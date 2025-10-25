@@ -226,7 +226,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         spt_attn_global_context_kernel: int = 250,
         spt_attn_epsilon: float = 1e-5,
         spt_attn_mode: str = "var",
-        activation: Optional[nn.Module] = None,
+        activation: Optional[nn.Module] = nn.ELU,
     ) -> None:
         super().__init__(
             n_chans=n_chans,
@@ -285,6 +285,8 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         self.proto_cpt = nn.Parameter(
             torch.empty(self.n_outputs, feat_dim), requires_grad=True
         )
+        # just for braindecode compatibility
+        self.final_layer = nn.Identity()
 
         self._reset_parameters()
 
@@ -321,6 +323,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             self.proto_sep.data, p=2, dim=1, maxnorm=self.proto_sep_maxnorm
         )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
+        logits = self.final_layer(logits)
 
         if self.return_features:
             return features, logits
