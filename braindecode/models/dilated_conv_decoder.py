@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import logging
 import math
 import typing as tp
 from functools import partial
@@ -17,8 +16,6 @@ from torch import nn
 from torch.nn import functional as F
 
 from braindecode.models.base import EEGModuleMixin
-
-logger = logging.getLogger(__name__)
 
 
 class DilatedConvDecoder(EEGModuleMixin, nn.Module):
