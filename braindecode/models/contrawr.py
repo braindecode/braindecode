@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+from mne.utils import warn
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -57,6 +58,9 @@ class ContraWR(EEGModuleMixin, nn.Module):
         steps=20,
         activation: nn.Module = nn.ELU,
         drop_prob: float = 0.5,
+        stride_res: int = 2,
+        kernel_size_res: int = 3,
+        padding_res: int = 1,
         # Another way to pass the EEG parameters
         chs_info=None,
         n_times=None,
@@ -74,7 +78,17 @@ class ContraWR(EEGModuleMixin, nn.Module):
         if not isinstance(res_channels, list):
             raise ValueError("res_channels must be a list of integers.")
 
-        self.n_fft = int(self.sfreq)
+        if self.input_window_seconds < 1.0:
+            warning_msg = (
+                "The input window is less than 1 second, which may not be "
+                "sufficient for the model to learn meaningful representations."
+                "changing the `n_fft` to `n_times`."
+            )
+            warn(warning_msg, UserWarning)
+            self.n_fft = self.n_times
+        else:
+            self.n_fft = int(self.sfreq)
+
         self.steps = steps
 
         res_channels = [self.n_chans] + res_channels + [emb_size]
@@ -89,19 +103,22 @@ class ContraWR(EEGModuleMixin, nn.Module):
                 _ResBlock(
                     in_channels=res_channels[i],
                     out_channels=res_channels[i + 1],
-                    stride=2,
+                    stride=stride_res,
                     use_downsampling=True,
                     pooling=True,
                     drop_prob=drop_prob,
+                    kernel_size=kernel_size_res,
+                    padding=padding_res,
+                    activation=activation,
                 )
                 for i in range(len(res_channels) - 1)
             ]
         )
+        self.adaptative_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.flatten_layer = nn.Flatten()
 
-        self.final_layer = nn.Sequential(
-            activation(),
-            nn.Linear(emb_size, self.n_outputs),
-        )
+        self.activation_layer = activation()
+        self.final_layer = nn.Linear(emb_size, self.n_outputs)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -118,9 +135,13 @@ class ContraWR(EEGModuleMixin, nn.Module):
         """
         X = self.torch_stft(X)
 
-        for conv in self.convs[:-1]:
+        for conv in self.convs:
             X = conv.forward(X)
-        emb = self.convs[-1](X).squeeze(-1).squeeze(-1)
+
+        emb = self.adaptative_pool(X)
+        emb = self.flatten_layer(emb)
+        emb = self.activation_layer(emb)
+
         return self.final_layer(emb)
 
 

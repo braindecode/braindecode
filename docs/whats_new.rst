@@ -17,12 +17,81 @@ What's new
 
 .. _current:
 
-Current 0.9 (dev0)
+Current 1.3 (dev)
 ----------------------
 
 Enhancements
 ~~~~~~~~~~~~
-- Implementing the Model :class:`braindecode.models.DeepRecurrentEncoder` (:gh:`743` by `Bruno Aristimunha`_)
+- Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
+- Including typing in the augmentation module (:gh:`709` by `Aphel`_)
+- Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
+
+
+API changes
+~~~~~~~~~~~
+
+Bugs
+~~~~
+- Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi Altaheri`_)
+- Fixing expired path when loading a preprocessed dataset that was moved (:gh:`786` by `Pierre Guetschel`_)
+- Fix OverflowError sometimes when saving description to a json file (:gh:`789` by `Pierre Guetschel`_)
+
+
+Current 1.2 (stable)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Improving the docstring for :class:`braindecode.models.EEGNetv4`  (:gh:`768` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGConformer`  (:gh:`769` by `Bruno Aristimunha`_)
+- Experimental BIDS Iterable Dataset support (:gh:`766` by `Bruno Aristimunha`_ and `Pierre Guetschel`_)
+- Improving the docstring for :class:`braindecode.models.ATCNet`  (:gh:`771` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.AttentionBaseNet`  (:gh:`772` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGNeX`  (:gh:`773` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`774` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`775` by `Bruno Aristimunha`_), creating the models categorization, table and many details.
+
+
+API changes
+~~~~~~~~~~~
+- Using the name from the original name and deprecation models that we create for no reason, models :gh:`775` by `Bruno Aristimunha`_
+- Deprecated the version name in :class:`braindecode.models.EEGNetv4` in favour of :class:`braindecode.models.EEGNetv`.
+- Deprecated the version name in :class:`braindecode.models.SleepStagerEldele2021` in favour of :class:`braindecode.models.AttnSleep`.
+- Deprecated the version name in :class:`braindecode.models.TSceptionV1` in favour of :class:`braindecode.models.TSception`.
+
+Bugs
+~~~~
+
+
+Version 1.1.1
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Massive refactor of the model webpage
+
+API changes
+~~~~~~~~~~~
+
+
+Bugs
+~~~~
+- Fixing several models to be be compatibility with small windows size(:gh:`756` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.Deep4Net` (:gh:`752` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.ATCNet` (:gh:`754` by `Bruno Aristimunha`_)
+- Fix Labram model for small input (:gh:`757` by `Bruno Aristimunha`_)
+- Fix the CTNet parameters to make the embedding configuration easy (:gh:`760` by `Bruno Aristimunha`_)
+
+API changes
+~~~~~~~~~~~
+
+
+Version 1.0
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Make sure all the models start at train model (:gh:`745` by `Bruno Aristimunha`_)
 - Enable more models to be pytorch compatible (:gh:`732` by `Bruno Aristimunha`_ and `Lucas Heck`_)
 - Making the braindecode.models compatibility with torch compile, torch export and torch jit (:gh:`729` by `Bruno Aristimunha` and `Pierre Guetschel`_)
 - Reorder the modules, functional and re-organize the codebase (:gh:`728` by `Bruno Aristimunha`_)
@@ -114,7 +183,7 @@ API changes
 
 .. _changes_0_8_0:
 
-Current 0.8 (11-2022)
+Version 0.8 (11-2022)
 ----------------------
 
 Enhancements
@@ -181,7 +250,7 @@ API changes
 
 .. _changes_0_7_0:
 
-Current 0.7 (10-2022)
+Version 0.7 (10-2022)
 ----------------------
 
 Enhancements
@@ -334,3 +403,6 @@ Authors
 .. _Young Truong: https://github.com/dungscout96
 .. _Lucas Heck: https://github.com/lucas-heck
 .. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif
+.. _Hamdi Altaheri: https://github.com/Altaheri
+.. _José Mauricio: https://github.com/josemaurici
+.. _Can Han: https://github.com/hancan16

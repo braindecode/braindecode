@@ -136,7 +136,8 @@ class CombinedConv(nn.Module):
         # Calculate bias terms
         if self.bias_time:
             time_bias = self.conv_time.bias
-            assert time_bias is not None
+            if time_bias is None:
+                raise RuntimeError("conv_time.bias is None despite bias_time=True")
             calculated_bias = (
                 self.conv_spat.weight.squeeze()
                 .sum(-1)
@@ -145,7 +146,8 @@ class CombinedConv(nn.Module):
             )
         if self.bias_spat:
             spat_bias = self.conv_spat.bias
-            assert spat_bias is not None
+            if spat_bias is None:
+                raise RuntimeError("conv_spat.bias is None despite bias_spat=True")
             if calculated_bias is None:
                 calculated_bias = spat_bias
             else:
@@ -190,11 +192,12 @@ class CausalConv1d(nn.Conv1d):
         dilation=1,
         **kwargs,
     ):
-        assert "padding" not in kwargs, (
-            "The padding parameter is controlled internally by "
-            f"{type(self).__name__} class. You should not try to override this"
-            " parameter."
-        )
+        if "padding" in kwargs:
+            raise ValueError(
+                "The padding parameter is controlled internally by "
+                f"{type(self).__name__} class. You should not try to override this"
+                " parameter."
+            )
 
         super().__init__(
             in_channels=in_channels,

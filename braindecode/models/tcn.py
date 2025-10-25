@@ -8,7 +8,7 @@ from torch.nn import init
 from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import Chomp1d, Ensure4d, Expression, SqueezeFinalOutput
+from braindecode.modules import Chomp1d, Ensure4d, SqueezeFinalOutput
 
 
 class BDTCN(EEGModuleMixin, nn.Module):
@@ -161,7 +161,7 @@ class TCN(nn.Module):
             self.min_len += 2 * (kernel_size - 1) * dilation
 
         # start in eval mode
-        self.eval()
+        self.train()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.

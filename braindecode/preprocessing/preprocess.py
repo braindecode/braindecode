@@ -55,15 +55,15 @@ class Preprocessor(object):
 
     Parameters
     ----------
-    fn: str or callable
+    fn : str or callable
         If str, the Raw/Epochs object must have a method with that name.
         If callable, directly apply the callable to the object.
     apply_on_array : bool
-        Ignored if `fn` is not a callable. If True, the `apply_function` of Raw
-        and Epochs object will be used to run `fn` on the underlying arrays
-        directly. If False, `fn` must directly modify the Raw or Epochs object.
-    kwargs:
-        Keyword arguments to be forwarded to the MNE function.
+        Ignored if ``fn`` is not a callable. If True, the ``apply_function`` of Raw
+        and Epochs will be used to run ``fn`` on the underlying arrays directly.
+        If False, ``fn`` must directly modify the Raw or Epochs object.
+    **kwargs : dict
+        Keyword arguments forwarded to the MNE function or callable.
     """
 
     def __init__(self, fn: Callable | str, *, apply_on_array: bool = True, **kwargs):
@@ -112,39 +112,38 @@ def preprocess(
     n_jobs: int | None = None,
     offset: int = 0,
     copy_data: bool | None = None,
+    parallel_kwargs: dict | None = None,
 ):
     """Apply preprocessors to a concat dataset.
 
     Parameters
     ----------
-    concat_ds: BaseConcatDataset
-        A concat of BaseDataset or WindowsDataset datasets to be preprocessed.
-    preprocessors: list(Preprocessor)
-        List of Preprocessor objects to apply to the dataset.
+    concat_ds : BaseConcatDataset
+        A concat of ``BaseDataset`` or ``WindowsDataset`` to be preprocessed.
+    preprocessors : list of Preprocessor
+        Preprocessor objects to apply to each dataset.
     save_dir : str | None
-        If a string, the preprocessed data will be saved under the specified
-        directory and the datasets in ``concat_ds`` will be reloaded with
-        `preload=False`.
+        If provided, save preprocessed data under this directory and reload
+        datasets in ``concat_ds`` with ``preload=False``.
     overwrite : bool
-        When `save_dir` is provided, controls whether to delete the old
-        subdirectories that will be written to under `save_dir`. If False and
-        the corresponding subdirectories already exist, a ``FileExistsError``
-        will be raised.
+        When ``save_dir`` is provided, controls whether to delete the old
+        subdirectories that will be written to under ``save_dir``. If False and
+        the corresponding subdirectories already exist, a ``FileExistsError`` is raised.
     n_jobs : int | None
-        Number of jobs for parallel execution. See `joblib.Parallel` for
-        a more detailed explanation.
+        Number of jobs for parallel execution. See ``joblib.Parallel`` for details.
     offset : int
-        If provided, the integer is added to the id of the dataset in the
-        concat. This is useful in the setting of very large datasets, where
-        one dataset has to be processed and saved at a time to account for
-        its original position.
+        Integer added to the dataset id in the concat. Useful when processing
+        and saving very large datasets in chunks to preserve original positions.
     copy_data : bool | None
-        Whether the data passed to the different jobs should be copied or
-        passed by reference.
+        Whether the data passed to parallel jobs should be copied or passed by reference.
+    parallel_kwargs : dict | None
+        Additional keyword arguments forwarded to ``joblib.Parallel``.
+        Defaults to None (equivalent to ``{}``).
+        See https://joblib.readthedocs.io/en/stable/generated/joblib.Parallel.html for details.
 
     Returns
     -------
-    BaseConcatDataset:
+    BaseConcatDataset
         Preprocessed dataset.
     """
     # In case of serialization, make sure directory is available before
@@ -159,8 +158,12 @@ def preprocess(
 
     parallel_processing = (n_jobs is not None) and (n_jobs != 1)
 
-    job_prefer = "threads" if platform.system() == "Windows" else None
-    list_of_ds = Parallel(n_jobs=n_jobs, prefer=job_prefer)(
+    parallel_params = {} if parallel_kwargs is None else dict(parallel_kwargs)
+    parallel_params.setdefault(
+        "prefer", "threads" if platform.system() == "Windows" else None
+    )
+
+    list_of_ds = Parallel(n_jobs=n_jobs, **parallel_params)(
         delayed(_preprocess)(
             ds,
             i + offset,

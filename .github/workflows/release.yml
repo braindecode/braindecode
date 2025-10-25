@@ -1,0 +1,74 @@
+name: Publish to PyPI on main updates
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pypi-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      PYPI_USERNAME: __token__
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install build packaging
+
+      # Figure out if this push is a merged PR or a direct push
+      - name: Derive version suffix (PR number if merged, else short SHA)
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_MSG="$(git log -1 --pretty=%B)"
+          if [[ "$COMMIT_MSG" =~ Merge\ pull\ request\ \#([0-9]+) ]]; then
+            echo "suffix=pr${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "pr_number=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "Detected merged PR #${BASH_REMATCH[1]}"
+          else
+            SHORT_SHA="$(git rev-parse --short HEAD)"
+            echo "suffix=sha${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            echo "Detected direct push (no PR); using ${SHORT_SHA}"
+          fi
+
+      # Use your script, passing PR number when present, otherwise a SHA-based suffix
+      - name: Bump version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ steps.ver.outputs.pr_number || '' }}" ]]; then
+            python scripts/release_script.py \
+              --init-file braindecode/version.py \
+              --pr "${{ steps.ver.outputs.pr_number }}"
+          else
+            # Fallback path must be supported by your script; if not, change the script
+            # to accept --pr and append a compliant .devN/.postN label.
+            python scripts/release_script.py \
+              --init-file braindecode/version.py \
+              --suffix "${{ steps.ver.outputs.suffix }}"
+          fi
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

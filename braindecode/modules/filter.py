@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-from functools import partial
 from typing import Optional
 
 import torch
-from einops.layers.torch import Rearrange
 from mne.filter import _check_coefficients, create_filter
 from mne.utils import warn
 from torch import Tensor, from_numpy, nn
 from torch.fft import fftfreq
 from torchaudio.functional import fftconvolve, filtfilt
-
-import braindecode.functional as F
 
 
 class FilterBankLayer(nn.Module):
@@ -456,12 +452,14 @@ class GeneralizedGaussianFilter(nn.Module):
         self.inverse_fourier = inverse_fourier
         self.affine_group_delay = affine_group_delay
         self.clamp_f_mean = clamp_f_mean
-        assert out_channels % in_channels == 0, (
-            "out_channels has to be multiple of in_channels"
-        )
-        assert len(f_mean) * in_channels == out_channels
-        assert len(bandwidth) * in_channels == out_channels
-        assert len(shape) * in_channels == out_channels
+        if out_channels % in_channels != 0:
+            raise ValueError("out_channels has to be multiple of in_channels")
+        if len(f_mean) * in_channels != out_channels:
+            raise ValueError("len(f_mean) * in_channels must equal out_channels")
+        if len(bandwidth) * in_channels != out_channels:
+            raise ValueError("len(bandwidth) * in_channels must equal out_channels")
+        if len(shape) * in_channels != out_channels:
+            raise ValueError("len(shape) * in_channels must equal out_channels")
 
         # Range from 0 to half sample rate, normalized
         self.n_range = nn.Parameter(

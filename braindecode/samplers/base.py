@@ -8,8 +8,6 @@ Sampler classes.
 #
 # License: BSD (3-clause)
 
-from typing import Optional
-
 import numpy as np
 from sklearn.utils import check_random_state
 from torch.utils.data.distributed import DistributedSampler

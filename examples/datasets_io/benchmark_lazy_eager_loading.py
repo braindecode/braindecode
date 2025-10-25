@@ -48,6 +48,7 @@ from torch.utils.data import DataLoader
 from braindecode.datasets import TUHAbnormal
 from braindecode.models import Deep4Net, ShallowFBCSPNet
 from braindecode.preprocessing import create_fixed_length_windows
+from braindecode.util import set_random_seeds
 
 mne.set_log_level("WARNING")  # avoid messages every time a window is extracted
 
@@ -58,6 +59,9 @@ mne.set_log_level("WARNING")  # avoid messages every time a window is extracted
 N_JOBS = 8
 torch.backends.cudnn.benchmark = True  # Enables automatic algorithm optimizations
 torch.set_num_threads(N_JOBS)  # Sets the available number of threads
+cuda = torch.cuda.is_available()
+seed = 20240205
+set_random_seeds(seed=seed, cuda=cuda)
 
 
 ###############################################################################

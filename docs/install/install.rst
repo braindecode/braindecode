@@ -4,7 +4,7 @@
 Installation
 ================
 
-Braindecode is written in Python 3, specifically for version 3.8 or above.
+Braindecode is written in Python 3, specifically for version 3.10 or above.
 
 The package is distributed via Python package index (`PyPI <braindecode-pypi_>`_), and you can access the
 source code via `Github <braindecode-github_>`_ repository.

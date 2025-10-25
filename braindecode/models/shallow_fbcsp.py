@@ -20,6 +20,8 @@ from braindecode.modules import (
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
     """Shallow ConvNet model from Schirrmeister et al (2017) [Schirrmeister2017]_.
 
+    :bdg-success:`Convolution`
+
     .. figure:: https://onlinelibrary.wiley.com/cms/asset/221ea375-6701-40d3-ab3f-e411aad62d9e/hbm23730-fig-0002-m.jpg
         :align: center
         :alt: ShallowNet Architecture
@@ -204,3 +206,5 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             init.constant_(self.bnorm.bias, 0)
         init.xavier_uniform_(self.final_layer.conv_classifier.weight, gain=1)
         init.constant_(self.final_layer.conv_classifier.bias, 0)
+
+        self.train()

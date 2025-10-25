@@ -3,13 +3,11 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
-import numpy as np
 import torch
-import torch.nn.functional as F
 from einops.layers.torch import Rearrange
-from torch import Tensor, nn
+from torch import nn
 
-from braindecode.functional import drop_path, safe_log
+from braindecode.functional import drop_path
 
 
 class Ensure4d(nn.Module):
@@ -110,7 +108,7 @@ class SqueezeFinalOutput(nn.Module):
     """
 
     Removes empty dimension at end and potentially removes empty time
-    dimension. It does  not just use squeeze as we never want to remove
+    dimension. It does not just use squeeze as we never want to remove
     first dimension.
 
     Returns

@@ -1,7 +1,7 @@
 # Authors: Tao Yang <sheeptao@outlook.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-from typing import Dict, Optional, Type, Union
+from typing import Type, Union
 
 import torch
 import torch.nn as nn

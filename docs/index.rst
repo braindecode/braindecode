@@ -14,12 +14,12 @@ Braindecode Homepage
 
 .. LOGO
 
-.. image:: _static/braindecode.svg
+.. image:: _static/braindecode.png
    :alt: Braindecode
    :class: logo, mainlogo, only-light
    :align: center
 
-.. image:: _static/braindecode.svg
+.. image:: _static/braindecode.png
    :alt: Braindecode
    :class: logo, mainlogo, only-dark
    :align: center
@@ -42,7 +42,7 @@ Braindecode Homepage
    :hidden:
 
    Install <install/install>
-   Models <models_summary>
+   Models <models/models>
    Cite <cite>
    Tutorial and Examples <auto_examples/index>
    API <api>

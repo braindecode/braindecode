@@ -33,7 +33,7 @@ train one of the Braindecode models on it.
 # architecture on Braindecode!
 #
 # In order to use this architecture, you first need to find what is its exact
-# name in Braindecode. To do so, you can visit Braindecode's :doc:`Models Summary </models_summary>`
+# name in Braindecode. To do so, you can visit Braindecode's Models Page
 # page for information on which are the available models.
 #
 # Alternatively, the :doc:`API </api>` also provide a dictionary with all available models:
@@ -46,7 +46,10 @@ print(f"All the Braindecode models:\n{list(models_dict.keys())}")
 # After your investigation, you found out that the model you are looking for is
 # ``ShallowFBCSPNet``. You can now import it from Braindecode:
 
+import torch
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 ######################################################################
 # Examining the model
@@ -57,6 +60,11 @@ from braindecode.models import ShallowFBCSPNet
 # :class:`braindecode.models.ShallowFBCSPNet` or directly in the module's docstring:
 
 print(ShallowFBCSPNet.__doc__)
+
+# Set random seed to ensure reproducible initialization below
+seed = 20240205
+cuda = torch.cuda.is_available()
+set_random_seeds(seed=seed, cuda=cuda)
 
 ######################################################################
 # Additionally, you might be interested in visualizing the model's architecture.

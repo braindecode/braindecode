@@ -5,11 +5,7 @@
 import inspect
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-import torch
-from scipy.special import log_softmax
-from sklearn.utils import deprecated
 
 import braindecode.models as models
 
@@ -26,6 +22,8 @@ def _init_models_dict():
             issubclass(m[1], models.base.EEGModuleMixin)
             and m[1] != models.base.EEGModuleMixin
         ):
+            if m[1].__name__ == "EEGNetv4":
+                continue
             models_dict[m[0]] = m[1]
 
 
@@ -59,9 +57,7 @@ models_mandatory_parameters = [
     ("EEGInceptionERP", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGNetv1", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGNetv4", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGResNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGNet", ["n_chans", "n_outputs", "n_times"], None),
     ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "SleepStagerBlanco2020",
@@ -70,20 +66,20 @@ models_mandatory_parameters = [
     ),
     ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
-        "SleepStagerEldele2021",
+        "AttnSleep",
         ["n_outputs", "n_times", "sfreq"],
         dict(sfreq=100.0, n_times=3000, chs_info=[dict(ch_name="C1", kind="eeg")]),
     ),  # 1 channel
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128.0)),
-    ("BIOT", ["n_chans", "n_outputs", "sfreq"], None),
+    ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
     ("Labram", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
     ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("ContraWR", ["n_chans", "n_outputs", "sfreq"], dict(sfreq=200.0)),
+    ("ContraWR", ["n_chans", "n_outputs", "sfreq", "n_times"], dict(sfreq=200.0)),
     ("EEGNeX", ["n_chans", "n_outputs", "n_times"], None),
-    ("TSceptionV1", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
+    ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
@@ -99,6 +95,8 @@ models_mandatory_parameters = [
     ("FBMSNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
     ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
+    ("PBT", ["n_chans", "n_outputs", "n_times"], None),
+    ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
 ]
 
 ################################################################

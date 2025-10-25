@@ -1,7 +1,6 @@
 # Authors: Ghaith Bouallegue <ghaithbouallegue@gmail.com>
 #
 # License: BSD-3
-import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
