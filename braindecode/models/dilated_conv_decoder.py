@@ -27,17 +27,97 @@ __all__ = ["DilatedConvDecoder"]
 
 
 class DilatedConvDecoder(EEGModuleMixin, nn.Module):
-    """Dilated Convolutional Decoder aka SimpleConv from [brainmagik]_.
+    r"""Dilated Convolutional Decoder (SimpleConv) as the Brain Module from [brainmagik]_.
 
-    A flexible encoder-decoder architecture using dilated convolutions, LSTM,
-    and optional attention mechanisms, originally designed for MEG decoding
-    and adapted for Braindecode's EEG workflows.
+    :bdg-secondary:`Recurrent` :bdg-info:`Small Attention` :bdg-success:`Convolution`
 
-    The model processes input through:
-    1. A series of dilated convolutional encoder layers
-    2. Optional LSTM for temporal modeling
-    3. Optional attention layers
-    4. Convolutional decoder to produce output
+    .. figure:: ../_static/model/simpleconv.png
+        :align: center
+        :alt: SimpleConv Architecture
+        :width: 1000px
+
+        For each layer, we note first the number of output channels, while the number of time steps is constant throughout the layers.
+        The model is composed of a spatial attention layer, then a 1x1 convolution without activation.
+        A 'Subject Layer' is selected based on the subject index s, which consists in a 1x1 convolution learnt only for that subject with no activation.
+        Then, we apply five convolutional blocks made of three convolutions.
+        The first two use residual skip connection and increasing dilation, followed by a BatchNorm layer and a GELU activation.
+        The third convolution is not residual, and uses a GLU activation (which halves the number of channels) and no normalization.
+        Finally, we apply two 1x1 convolutions with a GELU in between.
+
+    The **Dilated Convolutional Decoder**, sometimes referred to as SimpleConv [brainmagik]_,
+    functions as the **Brain Module** (or deep convolutional network) described in the
+    original paper by Défossez et al. (2023) for decoding speech perception from
+    non-invasive MEG/EEG recordings.
+
+    The model is a flexible encoder-decoder architecture adapted for Braindecode's
+    EEG workflows, originally designed for MEG decoding [brainmagik]_. Its primary role is to
+    map raw brain activity :math:`X \in \mathbb{R}^{C \times T}` into a latent
+    representation :math:`Z \in \mathbb{R}^{F \times T}` that is maximally aligned
+    with deep speech representations (e.g., wav2vec 2.0 features) using a contrastive
+    learning objective (CLIP loss).
+
+    The architecture leverages **dilated convolutions** to achieve large receptive
+    fields while maintaining temporal resolution [brainmagik]_.
+
+    .. rubric:: Architectural Overview
+
+    The Brain Module processes input through a series of stages: input conditioning,
+    encoding via dilated convolution blocks, optional temporal processing (LSTM and
+    attention), and a symmetrical decoder.
+
+    1. **Input Conditioning:** Handles Spectrogram transformation (optional STFT/n_fft),
+       Channel Dropout, Subject-Specific Embeddings, and initial 1x1 convolutions.
+    2. **Encoder:** A series of dilated convolutional blocks that downsample the signal.
+    3. **Temporal Modeling:** Optional LSTM and local self-attention layers for sequence processing.
+    4. **Decoder:** Convolutional blocks that upsample the representation back to the original time dimension.
+    5. **Final Layer:** Optional output convolution and pooling for dimensionality matching or classification.
+
+    .. rubric:: Macro Components
+
+    - `DilatedConvDecoder.initial_layer` **(Initial Linear/1x1 Conditioning)**
+        - *Original Paper Role.* Used for feature conditioning and domain adaptation, consisting of one or more 1x1 convolutions applied before the main encoder.
+        - *Presence.* Enabled if `initial_linear > 0`.
+    - `DilatedConvDecoder.subject_layers_module` **(Participant Layer)**
+        - *Original Paper Role.* Learns a unique linear transformation matrix :math:`M_s \in \mathbb{R}^{D_1, D_1}` for each participant :math:`s`, applied along the channel dimension after the conceptual Spatial Attention layer.
+          This is designed to leverage inter-individual variability.
+        - *Presence.* Enabled if `subject_layers=True` and `subject_dim > 0`.
+    - `DilatedConvDecoder.encoder` **(Dilated Convolutional Encoding)**
+        - *Original Paper Role.* Maps the conditioned input to a compressed latent space. The paper describes this stack as **five blocks of three convolutional layers**.
+        - *Presence.* Implemented via the internal `_ConvSequence` module.
+    - `DilatedConvDecoder.lstm` **(Optional Temporal Modeling)**
+        - *Original Paper Role.* Provides temporal sequence modeling capability]. The implementation supports bidirectional processing and sequence flipping.
+        - *Presence.* Enabled if `lstm_layers > 0`.
+    - `DilatedConvDecoder.attentions` **(Optional Local Self-Attention)**
+        - *Original Paper Role.* Attention layers added after the LSTM for further temporal refinement.
+        - *Presence.* Enabled if `attention_layers > 0`.
+    - `DilatedConvDecoder.decoder` **(Dilated Convolutional Decoding)**
+        - *Original Paper Role.* Symmetrical reconstruction layers that map the temporal representations back to the original time dimension.
+        - *Presence.* Implemented via the internal `_ConvSequence` with `decode=True`.
+    - `DilatedConvDecoder.final_layer` **(Output Convolution/Pooling)**
+        - *Original Paper Role.* Applies a final 1x1 convolution (often followed by activation and another 1x1 convolution if `complex_out=True`) to achieve the final output dimensionality :math:`F` (matching the speech representations).
+          It also includes global average pooling if required for classification tasks.
+        - *Presence.* Always present, though its components vary based on `linear_out` and `complex_out`.
+
+    .. rubric:: Key Architectural Mechanisms
+
+    * **Dilated Convolutions and Receptive Field.**
+        The encoder blocks utilize dilated convolutions (in the first two layers of each block) where the dilation rate increases exponentially per layer (e.g., :math:`2^{2k \mod 5}` and :math:`2^{2k+1 \mod 5}` for block :math:`k`).
+        This mechanism allows the model to capture context across a **large receptive field** without drastically reducing the time dimension.
+    * **Residual Skip Connections.**
+        Skip (residual) connections are applied across the convolutional layers in the encoder and decoder blocks to stabilize training and improve gradient flow, particularly in deep networks. These can optionally use LayerScale.
+    * **Gated Activation.** The convolutional layers rely primarily on GELU activation.
+        Specifically, the third layer in each block uses a **Gated Linear Unit (GLU)** activation, which gates intermediate representations for enhanced expressivity.
+    * **Input Transformation (STFT).**
+        The module optionally includes a Spectrogram transformation (if `n_fft` is set) before encoding, allowing the model to operate in the **spectrogram domain** rather than the raw time domain.
+    * **Temporal Alignment.**
+        To compensate for the expected delay between acoustic stimulus and neural response, the original paper's architecture shifts the input brain signal by **150 ms into the future** to facilitate alignment between brain representation :math:`Z` and speech representation :math:`Y`.
+
+    .. rubric:: Notes
+
+    * **Input/Output Shape:** Input is typically (batch, n_chans, n_times); output depends on configuration but is often (batch, n_outputs, n_times) or (batch, n_outputs) if pooling is applied.
+    * **Subject-Specific Features:** Subject embeddings (`subject_dim > 0`) or subject layers (`subject_layers=True`) require passing subject indices in the forward pass.
+    * **Temporal Padding:** Padding logic is utilized (`pad_to_valid_length`) to ensure temporal dimensions are maintained correctly through the encoder-decoder roundtrip.
+    * **Original Context:** The brain module was trained using a **contrastive CLIP loss**  to maximize discrimination between segments, showing improved performance over regression losses targeting low-level features like Mel spectrograms.
 
     Parameters
     ----------
@@ -182,7 +262,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         growth: float = 1.0,
         dilation_growth: int = 1,
         dilation_period: int | None = None,
-        # LSTM
+        # LSTM (optional)
         lstm_layers: int = 0,
         lstm_drop_prob: float = 0.0,
         flip_lstm: bool = False,
