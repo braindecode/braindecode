@@ -10,6 +10,7 @@ from .attention import (
     EncNet,
     GatherExcite,
     GSoP,
+    LocalSelfAttention,
     MultiHeadAttention,
     SqueezeAndExcitation,
 )
@@ -22,7 +23,14 @@ from .convolution import (
     DepthwiseConv2d,
 )
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
-from .layers import Chomp1d, DropPath, Ensure4d, SqueezeFinalOutput, TimeDistributed
+from .layers import (
+    Chomp1d,
+    DropPath,
+    Ensure4d,
+    SqueezeFinalOutput,
+    SubjectLayers,
+    TimeDistributed,
+)
 from .linear import LinearWithConstraint, MaxNormLinear
 from .parametrization import MaxNorm, MaxNormParametrize
 from .stats import (
@@ -51,6 +59,7 @@ __all__ = [
     "GatherExcite",
     "GSoP",
     "MultiHeadAttention",
+    "LocalSelfAttention",
     "SqueezeAndExcitation",
     "MLP",
     "FeedForwardBlock",
@@ -65,6 +74,7 @@ __all__ = [
     "Chomp1d",
     "DropPath",
     "Ensure4d",
+    "SubjectLayers",
     "SqueezeFinalOutput",
     "TimeDistributed",
     "LinearWithConstraint",

@@ -60,6 +60,7 @@ provides a common interface for all EEG models and derivate variables names if n
     ContraWR
     CTNet
     Deep4Net
+    DilatedConvDecoder
     DeepSleepNet
     EEGConformer
     EEGInceptionERP
@@ -141,6 +142,7 @@ multi'head attention and squeeze and excitation layers.
     GatherExcite
     GSoP
     MultiHeadAttention
+    LocalSelfAttention
     SqueezeAndExcitation
 
 Blocks
@@ -205,6 +207,7 @@ include layers for handling different input shapes and dimensions.
     Chomp1d
     DropPath
     Ensure4d
+    SubjectLayers
     TimeDistributed
 
 Linear
