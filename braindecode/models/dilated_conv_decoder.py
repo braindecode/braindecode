@@ -59,7 +59,8 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     The architecture leverages **dilated convolutions** to achieve large receptive
     fields while maintaining temporal resolution [brainmagik]_.
 
-    .. rubric:: Architectural Overview
+    Architectural Overview
+    ----------------------
 
     The Brain Module processes input through a series of stages: input conditioning,
     encoding via dilated convolution blocks, optional temporal processing (LSTM and
@@ -72,7 +73,8 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     4. **Decoder:** Convolutional blocks that upsample the representation back to the original time dimension.
     5. **Final Layer:** Optional output convolution and pooling for dimensionality matching or classification.
 
-    .. rubric:: Macro Components
+    Macro Components
+    ----------------
 
     - `DilatedConvDecoder.initial_layer` **(Initial Linear/1x1 Conditioning)**
         - *Original Paper Role.* Used for feature conditioning and domain adaptation, consisting of one or more 1x1 convolutions applied before the main encoder.
@@ -98,7 +100,8 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
           It also includes global average pooling if required for classification tasks.
         - *Presence.* Always present, though its components vary based on `linear_out` and `complex_out`.
 
-    .. rubric:: Key Architectural Mechanisms
+    Key Architectural Mechanisms
+    ----------------------------
 
     * **Dilated Convolutions and Receptive Field.**
         The encoder blocks utilize dilated convolutions (in the first two layers of each block) where the dilation rate increases exponentially per layer (e.g., :math:`2^{2k \mod 5}` and :math:`2^{2k+1 \mod 5}` for block :math:`k`).
@@ -112,8 +115,27 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     * **Temporal Alignment.**
         To compensate for the expected delay between acoustic stimulus and neural response, the original paper's architecture shifts the input brain signal by **150 ms into the future** to facilitate alignment between brain representation :math:`Z` and speech representation :math:`Y`.
 
-    .. rubric:: Notes
+    How the information is encoded temporally, spatially, and spectrally
+    --------------------------------------------------------------------
 
+    * **Temporal.**
+       The initial :class:``
+
+    * **Spatial.**
+       The
+
+    * **Spectral.**
+       Spectral information is
+
+    .. rubric:: Additional Mechanisms
+
+    - **Attention.**
+
+    - **Regularization.**
+
+
+    Notes
+    -----
     * **Input/Output Shape:** Input is typically (batch, n_chans, n_times); output depends on configuration but is often (batch, n_outputs, n_times) or (batch, n_outputs) if pooling is applied.
     * **Subject-Specific Features:** Subject embeddings (`subject_dim > 0`) or subject layers (`subject_layers=True`) require passing subject indices in the forward pass.
     * **Temporal Padding:** Padding logic is utilized (`pad_to_valid_length`) to ensure temporal dimensions are maintained correctly through the encoder-decoder roundtrip.
@@ -243,6 +265,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     - Subject-specific features (subject_dim > 0, subject_layers) require passing
       subject indices in the forward pass as an optional parameter or via batch.
     - STFT processing (n_fft > 0) automatically transforms input to spectrogram domain.
+
+    .. versionadded:: 1.2
+
     """
 
     def __init__(
