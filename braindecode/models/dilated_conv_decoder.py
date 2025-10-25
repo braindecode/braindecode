@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import logging
 import math
 import typing as tp
 from functools import partial
@@ -20,8 +19,6 @@ from torch.nn import functional as F
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.attention import LocalSelfAttention
 from braindecode.modules.layers import SubjectLayers
-
-logger = logging.getLogger(__name__)
 
 __all__ = ["DilatedConvDecoder"]
 
