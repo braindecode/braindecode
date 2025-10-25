@@ -18,8 +18,12 @@ from torch import nn
 from torch.nn import functional as F
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.attention import LocalSelfAttention
+from braindecode.modules.layers import SubjectLayers
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["DilatedConvDecoder"]
 
 
 class DilatedConvDecoder(EEGModuleMixin, nn.Module):
@@ -324,7 +328,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         # Initialize channel dropout (optional)
         self.channel_dropout = None
         if channel_dropout_prob > 0:
-            self.channel_dropout = ChannelDropout(
+            self.channel_dropout = _ChannelDropout(
                 dropout_prob=channel_dropout_prob,
                 ch_info=chs_info,
                 channel_type=channel_dropout_type,
@@ -336,7 +340,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         input_channels = self.n_chans
 
         if subject_dim > 0:
-            self.subject_embedding = ScaledEmbedding(
+            self.subject_embedding = _ScaledEmbedding(
                 n_subjects, subject_dim, embedding_scale
             )
             input_channels += subject_dim
@@ -424,12 +428,12 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             activation=activation_fn,
         )
 
-        self.encoder = ConvSequence(encoder_dims, **encoder_params)
+        self.encoder = _ConvSequence(encoder_dims, **encoder_params)
 
         # Build LSTM (optional)
         self.lstm = None
         if lstm_layers > 0:
-            self.lstm = LSTM(
+            self.lstm = _LSTM(
                 input_size=decoder_input_dim,
                 hidden_size=lstm_hidden,
                 dropout=lstm_drop_prob,
@@ -441,7 +445,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         # Build attention layers (optional)
         self.attentions = nn.ModuleList()
         for _ in range(attention_layers):
-            self.attentions.append(Attention(lstm_hidden, heads=attention_heads))
+            self.attentions.append(
+                LocalSelfAttention(lstm_hidden, heads=attention_heads)
+            )
 
         # Build decoder
         decoder_dims = [int(round(lstm_hidden / growth**k)) for k in range(depth + 1)]
@@ -451,7 +457,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             encoder_params["activation_on_last"] = False
             decoder_dims[-1] = self.n_outputs
 
-        self.decoder = ConvSequence(decoder_dims, decode=True, **encoder_params)
+        self.decoder = _ConvSequence(decoder_dims, decode=True, **encoder_params)
 
         # Final layer: combine output conv, pooling, and squeezing for classification
         # This is a named module for compatibility with test_model_integration_full_last_layer
@@ -561,7 +567,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             assert self.n_fft is not None, "n_fft must be set if stft is not None"
             pad_size = self.n_fft // 4
             x = F.pad(
-                pad_multiple(x, self.n_fft // 2), (pad_size, pad_size), mode="reflect"
+                _pad_multiple(x, self.n_fft // 2), (pad_size, pad_size), mode="reflect"
             )
 
             # Apply STFT
@@ -635,7 +641,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         return decoded
 
 
-class ConvSequence(nn.Module):
+class _ConvSequence(nn.Module):
     """Sequence of convolutional layers with optional dilation, skip connections, GLU."""
 
     def __init__(
@@ -709,7 +715,7 @@ class ConvSequence(nn.Module):
                     layers += [nn.Conv1d(chout, chout, 1), nn.LeakyReLU(leakiness)]
             if chin == chout and skip:
                 if scale is not None:
-                    layers.append(LayerScale(chout, scale))
+                    layers.append(_LayerScale(chout, scale))
                 if post_skip:
                     layers.append(Conv(chout, chout, 1, groups=chout, bias=False))
 
@@ -738,7 +744,7 @@ class ConvSequence(nn.Module):
         return x
 
 
-class LayerScale(nn.Module):
+class _LayerScale(nn.Module):
     """Layer scale: rescales residual outputs close to 0, learnable.
 
     From [Touvron et al 2021] (https://arxiv.org/pdf/2103.17239.pdf).
@@ -755,7 +761,7 @@ class LayerScale(nn.Module):
         return (self.boost * self.scale[:, None]) * x
 
 
-class LSTM(nn.Module):
+class _LSTM(nn.Module):
     """Wrapper for LSTM that normalizes output dimension for bidirectional mode.
 
     If bidirectional, LSTM output is linearly projected to hidden_size so
@@ -806,104 +812,14 @@ class LSTM(nn.Module):
         return x, (h, c)
 
 
-class Attention(nn.Module):
-    """Local attention mechanism with relative position embeddings.
-
-    Implements attention within a fixed radius around each position,
-    using learned position embeddings. Helps capture local dependencies
-    while limiting computational cost.
-    """
-
-    def __init__(self, channels: int, radius: int = 50, heads: int = 4):
-        super().__init__()
-        if channels % heads != 0:
-            raise ValueError(
-                f"channels ({channels}) must be divisible by heads ({heads})"
-            )
-
-        self.content = nn.Conv1d(channels, channels, 1)
-        self.query = nn.Conv1d(channels, channels, 1)
-        self.key = nn.Conv1d(channels, channels, 1)
-        self.embedding = nn.Embedding(radius * 2 + 1, channels // heads)
-
-        # Smooth position embeddings
-        weight = self.embedding.weight.data
-        weight[:] = (
-            weight.cumsum(0)
-            / torch.arange(1, len(weight) + 1, dtype=weight.dtype, device=weight.device)
-            .view(-1, 1)
-            .sqrt()
-        )
-
-        self.heads = heads
-        self.radius = radius
-        self.bn = nn.BatchNorm1d(channels)
-        self.fc = nn.Conv1d(channels, channels, 1)
-        self.scale = nn.Parameter(torch.full([channels], 0.1))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input of shape (batch, channels, time).
-
-        Returns
-        -------
-        torch.Tensor
-            Attention output of shape (batch, channels, time).
-        """
-
-        def _split(y: torch.Tensor) -> torch.Tensor:
-            return y.view(y.shape[0], self.heads, -1, y.shape[2])
-
-        content = _split(self.content(x))
-        query = _split(self.query(x))
-        key = _split(self.key(x))
-
-        batch_size, _, dim, length = content.shape
-
-        # Attention scores: (batch, heads, time_q, time_k)
-        dots = torch.einsum("bhct,bhcs->bhts", query, key)
-
-        # Relative position embeddings
-        steps = torch.arange(length, dtype=torch.long, device=x.device)
-        relative = steps[:, None] - steps[None, :]
-        embs = self.embedding.weight.gather(
-            0,
-            (self.radius + relative.clamp(-self.radius, self.radius))
-            .view(-1, 1)
-            .expand(-1, dim),
-        )
-        embs = embs.view(length, length, -1)
-        dots += 0.3 * torch.einsum("bhct,tsc->bhts", query, embs)
-
-        # Mask outside radius
-        dots = torch.where(
-            relative.abs() <= self.radius,
-            dots,
-            torch.tensor(float("-inf"), dtype=dots.dtype, device=dots.device),
-        )
-
-        # Attention weights
-        weights = torch.softmax(dots, dim=-1)
-        out = torch.einsum("bhts,bhcs->bhct", weights, content)
-        out += 0.3 * torch.einsum("bhts,tsc->bhct", weights, embs)
-        out = out.reshape(batch_size, -1, length)
-        out = F.relu(self.bn(self.fc(out))) * self.scale.view(1, -1, 1)
-        return out
-
-
-def pad_multiple(x: torch.Tensor, base: int) -> torch.Tensor:
+def _pad_multiple(x: torch.Tensor, base: int) -> torch.Tensor:
     """Pad tensor to be a multiple of base."""
     length = x.shape[-1]
     target = math.ceil(length / base) * base
     return F.pad(x, (0, target - length))
 
 
-class ScaledEmbedding(nn.Module):
+class _ScaledEmbedding(nn.Module):
     """Scaled embedding layer for subjects.
 
     Scales up the learning rate for the embedding to prevent slow convergence.
@@ -937,7 +853,7 @@ class ScaledEmbedding(nn.Module):
         return self.embedding(x) * self.scale
 
 
-class ChannelDropout(nn.Module):
+class _ChannelDropout(nn.Module):
     """Channel dropout with rescaling and optional ch_info support.
 
     Randomly drops channels during training and rescales output to maintain
@@ -963,13 +879,13 @@ class ChannelDropout(nn.Module):
     Examples
     --------
     >>> # Random channel dropout
-    >>> dropout = ChannelDropout(dropout_prob=0.1)
+    >>> dropout = _ChannelDropout(dropout_prob=0.1)
     >>> x = torch.randn(4, 32, 1000)
     >>> x_dropped = dropout(x)
 
     >>> # Selective EEG dropout using ch_info
     >>> ch_info = [{'ch_name': 'Fp1', 'ch_type': 'eeg'}, ...]
-    >>> dropout_eeg = ChannelDropout(
+    >>> dropout_eeg = _ChannelDropout(
     ...     dropout_prob=0.1,
     ...     ch_info=ch_info,
     ...     channel_type='eeg'  # Only drop EEG channels
@@ -1067,50 +983,3 @@ class ChannelDropout(nn.Module):
             f"rescale={self.rescale}, "
             f"channel_type={self.channel_type})"
         )
-
-
-class SubjectLayers(nn.Module):
-    """Per-subject linear transformation layer.
-
-    Applies subject-specific linear transformations to the input. Each subject
-    has its own weight matrix for personalized processing.
-    """
-
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        n_subjects: int,
-        init_id: bool = False,
-    ):
-        super().__init__()
-        self.weights = nn.Parameter(torch.randn(n_subjects, in_channels, out_channels))
-        if init_id:
-            assert in_channels == out_channels, (
-                "init_id requires in_channels == out_channels"
-            )
-            self.weights.data[:] = torch.eye(in_channels)[None]
-        self.weights.data *= 1 / (in_channels**0.5)
-
-    def forward(self, x: torch.Tensor, subjects: torch.Tensor) -> torch.Tensor:
-        """Forward pass.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input of shape (batch, in_channels, time).
-        subjects : torch.Tensor
-            Subject indices of shape (batch,).
-
-        Returns
-        -------
-        torch.Tensor
-            Output of shape (batch, out_channels, time).
-        """
-        _, C, D = self.weights.shape
-        weights = self.weights.gather(0, subjects.view(-1, 1, 1).expand(-1, C, D))
-        return torch.einsum("bct,bcd->bdt", x, weights)
-
-    def __repr__(self) -> str:
-        S, C, D = self.weights.shape
-        return f"SubjectLayers({C}, {D}, {S})"

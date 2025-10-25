@@ -48,6 +48,7 @@ from braindecode.models import (
     TSception,
     USleep,
 )
+from braindecode.models.dilated_conv_decoder import _ChannelDropout, _LayerScale
 from braindecode.util import set_random_seeds
 
 
@@ -2243,7 +2244,7 @@ def test_dilated_conv_decoder_layer_scale_with_skip(dilated_conv_decoder_params)
     # Verify LayerScale modules exist in encoder
     has_layer_scale = False
     for module in model.encoder.modules():
-        if type(module).__name__ == "LayerScale":
+        if isinstance(module, _LayerScale):
             has_layer_scale = True
             break
     assert has_layer_scale
@@ -2634,22 +2635,18 @@ def test_channel_dropout_requires_prob_for_type(dilated_conv_decoder_params):
 
 def test_channel_dropout_invalid_probability():
     """Test that invalid dropout probabilities are rejected."""
-    from braindecode.models.dilated_conv_decoder import ChannelDropout
+    with pytest.raises(ValueError, match="dropout_prob must be in"):
+        _ChannelDropout(dropout_prob=-0.1)
 
     with pytest.raises(ValueError, match="dropout_prob must be in"):
-        ChannelDropout(dropout_prob=-0.1)
-
-    with pytest.raises(ValueError, match="dropout_prob must be in"):
-        ChannelDropout(dropout_prob=1.5)
+        _ChannelDropout(dropout_prob=1.5)
 
 
 def test_channel_dropout_rescaling():
     """Test that channel dropout rescaling maintains expected value."""
-    from braindecode.models.dilated_conv_decoder import ChannelDropout
-
     set_random_seeds(0, False)
 
-    dropout = ChannelDropout(
+    dropout = _ChannelDropout(
         dropout_prob=0.5,
         rescale=True,
     )
@@ -2671,11 +2668,9 @@ def test_channel_dropout_rescaling():
 
 def test_channel_dropout_without_rescaling():
     """Test channel dropout without rescaling."""
-    from braindecode.models.dilated_conv_decoder import ChannelDropout
-
     set_random_seeds(0, False)
 
-    dropout = ChannelDropout(
+    dropout = _ChannelDropout(
         dropout_prob=0.5,
         rescale=False,
     )
