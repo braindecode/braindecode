@@ -13,8 +13,6 @@ from einops import rearrange
 
 from braindecode.models.base import EEGModuleMixin
 
-__all__ = ["SSTDPN"]
-
 
 class SSTDPN(EEGModuleMixin, nn.Module):
     r"""SSTDPN from Can Han et al (2025) [Han2025]_.
@@ -32,7 +30,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     small-sample sizes [Han2025]_.
 
     The framework systematically addresses three key challenges: multi-channel spatial–spectral
-    features, long-term temporal features, and the small-sample dilemma [Han2025]_.
+    features and long-term temporal features [Han2025]_.
 
     .. rubric:: Architectural Overview
 
@@ -81,11 +79,10 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     - `_SSTEncoder.chan_conv` **(Pointwise Fusion across Channels)**
 
         - *Operations.* A 1D pointwise convolution with `n_fused_filters` output channels
-          (equivalent to :math:`F_2` in the paper), followed by BatchNorm and ELU activation.
+          (equivalent to :math:`F_2` in the paper), followed by BatchNorm and the specified
+          `activation` function (default: ELU).
         - *Role.* Fuses the weighted spatial–spectral features across all electrodes to produce
-          a fused representation :math:`X_{fused} \in \mathbb{R}^{F_2 \times T}`.
-
-    - `_SSTEncoder.mvp` **(Multi-scale Variance Pooling for Temporal Extraction)**
+          a fused representation :math:`X_{fused} \in \mathbb{R}^{F_2 \times T}`.    - `_SSTEncoder.mvp` **(Multi-scale Variance Pooling for Temporal Extraction)**
 
         - *Operations.* Internal :class:`_MultiScaleVarPooler` using :class:`_VariancePool1D`
           layers at multiple scales (`mvp_kernel_sizes`), followed by concatenation.
@@ -161,6 +158,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     spt_attn_mode : str, optional
         Embedding computation mode for Spatial-Spectral Attention ('var', 'l2', or 'l1').
         Default is 'var' (variance-based).
+    activation : nn.Module, optional
+        Activation function to apply after the pointwise fusion convolution in _SSTEncoder.
+        Should be a PyTorch activation module class. Default is nn.ELU.
 
     References
     ----------
@@ -196,6 +196,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         spt_attn_global_context_kernel: int = 250,
         spt_attn_epsilon: float = 1e-5,
         spt_attn_mode: str = "var",
+        activation: Optional[nn.Module] = None,
     ) -> None:
         super().__init__(
             n_chans=n_chans,
@@ -205,7 +206,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del input_window_seconds, sfreq, chs_info
+        del input_window_seconds, sfreq, chs_info, n_chans, n_outputs, n_times
+
+        # Set default activation if not provided
+        if activation is None:
+            activation = nn.ELU
 
         # Store hyperparameters
         self.n_spectral_filters_temporal = n_spectral_filters_temporal
@@ -220,6 +225,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         self.spt_attn_global_context_kernel = spt_attn_global_context_kernel
         self.spt_attn_epsilon = spt_attn_epsilon
         self.spt_attn_mode = spt_attn_mode
+        self.activation = activation
 
         # Encoder accepts (batch, n_chans, n_times)
         self.encoder = _SSTEncoder(
@@ -232,6 +238,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             spt_attn_global_context_kernel=self.spt_attn_global_context_kernel,
             spt_attn_epsilon=self.spt_attn_epsilon,
             spt_attn_mode=self.spt_attn_mode,
+            activation=self.activation,
         )
 
         # Infer feature dimension analytically
@@ -248,6 +255,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         )
 
         self._reset_parameters()
+
+    def _reset_parameters(self) -> None:
+        """Initialize prototype parameters."""
+        nn.init.kaiming_normal_(self.proto_sep)
+        nn.init.normal_(self.proto_cpt, mean=0.0, std=self.proto_cpt_std)
 
     def forward(
         self, x: torch.Tensor
@@ -283,49 +295,44 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     def _compute_feature_dim(self) -> int:
         """Compute encoder feature dimensionality without a forward pass."""
-        num_scales = len(self.mvp_kernel_sizes)
-        if num_scales == 0:
+        if not self.mvp_kernel_sizes:
             raise ValueError(
                 "`mvp_kernel_sizes` must contain at least one kernel size."
             )
 
-        if self.n_fused_filters % num_scales != 0:
+        num_scales = len(self.mvp_kernel_sizes)
+        channels_per_scale, rest = divmod(self.n_fused_filters, num_scales)
+        if rest:
             raise ValueError(
                 "Number of fused filters must be divisible by the number of MVP scales. "
                 f"Got {self.n_fused_filters=} and {num_scales=}."
             )
 
-        channels_per_scale = self.n_fused_filters // num_scales
-        feature_dim = 0
-        for kernel_size in self.mvp_kernel_sizes:
-            stride = kernel_size // 2
-            if stride == 0:
-                raise ValueError(
-                    f"MVP kernel size {kernel_size} is too small to derive a valid stride."
-                )
-            pooled_length = self._pool1d_output_length(
-                length=self.n_times,
-                kernel_size=kernel_size,
-                stride=stride,
-                padding=0,
-                dilation=1,
+        # Validate all kernel sizes at once (stride = k // 2 must be >= 1)
+        invalid = [k for k in self.mvp_kernel_sizes if k // 2 == 0]
+        if invalid:
+            raise ValueError(
+                "MVP kernel sizes too small to derive a valid stride (k//2 == 0): "
+                f"{invalid}"
             )
-            feature_dim += channels_per_scale * pooled_length
-        return feature_dim
+
+        pooled_total = sum(
+            self._pool1d_output_length(
+                length=self.n_times, kernel_size=k, stride=k // 2, padding=0, dilation=1
+            )
+            for k in self.mvp_kernel_sizes
+        )
+        return channels_per_scale * pooled_total
 
     @staticmethod
     def _pool1d_output_length(
         length: int, kernel_size: int, stride: int, padding: int = 0, dilation: int = 1
     ) -> int:
-        """Compute the temporal length after 1D pooling."""
-        effective_kernel = dilation * (kernel_size - 1) + 1
-        numerator = length + 2 * padding - effective_kernel
-        return max(0, numerator // stride + 1)
-
-    def _reset_parameters(self) -> None:
-        """Initialize prototype parameters."""
-        nn.init.kaiming_normal_(self.proto_sep)
-        nn.init.normal_(self.proto_cpt, mean=0.0, std=self.proto_cpt_std)
+        """Temporal length after 1D pooling (PyTorch-style formula)."""
+        return max(
+            0,
+            (length + 2 * padding - (dilation * (kernel_size - 1) + 1)) // stride + 1,
+        )
 
 
 class _SSTEncoder(nn.Module):
@@ -354,6 +361,8 @@ class _SSTEncoder(nn.Module):
         Epsilon for numerical stability in Spatial-Spectral Attention.
     spt_attn_mode : str
         Mode for Spatial-Spectral Attention computation ('var', 'l2', or 'l1').
+    activation : nn.Module, optional
+        Activation function class to use after pointwise convolution. Default is nn.ELU.
     """
 
     def __init__(
@@ -367,11 +376,15 @@ class _SSTEncoder(nn.Module):
         spt_attn_global_context_kernel: int = 250,
         spt_attn_epsilon: float = 1e-5,
         spt_attn_mode: str = "var",
+        activation: Optional[nn.Module] = None,
     ) -> None:
         super().__init__()
 
         if mvp_kernel_sizes is None:
             mvp_kernel_sizes = [50, 100, 200]
+
+        if activation is None:
+            activation = nn.ELU
 
         # Adaptive Spatial-Spectral Fusion (ASSF): Temporal convolution for spectral filtering
         self.temporal_conv = _DepthwiseTemporalConv1d(
@@ -404,7 +417,7 @@ class _SSTEncoder(nn.Module):
                 bias=True,
             ),
             nn.BatchNorm1d(n_fused_filters),
-            nn.ELU(),
+            activation(),
         )
 
         # Multi-scale Variance Pooling (MVP): Temporal feature extraction at multiple scales
@@ -694,6 +707,12 @@ class _SpatSpectralAttn(nn.Module):
         self.epsilon = epsilon
         self.mode = mode
         self.after_relu = after_relu
+        # check mode validity
+        if self.mode not in ["var", "l2", "l1"]:
+            raise ValueError(
+                f"Unsupported Spatial-Spectral Attention mode: {self.mode}"
+            )
+
         # Global context module using variance pooling
         self.global_ctx = _GlobalContextVarPool1D(global_context_kernel)
 
@@ -711,7 +730,6 @@ class _SpatSpectralAttn(nn.Module):
         tuple of torch.Tensor
             (gated_output, gate) where both have the same shape as input.
         """
-        B, C, T = x.shape
 
         if self.mode == "l2":
             # L2-norm based embedding
@@ -732,10 +750,6 @@ class _SpatSpectralAttn(nn.Module):
             norm = (self.gamma) / (
                 embedding.pow(2).mean(dim=1, keepdim=True) + self.epsilon
             ).pow(0.5)
-        else:
-            raise ValueError(
-                f"Unsupported Spatial-Spectral Attention mode: {self.mode}"
-            )
 
         # Compute adaptive gate: 1 + tanh(...)
         gate = 1 + torch.tanh(embedding * norm + self.beta)
