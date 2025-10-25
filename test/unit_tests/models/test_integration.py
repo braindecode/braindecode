@@ -22,6 +22,7 @@ from torch.export import ExportedProgram, export
 
 from braindecode import EEGClassifier
 from braindecode.models import (
+    SSTDPN,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -444,6 +445,7 @@ def test_model_has_drop_prob_parameter(model_class):
         FBCNet,
         FBMSNet,
         FBLightConvNet,
+        SSTDPN,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -532,6 +534,7 @@ def test_model_torch_script(model):
         "BIOT",
         "Labram",
         "EEGMiner",
+        "SSTDPN",
     ]
 
     if model.__class__.__name__ in not_working_models:

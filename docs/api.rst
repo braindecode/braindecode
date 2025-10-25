@@ -92,7 +92,7 @@ provides a common interface for all EEG models and derivate variables names if n
     SincShallowNet
     SleepStagerBlanco2020
     SleepStagerChambon2018
-
+    SSTDPN
     SPARCNet
     SyncNet
     TIDNet
