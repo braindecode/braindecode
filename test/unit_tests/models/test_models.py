@@ -2193,44 +2193,17 @@ def test_dilated_conv_decoder_initial_linear_validation_errors(dilated_conv_deco
         )
 
 
-@pytest.mark.parametrize("layer_scale", [0.05, 0.1, 0.5])
-def test_dilated_conv_decoder_layer_scale_basic(dilated_conv_decoder_params, layer_scale):
-    """Test basic layer scale functionality."""
+@pytest.mark.parametrize(
+    "skip,layer_scale",
+    [(True, 0.05), (True, 0.5), (False, 0.1)],
+)
+def test_dilated_conv_decoder_layer_scale_forward(
+    dilated_conv_decoder_params, skip, layer_scale
+):
+    """LayerScale affects forward pass only when residual skips are enabled."""
     set_random_seeds(0, False)
     params = dilated_conv_decoder_params.copy()
-    params.update({"skip": True, "layer_scale": layer_scale})
-
-    model = DilatedConvDecoder(**params)
-    model.eval()
-
-    x = torch.randn(4, params["n_chans"], params["n_times"])
-    output = model(x)
-
-    assert output.shape == (4, params["n_outputs"])
-    assert not torch.isnan(output).any()
-
-
-def test_dilated_conv_decoder_layer_scale_requires_skip(dilated_conv_decoder_params):
-    """Test that layer_scale is ignored or properly handled without skip."""
-    set_random_seeds(0, False)
-    params = dilated_conv_decoder_params.copy()
-    params.update({"skip": False, "layer_scale": 0.1})
-
-    # Should work even if skip=False (layer_scale just won't be applied)
-    model = DilatedConvDecoder(**params)
-    model.eval()
-
-    x = torch.randn(4, params["n_chans"], params["n_times"])
-    output = model(x)
-
-    assert output.shape == (4, params["n_outputs"])
-
-
-def test_dilated_conv_decoder_layer_scale_with_skip(dilated_conv_decoder_params):
-    """Test layer scale with skip connections enabled."""
-    set_random_seeds(0, False)
-    params = dilated_conv_decoder_params.copy()
-    params.update({"skip": True, "layer_scale": 0.1})
+    params.update({"skip": skip, "layer_scale": layer_scale})
 
     model = DilatedConvDecoder(**params)
     model.eval()
@@ -2242,12 +2215,10 @@ def test_dilated_conv_decoder_layer_scale_with_skip(dilated_conv_decoder_params)
     assert not torch.isnan(output).any()
 
     # Verify LayerScale modules exist in encoder
-    has_layer_scale = False
-    for module in model.encoder.modules():
-        if isinstance(module, _LayerScale):
-            has_layer_scale = True
-            break
-    assert has_layer_scale
+    has_layer_scale = any(
+        isinstance(module, _LayerScale) for module in model.encoder.modules()
+    )
+    assert has_layer_scale == skip
 
 
 def test_dilated_conv_decoder_layer_scale_gradient_stability(dilated_conv_decoder_params):
@@ -2633,57 +2604,33 @@ def test_channel_dropout_requires_prob_for_type(dilated_conv_decoder_params):
         DilatedConvDecoder(**params)
 
 
-def test_channel_dropout_invalid_probability():
-    """Test that invalid dropout probabilities are rejected."""
+@pytest.mark.parametrize("invalid_prob", [-0.1, 1.5])
+def test_channel_dropout_invalid_probability(invalid_prob):
+    """Invalid dropout probabilities should raise."""
     with pytest.raises(ValueError, match="dropout_prob must be in"):
-        _ChannelDropout(dropout_prob=-0.1)
-
-    with pytest.raises(ValueError, match="dropout_prob must be in"):
-        _ChannelDropout(dropout_prob=1.5)
+        _ChannelDropout(dropout_prob=invalid_prob)
 
 
-def test_channel_dropout_rescaling():
-    """Test that channel dropout rescaling maintains expected value."""
+@pytest.mark.parametrize("rescale", [True, False])
+def test_channel_dropout_rescaling_behavior(rescale):
+    """Rescaling keeps the mean roughly intact; disabling it lowers the mean."""
     set_random_seeds(0, False)
 
-    dropout = _ChannelDropout(
-        dropout_prob=0.5,
-        rescale=True,
-    )
+    dropout = _ChannelDropout(dropout_prob=0.5, rescale=rescale)
     dropout.train()
 
-    # Create input with known mean
     x = torch.ones(4, 64, 1000)
 
-    # Run multiple times to check average behavior
     outputs = []
     for _ in range(10):
-        out = dropout(x)
-        outputs.append(out.mean().item())
+        outputs.append(dropout(x).mean().item())
 
     mean_output = np.mean(outputs)
-    # Should be close to 1.0 (input mean) due to rescaling
-    assert abs(mean_output - 1.0) < 0.3  # Allow some variance
 
-
-def test_channel_dropout_without_rescaling():
-    """Test channel dropout without rescaling."""
-    set_random_seeds(0, False)
-
-    dropout = _ChannelDropout(
-        dropout_prob=0.5,
-        rescale=False,
-    )
-    dropout.train()
-
-    # Create input with known mean
-    x = torch.ones(4, 64, 1000)
-
-    # Run to check mean is reduced (no rescaling)
-    out = dropout(x)
-
-    # Output mean should be lower than input (no rescaling applied)
-    assert out.mean().item() < 1.0
+    if rescale:
+        assert abs(mean_output - 1.0) < 0.3
+    else:
+        assert mean_output < 1.0
 
 
 def test_channel_dropout_with_initial_layers(dilated_conv_decoder_params):
