@@ -82,7 +82,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
           (equivalent to :math:`F_2` in the paper), followed by BatchNorm and the specified
           `activation` function (default: ELU).
         - *Role.* Fuses the weighted spatial–spectral features across all electrodes to produce
-          a fused representation :math:`X_{fused} \in \mathbb{R}^{F_2 \times T}`.    - `_SSTEncoder.mvp` **(Multi-scale Variance Pooling for Temporal Extraction)**
+          a fused representation :math:`X_{fused} \in \mathbb{R}^{F_2 \times T}`.
+
+    - `_SSTEncoder.mvp` **(Multi-scale Variance Pooling for Temporal Extraction)**
 
         - *Operations.* Internal :class:`_MultiScaleVarPooler` using :class:`_VariancePool1D`
           layers at multiple scales (`mvp_kernel_sizes`), followed by concatenation.
@@ -106,7 +108,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     * **Spatial (Fine-grained modeling).**
       The initial convolution at the classes `_DepthwiseTemporalConv1d` groups parameter :math:`h=1`,
-      meaning $F_1$ temporal filters are shared across channels. The Spatial-Spectral Attention
+      meaning :math:`F_1` temporal filters are shared across channels. The Spatial-Spectral Attention
       mechanism explicitly models the relationships among these channels in the spatial–spectral
       dimension, allowing for finer-grained spatial feature modeling compared to conventional
       GCNs according to the authors [Han2025]_.
@@ -114,7 +116,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
       independently to produce the spatial–spectral representation.
 
     * **Spectral (Feature extraction).**
-       Spectral information is implicitly extracted via the $F_1$ filters in `_DepthwiseTemporalConv1d` [9].
+       Spectral information is implicitly extracted via the :math:`F_1` filters in `_DepthwiseTemporalConv1d` [9].
        Furthermore, the use of Variance Pooling (in MVP) explicitly leverages the neurophysiological
        prior that the **variance of EEG signals represents their spectral power**, which is an
        important feature for distinguishing different MI classes [Han2025]_.
@@ -132,9 +134,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     Notes
     ----------
-    * The implementation of the DPL loss functions ($\mathcal{L}_S, \mathcal{L}_C, \mathcal{L}_{EF}$)
-      and the optimization of ICPs are typically handled outside the primary `forward` method, within the training strategy,
-      reference 52 from [Han2025]_.
+    * The implementation of the DPL loss functions (:math:`\mathcal{L}_S`, :math:`\mathcal{L}_C`, :math:`\mathcal{L}_{EF}`)
+      and the optimization of ICPs are typically handled outside the primary ``forward`` method, within the training strategy
+      (see Ref. 52 in [Han2025]_).
     * The default parameters are configured based on the BCI Competition IV 2a dataset.
     * The use of Prototype Learning (PL) methods is novel in the field of EEG-MI decoding.
     * **Lowest FLOPs:** Achieves the lowest Floating Point Operations (FLOPs) (9.65 M) among competitive
