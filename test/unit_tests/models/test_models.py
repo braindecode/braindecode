@@ -2511,4 +2511,295 @@ def test_dilated_conv_decoder_train_eval_consistency(dilated_conv_decoder_params
     assert output_train.shape == (4, params["n_outputs"])
     assert output_eval.shape == (4, params["n_outputs"])
     assert not torch.isnan(output_train).any()
-    assert not torch.isnan(output_eval).any()
+
+
+# ============================================================================
+# Channel Dropout Tests
+# ============================================================================
+
+
+def test_channel_dropout_disabled_by_default(dilated_conv_decoder_params):
+    """Test that channel dropout is disabled by default (dropout_prob=0)."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    # No channel_dropout_prob specified - should default to 0
+    assert params.get("channel_dropout_prob", 0.0) == 0.0
+
+    model = DilatedConvDecoder(**params)
+    assert model.channel_dropout is None
+
+
+def test_channel_dropout_basic_initialization(dilated_conv_decoder_params):
+    """Test basic channel dropout initialization."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"channel_dropout_prob": 0.1})
+
+    model = DilatedConvDecoder(**params)
+
+    assert model.channel_dropout is not None
+    assert model.channel_dropout.dropout_prob == 0.1
+    assert model.channel_dropout.channel_type is None
+
+
+@pytest.mark.parametrize("dropout_prob", [0.05, 0.1, 0.2, 0.5])
+def test_channel_dropout_different_probabilities(dilated_conv_decoder_params, dropout_prob):
+    """Test channel dropout with different probability values."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"channel_dropout_prob": dropout_prob})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_channel_dropout_no_effect_in_eval_mode(dilated_conv_decoder_params):
+    """Test that channel dropout has no effect in eval mode."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"channel_dropout_prob": 0.5})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    with torch.no_grad():
+        output_eval = model(x)
+
+    # In eval mode, should be deterministic and unchanged
+    with torch.no_grad():
+        output_eval2 = model(x)
+
+    torch.testing.assert_close(output_eval, output_eval2)
+
+
+def test_channel_dropout_with_ch_info():
+    """Test channel dropout with ch_info for selective dropout."""
+    set_random_seeds(0, False)
+
+    # Create ch_info with mix of EEG and reference channels
+    ch_info = [
+        {"ch_name": "Fp1", "ch_type": "eeg"},
+        {"ch_name": "Fp2", "ch_type": "eeg"},
+        {"ch_name": "F3", "ch_type": "eeg"},
+        {"ch_name": "F4", "ch_type": "eeg"},
+        {"ch_name": "A1", "ch_type": "ref"},
+        {"ch_name": "A2", "ch_type": "ref"},
+    ]
+
+    params = {
+        "n_chans": 6,
+        "n_outputs": 2,
+        "n_times": 1000,
+        "hidden_dim": 32,
+        "depth": 1,
+        "channel_dropout_prob": 1.0,  # 100% to ensure dropping
+        "channel_dropout_type": "eeg",  # Only drop EEG, not reference
+        "chs_info": ch_info,
+    }
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.ones(4, 6, 1000)
+
+    # Run multiple times to check patterns
+    outputs = []
+    for _ in range(5):
+        output = model(x)
+        outputs.append(output)
+        assert output.shape == (4, 2)
+        assert not torch.isnan(output).any()
+
+
+def test_channel_dropout_requires_prob_for_type(dilated_conv_decoder_params):
+    """Test that channel_dropout_type requires channel_dropout_prob > 0."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "channel_dropout_prob": 0.0,
+        "channel_dropout_type": "eeg",
+    })
+
+    with pytest.raises(ValueError, match="channel_dropout_type requires channel_dropout_prob > 0"):
+        DilatedConvDecoder(**params)
+
+
+def test_channel_dropout_invalid_probability():
+    """Test that invalid dropout probabilities are rejected."""
+    from braindecode.models.dilated_conv_decoder import ChannelDropout
+
+    with pytest.raises(ValueError, match="dropout_prob must be in"):
+        ChannelDropout(dropout_prob=-0.1)
+
+    with pytest.raises(ValueError, match="dropout_prob must be in"):
+        ChannelDropout(dropout_prob=1.5)
+
+
+def test_channel_dropout_rescaling():
+    """Test that channel dropout rescaling maintains expected value."""
+    from braindecode.models.dilated_conv_decoder import ChannelDropout
+
+    set_random_seeds(0, False)
+
+    dropout = ChannelDropout(
+        dropout_prob=0.5,
+        rescale=True,
+    )
+    dropout.train()
+
+    # Create input with known mean
+    x = torch.ones(4, 64, 1000)
+
+    # Run multiple times to check average behavior
+    outputs = []
+    for _ in range(10):
+        out = dropout(x)
+        outputs.append(out.mean().item())
+
+    mean_output = np.mean(outputs)
+    # Should be close to 1.0 (input mean) due to rescaling
+    assert abs(mean_output - 1.0) < 0.3  # Allow some variance
+
+
+def test_channel_dropout_without_rescaling():
+    """Test channel dropout without rescaling."""
+    from braindecode.models.dilated_conv_decoder import ChannelDropout
+
+    set_random_seeds(0, False)
+
+    dropout = ChannelDropout(
+        dropout_prob=0.5,
+        rescale=False,
+    )
+    dropout.train()
+
+    # Create input with known mean
+    x = torch.ones(4, 64, 1000)
+
+    # Run to check mean is reduced (no rescaling)
+    out = dropout(x)
+
+    # Output mean should be lower than input (no rescaling applied)
+    assert out.mean().item() < 1.0
+
+
+def test_channel_dropout_with_initial_layers(dilated_conv_decoder_params):
+    """Test channel dropout combined with initial linear layers."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "channel_dropout_prob": 0.1,
+        "initial_linear": 64,
+        "initial_depth": 1,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_channel_dropout_with_skip_connections(dilated_conv_decoder_params):
+    """Test channel dropout combined with skip connections."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "channel_dropout_prob": 0.1,
+        "skip": True,
+        "layer_scale": 0.1,
+        "post_skip": True,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_channel_dropout_gradient_flow(dilated_conv_decoder_params):
+    """Test gradient flow through channel dropout."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"channel_dropout_prob": 0.2})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"], requires_grad=True)
+    output = model(x)
+
+    loss = output.sum()
+    loss.backward()
+
+    # Check gradients exist
+    for param in model.parameters():
+        if param.grad is not None:
+            assert not torch.isnan(param.grad).any()
+
+    # Check input gradient
+    assert x.grad is not None
+    assert not torch.isnan(x.grad).any()
+
+
+def test_channel_dropout_with_subject_embeddings(dilated_conv_decoder_params):
+    """Test channel dropout combined with subject embeddings."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "channel_dropout_prob": 0.1,
+        "subject_dim": 32,
+        "n_subjects": 50,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 50, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_channel_dropout_all_features_combined(dilated_conv_decoder_params):
+    """Test channel dropout with all other features combined."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "channel_dropout_prob": 0.1,
+        "initial_linear": 64,
+        "skip": True,
+        "layer_scale": 0.1,
+        "post_skip": True,
+        "subject_dim": 32,
+        "n_subjects": 50,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 50, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()

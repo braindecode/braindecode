@@ -129,6 +129,12 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     post_skip : bool, default=False
         If True, applies skip connections after activation instead of before.
         Only used if skip=True. Changes residual connection pattern.
+    channel_dropout_prob : float, default=0.0
+        Probability of dropping each channel during training (0.0 to 1.0).
+        If 0.0, no channel dropout is applied.
+    channel_dropout_type : str, optional
+        If specified with chs_info, only drop channels of this type
+        (e.g., 'eeg', 'ref', 'eog'). If None with dropout_prob > 0, drops any channel.
     chs_info : list of dict, optional
         Information about each EEG channel (for compatibility with EEGModuleMixin).
     input_window_seconds : float, optional
@@ -205,6 +211,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         layer_scale: float | None = None,
         skip: bool = False,
         post_skip: bool = False,
+        # Channel dropout (optional)
+        channel_dropout_prob: float = 0.0,
+        channel_dropout_type: str | None = None,
         **kwargs,
     ):
         # Initialize EEGModuleMixin
@@ -262,6 +271,13 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             raise ValueError(f"layer_scale must be > 0, got {layer_scale}")
         if post_skip and not skip:
             raise ValueError("post_skip=True requires skip=True")
+        if not 0.0 <= channel_dropout_prob <= 1.0:
+            raise ValueError(
+                f"channel_dropout_prob must be in [0.0, 1.0], "
+                f"got {channel_dropout_prob}"
+            )
+        if channel_dropout_type is not None and channel_dropout_prob == 0.0:
+            raise ValueError("channel_dropout_type requires channel_dropout_prob > 0")
 
         self.depth = depth
         self.kernel_size = kernel_size
@@ -275,6 +291,15 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         self.skip = skip
         self.post_skip = post_skip
         self.layer_scale = layer_scale
+
+        # Initialize channel dropout (optional)
+        self.channel_dropout = None
+        if channel_dropout_prob > 0:
+            self.channel_dropout = ChannelDropout(
+                dropout_prob=channel_dropout_prob,
+                ch_info=chs_info,
+                channel_type=channel_dropout_type,
+            )
 
         # Initialize subject-specific modules (optional)
         self.subject_embedding = None
@@ -508,6 +533,10 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
                 x = spec.reshape(B, C * 2 * Fr, T)
             else:
                 x = spec.reshape(B, C * Fr, T)
+
+        # Apply channel dropout if enabled
+        if self.channel_dropout is not None:
+            x = self.channel_dropout(x)
 
         # Apply subject layers if enabled
         if self.subject_layers_module is not None:
@@ -877,6 +906,138 @@ class ScaledEmbedding(nn.Module):
             Scaled embeddings of shape (batch, embedding_dim).
         """
         return self.embedding(x) * self.scale
+
+
+class ChannelDropout(nn.Module):
+    """Channel dropout with rescaling and optional ch_info support.
+
+    Randomly drops channels during training and rescales output to maintain
+    expected value. Optionally supports selective channel dropout based on
+    channel type (EEG, reference, EOG, etc.) using ch_info metadata.
+
+    Parameters
+    ----------
+    dropout_prob : float, default=0.0
+        Probability of dropping each channel (0.0 to 1.0).
+        If 0.0, no dropout is applied.
+    ch_info : list of dict, optional
+        Channel information from MNE (e.g., from raw.info['chs']).
+        Each dict should have 'ch_name' and 'ch_type' keys.
+        If provided, enables selective channel dropout by type.
+    channel_type : str, optional
+        If specified with ch_info, only drop channels of this type
+        (e.g., 'eeg', 'ref', 'eog'). If None, drop from all available channels.
+    rescale : bool, default=True
+        If True, rescale output to maintain expected value.
+        scale_factor = n_channels / (n_channels - n_dropped)
+
+    Examples
+    --------
+    >>> # Random channel dropout
+    >>> dropout = ChannelDropout(dropout_prob=0.1)
+    >>> x = torch.randn(4, 32, 1000)
+    >>> x_dropped = dropout(x)
+
+    >>> # Selective EEG dropout using ch_info
+    >>> ch_info = [{'ch_name': 'Fp1', 'ch_type': 'eeg'}, ...]
+    >>> dropout_eeg = ChannelDropout(
+    ...     dropout_prob=0.1,
+    ...     ch_info=ch_info,
+    ...     channel_type='eeg'  # Only drop EEG channels
+    ... )
+    >>> x_dropped = dropout_eeg(x)  # Reference channels never dropped
+    """
+
+    def __init__(
+        self,
+        dropout_prob: float = 0.0,
+        ch_info: list[dict] | None = None,
+        channel_type: str | None = None,
+        rescale: bool = True,
+    ):
+        super().__init__()
+
+        if not 0.0 <= dropout_prob <= 1.0:
+            raise ValueError(f"dropout_prob must be in [0.0, 1.0], got {dropout_prob}")
+        if channel_type is not None and ch_info is None:
+            raise ValueError("channel_type requires ch_info to be provided")
+
+        self.dropout_prob = dropout_prob
+        self.rescale = rescale
+        self.ch_info = ch_info
+        self.channel_type = channel_type
+
+        # Compute droppable channel indices
+        self.droppable_indices: list[int] | None = None
+        if ch_info is not None:
+            if channel_type is not None:
+                # Drop only specific type
+                self.droppable_indices = [
+                    i
+                    for i, ch in enumerate(ch_info)
+                    if ch.get("ch_type", ch.get("kind")) == channel_type
+                ]
+            else:
+                # Drop any channel
+                self.droppable_indices = list(range(len(ch_info)))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass with channel dropout.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape (batch, channels, time).
+
+        Returns
+        -------
+        torch.Tensor
+            Output of same shape as input, with selected channels randomly zeroed.
+        """
+        if not self.training or self.dropout_prob == 0:
+            return x
+
+        batch, channels, time = x.shape
+
+        # Determine which channels to drop
+        if self.droppable_indices is not None:
+            # Only drop from specified indices
+            n_droppable = len(self.droppable_indices)
+            n_to_drop = max(1, int(n_droppable * self.dropout_prob))
+            if n_to_drop > 0:
+                drop_indices = torch.tensor(
+                    self.droppable_indices, device=x.device, dtype=torch.long
+                )
+                # Randomly select which droppable indices to actually drop
+                selected = torch.randperm(n_droppable, device=x.device)[:n_to_drop]
+                drop_indices = drop_indices[selected]
+            else:
+                drop_indices = torch.tensor([], device=x.device, dtype=torch.long)
+        else:
+            # Drop from any channel
+            n_to_drop = max(1, int(channels * self.dropout_prob))
+            drop_indices = torch.randperm(channels, device=x.device)[:n_to_drop]
+
+        # Clone and apply dropout
+        if len(drop_indices) > 0:
+            x_out = x.clone()
+            x_out[:, drop_indices, :] = 0
+
+            # Rescale to maintain expected value
+            if self.rescale:
+                scale_factor = channels / (channels - len(drop_indices))
+                x_out = x_out * scale_factor
+        else:
+            x_out = x
+
+        return x_out
+
+    def __repr__(self) -> str:
+        return (
+            f"ChannelDropout(dropout_prob={self.dropout_prob}, "
+            f"rescale={self.rescale}, "
+            f"channel_type={self.channel_type})"
+        )
 
 
 class SubjectLayers(nn.Module):
