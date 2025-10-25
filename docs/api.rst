@@ -142,6 +142,7 @@ multi'head attention and squeeze and excitation layers.
     GatherExcite
     GSoP
     MultiHeadAttention
+    LocalSelfAttention
     SqueezeAndExcitation
 
 Blocks
@@ -206,6 +207,7 @@ include layers for handling different input shapes and dimensions.
     Chomp1d
     DropPath
     Ensure4d
+    SubjectLayers
     TimeDistributed
 
 Linear
