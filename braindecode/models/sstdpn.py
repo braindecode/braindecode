@@ -37,12 +37,12 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     SST-DPN consists of a feature extractor (_SSTEncoder, comprising Adaptive Spatial-Spectral
     Fusion and Multi-scale Variance Pooling) followed by Dual Prototype Learning classification [Han2025]_.
 
-    1. **Adaptive Spatial–Spectral Fusion (ASSF)**: Uses _DepthwiseTemporalConv1d to generate a
-        multi-channel spatial–spectral representation, followed by _SpatSpectralAttn
+    1. **Adaptive Spatial–Spectral Fusion (ASSF)**: Uses :class:`_DepthwiseTemporalConv1d` to generate a
+        multi-channel spatial–spectral representation, followed by :class:`_SpatSpectralAttn`
         (Spatial-Spectral Attention) to model relationships and highlight key spatial–spectral
         channels [Han2025]_.
 
-    2. **Multi-scale Variance Pooling (MVP)**: Applies _MultiScaleVarPooler with variance pooling
+    2. **Multi-scale Variance Pooling (MVP)**: Applies :class:`_MultiScaleVarPooler` with variance pooling
         at multiple temporal scales to capture long-range temporal dependencies, serving as an
         efficient alternative to transformers [Han2025]_.
 
@@ -100,23 +100,23 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     .. rubric:: How the information is encoded temporally, spatially, and spectrally
 
-    * **Temporal (Long-term dependency).**
-      The initial `_DepthwiseTemporalConv1d` uses a large kernel (e.g., 75). The MVP module employs pooling
-      kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal
-      features effectively. Large kernel pooling layers are shown to be superior to transformer
-      modules for this task in EEG decoding according to [Han2025]_.
+    * **Temporal.**
+       The initial :class:`_DepthwiseTemporalConv1d` uses a large kernel (e.g., 75). The MVP module employs pooling
+       kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal
+       features effectively. Large kernel pooling layers are shown to be superior to transformer
+       modules for this task in EEG decoding according to [Han2025]_.
 
-    * **Spatial (Fine-grained modeling).**
-      The initial convolution at the classes `_DepthwiseTemporalConv1d` groups parameter :math:`h=1`,
-      meaning :math:`F_1` temporal filters are shared across channels. The Spatial-Spectral Attention
-      mechanism explicitly models the relationships among these channels in the spatial–spectral
-      dimension, allowing for finer-grained spatial feature modeling compared to conventional
-      GCNs according to the authors [Han2025]_.
-      In other words, all electrode channels share :math:`F_1` temporal filters
-      independently to produce the spatial–spectral representation.
+    * **Spatial.**
+       The initial convolution at the classes :class:`_DepthwiseTemporalConv1d` groups parameter :math:`h=1`,
+       meaning :math:`F_1` temporal filters are shared across channels. The Spatial-Spectral Attention
+       mechanism explicitly models the relationships among these channels in the spatial–spectral
+       dimension, allowing for finer-grained spatial feature modeling compared to conventional
+       GCNs according to the authors [Han2025]_.
+       In other words, all electrode channels share :math:`F_1` temporal filters
+       independently to produce the spatial–spectral representation.
 
-    * **Spectral (Feature extraction).**
-       Spectral information is implicitly extracted via the :math:`F_1` filters in `_DepthwiseTemporalConv1d` [9].
+    * **Spectral.**
+       Spectral information is implicitly extracted via the :math:`F_1` filters in :class:`_DepthwiseTemporalConv1d`.
        Furthermore, the use of Variance Pooling (in MVP) explicitly leverages the neurophysiological
        prior that the **variance of EEG signals represents their spectral power**, which is an
        important feature for distinguishing different MI classes [Han2025]_.
@@ -150,7 +150,8 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
         **Important:** To utilize the full potential of SSTDPN with Dual Prototype Learning (DPL),
         users must implement the DPL optimization strategy outside the model's forward method.
-        For implementation details and training strategies, please consult the official code at:
+        For implementation details and training strategies, please consult the official code at
+        [Han2025Code]_:
         https://github.com/hancan16/SST-DPN/blob/main/train.py
 
     Parameters
