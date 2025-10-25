@@ -2,7 +2,7 @@
 
 .. currentmodule:: braindecode.models
 
-.. _models:
+.. _models_attention:
 
 |attention-icon| Small Attention models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -21,7 +21,7 @@
     Figure: `LitMap <https://app.litmaps.com/shared/43fcc2cf-9b67-48be-8c83-5e7b3764aaab>`__ **with small attention core components for EEG architectures, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
 
 
-.. include:: ../links.inc
+.. include:: ../../links.inc
 
 .. raw:: html
 
