@@ -135,6 +135,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
+        # braindecode EEGModuleMixin parameters
         n_chans: int | None = None,
         n_outputs: int | None = None,
         n_times: int | None = None,
