@@ -119,13 +119,37 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     --------------------------------------------------------------------
 
     * **Temporal.**
-       The initial :class:``
+        The temporal axis is the primary processing dimension. The encoder `_ConvSequence`
+        applies stacks of dilated 1D convolutions whose dilation grows geometrically
+        (`dilation_growth`) so each successive block aggregates progressively longer
+        context without collapsing the sample rate. Residual shortcuts (optionally scaled
+        via LayerScale) stabilise these wide receptive fields. When enabled, the `_LSTM`
+        layer (optionally flipped or bidirectional) and the `LocalSelfAttention` blocks
+        refine sequential structure on the `(time, feature)` axis before the decoder
+        mirrors the stride pattern with transposed convolutions. Padding/cropping through
+        `pad_to_valid_length` and the final adaptive pooling ensure that temporal
+        resolution matches the requested output while still leveraging the enlarged
+        receptive field.
 
     * **Spatial.**
-       The
+        Spatial structure (sensors/electrodes) is shaped ahead of the temporal stack.
+        `_ChannelDropout` can drop entire electrodes to promote robustness to missing
+        channels. When `subject_layers` is active, `SubjectLayers` injects per-subject
+        1x1 projections across the channel axis and `_ScaledEmbedding` concatenates learned
+        subject embeddings as extra "virtual" channels. The optional initial 1x1 block
+        (and the ungrouped first convolution in `_ConvSequence`) mixes all channels,
+        letting every temporal filter access the full montage, while later grouped
+        convolutions or residual skips preserve locality if desired.
 
     * **Spectral.**
-       Spectral information is
+        Spectral cues can be made explicit by enabling the STFT branch (`n_fft`), which
+        converts the waveform into torchaudio spectrogram bins (real/imag pairs when
+        `fft_complex=True`) that are flattened into the channel dimension. Otherwise,
+        spectral structure is learned implicitly: long temporal kernels act as trainable
+        band-pass filters, the dilated stack captures multi-scale rhythms, and GLU-gated
+        layers modulate harmonic content. The decoder recombines these multi-scale
+        features before the final readout, allowing the network to represent both narrow-
+        band oscillations and broadband transients relevant for downstream decoding.
 
     .. rubric:: Additional Mechanisms
 
