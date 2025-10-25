@@ -4,27 +4,26 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+import inspect
+import logging
+import math
 import random
 import typing as tp
 from functools import partial
+from pathlib import Path
 
+import mne
+import pandas as pd
 import torch
 import torchaudio as ta
 from torch import nn
 from torch.nn import functional as F
 
-from .common import (
-    ChannelDropout,
-    ChannelMerger,
-    ConvSequence,
-    DualPathRNN,
-    ScaledEmbedding,
-    SubjectLayers,
-    pad_multiple,
-)
+logger = logging.getLogger(__name__)
 
 
-class SimpleConv(nn.Module):
+class DilatedConvDecoder(nn.Module):
     def __init__(
         self,
         # Channels
@@ -286,3 +285,639 @@ class SimpleConv(nn.Module):
             x = self.final(x)
         assert x.shape[-1] >= length
         return x[:, :, :length]
+
+
+# Common code:
+
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
+
+
+def pad_multiple(x: torch.Tensor, base: int):
+    length = x.shape[-1]
+    target = math.ceil(length / base) * base
+    return torch.nn.functional.pad(x, (0, target - length))
+
+
+class ScaledEmbedding(nn.Module):
+    """Scale up learning rate for the embedding, otherwise, it can move too slowly."""
+
+    def __init__(self, num_embeddings: int, embedding_dim: int, scale: float = 10.0):
+        super().__init__()
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim)
+        self.embedding.weight.data /= scale
+        self.scale = scale
+
+    @property
+    def weight(self):
+        return self.embedding.weight * self.scale
+
+    def forward(self, x):
+        return self.embedding(x) * self.scale
+
+
+class SubjectLayers(nn.Module):
+    """Per subject linear layer."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        n_subjects: int,
+        init_id: bool = False,
+    ):
+        super().__init__()
+        self.weights = nn.Parameter(torch.randn(n_subjects, in_channels, out_channels))
+        if init_id:
+            assert in_channels == out_channels
+            self.weights.data[:] = torch.eye(in_channels)[None]
+        self.weights.data *= 1 / in_channels**0.5
+
+    def forward(self, x, subjects):
+        _, C, D = self.weights.shape
+        weights = self.weights.gather(0, subjects.view(-1, 1, 1).expand(-1, C, D))
+        return torch.einsum("bct,bcd->bdt", x, weights)
+
+    def __repr__(self):
+        S, C, D = self.weights.shape
+        return f"SubjectLayers({C}, {D}, {S})"
+
+
+class LayerScale(nn.Module):
+    """Layer scale from [Touvron et al 2021] (https://arxiv.org/pdf/2103.17239.pdf).
+    This rescales diagonally residual outputs close to 0 initially, then learnt.
+    """
+
+    def __init__(self, channels: int, init: float = 0.1, boost: float = 5.0):
+        super().__init__()
+        self.scale = nn.Parameter(torch.zeros(channels, requires_grad=True))
+        self.scale.data[:] = init / boost
+        self.boost = boost
+
+    def forward(self, x):
+        return (self.boost * self.scale[:, None]) * x
+
+
+class ConvSequence(nn.Module):
+    def __init__(
+        self,
+        channels: tp.Sequence[int],
+        kernel: int = 4,
+        dilation_growth: int = 1,
+        dilation_period: tp.Optional[int] = None,
+        stride: int = 2,
+        dropout: float = 0.0,
+        leakiness: float = 0.0,
+        groups: int = 1,
+        decode: bool = False,
+        batch_norm: bool = False,
+        dropout_input: float = 0,
+        skip: bool = False,
+        scale: tp.Optional[float] = None,
+        rewrite: bool = False,
+        activation_on_last: bool = True,
+        post_skip: bool = False,
+        glu: int = 0,
+        glu_context: int = 0,
+        glu_glu: bool = True,
+        activation: tp.Any = None,
+    ) -> None:
+        super().__init__()
+        dilation = 1
+        channels = tuple(channels)
+        self.skip = skip
+        self.sequence = nn.ModuleList()
+        self.glus = nn.ModuleList()
+        if activation is None:
+            activation = partial(nn.LeakyReLU, leakiness)
+        Conv = nn.Conv1d if not decode else nn.ConvTranspose1d
+        # build layers
+        for k, (chin, chout) in enumerate(zip(channels[:-1], channels[1:])):
+            layers: tp.List[nn.Module] = []
+            is_last = k == len(channels) - 2
+
+            # Set dropout for the input of the conv sequence if defined
+            if k == 0 and dropout_input:
+                assert 0 < dropout_input < 1
+                layers.append(nn.Dropout(dropout_input))
+
+            # conv layer
+            if dilation_growth > 1:
+                assert kernel % 2 != 0, "Supports only odd kernel with dilation for now"
+            if dilation_period and (k % dilation_period) == 0:
+                dilation = 1
+            pad = kernel // 2 * dilation
+            layers.append(
+                Conv(
+                    chin,
+                    chout,
+                    kernel,
+                    stride,
+                    pad,
+                    dilation=dilation,
+                    groups=groups if k > 0 else 1,
+                )
+            )
+            dilation *= dilation_growth
+            # non-linearity
+            if activation_on_last or not is_last:
+                if batch_norm:
+                    layers.append(nn.BatchNorm1d(num_features=chout))
+                layers.append(activation())
+                if dropout:
+                    layers.append(nn.Dropout(dropout))
+                if rewrite:
+                    layers += [nn.Conv1d(chout, chout, 1), nn.LeakyReLU(leakiness)]
+                    # layers += [nn.Conv1d(chout, 2 * chout, 1), nn.GLU(dim=1)]
+            if chin == chout and skip:
+                if scale is not None:
+                    layers.append(LayerScale(chout, scale))
+                if post_skip:
+                    layers.append(Conv(chout, chout, 1, groups=chout, bias=False))
+
+            self.sequence.append(nn.Sequential(*layers))
+            if glu and (k + 1) % glu == 0:
+                ch = 2 * chout if glu_glu else chout
+                act = nn.GLU(dim=1) if glu_glu else activation()
+                self.glus.append(
+                    nn.Sequential(
+                        nn.Conv1d(chout, ch, 1 + 2 * glu_context, padding=glu_context),
+                        act,
+                    )
+                )
+            else:
+                self.glus.append(None)
+
+    def forward(self, x: tp.Any) -> tp.Any:
+        for module_idx, module in enumerate(self.sequence):
+            old_x = x
+            x = module(x)
+            if self.skip and x.shape == old_x.shape:
+                x = x + old_x
+            glu = self.glus[module_idx]
+            if glu is not None:
+                x = glu(x)
+        return x
+
+
+class DualPathRNN(nn.Module):
+    def __init__(self, channels: int, depth: int, inner_length: int = 10):
+        super().__init__()
+        self.lstms = nn.ModuleList(
+            [nn.LSTM(channels, channels, 1) for _ in range(depth * 4)]
+        )
+        self.inner_length = inner_length
+
+    def forward(self, x: torch.Tensor):
+        B, C, L = x.shape
+        IL = self.inner_length
+        x = pad_multiple(x, self.inner_length)
+        x = x.permute(2, 0, 1).contiguous()
+        for idx, lstm in enumerate(self.lstms):
+            y = x.reshape(-1, IL, B, C)
+            if idx % 2 == 0:
+                y = y.transpose(0, 1).reshape(IL, -1, C)
+            else:
+                y = y.reshape(-1, IL * B, C)
+            y, _ = lstm(x)
+            if idx % 2 == 0:
+                y = y.reshape(IL, -1, B, C).transpose(0, 1).reshape(-1, B, C)
+            else:
+                y = y.reshape(-1, B, C)
+            x = x + y
+
+            if idx % 2 == 1:
+                x = x.flip(dims=(0,))
+        return x[:L].permute(1, 2, 0).contiguous()
+
+
+class PositionGetter:
+    INVALID = -0.1
+
+    def __init__(self) -> None:
+        self._cache: tp.Dict[int, torch.Tensor] = {}
+        self._invalid_names: tp.Set[str] = set()
+
+    def get_recording_layout(self, recording: Recording) -> torch.Tensor:
+        index = recording.recording_index
+        if index in self._cache:
+            return self._cache[index]
+        else:
+            info = recording.mne_info
+            layout = mne.find_layout(info)
+            indexes: tp.List[int] = []
+            valid_indexes: tp.List[int] = []
+            for meg_index, name in enumerate(info.ch_names):
+                name = name.rsplit("-", 1)[0]
+                try:
+                    indexes.append(layout.names.index(name))
+                except ValueError:
+                    if name not in self._invalid_names:
+                        logger.warning(
+                            "Channels %s not in layout for recording %s of %s.",
+                            name,
+                            recording.study_name(),
+                            recording.recording_uid,
+                        )
+                        self._invalid_names.add(name)
+                else:
+                    valid_indexes.append(meg_index)
+
+            positions = torch.full((len(info.ch_names), 2), self.INVALID)
+            x, y = layout.pos[indexes, :2].T
+            x = (x - x.min()) / (x.max() - x.min())
+            y = (y - y.min()) / (y.max() - y.min())
+            x = torch.from_numpy(x).float()
+            y = torch.from_numpy(y).float()
+            positions[valid_indexes, 0] = x
+            positions[valid_indexes, 1] = y
+            self._cache[index] = positions
+            return positions
+
+    def get_positions(self, batch):
+        meg = batch.meg
+        B, C, T = meg.shape
+        positions = torch.full((B, C, 2), self.INVALID, device=meg.device)
+        for idx in range(len(batch)):
+            recording = batch._recordings[idx]
+            rec_pos = self.get_recording_layout(recording)
+            positions[idx, : len(rec_pos)] = rec_pos.to(meg.device)
+        return positions
+
+    def is_invalid(self, positions):
+        return (positions == self.INVALID).all(dim=-1)
+
+
+class FourierEmb(nn.Module):
+    """
+    Fourier positional embedding.
+    Unlike trad. embedding this is not using exponential periods
+    for cosines and sinuses, but typical `2 pi k` which can represent
+    any function over [0, 1]. As this function would be necessarily periodic,
+    we take a bit of margin and do over [-0.2, 1.2].
+    """
+
+    def __init__(self, dimension: int = 256, margin: float = 0.2):
+        super().__init__()
+        n_freqs = (dimension // 2) ** 0.5
+        assert int(n_freqs**2 * 2) == dimension
+        self.dimension = dimension
+        self.margin = margin
+
+    def forward(self, positions):
+        *O, D = positions.shape
+        assert D == 2
+        *O, D = positions.shape
+        n_freqs = (self.dimension // 2) ** 0.5
+        freqs_y = torch.arange(n_freqs).to(positions)
+        freqs_x = freqs_y[:, None]
+        width = 1 + 2 * self.margin
+        positions = positions + self.margin
+        p_x = 2 * math.pi * freqs_x / width
+        p_y = 2 * math.pi * freqs_y / width
+        positions = positions[..., None, None, :]
+        loc = (positions[..., 0] * p_x + positions[..., 1] * p_y).view(*O, -1)
+        emb = torch.cat(
+            [
+                torch.cos(loc),
+                torch.sin(loc),
+            ],
+            dim=-1,
+        )
+        return emb
+
+
+class ChannelDropout(nn.Module):
+    def __init__(self, dropout: float = 0.1, rescale: bool = True):
+        """
+        Args:
+            dropout: dropout radius in normalized [0, 1] coordinates.
+            rescale: at valid, rescale all channels.
+        """
+        super().__init__()
+        self.dropout = dropout
+        self.rescale = rescale
+        self.position_getter = PositionGetter()
+
+    def forward(self, meg, batch):
+        if not self.dropout:
+            return meg
+
+        B, C, T = meg.shape
+        meg = meg.clone()
+        positions = self.position_getter.get_positions(batch)
+        valid = (~self.position_getter.is_invalid(positions)).float()
+        meg = meg * valid[:, :, None]
+
+        if self.training:
+            center_to_ban = torch.rand(2, device=meg.device)
+            kept = (positions - center_to_ban).norm(dim=-1) > self.dropout
+            meg = meg * kept.float()[:, :, None]
+            if self.rescale:
+                proba_kept = torch.zeros(B, C, device=meg.device)
+                n_tests = 100
+                for _ in range(n_tests):
+                    center_to_ban = torch.rand(2, device=meg.device)
+                    kept = (positions - center_to_ban).norm(dim=-1) > self.dropout
+                    proba_kept += kept.float() / n_tests
+                meg = meg / (1e-8 + proba_kept[:, :, None])
+
+        return meg
+
+
+class ChannelMerger(nn.Module):
+    def __init__(
+        self,
+        chout: int,
+        pos_dim: int = 256,
+        dropout: float = 0,
+        usage_penalty: float = 0.0,
+        n_subjects: int = 200,
+        per_subject: bool = False,
+    ):
+        super().__init__()
+        assert pos_dim % 4 == 0
+        self.position_getter = PositionGetter()
+        self.per_subject = per_subject
+        if self.per_subject:
+            self.heads = nn.Parameter(
+                torch.randn(n_subjects, chout, pos_dim, requires_grad=True)
+            )
+        else:
+            self.heads = nn.Parameter(torch.randn(chout, pos_dim, requires_grad=True))
+        self.heads.data /= pos_dim**0.5
+        self.dropout = dropout
+        self.embedding = FourierEmb(pos_dim)
+        self.usage_penalty = usage_penalty
+        self._penalty = torch.tensor(0.0)
+
+    @property
+    def training_penalty(self):
+        return self._penalty.to(next(self.parameters()).device)
+
+    def forward(self, meg, batch):
+        B, C, T = meg.shape
+        meg = meg.clone()
+        positions = self.position_getter.get_positions(batch)
+        embedding = self.embedding(positions)
+        score_offset = torch.zeros(B, C, device=meg.device)
+        score_offset[self.position_getter.is_invalid(positions)] = float("-inf")
+
+        if self.training and self.dropout:
+            center_to_ban = torch.rand(2, device=meg.device)
+            radius_to_ban = self.dropout
+            banned = (positions - center_to_ban).norm(dim=-1) <= radius_to_ban
+            score_offset[banned] = float("-inf")
+
+        if self.per_subject:
+            _, cout, pos_dim = self.heads.shape
+            subject = batch.subject_index
+            heads = self.heads.gather(
+                0, subject.view(-1, 1, 1).expand(-1, cout, pos_dim)
+            )
+        else:
+            heads = self.heads[None].expand(B, -1, -1)
+
+        scores = torch.einsum("bcd,bod->boc", embedding, heads)
+        scores += score_offset[:, None]
+        weights = torch.softmax(scores, dim=2)
+        out = torch.einsum("bct,boc->bot", meg, weights)
+        if self.training and self.usage_penalty > 0.0:
+            usage = weights.mean(dim=(0, 1)).sum()
+            self._penalty = self.usage_penalty * usage
+        return out
+
+
+# Recording
+
+
+register: tp.Dict[str, tp.Type["Recording"]] = {}
+R = tp.TypeVar("R", bound="Recording")
+
+
+class Recording:
+    """
+    Parameter
+    ---------
+    subject_uid: str
+        unique uid of the subject, as a string
+
+    Attributes
+    ----------
+    subject_index: int
+        the index of the subject, across all recordings and studies.
+    recording_index: int
+        the index of the recording, across all recordings and studies.
+    """
+
+    data_url: str
+    paper_url: str
+    doi: str
+    licence: str
+    modality: str
+    language: str
+    device: str
+    description: str
+    _cache_folder: tp.Optional[Path] = None
+    # TO BE IMPLEMENTED FOR EACH STUDY #
+
+    @classmethod
+    def iter(cls: tp.Type[R], **kwargs: tp.Any) -> tp.Iterator[R]:
+        """List all the recordings in the study"""
+        raise NotImplementedError
+
+    def _load_events(self) -> pd.DataFrame:
+        """Loads the events of this recording as a csv"""
+        raise NotImplementedError
+
+    def _load_raw(self) -> mne.io.RawArray:
+        """Loads the raw MEG array of this recording"""
+        raise NotImplementedError
+
+    # the following is shared between all studies
+
+    @classmethod
+    def study_name(cls) -> str:
+        return cls.__name__.replace("Recording", "").lower()
+
+    @classmethod
+    def __init_subclass__(cls) -> None:
+        """Record all existing recording classes"""
+        super().__init_subclass__()
+        if cls.__name__.startswith("_"):
+            return  # for base classes
+        name = cls.study_name()
+        register[name] = cls
+        expected_name = cls.__module__.rsplit(".", maxsplit=1)[-1]
+        assert name == expected_name, (
+            f"Study {name} is defined in {expected_name} instead of its using name."
+        )
+        register[cls.study_name()] = cls
+        # check that Recording has correct information
+        compulsory_keys = (
+            "data_url",
+            "paper_url",
+            "doi",
+            "licence",
+            "modality",
+            "language",
+            "device",
+            "description",
+        )
+        for key in compulsory_keys:
+            assert isinstance(getattr(cls, key), str)
+
+        # check that Recording.list API is correct
+        params = list(inspect.signature(cls.iter).parameters.keys())
+        assert "study" not in params, (
+            '"study" is a reserved name which cannot be used as '
+            f"a parameter of {cls.__name__}.iter."
+        )
+
+    def __init__(self, *, subject_uid: str, recording_uid: str) -> None:
+        if not isinstance(subject_uid, str):
+            raise TypeError(
+                f"Recording.subject_uid needs to be a str instance, got: {subject_uid}"
+            )
+        self.subject_uid = subject_uid
+        self.recording_uid = recording_uid
+        self._subject_index: tp.Optional[int] = None  # specified during training
+        self._recording_index: tp.Optional[int] = None  # specified during training
+        self._mne_info: tp.Optional[mne.Info] = None
+        # cache system
+        self._arrays: tp.Dict[tp.Tuple[int, float], mne.io.RawArray] = {}
+        self._events: tp.Optional[pd.DataFrame] = None
+
+    def empty_copy(self):
+        """Creates a copy of the instance, without cached information
+        (for fast transfer)
+        """
+        out = copy.copy(self)
+        out._events = None
+        out._arrays = {}
+        return out
+
+    @property
+    def subject_index(self) -> int:
+        if self._subject_index is None:
+            raise RuntimeError("Recording.subject_index has not been initialized")
+        return self._subject_index
+
+    @property
+    def recording_index(self) -> int:
+        if self._recording_index is None:
+            raise RuntimeError("Recording.recording_index has not been initialized")
+        return self._recording_index
+
+    @property
+    def meg_dimension(self) -> int:
+        # take any available raw array to identify final time
+        raw_array = self.any_raw()
+        return len(raw_array.ch_names)
+
+    @property
+    def mne_info(self) -> mne.Info:
+        """Return the MNE Info object. Note that the sample rate might not be correct
+        due to resampling, but all other information should be preserved."""
+        if self._mne_info is None:
+            self._mne_info = self.any_raw().info
+        return self._mne_info
+
+    def any_raw(self) -> mne.io.RawArray:
+        """Return any raw currently cached, including preprocessed."""
+        return next(iter(self._arrays.values())) if self._arrays else self.raw()
+
+    def raw(self) -> mne.io.RawArray:
+        """Loads, caches and returns the raw for the subject"""
+        key = (0, 0.0)  # 0 for raw
+        if key not in self._arrays:
+            raw = self._load_raw()
+            raw = raw.pick_types(eeg=True, meg=True, ref_meg=True, stim=False)
+            self._arrays[key] = raw
+            self.mne_info  # populate mne info cache
+        return self._arrays[key]
+
+    # below is automatically handled and should not be reimplemented
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.recording_uid!r})"
+
+    def preprocessed(
+        self, sample_rate: tp.Optional[float] = None, highpass: float = 0
+    ) -> mne.io.RawArray:
+        """Creates and/or loads the data at a given sampling rate.
+        1200Hz sample_rate with no highpass (0) would returns the raw,
+        different values would create a subsampled fif file and load it from the cache.
+
+        Parameter
+        ---------
+        sample_rate: int
+            The wanted sample rate of the data.
+        highpass: float
+            the frequency of the highpass filter (no high pass filter if 0)
+        """
+        if sample_rate is not None and sample_rate != int(sample_rate):
+            raise ValueError(
+                "For simplicity's sake, only integer sampling rates in Hz are allowed"
+            )
+        sample_rate = int(sample_rate) if sample_rate is not None else 0
+        key: tp.Tuple[int, float] = (sample_rate, highpass)
+        if key in self._arrays:
+            return self._arrays[key]
+        name = f"meg-sr{sample_rate}-hp{highpass}-raw.fif"
+        filepath = None if self._cache_folder is None else self._cache_folder / name
+        # check is frequency matches raw
+        if filepath is None or not filepath.exists():
+            raw = self.raw()
+            if raw.info["sfreq"] == sample_rate:
+                key = (0, highpass)
+        if key == (0, 0.0):
+            return self.raw()
+        if key in self._arrays:
+            return self._arrays[key]
+        # still not available, so preprocess
+        if self._cache_folder is None:
+            raise RuntimeError(
+                "No cache folder provided for intermediate "
+                f"(subsampled at {sample_rate}Hz) storage."
+            )
+        assert filepath is not None
+        self._arrays[key] = mne.io.read_raw_fif(str(filepath), preload=False)
+        self.mne_info  # populate mne info cache.
+        return self._arrays[key]
+
+    @staticmethod
+    def _read_from_cache(cache_file: Path) -> pd.DataFrame:
+        return pd.read_csv(cache_file, index_col=None)
+
+    @staticmethod
+    def _write_to_cache(events: pd.DataFrame, cache_file: Path) -> None:
+        assert isinstance(events, pd.DataFrame)
+        events.to_csv(cache_file, index=False)
+
+    # pylint: disable=unused-argument
+    def events(self, clean: bool = True) -> pd.DataFrame:
+        """Loads, caches and returns the events for the subject
+
+        Parameters
+        ----------
+        clean: bool
+            only returns lines which can be cast as an Event type
+        """
+
+        if self._events is None:
+            if self._cache_folder is None:
+                self._events = self._load_events()
+            else:
+                cache_file = self._cache_folder / "events.csv"
+                if cache_file.exists():
+                    self._events = self._read_from_cache(cache_file)
+                else:
+                    self._events = self._load_events()
+                    self._write_to_cache(self._events, cache_file)
+        events = self._events
+
+        return events

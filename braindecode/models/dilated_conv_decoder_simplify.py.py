@@ -72,7 +72,7 @@ class ConvSequence(nn.Module):
         return x
 
 
-class SimpleConv(nn.Module):
+class DilatedConvDecoder(nn.Module):
     def __init__(
         self,
         in_channels: int,

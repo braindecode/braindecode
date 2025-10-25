@@ -7,39 +7,29 @@
 # Braindecode adaptation made by
 # Bruno Aristimunha <b.aristimunha@gmail.com>
 
-import logging
 import math
-import random
 import typing as tp
 from functools import partial
 
 import torch
-import torchaudio as ta
 from torch import nn
 from torch.nn import functional as F
 
 
-class DeepRecurrent(nn.Module):
+class DilatedConvDecoder(nn.Module):
     """
-    Deep Recurrent Encoder (DRE) for MEG data based on [chehab2022]_.
+    Dilated Convolutional Decoder (DCD) for MEG data based on [chehab2022]_.
 
-    .. figure:: _static/model/deeprecurrent.jpg
+    .. figure:: _static/model/dilatedconv.jpg
        :align: center
-       :alt: Deep Recurrent Encoder Architecture Diagram [chehab2022]_
+       :alt: Dilated Convolutional Decoder Architecture Diagram []_
 
     Parameters
     ----------
 
-    Notes
-    -----
-    Implemented from [brainmagik]_, which come from the same research group.
-
 
     References
     ----------
-    .. [chehab2022] Chehab, O., Défossez, A., Loiseau, J. C., Gramfort, A.,
-       & King, J. R. (2022). Deep Recurrent Encoder: an end-to-end network to model
-       magnetoencephalography at scale. Neurons, Behavior, Data Analysis, and Theory.
     .. [brainmagik] Défossez, A., Caucheteux, C., Rapin, J., Kabeli, O., & King, J. R.
        (2023). Decoding speech perception from non-invasive brain recordings. Nature
        Machine Intelligence, 5(10), 1097-1107.
@@ -49,9 +39,9 @@ class DeepRecurrent(nn.Module):
     def __init__(
         self,
         # Channels
-        n_chans: int,
+        n_chans,
         n_outputs: int,
-        hidden: int,
+        hidden,
         # Overall structure
         depth: int = 2,
         linear_out: bool = False,
@@ -77,12 +67,14 @@ class DeepRecurrent(nn.Module):
         # Subject embeddings,
         n_subjects: int = 200,
         subject_dim: int = 64,
-        embedding_location: tp.List[str] = ["lstm"],  # can be lstm or input
+        embedding_location=None,  # can be lstm or input
         embedding_scale: float = 1.0,
         subject_layers: bool = False,
         subject_layers_dim: str = "input",  # or hidden
     ):
         super().__init__()
+        if embedding_location is None:
+            embedding_location = ["lstm"]
         in_channels = n_chans
         out_channels = n_outputs
         self._concatenate = concatenate
@@ -92,24 +84,24 @@ class DeepRecurrent(nn.Module):
         self.embedding_location = embedding_location
 
         self.subject_layers = None
-        # if subject_layers:
-        #     assert "meg" in in_channels
-        #     meg_dim = in_channels["meg"]
-        #     dim = {"hidden": hidden["meg"], "input": meg_dim}[subject_layers_dim]
-        #     self.subject_layers = SubjectLayers(meg_dim, dim, n_subjects)
-        #     in_channels["meg"] = dim
-        # self.subject_embedding = None
-        # if subject_dim:
-        #     self.subject_embedding = ScaledEmbedding(
-        #         n_subjects, subject_dim, embedding_scale
-        #     )
-        #     if "input" in embedding_location:
-        #         in_channels["meg"] += subject_dim
+        if subject_layers:
+            assert "meg" in in_channels
+            meg_dim = in_channels["meg"]
+            dim = {"hidden": hidden["meg"], "input": meg_dim}[subject_layers_dim]
+            self.subject_layers = SubjectLayers(meg_dim, dim, n_subjects)
+            in_channels["meg"] = dim
+        self.subject_embedding = None
+        if subject_dim:
+            self.subject_embedding = ScaledEmbedding(
+                n_subjects, subject_dim, embedding_scale
+            )
+            if "input" in embedding_location:
+                in_channels["meg"] += subject_dim
 
         # concatenate inputs if need be
-        # if concatenate:
-        #     in_channels = {"concat": sum(in_channels.values())}
-        #     hidden = {"concat": sum(hidden.values())}
+        if concatenate:
+            in_channels = {"concat": sum(in_channels.values())}
+            hidden = {"concat": sum(hidden.values())}
 
         # compute the sequences of channel sizes
         sizes = [in_channels]
@@ -193,18 +185,18 @@ class DeepRecurrent(nn.Module):
         subjects = batch.subject_index
         length = next(iter(inputs.values())).shape[-1]  # length of any of the inputs
 
-        # if self.subject_layers is not None:
-        #     inputs["meg"] = self.subject_layers(inputs["meg"], subjects)
-        # if self.subject_embedding is not None:
-        #     emb = self.subject_embedding(subjects)[:, :, None]
-        #     if "input" in self.embedding_location:
-        #         inputs["meg"] = torch.cat(
-        #             [inputs["meg"], emb.expand(-1, -1, length)], dim=1
-        #         )
+        if self.subject_layers is not None:
+            inputs["meg"] = self.subject_layers(inputs["meg"], subjects)
+        if self.subject_embedding is not None:
+            emb = self.subject_embedding(subjects)[:, :, None]
+            if "input" in self.embedding_location:
+                inputs["meg"] = torch.cat(
+                    [inputs["meg"], emb.expand(-1, -1, length)], dim=1
+                )
 
-        # if self._concatenate:
-        #     input_list = [input_ for _, input_ in sorted(inputs.items())]
-        #     inputs = {"concat": torch.cat(input_list, dim=1)}
+        if self._concatenate:
+            input_list = [input_ for _, input_ in sorted(inputs.items())]
+            inputs = {"concat": torch.cat(input_list, dim=1)}
 
         inputs = {name: self.pad(input_) for name, input_ in inputs.items()}
         encoded = {}
@@ -478,28 +470,3 @@ class Attention(nn.Module):
         out = out.reshape(batch_size, -1, length)
         out = F.relu(self.bn(self.fc(out))) * self.scale.view(1, -1, 1)
         return out
-
-
-# if __name__ == "__main__":
-#     # Work in Progress
-#     n_batch = 4
-#     n_channels_in = 20
-#     n_channels_out = 2  # classes (?)
-#     n_times = 1000
-#     hidden = 32
-#     depth = 3
-#     sfreq = 100.0
-
-#     print("\n--- Example with STFT ---")
-#     n_fft_val = 32
-#     model = DeepRecurrent(
-#         n_chans=n_channels_in,
-#         n_outputs=n_channels_out,
-#         hidden_channels=hidden,
-#         depth=depth,
-#     )
-#     subject_index = torch.randint(0, 200, (n_batch,))
-#     x_tensor = torch.randn(n_batch, n_channels_in, n_times)
-
-#     y = model(x_tensor)
-#     print(y.shape)
