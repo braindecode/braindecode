@@ -228,7 +228,6 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         glu: int = 0,
         glu_context: int = 0,
         glu_glu: bool = True,
-        **kwargs,
     ):
         # Initialize EEGModuleMixin
         super().__init__(
