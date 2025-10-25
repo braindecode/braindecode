@@ -134,22 +134,13 @@ class PBT(EEGModuleMixin, nn.Module):
       (C3, C4, Cz) during motor imagery decoding.
 
 
-    References
-    ----------
-    .. [pbt] Klein, T., Minakowski, P., & Sager, S. (2025).
-        Flexible Patched Brain Transformer model for EEG decoding.
-        Scientific Reports, 15(1), 1-12.
-        https://www.nature.com/articles/s41598-025-86294-3
-    .. [visualtransformer]  Dosovitskiy, A., Beyer, L., Kolesnikov, A.,
-        Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M.,
-        Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J. & Houlsby,
-        N. (2021). An Image is Worth 16x16 Words: Transformers for Image
-        Recognition at Scale. International Conference on Learning
-        Representations (ICLR).
-    .. [efficient-batchpacking] Krell, M. M., Kosec, M., Perez, S. P., &
-        Fitzgibbon, A. (2021). Efficient sequence packing without
-        cross-contamination: Accelerating large language models without
-        impacting performance. arXiv preprint arXiv:2107.02027.
+    .. warning::
+
+        **Important:** As the other Large Brain Models in Braindecode, :class:`PBT` is
+        designed for large-scale pre-training and fine-tuning. Training from
+        scratch on small datasets may lead to suboptimal results. Cross-Dataset
+        pre-training and subsequent fine-tuning is recommended to leverage the
+        full potential of this architecture.
 
     Parameters
     ----------
@@ -170,6 +161,22 @@ class PBT(EEGModuleMixin, nn.Module):
     activation : nn.Module, optional
         Activation function class to use in Transformer feed-forward layers.
 
+    References
+    ----------
+    .. [pbt] Klein, T., Minakowski, P., & Sager, S. (2025).
+        Flexible Patched Brain Transformer model for EEG decoding.
+        Scientific Reports, 15(1), 1-12.
+        https://www.nature.com/articles/s41598-025-86294-3
+    .. [visualtransformer]  Dosovitskiy, A., Beyer, L., Kolesnikov, A.,
+        Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M.,
+        Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J. & Houlsby,
+        N. (2021). An Image is Worth 16x16 Words: Transformers for Image
+        Recognition at Scale. International Conference on Learning
+        Representations (ICLR).
+    .. [efficient-batchpacking] Krell, M. M., Kosec, M., Perez, S. P., &
+        Fitzgibbon, A. (2021). Efficient sequence packing without
+        cross-contamination: Accelerating large language models without
+        impacting performance. arXiv preprint arXiv:2107.02027.
     """
 
     def __init__(
