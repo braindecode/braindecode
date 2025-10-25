@@ -2,7 +2,7 @@
 
 .. currentmodule:: braindecode.models
 
-.. _models:
+.. _models_filterbank:
 
 |filterbank-icon| FilterBank models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
