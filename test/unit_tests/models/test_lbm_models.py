@@ -198,6 +198,23 @@ def test_labram_neural_decoder_forward_pass_single_sample(model_decoder, n_chans
     assert output.shape == (1, n_outputs)
 
 
+def test_labram_can_load_pretrained_weights():
+    """Ensure that Labram can load pre-trained weights via torch.hub convenience."""
+    model = Labram(n_times=1600, n_chans=64, n_outputs=4)
+    url = "https://huggingface.co/braindecode/Labram-Braindecode/resolve/main/braindecode_labram_base.pt"
+
+    state_dict = torch.hub.load_state_dict_from_url(
+        url,
+        progress=True,
+        map_location="cpu",
+        file_name="braindecode_labram_base_resolved.pt",
+    )
+    load_result = model.load_state_dict(state_dict)
+
+    assert not load_result.missing_keys
+    assert not load_result.unexpected_keys
+
+
 def test_labram_neural_decoder_forward_features_all_tokens(model_decoder, n_chans, n_times, emb_size):
     """Test forward_features with return_all_tokens=True in decoder mode."""
     batch_size = 2
