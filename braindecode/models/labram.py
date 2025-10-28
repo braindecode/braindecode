@@ -94,9 +94,10 @@ class Labram(EEGModuleMixin, nn.Module):
         Dropout rate for the attention weights used on DropPath.
     norm_layer : Pytorch Normalize layer (default=nn.LayerNorm)
         The normalization layer to be used.
-    init_values : float (default=None)
+    init_values : float (default=0.1)
         If not None, use this value to initialize the gamma_1 and gamma_2
-        parameters.
+        parameters for residual scaling. Default is 0.1 for better weight
+        transfer from original LaBraM. Set to None to disable.
     use_abs_pos_emb : bool (default=True)
         If True, use absolute position embedding.
     use_mean_pooling : bool (default=True)
@@ -149,7 +150,7 @@ class Labram(EEGModuleMixin, nn.Module):
         attn_drop_prob=0.0,
         drop_path_prob=0.0,
         norm_layer=nn.LayerNorm,
-        init_values=None,
+        init_values=0.1,
         use_abs_pos_emb=True,
         use_mean_pooling=True,
         init_scale=0.001,
