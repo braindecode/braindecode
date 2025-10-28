@@ -296,6 +296,6 @@ _ = clf.fit(windows_dataset, y=metadata["target"], epochs=10)
 # References
 # ----------
 #
-# .. [1] Guetschel, P., Moreau, T., and Tangermann, M.,
+# .. [1] Guetschel, P., Moreau, T., and Tangermann, M. (2024)
 #        “S-JEPA: towards seamless cross-dataset transfer
-#        through dynamic spatial attention”, arXiv:2403.11772, 2024.
+#        through dynamic spatial attention”.  https://arxiv.org/abs/2403.11772
