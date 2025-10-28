@@ -302,6 +302,9 @@ class EEGPrepBasePreprocessor(Preprocessor):
         in the MNE Raw structure for later use. This will not override any already
         present channel location information, so this can safely be used multiple times
         to record whatever were the original channel locations.
+    force_dtype : np.dtype | str | None
+        Optionally for the in/out data to be converted to this dtype before and after
+        processing. Can help ensure consistent dtypes across different preprocessors.
 
     """
 
@@ -314,6 +317,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
         limit_threads: int | None = 4,
         can_change_duration: str | bool | None = None,
         record_orig_chanlocs: bool = False,
+        force_dtype: np.dtype | str | None = None,
     ):
         super().__init__(
             fn=self._apply_op,
@@ -326,6 +330,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
         self.can_change_duration = can_change_duration
         self.limit_threads = limit_threads
         self.record_orig_chanlocs = record_orig_chanlocs
+        self.force_dtype = np.dtype(force_dtype) if force_dtype is not None else None
         self._raw: BaseRaw | None = None
 
     def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
@@ -352,8 +357,16 @@ class EEGPrepBasePreprocessor(Preprocessor):
         with _maybe_threadpool_limits(nthreads=self.limit_threads):
             try:
                 self._raw = raw
+
+                if self.force_dtype is not None:
+                    EEG["data"] = EEG["data"].astype(self.force_dtype)
+
                 # actual operation happens here
                 EEG = self.apply_eeg(EEG)
+
+                if self.force_dtype is not None:
+                    EEG["data"] = EEG["data"].astype(self.force_dtype)
+
             finally:
                 # clear again so we don't keep a reference around
                 self._raw = None
@@ -648,6 +661,10 @@ class EEGPrep(EEGPrepBasePreprocessor):
         # artifact removal stage
         EEG, *_ = eegprep.clean_artifacts(EEG, **self.clean_artifacts_params)
 
+        if self.force_dtype != np.float64:
+            # cast to float32 for equivalence with multi-stage EEGPrep pipeline
+            EEG['data'] = EEG['data'].astype(np.float32)
+
         # optionally reinterpolate dropped channels
         if self.reinterpolate and (len(orig_chanlocs) > len(EEG["chanlocs"])):
             EEG = eegprep.eeg_interp(EEG, list(orig_chanlocs))
@@ -757,8 +774,8 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
 
     def __init__(
         self,
+        transition: Sequence[float] = (0.25, 0.75),
         *,
-        transition: Sequence[float] = (0.5, 1),
         attenuation: float = 80.0,
         method: str = "fft",
     ):
