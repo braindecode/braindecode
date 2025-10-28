@@ -70,7 +70,7 @@ def model_config_decoder(n_times, n_chans, n_outputs, patch_size, emb_size, n_la
         "n_outputs": n_outputs,
         "patch_size": patch_size,
         "emb_size": emb_size,
-        "in_channels": 8,
+        "in_conv_channels": 8,
         "out_channels": 8,
         "n_layers": n_layers,
         "att_num_heads": att_num_heads,

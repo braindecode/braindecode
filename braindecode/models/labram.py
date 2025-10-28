@@ -78,7 +78,7 @@ class Labram(EEGModuleMixin, nn.Module):
         The size of the patch to be used in the patch embedding.
     emb_size : int
         The dimension of the embedding.
-    in_channels : int
+    in_conv_channels : int
         The number of convolutional input channels.
     out_channels : int
         The number of convolutional output channels.
@@ -149,7 +149,7 @@ class Labram(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         patch_size=200,
         emb_size=200,
-        in_channels=1,
+        in_conv_channels=1,
         out_channels=8,
         n_layers=12,
         att_num_heads=10,
@@ -197,15 +197,15 @@ class Labram(EEGModuleMixin, nn.Module):
             self.patch_size = patch_size
         self.n_path = self.n_times // self.patch_size
 
-        if neural_tokenizer and in_channels != 1:
+        if neural_tokenizer and in_conv_channels != 1:
             warn(
                 "The model is in Neural Tokenizer mode, but the variable "
-                + "`in_channels` is different from the default values."
-                + "`in_channels` is only needed for the Neural Decoder mode."
-                + "in_channels is not used in the Neural Tokenizer mode.",
+                + "`in_conv_channels` is different from the default values."
+                + "`in_conv_channels` is only needed for the Neural Decoder mode."
+                + "in_conv_channels is not used in the Neural Tokenizer mode.",
                 UserWarning,
             )
-            in_channels = 1
+            in_conv_channels = 1
             # If you can use the model in Neural Tokenizer mode,
         # temporal conv layer will be use over the patched dataset
         if neural_tokenizer:
@@ -242,7 +242,7 @@ class Labram(EEGModuleMixin, nn.Module):
                 _PatchEmbed(
                     n_times=self.n_times,
                     patch_size=patch_size,
-                    in_channels=in_channels,
+                    in_channels=in_conv_channels,
                     emb_dim=self.emb_size,
                 ),
             )
