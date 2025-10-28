@@ -278,6 +278,18 @@ clf = EEGClassifier(
 )
 _ = clf.fit(windows_dataset, y=metadata["target"], epochs=10)
 
+#############################################################
+#
+# Conclusion and Next Steps
+# -------------------------
+#
+# In this tutorial, we demonstrated how to fine-tune a pre-trained foundation
+# model, Signal-JEPA, for a motor imagery classification task. We now have a basic
+# implementation that can automatically load pre-trained weights and freeze specific layers.
+#
+# This setup can easily be extended to explore different fine-tuning techniques,
+# base foundation models, and downstream tasks.
+#
 
 #############################################################
 #
