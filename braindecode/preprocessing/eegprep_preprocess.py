@@ -21,8 +21,9 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "EEGPrep",
-    "RemoveFlatChannels",
     "RemoveDCOffset",
+    "Resample",
+    "RemoveFlatChannels",
     "RemoveDrifts",
     "RemoveBadChannels",
     "RemoveBadChannelsNoLocs",
@@ -85,27 +86,52 @@ def _join_noneeg_channels(
     return EEG
 
 
-def _mne2eeg_postproc(EEG: dict[str, Any]) -> dict[str, Any]:
-    """Postprocessing fix-ups after mne2eeg conversion."""
+def _mne2eegprep(mne: BaseRaw) -> dict[str, Any]:
+    """Convert MNE Raw to EEGLAB/EEGPrep EEG structure."""
+    try:
+        import eegprep
+    except ImportError as e:
+        raise _eegprep_missing_error() from e
+
+    # actual conversion
+    EEG = eegprep.mne2eeg(mne)
+
     # Ensure all events in EEG structure have a 'duration' field.
     if not all("duration" in ev for ev in EEG["event"]):
         for ev in EEG["event"]:
             if "duration" not in ev:
                 ev["duration"] = 1
+
+    # preserve the .info['description'] field, if present
+    EEG["etc"]["mne_description"] = mne.info.get("description") or ""
+
     return EEG
 
 
-def _eeg2mne_preproc(EEG: dict[str, Any]) -> dict[str, Any]:
-    """Preprocessing fix-ups before eeg2mne conversion."""
+def _eegprep2mne(EEG: dict[str, Any]) -> BaseRaw:
+    """Convert EEGLAB/EEGPrep EEG structure to MNE Raw."""
+    try:
+        import eegprep
+    except ImportError as e:
+        raise _eegprep_missing_error() from e
+
     # Rename EEGLAB-type boundary events to a form that's recognized by MNE so they
     # (or intersecting epochs) are ignored during downstream MNE epoching.
     for ev in EEG["event"]:
         if ev["type"] == "boundary":
             ev["type"] = "BAD boundary"
+
+    # add at least one recognized field to chaninfo to keep eeg2mne happy
     if not isinstance(EEG["chaninfo"], dict) or not EEG["chaninfo"]:
-        # add at least one recognized field to keep eeg2mne happy
         EEG["chaninfo"] = {"nosedir": "+X"}
-    return EEG
+
+    # actual conversion
+    proc = eegprep.eeg2mne(EEG)
+
+    # restore the .info['description'] field, if it was present
+    proc.info["description"] = EEG["etc"].get("mne_description", "") or None
+
+    return proc
 
 
 def _maybe_threadpool_limits(nthreads: int | None) -> contextlib.AbstractContextManager:
@@ -306,13 +332,8 @@ class EEGPrepBasePreprocessor(Preprocessor):
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
         raise NotImplementedError("Subclasses must implement apply_eeg().")
 
-    def _apply_op(self, raw: BaseRaw) -> BaseRaw:
+    def _apply_op(self, raw: BaseRaw) -> None:
         """Internal method that does the actual work; this is called by Preprocessor.apply()."""
-        try:
-            import eegprep
-        except ImportError as e:
-            raise _eegprep_missing_error() from e
-
         opname = self.__class__.__name__
         if isinstance(raw, BaseEpochs):
             raise ValueError(
@@ -324,8 +345,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
         EEG, nonEEG, chn_order = _separate_noneeg_channels(raw)
 
         # convert to EEGLAB structure and prepare for processing
-        EEG = eegprep.mne2eeg(EEG)
-        EEG = _mne2eeg_postproc(EEG)
+        EEG = _mne2eegprep(EEG)
 
         orig_chanlocs = list(EEG["chanlocs"])
 
@@ -339,8 +359,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
                 self._raw = None
 
         # convert back to MNE Raw
-        EEG = _eeg2mne_preproc(EEG)
-        proc = eegprep.eeg2mne(EEG)
+        proc = _eegprep2mne(EEG)
 
         if self.record_orig_chanlocs:
             # stash original channel locations if not already present
@@ -374,7 +393,12 @@ class EEGPrepBasePreprocessor(Preprocessor):
             else:
                 proc = _join_noneeg_channels(proc, nonEEG, chn_order)
 
-        return proc
+        # write result back into raw, discard proc (_apply_op() is in-place)
+        if not proc.preload:
+            proc.load_data()
+        raw.__dict__ = proc.__dict__
+
+        ...  # can place breakpoint here to inspect raw after processing
 
     def get_orig_chanlocs(self) -> list[dict[str, Any]] | None:
         """Retrieve the original channel locations stashed in the MNE Raw structure,
@@ -757,6 +781,40 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
             method=self.method,
             # (no other args)
         )
+
+        return EEG
+
+
+class Resample(EEGPrepBasePreprocessor):
+    """Resample the data to a specified rate. Included to equivalence to EEGPrep.
+
+    MNE has its resampling routine (use as `Preprocessor("resample", sfreq=rate)`)
+    but this will not necessarily match EEGPrep's behavior exactly; to get bit-identical
+    results to the default EEGPrep pipeline, use this preprocessor instead.
+
+    Parameters
+    ----------
+    sfreq : float | None
+        The desired sampling rate in Hz. Skipped if set to None.
+
+    """
+
+    def __init__(
+        self,
+        sfreq: float | None,
+    ):
+        super().__init__(can_change_duration=True)
+        self.sfreq = sfreq
+
+    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        try:
+            import eegprep
+        except ImportError as e:
+            raise _eegprep_missing_error() from e
+
+        if self.sfreq is not None:
+            EEG = eegprep.resample(EEG, self.sfreq)
 
         return EEG
 
