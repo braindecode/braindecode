@@ -663,7 +663,7 @@ class EEGPrep(EEGPrepBasePreprocessor):
 
         if self.force_dtype != np.float64:
             # cast to float32 for equivalence with multi-stage EEGPrep pipeline
-            EEG['data'] = EEG['data'].astype(np.float32)
+            EEG["data"] = EEG["data"].astype(np.float32)
 
         # optionally reinterpolate dropped channels
         if self.reinterpolate and (len(orig_chanlocs) > len(EEG["chanlocs"])):
