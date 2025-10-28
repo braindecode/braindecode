@@ -175,8 +175,8 @@ assert set(missing_keys) == new_layers, f"{missing_keys=}"
 #
 # With this downstream architecture, two options are possible for fine-tuning:
 #
-# 1. Fine-tune only the newly added layers
-# 2. Fine-tune the entire model
+# 1) Fine-tune only the newly added layers
+# 2) Fine-tune the entire model
 #
 # Freezing Pre-trained Layers
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
