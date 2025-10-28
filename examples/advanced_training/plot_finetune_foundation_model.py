@@ -4,7 +4,7 @@ Fine-tuning a Foundation Model (Signal-JEPA)
 ===========================================
 
 In this example, we demonstrate how to load a pre-trained foundation model
-and fine-tune it for a specific task. We use the Signal-JEPA model [1]
+and fine-tune it for a specific task. We use the Signal-JEPA model [1]_
 and a MOABB dataset for this tutorial.
 
 .. contents:: This example covers:
@@ -135,7 +135,7 @@ print(model)
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # We load the pre-trained weights into the model. The transformer layers are excluded
-# as this module is not used in the pre-local downstream architecture (see [1]).
+# as this module is not used in the pre-local downstream architecture (see [1]_).
 #
 
 # Define layers to exclude from the pre-trained weights
@@ -167,7 +167,7 @@ assert set(missing_keys) == new_layers, f"{missing_keys=}"
 # adjust the model architecture for finetuning. This is what is done by the
 # :class:`SignalJEPA_PreLocal`, :class:`SignalJEPA_Contextual`, and
 # :class:`SignalJEPA_PostLocal` classes. In these classes, new layers are added
-# specifically for classification, as described in the article [1] and in the following figure:
+# specifically for classification, as described in the article [1]_ and in the following figure:
 #
 # .. image:: /_static/model/sjepa_pre-local.jpg
 #    :alt: Signal-JEPA Pre-Local Downstream Architecture
