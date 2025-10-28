@@ -74,7 +74,7 @@ assert all(
 # Extract channel information
 chs_info = dataset.datasets[0].raw.info["chs"]  # Channel information
 
-print(f"{sfreq=}", f"{window_size_seconds=} ", f"{len(chs_info)=}")
+print(f"{sfreq=}, {window_size_seconds=}, {len(chs_info)=}")
 
 ##################################################################
 # Create Windows from Events
