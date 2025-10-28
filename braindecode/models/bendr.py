@@ -218,7 +218,7 @@ class BENDR(EEGModuleMixin, nn.Module):
 
         self.final_layer = None
         if self.include_final_layer:
-            # Input to LazyLinear will be [batch_size, encoder_h] after taking last timestep
+            # Input to Linear will be [batch_size, encoder_h] after taking last timestep
             linear = nn.Linear(in_features=in_features, out_features=self.n_outputs)
             self.final_layer = nn.utils.parametrizations.weight_norm(
                 linear, name="weight", dim=1
@@ -353,13 +353,15 @@ class _BENDRContextualizer(nn.Module):
         # --- Input Conditioning --- (Includes projection up to transformer_dim)
         # Rearrange, Norm, Dropout, Project, Rearrange
         self.input_conditioning = nn.Sequential(
-            Rearrange("b c t -> b t c"),  # Batch, Time, Channels
+            Rearrange(
+                "batch channel time -> batch time channel"
+            ),  # Batch, Time, Channels
             nn.LayerNorm(in_features),
             nn.Dropout(dropout),
             nn.Linear(in_features, self.transformer_dim),  # Project up using Linear
             # nn.Conv1d(in_features, self.transformer_dim, 1), # Alternative: Project up using Conv1d
             Rearrange(
-                "b t c -> t b c"
+                "batch time channel -> time batch channel"
             ),  # Time, Batch, Channels (Transformer expected format)
         )
 
