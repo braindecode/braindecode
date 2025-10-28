@@ -228,7 +228,7 @@ class Labram(EEGModuleMixin, nn.Module):
                 _PatchEmbed(
                     n_times=self.n_times,
                     patch_size=patch_size,
-                    in_channels=in_channels,
+                    in_channels=self.n_chans,
                     emb_dim=self.emb_size,
                 ),
             )
@@ -373,8 +373,7 @@ class Labram(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            The input data with shape (batch, n_chans, n_patches, patch size),
-            if neural decoder or (batch, n_chans, n_times), if neural tokenizer.
+            The input data with shape (batch, n_chans, n_times).
         input_chans : int
             The number of input channels.
         return_patch_tokens : bool
@@ -387,37 +386,72 @@ class Labram(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             The output of the model.
         """
+        batch_size = x.shape[0]
+
         if self.neural_tokenizer:
-            batch_size, nch, n_patch, temporal = self.patch_embed.segment_patch(x).shape
+            # For neural tokenizer: input is (batch, n_chans, n_times)
+            # patch_embed returns (batch, n_chans, emb_dim)
+            x = self.patch_embed(x)
+            # x shape: (batch, n_chans, emb_dim)
+            n_patch = self.n_chans
+            temporal = self.emb_size
         else:
-            batch_size, nch, n_patch = self.patch_embed(x).shape
-        x = self.patch_embed(x)
+            # For neural decoder: input is (batch, n_chans, n_times)
+            # patch_embed returns (batch, n_patchs, emb_dim)
+            x = self.patch_embed(x)
+            # x shape: (batch, n_patchs, emb_dim)
+            batch_size, n_patch, temporal = x.shape
+
         # add the [CLS] token to the embedded patch tokens
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
 
+        # Concatenate cls token with patch/channel embeddings
         x = torch.cat((cls_tokens, x), dim=1)
 
         # Positional Embedding
-        if input_chans is not None:
-            pos_embed_used = self.position_embedding[:, input_chans]
-        else:
-            pos_embed_used = self.position_embedding
-
         if self.position_embedding is not None:
-            pos_embed = self._adj_position_embedding(
-                pos_embed_used=pos_embed_used, batch_size=batch_size
-            )
+            if self.neural_tokenizer:
+                # In tokenizer mode, use channel-based position embedding
+                if input_chans is not None:
+                    pos_embed_used = self.position_embedding[:, input_chans]
+                else:
+                    pos_embed_used = self.position_embedding
+
+                pos_embed = self._adj_position_embedding(
+                    pos_embed_used=pos_embed_used, batch_size=batch_size
+                )
+            else:
+                # In decoder mode, we have different number of patches
+                # Adapt position embedding for n_patch patches
+                # Use the first n_patch+1 positions from position_embedding
+                n_pos = min(self.position_embedding.shape[1], n_patch + 1)
+                pos_embed_used = self.position_embedding[:, :n_pos, :]
+                pos_embed = pos_embed_used.expand(batch_size, -1, -1)
+
             x += pos_embed
 
         # The time embedding is added across the channels after the [CLS] token
         if self.neural_tokenizer:
             num_ch = self.n_chans
+            time_embed = self._adj_temporal_embedding(
+                num_ch=num_ch, batch_size=batch_size, dim_embed=temporal
+            )
+            x[:, 1:, :] += time_embed
         else:
-            num_ch = n_patch
-        time_embed = self._adj_temporal_embedding(
-            num_ch=num_ch, batch_size=batch_size, dim_embed=temporal
-        )
-        x[:, 1:, :] += time_embed
+            # In decoder mode, we have n_patch patches and don't need to expand
+            # Just broadcast the temporal embedding
+            if temporal is None:
+                temporal = self.emb_size
+
+            # Get temporal embeddings for n_patch patches
+            n_time_tokens = min(n_patch, self.temporal_embedding.shape[1] - 1)
+            time_embed = self.temporal_embedding[
+                :, 1 : n_time_tokens + 1, :
+            ]  # (1, n_patch, emb_dim)
+            time_embed = time_embed.expand(
+                batch_size, -1, -1
+            )  # (batch, n_patch, emb_dim)
+            x[:, 1:, :] += time_embed
 
         x = self.pos_drop(x)
 
@@ -428,10 +462,10 @@ class Labram(EEGModuleMixin, nn.Module):
         if self.fc_norm is not None:
             if return_all_tokens:
                 return self.fc_norm(x)
-            temporal = x[:, 1:, :]
+            tokens = x[:, 1:, :]
             if return_patch_tokens:
-                return self.fc_norm(temporal)
-            return self.fc_norm(temporal.mean(1))
+                return self.fc_norm(tokens)
+            return self.fc_norm(tokens.mean(1))
         else:
             if return_all_tokens:
                 return x
@@ -505,14 +539,16 @@ class Labram(EEGModuleMixin, nn.Module):
     def _adj_temporal_embedding(self, num_ch, batch_size, dim_embed=None):
         """
         Adjust the dimensions of the time embedding to match the
-        number of channels.
+        number of channels or patches.
 
         Parameters
         ----------
         num_ch : int
-            The number of channels or number of code books vectors.
+            The number of channels or number of patches.
         batch_size : int
             Batch size of the input data.
+        dim_embed : int
+            The embedding dimension (temporal feature dimension).
 
         Returns
         -------
@@ -523,17 +559,24 @@ class Labram(EEGModuleMixin, nn.Module):
         if dim_embed is None:
             cut_dimension = self.patch_size
         else:
-            cut_dimension = dim_embed
-        # first step will be match the time_embed to the number of channels
-        temporal_embedding = self.temporal_embedding[:, 1:cut_dimension, :]
+            cut_dimension = min(dim_embed, self.temporal_embedding.shape[1] - 1)
+
+        # Get the temporal embedding: (1, temporal_embedding_dim, emb_size)
+        # Slice to cut_dimension: (1, cut_dimension, emb_size)
+        temporal_embedding = self.temporal_embedding[:, 1 : cut_dimension + 1, :]
+
         # Add a new dimension to the time embedding
-        # e.g. (batch, 62, 200) -> (batch, 1, 62, 200)
+        # e.g. (1, 5, 200) -> (1, 1, 5, 200)
         temporal_embedding = temporal_embedding.unsqueeze(1)
-        # Expand the time embedding to match the number of channels
-        # or number of patches from
+
+        # Expand the time embedding to match the number of channels or patches
+        # (1, 1, cut_dimension, 200) -> (batch_size, num_ch, cut_dimension, 200)
         temporal_embedding = temporal_embedding.expand(batch_size, num_ch, -1, -1)
+
         # Flatten the intermediate dimensions
+        # (batch_size, num_ch, cut_dimension, 200) -> (batch_size, num_ch * cut_dimension, 200)
         temporal_embedding = temporal_embedding.flatten(1, 2)
+
         return temporal_embedding
 
     def _adj_position_embedding(self, pos_embed_used, batch_size):
@@ -679,25 +722,27 @@ class _SegmentPatch(nn.Module):
 
 
 class _PatchEmbed(nn.Module):
-    """EEG to Patch Embedding.
+    """EEG to Patch Embedding for Neural Decoder mode.
 
     This code is used when we want to apply the patch embedding
-    after the codebook layer.
+    after the codebook layer (Neural Decoder mode).
+
+    The input is expected to be in the format (Batch, n_channels, n_times),
+    but the original LaBraM expects pre-patched data (Batch, n_channels, n_patches, patch_size).
+    This class reshapes the input to the pre-patched format, then applies a 2D
+    convolution to project this pre-patched data to the embedding dimension,
+    and finally flattens across channels to produce a unified embedding.
 
     Parameters:
     -----------
     n_times: int (default=2000)
-        Number of temporal components of the input tensor.
+        Number of temporal components of the input tensor (used for dimension calculation).
     patch_size: int (default=200)
         Size of the patch, default is 1-seconds with 200Hz.
     in_channels: int (default=1)
-        Number of input channels for to be used in the convolution.
+        Number of input channels (from VQVAE codebook).
     emb_dim: int (default=200)
-        Number of out_channes to be used in the convolution, here,
-        we used the same as patch_size.
-    n_codebooks: int (default=62)
-        Number of patches to be used in the convolution, here,
-        we used the same as n_times // patch_size.
+        Number of output embedding dimension.
     """
 
     def __init__(
@@ -707,10 +752,13 @@ class _PatchEmbed(nn.Module):
         self.n_times = n_times
         self.patch_size = patch_size
         self.patch_shape = (1, self.n_times // self.patch_size)
-        n_patchs = n_codebooks * (self.n_times // self.patch_size)
+        self.n_patchs = self.n_times // self.patch_size
+        self.emb_dim = emb_dim
+        self.in_channels = in_channels
 
-        self.n_patchs = n_patchs
-
+        # 2D Conv to project the pre-patched data
+        # Input: (Batch, in_channels, n_patches, patch_size)
+        # After proj: (Batch, emb_dim, n_patches, 1)
         self.proj = nn.Conv2d(
             in_channels=in_channels,
             out_channels=emb_dim,
@@ -718,27 +766,42 @@ class _PatchEmbed(nn.Module):
             stride=(1, self.patch_size),
         )
 
-        self.merge_transpose = Rearrange(
-            "Batch ch patch spatch -> Batch patch spatch ch",
-        )
-
     def forward(self, x):
         """
-        Apply the convolution to the input tensor.
-        then merge the output tensor to the desired shape.
+        Apply 2D convolution to the input tensor after reshaping to pre-patched format.
 
         Parameters:
         -----------
         x: torch.Tensor
-            Input tensor of shape (Batch, Channels, n_patchs, patch_size).
+            Input tensor of shape (Batch, n_channels, n_times).
 
         Return:
         -------
         x: torch.Tensor
-            Output tensor of shape (Batch, n_patchs, patch_size, channels).
+            Output tensor of shape (Batch, n_patchs, emb_dim).
         """
+        # Expected input: (Batch, n_channels, n_times)
+        batch_size, n_channels, n_times = x.shape
+
+        # Reshape to pre-patched format: (Batch, n_channels, n_patchs, patch_size)
+        n_patchs = n_times // self.patch_size
+        x = x.view(batch_size, n_channels, n_patchs, self.patch_size)
+
+        # Apply 2D convolution (working per channel)
+        # x shape: (Batch, n_channels, n_patchs, patch_size)
+        # Conv2d will treat n_channels as in_channels, so we need to reshape for Conv2d
+        # Conv2d expects: (Batch, in_channels, Height, Width)
+        # We have: (Batch, n_channels, n_patchs, patch_size)
+        # After proj: (Batch, emb_dim, n_patchs, 1)
         x = self.proj(x)
-        x = self.merge_transpose(x)
+
+        # Remove the last dimension
+        # (Batch, emb_dim, n_patchs, 1) -> (Batch, emb_dim, n_patchs)
+        x = x.squeeze(-1)
+
+        # Permute to (Batch, n_patchs, emb_dim)
+        x = x.permute(0, 2, 1).contiguous()
+
         return x
 
 
