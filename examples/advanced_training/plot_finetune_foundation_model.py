@@ -3,9 +3,14 @@
 Fine-tuning a Foundation Model (Signal-JEPA)
 ===========================================
 
-In this example, we demonstrate how to load a pre-trained foundation model
+Foundation models are large-scale pre-trained models that serve as a starting point
+for a wide range of downstream tasks, leveraging their generalization capabilities.
+Fine-tuning these models is necessary to adapt them to specific tasks or datasets,
+ensuring optimal performance in specialized applications.
+
+In this tutorial, we demonstrate how to load a pre-trained foundation model
 and fine-tune it for a specific task. We use the Signal-JEPA model [1]_
-and a MOABB dataset for this tutorial.
+and a MOABB motor-imagery dataset for this tutorial.
 
 .. contents:: This example covers:
    :local:
