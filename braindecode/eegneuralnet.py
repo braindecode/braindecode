@@ -189,6 +189,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 "Skipping setting signal-related parameters from data."
             )
             return
+        if classes is None:
+            classes = getattr(self, "classes", None)
         # get kwargs from signal:
         signal_kwargs = dict()
         # Using shape to work both with torch.tensor and numpy.array:

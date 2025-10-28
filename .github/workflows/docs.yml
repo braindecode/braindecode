@@ -23,14 +23,16 @@ jobs:
           python-version: '3.12'
           cache: 'pip' # caching pip dependencies
       # Cache MNE Data
+      # Dedicated cache for docs (single platform: ubuntu-latest)
+      # Cache key includes hash of pyproject.toml to invalidate when dependencies change
       - name: Create/Restore MNE Data Cache
         id: cache-mne_data
         uses: actions/cache@v4
         with:
           path: ~/mne_data
-          key: ${{ runner.os }}-mne-data-v1-${{ github.run_id }}
+          key: docs-mne-data-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-mne-data-v1-
+            docs-mne-data-
       # Update pip
       - name: Update pip
         run: pip install --upgrade pip
