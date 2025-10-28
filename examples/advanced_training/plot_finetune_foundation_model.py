@@ -134,8 +134,8 @@ print(model)
 # Load the Pre-trained Weights into the Model
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We load the pre-trained weights into the model. Certain layers are excluded
-# to allow for fine-tuning on the new dataset.
+# We load the pre-trained weights into the model. The transformer layers are excluded
+# as this module is not used in the pre-local downstream architecture (see [1]).
 #
 
 # Define layers to exclude from the pre-trained weights
@@ -169,8 +169,9 @@ assert set(missing_keys) == new_layers, f"{missing_keys=}"
 # :class:`SignalJEPA_PostLocal` classes. In these classes, new layers are added
 # specifically for classification, as described in the article [1] and in the following figure:
 #
-# .. image:: /_static/sjepa_pre-local.png
+# .. image:: /_static/model/sjepa_pre-local.jpg
 #    :alt: Signal-JEPA Pre-Local Downstream Architecture
+#    :align: center
 #
 # With this downstream architecture, two options are possible for fine-tuning:
 # 1. Fine-tune only the newly added layers
