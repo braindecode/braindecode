@@ -15,6 +15,27 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from torchinfo import ModelStatistics, summary
 
 
+def _get_hub_mixin():
+    """
+    Soft import for Hugging Face Hub integration.
+
+    Returns PyTorchModelHubMixin if huggingface_hub is installed,
+    otherwise returns object as a fallback base class.
+
+    This allows EEGModuleMixin to optionally integrate with Hugging Face Hub
+    without making it a required dependency.
+    """
+    try:
+        from huggingface_hub import PyTorchModelHubMixin
+        return PyTorchModelHubMixin
+    except ImportError:
+        return object
+
+
+# Check if HF Hub is available
+HAS_HF_HUB = _get_hub_mixin() is not object
+
+
 def deprecated_args(obj, *old_new_args):
     out_args = []
     for old_name, new_name, old_val, new_val in old_new_args:
@@ -32,9 +53,13 @@ def deprecated_args(obj, *old_new_args):
     return out_args
 
 
-class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
+class EEGModuleMixin(_get_hub_mixin(), metaclass=NumpyDocstringInheritanceInitMeta):
     """
     Mixin class for all EEG models in braindecode.
+
+    This class integrates with Hugging Face Hub when the `huggingface_hub` package
+    is installed, enabling models to be pushed to and loaded from the Hub using
+    ``push_to_hub()`` and ``from_pretrained()`` methods.
 
     Parameters
     ----------
@@ -62,6 +87,44 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     -----
     If some input signal-related parameters are not specified,
     there will be an attempt to infer them from the other parameters.
+
+    Hugging Face Hub Integration
+    -----------------------------
+    When the optional ``huggingface_hub`` package is installed, all models
+    automatically gain the ability to be pushed to and loaded from the
+    Hugging Face Hub. Install with::
+
+        pip install braindecode[huggingface]
+
+    **Pushing a model to the Hub:**
+
+    .. code-block:: python
+
+        from braindecode.models import EEGNetv4
+
+        # Train your model
+        model = EEGNetv4(n_chans=22, n_outputs=4, n_times=1000)
+        # ... training code ...
+
+        # Push to the Hub
+        model.push_to_hub(
+            repo_id="username/my-eegnet-model",
+            commit_message="Initial model upload"
+        )
+
+    **Loading a model from the Hub:**
+
+    .. code-block:: python
+
+        from braindecode.models import EEGNetv4
+
+        # Load pretrained model
+        model = EEGNetv4.from_pretrained("username/my-eegnet-model")
+
+    The integration automatically handles EEG-specific parameters (n_chans,
+    n_times, sfreq, chs_info, etc.) by saving them in a config file alongside
+    the model weights. This ensures that loaded models are correctly configured
+    for their original data specifications.
     """
 
     def __init__(
@@ -73,6 +136,13 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         input_window_seconds: Optional[float] = None,  # type: ignore[assignment]
         sfreq: Optional[float] = None,  # type: ignore[assignment]
     ):
+        # Deserialize chs_info if it comes as a list of dicts (from Hub)
+        if chs_info is not None and isinstance(chs_info, list):
+            if len(chs_info) > 0 and isinstance(chs_info[0], dict):
+                # Check if it needs deserialization (has 'loc' as list)
+                if 'loc' in chs_info[0] and isinstance(chs_info[0]['loc'], list):
+                    chs_info = self._deserialize_chs_info(chs_info)
+
         if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
             raise ValueError(f"{n_chans=} different from {chs_info=} length")
         if (
@@ -294,3 +364,107 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
+
+    @staticmethod
+    def _serialize_chs_info(chs_info):
+        """
+        Serialize MNE channel info to JSON-compatible format.
+
+        Parameters
+        ----------
+        chs_info : list of dict or None
+            Channel information from MNE Info object.
+
+        Returns
+        -------
+        list of dict or None
+            Serialized channel information that can be saved to JSON.
+        """
+        if chs_info is None:
+            return None
+
+        serialized = []
+        for ch in chs_info:
+            # Extract serializable fields from MNE channel info
+            ch_dict = {
+                'ch_name': ch.get('ch_name', ''),
+                'coil_type': int(ch.get('coil_type', 0)),
+                'kind': int(ch.get('kind', 0)),
+                'unit': int(ch.get('unit', 0)),
+                'cal': float(ch.get('cal', 1.0)),
+                'range': float(ch.get('range', 1.0)),
+            }
+            # Serialize location array if present
+            if 'loc' in ch and ch['loc'] is not None:
+                ch_dict['loc'] = ch['loc'].tolist() if hasattr(ch['loc'], 'tolist') else list(ch['loc'])
+            serialized.append(ch_dict)
+
+        return serialized
+
+    @staticmethod
+    def _deserialize_chs_info(chs_info_dict):
+        """
+        Deserialize channel info from JSON-compatible format to MNE-like structure.
+
+        Parameters
+        ----------
+        chs_info_dict : list of dict or None
+            Serialized channel information.
+
+        Returns
+        -------
+        list of dict or None
+            Deserialized channel information compatible with MNE.
+        """
+        if chs_info_dict is None:
+            return None
+
+        deserialized = []
+        for ch_dict in chs_info_dict:
+            ch = ch_dict.copy()
+            # Convert location back to numpy array if present
+            if 'loc' in ch and ch['loc'] is not None:
+                ch['loc'] = np.array(ch['loc'])
+            deserialized.append(ch)
+
+        return deserialized
+
+    def _save_pretrained(self, save_directory):
+        """
+        Save model configuration and weights to the Hub.
+
+        This method is called by PyTorchModelHubMixin.push_to_hub() to save
+        model-specific configuration alongside the model weights.
+
+        Parameters
+        ----------
+        save_directory : str or Path
+            Directory where the configuration should be saved.
+        """
+        if not HAS_HF_HUB:
+            return
+
+        import json
+        import torch
+        from pathlib import Path
+
+        save_directory = Path(save_directory)
+
+        # Collect EEG-specific configuration
+        config = {
+            'n_outputs': self._n_outputs,
+            'n_chans': self._n_chans,
+            'n_times': self._n_times,
+            'input_window_seconds': self._input_window_seconds,
+            'sfreq': self._sfreq,
+            'chs_info': self._serialize_chs_info(self._chs_info),
+        }
+
+        # Save to config.json
+        config_path = save_directory / 'config.json'
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        # Save model weights
+        weights_path = save_directory / 'pytorch_model.bin'
+        torch.save(self.state_dict(), weights_path)

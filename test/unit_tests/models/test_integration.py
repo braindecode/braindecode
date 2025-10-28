@@ -32,6 +32,7 @@ from braindecode.models import (
     SyncNet,
     USleep,
 )
+from braindecode.models.base import HAS_HF_HUB
 from braindecode.models.util import (
     _summary_table,
     models_dict,
@@ -629,3 +630,38 @@ def test_if_models_with_embedding_parameter(model):
         print(model)
     except Exception as e:
         pytest.fail(f"Error printing model {model_name}: {e}")
+
+
+@pytest.mark.skipif(
+    not HAS_HF_HUB,
+    reason="huggingface_hub not installed. Install with: pip install braindecode[huggingface]"
+)
+@pytest.mark.parametrize("model_class", models_dict.values())
+def test_model_has_huggingface_hub_methods(model_class):
+    """Test that all models have Hugging Face Hub methods when HF Hub is installed."""
+    # Check that the model class has from_pretrained method
+    assert hasattr(model_class, 'from_pretrained'), (
+        f"{model_class.__name__} should have 'from_pretrained' class method "
+        "when huggingface_hub is installed."
+    )
+    assert callable(getattr(model_class, 'from_pretrained')), (
+        f"{model_class.__name__}.from_pretrained should be callable."
+    )
+
+    # Create a model instance to check instance methods
+    model_dict = {name: (args, defaults) for name, args, defaults in models_mandatory_parameters}
+    model_name = model_class.__name__
+
+    if model_name in model_dict:
+        mandatory_parameters, sig_params = model_dict[model_name]
+        signal_params = get_sp(sig_params, mandatory_parameters)
+        model = model_class(**signal_params)
+
+        # Check that the model instance has push_to_hub method
+        assert hasattr(model, 'push_to_hub'), (
+            f"{model_name} instance should have 'push_to_hub' method "
+            "when huggingface_hub is installed."
+        )
+        assert callable(getattr(model, 'push_to_hub')), (
+            f"{model_name}.push_to_hub should be callable."
+        )
