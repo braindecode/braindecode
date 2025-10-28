@@ -79,8 +79,10 @@ class Labram(EEGModuleMixin, nn.Module):
         The expansion ratio of the mlp layer
     qkv_bias :  bool (default=False)
         If True, add a learnable bias to the query, key, and value tensors.
-    qk_norm : Pytorch Normalize layer (default=None)
-        If not None, apply LayerNorm to the query and key tensors
+    qk_norm : Pytorch Normalize layer (default=nn.LayerNorm)
+        If not None, apply LayerNorm to the query and key tensors.
+        Default is nn.LayerNorm for better weight transfer from original LaBraM.
+        Set to None to disable Q,K normalization.
     qk_scale : float (default=None)
         If not None, use this value as the scale factor. If None,
         use head_dim**-0.5, where head_dim = dim // num_heads.
@@ -141,7 +143,7 @@ class Labram(EEGModuleMixin, nn.Module):
         att_num_heads=10,
         mlp_ratio=4.0,
         qkv_bias=False,
-        qk_norm=None,
+        qk_norm=nn.LayerNorm,
         qk_scale=None,
         drop_prob=0.0,
         attn_drop_prob=0.0,
