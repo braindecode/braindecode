@@ -22,6 +22,8 @@ from braindecode.modules import MLP, DropPath
 class Labram(EEGModuleMixin, nn.Module):
     """Labram from Jiang, W B et al (2024) [Jiang2024]_.
 
+    :bdg-danger:`Large Brain Model`
+
     .. figure:: https://arxiv.org/html/2405.18765v1/x1.png
         :align: center
         :alt: Labram Architecture.

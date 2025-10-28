@@ -8,7 +8,147 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class BENDR(EEGModuleMixin, nn.Module):
-    """ """
+    """BENDR from Can Han et al (2025) [Han2025]_.
+
+    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model`
+
+    .. figure:: https://www.frontiersin.org/files/Articles/653659/fnhum-15-653659-HTML/image_m/fnhum-15-653659-g001.jpg
+        :align: center
+        :alt: BENDR Architecture
+        :width: 1000px
+
+    The **Spatial-Spectral** and **Temporal - Dual Prototype Network** (SST-DPN)
+    is an end-to-end 1D convolutional architecture designed for motor imagery (MI) EEG decoding,
+    aiming to address challenges related to discriminative feature extraction and
+    small-sample sizes [Han2025]_.
+
+    The framework systematically addresses three key challenges: multi-channel spatial-spectral
+    features and long-term temporal features [Han2025]_.
+
+    .. rubric:: Architectural Overview
+
+    SST-DPN consists of a feature extractor (_SSTEncoder, comprising Adaptive Spatial-Spectral
+    Fusion and Multi-scale Variance Pooling) followed by Dual Prototype Learning classification [Han2025]_.
+
+    1. **Adaptive Spatial-Spectral Fusion (ASSF)**: Uses :class:`_DepthwiseTemporalConv1d` to generate a
+        multi-channel spatial-spectral representation, followed by :class:`_SpatSpectralAttn`
+        (Spatial-Spectral Attention) to model relationships and highlight key spatial-spectral
+        channels [Han2025]_.
+
+    2. **Multi-scale Variance Pooling (MVP)**: Applies :class:`_MultiScaleVarPooler` with variance pooling
+        at multiple temporal scales to capture long-range temporal dependencies, serving as an
+        efficient alternative to transformers [Han2025]_.
+
+    3. **Dual Prototype Learning (DPL)**: A training strategy that employs two sets of
+        prototypes—Inter-class Separation Prototypes (proto_sep) and Intra-class Compact
+        Prototypes (proto_cpt)—to optimize the feature space, enhancing generalization ability and
+        preventing overfitting on small datasets [Han2025]_. During inference (forward pass),
+        classification decisions are based on the distance (dot product) between the
+        feature vector and proto_sep for each class [Han2025]_.
+
+    .. rubric:: Macro Components
+
+    - `SSTDPN.encoder` **(Feature Extractor)**
+
+        - *Operations.* Combines Adaptive Spatial-Spectral Fusion and Multi-scale Variance Pooling
+          via an internal :class:`_SSTEncoder`.
+        - *Role.* Maps the raw MI-EEG trial :math:`X_i \in \mathbb{R}^{C \times T}` to the
+          feature space :math:`z_i \in \mathbb{R}^d`.
+
+    - `_SSTEncoder.temporal_conv` **(Depthwise Temporal Convolution for Spectral Extraction)**
+
+        - *Operations.* Internal :class:`_DepthwiseTemporalConv1d` applying separate temporal
+          convolution filters to each channel with kernel size `temporal_conv_kernel_size` and
+          depth multiplier `n_spectral_filters_temporal` (equivalent to :math:`F_1` in the paper).
+        - *Role.* Extracts multiple distinct spectral bands from each EEG channel independently.
+
+    - `_SSTEncoder.spt_attn` **(Spatial-Spectral Attention for Channel Gating)**
+
+        - *Operations.* Internal :class:`_SpatSpectralAttn` module using Global Context Embedding
+          via variance-based pooling, followed by adaptive channel normalization and gating.
+        - *Role.* Reweights channels in the spatial-spectral dimension to extract efficient and
+          discriminative features by emphasizing task-relevant regions and frequency bands.
+
+    - `_SSTEncoder.chan_conv` **(Pointwise Fusion across Channels)**
+
+        - *Operations.* A 1D pointwise convolution with `n_fused_filters` output channels
+          (equivalent to :math:`F_2` in the paper), followed by BatchNorm and the specified
+          `activation` function (default: ELU).
+        - *Role.* Fuses the weighted spatial-spectral features across all electrodes to produce
+          a fused representation :math:`X_{fused} \in \mathbb{R}^{F_2 \times T}`.
+
+    - `_SSTEncoder.mvp` **(Multi-scale Variance Pooling for Temporal Extraction)**
+
+        - *Operations.* Internal :class:`_MultiScaleVarPooler` using :class:`_VariancePool1D`
+          layers at multiple scales (`mvp_kernel_sizes`), followed by concatenation.
+        - *Role.* Captures long-range temporal features at multiple time scales. The variance
+          operation leverages the prior that variance represents EEG spectral power.
+
+    - `SSTDPN.proto_sep` / `SSTDPN.proto_cpt` **(Dual Prototypes)**
+
+        - *Operations.* Learnable vectors optimized during training using prototype learning losses.
+          The `proto_sep` (Inter-class Separation Prototype) is constrained via L2 weight-normalization
+          (:math:`\lVert s_i \rVert_2 \leq` `proto_sep_maxnorm`) during inference.
+        - *Role.* `proto_sep` achieves inter-class separation; `proto_cpt` enhances intra-class compactness.
+
+    .. rubric:: How the information is encoded temporally, spatially, and spectrally
+
+    * **Temporal.**
+       The initial :class:`_DepthwiseTemporalConv1d` uses a large kernel (e.g., 75). The MVP module employs pooling
+       kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal
+       features effectively. Large kernel pooling layers are shown to be superior to transformer
+       modules for this task in EEG decoding according to [Han2025]_.
+
+    * **Spatial.**
+       The initial convolution at the classes :class:`_DepthwiseTemporalConv1d` groups parameter :math:`h=1`,
+       meaning :math:`F_1` temporal filters are shared across channels. The Spatial-Spectral Attention
+       mechanism explicitly models the relationships among these channels in the spatial-spectral
+       dimension, allowing for finer-grained spatial feature modeling compared to conventional
+       GCNs according to the authors [Han2025]_.
+       In other words, all electrode channels share :math:`F_1` temporal filters
+       independently to produce the spatial-spectral representation.
+
+    * **Spectral.**
+       Spectral information is implicitly extracted via the :math:`F_1` filters in :class:`_DepthwiseTemporalConv1d`.
+       Furthermore, the use of Variance Pooling (in MVP) explicitly leverages the neurophysiological
+       prior that the **variance of EEG signals represents their spectral power**, which is an
+       important feature for distinguishing different MI classes [Han2025]_.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Attention.** A lightweight Spatial-Spectral Attention mechanism models spatial-spectral relationships
+        at the channel level, distinct from applying attention to deep feature dimensions,
+        which is common in comparison methods like :class:`ATCNet`.
+    - **Regularization.** Dual Prototype Learning acts as a regularization technique
+        by optimizing the feature space to be compact within classes and separated between
+        classes. This enhances model generalization and classification performance, particularly
+        useful for limited data typical of MI-EEG tasks, without requiring external transfer
+        learning data, according to [Han2025]_.
+
+    Notes
+    ----------
+    * The implementation of the DPL loss functions (:math:`\mathcal{L}_S`, :math:`\mathcal{L}_C`, :math:`\mathcal{L}_{EF}`)
+      and the optimization of ICPs are typically handled outside the primary ``forward`` method, within the training strategy
+      (see Ref. 52 in [Han2025]_).
+    * The default parameters are configured based on the BCI Competition IV 2a dataset.
+    * The use of Prototype Learning (PL) methods is novel in the field of EEG-MI decoding.
+    * **Lowest FLOPs:** Achieves the lowest Floating Point Operations (FLOPs) (9.65 M) among competitive
+      SOTA methods, including braindecode models like :class:`ATCNet` (29.81 M) and
+      :class:`EEGConformer` (63.86 M), demonstrating computational efficiency [Han2025]_.
+    * **Transformer Alternative:** Multi-scale Variance Pooling (MVP) provides a accuracy
+      improvement over temporal attention transformer modules in ablation studies, offering a more
+      efficient alternative to transformer-based approaches like :class:`EEGConformer` [Han2025]_.
+
+    .. warning::
+
+        **Important:** To utilize the full potential of SSTDPN with Dual Prototype Learning (DPL),
+        users must implement the DPL optimization strategy outside the model's forward method.
+        For implementation details and training strategies, please consult the official code at
+        [Han2025Code]_:
+        https://github.com/hancan16/SST-DPN/blob/main/train.py
+
+
+    """
 
     def __init__(
         self,
@@ -26,7 +166,7 @@ class BENDR(EEGModuleMixin, nn.Module):
         drop_prob=0.1,  # General dropout probability
         layer_drop=0.0,  # Probability of dropping transformer layers during training
         activation=nn.GELU,  # Activation function
-        # Transformer specific parameters (add defaults matching original if needed)
+        # Transformer specific parameters
         transformer_layers=8,
         transformer_heads=8,
         position_encoder_length=25,  # Kernel size for positional encoding conv
@@ -36,8 +176,6 @@ class BENDR(EEGModuleMixin, nn.Module):
         start_token=-5,  # Value for start token embedding
         final_layer=True,  # Whether to include the final linear layer
     ):
-        # Initialize EEGModuleMixin first if it provides n_chans, n_outputs etc.
-        # Ensure required parameters like n_chans, n_outputs are set before use
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
