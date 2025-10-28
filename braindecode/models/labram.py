@@ -242,7 +242,7 @@ class Labram(EEGModuleMixin, nn.Module):
                 _PatchEmbed(
                     n_times=self.n_times,
                     patch_size=patch_size,
-                    in_channels=self.n_chans,
+                    in_channels=in_channels,
                     emb_dim=self.emb_size,
                 ),
             )
@@ -782,39 +782,61 @@ class _PatchEmbed(nn.Module):
 
     def forward(self, x):
         """
-        Apply 2D convolution to the input tensor after reshaping to pre-patched format.
+        Apply the temporal projection to the input tensor after grouping channels.
 
-        Parameters:
-        -----------
-        x: torch.Tensor
-            Input tensor of shape (Batch, n_channels, n_times).
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (Batch, n_channels, n_times) or
+            (Batch, n_channels, n_patches, patch_size).
 
-        Return:
+        Returns
         -------
-        x: torch.Tensor
+        torch.Tensor
             Output tensor of shape (Batch, n_patchs, emb_dim).
         """
-        # Expected input: (Batch, n_channels, n_times)
-        batch_size, n_channels, n_times = x.shape
+        if x.ndim == 4:
+            batch_size, n_channels, n_patchs, patch_len = x.shape
+            if patch_len != self.patch_size:
+                raise ValueError(
+                    "When providing a 4D tensor, the last dimension "
+                    f"({patch_len}) must match patch_size ({self.patch_size})."
+                )
+            n_times = n_patchs * patch_len
+            x = x.reshape(batch_size, n_channels, n_times)
+        elif x.ndim == 3:
+            batch_size, n_channels, n_times = x.shape
+        else:
+            raise ValueError(
+                "Input must be either 3D (batch, channels, times) or "
+                "4D (batch, channels, n_patches, patch_size)."
+            )
 
-        # Reshape to pre-patched format: (Batch, n_channels, n_patchs, patch_size)
-        n_patchs = n_times // self.patch_size
-        x = x.view(batch_size, n_channels, n_patchs, self.patch_size)
+        if n_times % self.patch_size != 0:
+            raise ValueError(
+                f"n_times ({n_times}) must be divisible by patch_size ({self.patch_size})."
+            )
+        if n_channels % self.in_channels != 0:
+            raise ValueError(
+                "The input channel dimension "
+                f"({n_channels}) must be divisible by in_channels ({self.in_channels})."
+            )
 
-        # Apply 2D convolution (working per channel)
-        # x shape: (Batch, n_channels, n_patchs, patch_size)
-        # Conv2d will treat n_channels as in_channels, so we need to reshape for Conv2d
-        # Conv2d expects: (Batch, in_channels, Height, Width)
-        # We have: (Batch, n_channels, n_patchs, patch_size)
-        # After proj: (Batch, emb_dim, n_patchs, 1)
+        group_size = n_channels // self.in_channels
+
+        # Reshape so Conv2d sees `in_channels` feature maps and uses the grouped
+        # EEG channels as the spatial height dimension.
+        # Shape after view: (Batch, in_channels, group_size, n_times)
+        x = x.view(batch_size, self.in_channels, group_size, n_times)
+
+        # Apply the temporal projection per group.
+        # Output shape: (Batch, emb_dim, group_size, n_patchs)
         x = self.proj(x)
 
-        # Remove the last dimension
-        # (Batch, emb_dim, n_patchs, 1) -> (Batch, emb_dim, n_patchs)
-        x = x.squeeze(-1)
-
-        # Permute to (Batch, n_patchs, emb_dim)
-        x = x.permute(0, 2, 1).contiguous()
+        # THIS IS braindecode's MODIFICATION:
+        # Average over the grouped channel dimension and permute to (Batch, n_patchs, emb_dim)
+        x = x.mean(dim=2)
+        x = x.transpose(1, 2).contiguous()
 
         return x
 
