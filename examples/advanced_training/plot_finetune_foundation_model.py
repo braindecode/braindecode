@@ -220,7 +220,6 @@ clf = EEGClassifier(
     batch_size=16,
     callbacks=["accuracy"],
     classes=range(3),
-    iterator_train__generator=torch.manual_seed(12),
 )
 _ = clf.fit(windows_dataset, y=metadata["target"], epochs=10)
 
@@ -271,7 +270,6 @@ clf = EEGClassifier(
         Freezer(patterns="feature_encoder.*"),
     ],
     classes=range(3),
-    iterator_train__generator=torch.manual_seed(12),
 )
 _ = clf.fit(windows_dataset, y=metadata["target"], epochs=10)
 
