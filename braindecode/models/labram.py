@@ -61,6 +61,17 @@ class Labram(EEGModuleMixin, nn.Module):
 
     .. versionadded:: 0.9
 
+
+    Examples on how to load pre-trained weights:
+    --------------------------------------------
+    >>> import torch
+    >>> from braindecode.models import Labram
+    >>> model = Labram(n_times=1600, n_chans=64, n_outputs=4)
+    >>> url = 'https://huggingface.co/braindecode/Labram-Braindecode/blob/main/braindecode_labram_base.pt'
+    >>> state = torch.hub.load_state_dict_from_url(url, progress=True)
+    >>> model.load_state_dict(state)
+
+
     Parameters
     ----------
     patch_size : int
