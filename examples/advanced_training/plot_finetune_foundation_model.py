@@ -3,13 +3,13 @@
 Fine-tuning a Foundation Model (Signal-JEPA)
 ===========================================
 
-.. contents:: This example covers:
-   :local:
-   :depth: 2
-
 In this example, we demonstrate how to load a pre-trained foundation model
 and fine-tune it for a specific task. We use the Signal-JEPA model [1]
 and a MOABB dataset for this tutorial.
+
+.. contents:: This example covers:
+   :local:
+   :depth: 2
 """
 
 # Authors: Pierre Guetschel <pierre.guetschel@gmail.com>
