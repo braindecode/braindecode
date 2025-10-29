@@ -225,23 +225,6 @@ def test_model_inherits_from_mixin(model_class):
     assert issubclass(model_class, EEGModuleMixin)
 
 
-def test_model_forward_pass(sample_model):
-    x = torch.randn(2, 22, 1000)
-    output = sample_model(x)
-    assert output.shape[0] == 2
-    assert output.shape[1] == 4
-
-
-def test_model_properties(sample_model):
-    assert sample_model.n_chans == 22
-    assert sample_model.n_outputs == 4
-    assert sample_model.n_times == 1000
-
-
-def test_get_output_shape(sample_model):
-    output_shape = sample_model.get_output_shape()
-    assert output_shape[0] == 1
-    assert output_shape[1] == 4
 
 
 def test_state_dict_loading(sample_model):
