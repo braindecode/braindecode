@@ -142,7 +142,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             f"https://braindecode.org/stable/generated/braindecode.models.{cls.__name__}.html",
         )
         repo_url = kwargs.pop("repo_url", "https://braindecode.org")
-        library_name = kwargs.pop("library_name", "braindecocode")
+        library_name = kwargs.pop("library_name", "braindecode")
         license = kwargs.pop("license", "bsd-3-clause")
         # TODO: model_card_template can be added in the future for custom model cards
         super().__init_subclass__(
