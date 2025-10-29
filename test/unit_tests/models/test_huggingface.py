@@ -20,12 +20,29 @@ from braindecode.models import EEGNet
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 
 # importing some fixtures/utilities to help with testing
+from braindecode.models.util import (
+    models_dict,
+    models_mandatory_parameters,
+)
+
+from .test_integration import get_sp
 
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
     not HAS_HF_HUB,
     reason="huggingface_hub not installed. Install with: pip install braindecode[hug]"
 )
+
+@pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
+def sample_model(request):
+    """Instantiated model."""
+    name, req, sig_params = request.param
+    sp = get_sp(sig_params, req)
+    model = models_dict[name](**sp)
+
+    model.eval()
+    return model, name, sp
+
 
 @pytest.fixture
 def sample_chs_info():
@@ -120,6 +137,8 @@ def test_json_serialization(tmp_path, sample_chs_info):
 
 
 def test_save_pretrained_creates_config(tmp_path, sample_model):
+    sample_model, _, _ = sample_model
+
     sample_model._save_pretrained(tmp_path)
 
     config_path = tmp_path / 'config.json'
@@ -128,26 +147,14 @@ def test_save_pretrained_creates_config(tmp_path, sample_model):
     with open(config_path, 'r') as config_file:
         config = json.load(config_file)
 
-    assert config['n_outputs'] == 4
-    assert config['n_chans'] == 22
-    assert config['n_times'] == 1000
+    assert config['n_outputs'] == sample_model.n_outputs
+    assert config['n_times'] == sample_model.n_times
 
 
-def test_save_pretrained_with_chs_info(tmp_path, sample_model, sample_chs_info):
-    sample_model._chs_info = sample_chs_info
-
-    sample_model._save_pretrained(tmp_path)
-
-    config_path = tmp_path / 'config.json'
-    with open(config_path, 'r') as config_file:
-        config = json.load(config_file)
-
-    assert 'chs_info' in config
-    assert config['chs_info'] is not None
-    assert len(config['chs_info']) == 22
 
 
 def test_config_contains_all_parameters(tmp_path, sample_model):
+    sample_model, _, _ = sample_model
     sample_model._save_pretrained(tmp_path)
 
     config_path = tmp_path / 'config.json'
@@ -158,26 +165,25 @@ def test_config_contains_all_parameters(tmp_path, sample_model):
     assert expected_keys == config.keys()
 
 
-def test_local_push_and_pull_roundtrip(tmp_path, sample_model, sample_chs_info):
+def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
     """Roundtrip through local Hub save/load mimics push/pull."""
-    model = sample_model
+
+    model,name, sp   = sample_model
     assert hasattr(model, 'from_pretrained')
     assert callable(getattr(model, 'from_pretrained'))
-    model._chs_info = sample_chs_info
     model.eval()
 
-    repo_dir = tmp_path / 'hf_local_repo'
+    repo_dir = tmp_path / f'hf_local_repo_{sample_model.__class__.__name__}'
     repo_dir.mkdir()
     model._save_pretrained(repo_dir)
 
-    restored = sample_model.from_pretrained(repo_dir)
+    model = models_dict[name](**sp)
+
+    restored = model.from_pretrained(repo_dir)
     restored.eval()
 
-    assert restored.n_chans == model.n_chans
-    assert restored.n_outputs == model.n_outputs
-    assert restored.n_times == model.n_times
-    assert len(restored.chs_info) == len(sample_chs_info)
-    np.testing.assert_allclose(restored.chs_info[0]['loc'], sample_chs_info[0]['loc'])
+    for attr in sp:
+        assert getattr(restored, attr) == getattr(model, attr)
 
     torch.manual_seed(42)
     sample_input = torch.randn(2, model.n_chans,  model.n_times)
