@@ -18,7 +18,7 @@ from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
 huggingface_hub = _soft_import(
-    "huggingface_hub", propose="Hugging Face Hub integration", strict=False
+    "huggingface_hub", "Hugging Face Hub integration", strict=False
 )
 
 HAS_HF_HUB = huggingface_hub is not False
