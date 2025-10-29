@@ -65,7 +65,7 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.2.0"]
-huggingface = ["huggingface_hub>=0.20.0"]
+hug = ["huggingface_hub>=0.20.0"]
 tests = [
     'pytest',
     'pytest-cov',
@@ -93,7 +93,7 @@ docs = [
     'plotly',
 ]
 all = [
-    "braindecode[moabb,huggingface,tests,docs]"
+    "braindecode[moabb,hug,tests,docs]"
 ]
 
 [tool.setuptools]

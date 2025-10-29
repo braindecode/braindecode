@@ -5,35 +5,32 @@
 
 from __future__ import annotations
 
+import json
 import warnings
 from collections import OrderedDict
-from typing import Dict, Iterable, Optional
+from pathlib import Path
+from typing import Dict, Iterable, Optional, Type
 
 import numpy as np
 import torch
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
+from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
+huggingface_hub = _soft_import(
+    "huggingface_hub", propose="Hugging Face Hub integration", strict=False
+)
 
-def _get_hub_mixin():
-    """
-    Soft import for Hugging Face Hub integration.
-
-    Returns PyTorchModelHubMixin if huggingface_hub is installed,
-    otherwise returns object as a fallback base class.
-
-    This allows EEGModuleMixin to optionally integrate with Hugging Face Hub
-    without making it a required dependency.
-    """
-    try:
-        from huggingface_hub import PyTorchModelHubMixin
-        return PyTorchModelHubMixin
-    except ImportError:
-        return object
+HAS_HF_HUB = huggingface_hub is not False
 
 
-# Check if HF Hub is available
-HAS_HF_HUB = _get_hub_mixin() is not object
+class _BaseHubMixin:
+    pass
+
+
+# Define base class for hub mixin
+if HAS_HF_HUB:
+    _BaseHubMixin: Type = huggingface_hub.PyTorchModelHubMixin  # type: ignore
 
 
 def deprecated_args(obj, *old_new_args):
@@ -53,7 +50,7 @@ def deprecated_args(obj, *old_new_args):
     return out_args
 
 
-class EEGModuleMixin(_get_hub_mixin(), metaclass=NumpyDocstringInheritanceInitMeta):
+class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta):
     """
     Mixin class for all EEG models in braindecode.
 
@@ -94,7 +91,7 @@ class EEGModuleMixin(_get_hub_mixin(), metaclass=NumpyDocstringInheritanceInitMe
     automatically gain the ability to be pushed to and loaded from the
     Hugging Face Hub. Install with::
 
-        pip install braindecode[huggingface]
+        pip install braindecode[hug]
 
     **Pushing a model to the Hub:**
 
@@ -108,8 +105,7 @@ class EEGModuleMixin(_get_hub_mixin(), metaclass=NumpyDocstringInheritanceInitMe
 
         # Push to the Hub
         model.push_to_hub(
-            repo_id="username/my-eegnet-model",
-            commit_message="Initial model upload"
+            repo_id="username/my-eegnet-model", commit_message="Initial model upload"
         )
 
     **Loading a model from the Hub:**
@@ -140,7 +136,7 @@ class EEGModuleMixin(_get_hub_mixin(), metaclass=NumpyDocstringInheritanceInitMe
         if chs_info is not None and isinstance(chs_info, list):
             if len(chs_info) > 0 and isinstance(chs_info[0], dict):
                 # Check if it needs deserialization (has 'loc' as list)
-                if 'loc' in chs_info[0] and isinstance(chs_info[0]['loc'], list):
+                if "loc" in chs_info[0] and isinstance(chs_info[0]["loc"], list):
                     chs_info = self._deserialize_chs_info(chs_info)
 
         if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
@@ -387,16 +383,20 @@ class EEGModuleMixin(_get_hub_mixin(), metaclass=NumpyDocstringInheritanceInitMe
         for ch in chs_info:
             # Extract serializable fields from MNE channel info
             ch_dict = {
-                'ch_name': ch.get('ch_name', ''),
-                'coil_type': int(ch.get('coil_type', 0)),
-                'kind': int(ch.get('kind', 0)),
-                'unit': int(ch.get('unit', 0)),
-                'cal': float(ch.get('cal', 1.0)),
-                'range': float(ch.get('range', 1.0)),
+                "ch_name": ch.get("ch_name", ""),
+                "coil_type": int(ch.get("coil_type", 0)),
+                "kind": int(ch.get("kind", 0)),
+                "unit": int(ch.get("unit", 0)),
+                "cal": float(ch.get("cal", 1.0)),
+                "range": float(ch.get("range", 1.0)),
             }
             # Serialize location array if present
-            if 'loc' in ch and ch['loc'] is not None:
-                ch_dict['loc'] = ch['loc'].tolist() if hasattr(ch['loc'], 'tolist') else list(ch['loc'])
+            if "loc" in ch and ch["loc"] is not None:
+                ch_dict["loc"] = (
+                    ch["loc"].tolist()
+                    if hasattr(ch["loc"], "tolist")
+                    else list(ch["loc"])
+                )
             serialized.append(ch_dict)
 
         return serialized
@@ -423,8 +423,8 @@ class EEGModuleMixin(_get_hub_mixin(), metaclass=NumpyDocstringInheritanceInitMe
         for ch_dict in chs_info_dict:
             ch = ch_dict.copy()
             # Convert location back to numpy array if present
-            if 'loc' in ch and ch['loc'] is not None:
-                ch['loc'] = np.array(ch['loc'])
+            if "loc" in ch and ch["loc"] is not None:
+                ch["loc"] = np.array(ch["loc"])
             deserialized.append(ch)
 
         return deserialized
@@ -444,27 +444,23 @@ class EEGModuleMixin(_get_hub_mixin(), metaclass=NumpyDocstringInheritanceInitMe
         if not HAS_HF_HUB:
             return
 
-        import json
-        import torch
-        from pathlib import Path
-
         save_directory = Path(save_directory)
 
         # Collect EEG-specific configuration
         config = {
-            'n_outputs': self._n_outputs,
-            'n_chans': self._n_chans,
-            'n_times': self._n_times,
-            'input_window_seconds': self._input_window_seconds,
-            'sfreq': self._sfreq,
-            'chs_info': self._serialize_chs_info(self._chs_info),
+            "n_outputs": self._n_outputs,
+            "n_chans": self._n_chans,
+            "n_times": self._n_times,
+            "input_window_seconds": self._input_window_seconds,
+            "sfreq": self._sfreq,
+            "chs_info": self._serialize_chs_info(self._chs_info),
         }
 
         # Save to config.json
-        config_path = save_directory / 'config.json'
-        with open(config_path, 'w') as f:
+        config_path = save_directory / "config.json"
+        with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
 
         # Save model weights
-        weights_path = save_directory / 'pytorch_model.bin'
+        weights_path = save_directory / "pytorch_model.bin"
         torch.save(self.state_dict(), weights_path)
