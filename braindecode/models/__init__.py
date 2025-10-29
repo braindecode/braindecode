@@ -27,6 +27,7 @@ from .hybrid import HybridNet
 from .ifnet import IFNet
 from .labram import Labram
 from .msvtnet import MSVTNet
+from .patchedtransformer import PBT
 from .sccnet import SCCNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
@@ -39,6 +40,7 @@ from .sinc_shallow import SincShallowNet
 from .sleep_stager_blanco_2020 import SleepStagerBlanco2020
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
 from .sparcnet import SPARCNet
+from .sstdpn import SSTDPN
 from .syncnet import SyncNet
 from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
@@ -77,6 +79,7 @@ __all__ = [
     "IFNet",
     "Labram",
     "MSVTNet",
+    "PBT",
     "SCCNet",
     "ShallowFBCSPNet",
     "SignalJEPA",
@@ -84,6 +87,7 @@ __all__ = [
     "SignalJEPA_PostLocal",
     "SignalJEPA_PreLocal",
     "SincShallowNet",
+    "SSTDPN",
     "SleepStagerBlanco2020",
     "SleepStagerChambon2018",
     "SPARCNet",
