@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.models import Deep4Net, EEGNetv4, ShallowFBCSPNet
+from braindecode.models import Deep4Net, EEGNet, ShallowFBCSPNet
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 
 # Skip all tests in this file if huggingface_hub is not installed
@@ -31,7 +31,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def sample_model():
     """Create a simple EEGNet model for testing."""
-    return EEGNetv4(
+    return EEGNet(
         n_chans=22,
         n_outputs=4,
         n_times=1000,
@@ -58,7 +58,7 @@ def sample_chs_info():
 
 def test_models_work_without_hf_hub():
     """Ensure soft dependencies do not break model usage."""
-    model = EEGNetv4(n_chans=22, n_outputs=4, n_times=1000)
+    model = EEGNet(n_chans=22, n_outputs=4, n_times=1000)
     assert model is not None
     assert isinstance(model, EEGModuleMixin)
 
@@ -186,7 +186,7 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model, sample_chs_info):
     repo_dir.mkdir()
     model._save_pretrained(repo_dir)
 
-    restored = EEGNetv4.from_pretrained(repo_dir)
+    restored = EEGNet.from_pretrained(repo_dir)
     restored.eval()
 
     assert restored.n_chans == model.n_chans
@@ -206,11 +206,11 @@ def test_push_to_hub_method_exists(sample_model):
 
 
 def test_from_pretrained_method_exists():
-    assert hasattr(EEGNetv4, 'from_pretrained')
-    assert callable(getattr(EEGNetv4, 'from_pretrained'))
+    assert hasattr(EEGNet, 'from_pretrained')
+    assert callable(getattr(EEGNet, 'from_pretrained'))
 
 
-@pytest.mark.parametrize("model_class", [EEGNetv4, ShallowFBCSPNet, Deep4Net])
+@pytest.mark.parametrize("model_class", [EEGNet, ShallowFBCSPNet, Deep4Net])
 def test_model_has_hub_methods(model_class):
     assert hasattr(model_class, 'from_pretrained')
     assert callable(getattr(model_class, 'from_pretrained'))
@@ -220,7 +220,7 @@ def test_model_has_hub_methods(model_class):
     assert callable(getattr(model, 'push_to_hub'))
 
 
-@pytest.mark.parametrize("model_class", [EEGNetv4, ShallowFBCSPNet, Deep4Net])
+@pytest.mark.parametrize("model_class", [EEGNet, ShallowFBCSPNet, Deep4Net])
 def test_model_inherits_from_mixin(model_class):
     assert issubclass(model_class, EEGModuleMixin)
 
@@ -247,7 +247,7 @@ def test_get_output_shape(sample_model):
 def test_state_dict_loading(sample_model):
     state_dict = sample_model.state_dict()
 
-    new_model = EEGNetv4(n_chans=22, n_outputs=4, n_times=1000)
+    new_model = EEGNet(n_chans=22, n_outputs=4, n_times=1000)
     new_model.load_state_dict(state_dict)
 
     for (name1, param1), (name2, param2) in zip(
