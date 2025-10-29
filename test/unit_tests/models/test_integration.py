@@ -32,7 +32,6 @@ from braindecode.models import (
     SyncNet,
     USleep,
 )
-from braindecode.models.base import HAS_HF_HUB
 from braindecode.models.util import (
     _summary_table,
     models_dict,
