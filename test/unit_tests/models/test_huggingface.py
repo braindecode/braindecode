@@ -202,8 +202,13 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model, sample_chs_info):
 
 
 
-@pytest.mark.parametrize("model_class", [EEGNet, ShallowFBCSPNet, Deep4Net])
-def test_model_has_hub_methods(model_class):
+from braindecode.models.util import models_dict, models_mandatory_parameters
+  
+@pytest.mark.parametrize(
+    "model_name, required_params, signal_params", models_mandatory_parameters
+)
+def test_model_has_hub_methods(model_name, required_params, signal_params):
+    model_class = 
     assert hasattr(model_class, 'from_pretrained')
     assert callable(getattr(model_class, 'from_pretrained'))
 
