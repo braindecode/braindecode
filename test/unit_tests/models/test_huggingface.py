@@ -200,14 +200,6 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model, sample_chs_info):
     torch.testing.assert_close(restored(sample_input), model(sample_input))
 
 
-def test_push_to_hub_method_exists(sample_model):
-    assert hasattr(sample_model, 'push_to_hub')
-    assert callable(getattr(sample_model, 'push_to_hub'))
-
-
-def test_from_pretrained_method_exists():
-    assert hasattr(EEGNet, 'from_pretrained')
-    assert callable(getattr(EEGNet, 'from_pretrained'))
 
 
 @pytest.mark.parametrize("model_class", [EEGNet, ShallowFBCSPNet, Deep4Net])
