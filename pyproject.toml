@@ -93,7 +93,7 @@ docs = [
     'plotly',
 ]
 all = [
-    "braindecode[moabb,tests,docs]"
+    "braindecode[moabb,tests,docs,eegprep]"
 ]
 
 [tool.setuptools]
