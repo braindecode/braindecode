@@ -56,9 +56,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
     """
     Mixin class for all EEG models in braindecode.
 
-    This class integrates with Hugging Face Hub when the `huggingface_hub` package
+    This class integrates with Hugging Face Hub when the ``huggingface_hub`` package
     is installed, enabling models to be pushed to and loaded from the Hub using
-    ``push_to_hub()`` and ``from_pretrained()`` methods.
+    :func:`push_to_hub()` and :func:`from_pretrained()` methods.
 
     Parameters
     ----------
