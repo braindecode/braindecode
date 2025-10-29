@@ -4,10 +4,7 @@
 #
 # License: BSD-3
 
-import base64
-import json
 import logging
-import re
 from types import ModuleType
 from typing import Any, Sequence
 
@@ -15,7 +12,8 @@ import numpy as np
 from mne import BaseEpochs
 from mne.io import BaseRaw
 
-from braindecode.preprocessing.preprocess import Preprocessor
+from .preprocess import Preprocessor
+from .util import mne_load_metadata, mne_store_metadata
 
 log = logging.getLogger(__name__)
 
@@ -47,135 +45,6 @@ except ImportError:
             )
 
     eegprep = EEGPrepMissing("eegprep")
-
-
-# Use a unique marker for embedding structured data in info['description']
-_MARKER_PATTERN = re.compile(r"<!-- eegprep-data:\s*(\S+)\s*-->", re.DOTALL)
-_MARKER_START = "<!-- eegprep-data:"
-_MARKER_END = "-->"
-# Marker key for empty numpy arrays
-_EMPTY_ARRAY_KEY = "__empty_array__"
-
-
-def _numpy_empty_decoder(dct):
-    """JSON decoder that reconstructs empty numpy arrays."""
-    if dct.get(_EMPTY_ARRAY_KEY):
-        return np.array([])
-    return dct
-
-
-def _encode_payload(data: dict) -> str:
-    """Serializes, encodes, and formats data into a marker string."""
-
-    class NumpyEmptyEncoder(json.JSONEncoder):
-        """JSON encoder that handles empty numpy arrays
-        (can occur as a sentinel object in the payload)."""
-
-        def default(self, obj):
-            # note we don't expect other numpy objects here besides np.array([])
-            if isinstance(obj, np.ndarray) and obj.size == 0:
-                return {_EMPTY_ARRAY_KEY: True}
-            return super().default(obj)
-
-    json_str = json.dumps(data, cls=NumpyEmptyEncoder)
-    encoded = base64.b64encode(json_str.encode("utf-8")).decode("ascii")
-    return f"{_MARKER_START} {encoded} {_MARKER_END}"
-
-
-def _mne_stash_json(
-    raw: BaseRaw, payload: Any, *, key: str, no_overwrite: bool = False
-) -> None:
-    """Embed JSON-serializable payload in an MNE BaseRaw dataset.
-
-    Parameters
-    ----------
-    raw : BaseRaw
-        The MNE Raw object to store data in.
-    payload : Any
-        The JSON-serializable data to store.
-    key : str
-        The key under which to store the payload.
-    no_overwrite : bool
-        If True, will not overwrite an existing entry with the same key.
-
-    """
-    # the description is apparently the only viable place where custom metadata may be
-    # stored in MNE Raw objects
-    description = raw.info.get("description") or ""
-
-    # Try to find existing eegprep data
-    if match := _MARKER_PATTERN.search(description):
-        # Parse existing data
-        try:
-            decoded = base64.b64decode(match.group(1)).decode("utf-8")
-            existing_data = json.loads(decoded, object_hook=_numpy_empty_decoder)
-        except (ValueError, json.JSONDecodeError):
-            existing_data = {}
-        # Check no_overwrite condition
-        if no_overwrite and key in existing_data:
-            return
-        # Update data
-        existing_data[key] = payload
-        new_marker = _encode_payload(existing_data)
-        # Replace the old marker with updated one
-        new_description = _MARKER_PATTERN.sub(new_marker, description, count=1)
-    else:
-        # No existing data, append new marker
-        data = {key: payload}
-        new_marker = _encode_payload(data)
-        # Append with spacing if description exists
-        if description.strip():
-            new_description = f"{description.rstrip()}\n{new_marker}"
-        else:
-            new_description = new_marker
-
-    raw.info["description"] = new_description
-
-
-def _mne_retrieve_json(raw: BaseRaw, *, key: str, delete: bool = False) -> Any | None:
-    """Retrieves data that was previously stored using _mne_stash_json from an MNE
-    BaseRaw dataset.
-
-    Parameters
-    ----------
-    raw : BaseRaw
-        The MNE Raw object to retrieve data from.
-    key : str
-        The key under which the payload was stored.
-    delete : bool
-        If True, removes the key from the stored data after retrieval.
-
-    Returns
-    -------
-    Any | None
-        The retrieved payload, or None if not found.
-    """
-    description = raw.info.get("description") or ""
-    match = _MARKER_PATTERN.search(description)
-    if not match:
-        return None
-
-    try:
-        decoded = base64.b64decode(match.group(1)).decode("utf-8")
-        data = json.loads(decoded, object_hook=_numpy_empty_decoder)
-    except (ValueError, json.JSONDecodeError):
-        return None
-
-    result = data.get(key)
-
-    if delete and key in data:
-        # Remove the key from data
-        del data[key]
-        if data:
-            # Still have other keys, update the marker
-            new_marker = _encode_payload(data)
-            new_description = _MARKER_PATTERN.sub(new_marker, description, count=1)
-        else:
-            # No more keys, remove the entire marker
-            new_description = _MARKER_PATTERN.sub("", description, count=1).strip()
-        raw.info["description"] = new_description
-
-    return result
 
 
 class EEGPrepBasePreprocessor(Preprocessor):
@@ -287,7 +156,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
         if self.record_orig_chanlocs:
             # stash original channel locations if not already present
-            _mne_stash_json(
+            mne_store_metadata(
                 raw=proc,
                 payload=orig_chanlocs,
                 key=self._chanlocs_key,
@@ -331,7 +200,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
     def _get_orig_chanlocs(cls, raw: BaseRaw) -> list[dict[str, Any]] | None:
         """Retrieve original channel locations stashed in the given MNE Raw
         structure, if any."""
-        return _mne_retrieve_json(raw, key=cls._chanlocs_key)
+        return mne_load_metadata(raw, key=cls._chanlocs_key)
 
 
 class EEGPrep(EEGPrepBasePreprocessor):
