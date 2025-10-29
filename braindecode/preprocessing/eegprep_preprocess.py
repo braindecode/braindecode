@@ -8,6 +8,7 @@ import base64
 import json
 import logging
 import re
+from abc import abstractmethod
 from types import ModuleType
 from typing import Any, Sequence
 
@@ -220,9 +221,10 @@ class EEGPrepBasePreprocessor(Preprocessor):
         self.record_orig_chanlocs = record_orig_chanlocs
         self.force_dtype = np.dtype(force_dtype) if force_dtype is not None else None
 
+    @abstractmethod
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
-        raise NotImplementedError("Subclasses must implement apply_eeg().")
+        ...
 
     def _apply_op(self, raw: BaseRaw) -> None:
         """Internal method that does the actual work; this is called by Preprocessor.apply()."""
