@@ -245,7 +245,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
             non_eeg = None
 
         # convert to EEGLAB structure
-        eeg = eegprep.mne2eeg(raw)
+        eeg = eegprep.mne2eeg(eeg)
 
         # back up channel locations for potential later use
         orig_chanlocs = [cl.copy() for cl in eeg["chanlocs"]]
