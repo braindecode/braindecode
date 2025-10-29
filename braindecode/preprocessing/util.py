@@ -20,31 +20,38 @@ _MARKER_PATTERN = re.compile(r"<!-- braindecode-meta:\s*(\S+)\s*-->", re.DOTALL)
 _MARKER_START = "<!-- braindecode-meta:"
 _MARKER_END = "-->"
 
-# Marker key for empty numpy arrays
-_EMPTY_ARRAY_KEY = "__empty_array__"
+# Marker key for numpy arrays
+_NP_ARRAY_TAG = "__numpy_array__"
 
 
-def _numpy_empty_decoder(dct):
-    """JSON decoder that reconstructs empty numpy arrays."""
-    if dct.get(_EMPTY_ARRAY_KEY):
-        return np.array([])
+def _numpy_decoder(dct):
+    if dct.get(_NP_ARRAY_TAG):
+        arr = np.array(dct["data"], dtype=dct["dtype"])
+        return arr.reshape(dct["shape"])
     return dct
 
 
 def _encode_payload(data: dict) -> str:
     """Serializes, encodes, and formats data into a marker string."""
 
-    class NumpyEmptyEncoder(json.JSONEncoder):
-        """JSON encoder that handles empty numpy arrays
-        (can occur as a sentinel object in the payload)."""
-
+    class NumpyEncoder(json.JSONEncoder):
         def default(self, obj):
-            # note we don't expect other numpy objects here besides np.array([])
-            if isinstance(obj, np.ndarray) and obj.size == 0:
-                return {_EMPTY_ARRAY_KEY: True}
+            if isinstance(obj, np.ndarray):
+                # Reject complex-valued dtypes as they're not JSON serializable
+                if np.issubdtype(obj.dtype, np.complexfloating):
+                    raise TypeError(
+                        f"Cannot serialize numpy array with complex dtype {obj.dtype}. "
+                        "Complex dtypes are not supported."
+                    )
+                return {
+                    _NP_ARRAY_TAG: True,
+                    "dtype": obj.dtype.str,
+                    "shape": obj.shape,
+                    "data": obj.flatten().tolist(),
+                }
             return super().default(obj)
 
-    json_str = json.dumps(data, cls=NumpyEmptyEncoder)
+    json_str = json.dumps(data, cls=NumpyEncoder)
     encoded = base64.b64encode(json_str.encode("utf-8")).decode("ascii")
     return f"{_MARKER_START} {encoded} {_MARKER_END}"
 
@@ -57,7 +64,8 @@ def mne_store_metadata(
 
     This will encode the payload as a base64-encoded JSON string and store it
     in the `info['description']` field of the Raw object while preserving any
-    existing content.
+    existing content. Note this is not particularly efficient and should not
+    be used for very large payloads.
 
     Parameters
     ----------
@@ -80,7 +88,7 @@ def mne_store_metadata(
         # Parse existing data
         try:
             decoded = base64.b64decode(match.group(1)).decode("utf-8")
-            existing_data = json.loads(decoded, object_hook=_numpy_empty_decoder)
+            existing_data = json.loads(decoded, object_hook=_numpy_decoder)
         except (ValueError, json.JSONDecodeError):
             existing_data = {}
         # Check no_overwrite condition
@@ -134,7 +142,7 @@ def mne_load_metadata(raw: BaseRaw, *, key: str, delete: bool = False) -> Any | 
 
     try:
         decoded = base64.b64decode(match.group(1)).decode("utf-8")
-        data = json.loads(decoded, object_hook=_numpy_empty_decoder)
+        data = json.loads(decoded, object_hook=_numpy_decoder)
     except (ValueError, json.JSONDecodeError):
         return None
 

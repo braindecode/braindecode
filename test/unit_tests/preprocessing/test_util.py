@@ -6,6 +6,7 @@ import copy
 import mne
 import numpy as np
 import pytest
+from numpy.testing import assert_array_equal
 
 from braindecode.preprocessing.util import mne_load_metadata, mne_store_metadata
 
@@ -182,6 +183,100 @@ def test_mne_store_empty_numpy_array(dummy_raw):
     assert loaded["empty"].size == 0
 
 
+def test_mne_store_numpy_arrays_comprehensive(dummy_raw):
+    # Store various numpy arrays with different dtypes, shapes, and structures
+    raw = copy.deepcopy(dummy_raw)
+    payload = {
+        "int32_1d": np.array([1, 2, 3, 4, 5], dtype=np.int32),
+        "float64_2d": np.array([[1.1, 2.2], [3.3, 4.4]], dtype=np.float64),
+        "float32_3d": np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]], dtype=np.float32),
+        "bool_array": np.array([True, False, True, False], dtype=bool),
+        "uint8_array": np.array([0, 127, 255], dtype=np.uint8),
+        "int16_array": np.array([-32768, 0, 32767], dtype=np.int16),
+        "single_element": np.array([42], dtype=np.int64),
+        "empty_array": np.array([], dtype=np.float32),
+        "zeros": np.zeros((3, 3), dtype=np.float64),
+        "object_array": np.array([{"a": 1}, {"b": 2}], dtype=object),
+    }
+
+    mne_store_metadata(raw, payload, key="arrays")
+    loaded = mne_load_metadata(raw, key="arrays")
+
+    # Verify all arrays are correctly restored with proper dtype, shape, and content
+    for key, original_array in payload.items():
+        loaded_array = loaded[key]
+
+        # Verify it's a numpy array
+        assert isinstance(loaded_array, np.ndarray), f"{key} is not a numpy array"
+
+        # Verify dtype matches
+        assert loaded_array.dtype == original_array.dtype, \
+            f"{key} dtype mismatch: {loaded_array.dtype} != {original_array.dtype}"
+
+        # Verify shape matches
+        assert loaded_array.shape == original_array.shape, \
+            f"{key} shape mismatch: {loaded_array.shape} != {original_array.shape}"
+
+        # Verify content matches (using appropriate comparison for object arrays)
+        if original_array.dtype == object:
+            # For object arrays, compare element by element
+            assert len(loaded_array) == len(original_array)
+            for i, (loaded_elem, orig_elem) in enumerate(zip(loaded_array, original_array)):
+                assert loaded_elem == orig_elem, \
+                    f"{key}[{i}] content mismatch: {loaded_elem} != {orig_elem}"
+        else:
+            # For numeric arrays, use numpy testing
+            assert_array_equal(loaded_array, original_array,
+                             err_msg=f"{key} content mismatch")
+
+
+def test_mne_store_jagged_arrays(dummy_raw):
+    # Store jagged arrays (numpy arrays containing numpy arrays of different lengths)
+    raw = copy.deepcopy(dummy_raw)
+    payload = {
+        "jagged_1d": np.array([
+            np.array([1, 2, 3]),
+            np.array([4, 5]),
+            np.array([6, 7, 8, 9]),
+        ], dtype=object),
+        "jagged_2d": np.array([
+            np.array([[1, 2], [3, 4]]),
+            np.array([[5, 6, 7]]),
+            np.array([[8]]),
+        ], dtype=object),
+        "mixed_dtypes": np.array([
+            np.array([1, 2, 3], dtype=np.int32),
+            np.array([4.5, 5.5], dtype=np.float64),
+            np.array([True, False, True], dtype=bool),
+        ], dtype=object),
+    }
+
+    mne_store_metadata(raw, payload, key="jagged")
+    loaded = mne_load_metadata(raw, key="jagged")
+
+    # Verify jagged arrays are correctly restored
+    for key, original_jagged in payload.items():
+        loaded_jagged = loaded[key]
+
+        # Verify it's a numpy array with object dtype
+        assert isinstance(loaded_jagged, np.ndarray), f"{key} is not a numpy array"
+        assert loaded_jagged.dtype == object, f"{key} dtype should be object"
+        assert loaded_jagged.shape == original_jagged.shape, \
+            f"{key} shape mismatch: {loaded_jagged.shape} != {original_jagged.shape}"
+
+        # Verify each sub-array
+        assert len(loaded_jagged) == len(original_jagged)
+        for i, (loaded_sub, orig_sub) in enumerate(zip(loaded_jagged, original_jagged)):
+            assert isinstance(loaded_sub, np.ndarray), \
+                f"{key}[{i}] should be a numpy array"
+            assert loaded_sub.dtype == orig_sub.dtype, \
+                f"{key}[{i}] dtype mismatch: {loaded_sub.dtype} != {orig_sub.dtype}"
+            assert loaded_sub.shape == orig_sub.shape, \
+                f"{key}[{i}] shape mismatch: {loaded_sub.shape} != {orig_sub.shape}"
+            assert_array_equal(loaded_sub, orig_sub,
+                             err_msg=f"{key}[{i}] content mismatch")
+
+
 def test_mne_store_with_existing_description(dummy_raw):
     # Store metadata when description field has existing content
     # using some whitespace and newlines for good measure
@@ -256,7 +351,7 @@ def test_mne_store_nasty_payload(dummy_raw):
             "level1": {"level2": {"level3": "deep"}},
             "array": [1, 2, 3, [4, 5, 6]],
         },
-        "numbers": [1, 2.5, -3, 1e10, float("inf")],
+        "numbers": [1, 2.5, -3, 1e10, float("inf"), float("-inf")],
         "bools": [True, False],
     }
 
@@ -269,3 +364,64 @@ def test_mne_store_nasty_payload(dummy_raw):
     assert loaded["nested"] == payload["nested"]
     assert loaded["numbers"] == payload["numbers"]
     assert loaded["bools"] == payload["bools"]
+
+
+def test_mne_store_nan_values(dummy_raw):
+    # Store NaN values both as Python floats and in numpy arrays
+    # NaN requires special treatment since nan != nan
+    raw = copy.deepcopy(dummy_raw)
+    payload = {
+        "python_nan": float("nan"),
+        "python_list_with_nan": [1.0, float("nan"), 3.0],
+        "numpy_with_nan": np.array([1.0, np.nan, 3.0, np.inf, -np.inf]),
+        "numpy_all_nan": np.array([np.nan, np.nan]),
+        "nested_nan": {
+            "inner": [float("nan"), 2.0],
+            "array": np.array([np.nan, 1.0]),
+        },
+    }
+
+    mne_store_metadata(raw, payload, key="nan_test")
+    loaded = mne_load_metadata(raw, key="nan_test")
+
+    # Verify Python NaN
+    import math
+    assert math.isnan(loaded["python_nan"])
+
+    # Verify Python list with NaN
+    assert loaded["python_list_with_nan"][0] == 1.0
+    assert math.isnan(loaded["python_list_with_nan"][1])
+    assert loaded["python_list_with_nan"][2] == 3.0
+
+    # Verify numpy array with NaN and infinities
+    numpy_with_nan = loaded["numpy_with_nan"]
+    assert numpy_with_nan[0] == 1.0
+    assert np.isnan(numpy_with_nan[1])
+    assert numpy_with_nan[2] == 3.0
+    assert np.isinf(numpy_with_nan[3]) and numpy_with_nan[3] > 0
+    assert np.isinf(numpy_with_nan[4]) and numpy_with_nan[4] < 0
+
+    # Verify numpy array with all NaN
+    numpy_all_nan = loaded["numpy_all_nan"]
+    assert np.all(np.isnan(numpy_all_nan))
+
+    # Verify nested structure with NaN
+    assert math.isnan(loaded["nested_nan"]["inner"][0])
+    assert loaded["nested_nan"]["inner"][1] == 2.0
+    assert np.isnan(loaded["nested_nan"]["array"][0])
+    assert loaded["nested_nan"]["array"][1] == 1.0
+
+
+def test_mne_store_complex_dtype_rejected(dummy_raw):
+    # Verify that complex-valued numpy arrays are explicitly rejected
+    raw = copy.deepcopy(dummy_raw)
+
+    # Test with complex128
+    payload_complex128 = {"complex_array": np.array([1 + 2j, 3 + 4j], dtype=np.complex128)}
+    with pytest.raises(TypeError, match="Cannot serialize numpy array with complex dtype"):
+        mne_store_metadata(raw, payload_complex128, key="test")
+
+    # Test with complex64
+    payload_complex64 = {"complex_array": np.array([1 + 2j], dtype=np.complex64)}
+    with pytest.raises(TypeError, match="Cannot serialize numpy array with complex dtype"):
+        mne_store_metadata(raw, payload_complex64, key="test")
