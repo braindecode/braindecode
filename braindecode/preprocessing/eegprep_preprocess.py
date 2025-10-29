@@ -49,86 +49,6 @@ except ImportError:
     eegprep = EEGPrepMissing("eegprep")
 
 
-def _separate_noneeg_channels(
-    raw: BaseRaw,
-) -> tuple[BaseRaw, BaseRaw | None, list[str]]:
-    """Helper to split off non-EEG channels from raw data.
-    Returns EEG-only Raw, non-EEG Raw (or None), and original channel label order.
-    """
-    chn_order = raw.ch_names.copy()
-    EEG = raw.copy().pick_types(eeg=True, exclude=[])
-    if len(EEG.ch_names) < len(raw.ch_names):
-        nonEEG = raw.drop_channels(EEG.ch_names)
-    else:
-        nonEEG = None
-    return EEG, nonEEG, chn_order
-
-
-def _join_noneeg_channels(
-    EEG: BaseRaw, nonEEG: BaseRaw | None, chn_order: list[str]
-) -> BaseRaw:
-    """Helper to add back non-EEG channels to processed EEG data.
-
-    Parameters
-    ----------
-    EEG : BaseRaw
-        The processed EEG-only Raw data.
-    nonEEG : BaseRaw | None
-        The non-EEG Raw data that was split off before processing, or None if
-        there were no such channels.
-    chn_order : list[str]
-        The original channel order of the data before splitting.
-
-    Returns
-    -------
-    BaseRaw
-        The combined Raw data with EEG and non-EEG channels, in the original order.
-    """
-    if nonEEG is not None:
-        EEG.add_channels([nonEEG], force_update_info=True)
-        if EEG.ch_names != chn_order:
-            EEG.reorder_channels(chn_order)
-    return EEG
-
-
-def _mne2eegprep(mne: BaseRaw) -> dict[str, Any]:
-    """Convert MNE Raw to EEGLAB/EEGPrep EEG structure."""
-    # actual conversion
-    EEG = eegprep.mne2eeg(mne)
-
-    # Ensure all events in EEG structure have a 'duration' field.
-    if not all("duration" in ev for ev in EEG["event"]):
-        for ev in EEG["event"]:
-            if "duration" not in ev:
-                ev["duration"] = 1
-
-    # preserve the .info['description'] field, if present
-    EEG["etc"]["mne_description"] = mne.info.get("description") or ""
-
-    return EEG
-
-
-def _eegprep2mne(EEG: dict[str, Any]) -> BaseRaw:
-    """Convert EEGLAB/EEGPrep EEG structure to MNE Raw."""
-    # Rename EEGLAB-type boundary events to a form that's recognized by MNE so they
-    # (or intersecting epochs) are ignored during downstream MNE epoching.
-    for ev in EEG["event"]:
-        if ev["type"] == "boundary":
-            ev["type"] = "BAD boundary"
-
-    # add at least one recognized field to chaninfo to keep eeg2mne happy
-    if not isinstance(EEG["chaninfo"], dict) or not EEG["chaninfo"]:
-        EEG["chaninfo"] = {"nosedir": "+X"}
-
-    # actual conversion
-    proc = eegprep.eeg2mne(EEG)
-
-    # restore the .info['description'] field, if it was present
-    proc.info["description"] = EEG["etc"].get("mne_description", "") or None
-
-    return proc
-
-
 # Use a unique marker for embedding structured data in info['description']
 _MARKER_PATTERN = re.compile(r"<!-- eegprep-data:\s*(\S+)\s*-->", re.DOTALL)
 _MARKER_START = "<!-- eegprep-data:"
@@ -137,17 +57,7 @@ _MARKER_END = "-->"
 _EMPTY_ARRAY_KEY = "__empty_array__"
 
 
-class NumpyEmptyEncoder(json.JSONEncoder):
-    """JSON encoder that handles empty numpy arrays (used as a sentinel in EEGPrep)."""
-
-    def default(self, obj):
-        # note we don't expect other numpy objects here besides np.array([])
-        if isinstance(obj, np.ndarray) and obj.size == 0:
-            return {_EMPTY_ARRAY_KEY: True}
-        return super().default(obj)
-
-
-def numpy_empty_decoder(dct):
+def _numpy_empty_decoder(dct):
     """JSON decoder that reconstructs empty numpy arrays."""
     if dct.get(_EMPTY_ARRAY_KEY):
         return np.array([])
@@ -156,6 +66,17 @@ def numpy_empty_decoder(dct):
 
 def _encode_payload(data: dict) -> str:
     """Serializes, encodes, and formats data into a marker string."""
+
+    class NumpyEmptyEncoder(json.JSONEncoder):
+        """JSON encoder that handles empty numpy arrays
+        (can occur as a sentinel object in the payload)."""
+
+        def default(self, obj):
+            # note we don't expect other numpy objects here besides np.array([])
+            if isinstance(obj, np.ndarray) and obj.size == 0:
+                return {_EMPTY_ARRAY_KEY: True}
+            return super().default(obj)
+
     json_str = json.dumps(data, cls=NumpyEmptyEncoder)
     encoded = base64.b64encode(json_str.encode("utf-8")).decode("ascii")
     return f"{_MARKER_START} {encoded} {_MARKER_END}"
@@ -187,7 +108,7 @@ def _mne_stash_json(
         # Parse existing data
         try:
             decoded = base64.b64decode(match.group(1)).decode("utf-8")
-            existing_data = json.loads(decoded, object_hook=numpy_empty_decoder)
+            existing_data = json.loads(decoded, object_hook=_numpy_empty_decoder)
         except (ValueError, json.JSONDecodeError):
             existing_data = {}
         # Check no_overwrite condition
@@ -236,7 +157,7 @@ def _mne_retrieve_json(raw: BaseRaw, *, key: str, delete: bool = False) -> Any |
 
     try:
         decoded = base64.b64decode(match.group(1)).decode("utf-8")
-        data = json.loads(decoded, object_hook=numpy_empty_decoder)
+        data = json.loads(decoded, object_hook=_numpy_empty_decoder)
     except (ValueError, json.JSONDecodeError):
         return None
 
@@ -255,13 +176,6 @@ def _mne_retrieve_json(raw: BaseRaw, *, key: str, delete: bool = False) -> Any |
         raw.info["description"] = new_description
 
     return result
-
-
-def _off_if_none(x, *, switch: Any = -1):
-    """Helper to convert None to 'off' (as expected by some functions in eegprep).
-    Can also accept a second variable, which when None, results in 'off' to be
-    emitted."""
-    return "off" if x is None or switch is None else x
 
 
 class EEGPrepBasePreprocessor(Preprocessor):
@@ -305,9 +219,8 @@ class EEGPrepBasePreprocessor(Preprocessor):
         self.can_change_duration = can_change_duration
         self.record_orig_chanlocs = record_orig_chanlocs
         self.force_dtype = np.dtype(force_dtype) if force_dtype is not None else None
-        self._raw: BaseRaw | None = None
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
         raise NotImplementedError("Subclasses must implement apply_eeg().")
 
@@ -320,32 +233,57 @@ class EEGPrepBasePreprocessor(Preprocessor):
                 f"not Epochs. Use before epoching."
             )
 
-        # split off non-EEG channels since the op doesn't handle those
-        EEG, nonEEG, chn_order = _separate_noneeg_channels(raw)
+        # preserve the data description for restoration later
+        description = raw.info["description"]
 
-        # convert to EEGLAB structure and prepare for processing
-        EEG = _mne2eegprep(EEG)
+        # split off non-EEG channels since apply_eeg() expects only EEG channels
+        chn_order = raw.ch_names.copy()
+        eeg = raw.copy().pick_types(eeg=True, exclude=[])
+        if len(eeg.ch_names) < len(raw.ch_names):
+            non_eeg = raw.drop_channels(eeg.ch_names)
+        else:
+            non_eeg = None
 
-        orig_chanlocs = list(EEG["chanlocs"])
+        # convert to EEGLAB structure
+        eeg = eegprep.mne2eeg(raw)
 
-        try:
-            self._raw = raw
+        # back up channel locations for potential later use
+        orig_chanlocs = [cl.copy() for cl in eeg["chanlocs"]]
 
-            if self.force_dtype is not None:
-                EEG["data"] = EEG["data"].astype(self.force_dtype)
+        # ensure all events in EEG structure have a 'duration' field; this is
+        # necessary for some of the EEGPrep operations to succeed
+        if not all("duration" in ev for ev in eeg["event"]):
+            for ev in eeg["event"]:
+                if "duration" not in ev:
+                    ev["duration"] = 1
 
-            # actual operation happens here
-            EEG = self.apply_eeg(EEG)
+        if self.force_dtype is not None:
+            eeg["data"] = eeg["data"].astype(self.force_dtype)
 
-            if self.force_dtype is not None:
-                EEG["data"] = EEG["data"].astype(self.force_dtype)
+        # actual operation happens here
+        eeg = self.apply_eeg(eeg, raw)
 
-        finally:
-            # clear again so we don't keep a reference around
-            self._raw = None
+        if self.force_dtype is not None:
+            eeg["data"] = eeg["data"].astype(self.force_dtype)
 
-        # convert back to MNE Raw
-        proc = _eegprep2mne(EEG)
+        # rename EEGLAB-type boundary events to a form that's recognized by MNE so they
+        # (or intersecting epochs) are ignored during potential downstream epoching
+        # done by braindecode pipelines
+        for ev in eeg["event"]:
+            if ev["type"] == "boundary":
+                ev["type"] = "BAD boundary"
+
+        # set some minimal chaninfo fields, which are otherwise not necessarily
+        # guaranteed to be there
+        if not isinstance(eeg["chaninfo"], dict) or not eeg["chaninfo"]:
+            eeg["chaninfo"] = {"nosedir": "+X"}
+
+        # actual conversion
+        proc = eegprep.eeg2mne(eeg)
+
+        # restore the description field, since it may not survive the roundtrip
+        # conversion (and we don't have control over all the code involved there)
+        proc.info["description"] = description
 
         if self.record_orig_chanlocs:
             # stash original channel locations if not already present
@@ -356,7 +294,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
                 no_overwrite=True,
             )
 
-        if nonEEG is not None:
+        if non_eeg is not None:
             # try to add back any non-EEG channels that were originally present
 
             if offending_op_name := self.can_change_duration:
@@ -364,7 +302,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
                 # general we will not try to add them back in in this case; in future
                 # we may try to work out exactly what sample mask was removed from the
                 # EEG channels and apply the same to non-EEG channels via MNE
-                affected_chans = ", ".join(nonEEG.ch_names)
+                affected_chans = ", ".join(non_eeg.ch_names)
                 if offending_op_name == opname:
                     detail = f"the {opname} Preprocessor"
                 else:
@@ -377,7 +315,10 @@ class EEGPrepBasePreprocessor(Preprocessor):
                     f" methods before and after {opname}, respectively."
                 )
             else:
-                proc = _join_noneeg_channels(proc, nonEEG, chn_order)
+                # re-insert non-EEG channels, and restore original channel order
+                proc.add_channels([non_eeg], force_update_info=True)
+                if proc.ch_names != chn_order:
+                    proc.reorder_channels(chn_order)
 
         # write result back into raw, discard proc (_apply_op() is in-place)
         if not proc.preload:
@@ -386,15 +327,11 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
         ...  # can place breakpoint here to inspect raw after processing
 
-    def get_orig_chanlocs(self) -> list[dict[str, Any]] | None:
-        """Retrieve the original channel locations stashed in the MNE Raw structure,
-        if any."""
-        if self._raw is None:
-            raise RuntimeError(
-                "No Raw data is currently being processed; cannot "
-                "retrieve original channel locations."
-            )
-        return _mne_retrieve_json(self._raw, key=self._chanlocs_key)
+    @classmethod
+    def _get_orig_chanlocs(cls, raw: BaseRaw) -> list[dict[str, Any]] | None:
+        """Retrieve original channel locations stashed in the given MNE Raw
+        structure, if any."""
+        return _mne_retrieve_json(raw, key=cls._chanlocs_key)
 
 
 class EEGPrep(EEGPrepBasePreprocessor):
@@ -572,20 +509,22 @@ class EEGPrep(EEGPrepBasePreprocessor):
         self.burst_removal_cutoff = burst_removal_cutoff
         self.bad_window_max_bad_channels = bad_window_max_bad_channels
 
+        if bad_channel_corr_threshold is None:
+            line_noise_crit = None
+        else:
+            line_noise_crit = bad_channel_hf_threshold
         self.clean_artifacts_params = dict(
-            ChannelCriterion=_off_if_none(bad_channel_corr_threshold),
-            LineNoiseCriterion=_off_if_none(
-                bad_channel_hf_threshold, switch=bad_channel_corr_threshold
-            ),
-            BurstCriterion=_off_if_none(burst_removal_cutoff),
-            WindowCriterion=_off_if_none(bad_window_max_bad_channels),
-            Highpass=_off_if_none(highpass_frequencies),
+            ChannelCriterion=bad_channel_corr_threshold,
+            LineNoiseCriterion=line_noise_crit,
+            BurstCriterion=burst_removal_cutoff,
+            WindowCriterion=bad_window_max_bad_channels,
+            Highpass=highpass_frequencies,
             ChannelCriterionMaxBadTime=bad_channel_max_broken_time,
-            BurstCriterionRefMaxBadChns=_off_if_none(refdata_max_bad_channels),
+            BurstCriterionRefMaxBadChns=refdata_max_bad_channels,
             BurstCriterionRefTolerances=refdata_max_tolerances,
             # BurstRejection='off', # we don't use that one; left at default
             WindowCriterionTolerances=bad_window_tolerances,
-            FlatlineCriterion=_off_if_none(flatline_maxdur),
+            FlatlineCriterion=flatline_maxdur,
             NumSamples=num_samples,
             SubsetSize=subset_size,
             NoLocsChannelCriterion=bad_channel_nolocs_threshold,
@@ -598,21 +537,21 @@ class EEGPrep(EEGPrepBasePreprocessor):
             # (no other args)
         )
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
         # remove per-channel DC offset (can be huge)
-        EEG["data"] -= np.median(EEG["data"], axis=1, keepdims=True)
+        eeg["data"] -= np.median(eeg["data"], axis=1, keepdims=True)
 
         # optional resampling
         if (srate := self.resample_to) is not None:
-            EEG = eegprep.resample(EEG, srate)
+            eeg = eegprep.resample(eeg, srate)
 
         # do a check if the data has a supported sampling rate
         if self.burst_removal_cutoff is not None:
             from eegprep.utils import round_mat
 
             supported_rates = (100, 128, 200, 250, 256, 300, 500, 512)
-            if (sr_current := int(round_mat(EEG["srate"]))) not in supported_rates:
+            if (sr_current := int(round_mat(eeg["srate"]))) not in supported_rates:
                 # note: technically the method will run if you disable this error,
                 #   but you're likely getting (potentially quite) suboptimal results
                 raise NotImplementedError(
@@ -623,24 +562,25 @@ class EEGPrep(EEGPrepBasePreprocessor):
                     f" ({', '.join(str(r) for r in supported_rates)})."
                 )
 
-        orig_chanlocs = EEG["chanlocs"]
+        # preserve input channel locations for reinterpolation later
+        orig_chanlocs = [cl.copy() for cl in eeg["chanlocs"]]
 
         # artifact removal stage
-        EEG, *_ = eegprep.clean_artifacts(EEG, **self.clean_artifacts_params)
+        eeg, *_ = eegprep.clean_artifacts(eeg, **self.clean_artifacts_params)
 
         if self.force_dtype != np.float64:
             # cast to float32 for equivalence with multi-stage EEGPrep pipeline
-            EEG["data"] = EEG["data"].astype(np.float32)
+            eeg["data"] = eeg["data"].astype(np.float32)
 
         # optionally reinterpolate dropped channels
-        if self.reinterpolate and (len(orig_chanlocs) > len(EEG["chanlocs"])):
-            EEG = eegprep.eeg_interp(EEG, list(orig_chanlocs))
+        if self.reinterpolate and (len(orig_chanlocs) > len(eeg["chanlocs"])):
+            eeg = eegprep.eeg_interp(eeg, orig_chanlocs)
 
         # optionally apply common average reference
         if self.common_avg_ref:
-            EEG = eegprep.reref(EEG, [])
+            eeg = eegprep.reref(eeg, [])
 
-        return EEG
+        return eeg
 
 
 class RemoveFlatChannels(EEGPrepBasePreprocessor):
@@ -672,16 +612,16 @@ class RemoveFlatChannels(EEGPrepBasePreprocessor):
         self.max_flatline_duration = max_flatline_duration
         self.max_allowed_jitter = max_allowed_jitter
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
-        EEG = eegprep.clean_flatlines(
-            EEG,
+        eeg = eegprep.clean_flatlines(
+            eeg,
             max_flatline_duration=self.max_flatline_duration,
             max_allowed_jitter=self.max_allowed_jitter,
             # (no other args)
         )
 
-        return EEG
+        return eeg
 
 
 class RemoveDCOffset(EEGPrepBasePreprocessor):
@@ -696,12 +636,12 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
     def __init__(self):
         super().__init__()
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
         # note this might as well be implemented directly on the MNE data structure,
         # but was kept this way since we have the EEGPrep machinery here already.
-        EEG["data"] -= np.median(EEG["data"], axis=1, keepdims=True)
-        return EEG
+        eeg["data"] -= np.median(eeg["data"], axis=1, keepdims=True)
+        return eeg
 
 
 class RemoveDrifts(EEGPrepBasePreprocessor):
@@ -746,17 +686,17 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
         self.attenuation = attenuation
         self.method = method
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
-        EEG = eegprep.clean_drifts(
-            EEG,
+        eeg = eegprep.clean_drifts(
+            eeg,
             transition=self.transition,
             attenuation=self.attenuation,
             method=self.method,
             # (no other args)
         )
 
-        return EEG
+        return eeg
 
 
 class Resample(EEGPrepBasePreprocessor):
@@ -780,12 +720,12 @@ class Resample(EEGPrepBasePreprocessor):
         super().__init__(can_change_duration=True)
         self.sfreq = sfreq
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
         if self.sfreq is not None:
-            EEG = eegprep.resample(EEG, self.sfreq)
+            eeg = eegprep.resample(eeg, self.sfreq)
 
-        return EEG
+        return eeg
 
 
 class RemoveBadChannels(EEGPrepBasePreprocessor):
@@ -864,10 +804,10 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
         self.num_samples = num_samples
         self.subset_size = subset_size
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
-        EEG = eegprep.clean_channels(
-            EEG,
+        eeg = eegprep.clean_channels(
+            eeg,
             corr_threshold=self.corr_threshold,
             noise_threshold=self.noise_threshold,
             window_len=self.window_len,
@@ -877,7 +817,7 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
             # (no other args)
         )
 
-        return EEG
+        return eeg
 
 
 class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
@@ -939,10 +879,10 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
         self.max_broken_time = max_broken_time
         self.linenoise_aware = linenoise_aware
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
-        EEG, _ = eegprep.clean_channels_nolocs(
-            EEG,
+        eeg, _ = eegprep.clean_channels_nolocs(
+            eeg,
             min_corr=self.min_corr,
             ignored_quantile=self.ignored_quantile,
             window_len=self.window_len,
@@ -951,7 +891,7 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
             # (no other args)
         )
 
-        return EEG
+        return eeg
 
 
 class RemoveBursts(EEGPrepBasePreprocessor):
@@ -1026,15 +966,15 @@ class RemoveBursts(EEGPrepBasePreprocessor):
         self.window_len = window_len
         self.step_size = step_size
         self.max_dims = max_dims
-        self.ref_maxbadchannels = _off_if_none(ref_maxbadchannels)
+        self.ref_maxbadchannels = ref_maxbadchannels
         self.ref_tolerances = ref_tolerances
         self.ref_wndlen = ref_wndlen
         self.maxmem = maxmem
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
-        EEG = eegprep.clean_asr(
-            EEG,
+        eeg = eegprep.clean_asr(
+            eeg,
             cutoff=self.cutoff,
             window_len=self.window_len,
             step_size=self.step_size,
@@ -1048,7 +988,7 @@ class RemoveBursts(EEGPrepBasePreprocessor):
             # (no other args)
         )
 
-        return EEG
+        return eeg
 
 
 class RemoveBadWindows(EEGPrepBasePreprocessor):
@@ -1134,10 +1074,10 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
         self.step_sizes = step_sizes
         self.shape_range = shape_range
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
-        EEG, _ = eegprep.clean_windows(
-            EEG,
+        eeg, _ = eegprep.clean_windows(
+            eeg,
             max_bad_channels=self.max_bad_channels,
             zthresholds=self.zthresholds,
             window_len=self.window_len,
@@ -1150,7 +1090,7 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
             # (no other args)
         )
 
-        return EEG
+        return eeg
 
 
 class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
@@ -1165,18 +1105,18 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
     def __init__(self):
         super().__init__()
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
-        orig_chanlocs = self.get_orig_chanlocs()
+        orig_chanlocs = self._get_orig_chanlocs(raw)
         if orig_chanlocs is None:
             log.info(
                 "ReinterpolateRemovedChannels: No original channel locations were "
                 "recorded by a preceding step; skipping reinterpolation."
             )
-        elif len(orig_chanlocs) > len(EEG["chanlocs"]):
-            EEG = eegprep.eeg_interp(EEG, orig_chanlocs)
+        elif len(orig_chanlocs) > len(eeg["chanlocs"]):
+            eeg = eegprep.eeg_interp(eeg, orig_chanlocs)
 
-        return EEG
+        return eeg
 
 
 class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
@@ -1192,8 +1132,8 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
     def __init__(self):
         super().__init__()
 
-    def apply_eeg(self, EEG: dict[str, Any]) -> dict[str, Any]:
+    def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
-        EEG = eegprep.reref(EEG, [])
+        eeg = eegprep.reref(eeg, [])
 
-        return EEG
+        return eeg
