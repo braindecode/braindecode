@@ -176,6 +176,30 @@ def test_config_contains_all_parameters(sample_model):
         assert key in config
 
 
+def test_local_push_and_pull_roundtrip(tmp_path, sample_model, sample_chs_info):
+    """Roundtrip through local Hub save/load mimics push/pull."""
+    model = sample_model
+    model._chs_info = sample_chs_info
+    model.eval()
+
+    repo_dir = tmp_path / 'hf_local_repo'
+    repo_dir.mkdir()
+    model._save_pretrained(repo_dir)
+
+    restored = EEGNetv4.from_pretrained(repo_dir)
+    restored.eval()
+
+    assert restored.n_chans == model.n_chans
+    assert restored.n_outputs == model.n_outputs
+    assert restored.n_times == model.n_times
+    assert len(restored.chs_info) == len(sample_chs_info)
+    np.testing.assert_allclose(restored.chs_info[0]['loc'], sample_chs_info[0]['loc'])
+
+    torch.manual_seed(42)
+    sample_input = torch.randn(2, 22, 1000)
+    torch.testing.assert_close(restored(sample_input), model(sample_input))
+
+
 def test_push_to_hub_method_exists(sample_model):
     assert hasattr(sample_model, 'push_to_hub')
     assert callable(getattr(sample_model, 'push_to_hub'))

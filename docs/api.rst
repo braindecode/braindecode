@@ -34,6 +34,9 @@ All the models are implemented as subclasses of :py:class:`EEGModuleMixin`, whic
 base class for all EEG models in Braindecode. The :class:`EEGModuleMixin` class
 provides a common interface for all EEG models and derivate variables names if necessary.
 
+Also, all models inherit from `PytorchHuPyTorchModelHubMixin`, which provides functionality to
+save and load models from the Hugging Face Hub, if the `huggingface_hub` package is installed.
+
 :py:mod:`braindecode.models.base`:
 
 .. currentmodule:: braindecode.models
