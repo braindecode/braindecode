@@ -64,19 +64,19 @@ def _numpy_empty_decoder(dct):
     return dct
 
 
+class NumpyEmptyEncoder(json.JSONEncoder):
+    """JSON encoder that handles empty numpy arrays
+    (can occur as a sentinel object in the payload)."""
+
+    def default(self, obj):
+        # note we don't expect other numpy objects here besides np.array([])
+        if isinstance(obj, np.ndarray) and obj.size == 0:
+            return {_EMPTY_ARRAY_KEY: True}
+        return super().default(obj)
+
+
 def _encode_payload(data: dict) -> str:
     """Serializes, encodes, and formats data into a marker string."""
-
-    class NumpyEmptyEncoder(json.JSONEncoder):
-        """JSON encoder that handles empty numpy arrays
-        (can occur as a sentinel object in the payload)."""
-
-        def default(self, obj):
-            # note we don't expect other numpy objects here besides np.array([])
-            if isinstance(obj, np.ndarray) and obj.size == 0:
-                return {_EMPTY_ARRAY_KEY: True}
-            return super().default(obj)
-
     json_str = json.dumps(data, cls=NumpyEmptyEncoder)
     encoded = base64.b64encode(json_str.encode("utf-8")).decode("ascii")
     return f"{_MARKER_START} {encoded} {_MARKER_END}"
