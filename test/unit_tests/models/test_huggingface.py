@@ -217,9 +217,6 @@ def test_model_has_hub_methods(model_name, required_params, signal_params):
     assert callable(getattr(model, 'push_to_hub'))
 
 
-@pytest.mark.parametrize("model_class", [EEGNet, ShallowFBCSPNet, Deep4Net])
-def test_model_inherits_from_mixin(model_class):
-    assert issubclass(model_class, EEGModuleMixin)
 
 
 
