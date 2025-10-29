@@ -23,7 +23,7 @@ from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
     not HAS_HF_HUB,
-    reason="huggingface_hub not installed. Install with: pip install braindecode[huggingface]"
+    reason="huggingface_hub not installed. Install with: pip install braindecode[hug]"
 )
 
 
