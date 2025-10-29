@@ -171,9 +171,8 @@ def test_config_contains_all_parameters(sample_model):
         with open(config_path, 'r') as config_file:
             config = json.load(config_file)
 
-    expected_keys = ['n_outputs', 'n_chans', 'n_times', 'input_window_seconds', 'sfreq', 'chs_info']
-    for key in expected_keys:
-        assert key in config
+    expected_keys = {'n_outputs', 'n_chans', 'n_times', 'input_window_seconds', 'sfreq', 'chs_info'}
+    assert expected_keys == config.keys()
 
 
 def test_local_push_and_pull_roundtrip(tmp_path, sample_model, sample_chs_info):
