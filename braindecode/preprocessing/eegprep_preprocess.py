@@ -184,10 +184,10 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
     Parameters
     ----------
-    can_change_duration : bool | str | None
+    can_change_duration : bool | str
         Whether the preprocessor can change the duration of the data during processing;
         can also be the name of some sub-operation that does so for display in a more
-        actionable error message. None is the same as False.
+        actionable error message.
     record_orig_chanlocs : bool
         Whether to record the EEG channel locations before processing
         in the MNE Raw structure for later use. This will not override any already
@@ -205,7 +205,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
     def __init__(
         self,
         *,
-        can_change_duration: str | bool | None = None,
+        can_change_duration: str | bool = False,
         record_orig_chanlocs: bool = False,
         force_dtype: np.dtype | str | None = None,
     ):
@@ -215,8 +215,6 @@ class EEGPrepBasePreprocessor(Preprocessor):
         )
         if can_change_duration is True:
             can_change_duration = self.__class__.__name__
-        elif can_change_duration is False:
-            can_change_duration = None
         self.can_change_duration = can_change_duration
         self.record_orig_chanlocs = record_orig_chanlocs
         self.force_dtype = np.dtype(force_dtype) if force_dtype is not None else None
@@ -503,7 +501,7 @@ class EEGPrep(EEGPrepBasePreprocessor):
             if opname
         )
         super().__init__(
-            can_change_duration=can_change_duration or None,
+            can_change_duration=can_change_duration or False,
         )
         self.resample_to = resample_to
         self.reinterpolate = bad_channel_reinterpolate
