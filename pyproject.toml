@@ -65,10 +65,7 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.2.0"]
-eegprep = [
-    "eegprep>=0.1.0",
-    "eeglabio>=0.1.2",
-]
+eegprep = ["eegprep[eeglabio]>=0.1.1"]
 tests = [
     'pytest',
     'pytest-cov',
