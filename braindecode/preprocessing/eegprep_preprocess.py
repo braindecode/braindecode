@@ -563,7 +563,7 @@ class EEGPrep(EEGPrepBasePreprocessor):
                 )
 
         # preserve input channel locations for reinterpolation later
-        orig_chanlocs = [cl.copy() for cl in eeg["chanlocs"]]
+        orig_chanlocs = [channel_loc.copy() for channel_loc in eeg["chanlocs"]]
 
         # artifact removal stage
         eeg, *_ = eegprep.clean_artifacts(eeg, **self.clean_artifacts_params)
