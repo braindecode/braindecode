@@ -634,7 +634,7 @@ def test_if_models_with_embedding_parameter(model):
 
 @pytest.mark.skipif(
     not HAS_HF_HUB,
-    reason="huggingface_hub not installed. Install with: pip install braindecode[huggingface]"
+    reason="huggingface_hub not installed. Install with: pip install braindecode[hug]"
 )
 @pytest.mark.parametrize("model_class", models_dict.values())
 def test_model_has_huggingface_hub_methods(model_class):
