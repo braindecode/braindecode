@@ -12,8 +12,8 @@ from abc import abstractmethod
 from types import ModuleType
 from typing import Any, Sequence
 
+import mne
 import numpy as np
-from mne import BaseEpochs
 from mne.io import BaseRaw
 
 from braindecode.preprocessing.preprocess import Preprocessor
@@ -227,7 +227,7 @@ class EEGPrepBasePreprocessor(Preprocessor):
     def _apply_op(self, raw: BaseRaw) -> None:
         """Internal method that does the actual work; this is called by Preprocessor.apply()."""
         opname = self.__class__.__name__
-        if isinstance(raw, BaseEpochs):
+        if isinstance(raw, mne.BaseEpochs):
             raise ValueError(
                 f"{opname} is meant to be used on Raw (continuous) data, "
                 f"not Epochs. Use before epoching."
@@ -238,10 +238,12 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
         # split off non-EEG channels since apply_eeg() expects only EEG channels
         chn_order = raw.ch_names.copy()
-        eeg = raw.copy().pick_types(eeg=True, exclude=[])
-        if len(eeg.ch_names) < len(raw.ch_names):
+        eeg_idx = mne.pick_types(raw.info, eeg=True, exclude=[])
+        if len(eeg_idx) < len(chn_order):
+            eeg = raw.copy().pick(eeg_idx)
             non_eeg = raw.drop_channels(eeg.ch_names)
         else:
+            eeg = raw
             non_eeg = None
 
         # convert to EEGLAB structure

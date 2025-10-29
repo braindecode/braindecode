@@ -105,8 +105,8 @@ factor = 1e6
 
 preprocessors = [
     # If you have non-EEG channels in the data that you do not want to keep,
-    # it is best to remove them early on. EEGPrep generally only acts on
-    # the EEG channels.
+    # it is best to remove them early on, which is more memory-efficient.
+    # EEGPrep generally only acts on the EEG channels.
     Preprocessor("pick_types", eeg=True, meg=False, stim=False),
     # This particular dataset requires a conversion from V to uV; this
     # could also be done later in the pipeline since EEGPrep does not
