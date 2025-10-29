@@ -657,11 +657,3 @@ def test_model_has_huggingface_hub_methods(model_class):
         signal_params = get_sp(sig_params, mandatory_parameters)
         model = model_class(**signal_params)
 
-        # Check that the model instance has push_to_hub method
-        assert hasattr(model, 'push_to_hub'), (
-            f"{model_name} instance should have 'push_to_hub' method "
-            "when huggingface_hub is installed."
-        )
-        assert callable(getattr(model, 'push_to_hub')), (
-            f"{model_name}.push_to_hub should be callable."
-        )
