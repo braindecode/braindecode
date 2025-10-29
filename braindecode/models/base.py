@@ -464,3 +464,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         # Save model weights
         weights_path = save_directory / "pytorch_model.bin"
         torch.save(self.state_dict(), weights_path)
+
+        # Save safetensors weights using the default Hub mixin implementation
+        super()._save_pretrained(save_directory)
