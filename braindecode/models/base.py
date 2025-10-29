@@ -9,13 +9,15 @@ import json
 import warnings
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Type
+from typing import Dict, Iterable, Optional, Type, Union
 
 import numpy as np
 import torch
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
+
+from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
     "huggingface_hub", "Hugging Face Hub integration", strict=False
@@ -122,6 +124,35 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
     the model weights. This ensures that loaded models are correctly configured
     for their original data specifications.
     """
+
+    def __init_subclass__(cls, **kwargs):
+        if not HAS_HF_HUB:
+            super().__init_subclass__(**kwargs)
+            return
+
+        base_tags = ["braindecode", cls.__name__]
+        user_tags = kwargs.pop("tags", None)
+        tags = list(user_tags) if user_tags is not None else []
+        for tag in base_tags:
+            if tag not in tags:
+                tags.append(tag)
+
+        docs_url = kwargs.pop(
+            "docs_url",
+            f"https://braindecode.org/stable/generated/braindecode.models.{cls.__name__}.html",
+        )
+        repo_url = kwargs.pop("repo_url", "https://braindecode.org")
+        library_name = kwargs.pop("library_name", "braindecocode")
+        license = kwargs.pop("license", "bsd-3-clause")
+        # TODO: model_card_template can be added in the future for custom model cards
+        super().__init_subclass__(
+            tags=tags,
+            docs_url=docs_url,
+            repo_url=repo_url,
+            library_name=library_name,
+            license=license,
+            **kwargs,
+        )
 
     def __init__(
         self,
@@ -454,6 +485,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             "input_window_seconds": self._input_window_seconds,
             "sfreq": self._sfreq,
             "chs_info": self._serialize_chs_info(self._chs_info),
+            "braindecode_version": __version__,
         }
 
         # Save to config.json
@@ -462,8 +494,37 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             json.dump(config, f, indent=2)
 
         # Save model weights
-        weights_path = save_directory / "pytorch_model.bin"
+        weights_path = save_directory / f"pytorch_{type(self).__name__}.bin"
         torch.save(self.state_dict(), weights_path)
 
         # Save safetensors weights using the default Hub mixin implementation
         super()._save_pretrained(save_directory)
+
+    if HAS_HF_HUB:
+
+        @classmethod
+        def _from_pretrained(
+            cls,
+            *,
+            model_id: str,
+            revision: Optional[str],
+            cache_dir: Optional[Union[str, Path]],
+            force_download: bool,
+            local_files_only: bool,
+            token: Union[str, bool, None],
+            map_location: str = "cpu",
+            strict: bool = False,
+            **model_kwargs,
+        ):
+            model_kwargs.pop("braindecode_version", None)
+            return super()._from_pretrained(  # type: ignore
+                model_id=model_id,
+                revision=revision,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                local_files_only=local_files_only,
+                token=token,
+                map_location=map_location,
+                strict=strict,
+                **model_kwargs,
+            )
