@@ -415,12 +415,32 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             # Extract serializable fields from MNE channel info
             ch_dict = {
                 "ch_name": ch.get("ch_name", ""),
-                "coil_type": int(ch.get("coil_type", 0)),
-                "kind": int(ch.get("kind", 0)),
-                "unit": int(ch.get("unit", 0)),
-                "cal": float(ch.get("cal", 1.0)),
-                "range": float(ch.get("range", 1.0)),
             }
+
+            # Handle kind field - can be either string or integer
+            kind_val = ch.get("kind")
+            if kind_val is not None:
+                ch_dict["kind"] = (
+                    kind_val if isinstance(kind_val, str) else int(kind_val)
+                )
+
+            # Add numeric fields with safe conversion
+            coil_type = ch.get("coil_type")
+            if coil_type is not None:
+                ch_dict["coil_type"] = int(coil_type)
+
+            unit = ch.get("unit")
+            if unit is not None:
+                ch_dict["unit"] = int(unit)
+
+            cal = ch.get("cal")
+            if cal is not None:
+                ch_dict["cal"] = float(cal)
+
+            range_val = ch.get("range")
+            if range_val is not None:
+                ch_dict["range"] = float(range_val)
+
             # Serialize location array if present
             if "loc" in ch and ch["loc"] is not None:
                 ch_dict["loc"] = (

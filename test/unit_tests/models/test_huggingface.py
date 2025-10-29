@@ -11,32 +11,21 @@ Hugging Face Hub when the optional huggingface_hub dependency is installed.
 """
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 
-from braindecode.models import Deep4Net, EEGNet, ShallowFBCSPNet
+from braindecode.models import EEGNet
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
+
+# importing some fixtures/utilities to help with testing
 
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
     not HAS_HF_HUB,
     reason="huggingface_hub not installed. Install with: pip install braindecode[hug]"
 )
-
-
-@pytest.fixture
-def sample_model():
-    """Create a simple EEGNet model for testing."""
-    return EEGNet(
-        n_chans=22,
-        n_outputs=4,
-        n_times=1000,
-        final_conv_length="auto",
-    )
-
 
 @pytest.fixture
 def sample_chs_info():
@@ -116,12 +105,12 @@ def test_roundtrip_serialization(sample_chs_info):
         assert np.allclose(orig['loc'], deser['loc'])
 
 
-def test_json_serialization(sample_chs_info):
+def test_json_serialization(tmp_path, sample_chs_info):
     serialized = EEGModuleMixin._serialize_chs_info(sample_chs_info)
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
+    temp_path = tmp_path / 'chs_info.json'
+    with open(temp_path, 'w') as tmp_file:
         json.dump({'chs_info': serialized}, tmp_file)
-        temp_path = tmp_file.name
 
     with open(temp_path, 'r') as file:
         loaded = json.load(file)
@@ -129,54 +118,51 @@ def test_json_serialization(sample_chs_info):
     assert 'chs_info' in loaded
     assert len(loaded['chs_info']) == len(sample_chs_info)
 
-    Path(temp_path).unlink()
 
+def test_save_pretrained_creates_config(tmp_path, sample_model):
+    sample_model._save_pretrained(tmp_path)
 
-def test_save_pretrained_creates_config(sample_model):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        sample_model._save_pretrained(tmpdir)
+    config_path = tmp_path / 'config.json'
+    assert config_path.exists()
 
-        config_path = Path(tmpdir) / 'config.json'
-        assert config_path.exists()
-
-        with open(config_path, 'r') as config_file:
-            config = json.load(config_file)
+    with open(config_path, 'r') as config_file:
+        config = json.load(config_file)
 
     assert config['n_outputs'] == 4
     assert config['n_chans'] == 22
     assert config['n_times'] == 1000
 
 
-def test_save_pretrained_with_chs_info(sample_model, sample_chs_info):
+def test_save_pretrained_with_chs_info(tmp_path, sample_model, sample_chs_info):
     sample_model._chs_info = sample_chs_info
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        sample_model._save_pretrained(tmpdir)
+    sample_model._save_pretrained(tmp_path)
 
-        config_path = Path(tmpdir) / 'config.json'
-        with open(config_path, 'r') as config_file:
-            config = json.load(config_file)
+    config_path = tmp_path / 'config.json'
+    with open(config_path, 'r') as config_file:
+        config = json.load(config_file)
 
     assert 'chs_info' in config
     assert config['chs_info'] is not None
     assert len(config['chs_info']) == 22
 
 
-def test_config_contains_all_parameters(sample_model):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        sample_model._save_pretrained(tmpdir)
+def test_config_contains_all_parameters(tmp_path, sample_model):
+    sample_model._save_pretrained(tmp_path)
 
-        config_path = Path(tmpdir) / 'config.json'
-        with open(config_path, 'r') as config_file:
-            config = json.load(config_file)
+    config_path = tmp_path / 'config.json'
+    with open(config_path, 'r') as config_file:
+        config = json.load(config_file)
 
-    expected_keys = {'n_outputs', 'n_chans', 'n_times', 'input_window_seconds', 'sfreq', 'chs_info'}
+    expected_keys = {'n_outputs', 'n_chans', 'n_times', 'input_window_seconds', 'sfreq', 'chs_info', 'braindecode_version'}
     assert expected_keys == config.keys()
 
 
 def test_local_push_and_pull_roundtrip(tmp_path, sample_model, sample_chs_info):
     """Roundtrip through local Hub save/load mimics push/pull."""
     model = sample_model
+    assert hasattr(model, 'from_pretrained')
+    assert callable(getattr(model, 'from_pretrained'))
     model._chs_info = sample_chs_info
     model.eval()
 
@@ -184,7 +170,7 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model, sample_chs_info):
     repo_dir.mkdir()
     model._save_pretrained(repo_dir)
 
-    restored = EEGNet.from_pretrained(repo_dir)
+    restored = sample_model.from_pretrained(repo_dir)
     restored.eval()
 
     assert restored.n_chans == model.n_chans
@@ -194,28 +180,5 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model, sample_chs_info):
     np.testing.assert_allclose(restored.chs_info[0]['loc'], sample_chs_info[0]['loc'])
 
     torch.manual_seed(42)
-    sample_input = torch.randn(2, 22, 1000)
+    sample_input = torch.randn(2, model.n_chans,  model.n_times)
     torch.testing.assert_close(restored(sample_input), model(sample_input))
-
-
-
-
-from braindecode.models.util import models_dict, models_mandatory_parameters
-  
-@pytest.mark.parametrize(
-    "model_name, required_params, signal_params", models_mandatory_parameters
-)
-def test_model_has_hub_methods(model_name, required_params, signal_params):
-    model_class = 
-    assert hasattr(model_class, 'from_pretrained')
-    assert callable(getattr(model_class, 'from_pretrained'))
-
-    model = model_class(n_chans=22, n_outputs=4, n_times=1000)
-    assert hasattr(model, 'push_to_hub')
-    assert callable(getattr(model, 'push_to_hub'))
-
-
-
-
-
-
