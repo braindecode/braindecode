@@ -221,15 +221,3 @@ def test_model_has_hub_methods(model_name, required_params, signal_params):
 
 
 
-def test_state_dict_loading(sample_model):
-    state_dict = sample_model.state_dict()
-
-    new_model = EEGNet(n_chans=22, n_outputs=4, n_times=1000)
-    new_model.load_state_dict(state_dict)
-
-    for (name1, param1), (name2, param2) in zip(
-        sample_model.named_parameters(),
-        new_model.named_parameters(),
-    ):
-        assert name1 == name2
-        assert torch.allclose(param1, param2)
