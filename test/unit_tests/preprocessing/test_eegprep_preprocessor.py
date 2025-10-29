@@ -18,7 +18,7 @@ from braindecode.preprocessing.eegprep_preprocess import (
     RemoveCommonAverageReference,
     RemoveDCOffset,
     RemoveFlatChannels,
-    Resample,
+    Resampling,
 )
 
 # Check if eegprep is available
@@ -280,7 +280,7 @@ def test_resample(base_concat_ds):
 
     # Resample to a different rate
     new_sfreq = 128.0  # Resample from 250 Hz to 128 Hz
-    preprocessors = [Resample(sfreq=new_sfreq)]
+    preprocessors = [Resampling(sfreq=new_sfreq)]
     preprocess(base_concat_ds, preprocessors)
 
     # Get processed data

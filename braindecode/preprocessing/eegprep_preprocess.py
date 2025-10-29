@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 __all__ = [
     "EEGPrep",
     "RemoveDCOffset",
-    "Resample",
+    "Resampling",
     "RemoveFlatChannels",
     "RemoveDrifts",
     "RemoveBadChannels",
@@ -699,7 +699,7 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
         return eeg
 
 
-class Resample(EEGPrepBasePreprocessor):
+class Resampling(EEGPrepBasePreprocessor):
     """Resample the data to a specified rate. Included to equivalence to EEGPrep.
 
     MNE has its resampling routine (use as `Preprocessor("resample", sfreq=rate)`)

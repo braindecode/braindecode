@@ -3,10 +3,9 @@
 Basic Brain Decoding on EEG Data using EEGPrep preprocessor and EEGNet
 ======================================================================
 
-This is a variant of the basic _moabb_trial decoding example that
-additionally inserts an EEGPrep stage into the preprocessing pipeline
-as a minimal demonstration of how to use EEGPrep with Braindecode. See
-the documentation of EEGPrep for more details on its functionality.
+This is a variant of the basic :ref:`plot_bcic_iv_2a_moabb_trial` decoding
+example that additionally inserts an EEGPrep stage into the preprocessing
+pipeline as a minimal demonstration of how to use EEGPrep with Braindecode.
 
 .. contents:: This example covers:
    :local:
@@ -50,22 +49,48 @@ dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 
 ######################################################################
-# Now we apply preprocessing like bandpass filtering to our dataset.
-# You can either apply functions provided by :class:`mne.io.Raw` or
-# :class:`mne.Epochs` or apply your own functions, either to the
-# MNE object or the underlying numpy array.
+# Now we apply a series of preprocessing steps to our dataset.
+#
+# The conventional approach in deep learning is to keep preprocessing
+# minimal and leave it to the model to learn relevant features, as
+# done in the seminal early use of deep learning on EEG in [3]_ and
+# many subsequent works.
+#
+# However, since EEG can contain quite dramatic artifacts that
+# can easily dwarf the signal of interest and which may harm learning
+# or throw off predictions, additional artifact removal steps can be
+# beneficial in conjunction with deep models. The following code starts
+# from the minimal preprocessing pipeline in
+# :ref:`plot_bcic_iv_2a_moabb_trial` and inserts the EEGPrep Preprocessor
+# into the pipeline. This is an integration with the
+# (eegprep)[https://github.com/sccn/eegprep] preprocessing library that
+# implements a series of automated artifact removal steps first
+# proposed in [4]_ and later refined as part of the (now-default)
+# raw-data preprocessing approach in EEGLAB [5]_.
+#
+# The :class:`EEGPrep<braindecode.preprocessing.EEGPrep>`
+# class represents the default end-to-end preprocessing pipeline, which has
+# only a few primary parameters that are worth tuning for a given dataset,
+# the most important ones of which are shown in the code below.
+#
+# Besides using the end-to-end pipeline as a whole, users can also
+# separately invoke the individual preprocessing steps implemented
+# in EEGPrep as needed; for additional details see the documentation for
+# :class:`EEGPrep<braindecode.preprocessing.EEGPrep>`.
 #
 # .. note::
-#    Generally, braindecode prepocessing is directly applied to the loaded
-#    data, and not applied on-the-fly as transformations, such as in
-#    PyTorch-libraries like `<torchvision_>`_.
+#    EEGPrep is best used early in the preprocessing pipeline, when you are
+#    still acting on continuous (raw) data. The nature of the data after processing
+#    is essentially the same as the input (minus many of the artifacts), so
+#    you can typically retain most other processing steps that your pipeline
+#    would otherwise use, as below.
 #
 
 from numpy import multiply
 
 from braindecode.preprocessing import (
-    Preprocessor,
     EEGPrep,
+    Preprocessor,
     exponential_moving_standardize,
     preprocess,
 )
@@ -79,10 +104,17 @@ init_block_size = 1000
 factor = 1e6
 
 preprocessors = [
-    Preprocessor("pick_types", eeg=True, meg=False, stim=False),  # Keep EEG sensors
-    Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
-    # Insert EEGPrep preprocessing step; experiment with commenting this out to
-    # see how it affects results
+    # If you have non-EEG channels in the data that you do not want to keep,
+    # it is best to remove them early on. EEGPrep generally only acts on
+    # the EEG channels.
+    Preprocessor("pick_types", eeg=True, meg=False, stim=False),
+    # This particular dataset requires a conversion from V to uV; this
+    # could also be done later in the pipeline since EEGPrep does not
+    # care about absolute scaling
+    Preprocessor(lambda data: multiply(data, factor)),
+    # Here we insert the EEGPrep preprocessing step; experiment with commenting
+    # this out to see how it affects results. You can also disable additional
+    # processing steps in the pipeline by setting select parameters to None.
     EEGPrep(
         resample_to=128,
         # This is best disabled for single-trial classification (see EEGPrep docs)
@@ -101,6 +133,15 @@ preprocessors = [
 
 # Transform the data
 preprocess(dataset, preprocessors, n_jobs=-1)
+
+######################################################################
+# Besides using the end-to-end pipeline as a whole, you can also
+# separately invoke the individual preprocessing steps implemented
+# in EEGPrep as needed; see the :ref:`EEGPrep` class documentation for details.
+#
+# .. note::
+#    When using individual artifact removal steps, make sure they are applied
+#    in the intended order, since otherwise you may get suboptimal results.
 
 
 ######################################################################
@@ -162,8 +203,8 @@ valid_set = splitted["1test"]  # Session evaluation
 ######################################################################
 # Now we create the deep learning model! Braindecode comes with some
 # predefined convolutional neural network architectures for raw
-# time-domain EEG. Here, we use the :class:`ShallowFBCSPNet
-# <braindecode.models.ShallowFBCSPNet>` model from [3]_. These models are
+# time-domain EEG. Here, we use the :class:`EEGNet
+# <braindecode.models.EEGNet>` model from [6]_. These models are
 # pure `PyTorch <pytorch_>`_ deep learning models, therefore
 # to use your own model, it just has to be a normal PyTorch
 # :class:`torch.nn.Module`.
@@ -379,5 +420,19 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
 #        Hum. Brain Mapping, 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
+#
+# .. [4] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T.,
+#        Makeig, S., Jung, T.P. and Cauwenberghs, G., 2015.
+#        Real-time neuroimaging and cognitive monitoring using wearable dry EEG.
+#        IEEE Transactions on Biomedical Engineering, 62(11), pp.2553-2567.
+#
+# .. [5] Delorme, A. and Makeig, S., 2004. EEGLAB: an open source toolbox for
+#        analysis of single-trial EEG dynamics including independent component
+#        analysis. Journal of Neuroscience Methods, 134(1), pp.9-21.
+#
+# .. [6] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon, S. M.,
+#        Hung, C. P., & Lance, B. J. (2018). EEGNet: a compact convolutional
+#        neural network for EEG-based brain–computer interfaces. Journal of
+#        Neural Engineering, 15(5), 056013.
 #
 # .. include:: /links.inc
