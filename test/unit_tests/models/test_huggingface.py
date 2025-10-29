@@ -11,7 +11,6 @@ Hugging Face Hub when the optional huggingface_hub dependency is installed.
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 import numpy as np
