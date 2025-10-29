@@ -408,7 +408,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
         self.out_fun = nn.Identity()
 
-    def forward(self, X):
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
         # Dimension: (batch_size, C, T)
         X = self.ensuredims(X)
         # Dimension: (batch_size, C, T, 1)

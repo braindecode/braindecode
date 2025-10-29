@@ -381,6 +381,8 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         for k, pl, ps in zip(kernel_lengths, pool_lengths, pool_strides):
             out = math.floor(out + 2 * (k // 2) - k + 1)
             out = math.floor((out - pl) / ps + 1)
+            # Ensure output is at least 1 to avoid zero-sized tensors
+            out = max(1, out)
             seq_lengths.append(int(out))
         return seq_lengths
 
