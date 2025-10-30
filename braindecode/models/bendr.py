@@ -163,8 +163,8 @@ class BENDR(EEGModuleMixin, nn.Module):
         encoder_h=512,  # Hidden size of the encoder convolutional layers
         contextualizer_hidden=3076,  # Feedforward hidden size in transformer
         projection_head=False,  # Whether encoder should project back to input feature size (unused in original fine-tuning)
-        drop_prob=0.1,  # General dropout probability
-        layer_drop=0.0,  # Probability of dropping transformer layers during training
+        drop_prob=0.1,  # General dropout probability (paper: 0.15 for pretraining, 0.0 for fine-tuning)
+        layer_drop=0.0,  # Probability of dropping transformer layers during training (paper: 0.01 for pretraining)
         activation=nn.GELU,  # Activation function
         # Transformer specific parameters
         transformer_layers=8,
@@ -295,7 +295,7 @@ class _ConvEncoderBENDR(nn.Module):
                         padding=width
                         // 2,  # Correct padding for 'same' output length before stride
                     ),
-                    nn.Dropout1d(dropout),  # 1D dropout for 1D conv
+                    nn.Dropout2d(dropout),  # 2D dropout (matches paper specification)
                     nn.GroupNorm(
                         encoder_h // 2, encoder_h
                     ),  # Consider making num_groups configurable or ensure encoder_h is divisible by 2
@@ -331,8 +331,8 @@ class _BENDRContextualizer(nn.Module):
         self.layer_drop = layer_drop
         self.start_token = start_token  # Store start token value
 
-        # Let's follow the original's projection:
-        self.transformer_dim = in_features
+        # Paper specification: transformer_dim = 3 * encoder_h (1536 for encoder_h=512)
+        self.transformer_dim = 3 * in_features
         self.in_features = in_features
         # --- Positional Encoding --- (Applied before projection)
         self.position_encoder = None
@@ -344,8 +344,8 @@ class _BENDRContextualizer(nn.Module):
                 padding=position_encoder // 2,
                 groups=16,  # Number of groups for depthwise separation
             )
-            # Initialize weights first
-            nn.init.normal_(conv.weight, mean=0, std=0.02)  # Basic init
+            # T-Fixup positional encoding initialization (paper specification)
+            nn.init.normal_(conv.weight, mean=0, std=2 / self.transformer_dim)
             nn.init.constant_(conv.bias, 0)
 
             conv = nn.utils.parametrizations.weight_norm(conv, name="weight", dim=2)
@@ -366,6 +366,7 @@ class _BENDRContextualizer(nn.Module):
         )
 
         # --- Transformer Encoder Layers ---
+        # Paper uses T-Fixup: remove internal LayerNorm layers
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=self.transformer_dim,  # Use projected dimension
             nhead=heads,
@@ -375,16 +376,24 @@ class _BENDRContextualizer(nn.Module):
             batch_first=False,  # Expects (T, B, C)
             norm_first=False,  # Standard post-norm architecture
         )
+
+        # T-Fixup: Replace internal LayerNorms with Identity
+        encoder_layer.norm1 = nn.Identity()
+        encoder_layer.norm2 = nn.Identity()
+
         self.transformer_layers = nn.ModuleList(
             [copy.deepcopy(encoder_layer) for _ in range(layers)]
         )
 
-        # --- Output Layer --- (Project back down to in_features)
-        # Input is (T, B, C_transformer), output should be (B, C_original, T)
-        self.output_layer = nn.Linear(self.transformer_dim, in_features)
+        # Add final LayerNorm after all transformer layers (paper specification)
+        self.norm = nn.LayerNorm(self.transformer_dim)
 
-        # Initialize parameters like BERT / TFixup
-        self.apply(self._init_simplified_params)
+        # --- Output Layer --- (Project back down to in_features)
+        # Paper uses Conv1d with kernel=1 (equivalent to Linear but expects (B,C,T) input)
+        self.output_layer = nn.Conv1d(self.transformer_dim, in_features, 1)
+
+        # Initialize parameters with T-Fixup (paper specification)
+        self.apply(self._init_bert_params)
 
     def _init_bert_params(self, module):
         """Initialize linear layers and apply TFixup scaling."""
@@ -442,11 +451,16 @@ class _BENDRContextualizer(nn.Module):
                 x = layer(x)
         # x: [seq_len + 1, batch_size, transformer_dim]
 
-        # Apply final projection back to original feature dimension
-        x = self.output_layer(x)
-        # x: [seq_len + 1, batch_size, in_features]
+        # Apply final LayerNorm (T-Fixup: norm only at the end)
+        x = self.norm(x)
+        # x: [seq_len + 1, batch_size, transformer_dim]
 
-        # Rearrange back to [batch_size, in_features, seq_len + 1]
+        # Permute to (B, C, T) format for Conv1d output layer
         x = x.permute(1, 2, 0)
+        # x: [batch_size, transformer_dim, seq_len + 1]
+
+        # Apply output projection (Conv1d expects B, C, T)
+        x = self.output_layer(x)
+        # x: [batch_size, in_features, seq_len + 1]
 
         return x
