@@ -495,6 +495,8 @@ def test_all_preprocessing_functions(prep, base_concat_ds):
             ds.raw.set_montage(montage, match_case=False, on_missing='ignore')
         
         # Mark a bad channel for interpolation test
+        # Note: 'Pz' is guaranteed to exist in the test dataset as it's
+        # explicitly defined in bnci_kwargs at the top of this file
         if isinstance(prep, InterpolateBads):
             for ds in base_concat_ds.datasets:
                 ds.raw.info['bads'] = ['Pz']
