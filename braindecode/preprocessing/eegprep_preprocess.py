@@ -229,13 +229,14 @@ class EEGPrep(EEGPrepBasePreprocessor):
     recommended to remove these channels yourself beforehand if you don't want them
     included in your downstream analysis.
 
-    Note that this implementation of the pipeline is best used in the context of
-    cross-session prediction; when using this with a within-session split, there is
-    a risk of data leakage since the artifact removal will be calibrated on statistics
-    of the entire session (and thus test sets). In practice the effect may be minor,
-    unless your downstream analysis is strongly driven by artifacts (e.g., if you
-    are trying to decode eye movements or muscle activity), but paper reviewers may
-    not be convinced by that.
+    .. Note::
+      This implementation of the pipeline is best used in the context of
+      cross-session prediction; when using this with a within-session split, there is
+      a risk of data leakage since the artifact removal will be calibrated on statistics
+      of the entire session (and thus test sets). In practice the effect may be minor,
+      unless your downstream analysis is strongly driven by artifacts (e.g., if you
+      are trying to decode eye movements or muscle activity), but paper reviewers may
+      not be convinced by that.
 
     Parameters
     ----------
@@ -512,10 +513,11 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
     steps, e.g., to customize parts that are not exposed by the top-level EEGPrep
     preprocessor.
 
-    NOTE: If your method involves causal analysis, either with applications to real-time
-    single-trial brain-computer interfacing or for example involving autoregressive
-    modeling or other causal measures, consider using a strictly causal highpass filter
-    instead.
+    .. Note::
+      If your method involves causal analysis, either with applications to real-time
+      single-trial brain-computer interfacing or for example involving autoregressive
+      modeling or other causal measures, consider using a strictly causal highpass
+      filter instead.
 
     Parameters
     ----------
@@ -862,12 +864,13 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
     power is above or below some z-score threshold relative to a robust estimate
     of clean-EEG power in that channel.
 
-    Note that, when your method is meant to produce predictions for all time points
-    in your continuous data (or all epochs of interest), you may not want to use this
-    preprocessor, and enabling it may give you rosy performance estimates that do not
-    reflect how your method works when used on gap-free data. It can nevertheless be
-    useful to apply this to training data only in such cases, however, to get an
-    artifact-unencumbered model.
+    .. Note::
+      When your method is meant to produce predictions for all time points
+      in your continuous data (or all epochs of interest), you may not want to use this
+      preprocessor, and enabling it may give you rosy performance estimates that do not
+      reflect how your method works when used on gap-free data. It can nevertheless be
+      useful to apply this to training data only in such cases, however, to get an
+      artifact-unencumbered model.
 
     Parameters
     ----------
