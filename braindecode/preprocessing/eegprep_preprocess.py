@@ -495,9 +495,6 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
 
     """
 
-    def __init__(self):
-        super().__init__()
-
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
         # note this might as well be implemented directly on the MNE data structure,
