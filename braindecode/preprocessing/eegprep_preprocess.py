@@ -567,8 +567,17 @@ class Resampling(EEGPrepBasePreprocessor):
     """Resample the data to a specified rate. Included to equivalence to EEGPrep.
 
     MNE has its resampling routine (use as `Preprocessor("resample", sfreq=rate)`)
-    but this will not necessarily match EEGPrep's behavior exactly; to get bit-identical
-    results to the default EEGPrep pipeline, use this preprocessor instead.
+    but this will not necessarily match EEGPrep's behavior exactly. Typical
+    differences include edge padding, the exact design rule for the filter kernel
+    and its window function, and handling of resampling ratios with large rational
+    factors.
+
+    It's not necessarily clear which of the two implementations is "better" (likely
+    both are fine for typical EEG applications). Use this one if you try to match
+    EEGPrep and EEGLAB behavior specifically, for example when you migrate from a
+    simple pipeline that uses the high-level EEGPrep preprocessor to a more
+    custom pipeline built from individual steps and want to ensure identical
+    results (up to float precision issues).
 
     Parameters
     ----------
