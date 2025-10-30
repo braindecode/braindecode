@@ -84,6 +84,15 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
     def _apply_op(self, raw: BaseRaw) -> None:
         """Internal method that does the actual work; this is called by Preprocessor.apply()."""
+        # handle error if eegprep is not available
+        if eegprep is None:
+            raise RuntimeError(
+                "The eegprep package is required to use the EEGPrep preprocessor.\n"
+                "  Please install braindecode with the [eegprep] extra added as in\n"
+                "  'pip install braindecode[eegprep]' to use this functionality,\n"
+                "  or run 'pip install eegprep[eeglabio]' directly."
+            )
+
         opname = self.__class__.__name__
         if isinstance(raw, mne.BaseEpochs):
             raise ValueError(
@@ -103,16 +112,6 @@ class EEGPrepBasePreprocessor(Preprocessor):
         else:
             eeg = raw
             non_eeg = None
-
-        # this is assumed to be the first line where EEGPrep is accessed, so we do
-        # the error handling here if users don't have it installed
-        if eegprep is None:
-            raise RuntimeError(
-                "The eegprep package is required to use the EEGPrep preprocessor.\n"
-                "  Please install braindecode with the [eegprep] extra added as in\n"
-                "  'pip install braindecode[eegprep]' to use this functionality,\n"
-                "  or run 'pip install eegprep[eeglabio]' directly."
-            )
 
         eeg = eegprep.mne2eeg(eeg)
 
@@ -393,8 +392,8 @@ class EEGPrep(EEGPrepBasePreprocessor):
             NoLocsChannelCriterion=bad_channel_nolocs_threshold,
             NoLocsChannelCriterionExcluded=bad_channel_nolocs_exclude_frac,
             MaxMem=max_mem_mb,
-            # The function additionally accepts these (legacy etc.) arguments, which
-            # we're not exposing here (current defaults as below):
+            # For reference, the function additionally accepts these (legacy etc.)
+            # arguments, which we're not exposing here (current defaults as below):
             # BurstRejection='off',
             # Distance='euclidian',
             # Channels=None,
