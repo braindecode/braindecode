@@ -961,11 +961,16 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
 
 
 class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
-    """Reinterpolates EEG channels that were previously removed via one of the EEGPrep
-    channel removal operations, in their original order. This is useful for ensuring
-    a consistent channel set across recordings after automated channel removal; this
-    step is ideally performed after all other artifact removal steps. If no channel
-    locations were recorded, this preprocessor has no effect.
+    """Reinterpolate previously removed EEG channels to restore original channel set.
+
+    This reinterpolates EEG channels that were previously dropped via one of the EEGPrep
+    channel removal operations and restores the original order of EEG channels. This
+    is typically necessary when you are using automatic channel removal but you need
+    a consistent channel set across multiple recordings/sessions.
+
+    The typical place to perform this is after all other EEGPrep-related artifact
+    removal steps. If no channel locations were recorded, this preprocessor has no
+    effect.
 
     """
 
