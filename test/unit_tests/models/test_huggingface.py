@@ -151,18 +151,17 @@ def test_save_pretrained_creates_config(tmp_path, sample_model):
     with open(config_path, 'r') as config_file:
         config = json.load(config_file)
 
-    try:
-        n_times = sample_model.n_times
-    except ValueError:
-        n_times = None
-    try:
-        n_chans = sample_model.n_chans
-    except ValueError:
-        n_chans = None
-    try:
-        n_outputs = sample_model.n_outputs
-    except ValueError:
-        n_outputs = None
+    # Use getattr with exception handling to safely get model properties
+    # Some models may raise ValueError when properties are not properly initialized
+    def safe_get_property(obj, prop_name):
+        try:
+            return getattr(obj, prop_name)
+        except (ValueError, AttributeError):
+            return None
+
+    n_times = safe_get_property(sample_model, 'n_times')
+    n_chans = safe_get_property(sample_model, 'n_chans')
+    n_outputs = safe_get_property(sample_model, 'n_outputs')
 
     if n_chans is not None and name != "SignalJEPA_Contextual":
         assert config['n_chans'] == n_chans
