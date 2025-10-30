@@ -974,9 +974,6 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
 
     """
 
-    def __init__(self):
-        super().__init__()
-
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
         orig_chanlocs = self._get_orig_chanlocs(raw)
@@ -996,16 +993,17 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
     EEG data. This is useful for having a consistent referencing scheme across
     recordings.
 
-    Note MNE has a very sophisticated rereferencing implementation; this preprocessor
-    is included to simplify building custom EEGPrep-like pipelines.
+    Generally, common average re-referencing is `data -= mean(data, axis=0)`, but
+    both EEGLAB/eegprep and to a greater extent MNE have additional bookkeeping around
+    re-referencing, in the latter case due to its focus on source localization. This
+    will have little effect on most machine-learning use cases; nevertheless, this
+    operation is included here to allow users to mirror the behavior of the end-to-end
+    EEGPrep pipeline by means of individual operations (for example when migrating
+    from one to the other form) without introducing perhaps unexpected side effects
+    on the MNE data structure.
 
     """
 
-    def __init__(self):
-        super().__init__()
-
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
-        eeg = eegprep.reref(eeg, [])
-
-        return eeg
+        return eegprep.reref(eeg, [])
