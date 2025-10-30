@@ -196,8 +196,6 @@ class EEGPrepBasePreprocessor(Preprocessor):
             proc.load_data()
         raw.__dict__ = proc.__dict__
 
-        ...  # can place breakpoint here to inspect raw after processing
-
     @classmethod
     def _get_orig_chanlocs(cls, raw: BaseRaw) -> list[dict[str, Any]] | None:
         """Retrieve original channel locations stashed in the given MNE Raw
@@ -244,7 +242,6 @@ class EEGPrep(EEGPrepBasePreprocessor):
 
     Parameters
     ----------
-    (main processing parameters, corresponding to processing stages)
     resample_to : float | None = None
         Optionally resample to this sampling rate (in Hz) before processing.
         Good choices are 200, 250, 256 Hz (consider keeping it a power of two
@@ -279,8 +276,6 @@ class EEGPrep(EEGPrepBasePreprocessor):
     common_avg_ref : bool
         Whether to apply a common average reference after processing. Recommended
         when doing cross-study analysis to have a consistent referencing scheme.
-
-    (additional tuning parameters)
     bad_channel_hf_threshold : float
         Threshold for high-frequency (>=45 Hz) noise-based bad channel detection,
         in z-scores. Lower is more aggressive. Default is 4.0. This is rarely tuned,
@@ -393,7 +388,6 @@ class EEGPrep(EEGPrepBasePreprocessor):
             ChannelCriterionMaxBadTime=bad_channel_max_broken_time,
             BurstCriterionRefMaxBadChns=refdata_max_bad_channels,
             BurstCriterionRefTolerances=refdata_max_tolerances,
-            # BurstRejection='off', # we don't use that one; left at default
             WindowCriterionTolerances=bad_window_tolerances,
             FlatlineCriterion=flatline_maxdur,
             NumSamples=num_samples,
@@ -401,11 +395,13 @@ class EEGPrep(EEGPrepBasePreprocessor):
             NoLocsChannelCriterion=bad_channel_nolocs_threshold,
             NoLocsChannelCriterionExcluded=bad_channel_nolocs_exclude_frac,
             MaxMem=max_mem_mb,
+            # The function additionally accepts these (legacy etc.) arguments, which
+            # we're not exposing here (current defaults as below):
+            # BurstRejection='off',
             # Distance='euclidian',
             # Channels=None,
             # Channels_ignore=None,
             # availableRAM_GB=None,
-            # (no other args)
         )
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
@@ -419,14 +415,13 @@ class EEGPrep(EEGPrepBasePreprocessor):
 
         # do a check if the data has a supported sampling rate
         if self.burst_removal_cutoff is not None:
-            from eegprep.utils import round_mat
-
             supported_rates = (100, 128, 200, 250, 256, 300, 500, 512)
-            if (sr_current := int(round_mat(eeg["srate"]))) not in supported_rates:
+            cur_srate = int(eegprep.utils.round_mat(eeg["srate"]))
+            if cur_srate not in supported_rates:
                 # note: technically the method will run if you disable this error,
                 #   but you're likely getting (potentially quite) suboptimal results
                 raise NotImplementedError(
-                    f"The dataset has an uncommon sampling rate of {sr_current} Hz,"
+                    f"The dataset has an uncommon sampling rate of {cur_srate} Hz,"
                     f" which is not supported by the EEGPrep Preprocessor"
                     f" implementation. Please enable resampling to"
                     f" resample the data to one of the supported rates"
