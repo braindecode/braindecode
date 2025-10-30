@@ -6,7 +6,6 @@
 
 import logging
 from abc import abstractmethod
-from types import ModuleType
 from typing import Any, Sequence
 
 import mne
@@ -35,17 +34,7 @@ __all__ = [
 try:
     import eegprep
 except ImportError:
-
-    class EEGPrepMissing(ModuleType):
-        def __getattr__(self, _: str) -> Any:
-            raise ImportError(
-                "The eegprep package is required to use the EEGPrep preprocessor.\n"
-                "  Please install braindecode with the [eegprep] extra added as in\n"
-                "  'pip install braindecode[eegprep]' to use this functionality,\n"
-                "  or run 'pip install eegprep[eeglabio]' directly."
-            )
-
-    eegprep = EEGPrepMissing("eegprep")
+    eegprep = None
 
 
 class EEGPrepBasePreprocessor(Preprocessor):
@@ -115,7 +104,16 @@ class EEGPrepBasePreprocessor(Preprocessor):
             eeg = raw
             non_eeg = None
 
-        # convert to EEGLAB structure
+        # this is assumed to be the first line where EEGPrep is accessed, so we do
+        # the error handling here if users don't have it installed
+        if eegprep is None:
+            raise RuntimeError(
+                "The eegprep package is required to use the EEGPrep preprocessor.\n"
+                "  Please install braindecode with the [eegprep] extra added as in\n"
+                "  'pip install braindecode[eegprep]' to use this functionality,\n"
+                "  or run 'pip install eegprep[eeglabio]' directly."
+            )
+
         eeg = eegprep.mne2eeg(eeg)
 
         # back up channel locations for potential later use
