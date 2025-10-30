@@ -21,12 +21,21 @@ from pytest_cases import parametrize_with_cases
 from braindecode.datasets import BaseConcatDataset, BaseDataset, MOABBDataset
 from braindecode.datautil.serialization import load_concat_dataset
 from braindecode.preprocessing import (
+    AddReferenceChannels,
+    ApplyHilbert,
+    ApplyProj,
     Crop,
     DropChannels,
     Filter,
+    InterpolateBads,
+    NotchFilter,
     Pick,
+    RenameChannels,
+    ReorderChannels,
     Resample,
+    SavgolFilter,
     SetEEGReference,
+    SetMontage,
 )
 from braindecode.preprocessing.preprocess import (
     Preprocessor,
@@ -385,3 +394,115 @@ def test_new_misc_channels():
     # This is only valid for preprocessors that use mne functions which do not modify
     # `misc` channels.
     np.testing.assert_array_equal(concat_ds.datasets[0].raw.get_data()[-2:, :], targets)
+
+
+# Comprehensive parameterized test for all preprocessing functions
+class AllPrepClasses:
+    """Test cases for all available preprocessing functions."""
+
+    @pytest.mark.parametrize("sfreq", [100, 250])
+    def prep_resample(self, sfreq):
+        """Test Resample preprocessor."""
+        return Resample(sfreq=sfreq)
+
+    @pytest.mark.parametrize("picks", ["eeg"])
+    def prep_picktype(self, picks):
+        """Test Pick by type."""
+        return Pick(picks=picks)
+
+    @pytest.mark.parametrize("picks", [["Cz"], ["C4", "FC3"]])
+    def prep_pickchannels(self, picks):
+        """Test Pick by channel names."""
+        return Pick(picks=picks)
+
+    @pytest.mark.parametrize("l_freq,h_freq", [(4, 30), (7, None), (None, 35)])
+    def prep_filter(self, l_freq, h_freq):
+        """Test Filter preprocessor."""
+        return Filter(l_freq=l_freq, h_freq=h_freq)
+
+    @pytest.mark.parametrize("ref_channels", ["average", ["C4"], ["C4", "Cz"]])
+    def prep_setref(self, ref_channels):
+        """Test SetEEGReference preprocessor."""
+        return SetEEGReference(ref_channels=ref_channels)
+
+    @pytest.mark.parametrize("tmin,tmax", [(0, 0.1), (0.1, 1.2), (0.1, None)])
+    def prep_crop(self, tmin, tmax):
+        """Test Crop preprocessor."""
+        return Crop(tmin=tmin, tmax=tmax)
+
+    @pytest.mark.parametrize("ch_names", ["Pz", "P2", "P1", "POz"])
+    def prep_drop(self, ch_names):
+        """Test DropChannels preprocessor."""
+        return DropChannels(ch_names=ch_names)
+
+    @pytest.mark.parametrize("freqs", [[50], [60], [50, 60]])
+    def prep_notch(self, freqs):
+        """Test NotchFilter preprocessor."""
+        return NotchFilter(freqs=freqs)
+
+    @pytest.mark.parametrize("h_freq", [10, 20, 30])
+    def prep_savgol(self, h_freq):
+        """Test SavgolFilter preprocessor."""
+        return SavgolFilter(h_freq=h_freq)
+
+    @pytest.mark.parametrize("mapping", [{"C4": "C4_new"}, {"Cz": "Cz_renamed", "FC3": "FC3_renamed"}])
+    def prep_rename(self, mapping):
+        """Test RenameChannels preprocessor."""
+        return RenameChannels(mapping=mapping)
+
+    @pytest.mark.parametrize("ch_names", [["Cz", "C4", "FC3", "Pz"], ["FC3", "C4", "Cz", "Pz"]])
+    def prep_reorder(self, ch_names):
+        """Test ReorderChannels preprocessor."""
+        return ReorderChannels(ch_names=ch_names)
+
+    @pytest.mark.parametrize("ref_channels", ["FCz", "AFz"])
+    def prep_addref(self, ref_channels):
+        """Test AddReferenceChannels preprocessor."""
+        return AddReferenceChannels(ref_channels=ref_channels)
+
+    @pytest.mark.parametrize("envelope", [True, False])
+    def prep_hilbert(self, envelope):
+        """Test ApplyHilbert preprocessor."""
+        return ApplyHilbert(envelope=envelope)
+
+    def prep_proj(self):
+        """Test ApplyProj preprocessor."""
+        return ApplyProj()
+
+    def prep_interpolate(self):
+        """Test InterpolateBads preprocessor."""
+        return InterpolateBads(reset_bads=True)
+
+    def prep_montage(self):
+        """Test SetMontage preprocessor."""
+        montage = mne.channels.make_standard_montage('standard_1020')
+        return SetMontage(montage=montage, match_case=False, on_missing='ignore')
+
+
+@parametrize_with_cases("prep", cases=AllPrepClasses, prefix="prep_")
+def test_all_preprocessing_functions(prep, base_concat_ds):
+    """Comprehensive test for all preprocessing functions.
+    
+    This test ensures that all preprocessing functions can be applied
+    to a dataset without errors. Some functions may require specific
+    setup (e.g., montage for interpolation).
+    """
+    # Special handling for functions that need setup
+    if isinstance(prep, (InterpolateBads, SetMontage)):
+        # Set montage for interpolation and montage-related operations
+        montage = mne.channels.make_standard_montage('standard_1020')
+        for ds in base_concat_ds.datasets:
+            ds.raw.set_montage(montage, match_case=False, on_missing='ignore')
+        
+        # Mark a bad channel for interpolation test
+        if isinstance(prep, InterpolateBads):
+            for ds in base_concat_ds.datasets:
+                ds.raw.info['bads'] = ['Pz']
+    
+    preprocessors = [prep]
+    
+    # Apply preprocessing
+    preprocess(base_concat_ds, preprocessors, n_jobs=1)
+    
+    # Verify the preprocessing was recorded
+    assert all([hasattr(ds, 'raw_preproc_kwargs') for ds in base_concat_ds.datasets])

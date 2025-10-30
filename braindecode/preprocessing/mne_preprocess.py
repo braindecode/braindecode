@@ -59,6 +59,15 @@ mne_functions = [
     mne.io.Raw.crop,
     mne.io.Raw.pick,
     mne.io.Raw.set_eeg_reference,
+    mne.io.Raw.interpolate_bads,
+    mne.io.Raw.notch_filter,
+    mne.io.Raw.savgol_filter,
+    mne.io.Raw.set_montage,
+    mne.io.Raw.rename_channels,
+    mne.io.Raw.reorder_channels,
+    mne.io.Raw.add_reference_channels,
+    mne.io.Raw.apply_hilbert,
+    mne.io.Raw.apply_proj,
 ]
 
 # Automatically generate and add classes to the global namespace
