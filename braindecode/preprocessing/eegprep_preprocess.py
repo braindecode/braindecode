@@ -405,7 +405,7 @@ class EEGPrep(EEGPrepBasePreprocessor):
         )
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         # remove per-channel DC offset (can be huge)
         eeg["data"] -= np.median(eeg["data"], axis=1, keepdims=True)
 
@@ -479,7 +479,7 @@ class RemoveFlatChannels(EEGPrepBasePreprocessor):
         self.max_allowed_jitter = max_allowed_jitter
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         eeg = eegprep.clean_flatlines(
             eeg,
             max_flatline_duration=self.max_flatline_duration,
@@ -503,7 +503,7 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
         super().__init__()
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         # note this might as well be implemented directly on the MNE data structure,
         # but was kept this way since we have the EEGPrep machinery here already.
         eeg["data"] -= np.median(eeg["data"], axis=1, keepdims=True)
@@ -553,7 +553,7 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
         self.method = method
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         eeg = eegprep.clean_drifts(
             eeg,
             transition=self.transition,
@@ -587,7 +587,7 @@ class Resampling(EEGPrepBasePreprocessor):
         self.sfreq = sfreq
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         if self.sfreq is not None:
             eeg = eegprep.resample(eeg, self.sfreq)
 
@@ -671,7 +671,7 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
         self.subset_size = subset_size
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         eeg = eegprep.clean_channels(
             eeg,
             corr_threshold=self.corr_threshold,
@@ -746,7 +746,7 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
         self.linenoise_aware = linenoise_aware
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         eeg, _ = eegprep.clean_channels_nolocs(
             eeg,
             min_corr=self.min_corr,
@@ -838,7 +838,7 @@ class RemoveBursts(EEGPrepBasePreprocessor):
         self.maxmem = maxmem
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         eeg = eegprep.clean_asr(
             eeg,
             cutoff=self.cutoff,
@@ -941,7 +941,7 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
         self.shape_range = shape_range
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         eeg, _ = eegprep.clean_windows(
             eeg,
             max_bad_channels=self.max_bad_channels,
@@ -972,7 +972,7 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
         super().__init__()
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         orig_chanlocs = self._get_orig_chanlocs(raw)
         if orig_chanlocs is None:
             log.info(
@@ -999,7 +999,7 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
         super().__init__()
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
-        """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
+        """Apply the preprocessor to an EEGLAB EEG structure."""
         eeg = eegprep.reref(eeg, [])
 
         return eeg
