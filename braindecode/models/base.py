@@ -123,6 +123,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
     n_times, sfreq, chs_info, etc.) by saving them in a config file alongside
     the model weights. This ensures that loaded models are correctly configured
     for their original data specifications.
+
+    .. important::
+        Currently, only EEG-specific parameters (n_outputs, n_chans, n_times,
+        input_window_seconds, sfreq, chs_info) are saved to the Hub. Model-specific
+        parameters (e.g., dropout rates, activation functions, number of filters)
+        are not preserved and will use their default values when loading from the Hub.
+
+        To use non-default model parameters, specify them explicitly when calling
+        :func:`from_pretrained()`::
+
+            model = EEGNet.from_pretrained("user/model", dropout=0.3, activation='relu')
+
+        Full parameter serialization will be addressed in a future update.
     """
 
     def __init_subclass__(cls, **kwargs):
@@ -513,12 +526,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
 
-        # Save model weights
-        weights_path = save_directory / f"pytorch_{type(self).__name__}.bin"
+        # Save model weights with standard Hub filename
+        weights_path = save_directory / "pytorch_model.bin"
         torch.save(self.state_dict(), weights_path)
 
-        # Save safetensors weights using the default Hub mixin implementation
-        super()._save_pretrained(save_directory)
+        # Also save in safetensors format using parent's implementation
+        try:
+            super()._save_pretrained(save_directory)
+        except Exception:
+            # Fallback to pytorch_model.bin if safetensors saving fails
+            pass
 
     if HAS_HF_HUB:
 
