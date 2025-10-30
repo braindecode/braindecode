@@ -25,32 +25,35 @@ _NP_ARRAY_TAG = "__numpy_array__"
 
 
 def _numpy_decoder(dct):
+    """Internal JSON decoder hook to handle numpy arrays."""
     if dct.get(_NP_ARRAY_TAG):
         arr = np.array(dct["data"], dtype=dct["dtype"])
         return arr.reshape(dct["shape"])
     return dct
 
 
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder hook to handle numpy arrays."""
+
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            # Reject complex-valued dtypes as they're not JSON serializable
+            if np.issubdtype(obj.dtype, np.complexfloating):
+                raise TypeError(
+                    f"Cannot serialize numpy array with complex dtype {obj.dtype}. "
+                    "Complex dtypes are not supported."
+                )
+            return {
+                _NP_ARRAY_TAG: True,
+                "dtype": obj.dtype.str,
+                "shape": obj.shape,
+                "data": obj.flatten().tolist(),
+            }
+        return super().default(obj)
+
+
 def _encode_payload(data: dict) -> str:
     """Serializes, encodes, and formats data into a marker string."""
-
-    class NumpyEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, np.ndarray):
-                # Reject complex-valued dtypes as they're not JSON serializable
-                if np.issubdtype(obj.dtype, np.complexfloating):
-                    raise TypeError(
-                        f"Cannot serialize numpy array with complex dtype {obj.dtype}. "
-                        "Complex dtypes are not supported."
-                    )
-                return {
-                    _NP_ARRAY_TAG: True,
-                    "dtype": obj.dtype.str,
-                    "shape": obj.shape,
-                    "data": obj.flatten().tolist(),
-                }
-            return super().default(obj)
-
     json_str = json.dumps(data, cls=NumpyEncoder)
     encoded = base64.b64encode(json_str.encode("utf-8")).decode("ascii")
     return f"{_MARKER_START} {encoded} {_MARKER_END}"
