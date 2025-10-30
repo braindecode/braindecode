@@ -484,7 +484,6 @@ class RemoveFlatChannels(EEGPrepBasePreprocessor):
             eeg,
             max_flatline_duration=self.max_flatline_duration,
             max_allowed_jitter=self.max_allowed_jitter,
-            # (no other args)
         )
 
         return eeg
@@ -559,7 +558,6 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
             transition=self.transition,
             attenuation=self.attenuation,
             method=self.method,
-            # (no other args)
         )
 
         return eeg
@@ -680,7 +678,6 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
             max_broken_time=self.max_broken_time,
             num_samples=self.num_samples,
             subset_size=self.subset_size,
-            # (no other args)
         )
 
         return eeg
@@ -754,7 +751,6 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
             window_len=self.window_len,
             max_broken_time=self.max_broken_time,
             linenoise_aware=self.linenoise_aware,
-            # (no other args)
         )
 
         return eeg
@@ -848,10 +844,7 @@ class RemoveBursts(EEGPrepBasePreprocessor):
             ref_maxbadchannels=self.ref_maxbadchannels,
             ref_tolerances=self.ref_tolerances,
             ref_wndlen=self.ref_wndlen,
-            # use_gpu=False,
-            # useriemannian=False,
             maxmem=self.maxmem,
-            # (no other args)
         )
 
         return eeg
@@ -953,7 +946,6 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
             truncate_quant=self.truncate_quant,
             step_sizes=self.step_sizes,
             shape_range=self.shape_range,
-            # (no other args)
         )
 
         return eeg
