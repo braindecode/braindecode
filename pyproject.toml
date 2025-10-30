@@ -65,7 +65,7 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.2.0"]
-hug = ["huggingface_hub[torch]>=0.20.0", "safetensors>=0.4.0"]
+hug = ["huggingface_hub[torch]>=0.20.0"]
 tests = [
     'pytest',
     'pytest-cov',
