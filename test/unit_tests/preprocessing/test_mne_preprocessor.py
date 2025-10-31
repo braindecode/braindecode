@@ -21,23 +21,36 @@ from pytest_cases import parametrize_with_cases
 from braindecode.datasets import BaseConcatDataset, BaseDataset, MOABBDataset
 from braindecode.datautil.serialization import load_concat_dataset
 from braindecode.preprocessing import (
+    AddChannels,
+    AddEvents,
+    AddProj,
     AddReferenceChannels,
+    Anonymize,
+    ApplyGradientCompensation,
     ApplyHilbert,
     ApplyProj,
     ComputeCurrentSourceDensity,
     Crop,
+    CropByAnnotations,
+    DelProj,
     DropChannels,
     EqualizeChannels,
     Filter,
+    FixMagCoilTypes,
     FixStimArtifact,
     InterpolateBads,
+    InterpolateTo,
     NotchFilter,
     Pick,
     RenameChannels,
     ReorderChannels,
     Resample,
+    Rescale,
     SavgolFilter,
+    SetAnnotations,
+    SetChannelTypes,
     SetEEGReference,
+    SetMeasDate,
     SetMontage,
 )
 from braindecode.preprocessing.preprocess import (
@@ -190,6 +203,34 @@ class PrepClasses:
 
     def prep_csd(self):
         return ComputeCurrentSourceDensity()
+
+    def prep_anonymize(self):
+        return Anonymize()
+
+    @pytest.mark.parametrize("mapping", [{"eeg": "eog"}])
+    def prep_setchanneltypes(self, mapping):
+        return SetChannelTypes(mapping=mapping)
+
+    @pytest.mark.parametrize("scalings", [{"eeg": 1e-6}])
+    def prep_rescale(self, scalings):
+        return Rescale(scalings=scalings)
+
+    def prep_fixmagcoiltypes(self):
+        return FixMagCoilTypes()
+
+    def prep_addproj(self):
+        # Create a simple projection
+        import numpy as np
+        proj_data = {
+            'kind': 1,
+            'active': False,
+            'desc': 'test',
+            'data': {'col_names': [], 'row_names': [], 'data': np.array([[]])},
+        }
+        return AddProj(projs=[proj_data])
+
+    def prep_delproj(self):
+        return DelProj(idx=0)
 
 
 @pytest.fixture

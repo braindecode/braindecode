@@ -369,23 +369,36 @@ Preprocessing
     filterbank
     preprocess
     Preprocessor
+    AddChannels
+    AddEvents
+    AddProj
     AddReferenceChannels
+    Anonymize
+    ApplyGradientCompensation
     ApplyHilbert
     ApplyProj
     ComputeCurrentSourceDensity
     Crop
+    CropByAnnotations
+    DelProj
     DropChannels
     EqualizeChannels
     Filter
+    FixMagCoilTypes
     FixStimArtifact
     InterpolateBads
+    InterpolateTo
     NotchFilter
     Pick
     RenameChannels
     ReorderChannels
     Resample
+    Rescale
     SavgolFilter
+    SetAnnotations
+    SetChannelTypes
     SetEEGReference
+    SetMeasDate
     SetMontage
 
 Data Utils
