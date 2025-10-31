@@ -201,17 +201,19 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
 
 class EEGPrep(EEGPrepBasePreprocessor):
-    """Preprocessor for an MNE Raw object that applies the EEGPrep pipeline. This
-    pipeline involves the stages:
-     * DC offset subtraction
-     * Optional resampling
-     * Flatline channel detection and removal
-     * High-pass filtering
-     * Bad channel detection and removal using correlation and HF noise criteria
-     * Burst artifact removal using ASR (Artifact Subspace Reconstruction)
-     * Detection and removal of residual bad time windows
-     * Optional reinterpolation of removed channels
-     * Optional common average referencing
+    """Preprocessor for an MNE Raw object that applies the EEGPrep pipeline.
+
+    This pipeline involves the stages:
+
+    - DC offset subtraction
+    - Optional resampling
+    - Flatline channel detection and removal
+    - High-pass filtering
+    - Bad channel detection and removal using correlation and HF noise criteria
+    - Burst artifact removal using ASR (Artifact Subspace Reconstruction)
+    - Detection and removal of residual bad time windows
+    - Optional reinterpolation of removed channels
+    - Optional common average referencing
 
     These steps are also individually available as separate preprocessors in this module
     if you want to apply only a subset of them or customize some beyond the parameters
@@ -230,13 +232,14 @@ class EEGPrep(EEGPrepBasePreprocessor):
     included in your downstream analysis.
 
     .. Note::
-      This implementation of the pipeline is best used in the context of
-      cross-session prediction; when using this with a within-session split, there is
-      a risk of data leakage since the artifact removal will be calibrated on statistics
-      of the entire session (and thus test sets). In practice the effect may be minor,
-      unless your downstream analysis is strongly driven by artifacts (e.g., if you
-      are trying to decode eye movements or muscle activity), but paper reviewers may
-      not be convinced by that.
+        This implementation of the pipeline is best used in the context of
+        cross-session prediction; when using this with a within-session split, there is
+        a risk of data leakage since the artifact removal will be calibrated on statistics
+        of the entire session (and thus test sets). In practice the effect may be minor,
+        unless your downstream analysis is strongly driven by artifacts (e.g., if you
+        are trying to decode eye movements or muscle activity), but paper reviewers may
+        not be convinced by that.
+
 
     Parameters
     ----------

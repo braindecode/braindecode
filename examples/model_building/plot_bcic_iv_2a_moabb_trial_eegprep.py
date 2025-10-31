@@ -1,9 +1,9 @@
 """.. _bcic-iv-2a-moabb-trial-eegprep:
 
-Basic Brain Decoding on EEG Data using EEGPrep preprocessor and EEGNet
-======================================================================
+Cleaning EEG Data with EEGPrep for Trialwise Decoding
+=====================================================
 
-This is a variant of the basic :ref:`plot_bcic_iv_2a_moabb_trial` decoding
+This is a variant of the basic :ref:`Trialwise decoding tutorial <bcic-iv-2a-moabb-trial>` decoding
 example that additionally inserts an EEGPrep stage into the preprocessing
 pipeline as a minimal demonstration of how to use EEGPrep with Braindecode.
 
@@ -61,14 +61,14 @@ dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 # or throw off predictions, additional artifact removal steps can be
 # beneficial in conjunction with deep models. The following code starts
 # from the minimal preprocessing pipeline in
-# :ref:`plot_bcic_iv_2a_moabb_trial` and inserts the EEGPrep Preprocessor
+# :ref:`Trialwise decoding tutorial <bcic-iv-2a-moabb-trial>` and inserts the EEGPrep Preprocessor
 # into the pipeline. This is an integration with the
-# (eegprep)[https://github.com/sccn/eegprep] preprocessing library that
+# `eegprep <https://github.com/sccn/eegprep>`_ preprocessing library that
 # implements a series of automated artifact removal steps first
 # proposed in [4]_ and later refined as part of the (now-default)
 # raw-data preprocessing approach in EEGLAB [5]_.
 #
-# The :class:`EEGPrep<braindecode.preprocessing.EEGPrep>`
+# The :class:`~braindecode.preprocessing.EEGPrep`
 # class represents the default end-to-end preprocessing pipeline, which has
 # only a few primary parameters that are worth tuning for a given dataset,
 # the most important ones of which are shown in the code below.
@@ -76,7 +76,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 # Besides using the end-to-end pipeline as a whole, users can also
 # separately invoke the individual preprocessing steps implemented
 # in EEGPrep as needed; for additional details see the documentation for
-# :class:`EEGPrep<braindecode.preprocessing.EEGPrep>`.
+# :class:`~braindecode.preprocessing.EEGPrep`.
 #
 # .. note::
 #    EEGPrep is best used early in the preprocessing pipeline, when you are
@@ -137,7 +137,7 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 ######################################################################
 # Besides using the end-to-end pipeline as a whole, you can also
 # separately invoke the individual preprocessing steps implemented
-# in EEGPrep as needed; see the :ref:`EEGPrep` class documentation for details.
+# in EEGPrep as needed; see the :class:`~braindecode.preprocessing.EEGPrep` class documentation for details.
 #
 # .. note::
 #    When using individual artifact removal steps, make sure they are applied
