@@ -119,7 +119,7 @@ class RawDataset(RecordDataset):
 
     def __init__(
         self,
-        raw: mne.io.BaseRaw | mne.BaseEpochs,
+        raw: mne.io.BaseRaw,
         description: dict | pd.Series | None = None,
         target_name: str | tuple[str, ...] | None = None,
         transform: Callable | None = None,
