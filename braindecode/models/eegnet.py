@@ -57,7 +57,7 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
 
     - **Temporal.** The initial temporal convs serve as a *learned filter bank*:
       long 1-D kernels (implemented as 2-D with singleton spatial extent) emphasize oscillatory bands and transients.
-      Because this stage is linear prior to BN/ELU, kernels can be analyzed as FIR filters to reveal each feature’s spectrum [Lawhern2018]_.
+      Because this stage is linear prior to BN/ELU, kernels can be analyzed as FIR filters to reveal each feature's spectrum [Lawhern2018]_.
 
     - **Spatial.** The depthwise spatial conv spans the full channel axis (kernel height = #electrodes; temporal size = 1).
       With ``groups = F1``, each temporal filter learns its own set of ``D`` spatial projections—akin to CSP, learned end-to-end and

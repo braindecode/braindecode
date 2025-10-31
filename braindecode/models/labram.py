@@ -45,33 +45,36 @@ class Labram(EEGModuleMixin, nn.Module):
     equals True. The original implementation uses (batch, n_chans, n_patches,
     patch_size) as input with static segmentation of the input data.
 
-    The models have the following sequence of steps:
-    if neural tokenizer:
-        - SegmentPatch: Segment the input data in patches;
-        - TemporalConv: Apply a temporal convolution to the segmented data;
-        - Residual adding cls, temporal and position embeddings (optional);
-        - WindowsAttentionBlock: Apply a windows attention block to the data;
-        - LayerNorm: Apply layer normalization to the data;
-        - Linear: An head linear layer to transformer the data into classes.
+    The models have the following sequence of steps::
 
-    else:
-        - PatchEmbed: Apply a patch embedding to the input data;
-        - Residual adding cls, temporal and position embeddings (optional);
-        - WindowsAttentionBlock: Apply a windows attention block to the data;
-        - LayerNorm: Apply layer normalization to the data;
-        - Linear: An head linear layer to transformer the data into classes.
+        if neural tokenizer:
+            - SegmentPatch: Segment the input data in patches;
+            - TemporalConv: Apply a temporal convolution to the segmented data;
+            - Residual adding cls, temporal and position embeddings (optional);
+            - WindowsAttentionBlock: Apply a windows attention block to the data;
+            - LayerNorm: Apply layer normalization to the data;
+            - Linear: An head linear layer to transformer the data into classes.
+
+        else:
+            - PatchEmbed: Apply a patch embedding to the input data;
+            - Residual adding cls, temporal and position embeddings (optional);
+            - WindowsAttentionBlock: Apply a windows attention block to the data;
+            - LayerNorm: Apply layer normalization to the data;
+            - Linear: An head linear layer to transformer the data into classes.
 
     .. versionadded:: 0.9
 
 
-    Examples on how to load pre-trained weights:
-    --------------------------------------------
-    >>> import torch
-    >>> from braindecode.models import Labram
-    >>> model = Labram(n_times=1600, n_chans=64, n_outputs=4)
-    >>> url = 'https://huggingface.co/braindecode/Labram-Braindecode/blob/main/braindecode_labram_base.pt'
-    >>> state = torch.hub.load_state_dict_from_url(url, progress=True)
-    >>> model.load_state_dict(state)
+    Examples
+    --------
+    Load pre-trained weights::
+
+        >>> import torch
+        >>> from braindecode.models import Labram
+        >>> model = Labram(n_times=1600, n_chans=64, n_outputs=4)
+        >>> url = "https://huggingface.co/braindecode/Labram-Braindecode/blob/main/braindecode_labram_base.pt"
+        >>> state = torch.hub.load_state_dict_from_url(url, progress=True)
+        >>> model.load_state_dict(state)
 
 
     Parameters

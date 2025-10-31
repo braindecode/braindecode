@@ -19,23 +19,24 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
     The Sinc-ShallowNet architecture has these fundamental blocks:
 
     1. **Block 1: Spectral and Spatial Feature Extraction**
-        - *Temporal Sinc-Convolutional Layer*:
-            Uses parametrized sinc functions to learn band-pass filters,
-            significantly reducing the number of trainable parameters by only
-            learning the lower and upper cutoff frequencies for each filter.
-       - *Spatial Depthwise Convolutional Layer*:
-            Applies depthwise convolutions to learn spatial filters for
-            each temporal feature map independently, further reducing
-            parameters and enhancing interpretability.
-       - *Batch Normalization*
+
+        - *Temporal Sinc-Convolutional Layer*: Uses parametrized sinc functions to learn band-pass filters,
+          significantly reducing the number of trainable parameters by only
+          learning the lower and upper cutoff frequencies for each filter.
+        - *Spatial Depthwise Convolutional Layer*: Applies depthwise convolutions to learn spatial filters for
+          each temporal feature map independently, further reducing
+          parameters and enhancing interpretability.
+        - *Batch Normalization*
 
     2. **Block 2: Temporal Aggregation**
+
         - *Activation Function*: ELU
         - *Average Pooling Layer*: Aggregation by averaging spatial dim
         - *Dropout Layer*
         - *Flatten Layer*
 
     3. **Block 3: Classification**
+
         - *Fully Connected Layer*: Maps the feature vector to n_outputs.
 
     **Implementation Notes:**
