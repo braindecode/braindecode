@@ -26,6 +26,7 @@ Enhancements
 - Including typing in the augmentation module (:gh:`709` by `Aphel`_)
 - Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
 - Adding a tutorial for fine-tuning a pre-trained foundation model (:gh:`794` by `Pierre Guetschel`_)
+- Added 25 new MNE preprocessing functions, expanding from 6 to 31 total preprocessing classes. New functions include: :class:`braindecode.preprocessing.NotchFilter`, :class:`braindecode.preprocessing.SavgolFilter`, :class:`braindecode.preprocessing.ApplyHilbert`, :class:`braindecode.preprocessing.InterpolateBads`, :class:`braindecode.preprocessing.InterpolateTo`, :class:`braindecode.preprocessing.RenameChannels`, :class:`braindecode.preprocessing.ReorderChannels`, :class:`braindecode.preprocessing.EqualizeChannels`, :class:`braindecode.preprocessing.AddChannels`, :class:`braindecode.preprocessing.SetMontage`, :class:`braindecode.preprocessing.AddReferenceChannels`, :class:`braindecode.preprocessing.AddProj`, :class:`braindecode.preprocessing.ApplyProj`, :class:`braindecode.preprocessing.DelProj`, :class:`braindecode.preprocessing.ComputeCurrentSourceDensity`, :class:`braindecode.preprocessing.FixStimArtifact`, :class:`braindecode.preprocessing.CropByAnnotations`, :class:`braindecode.preprocessing.Anonymize`, :class:`braindecode.preprocessing.SetAnnotations`, :class:`braindecode.preprocessing.SetChannelTypes`, :class:`braindecode.preprocessing.SetMeasDate`, :class:`braindecode.preprocessing.FixMagCoilTypes`, :class:`braindecode.preprocessing.ApplyGradientCompensation`, :class:`braindecode.preprocessing.AddEvents`, and :class:`braindecode.preprocessing.Rescale` (:gh:`XXX` by `Copilot`_ and `Bruno Aristimunha`_)
 
 
 API changes
@@ -407,3 +408,4 @@ Authors
 .. _Hamdi Altaheri: https://github.com/Altaheri
 .. _José Mauricio: https://github.com/josemaurici
 .. _Can Han: https://github.com/hancan16
+.. _Copilot: https://github.com/features/copilot
