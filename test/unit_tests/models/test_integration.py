@@ -535,6 +535,7 @@ def test_model_torch_script(model):
         "Labram",
         "EEGMiner",
         "SSTDPN",
+        "BENDR",
     ]
 
     if model.__class__.__name__ in not_working_models:

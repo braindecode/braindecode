@@ -8,7 +8,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class BENDR(EEGModuleMixin, nn.Module):
-    """BENDR from Can Han et al (2025) [Han2025]_.
+    """BENDR (BErt-inspired Neural Data Representations) from Kostas et al. (2021) [bendr]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Large Brain Model`
 
@@ -17,137 +17,144 @@ class BENDR(EEGModuleMixin, nn.Module):
         :alt: BENDR Architecture
         :width: 1000px
 
-    The **Spatial-Spectral** and **Temporal - Dual Prototype Network** (SST-DPN)
-    is an end-to-end 1D convolutional architecture designed for motor imagery (MI) EEG decoding,
-    aiming to address challenges related to discriminative feature extraction and
-    small-sample sizes [Han2025]_.
 
-    The framework systematically addresses three key challenges: multi-channel spatial-spectral
-    features and long-term temporal features [Han2025]_.
+    The **BENDR** architecture adapts techniques used for language modeling (LM) toward the
+    development of encephalography modeling (EM) [bendr]_. It utilizes a self-supervised
+    training objective to learn compressed representations of raw EEG signals [bendr]_. The
+    model is capable of modeling completely novel raw EEG sequences recorded with differing
+    hardware and subjects, aiming for transferable performance across a variety of downstream
+    BCI and EEG classification tasks [bendr]_.
 
     .. rubric:: Architectural Overview
 
-    SST-DPN consists of a feature extractor (_SSTEncoder, comprising Adaptive Spatial-Spectral
-    Fusion and Multi-scale Variance Pooling) followed by Dual Prototype Learning classification [Han2025]_.
-
-    1. **Adaptive Spatial-Spectral Fusion (ASSF)**: Uses :class:`_DepthwiseTemporalConv1d` to generate a
-        multi-channel spatial-spectral representation, followed by :class:`_SpatSpectralAttn`
-        (Spatial-Spectral Attention) to model relationships and highlight key spatial-spectral
-        channels [Han2025]_.
-
-    2. **Multi-scale Variance Pooling (MVP)**: Applies :class:`_MultiScaleVarPooler` with variance pooling
-        at multiple temporal scales to capture long-range temporal dependencies, serving as an
-        efficient alternative to transformers [Han2025]_.
-
-    3. **Dual Prototype Learning (DPL)**: A training strategy that employs two sets of
-        prototypes—Inter-class Separation Prototypes (proto_sep) and Intra-class Compact
-        Prototypes (proto_cpt)—to optimize the feature space, enhancing generalization ability and
-        preventing overfitting on small datasets [Han2025]_. During inference (forward pass),
-        classification decisions are based on the distance (dot product) between the
-        feature vector and proto_sep for each class [Han2025]_.
+    BENDR is adapted from wav2vec 2.0 [wav2vec2]_ and is composed of two main stages: a
+    feature extractor (Convolutional stage) that produces BErt-inspired Neural Data
+    Representations (BENDR), followed by a transformer encoder (Contextualizer) [bendr]_.
 
     .. rubric:: Macro Components
 
-    - `SSTDPN.encoder` **(Feature Extractor)**
-
-        - *Operations.* Combines Adaptive Spatial-Spectral Fusion and Multi-scale Variance Pooling
-          via an internal :class:`_SSTEncoder`.
-        - *Role.* Maps the raw MI-EEG trial :math:`X_i \in \mathbb{R}^{C \times T}` to the
-          feature space :math:`z_i \in \mathbb{R}^d`.
-
-    - `_SSTEncoder.temporal_conv` **(Depthwise Temporal Convolution for Spectral Extraction)**
-
-        - *Operations.* Internal :class:`_DepthwiseTemporalConv1d` applying separate temporal
-          convolution filters to each channel with kernel size `temporal_conv_kernel_size` and
-          depth multiplier `n_spectral_filters_temporal` (equivalent to :math:`F_1` in the paper).
-        - *Role.* Extracts multiple distinct spectral bands from each EEG channel independently.
-
-    - `_SSTEncoder.spt_attn` **(Spatial-Spectral Attention for Channel Gating)**
-
-        - *Operations.* Internal :class:`_SpatSpectralAttn` module using Global Context Embedding
-          via variance-based pooling, followed by adaptive channel normalization and gating.
-        - *Role.* Reweights channels in the spatial-spectral dimension to extract efficient and
-          discriminative features by emphasizing task-relevant regions and frequency bands.
-
-    - `_SSTEncoder.chan_conv` **(Pointwise Fusion across Channels)**
-
-        - *Operations.* A 1D pointwise convolution with `n_fused_filters` output channels
-          (equivalent to :math:`F_2` in the paper), followed by BatchNorm and the specified
-          `activation` function (default: ELU).
-        - *Role.* Fuses the weighted spatial-spectral features across all electrodes to produce
-          a fused representation :math:`X_{fused} \in \mathbb{R}^{F_2 \times T}`.
-
-    - `_SSTEncoder.mvp` **(Multi-scale Variance Pooling for Temporal Extraction)**
-
-        - *Operations.* Internal :class:`_MultiScaleVarPooler` using :class:`_VariancePool1D`
-          layers at multiple scales (`mvp_kernel_sizes`), followed by concatenation.
-        - *Role.* Captures long-range temporal features at multiple time scales. The variance
-          operation leverages the prior that variance represents EEG spectral power.
-
-    - `SSTDPN.proto_sep` / `SSTDPN.proto_cpt` **(Dual Prototypes)**
-
-        - *Operations.* Learnable vectors optimized during training using prototype learning losses.
-          The `proto_sep` (Inter-class Separation Prototype) is constrained via L2 weight-normalization
-          (:math:`\lVert s_i \rVert_2 \leq` `proto_sep_maxnorm`) during inference.
-        - *Role.* `proto_sep` achieves inter-class separation; `proto_cpt` enhances intra-class compactness.
+    - `BENDR.encoder` **(Convolutional Stage/Feature Extractor)**
+        - *Operations.* A stack of six short-receptive field 1D convolutions [bendr]_. Each
+          block consists of 1D convolution, GroupNorm, and GELU activation.
+        - *Role.* Takes raw data :math:`X_{raw}` and dramatically downsamples it to a new
+          sequence of vectors (BENDR) [bendr]_. Each resulting vector has a length of 512.
+    - `BENDR.contextualizer` **(Transformer Encoder)**
+        - *Operations.* A transformer encoder that uses layered, multi-head self-attention
+          [bendr]_. It employs T-Fixup weight initialization [tfixup]_ and uses 8 layers
+          and 8 heads.
+        - *Role.* Maps the sequence of BENDR vectors to a contextualized sequence. The output
+          of a fixed start token is typically used as the aggregate representation for
+          downstream classification [bendr]_.
+    - `Contextualizer.position_encoder` **(Positional Encoding)**
+        - *Operations.* An additive (grouped) convolution layer with a receptive field of 25
+          and 16 groups [bendr]_.
+        - *Role.* Encodes position information before the input enters the transformer.
 
     .. rubric:: How the information is encoded temporally, spatially, and spectrally
 
     * **Temporal.**
-       The initial :class:`_DepthwiseTemporalConv1d` uses a large kernel (e.g., 75). The MVP module employs pooling
-       kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal
-       features effectively. Large kernel pooling layers are shown to be superior to transformer
-       modules for this task in EEG decoding according to [Han2025]_.
-
+      The convolutional encoder uses a stack of blocks where the stride matches the receptive
+      field (e.g., 3 for the first block, 2 for subsequent blocks) [bendr]_. This process
+      downsamples the raw data by a factor of 96, resulting in an effective sampling frequency
+      of approximately 2.67 Hz.
     * **Spatial.**
-       The initial convolution at the classes :class:`_DepthwiseTemporalConv1d` groups parameter :math:`h=1`,
-       meaning :math:`F_1` temporal filters are shared across channels. The Spatial-Spectral Attention
-       mechanism explicitly models the relationships among these channels in the spatial-spectral
-       dimension, allowing for finer-grained spatial feature modeling compared to conventional
-       GCNs according to the authors [Han2025]_.
-       In other words, all electrode channels share :math:`F_1` temporal filters
-       independently to produce the spatial-spectral representation.
-
+      To maintain simplicity and reduce complexity, the convolutional stage uses **1D
+      convolutions** and elects not to mix EEG channels across the first stage [bendr]_. The
+      input includes 20 channels (19 EEG channels and one relative amplitude channel).
     * **Spectral.**
-       Spectral information is implicitly extracted via the :math:`F_1` filters in :class:`_DepthwiseTemporalConv1d`.
-       Furthermore, the use of Variance Pooling (in MVP) explicitly leverages the neurophysiological
-       prior that the **variance of EEG signals represents their spectral power**, which is an
-       important feature for distinguishing different MI classes [Han2025]_.
+      The convolution operations implicitly extract features from the raw EEG signal [bendr]_.
+      The representations (BENDR) are derived from the raw waveform using convolutional
+      operations followed by sequence modeling [wav2vec2]_.
 
     .. rubric:: Additional Mechanisms
 
-    - **Attention.** A lightweight Spatial-Spectral Attention mechanism models spatial-spectral relationships
-        at the channel level, distinct from applying attention to deep feature dimensions,
-        which is common in comparison methods like :class:`ATCNet`.
-    - **Regularization.** Dual Prototype Learning acts as a regularization technique
-        by optimizing the feature space to be compact within classes and separated between
-        classes. This enhances model generalization and classification performance, particularly
-        useful for limited data typical of MI-EEG tasks, without requiring external transfer
-        learning data, according to [Han2025]_.
+    - **Self-Supervision (Pre-training).** Uses a masked sequence learning approach (adapted
+      from wav2vec 2.0 [wav2vec2]_) where contiguous spans of BENDR sequences are masked, and
+      the model attempts to reconstruct the original underlying encoded vector based on the
+      transformer output and a set of negative distractors [bendr]_.
+    - **Regularization.** LayerDrop [layerdrop]_ and Dropout (at probabilities 0.01 and 0.15,
+      respectively) are used during pre-training [bendr]_. The implementation also uses T-Fixup
+      scaling for parameter initialization [tfixup]_.
+    - **Input Conditioning.** A fixed token (a vector filled with the value **-5**) is
+      prepended to the BENDR sequence before input to the transformer, serving as the aggregate
+      representation token [bendr]_.
 
     Notes
-    ----------
-    * The implementation of the DPL loss functions (:math:`\mathcal{L}_S`, :math:`\mathcal{L}_C`, :math:`\mathcal{L}_{EF}`)
-      and the optimization of ICPs are typically handled outside the primary ``forward`` method, within the training strategy
-      (see Ref. 52 in [Han2025]_).
-    * The default parameters are configured based on the BCI Competition IV 2a dataset.
-    * The use of Prototype Learning (PL) methods is novel in the field of EEG-MI decoding.
-    * **Lowest FLOPs:** Achieves the lowest Floating Point Operations (FLOPs) (9.65 M) among competitive
-      SOTA methods, including braindecode models like :class:`ATCNet` (29.81 M) and
-      :class:`EEGConformer` (63.86 M), demonstrating computational efficiency [Han2025]_.
-    * **Transformer Alternative:** Multi-scale Variance Pooling (MVP) provides a accuracy
-      improvement over temporal attention transformer modules in ablation studies, offering a more
-      efficient alternative to transformer-based approaches like :class:`EEGConformer` [Han2025]_.
+    -----
+    * The full BENDR architecture contains a large number of parameters; configuration (1)
+      involved training over **one billion parameters** [bendr]_.
+    * Randomly initialized full BENDR architecture was generally ineffective at solving
+      downstream tasks without prior self-supervised training [bendr]_.
+    * The pre-training task (contrastive predictive coding via masking) is generalizable,
+      exhibiting strong uniformity of performance across novel subjects, hardware, and
+      tasks [bendr]_.
 
     .. warning::
 
-        **Important:** To utilize the full potential of SSTDPN with Dual Prototype Learning (DPL),
-        users must implement the DPL optimization strategy outside the model's forward method.
-        For implementation details and training strategies, please consult the official code at
-        [Han2025Code]_:
-        https://github.com/hancan16/SST-DPN/blob/main/train.py
+        **Important:** To utilize the full potential of BENDR, the model requires
+        **self-supervised pre-training** on large, unlabeled EEG datasets (like TUEG) followed
+        by subsequent fine-tuning on the specific downstream classification task [bendr]_.
 
+    Parameters
+    ----------
+    encoder_h : int, default=512
+        Hidden size (number of output channels) of the convolutional encoder. This determines
+        the dimensionality of the BENDR feature vectors produced by the encoder.
+    contextualizer_hidden : int, default=3076
+        Hidden size of the feedforward layer within each transformer block. The paper uses
+        approximately 2x the transformer dimension (3076 ~ 2 x 1536).
+    projection_head : bool, default=False
+        If True, adds a projection layer at the end of the encoder to project back to the
+        input feature size. This is used during self-supervised pre-training but typically
+        disabled during fine-tuning.
+    drop_prob : float, default=0.1
+        Dropout probability applied throughout the model. The paper recommends 0.15 for
+        pre-training and 0.0 for fine-tuning. Default is 0.1 as a compromise.
+    layer_drop : float, default=0.0
+        Probability of dropping entire transformer layers during training (LayerDrop
+        regularization [layerdrop]_). The paper uses 0.01 for pre-training and 0.0 for
+        fine-tuning.
+    activation : nn.Module, default=nn.GELU
+        Activation function used in the encoder convolutional blocks. The paper uses GELU
+        activation throughout.
+    transformer_layers : int, default=8
+        Number of transformer encoder layers in the contextualizer. The paper uses 8 layers.
+    transformer_heads : int, default=8
+        Number of attention heads in each transformer layer. The paper uses 8 heads with
+        head dimension of 192 (1536 / 8).
+    position_encoder_length : int, default=25
+        Kernel size for the convolutional positional encoding layer. The paper uses a
+        receptive field of 25 with 16 groups.
+    enc_width : tuple of int, default=(3, 2, 2, 2, 2, 2)
+        Kernel sizes for each of the 6 convolutional blocks in the encoder. Each value
+        corresponds to one block.
+    enc_downsample : tuple of int, default=(3, 2, 2, 2, 2, 2)
+        Stride values for each of the 6 convolutional blocks in the encoder. The total
+        downsampling factor is the product of all strides (3 x 2 x 2 x 2 x 2 x 2 = 96).
+    start_token : int or float, default=-5
+        Value used to fill the start token embedding that is prepended to the BENDR sequence
+        before input to the transformer. This token's output is used as the aggregate
+        representation for classification.
+    final_layer : bool, default=True
+        If True, includes a final linear classification layer that maps from encoder_h to
+        n_outputs. If False, the model outputs the contextualized features directly.
 
+    References
+    ----------
+    .. [bendr] Kostas, D., Aroca-Ouellette, S., & Rudzicz, F. (2021).
+       BENDR: Using transformers and a contrastive self-supervised learning task to learn from
+       massive amounts of EEG data.
+       Frontiers in Human Neuroscience, 15, 653659.
+       https://doi.org/10.3389/fnhum.2021.653659
+    .. [wav2vec2] Baevski, A., Zhou, Y., Mohamed, A., & Auli, M. (2020).
+       wav2vec 2.0: A framework for self-supervised learning of speech representations.
+       Advances in Neural Information Processing Systems, 33, 12449-12460.
+    .. [tfixup] Huang, T. K., Liang, S., Jha, A., & Salakhutdinov, R. (2020).
+       Improving Transformer Optimization Through Better Initialization.
+       In International Conference on Machine Learning (pp. 4475-4483). PMLR.
+    .. [layerdrop] Fan, A., Grave, E., & Joulin, A. (2020).
+       Reducing transformer depth on demand with structured dropout.
+       In International Conference on Learning Representations.
     """
 
     def __init__(
