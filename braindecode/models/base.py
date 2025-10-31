@@ -182,7 +182,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
                 # Check if it needs deserialization (has 'loc' as list)
                 if "loc" in chs_info[0] and isinstance(chs_info[0]["loc"], list):
                     chs_info = self._deserialize_chs_info(chs_info)
-                    warnings.info("Modifying chs_info argument using the _deserialize_chs_info() method")
+                    warnings.warn(
+                        "Modifying chs_info argument using the _deserialize_chs_info() method"
+                    )
 
         if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
             raise ValueError(f"{n_chans=} different from {chs_info=} length")
