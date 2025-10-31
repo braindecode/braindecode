@@ -28,6 +28,8 @@ Enhancements
 - Added :class:`braindecode.models.BENDR`  (:gh:`802` by `Bruno Aristimunha`_ )
 - Adding a tutorial for fine-tuning a pre-trained foundation model (:gh:`794` by `Pierre Guetschel`_)
 - Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
+- Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
+
 
 
 API changes
