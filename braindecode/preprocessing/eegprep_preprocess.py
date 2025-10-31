@@ -688,20 +688,19 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
     contains no channels that record only noise for extended periods of time. This uses
     a hybrid criterion involving correlation and high-frequency noise thresholds:
 
-     a) if a channel has lower correlation to its robust estimate (based on other
-        channels) than a given threshold for a minimum period of time (or percentage of
-        the recording), it will be removed.
-     b) if a channel has more (high-frequency) noise relative relative to the (robust)
-        population of other channels than a given threshold (in standard deviations),
-        it will be removed.
+    a) if a channel has lower correlation to its robust estimate (based on other
+       channels) than a given threshold for a minimum period of time (or percentage of
+       the recording), it will be removed.
+    b) if a channel has more (high-frequency) noise relative relative to the (robust)
+       population of other channels than a given threshold (in standard deviations),
+       it will be removed.
 
     This method requires channels to have an associated location; when a location
     is not known or could not be inferred (e.g., from channel labels if using a standard
-    montage such as the 10-20 system), use the RemoveBadChannelsNoLocs preprocessor
-    instead.
+    montage such as the 10-20 system), use the :class:`RemoveBadChannelsNoLocs`
+    preprocessor instead.
 
-    Preconditions
-    -------------
+    Preconditions:
 
     - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
       configured as a highpass filter) must have been applied beforehand.
@@ -807,8 +806,7 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
     locations, you may get better results with the RemoveBadChannels preprocessor
     instead.
 
-    Preconditions
-    -------------
+    Preconditions:
 
     - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
       configured as a highpass filter) must have been applied beforehand.
@@ -891,8 +889,8 @@ class RemoveBursts(EEGPrepBasePreprocessor):
     those events occur are reconstructed (interpolated) based on the rest of the
     EEG signal during these time periods.
 
-    Preconditions
-    -------------
+    Preconditions:
+
     - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
       configured as a highpass filter) must have been applied beforehand.
     - Must have removed flat-line channels beforehand with :class:`RemoveFlatChannels`.
@@ -1016,8 +1014,7 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
       useful to apply this to training data only in such cases, however, to get an
       artifact-unencumbered model.
 
-    Preconditions
-    -------------
+    Preconditions:
 
     - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
       configured as a highpass filter) must have been applied beforehand.
@@ -1123,14 +1120,14 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
     channel removal operations and restores the original order of EEG channels. This
     is typically necessary when you are using automatic channel removal but you need
     a consistent channel set across multiple recordings/sessions. Uses spherical-spline
-    interpolation ([Perrin1989]_).
+    interpolation (based on [Perrin1989]_).
 
     The typical place to perform this is after all other EEGPrep-related artifact
     removal steps, except re-referencing. If no channel locations were recorded,
     this preprocessor has no effect.
 
-    Preconditions
-    -------------
+    Preconditions:
+
     - Must have 3D channel locations.
     - This filter will only have an effect if one or more of the preceding steps
       recorded original channel locations (e.g., :class:`RemoveBadChannels`,
@@ -1144,6 +1141,7 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
     .. [Perrin1989] Perrin, F., Pernier, J., Bertrand, O. and Echallier, J.F., 1989.
        Spherical splines for scalp potential and current density mapping.
        Electroencephalography and Clinical Neurophysiology, 72(2), pp.184-187.
+
 
     """
 
