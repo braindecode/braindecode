@@ -41,18 +41,41 @@ def _create_description(description) -> pd.Series:
 
 
 class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]]):
+    def __init__(self, description: dict | pd.Series | None = None):
+        self._description = _create_description(description)
+
     @abstractmethod
     def __len__(self) -> int:
         pass
 
     @property
-    @abstractmethod
     def description(self) -> pd.Series:
-        pass
+        return self._description
 
-    @abstractmethod
     def set_description(self, description: dict | pd.Series, overwrite: bool = False):
-        pass
+        """Update (add or overwrite) the dataset description.
+
+        Parameters
+        ----------
+        description: dict | pd.Series
+            Description in the form key: value.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
+        """
+        description = _create_description(description)
+        for key, value in description.items():
+            # if the key is already in the existing description, drop it
+            if self._description is not None and key in self._description:
+                assert overwrite, (
+                    f"'{key}' already in description. Please "
+                    f"rename or set overwrite to True."
+                )
+                self._description.pop(key)
+        if self._description is None:
+            self._description = description
+        else:
+            self._description = pd.concat([self.description, description])
 
     @property
     @abstractmethod
@@ -92,8 +115,8 @@ class RawDataset(RecordDataset):
         target_name: str | tuple[str, ...] | None = None,
         transform: Callable | None = None,
     ):
+        super().__init__(description)
         self.raw = raw
-        self._description = _create_description(description)
         self.transform = transform
 
         # save target name for load/save later
@@ -122,35 +145,6 @@ class RawDataset(RecordDataset):
         if value is not None and not callable(value):
             raise ValueError("Transform needs to be a callable.")
         self._transform = value
-
-    @property
-    def description(self) -> pd.Series:
-        return self._description
-
-    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
-        """Update (add or overwrite) the dataset description.
-
-        Parameters
-        ----------
-        description: dict | pd.Series
-            Description in the form key: value.
-        overwrite: bool
-            Has to be True if a key in description already exists in the
-            dataset description.
-        """
-        description = _create_description(description)
-        for key, value in description.items():
-            # if the key is already in the existing description, drop it
-            if self._description is not None and key in self._description:
-                assert overwrite, (
-                    f"'{key}' already in description. Please "
-                    f"rename or set overwrite to True."
-                )
-                self._description.pop(key)
-        if self._description is None:
-            self._description = description
-        else:
-            self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
         if target_name is not None and not isinstance(target_name, (str, tuple, list)):
@@ -230,9 +224,9 @@ class EEGWindowsDataset(RecordDataset):
         targets_from: str = "metadata",
         last_target_only: bool = True,
     ):
+        super().__init__(description)
         self.raw = raw
         self.metadata = metadata
-        self._description = _create_description(description)
 
         self.transform = transform
         self.last_target_only = last_target_only
@@ -303,32 +297,6 @@ class EEGWindowsDataset(RecordDataset):
             raise ValueError("Transform needs to be a callable.")
         self._transform = value
 
-    @property
-    def description(self) -> pd.Series:
-        return self._description
-
-    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
-        """Update (add or overwrite) the dataset description.
-
-        Parameters
-        ----------
-        description: dict | pd.Series
-            Description in the form key: value.
-        overwrite: bool
-            Has to be True if a key in description already exists in the
-            dataset description.
-        """
-        description = _create_description(description)
-        for key, value in description.items():
-            # if they key is already in the existing description, drop it
-            if key in self._description:
-                assert overwrite, (
-                    f"'{key}' already in description. Please "
-                    f"rename or set overwrite to True."
-                )
-                self._description.pop(key)
-        self._description = pd.concat([self.description, description])
-
 
 class WindowsDataset(RecordDataset):
     """Returns windows from an mne.Epochs object along with a target.
@@ -365,8 +333,8 @@ class WindowsDataset(RecordDataset):
         targets_from: str = "metadata",
         last_target_only: bool = True,
     ):
+        super().__init__(description)
         self.windows = windows
-        self._description = _create_description(description)
         self.transform = transform
         self.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
@@ -426,32 +394,6 @@ class WindowsDataset(RecordDataset):
         if value is not None and not callable(value):
             raise ValueError("Transform needs to be a callable.")
         self._transform = value
-
-    @property
-    def description(self) -> pd.Series:
-        return self._description
-
-    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
-        """Update (add or overwrite) the dataset description.
-
-        Parameters
-        ----------
-        description: dict | pd.Series
-            Description in the form key: value.
-        overwrite: bool
-            Has to be True if a key in description already exists in the
-            dataset description.
-        """
-        description = _create_description(description)
-        for key, value in description.items():
-            # if they key is already in the existing description, drop it
-            if key in self._description:
-                assert overwrite, (
-                    f"'{key}' already in description. Please "
-                    f"rename or set overwrite to True."
-                )
-                self._description.pop(key)
-        self._description = pd.concat([self.description, description])
 
 
 T = TypeVar("T", bound=RecordDataset)
