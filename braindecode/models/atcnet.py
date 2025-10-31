@@ -62,12 +62,14 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     - **Sliding-Window Sequencer**
 
-      From the condensed time axis (length ``T_c``), ATCNet forms ``n`` overlapping windows
-      of width ``T_w = T_c - n + 1`` (one start per index). Each window produces a sequence
-      ``(B, F2, T_w)`` forwarded to its own attention–TCN branch. This creates *parallel*
-      encoders over shifted contexts and is key to robustness on nonstationary EEG.
+        From the condensed time axis (length ``T_c``), ATCNet forms ``n`` overlapping windows
+        of width ``T_w = T_c - n + 1`` (one start per index). Each window produces a sequence
+        ``(B, F2, T_w)`` forwarded to its own attention-TCN branch. This creates *parallel*
+        encoders over shifted contexts and is key to robustness on nonstationary EEG.
 
     - :class:`_AttentionBlock` **(small MHA on temporal positions)**
+
+        Attention here is *local to a window* and purely temporal.
 
         - *Operations.*
         - Rearrange to ``(B, T_w, F2)``,
@@ -75,8 +77,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - Custom MultiHeadAttention :class:`_MHA` (``num_heads=H``, per-head dim ``d_h``) + residual add,
         - Dropout :class:`torch.nn.Dropout`
         - Rearrange back to ``(B, F2, T_w)``.
-
-        **Note**: Attention is *local to a window* and purely temporal.
 
         *Role.* Re-weights evidence across the window, letting the model emphasize informative
         segments (onsets, bursts) before causal convolutions aggregate history.
@@ -100,7 +100,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - (b) **concatenate** all window features ``(B, n·F2)`` and apply a single :class:`MaxNormLinear`.
         The max-norm constraint regularizes the readout.
 
-    **Convolutional Details**
+    .. rubric:: Convolutional Details
 
     - **Temporal.** Temporal structure is learned in three places:
         - (1) the stem's wide ``(L_t, 1)`` conv (learned filter bank),

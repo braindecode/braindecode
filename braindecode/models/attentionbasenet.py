@@ -127,7 +127,8 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Additional Mechanisms
 
-    - **Attention variants at a glance.**
+    **Attention variants at a glance:**
+
     - ``"se"``: Squeeze-and-Excitation (global pooling → bottleneck → gates).
     - ``"gsop"``: Global second-order pooling (covariance-aware channel weights).
     - ``"fca"``: Frequency Channel Attention (DCT summary; uses ``seq_len`` and ``freq_idx``).
@@ -138,12 +139,12 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     - ``"srm"``: Style-based recalibration (mean–std descriptors; optional MLP).
     - ``"cbam"``: Channel then temporal attention (uses ``kernel_size``).
     - ``"cat"`` / ``"catlite"``: Collaborative (channel ± temporal) attention; *lite* omits temporal.
-    - **Auto-compatibility on short inputs.**
 
-    If the input duration is too short for the configured kernels/pools, the implementation
-    **automatically rescales** temporal lengths/strides downward (with a warning) to keep
-    shapes valid and preserve the pipeline semantics.
+    **Auto-compatibility on short inputs:**
 
+        If the input duration is too short for the configured kernels/pools, the implementation
+        **automatically rescales** temporal lengths/strides downward (with a warning) to keep
+        shapes valid and preserve the pipeline semantics.
 
     .. rubric:: Usage and Configuration
 
@@ -158,9 +159,9 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     - ``drop_prob_inp`` and ``drop_prob_attn``: regularize stem and attention stages.
     - **Training tips.**
 
-    Start with moderate pooling (e.g., ``P₁=75,S₁=15``) and ELU activations; enable attention
-    only after the stem learns stable filters. For small datasets, prefer simpler modes
-    (``"se"``, ``"eca"``) before heavier ones (``"gsop"``, ``"encnet"``).
+        Start with moderate pooling (e.g., ``P₁=75,S₁=15``) and ELU activations; enable attention
+        only after the stem learns stable filters. For small datasets, prefer simpler modes
+        (``"se"``, ``"eca"``) before heavier ones (``"gsop"``, ``"encnet"``).
 
     Notes
     -----
@@ -170,6 +171,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
       specific variants (CBAM/CAT).
     - The paper and original code with more details about the methodological
       choices are available at the [Martin2023]_ and [MartinCode]_.
+
     .. versionadded:: 0.9
 
     Parameters
