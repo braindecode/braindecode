@@ -666,22 +666,23 @@ class BaseConcatDataset(ConcatDataset, Generic[T]):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
     def save(self, path: str, overwrite: bool = False, offset: int = 0):
-        """Save datasets to files by creating one subdirectory for each dataset:
-        path/
-            0/
-                0-raw.fif | 0-epo.fif
-                description.json
-                raw_preproc_kwargs.json (if raws were preprocessed)
-                window_kwargs.json (if this is a windowed dataset)
-                window_preproc_kwargs.json  (if windows were preprocessed)
-                target_name.json (if target_name is not None and dataset is raw)
-            1/
-                1-raw.fif | 1-epo.fif
-                description.json
-                raw_preproc_kwargs.json (if raws were preprocessed)
-                window_kwargs.json (if this is a windowed dataset)
-                window_preproc_kwargs.json  (if windows were preprocessed)
-                target_name.json (if target_name is not None and dataset is raw)
+        """Save datasets to files by creating one subdirectory for each dataset::
+
+            path/
+                0/
+                    0-raw.fif | 0-epo.fif
+                    description.json
+                    raw_preproc_kwargs.json (if raws were preprocessed)
+                    window_kwargs.json (if this is a windowed dataset)
+                    window_preproc_kwargs.json  (if windows were preprocessed)
+                    target_name.json (if target_name is not None and dataset is raw)
+                1/
+                    1-raw.fif | 1-epo.fif
+                    description.json
+                    raw_preproc_kwargs.json (if raws were preprocessed)
+                    window_kwargs.json (if this is a windowed dataset)
+                    window_preproc_kwargs.json  (if windows were preprocessed)
+                    target_name.json (if target_name is not None and dataset is raw)
 
         Parameters
         ----------

@@ -39,16 +39,19 @@ class CTNet(EEGModuleMixin, nn.Module):
     The architecture consists of three main components:
 
     1. **Convolutional Module**:
+
         - Apply :class:`EEGNet` to perform some feature extraction, denoted here as
-        _PatchEmbeddingEEGNet module.
+          _PatchEmbeddingEEGNet module.
 
     2. **Transformer Encoder Module**:
+
         - Utilizes multi-head self-attention mechanisms as EEGConformer but
-        with residual blocks.
+          with residual blocks.
 
     3. **Classifier Module**:
+
         - Combines features from both the convolutional module
-        and the Transformer encoder.
+          and the Transformer encoder.
         - Flattens the combined features and applies dropout for regularization.
         - Uses a fully connected layer to produce the final classification output.
 

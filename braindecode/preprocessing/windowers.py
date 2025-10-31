@@ -273,7 +273,7 @@ def create_windows_from_events(
         rejection based on flatness is done. See mne.Epochs.
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
     accepted_bads_ratio: float, optional
         Acceptable proportion of trials with inconsistent length in a raw. If
         the number of trials whose length is exceeded by the window size is
@@ -403,7 +403,7 @@ def create_fixed_length_windows(
         by using the _LazyDataFrame (experimental).
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
     n_jobs: int
         Number of jobs to use to parallelize the windowing.
     verbose: bool | str | int | None
