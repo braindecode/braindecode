@@ -553,9 +553,9 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
     """Remove drifts from the EEG data using a forward-backward high-pass filter
     ([Oppenheim1999]_).
 
-    .. figure:: https://www.researchgate.net/profile/Zohreh-Zakeri/publication/322581932/figure/fig5/AS:584276756152320@1516313842603/Not-filtered-EEG-data-left-versus-band-pass-filtered-EEG-data-with-high-cut-off.png
+    .. figure:: ../../docs/_static/preprocess/highpass.png
        :align: center
-       :alt: Before/after comparison of drift removal.
+       :alt: Magnitude response for this filter with default settings.
 
     Note that MNE has its own suite of filters for this that offers more choices; use
     this filter if you are specifically interested in matching the EEGLAB and EEGPrep
