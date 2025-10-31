@@ -57,6 +57,7 @@ provides a common interface for all EEG models and derivate variables names if n
     AttnSleep
     BDTCN
     BIOT
+    BENDR
     ContraWR
     CTNet
     Deep4Net

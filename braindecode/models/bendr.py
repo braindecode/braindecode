@@ -179,7 +179,6 @@ class BENDR(EEGModuleMixin, nn.Module):
         position_encoder_length=25,  # Kernel size for positional encoding conv
         enc_width=(3, 2, 2, 2, 2, 2),
         enc_downsample=(3, 2, 2, 2, 2, 2),
-        # extra model parameters
         start_token=-5,  # Value for start token embedding
         final_layer=True,  # Whether to include the final linear layer
     ):
@@ -216,7 +215,7 @@ class BENDR(EEGModuleMixin, nn.Module):
             heads=transformer_heads,
             layers=transformer_layers,
             dropout=drop_prob,  # Use general dropout probability
-            # activation="gelu", # Pass activation name string
+            activation=activation,
             position_encoder=position_encoder_length,  # Pass position encoder kernel size
             layer_drop=layer_drop,
             start_token=start_token,  # Keep fixed start token value
@@ -321,6 +320,8 @@ class _ConvEncoderBENDR(nn.Module):
 
 
 class _BENDRContextualizer(nn.Module):
+    """Transformer-based contextualizer for BENDR."""
+
     def __init__(
         self,
         in_features,
@@ -328,7 +329,7 @@ class _BENDRContextualizer(nn.Module):
         heads=8,
         layers=8,
         dropout=0.1,  # Default dropout
-        activation="gelu",  # Activation for transformer FF layer
+        activation=nn.GELU,  # Activation for transformer FF layer
         position_encoder=25,  # Kernel size for conv positional encoding
         layer_drop=0.0,  # Probability of dropping a whole layer
         start_token=-5,  # Value for start token embedding
@@ -356,7 +357,8 @@ class _BENDRContextualizer(nn.Module):
             nn.init.constant_(conv.bias, 0)
 
             conv = nn.utils.parametrizations.weight_norm(conv, name="weight", dim=2)
-            self.relative_position = nn.Sequential(conv, nn.GELU())
+            self.relative_position = nn.Sequential(conv, nn.activation())
+
         # --- Input Conditioning --- (Includes projection up to transformer_dim)
         # Rearrange, Norm, Dropout, Project, Rearrange
         self.input_conditioning = nn.Sequential(
@@ -403,10 +405,9 @@ class _BENDRContextualizer(nn.Module):
         self.apply(self._init_bert_params)
 
     def _init_bert_params(self, module):
-        """Initialize linear layers and apply TFixup scaling."""
+        """Initialize linear layers and apply T-Fixup scaling."""
         if isinstance(module, nn.Linear):
             # Standard init
-            # module.weight.data.normal_(mean=0.0, std=0.02)
             nn.init.xavier_uniform_(module.weight.data)
             if module.bias is not None:
                 module.bias.data.zero_()
@@ -414,22 +415,11 @@ class _BENDRContextualizer(nn.Module):
             module.weight.data = (
                 0.67 * len(self.transformer_layers) ** (-0.25) * module.weight.data
             )
-        # You might want to initialize LayerNorm layers as well
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
 
-    def _init_simplified_params(self, module):
-        """Initialize linear layers with Xavier and LayerNorms with defaults."""
-        if isinstance(module, nn.Linear):
-            nn.init.xavier_uniform_(module.weight.data)
-            if module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
-
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Input x: [batch_size, in_features, seq_len]
 
         # Apply relative positional encoding
@@ -463,7 +453,7 @@ class _BENDRContextualizer(nn.Module):
         # x: [seq_len + 1, batch_size, transformer_dim]
 
         # Permute to (B, C, T) format for Conv1d output layer
-        x = x.permute(1, 2, 0)
+        x = Rearrange("time batch channel -> batch channel time")(x)
         # x: [batch_size, transformer_dim, seq_len + 1]
 
         # Apply output projection (Conv1d expects B, C, T)
