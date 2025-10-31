@@ -6,7 +6,9 @@
 # License: BSD-3
 import inspect
 
+import mne.channels
 import mne.io
+import mne.preprocessing
 
 from braindecode.preprocessing.preprocess import Preprocessor
 from braindecode.util import _update_moabb_docstring
@@ -53,7 +55,9 @@ def _generate_mne_pre_processor(function):
 
 # List of MNE functions to generate classes for
 mne_functions = [
+    # From mne.filter
     mne.filter.resample,
+    # From mne.io.Raw
     mne.io.Raw.drop_channels,
     mne.io.Raw.filter,
     mne.io.Raw.crop,
@@ -68,6 +72,11 @@ mne_functions = [
     mne.io.Raw.add_reference_channels,
     mne.io.Raw.apply_hilbert,
     mne.io.Raw.apply_proj,
+    # From mne.preprocessing
+    mne.preprocessing.compute_current_source_density,
+    mne.preprocessing.fix_stim_artifact,
+    # From mne.channels
+    mne.channels.equalize_channels,
 ]
 
 # Automatically generate and add classes to the global namespace

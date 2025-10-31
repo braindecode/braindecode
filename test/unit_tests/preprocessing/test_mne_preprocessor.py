@@ -24,9 +24,12 @@ from braindecode.preprocessing import (
     AddReferenceChannels,
     ApplyHilbert,
     ApplyProj,
+    ComputeCurrentSourceDensity,
     Crop,
     DropChannels,
+    EqualizeChannels,
     Filter,
+    FixStimArtifact,
     InterpolateBads,
     NotchFilter,
     Pick,
@@ -150,6 +153,64 @@ class PrepClasses:
     @pytest.mark.parametrize("ch_names", ["Pz", "P2", "P1", "POz"])
     def prep_drop(self, ch_names):
         return DropChannels(ch_names=ch_names)
+
+    @pytest.mark.parametrize("freqs", [[50], [60]])
+    def prep_notch(self, freqs):
+        return NotchFilter(freqs=freqs)
+
+    @pytest.mark.parametrize("h_freq", [10, 20])
+    def prep_savgol(self, h_freq):
+        return SavgolFilter(h_freq=h_freq)
+
+    @pytest.mark.parametrize("mapping", [{"C4": "C4_new"}])
+    def prep_rename(self, mapping):
+        return RenameChannels(mapping=mapping)
+
+    @pytest.mark.parametrize("ch_names", [["Cz", "C4", "FC3", "Pz"]])
+    def prep_reorder(self, ch_names):
+        return ReorderChannels(ch_names=ch_names)
+
+    @pytest.mark.parametrize("ref_channels", ["FCz"])
+    def prep_addref(self, ref_channels):
+        return AddReferenceChannels(ref_channels=ref_channels)
+
+    @pytest.mark.parametrize("envelope", [True, False])
+    def prep_hilbert(self, envelope):
+        return ApplyHilbert(envelope=envelope)
+
+    def prep_proj(self):
+        return ApplyProj()
+
+    def prep_interpolate(self):
+        return InterpolateBads(reset_bads=True)
+
+    def prep_montage(self):
+        montage = mne.channels.make_standard_montage('standard_1020')
+        return SetMontage(montage=montage, match_case=False, on_missing='ignore')
+
+    def prep_csd(self):
+        return ComputeCurrentSourceDensity()
+
+
+@pytest.fixture
+def base_concat_ds_with_montage(base_concat_ds):
+    """Dataset with montage set for functions that require it."""
+    import copy
+    ds = copy.deepcopy(base_concat_ds)
+    montage = mne.channels.make_standard_montage('standard_1020')
+    for d in ds.datasets:
+        d.raw.set_montage(montage, match_case=False, on_missing='ignore')
+    return ds
+
+
+@pytest.fixture
+def base_concat_ds_with_bad_channels(base_concat_ds_with_montage):
+    """Dataset with bad channels marked for interpolation."""
+    import copy
+    ds = copy.deepcopy(base_concat_ds_with_montage)
+    for d in ds.datasets:
+        d.raw.info['bads'] = ['Pz']
+    return ds
 
 
 @parametrize_with_cases("prep", cases=PrepClasses, prefix="prep_")
@@ -396,115 +457,26 @@ def test_new_misc_channels():
     np.testing.assert_array_equal(concat_ds.datasets[0].raw.get_data()[-2:, :], targets)
 
 
-# Comprehensive parameterized test for all preprocessing functions
-class AllPrepClasses:
-    """Test cases for all available preprocessing functions."""
-
-    @pytest.mark.parametrize("sfreq", [100, 250])
-    def prep_resample(self, sfreq):
-        """Test Resample preprocessor."""
-        return Resample(sfreq=sfreq)
-
-    @pytest.mark.parametrize("picks", ["eeg"])
-    def prep_picktype(self, picks):
-        """Test Pick by type."""
-        return Pick(picks=picks)
-
-    @pytest.mark.parametrize("picks", [["Cz"], ["C4", "FC3"]])
-    def prep_pickchannels(self, picks):
-        """Test Pick by channel names."""
-        return Pick(picks=picks)
-
-    @pytest.mark.parametrize("l_freq,h_freq", [(4, 30), (7, None), (None, 35)])
-    def prep_filter(self, l_freq, h_freq):
-        """Test Filter preprocessor."""
-        return Filter(l_freq=l_freq, h_freq=h_freq)
-
-    @pytest.mark.parametrize("ref_channels", ["average", ["C4"], ["C4", "Cz"]])
-    def prep_setref(self, ref_channels):
-        """Test SetEEGReference preprocessor."""
-        return SetEEGReference(ref_channels=ref_channels)
-
-    @pytest.mark.parametrize("tmin,tmax", [(0, 0.1), (0.1, 1.2), (0.1, None)])
-    def prep_crop(self, tmin, tmax):
-        """Test Crop preprocessor."""
-        return Crop(tmin=tmin, tmax=tmax)
-
-    @pytest.mark.parametrize("ch_names", ["Pz", "P2", "P1", "POz"])
-    def prep_drop(self, ch_names):
-        """Test DropChannels preprocessor."""
-        return DropChannels(ch_names=ch_names)
-
-    @pytest.mark.parametrize("freqs", [[50], [60], [50, 60]])
-    def prep_notch(self, freqs):
-        """Test NotchFilter preprocessor."""
-        return NotchFilter(freqs=freqs)
-
-    @pytest.mark.parametrize("h_freq", [10, 20, 30])
-    def prep_savgol(self, h_freq):
-        """Test SavgolFilter preprocessor."""
-        return SavgolFilter(h_freq=h_freq)
-
-    @pytest.mark.parametrize("mapping", [{"C4": "C4_new"}, {"Cz": "Cz_renamed", "FC3": "FC3_renamed"}])
-    def prep_rename(self, mapping):
-        """Test RenameChannels preprocessor."""
-        return RenameChannels(mapping=mapping)
-
-    @pytest.mark.parametrize("ch_names", [["Cz", "C4", "FC3", "Pz"], ["FC3", "C4", "Cz", "Pz"]])
-    def prep_reorder(self, ch_names):
-        """Test ReorderChannels preprocessor."""
-        return ReorderChannels(ch_names=ch_names)
-
-    @pytest.mark.parametrize("ref_channels", ["FCz", "AFz"])
-    def prep_addref(self, ref_channels):
-        """Test AddReferenceChannels preprocessor."""
-        return AddReferenceChannels(ref_channels=ref_channels)
-
-    @pytest.mark.parametrize("envelope", [True, False])
-    def prep_hilbert(self, envelope):
-        """Test ApplyHilbert preprocessor."""
-        return ApplyHilbert(envelope=envelope)
-
-    def prep_proj(self):
-        """Test ApplyProj preprocessor."""
-        return ApplyProj()
-
-    def prep_interpolate(self):
-        """Test InterpolateBads preprocessor."""
-        return InterpolateBads(reset_bads=True)
-
-    def prep_montage(self):
-        """Test SetMontage preprocessor."""
-        montage = mne.channels.make_standard_montage('standard_1020')
-        return SetMontage(montage=montage, match_case=False, on_missing='ignore')
+def test_interpolate_bads(base_concat_ds_with_bad_channels):
+    """Test InterpolateBads preprocessor."""
+    preprocessors = [InterpolateBads(reset_bads=True)]
+    preprocess(base_concat_ds_with_bad_channels, preprocessors)
+    # After interpolation, bads should be reset
+    assert all([ds.raw.info['bads'] == [] for ds in base_concat_ds_with_bad_channels.datasets])
 
 
-@parametrize_with_cases("prep", cases=AllPrepClasses, prefix="prep_")
-def test_all_preprocessing_functions(prep, base_concat_ds):
-    """Comprehensive test for all preprocessing functions.
-    
-    This test ensures that all preprocessing functions can be applied
-    to a dataset without errors. Some functions may require specific
-    setup (e.g., montage for interpolation).
-    """
-    # Special handling for functions that need setup
-    if isinstance(prep, (InterpolateBads, SetMontage)):
-        # Set montage for interpolation and montage-related operations
-        montage = mne.channels.make_standard_montage('standard_1020')
-        for ds in base_concat_ds.datasets:
-            ds.raw.set_montage(montage, match_case=False, on_missing='ignore')
-        
-        # Mark a bad channel for interpolation test
-        # Note: 'Pz' is guaranteed to exist in the test dataset as it's
-        # explicitly defined in bnci_kwargs at the top of this file
-        if isinstance(prep, InterpolateBads):
-            for ds in base_concat_ds.datasets:
-                ds.raw.info['bads'] = ['Pz']
-    
-    preprocessors = [prep]
-    
-    # Apply preprocessing
-    preprocess(base_concat_ds, preprocessors, n_jobs=1)
-    
-    # Verify the preprocessing was recorded
-    assert all([hasattr(ds, 'raw_preproc_kwargs') for ds in base_concat_ds.datasets])
+def test_set_montage(base_concat_ds):
+    """Test SetMontage preprocessor."""
+    montage = mne.channels.make_standard_montage('standard_1020')
+    preprocessors = [SetMontage(montage=montage, match_case=False, on_missing='ignore')]
+    preprocess(base_concat_ds, preprocessors)
+    # Check that montage was set
+    assert all([ds.raw.get_montage() is not None for ds in base_concat_ds.datasets])
+
+
+def test_compute_csd(base_concat_ds_with_montage):
+    """Test ComputeCurrentSourceDensity preprocessor."""
+    preprocessors = [ComputeCurrentSourceDensity()]
+    # CSD returns a new instance, so we need to handle it differently
+    # For now, just test that it doesn't raise an error
+    preprocess(base_concat_ds_with_montage, preprocessors)

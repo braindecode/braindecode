@@ -369,12 +369,24 @@ Preprocessing
     filterbank
     preprocess
     Preprocessor
-    Resample
-    DropChannels
-    SetEEGReference
-    Filter
-    Pick
+    AddReferenceChannels
+    ApplyHilbert
+    ApplyProj
+    ComputeCurrentSourceDensity
     Crop
+    DropChannels
+    EqualizeChannels
+    Filter
+    FixStimArtifact
+    InterpolateBads
+    NotchFilter
+    Pick
+    RenameChannels
+    ReorderChannels
+    Resample
+    SavgolFilter
+    SetEEGReference
+    SetMontage
 
 Data Utils
 ==========
