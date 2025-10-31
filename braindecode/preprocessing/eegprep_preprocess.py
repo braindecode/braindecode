@@ -616,6 +616,10 @@ class Resampling(EEGPrepBasePreprocessor):
     """Resample the data to a specified rate ([1]_). Included for equivalence with
     EEGPrep.
 
+    .. figure:: ../../docs/_static/preprocess/downsample.png
+        :align: center
+        :alt: Example of resampling a time series.
+
     MNE has its resampling routine (use as `Preprocessor("resample", sfreq=rate)`)
     but this will not necessarily match EEGPrep's behavior exactly. Typical
     differences include edge padding, the exact design rule for the filter kernel
