@@ -37,8 +37,8 @@ class MLP(nn.Sequential):
     :math:`a_i` are called activation functions. The trainable parameters of an
     MLP are its weights and biases :math:`\\phi = \{W_i, b_i | i = 1, \dots, L\}`.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     in_features: int
         Number of input features.
     hidden_features: Sequential[int] (default=None)
