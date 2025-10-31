@@ -533,9 +533,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         # Also save in safetensors format using parent's implementation
         try:
             super()._save_pretrained(save_directory)
-        except Exception:
+        except (ImportError, RuntimeError) as e:
             # Fallback to pytorch_model.bin if safetensors saving fails
-            pass
+            warnings.warn(
+                f"Could not save model in safetensors format: {e}. "
+                "Model weights saved in pytorch_model.bin instead.",
+                stacklevel=2,
+            )
 
     if HAS_HF_HUB:
 
