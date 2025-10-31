@@ -69,17 +69,17 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
             dataset description.
         """
         description = _create_description(description)
-        for key, value in description.items():
-            # if the key is already in the existing description, drop it
-            if self._description is not None and key in self._description:
-                assert overwrite, (
-                    f"'{key}' already in description. Please "
-                    f"rename or set overwrite to True."
-                )
-                self._description.pop(key)
-        if self._description is None:
+        if self.description is None:
             self._description = description
         else:
+            for key, value in description.items():
+                # if the key is already in the existing description, drop it
+                if key in self._description:
+                    assert overwrite, (
+                        f"'{key}' already in description. Please "
+                        f"rename or set overwrite to True."
+                    )
+                    self._description.pop(key)
             self._description = pd.concat([self.description, description])
 
     @property
