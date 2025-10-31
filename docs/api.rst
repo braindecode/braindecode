@@ -317,7 +317,8 @@ Base classes
    :toctree: generated/
 
     BaseConcatDataset
-    BaseDataset
+    RecordDataset
+    RawDataset
     WindowsDataset
     BIDSDataset
     BIDSEpochsDataset

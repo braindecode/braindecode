@@ -30,8 +30,8 @@ from numpy.typing import NDArray
 
 from braindecode.datasets.base import (
     BaseConcatDataset,
-    BaseDataset,
     EEGWindowsDataset,
+    RawDataset,
     WindowsDataset,
 )
 from braindecode.datautil.serialization import (
@@ -119,7 +119,7 @@ def preprocess(
     Parameters
     ----------
     concat_ds : BaseConcatDataset
-        A concat of ``BaseDataset`` or ``WindowsDataset`` to be preprocessed.
+        A concat of ``RecordDataset`` to be preprocessed.
     preprocessors : list of Preprocessor
         Preprocessor objects to apply to each dataset.
     save_dir : str | None
@@ -229,15 +229,15 @@ def _preprocess(
 
     Parameters
     ----------
-    ds: BaseDataset | WindowsDataset
+    ds: RecordDataset
         Dataset object to preprocess.
     ds_index : int
-        Index of the BaseDataset in its BaseConcatDataset. Ignored if save_dir
+        Index of the ``RecordDataset`` in its ``BaseConcatDataset``. Ignored if save_dir
         is None.
     preprocessors: list(Preprocessor)
         List of preprocessors to apply to the dataset.
     save_dir : str | None
-        If provided, save the preprocessed BaseDataset in the
+        If provided, save the preprocessed RecordDataset in the
         specified directory.
     overwrite : bool
         If True, overwrite existing file with the same name.
@@ -263,8 +263,8 @@ def _preprocess(
         _preprocess_raw_or_epochs(ds.windows, preprocessors)
     else:
         raise ValueError(
-            "Can only preprocess concatenation of BaseDataset or "
-            "WindowsDataset, with either a `raw` or `windows` attribute."
+            "Can only preprocess concatenation of RecordDataset, "
+            "with either a `raw` or `windows` attribute."
         )
 
     # Store preprocessing keyword arguments in the dataset
@@ -297,11 +297,11 @@ def _get_preproc_kwargs(preprocessors):
 
 
 def _set_preproc_kwargs(ds, preprocessors):
-    """Record preprocessing keyword arguments in BaseDataset or WindowsDataset.
+    """Record preprocessing keyword arguments in RecordDataset.
 
     Parameters
     ----------
-    ds : BaseDataset | WindowsDataset
+    ds : RecordDataset
         Dataset in which to record preprocessing keyword arguments.
     preprocessors : list
         List of preprocessors.
@@ -309,12 +309,12 @@ def _set_preproc_kwargs(ds, preprocessors):
     preproc_kwargs = _get_preproc_kwargs(preprocessors)
     if isinstance(ds, WindowsDataset):
         kind = "window"
-    if isinstance(ds, EEGWindowsDataset):
+    elif isinstance(ds, EEGWindowsDataset):
         kind = "raw"
-    elif isinstance(ds, BaseDataset):
+    elif isinstance(ds, RawDataset):
         kind = "raw"
     else:
-        raise TypeError(f"ds must be a BaseDataset or a WindowsDataset, got {type(ds)}")
+        raise TypeError(f"ds must be a RecordDataset, got {type(ds)}")
     setattr(ds, kind + "_preproc_kwargs", preproc_kwargs)
 
 

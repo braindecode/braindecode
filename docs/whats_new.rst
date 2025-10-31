@@ -29,6 +29,8 @@ Enhancements
 - Adding a tutorial for fine-tuning a pre-trained foundation model (:gh:`794` by `Pierre Guetschel`_)
 - Adding artifact removal preprocessing steps, incl. :class:`braindecode.preprocessing.EEGPrep` (:gh:`796` by `Christian Kothe`_)
 - Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
+- Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
+
 
 
 API changes

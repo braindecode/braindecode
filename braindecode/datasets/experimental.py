@@ -25,14 +25,14 @@ class BIDSIterableDataset(IterableDataset):
 
     Examples
     --------
-    >>> from braindecode.datasets import BaseDataset, BaseConcatDataset
+    >>> from braindecode.datasets import RecordDataset, BaseConcatDataset
     >>> from braindecode.datasets.bids import BIDSIterableDataset, _description_from_bids_path
     >>> from braindecode.preprocessing import create_fixed_length_windows
     >>>
     >>> def my_reader_fn(path):
     ...     raw = mne_bids.read_raw_bids(path)
     ...     desc = _description_from_bids_path(path)
-    ...     ds = BaseDataset(raw, description=desc)
+    ...     ds = RawDataset(raw, description=desc)
     ...     windows_ds = create_fixed_length_windows(
     ...         BaseConcatDataset([ds]),
     ...         window_size_samples=400,
