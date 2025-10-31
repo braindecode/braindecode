@@ -93,6 +93,10 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
         self._transform = value
 
 
+# Type of the datasets contained in BaseConcatDataset
+T = TypeVar("T", bound=RecordDataset)
+
+
 class RawDataset(RecordDataset):
     """Returns samples from an mne.io.Raw object along with a target.
 
@@ -366,9 +370,6 @@ class WindowsDataset(RecordDataset):
 
     def __len__(self) -> int:
         return len(self.windows.events)
-
-
-T = TypeVar("T", bound=RecordDataset)
 
 
 class BaseConcatDataset(ConcatDataset, Generic[T]):
