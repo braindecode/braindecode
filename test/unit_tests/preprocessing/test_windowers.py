@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.base import BaseConcatDataset, BaseDataset, EEGWindowsDataset
+from braindecode.datasets.base import BaseConcatDataset, EEGWindowsDataset, RawDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing import (
     create_fixed_length_windows,
@@ -47,7 +47,7 @@ def concat_ds_targets():
     raws, description = fetch_data_with_moabb(dataset_name="BNCI2014001", subject_ids=4)
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
-    ds = BaseDataset(raws[0], description.iloc[0])
+    ds = RawDataset(raws[0], description.iloc[0])
     concat_ds = BaseConcatDataset([ds])
     return concat_ds, targets
 
@@ -56,7 +56,7 @@ def concat_ds_targets():
 def lazy_loadable_dataset(tmpdir_factory):
     """Make a dataset of fif files that can be loaded lazily."""
     raw = _get_raw(tmpdir_factory)
-    base_ds = BaseDataset(raw, description=pd.Series({"file_id": 1}))
+    base_ds = RawDataset(raw, description=pd.Series({"file_id": 1}))
     concat_ds = BaseConcatDataset([base_ds])
 
     return concat_ds
@@ -107,7 +107,7 @@ def test_windows_from_events_n_jobs(lazy_loadable_dataset):
 
 def test_windows_from_events_mapping_filter(tmpdir_factory):
     raw = _get_raw(tmpdir_factory, 5 * ["T0", "T1"])
-    base_ds = BaseDataset(raw, description=pd.Series({"file_id": 1}))
+    base_ds = RawDataset(raw, description=pd.Series({"file_id": 1}))
     concat_ds = BaseConcatDataset([base_ds])
 
     windows = create_windows_from_events(
@@ -134,10 +134,10 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
 def test_windows_from_events_different_events(tmpdir_factory):
     description_expected = 5 * ["T0", "T1"] + 4 * ["T2", "T3"] + 2 * ["T1"]
     raw = _get_raw(tmpdir_factory, description_expected[:10])
-    base_ds = BaseDataset(raw, description=pd.Series({"file_id": 1}))
+    base_ds = RawDataset(raw, description=pd.Series({"file_id": 1}))
 
     raw_1 = _get_raw(tmpdir_factory, description_expected[10:])
-    base_ds_1 = BaseDataset(raw_1, description=pd.Series({"file_id": 2}))
+    base_ds_1 = RawDataset(raw_1, description=pd.Series({"file_id": 2}))
     concat_ds = BaseConcatDataset([base_ds, base_ds_1])
 
     windows = create_windows_from_events(
@@ -367,7 +367,7 @@ def test_fixed_length_windower(
     data = rng.randn(2, 1000)
     raw = mne.io.RawArray(data=data, info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    base_ds = BaseDataset(raw, desc, target_name="age")
+    base_ds = RawDataset(raw, desc, target_name="age")
     concat_ds = BaseConcatDataset([base_ds])
 
     if window_size_samples is None:
@@ -432,7 +432,7 @@ def test_fixed_length_windower_lazy(
     data = rng.randn(2, 1000)
     raw = mne.io.RawArray(data=data, info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    base_ds = BaseDataset(raw, desc, target_name="age")
+    base_ds = RawDataset(raw, desc, target_name="age")
     concat_ds = BaseConcatDataset([base_ds])
 
     if window_size_samples is None:
@@ -908,7 +908,7 @@ def dataset_target_time_series():
 
     raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    base_dataset = BaseDataset(raw, desc, target_name=None)
+    base_dataset = RawDataset(raw, desc, target_name=None)
     concat_ds = BaseConcatDataset([base_dataset])
     windows_dataset = create_windows_from_target_channels(
         concat_ds,

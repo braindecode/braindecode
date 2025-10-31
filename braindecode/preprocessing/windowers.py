@@ -25,7 +25,12 @@ import pandas as pd
 from joblib import Parallel, delayed
 from numpy.typing import ArrayLike
 
-from ..datasets.base import BaseConcatDataset, EEGWindowsDataset, WindowsDataset
+from ..datasets.base import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    RawDataset,
+    WindowsDataset,
+)
 
 
 class _LazyDataFrame:
@@ -189,7 +194,7 @@ def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
 
 # XXX it's called concat_ds...
 def create_windows_from_events(
-    concat_ds: BaseConcatDataset,
+    concat_ds: BaseConcatDataset[RawDataset],
     trial_start_offset_samples: int = 0,
     trial_stop_offset_samples: int = 0,
     window_size_samples: int | None = None,
@@ -206,7 +211,7 @@ def create_windows_from_events(
     use_mne_epochs: bool | None = None,
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
-):
+) -> BaseConcatDataset[WindowsDataset | EEGWindowsDataset]:
     """Create windows based on events in mne.Raw.
 
     This function extracts windows of size window_size_samples in the interval
@@ -228,7 +233,7 @@ def create_windows_from_events(
 
     Parameters
     ----------
-    concat_ds: BaseConcatDataset
+    concat_ds: BaseConcatDataset[RawDataset]
         A concat of base datasets each holding raw and description.
     trial_start_offset_samples: int
         Start offset from original trial onsets, in samples. Defaults to zero.
@@ -286,7 +291,7 @@ def create_windows_from_events(
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset
+    windows_datasets: BaseConcatDataset[WindowsDataset | EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
     """
     _check_windowing_arguments(
@@ -341,7 +346,7 @@ def create_windows_from_events(
 
 
 def create_fixed_length_windows(
-    concat_ds: BaseConcatDataset,
+    concat_ds: BaseConcatDataset[RawDataset],
     start_offset_samples: int = 0,
     stop_offset_samples: int | None = None,
     window_size_samples: int | None = None,
@@ -358,12 +363,12 @@ def create_fixed_length_windows(
     on_missing: str = "error",
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
-):
+) -> BaseConcatDataset[EEGWindowsDataset]:
     """Windower that creates sliding windows.
 
     Parameters
     ----------
-    concat_ds: ConcatDataset
+    concat_ds: ConcatDataset[RawDataset]
         A concat of base datasets each holding raw and description.
     start_offset_samples: int
         Start offset from beginning of recording in samples.
@@ -406,7 +411,7 @@ def create_fixed_length_windows(
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset
+    windows_datasets: BaseConcatDataset[EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
     """
     stop_offset_samples, drop_last_window = (
@@ -473,11 +478,11 @@ def _create_windows_from_events(
     verbose="error",
     use_mne_epochs=False,
 ):
-    """Create WindowsDataset from BaseDataset based on events.
+    """Create WindowsDataset from RawDataset based on events.
 
     Parameters
     ----------
-    ds : BaseDataset
+    ds : RawDataset
         Dataset containing continuous data and description.
     infer_mapping : bool
         If True, extract all events from all datasets and map them to
@@ -648,11 +653,11 @@ def _create_fixed_length_windows(
     on_missing="error",
     verbose="error",
 ):
-    """Create WindowsDataset from BaseDataset with sliding windows.
+    """Create WindowsDataset from RawDataset with sliding windows.
 
     Parameters
     ----------
-    ds : BaseDataset
+    ds : RawDataset
         Dataset containing continuous data and description.
 
     See `create_fixed_length_windows` for description of other parameters.
@@ -750,7 +755,7 @@ def _create_fixed_length_windows(
 
 
 def create_windows_from_target_channels(
-    concat_ds,
+    concat_ds: BaseConcatDataset[RawDataset],
     window_size_samples=None,
     preload=False,
     picks=None,
@@ -759,7 +764,7 @@ def create_windows_from_target_channels(
     n_jobs=1,
     last_target_only=True,
     verbose="error",
-):
+) -> BaseConcatDataset[EEGWindowsDataset]:
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_target_channels)(
             ds,
@@ -788,11 +793,11 @@ def _create_windows_from_target_channels(
     on_missing="error",
     verbose="error",
 ):
-    """Create WindowsDataset from BaseDataset using targets `misc` channels from mne.Raw.
+    """Create WindowsDataset from RawDataset using targets `misc` channels from mne.Raw.
 
     Parameters
     ----------
-    ds : BaseDataset
+    ds : RawDataset
         Dataset containing continuous data and description.
 
     See `create_fixed_length_windows` for description of other parameters.

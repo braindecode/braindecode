@@ -189,7 +189,7 @@ class AugmentedDataLoader(DataLoader):
 
     Parameters
     ----------
-    dataset : BaseDataset
+    dataset : RecordDataset
         The dataset containing the signals.
     transforms : list | Transform, optional
         Transform or sequence of Transform to be applied to each batch.

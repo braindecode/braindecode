@@ -16,7 +16,7 @@ import numpy as np
 from mne.utils import verbose
 from scipy.io import loadmat
 
-from braindecode.datasets import BaseConcatDataset, BaseDataset
+from braindecode.datasets import BaseConcatDataset, RawDataset
 
 DATASET_URL = (
     "https://stacks.stanford.edu/file/druid:zk881ps0522/"
@@ -73,8 +73,8 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
                 file_name=file_path.split("/")[-1],
                 session="test",
             )
-            datasets.append(BaseDataset(raw_train, description=desc_train))
-            datasets.append(BaseDataset(raw_test, description=desc_test))
+            datasets.append(RawDataset(raw_train, description=desc_train))
+            datasets.append(RawDataset(raw_test, description=desc_test))
         super().__init__(datasets)
 
     @staticmethod
