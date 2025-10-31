@@ -309,7 +309,7 @@ def _set_preproc_kwargs(ds, preprocessors):
     preproc_kwargs = _get_preproc_kwargs(preprocessors)
     if isinstance(ds, WindowsDataset):
         kind = "window"
-    if isinstance(ds, EEGWindowsDataset):
+    elif isinstance(ds, EEGWindowsDataset):
         kind = "raw"
     elif isinstance(ds, RawDataset):
         kind = "raw"
