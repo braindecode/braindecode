@@ -15,7 +15,7 @@ with Braindecode.
 # License: BSD (3-clause)
 
 from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing import Preprocessor, preprocess
+from braindecode.preprocessing import preprocess
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,
@@ -42,7 +42,7 @@ for x, y in dataset:
 from braindecode.preprocessing import Pick, Resample
 
 preprocessors = [
-    Pick(picks='eeg', exclude=()),  # Keep only EEG channels
+    Pick(picks="eeg", exclude=()),  # Keep only EEG channels
     Resample(sfreq=100),  # Resample to 100 Hz
 ]
 

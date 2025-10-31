@@ -14,20 +14,16 @@ convenient and type-safe way to preprocess EEG data.
 # License: BSD (3-clause)
 
 import mne
+
 from braindecode.datasets import MOABBDataset
 from braindecode.preprocessing import (
-    AddReferenceChannels,
     Anonymize,
-    ApplyHilbert,
     Crop,
     Filter,
     InterpolateBads,
     NotchFilter,
     Pick,
-    RenameChannels,
     Resample,
-    SetAnnotations,
-    SetChannelTypes,
     SetEEGReference,
     SetMontage,
     preprocess,
@@ -68,7 +64,7 @@ print("Applied notch filter at 50 Hz and bandpass filter 4-30 Hz")
 
 # 3. Pick only EEG channels
 preprocessors_channels = [
-    Pick(picks='eeg'),  # Select only EEG channels
+    Pick(picks="eeg"),  # Select only EEG channels
 ]
 print(f"Channels before pick: {len(dataset.datasets[0].raw.ch_names)}")
 preprocess(dataset, preprocessors_channels)
@@ -91,22 +87,24 @@ print(f"Original channel names (first 3): {original_names}")
 
 # 5. Set EEG reference to average
 preprocessors_reference = [
-    SetEEGReference(ref_channels='average'),
+    SetEEGReference(ref_channels="average"),
 ]
 preprocess(dataset, preprocessors_reference)
 print("Set EEG reference to average")
 
 # 6. Set montage for proper channel positions
-montage = mne.channels.make_standard_montage('standard_1020')
+montage = mne.channels.make_standard_montage("standard_1020")
 preprocessors_montage = [
-    SetMontage(montage=montage, match_case=False, on_missing='ignore'),
+    SetMontage(montage=montage, match_case=False, on_missing="ignore"),
 ]
 preprocess(dataset, preprocessors_montage)
-print(f"Set montage, number of positions: {len(dataset.datasets[0].raw.get_montage().get_positions()['ch_pos'])}")
+print(
+    f"Set montage, number of positions: {len(dataset.datasets[0].raw.get_montage().get_positions()['ch_pos'])}"
+)
 
 # 7. Interpolate bad channels (if any were marked)
 # First, let's mark a channel as bad for demonstration
-dataset.datasets[0].raw.info['bads'] = ['Fz']
+dataset.datasets[0].raw.info["bads"] = ["Fz"]
 print(f"Marked bad channels: {dataset.datasets[0].raw.info['bads']}")
 
 preprocessors_interpolate = [
@@ -158,54 +156,50 @@ print("Anonymized measurement information")
 # ---------------------------------------
 # You can combine multiple preprocessing steps in a single pipeline
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("Complete Preprocessing Pipeline Example")
-print("="*60)
+print("=" * 60)
 
 # Reload dataset for complete pipeline demonstration
 dataset_complete = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 
 # Set montage first (needed for interpolation)
-montage = mne.channels.make_standard_montage('standard_1020')
+montage = mne.channels.make_standard_montage("standard_1020")
 
 complete_pipeline = [
     # 1. Set montage (must come before interpolation)
-    SetMontage(montage=montage, match_case=False, on_missing='ignore'),
-    
+    SetMontage(montage=montage, match_case=False, on_missing="ignore"),
     # 2. Interpolate any bad channels
     InterpolateBads(reset_bads=True),
-    
     # 3. Set reference
-    SetEEGReference(ref_channels='average'),
-    
+    SetEEGReference(ref_channels="average"),
     # 4. Remove power line noise
     NotchFilter(freqs=[50]),
-    
     # 5. Bandpass filter
     Filter(l_freq=4, h_freq=30),
-    
     # 6. Downsample
     Resample(sfreq=100),
-    
     # 7. Select only EEG channels
-    Pick(picks='eeg'),
-    
+    Pick(picks="eeg"),
     # 8. Crop to region of interest
     Crop(tmin=0, tmax=60),
-    
     # 9. Anonymize
     Anonymize(),
 ]
 
-print(f"Original: {dataset_complete.datasets[0].raw.info['sfreq']} Hz, "
-      f"{dataset_complete.datasets[0].raw.times[-1]:.1f} s, "
-      f"{len(dataset_complete.datasets[0].raw.ch_names)} channels")
+print(
+    f"Original: {dataset_complete.datasets[0].raw.info['sfreq']} Hz, "
+    f"{dataset_complete.datasets[0].raw.times[-1]:.1f} s, "
+    f"{len(dataset_complete.datasets[0].raw.ch_names)} channels"
+)
 
 preprocess(dataset_complete, complete_pipeline)
 
-print(f"After preprocessing: {dataset_complete.datasets[0].raw.info['sfreq']} Hz, "
-      f"{dataset_complete.datasets[0].raw.times[-1]:.1f} s, "
-      f"{len(dataset_complete.datasets[0].raw.ch_names)} channels")
+print(
+    f"After preprocessing: {dataset_complete.datasets[0].raw.info['sfreq']} Hz, "
+    f"{dataset_complete.datasets[0].raw.times[-1]:.1f} s, "
+    f"{len(dataset_complete.datasets[0].raw.ch_names)} channels"
+)
 
 print("\nPreprocessing complete!")
 

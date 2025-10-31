@@ -95,6 +95,7 @@ See Also
 :func:`braindecode.preprocessing.create_windows_from_events` : Create epochs from events
 :func:`braindecode.preprocessing.create_fixed_length_windows` : Create fixed-length epochs
 """
+
 from .mne_preprocess import (  # type: ignore[attr-defined]
     AddChannels,
     AddEvents,
