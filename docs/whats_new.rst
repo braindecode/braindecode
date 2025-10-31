@@ -25,8 +25,11 @@ Enhancements
 - Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
 - Including typing in the augmentation module (:gh:`709` by `Aphel`_)
 - Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
+- Added :class:`braindecode.models.BENDR`  (:gh:`802` by `Bruno Aristimunha`_ )
 - Adding a tutorial for fine-tuning a pre-trained foundation model (:gh:`794` by `Pierre Guetschel`_)
 - Adding artifact removal preprocessing steps, incl. :class:`braindecode.preprocessing.EEGPrep` (:gh:`796` by `Christian Kothe`_)
+- Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
+
 
 API changes
 ~~~~~~~~~~~
@@ -408,3 +411,4 @@ Authors
 .. _José Mauricio: https://github.com/josemaurici
 .. _Can Han: https://github.com/hancan16
 .. _Christian Kothe: https://github.com/chkothe
+.. _Kuntal Kokate: https://github.com/Kkuntal990
