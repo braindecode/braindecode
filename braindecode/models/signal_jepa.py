@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import math
 from copy import deepcopy
-from typing import Any, Sequence
+from pathlib import Path
+from typing import Any, Optional, Sequence
 
 import torch
 from einops.layers.torch import Rearrange
@@ -323,25 +324,50 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
     @classmethod
     def from_pretrained(
         cls,
-        model: SignalJEPA,
-        n_outputs: int,
+        model: Optional[SignalJEPA | str | Path] = None,  # type: ignore
+        n_outputs: Optional[int] = None,  # type: ignore
         n_spat_filters: int = 4,
-        chs_info: list[dict[str, Any]] | None = None,
+        chs_info: Optional[list[dict[str, Any]]] = None,  # type: ignore
+        **kwargs,
     ):
-        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model.
+        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model or from Hub.
 
         Parameters
         ----------
-        model: SignalJEPA
-            Pre-trained model.
-        n_outputs: int
-            Number of classes for the new model.
+        model: SignalJEPA, str, Path, or None
+            Either a pre-trained :class:`SignalJEPA` model, a string/Path to a local directory
+            (for Hub-style loading), or None (for Hub loading via kwargs).
+        n_outputs: int or None
+            Number of classes for the new model. Required when loading from a SignalJEPA model,
+            optional when loading from Hub (will be read from config).
         n_spat_filters: int
             Number of spatial filters.
         chs_info: list of dict | None
             Information about each individual EEG channel. This should be filled with
             ``info["chs"]``. Refer to :class:`mne.Info` for more details.
+        **kwargs
+            Additional keyword arguments passed to the parent class for Hub loading.
         """
+        # Check if this is a Hub-style load (from a directory path)
+        if isinstance(model, (str, Path)) or (model is None and kwargs):
+            # This is a Hub load, delegate to parent class
+            if isinstance(model, (str, Path)):
+                # model is actually the repo_id or directory path
+                return super().from_pretrained(model, **kwargs)
+            else:
+                # model is None, treat as hub-style load
+                return super().from_pretrained(**kwargs)
+
+        # This is the original SignalJEPA transfer learning case
+        if not isinstance(model, SignalJEPA):
+            raise TypeError(
+                f"model must be a SignalJEPA instance, a path string, or Path object, got {type(model)}"
+            )
+        if n_outputs is None:
+            raise ValueError(
+                "n_outputs must be provided when loading from a SignalJEPA model"
+            )
+
         feature_encoder = model.feature_encoder
         pos_encoder = model.pos_encoder
         transformer = model.transformer
@@ -469,22 +495,47 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
     @classmethod
     def from_pretrained(
-        cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
+        cls,
+        model: SignalJEPA | str | Path = None,  # type: ignore
+        n_outputs: int = None,  # type: ignore
+        n_spat_filters: int = 4,
+        **kwargs,
     ):
-        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model.
+        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model or from Hub.
 
         Parameters
         ----------
-        model: SignalJEPA
-            Pre-trained model.
-        n_outputs: int
-            Number of classes for the new model.
+        model: SignalJEPA, str, Path, or None
+            Either a pre-trained :class:`SignalJEPA` model, a string/Path to a local directory
+            (for Hub-style loading), or None (for Hub loading via kwargs).
+        n_outputs: int or None
+            Number of classes for the new model. Required when loading from a SignalJEPA model,
+            optional when loading from Hub (will be read from config).
         n_spat_filters: int
             Number of spatial filters.
-        chs_info: list of dict | None
-            Information about each individual EEG channel. This should be filled with
-            ``info["chs"]``. Refer to :class:`mne.Info` for more details.
+        **kwargs
+            Additional keyword arguments passed to the parent class for Hub loading.
         """
+        # Check if this is a Hub-style load (from a directory path)
+        if isinstance(model, (str, Path)) or (model is None and kwargs):
+            # This is a Hub load, delegate to parent class
+            if isinstance(model, (str, Path)):
+                # model is actually the repo_id or directory path
+                return super().from_pretrained(model, **kwargs)
+            else:
+                # model is None, treat as hub-style load
+                return super().from_pretrained(**kwargs)
+
+        # This is the original SignalJEPA transfer learning case
+        if not isinstance(model, SignalJEPA):
+            raise TypeError(
+                f"model must be a SignalJEPA instance, a path string, or Path object, got {type(model)}"
+            )
+        if n_outputs is None:
+            raise ValueError(
+                "n_outputs must be provided when loading from a SignalJEPA model"
+            )
+
         feature_encoder = model.feature_encoder
         assert feature_encoder is not None
         new_model = cls(
@@ -603,22 +654,47 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     @classmethod
     def from_pretrained(
-        cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
+        cls,
+        model: SignalJEPA | str | Path = None,  # type: ignore
+        n_outputs: int = None,  # type: ignore
+        n_spat_filters: int = 4,
+        **kwargs,
     ):
-        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model.
+        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model or from Hub.
 
         Parameters
         ----------
-        model: SignalJEPA
-            Pre-trained model.
-        n_outputs: int
-            Number of classes for the new model.
+        model: SignalJEPA, str, Path, or None
+            Either a pre-trained :class:`SignalJEPA` model, a string/Path to a local directory
+            (for Hub-style loading), or None (for Hub loading via kwargs).
+        n_outputs: int or None
+            Number of classes for the new model. Required when loading from a SignalJEPA model,
+            optional when loading from Hub (will be read from config).
         n_spat_filters: int
             Number of spatial filters.
-        chs_info: list of dict | None
-            Information about each individual EEG channel. This should be filled with
-            ``info["chs"]``. Refer to :class:`mne.Info` for more details.
+        **kwargs
+            Additional keyword arguments passed to the parent class for Hub loading.
         """
+        # Check if this is a Hub-style load (from a directory path)
+        if isinstance(model, (str, Path)) or (model is None and kwargs):
+            # This is a Hub load, delegate to parent class
+            if isinstance(model, (str, Path)):
+                # model is actually the repo_id or directory path
+                return super().from_pretrained(model, **kwargs)
+            else:
+                # model is None, treat as hub-style load
+                return super().from_pretrained(**kwargs)
+
+        # This is the original SignalJEPA transfer learning case
+        if not isinstance(model, SignalJEPA):
+            raise TypeError(
+                f"model must be a SignalJEPA instance, a path string, or Path object, got {type(model)}"
+            )
+        if n_outputs is None:
+            raise ValueError(
+                "n_outputs must be provided when loading from a SignalJEPA model"
+            )
+
         feature_encoder = model.feature_encoder
         assert feature_encoder is not None
         new_model = cls(
