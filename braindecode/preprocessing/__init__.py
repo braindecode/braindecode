@@ -1,3 +1,16 @@
+from .eegprep_preprocess import (
+    EEGPrep,
+    ReinterpolateRemovedChannels,
+    RemoveBadChannels,
+    RemoveBadChannelsNoLocs,
+    RemoveBadWindows,
+    RemoveBursts,
+    RemoveCommonAverageReference,
+    RemoveDCOffset,
+    RemoveDrifts,
+    RemoveFlatChannels,
+    Resampling,
+)
 from .mne_preprocess import (  # type: ignore[attr-defined]
     Crop,
     DropChannels,
@@ -13,7 +26,6 @@ from .preprocess import (
     filterbank,
     preprocess,
 )
-from .eegprep_preprocess import EEGPrep
 from .windowers import (
     create_fixed_length_windows,
     create_windows_from_events,
@@ -33,6 +45,16 @@ __all__ = [
     "Pick",
     "Crop",
     "EEGPrep",
+    "RemoveDCOffset",
+    "Resampling",
+    "RemoveFlatChannels",
+    "RemoveDrifts",
+    "RemoveBadChannels",
+    "RemoveBadChannelsNoLocs",
+    "RemoveBursts",
+    "RemoveBadWindows",
+    "ReinterpolateRemovedChannels",
+    "RemoveCommonAverageReference",
     "create_windows_from_events",
     "create_fixed_length_windows",
     "create_windows_from_target_channels",
