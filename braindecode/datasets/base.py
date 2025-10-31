@@ -41,8 +41,13 @@ def _create_description(description) -> pd.Series:
 
 
 class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]]):
-    def __init__(self, description: dict | pd.Series | None = None):
+    def __init__(
+        self,
+        description: dict | pd.Series | None = None,
+        transform: Callable | None = None,
+    ):
         self._description = _create_description(description)
+        self.transform = transform
 
     @abstractmethod
     def __len__(self) -> int:
@@ -78,14 +83,14 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
             self._description = pd.concat([self.description, description])
 
     @property
-    @abstractmethod
     def transform(self) -> Callable | None:
-        pass
+        return self._transform
 
     @transform.setter
-    @abstractmethod
-    def transform(self, value):
-        pass
+    def transform(self, value: Callable | None):
+        if value is not None and not callable(value):
+            raise ValueError("Transform needs to be a callable.")
+        self._transform = value
 
 
 class RawDataset(RecordDataset):
@@ -115,9 +120,8 @@ class RawDataset(RecordDataset):
         target_name: str | tuple[str, ...] | None = None,
         transform: Callable | None = None,
     ):
-        super().__init__(description)
+        super().__init__(description, transform)
         self.raw = raw
-        self.transform = transform
 
         # save target name for load/save later
         self.target_name = self._target_name(target_name)
@@ -135,16 +139,6 @@ class RawDataset(RecordDataset):
 
     def __len__(self):
         return len(self.raw)
-
-    @property
-    def transform(self):
-        return self._transform
-
-    @transform.setter
-    def transform(self, value):
-        if value is not None and not callable(value):
-            raise ValueError("Transform needs to be a callable.")
-        self._transform = value
 
     def _target_name(self, target_name):
         if target_name is not None and not isinstance(target_name, (str, tuple, list)):
@@ -224,11 +218,10 @@ class EEGWindowsDataset(RecordDataset):
         targets_from: str = "metadata",
         last_target_only: bool = True,
     ):
-        super().__init__(description)
+        super().__init__(description, transform)
         self.raw = raw
         self.metadata = metadata
 
-        self.transform = transform
         self.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
             raise ValueError("Wrong value for parameter `targets_from`.")
@@ -287,16 +280,6 @@ class EEGWindowsDataset(RecordDataset):
     def __len__(self):
         return len(self.crop_inds)
 
-    @property
-    def transform(self):
-        return self._transform
-
-    @transform.setter
-    def transform(self, value):
-        if value is not None and not callable(value):
-            raise ValueError("Transform needs to be a callable.")
-        self._transform = value
-
 
 class WindowsDataset(RecordDataset):
     """Returns windows from an mne.Epochs object along with a target.
@@ -333,9 +316,8 @@ class WindowsDataset(RecordDataset):
         targets_from: str = "metadata",
         last_target_only: bool = True,
     ):
-        super().__init__(description)
+        super().__init__(description, transform)
         self.windows = windows
-        self.transform = transform
         self.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
             raise ValueError("Wrong value for parameter `targets_from`.")
@@ -384,16 +366,6 @@ class WindowsDataset(RecordDataset):
 
     def __len__(self) -> int:
         return len(self.windows.events)
-
-    @property
-    def transform(self):
-        return self._transform
-
-    @transform.setter
-    def transform(self, value):
-        if value is not None and not callable(value):
-            raise ValueError("Transform needs to be a callable.")
-        self._transform = value
 
 
 T = TypeVar("T", bound=RecordDataset)
