@@ -51,7 +51,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     The result is rearranged to a token sequence ``(B, S_tokens, D)``, where ``D = n_filters_time``.
 
     *Interpretability/robustness.* Temporal kernels can be inspected as FIR filters;
-    the spatial conv yields channel projections analogous to :class:`ShallowFBCSPNet`’s learned
+    the spatial conv yields channel projections analogous to :class:`ShallowFBCSPNet`'s learned
     spatial filters. Temporal pooling stabilizes statistics and reduces sequence length.
 
     - :class:`_TransformerEncoder` **(context over temporal tokens)**
@@ -119,7 +119,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         capacity (but higher compute); larger strides → fewer tokens and stronger inductive bias.
 
     - **Embedding dimension = filters.** ``n_filters_time`` serves double duty as both the
-        number of temporal filters in the stem and the transformer’s embedding size ``D``,
+        number of temporal filters in the stem and the transformer's embedding size ``D``,
         simplifying dimensional alignment.
 
     .. rubric:: Usage and Configuration

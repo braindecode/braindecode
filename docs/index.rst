@@ -47,4 +47,4 @@ Braindecode Homepage
    Tutorial and Examples <auto_examples/index>
    API <api>
    Get help <help>
-   What’s new <whats_new>
+   What's new <whats_new>

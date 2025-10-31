@@ -50,7 +50,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - **Temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(L_t, 1)`` builds a
             FIR-like filter bank (``F1`` maps).
         - **Depthwise spatial conv** (:class:`torch.nn.Conv2d`, ``groups=F1``) with kernel
-          ``(1, n_chans)`` learns per-filter spatial projections (akin to EEGNet’s CSP-like step).
+          ``(1, n_chans)`` learns per-filter spatial projections (akin to EEGNet's CSP-like step).
         - **BN → ELU → AvgPool → Dropout** to stabilize and condense activations.
         - **Refining temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(L_r, 1)`` +
           **BN → ELU → AvgPool → Dropout**.
@@ -76,10 +76,10 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - Dropout :class:`torch.nn.Dropout`
         - Rearrange back to ``(B, F2, T_w)``.
 
-    **Note**: Attention is *local to a window* and purely temporal.
+        **Note**: Attention is *local to a window* and purely temporal.
 
-    *Role.* Re-weights evidence across the window, letting the model emphasize informative
-    segments (onsets, bursts) before causal convolutions aggregate history.
+        *Role.* Re-weights evidence across the window, letting the model emphasize informative
+        segments (onsets, bursts) before causal convolutions aggregate history.
 
     - :class:`_TCNResidualBlock` **(causal dilated temporal CNN)**
 
@@ -89,8 +89,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
           a residual (identity or 1x1 mapping).
         - The final feature used per window is the *last* causal step ``[..., -1]`` (forecast-style).
 
-    *Role.* Efficient long-range temporal integration with stable gradients; the dilated
-    receptive field complements attention’s soft selection.
+        *Role.* Efficient long-range temporal integration with stable gradients; the dilated
+        receptive field complements attention's soft selection.
 
     - **Aggregation & Classifier**
 
@@ -100,19 +100,19 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - (b) **concatenate** all window features ``(B, n·F2)`` and apply a single :class:`MaxNormLinear`.
         The max-norm constraint regularizes the readout.
 
-    .. rubric:: Convolutional Details
+    **Convolutional Details**
 
     - **Temporal.** Temporal structure is learned in three places:
-        - (1) the stem’s wide ``(L_t, 1)`` conv (learned filter bank),
+        - (1) the stem's wide ``(L_t, 1)`` conv (learned filter bank),
         - (2) the refining ``(L_r, 1)`` conv after pooling (short-term dynamics), and
-        - (3) the TCN’s causal 1-D convolutions with exponentially increasing dilation
+        - (3) the TCN's causal 1-D convolutions with exponentially increasing dilation
           (long-range dependencies). The minimum sequence length required by the TCN stack is
           ``(K_t - 1)·2^{L-1} + 1``; the implementation *auto-scales* kernels/pools/windows
           when inputs are shorter to preserve feasibility.
 
     - **Spatial.** A depthwise spatial conv spans the **full montage** (kernel ``(1, n_chans)``),
         producing *per-temporal-filter* spatial projections (no cross-filter mixing at this step).
-        This mirrors EEGNet’s interpretability: each temporal filter has its own spatial pattern.
+        This mirrors EEGNet's interpretability: each temporal filter has its own spatial pattern.
 
 
     .. rubric:: Attention / Sequential Modules

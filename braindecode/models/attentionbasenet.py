@@ -97,7 +97,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     - **Temporal (where time-domain patterns are learned).**
         Wide kernels in the stem (``(1, L_t)``) act as a learned filter bank for oscillatory
-        bands/transients; the attention block’s depthwise temporal conv (``(1, L_a)``) sharpens
+        bands/transients; the attention block's depthwise temporal conv (``(1, L_a)``) sharpens
         short-term dynamics after downsampling. Pool sizes/strides (``P₁,S₁`` then ``P₂,S₂``)
         set the token rate and effective temporal resolution.
 
@@ -501,6 +501,7 @@ class _ChannelAttentionBlock(nn.Module):
     ----------
     attention_mode : str, optional
         The type of attention mechanism to apply. If `None`, no attention is applied.
+
         - "se" for Squeeze-and-excitation network
         - "gsop" for Global Second-Order Pooling
         - "fca" for Frequency Channel Attention Network

@@ -49,7 +49,7 @@ class MLP(nn.Sequential):
     out_features: int (default=None)
         Number of output features, if None, set to in_features.
     act_layer: nn.GELU (default)
-        The activation function constructor. If :py:`None`, use
+        The activation function constructor. If ``None``, use
         :class:`torch.nn.GELU` instead.
     drop: float (default=0.0)
         Dropout rate.

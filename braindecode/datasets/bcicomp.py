@@ -85,7 +85,7 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
         ----------
         path  (None | str) – Location of where to look for the data storing location.
         If None, the environment variable or config parameter
-        MNE_DATASETS_(dataset)_PATH is used. If it doesn’t exist, the “~/mne_data”
+        MNE_DATASETS_(dataset)_PATH is used. If it doesn't exist, the “~/mne_data”
         directory is used. If the dataset is not found under the given path, the data
         will be automatically downloaded to the specified folder.
         force_update (bool) – Force update of the dataset even if a local copy exists.
