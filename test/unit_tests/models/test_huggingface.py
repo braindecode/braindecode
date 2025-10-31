@@ -188,7 +188,7 @@ def test_config_contains_all_parameters(tmp_path, sample_model):
 def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
     """Roundtrip through local Hub save/load mimics push/pull."""
     model, name, sp = sample_model
-    # TODO: fix for AttnSleep/DeepSleepNet/DeepSleepNet/SincShallowNet
+    # TODO: fix for AttnSleep-DeepSleepNet/SincShallowNet
     if name in non_classification_models+["AttnSleep","DeepSleepNet","SincShallowNet"]:
         pytest.skip(f"Skipping Hugging Face Hub test for non-classification model: {name}")
     assert hasattr(model, 'from_pretrained')
