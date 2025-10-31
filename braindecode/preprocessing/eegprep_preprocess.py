@@ -201,19 +201,22 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
 
 class EEGPrep(EEGPrepBasePreprocessor):
-    """Preprocessor for an MNE Raw object that applies the EEGPrep pipeline.
+    """Preprocessor for an MNE Raw object that applies the EEGPrep pipeline [1]_.
 
     This pipeline involves the stages:
 
-    - DC offset subtraction
-    - Optional resampling
-    - Flatline channel detection and removal
-    - High-pass filtering
+    - DC offset subtraction (:class:`RemoveDCOffset`)
+    - Optional resampling (:class:`Resampling`)
+    - Flatline channel detection and removal (:class:`RemoveFlatChannels`)
+    - High-pass filtering (:class:`RemoveDrifts`)
     - Bad channel detection and removal using correlation and HF noise criteria
+      (:class:`RemoveBadChannels` with fallback to :class:`RemoveBadChannelsNoLocs`)
     - Burst artifact removal using ASR (Artifact Subspace Reconstruction)
-    - Detection and removal of residual bad time windows
+      (:class:`RemoveBursts`)
+    - Detection and removal of residual bad time windows (:class:`RemoveBadWindows`)
     - Optional reinterpolation of removed channels
-    - Optional common average referencing
+      (:class:`ReinterpolateRemovedChannels`)
+    - Optional common average referencing (:class:`RemoveCommonAverageReference`)
 
     These steps are also individually available as separate preprocessors in this module
     if you want to apply only a subset of them or customize some beyond the parameters
@@ -329,9 +332,10 @@ class EEGPrep(EEGPrepBasePreprocessor):
 
     References
     ----------
-    [1] Mullen, T. R., Kothe, C. A., Chi, Y. M., Ojeda, A., Kerth, T., Makeig, S., ...
-       & Cauwenberghs, G. (2015). Real-time neuroimaging and cognitive monitoring using
-       wearable dry EEG. IEEE Transactions on Biomedical Engineering, 62(11), 2553-2567.
+    .. [1] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T., Makeig, S.,
+       Jung, T.P. and Cauwenberghs, G., 2015. Real-time neuroimaging and cognitive
+       monitoring using wearable dry EEG. IEEE Transactions on Biomedical Engineering,
+       62(11), pp.2553-2567.
 
     """
 
@@ -458,6 +462,9 @@ class RemoveFlatChannels(EEGPrepBasePreprocessor):
     preprocessor exists since the presence of such channels may throw off downstream
     preproc steps.
 
+    This step is best placed very early in a preprocessing pipeline, before any
+    filtering (since filter pre/post ringing can mask flatlines).
+
     Parameters
     ----------
     max_flatline_duration : float
@@ -578,6 +585,19 @@ class Resampling(EEGPrepBasePreprocessor):
     custom pipeline built from individual steps and want to ensure identical
     results (up to float precision issues).
 
+    Resampling can be placed quite early in a preprocessing pipeline to cut down on
+    compute time and memory usage of downstram steps, e.g., before filtering, but
+    note the sampling rate interacts with e.g. temporal convolution kernel sizes;
+    when reproducing literature, ideally you first resample to the same rate as
+    used there.
+
+    .. Note::
+        There can be a small timing accuracy penalty when resampling on continuous data
+        (before epoching) when doing event-locked analysis, since epoch windows will be
+        snapped to the nearest sample. However, this jitter is typically fairly minor
+        relative to timing variability in the brain responses themselves, so will often
+        not be a problem in practice.
+
     Parameters
     ----------
     sfreq : float | None
@@ -617,6 +637,14 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
     is not known or could not be inferred (e.g., from channel labels if using a standard
     montage such as the 10-20 system), use the RemoveBadChannelsNoLocs preprocessor
     instead.
+
+    Preconditions
+    -------------
+    - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
+      configured as a highpass filter) must have been applied beforehand.
+    - 3D channel locations must be available in the data (can be automatic with some
+      file types, but may require some MNE operations with others).
+    - Consider applying :class:`RemoveDCOffset` beforehand as a general precaution.
 
     Parameters
     ----------
@@ -706,6 +734,12 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
     locations, you may get better results with the RemoveBadChannels preprocessor
     instead.
 
+    Preconditions
+    -------------
+    - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
+      configured as a highpass filter) must have been applied beforehand.
+    - Consider applying :class:`RemoveDCOffset` beforehand as a general precaution.
+
     Parameters
     ----------
     min_corr : float
@@ -772,6 +806,17 @@ class RemoveBursts(EEGPrepBasePreprocessor):
     contains no events that have abnormally strong power; the subspaces on which
     those events occur are reconstructed (interpolated) based on the rest of the
     EEG signal during these time periods.
+
+    Preconditions
+    -------------
+    - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
+      configured as a highpass filter) must have been applied beforehand.
+    - Must have removed flat-line channels beforehand with :class:`RemoveFlatChannels`.
+    - If you are removing bad channels (:class:`RemoveBadChannels` or
+      :class:`RemoveBadChannelsNoLocs`), use those before this step.
+    - Consider applying :class:`RemoveDCOffset` beforehand as a general best practice.
+    - If you are re-referencing to common average (:class:`RemoveCommonAverageReference`),
+      this should normally *NOT* be done before this step, but after it.
 
     Parameters
     ----------
@@ -875,6 +920,11 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
       useful to apply this to training data only in such cases, however, to get an
       artifact-unencumbered model.
 
+    Preconditions
+    -------------
+    - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
+      configured as a highpass filter) must have been applied beforehand.
+
     Parameters
     ----------
     max_bad_channels : int | float
@@ -969,8 +1019,18 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
     a consistent channel set across multiple recordings/sessions.
 
     The typical place to perform this is after all other EEGPrep-related artifact
-    removal steps. If no channel locations were recorded, this preprocessor has no
-    effect.
+    removal steps, except re-referencing. If no channel locations were recorded,
+    this preprocessor has no effect.
+
+    Preconditions
+    -------------
+    - Must have 3D channel locations.
+    - This filter will only have an effect if one or more of the preceding steps
+      recorded original channel locations (e.g., :class:`RemoveBadChannels`,
+      :class:`RemoveBadChannelsNoLocs`, or :class:`RemoveFlatChannels`).
+    - If you are re-referencing to common average (:class:`RemoveCommonAverageReference`),
+      this should normally *NOT* be done before this step, but after it (otherwise
+      your reference will depend on which channels were removed).
 
     """
 
