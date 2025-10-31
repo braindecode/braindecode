@@ -60,6 +60,7 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     AttnSleep
     BDTCN
     BIOT
+    BENDR
     ContraWR
     CTNet
     Deep4Net

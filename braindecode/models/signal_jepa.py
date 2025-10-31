@@ -146,6 +146,8 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
 class SignalJEPA(_BaseSignalJEPA):
     """Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [1]_
 
+    :bdg-danger:`Large Brain Model`
+
     This model is not meant for classification but for SSL pre-training.
     Its output shape depends on the input shape.
     For classification purposes, three variants of this model are available:
@@ -231,6 +233,8 @@ class SignalJEPA(_BaseSignalJEPA):
 
 class SignalJEPA_Contextual(_BaseSignalJEPA):
     """Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
+
+    :bdg-danger:`Large Brain Model`
 
     This architecture is one of the variants of :class:`SignalJEPA`
     that can be used for classification purposes.
@@ -402,6 +406,8 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
     """Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
+
+    :bdg-danger:`Large Brain Model`
 
     This architecture is one of the variants of :class:`SignalJEPA`
     that can be used for classification purposes.
