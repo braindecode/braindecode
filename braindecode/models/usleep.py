@@ -62,43 +62,48 @@ class USleep(EEGModuleMixin, nn.Module):
     - Decoder :class:`_DecoderBlock`  **(progressive upsampling + skip fusion to high-frequency map, 12 blocks; upsampling x2 per block)**
 
         - *Operations.*
-        - **Nearest-neighbor upsample**, :class:`nn.Upsample` (x2)
-        - **Convolution2d** (k=2), :class:`torch.nn.Conv2d`
-        - ELU, :class:`torch.nn.ELU`
-        - Batch Norm, :class:`torch.nn.BatchNorm2d`
-        - **Concatenate** with the encoder skip at the same temporal scale, :function:`torch.cat`
-        - **Convolution**, :class:`torch.nn.Conv2d`
-        - ELU, :class:`torch.nn.ELU`
-        - Batch Norm, :class:`torch.nn.BatchNorm2d`.
+
+            - **Nearest-neighbor upsample**, :class:`nn.Upsample` (x2)
+            - **Convolution2d** (k=2), :class:`torch.nn.Conv2d`
+            - ELU, :class:`torch.nn.ELU`
+            - Batch Norm, :class:`torch.nn.BatchNorm2d`
+            - **Concatenate** with the encoder skip at the same temporal scale, ``torch.cat``
+            - **Convolution**, :class:`torch.nn.Conv2d`
+            - ELU, :class:`torch.nn.ELU`
+            - Batch Norm, :class:`torch.nn.BatchNorm2d`.
 
     **Output**: A multi-class, **high-frequency** per-sample representation aligned to the input rate (128 Hz).
 
     - **Segment Classifier incorporate into :class:`braindecode.models.USleep` (aggregation to fixed epochs)**
 
         - *Operations.*
-        - **Mean-pool**, :class:`torch.nn.AvgPool2d` per class with kernel = epoch length *i* and stride *i*
-        - **1x1 conv**, :class:`torch.nn.Conv2d`
-        - ELU, :class:`torch.nn.ELU`
-        - **1x1 conv**, :class:`torch.nn.Conv2d` with ``(T, K)`` (epochs x stages).
+
+            - **Mean-pool**, :class:`torch.nn.AvgPool2d` per class with kernel = epoch length *i* and stride *i*
+            - **1x1 conv**, :class:`torch.nn.Conv2d`
+            - ELU, :class:`torch.nn.ELU`
+            - **1x1 conv**, :class:`torch.nn.Conv2d` with ``(T, K)`` (epochs x stages).
 
     **Role**: Learns a **non-linear** weighted combination over each 30-s window (unlike U-Time's linear combiner).
 
     .. rubric:: Convolutional Details
 
     - **Temporal (where time-domain patterns are learned).**
-    All convolutions are **1-D along time**; depth (12 levels) plus pooling yields an extensive receptive field
-    (reported sensitivity to ±6.75 min around each epoch; theoretical field ≈ 9.6 min at the deepest layer).
-    The decoder restores sample-level resolution before epoch aggregation.
+
+      All convolutions are **1-D along time**; depth (12 levels) plus pooling yields an extensive receptive field
+      (reported sensitivity to ±6.75 min around each epoch; theoretical field ≈ 9.6 min at the deepest layer).
+      The decoder restores sample-level resolution before epoch aggregation.
 
     - **Spatial (how channels are processed).**
-    Convolutions mix across the *channel* dimension jointly with time (no separate spatial operator). The system
-    is **montage-agnostic** (any reasonable EEG/EOG pair) and was trained across diverse cohorts/protocols,
-    supporting robustness to channel placement and hardware differences.
+
+      Convolutions mix across the *channel* dimension jointly with time (no separate spatial operator). The system
+      is **montage-agnostic** (any reasonable EEG/EOG pair) and was trained across diverse cohorts/protocols,
+      supporting robustness to channel placement and hardware differences.
 
     - **Spectral (how frequency content is captured).**
-    No explicit Fourier/wavelet transform is used; the **stack of temporal convolutions** acts as a learned
-    filter bank whose effective bandwidth grows with depth. The high-frequency decoder output (128 Hz)
-    retains fine temporal detail for the segment classifier.
+
+      No explicit Fourier/wavelet transform is used; the **stack of temporal convolutions** acts as a learned
+      filter bank whose effective bandwidth grows with depth. The high-frequency decoder output (128 Hz)
+      retains fine temporal detail for the segment classifier.
 
 
     .. rubric:: Attention / Sequential Modules

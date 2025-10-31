@@ -1,7 +1,7 @@
 """.. _finetune-foundation-model:
 
 Fine-tuning a Foundation Model (Signal-JEPA)
-===========================================
+==============================================
 
 Foundation models are large-scale pre-trained models that serve as a starting point
 for a wide range of downstream tasks, leveraging their generalization capabilities.
@@ -164,7 +164,7 @@ assert set(missing_keys) == new_layers, f"{missing_keys=}"
 ##################################################################
 #
 # Fine-tuning the Model
-# --------------------
+# ---------------------
 #
 # Signal-JEPA is a model trained in a self-supervised manner on a masked
 # prediction task. In this task, the model is configured in a many-to-many
@@ -208,7 +208,7 @@ print(other_modules)
 
 #############################################################
 # Fine-tuning Procedure
-# ~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~
 #
 # Finally, we set up the fine-tuning procedure using Braindecode's
 # :class:`EEGClassifier`. We define the loss function, optimizer, and training

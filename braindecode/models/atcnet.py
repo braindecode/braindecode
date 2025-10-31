@@ -76,7 +76,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - Dropout :class:`torch.nn.Dropout`
         - Rearrange back to ``(B, F2, T_w)``.
 
-
     **Note**: Attention is *local to a window* and purely temporal.
 
     *Role.* Re-weights evidence across the window, letting the model emphasize informative
@@ -137,17 +136,17 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Usage and Configuration
 
-        - ``conv_block_n_filters (F1)``, ``conv_block_depth_mult (D)`` → capacity of the stem
-        (with ``F2 = F1·D`` feeding attention/TCN), dimensions aligned to ``F2``, like :class:`EEGNet`.
-        - Pool sizes ``P1,P2`` trade temporal resolution for stability/compute; they set
-        ``T_c = T/(P1·P2)`` and thus window width ``T_w``.
-        - ``n_windows`` controls the ensemble over shifts (compute ∝ windows).
-        - ``att_num_heads``, ``att_head_dim`` set attention capacity; keep ``H·d_h ≈ F2``.
-        - ``tcn_depth``, ``tcn_kernel_size`` govern receptive field; larger values demand
-        longer inputs (see minimum length above). The implementation warns and *rescales*
-        kernels/pools/windows if inputs are too short.
-        - **Aggregation choice.** ``concat=False`` (default, average of per-window logits) matches
-        the official code; ``concat=True`` mirrors the paper’s concatenation variant.
+    - ``conv_block_n_filters (F1)``, ``conv_block_depth_mult (D)`` → capacity of the stem
+      (with ``F2 = F1·D`` feeding attention/TCN), dimensions aligned to ``F2``, like :class:`EEGNet`.
+    - Pool sizes ``P1,P2`` trade temporal resolution for stability/compute; they set
+      ``T_c = T/(P1·P2)`` and thus window width ``T_w``.
+    - ``n_windows`` controls the ensemble over shifts (compute ∝ windows).
+    - ``att_num_heads``, ``att_head_dim`` set attention capacity; keep ``H·d_h ≈ F2``.
+    - ``tcn_depth``, ``tcn_kernel_size`` govern receptive field; larger values demand
+      longer inputs (see minimum length above). The implementation warns and *rescales*
+      kernels/pools/windows if inputs are too short.
+    - **Aggregation choice.** ``concat=False`` (default, average of per-window logits) matches
+      the official code; ``concat=True`` mirrors the paper's concatenation variant.
 
 
     Notes
