@@ -381,12 +381,13 @@ class _BENDRContextualizer(nn.Module):
 
         # --- Transformer Encoder Layers ---
         # Paper uses T-Fixup: remove internal LayerNorm layers
+
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=self.transformer_dim,  # Use projected dimension
             nhead=heads,
             dim_feedforward=hidden_feedforward,
             dropout=dropout,  # Dropout within transformer layer
-            activation=activation,
+            activation=activation(),
             batch_first=False,  # Expects (T, B, C)
             norm_first=False,  # Standard post-norm architecture
         )
