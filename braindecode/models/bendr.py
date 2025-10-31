@@ -114,7 +114,7 @@ class BENDR(EEGModuleMixin, nn.Module):
         Probability of dropping entire transformer layers during training (LayerDrop
         regularization [layerdrop]_). The paper uses 0.01 for pre-training and 0.0 for
         fine-tuning.
-    activation : nn.Module, default=nn.GELU
+    activation : :class:`torch.nn.Module`, default=:class:`torch.nn.GELU`
         Activation function used in the encoder convolutional blocks. The paper uses GELU
         activation throughout.
     transformer_layers : int, default=8
@@ -147,14 +147,18 @@ class BENDR(EEGModuleMixin, nn.Module):
        Frontiers in Human Neuroscience, 15, 653659.
        https://doi.org/10.3389/fnhum.2021.653659
     .. [wav2vec2] Baevski, A., Zhou, Y., Mohamed, A., & Auli, M. (2020).
-       wav2vec 2.0: A framework for self-supervised learning of speech representations.
-       Advances in Neural Information Processing Systems, 33, 12449-12460.
+       wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations.
+       In H. Larochelle, M. Ranzato, R. Hadsell, M. F. Balcan, & H. Lin (Eds),
+       Advances in Neural Information Processing Systems (Vol. 33, pp. 12449-12460).
+       https://dl.acm.org/doi/10.5555/3495724.3496768
     .. [tfixup] Huang, T. K., Liang, S., Jha, A., & Salakhutdinov, R. (2020).
        Improving Transformer Optimization Through Better Initialization.
        In International Conference on Machine Learning (pp. 4475-4483). PMLR.
+       https://dl.acm.org/doi/10.5555/3524938.3525354
     .. [layerdrop] Fan, A., Grave, E., & Joulin, A. (2020).
-       Reducing transformer depth on demand with structured dropout.
-       In International Conference on Learning Representations.
+       Reducing Transformer Depth on Demand with Structured Dropout.
+       International Conference on Learning Representations.
+       Retrieved from https://openreview.net/forum?id=SylO2yStDr
     """
 
     def __init__(
@@ -196,14 +200,14 @@ class BENDR(EEGModuleMixin, nn.Module):
 
         self.encoder_h = encoder_h
         self.contextualizer_hidden = contextualizer_hidden
-        self.include_final_layer = final_layer  # Renamed to avoid conflict
+        self.include_final_layer = final_layer
 
         # Encoder: Use parameters from __init__
         self.encoder = _ConvEncoderBENDR(
-            in_features=self.n_chans,  # Use n_chans from mixin/init
+            in_features=self.n_chans,
             encoder_h=encoder_h,
             dropout=drop_prob,
-            projection_head=projection_head,  # Pass projection_head parameter
+            projection_head=projection_head,
             enc_width=enc_width,
             enc_downsample=enc_downsample,
             activation=activation,
