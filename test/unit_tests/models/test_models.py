@@ -1767,7 +1767,11 @@ def test_bendr_parameter_counts():
     # Count total parameters
     total_params = sum(p.numel() for p in model.parameters())
 
-    # Should be close to 157,143,101 (paper: 157,141,049)
+    # Should be close to paper: 157,141,049,
+    # At braindecode, there are 2 k params difference
+    # that might come from implementation details from different
+    # torch versions or minor code changes. 157,143,101 in my case.
+
     # Allow 0.1% tolerance
     expected = 157_141_049
     assert abs(total_params - expected) / expected < 0.001, \

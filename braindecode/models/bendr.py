@@ -242,15 +242,16 @@ class BENDR(EEGModuleMixin, nn.Module):
         context = self.contextualizer(encoded)
         # context: [batch_size, encoder_h, n_encoded_times + 1] (due to start token)
 
-        # Extract features - take the state corresponding to the *last input timestep*
+        # Extract features - use the output corresponding to the start token (index 0)
         # The output has shape [batch_size, features, seq_len+1]
-        # The last element context[:,:,-1] corresponds to the *last input time step*
-        # (assuming start token is at index 0 after permute in contextualizer)
-        # However, often the output corresponding to the *start token* (index 0) is used
-        # as the aggregate representation. Let's assume you want the last input timestep's state.
-        # Check the transformer's output dimensions carefully based on start_token handling.
-        # If output is [batch_size, features, seq_len+1], then last *input* timestep is -1
-        feature = context[:, :, -1]
+        # The start token was prepended at position 0 in the contextualizer before the
+        # transformer layers. After permutation back to [batch, features, seq_len+1],
+        # the start token output is at index 0.
+        # According to the paper (Kostas et al. 2021): "The transformer output of this
+        # initial position was not modified during pre-training, and only used for
+        # downstream tasks." This follows BERT's [CLS] token convention where the
+        # first token aggregates sequence information via self-attention.
+        feature = context[:, :, 0]
         # feature: [batch_size, encoder_h]
 
         if self.final_layer is not None:
