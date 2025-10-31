@@ -201,7 +201,8 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
 
 class EEGPrep(EEGPrepBasePreprocessor):
-    """Preprocessor for an MNE Raw object that applies the EEGPrep pipeline [1]_.
+    """Preprocessor for an MNE Raw object that applies the EEGPrep pipeline (based on
+    [1]_).
 
     This pipeline involves the stages:
 
@@ -321,8 +322,8 @@ class EEGPrep(EEGPrepBasePreprocessor):
         A fallback correlation threshold for bad-channel removal that is applied when
         no channel location information is available. The value here typically needs to
         be fairly low, e.g., 0.45-0.5 (lower is more aggressive). Ideally you have
-       channel locations so that this fallback is not needed.
-    bad_channel_nolocs_exclude_frac : float = 0.1,
+        channel locations so that this fallback is not needed.
+    bad_channel_nolocs_exclude_frac : float
         A fraction of most correlated channels to exclude in the case where no channel
         location information is available. Used to reject pairs of shorted or otherwise
         highly correlated sets of bad channels.
@@ -455,7 +456,7 @@ class EEGPrep(EEGPrepBasePreprocessor):
 
 
 class RemoveFlatChannels(EEGPrepBasePreprocessor):
-    """Removes EEG channels that flat-line for extended periods of time.
+    """Removes EEG channels that flat-line for extended periods of time (as in [1]_).
 
     This is an automated artifact rejection function which ensures that
     the data contains no flat-lined channels. This is very rarely the case, but the
@@ -473,6 +474,13 @@ class RemoveFlatChannels(EEGPrepBasePreprocessor):
     max_allowed_jitter : float
         Maximum tolerated jitter during flatlines. As a multiple of epsilon for the
         64-bit float data type (np.finfo(np.float64).eps). Defaults to 20.
+
+    References
+    ----------
+    .. [1] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T., Makeig, S.,
+       Jung, T.P. and Cauwenberghs, G., 2015. Real-time neuroimaging and cognitive
+       monitoring using wearable dry EEG. IEEE Transactions on Biomedical Engineering,
+       62(11), pp.2553-2567.
 
     """
 
@@ -515,7 +523,7 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
 
 
 class RemoveDrifts(EEGPrepBasePreprocessor):
-    """Remove drifts from the EEG data using a forward-backward high-pass filter.
+    """Remove drifts from the EEG data using a forward-backward high-pass filter ([1]_).
 
     Note that MNE has its own suite of filters for this that offers more choices; use
     this filter if you are specifically interested in matching the EEGLAB and EEGPrep
@@ -542,6 +550,11 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
     method : str
         The method to use for filtering ('fft' or 'fir'). Defaults to 'fft' (uses more
         memory but is much faster than 'fir').
+
+    References
+    ----------
+    .. [1] Oppenheim, A.V., 1999. Discrete-time signal processing. Pearson Education
+       India.
 
     """
 
@@ -570,7 +583,8 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
 
 
 class Resampling(EEGPrepBasePreprocessor):
-    """Resample the data to a specified rate. Included to equivalence to EEGPrep.
+    """Resample the data to a specified rate ([1]_). Included for equivalence with
+    EEGPrep.
 
     MNE has its resampling routine (use as `Preprocessor("resample", sfreq=rate)`)
     but this will not necessarily match EEGPrep's behavior exactly. Typical
@@ -603,6 +617,12 @@ class Resampling(EEGPrepBasePreprocessor):
     sfreq : float | None
         The desired sampling rate in Hz. Skipped if set to None.
 
+
+    References
+    ----------
+    .. [1] Proakis, J.G., 2007. Digital signal processing: principles, algorithms,
+       and applications, 4/E. Pearson Education India.
+
     """
 
     def __init__(
@@ -621,7 +641,8 @@ class Resampling(EEGPrepBasePreprocessor):
 
 
 class RemoveBadChannels(EEGPrepBasePreprocessor):
-    """Removes EEG channels with problematic data; variant that uses channel locations.
+    """Removes EEG channels with problematic data (as in [1]_); variant
+    that uses channel locations.
 
     This is an automated artifact rejection function which ensures that the data
     contains no channels that record only noise for extended periods of time. This uses
@@ -684,6 +705,11 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
         removed. Not usually tuned. Default is 0.4 (40%), max is 0.5 (breakdown point
         of stats). Pretty much never tuned.
 
+    References
+    ----------
+    .. [1] Kothe, C.A. and Makeig, S., 2013. BCILAB: a platform for brain–computer
+       interface development. Journal of Neural Engineering, 10(5), p.056014.
+
     """
 
     def __init__(
@@ -720,8 +746,8 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
 
 
 class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
-    """Remove EEG channels with problematic data; variant that does not use channel
-    locations.
+    """Remove EEG channels with problematic data  (following [1]_); variant that does
+    not use channel locations.
 
     This is an automated artifact rejection function which ensures that the data
     contains no channels that record only noise for extended periods of time.
@@ -766,6 +792,11 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
         aware manner. If enabled, the correlation measure will not be affected
         by the presence or absence of line noise (using a temporary notch filter).
 
+    References
+    ----------
+    .. [1] Kothe, C.A. and Makeig, S., 2013. BCILAB: a platform for brain–computer
+       interface development. Journal of Neural Engineering, 10(5), p.056014.
+
     """
 
     def __init__(
@@ -799,8 +830,8 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
 
 
 class RemoveBursts(EEGPrepBasePreprocessor):
-    """Run the Artifact Subspace Reconstruction (ASR) method on EEG data to remove
-    burst-type artifacts.
+    """Run the Artifact Subspace Reconstruction (ASR) method ([1]_) on EEG data to
+    remove burst-type artifacts.
 
     This is an automated artifact rejection function that ensures that the data
     contains no events that have abnormally strong power; the subspaces on which
@@ -862,6 +893,12 @@ class RemoveBursts(EEGPrepBasePreprocessor):
         Maximum memory (in MB) to use during processing. Larger values can reduce
         overhead during processing, but usually 64MB is sufficient.
 
+    References
+    ----------
+    .. [1] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T., Makeig, S.,
+       Jung, T.P. and Cauwenberghs, G., 2015. Real-time neuroimaging and cognitive
+       monitoring using wearable dry EEG. IEEE Transactions on Biomedical Engineering,
+       62(11), pp.2553-2567.
     """
 
     def __init__(
@@ -904,7 +941,8 @@ class RemoveBursts(EEGPrepBasePreprocessor):
 
 
 class RemoveBadWindows(EEGPrepBasePreprocessor):
-    """Remove periods with abnormally high-power content from continuous data.
+    """Remove periods with abnormally high-power content from continuous data
+    (as in [1]_).
 
     This function cuts segments from the data which contain high-power (or low-power)
     artifacts. Specifically, only time windows are retained which have less than a
@@ -966,6 +1004,11 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
     shape_range : sequence(float)
         Range for the beta shape parameter in the generalised Gaussian used
         for distribution fitting. Default is np.arange(1.7, 3.6, 0.15).
+
+    References
+    ----------
+    .. [1] Kothe, C.A. and Makeig, S., 2013. BCILAB: a platform for brain–computer
+       interface development. Journal of Neural Engineering, 10(5), p.056014.
     """
 
     def __init__(
@@ -1016,7 +1059,8 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
     This reinterpolates EEG channels that were previously dropped via one of the EEGPrep
     channel removal operations and restores the original order of EEG channels. This
     is typically necessary when you are using automatic channel removal but you need
-    a consistent channel set across multiple recordings/sessions.
+    a consistent channel set across multiple recordings/sessions. Uses spherical-spline
+    interpolation ([1]_).
 
     The typical place to perform this is after all other EEGPrep-related artifact
     removal steps, except re-referencing. If no channel locations were recorded,
@@ -1031,6 +1075,12 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
     - If you are re-referencing to common average (:class:`RemoveCommonAverageReference`),
       this should normally *NOT* be done before this step, but after it (otherwise
       your reference will depend on which channels were removed).
+
+    References
+    ----------
+    .. [1] Perrin, F., Pernier, J., Bertrand, O. and Echallier, J.F., 1989. Spherical
+       splines for scalp potential and current density mapping.
+       Electroencephalography and Clinical Neurophysiology, 72(2), pp.184-187.
 
     """
 
@@ -1049,7 +1099,7 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
 
 
 class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
-    """Subtracts the common average reference (mean across EEG channels) from the
+    """Subtracts the common average reference (mean across EEG channels; [1]_) from the
     EEG data. This is useful for having a consistent referencing scheme across
     recordings.
 
@@ -1061,6 +1111,12 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
     EEGPrep pipeline by means of individual operations (for example when migrating
     from one to the other form) without introducing perhaps unexpected side effects
     on the MNE data structure.
+
+    References
+    ----------
+    .. [1] Offner, F. F. (1950). The EEG as potential mapping: the value of the
+       average monopolar reference. Electroencephalography and Clinical Neurophysiology,
+       2(2), 213-214.
 
     """
 
