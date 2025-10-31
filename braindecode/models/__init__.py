@@ -21,6 +21,8 @@ from .eegnet import EEGNet, EEGNetv4
 from .eegnex import EEGNeX
 from .eegsimpleconv import EEGSimpleConv
 from .eegtcnet import EEGTCNet
+from .syncnet import SyncNet
+from .eegsym import EEGSym
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
