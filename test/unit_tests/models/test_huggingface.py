@@ -217,3 +217,102 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
 
     out_restored = restored(sample_input)
     torch.testing.assert_close(out_restored, out_original)
+
+
+def test_serialize_chs_info_with_string_kind():
+    """Test serialization when kind field is a string."""
+    chs_info = [
+        {
+            'ch_name': 'EEG 001',
+            'kind': 'eeg',  # String instead of int
+            'coil_type': 0,
+            'unit': 107,
+            'cal': 1.0,
+            'range': 1.0,
+            'loc': np.array([0.0] * 12),
+        }
+    ]
+    serialized = EEGModuleMixin._serialize_chs_info(chs_info)
+    assert serialized[0]['kind'] == 'eeg'
+
+
+def test_serialize_chs_info_without_optional_fields():
+    """Test serialization when optional fields are missing."""
+    chs_info = [
+        {
+            'ch_name': 'EEG 001',
+            # Missing coil_type, unit, cal, range, loc, kind
+        }
+    ]
+    serialized = EEGModuleMixin._serialize_chs_info(chs_info)
+    assert serialized[0]['ch_name'] == 'EEG 001'
+    # Optional fields should not be in the serialized output
+    assert 'coil_type' not in serialized[0] or serialized[0].get('coil_type') is None
+
+
+def test_init_with_serialized_chs_info():
+    """Test model initialization with serialized channel info from Hub."""
+    serialized_chs_info = [
+        {
+            'ch_name': 'EEG 001',
+            'kind': 2,
+            'coil_type': 0,
+            'unit': 107,
+            'cal': 1.0,
+            'range': 1.0,
+            'loc': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # List, not ndarray
+        }
+    ]
+    # Model should deserialize this automatically in __init__
+    model = EEGNet(n_chans=1, n_outputs=2, n_times=100, chs_info=serialized_chs_info)
+    # Check that chs_info was deserialized (loc should be ndarray now)
+    assert isinstance(model.chs_info[0]['loc'], np.ndarray)
+
+
+def test_init_with_already_deserialized_chs_info():
+    """Test model initialization with already-deserialized channel info."""
+    deserialized_chs_info = [
+        {
+            'ch_name': 'EEG 001',
+            'kind': 2,
+            'coil_type': 0,
+            'unit': 107,
+            'cal': 1.0,
+            'range': 1.0,
+            'loc': np.array([0.0] * 12),  # Already ndarray
+        }
+    ]
+    # Model should handle this without error
+    model = EEGNet(n_chans=1, n_outputs=2, n_times=100, chs_info=deserialized_chs_info)
+    assert isinstance(model.chs_info[0]['loc'], np.ndarray)
+
+
+def test_save_pretrained_without_hf_hub():
+    """Test that _save_pretrained returns early when HF Hub is not available."""
+    from braindecode.models import base
+    original_has_hf_hub = base.HAS_HF_HUB
+    try:
+        # Temporarily set HAS_HF_HUB to False
+        base.HAS_HF_HUB = False
+        model = EEGNet(n_chans=22, n_outputs=4, n_times=1000)
+        # Should return early without error
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model._save_pretrained(tmpdir)
+    finally:
+        base.HAS_HF_HUB = original_has_hf_hub
+
+
+def test_init_subclass_without_hf_hub():
+    """Test that __init_subclass__ works when HF Hub is not available."""
+    from braindecode.models import base
+    original_has_hf_hub = base.HAS_HF_HUB
+    try:
+        base.HAS_HF_HUB = False
+        # Creating a subclass should work without HF Hub
+        class TestModel(base.EEGModuleMixin):
+            pass
+        # Should complete without error
+        assert TestModel is not None
+    finally:
+        base.HAS_HF_HUB = original_has_hf_hub
