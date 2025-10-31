@@ -147,7 +147,7 @@ def test_preprocess_mne_windows_str(mne_windows_concat_ds):
     # as underlying data is always raw
     assert all(
         [
-            ds.raw_preproc_kwargs
+            ds.window_preproc_kwargs
             == [
                 ("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False}),
             ]
