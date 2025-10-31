@@ -408,4 +408,3 @@ Authors
 .. _Hamdi Altaheri: https://github.com/Altaheri
 .. _José Mauricio: https://github.com/josemaurici
 .. _Can Han: https://github.com/hancan16
-.. _Copilot: https://github.com/features/copilot
