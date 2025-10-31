@@ -362,7 +362,7 @@ class _BENDRContextualizer(nn.Module):
             nn.init.constant_(conv.bias, 0)
 
             conv = nn.utils.parametrizations.weight_norm(conv, name="weight", dim=2)
-            self.relative_position = nn.Sequential(conv, nn.activation())
+            self.relative_position = nn.Sequential(conv, activation())
 
         # --- Input Conditioning --- (Includes projection up to transformer_dim)
         # Rearrange, Norm, Dropout, Project, Rearrange
