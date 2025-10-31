@@ -13,9 +13,12 @@ from braindecode.datasets import BaseConcatDataset
 from braindecode.datasets.base import BaseDataset
 from braindecode.preprocessing import preprocess
 from braindecode.preprocessing.eegprep_preprocess import (
+    EEGPrep,
     ReinterpolateRemovedChannels,
+    RemoveBadChannels,
     RemoveBadChannelsNoLocs,
     RemoveBadWindows,
+    RemoveBursts,
     RemoveCommonAverageReference,
     RemoveDCOffset,
     RemoveFlatChannels,
@@ -149,12 +152,60 @@ def test_remove_dc_offset(base_concat_ds):
 
 @pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
 def test_non_eeg_channels_preserved():
-    """Test that non-EEG channels are separated and reintroduced correctly."""
-    # Create dataset with non-EEG channels
-    ds_with_non_eeg = _create_synthetic_dataset(include_non_eeg=True)
+    """Test that non-EEG channels are separated, reintroduced, and order is preserved."""
+    # Create dataset with non-EEG channels interspersed before, during, and after EEG channels
+    rng = np.random.RandomState(42)
 
-    # Get original data to check DC offsets before processing
+    # Create a mixed channel list with non-EEG channels interspersed
+    # Format: [non-EEG, EEG, EEG, non-EEG, EEG, EEG, ..., non-EEG]
+    ch_names = [
+        'EOG_L',     # non-EEG at start
+        'Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',  # EEG
+        'EMG_1',     # non-EEG in middle
+        'T7', 'C3', 'Cz', 'C4', 'T8',                # EEG
+        'EOG_R',     # non-EEG in middle
+        'P7', 'P3', 'Pz', 'P4', 'P8',                # EEG
+        'O1', 'Oz', 'O2', 'FC1', 'FC2',              # EEG
+        'ECG_1',     # non-EEG at end
+    ]
+
+    ch_types = [
+        'misc',                                      # EOG_L
+        'eeg', 'eeg', 'eeg', 'eeg', 'eeg', 'eeg', 'eeg',  # EEG block 1
+        'misc',                                      # EMG_1
+        'eeg', 'eeg', 'eeg', 'eeg', 'eeg',          # EEG block 2
+        'misc',                                      # EOG_R
+        'eeg', 'eeg', 'eeg', 'eeg', 'eeg',          # EEG block 3
+        'eeg', 'eeg', 'eeg', 'eeg', 'eeg',          # EEG block 4
+        'misc',                                      # ECG_1
+    ]
+
+    n_channels = len(ch_names)
+    sfreq = 250
+    duration = 10
+    n_samples = int(sfreq * duration)
+
+    # Generate random data with DC offsets
+    data = rng.randn(n_channels, n_samples) * 1e-5
+    dc_offsets = rng.uniform(-100, 100, size=(n_channels, 1))
+    data += dc_offsets
+
+    # Create MNE Raw object
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)
+    raw = mne.io.RawArray(data, info)
+
+    # Set montage for EEG channels (will be ignored for non-EEG)
+    montage = mne.channels.make_standard_montage('standard_1020')
+    raw.set_montage(montage, on_missing='ignore')
+
+    # Create dataset
+    desc = pd.Series({'subject': 1, 'session': 1})
+    base_dataset = BaseDataset(raw, desc, target_name=None)
+    ds_with_non_eeg = BaseConcatDataset([base_dataset])
+
+    # Store original channel order and data
     original_raw = ds_with_non_eeg.datasets[0].raw
+    original_ch_names = original_raw.ch_names.copy()
     eeg_picks = mne.pick_types(original_raw.info, eeg=True, misc=False, exclude=[])
     non_eeg_picks = mne.pick_types(original_raw.info, eeg=False, misc=True, exclude=[])
 
@@ -164,6 +215,7 @@ def test_non_eeg_channels_preserved():
 
     # Verify that both EEG and non-EEG channels have DC offsets initially
     assert len(non_eeg_picks) > 0  # Verify we actually have non-EEG channels
+    assert len(non_eeg_picks) == 4  # Should have 4 non-EEG channels
     assert np.max(np.abs(original_eeg_medians)) > 10  # Should have large DC offset
     assert np.max(np.abs(original_non_eeg_medians)) > 10  # Should have large DC offset
 
@@ -173,7 +225,12 @@ def test_non_eeg_channels_preserved():
 
     # Get processed data
     processed_raw = ds_with_non_eeg.datasets[0].raw
+    processed_ch_names = processed_raw.ch_names
     processed_data = processed_raw.get_data()
+
+    # CRITICAL: Verify that channel order is exactly preserved
+    assert processed_ch_names == original_ch_names, \
+        f"Channel order was not preserved!\nOriginal: {original_ch_names}\nProcessed: {processed_ch_names}"
 
     # Get EEG and non-EEG channel picks for processed data
     processed_eeg_picks = mne.pick_types(processed_raw.info, eeg=True, misc=False, exclude=[])
@@ -384,6 +441,71 @@ def test_remove_bad_channels_no_locs():
 
 
 @pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
+def test_remove_bad_channels():
+    """Test that RemoveBadChannels removes channels with high noise using channel locations."""
+    # Create a smaller dataset with correlated data for faster processing
+    rng = np.random.RandomState(456)
+
+    # Create a custom smaller dataset for this test with standard 10-20 channel names
+    ch_names = ['Fp1', 'Fp2', 'F3', 'Fz', 'F4', 'C3', 'Cz', 'C4',
+                'P3', 'Pz', 'P4', 'O1', 'Oz', 'O2', 'FC1', 'FC2']
+    n_channels = len(ch_names)
+    sfreq = 250
+    duration = 60  # 60 seconds for sufficient statistics
+    n_samples = int(sfreq * duration)
+
+    # Generate correlated data
+    data = rng.randn(n_channels, n_samples) * 1e-5
+    # Add positive offset to mixing matrix to increase baseline correlations
+    mixing_matrix = rng.randn(n_channels, n_channels) + 2.0
+    data = mixing_matrix @ data
+
+    # Create MNE Raw object
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=['eeg'] * n_channels)
+    raw = mne.io.RawArray(data, info)
+
+    # Set standard 10-20 montage for channel locations (required for RemoveBadChannels)
+    montage = mne.channels.make_standard_montage('standard_1020')
+    raw.set_montage(montage, on_missing='ignore')
+
+    # Create dataset
+    desc = pd.Series({'subject': 1, 'session': 1})
+    base_dataset = BaseDataset(raw, desc, target_name=None)
+    concat_ds = BaseConcatDataset([base_dataset])
+
+    # Add high-amplitude Gaussian noise to two channels (indices 5 and 10)
+    # This makes them uncorrelated from the other channels
+    bad_channel_indices = [5, 10]
+    bad_channel_names = [ch_names[i] for i in bad_channel_indices]
+    noise_scale = 10 * np.mean(np.std(data, axis=1))  # 10x the mean std
+
+    for idx in bad_channel_indices:
+        concat_ds.datasets[0].raw._data[idx, :] += rng.randn(n_samples) * noise_scale
+
+    # Get original channel count
+    original_n_channels = len(concat_ds.datasets[0].raw.ch_names)
+
+    # Apply RemoveBadChannels
+    # Using default parameters which should be sensitive enough to detect the noise
+    preprocessors = [
+        RemoveBadChannels(),
+    ]
+    preprocess(concat_ds, preprocessors)
+
+    # Get processed data
+    processed_raw = concat_ds.datasets[0].raw
+    processed_n_channels = len(processed_raw.ch_names)
+    processed_ch_names = processed_raw.ch_names
+
+    # Assert that channels were removed (at least the 2 we corrupted)
+    assert processed_n_channels < original_n_channels
+
+    # Assert that the bad channels are no longer present
+    for bad_ch in bad_channel_names:
+        assert bad_ch not in processed_ch_names
+
+
+@pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
 def test_remove_bad_windows():
     """Test that RemoveBadWindows removes time periods with high-amplitude artifacts."""
     # Create a long dataset without DC offsets (required for bad window detection)
@@ -444,3 +566,342 @@ def test_remove_bad_windows():
     # Also verify that some but not all data was removed
     assert processed_duration < original_duration
     assert processed_duration > original_duration * 0.5  # Should keep most of the data
+
+
+@pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
+def test_reinterpolate_without_channel_removal_logs_skip(base_concat_ds, caplog):
+    """Test that ReinterpolateRemovedChannels logs when used without channel removal."""
+    # Apply ReinterpolateRemovedChannels without any preceding channel-removing operation
+    import logging
+
+    # Set log level to capture INFO messages
+    with caplog.at_level(logging.INFO):
+        preprocessors = [ReinterpolateRemovedChannels()]
+        preprocess(base_concat_ds, preprocessors)
+
+    # Check that the expected log message was produced
+    assert any("skipping reinterpolation" in record.message.lower()
+               for record in caplog.records if record.levelname == "INFO"), \
+        "Expected INFO log containing 'skipping reinterpolation' was not found"
+
+
+@pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
+def test_remove_bad_windows_with_non_eeg_channels(caplog):
+    """Test that RemoveBadWindows logs error and omits non-EEG channels."""
+    import logging
+
+    # Create a long dataset with non-EEG channels and without DC offsets
+    ds = _create_synthetic_dataset(
+        include_non_eeg=True,
+        duration=1000,
+        have_dc_offsets=False
+    )
+
+    # Get original channel info
+    original_raw = ds.datasets[0].raw
+    original_duration = original_raw.times[-1]
+    sfreq = original_raw.info['sfreq']
+
+    # Verify we have non-EEG channels initially
+    eeg_picks = mne.pick_types(original_raw.info, eeg=True, misc=False, exclude=[])
+    non_eeg_picks = mne.pick_types(original_raw.info, eeg=False, misc=True, exclude=[])
+    original_n_eeg = len(eeg_picks)
+    original_n_non_eeg = len(non_eeg_picks)
+
+    assert original_n_non_eeg > 0, "Dataset should have non-EEG channels"
+
+    # Calculate baseline amplitude
+    baseline_data = original_raw.get_data()
+    baseline_scale = np.mean(np.std(baseline_data[eeg_picks, :], axis=1))
+
+    # Inject 10 seconds of high-amplitude noise into EEG channels
+    noise_duration = 10  # seconds
+    noise_start_time = 100  # seconds
+    noise_start_sample = int(noise_start_time * sfreq)
+    noise_n_samples = int(noise_duration * sfreq)
+    noise_end_sample = noise_start_sample + noise_n_samples
+
+    # Add 10x amplitude noise to all EEG channels in this window
+    noise_scale = 10 * baseline_scale
+    rng = np.random.RandomState(789)
+
+    for ch_idx in eeg_picks:
+        ds.datasets[0].raw._data[ch_idx, noise_start_sample:noise_end_sample] += \
+            rng.randn(noise_n_samples) * noise_scale
+
+    # Apply RemoveBadWindows and capture logs
+    with caplog.at_level(logging.ERROR):
+        preprocessors = [RemoveBadWindows()]
+        preprocess(ds, preprocessors)
+
+    # Check that an error was logged containing "omitted"
+    assert any("omitted" in record.message.lower()
+               for record in caplog.records if record.levelname == "ERROR"), \
+        "Expected ERROR log containing 'omitted' was not found"
+
+    # Get processed data
+    processed_raw = ds.datasets[0].raw
+    processed_duration = processed_raw.times[-1]
+
+    # Verify that non-EEG channels were removed
+    processed_eeg_picks = mne.pick_types(processed_raw.info, eeg=True, misc=False, exclude=[])
+    processed_non_eeg_picks = mne.pick_types(processed_raw.info, eeg=False, misc=True, exclude=[])
+
+    assert len(processed_eeg_picks) == original_n_eeg, \
+        "EEG channel count should remain the same"
+    assert len(processed_non_eeg_picks) == 0, \
+        "Non-EEG channels should have been omitted"
+
+    # Also verify that some data was removed (bad windows were detected)
+    assert processed_duration < original_duration, \
+        "Some time windows should have been removed"
+
+
+def test_missing_eegprep_raises_error(base_concat_ds, monkeypatch):
+    """Test that missing eegprep package raises RuntimeError with installation hint."""
+    # Mock eegprep as None to simulate it not being installed
+    import braindecode.preprocessing.eegprep_preprocess as eegprep_module
+    monkeypatch.setattr(eegprep_module, 'eegprep', None)
+
+    # Try to use RemoveDrifts (any EEGPrep preprocessor would work)
+    from braindecode.preprocessing.eegprep_preprocess import RemoveDrifts
+
+    preprocessors = [RemoveDrifts()]
+
+    # Expect a RuntimeError with the installation instructions
+    with pytest.raises(RuntimeError) as exc_info:
+        preprocess(base_concat_ds, preprocessors)
+
+    # Check that the error message contains the installation instructions
+    error_message = str(exc_info.value)
+    assert "pip install braindecode[eegprep]" in error_message, \
+        f"Expected installation instructions in error message, got: {error_message}"
+
+
+@pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
+def test_eegprep_pipeline_removes_bad_channels_and_windows():
+    """Test that the end-to-end EEGPrep pipeline removes both bad channels and bad windows."""
+    # Create a long dataset with correlated data (needed for bad channel detection)
+    # and without initial DC offsets (bad window detection works better)
+    rng = np.random.RandomState(999)
+
+    # Use standard 10-20 channel names for channel location support
+    ch_names = ['Fp1', 'Fp2', 'F3', 'Fz', 'F4', 'C3', 'Cz', 'C4',
+                'P3', 'Pz', 'P4', 'O1', 'Oz', 'O2', 'FC1', 'FC2']
+    n_channels = len(ch_names)
+    sfreq = 250
+    duration = 1000  # Long recording for bad window detection
+    n_samples = int(sfreq * duration)
+
+    # Generate correlated data
+    data = rng.randn(n_channels, n_samples) * 1e-5
+    # Add positive offset to mixing matrix to increase baseline correlations
+    mixing_matrix = rng.randn(n_channels, n_channels) + 2.0
+    data = mixing_matrix @ data
+
+    # Create MNE Raw object
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=['eeg'] * n_channels)
+    raw = mne.io.RawArray(data, info)
+
+    # Set standard 10-20 montage for channel locations
+    montage = mne.channels.make_standard_montage('standard_1020')
+    raw.set_montage(montage, on_missing='ignore')
+
+    # Create dataset
+    desc = pd.Series({'subject': 1, 'session': 1})
+    base_dataset = BaseDataset(raw, desc, target_name=None)
+    concat_ds = BaseConcatDataset([base_dataset])
+
+    # Calculate baseline amplitude for noise scaling
+    baseline_scale = np.mean(np.std(data, axis=1))
+
+    # Add high-amplitude noise to two channels to make them bad
+    bad_channel_indices = [5, 10]  # C3 and P4
+    bad_channel_names = [ch_names[i] for i in bad_channel_indices]
+    channel_noise_scale = 10 * baseline_scale
+
+    for idx in bad_channel_indices:
+        concat_ds.datasets[0].raw._data[idx, :] += rng.randn(n_samples) * channel_noise_scale
+
+    # Inject 10 seconds of high-amplitude noise into a time window (all channels)
+    noise_duration = 10  # seconds
+    noise_start_time = 100  # seconds
+    noise_start_sample = int(noise_start_time * sfreq)
+    noise_n_samples = int(noise_duration * sfreq)
+    noise_end_sample = noise_start_sample + noise_n_samples
+
+    # Add 10x amplitude noise to all channels in this window
+    window_noise_scale = 10 * baseline_scale
+    for ch_idx in range(n_channels):
+        concat_ds.datasets[0].raw._data[ch_idx, noise_start_sample:noise_end_sample] += \
+            rng.randn(noise_n_samples) * window_noise_scale
+
+    # Get original state
+    original_raw = concat_ds.datasets[0].raw
+    original_n_channels = len(original_raw.ch_names)
+    original_duration = original_raw.times[-1]
+    original_n_samples = original_raw.n_times
+
+    print(f'Original: {original_n_channels} channels, {original_duration}s duration')
+    print(f'Bad channels injected: {bad_channel_names}')
+    print(f'Bad window injected: {noise_duration}s at t={noise_start_time}s')
+
+    # Apply EEGPrep pipeline with some stages disabled
+    preprocessors = [
+        EEGPrep(
+            highpass_frequencies=None,        # Disable highpass filtering
+            burst_removal_cutoff=None,        # Disable ASR burst removal
+            bad_channel_reinterpolate=False,  # Don't reinterpolate removed channels
+            common_avg_ref=False,             # Don't apply common average reference
+        )
+    ]
+    preprocess(concat_ds, preprocessors)
+
+    # Get processed data
+    processed_raw = concat_ds.datasets[0].raw
+    processed_n_channels = len(processed_raw.ch_names)
+    processed_ch_names = processed_raw.ch_names
+    processed_duration = processed_raw.times[-1]
+    processed_n_samples = processed_raw.n_times
+
+    print(f'Processed: {processed_n_channels} channels, {processed_duration}s duration')
+
+    # Verify that bad channels were removed
+    channels_removed = original_n_channels - processed_n_channels
+    print(f'Channels removed: {channels_removed}')
+
+    assert processed_n_channels < original_n_channels, \
+        "Expected some channels to be removed"
+
+    # Check that at least one of our intentionally bad channels was removed
+    bad_channels_removed = [ch for ch in bad_channel_names if ch not in processed_ch_names]
+    print(f'Our bad channels removed: {bad_channels_removed}')
+
+    assert len(bad_channels_removed) > 0, \
+        f"Expected at least one of the bad channels {bad_channel_names} to be removed"
+
+    # Verify that bad time windows were removed
+    duration_removed = original_duration - processed_duration
+    print(f'Duration removed: {duration_removed}s')
+
+    assert processed_duration < original_duration, \
+        "Expected some time windows to be removed"
+
+    # Assert that at least a few seconds were removed (conservative estimate)
+    assert duration_removed >= 3.0, \
+        f"Expected at least 3s removed, but only {duration_removed}s was removed"
+
+    # Verify that not all data was removed
+    assert processed_duration > original_duration * 0.5, \
+        "Too much data was removed; should keep most of the recording"
+
+
+@pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
+def test_remove_bursts():
+    """Test that RemoveBursts removes transient subspace artifacts using ASR."""
+    # Create a long dataset with correlated background data
+    rng = np.random.RandomState(777)
+
+    # Use standard 10-20 channel names
+    ch_names = ['Fp1', 'Fp2', 'F3', 'Fz', 'F4', 'C3', 'Cz', 'C4',
+                'P3', 'Pz', 'P4', 'O1', 'Oz', 'O2', 'FC1', 'FC2']
+    n_channels = len(ch_names)
+    sfreq = 250
+    duration = 1000  # Long recording for ASR calibration
+    n_samples = int(sfreq * duration)
+
+    # Generate correlated background data
+    data = rng.randn(n_channels, n_samples) * 1e-5
+    # Add positive offset to mixing matrix for realistic correlations
+    mixing_matrix = rng.randn(n_channels, n_channels) + 2.0
+    data = mixing_matrix @ data
+
+    # Calculate baseline statistics before adding artifact
+    baseline_std = np.mean(np.std(data, axis=1))
+
+    # Create a latent artifact source: single channel of high-amplitude noise
+    artifact_duration = 10  # seconds
+    artifact_start_time = 100  # seconds
+    artifact_start_sample = int(artifact_start_time * sfreq)
+    artifact_n_samples = int(artifact_duration * sfreq)
+    artifact_end_sample = artifact_start_sample + artifact_n_samples
+
+    # Generate latent artifact source with 10x amplitude
+    latent_artifact = rng.randn(artifact_n_samples) * (10 * baseline_std)
+
+    # Create random spatial weights (how the artifact projects onto channels)
+    spatial_weights = rng.randn(n_channels)
+
+    # Add the weighted artifact to the data in the specified time window
+    for ch_idx in range(n_channels):
+        data[ch_idx, artifact_start_sample:artifact_end_sample] += \
+            spatial_weights[ch_idx] * latent_artifact
+
+    # Verify that artifact was added (std in artifact window should be much higher)
+    artifact_window_std_before = np.mean(
+        np.std(data[:, artifact_start_sample:artifact_end_sample], axis=1)
+    )
+    whole_data_std_before = np.mean(np.std(data, axis=1))
+
+    print(f'Before processing:')
+    print(f'  Baseline std: {baseline_std:.6e}')
+    print(f'  Whole data std: {whole_data_std_before:.6e}')
+    print(f'  Artifact window std: {artifact_window_std_before:.6e}')
+    print(f'  Artifact window / whole data ratio: '
+          f'{artifact_window_std_before / whole_data_std_before:.2f}x')
+
+    # Create MNE Raw object
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=['eeg'] * n_channels)
+    raw = mne.io.RawArray(data, info)
+
+    # Set standard 10-20 montage
+    montage = mne.channels.make_standard_montage('standard_1020')
+    raw.set_montage(montage, on_missing='ignore')
+
+    # Create dataset
+    desc = pd.Series({'subject': 1, 'session': 1})
+    base_dataset = BaseDataset(raw, desc, target_name=None)
+    concat_ds = BaseConcatDataset([base_dataset])
+
+    # Apply RemoveBursts
+    preprocessors = [
+        RemoveBursts(cutoff=10.0),  # Standard cutoff for ML pipelines
+    ]
+    preprocess(concat_ds, preprocessors)
+
+    # Get processed data
+    processed_raw = concat_ds.datasets[0].raw
+    processed_data = processed_raw.get_data()
+
+    # Calculate statistics after processing
+    # Note: We need to account for potential sample shifts due to filtering
+    # Use the same relative position for the artifact window
+    artifact_window_std_after = np.mean(
+        np.std(processed_data[:, artifact_start_sample:artifact_end_sample], axis=1)
+    )
+    whole_data_std_after = np.mean(np.std(processed_data, axis=1))
+
+    print(f'\nAfter processing:')
+    print(f'  Whole data std: {whole_data_std_after:.6e}')
+    print(f'  Artifact window std: {artifact_window_std_after:.6e}')
+    print(f'  Artifact window / whole data ratio: '
+          f'{artifact_window_std_after / whole_data_std_after:.2f}x')
+
+    # Verify that the artifact window std is now similar to the whole data std
+    # Allow ±10% tolerance
+    relative_diff = abs(artifact_window_std_after - whole_data_std_after) / whole_data_std_after
+
+    print(f'\nRelative difference: {relative_diff * 100:.2f}%')
+
+    assert relative_diff <= 0.10, \
+        (f"Artifact window std ({artifact_window_std_after:.6e}) should be within ±10% "
+         f"of whole data std ({whole_data_std_after:.6e}), but relative difference "
+         f"is {relative_diff * 100:.2f}%")
+
+    # Additional check: the artifact should have been significantly reduced
+    # The std in the artifact window should be much closer to baseline now
+    reduction_ratio = artifact_window_std_before / artifact_window_std_after
+    print(f'Artifact reduction ratio: {reduction_ratio:.2f}x')
+
+    assert reduction_ratio > 1.5, \
+        f"Expected significant artifact reduction, but only got {reduction_ratio:.2f}x"

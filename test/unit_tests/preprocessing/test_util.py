@@ -166,6 +166,44 @@ def test_mne_load_delete_last_key(dummy_raw):
     assert expected_tag not in description
 
 
+def test_mne_load_delete_one_of_multiple_keys(dummy_raw):
+    # Store two keys, delete one with delete=True
+    raw = copy.deepcopy(dummy_raw)
+    payload1 = {"value": "first"}
+    payload2 = {"value": "second"}
+
+    mne_store_metadata(raw, payload1, key="key1")
+    mne_store_metadata(raw, payload2, key="key2")
+
+    # Delete key1
+    loaded = mne_load_metadata(raw, key="key1", delete=True)
+    assert loaded == payload1
+
+    # Verify key2 still exists and is retrievable
+    loaded2 = mne_load_metadata(raw, key="key2")
+    assert loaded2 == payload2
+
+
+def test_mne_store_delete_preserves_description_with_whitespace(dummy_raw):
+    # Store and delete metadata, verify original description with leading whitespace is preserved
+    raw = copy.deepcopy(dummy_raw)
+    original_description = "  Leading whitespace\n  More leading whitespace\nNo leading whitespace"
+    raw.info["description"] = original_description
+
+    payload = {"value": "test"}
+    mne_store_metadata(raw, payload, key="data")
+
+    # Verify metadata is there
+    loaded = mne_load_metadata(raw, key="data")
+    assert loaded == payload
+
+    # Delete the sole key
+    mne_load_metadata(raw, key="data", delete=True)
+
+    # Verify original description is preserved verbatim
+    assert raw.info["description"] == original_description
+
+
 # Edge Cases Tests
 
 

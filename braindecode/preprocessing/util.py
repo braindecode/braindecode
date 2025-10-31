@@ -160,7 +160,7 @@ def mne_load_metadata(raw: BaseRaw, *, key: str, delete: bool = False) -> Any | 
             new_description = _MARKER_PATTERN.sub(new_marker, description, count=1)
         else:
             # No more keys, remove the entire marker
-            new_description = _MARKER_PATTERN.sub("", description, count=1).strip()
+            new_description = _MARKER_PATTERN.sub("", description, count=1).rstrip()
         raw.info["description"] = new_description
 
     return result
