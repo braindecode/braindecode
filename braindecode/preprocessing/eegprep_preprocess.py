@@ -201,8 +201,8 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
 
 class EEGPrep(EEGPrepBasePreprocessor):
-    """Preprocessor for an MNE Raw object that applies the EEGPrep pipeline (based on
-    [1]_).
+    """Preprocessor for an MNE Raw object that applies the EEGPrep pipeline.
+    This is based on [Mullen2015]_.
 
     .. figure:: https://cdn.ncbi.nlm.nih.gov/pmc/blobs/a79a/4710679/675fc2dee929/nihms733482f9.jpg
        :align: center
@@ -337,10 +337,10 @@ class EEGPrep(EEGPrepBasePreprocessor):
 
     References
     ----------
-    .. [1] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T., Makeig, S.,
-       Jung, T.P. and Cauwenberghs, G., 2015. Real-time neuroimaging and cognitive
-       monitoring using wearable dry EEG. IEEE Transactions on Biomedical Engineering,
-       62(11), pp.2553-2567.
+    .. [Mullen2015] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T.,
+       Makeig, S., Jung, T.P. and Cauwenberghs, G., 2015. Real-time neuroimaging and
+       cognitive monitoring using wearable dry EEG. IEEE Transactions on Biomedical
+       Engineering, 62(11), pp.2553-2567.
 
     """
 
@@ -460,7 +460,8 @@ class EEGPrep(EEGPrepBasePreprocessor):
 
 
 class RemoveFlatChannels(EEGPrepBasePreprocessor):
-    """Removes EEG channels that flat-line for extended periods of time (as in [1]_).
+    """Removes EEG channels that flat-line for extended periods of time.
+    Follows [Mullen2015]_.
 
     This is an automated artifact rejection function which ensures that
     the data contains no flat-lined channels. This is very rarely the case, but the
@@ -479,9 +480,9 @@ class RemoveFlatChannels(EEGPrepBasePreprocessor):
 
         \\text{and} \\quad t_2 - t_1 > T_{\\text{max}}
 
-    where :math:`\\varepsilon_{\\text{jitter}} = \\text{max\\_allowed\\_jitter} \\times \\varepsilon`
+    where :math:`\\varepsilon_{\\text{jitter}} = \\text{max_allowed_jitter} \\times \\varepsilon`
     (with :math:`\\varepsilon` being machine epsilon for float64), and
-    :math:`T_{\\text{max}} = \\text{max\\_flatline\\_duration} \\times f_s` (with :math:`f_s`
+    :math:`T_{\\text{max}} = \\text{max_flatline_duration} \\times f_s` (with :math:`f_s`
     being the sampling rate).
 
     Parameters
@@ -495,10 +496,10 @@ class RemoveFlatChannels(EEGPrepBasePreprocessor):
 
     References
     ----------
-    .. [1] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T., Makeig, S.,
-       Jung, T.P. and Cauwenberghs, G., 2015. Real-time neuroimaging and cognitive
-       monitoring using wearable dry EEG. IEEE Transactions on Biomedical Engineering,
-       62(11), pp.2553-2567.
+    .. [Mullen2015] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T.,
+       Makeig, S., Jung, T.P. and Cauwenberghs, G., 2015. Real-time neuroimaging and
+       cognitive monitoring using wearable dry EEG. IEEE Transactions on Biomedical
+       Engineering, 62(11), pp.2553-2567.
 
     """
 
@@ -549,42 +550,43 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
 
 
 class RemoveDrifts(EEGPrepBasePreprocessor):
-    """Remove drifts from the EEG data using a forward-backward high-pass filter ([1]_).
+    """Remove drifts from the EEG data using a forward-backward high-pass filter
+    ([Oppenheim1999]_).
 
     .. figure:: https://www.researchgate.net/profile/Zohreh-Zakeri/publication/322581932/figure/fig5/AS:584276756152320@1516313842603/Not-filtered-EEG-data-left-versus-band-pass-filtered-EEG-data-with-high-cut-off.png
-        :align: center
-        :alt: Before/after comparison of drift removal.
+       :align: center
+       :alt: Before/after comparison of drift removal.
 
-     Note that MNE has its own suite of filters for this that offers more choices; use
-     this filter if you are specifically interested in matching the EEGLAB and EEGPrep
-     behavior, for example if you're building an EEGPrep-like pipeline from individual
-     steps, e.g., to customize parts that are not exposed by the top-level EEGPrep
-     preprocessor.
+    Note that MNE has its own suite of filters for this that offers more choices; use
+    this filter if you are specifically interested in matching the EEGLAB and EEGPrep
+    behavior, for example if you're building an EEGPrep-like pipeline from individual
+    steps, e.g., to customize parts that are not exposed by the top-level EEGPrep
+    preprocessor.
 
-     .. Note::
+    .. Note::
        If your method involves causal analysis, either with applications to real-time
        single-trial brain-computer interfacing or for example involving autoregressive
        modeling or other causal measures, consider using a strictly causal highpass
        filter instead.
 
-     Parameters
-     ----------
-     transition : Sequence[float]
-         The transition band in Hz, i.e. lower and upper edge of the transition as in
-         (lo, hi). Defaults to (0.25, 0.75). Choosing this can be tricky when your data
-         contains long-duration event-related potentials that your method exploits, in
-         which case you may need to carefully lower this somewhat to avoid attenuating
-         them.
-     attenuation : float
-         The stop-band attenuation, in dB. Defaults to 80.0.
-     method : str
-         The method to use for filtering ('fft' or 'fir'). Defaults to 'fft' (uses more
-         memory but is much faster than 'fir').
+    Parameters
+    ----------
+    transition : Sequence[float]
+        The transition band in Hz, i.e. lower and upper edge of the transition as in
+        (lo, hi). Defaults to (0.25, 0.75). Choosing this can be tricky when your data
+        contains long-duration event-related potentials that your method exploits, in
+        which case you may need to carefully lower this somewhat to avoid attenuating
+        them.
+    attenuation : float
+        The stop-band attenuation, in dB. Defaults to 80.0.
+    method : str
+        The method to use for filtering ('fft' or 'fir'). Defaults to 'fft' (uses more
+        memory but is much faster than 'fir').
 
-     References
-     ----------
-     .. [1] Oppenheim, A.V., 1999. Discrete-time signal processing. Pearson Education
-        India.
+    References
+    ----------
+    .. [Oppenheim1999] Oppenheim, A.V., 1999. Discrete-time signal processing.
+       Pearson Education India.
 
     """
 
@@ -613,12 +615,12 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
 
 
 class Resampling(EEGPrepBasePreprocessor):
-    """Resample the data to a specified rate ([1]_). Included for equivalence with
-    EEGPrep.
+    """Resample the data to a specified rate.
+    Based on [Proakis2007]_ and included for equivalence with EEGPrep.
 
     .. figure:: ../../docs/_static/preprocess/downsample.png
-        :align: center
-        :alt: Example of resampling a time series.
+       :align: center
+       :alt: Example of resampling a time series.
 
     MNE has its resampling routine (use as `Preprocessor("resample", sfreq=rate)`)
     but this will not necessarily match EEGPrep's behavior exactly. Typical
@@ -654,8 +656,8 @@ class Resampling(EEGPrepBasePreprocessor):
 
     References
     ----------
-    .. [1] Proakis, J.G., 2007. Digital signal processing: principles, algorithms,
-       and applications, 4/E. Pearson Education India.
+    .. [Proakis2007] Proakis, J.G., 2007. Digital signal processing: principles,
+       algorithms, and applications, 4/E. Pearson Education India.
 
     """
 
@@ -675,78 +677,81 @@ class Resampling(EEGPrepBasePreprocessor):
 
 
 class RemoveBadChannels(EEGPrepBasePreprocessor):
-    """Removes EEG channels with problematic data (as in [1]_); variant
-     that uses channel locations.
+    """Removes EEG channels with problematic data; variant that uses channel locations.
+    Implemented as in [Kothe2013]_.
 
     .. figure:: https://www.mdpi.com/sensors/sensors-22-07314/article_deploy/html/images/sensors-22-07314-g003.png
-        :align: center
-        :alt: Conceptual image of bad-channel removal.
+       :align: center
+       :alt: Conceptual image of bad-channel removal.
 
-     This is an automated artifact rejection function which ensures that the data
-     contains no channels that record only noise for extended periods of time. This uses
-     a hybrid criterion involving correlation and high-frequency noise thresholds:
-      a) if a channel has lower correlation to its robust estimate (based on other
-         channels) than a given threshold for a minimum period of time (or percentage of
-         the recording), it will be removed.
-      b) if a channel has more (high-frequency) noise relative relative to the (robust)
-         population of other channels than a given threshold (in standard deviations),
-         it will be removed.
+    This is an automated artifact rejection function which ensures that the data
+    contains no channels that record only noise for extended periods of time. This uses
+    a hybrid criterion involving correlation and high-frequency noise thresholds:
 
-     This method requires channels to have an associated location; when a location
-     is not known or could not be inferred (e.g., from channel labels if using a standard
-     montage such as the 10-20 system), use the RemoveBadChannelsNoLocs preprocessor
-     instead.
+     a) if a channel has lower correlation to its robust estimate (based on other
+        channels) than a given threshold for a minimum period of time (or percentage of
+        the recording), it will be removed.
+     b) if a channel has more (high-frequency) noise relative relative to the (robust)
+        population of other channels than a given threshold (in standard deviations),
+        it will be removed.
 
-     Preconditions
-     -------------
-     - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
-       configured as a highpass filter) must have been applied beforehand.
-     - 3D channel locations must be available in the data (can be automatic with some
-       file types, but may require some MNE operations with others).
-     - Consider applying :class:`RemoveDCOffset` beforehand as a general precaution.
+    This method requires channels to have an associated location; when a location
+    is not known or could not be inferred (e.g., from channel labels if using a standard
+    montage such as the 10-20 system), use the RemoveBadChannelsNoLocs preprocessor
+    instead.
 
-     Parameters
-     ----------
-     corr_threshold : float
-         Correlation threshold. If a channel over a short time window is correlated at
-         less than this value to its robust estimate (based on other channels), it is
-         considered abnormal during that time. A good default range is 0.75-0.8 and the
-         default is 0.8. Becomes quite aggressive at and beyond 0.8; also, consider
-         using lower values (eg 0.7-0.75) for <32ch EEG and higher (0.8-0.85) for >128ch.
-         This is the main tunable parameter of the method.
-     noise_threshold : float
-         Threshold for high-frequency (>=45 Hz) noise-based bad channel detection,
-         in robust z-scores (i.e., st. devs.). Lower is more aggressive. Default is 4.0.
-         This is rarely tuned, but data with unusual higher-frequency activity could
-         benefit from exploration in the 3.5-5.0 range.
-     window_len : float
-         Length of the time windows (in seconds) for which correlation statistics
-         are computed; ideally short enough to reasonably capture periods of global
-         artifacts or intermittent sensor dropouts, but not shorter (for statistical
-         reasons). Default is 5.0 sec.
-     subset_size : float
-         Size of random channel subsets to compute robust reconstructions. This can be
-         given as a fraction (0-1) of the total number of channels, or as an absolute
-         number. Multiple (pseudo-)random subsets are sampled in a RANSAC-like process
-         to obtain a robust reference estimate for each channel. Default is 0.25 (25% of
-         channels). For higher-density EEG (e.g., 64-128ch) with potential clusters
-         of bad channels, one can achieve somewhat better robustness by setting this
-         to 0.15 and increasing num_samples to 200.
-     num_samples : int
-         Number of samples generated for the robust channel reconstruction. This is the
-         number of samples to generate in a RANSAC-like process. The larger
-         this value, the more robust but also slower the initial identification of
-         bad channels will be. Default is 50.
-     max_broken_time : float
-         Maximum time (either in seconds or as fraction of the recording) during which
-         a channel is allowed to have artifacts. If a channel exceeds this, it will be
-         removed. Not usually tuned. Default is 0.4 (40%), max is 0.5 (breakdown point
-         of stats). Pretty much never tuned.
+    Preconditions
+    -------------
 
-     References
-     ----------
-     .. [1] Kothe, C.A. and Makeig, S., 2013. BCILAB: a platform for brain–computer
-        interface development. Journal of Neural Engineering, 10(5), p.056014.
+    - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
+      configured as a highpass filter) must have been applied beforehand.
+    - 3D channel locations must be available in the data (can be automatic with some
+      file types, but may require some MNE operations with others).
+    - Consider applying :class:`RemoveDCOffset` beforehand as a general precaution.
+
+    Parameters
+    ----------
+    corr_threshold : float
+        Correlation threshold. If a channel over a short time window is correlated at
+        less than this value to its robust estimate (based on other channels), it is
+        considered abnormal during that time. A good default range is 0.75-0.8 and the
+        default is 0.8. Becomes quite aggressive at and beyond 0.8; also, consider
+        using lower values (eg 0.7-0.75) for <32ch EEG and higher (0.8-0.85) for >128ch.
+        This is the main tunable parameter of the method.
+    noise_threshold : float
+        Threshold for high-frequency (>=45 Hz) noise-based bad channel detection,
+        in robust z-scores (i.e., st. devs.). Lower is more aggressive. Default is 4.0.
+        This is rarely tuned, but data with unusual higher-frequency activity could
+        benefit from exploration in the 3.5-5.0 range.
+    window_len : float
+        Length of the time windows (in seconds) for which correlation statistics
+        are computed; ideally short enough to reasonably capture periods of global
+        artifacts or intermittent sensor dropouts, but not shorter (for statistical
+        reasons). Default is 5.0 sec.
+    subset_size : float
+        Size of random channel subsets to compute robust reconstructions. This can be
+        given as a fraction (0-1) of the total number of channels, or as an absolute
+        number. Multiple (pseudo-)random subsets are sampled in a RANSAC-like process
+        to obtain a robust reference estimate for each channel. Default is 0.25 (25% of
+        channels). For higher-density EEG (e.g., 64-128ch) with potential clusters
+        of bad channels, one can achieve somewhat better robustness by setting this
+        to 0.15 and increasing num_samples to 200.
+    num_samples : int
+        Number of samples generated for the robust channel reconstruction. This is the
+        number of samples to generate in a RANSAC-like process. The larger
+        this value, the more robust but also slower the initial identification of
+        bad channels will be. Default is 50.
+    max_broken_time : float
+        Maximum time (either in seconds or as fraction of the recording) during which
+        a channel is allowed to have artifacts. If a channel exceeds this, it will be
+        removed. Not usually tuned. Default is 0.4 (40%), max is 0.5 (breakdown point
+        of stats). Pretty much never tuned.
+
+    References
+    ----------
+    .. [Kothe2013] Kothe, C.A. and Makeig, S., 2013. BCILAB: a platform for
+       brain–computer interface development. Journal of Neural Engineering, 10(5),
+       p.056014.
 
     """
 
@@ -784,60 +789,62 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
 
 
 class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
-    """Remove EEG channels with problematic data  (following [1]_); variant that does
-     not use channel locations.
+    """Remove EEG channels with problematic data; variant that does not use channel
+    locations. Implemented as in [Kothe2013]_.
 
     .. figure:: https://www.mdpi.com/sensors/sensors-22-07314/article_deploy/html/images/sensors-22-07314-g003.png
-        :align: center
-        :alt: Conceptual image of bad-channel removal.
+       :align: center
+       :alt: Conceptual image of bad-channel removal.
 
-     This is an automated artifact rejection function which ensures that the data
-     contains no channels that record only noise for extended periods of time.
-     The criterion is based on correlation: if a channel is decorrelated from all others
-     (pairwise correlation < a given threshold), excluding a given fraction of most
-     correlated channels, and if this holds on for a sufficiently long fraction of the
-     data set, then the channel is removed.
+    This is an automated artifact rejection function which ensures that the data
+    contains no channels that record only noise for extended periods of time.
+    The criterion is based on correlation: if a channel is decorrelated from all others
+    (pairwise correlation < a given threshold), excluding a given fraction of most
+    correlated channels, and if this holds on for a sufficiently long fraction of the
+    data set, then the channel is removed.
 
-     This method does not require or take into account channel locations; if you do have
-     locations, you may get better results with the RemoveBadChannels preprocessor
-     instead.
+    This method does not require or take into account channel locations; if you do have
+    locations, you may get better results with the RemoveBadChannels preprocessor
+    instead.
 
-     Preconditions
-     -------------
-     - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
-       configured as a highpass filter) must have been applied beforehand.
-     - Consider applying :class:`RemoveDCOffset` beforehand as a general precaution.
+    Preconditions
+    -------------
 
-     Parameters
-     ----------
-     min_corr : float
-         Minimum correlation between a channel and any other channel (in a short
-         period of time) below which the channel is considered abnormal for that time
-         period. Reasonable range: 0.4 (very lax) to 0.6 (quite aggressive).
-         Default is 0.45.
-     ignored_quantile : float
-         Fraction of channels that need to have at least the given min_corr value w.r.t.
-         the channel under consideration. This allows to deal with channels or small
-         groups of channels that measure the same noise source. Reasonable
-         range: 0.05 (rather lax) to 0.2 (tolerates many disconnected/shorted channels).
-     window_len : float
-         Length of the windows (in seconds) over which correlation stats are computed.
-         Reasonable values are 1.0 sec (more noisy estimates) to 5.0 sec (more reliable,
-         but can miss brief artifacts). Default is 2.0 sec.
-     max_broken_time : float
-         Maximum time (either in seconds or as fraction of the recording) during which
-         a channel is allowed to have artifacts. If a channel exceeds this, it will be
-         removed. Not usually tuned. Default is 0.4 (40%), max is 0.5 (breakdown point
-         of stats). Pretty much never tuned.
-     linenoise_aware : bool
-         Whether the operation should be performed in a line-noise
-         aware manner. If enabled, the correlation measure will not be affected
-         by the presence or absence of line noise (using a temporary notch filter).
+    - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
+      configured as a highpass filter) must have been applied beforehand.
+    - Consider applying :class:`RemoveDCOffset` beforehand as a general precaution.
 
-     References
-     ----------
-     .. [1] Kothe, C.A. and Makeig, S., 2013. BCILAB: a platform for brain–computer
-        interface development. Journal of Neural Engineering, 10(5), p.056014.
+    Parameters
+    ----------
+    min_corr : float
+        Minimum correlation between a channel and any other channel (in a short
+        period of time) below which the channel is considered abnormal for that time
+        period. Reasonable range: 0.4 (very lax) to 0.6 (quite aggressive).
+        Default is 0.45.
+    ignored_quantile : float
+        Fraction of channels that need to have at least the given min_corr value w.r.t.
+        the channel under consideration. This allows to deal with channels or small
+        groups of channels that measure the same noise source. Reasonable
+        range: 0.05 (rather lax) to 0.2 (tolerates many disconnected/shorted channels).
+    window_len : float
+        Length of the windows (in seconds) over which correlation stats are computed.
+        Reasonable values are 1.0 sec (more noisy estimates) to 5.0 sec (more reliable,
+        but can miss brief artifacts). Default is 2.0 sec.
+    max_broken_time : float
+        Maximum time (either in seconds or as fraction of the recording) during which
+        a channel is allowed to have artifacts. If a channel exceeds this, it will be
+        removed. Not usually tuned. Default is 0.4 (40%), max is 0.5 (breakdown point
+        of stats). Pretty much never tuned.
+    linenoise_aware : bool
+        Whether the operation should be performed in a line-noise
+        aware manner. If enabled, the correlation measure will not be affected
+        by the presence or absence of line noise (using a temporary notch filter).
+
+    References
+    ----------
+    .. [Kothe2013] Kothe, C.A. and Makeig, S., 2013. BCILAB: a platform for
+       brain–computer interface development. Journal of Neural Engineering, 10(5),
+       p.056014.
 
     """
 
@@ -872,8 +879,8 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
 
 
 class RemoveBursts(EEGPrepBasePreprocessor):
-    """Run the Artifact Subspace Reconstruction (ASR) method ([1]_) on EEG data to
-    remove burst-type artifacts.
+    """Run the Artifact Subspace Reconstruction (ASR) method on EEG data to
+    remove burst-type artifacts. Follows [Mullen2015]_.
 
     .. figure:: https://cdn.ncbi.nlm.nih.gov/pmc/blobs/a79a/4710679/675fc2dee929/nihms733482f9.jpg
        :align: center
@@ -941,10 +948,11 @@ class RemoveBursts(EEGPrepBasePreprocessor):
 
     References
     ----------
-    .. [1] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T., Makeig, S.,
-       Jung, T.P. and Cauwenberghs, G., 2015. Real-time neuroimaging and cognitive
-       monitoring using wearable dry EEG. IEEE Transactions on Biomedical Engineering,
-       62(11), pp.2553-2567.
+    .. [Mullen2015] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T.,
+       Makeig, S., Jung, T.P. and Cauwenberghs, G., 2015. Real-time neuroimaging and
+       cognitive monitoring using wearable dry EEG. IEEE Transactions on Biomedical
+       Engineering, 62(11), pp.2553-2567.
+
     """
 
     def __init__(
@@ -987,8 +995,8 @@ class RemoveBursts(EEGPrepBasePreprocessor):
 
 
 class RemoveBadWindows(EEGPrepBasePreprocessor):
-    """Remove periods with abnormally high-power content from continuous data
-    (as in [1]_).
+    """Remove periods with abnormally high-power content from continuous data.
+     Implemented as in [Kothe2013]_.
 
     .. figure:: https://www.jove.com/files/ftp_upload/65829/65829fig13.jpg
        :align: center
@@ -1010,6 +1018,7 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
 
     Preconditions
     -------------
+
     - One of :class:`RemoveDrifts` or :class:`braindecode.preprocessing.Filter` (
       configured as a highpass filter) must have been applied beforehand.
 
@@ -1045,8 +1054,6 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
     min_clean_fraction : float
         Minimum fraction of windows expected to be clean (essentially
         uncontaminated EEG). Default is 0.25.
-
-    (miscellaneous parameters that normally need not be changed)
     truncate_quant : tuple(float, float)
         Quantile range of the truncated Gaussian to fit (default (0.022,0.6)).
     step_sizes : tuple(float, float)
@@ -1057,8 +1064,10 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
 
     References
     ----------
-    .. [1] Kothe, C.A. and Makeig, S., 2013. BCILAB: a platform for brain–computer
-       interface development. Journal of Neural Engineering, 10(5), p.056014.
+    .. [Kothe2013] Kothe, C.A. and Makeig, S., 2013. BCILAB: a platform for
+       brain–computer interface development. Journal of Neural Engineering, 10(5),
+       p.056014.
+
     """
 
     def __init__(
@@ -1114,7 +1123,7 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
     channel removal operations and restores the original order of EEG channels. This
     is typically necessary when you are using automatic channel removal but you need
     a consistent channel set across multiple recordings/sessions. Uses spherical-spline
-    interpolation ([1]_).
+    interpolation ([Perrin1989]_).
 
     The typical place to perform this is after all other EEGPrep-related artifact
     removal steps, except re-referencing. If no channel locations were recorded,
@@ -1132,8 +1141,8 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
 
     References
     ----------
-    .. [1] Perrin, F., Pernier, J., Bertrand, O. and Echallier, J.F., 1989. Spherical
-       splines for scalp potential and current density mapping.
+    .. [Perrin1989] Perrin, F., Pernier, J., Bertrand, O. and Echallier, J.F., 1989.
+       Spherical splines for scalp potential and current density mapping.
        Electroencephalography and Clinical Neurophysiology, 72(2), pp.184-187.
 
     """
@@ -1153,9 +1162,9 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
 
 
 class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
-    """Subtracts the common average reference (mean across EEG channels; [1]_) from the
+    """Subtracts the common average reference (mean across EEG channels) from the
     EEG data. This is useful for having a consistent referencing scheme across
-    recordings.
+    recordings (cf. [Offner1950]_).
 
     Generally, common average re-referencing is `data -= mean(data, axis=0)`, but
     both EEGLAB/eegprep and to a greater extent MNE have additional bookkeeping around
@@ -1177,7 +1186,7 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
 
     References
     ----------
-    .. [1] Offner, F. F. (1950). The EEG as potential mapping: the value of the
+    .. [Offner1950] Offner, F. F. (1950). The EEG as potential mapping: the value of the
        average monopolar reference. Electroencephalography and Clinical Neurophysiology,
        2(2), 213-214.
 
