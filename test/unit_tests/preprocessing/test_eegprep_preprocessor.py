@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets import BaseConcatDataset, BaseDataset
+from braindecode.datasets import BaseConcatDataset
+from braindecode.datasets.base import BaseDataset
 from braindecode.preprocessing import preprocess
 from braindecode.preprocessing.eegprep_preprocess import (
     ReinterpolateRemovedChannels,
