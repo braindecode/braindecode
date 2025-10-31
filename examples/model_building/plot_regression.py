@@ -23,7 +23,7 @@ function from the classifier's output layer and how to train it on a fake regres
 import numpy as np
 import pandas as pd
 
-from braindecode.datasets import BaseConcatDataset, BaseDataset
+from braindecode.datasets import BaseConcatDataset, RawDataset
 from braindecode.util import create_mne_dummy_raw
 
 
@@ -82,7 +82,7 @@ def fake_regression_dataset(
         fake_description = pd.Series(
             data=[target, target_subset], index=["target", "session"]
         )
-        datasets.append(BaseDataset(raw, fake_description, target_name="target"))
+        datasets.append(RawDataset(raw, fake_description, target_name="target"))
 
     return BaseConcatDataset(datasets)
 
