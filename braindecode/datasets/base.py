@@ -24,7 +24,7 @@ from typing import Generic, Iterable, no_type_check
 import mne.io
 import numpy as np
 import pandas as pd
-from mne.utils import deprecated
+from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset
 from typing_extensions import TypeVar
 
@@ -139,7 +139,7 @@ class RawDataset(RecordDataset):
             y = y.to_list()
         if self.transform is not None:
             X = self.transform(X)
-        return X, y  # TODO: crop ids
+        return X, y
 
     def __len__(self):
         return len(self.raw)
@@ -327,11 +327,13 @@ class WindowsDataset(RecordDataset):
             raise ValueError("Wrong value for parameter `targets_from`.")
         self.targets_from = targets_from
 
-        self.crop_inds = self.windows.metadata.loc[
+        metadata = self.windows.metadata
+        assert metadata is not None, "WindowsDataset requires windows with metadata."
+        self.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
         ].to_numpy()
         if self.targets_from == "metadata":
-            self.y = self.windows.metadata.loc[:, "target"].to_list()
+            self.y = metadata.loc[:, "target"].to_list()
 
     def __getitem__(self, index: int):
         """Get a window and its target.
