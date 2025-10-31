@@ -50,7 +50,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - **Temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(L_t, 1)`` builds a
             FIR-like filter bank (``F1`` maps).
         - **Depthwise spatial conv** (:class:`torch.nn.Conv2d`, ``groups=F1``) with kernel
-          ``(1, n_chans)`` learns per-filter spatial projections (akin to EEGNet’s CSP-like step).
+          ``(1, n_chans)`` learns per-filter spatial projections (akin to EEGNet's CSP-like step).
         - **BN → ELU → AvgPool → Dropout** to stabilize and condense activations.
         - **Refining temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(L_r, 1)`` +
           **BN → ELU → AvgPool → Dropout**.
@@ -62,12 +62,14 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     - **Sliding-Window Sequencer**
 
-      From the condensed time axis (length ``T_c``), ATCNet forms ``n`` overlapping windows
-      of width ``T_w = T_c - n + 1`` (one start per index). Each window produces a sequence
-      ``(B, F2, T_w)`` forwarded to its own attention–TCN branch. This creates *parallel*
-      encoders over shifted contexts and is key to robustness on nonstationary EEG.
+        From the condensed time axis (length ``T_c``), ATCNet forms ``n`` overlapping windows
+        of width ``T_w = T_c - n + 1`` (one start per index). Each window produces a sequence
+        ``(B, F2, T_w)`` forwarded to its own attention-TCN branch. This creates *parallel*
+        encoders over shifted contexts and is key to robustness on nonstationary EEG.
 
     - :class:`_AttentionBlock` **(small MHA on temporal positions)**
+
+        Attention here is *local to a window* and purely temporal.
 
         - *Operations.*
         - Rearrange to ``(B, T_w, F2)``,
@@ -76,11 +78,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - Dropout :class:`torch.nn.Dropout`
         - Rearrange back to ``(B, F2, T_w)``.
 
-
-    **Note**: Attention is *local to a window* and purely temporal.
-
-    *Role.* Re-weights evidence across the window, letting the model emphasize informative
-    segments (onsets, bursts) before causal convolutions aggregate history.
+        *Role.* Re-weights evidence across the window, letting the model emphasize informative
+        segments (onsets, bursts) before causal convolutions aggregate history.
 
     - :class:`_TCNResidualBlock` **(causal dilated temporal CNN)**
 
@@ -90,8 +89,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
           a residual (identity or 1x1 mapping).
         - The final feature used per window is the *last* causal step ``[..., -1]`` (forecast-style).
 
-    *Role.* Efficient long-range temporal integration with stable gradients; the dilated
-    receptive field complements attention’s soft selection.
+        *Role.* Efficient long-range temporal integration with stable gradients; the dilated
+        receptive field complements attention's soft selection.
 
     - **Aggregation & Classifier**
 
@@ -104,16 +103,16 @@ class ATCNet(EEGModuleMixin, nn.Module):
     .. rubric:: Convolutional Details
 
     - **Temporal.** Temporal structure is learned in three places:
-        - (1) the stem’s wide ``(L_t, 1)`` conv (learned filter bank),
+        - (1) the stem's wide ``(L_t, 1)`` conv (learned filter bank),
         - (2) the refining ``(L_r, 1)`` conv after pooling (short-term dynamics), and
-        - (3) the TCN’s causal 1-D convolutions with exponentially increasing dilation
+        - (3) the TCN's causal 1-D convolutions with exponentially increasing dilation
           (long-range dependencies). The minimum sequence length required by the TCN stack is
           ``(K_t - 1)·2^{L-1} + 1``; the implementation *auto-scales* kernels/pools/windows
           when inputs are shorter to preserve feasibility.
 
     - **Spatial.** A depthwise spatial conv spans the **full montage** (kernel ``(1, n_chans)``),
         producing *per-temporal-filter* spatial projections (no cross-filter mixing at this step).
-        This mirrors EEGNet’s interpretability: each temporal filter has its own spatial pattern.
+        This mirrors EEGNet's interpretability: each temporal filter has its own spatial pattern.
 
 
     .. rubric:: Attention / Sequential Modules
@@ -137,17 +136,17 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Usage and Configuration
 
-        - ``conv_block_n_filters (F1)``, ``conv_block_depth_mult (D)`` → capacity of the stem
-        (with ``F2 = F1·D`` feeding attention/TCN), dimensions aligned to ``F2``, like :class:`EEGNet`.
-        - Pool sizes ``P1,P2`` trade temporal resolution for stability/compute; they set
-        ``T_c = T/(P1·P2)`` and thus window width ``T_w``.
-        - ``n_windows`` controls the ensemble over shifts (compute ∝ windows).
-        - ``att_num_heads``, ``att_head_dim`` set attention capacity; keep ``H·d_h ≈ F2``.
-        - ``tcn_depth``, ``tcn_kernel_size`` govern receptive field; larger values demand
-        longer inputs (see minimum length above). The implementation warns and *rescales*
-        kernels/pools/windows if inputs are too short.
-        - **Aggregation choice.** ``concat=False`` (default, average of per-window logits) matches
-        the official code; ``concat=True`` mirrors the paper’s concatenation variant.
+    - ``conv_block_n_filters (F1)``, ``conv_block_depth_mult (D)`` → capacity of the stem
+      (with ``F2 = F1·D`` feeding attention/TCN), dimensions aligned to ``F2``, like :class:`EEGNet`.
+    - Pool sizes ``P1,P2`` trade temporal resolution for stability/compute; they set
+      ``T_c = T/(P1·P2)`` and thus window width ``T_w``.
+    - ``n_windows`` controls the ensemble over shifts (compute ∝ windows).
+    - ``att_num_heads``, ``att_head_dim`` set attention capacity; keep ``H·d_h ≈ F2``.
+    - ``tcn_depth``, ``tcn_kernel_size`` govern receptive field; larger values demand
+      longer inputs (see minimum length above). The implementation warns and *rescales*
+      kernels/pools/windows if inputs are too short.
+    - **Aggregation choice.** ``concat=False`` (default, average of per-window logits) matches
+      the official code; ``concat=True`` mirrors the paper's concatenation variant.
 
 
     Notes

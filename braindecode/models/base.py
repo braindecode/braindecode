@@ -87,8 +87,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
     If some input signal-related parameters are not specified,
     there will be an attempt to infer them from the other parameters.
 
-    Hugging Face Hub Integration
-    -----------------------------
+    .. rubric:: Hugging Face Hub integration
+
     When the optional ``huggingface_hub`` package is installed, all models
     automatically gain the ability to be pushed to and loaded from the
     Hugging Face Hub. Install with::

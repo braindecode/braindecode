@@ -37,8 +37,8 @@ class MLP(nn.Sequential):
     :math:`a_i` are called activation functions. The trainable parameters of an
     MLP are its weights and biases :math:`\\phi = \{W_i, b_i | i = 1, \dots, L\}`.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     in_features: int
         Number of input features.
     hidden_features: Sequential[int] (default=None)
@@ -49,7 +49,7 @@ class MLP(nn.Sequential):
     out_features: int (default=None)
         Number of output features, if None, set to in_features.
     act_layer: nn.GELU (default)
-        The activation function constructor. If :py:`None`, use
+        The activation function constructor. If ``None``, use
         :class:`torch.nn.GELU` instead.
     drop: float (default=0.0)
         Dropout rate.
