@@ -30,6 +30,7 @@ Enhancements
 - Adding artifact removal preprocessing steps, incl. :class:`braindecode.preprocessing.EEGPrep` (:gh:`796` by `Christian Kothe`_)
 - Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
 - Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
+- Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
 
 
 
@@ -415,3 +416,4 @@ Authors
 .. _Can Han: https://github.com/hancan16
 .. _Christian Kothe: https://github.com/chkothe
 .. _Kuntal Kokate: https://github.com/Kkuntal990
+.. _Matthew Chen: https://github.com/MatthewChen37

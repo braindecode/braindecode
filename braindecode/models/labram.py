@@ -2,6 +2,7 @@
 Labram module.
 Authors: Wei-Bang Jiang
          Bruno Aristimunha <b.aristimunha@gmail.com>
+         Matthew Chen <matt.chen4260@gmail.com>
 License: BSD 3 clause
 """
 
@@ -29,7 +30,7 @@ class Labram(EEGModuleMixin, nn.Module):
         :alt: Labram Architecture.
 
     Large Brain Model for Learning Generic Representations with Tremendous
-    EEG Data in BCI from [Jiang2024]_
+    EEG Data in BCI from [Jiang2024]_.
 
     This is an **adaptation** of the code [Code2024]_ from the Labram model.
 
@@ -37,7 +38,8 @@ class Labram(EEGModuleMixin, nn.Module):
     BEiTv2 [BeiTv2]_.
 
     The models can be used in two modes:
-    - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
+
+    - Neural Tokenizer: Design to get an embedding layers (e.g. classification).
     - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
 
     The braindecode's modification is to allow the model to be used in
@@ -121,7 +123,7 @@ class Labram(EEGModuleMixin, nn.Module):
     init_scale : float (default=0.001)
         The initial scale to be used in the parameters of the model.
     neural_tokenizer : bool (default=True)
-        The model can be used in two modes: Neural Tokenizor or Neural Decoder.
+        The model can be used in two modes: Neural Tokenizer or Neural Decoder.
     attn_head_dim : bool (default=None)
         The head dimension to be used in the attention layer, to be used only
         during pre-training.
