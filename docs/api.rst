@@ -374,12 +374,39 @@ Preprocessing
     filterbank
     preprocess
     Preprocessor
-    Resample
+    EEGPrep
+
+
+Preprocessing Transform
+''''''''''''''''''''''''
+
+These modules implement various preprocessing transforms that can be applied
+to EEG data, including cropping, filtering, resampling, and channel selection.
+
+:py:mod:`braindecode.preprocessing`:
+
+.. currentmodule:: braindecode.preprocessing
+
+.. autosummary::
+   :toctree: generated/
+
+    Crop
     DropChannels
-    SetEEGReference
     Filter
     Pick
-    Crop
+    ReinterpolateRemovedChannels
+    RemoveBadChannels
+    RemoveBadChannelsNoLocs
+    RemoveBadWindows
+    RemoveBursts
+    RemoveCommonAverageReference
+    RemoveDCOffset
+    RemoveDrifts
+    RemoveFlatChannels
+    Resample
+    Resampling
+    SetEEGReference
+
 
 Data Utils
 ==========
