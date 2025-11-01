@@ -1119,9 +1119,9 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
 class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
     """Reinterpolate previously removed EEG channels to restore original channel set.
 
-    .. figure:: https://i.sstatic.net/0ZuS7.png
+    .. figure:: ../../docs/_static/preprocess/sph_spline_interp.png
        :align: center
-       :alt: Example rendering of spherical splines.
+       :alt: Spherical spline interpolation example.
 
     This reinterpolates EEG channels that were previously dropped via one of the EEGPrep
     channel removal operations and restores the original order of EEG channels. This
