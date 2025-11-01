@@ -374,6 +374,20 @@ Preprocessing
     filterbank
     preprocess
     Preprocessor
+    AddChannels
+    AddEvents
+    AddProj
+    AddReferenceChannels
+    Anonymize
+    ApplyGradientCompensation
+    ApplyHilbert
+    ApplyProj
+    ComputeCurrentSourceDensity
+    Crop
+    CropByAnnotations
+    DelProj
+    DropChannels
+    EqualizeChannels
     EEGPrep
 
 
@@ -393,7 +407,22 @@ to EEG data, including cropping, filtering, resampling, and channel selection.
     Crop
     DropChannels
     Filter
+    FixMagCoilTypes
+    FixStimArtifact
+    InterpolateBads
+    InterpolateTo
+    NotchFilter
     Pick
+    RenameChannels
+    ReorderChannels
+    Resample
+    Rescale
+    SavgolFilter
+    SetAnnotations
+    SetChannelTypes
+    SetEEGReference
+    SetMeasDate
+    SetMontage
     ReinterpolateRemovedChannels
     RemoveBadChannels
     RemoveBadChannelsNoLocs
