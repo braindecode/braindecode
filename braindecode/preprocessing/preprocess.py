@@ -85,7 +85,7 @@ class Preprocessor(object):
 
     def apply(self, raw_or_epochs: BaseRaw | BaseEpochs):
         try:
-            self._try_apply(raw_or_epochs)
+            return self._try_apply(raw_or_epochs)
         except RuntimeError:
             # Maybe the function needs the data to be loaded and the data was
             # not loaded yet. Not all MNE functions need data to be loaded,
@@ -93,15 +93,24 @@ class Preprocessor(object):
             # without preloading data which can make the overall preprocessing
             # pipeline substantially faster.
             raw_or_epochs.load_data()
-            self._try_apply(raw_or_epochs)
+            return self._try_apply(raw_or_epochs)
 
     def _try_apply(self, raw_or_epochs):
         if callable(self.fn):
-            self.fn(raw_or_epochs, **self.kwargs)
+            result = self.fn(raw_or_epochs, **self.kwargs)
+            # For standalone functions that return a new object, replace the input
+            if result is not None and result is not raw_or_epochs:
+                # Copy the returned object's data back to the original
+                raw_or_epochs._data = result._data
+                raw_or_epochs.info = result.info
+                if hasattr(result, '_times'):
+                    raw_or_epochs._times = result._times
+            return raw_or_epochs
         else:
             if not hasattr(raw_or_epochs, self.fn):
                 raise AttributeError(f"MNE object does not have a {self.fn} method.")
             getattr(raw_or_epochs, self.fn)(**self.kwargs)
+            return raw_or_epochs
 
 
 def preprocess(
