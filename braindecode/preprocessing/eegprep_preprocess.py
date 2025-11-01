@@ -550,8 +550,8 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
 
 
 class RemoveDrifts(EEGPrepBasePreprocessor):
-    """Remove drifts from the EEG data using a forward-backward high-pass filter
-    ([Oppenheim1999]_).
+    """Remove drifts from the EEG data using a forward-backward high-pass filter.
+    See [Oppenheim1999]_.
 
     .. figure:: ../../docs/_static/preprocess/highpass.png
        :align: center
@@ -615,7 +615,7 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
 
 
 class Resampling(EEGPrepBasePreprocessor):
-    """Resample the data to a specified rate.
+    """Resample the data to a specified rate (EEGPrep version).
     Based on [Proakis2007]_ and included for equivalence with EEGPrep.
 
     .. figure:: ../../docs/_static/preprocess/downsample.png
@@ -1160,9 +1160,9 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
 
 
 class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
-    """Subtracts the common average reference (mean across EEG channels) from the
-    EEG data. This is useful for having a consistent referencing scheme across
-    recordings (cf. [Offner1950]_).
+    """Subtracts the common average reference from the EEG data (EEGPrep version).
+    This is useful for having a consistent referencing scheme across recordings
+    (cf. [Offner1950]_).
 
     Generally, common average re-referencing is `data -= mean(data, axis=0)`, but
     both EEGLAB/eegprep and to a greater extent MNE have additional bookkeeping around
