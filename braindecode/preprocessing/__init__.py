@@ -21,17 +21,23 @@ used with :func:`~braindecode.preprocessing.preprocess`.
 - :class:`~braindecode.preprocessing.SavgolFilter` : Apply Savitzky-Golay polynomial filter
 - :class:`~braindecode.preprocessing.ApplyHilbert` : Compute analytic signal or envelope
 - :class:`~braindecode.preprocessing.Rescale` : Rescale channel amplitudes
+- :class:`~braindecode.preprocessing.OversampledTemporalProjection` : Apply oversampled temporal projection
 
 **Channel Management**
 
 - :class:`~braindecode.preprocessing.Pick` : Select specific channels or channel types
+- :class:`~braindecode.preprocessing.PickChannels` : Pick channels by name
+- :class:`~braindecode.preprocessing.PickTypes` : Pick channels by type (EEG, MEG, etc.)
 - :class:`~braindecode.preprocessing.DropChannels` : Remove specific channels
 - :class:`~braindecode.preprocessing.AddChannels` : Append new channels from other MNE objects
+- :class:`~braindecode.preprocessing.CombineChannels` : Combine data from multiple channels
 - :class:`~braindecode.preprocessing.RenameChannels` : Rename channels
 - :class:`~braindecode.preprocessing.ReorderChannels` : Reorder channels
 - :class:`~braindecode.preprocessing.SetChannelTypes` : Specify sensor types of channels
 - :class:`~braindecode.preprocessing.InterpolateBads` : Interpolate bad channels
 - :class:`~braindecode.preprocessing.InterpolateTo` : Interpolate EEG data onto new montage
+- :class:`~braindecode.preprocessing.InterpolateBridgedElectrodes` : Interpolate bridged electrodes
+- :class:`~braindecode.preprocessing.ComputeBridgedElectrodes` : Identify bridged electrodes
 - :class:`~braindecode.preprocessing.EqualizeChannels` : Make channel sets identical across datasets
 
 **Reference & Montage**
@@ -52,6 +58,17 @@ used with :func:`~braindecode.preprocessing.preprocess`.
 - :class:`~braindecode.preprocessing.CropByAnnotations` : Crop data by annotations
 - :class:`~braindecode.preprocessing.ComputeCurrentSourceDensity` : Apply CSD transformation
 - :class:`~braindecode.preprocessing.FixStimArtifact` : Remove stimulation artifacts
+- :class:`~braindecode.preprocessing.MaxwellFilter` : Apply Maxwell filtering (for MEG data)
+- :class:`~braindecode.preprocessing.RealignRaw` : Realign raw data
+- :class:`~braindecode.preprocessing.RegressArtifact` : Regress out artifacts
+
+**Artifact Detection & Annotation**
+
+- :class:`~braindecode.preprocessing.AnnotateAmplitude` : Annotate periods based on amplitude
+- :class:`~braindecode.preprocessing.AnnotateBreak` : Annotate breaks in the data
+- :class:`~braindecode.preprocessing.AnnotateMovement` : Annotate movement artifacts
+- :class:`~braindecode.preprocessing.AnnotateMuscleZscore` : Annotate muscle artifacts using z-score
+- :class:`~braindecode.preprocessing.AnnotateNan` : Annotate NaN values in data
 
 **Metadata & Configuration**
 
@@ -115,9 +132,16 @@ from .mne_preprocess import (  # type: ignore[attr-defined]
     AddProj,
     AddReferenceChannels,
     Anonymize,
+    AnnotateAmplitude,
+    AnnotateBreak,
+    AnnotateMovement,
+    AnnotateMuscleZscore,
+    AnnotateNan,
     ApplyGradientCompensation,
     ApplyHilbert,
     ApplyProj,
+    CombineChannels,
+    ComputeBridgedElectrodes,
     ComputeCurrentSourceDensity,
     Crop,
     CropByAnnotations,
@@ -128,9 +152,16 @@ from .mne_preprocess import (  # type: ignore[attr-defined]
     FixMagCoilTypes,
     FixStimArtifact,
     InterpolateBads,
+    InterpolateBridgedElectrodes,
     InterpolateTo,
+    MaxwellFilter,
     NotchFilter,
+    OversampledTemporalProjection,
     Pick,
+    PickChannels,
+    PickTypes,
+    RealignRaw,
+    RegressArtifact,
     RenameChannels,
     ReorderChannels,
     Resample,
@@ -166,9 +197,16 @@ __all__ = [
     "AddProj",
     "AddReferenceChannels",
     "Anonymize",
+    "AnnotateAmplitude",
+    "AnnotateBreak",
+    "AnnotateMovement",
+    "AnnotateMuscleZscore",
+    "AnnotateNan",
     "ApplyGradientCompensation",
     "ApplyHilbert",
     "ApplyProj",
+    "CombineChannels",
+    "ComputeBridgedElectrodes",
     "ComputeCurrentSourceDensity",
     "Crop",
     "CropByAnnotations",
@@ -179,9 +217,16 @@ __all__ = [
     "FixMagCoilTypes",
     "FixStimArtifact",
     "InterpolateBads",
+    "InterpolateBridgedElectrodes",
     "InterpolateTo",
+    "MaxwellFilter",
     "NotchFilter",
+    "OversampledTemporalProjection",
     "Pick",
+    "PickChannels",
+    "PickTypes",
+    "RealignRaw",
+    "RegressArtifact",
     "RenameChannels",
     "ReorderChannels",
     "Resample",
@@ -192,7 +237,6 @@ __all__ = [
     "SetEEGReference",
     "SetMeasDate",
     "SetMontage",
-    "Crop",
     "EEGPrep",
     "RemoveDCOffset",
     "Resampling",

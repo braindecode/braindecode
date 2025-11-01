@@ -128,6 +128,8 @@ mne_functions = [
     mne.io.Raw.interpolate_to,
     mne.io.Raw.notch_filter,
     mne.io.Raw.pick,
+    mne.io.Raw.pick_channels,
+    mne.io.Raw.pick_types,
     mne.io.Raw.rename_channels,
     mne.io.Raw.reorder_channels,
     mne.io.Raw.rescale,
@@ -139,9 +141,21 @@ mne_functions = [
     mne.io.Raw.set_meas_date,
     mne.io.Raw.set_montage,
     # Standalone functions from mne.preprocessing
+    mne.preprocessing.annotate_amplitude,
+    mne.preprocessing.annotate_break,
+    mne.preprocessing.annotate_movement,
+    mne.preprocessing.annotate_muscle_zscore,
+    mne.preprocessing.annotate_nan,
     mne.preprocessing.compute_current_source_density,
+    mne.preprocessing.compute_bridged_electrodes,
     mne.preprocessing.fix_stim_artifact,
+    mne.preprocessing.interpolate_bridged_electrodes,
+    mne.preprocessing.maxwell_filter,
+    mne.preprocessing.oversampled_temporal_projection,
+    mne.preprocessing.realign_raw,
+    mne.preprocessing.regress_artifact,
     # Standalone functions from mne.channels
+    mne.channels.combine_channels,
     mne.channels.equalize_channels,
 ]
 
