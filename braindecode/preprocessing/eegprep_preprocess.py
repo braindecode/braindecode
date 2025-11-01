@@ -540,6 +540,9 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
 
     where :math:`c` indexes the channel and :math:`t` indexes time.
 
+    .. note::
+        This preprocessor does not take any parameters.
+
     References
     ----------
     .. [Delorme2004] Delorme, A. and Makeig, S., 2004. EEGLAB: an open source toolbox
@@ -547,9 +550,6 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
        analysis. Journal of Neuroscience Methods, 134(1), pp.9-21.
 
     """
-
-    def __init__(self):
-        super().__init__()
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
@@ -1146,6 +1146,9 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
       this should normally *NOT* be done before this step, but after it (otherwise
       your reference will depend on which channels were removed).
 
+    .. note::
+        This preprocessor does not take any parameters.
+
     References
     ----------
     .. [Perrin1989] Perrin, F., Pernier, J., Bertrand, O. and Echallier, J.F., 1989.
@@ -1154,9 +1157,6 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
 
 
     """
-
-    def __init__(self):
-        super().__init__()
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
@@ -1195,6 +1195,9 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
     where :math:`C` is the number of channels, :math:`c` indexes the channel, and
     :math:`t` indexes time.
 
+    .. note::
+        This preprocessor does not take any parameters.
+
     References
     ----------
     .. [Offner1950] Offner, F. F. (1950). The EEG as potential mapping: the value of the
@@ -1202,9 +1205,6 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
        2(2), 213-214.
 
     """
-
-    def __init__(self):
-        super().__init__()
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
