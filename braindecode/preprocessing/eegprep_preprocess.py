@@ -528,8 +528,9 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
     """Remove the DC offset from the EEG data by subtracting the per-channel median.
 
     This preprocessor mainly exists because some EEG data (depending on the electrical
-    characteristics of the hardware) can have such a large DC offset that typical
-    highpass filters do not fully remove it.
+    characteristics of the hardware) can have such a large DC offset that highpass
+    filters do not necessarily fully remove it, unless some care is taken with filter
+    settings (noted in EEGLAB documentation [Delorme2004]_).
 
     The operation performed is:
 
@@ -538,6 +539,12 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
         X'_{c,t} = X_{c,t} - \\text{median}_t(X_{c,t})
 
     where :math:`c` indexes the channel and :math:`t` indexes time.
+
+    References
+    ----------
+    .. [Delorme2004] Delorme, A. and Makeig, S., 2004. EEGLAB: an open source toolbox
+       for analysis of single-trial EEG dynamics including independent component
+       analysis. Journal of Neuroscience Methods, 134(1), pp.9-21.
 
     """
 
