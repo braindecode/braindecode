@@ -905,3 +905,51 @@ def test_remove_bursts():
 
     assert reduction_ratio > 1.5, \
         f"Expected significant artifact reduction, but only got {reduction_ratio:.2f}x"
+
+
+def test_remove_dc_offset_no_base_params():
+    """Test that RemoveDCOffset doesn't accept base class parameters."""
+    # Should work without parameters
+    RemoveDCOffset()
+    
+    # Should reject base class parameters
+    with pytest.raises(TypeError):
+        RemoveDCOffset(can_change_duration=False)
+    
+    with pytest.raises(TypeError):
+        RemoveDCOffset(record_orig_chanlocs=False)
+    
+    with pytest.raises(TypeError):
+        RemoveDCOffset(force_dtype=None)
+
+
+def test_remove_common_average_reference_no_base_params():
+    """Test that RemoveCommonAverageReference doesn't accept base class parameters."""
+    # Should work without parameters
+    RemoveCommonAverageReference()
+    
+    # Should reject base class parameters
+    with pytest.raises(TypeError):
+        RemoveCommonAverageReference(can_change_duration=False)
+    
+    with pytest.raises(TypeError):
+        RemoveCommonAverageReference(record_orig_chanlocs=False)
+    
+    with pytest.raises(TypeError):
+        RemoveCommonAverageReference(force_dtype=None)
+
+
+def test_reinterpolate_removed_channels_no_base_params():
+    """Test that ReinterpolateRemovedChannels doesn't accept base class parameters."""
+    # Should work without parameters
+    ReinterpolateRemovedChannels()
+    
+    # Should reject base class parameters
+    with pytest.raises(TypeError):
+        ReinterpolateRemovedChannels(can_change_duration=False)
+    
+    with pytest.raises(TypeError):
+        ReinterpolateRemovedChannels(record_orig_chanlocs=False)
+    
+    with pytest.raises(TypeError):
+        ReinterpolateRemovedChannels(force_dtype=None)

@@ -548,6 +548,9 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
 
     """
 
+    def __init__(self):
+        super().__init__()
+
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
         # note this might as well be implemented directly on the MNE data structure,
@@ -1152,6 +1155,9 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
 
     """
 
+    def __init__(self):
+        super().__init__()
+
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
         orig_chanlocs = self._get_orig_chanlocs(raw)
@@ -1196,6 +1202,9 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
        2(2), 213-214.
 
     """
+
+    def __init__(self):
+        super().__init__()
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
