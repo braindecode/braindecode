@@ -540,6 +540,9 @@ class RemoveDCOffset(EEGPrepBasePreprocessor):
 
     where :math:`c` indexes the channel and :math:`t` indexes time.
 
+    .. note::
+        This preprocessor does not take any parameters.
+
     References
     ----------
     .. [Delorme2004] Delorme, A. and Makeig, S., 2004. EEGLAB: an open source toolbox
@@ -1143,6 +1146,9 @@ class ReinterpolateRemovedChannels(EEGPrepBasePreprocessor):
       this should normally *NOT* be done before this step, but after it (otherwise
       your reference will depend on which channels were removed).
 
+    .. note::
+        This preprocessor does not take any parameters.
+
     References
     ----------
     .. [Perrin1989] Perrin, F., Pernier, J., Bertrand, O. and Echallier, J.F., 1989.
@@ -1188,6 +1194,9 @@ class RemoveCommonAverageReference(EEGPrepBasePreprocessor):
 
     where :math:`C` is the number of channels, :math:`c` indexes the channel, and
     :math:`t` indexes time.
+
+    .. note::
+        This preprocessor does not take any parameters.
 
     References
     ----------
