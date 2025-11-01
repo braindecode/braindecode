@@ -96,6 +96,19 @@ See Also
 :func:`braindecode.preprocessing.create_fixed_length_windows` : Create fixed-length epochs
 """
 
+from .eegprep_preprocess import (
+    EEGPrep,
+    ReinterpolateRemovedChannels,
+    RemoveBadChannels,
+    RemoveBadChannelsNoLocs,
+    RemoveBadWindows,
+    RemoveBursts,
+    RemoveCommonAverageReference,
+    RemoveDCOffset,
+    RemoveDrifts,
+    RemoveFlatChannels,
+    Resampling,
+)
 from .mne_preprocess import (  # type: ignore[attr-defined]
     AddChannels,
     AddEvents,
@@ -179,6 +192,18 @@ __all__ = [
     "SetEEGReference",
     "SetMeasDate",
     "SetMontage",
+    "Crop",
+    "EEGPrep",
+    "RemoveDCOffset",
+    "Resampling",
+    "RemoveFlatChannels",
+    "RemoveDrifts",
+    "RemoveBadChannels",
+    "RemoveBadChannelsNoLocs",
+    "RemoveBursts",
+    "RemoveBadWindows",
+    "ReinterpolateRemovedChannels",
+    "RemoveCommonAverageReference",
     "create_windows_from_events",
     "create_fixed_length_windows",
     "create_windows_from_target_channels",

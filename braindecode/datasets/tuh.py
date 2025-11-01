@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseConcatDataset, BaseDataset
+from .base import BaseConcatDataset, RawDataset
 
 
 class TUH(BaseConcatDataset):
@@ -214,7 +214,7 @@ class TUH(BaseConcatDataset):
             d["report"] = physician_report
         additional_description = pd.Series(d)
         description = pd.concat([description, additional_description])
-        base_dataset = BaseDataset(raw, description, target_name=target_name)
+        base_dataset = RawDataset(raw, description, target_name=target_name)
         return base_dataset
 
 

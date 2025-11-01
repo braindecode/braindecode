@@ -2,6 +2,7 @@
 Labram module.
 Authors: Wei-Bang Jiang
          Bruno Aristimunha <b.aristimunha@gmail.com>
+         Matthew Chen <matt.chen4260@gmail.com>
 License: BSD 3 clause
 """
 
@@ -22,12 +23,14 @@ from braindecode.modules import MLP, DropPath
 class Labram(EEGModuleMixin, nn.Module):
     """Labram from Jiang, W B et al (2024) [Jiang2024]_.
 
+    :bdg-danger:`Large Brain Model`
+
     .. figure:: https://arxiv.org/html/2405.18765v1/x1.png
         :align: center
         :alt: Labram Architecture.
 
     Large Brain Model for Learning Generic Representations with Tremendous
-    EEG Data in BCI from [Jiang2024]_
+    EEG Data in BCI from [Jiang2024]_.
 
     This is an **adaptation** of the code [Code2024]_ from the Labram model.
 
@@ -35,7 +38,8 @@ class Labram(EEGModuleMixin, nn.Module):
     BEiTv2 [BeiTv2]_.
 
     The models can be used in two modes:
-    - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
+
+    - Neural Tokenizer: Design to get an embedding layers (e.g. classification).
     - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
 
     The braindecode's modification is to allow the model to be used in
@@ -43,33 +47,36 @@ class Labram(EEGModuleMixin, nn.Module):
     equals True. The original implementation uses (batch, n_chans, n_patches,
     patch_size) as input with static segmentation of the input data.
 
-    The models have the following sequence of steps:
-    if neural tokenizer:
-        - SegmentPatch: Segment the input data in patches;
-        - TemporalConv: Apply a temporal convolution to the segmented data;
-        - Residual adding cls, temporal and position embeddings (optional);
-        - WindowsAttentionBlock: Apply a windows attention block to the data;
-        - LayerNorm: Apply layer normalization to the data;
-        - Linear: An head linear layer to transformer the data into classes.
+    The models have the following sequence of steps::
 
-    else:
-        - PatchEmbed: Apply a patch embedding to the input data;
-        - Residual adding cls, temporal and position embeddings (optional);
-        - WindowsAttentionBlock: Apply a windows attention block to the data;
-        - LayerNorm: Apply layer normalization to the data;
-        - Linear: An head linear layer to transformer the data into classes.
+        if neural tokenizer:
+            - SegmentPatch: Segment the input data in patches;
+            - TemporalConv: Apply a temporal convolution to the segmented data;
+            - Residual adding cls, temporal and position embeddings (optional);
+            - WindowsAttentionBlock: Apply a windows attention block to the data;
+            - LayerNorm: Apply layer normalization to the data;
+            - Linear: An head linear layer to transformer the data into classes.
+
+        else:
+            - PatchEmbed: Apply a patch embedding to the input data;
+            - Residual adding cls, temporal and position embeddings (optional);
+            - WindowsAttentionBlock: Apply a windows attention block to the data;
+            - LayerNorm: Apply layer normalization to the data;
+            - Linear: An head linear layer to transformer the data into classes.
 
     .. versionadded:: 0.9
 
 
-    Examples on how to load pre-trained weights:
-    --------------------------------------------
-    >>> import torch
-    >>> from braindecode.models import Labram
-    >>> model = Labram(n_times=1600, n_chans=64, n_outputs=4)
-    >>> url = 'https://huggingface.co/braindecode/Labram-Braindecode/blob/main/braindecode_labram_base.pt'
-    >>> state = torch.hub.load_state_dict_from_url(url, progress=True)
-    >>> model.load_state_dict(state)
+    Examples
+    --------
+    Load pre-trained weights::
+
+        >>> import torch
+        >>> from braindecode.models import Labram
+        >>> model = Labram(n_times=1600, n_chans=64, n_outputs=4)
+        >>> url = "https://huggingface.co/braindecode/Labram-Braindecode/blob/main/braindecode_labram_base.pt"
+        >>> state = torch.hub.load_state_dict_from_url(url, progress=True)
+        >>> model.load_state_dict(state)
 
 
     Parameters
@@ -116,7 +123,7 @@ class Labram(EEGModuleMixin, nn.Module):
     init_scale : float (default=0.001)
         The initial scale to be used in the parameters of the model.
     neural_tokenizer : bool (default=True)
-        The model can be used in two modes: Neural Tokenizor or Neural Decoder.
+        The model can be used in two modes: Neural Tokenizer or Neural Decoder.
     attn_head_dim : bool (default=None)
         The head dimension to be used in the attention layer, to be used only
         during pre-training.

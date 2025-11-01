@@ -195,7 +195,7 @@ if cuda:
 print(model)
 
 ######################################################################
-# To know the models’ receptive field, we calculate the shape of model
+# To know the models' receptive field, we calculate the shape of model
 # output for a dummy input.
 
 n_preds_per_input = model.get_output_shape()[2]

@@ -16,7 +16,7 @@ import numpy as np
 from mne.utils import verbose
 from scipy.io import loadmat
 
-from braindecode.datasets import BaseConcatDataset, BaseDataset
+from braindecode.datasets import BaseConcatDataset, RawDataset
 
 DATASET_URL = (
     "https://stacks.stanford.edu/file/druid:zk881ps0522/"
@@ -73,8 +73,8 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
                 file_name=file_path.split("/")[-1],
                 session="test",
             )
-            datasets.append(BaseDataset(raw_train, description=desc_train))
-            datasets.append(BaseDataset(raw_test, description=desc_test))
+            datasets.append(RawDataset(raw_train, description=desc_train))
+            datasets.append(RawDataset(raw_test, description=desc_test))
         super().__init__(datasets)
 
     @staticmethod
@@ -85,7 +85,7 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
         ----------
         path  (None | str) – Location of where to look for the data storing location.
         If None, the environment variable or config parameter
-        MNE_DATASETS_(dataset)_PATH is used. If it doesn’t exist, the “~/mne_data”
+        MNE_DATASETS_(dataset)_PATH is used. If it doesn't exist, the “~/mne_data”
         directory is used. If the dataset is not found under the given path, the data
         will be automatically downloaded to the specified folder.
         force_update (bool) – Force update of the dataset even if a local copy exists.

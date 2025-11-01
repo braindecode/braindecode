@@ -503,7 +503,7 @@ def test_model_exported(model):
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
-    # example input matching your model’s expected shape
+    # example input matching your model's expected shape
     try:
         n_chans = model.n_chans
     except ValueError:
@@ -514,7 +514,7 @@ def test_model_exported(model):
         n_times = default_signal_params["n_times"]
     example_input = torch.randn(1, n_chans, n_times)
 
-    # this will raise if the model isn’t fully traceable
+    # this will raise if the model isn't fully traceable
     exported_prog: ExportedProgram = export(model, args=(example_input,), strict=False)
 
     # sanity check: we got the right return type
@@ -535,6 +535,7 @@ def test_model_torch_script(model):
         "Labram",
         "EEGMiner",
         "SSTDPN",
+        "BENDR",
     ]
 
     if model.__class__.__name__ in not_working_models:
@@ -545,7 +546,7 @@ def test_model_torch_script(model):
     final_plain_model = convert_model_to_plain(model)
     final_plain_model.eval()
 
-    # example input matching your model’s expected shape
+    # example input matching your model's expected shape
     try:
         n_chans = model.n_chans
     except ValueError:

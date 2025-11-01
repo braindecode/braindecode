@@ -25,8 +25,14 @@ Enhancements
 - Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
 - Including typing in the augmentation module (:gh:`709` by `Aphel`_)
 - Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
+- Added :class:`braindecode.models.BENDR`  (:gh:`802` by `Bruno Aristimunha`_ )
 - Adding a tutorial for fine-tuning a pre-trained foundation model (:gh:`794` by `Pierre Guetschel`_)
 - Added 25 new MNE preprocessing functions, expanding from 6 to 31 total preprocessing classes. New functions include: :class:`braindecode.preprocessing.NotchFilter`, :class:`braindecode.preprocessing.SavgolFilter`, :class:`braindecode.preprocessing.ApplyHilbert`, :class:`braindecode.preprocessing.InterpolateBads`, :class:`braindecode.preprocessing.InterpolateTo`, :class:`braindecode.preprocessing.RenameChannels`, :class:`braindecode.preprocessing.ReorderChannels`, :class:`braindecode.preprocessing.EqualizeChannels`, :class:`braindecode.preprocessing.AddChannels`, :class:`braindecode.preprocessing.SetMontage`, :class:`braindecode.preprocessing.AddReferenceChannels`, :class:`braindecode.preprocessing.AddProj`, :class:`braindecode.preprocessing.ApplyProj`, :class:`braindecode.preprocessing.DelProj`, :class:`braindecode.preprocessing.ComputeCurrentSourceDensity`, :class:`braindecode.preprocessing.FixStimArtifact`, :class:`braindecode.preprocessing.CropByAnnotations`, :class:`braindecode.preprocessing.Anonymize`, :class:`braindecode.preprocessing.SetAnnotations`, :class:`braindecode.preprocessing.SetChannelTypes`, :class:`braindecode.preprocessing.SetMeasDate`, :class:`braindecode.preprocessing.FixMagCoilTypes`, :class:`braindecode.preprocessing.ApplyGradientCompensation`, :class:`braindecode.preprocessing.AddEvents`, and :class:`braindecode.preprocessing.Rescale` (:gh:`801` by `Bruno Aristimunha`_)
+- Adding artifact removal preprocessing steps, incl. :class:`braindecode.preprocessing.EEGPrep` (:gh:`796` by `Christian Kothe`_)
+- Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
+- Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
+- Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
+
 
 
 API changes
@@ -38,6 +44,7 @@ Bugs
 - Fixing expired path when loading a preprocessed dataset that was moved (:gh:`786` by `Pierre Guetschel`_)
 - Fix OverflowError sometimes when saving description to a json file (:gh:`789` by `Pierre Guetschel`_)
 - Small adjustment in :class:`braindecode.models.Labram` model to allow pre-loading of weights (:gh:`792` by `Bruno Aristimunha`_)
+- Fixing many warnings for generating the documentation (:gh:`805` by `Bruno Aristimunha`_)
 
 Current 1.2 (stable)
 ----------------------
@@ -408,3 +415,6 @@ Authors
 .. _Hamdi Altaheri: https://github.com/Altaheri
 .. _José Mauricio: https://github.com/josemaurici
 .. _Can Han: https://github.com/hancan16
+.. _Christian Kothe: https://github.com/chkothe
+.. _Kuntal Kokate: https://github.com/Kkuntal990
+.. _Matthew Chen: https://github.com/MatthewChen37

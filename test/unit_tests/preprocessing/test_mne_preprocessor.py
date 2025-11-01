@@ -18,7 +18,7 @@ import pandas as pd
 import pytest
 from pytest_cases import parametrize_with_cases
 
-from braindecode.datasets import BaseConcatDataset, BaseDataset, MOABBDataset
+from braindecode.datasets import BaseConcatDataset, MOABBDataset, RawDataset
 from braindecode.datautil.serialization import load_concat_dataset
 from braindecode.preprocessing import (
     AddChannels,
@@ -523,7 +523,7 @@ def test_new_misc_channels():
     targets = rng.randn(2, 1000)
     raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    base_dataset = BaseDataset(raw, desc, target_name=None)
+    base_dataset = RawDataset(raw, desc, target_name=None)
     concat_ds = BaseConcatDataset([base_dataset])
 
     preprocessors = [
