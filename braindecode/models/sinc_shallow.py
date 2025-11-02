@@ -12,6 +12,8 @@ from braindecode.models.base import EEGModuleMixin
 class SincShallowNet(EEGModuleMixin, nn.Module):
     """Sinc-ShallowNet from Borra, D et al (2020) [borra2020]_.
 
+    :bdg-success:`Convolution` :bdg-warning:`Interpretability`
+
     .. figure:: https://ars.els-cdn.com/content/image/1-s2.0-S0893608020302021-gr2_lrg.jpg
         :align: center
         :alt: SincShallowNet Architecture

@@ -21,6 +21,8 @@ _eeg_miner_methods = ["mag", "corr", "plv"]
 class EEGMiner(EEGModuleMixin, nn.Module):
     """EEGMiner from Ludwig et al (2024) [eegminer]_.
 
+    :bdg-success:`Convolution` :bdg-warning:`Interpretability`
+
     .. figure:: https://content.cld.iop.org/journals/1741-2552/21/3/036010/revision2/jnead44d7f1_hr.jpg
        :align: center
        :alt: EEGMiner Architecture
