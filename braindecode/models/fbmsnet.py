@@ -19,6 +19,8 @@ from braindecode.modules import (
 class FBMSNet(EEGModuleMixin, nn.Module):
     """FBMSNet from Liu et al (2022) [fbmsnet]_.
 
+    :bdg-success:`Convolution` :bdg-primary:`Filterbank`
+
     .. figure:: https://raw.githubusercontent.com/Want2Vanish/FBMSNet/refs/heads/main/FBMSNet.png
         :align: center
         :alt: FBMSNet Architecture

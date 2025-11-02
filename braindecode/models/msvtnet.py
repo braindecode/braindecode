@@ -13,6 +13,8 @@ from braindecode.models.base import EEGModuleMixin
 class MSVTNet(EEGModuleMixin, nn.Module):
     """MSVTNet model from Liu K et al (2024) from [msvt2024]_.
 
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Small Attention`
+
     This model implements a multi-scale convolutional transformer network
     for EEG signal classification, as described in [msvt2024]_.
 
