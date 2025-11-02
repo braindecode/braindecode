@@ -379,50 +379,37 @@ Preprocessing
     AddProj
     AddReferenceChannels
     Anonymize
+    AnnotateAmplitude
+    AnnotateBreak
+    AnnotateMovement
+    AnnotateMuscleZscore
+    AnnotateNan
     ApplyGradientCompensation
     ApplyHilbert
     ApplyProj
+    CombineChannels
+    ComputeBridgedElectrodes
     ComputeCurrentSourceDensity
     Crop
     CropByAnnotations
     DelProj
     DropChannels
-    EqualizeChannels
     EEGPrep
-
-
-Preprocessing Transform
-''''''''''''''''''''''''
-
-These modules implement various preprocessing transforms that can be applied
-to EEG data, including cropping, filtering, resampling, and channel selection.
-
-:py:mod:`braindecode.preprocessing`:
-
-.. currentmodule:: braindecode.preprocessing
-
-.. autosummary::
-   :toctree: generated/
-
-    Crop
-    DropChannels
+    EqualizeChannels
     Filter
     FixMagCoilTypes
     FixStimArtifact
     InterpolateBads
+    InterpolateBridgedElectrodes
     InterpolateTo
+    MaxwellFilter
     NotchFilter
+    OversampledTemporalProjection
     Pick
-    RenameChannels
-    ReorderChannels
-    Resample
-    Rescale
-    SavgolFilter
-    SetAnnotations
-    SetChannelTypes
-    SetEEGReference
-    SetMeasDate
-    SetMontage
+    PickChannels
+    PickTypes
+    RealignRaw
+    RegressArtifact
     ReinterpolateRemovedChannels
     RemoveBadChannels
     RemoveBadChannelsNoLocs
@@ -432,9 +419,17 @@ to EEG data, including cropping, filtering, resampling, and channel selection.
     RemoveDCOffset
     RemoveDrifts
     RemoveFlatChannels
+    RenameChannels
+    ReorderChannels
     Resample
     Resampling
+    Rescale
+    SavgolFilter
+    SetAnnotations
+    SetChannelTypes
     SetEEGReference
+    SetMeasDate
+    SetMontage
 
 
 Data Utils
