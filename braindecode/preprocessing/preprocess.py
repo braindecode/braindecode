@@ -72,10 +72,6 @@ class Preprocessor(object):
     def __init__(self, fn: Callable | str, *, apply_on_array: bool = True, **kwargs):
         if hasattr(fn, "__name__") and fn.__name__ == "<lambda>":
             warn("Preprocessing choices with lambda functions cannot be saved.")
-        if apply_on_array and not callable(fn):
-            raise ValueError(
-                "apply_on_array can only be True if fn is a callable function."
-            )
         # We store the exact input parameters. Simpler for serialization.
         self.fn = fn
         self.apply_on_array = apply_on_array
@@ -85,7 +81,7 @@ class Preprocessor(object):
     def _function(self):
         kwargs = dict(self.kwargs)
         fn = self.fn
-        if self.apply_on_array:
+        if callable(fn) and self.apply_on_array:
             channel_wise = kwargs.pop("channel_wise", False)
             picks = kwargs.pop("picks", None)
             n_jobs = kwargs.pop("n_jobs", 1)
