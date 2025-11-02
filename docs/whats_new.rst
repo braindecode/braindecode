@@ -32,6 +32,7 @@ Enhancements
 - Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
 - Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
 - Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
+- Improve :class:`braindecode.preprocessing.Preprocessor` serialisation (:gh:`813` by `Pierre Guetschel`_ )
 
 
 API changes
