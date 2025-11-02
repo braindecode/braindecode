@@ -13,7 +13,9 @@ from __future__ import annotations
 import platform
 import sys
 from collections.abc import Iterable
-from functools import partial
+from copy import deepcopy
+from functools import cached_property, partial
+from importlib import import_module
 from warnings import warn
 
 if sys.version_info < (3, 9):
@@ -32,6 +34,7 @@ from braindecode.datasets.base import (
     BaseConcatDataset,
     EEGWindowsDataset,
     RawDataset,
+    RecordDataset,
     WindowsDataset,
 )
 from braindecode.datautil.serialization import (
@@ -69,7 +72,20 @@ class Preprocessor(object):
     def __init__(self, fn: Callable | str, *, apply_on_array: bool = True, **kwargs):
         if hasattr(fn, "__name__") and fn.__name__ == "<lambda>":
             warn("Preprocessing choices with lambda functions cannot be saved.")
-        if callable(fn) and apply_on_array:
+        if apply_on_array and not callable(fn):
+            raise ValueError(
+                "apply_on_array can only be True if fn is a callable function."
+            )
+        # We store the exact input parameters. Simpler for serialization.
+        self.fn = fn
+        self.apply_on_array = apply_on_array
+        self.kwargs = kwargs
+
+    @cached_property
+    def _function(self):
+        kwargs = dict(self.kwargs)
+        fn = self.fn
+        if self.apply_on_array:
             channel_wise = kwargs.pop("channel_wise", False)
             picks = kwargs.pop("picks", None)
             n_jobs = kwargs.pop("n_jobs", 1)
@@ -80,12 +96,21 @@ class Preprocessor(object):
                 n_jobs=n_jobs,
             )
             fn = "apply_function"
-        self.fn = fn
-        self.kwargs = kwargs
+
+        if callable(fn):
+            return partial(fn, **kwargs)
+        return partial(self._apply_str, fn=fn, **kwargs)
+
+    @staticmethod
+    def _apply_str(raw_or_epochs: BaseRaw | BaseEpochs, fn: str, **kwargs):
+        if not hasattr(raw_or_epochs, fn):
+            raise AttributeError(f"MNE object does not have a {fn} method.")
+        return getattr(raw_or_epochs, fn)(**kwargs)
 
     def apply(self, raw_or_epochs: BaseRaw | BaseEpochs):
+        function = self._function
         try:
-            self._try_apply(raw_or_epochs)
+            function(raw_or_epochs)
         except RuntimeError:
             # Maybe the function needs the data to be loaded and the data was
             # not loaded yet. Not all MNE functions need data to be loaded,
@@ -93,15 +118,56 @@ class Preprocessor(object):
             # without preloading data which can make the overall preprocessing
             # pipeline substantially faster.
             raw_or_epochs.load_data()
-            self._try_apply(raw_or_epochs)
+            function(raw_or_epochs)
 
-    def _try_apply(self, raw_or_epochs):
-        if callable(self.fn):
-            self.fn(raw_or_epochs, **self.kwargs)
+    def serialize(self):
+        """Return a serializable representation of the Preprocessor.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys 'fn' and 'kwargs' representing the
+            Preprocessor.
+        """
+        out = {
+            "apply_on_array": self.apply_on_array,
+            "kwargs": deepcopy(self.kwargs),
+        }
+        if isinstance(self.fn, str):
+            out["fn"] = self.fn
+            out["fn_str"] = True
         else:
-            if not hasattr(raw_or_epochs, self.fn):
-                raise AttributeError(f"MNE object does not have a {self.fn} method.")
-            getattr(raw_or_epochs, self.fn)(**self.kwargs)
+            out["fn"] = self.fn.__module__ + "." + self.fn.__name__
+            out["fn_str"] = False
+        return out
+
+    @classmethod
+    def deserialize(cls, data: dict):
+        """Create a Preprocessor from its serializable representation.
+
+        Parameters
+        ----------
+        data : dict
+            Dictionary with keys 'fn' and 'kwargs' representing the
+            Preprocessor.
+        Returns
+        -------
+        Preprocessor
+            The deserialized Preprocessor object.
+        """
+        fn = data["fn"]
+        fn_str = data["fn_str"]
+        kwargs = data["kwargs"]
+        apply_on_array = data["apply_on_array"]
+        if not fn_str:
+            fn_name = fn.split(".")[-1]
+            module_name = ".".join(fn.split(".")[:-1])
+            module = import_module(module_name)
+            fn = getattr(module, fn_name)
+        return cls(fn, apply_on_array=apply_on_array, **kwargs)
+
+    def __repr__(self):
+        return f"Preprocessor(fn={self.fn.__repr__()}, apply_on_array={self.apply_on_array}, kwargs={self.kwargs})"
 
 
 def preprocess(
@@ -223,7 +289,12 @@ def _replace_inplace(concat_ds, new_concat_ds):
 
 
 def _preprocess(
-    ds, ds_index, preprocessors, save_dir=None, overwrite=False, copy_data=False
+    ds: RecordDataset,
+    ds_index,
+    preprocessors,
+    save_dir=None,
+    overwrite=False,
+    copy_data=False,
 ):
     """Apply preprocessor(s) to Raw or Epochs object.
 
