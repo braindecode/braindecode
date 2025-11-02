@@ -114,8 +114,10 @@ def test_preprocess_raw_str(base_concat_ds):
 
 def test_preprocess_windows_str(windows_concat_ds):
     preprocessors = [Preprocessor("crop", tmin=0, tmax=0.1, include_tmax=False)]
-    with pytest.warns(UserWarning,
-                      match='Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.'):
+    with pytest.warns(
+        UserWarning,
+        match="Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.",
+    ):
         preprocess(windows_concat_ds, preprocessors)
     # assert windows_concat_ds[0][0].shape[1] == 25  no longer correct as raw preprocessed
 
@@ -138,7 +140,7 @@ def test_preprocess_mne_windows_str(mne_windows_concat_ds):
     # message = f"Applying preprocessors {preprocessors} to the mne.io.Raw of an EEGWindowsDataset."
     with warnings.catch_warnings():
         # warnings.filterwarnings('error', message=message)
-        warnings.simplefilter('error')
+        warnings.simplefilter("error")
         preprocess(mne_windows_concat_ds, preprocessors)
     # assert mne_windows_concat_ds[0][0].shape[1] == 25  no longer correct as raw preprocessed
 
@@ -177,8 +179,10 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
         Preprocessor(modify_windows_object, apply_on_array=False, factor=factor)
     ]
     raw_window = windows_concat_ds[0][0]
-    with pytest.warns(UserWarning,
-                      match='Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.'):
+    with pytest.warns(
+        UserWarning,
+        match="Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.",
+    ):
         preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(
         windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-4
@@ -194,7 +198,7 @@ def test_preprocess_mne_windows_callable_on_object(mne_windows_concat_ds):
     # message = f"Applying preprocessors {preprocessors} to the mne.io.Raw of an EEGWindowsDataset."
     with warnings.catch_warnings():
         # warnings.filterwarnings('error', message=message)
-        warnings.simplefilter('error')
+        warnings.simplefilter("error")
         preprocess(mne_windows_concat_ds, preprocessors)
     np.testing.assert_allclose(
         mne_windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-4
@@ -229,8 +233,10 @@ def test_scale_windows(windows_concat_ds):
         Preprocessor(lambda data: multiply(data, factor)),
     ]
     raw_window = windows_concat_ds[0][0][:22]  # only keep EEG channels
-    with pytest.warns(UserWarning,
-                      match='Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.'):
+    with pytest.warns(
+        UserWarning,
+        match="Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.",
+    ):
         preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(
         windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-4
@@ -336,7 +342,9 @@ def test_exponential_running_init_block_size(mock_data):
     )
 
     # mean over time axis (1!) should give 0 per channel
-    demeaned_data = exponential_moving_demean(mock_input, init_block_size=init_block_size)
+    demeaned_data = exponential_moving_demean(
+        mock_input, init_block_size=init_block_size
+    )
     np.testing.assert_allclose(
         demeaned_data[:, :init_block_size].mean(axis=1), 0, rtol=1e-4, atol=1e-4
     )
@@ -463,6 +471,26 @@ def test_set_preproc_kwargs_wrong_type(base_concat_ds):
         _set_preproc_kwargs(base_concat_ds, preprocessors)
 
 
+def test_preprocessor_deserialization():
+    preprocessor = Preprocessor(
+        "crop", tmax=10, include_tmax=False, apply_on_array=False
+    )
+    preproc_dict = preprocessor.serialize()
+    loaded_preprocessor = Preprocessor.deserialize(preproc_dict)
+    assert preprocessor == loaded_preprocessor
+
+
+def test_preprocessor_overwrites_apply_on_array():
+    with pytest.warns(
+        UserWarning,
+        match="apply_on_array can only be True if fn is a callable function. Automatically correcting to apply_on_array=False.",
+    ):
+        preprocessor = Preprocessor(
+            "pick_channels", ch_names=["Cz"], apply_on_array=True
+        )
+        assert preprocessor.apply_on_array == False
+
+
 # Skip if OS is Windows
 @pytest.mark.skipif(
     platform.system() == "Windows", reason="Not supported on Windows"
@@ -472,7 +500,7 @@ def test_set_preproc_kwargs_wrong_type(base_concat_ds):
 @pytest.mark.parametrize("overwrite", [True, False])
 @pytest.mark.parametrize("n_jobs", [-1, 1, 2, None])
 def test_preprocess_save_dir(
-        base_concat_ds, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
+    base_concat_ds, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
 ):
     preproc_kwargs = [("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False})]
     preprocessors = [Preprocessor("crop", tmin=0, tmax=0.1, include_tmax=False)]
@@ -493,7 +521,10 @@ def test_preprocess_save_dir(
 
     assert all([hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets])
     assert all(
-        [getattr(ds, preproc_kwargs_name) == preproc_kwargs for ds in concat_ds.datasets]
+        [
+            getattr(ds, preproc_kwargs_name) == preproc_kwargs
+            for ds in concat_ds.datasets
+        ]
     )
     assert all([len(ds.raw.times) == 25 for ds in concat_ds.datasets])
     if kind == "raw":

@@ -171,6 +171,15 @@ class Preprocessor(object):
     def __repr__(self):
         return f"Preprocessor(fn={self.fn.__repr__()}, apply_on_array={self.apply_on_array}, kwargs={self.kwargs})"
 
+    def __eq__(self, other):
+        if not isinstance(other, Preprocessor):
+            return False
+        return (
+            (self.fn == other.fn)
+            and (self.apply_on_array == other.apply_on_array)
+            and (self.kwargs == other.kwargs)
+        )
+
 
 def preprocess(
     concat_ds: BaseConcatDataset,
