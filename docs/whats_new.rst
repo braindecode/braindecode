@@ -31,7 +31,7 @@ Enhancements
 - Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
 - Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
 - Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
-
+- Including missed tag in all the models and creating some test for it (:gh:`809` by `Bruno Aristimunha`_ )
 
 
 API changes
