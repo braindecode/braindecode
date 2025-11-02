@@ -15,7 +15,7 @@ from braindecode.modules import CausalConv1d, Ensure4d, MaxNormLinear
 class ATCNet(EEGModuleMixin, nn.Module):
     """ATCNet from Altaheri et al. (2022) [1]_.
 
-    :bdg-success:`Convolution` :bdg-info:`Small Attention`
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Small Attention`
 
     .. figure:: https://user-images.githubusercontent.com/25565236/185449791-e8539453-d4fa-41e1-865a-2cf7e91f60ef.png
         :align: center

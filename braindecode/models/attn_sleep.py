@@ -18,6 +18,8 @@ from braindecode.modules import CausalConv1d
 class AttnSleep(EEGModuleMixin, nn.Module):
     """Sleep Staging Architecture from Eldele et al. (2021) [Eldele2021]_.
 
+    :bdg-success:`Convolution` :bdg-info:`Small Attention`
+
     .. figure:: https://raw.githubusercontent.com/emadeldeen24/AttnSleep/refs/heads/main/imgs/AttnSleep.png
         :align: center
         :alt: AttnSleep Architecture

@@ -18,6 +18,8 @@ from braindecode.modules import (
 class FBLightConvNet(EEGModuleMixin, nn.Module):
     """LightConvNet from Ma, X et al (2023) [lightconvnet]_.
 
+    :bdg-success:`Convolution` :bdg-primary:`Filterbank`
+
     .. figure:: https://raw.githubusercontent.com/Ma-Xinzhi/LightConvNet/refs/heads/main/network_architecture.png
         :align: center
         :alt: LightConvNet Neural Network

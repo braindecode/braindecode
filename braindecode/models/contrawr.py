@@ -10,6 +10,8 @@ from braindecode.models.base import EEGModuleMixin
 class ContraWR(EEGModuleMixin, nn.Module):
     """Contrast with the World Representation ContraWR from Yang et al (2021) [Yang2021]_.
 
+    :bdg-success:`Convolution`
+
     This model is a convolutional neural network that uses a spectral
     representation with a series of convolutional layers and residual blocks.
     The model is designed to learn a representation of the EEG signal that can
