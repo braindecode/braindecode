@@ -797,7 +797,7 @@ class BaseConcatDataset(ConcatDataset, Generic[T]):
                 kwargs = getattr(ds, kwargs_name)
                 if kwargs is not None:
                     with open(kwargs_file_path, "w") as f:
-                        json.dump(kwargs, f)
+                        json.dump(kwargs, f, indent=2)
 
     @staticmethod
     def _save_target_name(sub_dir, ds):
