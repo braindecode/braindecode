@@ -17,33 +17,39 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+from rotary_embedding_torch import RotaryEmbedding
 from torch.nn.init import trunc_normal_ as torch_trunc_normal_
 
-from braindecode.models.base import EEGModuleMixin
-
-# External dependencies
-try:
-    from rotary_embedding_torch import RotaryEmbedding
-
-    HAS_ROPE = True
-except ImportError:
-    HAS_ROPE = False
-    RotaryEmbedding = None
-
-try:
-    from timm.models.layers import DropPath
-    from timm.models.layers import Mlp as TimmMlp
-
-    HAS_TIMM = True
-except ImportError:
-    HAS_TIMM = False
-    TimmMlp = None
-    DropPath = None
+from ..modules.layers import DropPath
+from .base import EEGModuleMixin
 
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
+class Mlp(nn.Module):
+    """MLP as used in Vision Transformer, MLP-Mixer and related networks"""
+
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_layer=nn.GELU,
+        drop=0.0,
+    ):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
 
 
 def trunc_normal_(tensor, mean=0.0, std=1.0):
@@ -256,19 +262,12 @@ class FrequencyFeatureEmbedder(nn.Module):
         in_features = 2 * (patch_size // 2 + 1)
 
         # MLP: (2 * num_freq_bins) -> embed_dim
-        if HAS_TIMM and TimmMlp is not None:
-            self.frequency_to_embed = TimmMlp(
-                in_features=in_features,
-                hidden_features=int(4 * in_features),
-                out_features=embed_dim,
-                act_layer=nn.GELU,
-            )
-        else:
-            self.frequency_to_embed = nn.Sequential(
-                nn.Linear(in_features, int(4 * in_features)),
-                nn.GELU(),
-                nn.Linear(int(4 * in_features), embed_dim),
-            )
+        self.frequency_to_embed = Mlp(
+            in_features=in_features,
+            hidden_features=int(4 * in_features),
+            out_features=embed_dim,
+            act_layer=nn.GELU,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -505,12 +504,8 @@ class RotaryTransformerBlock(nn.Module):
         )
 
         # Stochastic depth
-        if HAS_TIMM and DropPath is not None:
-            self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-            self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        else:
-            self.drop_path1 = nn.Identity()
-            self.drop_path2 = nn.Identity()
+        self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
         self.norm2 = norm_layer(dim)
         self.mlp = FeedForwardBlock(
@@ -590,22 +585,13 @@ class ClassificationHeadWithQueries(nn.Module):
         )
 
         # MLP classifier
-        if HAS_TIMM and TimmMlp is not None:
-            self.decoder_ffn = TimmMlp(
-                in_features=self.embed_dim,
-                hidden_features=int(self.embed_dim * 4),
-                out_features=num_classes,
-                act_layer=nn.GELU,
-                drop=0.15,
-            )
-        else:
-            self.decoder_ffn = nn.Sequential(
-                nn.Linear(self.embed_dim, int(self.embed_dim * 4)),
-                nn.GELU(),
-                nn.Dropout(0.15),
-                nn.Linear(int(self.embed_dim * 4), num_classes),
-                nn.Dropout(0.15),
-            )
+        self.decoder_ffn = Mlp(
+            in_features=self.embed_dim,
+            hidden_features=int(self.embed_dim * 4),
+            out_features=num_classes,
+            act_layer=nn.GELU,
+            drop=0.15,
+        )
 
         # Learned aggregation query
         self.learned_agg = nn.Parameter(
@@ -690,20 +676,13 @@ class PatchReconstructionHeadWithQueries(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
         # MLP to project to patch size
-        if HAS_TIMM and TimmMlp is not None:
-            self.decoder_linear = TimmMlp(
-                in_features=embed_dim,
-                hidden_features=int(embed_dim * 4),
-                out_features=input_dim,
-                act_layer=nn.GELU,
-                drop=0.0,
-            )
-        else:
-            self.decoder_linear = nn.Sequential(
-                nn.Linear(embed_dim, int(embed_dim * 4)),
-                nn.GELU(),
-                nn.Linear(int(embed_dim * 4), input_dim),
-            )
+        self.decoder_linear = Mlp(
+            in_features=embed_dim,
+            hidden_features=int(embed_dim * 4),
+            out_features=input_dim,
+            act_layer=nn.GELU,
+            drop=0.0,
+        )
 
     def forward(self, enc: torch.Tensor, decoder_queries: torch.Tensor) -> torch.Tensor:
         """
@@ -818,22 +797,13 @@ class CrossAttentionBlock(nn.Module):
         self.queries_norm = nn.LayerNorm(input_embed_dim)
 
         # Feedforward network on queries
-        if HAS_TIMM and TimmMlp is not None:
-            self.ffn = TimmMlp(
-                in_features=input_embed_dim,
-                hidden_features=ff_dim,
-                out_features=output_embed_dim,
-                act_layer=nn.GELU,
-                drop=dropout_p,
-            )
-        else:
-            self.ffn = nn.Sequential(
-                nn.Linear(input_embed_dim, ff_dim),
-                nn.GELU(),
-                nn.Dropout(dropout_p),
-                nn.Linear(ff_dim, output_embed_dim),
-                nn.Dropout(dropout_p),
-            )
+        self.ffn = Mlp(
+            in_features=input_embed_dim,
+            hidden_features=ff_dim,
+            out_features=output_embed_dim,
+            act_layer=nn.GELU,
+            drop=dropout_p,
+        )
 
         # Query self-attention (3 layers)
         encoder_layer = nn.TransformerEncoderLayer(
@@ -1050,19 +1020,6 @@ class LUNA(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
         )
 
-        # Check dependencies
-        if not HAS_ROPE:
-            raise ImportError(
-                "rotary-embedding-torch is required for LUNA. "
-                "Install with: pip install rotary-embedding-torch"
-            )
-
-        if not HAS_TIMM:
-            warnings.warn(
-                "timm not found. Using fallback implementations for Mlp and DropPath. "
-                "Install timm for better performance: pip install timm"
-            )
-
         # Validate parameters
         if self.n_times is not None and self.n_times % patch_size != 0:
             warnings.warn(
@@ -1095,20 +1052,13 @@ class LUNA(EEGModuleMixin, nn.Module):
 
         # Channel location embedder MLP
         # Input: embed_dim (from NeRF encoding), Output: embed_dim
-        if HAS_TIMM and TimmMlp is not None:
-            self.channel_location_embedder = TimmMlp(
-                in_features=embed_dim,
-                hidden_features=embed_dim * 2,
-                out_features=embed_dim,
-                act_layer=nn.GELU,
-                drop=0.0,
-            )
-        else:
-            self.channel_location_embedder = nn.Sequential(
-                nn.Linear(embed_dim, embed_dim * 2),
-                nn.GELU(),
-                nn.Linear(embed_dim * 2, embed_dim),
-            )
+        self.channel_location_embedder = Mlp(
+            in_features=embed_dim,
+            hidden_features=embed_dim * 2,
+            out_features=embed_dim,
+            act_layer=nn.GELU,
+            drop=0.0,
+        )
 
         # Mask token (for pre-training)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
