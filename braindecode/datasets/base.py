@@ -129,6 +129,7 @@ class RawDataset(RecordDataset):
 
         # save target name for load/save later
         self.target_name = self._target_name(target_name)
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index):
         X = self.raw[:, index][0]
