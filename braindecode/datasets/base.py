@@ -19,7 +19,7 @@ import warnings
 from abc import abstractmethod
 from collections.abc import Callable
 from glob import glob
-from typing import Generic, Iterable, no_type_check
+from typing import Any, Generic, Iterable, no_type_check
 
 import mne.io
 import numpy as np
@@ -235,6 +235,7 @@ class EEGWindowsDataset(RecordDataset):
         ].to_numpy()
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -334,6 +335,8 @@ class WindowsDataset(RecordDataset):
         ].to_numpy()
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
+        self.windows_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index: int):
         """Get a window and its target.

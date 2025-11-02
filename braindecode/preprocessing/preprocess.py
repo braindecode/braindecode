@@ -348,25 +348,6 @@ def _preprocess(
         return ds
 
 
-def _get_preproc_kwargs(preprocessors):
-    preproc_kwargs = []
-    for p in preprocessors:
-        # in case of a mne function, fn is a str, kwargs is a dict
-        func_name = p.fn
-        func_kwargs = p.kwargs
-        # in case of another function
-        # if apply_on_array=False
-        if callable(p.fn):
-            func_name = p.fn.__name__
-        # if apply_on_array=True
-        else:
-            if "fun" in p.fn:
-                func_name = p.kwargs["fun"].func.__name__
-                func_kwargs = p.kwargs["fun"].keywords
-        preproc_kwargs.append((func_name, func_kwargs))
-    return preproc_kwargs
-
-
 def _set_preproc_kwargs(ds, preprocessors):
     """Record preprocessing keyword arguments in RecordDataset.
 
@@ -377,7 +358,7 @@ def _set_preproc_kwargs(ds, preprocessors):
     preprocessors : list
         List of preprocessors.
     """
-    preproc_kwargs = _get_preproc_kwargs(preprocessors)
+    preproc_kwargs = [p.serialize() for p in preprocessors]
     if isinstance(ds, WindowsDataset):
         kind = "window"
     elif isinstance(ds, EEGWindowsDataset):
@@ -386,7 +367,8 @@ def _set_preproc_kwargs(ds, preprocessors):
         kind = "raw"
     else:
         raise TypeError(f"ds must be a RecordDataset, got {type(ds)}")
-    setattr(ds, kind + "_preproc_kwargs", preproc_kwargs)
+    old_preproc_kwargs = getattr(ds, kind + "_preproc_kwargs")
+    old_preproc_kwargs.extend(preproc_kwargs)
 
 
 def exponential_moving_standardize(
