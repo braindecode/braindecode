@@ -984,4 +984,3 @@ class LUNA(EEGModuleMixin, nn.Module):
             )
 
         return model
-        return model
