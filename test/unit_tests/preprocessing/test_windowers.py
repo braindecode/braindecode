@@ -849,7 +849,7 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
 
     # verbose is True, so we expect to see the used annotations descriptions
     concat_ds, targets = concat_ds_targets
-    windows = create_windows_from_events(
+    create_windows_from_events(
         concat_ds=concat_ds,
         trial_start_offset_samples=1,
         trial_stop_offset_samples=0,
@@ -862,7 +862,7 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
 
     # verbose is False, so we expect to see the used annotations descriptions
     concat_ds, targets = concat_ds_targets
-    windows = create_windows_from_events(
+    create_windows_from_events(
         concat_ds=concat_ds,
         trial_start_offset_samples=1,
         trial_stop_offset_samples=0,
@@ -875,7 +875,7 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
 
     # verbose is not specified, so it defaults to verbose="error"
     concat_ds, targets = concat_ds_targets
-    windows = create_windows_from_events(
+    create_windows_from_events(
         concat_ds=concat_ds,
         trial_start_offset_samples=1,
         trial_stop_offset_samples=0,
