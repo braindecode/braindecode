@@ -102,13 +102,11 @@ def test_preprocess_raw_str(base_concat_ds):
     preprocess(base_concat_ds, preprocessors)
     assert len(base_concat_ds.datasets[0].raw.times) == 2500
     assert all(
-        [
-            ds.raw_preproc_kwargs
-            == [
-                ("crop", {"tmax": 10, "include_tmax": False}),
-            ]
-            for ds in base_concat_ds.datasets
+        ds.raw_preproc_kwargs
+        == [
+            ("crop", {"tmax": 10, "include_tmax": False}),
         ]
+        for ds in base_concat_ds.datasets
     )
 
 
@@ -125,13 +123,11 @@ def test_preprocess_windows_str(windows_concat_ds):
     # also for windows it is called raw_preproc_kwargs
     # as underlying data is always raw
     assert all(
-        [
-            ds.raw_preproc_kwargs
-            == [
-                ("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False}),
-            ]
-            for ds in windows_concat_ds.datasets
+        ds.raw_preproc_kwargs
+        == [
+            ("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False}),
         ]
+        for ds in windows_concat_ds.datasets
     )
 
 
@@ -148,13 +144,11 @@ def test_preprocess_mne_windows_str(mne_windows_concat_ds):
     # also for windows it is called raw_preproc_kwargs
     # as underlying data is always raw
     assert all(
-        [
-            ds.window_preproc_kwargs
-            == [
-                ("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False}),
-            ]
-            for ds in mne_windows_concat_ds.datasets
+        ds.window_preproc_kwargs
+        == [
+            ("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False}),
         ]
+        for ds in mne_windows_concat_ds.datasets
     )
 
 
@@ -218,11 +212,9 @@ def test_scale_continuous(base_concat_ds):
     )
 
     assert all(
-        [
-            ("pick_types", {"eeg": True, "meg": False, "stim": False})
-            in ds.raw_preproc_kwargs
-            for ds in base_concat_ds.datasets
-        ]
+        ("pick_types", {"eeg": True, "meg": False, "stim": False})
+        in ds.raw_preproc_kwargs
+        for ds in base_concat_ds.datasets
     )
 
 
@@ -243,11 +235,9 @@ def test_scale_windows(windows_concat_ds):
     )
 
     assert all(
-        [
-            ("pick_types", {"eeg": True, "meg": False, "stim": False})
-            in ds.raw_preproc_kwargs
-            for ds in windows_concat_ds.datasets
-        ]
+        ("pick_types", {"eeg": True, "meg": False, "stim": False})
+        in ds.raw_preproc_kwargs
+        for ds in windows_concat_ds.datasets
     )
 
 
@@ -383,20 +373,18 @@ def test_filterbank(base_concat_ds):
         ],
     )
     assert all(
-        [
-            ds.raw_preproc_kwargs
-            == [
-                ("pick_channels", {"ch_names": ["C4", "Cz"], "ordered": True}),
-                (
-                    "filterbank",
-                    {
-                        "frequency_bands": [(0, 4), (4, 8), (8, 13)],
-                        "drop_original_signals": False,
-                    },
-                ),
-            ]
-            for ds in base_concat_ds.datasets
+        ds.raw_preproc_kwargs
+        == [
+            ("pick_channels", {"ch_names": ["C4", "Cz"], "ordered": True}),
+            (
+                "filterbank",
+                {
+                    "frequency_bands": [(0, 4), (4, 8), (8, 13)],
+                    "drop_original_signals": False,
+                },
+            ),
         ]
+        for ds in base_concat_ds.datasets
     )
 
 
@@ -418,21 +406,19 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
         ["C4", "Cz", "C4_0-4", "Cz_0-4", "C4_4-8", "Cz_4-8", "C4_8-13", "Cz_8-13"],
     )
     assert all(
-        [
-            ds.raw_preproc_kwargs
-            == [
-                ("pick_channels", {"ch_names": ["C4", "Cz"], "ordered": True}),
-                (
-                    "filterbank",
-                    {
-                        "frequency_bands": [(0, 4), (4, 8), (8, 13)],
-                        "drop_original_signals": False,
-                        "order_by_frequency_band": True,
-                    },
-                ),
-            ]
-            for ds in base_concat_ds.datasets
+        ds.raw_preproc_kwargs
+        == [
+            ("pick_channels", {"ch_names": ["C4", "Cz"], "ordered": True}),
+            (
+                "filterbank",
+                {
+                    "frequency_bands": [(0, 4), (4, 8), (8, 13)],
+                    "drop_original_signals": False,
+                    "order_by_frequency_band": True,
+                },
+            ),
         ]
+        for ds in base_concat_ds.datasets
     )
 
 
@@ -442,7 +428,7 @@ def test_replace_inplace(base_concat_ds):
         base_concat_ds2.datasets[i].raw.crop(0, 10, include_tmax=False)
     _replace_inplace(base_concat_ds, base_concat_ds2)
 
-    assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
+    assert all(len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets)
 
 
 def test_set_raw_preproc_kwargs(base_concat_ds):
@@ -519,21 +505,18 @@ def test_preprocess_save_dir(
         concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs
     )
 
-    assert all([hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets])
+    assert all(hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets)
     assert all(
-        [
-            getattr(ds, preproc_kwargs_name) == preproc_kwargs
-            for ds in concat_ds.datasets
-        ]
+        getattr(ds, preproc_kwargs_name) == preproc_kwargs for ds in concat_ds.datasets
     )
-    assert all([len(ds.raw.times) == 25 for ds in concat_ds.datasets])
+    assert all(len(ds.raw.times) == 25 for ds in concat_ds.datasets)
     if kind == "raw":
-        assert all([hasattr(ds, "target_name") for ds in concat_ds.datasets])
+        assert all(hasattr(ds, "target_name") for ds in concat_ds.datasets)
 
     if save_dir is None:
-        assert all([ds.raw.preload for ds in concat_ds.datasets])
+        assert all(ds.raw.preload for ds in concat_ds.datasets)
     else:
-        assert all([not ds.raw.preload for ds in concat_ds.datasets])
+        assert all(not ds.raw.preload for ds in concat_ds.datasets)
         save_dirs = [
             os.path.join(save_dir, str(i)) for i in range(len(concat_ds.datasets))
         ]
@@ -556,7 +539,7 @@ def test_preprocess_overwrite(base_concat_ds, tmp_path, overwrite):
         preprocess(base_concat_ds, preprocessors, save_dir, overwrite=True)
         # Make sure the serialized data is preprocessed
         preproc_concat_ds = load_concat_dataset(save_dir, True)
-        assert all([len(ds.raw.times) == 2500 for ds in preproc_concat_ds.datasets])
+        assert all(len(ds.raw.times) == 2500 for ds in preproc_concat_ds.datasets)
     else:
         with pytest.raises(FileExistsError):
             preprocess(base_concat_ds, preprocessors, save_dir, overwrite=False)
