@@ -40,3 +40,4 @@ IFNet,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sfreq",9860
 PBT,General,Classification,250,"n_chans, n_outputs, n_times",818948,"PBT(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Large Brain Model"
 SSTDPN,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times",19502,"SSTDPN(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Small Attention"
 BENDR,General,"Classification,Embedding",250,"n_chans, n_times, n_outputs",157141049,"BENDR(n_chans=22, n_outputs=4, n_times=1000)","Large Brain Model,Convolution"
+LUNA,General,"Classification,Embedding",128,"n_chans, n_times, sfreq, chs_info",3456882,"LUNA(n_chans=62, n_times=512, sfreq=128, chs_info=Lee2019_MI().get_data(subjects=[1])[1]['0']['1train'].info[""chs""][:62])","Convolution,Channel,Large Brain Model"
