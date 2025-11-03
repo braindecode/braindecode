@@ -12,7 +12,6 @@ the LICENSE Of this file is APACHE-2.0.
 """
 
 import math
-from pathlib import Path
 from typing import Optional
 
 import mne
@@ -22,7 +21,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from rotary_embedding_torch import RotaryEmbedding
-from safetensors.torch import load_file
 from timm.models.layers import DropPath, Mlp
 from timm.models.layers import trunc_normal_ as __call_trunc_normal_
 
@@ -96,6 +94,8 @@ class LUNA(EEGModuleMixin, nn.Module):
         mlp_ratio: float = 4.0,
         norm_layer=nn.LayerNorm,
         drop_path: float = 0.0,
+        drop_prob_chan: float = 0.0,
+        attn_drop: float = 0.0,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -107,6 +107,16 @@ class LUNA(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        # Mapping for loading pretrained weights
+        self.mapping = {
+            "channel_location_embedder.0.fc1.weight": "channel_location_embedder.fc1.weight",
+            "channel_location_embedder.0.fc1.bias": "channel_location_embedder.fc1.bias",
+            "channel_location_embedder.0.fc2.weight": "channel_location_embedder.fc2.weight",
+            "channel_location_embedder.0.fc2.bias": "channel_location_embedder.fc2.bias",
+            "channel_location_embedder.0.norm.weight": "channel_location_embedder.norm.weight",
+            "channel_location_embedder.0.norm.bias": "channel_location_embedder.norm.bias",
+        }
+
         # Map braindecode parameters to LUNA parameters
         num_classes = self.n_outputs if self.n_outputs else 0
 
@@ -117,12 +127,16 @@ class LUNA(EEGModuleMixin, nn.Module):
         self.num_heads = num_heads
         self.num_classes = num_classes
         self.depth = depth
+        self.drop_path = drop_path
+        self.attn_drop = attn_drop
+        self.drop_prob_chan = drop_prob_chan
+        self.mlp_ratio = mlp_ratio
 
         self.patch_embed = PatchEmbedNetwork(
-            embed_dim=self.embed_dim, patch_size=patch_size
+            embed_dim=self.embed_dim, patch_size=self.patch_size
         )
         self.freq_embed = FrequencyFeatureEmbedder(
-            embed_dim=self.embed_dim, patch_size=patch_size
+            embed_dim=self.embed_dim, patch_size=self.patch_size
         )
         # For weight loading, we omit the normalization here to match parameter count
         self.channel_location_embedder = Mlp(
@@ -130,15 +144,15 @@ class LUNA(EEGModuleMixin, nn.Module):
             out_features=int(self.patch_embed_size),
             hidden_features=int(self.patch_embed_size * 2),
             act_layer=nn.GELU,
-            drop=0.0,
+            drop=self.drop_prob_chan,
         )
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
         self.cross_attn = CrossAttentionBlock(
-            num_queries=num_queries,
+            num_queries=self.num_queries,
             input_embed_dim=self.embed_dim,
             output_embed_dim=self.embed_dim,
             num_heads=self.num_heads,
-            ff_dim=int(mlp_ratio * self.embed_dim),
+            ff_dim=int(self.mlp_ratio * self.embed_dim),
             pre_norm=True,
         )
         self.blocks = nn.ModuleList(
@@ -146,11 +160,11 @@ class LUNA(EEGModuleMixin, nn.Module):
                 RotaryTransformerBlock(
                     dim=int(self.embed_dim * self.num_queries),
                     num_heads=int(self.num_heads * self.num_queries),
-                    mlp_ratio=mlp_ratio,
+                    mlp_ratio=self.mlp_ratio,
                     qkv_bias=True,
                     drop=0.0,
                     attn_drop=0.0,
-                    drop_path=drop_path,
+                    drop_path=self.drop_path,
                     norm_layer=norm_layer,
                 )
                 for i in range(depth)
@@ -160,16 +174,16 @@ class LUNA(EEGModuleMixin, nn.Module):
 
         if num_classes == 0:
             self.decoder_head = PatchReconstructionHeadWithQueries(
-                input_dim=patch_size,
+                input_dim=self.patch_size,
                 embed_dim=self.embed_dim,
                 num_heads=self.num_heads,
-                num_queries=num_queries,
+                num_queries=self.num_queries,
             )
             self.channel_emb = ChannelEmbeddings(self.embed_dim)
         else:
             self.classifier = ClassificationHeadWithQueries(
-                input_dim=patch_size,
-                num_queries=num_queries,
+                input_dim=self.patch_size,
+                num_queries=self.num_queries,
                 embed_dim=self.embed_dim,
                 num_classes=num_classes,
                 num_heads=self.num_heads,
@@ -273,116 +287,6 @@ class LUNA(EEGModuleMixin, nn.Module):
             channel_emb = channel_emb.repeat(num_patches, 1, 1)
             decoder_queries = channel_locations_emb + channel_emb
             return self.decoder_head(x_latent, decoder_queries)
-
-    @classmethod
-    def from_pretrained(
-        cls, variant="base", weights_path=None, n_outputs=None, **kwargs
-    ):
-        """Load a pretrained LUNA model.
-
-        Parameters
-        ----------
-        variant : str, optional
-            Model variant: 'base', 'large', or 'huge'. Default is 'base'.
-        weights_path : str, optional
-            Path to the weights file. If None, will look in default location:
-            'thesis/luna-weights/LUNA_{variant}.safetensors'
-        n_outputs : int, optional
-            Number of output classes for classification. If None, loads for
-            reconstruction (pretraining mode).
-        **kwargs : dict
-            Additional arguments passed to LUNA.__init__()
-
-        Returns
-        -------
-        model : LUNA
-            LUNA model with pretrained weights loaded.
-
-        Examples
-        --------
-        >>> # Load pretrained base model for classification
-        >>> model = LUNA.from_pretrained('base', n_outputs=4)
-        >>>
-        >>> # Load pretrained large model from custom path
-        >>> model = LUNA.from_pretrained('large',
-        ...                               weights_path='path/to/LUNA_large.safetensors',
-        ...                               n_outputs=2)
-        """
-
-        # Model configurations
-        configs = {
-            "base": dict(embed_dim=64, num_queries=4, depth=8, num_heads=2),
-            "large": dict(embed_dim=96, num_queries=6, depth=10, num_heads=2),
-            "huge": dict(embed_dim=128, num_queries=8, depth=24, num_heads=2),
-        }
-
-        if variant.lower() not in configs:
-            raise ValueError(
-                f"variant must be one of {list(configs.keys())}, got {variant}"
-            )
-
-        config = configs[variant.lower()]
-
-        # Update config with user-provided kwargs
-        # Remove num_classes from config if present (we use n_outputs)
-        for key in list(config.keys()):
-            if key in kwargs:
-                config[key] = kwargs.pop(key)
-
-        # Determine weights path
-        if weights_path is None:
-            weights_path = (
-                Path("thesis/luna-weights") / f"LUNA_{variant.lower()}.safetensors"
-            )
-        else:
-            weights_path = Path(weights_path)
-
-        if not weights_path.exists():
-            raise FileNotFoundError(
-                f"Weights file not found at {weights_path}. "
-                f"Please download weights from HuggingFace: ETH-MSRL/LUNA"
-            )
-
-        # Create model
-        if n_outputs is not None:
-            model = cls(n_outputs=n_outputs, patch_size=40, **config, **kwargs)
-        else:
-            # Pretraining mode - would need decoder_head
-            raise NotImplementedError(
-                "Reconstruction mode not yet implemented. "
-                "Please specify n_outputs for classification."
-            )
-
-        # Load pretrained weights
-        print(
-            f"Loading pretrained LUNA-{variant.upper()} weights from {weights_path}..."
-        )
-        pretrained = load_file(str(weights_path))
-
-        # Map channel_location_embedder keys (pretrained has Sequential wrapper)
-        key_mapping = {
-            "channel_location_embedder.0.fc1.weight": "channel_location_embedder.fc1.weight",
-            "channel_location_embedder.0.fc1.bias": "channel_location_embedder.fc1.bias",
-            "channel_location_embedder.0.fc2.weight": "channel_location_embedder.fc2.weight",
-            "channel_location_embedder.0.fc2.bias": "channel_location_embedder.fc2.bias",
-            "channel_location_embedder.0.norm.weight": "channel_location_embedder.norm.weight",
-            "channel_location_embedder.0.norm.bias": "channel_location_embedder.norm.bias",
-        }
-
-        mapped_pretrained = {}
-        for k, v in pretrained.items():
-            mapped_pretrained[key_mapping.get(k, k)] = v
-
-        # Load weights (strict=False because classifier head is randomly initialized)
-        result = model.load_state_dict(mapped_pretrained, strict=False)
-
-        print(f"✅ Loaded {len(pretrained) - len(result.unexpected_keys)} weights")
-        if result.missing_keys:
-            print(
-                f"⚠️  {len(result.missing_keys)} keys not found in pretrained (using random init)"
-            )
-
-        return model
 
 
 def trunc_normal_(tensor, mean=0.0, std=1.0):
