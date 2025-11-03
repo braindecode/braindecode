@@ -197,13 +197,13 @@ def test_new_filterbank(base_concat_ds):
                 "fn_str": True,
             },
             {
-                "fn": "filterbank",
+                "fn": "braindecode.preprocessing.preprocess.filterbank",
                 "kwargs": {
                     "frequency_bands": [(0, 4), (4, 8), (8, 13)],
                     "drop_original_signals": False,
                 },
                 "apply_on_array": False,
-                "fn_str": True,
+                "fn_str": False,
             },
         ]
         for ds in base_concat_ds.datasets
@@ -359,14 +359,14 @@ def test_new_filterbank_order_channels_by_freq(base_concat_ds):
                 "fn_str": True,
             },
             {
-                "fn": "filterbank",
+                "fn": "braindecode.preprocessing.preprocess.filterbank",
                 "kwargs": {
                     "frequency_bands": [(0, 4), (4, 8), (8, 13)],
                     "drop_original_signals": False,
                     "order_by_frequency_band": True,
                 },
                 "apply_on_array": False,
-                "fn_str": True,
+                "fn_str": False,
             },
         ]
         for ds in base_concat_ds.datasets
