@@ -30,7 +30,7 @@ from .base import EEGModuleMixin
 class LUNA(EEGModuleMixin, nn.Module):
     """LUNA from Döner et al. [LUNA]_.
 
-    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model`
+    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model` :bdg-dark-line:`Channel`
 
     .. figure:: https://arxiv.org/html/2510.22257v1/x1.png
         :align: center
@@ -96,6 +96,7 @@ class LUNA(EEGModuleMixin, nn.Module):
         drop_path: float = 0.0,
         drop_prob_chan: float = 0.0,
         attn_drop: float = 0.0,
+        activation=nn.GELU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -131,6 +132,7 @@ class LUNA(EEGModuleMixin, nn.Module):
         self.attn_drop = attn_drop
         self.drop_prob_chan = drop_prob_chan
         self.mlp_ratio = mlp_ratio
+        self.activation = activation
 
         self.patch_embed = PatchEmbedNetwork(
             embed_dim=self.embed_dim, patch_size=self.patch_size
@@ -143,7 +145,7 @@ class LUNA(EEGModuleMixin, nn.Module):
             in_features=int(self.patch_embed_size),
             out_features=int(self.patch_embed_size),
             hidden_features=int(self.patch_embed_size * 2),
-            act_layer=nn.GELU,
+            act_layer=self.activation,
             drop=self.drop_prob_chan,
         )
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
@@ -181,7 +183,7 @@ class LUNA(EEGModuleMixin, nn.Module):
             )
             self.channel_emb = ChannelEmbeddings(self.embed_dim)
         else:
-            self.classifier = ClassificationHeadWithQueries(
+            self.final_layer = ClassificationHeadWithQueries(
                 input_dim=self.patch_size,
                 num_queries=self.num_queries,
                 embed_dim=self.embed_dim,
@@ -281,7 +283,7 @@ class LUNA(EEGModuleMixin, nn.Module):
         x_latent = self.norm(x)
 
         if self.num_classes > 0:
-            return self.classifier(x_latent)
+            return self.final_layer(x_latent)
         else:
             channel_emb = self.channel_emb(channel_names)
             channel_emb = channel_emb.repeat(num_patches, 1, 1)
