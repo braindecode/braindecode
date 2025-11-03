@@ -45,6 +45,7 @@ def _generate_mne_pre_processor(function):
         "__init__": _generate_init_method(function),
         "__doc__": _update_moabb_docstring(function, doc),
         "fn": function.__name__,
+        "apply_on_array": False,
     }
     generated_class = type(class_name, base_classes, class_attrs)
 

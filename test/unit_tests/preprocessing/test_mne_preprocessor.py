@@ -87,7 +87,12 @@ def test_preprocess_raw_kwargs(base_concat_ds):
         [
             ds.raw_preproc_kwargs
             == [
-                ("crop", {"tmax": 10, "include_tmax": False}),
+                {
+                    "fn": "crop",
+                    "kwargs": {"tmax": 10, "include_tmax": False},
+                    "apply_on_array": False,
+                    "fn_str": True,
+                },
             ]
             for ds in base_concat_ds.datasets
         ]
@@ -105,7 +110,12 @@ def test_preprocess_windows_kwargs(windows_concat_ds):
         [
             ds.raw_preproc_kwargs
             == [
-                ("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False}),
+                {
+                    "fn": "crop",
+                    "kwargs": {"tmin": 0, "tmax": 0.1, "include_tmax": False},
+                    "apply_on_array": False,
+                    "fn_str": True,
+                },
             ]
             for ds in windows_concat_ds.datasets
         ]
@@ -185,14 +195,21 @@ def test_new_filterbank(base_concat_ds):
         [
             ds.raw_preproc_kwargs
             == [
-                ("pick", {"picks": ["C4", "Cz"]}),
-                (
-                    "filterbank",
-                    {
+                {
+                    "fn": "pick",
+                    "kwargs": {"picks": ["C4", "Cz"]},
+                    "apply_on_array": False,
+                    "fn_str": True,
+                },
+                {
+                    "fn": "filterbank",
+                    "kwargs": {
                         "frequency_bands": [(0, 4), (4, 8), (8, 13)],
                         "drop_original_signals": False,
                     },
-                ),
+                    "apply_on_array": False,
+                    "fn_str": True,
+                },
             ]
             for ds in base_concat_ds.datasets
         ]
@@ -209,7 +226,14 @@ def test_replace_inplace(base_concat_ds):
 
 
 def test_set_raw_preproc_kwargs(base_concat_ds):
-    raw_preproc_kwargs = [("crop", {"tmax": 10, "include_tmax": False})]
+    raw_preproc_kwargs = [
+        {
+            "fn": "crop",
+            "kwargs": {"tmax": 10, "include_tmax": False},
+            "apply_on_array": False,
+            "fn_str": True,
+        }
+    ]
     preprocessors = [Crop(tmax=10, include_tmax=False)]
     ds = base_concat_ds.datasets[0]
     _set_preproc_kwargs(ds, preprocessors)
@@ -219,7 +243,14 @@ def test_set_raw_preproc_kwargs(base_concat_ds):
 
 
 def test_set_window_preproc_kwargs(windows_concat_ds):
-    window_preproc_kwargs = [("crop", {"tmax": 10, "include_tmax": False})]
+    window_preproc_kwargs = [
+        {
+            "fn": "crop",
+            "kwargs": {"tmax": 10, "include_tmax": False},
+            "apply_on_array": False,
+            "fn_str": True,
+        }
+    ]
     preprocessors = [Crop(tmax=10, include_tmax=False)]
     ds = windows_concat_ds.datasets[0]
     _set_preproc_kwargs(ds, preprocessors)
@@ -245,7 +276,14 @@ def test_set_preproc_kwargs_wrong_type(base_concat_ds):
 def test_preprocess_save_dir(
     base_concat_ds, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
 ):
-    preproc_kwargs = [("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False})]
+    preproc_kwargs = [
+        {
+            "fn": "crop",
+            "kwargs": {"tmin": 0, "tmax": 0.1, "include_tmax": False},
+            "apply_on_array": False,
+            "fn_str": True,
+        }
+    ]
     preprocessors = [Crop(tmin=0, tmax=0.1, include_tmax=False)]
 
     save_dir = str(tmp_path) if save else None
@@ -264,7 +302,10 @@ def test_preprocess_save_dir(
 
     assert all([hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets])
     assert all(
-        [getattr(ds, preproc_kwargs_name) == preproc_kwargs for ds in concat_ds.datasets]
+        [
+            getattr(ds, preproc_kwargs_name) == preproc_kwargs
+            for ds in concat_ds.datasets
+        ]
     )
     assert all([len(ds.raw.times) == 25 for ds in concat_ds.datasets])
     if kind == "raw":
@@ -321,15 +362,22 @@ def test_new_filterbank_order_channels_by_freq(base_concat_ds):
         [
             ds.raw_preproc_kwargs
             == [
-                ("pick", {"picks": ["C4", "Cz"]}),
-                (
-                    "filterbank",
-                    {
+                {
+                    "fn": "pick",
+                    "kwargs": {"picks": ["C4", "Cz"]},
+                    "apply_on_array": False,
+                    "fn_str": True,
+                },
+                {
+                    "fn": "filterbank",
+                    "kwargs": {
                         "frequency_bands": [(0, 4), (4, 8), (8, 13)],
                         "drop_original_signals": False,
                         "order_by_frequency_band": True,
                     },
-                ),
+                    "apply_on_array": False,
+                    "fn_str": True,
+                },
             ]
             for ds in base_concat_ds.datasets
         ]
