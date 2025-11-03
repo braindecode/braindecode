@@ -1,20 +1,18 @@
-"""LUNA (Latent Unified Network Architecture) model.
+"""This implementation is adapted from ETH Zurich's BioFoundation repository.
 
-This implementation is adapted from ETH Zurich's BioFoundation repository.
-
-Reference:
-    Döner, B., Ingolfsson, T. M., Benini, L., & Magimai-Doss, M. (2024).
-    LUNA: A Model-Based Universal Analysis Framework for Large-Scale
-    EEG Data. arXiv preprint arXiv:2510.22257.
-
-The model architecture is preserved exactly as in the original implementation
-to enable loading of pre-trained weights from HuggingFace Hub.
+Döner, B., Ingolfsson, T. M., Benini, L., & Li, Y. (2025).
+LUNA: Efficient and Topology-Agnostic Foundation Model for EEG Signal Analysis.
+The Thirty-Ninth Annual Conference on Neural Information Processing Systems.
+Retrieved from https://openreview.net/forum?id=uazfjnFL0G
 
 Original Authors: Berkay Döner, Thorir Mar Ingolfsson
 Braindecode Adaptation: Bruno Aristimunha
+
+the LICENSE Of this file is APACHE-2.0.
 """
 
 import math
+from pathlib import Path
 from typing import Optional
 
 import mne
@@ -24,10 +22,367 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from rotary_embedding_torch import RotaryEmbedding
+from safetensors.torch import load_file
 from timm.models.layers import DropPath, Mlp
 from timm.models.layers import trunc_normal_ as __call_trunc_normal_
 
 from .base import EEGModuleMixin
+
+
+class LUNA(EEGModuleMixin, nn.Module):
+    """LUNA from Döner et al. [LUNA]_.
+
+    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model`
+
+    .. figure:: https://arxiv.org/html/2510.22257v1/x1.png
+        :align: center
+        :alt: LUNA Architecture.
+
+    LUNA is a topology-invariant EEG model that processes signals from varying
+    numbers of channels using a channel-unification mechanism with learned queries.
+
+    The architecture consists of:
+    1. Patch Feature Extraction (temporal CNN + FFT-based features)
+    2. Channel-Unification Module (cross-attention with learned queries)
+    3. Patch-wise Temporal Encoder (RoPE-based transformer)
+    4. Decoder Heads (classification or reconstruction)
+
+    Parameters
+    ----------
+    patch_size : int
+        Number of time samples per patch. Default: 40.
+    num_queries : int
+        Number of learned queries for channel unification.
+        Paper uses: 4 (Base), 6 (Large), 8 (Huge). Default: 4.
+    embed_dim : int
+        Embedding dimension for patch features.
+        Paper uses: 64 (Base), 96 (Large), 128 (Huge). Default: 64.
+    depth : int
+        Number of transformer encoder blocks.
+        Paper uses: 8 (Base), 10 (Large), 24 (Huge). Default: 8.
+    num_heads : int
+        Number of attention heads in channel unification.
+        Default: 2.
+    mlp_ratio : float
+        Ratio of MLP hidden dimension to embedding dimension. Default: 4.0.
+    norm_layer : nn.Module
+        Normalization layer class. Default: nn.LayerNorm.
+    drop_path : float
+        Stochastic depth rate. Default: 0.0.
+
+    References
+    ----------
+    .. [LUNA] Döner, B., Ingolfsson, T. M., Benini, L., & Li, Y. (2025).
+        LUNA: Efficient and Topology-Agnostic Foundation Model for EEG Signal Analysis.
+        The Thirty-Ninth Annual Conference on Neural Information Processing Systems.
+        Retrieved from https://openreview.net/forum?id=uazfjnFL0G
+    """
+
+    def __init__(
+        self,
+        # Braindecode EEGModuleMixin parameters
+        n_outputs: Optional[int] = None,
+        n_chans: Optional[int] = None,
+        n_times: Optional[int] = None,
+        sfreq: Optional[float] = None,
+        chs_info=None,
+        input_window_seconds=None,
+        # Model-specific parameters
+        patch_size: int = 40,
+        num_queries: int = 4,
+        embed_dim: int = 64,
+        depth: int = 8,
+        num_heads: int = 2,
+        mlp_ratio: float = 4.0,
+        norm_layer=nn.LayerNorm,
+        drop_path: float = 0.0,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            n_times=n_times,
+            sfreq=sfreq,
+            chs_info=chs_info,
+            input_window_seconds=input_window_seconds,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        # Map braindecode parameters to LUNA parameters
+        num_classes = self.n_outputs if self.n_outputs else 0
+
+        self.embed_dim = embed_dim
+        self.num_queries = num_queries
+        self.patch_size = patch_size
+        self.patch_embed_size = embed_dim
+        self.num_heads = num_heads
+        self.num_classes = num_classes
+        self.depth = depth
+
+        self.patch_embed = PatchEmbedNetwork(
+            embed_dim=self.embed_dim, patch_size=patch_size
+        )
+        self.freq_embed = FrequencyFeatureEmbedder(
+            embed_dim=self.embed_dim, patch_size=patch_size
+        )
+        # For weight loading, we omit the normalization here to match parameter count
+        self.channel_location_embedder = Mlp(
+            in_features=int(self.patch_embed_size),
+            out_features=int(self.patch_embed_size),
+            hidden_features=int(self.patch_embed_size * 2),
+            act_layer=nn.GELU,
+            drop=0.0,
+        )
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
+        self.cross_attn = CrossAttentionBlock(
+            num_queries=num_queries,
+            input_embed_dim=self.embed_dim,
+            output_embed_dim=self.embed_dim,
+            num_heads=self.num_heads,
+            ff_dim=int(mlp_ratio * self.embed_dim),
+            pre_norm=True,
+        )
+        self.blocks = nn.ModuleList(
+            [
+                RotaryTransformerBlock(
+                    dim=int(self.embed_dim * self.num_queries),
+                    num_heads=int(self.num_heads * self.num_queries),
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=True,
+                    drop=0.0,
+                    attn_drop=0.0,
+                    drop_path=drop_path,
+                    norm_layer=norm_layer,
+                )
+                for i in range(depth)
+            ]
+        )
+        self.norm = norm_layer(int(self.embed_dim * self.num_queries))
+
+        if num_classes == 0:
+            self.decoder_head = PatchReconstructionHeadWithQueries(
+                input_dim=patch_size,
+                embed_dim=self.embed_dim,
+                num_heads=self.num_heads,
+                num_queries=num_queries,
+            )
+            self.channel_emb = ChannelEmbeddings(self.embed_dim)
+        else:
+            self.classifier = ClassificationHeadWithQueries(
+                input_dim=patch_size,
+                num_queries=num_queries,
+                embed_dim=self.embed_dim,
+                num_classes=num_classes,
+                num_heads=self.num_heads,
+            )
+            self.mask_token.requires_grad = (
+                False  # no use of mask token for classification
+            )
+
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        self.cross_attn.initialize_weights()
+        trunc_normal_(self.mask_token, std=0.02)
+        self.apply(self._init_weights)
+        self.fix_init_weight()
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            torch.nn.init.xavier_normal_(m.weight)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
+    def fix_init_weight(self):
+        def rescale(param, layer_id):
+            param.div_(math.sqrt(2.0 * layer_id))
+
+        for layer_id, layer in enumerate(self.blocks):
+            rescale(layer.attn.proj.weight.data, layer_id + 1)
+            rescale(layer.mlp.fc2.weight.data, layer_id + 1)
+
+    def prepare_tokens(self, x_signal, channel_locations, mask=None):
+        num_channels = channel_locations.shape[1]
+        num_patches_per_channel = x_signal.shape[-1] // self.patch_size
+        x_patched = self.patch_embed(x_signal)
+        freq_embed = self.freq_embed(x_signal)
+        x_patched = x_patched + freq_embed
+        x_masked = x_patched.clone()  # (B, N, D), N = C * num_patches_per_channel
+
+        if mask is not None:
+            mask_tokens = self.mask_token.repeat(
+                x_masked.shape[0], x_masked.shape[1], 1
+            )  # (B, N, D) N = C * num_patches_per_channel
+            mask = rearrange(
+                mask, "B C (S P) -> B (C S) P", P=self.patch_size
+            )  # (B, C, T) -> (B, N, P)
+            mask = (
+                (mask.sum(dim=-1) > 0).unsqueeze(-1).float()
+            )  # (B, N, 1), since a patch is either fully masked or not
+            x_masked = torch.where(mask.bool(), mask_tokens, x_masked)
+
+        channel_min = torch.min(channel_locations, dim=1, keepdim=True)[0]
+        channel_max = torch.max(channel_locations, dim=1, keepdim=True)[0]
+        channel_locations = (channel_locations - channel_min) / (
+            channel_max - channel_min + 1e-8
+        )
+
+        if mask is not None:
+            channel_locations = (
+                channel_locations + torch.randn_like(channel_locations) * 0.02
+            )
+
+        channel_locations = nerf_positional_encoding(
+            channel_locations, self.patch_embed_size
+        )
+        channel_locations_emb = self.channel_location_embedder(channel_locations)
+
+        x_tokenized = rearrange(x_masked, "B (C t) D -> (B t) C D", C=num_channels)
+        channel_locations_emb = channel_locations_emb.repeat(
+            num_patches_per_channel, 1, 1
+        )
+        x_tokenized = x_tokenized + channel_locations_emb
+
+        return x_tokenized, channel_locations_emb
+
+    def forward(self, X, mask=None, channel_locations=None, channel_names=None):
+        """Forward pass."""
+        x_signal = X
+        B, C, _ = x_signal.shape
+
+        if channel_locations is None:
+            channel_locations = torch.randn(B, C, 3, device=x_signal.device)
+
+        x, channel_locations_emb = self.prepare_tokens(
+            x_signal, channel_locations, mask=mask
+        )
+        x, attention_scores = self.cross_attn(x)
+        x = rearrange(x, "(B t) Q D -> B t (Q D)", B=B)
+        num_patches = x.shape[1]
+
+        for blk in self.blocks:
+            x = blk(x)
+        x_latent = self.norm(x)
+
+        if self.num_classes > 0:
+            return self.classifier(x_latent)
+        else:
+            channel_emb = self.channel_emb(channel_names)
+            channel_emb = channel_emb.repeat(num_patches, 1, 1)
+            decoder_queries = channel_locations_emb + channel_emb
+            return self.decoder_head(x_latent, decoder_queries)
+
+    @classmethod
+    def from_pretrained(
+        cls, variant="base", weights_path=None, n_outputs=None, **kwargs
+    ):
+        """Load a pretrained LUNA model.
+
+        Parameters
+        ----------
+        variant : str, optional
+            Model variant: 'base', 'large', or 'huge'. Default is 'base'.
+        weights_path : str, optional
+            Path to the weights file. If None, will look in default location:
+            'thesis/luna-weights/LUNA_{variant}.safetensors'
+        n_outputs : int, optional
+            Number of output classes for classification. If None, loads for
+            reconstruction (pretraining mode).
+        **kwargs : dict
+            Additional arguments passed to LUNA.__init__()
+
+        Returns
+        -------
+        model : LUNA
+            LUNA model with pretrained weights loaded.
+
+        Examples
+        --------
+        >>> # Load pretrained base model for classification
+        >>> model = LUNA.from_pretrained('base', n_outputs=4)
+        >>>
+        >>> # Load pretrained large model from custom path
+        >>> model = LUNA.from_pretrained('large',
+        ...                               weights_path='path/to/LUNA_large.safetensors',
+        ...                               n_outputs=2)
+        """
+
+        # Model configurations
+        configs = {
+            "base": dict(embed_dim=64, num_queries=4, depth=8, num_heads=2),
+            "large": dict(embed_dim=96, num_queries=6, depth=10, num_heads=2),
+            "huge": dict(embed_dim=128, num_queries=8, depth=24, num_heads=2),
+        }
+
+        if variant.lower() not in configs:
+            raise ValueError(
+                f"variant must be one of {list(configs.keys())}, got {variant}"
+            )
+
+        config = configs[variant.lower()]
+
+        # Update config with user-provided kwargs
+        # Remove num_classes from config if present (we use n_outputs)
+        for key in list(config.keys()):
+            if key in kwargs:
+                config[key] = kwargs.pop(key)
+
+        # Determine weights path
+        if weights_path is None:
+            weights_path = (
+                Path("thesis/luna-weights") / f"LUNA_{variant.lower()}.safetensors"
+            )
+        else:
+            weights_path = Path(weights_path)
+
+        if not weights_path.exists():
+            raise FileNotFoundError(
+                f"Weights file not found at {weights_path}. "
+                f"Please download weights from HuggingFace: ETH-MSRL/LUNA"
+            )
+
+        # Create model
+        if n_outputs is not None:
+            model = cls(n_outputs=n_outputs, patch_size=40, **config, **kwargs)
+        else:
+            # Pretraining mode - would need decoder_head
+            raise NotImplementedError(
+                "Reconstruction mode not yet implemented. "
+                "Please specify n_outputs for classification."
+            )
+
+        # Load pretrained weights
+        print(
+            f"Loading pretrained LUNA-{variant.upper()} weights from {weights_path}..."
+        )
+        pretrained = load_file(str(weights_path))
+
+        # Map channel_location_embedder keys (pretrained has Sequential wrapper)
+        key_mapping = {
+            "channel_location_embedder.0.fc1.weight": "channel_location_embedder.fc1.weight",
+            "channel_location_embedder.0.fc1.bias": "channel_location_embedder.fc1.bias",
+            "channel_location_embedder.0.fc2.weight": "channel_location_embedder.fc2.weight",
+            "channel_location_embedder.0.fc2.bias": "channel_location_embedder.fc2.bias",
+            "channel_location_embedder.0.norm.weight": "channel_location_embedder.norm.weight",
+            "channel_location_embedder.0.norm.bias": "channel_location_embedder.norm.bias",
+        }
+
+        mapped_pretrained = {}
+        for k, v in pretrained.items():
+            mapped_pretrained[key_mapping.get(k, k)] = v
+
+        # Load weights (strict=False because classifier head is randomly initialized)
+        result = model.load_state_dict(mapped_pretrained, strict=False)
+
+        print(f"✅ Loaded {len(pretrained) - len(result.unexpected_keys)} weights")
+        if result.missing_keys:
+            print(
+                f"⚠️  {len(result.missing_keys)} keys not found in pretrained (using random init)"
+            )
+
+        return model
 
 
 def trunc_normal_(tensor, mean=0.0, std=1.0):
@@ -298,7 +653,6 @@ class RotarySelfAttentionBlock(nn.Module):
         qk_scale=None,
         attn_drop=0.0,
         proj_drop=0.0,
-        **kwargs,
     ):
         super().__init__()
         self.dim = dim
@@ -626,361 +980,3 @@ class PatchEmbedNetwork(nn.Module):
         x = self.proj_in(x)
         x = rearrange(x, "B E CS D -> B CS (D E)")
         return x
-
-
-class LUNA(EEGModuleMixin, nn.Module):
-    """LUNA (Latent Unified Network Architecture) model.
-
-    LUNA is a topology-invariant EEG model that processes signals from varying
-    numbers of channels using a channel-unification mechanism with learned queries.
-
-    The architecture consists of:
-    1. Patch Feature Extraction (temporal CNN + FFT-based features)
-    2. Channel-Unification Module (cross-attention with learned queries)
-    3. Patch-wise Temporal Encoder (RoPE-based transformer)
-    4. Decoder Heads (classification or reconstruction)
-
-    Parameters
-    ----------
-    n_outputs : int, optional
-        Number of output classes. If 0, model operates in reconstruction mode.
-        Default: 0 (reconstruction mode).
-    n_chans : int, optional
-        Number of EEG channels. Not used for parameter initialization but
-        kept for braindecode compatibility. Default: None.
-    n_times : int, optional
-        Number of time samples. Not used for parameter initialization but
-        kept for braindecode compatibility. Default: None.
-    sfreq : float, optional
-        Sampling frequency in Hz. Not used for parameter initialization but
-        kept for braindecode compatibility. Default: None.
-    patch_size : int
-        Number of time samples per patch. Default: 40.
-    num_queries : int
-        Number of learned queries for channel unification.
-        Paper uses: 4 (Base), 6 (Large), 8 (Huge). Default: 4.
-    embed_dim : int
-        Embedding dimension for patch features.
-        Paper uses: 64 (Base), 96 (Large), 128 (Huge). Default: 64.
-    depth : int
-        Number of transformer encoder blocks.
-        Paper uses: 8 (Base), 10 (Large), 24 (Huge). Default: 8.
-    num_heads : int
-        Number of attention heads in channel unification.
-        Default: 2.
-    mlp_ratio : float
-        Ratio of MLP hidden dimension to embedding dimension. Default: 4.0.
-    norm_layer : nn.Module
-        Normalization layer class. Default: nn.LayerNorm.
-    drop_path : float
-        Stochastic depth rate. Default: 0.0.
-
-    References
-    ----------
-    .. [LUNA] Döner, B., Ingolfsson, T. M., Benini, L., & Magimai-Doss, M. (2024).
-       LUNA: A Model-Based Universal Analysis Framework for Large-Scale EEG Data.
-       arXiv preprint arXiv:2510.22257.
-    """
-
-    def __init__(
-        self,
-        n_outputs: Optional[int] = 0,
-        n_chans: Optional[int] = None,
-        n_times: Optional[int] = None,
-        sfreq: Optional[float] = None,
-        patch_size: int = 40,
-        num_queries: int = 4,
-        embed_dim: int = 64,
-        depth: int = 8,
-        num_heads: int = 2,
-        mlp_ratio: float = 4.0,
-        norm_layer=nn.LayerNorm,
-        drop_path: float = 0.0,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            n_times=n_times,
-            sfreq=sfreq,
-        )
-
-        # Map braindecode parameters to LUNA parameters
-        num_classes = n_outputs if n_outputs else 0
-
-        self.embed_dim = embed_dim
-        self.num_queries = num_queries
-        self.patch_size = patch_size
-        self.patch_embed_size = embed_dim
-        self.num_heads = num_heads
-        self.num_classes = num_classes
-        self.depth = depth
-
-        self.patch_embed = PatchEmbedNetwork(
-            embed_dim=self.embed_dim, patch_size=patch_size
-        )
-        self.freq_embed = FrequencyFeatureEmbedder(
-            embed_dim=self.embed_dim, patch_size=patch_size
-        )
-        # Note: Original uses Mlp(..., norm_layer=nn.LayerNorm) but timm 0.4.12 doesn't support it
-        # For weight loading, we omit the normalization here to match parameter count
-        self.channel_location_embedder = Mlp(
-            in_features=int(self.patch_embed_size),
-            out_features=int(self.patch_embed_size),
-            hidden_features=int(self.patch_embed_size * 2),
-            act_layer=nn.GELU,
-            drop=0.0,
-        )
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
-        self.cross_attn = CrossAttentionBlock(
-            num_queries=num_queries,
-            input_embed_dim=self.embed_dim,
-            output_embed_dim=self.embed_dim,
-            num_heads=self.num_heads,
-            ff_dim=int(mlp_ratio * self.embed_dim),
-            pre_norm=True,
-        )
-        self.blocks = nn.ModuleList(
-            [
-                RotaryTransformerBlock(
-                    dim=int(self.embed_dim * self.num_queries),
-                    num_heads=int(self.num_heads * self.num_queries),
-                    mlp_ratio=mlp_ratio,
-                    qkv_bias=True,
-                    drop=0.0,
-                    attn_drop=0.0,
-                    drop_path=drop_path,
-                    norm_layer=norm_layer,
-                )
-                for i in range(depth)
-            ]
-        )
-        self.norm = norm_layer(int(self.embed_dim * self.num_queries))
-
-        if num_classes == 0:  # reconstruction (pre-training)
-            self.decoder_head = PatchReconstructionHeadWithQueries(
-                input_dim=patch_size,
-                embed_dim=self.embed_dim,
-                num_heads=self.num_heads,
-                num_queries=num_queries,
-            )
-            self.channel_emb = ChannelEmbeddings(self.embed_dim)
-        else:  # classification
-            self.classifier = ClassificationHeadWithQueries(
-                input_dim=patch_size,
-                num_queries=num_queries,
-                embed_dim=self.embed_dim,
-                num_classes=num_classes,
-                num_heads=self.num_heads,
-            )
-            self.mask_token.requires_grad = (
-                False  # no use of mask token for classification
-            )
-
-        self.initialize_weights()
-
-    def initialize_weights(self):
-        self.cross_attn.initialize_weights()
-        trunc_normal_(self.mask_token, std=0.02)
-        self.apply(self._init_weights)
-        self.fix_init_weight()
-
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            torch.nn.init.xavier_normal_(m.weight)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-
-    def fix_init_weight(self):
-        def rescale(param, layer_id):
-            param.div_(math.sqrt(2.0 * layer_id))
-
-        for layer_id, layer in enumerate(self.blocks):
-            rescale(layer.attn.proj.weight.data, layer_id + 1)
-            rescale(layer.mlp.fc2.weight.data, layer_id + 1)
-
-    def prepare_tokens(self, x_signal, channel_locations, mask=None):
-        num_channels = channel_locations.shape[1]
-        num_patches_per_channel = x_signal.shape[-1] // self.patch_size
-        x_patched = self.patch_embed(x_signal)
-        freq_embed = self.freq_embed(x_signal)
-        x_patched = x_patched + freq_embed
-        x_masked = x_patched.clone()  # (B, N, D), N = C * num_patches_per_channel
-
-        if mask is not None:
-            mask_tokens = self.mask_token.repeat(
-                x_masked.shape[0], x_masked.shape[1], 1
-            )  # (B, N, D) N = C * num_patches_per_channel
-            mask = rearrange(
-                mask, "B C (S P) -> B (C S) P", P=self.patch_size
-            )  # (B, C, T) -> (B, N, P)
-            mask = (
-                (mask.sum(dim=-1) > 0).unsqueeze(-1).float()
-            )  # (B, N, 1), since a patch is either fully masked or not
-            x_masked = torch.where(mask.bool(), mask_tokens, x_masked)
-
-        channel_min = torch.min(channel_locations, dim=1, keepdim=True)[0]
-        channel_max = torch.max(channel_locations, dim=1, keepdim=True)[0]
-        channel_locations = (channel_locations - channel_min) / (
-            channel_max - channel_min + 1e-8
-        )
-
-        if mask is not None:
-            channel_locations = (
-                channel_locations + torch.randn_like(channel_locations) * 0.02
-            )
-
-        channel_locations = nerf_positional_encoding(
-            channel_locations, self.patch_embed_size
-        )
-        channel_locations_emb = self.channel_location_embedder(channel_locations)
-
-        x_tokenized = rearrange(x_masked, "B (C t) D -> (B t) C D", C=num_channels)
-        channel_locations_emb = channel_locations_emb.repeat(
-            num_patches_per_channel, 1, 1
-        )
-        x_tokenized = x_tokenized + channel_locations_emb
-
-        return x_tokenized, channel_locations_emb
-
-    def forward(self, X, mask=None, channel_locations=None, channel_names=None):
-        """Forward pass."""
-        x_signal = X
-        B, C, T = x_signal.shape
-
-        if channel_locations is None:
-            channel_locations = torch.randn(B, C, 3, device=x_signal.device)
-
-        x, channel_locations_emb = self.prepare_tokens(
-            x_signal, channel_locations, mask=mask
-        )
-        x, attention_scores = self.cross_attn(x)
-        x = rearrange(x, "(B t) Q D -> B t (Q D)", B=B)
-        num_patches = x.shape[1]
-
-        for blk in self.blocks:
-            x = blk(x)
-        x_latent = self.norm(x)
-
-        if self.num_classes > 0:
-            return self.classifier(x_latent)
-        else:
-            channel_emb = self.channel_emb(channel_names)
-            channel_emb = channel_emb.repeat(num_patches, 1, 1)
-            decoder_queries = channel_locations_emb + channel_emb
-            return self.decoder_head(x_latent, decoder_queries)
-
-    @classmethod
-    def from_pretrained(
-        cls, variant="base", weights_path=None, n_outputs=None, **kwargs
-    ):
-        """Load a pretrained LUNA model.
-
-        Parameters
-        ----------
-        variant : str, optional
-            Model variant: 'base', 'large', or 'huge'. Default is 'base'.
-        weights_path : str, optional
-            Path to the weights file. If None, will look in default location:
-            'thesis/luna-weights/LUNA_{variant}.safetensors'
-        n_outputs : int, optional
-            Number of output classes for classification. If None, loads for
-            reconstruction (pretraining mode).
-        **kwargs : dict
-            Additional arguments passed to LUNA.__init__()
-
-        Returns
-        -------
-        model : LUNA
-            LUNA model with pretrained weights loaded.
-
-        Examples
-        --------
-        >>> # Load pretrained base model for classification
-        >>> model = LUNA.from_pretrained('base', n_outputs=4)
-        >>>
-        >>> # Load pretrained large model from custom path
-        >>> model = LUNA.from_pretrained('large',
-        ...                               weights_path='path/to/LUNA_large.safetensors',
-        ...                               n_outputs=2)
-        """
-        from pathlib import Path
-
-        from safetensors.torch import load_file
-
-        # Model configurations
-        configs = {
-            "base": dict(embed_dim=64, num_queries=4, depth=8, num_heads=2),
-            "large": dict(embed_dim=96, num_queries=6, depth=10, num_heads=2),
-            "huge": dict(embed_dim=128, num_queries=8, depth=24, num_heads=2),
-        }
-
-        if variant.lower() not in configs:
-            raise ValueError(
-                f"variant must be one of {list(configs.keys())}, got {variant}"
-            )
-
-        config = configs[variant.lower()]
-
-        # Update config with user-provided kwargs
-        # Remove num_classes from config if present (we use n_outputs)
-        for key in list(config.keys()):
-            if key in kwargs:
-                config[key] = kwargs.pop(key)
-
-        # Determine weights path
-        if weights_path is None:
-            weights_path = (
-                Path("thesis/luna-weights") / f"LUNA_{variant.lower()}.safetensors"
-            )
-        else:
-            weights_path = Path(weights_path)
-
-        if not weights_path.exists():
-            raise FileNotFoundError(
-                f"Weights file not found at {weights_path}. "
-                f"Please download weights from HuggingFace: ETH-MSRL/LUNA"
-            )
-
-        # Create model
-        if n_outputs is not None:
-            model = cls(n_outputs=n_outputs, patch_size=40, **config, **kwargs)
-        else:
-            # Pretraining mode - would need decoder_head
-            raise NotImplementedError(
-                "Reconstruction mode not yet implemented. "
-                "Please specify n_outputs for classification."
-            )
-
-        # Load pretrained weights
-        print(
-            f"Loading pretrained LUNA-{variant.upper()} weights from {weights_path}..."
-        )
-        pretrained = load_file(str(weights_path))
-
-        # Map channel_location_embedder keys (pretrained has Sequential wrapper)
-        key_mapping = {
-            "channel_location_embedder.0.fc1.weight": "channel_location_embedder.fc1.weight",
-            "channel_location_embedder.0.fc1.bias": "channel_location_embedder.fc1.bias",
-            "channel_location_embedder.0.fc2.weight": "channel_location_embedder.fc2.weight",
-            "channel_location_embedder.0.fc2.bias": "channel_location_embedder.fc2.bias",
-            "channel_location_embedder.0.norm.weight": "channel_location_embedder.norm.weight",
-            "channel_location_embedder.0.norm.bias": "channel_location_embedder.norm.bias",
-        }
-
-        mapped_pretrained = {}
-        for k, v in pretrained.items():
-            mapped_pretrained[key_mapping.get(k, k)] = v
-
-        # Load weights (strict=False because classifier head is randomly initialized)
-        result = model.load_state_dict(mapped_pretrained, strict=False)
-
-        print(f"✅ Loaded {len(pretrained) - len(result.unexpected_keys)} weights")
-        if result.missing_keys:
-            print(
-                f"⚠️  {len(result.missing_keys)} keys not found in pretrained (using random init)"
-            )
-
-        return model
