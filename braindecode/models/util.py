@@ -98,6 +98,7 @@ models_mandatory_parameters = [
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BENDR", ["n_chans", "n_outputs", "n_times"], None),
+    ("LUNA", ["chs_info", "n_times", "n_outputs"], None),
 ]
 
 ################################################################
