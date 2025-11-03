@@ -337,7 +337,7 @@ class WindowsDataset(RecordDataset):
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
         self.raw_preproc_kwargs: list[dict[str, Any]] = []
-        self.windows_preproc_kwargs: list[dict[str, Any]] = []
+        self.window_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index: int):
         """Get a window and its target.
