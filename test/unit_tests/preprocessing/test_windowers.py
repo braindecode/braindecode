@@ -2,6 +2,7 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Hubert Banville <hubert.jbanville@gmail.com>
+#          Matthew Chen <matt.chen42601@gmail.com>
 #
 # License: BSD-3
 
