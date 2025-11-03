@@ -514,7 +514,7 @@ def _create_windows_from_events(
             }
         )
 
-    events, events_id = mne.events_from_annotations(ds.raw, mapping)
+    events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
     onsets = events[:, 0]
     # Onsets are relative to the beginning of the recording
     filtered_durations = np.array(
