@@ -332,6 +332,7 @@ Common Datasets
 
     BCICompetitionIVDataset4
     BNCI2014001
+    CHBMIT
     HGD
     MOABBDataset
     NMT
