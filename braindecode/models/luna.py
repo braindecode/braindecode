@@ -140,7 +140,7 @@ class LUNA(EEGModuleMixin, nn.Module):
             embed_dim=self.embed_dim, patch_size=self.patch_size
         )
         # For weight loading, we omit the normalization here to match parameter count
-        self.channel_location_embedder = Mlp(
+        self.channel_location_embedder = _Mlp(
             in_features=int(self.patch_embed_size),
             out_features=int(self.patch_embed_size),
             hidden_features=int(self.patch_embed_size * 2),
@@ -442,7 +442,7 @@ class _FrequencyFeatureEmbedder(nn.Module):
         self.patch_size = patch_size
         self.embed_dim = embed_dim
         in_features = 2 * (patch_size // 2 + 1)
-        self.frequency_to_embed = Mlp(
+        self.frequency_to_embed = _Mlp(
             in_features=in_features,
             hidden_features=int(4 * in_features),
             out_features=embed_dim,
@@ -609,7 +609,7 @@ class _PatchReconstructionHeadWithQueries(nn.Module):
             num_layers=1,
         )
         self.norm = nn.LayerNorm(embed_dim)
-        self.decoder_linear = Mlp(
+        self.decoder_linear = _Mlp(
             embed_dim, int(embed_dim * 4), input_dim, act_layer=nn.GELU, drop=0.0
         )  # nn.Linear(embed_dim, input_dim, bias=True)
 
@@ -636,20 +636,22 @@ class _ClassificationHeadWithQueries(nn.Module):
         num_queries: int = 8,
         num_heads: int = 8,
         num_classes: int = 2,
+        drop_decoder: float = 0.15,
+        drop_ffn: float = 0.15,
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.embed_dim = int(embed_dim * num_queries)
         self.reconstruction_shape = self.input_dim
         self.decoder_attn = nn.MultiheadAttention(
-            self.embed_dim, num_heads, batch_first=True, dropout=0.15
+            self.embed_dim, num_heads, batch_first=True, dropout=drop_decoder
         )
-        self.decoder_ffn = Mlp(
+        self.decoder_ffn = _Mlp(
             in_features=self.embed_dim,
             hidden_features=int(self.embed_dim * 4),
             out_features=num_classes,
             act_layer=nn.GELU,
-            drop=0.15,
+            drop=drop_ffn,
         )
 
         self.learned_agg = nn.Parameter(
@@ -697,7 +699,7 @@ class _CrossAttentionBlock(nn.Module):
         )
         self.temperature = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
-        self.ffn = Mlp(
+        self.ffn = _Mlp(
             input_embed_dim,
             ff_dim,
             output_embed_dim,
@@ -804,7 +806,7 @@ class _PatchEmbedNetwork(nn.Module):
         return x
 
 
-class Mlp(nn.Module):
+class _Mlp(nn.Module):
     """MLP as used in Vision Transformer, MLP-Mixer and related networks.
 
     Code copied from timm.models.mlp.Mlp
