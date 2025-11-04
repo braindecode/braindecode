@@ -103,7 +103,7 @@ class SIENA(BIDSDataset):
             # correct directory.
             path_root = _correct_path(path_root)
 
-        args["bids_root"] = path_root
+        kwargs["root"] = path_root
 
         super().__init__(
             *args,
