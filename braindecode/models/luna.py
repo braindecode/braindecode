@@ -12,7 +12,7 @@ the LICENSE Of this file is APACHE-2.0.
 """
 
 import math
-from typing import Any, Optional, Sequence, Tuple, Type
+from typing import Any, Dict, Optional, Sequence, Tuple, Type
 
 import mne
 import numpy as np
@@ -173,6 +173,8 @@ class LUNA(EEGModuleMixin, nn.Module):
         )
         self.norm = norm_layer(int(self.embed_dim * self.num_queries))
 
+        self._channel_location_cache: Dict[int, torch.Tensor] = {}
+
         if self.num_classes == 0:
             self.decoder_head = _PatchReconstructionHeadWithQueries(
                 input_dim=self.patch_size,
@@ -279,7 +281,12 @@ class LUNA(EEGModuleMixin, nn.Module):
         B, C, _ = x_signal.shape
 
         if channel_locations is None:
-            channel_locations = torch.randn(B, C, 3, device=x_signal.device)
+            channel_locations = self._get_default_channel_locations(
+                batch_size=B,
+                num_channels=C,
+                device=x_signal.device,
+                dtype=x_signal.dtype,
+            )
 
         x, channel_locations_emb = self.prepare_tokens(
             x_signal, channel_locations, mask=mask
@@ -301,6 +308,50 @@ class LUNA(EEGModuleMixin, nn.Module):
         channel_emb = channel_emb.repeat(num_patches, 1, 1)
         decoder_queries = channel_locations_emb + channel_emb
         return self.decoder_head(x_latent, decoder_queries)
+
+    def _get_default_channel_locations(
+        self,
+        batch_size: int,
+        num_channels: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        if num_channels not in self._channel_location_cache:
+            template = self._build_channel_location_template(num_channels)
+            self._channel_location_cache[num_channels] = template
+        template = self._channel_location_cache[num_channels].to(
+            device=device, dtype=dtype
+        )
+        return template.unsqueeze(0).repeat(batch_size, 1, 1)
+
+    def _build_channel_location_template(self, num_channels: int) -> torch.Tensor:
+        channel_info = getattr(self, "_chs_info", None)
+        if (
+            channel_info is not None
+            and isinstance(channel_info, Sequence)
+            and len(channel_info) >= num_channels
+        ):
+            candidate: list[torch.Tensor] = []
+            for ch in channel_info[:num_channels]:
+                if not isinstance(ch, dict):
+                    candidate = []
+                    break
+                raw_loc = ch.get("loc")
+                if raw_loc is None:
+                    candidate = []
+                    break
+                loc_array = np.asarray(raw_loc, dtype=np.float32)
+                if loc_array.ndim != 1 or loc_array.size < 3:
+                    candidate = []
+                    break
+                candidate.append(torch.from_numpy(loc_array[:3]))
+            if len(candidate) == num_channels:
+                return torch.stack(candidate, dim=0)
+
+        positions = torch.linspace(-1.0, 1.0, steps=num_channels, dtype=torch.float32)
+        zeros = torch.zeros_like(positions)
+        locs_tensor = torch.stack([positions, zeros, zeros], dim=-1)
+        return locs_tensor
 
 
 def trunc_normal_(tensor: torch.Tensor, mean: float = 0.0, std: float = 1.0) -> None:
