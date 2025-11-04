@@ -503,6 +503,15 @@ def test_model_exported(model):
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
+    # Models known to have export issues on Windows (e.g., non-pytree-compatible attributes)
+    if sys.platform.startswith("win"):
+        not_exportable_models_win = [
+            "LUNA",  # Has _channel_location_cache dict that breaks pytree on Windows
+        ]
+        model_name = model.__class__.__name__
+        if model_name in not_exportable_models_win:
+            pytest.skip(f"{model_name} export is not compatible on Windows")
+
     # example input matching your model's expected shape
     try:
         n_chans = model.n_chans
