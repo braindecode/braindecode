@@ -57,6 +57,7 @@ dependencies = [
     'h5py',
     'linear_attention_transformer',
     'docstring_inheritance',
+    "rotary_embedding_torch",
 ]
 [project.urls]
 homepage = "https://braindecode.org"
