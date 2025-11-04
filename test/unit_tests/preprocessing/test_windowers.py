@@ -2,10 +2,12 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Hubert Banville <hubert.jbanville@gmail.com>
+#          Matthew Chen <matt.chen42601@gmail.com>
 #
 # License: BSD-3
 
 import copy
+import logging
 import platform
 import warnings
 
@@ -44,7 +46,8 @@ def _get_raw(tmpdir_factory, description=None):
 
 @pytest.fixture(scope="module")
 def concat_ds_targets():
-    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014001", subject_ids=4)
+    raws, description = fetch_data_with_moabb(
+        dataset_name="BNCI2014001", subject_ids=4)
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
     ds = RawDataset(raws[0], description.iloc[0])
@@ -398,9 +401,10 @@ def test_fixed_length_windower(
     if not drop_last_window and idxs[-1] != stop_offset_samples - window_size_samples:
         idxs = np.append(idxs, stop_offset_samples - window_size_samples)
 
-    assert len(idxs) == epochs_data.shape[0], "Number of epochs different than expected"
+    assert len(
+        idxs) == epochs_data.shape[0], "Number of epochs different than expected"
     assert (
-            window_size_samples == epochs_data.shape[2]
+        window_size_samples == epochs_data.shape[2]
     ), "Window size different than expected"
     for j, idx in enumerate(idxs):
         np.testing.assert_allclose(
@@ -467,30 +471,33 @@ def test_fixed_length_windower_lazy(
     # metadata_lazy = epochs_ds_lazy.get_metadata()
     for d, d_lazy in zip(epochs_ds.datasets, epochs_ds_lazy.datasets):
         crop_inds = d.metadata.loc[
-                    :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
-                    ].to_numpy()
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
         crop_inds_lazy = d_lazy.metadata.loc[
-                         :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
-                         ].to_numpy()
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
         y = d.metadata.loc[:, "target"].to_list()
         y_lazy = d_lazy.metadata.loc[:, "target"].to_list()
         n = len(d.metadata)
         assert n == len(d_lazy.metadata)
         assert len(crop_inds) == len(crop_inds_lazy)
         assert len(y) == len(y_lazy)
-        assert all(crop_inds[i].tolist() == crop_inds_lazy[i].tolist() for i in range(n))
+        assert all(crop_inds[i].tolist() ==
+                   crop_inds_lazy[i].tolist() for i in range(n))
         assert all(y[i] == y_lazy[i] for i in range(n))
 
 
 def test_lazy_dataframe():
     with pytest.raises(ValueError, match="Length must be a positive integer."):
-        _ = _LazyDataFrame(length=-1, functions=dict(a=lambda i: 2 * i), columns=["a"])
+        _ = _LazyDataFrame(
+            length=-1, functions=dict(a=lambda i: 2 * i), columns=["a"])
     with pytest.raises(ValueError, match="All columns must have a corresponding function."):
         _ = _LazyDataFrame(length=10, columns=['a'], functions=dict())
     with pytest.raises(ValueError, match="Series must have exactly one column."):
         _ = _LazyDataFrame(length=10, columns=['a', 'b'],
                            functions=dict(a=lambda i: 2 * i, b=lambda i: 2 + i), series=True)
-    df = _LazyDataFrame(length=10, functions=dict(a=lambda i: 2 * i), columns=["a"])
+    df = _LazyDataFrame(length=10, functions=dict(
+        a=lambda i: 2 * i), columns=["a"])
     assert len(df) == 10
     assert all(df[i, "a"] == 2 * i for i in range(10))
     assert all((df[i] == pd.Series(dict(a=2 * i))).all() for i in range(10))
@@ -836,6 +843,52 @@ def test_window_sizes_from_events(concat_ds_targets):
     assert x.shape[-1] == expected_n_samples
 
 
+def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
+    logger = logging.getLogger("mne")
+    logger.propagate = True  # Temporarily propagate to root logger
+    caplog.set_level(logging.INFO)
+
+    # verbose is True, so we expect to see the used annotations descriptions
+    concat_ds, targets = concat_ds_targets
+    create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1,
+        trial_stop_offset_samples=0,
+        drop_last_window=False,
+        verbose=True,
+    )
+
+    assert "Used Annotations descriptions: ['left_hand', 'tongue']" in caplog.text
+    caplog.clear()
+
+    # verbose is False, so we expect to see the used annotations descriptions
+    concat_ds, targets = concat_ds_targets
+    create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1,
+        trial_stop_offset_samples=0,
+        drop_last_window=False,
+        verbose=False,
+    )
+
+    assert "Used Annotations descriptions: ['left_hand', 'tongue']" not in caplog.text
+    caplog.clear()
+
+    # verbose is not specified, so it defaults to verbose="error"
+    concat_ds, targets = concat_ds_targets
+    create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1,
+        trial_stop_offset_samples=0,
+        drop_last_window=False,
+    )
+
+    assert "Used Annotations descriptions: ['left_hand', 'tongue']" not in caplog.text
+    caplog.clear()
+
+    logger.propagate = False  # Reset to default
+
+
 def test_window_sizes_too_large(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     # Window size larger than all trials
@@ -866,7 +919,8 @@ def test_window_sizes_too_large(concat_ds_targets):
     annots = concat_ds.datasets[0].raw.annotations
     annot_0 = annots[0]
     # Window equal original trials size
-    window_size = int(annot_0["duration"] * concat_ds.datasets[0].raw.info["sfreq"])
+    window_size = int(annot_0["duration"] *
+                      concat_ds.datasets[0].raw.info["sfreq"])
 
     # Make first trial 1 second shorter
     annot_0["duration"] -= 1
@@ -874,7 +928,7 @@ def test_window_sizes_too_large(concat_ds_targets):
     # Replace first trial by a new shorter one
     annots.delete(0)
     del annot_0["orig_time"]
-    del annot_0["extras"] # empty extra dict
+    del annot_0["extras"]  # empty extra dict
 
     annots.append(**annot_0)
     concat_ds.datasets[0].raw.set_annotations(annots)
@@ -904,7 +958,8 @@ def dataset_target_time_series():
     targets = np.full((2, 1000), np.nan)
     targets_sfreq = 10
     targets_stride = int(signal_sfreq / targets_sfreq)
-    targets[:, ::targets_stride] = rng.randn(2, int(targets.shape[1] / targets_stride))
+    targets[:, ::targets_stride] = rng.randn(
+        2, int(targets.shape[1] / targets_stride))
 
     raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})

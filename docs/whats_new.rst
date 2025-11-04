@@ -33,6 +33,8 @@ Enhancements
 - Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
 - Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
 - Added :class:`braindecode.models.LUNA`  (:gh:`802` by `Bruno Aristimunha`_, `Thorir Mar Ingolfsson`_)
+- Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
+
 
 API changes
 ~~~~~~~~~~~
