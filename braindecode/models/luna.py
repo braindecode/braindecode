@@ -2,7 +2,7 @@
 
 Döner, B., Ingolfsson, T. M., Benini, L., & Li, Y. (2025).
 LUNA: Efficient and Topology-Agnostic Foundation Model for EEG Signal Analysis.
-The Thirty-Ninth Annual Conference on Neural Information Processing Systems.
+The Thirty-Ninth Annual Conference on Neural Information Processing Systems, NeurIPS.
 Retrieved from https://openreview.net/forum?id=uazfjnFL0G
 
 Original Authors: Berkay Döner, Thorir Mar Ingolfsson
@@ -73,7 +73,7 @@ class LUNA(EEGModuleMixin, nn.Module):
     ----------
     .. [LUNA] Döner, B., Ingolfsson, T. M., Benini, L., & Li, Y. (2025).
         LUNA: Efficient and Topology-Agnostic Foundation Model for EEG Signal Analysis.
-        The Thirty-Ninth Annual Conference on Neural Information Processing Systems.
+        The Thirty-Ninth Annual Conference on Neural Information Processing Systems - NeurIPS.
         Retrieved from https://openreview.net/forum?id=uazfjnFL0G
     """
 
@@ -281,7 +281,7 @@ class LUNA(EEGModuleMixin, nn.Module):
         B, C, _ = x_signal.shape
 
         if channel_locations is None:
-            channel_locations = self._get_default_channel_locations(
+            channel_locations = self.get_default_channel_locations(
                 batch_size=B,
                 num_channels=C,
                 device=x_signal.device,
@@ -309,7 +309,7 @@ class LUNA(EEGModuleMixin, nn.Module):
         decoder_queries = channel_locations_emb + channel_emb
         return self.decoder_head(x_latent, decoder_queries)
 
-    def _get_default_channel_locations(
+    def get_default_channel_locations(
         self,
         batch_size: int,
         num_channels: int,
@@ -317,14 +317,14 @@ class LUNA(EEGModuleMixin, nn.Module):
         dtype: torch.dtype,
     ) -> torch.Tensor:
         if num_channels not in self._channel_location_cache:
-            template = self._build_channel_location_template(num_channels)
+            template = self.build_channel_location_template(num_channels)
             self._channel_location_cache[num_channels] = template
         template = self._channel_location_cache[num_channels].to(
             device=device, dtype=dtype
         )
         return template.unsqueeze(0).repeat(batch_size, 1, 1)
 
-    def _build_channel_location_template(self, num_channels: int) -> torch.Tensor:
+    def build_channel_location_template(self, num_channels: int) -> torch.Tensor:
         channel_info = getattr(self, "_chs_info", None)
         if (
             channel_info is not None
@@ -352,6 +352,23 @@ class LUNA(EEGModuleMixin, nn.Module):
         zeros = torch.zeros_like(positions)
         locs_tensor = torch.stack([positions, zeros, zeros], dim=-1)
         return locs_tensor
+
+    def _get_default_channel_locations(
+        self,
+        batch_size: int,
+        num_channels: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        return self.get_default_channel_locations(
+            batch_size=batch_size,
+            num_channels=num_channels,
+            device=device,
+            dtype=dtype,
+        )
+
+    def _build_channel_location_template(self, num_channels: int) -> torch.Tensor:
+        return self.build_channel_location_template(num_channels)
 
 
 def trunc_normal_(tensor: torch.Tensor, mean: float = 0.0, std: float = 1.0) -> None:
