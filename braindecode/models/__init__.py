@@ -48,7 +48,11 @@ from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
 from .tsinception import TSception
 from .usleep import USleep
-from .util import _init_models_dict, models_mandatory_parameters
+from .util import (
+    _init_models_dict,
+    extract_channel_locations_from_chs_info,
+    models_mandatory_parameters,
+)
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
@@ -82,6 +86,7 @@ __all__ = [
     "IFNet",
     "Labram",
     "LUNA",
+    "extract_channel_locations_from_chs_info",
     "MSVTNet",
     "PBT",
     "SCCNet",

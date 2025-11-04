@@ -12,10 +12,8 @@ the LICENSE Of this file is APACHE-2.0.
 """
 
 import math
-from typing import Any, Dict, Optional, Sequence, Tuple, Type
+from typing import Any, Dict, Optional, Tuple, Type
 
-import mne
-import numpy as np
 import torch
 import torch.fft as fft
 import torch.nn as nn
@@ -25,7 +23,8 @@ from rotary_embedding_torch import RotaryEmbedding
 from timm.models.layers import DropPath, Mlp
 from timm.models.layers import trunc_normal_ as __call_trunc_normal_
 
-from .base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import extract_channel_locations_from_chs_info
 
 
 class LUNA(EEGModuleMixin, nn.Module):
@@ -182,7 +181,7 @@ class LUNA(EEGModuleMixin, nn.Module):
                 num_heads=self.num_heads,
                 num_queries=self.num_queries,
             )
-            self.channel_emb = ChannelEmbeddings(self.embed_dim)
+            self.channel_emb = _ChannelEmbeddings(self.embed_dim)
         else:
             self.final_layer = _ClassificationHeadWithQueries(
                 input_dim=self.patch_size,
@@ -291,7 +290,7 @@ class LUNA(EEGModuleMixin, nn.Module):
         x, channel_locations_emb = self.prepare_tokens(
             x_signal, channel_locations, mask=mask
         )
-        x, attention_scores = self.cross_attn(x)
+        x, _ = self.cross_attn(x)
         x = rearrange(x, "(B t) Q D -> B t (Q D)", B=B)
         num_patches = x.shape[1]
 
@@ -325,29 +324,31 @@ class LUNA(EEGModuleMixin, nn.Module):
         return template.unsqueeze(0).repeat(batch_size, 1, 1)
 
     def build_channel_location_template(self, num_channels: int) -> torch.Tensor:
-        channel_info = getattr(self, "_chs_info", None)
-        if (
-            channel_info is not None
-            and isinstance(channel_info, Sequence)
-            and len(channel_info) >= num_channels
-        ):
-            candidate: list[torch.Tensor] = []
-            for ch in channel_info[:num_channels]:
-                if not isinstance(ch, dict):
-                    candidate = []
-                    break
-                raw_loc = ch.get("loc")
-                if raw_loc is None:
-                    candidate = []
-                    break
-                loc_array = np.asarray(raw_loc, dtype=np.float32)
-                if loc_array.ndim != 1 or loc_array.size < 3:
-                    candidate = []
-                    break
-                candidate.append(torch.from_numpy(loc_array[:3]))
-            if len(candidate) == num_channels:
-                return torch.stack(candidate, dim=0)
+        """Build channel location template for the model.
 
+        Attempts to extract channel locations from chs_info. Falls back to a default
+        linear spacing along the x-axis if real locations are unavailable.
+
+        Parameters
+        ----------
+        num_channels : int
+            Number of channels to generate locations for.
+
+        Returns
+        -------
+        torch.Tensor
+            Tensor of shape (num_channels, 3) with channel locations in 3D space.
+        """
+        # Try to extract channel locations from chs_info using the unified utility
+        channel_info = getattr(self, "_chs_info", None)
+        if channel_info is not None:
+            locs = extract_channel_locations_from_chs_info(
+                channel_info, num_channels=num_channels
+            )
+            if locs is not None and len(locs) == num_channels:
+                return torch.from_numpy(locs).float()
+
+        # Fallback: generate default linear spacing along x-axis
         positions = torch.linspace(-1.0, 1.0, steps=num_channels, dtype=torch.float32)
         zeros = torch.zeros_like(positions)
         locs_tensor = torch.stack([positions, zeros, zeros], dim=-1)
@@ -401,181 +402,26 @@ def nerf_positional_encoding(coords: torch.Tensor, embed_size: int) -> torch.Ten
     return encoded
 
 
-SEED_PRETRAINING_CHANNEL_LIST = [
-    "FP1",
-    "FPZ",
-    "FP2",
-    "AF3",
-    "AF4",
-    "F7",
-    "F5",
-    "F3",
-    "F1",
-    "FZ",
-    "F2",
-    "F4",
-    "F6",
-    "F8",
-    "FT7",
-    "FC5",
-    "FC3",
-    "FC1",
-    "FCZ",
-    "FC2",
-    "FC4",
-    "FC6",
-    "FT8",
-    "T7",
-    "C5",
-    "C3",
-    "C1",
-    "CZ",
-    "C2",
-    "C4",
-    "C6",
-    "T8",
-    "TP7",
-    "CP5",
-    "CP3",
-    "CP1",
-    "CPZ",
-    "CP2",
-    "CP4",
-    "CP6",
-    "TP8",
-    "P7",
-    "P5",
-    "P3",
-    "P1",
-    "PZ",
-    "P2",
-    "P4",
-    "P6",
-    "P8",
-    "PO7",
-    "PO5",
-    "PO3",
-    "POZ",
-    "PO4",
-    "PO6",
-    "PO8",
-    "CB1",
-    "O1",
-    "OZ",
-    "O2",
-    "CB2",
-]
-TUEG_CHANNEL_LIST = [
-    "FP1-F7",
-    "F7-T3",
-    "T3-T5",
-    "T5-O1",
-    "FP2-F8",
-    "F8-T4",
-    "T4-T6",
-    "T6-O2",
-    "T3-C3",
-    "C3-CZ",
-    "CZ-C4",
-    "C4-T4",
-    "FP1-F3",
-    "F3-C3",
-    "C3-P3",
-    "P3-O1",
-    "FP2-F4",
-    "F4-C4",
-    "C4-P4",
-    "P4-O2",
-    "A1-T3",
-    "T4-A2",
-]
-SIENA_CHANNEL_LIST = [
-    "FP1",
-    "FP2",
-    "F3",
-    "C3",
-    "P3",
-    "O1",
-    "F7",
-    "T3",
-    "T5",
-    "FC1",
-    "FC5",
-    "CP1",
-    "CP5",
-    "F9",
-    "FZ",
-    "CZ",
-    "PZ",
-    "F4",
-    "C4",
-    "P4",
-    "O2",
-    "F8",
-    "T4",
-    "T6",
-    "FC2",
-    "FC6",
-    "CP2",
-    "CP6",
-    "F10",
-]
+class _ChannelEmbeddings(nn.Module):
+    """
+    This class creates embeddings for each EEG channel based on a predefined
+    mapping of channel names to indices.
 
-all_channels = set()
-for ds in [
-    SEED_PRETRAINING_CHANNEL_LIST,
-    TUEG_CHANNEL_LIST,
-    SIENA_CHANNEL_LIST,
-]:
-    for ch in ds:
-        all_channels.add(ch)
-CHANNEL_NAMES_TO_IDX = {ch: i for i, ch in enumerate(sorted(all_channels))}
-CHANNEL_IDX_TO_NAMES = {i: ch for ch, i in CHANNEL_NAMES_TO_IDX.items()}
+    The number of unique channels is determined by the union of channels
+    from SEED Pretraining, TUEG, and Siena datasets.
 
+    Parameters
+    ----------
+    embed_dim : int
+        Dimension of the channel embeddings.
+    number_channels : int
+        Number of unique EEG channels. Default is 90.
 
-def get_channel_indices(channel_names: Sequence[str]) -> list[int]:
-    indices: list[int] = []
-    for name in channel_names:
-        indices.append(CHANNEL_NAMES_TO_IDX[name])
-    return indices
+    """
 
-
-def get_channel_names(channel_indices: Sequence[int]) -> list[str]:
-    names: list[str] = []
-    for idx in channel_indices:
-        names.append(CHANNEL_IDX_TO_NAMES[idx])
-    return names
-
-
-def get_channel_locations(channel_names: Sequence[str]) -> list[np.ndarray]:
-    names: list[str]
-    if "-" in channel_names[0]:
-        names = list({part for ch in channel_names for part in ch.split("-")})
-    else:
-        names = list(channel_names)
-    ch_types = ["eeg"] * len(names)  # Channel types
-    info = mne.create_info(ch_names=names, sfreq=256, ch_types=ch_types)
-    info = info.set_montage(
-        mne.channels.make_standard_montage("standard_1005"),
-        match_case=False,
-        match_alias={"cb1": "POO7", "cb2": "POO8"},
-    )
-    locs: list[np.ndarray] = []
-    for name in channel_names:
-        if name in TUEG_CHANNEL_LIST:
-            electrode1, electrode2 = name.split("-")
-            loc1 = info.get_montage().get_positions()["ch_pos"][electrode1]
-            loc2 = info.get_montage().get_positions()["ch_pos"][electrode2]
-            locs.append(((loc1 + loc2) / 2))
-        else:
-            locs.append(info.get_montage().get_positions()["ch_pos"][name])
-    return locs
-
-
-class ChannelEmbeddings(nn.Module):
-    def __init__(self, embed_dim: int) -> None:
-        super(ChannelEmbeddings, self).__init__()
-        self.embeddings = nn.Embedding(len(CHANNEL_NAMES_TO_IDX), embed_dim)
+    def __init__(self, embed_dim: int, number_channels=90) -> None:
+        super().__init__()
+        self.embeddings = nn.Embedding(number_channels, embed_dim)
 
     def forward(self, indices: torch.Tensor) -> torch.Tensor:
         return self.embeddings(indices)

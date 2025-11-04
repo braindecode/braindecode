@@ -4,7 +4,9 @@
 # License: BSD (3-clause)
 import inspect
 from pathlib import Path
+from typing import Any, Dict, Optional, Sequence
 
+import numpy as np
 import pandas as pd
 
 import braindecode.models as models
@@ -128,6 +130,87 @@ def get_summary_table(dir_name=None):
         skipinitialspace=True,
     )
     return df
+
+
+def extract_channel_locations_from_chs_info(
+    chs_info: Optional[Sequence[Dict[str, Any]]],
+    num_channels: Optional[int] = None,
+) -> Optional[np.ndarray]:
+    """Extract 3D channel locations from MNE-style channel information.
+
+    This function provides a unified approach to extract 3D channel locations
+    from MNE channel information. It's compatible with models like SignalJEPA
+    and LUNA that need to work with channel spatial information.
+
+    Parameters
+    ----------
+    chs_info : list of dict or None
+        Channel information, typically from ``mne.Info.chs``. Each dict should
+        contain a 'loc' key with a 12-element array (MNE format) where indices 3:6
+        represent the 3D cartesian coordinates.
+    num_channels : int or None
+        If specified, only extract the first ``num_channels`` channel locations.
+        If None, extract all available channels.
+
+    Returns
+    -------
+    channel_locations : np.ndarray of shape (n_channels, 3) or None
+        Array of 3D channel locations in cartesian coordinates. Returns None if
+        no valid locations are found.
+
+    Notes
+    -----
+    - This function handles both 12-element MNE location format (using indices 3:6)
+      and 3-element location format (using directly).
+    - Invalid or missing locations cause extraction to stop at that point.
+    - Returns None if no valid locations can be extracted.
+    - This is a unified utility compatible with models like SignalJEPA and LUNA.
+
+    Examples
+    --------
+    >>> import mne
+    >>> from braindecode.models.util import extract_channel_locations_from_chs_info
+    >>> raw = mne.io.read_raw_edf("sample.edf")
+    >>> locs = extract_channel_locations_from_chs_info(raw.info['chs'], num_channels=22)
+    >>> print(locs.shape)
+    (22, 3)
+    """
+    if chs_info is None:
+        return None
+
+    locations = []
+    n_to_extract = num_channels if num_channels is not None else len(chs_info)
+
+    for i, ch_info in enumerate(chs_info[:n_to_extract]):
+        if not isinstance(ch_info, dict):
+            break
+
+        loc = ch_info.get("loc")
+        if loc is None:
+            break
+
+        try:
+            loc_array = np.asarray(loc, dtype=np.float32)
+
+            # MNE format: 12-element array with coordinates at indices 3:6
+            if loc_array.ndim == 1 and loc_array.size >= 6:
+                if loc_array.size == 12:
+                    # Standard MNE format
+                    coordinates = loc_array[3:6]
+                else:
+                    # Assume first 3 elements are coordinates
+                    coordinates = loc_array[:3]
+            else:
+                break
+
+            locations.append(coordinates)
+        except (ValueError, TypeError):
+            break
+
+    if len(locations) == 0:
+        return None
+
+    return np.stack(locations, axis=0)
 
 
 _summary_table = get_summary_table()
