@@ -7,7 +7,6 @@ It reorganizes the file structure to comply with the BIDS specification. To this
 -   Data in the EEG edf files was modified to keep only the 19 channels from a 10-20 EEG system.
 -   Annotations were formatted as BIDS-score compatible tsv files.
 
-
 """
 
 # Authors: Dan, Jonathan
@@ -27,7 +26,7 @@ from braindecode.datasets import BIDSDataset
 
 SIENA_URL = "https://zenodo.org/records/10640762/files/BIDS_Siena.zip"
 SIENA_archive_name = "SIENA.zip"
-SIENA_folder_name = "MNE-SIENA-eeg-dataset"
+SIENA_folder_name = "SIENA-BIDS-eeg-dataset"
 SIENA_dataset_name = "SIENA-EEG-Corpus"
 
 SIENA_dataset_params = {
@@ -35,7 +34,7 @@ SIENA_dataset_params = {
     "url": SIENA_URL,
     "archive_name": SIENA_archive_name,
     "folder_name": SIENA_folder_name,
-    "hash": "77b3ce12bcaf6c6cce4e6690ea89cb22bed55af10c525077b430f6e1d2e3c6bf",
+    "hash": "49c29ebb3a3705ec4e8332fd59141851c25a0fc3",
     "config_key": SIENA_dataset_name,
 }
 
@@ -64,10 +63,58 @@ class SIENA(BIDSDataset):
 
     Parameters
     ----------
-    path: str
-        Parent directory of the dataset.
-    preload: bool
-        If True, preload the data of the Raw objects.
+    root : pathlib.Path | str
+        The root of the BIDS path.
+    subjects : str | array-like of str | None
+        The subject ID. Corresponds to "sub".
+    sessions : str | array-like of str | None
+        The acquisition session. Corresponds to "ses".
+    tasks : str | array-like of str | None
+        The experimental task. Corresponds to "task".
+    acquisitions: str | array-like of str | None
+        The acquisition parameters. Corresponds to "acq".
+    runs : str | array-like of str | None
+        The run number. Corresponds to "run".
+    processings : str | array-like of str | None
+        The processing label. Corresponds to "proc".
+    recordings : str | array-like of str | None
+        The recording name. Corresponds to "rec".
+    spaces : str | array-like of str | None
+        The coordinate space for anatomical and sensor location
+        files (e.g., ``*_electrodes.tsv``, ``*_markers.mrk``).
+        Corresponds to "space".
+        Note that valid values for ``space`` must come from a list
+        of BIDS keywords as described in the BIDS specification.
+    splits : str | array-like of str | None
+        The split of the continuous recording file for ``.fif`` data.
+        Corresponds to "split".
+    descriptions : str | array-like of str | None
+        This corresponds to the BIDS entity ``desc``. It is used to provide
+        additional information for derivative data, e.g., preprocessed data
+        may be assigned ``description='cleaned'``.
+    suffixes : str | array-like of str | None
+        The filename suffix. This is the entity after the
+        last ``_`` before the extension. E.g., ``'channels'``.
+        The following filename suffix's are accepted:
+        'meg', 'markers', 'eeg', 'ieeg', 'T1w',
+        'participants', 'scans', 'electrodes', 'coordsystem',
+        'channels', 'events', 'headshape', 'digitizer',
+        'beh', 'physio', 'stim'
+    extensions : str | array-like of str | None
+        The extension of the filename. E.g., ``'.json'``.
+        By default, uses the ones accepted by :func:`mne_bids.read_raw_bids`.
+    datatypes : str | array-like of str | None
+        The BIDS data type, e.g., ``'anat'``, ``'func'``, ``'eeg'``, ``'meg'``,
+        ``'ieeg'``.
+    check : bool
+        If ``True``, only returns paths that conform to BIDS. If ``False``
+        (default), the ``.check`` attribute of the returned
+        :class:`mne_bids.BIDSPath` object will be set to ``True`` for paths that
+        do conform to BIDS, and to ``False`` for those that don't.
+    preload : bool
+        If True, preload the data. Defaults to False.
+    n_jobs : int
+        Number of jobs to run in parallel. Defaults to 1.
 
     References
     ----------
@@ -84,8 +131,9 @@ class SIENA(BIDSDataset):
         automated seizure detection algorithms. Epilepsia, 66, 14-24.
     """
 
-    def __init__(self, path_root=None, *args, **kwargs):
+    def __init__(self, root=None, *args, **kwargs):
         # correct the path if needed
+        path_root = root
         if path_root is not None:
             list_tsv = glob.glob(f"{path_root}/**/participants.tsv", recursive=True)
             if isinstance(list_tsv, list) and len(list_tsv) > 0:
