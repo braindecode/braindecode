@@ -33,7 +33,7 @@ Enhancements
 - Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
 - Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
 - Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
-- Including SIENA dataset (:gh:`818` by `Jonathan Dan`_ and `Bruno Aristimunha`_ )
+- Including SIENA dataset and CHB_MIT datasets (:gh:`818` by `Jonathan Dan`_ and `Bruno Aristimunha`_ )
 
 API changes
 ~~~~~~~~~~~

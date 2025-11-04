@@ -34,7 +34,7 @@ CHB_MIT_dataset_params = {
     "url": CHB_MIT_URL,
     "archive_name": CHB_MIT_archive_name,
     "folder_name": CHB_MIT_folder_name,
-    "hash": "126e71e18570cf359a440ba5227494ecffca4b0b0057c733f90ec29ba5e15ff8",  # sha256
+    "hash": "078f4e110e40d10fef1a38a892571ad24666c488e8118a01002c9224909256ed",  # sha256
     "config_key": CHB_MIT_dataset_name,
 }
 
@@ -199,7 +199,7 @@ def _correct_path(path: str):
                 )
 
     # Check if the BIDS_Siena folder exists inside the path
-    bids_siena_path = os.path.join(path, "BIDS_CHB_MIT")
+    bids_siena_path = os.path.join(path, "BIDS_CHB-MIT")
     if Path(bids_siena_path).exists():
         path = bids_siena_path
 
