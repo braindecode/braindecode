@@ -32,7 +32,7 @@ Enhancements
 - Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
 - Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
 - Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
-
+- Added :class:`braindecode.models.LUNA`  (:gh:`802` by `Bruno Aristimunha`_, `Thorir Mar Ingolfsson`_)
 
 API changes
 ~~~~~~~~~~~
@@ -417,3 +417,4 @@ Authors
 .. _Christian Kothe: https://github.com/chkothe
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _Matthew Chen: https://github.com/MatthewChen37
+.. _Thorir Mar Ingolfsson: https://github.com/Thoriri
