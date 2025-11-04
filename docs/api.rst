@@ -336,6 +336,7 @@ Common Datasets
     MOABBDataset
     NMT
     SleepPhysionet
+    SIENA
     SleepPhysionetChallenge2018
     TUH
     TUHAbnormal
