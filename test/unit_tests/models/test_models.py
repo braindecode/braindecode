@@ -4,6 +4,7 @@
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Daniel Wilson <dan.c.wil@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com
+#          Matthew Chen <matt.chen42601@gmail.com>
 #
 # License: BSD-3
 
@@ -36,6 +37,7 @@ from braindecode.models import (
     EEGSimpleConv,
     EEGTCNet,
     FBCNet,
+    FBMSNet,
     HybridNet,
     IFNet,
     Labram,
@@ -88,6 +90,7 @@ def check_forward_pass(model, input_sizes, only_check_until_dim=None):
         atol=1e-4,
         rtol=0,
     )
+
 
 def check_forward_pass_3d(model, input_sizes, only_check_until_dim=None):
     rng = np.random.RandomState(42)
@@ -194,7 +197,6 @@ def test_deep4net_load_state_dict(input_sizes):
     )
     state_dict["conv_classifier.bias"] = torch.rand([input_sizes["n_classes"]])
     model.load_state_dict(state_dict)
-
 
 
 def test_hybridnet(input_sizes):
@@ -942,7 +944,6 @@ def test_attentionbasenet_dummy(n_times, n_chans, sfreq, n_outputs):
     check_forward_pass_3d(model, input_sizes)
 
 
-
 def test_conformer_forward_pass(sample_input, model):
     output = model(sample_input)
     assert isinstance(output, torch.Tensor)
@@ -1253,7 +1254,6 @@ def test_eeg_simpleconv_features(param_eegsimple):
 
     feature = output
 
-
     assert (feature.shape[0] == batch_size and
             feature.shape[1] == 32)
 
@@ -1488,9 +1488,11 @@ def test_eegnet_final_layer_linear_true():
 
     # Check final layer is Conv2d instead of Flatten/LinearWithConstraint
     final_layer = dict(model.named_modules())["final_layer"]
-    # Inside final_layer for conv-based approach, we expect "conv_classifier" as the first sub-module:
+    # Inside final_layer for conv-based approach, we expect "conv_classifier"
+    # as the first sub-module:
     assert hasattr(final_layer,
                    "linearconstraint"), "Expected a 'linear constraint' sub-module."
+
 
 def test_eegnet_final_layer_linear_false():
     """Test that final_layer_conv=False raises a DeprecationWarning and uses
@@ -1517,7 +1519,6 @@ def test_eegnet_final_layer_linear_false():
     assert "linearconstraint" not in submodule_names, "Did not expected a linearconstraint sub-module."
 
 
-
 @pytest.mark.parametrize(
     "temporal_layer", ['VarLayer', 'StdLayer', 'LogVarLayer',
                        'MeanLayer', 'MaxLayer']
@@ -1542,6 +1543,36 @@ def test_fbcnet_forward_pass(temporal_layer):
     output = model(x)
 
     assert output.shape == (batch_size, n_outputs)
+
+
+def test_fbcnet_specified_filter_parameters():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    n_bands = 9
+
+    model = FBCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        sfreq=250,
+        filter_parameters={"method": "fir",
+                           "filter_length": "auto",
+                           "l_trans_bandwidth": 1.0,
+                           "h_trans_bandwidth": 1.0,
+                           "phase": "zero",
+                           "iir_params": None,
+                           "fir_window": "hamming",
+                           "fir_design": "firwin",
+                           })
+
+    filter_bank_layer = model.spectral_filtering
+    assert filter_bank_layer.n_bands == 9
+    assert filter_bank_layer.phase == "zero"
+    assert filter_bank_layer.method == "fir"
+    assert filter_bank_layer.n_chans == 22
+    assert filter_bank_layer.method_iir is False
 
 
 @pytest.mark.parametrize(
@@ -1574,9 +1605,9 @@ def test_fbcnet_num_parameters(n_chans, n_bands, n_filters_spat, stride_factor):
     n_outputs = 2
     sfreq = 250
 
-    conv_params = (n_filters_spat * n_bands*n_chans + n_filters_spat * n_bands)
+    conv_params = (n_filters_spat * n_bands * n_chans + n_filters_spat * n_bands)
 
-    batchnorm_params = (2*n_filters_spat * n_bands)
+    batchnorm_params = (2 * n_filters_spat * n_bands)
 
     linear_parameters = n_filters_spat * n_bands * stride_factor * n_outputs + n_outputs
 
@@ -1615,6 +1646,8 @@ def test_fbcnet_different_n_times(n_times):
     output = model(x)
 
     assert output.shape == (batch_size, n_outputs)
+
+
 @pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
 def test_fbcnet_stride_factor_warning(stride_factor):
     n_chans = 22
@@ -1636,6 +1669,112 @@ def test_fbcnet_stride_factor_warning(stride_factor):
 def test_fbcnet_invalid_temporal_layer():
     with pytest.raises(NotImplementedError):
         FBCNet(
+            n_chans=22,
+            n_outputs=2,
+            n_times=1000,
+            temporal_layer='InvalidLayer',
+            sfreq=250,
+        )
+
+
+@pytest.mark.parametrize(
+    "temporal_layer", ['VarLayer', 'StdLayer', 'LogVarLayer',
+                       'MeanLayer', 'MaxLayer']
+)
+def test_fbmsnet_forward_pass(temporal_layer):
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    batch_size = 8
+    n_bands = 9
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        temporal_layer=temporal_layer,
+        sfreq=250
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+
+
+def test_fbmsnet_specified_filter_parameters():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    n_bands = 9
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        sfreq=250,
+        filter_parameters={"method": "fir",
+                           "filter_length": "auto",
+                           "l_trans_bandwidth": 1.0,
+                           "h_trans_bandwidth": 1.0,
+                           "phase": "zero",
+                           "iir_params": None,
+                           "fir_window": "hamming",
+                           "fir_design": "firwin",
+                           },
+    )
+
+    filter_bank_layer = model.spectral_filtering
+    assert filter_bank_layer.n_bands == 9
+    assert filter_bank_layer.phase == "zero"
+    assert filter_bank_layer.method == "fir"
+    assert filter_bank_layer.n_chans == 22
+    assert filter_bank_layer.method_iir is False
+
+
+@pytest.mark.parametrize("n_times", [100, 500, 1000, 5000, 10000])
+def test_fbmsnet_different_n_times(n_times):
+    n_chans = 22
+    n_outputs = 2
+    batch_size = 8
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=9,
+        sfreq=250,
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+
+
+@pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
+def test_fbmsnet_stride_factor_warning(stride_factor):
+    n_chans = 22
+    n_times = 1003  # Not divisible by stride_factor when stride_factor > 1
+    n_outputs = 2
+
+    if n_times % stride_factor != 0:
+        with pytest.warns(UserWarning, match="Input will be padded."):
+
+            _ = FBMSNet(
+                n_chans=n_chans,
+                n_outputs=n_outputs,
+                n_times=n_times,
+                stride_factor=stride_factor,
+                sfreq=250,
+            )
+
+
+def test_fbmsnet_invalid_temporal_layer():
+    with pytest.raises(NotImplementedError):
+        FBMSNet(
             n_chans=22,
             n_outputs=2,
             n_times=1000,
@@ -1673,11 +1812,12 @@ def test_initialize_weights_conv():
 
 test_cases = [
     pytest.param(64, id="n_times=64_perfect_multiple"),
-    pytest.param(437, id="n_times=437_trace_example"), # Expect 104
-    pytest.param(95, id="n_times=95_edge_case_1"), # Expect 24
-    pytest.param(67, id="n_times=67_edge_case_2"), # Expect 16
-    pytest.param(94, id="n_times=94_edge_case_3"), # Expect 24
+    pytest.param(437, id="n_times=437_trace_example"),  # Expect 104
+    pytest.param(95, id="n_times=95_edge_case_1"),  # Expect 24
+    pytest.param(67, id="n_times=67_edge_case_2"),  # Expect 16
+    pytest.param(94, id="n_times=94_edge_case_3"),  # Expect 24
 ]
+
 
 @pytest.mark.parametrize("n_times_input", test_cases)
 def test_eegnex_final_layer_in_features(n_times_input):
@@ -1698,6 +1838,7 @@ def test_eegnex_final_layer_in_features(n_times_input):
 
     print(model)
 
+
 @pytest.mark.parametrize("batch_norm", [True, False])
 def test_batchnorm_deep4net(batch_norm):
     """
@@ -1706,6 +1847,7 @@ def test_batchnorm_deep4net(batch_norm):
     model = Deep4Net(n_outputs=2, n_chans=22, n_times=1000, batch_norm=batch_norm)
 
     assert model is not None
+
 
 def test_fc_length_eegconformer():
     """
@@ -1774,18 +1916,16 @@ def test_bendr_parameter_counts():
 
     # Allow 0.1% tolerance
     expected = 157_141_049
-    assert abs(total_params - expected) / expected < 0.001, \
-        f"Expected ~{expected:,} params, got {total_params:,}"
+    assert abs(
+        total_params - expected) / expected < 0.001, f"Expected ~{expected:,} params, got {total_params:,}"
 
     # Count encoder parameters (should be ~4M)
     encoder_params = sum(p.numel() for p in model.encoder.parameters())
-    assert 3_900_000 < encoder_params < 4_100_000, \
-        f"Encoder should have ~4M params, got {encoder_params:,}"
+    assert 3_900_000 < encoder_params < 4_100_000, f"Encoder should have ~4M params, got {encoder_params:,}"
 
     # Count contextualizer parameters (should be ~153M)
     contextualizer_params = sum(p.numel() for p in model.contextualizer.parameters())
-    assert 152_000_000 < contextualizer_params < 154_000_000, \
-        f"Contextualizer should have ~153M params, got {contextualizer_params:,}"
+    assert 152_000_000 < contextualizer_params < 154_000_000, f"Contextualizer should have ~153M params, got {contextualizer_params:,}"
 
 
 def test_bendr_different_channels():
@@ -1812,8 +1952,7 @@ def test_bendr_different_channels():
         total_params = sum(p.numel() for p in model.parameters())
 
         # Check exact match
-        assert total_params == expected_params, \
-            f"For {n_chans} channels: expected {expected_params:,}, got {total_params:,}"
+        assert total_params == expected_params, f"For {n_chans} channels: expected {expected_params:,}, got {total_params:,}"
 
 
 def test_bendr_output_shapes():
