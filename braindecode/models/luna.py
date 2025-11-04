@@ -20,7 +20,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from rotary_embedding_torch import RotaryEmbedding
-from timm.models.layers import trunc_normal_ as __call_trunc_normal_
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
@@ -373,7 +372,7 @@ class LUNA(EEGModuleMixin, nn.Module):
 
 
 def trunc_normal_(tensor: torch.Tensor, mean: float = 0.0, std: float = 1.0) -> None:
-    __call_trunc_normal_(tensor, mean=mean, std=std, a=-std, b=std)
+    nn.init.trunc_normal_(tensor, mean=mean, std=std, a=-std, b=std)
 
 
 def nerf_positional_encoding(coords: torch.Tensor, embed_size: int) -> torch.Tensor:
