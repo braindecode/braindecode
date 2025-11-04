@@ -34,7 +34,7 @@ SIENA_dataset_params = {
     "url": SIENA_URL,
     "archive_name": SIENA_archive_name,
     "folder_name": SIENA_folder_name,
-    "hash": "49c29ebb3a3705ec4e8332fd59141851c25a0fc3",
+    "hash": "126e71e18570cf359a440ba5227494ecffca4b0b0057c733f90ec29ba5e15ff8",  # sha256
     "config_key": SIENA_dataset_name,
 }
 
