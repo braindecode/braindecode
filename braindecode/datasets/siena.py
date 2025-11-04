@@ -189,6 +189,10 @@ def _correct_path(path: str):
                     f"Please rename {Path(path).parent / unzip_file_name}"
                     + f"manually to {path} and try again."
                 )
-        path = os.path.join(path, "SIENA-BIDS-eeg-dataset".lower())
+
+    # Check if the BIDS_Siena folder exists inside the path
+    bids_siena_path = os.path.join(path, "BIDS_Siena")
+    if Path(bids_siena_path).exists():
+        path = bids_siena_path
 
     return path
