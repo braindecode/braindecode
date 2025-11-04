@@ -20,11 +20,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from rotary_embedding_torch import RotaryEmbedding
-from timm.models.layers import DropPath, Mlp
 from timm.models.layers import trunc_normal_ as __call_trunc_normal_
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.modules.layers import DropPath
 
 
 class LUNA(EEGModuleMixin, nn.Module):
@@ -801,4 +801,35 @@ class _PatchEmbedNetwork(nn.Module):
         x = x.unsqueeze(1)
         x = self.proj_in(x)
         x = rearrange(x, "B E CS D -> B CS (D E)")
+        return x
+
+
+class Mlp(nn.Module):
+    """MLP as used in Vision Transformer, MLP-Mixer and related networks.
+
+    Code copied from timm.models.mlp.Mlp
+    """
+
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_layer=nn.GELU,
+        drop=0.0,
+    ):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
         return x
