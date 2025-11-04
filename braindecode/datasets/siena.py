@@ -189,6 +189,6 @@ def _correct_path(path: str):
                     f"Please rename {Path(path).parent / unzip_file_name}"
                     + f"manually to {path} and try again."
                 )
-        path = os.path.join(path, "nmt_scalp_eeg_dataset")
+        path = os.path.join(path, "SIENA-BIDS-eeg-dataset".lower())
 
     return path
