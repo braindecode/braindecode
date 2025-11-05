@@ -18,7 +18,7 @@ import pandas as pd
 
 from braindecode.util import _update_moabb_docstring
 
-from .base import BaseConcatDataset, BaseDataset
+from .base import BaseConcatDataset, RawDataset
 
 
 def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
@@ -164,7 +164,7 @@ class MOABBDataset(BaseConcatDataset):
             dataset_load_kwargs=dataset_load_kwargs,
         )
         all_base_ds = [
-            BaseDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
+            RawDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
         ]
         super().__init__(all_base_ds)
 

@@ -5,9 +5,8 @@ from torch import nn
 
 def glorot_weight_zero_bias(model):
     """Initialize parameters of all modules by initializing weights with
-    glorot
-     uniform/xavier initialization, and setting biases to zero. Weights from
-     batch norm layers are set to 1.
+    glorot uniform/xavier initialization, and setting biases to zero. Weights from
+    batch norm layers are set to 1.
 
     Parameters
     ----------

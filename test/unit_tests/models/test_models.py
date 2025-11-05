@@ -3,7 +3,8 @@
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Daniel Wilson <dan.c.wil@gmail.com>
-#          Bruno Aristimunha <b.aristimunha@gmail.com
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Matthew Chen <matt.chen42601@gmail.com>
 #
 # License: BSD-3
 
@@ -17,6 +18,7 @@ from sklearn.utils import check_random_state
 from torch import nn
 
 from braindecode.models import (
+    BENDR,
     BIOT,
     TCN,
     ATCNet,
@@ -35,6 +37,7 @@ from braindecode.models import (
     EEGSimpleConv,
     EEGTCNet,
     FBCNet,
+    FBMSNet,
     HybridNet,
     IFNet,
     Labram,
@@ -1542,6 +1545,35 @@ def test_fbcnet_forward_pass(temporal_layer):
 
     assert output.shape == (batch_size, n_outputs)
 
+def test_fbcnet_specified_filter_parameters():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    n_bands = 9
+
+    model = FBCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        sfreq=250,
+        filter_parameters={"method": "fir",
+                           "filter_length": "auto",
+                           "l_trans_bandwidth": 1.0,
+                           "h_trans_bandwidth": 1.0,
+                           "phase": "zero",
+                           "iir_params": None,
+                           "fir_window": "hamming",
+                           "fir_design": "firwin",
+                           })
+
+    filter_bank_layer = model.spectral_filtering
+    assert filter_bank_layer.n_bands == 9
+    assert filter_bank_layer.phase == "zero"
+    assert filter_bank_layer.method == "fir"
+    assert filter_bank_layer.n_chans == 22
+    assert filter_bank_layer.method_iir is False
+
 
 @pytest.mark.parametrize(
     "n_chans, n_bands, n_filters_spat, stride_factor",
@@ -1642,6 +1674,110 @@ def test_fbcnet_invalid_temporal_layer():
             sfreq=250,
         )
 
+@pytest.mark.parametrize(
+    "temporal_layer", ['VarLayer', 'StdLayer', 'LogVarLayer',
+                       'MeanLayer', 'MaxLayer']
+)
+def test_fbmsnet_forward_pass(temporal_layer):
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    batch_size = 8
+    n_bands = 9
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        temporal_layer=temporal_layer,
+        sfreq=250
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+
+
+def test_fbmsnet_specified_filter_parameters():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    n_bands = 9
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        sfreq=250,
+        filter_parameters={"method": "fir",
+                           "filter_length": "auto",
+                           "l_trans_bandwidth": 1.0,
+                           "h_trans_bandwidth": 1.0,
+                           "phase": "zero",
+                           "iir_params": None,
+                           "fir_window": "hamming",
+                           "fir_design": "firwin",
+                           },
+    )
+
+    filter_bank_layer = model.spectral_filtering
+    assert filter_bank_layer.n_bands == 9
+    assert filter_bank_layer.phase == "zero"
+    assert filter_bank_layer.method == "fir"
+    assert filter_bank_layer.n_chans == 22
+    assert filter_bank_layer.method_iir is False
+
+
+@pytest.mark.parametrize("n_times", [100, 500, 1000, 5000, 10000])
+def test_fbmsnet_different_n_times(n_times):
+    n_chans = 22
+    n_outputs = 2
+    batch_size = 8
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=9,
+        sfreq=250,
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+
+
+@pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
+def test_fbmsnet_stride_factor_warning(stride_factor):
+    n_chans = 22
+    n_times = 1003  # Not divisible by stride_factor when stride_factor > 1
+    n_outputs = 2
+
+    if n_times % stride_factor != 0:
+        with pytest.warns(UserWarning, match="Input will be padded."):
+
+            _ = FBMSNet(
+                n_chans=n_chans,
+                n_outputs=n_outputs,
+                n_times=n_times,
+                stride_factor=stride_factor,
+                sfreq=250,
+            )
+
+
+def test_fbmsnet_invalid_temporal_layer():
+    with pytest.raises(NotImplementedError):
+        FBMSNet(
+            n_chans=22,
+            n_outputs=2,
+            n_times=1000,
+            temporal_layer='InvalidLayer',
+            sfreq=250,
+        )
 
 def test_initialize_weights_linear():
     linear = nn.Linear(10, 5)
@@ -1722,3 +1858,204 @@ def test_fc_length_eegconformer():
     )
 
     assert model is not None
+
+
+def test_bendr():
+    """
+    Test BENDR model forward pass with 3D inputs.
+    BENDR only accepts 3D inputs: (batch, channels, time).
+    """
+    set_random_seeds(0, False)
+
+    # Standard configuration
+    model = BENDR(
+        n_chans=20,
+        n_outputs=4,
+        n_times=None,  # Auto-infer
+        sfreq=256,
+        input_window_seconds=20.0,
+    )
+
+    # Test with 3D inputs only (BENDR doesn't support 4D)
+    input_sizes = dict(n_channels=20, n_in_times=5120, n_classes=4, n_samples=2)
+    check_forward_pass_3d(model, input_sizes)
+
+
+def test_bendr_parameter_counts():
+    """
+    Test BENDR parameter counts match paper specifications.
+
+    Paper reports ~157M parameters total:
+    - Encoder: ~4M parameters
+    - Contextualizer: ~153M parameters
+    """
+    set_random_seeds(0, False)
+
+    # Standard 20-channel configuration
+    model = BENDR(
+        n_chans=20,
+        n_outputs=2,
+        n_times=5120,
+        sfreq=256,
+    )
+
+    # Count total parameters
+    total_params = sum(p.numel() for p in model.parameters())
+
+    # Should be close to paper: 157,141,049,
+    # At braindecode, there are 2 k params difference
+    # that might come from implementation details from different
+    # torch versions or minor code changes. 157,143,101 in my case.
+
+    # Allow 0.1% tolerance
+    expected = 157_141_049
+    assert abs(total_params - expected) / expected < 0.001, \
+        f"Expected ~{expected:,} params, got {total_params:,}"
+
+    # Count encoder parameters (should be ~4M)
+    encoder_params = sum(p.numel() for p in model.encoder.parameters())
+    assert 3_900_000 < encoder_params < 4_100_000, \
+        f"Encoder should have ~4M params, got {encoder_params:,}"
+
+    # Count contextualizer parameters (should be ~153M)
+    contextualizer_params = sum(p.numel() for p in model.contextualizer.parameters())
+    assert 152_000_000 < contextualizer_params < 154_000_000, \
+        f"Contextualizer should have ~153M params, got {contextualizer_params:,}"
+
+
+def test_bendr_different_channels():
+    """
+    Test BENDR with different channel counts.
+    Parameter count should scale with number of channels.
+    """
+    set_random_seeds(0, False)
+
+    configs = [
+        (1, 157_112_891),   # Single channel
+        (20, 157_142_075),  # Standard
+        (64, 157_209_659),  # More channels
+    ]
+
+    for n_chans, expected_params in configs:
+        model = BENDR(
+            n_chans=n_chans,
+            n_outputs=2,
+            n_times=5120,
+            sfreq=256,
+        )
+
+        total_params = sum(p.numel() for p in model.parameters())
+
+        # Check exact match
+        assert total_params == expected_params, \
+            f"For {n_chans} channels: expected {expected_params:,}, got {total_params:,}"
+
+
+def test_bendr_output_shapes():
+    """
+    Test BENDR output shapes for different configurations.
+    """
+    set_random_seeds(0, False)
+
+    # Binary classification
+    model_binary = BENDR(n_chans=20, n_outputs=2, n_times=5120, sfreq=256)
+    x = torch.randn(4, 20, 5120)
+    y = model_binary(x)
+    assert y.shape == (4, 2), f"Expected (4, 2), got {y.shape}"
+
+    # Multi-class classification
+    model_multi = BENDR(n_chans=20, n_outputs=10, n_times=5120, sfreq=256)
+    y = model_multi(x)
+    assert y.shape == (4, 10), f"Expected (4, 10), got {y.shape}"
+
+    # Regression
+    model_reg = BENDR(n_chans=20, n_outputs=1, n_times=5120, sfreq=256)
+    y = model_reg(x)
+    assert y.shape == (4, 1), f"Expected (4, 1), got {y.shape}"
+
+
+def test_bendr_variable_length():
+    """
+    Test BENDR with variable input lengths.
+    Model should handle different sequence lengths at inference.
+    """
+    set_random_seeds(0, False)
+
+    model = BENDR(
+        n_chans=20,
+        n_outputs=4,
+        n_times=None,  # Don't specify - should work with any length
+        sfreq=256,
+    )
+
+    # Test different lengths
+    for n_times in [2560, 5120, 10240]:
+        x = torch.randn(2, 20, n_times)
+        y = model(x)
+        assert y.shape == (2, 4), f"Failed for length {n_times}: got shape {y.shape}"
+
+
+def test_bendr_gradient_flow():
+    """
+    Test that gradients flow through the entire model.
+    """
+    set_random_seeds(0, False)
+
+    model = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
+    x = torch.randn(2, 20, 5120, requires_grad=True)
+
+    y = model(x)
+    loss = y.sum()
+    loss.backward()
+
+    # Check gradients exist in encoder
+    encoder_has_grad = any(
+        p.grad is not None and p.grad.abs().sum() > 0
+        for p in model.encoder.parameters()
+    )
+    assert encoder_has_grad, "No gradients in encoder"
+
+    # Check gradients exist in contextualizer
+    contextualizer_has_grad = any(
+        p.grad is not None and p.grad.abs().sum() > 0
+        for p in model.contextualizer.parameters()
+    )
+    assert contextualizer_has_grad, "No gradients in contextualizer"
+
+
+@pytest.mark.parametrize("drop_prob", [0.0, 0.1, 0.15])
+def test_bendr_dropout_configurations(drop_prob):
+    """
+    Test BENDR with different dropout rates.
+    Paper uses 0.15 for pretraining, 0.0 for fine-tuning.
+    """
+    set_random_seeds(0, False)
+
+    model = BENDR(
+        n_chans=20,
+        n_outputs=4,
+        n_times=5120,
+        sfreq=256,
+        drop_prob=drop_prob,
+    )
+
+    x = torch.randn(2, 20, 5120)
+
+    # Training mode
+    model.train()
+    y_train = model(x)
+    assert y_train.shape == (2, 4)
+
+    # Eval mode
+    model.eval()
+    y_eval = model(x)
+    assert y_eval.shape == (2, 4)
+
+    # With dropout=0, outputs should be identical
+    if drop_prob == 0.0:
+        np.testing.assert_allclose(
+            y_train.detach().numpy(),
+            y_eval.detach().numpy(),
+            rtol=1e-5,
+            atol=1e-7,
+        )

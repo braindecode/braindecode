@@ -9,7 +9,7 @@ import mne
 import numpy as np
 import pandas as pd
 
-from .base import BaseConcatDataset, BaseDataset, WindowsDataset
+from .base import BaseConcatDataset, RawDataset, WindowsDataset
 
 
 def create_from_mne_raw(
@@ -75,11 +75,9 @@ def create_from_mne_raw(
                 f"length of 'raws' ({len(raws)}) and 'description' "
                 f"({len(descriptions)}) has to match"
             )
-        base_datasets = [
-            BaseDataset(raw, desc) for raw, desc in zip(raws, descriptions)
-        ]
+        base_datasets = [RawDataset(raw, desc) for raw, desc in zip(raws, descriptions)]
     else:
-        base_datasets = [BaseDataset(raw) for raw in raws]
+        base_datasets = [RawDataset(raw) for raw in raws]
 
     base_datasets = BaseConcatDataset(base_datasets)
     windows_datasets = create_windows_from_events(

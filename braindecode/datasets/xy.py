@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike, NDArray
 
-from .base import BaseConcatDataset, BaseDataset
+from .base import BaseConcatDataset, RawDataset
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def create_from_X_y(
         n_samples_per_x.append(x.shape[1])
         info = mne.create_info(ch_names=ch_names, sfreq=sfreq)
         raw = mne.io.RawArray(x, info)
-        base_dataset = BaseDataset(
+        base_dataset = RawDataset(
             raw, pd.Series({"target": target}), target_name="target"
         )
         base_datasets.append(base_dataset)

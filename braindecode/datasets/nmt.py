@@ -31,7 +31,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 from mne.datasets import fetch_dataset
 
-from braindecode.datasets.base import BaseConcatDataset, BaseDataset
+from braindecode.datasets.base import BaseConcatDataset, RawDataset
 
 NMT_URL = "https://zenodo.org/record/10909103/files/NMT.zip"
 NMT_archive_name = "NMT.zip"
@@ -172,7 +172,7 @@ class NMT(BaseConcatDataset):
         d["n_samples"] = raw.n_times
         d["sfreq"] = raw.info["sfreq"]
         d["train"] = "train" in d.path.split(os.sep)
-        base_dataset = BaseDataset(raw, d, target_name)
+        base_dataset = RawDataset(raw, d, target_name)
         return base_dataset
 
 

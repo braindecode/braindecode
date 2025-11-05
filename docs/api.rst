@@ -34,6 +34,9 @@ All the models are implemented as subclasses of :py:class:`EEGModuleMixin`, whic
 base class for all EEG models in Braindecode. The :class:`EEGModuleMixin` class
 provides a common interface for all EEG models and derivate variables names if necessary.
 
+Also, all models inherit from :class:`PyTorchModelHubMixin`, which provides functionality to
+save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` package is installed.
+
 :py:mod:`braindecode.models.base`:
 
 .. currentmodule:: braindecode.models
@@ -57,6 +60,7 @@ provides a common interface for all EEG models and derivate variables names if n
     AttnSleep
     BDTCN
     BIOT
+    BENDR
     ContraWR
     CTNet
     Deep4Net
@@ -313,7 +317,8 @@ Base classes
    :toctree: generated/
 
     BaseConcatDataset
-    BaseDataset
+    RecordDataset
+    RawDataset
     WindowsDataset
     BIDSDataset
     BIDSEpochsDataset
@@ -369,12 +374,39 @@ Preprocessing
     filterbank
     preprocess
     Preprocessor
-    Resample
+    EEGPrep
+
+
+Preprocessing Transform
+''''''''''''''''''''''''
+
+These modules implement various preprocessing transforms that can be applied
+to EEG data, including cropping, filtering, resampling, and channel selection.
+
+:py:mod:`braindecode.preprocessing`:
+
+.. currentmodule:: braindecode.preprocessing
+
+.. autosummary::
+   :toctree: generated/
+
+    Crop
     DropChannels
-    SetEEGReference
     Filter
     Pick
-    Crop
+    ReinterpolateRemovedChannels
+    RemoveBadChannels
+    RemoveBadChannelsNoLocs
+    RemoveBadWindows
+    RemoveBursts
+    RemoveCommonAverageReference
+    RemoveDCOffset
+    RemoveDrifts
+    RemoveFlatChannels
+    Resample
+    Resampling
+    SetEEGReference
+
 
 Data Utils
 ==========
