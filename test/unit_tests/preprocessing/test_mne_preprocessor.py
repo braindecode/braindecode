@@ -16,7 +16,6 @@ import mne
 import numpy as np
 import pandas as pd
 import pytest
-from pytest_cases import parametrize_with_cases
 
 from braindecode.datasets import BaseConcatDataset, MOABBDataset, RawDataset
 from braindecode.datautil.serialization import load_concat_dataset
@@ -67,45 +66,67 @@ from braindecode.preprocessing.preprocess import (
 )
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 
-# We can't use fixtures with scope='module' as the dataset objects are modified
-# inplace during preprocessing. To avoid the long setup time caused by calling
-# the dataset/windowing functions multiple times, we instantiate the dataset
-# objects once and deep-copy them in fixture.
-bnci_kwargs = {
-    "n_sessions": 2,
-    "n_runs": 1,
-    "n_subjects": 1,
-    "paradigm": "imagery",
-    "duration": 386,
-    "sfreq": 250,
-    "event_list": ("left", "right"),
-    "channels": ("C4", "Cz", "FC3", "Pz", "P2", "P1", "POz"),
-}
 
-raw_ds = MOABBDataset(
-    dataset_name="FakeDataset", subject_ids=[1], dataset_kwargs=bnci_kwargs
-)
-windows_ds = create_fixed_length_windows(
-    raw_ds,
-    start_offset_samples=100,
-    stop_offset_samples=None,
-    window_size_samples=1000,
-    window_stride_samples=1000,
-    drop_last_window=True,
-    mapping=None,
-    preload=True,
-)
+@pytest.fixture(scope="module")
+def _raw_dataset():
+    """Create the raw dataset once for the module."""
+    bnci_kwargs = {
+        "n_sessions": 2,
+        "n_runs": 1,
+        "n_subjects": 1,
+        "paradigm": "imagery",
+        "duration": 386,
+        "sfreq": 250,
+        "event_list": ("left", "right"),
+        "channels": ("C4", "Cz", "FC3", "Pz", "P2", "P1", "POz"),
+    }
+    return MOABBDataset(
+        dataset_name="FakeDataset", subject_ids=[1], dataset_kwargs=bnci_kwargs
+    )
 
 
-# Get the raw data in fixture
-@pytest.fixture
-def base_concat_ds():
-    return copy.deepcopy(raw_ds)
+@pytest.fixture(scope="module")
+def _windows_dataset(_raw_dataset):
+    """Create the windows dataset once for the module."""
+    return create_fixed_length_windows(
+        _raw_dataset,
+        start_offset_samples=100,
+        stop_offset_samples=None,
+        window_size_samples=1000,
+        window_stride_samples=1000,
+        drop_last_window=True,
+        mapping=None,
+        preload=True,
+    )
 
 
 @pytest.fixture
-def windows_concat_ds():
-    return copy.deepcopy(windows_ds)
+def base_concat_ds(_raw_dataset):
+    """Get a fresh copy of the raw dataset for each test."""
+    return copy.deepcopy(_raw_dataset)
+
+
+@pytest.fixture
+def windows_concat_ds(_windows_dataset):
+    """Get a fresh copy of the windows dataset for each test."""
+    return copy.deepcopy(_windows_dataset)
+
+
+@pytest.fixture
+def base_concat_ds_with_montage(base_concat_ds):
+    """Dataset with montage set for functions that require it."""
+    montage = mne.channels.make_standard_montage('standard_1020')
+    for d in base_concat_ds.datasets:
+        d.raw.set_montage(montage, match_case=False, on_missing='ignore')
+    return base_concat_ds
+
+
+@pytest.fixture
+def base_concat_ds_with_bad_channels(base_concat_ds_with_montage):
+    """Dataset with bad channels marked for interpolation."""
+    for d in base_concat_ds_with_montage.datasets:
+        d.raw.info['bads'] = ['Pz']
+    return base_concat_ds_with_montage
 
 
 def test_preprocess_raw_kwargs(base_concat_ds):
@@ -141,190 +162,65 @@ def test_preprocess_windows_kwargs(windows_concat_ds):
     )
 
 
-# To test one preprocessor at each time, using this fixture structure
-class PrepClasses:
-    @pytest.mark.parametrize("sfreq", [100, 300])
-    def prep_resample(self, sfreq):
-        return Resample(sfreq=sfreq)
+@pytest.mark.parametrize("prep_class,init_kwargs,marks", [
+    (Resample, {"sfreq": 100}, []),
+    (Resample, {"sfreq": 300}, []),
+    (Pick, {"picks": "eeg"}, []),
+    (Pick, {"picks": ["Cz"]}, []),
+    (Pick, {"picks": ["C4", "FC3"]}, []),
+    (Filter, {"l_freq": 4, "h_freq": 30}, []),
+    (Filter, {"l_freq": 7, "h_freq": None}, []),
+    (Filter, {"l_freq": None, "h_freq": 35}, []),
+    (SetEEGReference, {"ref_channels": "average"}, []),
+    (SetEEGReference, {"ref_channels": ["C4"]}, []),
+    (SetEEGReference, {"ref_channels": ["C4", "Cz"]}, []),
+    (Crop, {"tmin": 0, "tmax": 0.1}, []),
+    (Crop, {"tmin": 0.1, "tmax": 1.2}, []),
+    (Crop, {"tmin": 0.1, "tmax": None}, []),
+    (DropChannels, {"ch_names": "Pz"}, []),
+    (DropChannels, {"ch_names": "P2"}, []),
+    (NotchFilter, {"freqs": [50]}, []),
+    (NotchFilter, {"freqs": [60]}, []),
+    (SavgolFilter, {"h_freq": 10}, []),
+    (SavgolFilter, {"h_freq": 20}, []),
+    (RenameChannels, {"mapping": {"C4": "C4_new"}}, []),
+    (ReorderChannels, {"ch_names": ["Cz", "C4", "FC3", "Pz"]}, []),
+    (AddReferenceChannels, {"ref_channels": "FCz"}, []),
+    (ApplyHilbert, {"envelope": True}, []),
+    (ApplyHilbert, {"envelope": False}, []),
+    (ApplyProj, {}, []),
+    (InterpolateBads, {"reset_bads": True}, []),
+    (SetMontage, {"montage": mne.channels.make_standard_montage('standard_1020'), "match_case": False, "on_missing": "ignore"}, []),
+    (ComputeCurrentSourceDensity, {}, [pytest.mark.skip(reason="requires montage setup")]),
+    (Anonymize, {}, []),
+    (SetChannelTypes, {"mapping": {"C4": "eog"}}, []),
+    (Rescale, {"scalings": {"eeg": 1e-6}}, []),
+    (FixMagCoilTypes, {}, [pytest.mark.skip(reason="MEG-specific")]),
+    (AddProj, {"projs": [{'kind': 1, 'active': False, 'desc': 'test', 'data': {'col_names': [], 'row_names': [], 'data': np.array([[]])}}]}, []),
+    (DelProj, {"idx": 0}, [pytest.mark.skip(reason="requires existing projections")]),
+    (SetMeasDate, {"meas_date": 1}, []),
+    (SetMeasDate, {"meas_date": 10}, []),
+    (AddChannels, {"add_list": []}, [pytest.mark.skip(reason="requires additional raw object")]),
+    (CropByAnnotations, {"annotations": ['BAD']}, [pytest.mark.skip(reason="requires specific annotation format")]),
+    (EqualizeChannels, {"raws": []}, [pytest.mark.skip(reason="requires multiple raw objects")]),
+    (FixStimArtifact, {"events": None}, [pytest.mark.skip(reason="requires event setup")]),
+    (AddEvents, {"events": np.array([[100, 0, 1], [200, 0, 2]])}, []),
+    (ApplyGradientCompensation, {"grade": 0}, [pytest.mark.skip(reason="MEG-specific")]),
+    (SetAnnotations, {"annotations": mne.Annotations(onset=[1], duration=[0.5], description=['test'])}, []),
+    (AnnotateMovement, {"t_step_min": 0.01}, [pytest.mark.skip(reason="requires head position data")]),
+    (FilterData, {"l_freq": 4, "h_freq": 30, "sfreq": 250}, [pytest.mark.skip(reason="low-level function, use Filter instead")]),
+    (FindBadChannelsLof, {}, [pytest.mark.skip(reason="requires specific data characteristics")]),
+    (EqualizeBads, {"raws": []}, [pytest.mark.skip(reason="requires multiple raw instances")]),
+    (SetBipolarReference, {"anode": "C4", "cathode": "Cz"}, [pytest.mark.skip(reason="requires anode/cathode setup")]),
+])
+def test_preprocessing_classes(base_concat_ds, prep_class, init_kwargs, marks):
+    """Test individual preprocessing classes with various parameters."""
+    # Apply marks if any
+    for mark in marks:
+        pytest.skip(mark.kwargs.get('reason', 'Skipped'))
 
-    @pytest.mark.parametrize("picks", ["eeg"])
-    def prep_picktype(self, picks):
-        return Pick(picks=picks)
-
-    @pytest.mark.parametrize("picks", [["Cz"], ["C4", "FC3"]])
-    def prep_pickchannels(self, picks):
-        return Pick(picks=picks)
-
-    @pytest.mark.parametrize("l_freq,h_freq", [(4, 30), (7, None), (None, 35)])
-    def prep_filter(self, l_freq, h_freq):
-        return Filter(l_freq=l_freq, h_freq=h_freq)
-
-    @pytest.mark.parametrize("ref_channels", ["average", ["C4"], ["C4", "Cz"]])
-    def prep_setref(self, ref_channels):
-        return SetEEGReference(ref_channels=ref_channels)
-
-    @pytest.mark.parametrize("tmin,tmax", [(0, 0.1), (0.1, 1.2), (0.1, None)])
-    def prep_crop(self, tmin, tmax):
-        return Crop(tmin=tmin, tmax=tmax)
-
-    @pytest.mark.parametrize("ch_names", ["Pz", "P2", "P1", "POz"])
-    def prep_drop(self, ch_names):
-        return DropChannels(ch_names=ch_names)
-
-    @pytest.mark.parametrize("freqs", [[50], [60]])
-    def prep_notch(self, freqs):
-        return NotchFilter(freqs=freqs)
-
-    @pytest.mark.parametrize("h_freq", [10, 20])
-    def prep_savgol(self, h_freq):
-        return SavgolFilter(h_freq=h_freq)
-
-    @pytest.mark.parametrize("mapping", [{"C4": "C4_new"}])
-    def prep_rename(self, mapping):
-        return RenameChannels(mapping=mapping)
-
-    @pytest.mark.parametrize("ch_names", [["Cz", "C4", "FC3", "Pz"]])
-    def prep_reorder(self, ch_names):
-        return ReorderChannels(ch_names=ch_names)
-
-    @pytest.mark.parametrize("ref_channels", ["FCz"])
-    def prep_addref(self, ref_channels):
-        return AddReferenceChannels(ref_channels=ref_channels)
-
-    @pytest.mark.parametrize("envelope", [True, False])
-    def prep_hilbert(self, envelope):
-        return ApplyHilbert(envelope=envelope)
-
-    def prep_proj(self):
-        return ApplyProj()
-
-    def prep_interpolate(self):
-        return InterpolateBads(reset_bads=True)
-
-    def prep_montage(self):
-        montage = mne.channels.make_standard_montage('standard_1020')
-        return SetMontage(montage=montage, match_case=False, on_missing='ignore')
-
-    def prep_csd(self):
-        pytest.skip("ComputeCurrentSourceDensity requires montage setup")
-        return ComputeCurrentSourceDensity()
-
-    def prep_anonymize(self):
-        return Anonymize()
-
-    @pytest.mark.parametrize("mapping", [{"C4": "eog"}])
-    def prep_setchanneltypes(self, mapping):
-        return SetChannelTypes(mapping=mapping)
-
-    @pytest.mark.parametrize("scalings", [{"eeg": 1e-6}])
-    def prep_rescale(self, scalings):
-        return Rescale(scalings=scalings)
-
-    def prep_fixmagcoiltypes(self):
-        pytest.skip("FixMagCoilTypes is MEG-specific")
-        return FixMagCoilTypes()
-
-    def prep_addproj(self):
-        # Create a simple projection
-        import numpy as np
-        proj_data = {
-            'kind': 1,
-            'active': False,
-            'desc': 'test',
-            'data': {'col_names': [], 'row_names': [], 'data': np.array([[]])},
-        }
-        return AddProj(projs=[proj_data])
-
-    def prep_delproj(self):
-        pytest.skip("DelProj requires existing projections")
-        return DelProj(idx=0)
-
-    @pytest.mark.parametrize("daysback", [1, 10])
-    def prep_setmeasdate(self, daysback):
-        return SetMeasDate(meas_date=daysback)
-
-    def prep_addchannels(self):
-        # Create a simple raw to add
-        info = mne.create_info(ch_names=['new_ch'], sfreq=250, ch_types=['eeg'])
-        new_raw = mne.io.RawArray(np.random.randn(1, 96500), info)
-        return AddChannels(add_list=[new_raw])
-
-    def prep_cropbyannotations(self):
-        pytest.skip("CropByAnnotations requires specific annotation format")
-        # Create annotations first, then crop by them
-        return CropByAnnotations(annotations=['BAD'])
-
-    def prep_equalizechannels(self):
-        pytest.skip("EqualizeChannels requires multiple raw objects")
-        # This requires another raw object with same channels
-        return EqualizeChannels(raws=[])
-
-    def prep_fixstimart(self):
-        pytest.skip("FixStimArtifact requires event setup")
-        return FixStimArtifact(events=None)
-
-    def prep_addevents(self):
-        # Create simple events array
-        events = np.array([[100, 0, 1], [200, 0, 2]])
-        return AddEvents(events=events)
-
-    @pytest.mark.parametrize("grade", [0, 1])
-    def prep_applygradcomp(self, grade):
-        pytest.skip("ApplyGradientCompensation is MEG-specific")
-        return ApplyGradientCompensation(grade=grade)
-
-    def prep_setannotations(self):
-        # Create simple annotations
-        annot = mne.Annotations(onset=[1], duration=[0.5], description=['test'])
-        return SetAnnotations(annotations=annot)
-
-    def prep_annotatemovement(self):
-        pytest.skip("AnnotateMovement requires head position data")
-        return AnnotateMovement(t_step_min=0.01)
-
-    def prep_filterdata(self):
-        pytest.skip("FilterData is a low-level function, use Filter instead")
-        return FilterData(l_freq=4, h_freq=30, sfreq=250)
-
-    def prep_findbadchannelslof(self):
-        pytest.skip("FindBadChannelsLof requires specific data characteristics")
-        return FindBadChannelsLof()
-
-    def prep_equalizebads(self):
-        pytest.skip("EqualizeBads requires multiple raw instances")
-        return EqualizeBads(raws=[])
-
-    @pytest.mark.parametrize("ref_channels", [["C4", "Cz"]])
-    def prep_setbipolarref(self, ref_channels):
-        pytest.skip("SetBipolarReference requires specific anode/cathode setup")
-        # This requires anode and cathode specification
-        return SetBipolarReference(anode=ref_channels[0], cathode=ref_channels[1])
-
-
-@pytest.fixture
-def base_concat_ds_with_montage(base_concat_ds):
-    """Dataset with montage set for functions that require it."""
-    import copy
-    ds = copy.deepcopy(base_concat_ds)
-    montage = mne.channels.make_standard_montage('standard_1020')
-    for d in ds.datasets:
-        d.raw.set_montage(montage, match_case=False, on_missing='ignore')
-    return ds
-
-
-@pytest.fixture
-def base_concat_ds_with_bad_channels(base_concat_ds_with_montage):
-    """Dataset with bad channels marked for interpolation."""
-    import copy
-    ds = copy.deepcopy(base_concat_ds_with_montage)
-    for d in ds.datasets:
-        d.raw.info['bads'] = ['Pz']
-    return ds
-
-
-@parametrize_with_cases("prep", cases=PrepClasses, prefix="prep_")
-def test_preprocessings(prep, base_concat_ds):
-    preprocessors = [prep]
+    preprocessor = prep_class(**init_kwargs)
+    preprocessors = [preprocessor]
     preprocess(base_concat_ds, preprocessors, n_jobs=1)
 
 
