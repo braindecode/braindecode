@@ -122,6 +122,7 @@ from braindecode.preprocessing import (
     preprocess,
 )
 
+######################################################################
 
 # Load the EEG dataset
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
