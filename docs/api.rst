@@ -382,7 +382,6 @@ Preprocessing
     Anonymize
     AnnotateAmplitude
     AnnotateBreak
-    AnnotateMovement
     AnnotateMuscleZscore
     AnnotateNan
     ApplyGradientCompensation

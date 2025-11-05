@@ -66,7 +66,6 @@ used with :func:`~braindecode.preprocessing.preprocess`.
 
 - :class:`~braindecode.preprocessing.AnnotateAmplitude` : Annotate periods based on amplitude
 - :class:`~braindecode.preprocessing.AnnotateBreak` : Annotate breaks in the data
-- :class:`~braindecode.preprocessing.AnnotateMovement` : Annotate movement artifacts
 - :class:`~braindecode.preprocessing.AnnotateMuscleZscore` : Annotate muscle artifacts using z-score
 - :class:`~braindecode.preprocessing.AnnotateNan` : Annotate NaN values in data
 
@@ -133,7 +132,6 @@ from .mne_preprocess import (  # type: ignore[attr-defined]
     AddReferenceChannels,
     AnnotateAmplitude,
     AnnotateBreak,
-    AnnotateMovement,
     AnnotateMuscleZscore,
     AnnotateNan,
     Anonymize,
@@ -199,7 +197,6 @@ __all__ = [
     "Anonymize",
     "AnnotateAmplitude",
     "AnnotateBreak",
-    "AnnotateMovement",
     "AnnotateMuscleZscore",
     "AnnotateNan",
     "ApplyGradientCompensation",

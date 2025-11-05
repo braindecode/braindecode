@@ -11,7 +11,6 @@ import mne.io
 import mne.preprocessing
 
 from braindecode.preprocessing.preprocess import Preprocessor
-from braindecode.util import _update_moabb_docstring
 
 
 def _is_standalone_function(func):
@@ -70,8 +69,30 @@ def _generate_mne_pre_processor(function):
     class_name = "".join(word.title() for word in function.__name__.split("_")).replace(
         "Eeg", "EEG"
     )
-    import_path = f"{function.__module__}.{function.__name__}"
-    doc = f" See more details in {import_path}"
+    # Create a wrapper note that references the original MNE function
+    # For Raw methods, use mne.io.Raw.method_name format with :meth:
+    # For standalone functions, use the function name only with :func:
+    if hasattr(mne.io.Raw, function.__name__):
+        ref_path = f"mne.io.Raw.{function.__name__}"
+        ref_role = "meth"
+    else:
+        # For standalone functions, try common MNE public APIs
+        # These are more likely to be in intersphinx inventory
+        func_name = function.__name__
+        if function.__module__.startswith("mne.preprocessing"):
+            ref_path = f"mne.preprocessing.{func_name}"
+        elif function.__module__.startswith("mne.channels"):
+            ref_path = f"mne.channels.{func_name}"
+        elif function.__module__.startswith("mne.filter"):
+            ref_path = f"mne.filter.{func_name}"
+        else:
+            ref_path = f"{function.__module__}.{func_name}"
+        ref_role = "func"
+
+    # Use proper Sphinx cross-reference for intersphinx linking
+    wrapper_note = (
+        f"Braindecode preprocessor wrapper for :{ref_role}:`~{ref_path}`.\n\n"
+    )
 
     base_classes = (Preprocessor,)
 
@@ -89,7 +110,7 @@ def _generate_mne_pre_processor(function):
             "__init__": _generate_init_method(
                 function, force_copy_false=force_copy_false
             ),
-            "__doc__": _update_moabb_docstring(function, doc),
+            "__doc__": wrapper_note + (function.__doc__ or ""),
             "fn": function,  # Store the function itself, not the name
             "_is_standalone": True,
         }
@@ -97,7 +118,7 @@ def _generate_mne_pre_processor(function):
         # For methods, store the function name as before
         class_attrs = {
             "__init__": _generate_init_method(function),
-            "__doc__": _update_moabb_docstring(function, doc),
+            "__doc__": wrapper_note + (function.__doc__ or ""),
             "fn": function.__name__,
             "_is_standalone": False,
         }
@@ -145,7 +166,6 @@ mne_functions = [
     # Standalone functions from mne.preprocessing
     mne.preprocessing.annotate_amplitude,
     mne.preprocessing.annotate_break,
-    mne.preprocessing.annotate_movement,
     mne.preprocessing.annotate_muscle_zscore,
     mne.preprocessing.annotate_nan,
     mne.preprocessing.compute_current_source_density,
