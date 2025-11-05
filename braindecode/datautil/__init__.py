@@ -2,6 +2,10 @@
 Utilities for data manipulation.
 """
 
+from .channel_utils import (
+    division_channels_idx,
+    match_hemisphere_chans,
+)
 from .serialization import (
     _check_save_dir_empty,
     load_concat_dataset,
@@ -49,4 +53,10 @@ def __getattr__(name):
     raise AttributeError("No possible import named " + name)
 
 
-__all__ = ["load_concat_dataset", "save_concat_dataset", "_check_save_dir_empty"]
+__all__ = [
+    "load_concat_dataset",
+    "save_concat_dataset",
+    "_check_save_dir_empty",
+    "match_hemisphere_chans",
+    "division_channels_idx",
+]

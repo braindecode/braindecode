@@ -27,6 +27,8 @@ from braindecode.modules import (
 class CTNet(EEGModuleMixin, nn.Module):
     """CTNet from Zhao, W et al (2024) [ctnet]_.
 
+    :bdg-success:`Convolution` :bdg-info:`Small Attention`
+
      A Convolutional Transformer Network for EEG-Based Motor Imagery Classification
 
      .. figure:: https://raw.githubusercontent.com/snailpt/CTNet/main/architecture.png
