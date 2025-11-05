@@ -51,25 +51,24 @@ class HubDatasetMixin:
     def push_to_hub(
         self,
         repo_id: str,
-        format: str = "hdf5",
         commit_message: Optional[str] = None,
         private: bool = False,
         token: Optional[str] = None,
         create_pr: bool = False,
-        **format_kwargs,
+        compression: str = "blosc",
+        compression_level: int = 5,
     ) -> str:
         """
-        Upload the dataset to the Hugging Face Hub.
+        Upload the dataset to the Hugging Face Hub in Zarr format.
+
+        The dataset is converted to Zarr format with blosc compression, which provides
+        optimal random access performance for PyTorch training (based on comprehensive
+        benchmarking).
 
         Parameters
         ----------
         repo_id : str
             Repository ID on the Hugging Face Hub (e.g., "username/dataset-name").
-        format : str, default="hdf5"
-            Storage format for the dataset. Options:
-            - "hdf5": HDF5 format (recommended for most cases)
-            - "zarr": Zarr format (good for very large datasets)
-            - "npz_parquet": NumPy + Parquet format (simple, lightweight)
         commit_message : str | None
             Commit message. If None, a default message is generated.
         private : bool, default=False
@@ -78,9 +77,10 @@ class HubDatasetMixin:
             Hugging Face API token. If None, uses cached token.
         create_pr : bool, default=False
             Whether to create a Pull Request instead of directly committing.
-        **format_kwargs
-            Additional arguments passed to the format converter
-            (e.g., compression, compression_level).
+        compression : str, default="blosc"
+            Compression algorithm for Zarr. Options: "blosc", "zstd", "gzip", None.
+        compression_level : int, default=5
+            Compression level (0-9). Level 5 provides optimal balance.
 
         Returns
         -------
@@ -97,12 +97,17 @@ class HubDatasetMixin:
         Examples
         --------
         >>> dataset = NMT(path=path, preload=True)
+        >>> # Upload with default settings (zarr with blosc compression)
         >>> url = dataset.push_to_hub(
         ...     repo_id="myusername/nmt-dataset",
-        ...     format="hdf5",
-        ...     compression="gzip",
-        ...     compression_level=4,
         ...     commit_message="Upload NMT EEG dataset"
+        ... )
+        >>>
+        >>> # Or customize compression
+        >>> url = dataset.push_to_hub(
+        ...     repo_id="myusername/nmt-dataset",
+        ...     compression="blosc",
+        ...     compression_level=5
         ... )
         """
         if not HF_HUB_AVAILABLE:
@@ -113,12 +118,6 @@ class HubDatasetMixin:
 
         if len(self.datasets) == 0:
             raise ValueError("Cannot upload an empty dataset")
-
-        if format not in ["hdf5", "zarr", "npz_parquet"]:
-            raise ValueError(
-                f"Invalid format '{format}'. Must be one of: "
-                "'hdf5', 'zarr', 'npz_parquet'"
-            )
 
         # Create API instance
         api = HfApi(token=token)
@@ -135,30 +134,23 @@ class HubDatasetMixin:
         except Exception as e:
             raise RuntimeError(f"Failed to create repository: {e}")
 
-        # Import converters (lazy import to avoid circular dependency)
-        from ..datautil.hub_formats import (
-            convert_to_hdf5,
-            convert_to_npz_parquet,
-            convert_to_zarr,
-            get_format_info,
-        )
+        # Import converter (lazy import to avoid circular dependency)
+        from ..datautil.hub_formats import convert_to_zarr, get_format_info
 
         # Create a temporary directory for upload
         import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
 
-            # Convert dataset to chosen format
-            print(f"Converting dataset to {format} format...")
-            if format == "hdf5":
-                dataset_path = tmp_path / "dataset.h5"
-                convert_to_hdf5(self, dataset_path, **format_kwargs)
-            elif format == "zarr":
-                dataset_path = tmp_path / "dataset.zarr"
-                convert_to_zarr(self, dataset_path, **format_kwargs)
-            elif format == "npz_parquet":
-                dataset_path = tmp_path / "dataset"
-                convert_to_npz_parquet(self, dataset_path, **format_kwargs)
+            # Convert dataset to Zarr format
+            print("Converting dataset to Zarr format...")
+            dataset_path = tmp_path / "dataset.zarr"
+            convert_to_zarr(
+                self,
+                dataset_path,
+                compression=compression,
+                compression_level=compression_level,
+            )
 
             # Save dataset metadata
             self._save_dataset_card(tmp_path)
@@ -168,8 +160,9 @@ class HubDatasetMixin:
             with open(format_info_path, "w") as f:
                 json.dump(
                     {
-                        "format": format,
-                        "format_kwargs": format_kwargs,
+                        "format": "zarr",
+                        "compression": compression,
+                        "compression_level": compression_level,
                         **get_format_info(self),
                     },
                     f,
@@ -179,7 +172,7 @@ class HubDatasetMixin:
             # Default commit message
             if commit_message is None:
                 commit_message = (
-                    f"Upload EEG dataset with {format} format "
+                    f"Upload EEG dataset in Zarr format "
                     f"({len(self.datasets)} recordings)"
                 )
 
@@ -310,7 +303,10 @@ If you use this dataset in your research, please cite braindecode:
 
 ## Dataset Format
 
-This dataset is stored in **{format_info.get('recommended_format', 'hdf5')}** format for efficient storage and fast random access during training.
+This dataset is stored in **{format_info.get('recommended_format', 'zarr')}** format, optimized for:
+- Fast random access during training (critical for PyTorch DataLoader)
+- Efficient compression with blosc
+- Cloud-native storage compatibility
 
 For more information about braindecode, visit: https://braindecode.org
 """
@@ -380,73 +376,44 @@ For more information about braindecode, visit: https://braindecode.org
 
         print(f"Loading dataset from Hugging Face Hub ({repo_id})...")
 
-        # Lazy import loaders to avoid circular dependency
-        from ..datautil.hub_formats import (
-            load_from_hdf5,
-            load_from_npz_parquet,
-            load_from_zarr,
-        )
+        # Lazy import loader to avoid circular dependency
+        from ..datautil.hub_formats import load_from_zarr
+        from huggingface_hub import snapshot_download
 
         try:
-            # Download format info first to know which files to download
-            format_info_path = hf_hub_download(
+            # Download the entire dataset directory
+            dataset_dir = snapshot_download(
                 repo_id=repo_id,
-                filename="format_info.json",
                 repo_type="dataset",
                 token=token,
                 cache_dir=cache_dir,
                 force_download=force_download,
             )
 
-            with open(format_info_path, "r") as f:
-                format_info = json.load(f)
+            # Load format info
+            format_info_path = Path(dataset_dir) / "format_info.json"
+            if format_info_path.exists():
+                with open(format_info_path, "r") as f:
+                    format_info = json.load(f)
 
-            dataset_format = format_info["format"]
-            print(f"  Format: {dataset_format}")
-
-            # Download the dataset based on format
-            if dataset_format == "hdf5":
-                dataset_file = hf_hub_download(
-                    repo_id=repo_id,
-                    filename="dataset.h5",
-                    repo_type="dataset",
-                    token=token,
-                    cache_dir=cache_dir,
-                    force_download=force_download,
-                )
-                dataset = load_from_hdf5(dataset_file, preload=preload)
-
-            elif dataset_format == "zarr":
-                # For zarr, we need to download the entire directory
-                # This is more complex and might require snapshot download
-                from huggingface_hub import snapshot_download
-
-                dataset_dir = snapshot_download(
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    token=token,
-                    cache_dir=cache_dir,
-                    force_download=force_download,
-                )
-                zarr_path = Path(dataset_dir) / "dataset.zarr"
-                dataset = load_from_zarr(zarr_path, preload=preload)
-
-            elif dataset_format == "npz_parquet":
-                # Similar to zarr, download entire directory
-                from huggingface_hub import snapshot_download
-
-                dataset_dir = snapshot_download(
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    token=token,
-                    cache_dir=cache_dir,
-                    force_download=force_download,
-                )
-                npz_path = Path(dataset_dir) / "dataset"
-                dataset = load_from_npz_parquet(npz_path, preload=preload)
-
+                # Verify it's zarr format
+                if format_info.get("format") != "zarr":
+                    raise ValueError(
+                        f"Dataset format is '{format_info.get('format')}', but only "
+                        "'zarr' format is supported. Please re-upload the dataset."
+                    )
             else:
-                raise ValueError(f"Unknown dataset format: {dataset_format}")
+                format_info = {}
+
+            # Load zarr dataset
+            zarr_path = Path(dataset_dir) / "dataset.zarr"
+            if not zarr_path.exists():
+                raise FileNotFoundError(
+                    f"Zarr dataset not found at {zarr_path}. "
+                    "The dataset may be in an unsupported format."
+                )
+
+            dataset = load_from_zarr(zarr_path, preload=preload)
 
             print(f"✅ Dataset loaded successfully!")
             print(f"   Recordings: {len(dataset.datasets)}")

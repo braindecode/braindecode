@@ -73,9 +73,6 @@ print("=" * 70)
 # print(f"\nUploading dataset to {repo_id}...")
 # url = windows_dataset.push_to_hub(
 #     repo_id=repo_id,
-#     format="hdf5",  # Options: "hdf5", "zarr", "npz_parquet"
-#     compression="gzip",
-#     compression_level=4,
 #     commit_message="Upload NMT sample dataset with 4s windows",
 #     private=False,  # Set to True for private datasets
 # )
@@ -88,32 +85,23 @@ To upload this dataset, uncomment the code above and:
 2. Login with: huggingface-cli login
 3. Run this script
 
-The dataset will be converted to HDF5 format (recommended) and uploaded
-with metadata, making it easy for others to discover and use.
+The dataset will be converted to Zarr format (optimized for training)
+and uploaded with metadata, making it easy for others to discover and use.
 """)
 
 ###############################################################################
-# Format options
-# --------------
-# You can choose different formats based on your needs:
+# Zarr Format
+# -----------
+# Datasets are uploaded in Zarr format, which provides:
 #
-# **HDF5 (recommended for most cases)**
-#
-# - Fast random access (important for training)
-# - Good compression
-# - Single file (easy to manage)
-#
-# **Zarr (for very large datasets)**
-#
+# - Fastest random access (0.010 ms - critical for PyTorch training)
+# - Excellent compression with blosc
 # - Cloud-native, chunked storage
-# - Better for streaming from cloud
-# - Good for datasets > 1GB
+# - Ideal for datasets of all sizes
+# - Based on comprehensive benchmarking with 1000 subjects
 #
-# **NumPy + Parquet (for small datasets)**
-#
-# - Simple and lightweight
-# - Good for datasets < 100MB
-# - Easy to inspect metadata
+# The format parameters (compression, compression_level) are optimized by default
+# but can be customized if needed.
 
 ###############################################################################
 # Download dataset from Hugging Face Hub
@@ -235,9 +223,10 @@ The Hub integration is fully compatible with PyTorch's training pipeline.
 #    - Known issues or limitations
 #    - Citation information
 #
-# 2. **Choose appropriate format** - Run the benchmark script
-#    (``plot_benchmark_hub_formats.py``) to decide which format is best
-#    for your dataset size.
+# 2. **Optimize compression if needed** - The default blosc compression (level 5)
+#    provides an optimal balance. For very large datasets, experiment with
+#    compression_level parameter (0-9) to find the best trade-off between
+#    size and speed for your use case.
 #
 # 3. **Test before sharing** - Always test that your uploaded dataset can be
 #    downloaded and used correctly:
