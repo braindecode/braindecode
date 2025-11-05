@@ -161,6 +161,8 @@ class MEDFormer(EEGModuleMixin, nn.Module):
             stride_list=self.stride_list,
             dropout=self.drop_prob,
             single_channel=self.single_channel,
+            n_chans=self.n_chans,
+            n_times=self.n_times,
         )
         # Build the encoder with multiple layers.
         self.encoder = _Encoder(
@@ -194,7 +196,7 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             self.d_model
             * len(self.patch_num_list)
-            * (1 if not self.single_channel else self.n_times),
+            * (1 if not self.single_channel else self.n_chans),
             self.n_outputs,
         )
 
@@ -216,7 +218,8 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         enc_out, _ = self.encoder(enc_out, attn_mask=None)
 
         if self.single_channel:
-            enc_out = torch.reshape(enc_out, (-1, self.n_times, *enc_out.shape[-2:]))
+            # Reshape back from (batch_size * n_chans, ...) to (batch_size, n_chans, ...)
+            enc_out = torch.reshape(enc_out, (-1, self.n_chans, *enc_out.shape[-2:]))
 
         # Output
         output = self.activation_layer(enc_out)
@@ -298,12 +301,16 @@ class _ListPatchEmbedding(nn.Module):
         stride_list: List[int],
         dropout: float,
         single_channel: bool = False,
+        n_chans: Optional[int] = None,
+        n_times: Optional[int] = None,
     ):
         super().__init__()
         self.patch_len_list = patch_len_list
         self.stride_list = stride_list
         self.paddings = [nn.ReplicationPad1d((0, stride)) for stride in stride_list]
         self.single_channel = single_channel
+        self.n_chans = n_chans
+        self.n_times = n_times
 
         linear_layers = [
             _CrossChannelTokenEmbedding(
@@ -327,14 +334,22 @@ class _ListPatchEmbedding(nn.Module):
     ) -> List[torch.Tensor]:  # (batch_size, seq_len, enc_in)
         x = x.permute(0, 2, 1)  # (batch_size, enc_in, seq_len)
         if self.single_channel:
-            batch_size, n_channels, seq_length = x.shape
-            x = torch.reshape(x, (batch_size * n_channels, 1, seq_length))
+            # After permute: x.shape = (batch_size, n_times, n_chans)
+            # We want to process each channel independently
+            batch_size = x.shape[0]
+            # Permute to get channels in the middle: (batch_size, n_chans, n_times)
+            x = x.permute(0, 2, 1)
+            # Reshape to treat each channel independently: (batch_size * n_chans, 1, n_times)
+            x = torch.reshape(x, (batch_size * self.n_chans, 1, self.n_times))
 
         x_list = []
         for padding, value_embedding in zip(self.paddings, self.value_embeddings):
             x_copy = x.clone()
-            # add positional embedding to tag each channel
-            x_new = x_copy + self.channel_embedding(x_copy)
+            # add positional embedding to tag each channel (only when not single_channel)
+            if not self.single_channel:
+                x_new = x_copy + self.channel_embedding(x_copy)
+            else:
+                x_new = x_copy
             x_new = padding(x_new).unsqueeze(
                 1
             )  # (batch_size, 1, enc_in, seq_len+stride)
@@ -423,6 +438,11 @@ class _FullAttention(nn.Module):
         self.mask_flag = mask_flag
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
+        super().__init__()
+        self.scale = scale
+        self.mask_flag = mask_flag
+        self.output_attention = output_attention
+        self.dropout = nn.Dropout(attention_dropout)
 
     def forward(
         self,
@@ -430,6 +450,8 @@ class _FullAttention(nn.Module):
         keys: torch.Tensor,
         values: torch.Tensor,
         attn_mask: Optional[_TriangularCausalMask],
+        tau: Optional[torch.Tensor] = None,
+        delta: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         batch_size, query_len, _, embed_dim = queries.shape
         _, _, _, _ = values.shape
