@@ -3,13 +3,11 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
-import numpy as np
 import torch
-import torch.nn.functional as F
 from einops.layers.torch import Rearrange
-from torch import Tensor, nn
+from torch import nn
 
-from braindecode.functional import drop_path, safe_log
+from braindecode.functional import drop_path
 
 
 class Ensure4d(nn.Module):
@@ -72,26 +70,27 @@ class TimeDistributed(nn.Module):
 class DropPath(nn.Module):
     """Drop paths, also known as Stochastic Depth, per sample.
 
-        When applied in main path of residual blocks.
+    When applied in main path of residual blocks.
 
-        Parameters:
-        -----------
-        drop_prob: float (default=None)
-            Drop path probability (should be in range 0-1).
+    Parameters
+    ----------
+    drop_prob: float (default=None)
+        Drop path probability (should be in range 0-1).
 
-        Notes
-        -----
-        Code copied and modified from VISSL facebookresearch:
+    Notes
+    -----
+    Code copied and modified from VISSL facebookresearch:
     https://github.com/facebookresearch/vissl/blob/0b5d6a94437bc00baed112ca90c9d78c6ccfbafb/vissl/models/model_helpers.py#L676
-        All rights reserved.
 
-        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-        SOFTWARE.
+    All rights reserved.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
     """
 
     def __init__(self, drop_prob=None):
@@ -110,7 +109,7 @@ class SqueezeFinalOutput(nn.Module):
     """
 
     Removes empty dimension at end and potentially removes empty time
-    dimension. It does  not just use squeeze as we never want to remove
+    dimension. It does not just use squeeze as we never want to remove
     first dimension.
 
     Returns

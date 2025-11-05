@@ -4,12 +4,11 @@
 #
 # License: BSD-3
 from __future__ import annotations
-import sys
+
 import inspect
 import os
-
+import sys
 from copy import deepcopy
-import inspect
 from types import MethodType
 from typing import Any
 
@@ -19,13 +18,13 @@ import pytest
 import torch
 from skorch.dataset import ValidSplit
 from torch import nn
-from torch.export import export, ExportedProgram
+from torch.export import ExportedProgram, export
 
 from braindecode import EEGClassifier
 from braindecode.models import (
+    SSTDPN,
     EEGInceptionMI,
     EEGMiner,
-    EEGResNet,
     EEGSimpleConv,
     FBCNet,
     FBLightConvNet,
@@ -117,7 +116,7 @@ def get_sp(
             ]
         assert isinstance( sp["n_times"], int)
         assert isinstance( sp["sfreq"], float)
-        assert isinstance( sp["input_window_seconds"], float)         
+        assert isinstance( sp["input_window_seconds"], float)
         if "input_window_seconds" not in signal_params:
             sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
         if "sfreq" not in signal_params:
@@ -440,13 +439,13 @@ def test_model_has_drop_prob_parameter(model_class):
     if model_class in [
         SyncNet,
         EEGSimpleConv,
-        EEGResNet,
         USleep,
         EEGMiner,
         EEGInceptionMI,
         FBCNet,
         FBMSNet,
         FBLightConvNet,
+        SSTDPN,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -504,7 +503,7 @@ def test_model_exported(model):
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
-    # example input matching your model’s expected shape
+    # example input matching your model's expected shape
     try:
         n_chans = model.n_chans
     except ValueError:
@@ -515,7 +514,7 @@ def test_model_exported(model):
         n_times = default_signal_params["n_times"]
     example_input = torch.randn(1, n_chans, n_times)
 
-    # this will raise if the model isn’t fully traceable
+    # this will raise if the model isn't fully traceable
     exported_prog: ExportedProgram = export(model, args=(example_input,), strict=False)
 
     # sanity check: we got the right return type
@@ -535,6 +534,8 @@ def test_model_torch_script(model):
         "BIOT",
         "Labram",
         "EEGMiner",
+        "SSTDPN",
+        "BENDR",
     ]
 
     if model.__class__.__name__ in not_working_models:
@@ -545,7 +546,7 @@ def test_model_torch_script(model):
     final_plain_model = convert_model_to_plain(model)
     final_plain_model.eval()
 
-    # example input matching your model’s expected shape
+    # example input matching your model's expected shape
     try:
         n_chans = model.n_chans
     except ValueError:
@@ -559,7 +560,7 @@ def test_model_torch_script(model):
     output_model = model(input_tensor)
     output_model_recreated = final_plain_model(input_tensor)
     assert output_model.shape == output_model_recreated.shape
-    
+
     torch.testing.assert_close(output_model, output_model_recreated)
     # convert the new model to scripted
     scripted_model = torch.jit.script(final_plain_model)
@@ -568,10 +569,10 @@ def test_model_torch_script(model):
     scripted_model.save(fname)
 
     os.remove(fname)
-    # now that we can save, 
+    # now that we can save,
     # erasing the model from the memory
-    # 
-     
+    #
+
     # print(f"Model {model_class.__name__} passed the test.")
     # Continue this tests later. Not now...
     # output_script = scripted_model(input_tensor)
@@ -586,3 +587,46 @@ def test_completeness_summary_table(model_class):
         f"{model_class.__name__} is not in the summary table. "
         f"Please add it to the summary table."
     )
+
+
+def test_if_models_with_embedding_parameter(model):
+    # Test if the model that have embedding parameters works changing the default
+    # embedding value
+    model_name = model.__class__.__name__
+    # first step is to inspect the models parameters
+    params = inspect.signature(model.__init__).parameters
+
+    # check if there is any mention to emb_size or embedding_dim or emb
+    # or return_features or feature
+
+    parameters_related_with_emb = ["emb_size", "embedding_dim", "emb",
+                                   "return_features", "feature"]
+
+    # check if any of the parameters related to embedding are present in the model
+    if not any(param in params for param in parameters_related_with_emb):
+        pytest.skip(
+            f"{model_name} does not have an embedding parameter."
+        )
+    else:
+        # getting the parameters name
+        emb_param = next((param for param in params if param in parameters_related_with_emb), None)
+
+    # getting the emb parameter and re-initializing the model
+    # changing only this parameters
+    new_value = 128
+
+    model_dict = {name: (args, defaults) for name, args, defaults in models_mandatory_parameters}
+
+    mandatory_parameters, sig_params = model_dict[model_name]
+    signal_params = get_sp(sig_params, mandatory_parameters)
+    # redefining the embedding parameter
+    signal_params[emb_param] = new_value
+
+    model = models_dict[model_name](**signal_params)
+
+    print(f"Model {model_name} has an embedding parameter {emb_param} with value {new_value}.")
+    # assert not error when print the model
+    try:
+        print(model)
+    except Exception as e:
+        pytest.fail(f"Error printing model {model_name}: {e}")

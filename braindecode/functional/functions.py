@@ -1,7 +1,6 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
-import math
 
 import torch
 import torch.nn.functional as F
@@ -182,20 +181,24 @@ def plv_time(x, forward_fourier=True, epsilon: float = 1e-6):
     The Phase Locking Value (PLV) is a measure of the synchronization between
     different channels by evaluating the consistency of phase differences
     over time. It ranges from 0 (no synchronization) to 1 (perfect
-    synchronization) [1]_.
+    synchronization) [Lachaux1999]_.
 
     Parameters
     ----------
     x : torch.Tensor
         Input tensor containing the signal data.
+
         - If `forward_fourier` is `True`, the shape should be `(..., channels, time)`.
         - If `forward_fourier` is `False`, the shape should be `(..., channels, freqs, 2)`,
           where the last dimension represents the real and imaginary parts.
+
     forward_fourier : bool, optional
         Specifies the format of the input tensor `x`.
+
         - If `True`, `x` is assumed to be in the time domain.
         - If `False`, `x` is assumed to be in the Fourier domain with separate real and
           imaginary components.
+
         Default is `True`.
     epsilon : float, default 1e-6
         Small numerical value to ensure positivity constraint on the complex part
@@ -208,7 +211,7 @@ def plv_time(x, forward_fourier=True, epsilon: float = 1e-6):
 
     References
     ----------
-    [1] Lachaux, J. P., Rodriguez, E., Martinerie, J., & Varela, F. J. (1999).
+    .. [Lachaux1999] Lachaux, J. P., Rodriguez, E., Martinerie, J., & Varela, F. J. (1999).
         Measuring phase synchrony in brain signals. Human brain mapping,
         8(4), 194-208.
     """

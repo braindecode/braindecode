@@ -5,6 +5,7 @@ import math
 
 import torch
 from einops.layers.torch import Rearrange
+from mne.utils import warn
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -12,13 +13,153 @@ from braindecode.modules import CausalConv1d, Ensure4d, MaxNormLinear
 
 
 class ATCNet(EEGModuleMixin, nn.Module):
-    """ATCNet model from Altaheri et al. (2022) [1]_
+    """ATCNet from Altaheri et al. (2022) [1]_.
 
-    Pytorch implementation based on official tensorflow code [2]_.
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Small Attention`
 
     .. figure:: https://user-images.githubusercontent.com/25565236/185449791-e8539453-d4fa-41e1-865a-2cf7e91f60ef.png
-       :align: center
-       :alt: ATCNet Architecture
+        :align: center
+        :alt: ATCNet Architecture
+        :width: 650px
+
+    .. rubric:: Architectural Overview
+
+    ATCNet is a *convolution-first* architecture augmented with a *lightweight attention–TCN*
+    sequence module. The end-to-end flow is:
+
+    - (i) :class:`_ConvBlock` learns temporal filter-banks and spatial projections (EEGNet-style),
+      downsampling time to a compact feature map;
+
+    - (ii) Sliding Windows carve overlapping temporal windows from this map;
+
+    - (iii) for each window, :class:`_AttentionBlock` applies small multi-head self-attention
+      over time, followed by a :class:`_TCNResidualBlock` stack (causal, dilated);
+
+    - (iv) window-level features are aggregated (mean of window logits or concatenation)
+      and mapped via a max-norm–constrained linear layer.
+
+    Relative to ViT, ATCNet replaces linear patch projection with learned *temporal–spatial*
+    convolutions; it processes *parallel* window encoders (attention→TCN) instead of a deep
+    stack; and swaps the MLP head for a TCN suited to 1-D EEG sequences.
+
+    .. rubric:: Macro Components
+
+    - :class:`_ConvBlock` **(Shallow conv stem → feature map)**
+
+        - *Operations.*
+        - **Temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(L_t, 1)`` builds a
+            FIR-like filter bank (``F1`` maps).
+        - **Depthwise spatial conv** (:class:`torch.nn.Conv2d`, ``groups=F1``) with kernel
+          ``(1, n_chans)`` learns per-filter spatial projections (akin to EEGNet's CSP-like step).
+        - **BN → ELU → AvgPool → Dropout** to stabilize and condense activations.
+        - **Refining temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(L_r, 1)`` +
+          **BN → ELU → AvgPool → Dropout**.
+
+    The output shape is ``(B, F2, T_c, 1)`` with ``F2 = F1·D`` and ``T_c = T/(P1·P2)``.
+    Temporal kernels behave as FIR filters; the depthwise-spatial conv yields frequency-specific
+    topographies. Pooling acts as a local integrator, reducing variance and imposing a
+    useful inductive bias on short EEG windows.
+
+    - **Sliding-Window Sequencer**
+
+        From the condensed time axis (length ``T_c``), ATCNet forms ``n`` overlapping windows
+        of width ``T_w = T_c - n + 1`` (one start per index). Each window produces a sequence
+        ``(B, F2, T_w)`` forwarded to its own attention-TCN branch. This creates *parallel*
+        encoders over shifted contexts and is key to robustness on nonstationary EEG.
+
+    - :class:`_AttentionBlock` **(small MHA on temporal positions)**
+
+        Attention here is *local to a window* and purely temporal.
+
+        - *Operations.*
+        - Rearrange to ``(B, T_w, F2)``,
+        - Normalization :class:`torch.nn.LayerNorm`
+        - Custom MultiHeadAttention :class:`_MHA` (``num_heads=H``, per-head dim ``d_h``) + residual add,
+        - Dropout :class:`torch.nn.Dropout`
+        - Rearrange back to ``(B, F2, T_w)``.
+
+        *Role.* Re-weights evidence across the window, letting the model emphasize informative
+        segments (onsets, bursts) before causal convolutions aggregate history.
+
+    - :class:`_TCNResidualBlock` **(causal dilated temporal CNN)**
+
+        - *Operations.*
+        - Two :class:`braindecode.modules.CausalConv1d` layers per block with dilation  ``1, 2, 4, …``
+        - Across blocks of `torch.nn.ELU` + `torch.nn.BatchNorm1d` + `torch.nn.Dropout`) +
+          a residual (identity or 1x1 mapping).
+        - The final feature used per window is the *last* causal step ``[..., -1]`` (forecast-style).
+
+        *Role.* Efficient long-range temporal integration with stable gradients; the dilated
+        receptive field complements attention's soft selection.
+
+    - **Aggregation & Classifier**
+
+        - *Operations.*
+        - Either (a) map each window feature ``(B, F2)`` to logits via :class:`braindecode.modules.MaxNormLinear`
+        and **average** across windows (default, matching official code), or
+        - (b) **concatenate** all window features ``(B, n·F2)`` and apply a single :class:`MaxNormLinear`.
+        The max-norm constraint regularizes the readout.
+
+    .. rubric:: Convolutional Details
+
+    - **Temporal.** Temporal structure is learned in three places:
+        - (1) the stem's wide ``(L_t, 1)`` conv (learned filter bank),
+        - (2) the refining ``(L_r, 1)`` conv after pooling (short-term dynamics), and
+        - (3) the TCN's causal 1-D convolutions with exponentially increasing dilation
+          (long-range dependencies). The minimum sequence length required by the TCN stack is
+          ``(K_t - 1)·2^{L-1} + 1``; the implementation *auto-scales* kernels/pools/windows
+          when inputs are shorter to preserve feasibility.
+
+    - **Spatial.** A depthwise spatial conv spans the **full montage** (kernel ``(1, n_chans)``),
+        producing *per-temporal-filter* spatial projections (no cross-filter mixing at this step).
+        This mirrors EEGNet's interpretability: each temporal filter has its own spatial pattern.
+
+
+    .. rubric:: Attention / Sequential Modules
+
+    - **Type.** Multi-head self-attention with ``H`` heads and per-head dim ``d_h`` implemented
+      in :class:`_MHA`, allowing ``embed_dim = H·d_h`` independent of input and output dims.
+    - **Shapes.** ``(B, F2, T_w) → (B, T_w, F2) → (B, F2, T_w)``. Attention operates along
+      the **temporal** axis within a window; channels/features stay in the embedding dim ``F2``.
+    - **Role.** Highlights salient temporal positions prior to causal convolution; small attention
+      keeps compute modest while improving context modeling over pooled features.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Parallel encoders over shifted windows.** Improves montage/phase robustness by
+      ensembling nearby contexts rather than committing to a single segmentation.
+    - **Max-norm classifier.** Enforces weight norm constraints at the readout, a common
+      stabilization trick in EEG decoding.
+    - **ViT vs. ATCNet (design choices).** Convolutional *nonlinear* projection rather than
+      linear patchification; attention followed by **TCN** (not MLP); *parallel* window
+      encoders rather than stacked encoders.
+
+    .. rubric:: Usage and Configuration
+
+    - ``conv_block_n_filters (F1)``, ``conv_block_depth_mult (D)`` → capacity of the stem
+      (with ``F2 = F1·D`` feeding attention/TCN), dimensions aligned to ``F2``, like :class:`EEGNet`.
+    - Pool sizes ``P1,P2`` trade temporal resolution for stability/compute; they set
+      ``T_c = T/(P1·P2)`` and thus window width ``T_w``.
+    - ``n_windows`` controls the ensemble over shifts (compute ∝ windows).
+    - ``att_num_heads``, ``att_head_dim`` set attention capacity; keep ``H·d_h ≈ F2``.
+    - ``tcn_depth``, ``tcn_kernel_size`` govern receptive field; larger values demand
+      longer inputs (see minimum length above). The implementation warns and *rescales*
+      kernels/pools/windows if inputs are too short.
+    - **Aggregation choice.** ``concat=False`` (default, average of per-window logits) matches
+      the official code; ``concat=True`` mirrors the paper's concatenation variant.
+
+
+    Notes
+    -----
+    - Inputs substantially shorter than the implied minimum length trigger **automatic
+      downscaling** of kernels, pools, windows, and TCN kernel size to maintain validity.
+    - The attention–TCN sequence operates **per window**; the last causal step is used as the
+      window feature, aligning the temporal semantics across windows.
+
+    .. versionadded:: 1.1
+
+        - More detailed documentation of the model.
+
 
     Parameters
     ----------
@@ -69,9 +210,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
     tcn_kernel_size : int
         Temporal kernel size used in TCN block, denoted Kt in table 1 of the
         paper [1]_. Defaults to 4 as in [1]_.
-    tcn_n_filters : int
-        Number of filters used in TCN convolutional layers (Ft). Defaults to
-        32 as in [1]_.
     tcn_dropout : float
         Dropout probability used in the TCN block, denoted pt in table 1
         of the paper [1]_. Defaults to 0.3 as in [1]_.
@@ -87,15 +225,13 @@ class ATCNet(EEGModuleMixin, nn.Module):
         Maximum L2-norm constraint imposed on weights of the last
         fully-connected layer. Defaults to 0.25.
 
-
     References
     ----------
-    .. [1] H. Altaheri, G. Muhammad and M. Alsulaiman,
-        Physics-informed attention temporal convolutional network for EEG-based
-        motor imagery classification in IEEE Transactions on Industrial Informatics,
-        2022, doi: 10.1109/TII.2022.3197419.
-    .. [2] EEE-ATCNet implementation.
-       https://github.com/Altaheri/EEG-ATCNet/blob/main/models.py
+    .. [1] H. Altaheri, G. Muhammad, M. Alsulaiman (2022).
+        *Physics-informed attention temporal convolutional network for EEG-based motor imagery classification.*
+        IEEE Transactions on Industrial Informatics. doi:10.1109/TII.2022.3197419.
+    .. [2] Official EEG-ATCNet implementation (TensorFlow):
+        https://github.com/Altaheri/EEG-ATCNet/blob/main/models.py
     """
 
     def __init__(
@@ -117,7 +253,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
         att_drop_prob=0.5,
         tcn_depth=2,
         tcn_kernel_size=4,
-        tcn_n_filters=32,
         tcn_drop_prob=0.3,
         tcn_activation: nn.Module = nn.ELU,
         concat=False,
@@ -134,6 +269,45 @@ class ATCNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        # Validate and adjust parameters based on input size
+
+        min_len_tcn = (tcn_kernel_size - 1) * (2 ** (tcn_depth - 1)) + 1
+        # Minimum length required to get at least one sliding window
+        min_len_sliding = n_windows + min_len_tcn - 1
+        # Minimum input size that produces the required feature map length
+        min_n_times = min_len_sliding * conv_block_pool_size_1 * conv_block_pool_size_2
+
+        # 2. If the input is shorter, calculate a scaling factor
+        if self.n_times < min_n_times:
+            scaling_factor = self.n_times / min_n_times
+            warn(
+                f"n_times ({self.n_times}) is smaller than the minimum required "
+                f"({min_n_times}) for the current model parameters configuration. "
+                "Adjusting parameters to ensure compatibility."
+                "Reducing the kernel, pooling, and stride sizes accordingly."
+                "Scaling factor: {:.2f}".format(scaling_factor),
+                UserWarning,
+            )
+            conv_block_kernel_length_1 = max(
+                1, int(conv_block_kernel_length_1 * scaling_factor)
+            )
+            conv_block_kernel_length_2 = max(
+                1, int(conv_block_kernel_length_2 * scaling_factor)
+            )
+            conv_block_pool_size_1 = max(
+                1, int(conv_block_pool_size_1 * scaling_factor)
+            )
+            conv_block_pool_size_2 = max(
+                1, int(conv_block_pool_size_2 * scaling_factor)
+            )
+
+            # n_windows should be at least 1
+            n_windows = max(1, int(n_windows * scaling_factor))
+
+            # tcn_kernel_size must be at least 2 for dilation to work
+            tcn_kernel_size = max(2, int(tcn_kernel_size * scaling_factor))
+
         self.conv_block_n_filters = conv_block_n_filters
         self.conv_block_kernel_length_1 = conv_block_kernel_length_1
         self.conv_block_kernel_length_2 = conv_block_kernel_length_2
@@ -147,12 +321,11 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.att_dropout = att_drop_prob
         self.tcn_depth = tcn_depth
         self.tcn_kernel_size = tcn_kernel_size
-        self.tcn_n_filters = tcn_n_filters
         self.tcn_dropout = tcn_drop_prob
         self.tcn_activation = tcn_activation
         self.concat = concat
         self.max_norm_const = max_norm_const
-
+        self.tcn_n_filters = int(self.conv_block_depth_mult * self.conv_block_n_filters)
         map = dict()
         for w in range(self.n_windows):
             map[f"max_norm_linears.[{w}].weight"] = f"final_layer.[{w}].weight"
@@ -196,14 +369,14 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 nn.Sequential(
                     *[
                         _TCNResidualBlock(
-                            in_channels=self.F2,
-                            kernel_size=tcn_kernel_size,
-                            n_filters=tcn_n_filters,
-                            dropout=tcn_drop_prob,
-                            activation=tcn_activation,
+                            in_channels=self.F2 if i == 0 else self.tcn_n_filters,
+                            kernel_size=self.tcn_kernel_size,
+                            n_filters=self.tcn_n_filters,
+                            dropout=self.tcn_dropout,
+                            activation=self.tcn_activation,
                             dilation=2**i,
                         )
-                        for i in range(tcn_depth)
+                        for i in range(self.tcn_depth)
                     ]
                 )
                 for _ in range(self.n_windows)
@@ -214,7 +387,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.final_layer = nn.ModuleList(
                 [
                     MaxNormLinear(
-                        in_features=self.F2 * self.n_windows,
+                        in_features=self.tcn_n_filters * self.n_windows,
                         out_features=self.n_outputs,
                         max_norm_val=self.max_norm_const,
                     )
@@ -224,7 +397,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.final_layer = nn.ModuleList(
                 [
                     MaxNormLinear(
-                        in_features=self.F2,
+                        in_features=self.tcn_n_filters,
                         out_features=self.n_outputs,
                         max_norm_val=self.max_norm_const,
                     )
@@ -234,7 +407,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
         self.out_fun = nn.Identity()
 
-    def forward(self, X):
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
         # Dimension: (batch_size, C, T)
         X = self.ensuredims(X)
         # Dimension: (batch_size, C, T, 1)
@@ -521,7 +694,8 @@ class _TCNResidualBlock(nn.Module):
         # Reshape the input for the residual connection when necessary
         if in_channels != n_filters:
             self.reshaping_conv = nn.Conv1d(
-                n_filters,
+                in_channels=in_channels,  # Specify input channels
+                out_channels=n_filters,  # Specify output channels
                 kernel_size=1,
                 padding="same",
             )
@@ -541,7 +715,7 @@ class _TCNResidualBlock(nn.Module):
         out = self.activation(out)
         out = self.drop2(out)
 
-        out = self.reshaping_conv(out)
+        X = self.reshaping_conv(X)
 
         # ----- Residual connection -----
         out = X + out

@@ -8,11 +8,13 @@ from torch.nn import init
 from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import Chomp1d, Ensure4d, Expression, SqueezeFinalOutput
+from braindecode.modules import Chomp1d, Ensure4d, SqueezeFinalOutput
 
 
 class BDTCN(EEGModuleMixin, nn.Module):
     """Braindecode TCN from Gemein, L et al (2020) [gemein2020]_.
+
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
     .. figure:: https://ars.els-cdn.com/content/image/1-s2.0-S1053811920305073-gr3_lrg.jpg
        :align: center

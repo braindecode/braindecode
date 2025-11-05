@@ -38,7 +38,7 @@ class SqueezeAndExcitation(nn.Module):
     References
     ----------
     .. [Hu2018] Hu, J., Albanie, S., Sun, G., Wu, E., 2018.
-    Squeeze-and-Excitation Networks. CVPR 2018.
+        Squeeze-and-Excitation Networks. CVPR 2018.
     """
 
     def __init__(self, in_channels: int, reduction_rate: int, bias: bool = False):
@@ -93,7 +93,7 @@ class GSoP(nn.Module):
     References
     ----------
     .. [Gao2018] Gao, Z., Jiangtao, X., Wang, Q., Li, P., 2018.
-    Global Second-order Pooling Convolutional Networks. CVPR 2018.
+        Global Second-order Pooling Convolutional Networks. CVPR 2018.
     """
 
     def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):
@@ -149,7 +149,7 @@ class FCA(nn.Module):
     References
     ----------
     .. [Qin2021] Qin, Z., Zhang, P., Wu, F., Li, X., 2021.
-    FcaNet: Frequency Channel Attention Networks. ICCV 2021.
+        FcaNet: Frequency Channel Attention Networks. ICCV 2021.
     """
 
     def __init__(
@@ -157,7 +157,8 @@ class FCA(nn.Module):
     ):
         super(FCA, self).__init__()
         mapper_y = [freq_idx]
-        assert in_channels % len(mapper_y) == 0
+        if in_channels % len(mapper_y) != 0:
+            raise ValueError("in_channels must be divisible by number of DCT filters")
 
         self.weight = nn.Parameter(
             self.get_dct_filter(seq_len, mapper_y, in_channels), requires_grad=False
@@ -232,7 +233,7 @@ class EncNet(nn.Module):
     References
     ----------
     .. [Zhang2018] Zhang, H. et al. 2018.
-    Context Encoding for Semantic Segmentation. CVPR 2018.
+        Context Encoding for Semantic Segmentation. CVPR 2018.
     """
 
     def __init__(self, in_channels: int, n_codewords: int):
@@ -289,13 +290,14 @@ class ECA(nn.Module):
     References
     ----------
     .. [Wang2021] Wang, Q. et al., 2021. ECA-Net: Efficient Channel Attention
-    for Deep Convolutional Neural Networks. CVPR 2021.
+        for Deep Convolutional Neural Networks. CVPR 2021.
     """
 
     def __init__(self, in_channels: int, kernel_size: int):
         super(ECA, self).__init__()
         self.gap = nn.AdaptiveAvgPool2d(1)
-        assert kernel_size % 2 == 1, "kernel size must be odd for same padding"
+        if kernel_size % 2 != 1:
+            raise ValueError("kernel size must be odd for same padding")
         self.conv = nn.Conv1d(
             1, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False
         )
@@ -339,8 +341,8 @@ class GatherExcite(nn.Module):
     References
     ----------
     .. [Hu2018b] Hu, J., Albanie, S., Sun, G., Vedaldi, A., 2018.
-    Gather-Excite: Exploiting Feature Context in Convolutional Neural Networks.
-    NeurIPS 2018.
+        Gather-Excite: Exploiting Feature Context in Convolutional Neural Networks.
+        NeurIPS 2018.
     """
 
     def __init__(
@@ -408,7 +410,7 @@ class GCT(nn.Module):
     References
     ----------
     .. [Yang2020] Yang, Z. Linchao, Z., Wu, Y., Yang, Y., 2020.
-    Gated Channel Transformation for Visual Recognition. CVPR 2020.
+        Gated Channel Transformation for Visual Recognition. CVPR 2020.
     """
 
     def __init__(self, in_channels: int):
@@ -453,7 +455,7 @@ class SRM(nn.Module):
     References
     ----------
     .. [Lee2019] Lee, H., Kim, H., Nam, H., 2019. SRM: A Style-based
-    Recalibration Module for Convolutional Neural Networks. ICCV 2019.
+        Recalibration Module for Convolutional Neural Networks. ICCV 2019.
     """
 
     def __init__(
@@ -518,7 +520,7 @@ class CBAM(nn.Module):
     References
     ----------
     .. [Woo2018] Woo, S., Park, J., Lee, J., Kweon, I., 2018.
-    CBAM: Convolutional Block Attention Module. ECCV 2018.
+        CBAM: Convolutional Block Attention Module. ECCV 2018.
     """
 
     def __init__(self, in_channels: int, reduction_rate: int, kernel_size: int):
@@ -530,7 +532,8 @@ class CBAM(nn.Module):
             nn.ReLU(),
             nn.Conv2d(in_channels // reduction_rate, in_channels, 1, bias=False),
         )
-        assert kernel_size % 2 == 1, "kernel size must be odd for same padding"
+        if kernel_size % 2 != 1:
+            raise ValueError("kernel size must be odd for same padding")
         self.conv = nn.Conv2d(2, 1, (1, kernel_size), padding=(0, kernel_size // 2))
 
     def forward(self, x):

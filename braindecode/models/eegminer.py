@@ -10,7 +10,6 @@ from functools import partial
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.fft import fftfreq
 
 import braindecode.functional as F
 from braindecode.models.base import EEGModuleMixin
@@ -21,6 +20,8 @@ _eeg_miner_methods = ["mag", "corr", "plv"]
 
 class EEGMiner(EEGModuleMixin, nn.Module):
     """EEGMiner from Ludwig et al (2024) [eegminer]_.
+
+    :bdg-success:`Convolution` :bdg-warning:`Interpretability`
 
     .. figure:: https://content.cld.iop.org/journals/1741-2552/21/3/036010/revision2/jnead44d7f1_hr.jpg
        :align: center

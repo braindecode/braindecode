@@ -15,22 +15,121 @@ class USleep(EEGModuleMixin, nn.Module):
     """
     Sleep staging architecture from Perslev et al. (2021) [1]_.
 
+    :bdg-success:`Convolution`
+
     .. figure:: https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41746-021-00440-5/MediaObjects/41746_2021_440_Fig2_HTML.png
         :align: center
         :alt: USleep Architecture
 
-    U-Net (autoencoder with skip connections) feature-extractor for sleep
-    staging described in [1]_.
+        Figure: U-Sleep consists of an encoder (left) which encodes the input signals into dense feature representations, a decoder (middle) which projects
+        the learned features into the input space to generate a dense sleep stage representation, and finally a specially designed segment
+        classifier (right) which generates sleep stages at a chosen temporal resolution.
 
-    For the encoder ('down'):
-        - the temporal dimension shrinks (via maxpooling in the time-domain)
-        - the spatial dimension expands (via more conv1d filters in the time-domain)
+    .. rubric:: Architectural Overview
 
-    For the decoder ('up'):
-        - the temporal dimension expands (via upsampling in the time-domain)
-        - the spatial dimension shrinks (via fewer conv1d filters in the time-domain)
+    U-Sleep is a **fully convolutional**, feed-forward encoder-decoder with a *segment classifier* head for
+    time-series **segmentation** (sleep staging). It maps multi-channel PSG (EEG+EOG) to a *dense, high-frequency*
+    per-sample representation, then aggregates it into fixed-length stage labels (e.g., 30 s). The network
+    processes arbitrarily long inputs in **one forward pass** (resampling to 128 Hz), allowing whole-night
+    hypnograms in seconds.
 
-    Both do so at exponential rates.
+    - (i). :class:`_EncoderBlock` extracts progressively deeper temporal features at lower resolution;
+    - (ii). :class:`_Decoder` upsamples and fuses encoder features via U-Net-style skips to recover a per-sample stage map;
+    - (iii). Segment Classifier mean-pools over the target epoch length and applies two pointwise convs to yield
+      per-epoch probabilities. Integrates into the USleep class.
+
+    .. rubric:: Macro Components
+
+    - Encoder :class:`_EncoderBlock` **(multi-scale temporal feature extractor; downsampling x2 per block)**
+
+        - *Operations.*
+        - **Conv1d** (:class:`torch.nn.Conv1d`) with kernel ``9`` (stride ``1``, no dilation)
+        - **ELU** (:class:`torch.nn.ELU`)
+        - **Batch Norm** (:class:`torch.nn.BatchNorm1d`)
+        - **Max Pool 1d**, :class:`torch.nn.MaxPool1d` (``kernel=2, stride=2``).
+
+        Filters grow with depth by a factor of ``sqrt(2)`` (start ``c_1=5``); each block exposes a **skip**
+        (pre-pooling activation) to the matching decoder block.
+        *Role.* Slow, uniform downsampling preserves early information while expanding the effective temporal
+        context over minutes—foundational for robust cross-cohort staging.
+
+    The number of filters grows with depth (capacity scaling); each block also exposes a **skip** (pre-pool)
+    to the matching decoder block.
+
+    **Rationale.**
+        - Slow, uniform downsampling (x2 each level) preserves information in early layers while expanding the temporal receptive field over the minutes.
+
+    - Decoder :class:`_DecoderBlock`  **(progressive upsampling + skip fusion to high-frequency map, 12 blocks; upsampling x2 per block)**
+
+        - *Operations.*
+
+            - **Nearest-neighbor upsample**, :class:`nn.Upsample` (x2)
+            - **Convolution2d** (k=2), :class:`torch.nn.Conv2d`
+            - ELU, :class:`torch.nn.ELU`
+            - Batch Norm, :class:`torch.nn.BatchNorm2d`
+            - **Concatenate** with the encoder skip at the same temporal scale, ``torch.cat``
+            - **Convolution**, :class:`torch.nn.Conv2d`
+            - ELU, :class:`torch.nn.ELU`
+            - Batch Norm, :class:`torch.nn.BatchNorm2d`.
+
+    **Output**: A multi-class, **high-frequency** per-sample representation aligned to the input rate (128 Hz).
+
+    - **Segment Classifier incorporate into :class:`braindecode.models.USleep` (aggregation to fixed epochs)**
+
+        - *Operations.*
+
+            - **Mean-pool**, :class:`torch.nn.AvgPool2d` per class with kernel = epoch length *i* and stride *i*
+            - **1x1 conv**, :class:`torch.nn.Conv2d`
+            - ELU, :class:`torch.nn.ELU`
+            - **1x1 conv**, :class:`torch.nn.Conv2d` with ``(T, K)`` (epochs x stages).
+
+    **Role**: Learns a **non-linear** weighted combination over each 30-s window (unlike U-Time's linear combiner).
+
+    .. rubric:: Convolutional Details
+
+    - **Temporal (where time-domain patterns are learned).**
+
+      All convolutions are **1-D along time**; depth (12 levels) plus pooling yields an extensive receptive field
+      (reported sensitivity to ±6.75 min around each epoch; theoretical field ≈ 9.6 min at the deepest layer).
+      The decoder restores sample-level resolution before epoch aggregation.
+
+    - **Spatial (how channels are processed).**
+
+      Convolutions mix across the *channel* dimension jointly with time (no separate spatial operator). The system
+      is **montage-agnostic** (any reasonable EEG/EOG pair) and was trained across diverse cohorts/protocols,
+      supporting robustness to channel placement and hardware differences.
+
+    - **Spectral (how frequency content is captured).**
+
+      No explicit Fourier/wavelet transform is used; the **stack of temporal convolutions** acts as a learned
+      filter bank whose effective bandwidth grows with depth. The high-frequency decoder output (128 Hz)
+      retains fine temporal detail for the segment classifier.
+
+
+    .. rubric:: Attention / Sequential Modules
+
+    U-Sleep contains **no attention or recurrent units**; it is a *pure* feed-forward, fully convolutional
+    segmentation network inspired by U-Net/U-Time, favoring training stability and cross-dataset portability.
+
+
+    .. rubric:: Additional Mechanisms
+
+    - **U-Net lineage with task-specific head.** U-Sleep extends U-Time by being **deeper** (12 vs. 4 levels),
+      switching ReLU→**ELU**, using uniform pooling (2) at all depths, and replacing the linear combiner with a
+      **two-layer** pointwise head—improving capacity and resilience across datasets.
+    - **Arbitrary-length inference.** Thanks to full convolutionality and tiling-free design, entire nights can be
+      staged in a single pass on commodity hardware. Inputs shorter than ≈ 17.5 min may reduce performance by
+      limiting long-range context.
+    - **Complexity scaling (alpha).** Filter counts can be adjusted by a global **complexity factor** to trade accuracy
+      and memory (as described in the paper's topology table).
+
+
+    .. rubric:: Usage and Configuration
+
+    - **Practice.** Resample PSG to **128 Hz** and provide at least two channels (one EEG, one EOG). Choose epoch
+      length *i* (often 30 s); ensure windows long enough to exploit the model's receptive field (e.g., training on
+      ≥ 17.5 min chunks).
+
 
     Parameters
     ----------

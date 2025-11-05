@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-from functools import partial
 from typing import Optional
 
 import torch
-from einops.layers.torch import Rearrange
 from mne.filter import _check_coefficients, create_filter
 from mne.utils import warn
 from torch import Tensor, from_numpy, nn
 from torch.fft import fftfreq
 from torchaudio.functional import fftconvolve, filtfilt
-
-import braindecode.functional as F
 
 
 class FilterBankLayer(nn.Module):
@@ -21,9 +17,8 @@ class FilterBankLayer(nn.Module):
     It uses MNE's `create_filter` function to create the band-specific filters and
     applies them to multi-channel time-series data. Each filter in the bank corresponds to a
     specific frequency band and is applied to all channels of the input data. The filtering is
-    performed using FFT-based convolution via the `fftconvolve` function from
-    :func:`torchaudio.functional if the method is FIR, and `filtfilt` function from
-    :func:`torchaudio.functional if the method is IIR.
+    performed using FFT-based convolution via the ``torchaudio.functional`` if the method is FIR,
+    and ``torchaudio.functional`` if the method is IIR.
 
     The default configuration creates 9 non-overlapping frequency bands with a 4 Hz bandwidth,
     spanning from 4 Hz to 40 Hz (i.e., 4-8 Hz, 8-12 Hz, ..., 36-40 Hz). This setup is based on the
@@ -114,11 +109,6 @@ class FilterBankLayer(nn.Module):
         or "firwin2" to use :func:`scipy.signal.firwin2`. "firwin" uses
         a time-domain design technique that generally gives improved
         attenuation using fewer samples than "firwin2".
-    pad : str, default='reflect_limited'
-        The type of padding to use. Supports all func:`numpy.pad()` mode options.
-        Can also be "reflect_limited", which pads with a reflected version of
-        each vector mirrored on the first and last values of the vector,
-        followed by zeros. Only used for ``method='fir'``.
     verbose: bool | str | int | None, default=True
         Control verbosity of the logging output. If ``None``, use the default
         verbosity level. See the func:`mne.verbose` for details.
@@ -188,7 +178,6 @@ class FilterBankLayer(nn.Module):
                     "The band_filters items should be splitable in 2 values."
                 )
 
-        # and we accepted as
         self.band_filters = band_filters
         self.n_bands = len(band_filters)
         self.phase = phase
@@ -456,12 +445,14 @@ class GeneralizedGaussianFilter(nn.Module):
         self.inverse_fourier = inverse_fourier
         self.affine_group_delay = affine_group_delay
         self.clamp_f_mean = clamp_f_mean
-        assert out_channels % in_channels == 0, (
-            "out_channels has to be multiple of in_channels"
-        )
-        assert len(f_mean) * in_channels == out_channels
-        assert len(bandwidth) * in_channels == out_channels
-        assert len(shape) * in_channels == out_channels
+        if out_channels % in_channels != 0:
+            raise ValueError("out_channels has to be multiple of in_channels")
+        if len(f_mean) * in_channels != out_channels:
+            raise ValueError("len(f_mean) * in_channels must equal out_channels")
+        if len(bandwidth) * in_channels != out_channels:
+            raise ValueError("len(bandwidth) * in_channels must equal out_channels")
+        if len(shape) * in_channels != out_channels:
+            raise ValueError("len(shape) * in_channels must equal out_channels")
 
         # Range from 0 to half sample rate, normalized
         self.n_range = nn.Parameter(

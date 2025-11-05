@@ -21,8 +21,7 @@ from mne.datasets.sleep_physionet._utils import _fetch_one
 from mne.datasets.utils import _get_path
 from mne.utils import warn
 
-from braindecode.datasets import BaseConcatDataset, BaseDataset
-from braindecode.preprocessing.preprocess import _preprocess
+from braindecode.datasets import BaseConcatDataset, RawDataset
 
 PC18_DIR = op.join(op.dirname(__file__), "data", "pc18")
 PC18_RECORDS = op.join(PC18_DIR, "sleep_records.csv")
@@ -404,9 +403,11 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
             },
             name="",
         )
-        base_dataset = BaseDataset(raw_file, desc)
+        base_dataset = RawDataset(raw_file, desc)
 
         if preproc is not None:
+            from braindecode.preprocessing.preprocess import _preprocess
+
             _preprocess(base_dataset, None, preproc)
 
         return base_dataset

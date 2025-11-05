@@ -60,7 +60,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 #        (larger window sizes should be faster). As a rule of thumb, you can
 #        set it to two times the crop size.
 #     -  Crop size and window size together define how many predictions the
-#        network makes per window: ``#window − #crop + 1 = #predictions``
+#        network makes per window: ``#window - #crop + 1 = #predictions``
 #
 # .. note::
 #
@@ -195,7 +195,7 @@ if cuda:
 model.to_dense_prediction_model()
 
 ######################################################################
-# To know the models’ output shape without the last layer, we calculate the
+# To know the models' output shape without the last layer, we calculate the
 # shape of model output for a dummy input.
 #
 

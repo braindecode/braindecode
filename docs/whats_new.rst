@@ -17,7 +17,87 @@ What's new
 
 .. _current:
 
-Current 0.9 (dev0)
+Current 1.3 (dev)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
+- Including typing in the augmentation module (:gh:`709` by `Aphel`_)
+- Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
+- Added :class:`braindecode.models.BENDR`  (:gh:`802` by `Bruno Aristimunha`_ )
+- Adding a tutorial for fine-tuning a pre-trained foundation model (:gh:`794` by `Pierre Guetschel`_)
+- Adding artifact removal preprocessing steps, incl. :class:`braindecode.preprocessing.EEGPrep` (:gh:`796` by `Christian Kothe`_)
+- Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
+- Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
+- Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
+- Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
+- Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
+- Modify the interface of FBMSNet for consistency with FBCNet + Unit Tests (:gh:`819` by `Matthew Chen`_)
+- Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
+
+
+API changes
+~~~~~~~~~~~
+
+Bugs
+~~~~
+- Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi Altaheri`_)
+- Fixing expired path when loading a preprocessed dataset that was moved (:gh:`786` by `Pierre Guetschel`_)
+- Fix OverflowError sometimes when saving description to a json file (:gh:`789` by `Pierre Guetschel`_)
+- Small adjustment in :class:`braindecode.models.Labram` model to allow pre-loading of weights (:gh:`792` by `Bruno Aristimunha`_)
+- Fixing many warnings for generating the documentation (:gh:`805` by `Bruno Aristimunha`_)
+
+Current 1.2 (stable)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Improving the docstring for :class:`braindecode.models.EEGNetv4`  (:gh:`768` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGConformer`  (:gh:`769` by `Bruno Aristimunha`_)
+- Experimental BIDS Iterable Dataset support (:gh:`766` by `Bruno Aristimunha`_ and `Pierre Guetschel`_)
+- Improving the docstring for :class:`braindecode.models.ATCNet`  (:gh:`771` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.AttentionBaseNet`  (:gh:`772` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGNeX`  (:gh:`773` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`774` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`775` by `Bruno Aristimunha`_), creating the models categorization, table and many details.
+
+
+API changes
+~~~~~~~~~~~
+- Using the name from the original name and deprecation models that we create for no reason, models :gh:`775` by `Bruno Aristimunha`_
+- Deprecated the version name in :class:`braindecode.models.EEGNetv4` in favour of :class:`braindecode.models.EEGNetv`.
+- Deprecated the version name in :class:`braindecode.models.SleepStagerEldele2021` in favour of :class:`braindecode.models.AttnSleep`.
+- Deprecated the version name in :class:`braindecode.models.TSceptionV1` in favour of :class:`braindecode.models.TSception`.
+
+Bugs
+~~~~
+
+
+Version 1.1.1
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Massive refactor of the model webpage
+
+API changes
+~~~~~~~~~~~
+
+
+Bugs
+~~~~
+- Fixing several models to be be compatibility with small windows size(:gh:`756` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.Deep4Net` (:gh:`752` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.ATCNet` (:gh:`754` by `Bruno Aristimunha`_)
+- Fix Labram model for small input (:gh:`757` by `Bruno Aristimunha`_)
+- Fix the CTNet parameters to make the embedding configuration easy (:gh:`760` by `Bruno Aristimunha`_)
+
+API changes
+~~~~~~~~~~~
+
+
+Version 1.0
 ----------------------
 
 Enhancements
@@ -115,7 +195,7 @@ API changes
 
 .. _changes_0_8_0:
 
-Current 0.8 (11-2022)
+Version 0.8 (11-2022)
 ----------------------
 
 Enhancements
@@ -182,7 +262,7 @@ API changes
 
 .. _changes_0_7_0:
 
-Current 0.7 (10-2022)
+Version 0.7 (10-2022)
 ----------------------
 
 Enhancements
@@ -335,3 +415,9 @@ Authors
 .. _Young Truong: https://github.com/dungscout96
 .. _Lucas Heck: https://github.com/lucas-heck
 .. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif
+.. _Hamdi Altaheri: https://github.com/Altaheri
+.. _José Mauricio: https://github.com/josemaurici
+.. _Can Han: https://github.com/hancan16
+.. _Christian Kothe: https://github.com/chkothe
+.. _Kuntal Kokate: https://github.com/Kkuntal990
+.. _Matthew Chen: https://github.com/MatthewChen37

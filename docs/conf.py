@@ -42,6 +42,10 @@ curdir = os.path.dirname(__file__)
 sys.path.append(os.path.abspath(os.path.join(curdir, "..", "braindecode")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
+import sphinx_design
+
+print(f"--- Sphinx is using sphinx_design version: {sphinx_design.__version__} ---")
+
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
@@ -55,9 +59,12 @@ extensions = [
     "sphinx.ext.ifconfig",
     "sphinx.ext.intersphinx",
     "sphinx.ext.githubpages",
+    "sphinxcontrib.bibtex",
     "sphinx.ext.napoleon",
+    "sphinx_autodoc_typehints",
     "sphinx_gallery.gen_gallery",
     "sphinx.ext.linkcode",
+    "sphinx_sitemap",
     "sphinx_design",
     "numpydoc",
     "gh_substitutions",
@@ -166,14 +173,16 @@ templates_path = ["_templates"]
 # source_suffix = ['.rst', '.md']
 source_suffix = ".rst"
 
+
 # The master toctree document.
 master_doc = "index"
 
 # General information about the project.
 
-
+bibtex_bibfiles = ["references.bib"]
+bibtex_reference_style = "author_year"
+bibtex_default_style = "unsrt"
 # -- Project information -----------------------------------------------------
-
 project = "Braindecode"
 td = datetime.now(tz=timezone.utc)
 
@@ -283,8 +292,8 @@ html_theme_options = {
         "version_match": switcher_version_match,
     },
     "logo": {
-        "image_light": "_static/braindecode_symbol.png",
-        "image_dark": "_static/braindecode_symbol.png",
+        "image_light": "_static/braindecode_long.png",
+        "image_dark": "_static/braindecode_long.png",
         "alt_text": "Braindecode Logo",
     },
     "footer_start": ["copyright"],
@@ -303,6 +312,9 @@ html_static_path = ["_static"]
 html_css_files = [
     "style.css",
 ]
+
+# Favicon for the site
+html_favicon = "_static/braindecode_symbol.png"
 
 # If true, links to the reST sources are added to the pages.
 html_show_sourcelink = False
@@ -353,7 +365,6 @@ html_context = {
 }
 
 html_sidebars = {
-    "models_summary": [],
     "cite": [],
     "help": [],
     "whats_new": [],
@@ -361,20 +372,23 @@ html_sidebars = {
 }
 
 # -- Options for LaTeX output ---------------------------------------------
-
+latex_engine = "xelatex"
 latex_elements = {
+    "latex_engine": "xelatex",
     # The paper size ('letterpaper' or 'a4paper').
-    #
-    # 'papersize': 'letterpaper',
+    "papersize": "a4paper",
     # The font size ('10pt', '11pt' or '12pt').
     #
-    # 'pointsize': '10pt',
+    "pointsize": "14pt",
     # Additional stuff for the LaTeX preamble.
     #
-    # 'preamble': '',
+    "preamble": r"""\usepackage{microtype}
+    \usepackage{enumitem}
+    \setlist{nosep}
+    """,
     # Latex figure (float) alignment
     #
-    # 'figure_align': 'htbp',
+    "figure_align": "htbp",
 }
 
 latex_logo = "_static/braindecode_symbol.png"
@@ -388,11 +402,12 @@ latex_documents = [
         master_doc,
         "Braindecode.tex",
         "Braindecode",
-        "Robin Tibor Schirrmeister",
+        "Bruno Aristimunha",
         "manual",
     ),
 ]
-
+html_baseurl = "https://braindecode.org"
+sitemap_filename = "sitemap.xml"
 # -- Fontawesome support -----------------------------------------------------
 
 # here the "fab" and "fas" refer to "brand" and "solid" (determines which font
@@ -427,6 +442,16 @@ other_icons = (
     "cloud-download-alt",
     "wrench",
     "hourglass",
+    # Add your new icons here
+    "braille",
+    "repeat",
+    "lightbulb",
+    "layer-group",
+    "eye",
+    "circle-nodes",
+    "magnifying-glass-chart",
+    "share-nodes",
+    "clone",
 )
 icons = dict()
 for icon in brand_icons + fixed_icons + other_icons:
@@ -454,7 +479,7 @@ prolog += """
 prolog += """
 .. |ensp| unicode:: U+2002 .. EN SPACE
 """
-
+rst_prolog = prolog
 # -- Options for manual page output ---------------------------------------
 
 # One entry per manual page. List of tuples

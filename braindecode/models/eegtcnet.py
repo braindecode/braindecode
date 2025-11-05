@@ -15,6 +15,8 @@ from braindecode.modules import Chomp1d, MaxNormLinear
 class EEGTCNet(EEGModuleMixin, nn.Module):
     """EEGTCNet model from Ingolfsson et al. (2020) [ingolfsson2020]_.
 
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
+
     .. figure:: https://braindecode.org/dev/_static/model/eegtcnet.jpg
         :align: center
         :alt: EEGTCNet Architecture
@@ -157,7 +159,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
 class _EEGNetTC(nn.Module):
     """EEGNet Temporal Convolutional Network (TCN) block.
 
-    The main difference from our EEGNetV4 (braindecode) implementation is the
+    The main difference from our :class:`EEGNet` (braindecode) implementation is the
     kernel and dimensional order. Because of this, we decided to keep this
     implementation in a future issue; we will re-evaluate if it is necessary
     to maintain this separate implementation.

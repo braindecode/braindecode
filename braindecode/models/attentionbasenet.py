@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from einops.layers.torch import Rearrange
+from mne.utils import warn
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -25,24 +26,151 @@ from braindecode.modules.attention import (
 class AttentionBaseNet(EEGModuleMixin, nn.Module):
     """AttentionBaseNet from Wimpff M et al. (2023) [Martin2023]_.
 
+    :bdg-success:`Convolution` :bdg-info:`Small Attention`
+
     .. figure:: https://content.cld.iop.org/journals/1741-2552/21/3/036020/revision2/jnead48b9f2_hr.jpg
-       :align: center
-       :alt: Attention Base Net
+        :align: center
+        :alt: AttentionBaseNet Architecture
+        :width: 640px
 
-    Neural Network from the paper: EEG motor imagery decoding:
-    A framework for comparative analysis with channel attention
-    mechanisms
 
-    The paper and original code with more details about the methodological
-    choices are available at the [Martin2023]_ and [MartinCode]_.
+    .. rubric:: Architectural Overview
 
-    The AttentionBaseNet architecture is composed of four modules:
-    - Input Block that performs a temporal convolution and a spatial
-    convolution.
-    - Channel Expansion that modifies the number of channels.
-    - An attention block that performs channel attention with several
-    options
-    - ClassificationHead
+    AttentionBaseNet is a *convolution-first* network with a *channel-attention* stage.
+    The end-to-end flow is:
+
+    - (i) :class:`_FeatureExtractor` learns a temporal filter bank and per-filter spatial
+      projections (depthwise across electrodes), then condenses time by pooling;
+    - (ii) **Channel Expansion** uses a ``1x1`` convolution to set the feature width;
+    - (iii) :class:`_ChannelAttentionBlock` refines features via depthwise–pointwise temporal
+      convs and an optional channel-attention module (SE/CBAM/ECA/…);
+    - (iv) **Classifier** flattens the sequence and applies a linear readout.
+
+    This design mirrors shallow CNN pipelines (EEGNet-style stem) but inserts a pluggable
+    attention unit that *re-weights channels* (and optionally temporal positions) before
+    classification.
+
+
+    .. rubric:: Macro Components
+
+    - :class:`_FeatureExtractor` **(Shallow conv stem → condensed feature map)**
+
+        - *Operations.*
+        - **Temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(1, L_t)`` creates a learned
+          FIR-like filter bank with ``n_temporal_filters`` maps.
+        - **Depthwise spatial conv** (:class:`torch.nn.Conv2d`, ``groups=n_temporal_filters``)
+          with kernel ``(n_chans, 1)`` learns per-filter spatial projections over the full montage.
+        - **BatchNorm → ELU → AvgPool → Dropout** stabilize and downsample time.
+        - Output shape: ``(B, F2, 1, T₁)`` with ``F2 = n_temporal_filters x spatial_expansion``.
+
+    *Interpretability/robustness.* Temporal kernels behave as analyzable FIR filters; the
+    depthwise spatial step yields rhythm-specific topographies. Pooling acts as a local
+    integrator that reduces variance on short EEG windows.
+
+    - **Channel Expansion**
+
+        - *Operations.*
+        - A ``1x1`` conv → BN → activation maps ``F2 → ch_dim`` without changing
+          the temporal length ``T₁`` (shape: ``(B, ch_dim, 1, T₁)``).
+          This sets the embedding width for the attention block.
+
+    - :class:`_ChannelAttentionBlock` **(temporal refinement + channel attention)**
+
+        - *Operations.*
+        - **Depthwise temporal conv** ``(1, L_a)`` (groups=``ch_dim``) + **pointwise ``1x1``**,
+          BN and activation → preserves shape ``(B, ch_dim, 1, T₁)`` while refining timing.
+        - **Optional attention module** (see *Additional Mechanisms*) applies channel reweighting
+          (some variants also apply temporal gating).
+        - **AvgPool (1, P₂)** with stride ``(1, S₂)`` and **Dropout** → outputs
+          ``(B, ch_dim, 1, T₂)``.
+
+    *Role.* Emphasizes informative channels (and, in certain modes, salient time steps)
+    before the classifier; complements the convolutional priors with adaptive re-weighting.
+
+    - **Classifier (aggregation + readout)**
+
+    *Operations.* :class:`torch.nn.Flatten` → :class:`torch.nn.Linear` from
+    ``(B, ch_dim·T₂)`` to classes.
+
+
+    .. rubric:: Convolutional Details
+
+    - **Temporal (where time-domain patterns are learned).**
+        Wide kernels in the stem (``(1, L_t)``) act as a learned filter bank for oscillatory
+        bands/transients; the attention block's depthwise temporal conv (``(1, L_a)``) sharpens
+        short-term dynamics after downsampling. Pool sizes/strides (``P₁,S₁`` then ``P₂,S₂``)
+        set the token rate and effective temporal resolution.
+
+    - **Spatial (how electrodes are processed).**
+        A depthwise spatial conv with kernel ``(n_chans, 1)`` spans the full montage to
+        learn *per-temporal-filter* spatial projections (no cross-filter mixing at this step),
+        mirroring the interpretable spatial stage in shallow CNNs.
+
+    - **Spectral (how frequency content is captured).**
+        No explicit Fourier/wavelet transform is used in the stem—spectral selectivity
+        emerges from learned temporal kernels. When ``attention_mode="fca"``, a frequency
+        channel attention (DCT-based) summarizes frequencies to drive channel weights.
+
+
+    .. rubric:: Attention / Sequential Modules
+
+    - **Type.** Channel attention chosen by ``attention_mode`` (SE, ECA, CBAM, CAT, GSoP,
+        EncNet, GE, GCT, SRM, CATLite). Most operate purely on channels; CBAM/CAT additionally
+        include temporal attention.
+
+    - **Shapes.** Input/Output around attention: ``(B, ch_dim, 1, T₁)``. Re-arrangements
+        (if any) are internal to the module; the block returns the same shape before pooling.
+
+    - **Role.** Re-weights channels (and optionally time) to highlight informative sources
+        and suppress distractors, improving SNR ahead of the linear head.
+
+
+    .. rubric:: Additional Mechanisms
+
+    **Attention variants at a glance:**
+
+    - ``"se"``: Squeeze-and-Excitation (global pooling → bottleneck → gates).
+    - ``"gsop"``: Global second-order pooling (covariance-aware channel weights).
+    - ``"fca"``: Frequency Channel Attention (DCT summary; uses ``seq_len`` and ``freq_idx``).
+    - ``"encnet"``: EncNet with learned codewords (uses ``n_codewords``).
+    - ``"eca"``: Efficient Channel Attention (local 1-D conv over channel descriptor; uses ``kernel_size``).
+    - ``"ge"``: Gather–Excite (context pooling with optional MLP; can use ``extra_params``).
+    - ``"gct"``: Gated Channel Transformation (global context normalization + gating).
+    - ``"srm"``: Style-based recalibration (mean–std descriptors; optional MLP).
+    - ``"cbam"``: Channel then temporal attention (uses ``kernel_size``).
+    - ``"cat"`` / ``"catlite"``: Collaborative (channel ± temporal) attention; *lite* omits temporal.
+
+    **Auto-compatibility on short inputs:**
+
+        If the input duration is too short for the configured kernels/pools, the implementation
+        **automatically rescales** temporal lengths/strides downward (with a warning) to keep
+        shapes valid and preserve the pipeline semantics.
+
+    .. rubric:: Usage and Configuration
+
+    - ``n_temporal_filters``, ``temporal_filter_length`` and ``spatial_expansion``:
+        control the capacity and the number of spatial projections in the stem.
+    - ``pool_length_inp``, ``pool_stride_inp`` then ``pool_length``, ``pool_stride``:
+        trade temporal resolution for compute; they determine the final sequence length ``T₂``.
+    - ``ch_dim``: width after the ``1x1`` expansion and the effective embedding size for attention.
+    - ``attention_mode`` + its specific hyperparameters (``reduction_rate``,
+        ``kernel_size``, ``seq_len``, ``freq_idx``, ``n_codewords``, ``use_mlp``):
+        select and tune the reweighting mechanism.
+    - ``drop_prob_inp`` and ``drop_prob_attn``: regularize stem and attention stages.
+    - **Training tips.**
+
+        Start with moderate pooling (e.g., ``P₁=75,S₁=15``) and ELU activations; enable attention
+        only after the stem learns stable filters. For small datasets, prefer simpler modes
+        (``"se"``, ``"eca"``) before heavier ones (``"gsop"``, ``"encnet"``).
+
+    Notes
+    -----
+    - Sequence length after each stage is computed internally; the final classifier expects
+      a flattened ``ch_dim x T₂`` vector.
+    - Attention operates on *channel* dimension by design; temporal gating exists only in
+      specific variants (CBAM/CAT).
+    - The paper and original code with more details about the methodological
+      choices are available at the [Martin2023]_ and [MartinCode]_.
 
     .. versionadded:: 0.9
 
@@ -72,6 +200,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         the depth of the network after the initial layer. Default is 16.
     attention_mode : str, optional
         The type of attention mechanism to apply. If `None`, no attention is applied.
+
         - "se" for Squeeze-and-excitation network
         - "gsop" for Global Second-Order Pooling
         - "fca" for Frequency Channel Attention Network
@@ -82,9 +211,10 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         - "srm" for Style-based Recalibration Module
         - "cbam" for Convolutional Block Attention Module
         - "cat" for Learning to collaborate channel and temporal attention
-        from multi-information fusion
+          from multi-information fusion
         - "catlite" for Learning to collaborate channel attention
-        from multi-information fusion (lite version, cat w/o temporal attention)
+          from multi-information fusion (lite version, cat w/o temporal attention)
+
     pool_length : int, default=8
         The length of the window for the average pooling operation.
     pool_stride : int, default=8
@@ -162,6 +292,33 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
+        min_n_times_required = self._get_min_n_times(
+            pool_length_inp,
+            pool_stride_inp,
+            pool_length,
+        )
+
+        if self.n_times < min_n_times_required:
+            scaling_factor = self.n_times / min_n_times_required
+            warn(
+                f"n_times ({self.n_times}) is smaller than the minimum required "
+                f"({min_n_times_required}) for the current model parameters configuration. "
+                "Adjusting parameters to ensure compatibility."
+                "Reducing the kernel, pooling, and stride sizes accordingly.\n"
+                "Scaling factor: {:.2f}".format(scaling_factor),
+                UserWarning,
+            )
+            # 3. Scale down all temporal parameters proportionally
+            # Use max(1, ...) to ensure parameters remain valid
+            temp_filter_length_inp = max(
+                1, int(temp_filter_length_inp * scaling_factor)
+            )
+            pool_length_inp = max(1, int(pool_length_inp * scaling_factor))
+            pool_stride_inp = max(1, int(pool_stride_inp * scaling_factor))
+            temp_filter_length = max(1, int(temp_filter_length * scaling_factor))
+            pool_length = max(1, int(pool_length * scaling_factor))
+            pool_stride = max(1, int(pool_stride * scaling_factor))
+
         self.input_block = _FeatureExtractor(
             n_chans=self.n_chans,
             n_temporal_filters=n_temporal_filters,
@@ -228,8 +385,31 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         for k, pl, ps in zip(kernel_lengths, pool_lengths, pool_strides):
             out = math.floor(out + 2 * (k // 2) - k + 1)
             out = math.floor((out - pl) / ps + 1)
+            # Ensure output is at least 1 to avoid zero-sized tensors
+            out = max(1, out)
             seq_lengths.append(int(out))
         return seq_lengths
+
+    @staticmethod
+    def _get_min_n_times(
+        pool_length_inp: int,
+        pool_stride_inp: int,
+        pool_length: int,
+    ) -> int:
+        """
+        Calculates the minimum n_times required for the model to work
+        with the given parameters.
+
+        The calculation is based on reversing the pooling operations to
+        ensure the input to each is valid.
+        """
+        # The input to the second pooling layer must be at least its kernel size.
+        min_len_for_second_pool = pool_length
+
+        # Reverse the first pooling operation to find the required input size.
+        # Formula: min_L_in = Stride * (min_L_out - 1) + Kernel
+        min_len = pool_stride_inp * (min_len_for_second_pool - 1) + pool_length_inp
+        return min_len
 
 
 class _FeatureExtractor(nn.Module):
@@ -323,6 +503,7 @@ class _ChannelAttentionBlock(nn.Module):
     ----------
     attention_mode : str, optional
         The type of attention mechanism to apply. If `None`, no attention is applied.
+
         - "se" for Squeeze-and-excitation network
         - "gsop" for Global Second-Order Pooling
         - "fca" for Frequency Channel Attention Network

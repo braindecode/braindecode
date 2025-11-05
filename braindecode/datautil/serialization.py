@@ -19,8 +19,8 @@ from joblib import Parallel, delayed
 
 from ..datasets.base import (
     BaseConcatDataset,
-    BaseDataset,
     EEGWindowsDataset,
+    RawDataset,
     WindowsDataset,
 )
 
@@ -35,7 +35,7 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
 
 
 def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
-    """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
+    """Load a stored BaseConcatDataset from
     files.
 
     Parameters
@@ -52,7 +52,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
 
     Returns
     -------
-    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
+    concat_dataset: BaseConcatDataset
     """
     # assume we have a single concat dataset to load
     is_raw = (path / "0-raw.fif").is_file()
@@ -87,7 +87,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
         for i_signal, signal in enumerate(all_signals):
             if is_raw:
                 datasets.append(
-                    BaseDataset(
+                    RawDataset(
                         signal, description.iloc[i_signal], target_name=target_name
                     )
                 )
@@ -107,7 +107,14 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
 def _load_signals_and_description(path, preload, is_raw, ids_to_load=None):
     all_signals = []
     file_name = "{}-raw.fif" if is_raw else "{}-epo.fif"
-    description_df = pd.read_json(path / "description.json")
+    description_df = pd.read_json(
+        path / "description.json", typ="series", convert_dates=False
+    )
+
+    if "timestamp" in description_df.index:
+        timestamp_numeric = pd.to_numeric(description_df["timestamp"])
+        description_df["timestamp"] = pd.to_datetime(timestamp_numeric)
+
     if ids_to_load is None:
         file_names = path.glob(f"*{file_name.lstrip('{}')}")
         # Extract ids, e.g.,
@@ -131,12 +138,17 @@ def _load_signals(fif_file, preload, is_raw):
         with open(pkl_file, "rb") as f:
             signals = pickle.load(f)
 
-        # If the file has been moved together with the pickle file, make sure
-        # the path links to correct fif file.
-        signals._fname = str(fif_file)
-        if preload:
-            signals.load_data()
-        return signals
+        if all(f.exists() for f in signals.filenames):
+            if preload:
+                signals.load_data()
+            return signals
+        else:  # This may happen if the file has been moved together with the pickle file.
+            warnings.warn(
+                f"Pickle file {pkl_file} exists, but the referenced fif "
+                "file(s) do not exist. Will read the fif file(s) directly "
+                "and re-create the pickle file.",
+                UserWarning,
+            )
 
     # If pickle didn't exist read via mne (likely slower) and save pkl after
     if is_raw:
@@ -163,7 +175,7 @@ def _load_signals(fif_file, preload, is_raw):
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_jobs=1):
-    """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
+    """Load a stored BaseConcatDataset from
     files.
 
     Parameters
@@ -182,7 +194,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_job
 
     Returns
     -------
-    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
+    concat_dataset: BaseConcatDataset
     """
     # Make sure we always work with a pathlib.Path
     path = Path(path)
@@ -242,7 +254,11 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     signals = _load_signals(fif_file_path, preload, is_raw)
 
     description_file_path = sub_dir / "description.json"
-    description = pd.read_json(description_file_path, typ="series")
+    description = pd.read_json(description_file_path, typ="series", convert_dates=False)
+
+    # if 'timestamp' in description.index:
+    #     timestamp_numeric = pd.to_numeric(description['timestamp'])
+    #     description['timestamp'] = pd.to_datetime(timestamp_numeric, unit='s')
 
     target_file_path = sub_dir / "target_name.json"
     target_name = None
@@ -250,7 +266,7 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
         target_name = json.load(open(target_file_path, "r"))["target_name"]
 
     if is_raw and (not has_stored_windows):
-        dataset = BaseDataset(signals, description, target_name)
+        dataset = RawDataset(signals, description, target_name)
     else:
         window_kwargs = _load_kwargs_json("window_kwargs", sub_dir)
         windows_ds_kwargs = [

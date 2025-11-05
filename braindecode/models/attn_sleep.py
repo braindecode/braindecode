@@ -5,22 +5,24 @@
 import math
 import warnings
 from copy import deepcopy
-from typing import Callable, Optional
 
 import torch
 import torch.nn.functional as F
+from mne.utils import deprecated
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CausalConv1d
 
 
-class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
+class AttnSleep(EEGModuleMixin, nn.Module):
     """Sleep Staging Architecture from Eldele et al. (2021) [Eldele2021]_.
+
+    :bdg-success:`Convolution` :bdg-info:`Small Attention`
 
     .. figure:: https://raw.githubusercontent.com/emadeldeen24/AttnSleep/refs/heads/main/imgs/AttnSleep.png
         :align: center
-        :alt: SleepStagerEldele2021 Architecture
+        :alt: AttnSleep Architecture
 
     Attention based Neural Net for sleep staging as described in [Eldele2021]_.
     The code for the paper and this model is also available at [1]_.
@@ -534,3 +536,12 @@ class _PositionwiseFeedForward(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Implements FFN equation."""
         return self.w_2(self.dropout(self.activate(self.w_1(x))))
+
+
+@deprecated(
+    "`SleepStagerEldele2021` was renamed to `AttnSleep` in v1.12 to follow original author's name; this alias will be removed in v1.14."
+)
+class SleepStagerEldele2021(AttnSleep):
+    """Deprecated alias for SleepStagerEldele2021."""
+
+    pass

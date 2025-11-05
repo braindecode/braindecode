@@ -14,17 +14,17 @@ Models
 ======
 
 Model zoo availables in braindecode. The models are implemented as
-``PyTorch`` :py:class:`torch.nn.Modules` and can be used for various EEG decoding ways tasks. 
+``PyTorch`` :py:class:`torch.nn.Modules` and can be used for various EEG decoding ways tasks.
 
-All the models have the convention of having the signal related parameters 
+All the models have the convention of having the signal related parameters
 named the same way, following the braindecode's standards:
 
-+ ``n_outputs``: Number of labels or outputs of the model. 
-+ ``n_chans``: Number of EEG channels.
-+ ``n_times``: Number of time points of the input window.
-+ ``input_window_seconds``: Length of the input window in seconds.
-+ ``sfreq``: Sampling frequency of the EEG recordings.
-+ ``chs_info``: Information about each individual EEG channel. Refer to :class:`mne.Info["chs"]`. 
++ :fa:`shapes`\  ``n_outputs``: Number of labels or outputs of the model.
++ :fa:`wave-square`\  ``n_chans``: Number of EEG channels.
++ :fa:`clock`\  ``n_times``: Number of time points of the input window.
++ :fa:`wifi`\  ``sfreq``: Sampling frequency of the EEG recordings.
++ (:fa:`clock`\ / :fa:`wifi`\)  ``input_window_seconds``: Length of the input window in seconds.
++ :fa:`info-circle`\  ``chs_info``: Information about each individual EEG channel. Refer to :class:`mne.Info["chs"]`.
 
 All the models assume that the input data is a 3D tensor of shape
 ``(batch_size, n_chans, n_times)``, and some models also accept a 4D tensor of shape
@@ -34,6 +34,9 @@ All the models are implemented as subclasses of :py:class:`EEGModuleMixin`, whic
 base class for all EEG models in Braindecode. The :class:`EEGModuleMixin` class
 provides a common interface for all EEG models and derivate variables names if necessary.
 
+Also, all models inherit from :class:`PyTorchModelHubMixin`, which provides functionality to
+save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` package is installed.
+
 :py:mod:`braindecode.models.base`:
 
 .. currentmodule:: braindecode.models
@@ -41,7 +44,7 @@ provides a common interface for all EEG models and derivate variables names if n
 .. autosummary::
    :toctree: generated/
    :recursive:
-   
+
     EEGModuleMixin
 
 :py:mod:`braindecode.models`:
@@ -51,11 +54,13 @@ provides a common interface for all EEG models and derivate variables names if n
 .. autosummary::
    :toctree: generated/
    :recursive:
-   
+
     ATCNet
     AttentionBaseNet
+    AttnSleep
     BDTCN
     BIOT
+    BENDR
     ContraWR
     CTNet
     Deep4Net
@@ -65,11 +70,10 @@ provides a common interface for all EEG models and derivate variables names if n
     EEGInceptionMI
     EEGITNet
     EEGMiner
-    EEGNetv1
-    EEGNetv4
+    EEGNet
     EEGNeX
-    EEGResNet
     EEGSimpleConv
+    EEGSym
     EEGTCNet
     FBCNet
     FBLightConvNet
@@ -77,6 +81,7 @@ provides a common interface for all EEG models and derivate variables names if n
     IFNet
     Labram
     MSVTNet
+    PBT
     SCCNet
     ShallowFBCSPNet
     SignalJEPA
@@ -86,11 +91,11 @@ provides a common interface for all EEG models and derivate variables names if n
     SincShallowNet
     SleepStagerBlanco2020
     SleepStagerChambon2018
-    SleepStagerEldele2021
+    SSTDPN
     SPARCNet
     SyncNet
     TIDNet
-    TSceptionV1
+    TSception
     USleep
 
 
@@ -114,7 +119,7 @@ These modules wrap specialized activation functions—e.g., safe logarithms for 
 .. autosummary::
     :toctree: generated/activation
     :recursive:
-   
+
     LogActivation
     SafeLog
 
@@ -129,7 +134,7 @@ multi'head attention and squeeze and excitation layers.
 .. autosummary::
     :toctree: generated/attention
     :recursive:
-   
+
     CAT
     CBAM
     ECA
@@ -153,7 +158,7 @@ including multi'layer perceptrons (MLPs) and inception blocks.
 .. autosummary::
     :toctree: generated/blocks
     :recursive:
-   
+
     MLP
     FeedForwardBlock
     InceptionBlock
@@ -169,7 +174,7 @@ convolutional layers with constraints and pooling layers.
 .. autosummary::
     :toctree: generated/convolution
     :recursive:
-   
+
     AvgPool2dWithConv
     CausalConv1d
     CombinedConv
@@ -179,14 +184,14 @@ convolutional layers with constraints and pooling layers.
 Filter
 ''''''
 These modules implement Filter Bank as Layer and generalizer Gaussian
-layer. 
+layer.
 
 :py:mod:`braindecode.modules.filter`:
 
 .. autosummary::
     :toctree: generated/filter
     :recursive:
-   
+
     FilterBankLayer
     GeneralizedGaussianFilter
 
@@ -201,7 +206,7 @@ include layers for handling different input shapes and dimensions.
 .. autosummary::
     :toctree: generated/layers
     :recursive:
-   
+
     Chomp1d
     DropPath
     Ensure4d
@@ -218,7 +223,7 @@ and linear layers with specific initializations.
 .. autosummary::
     :toctree: generated/linear
     :recursive:
-   
+
     LinearWithConstraint
     MaxNormLinear
 
@@ -234,7 +239,7 @@ variance of input data. Mostly used on FilterBank models.
 .. autosummary::
     :toctree: generated/stats
     :recursive:
-       
+
     StatLayer
     LogPowerLayer
     LogVarLayer
@@ -253,22 +258,22 @@ change to cropped model.
 .. autosummary::
     :toctree: generated/util
     :recursive:
-   
+
     aggregate_probas
-    
+
 
 Wrappers
 ''''''''
 These modules implement wrappers for various types of models,
 including wrappers for models with multiple outputs and wrappers for
-models with intermediate outputs. 
+models with intermediate outputs.
 
 :py:mod:`braindecode.modules.wrapper`:
 
 .. autosummary::
     :toctree: generated/wrapper
     :recursive:
-   
+
     Expression
     IntermediateOutputWrapper
 
@@ -280,21 +285,21 @@ Functional
 .. currentmodule:: braindecode.functional
 
 The functional module contains various functions that can be used
-like functional API. 
+like functional API.
 
 .. autosummary::
     :toctree: generated
     :recursive:
-   
+
      drop_path
-     glorot_weight_zero_bias 
+     glorot_weight_zero_bias
      hilbert_freq
      identity
      plv_time
      rescale_parameter
      safe_log
      square
-     squeeze_final_output
+
 
 Datasets
 ========
@@ -303,7 +308,7 @@ Datasets
 .. currentmodule:: braindecode.datasets
 
 Pytorch Datasets structure for common EEG datasets, and function to create the dataset from several
-different data formats. The options available are: `Numpy Arrays`, `MNE Raw` and `MNE Epochs`. 
+different data formats. The options available are: `Numpy Arrays`, `MNE Raw` and `MNE Epochs`.
 
 
 Base classes
@@ -313,12 +318,13 @@ Base classes
    :toctree: generated/
 
     BaseConcatDataset
-    BaseDataset
+    RecordDataset
+    RawDataset
     WindowsDataset
     BIDSDataset
     BIDSEpochsDataset
 
-   
+
 Common Datasets
 ''''''''''''''''
 
@@ -369,12 +375,39 @@ Preprocessing
     filterbank
     preprocess
     Preprocessor
-    Resample
+    EEGPrep
+
+
+Preprocessing Transform
+''''''''''''''''''''''''
+
+These modules implement various preprocessing transforms that can be applied
+to EEG data, including cropping, filtering, resampling, and channel selection.
+
+:py:mod:`braindecode.preprocessing`:
+
+.. currentmodule:: braindecode.preprocessing
+
+.. autosummary::
+   :toctree: generated/
+
+    Crop
     DropChannels
-    SetEEGReference
     Filter
     Pick
-    Crop
+    ReinterpolateRemovedChannels
+    RemoveBadChannels
+    RemoveBadChannelsNoLocs
+    RemoveBadWindows
+    RemoveBursts
+    RemoveCommonAverageReference
+    RemoveDCOffset
+    RemoveDrifts
+    RemoveFlatChannels
+    Resample
+    Resampling
+    SetEEGReference
+
 
 Data Utils
 ==========
@@ -419,7 +452,7 @@ transformations that can be applied to EEG data. The transformations
 can be used to augment the data during training, which can help improve
 the performance of the model. The transformations can be applied to
 the data in a variety of ways, including time'domain transformations,
-frequency'domain transformations, and spatial transformations. 
+frequency'domain transformations, and spatial transformations.
 
 :py:mod:`braindecode.augmentation`:
 
@@ -452,7 +485,7 @@ frequency'domain transformations, and spatial transformations.
 
 
 The functional augmentation API contains the same transformations as the
-transforms API, but they are implemented as functions. 
+transforms API, but they are implemented as functions.
 
 :py:mod:`braindecode.augmentation.functional`:
 
@@ -483,7 +516,7 @@ Classifier
 
 Skorch wrapper for braindecode models. The skorch wrapper
 allows to use braindecode models with scikit'learn
-API. 
+API.
 
 :py:mod:`braindecode.classifier`:
 
@@ -499,7 +532,7 @@ Regressor
 
 Skorch wrapper for braindecode models focus on regression tasks.
 The skorch wrapper allows to use braindecode models with scikit'learn
-API. 
+API.
 
 :py:mod:`braindecode.regressor`:
 
@@ -517,7 +550,7 @@ Training
 Training module contains functions and classes for training
 and evaluating EEG models. It is inside the Classifier and
 Regressor skorch classes, and it is used to train the models
-and evaluate their performance. 
+and evaluate their performance.
 
 :py:mod:`braindecode.training`:
 
@@ -537,7 +570,7 @@ and evaluate their performance.
 
 Utils
 =====
-Functions available in braindecode util module. 
+Functions available in braindecode util module.
 
 :py:mod:`braindecode.util`:
 
@@ -553,7 +586,7 @@ Visualization
 Visualization module contains functions for visualizing EEG data,
 including plotting the confusion matrix and computing amplitude
 gradients. The visualization module is useful for understanding the
-performance of the model and for interpreting the results. 
+performance of the model and for interpreting the results.
 
 :py:mod:`braindecode.visualization`:
 
