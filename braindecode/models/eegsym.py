@@ -123,49 +123,65 @@ class EEGSym(EEGModuleMixin, nn.Module):
         )
 
         # Build the model
-        self.inception_block1 = self._create_inception_block(
+        self.inception_block1 = _InceptionBlock(
             in_channels=1,
             scales_samples=self.scales_samples,
             filters_per_branch=self.filters_per_branch,
             ncha=self.n_channels_per_hemi,
+            activation=self.activation,
+            drop_prob=self.drop_prob,
             average_pool=2,
+            spatial_resnet_repetitions=self.spatial_resnet_repetitions,
             init=True,
         )
-        self.inception_block2 = self._create_inception_block(
+        self.inception_block2 = _InceptionBlock(
             in_channels=self.filters_per_branch * len(self.scales_samples),
             scales_samples=[max(1, s // 4) for s in self.scales_samples],
             filters_per_branch=self.filters_per_branch,
-            ncha=self.n_channels_per_hemi,  #
+            ncha=self.n_channels_per_hemi,
+            activation=self.activation,
+            drop_prob=self.drop_prob,
             average_pool=2,
+            spatial_resnet_repetitions=self.spatial_resnet_repetitions,
+            init=False,
         )
 
         # Residual blocks (spatial dim is still n_channels_per_hemi through the network)
         self.residual_blocks = nn.Sequential(
-            self._create_residual_block(
+            _ResidualBlock(
                 in_channels=self.filters_per_branch * len(self.scales_samples),
                 filters=self.filters_per_branch
                 * len(self.scales_samples),  # No reduction
                 kernel_size=16,
-                average_pool=2,
                 ncha=self.n_channels_per_hemi,
+                activation=self.activation,
+                drop_prob=self.drop_prob,
+                average_pool=2,
+                spatial_resnet_repetitions=self.spatial_resnet_repetitions,
             ),
-            self._create_residual_block(
+            _ResidualBlock(
                 in_channels=self.filters_per_branch * len(self.scales_samples),
                 filters=int(
                     self.filters_per_branch * len(self.scales_samples) / 2
                 ),  # Reduce by /2
                 kernel_size=8,
-                average_pool=2,
                 ncha=self.n_channels_per_hemi,
+                activation=self.activation,
+                drop_prob=self.drop_prob,
+                average_pool=2,
+                spatial_resnet_repetitions=self.spatial_resnet_repetitions,
             ),
-            self._create_residual_block(
+            _ResidualBlock(
                 in_channels=int(self.filters_per_branch * len(self.scales_samples) / 2),
                 filters=int(
                     self.filters_per_branch * len(self.scales_samples) / 4
                 ),  # Reduce by /2
                 kernel_size=4,
-                average_pool=2,
                 ncha=self.n_channels_per_hemi,
+                activation=self.activation,
+                drop_prob=self.drop_prob,
+                average_pool=2,
+                spatial_resnet_repetitions=self.spatial_resnet_repetitions,
             ),
         )
 
@@ -223,46 +239,6 @@ class EEGSym(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=int(self.filters_per_branch * len(self.scales_samples) / 2),
             out_features=self.n_outputs,
-        )
-
-    def _create_inception_block(
-        self,
-        in_channels: int,
-        scales_samples: List[int],
-        filters_per_branch: int,
-        ncha: int,
-        average_pool: int,
-        init: bool = False,
-    ):
-        return _InceptionBlock(
-            in_channels=in_channels,
-            scales_samples=scales_samples,
-            filters_per_branch=filters_per_branch,
-            ncha=ncha,
-            activation=self.activation,
-            drop_prob=self.drop_prob,
-            average_pool=average_pool,
-            spatial_resnet_repetitions=self.spatial_resnet_repetitions,
-            init=init,
-        )
-
-    def _create_residual_block(
-        self,
-        in_channels: int,
-        filters: int,
-        kernel_size: int,
-        average_pool: int,
-        ncha: int = 1,
-    ):
-        return _ResidualBlock(
-            in_channels=in_channels,
-            filters=filters,
-            kernel_size=kernel_size,
-            ncha=ncha,
-            activation=self.activation,
-            drop_prob=self.drop_prob,
-            average_pool=average_pool,
-            spatial_resnet_repetitions=self.spatial_resnet_repetitions,
         )
 
     def forward(self, x):
