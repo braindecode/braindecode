@@ -14,7 +14,8 @@ Fixed-Length Windows Extraction
 # Introduction to Fixed-Length Windows Function
 # -------------------------------------
 #
-# In many EEG decoding tasks, it is useful to split long continuous recordings
+# In many EEG decoding tasks, such as self-supervised pre-training,
+# it is useful to split long continuous recordings
 # into **fixed-length, overlapping or non-overlapping windows**
 #
 # The function :func:`braindecode.preprocessing.create_fixed_length_windows`
