@@ -16,118 +16,136 @@ from braindecode.models.base import EEGModuleMixin
 class EEGSym(EEGModuleMixin, nn.Module):
     """EEGSym from Pérez-Velasco et al (2022) [eegsym2022]_.
 
-    :bdg-success:`Convolution`
+    :bdg-success:`Convolution` :bdg-dark-line:`Channel`
 
-    .. figure:: https://raw.githubusercontent.com/Serpeve/EEGSym/refs/heads/main/EEGSym_scheme_online.png
+    .. figure:: ../../docs/_static/model/eegsym.png
         :align: center
         :alt: EEGSym Architecture
 
 
     The **EEGSym** is a novel Convolutional Neural Network (CNN) architecture designed for
     Motor Imagery (MI) based Brain-Computer Interfaces (BCIs), primarily aimed at
-    **overcoming inter-subject variability** and significantly **reducing BCI inefficiency** [1, 2].
+    **overcoming inter-subject variability** and significantly **reducing BCI inefficiency**
+    [eegsym2022]_.
 
     The architecture integrates advances from Deep Learning (DL), complemented by
-    Transfer Learning (TL) techniques and Data Augmentation (DA), to achieve
-    performance in inter-subject MI classification [1, 3, 4].
+    Transfer Learning (TL) techniques and Data Augmentation (DA), to achieve strong
+    performance in inter-subject MI classification [eegsym2022]_.
 
     .. rubric:: Architectural Overview
 
     EEGSym systematically incorporates three core features:
 
-    #. **Inception Modules** for multi-scale temporal analysis [5].
+    #. **Inception Modules** for multi-scale temporal analysis [eegsym2022]_.
     #. **Residual Connections** maintain spatio-temporal signal structure and
-       enable deeper feature extraction [6, 7].
+       enable deeper feature extraction [eegsym2022]_.
     #. A **Siamese-network design** exploits the inherent symmetry of the brain
-       across the mid-sagittal plane [1, 8, 9].
+       across the mid-sagittal plane [eegsym2022]_.
 
     .. rubric:: Macro Components
 
     - `EEGSym.symmetric_division` **(Input Processing)**
         - *Operations.* The input is virtually split into left, right, and middle channels.
-           Middle (central) channels are duplicated and concatenated to both left,
-           and right lateralized electrodes to form the two hemisphere inputs [10-12].
+           Middle (central) channels are duplicated and concatenated to both left
+           and right lateralized electrodes to form the two hemisphere inputs [eegsym2022]_.
         - *Role.* Prepares the data for the siamese-network approach,
            reducing the number of parameters in the spatial filters
-           for the tempospatial analysis stage [9, 12].
+           for the tempospatial analysis stage [eegsym2022]_.
 
     - `EEGSym.inception_block` **(Tempospatial Analysis - Temporal Feature Extraction)**
         - *Operations.* Uses :class:`_InceptionBlock` modules, which apply parallel
-          temporal convolutions with different kernel sizes (scales) [13].
+          temporal convolutions with different kernel sizes (scales) [eegsym2022]_.
           This is followed by concatenation, residual connections, and average
-          pooling for temporal dimensionality reduction [13, 14].
-        - *Role.* Captures the most detailed temporal relationships in the architecture,
-          similarly to :class:`EEG-Inception` [5, 15].
-          The first block uses large temporal kernels (e.g., 500 ms, 250 ms, 125 ms) [13, 16].
+          pooling for temporal dimensionality reduction [eegsym2022]_.
+        - *Role.* Captures detailed temporal relationships in the architecture,
+          similarly to :class:`~braindecode.models.eeginception_mi.EEGInceptionMI`
+          [eeginception2020]_. The first block uses large temporal kernels
+          (e.g., 500 ms, 250 ms, 125 ms) [eegsym2022]_.
 
     - `EEGSym.residual_blocks` **(Tempospatial Analysis - Spatial Feature Extraction)**
-        - *Operations.* Composed of multiple :class:`_ResidualBlock` modules (typically three instances) [13, 17].
-           Each block applies temporal convolution, pooling, and a spatial analysis layer
-           (convolution or grouped convolution) [18, 19].
+        - *Operations.* Composed of multiple :class:`_ResidualBlock` modules (typically three instances)
+          [eegsym2022]_. Each block applies temporal convolution, pooling, and a spatial analysis layer
+          (convolution or grouped convolution) [eegsym2022]_.
         - *Role.* Enhances spatial feature extraction by incorporating residual
            connections across all CNN stages, which helps maintain the spatio-temporal
-           structure of the signal through deeper layers [2, 6, 7].
+           structure of the signal through deeper layers [eegsym2022]_.
 
     - `EEGSym.channel_merging` **(Hemisphere Merging)**
         - *Operations.* The :class:`_ChannelMergingBlock` reduces the spatial dimensionality
           (Z and C) to 1, performing two residual convolutions followed by a final grouped
-          convolution that merges the feature information from the two hemispheres [20, 21].
+          convolution that merges the feature information from the two hemispheres [eegsym2022]_.
         - *Role.* Extracts complex relationships between channels of both hemispheres as part of the
-          symmetry exploitation [9].
+          symmetry exploitation [eegsym2022]_.
 
     - `EEGSym.temporal_merging` **(Temporal Collapse)**
         - *Operations.* The :class:`_TemporalMergingBlock` uses residual convolution
-          followed by grouped convolution to reduce the temporal dimension (S) to 1 [21, 22].
-        - *Role.* Final step of temporal aggregation before the output module [21].
+          followed by grouped convolution to reduce the temporal dimension (S) to 1 [eegsym2022]_.
+        - *Role.* Final step of temporal aggregation before the output module [eegsym2022]_.
+
+    - `EEGSym.output_blocks` **(Output Processing)**
+        - *Operations.* The :class:`_OutputBlock` applies four residual convolution iterations
+          (1x1x1 convolutions) followed by flattening [eegsym2022]_.
+        - *Role.* Final feature refinement through residual connections before the
+          fully connected classification layer [eegsym2022]_.
 
     .. rubric:: How the information is encoded temporally, spatially, and spectrally
 
     * **Temporal.**
         Temporal features are extracted across multiple scales in the inception modules
         using different temporal convolution kernel sizes (e.g., corresponding to
-        500 ms, 250 ms, and 125 ms windows for a 128 Hz sampling rate) [13, 23].
-        Subsequent pooling operations and residual blocks continue to reduce the temporal dimension [13, 18].
+        500 ms, 250 ms, and 125 ms windows for a 128 Hz sampling rate), very similar to [eeginception2020]_.
+        Subsequent pooling operations and residual blocks continue to reduce the temporal dimension
+        [eegsym2022]_.
 
     * **Spatial.**
 
         Spatial features are extracted via two main mechanisms:
 
         - (1) The **siamese-network design** implicitly introduces brain symmetry by treating the two hemispheres
-          equally during feature extraction [8, 9].
+          equally during feature extraction [eegsym2022]_.
         - (2) **Residual connections** are utilized in the Tempospatial Analysis stage to enhance the extraction of
-          spatial correlations between electrodes [2, 7].
+          spatial correlations between electrodes [eegsym2022]_.
 
     * **Spectral.**
-        Spectral information is implicitly captured by the varying kernel sizes of the temporal convolutions in the inception modules [5, 13].
-        These kernels filter the signal across different temporal windows, corresponding to different frequency characteristics.
+        Spectral information is implicitly captured by the varying kernel sizes of the temporal convolutions
+        in the inception modules [eegsym2022]_. These kernels filter the signal across different temporal windows,
+        corresponding to different frequency characteristics.
 
     Notes
     ----------
-    * EEGSym achieved focus on accuracies across five large MI datasets [1, 4].
-    * The model achieved high accuracy using a reduced set of electrodes (8 or 16 channels) [1, 2].
+    * EEGSym achieved competitive accuracies across five large MI datasets [eegsym2022]_.
+    * The model maintained high accuracy using a reduced set of electrodes (8 or 16 channels)
+      [eegsym2022]_.
     * This is PyTorch implementation of the EEGSym model of the TensorFlow original [eegsym2022code]_.
 
     Parameters
     ----------
     filters_per_branch : int, optional
         Number of filters in each inception branch. Should be a multiple of 8.
-        Default is 12 [31].
+        Default is 12 [eegsym2022]_.
     scales_time : tuple of int, optional
         Temporal scales (in milliseconds) for the temporal convolutions in the first
-        inception module. Default is (500, 250, 125) [23, 31].
+        inception module. Default is (500, 250, 125) [eegsym2022]_.
     drop_prob : float, optional
-        Dropout probability. Default is 0.25 [23, 31].
+        Dropout probability. Default is 0.25 [eegsym2022]_.
     activation : nn.Module, optional
-        Activation function to use. Default is :class:`nn.ELU()` [23, 31].
+        Activation function to use. Default is :class:`nn.ELU()` [eegsym2022]_.
     spatial_resnet_repetitions : int, optional
         Number of repetitions of the spatial analysis operations at each step.
-        Default is 5 [31, 32].
+        Default is 5 [eegsym2022]_.
     left_right_chs : list of tuple of str, optional
-        Optional list of tuples with the names of the left and right hemisphere channels.
-        If not provided, channels are automatically split [32].
+        List of tuples pairing left and right hemisphere channel names,
+        e.g., ``[('C3', 'C4'), ('FC5', 'FC6')]``. If not provided, channels
+        are automatically split into left/right hemispheres using
+        :func:`~braindecode.datautil.channel_utils.division_channels_idx` and
+        :func:`~braindecode.datautil.channel_utils.match_hemisphere_chans`.
+        Must be provided together with ``middle_chs`` [eegsym2022]_.
     middle_chs : list of str, optional
-        Optional list of the names of the middle (mid-sagittal) channels. If not provided,
-        channels are automatically split [32].
+        List of midline (central) channel names that lie on the mid-sagittal plane,
+        e.g., ``['FZ', 'CZ', 'PZ']``. These channels are duplicated and concatenated
+        to both hemispheres. If not provided, channels are automatically identified
+        using :func:`~braindecode.datautil.channel_utils.division_channels_idx`.
+        Must be provided together with ``left_right_chs`` [eegsym2022]_.
 
     References
     ----------
@@ -137,6 +155,10 @@ class EEGSym(EEGModuleMixin, nn.Module):
        on Neural Systems and Rehabilitation Engineering, 30, 1766-1775.
     .. [eegsym2022code] Pérez-Velasco, S., EEGSym source code.
         https://github.com/Serpeve/EEGSym
+    .. [eeginception2020] Santamaría-Vázquez, E., Martínez-Cagigal, V.,
+       Vaquerizo-Villar, F., & Hornero, R. (2020). EEG-Inception: A novel deep
+       convolutional neural network for assistive ERP-based brain-computer interfaces.
+       IEEE Transactions on Neural Systems and Rehabilitation Engineering, 28, 2773-2782.
     """
 
     def __init__(
