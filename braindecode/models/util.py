@@ -82,7 +82,7 @@ models_mandatory_parameters = [
     ("EEGSym", ["chs_info", "n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("SyncNet", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
