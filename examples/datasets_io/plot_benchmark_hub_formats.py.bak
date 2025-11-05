@@ -1,0 +1,572 @@
+""".. _benchmark-hub-formats:
+
+Benchmarking storage formats for Hugging Face Hub integration
+==============================================================
+
+This example benchmarks different storage formats (HDF5, Zarr, NumPy+Parquet)
+for storing EEG datasets to be uploaded to Hugging Face Hub. We evaluate:
+
+1. **Save time**: How long it takes to convert and save the dataset
+2. **Load time**: How long it takes to load the entire dataset (cold start)
+3. **Random access speed**: Time to access random windows (critical for DataLoader)
+4. **File size**: Storage efficiency with compression
+5. **Sequential read**: Time to iterate through all windows sequentially
+
+The **random access speed** is the most critical metric for deep learning
+training, as PyTorch DataLoader randomly samples batches during training.
+
+We use the :class:`braindecode.datasets.NMT` dataset as it represents an
+intermediate-sized dataset suitable for testing.
+"""
+
+# Authors: Kuntal Kokate, Bruno Aristimunha
+#
+# License: BSD (3-clause)
+
+import os
+import shutil
+import tempfile
+import time
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from memory_profiler import memory_usage
+
+from braindecode.datasets import NMT
+from braindecode.datautil.hub_formats import (
+    convert_to_hdf5,
+    convert_to_npz_parquet,
+    convert_to_zarr,
+    get_format_info,
+    load_from_hdf5,
+    load_from_npz_parquet,
+    load_from_zarr,
+)
+from braindecode.preprocessing import create_fixed_length_windows, preprocess
+
+
+if __name__ == '__main__':
+    ###############################################################################
+    # Main execution
+    # --------------
+    # Wrapped in if __name__ == '__main__' for memory_profiler multiprocessing support
+
+    if __name__ == '__main__':
+        ###########################################################################
+        # Load and prepare the NMT dataset
+        # ---------------------------------
+        # We'll use a subset of the NMT dataset and create windows from it.
+        #
+        # IMPORTANT: Manually download NMT dataset before running this script!
+        # The dataset should be placed in the path specified below.
+        # Default MNE data location: ~/mne_data/
+        # Or specify a custom path in the NMT() constructor using the 'path' parameter.
+
+        print("Loading NMT dataset...")
+        # Enhanced benchmark with 5 subjects following braindecode methodology
+        n_subjects = 5  # Using 5 subjects for comprehensive benchmark
+        n_repetitions = 2  # Number of repetitions per format (following braindecode style)
+
+        print(f"Benchmark configuration:")
+        print(f"  Subjects: {n_subjects}")
+        print(f"  Repetitions per format: {n_repetitions}")
+
+        # Option 1: Load from default MNE data directory (~/mne_data/)
+        # Make sure the NMT dataset is already downloaded there!
+        # dataset = NMT(recording_ids=list(range(n_subjects)), preload=True)
+
+        # Option 2: Load from custom path (uncomment and modify if needed)
+        import os
+        custom_path = os.path.expanduser("~/Downloads")
+        dataset = NMT(path=custom_path, recording_ids=list(range(n_subjects)), preload=True)
+
+        # Get dataset info
+        info = get_format_info(dataset)
+        print(f"\nDataset info before windowing:")
+        print(f"  Number of recordings: {info['n_recordings']}")
+        print(f"  Total size: {info['total_size_mb']:.2f} MB")
+        print(f"  Recommended format: {info['recommended_format']}")
+        print(f"  Reason: {info['reason']}")
+
+        # Create windows for more realistic testing
+        sfreq = dataset.datasets[0].raw.info["sfreq"]
+        window_size_s = 4  # 4-second windows
+        window_stride_s = 2  # 2-second stride (50% overlap)
+
+        print(f"\nCreating {window_size_s}s windows with {window_stride_s}s stride...")
+        windows_dataset = create_fixed_length_windows(
+        dataset,
+        start_offset_samples=0,
+        stop_offset_samples=None,
+        window_size_samples=int(window_size_s * sfreq),
+        window_stride_samples=int(window_stride_s * sfreq),
+        drop_last_window=True,
+        preload=True,
+        )
+
+        # Get windowed dataset info
+        info_windowed = get_format_info(windows_dataset)
+        print(f"\nDataset info after windowing:")
+        print(f"  Number of windows: {info_windowed['total_samples']}")
+        print(f"  Total size: {info_windowed['total_size_mb']:.2f} MB")
+
+        ###############################################################################
+        # Benchmark functions
+        # -------------------
+        # We define functions to benchmark each format.
+
+
+        def benchmark_save(dataset, format_name, output_path, **kwargs):
+        """Benchmark save time, memory usage, and file size.
+
+        Following braindecode methodology: measures peak memory during execution.
+        """
+        # Define conversion function for memory profiling
+        def _convert():
+            if format_name == "hdf5":
+                convert_to_hdf5(dataset, output_path, overwrite=True, **kwargs)
+            elif format_name == "zarr":
+                convert_to_zarr(dataset, output_path, overwrite=True, **kwargs)
+            elif format_name == "npz_parquet":
+                convert_to_npz_parquet(dataset, output_path, overwrite=True, **kwargs)
+
+        # Measure time and memory (following braindecode style)
+        start = time.time()
+        mem_usage = memory_usage(_convert, interval=0.1, max_usage=True)
+        save_time = time.time() - start
+        peak_memory = mem_usage  # memory_usage with max_usage=True returns single value
+
+        # Calculate file size
+        if format_name == "hdf5":
+            file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
+        else:
+            # For directory-based formats (zarr, npz_parquet)
+            total_size = 0
+            for dirpath, dirnames, filenames in os.walk(output_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    total_size += os.path.getsize(filepath)
+            file_size = total_size / (1024 * 1024)  # MB
+
+        return save_time, peak_memory, file_size
+
+
+        def benchmark_load(format_name, input_path):
+        """Benchmark full dataset load time and memory usage.
+
+        Following braindecode methodology: measures peak memory during execution.
+        """
+        loaded_dataset = None
+
+        def _load():
+            nonlocal loaded_dataset
+            if format_name == "hdf5":
+                loaded_dataset = load_from_hdf5(input_path, preload=True)
+            elif format_name == "zarr":
+                loaded_dataset = load_from_zarr(input_path, preload=True)
+            elif format_name == "npz_parquet":
+                loaded_dataset = load_from_npz_parquet(input_path, preload=True)
+
+        # Measure time and memory (following braindecode style)
+        start = time.time()
+        mem_usage = memory_usage(_load, interval=0.1, max_usage=True)
+        load_time = time.time() - start
+        peak_memory = mem_usage
+
+        return load_time, peak_memory, loaded_dataset
+
+
+        def benchmark_random_access(dataset, n_samples=1000):
+        """Benchmark random access speed (critical for DataLoader).
+
+        This simulates what happens during training when PyTorch DataLoader
+        randomly samples batches.
+        """
+        # Get total number of windows
+        total_windows = len(dataset)
+
+        # Generate random indices
+        np.random.seed(42)
+        random_indices = np.random.randint(0, total_windows, size=n_samples)
+
+        start = time.time()
+        for idx in random_indices:
+            # Access data (simulating DataLoader __getitem__)
+            X, y = dataset[idx]
+        random_access_time = time.time() - start
+
+        # Calculate average time per sample
+        avg_time_per_sample = random_access_time / n_samples
+
+        return random_access_time, avg_time_per_sample
+
+
+        def benchmark_sequential_read(dataset):
+        """Benchmark sequential iteration through dataset."""
+        start = time.time()
+        for i in range(len(dataset)):
+            X, y = dataset[i]
+        sequential_time = time.time() - start
+
+        return sequential_time
+
+
+        ###############################################################################
+        # Run benchmarks for all formats
+        # -------------------------------
+        # We test HDF5, Zarr, and NumPy+Parquet with different compression settings.
+
+        formats_to_test = [
+        # (format_name, kwargs)
+        ("hdf5", {"compression": "gzip", "compression_level": 4}),
+        ("hdf5", {"compression": "gzip", "compression_level": 9}),
+        ("hdf5", {"compression": None}),
+        ("zarr", {"compression": "blosc", "compression_level": 5}),
+        ("zarr", {"compression": None}),
+        ("npz_parquet", {"compression": "zstd"}),
+        ("npz_parquet", {"compression": None}),
+        ]
+
+        results = []
+
+        # Create temporary directory for testing
+        tmp_dir = tempfile.mkdtemp()
+
+        print("\n" + "="*70)
+        print("BENCHMARKING STORAGE FORMATS (Following braindecode methodology)")
+        print("="*70)
+        print(f"Each format will be tested {n_repetitions} times")
+
+        for format_name, kwargs in formats_to_test:
+        compression_str = kwargs.get('compression', 'none')
+        if 'compression_level' in kwargs:
+            compression_str += f"_{kwargs['compression_level']}"
+
+        print(f"\n📊 Benchmarking {format_name.upper()} (compression={compression_str})...")
+
+        # Create output path
+        ext = ".h5" if format_name == "hdf5" else f".{format_name}"
+        output_path = Path(tmp_dir) / f"dataset_{format_name}_{compression_str}{ext}"
+
+        # Store results for each repetition
+        rep_results = {
+            "save_time": [],
+            "save_memory": [],
+            "load_time": [],
+            "load_memory": [],
+            "random_access_time": [],
+            "avg_time_per_sample_ms": [],
+            "sequential_time": [],
+            "file_size_mb": None,  # Only need to measure once
+        }
+
+        try:
+            for rep in range(n_repetitions):
+                print(f"  🔄 Repetition {rep + 1}/{n_repetitions}")
+
+                # 1. Benchmark save
+                print("     ⏱️  Saving dataset...")
+                save_time, save_memory, file_size = benchmark_save(
+                    windows_dataset, format_name, output_path, **kwargs
+                )
+                rep_results["save_time"].append(save_time)
+                rep_results["save_memory"].append(save_memory)
+                if rep_results["file_size_mb"] is None:
+                    rep_results["file_size_mb"] = file_size
+                print(f"        Time: {save_time:.2f}s | Memory: {save_memory:.1f} MiB | "
+                      f"Size: {file_size:.2f} MB")
+
+                # 2. Benchmark load
+                print("     ⏱️  Loading dataset...")
+                load_time, load_memory, loaded_dataset = benchmark_load(format_name, output_path)
+                rep_results["load_time"].append(load_time)
+                rep_results["load_memory"].append(load_memory)
+                print(f"        Time: {load_time:.2f}s | Memory: {load_memory:.1f} MiB")
+
+                # 3. Benchmark random access (MOST IMPORTANT)
+                print("     ⏱️  Random access test (1000 samples)...")
+                random_time, avg_per_sample = benchmark_random_access(
+                    loaded_dataset, n_samples=1000
+                )
+                rep_results["random_access_time"].append(random_time)
+                rep_results["avg_time_per_sample_ms"].append(avg_per_sample * 1000)
+                print(f"        Time: {random_time:.3f}s ({avg_per_sample*1000:.3f}ms/sample)")
+
+                # 4. Benchmark sequential read
+                print("     ⏱️  Sequential read test...")
+                sequential_time = benchmark_sequential_read(loaded_dataset)
+                rep_results["sequential_time"].append(sequential_time)
+                print(f"        Time: {sequential_time:.2f}s")
+
+                # Cleanup after each repetition
+                if output_path.is_file():
+                    output_path.unlink()
+                elif output_path.is_dir():
+                    shutil.rmtree(output_path)
+
+            # Calculate average and std across repetitions
+            print(f"\n  📈 Average results across {n_repetitions} repetitions:")
+            results.append({
+                "format": format_name,
+                "compression": compression_str,
+                "save_time_mean": np.mean(rep_results["save_time"]),
+                "save_time_std": np.std(rep_results["save_time"]),
+                "save_memory_mean": np.mean(rep_results["save_memory"]),
+                "save_memory_std": np.std(rep_results["save_memory"]),
+                "load_time_mean": np.mean(rep_results["load_time"]),
+                "load_time_std": np.std(rep_results["load_time"]),
+                "load_memory_mean": np.mean(rep_results["load_memory"]),
+                "load_memory_std": np.std(rep_results["load_memory"]),
+                "random_access_time_mean": np.mean(rep_results["random_access_time"]),
+                "random_access_time_std": np.std(rep_results["random_access_time"]),
+                "avg_time_per_sample_ms_mean": np.mean(rep_results["avg_time_per_sample_ms"]),
+                "avg_time_per_sample_ms_std": np.std(rep_results["avg_time_per_sample_ms"]),
+                "sequential_time_mean": np.mean(rep_results["sequential_time"]),
+                "sequential_time_std": np.std(rep_results["sequential_time"]),
+                "file_size_mb": rep_results["file_size_mb"],
+            })
+
+            print(f"     Save: {results[-1]['save_time_mean']:.2f}±{results[-1]['save_time_std']:.2f}s "
+                  f"(Memory: {results[-1]['save_memory_mean']:.1f}±{results[-1]['save_memory_std']:.1f} MiB)")
+            print(f"     Load: {results[-1]['load_time_mean']:.2f}±{results[-1]['load_time_std']:.2f}s "
+                  f"(Memory: {results[-1]['load_memory_mean']:.1f}±{results[-1]['load_memory_std']:.1f} MiB)")
+            print(f"     Random access: {results[-1]['avg_time_per_sample_ms_mean']:.3f}±"
+                  f"{results[-1]['avg_time_per_sample_ms_std']:.3f}ms/sample")
+
+        except Exception as e:
+            print(f"     ❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+
+        # Cleanup temp directory
+        shutil.rmtree(tmp_dir)
+
+        ###############################################################################
+        # Display results
+        # ---------------
+
+        results_df = pd.DataFrame(results)
+
+        # Check if we have any results
+        if len(results_df) == 0:
+        print("\n" + "="*70)
+        print("❌ ERROR: No benchmarks completed successfully!")
+        print("="*70)
+        print("\nAll format tests failed. This could be due to:")
+        print("1. Missing dependencies (h5py, zarr, pyarrow)")
+        print("2. Data loading issues")
+        print("3. Conversion errors")
+        print("\nPlease check the error messages above.")
+        import sys
+        sys.exit(1)
+
+        print("\n" + "="*70)
+        print("BENCHMARK RESULTS")
+        print("="*70)
+        print(results_df.to_string(index=False))
+
+        # Save results
+        results_df.to_csv("hub_formats_benchmark_results.csv", index=False)
+        print("\n📄 Results saved to: hub_formats_benchmark_results.csv")
+
+        ###############################################################################
+        # Visualization
+        # -------------
+        # Create plots to visualize the benchmark results (following braindecode style).
+
+        fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+        fig.suptitle("Storage Format Benchmark Results (with repetitions and memory profiling)",
+                 fontsize=16, fontweight="bold")
+
+        # Create format labels for plotting
+        results_df["label"] = results_df["format"] + "\n" + results_df["compression"]
+
+        # 1. Save Time (with error bars)
+        ax = axes[0, 0]
+        ax.bar(range(len(results_df)), results_df["save_time_mean"],
+           yerr=results_df["save_time_std"], capsize=5)
+        ax.set_xticks(range(len(results_df)))
+        ax.set_xticklabels(results_df["label"], rotation=45, ha="right", fontsize=8)
+        ax.set_ylabel("Time (s)")
+        ax.set_title("Save Time")
+        ax.grid(axis="y", alpha=0.3)
+
+        # 2. Load Time (with error bars)
+        ax = axes[0, 1]
+        ax.bar(range(len(results_df)), results_df["load_time_mean"],
+           yerr=results_df["load_time_std"], color="orange", capsize=5)
+        ax.set_xticks(range(len(results_df)))
+        ax.set_xticklabels(results_df["label"], rotation=45, ha="right", fontsize=8)
+        ax.set_ylabel("Time (s)")
+        ax.set_title("Load Time (Cold Start)")
+        ax.grid(axis="y", alpha=0.3)
+
+        # 3. Random Access Time (MOST IMPORTANT) with error bars
+        ax = axes[0, 2]
+        bars = ax.bar(
+        range(len(results_df)),
+        results_df["avg_time_per_sample_ms_mean"],
+        yerr=results_df["avg_time_per_sample_ms_std"],
+        color="red",
+        alpha=0.7,
+        capsize=5
+        )
+        ax.set_xticks(range(len(results_df)))
+        ax.set_xticklabels(results_df["label"], rotation=45, ha="right", fontsize=8)
+        ax.set_ylabel("Time (ms)")
+        ax.set_title("⭐ Random Access Speed (avg/sample)\n[CRITICAL for Training]",
+                 fontweight="bold")
+        ax.grid(axis="y", alpha=0.3)
+
+        # Highlight the best performer
+        best_idx = results_df["avg_time_per_sample_ms_mean"].idxmin()
+        bars[best_idx].set_color("green")
+
+        # 4. Memory vs Time Scatter Plot (following braindecode style)
+        ax = axes[0, 3]
+        colors = ['red' if fmt == 'hdf5' else 'blue' if fmt == 'zarr' else 'green'
+              for fmt in results_df['format']]
+        ax.scatter(results_df["load_time_mean"], results_df["load_memory_mean"],
+               c=colors, s=100, alpha=0.6)
+        for idx, row in results_df.iterrows():
+        ax.annotate(row["label"], (row["load_time_mean"], row["load_memory_mean"]),
+                    fontsize=7, ha='right')
+        ax.set_xlabel("Load Time (s)")
+        ax.set_ylabel("Peak Memory (MiB)")
+        ax.set_title("Memory vs Time Tradeoff\n(braindecode style)")
+        ax.grid(alpha=0.3)
+
+        # 5. Sequential Read Time
+        ax = axes[1, 0]
+        ax.bar(range(len(results_df)), results_df["sequential_time_mean"],
+           yerr=results_df["sequential_time_std"], color="purple", capsize=5)
+        ax.set_xticks(range(len(results_df)))
+        ax.set_xticklabels(results_df["label"], rotation=45, ha="right", fontsize=8)
+        ax.set_ylabel("Time (s)")
+        ax.set_title("Sequential Read Time")
+        ax.grid(axis="y", alpha=0.3)
+
+        # 6. File Size
+        ax = axes[1, 1]
+        ax.bar(range(len(results_df)), results_df["file_size_mb"], color="teal")
+        ax.set_xticks(range(len(results_df)))
+        ax.set_xticklabels(results_df["label"], rotation=45, ha="right", fontsize=8)
+        ax.set_ylabel("Size (MB)")
+        ax.set_title("File Size")
+        ax.grid(axis="y", alpha=0.3)
+
+        # 7. Memory Usage Comparison
+        ax = axes[1, 2]
+        x = np.arange(len(results_df))
+        width = 0.35
+        ax.bar(x - width/2, results_df["save_memory_mean"], width,
+           yerr=results_df["save_memory_std"], label='Save', capsize=3)
+        ax.bar(x + width/2, results_df["load_memory_mean"], width,
+           yerr=results_df["load_memory_std"], label='Load', capsize=3)
+        ax.set_xticks(range(len(results_df)))
+        ax.set_xticklabels(results_df["label"], rotation=45, ha="right", fontsize=8)
+        ax.set_ylabel("Peak Memory (MiB)")
+        ax.set_title("Memory Usage (Save vs Load)")
+        ax.legend()
+        ax.grid(axis="y", alpha=0.3)
+
+        # 8. Overall Score (normalized composite)
+        ax = axes[1, 3]
+        # Normalize metrics (lower is better for all)
+        norm_random = results_df["avg_time_per_sample_ms_mean"] / results_df["avg_time_per_sample_ms_mean"].max()
+        norm_load = results_df["load_time_mean"] / results_df["load_time_mean"].max()
+        norm_save = results_df["save_time_mean"] / results_df["save_time_mean"].max()
+        norm_size = results_df["file_size_mb"] / results_df["file_size_mb"].max()
+
+        # Weighted score (random access is most important)
+        overall_score = (
+        0.5 * norm_random +  # 50% weight on random access
+        0.2 * norm_load +    # 20% weight on load time
+        0.15 * norm_save +   # 15% weight on save time
+        0.15 * norm_size     # 15% weight on file size
+        )
+
+        bars = ax.bar(range(len(results_df)), overall_score, color="gray", alpha=0.7)
+        ax.set_xticks(range(len(results_df)))
+        ax.set_xticklabels(results_df["label"], rotation=45, ha="right", fontsize=8)
+        ax.set_ylabel("Score (lower is better)")
+        ax.set_title("Overall Score (Weighted)", fontweight="bold")
+        ax.grid(axis="y", alpha=0.3)
+
+        # Highlight the best overall
+        best_overall_idx = overall_score.idxmin()
+        bars[best_overall_idx].set_color("gold")
+
+        plt.tight_layout()
+        plt.savefig("hub_formats_benchmark.png", dpi=150, bbox_inches="tight")
+        print("📊 Plots saved to: hub_formats_benchmark.png")
+        plt.show()
+
+        ###############################################################################
+        # Recommendations
+        # ---------------
+        # Based on the benchmark results, we provide recommendations.
+
+        print("\n" + "="*70)
+        print("RECOMMENDATIONS")
+        print("="*70)
+
+        # Find best for each metric
+        best_random_access = results_df.loc[results_df["avg_time_per_sample_ms_mean"].idxmin()]
+        best_file_size = results_df.loc[results_df["file_size_mb"].idxmin()]
+        best_memory = results_df.loc[results_df["load_memory_mean"].idxmin()]
+        best_overall = results_df.loc[overall_score.idxmin()]
+
+        print("\n🏆 Best Random Access Speed (MOST IMPORTANT for training):")
+        print(f"   Format: {best_random_access['format']}")
+        print(f"   Compression: {best_random_access['compression']}")
+        print(f"   Speed: {best_random_access['avg_time_per_sample_ms_mean']:.3f}±"
+          f"{best_random_access['avg_time_per_sample_ms_std']:.3f} ms/sample")
+
+        print("\n💾 Best File Size:")
+        print(f"   Format: {best_file_size['format']}")
+        print(f"   Compression: {best_file_size['compression']}")
+        print(f"   Size: {best_file_size['file_size_mb']:.2f} MB")
+
+        print("\n🧠 Best Memory Efficiency:")
+        print(f"   Format: {best_memory['format']}")
+        print(f"   Compression: {best_memory['compression']}")
+        print(f"   Peak Memory: {best_memory['load_memory_mean']:.1f}±"
+          f"{best_memory['load_memory_std']:.1f} MiB")
+
+        print("\n⭐ Best Overall (Weighted Score):")
+        print(f"   Format: {best_overall['format']}")
+        print(f"   Compression: {best_overall['compression']}")
+        print(f"   Random Access: {best_overall['avg_time_per_sample_ms_mean']:.3f}±"
+          f"{best_overall['avg_time_per_sample_ms_std']:.3f} ms/sample")
+        print(f"   File Size: {best_overall['file_size_mb']:.2f} MB")
+        print(f"   Load Memory: {best_overall['load_memory_mean']:.1f}±"
+          f"{best_overall['load_memory_std']:.1f} MiB")
+
+        print("\n" + "="*70)
+        print("CONCLUSION")
+        print("="*70)
+        print("""
+        For Hugging Face Hub integration, we recommend:
+
+        1. **HDF5 with gzip compression (level 4)**: Best balance of speed and size
+           - Fast random access (critical for DataLoader)
+           - Good compression ratio
+           - Single file (easier to upload/download)
+           - Mature ecosystem
+
+        2. **Zarr with blosc compression**: Best for very large datasets
+           - Excellent for cloud storage and streaming
+           - Chunked storage allows partial downloads
+           - Better for datasets > 1GB
+
+        3. **NumPy + Parquet**: Best for small datasets
+           - Simplest format
+           - Good for datasets < 100MB
+           - Easy to inspect metadata with Parquet tools
+
+        The choice should depend on your dataset size and use case.
+        """)
