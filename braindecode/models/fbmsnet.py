@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from typing import Any, Sequence
 
 import torch
 from einops.layers.torch import Rearrange
@@ -18,6 +18,8 @@ from braindecode.modules import (
 
 class FBMSNet(EEGModuleMixin, nn.Module):
     """FBMSNet from Liu et al (2022) [fbmsnet]_.
+
+    :bdg-success:`Convolution` :bdg-primary:`Filterbank`
 
     .. figure:: https://raw.githubusercontent.com/Want2Vanish/FBMSNet/refs/heads/main/FBMSNet.png
         :align: center
@@ -55,16 +57,28 @@ class FBMSNet(EEGModuleMixin, nn.Module):
     ----------
     n_bands : int, default=9
         Number of input channels (e.g., number of frequency bands).
-    stride_factor : int, default=4
-        Stride factor for temporal segmentation.
-    temporal_layer : str, default='LogVarLayer'
-        Temporal aggregation layer to use.
     n_filters_spat : int, default=36
         Number of output channels from the MixedConv2d layer.
+    temporal_layer : str, default='LogVarLayer'
+        Temporal aggregation layer to use.
+    n_dim: int, default=3
+        Dimension of the temporal reduction layer.
+    stride_factor : int, default=4
+        Stride factor for temporal segmentation.
     dilatability : int, default=8
         Expansion factor for the spatial convolution block.
     activation : nn.Module, default=nn.SiLU
         Activation function class to apply.
+    kernels_weights : Sequence[int], default=(15, 31, 63, 125)
+        Kernel sizes for the MixedConv2d layer.
+    cnn_max_norm : float, default=2
+        Maximum norm constraint for the convolutional layers.
+    linear_max_norm : float, default=0.5
+        Maximum norm constraint for the linear layers.
+    filter_parameters : dict, default=None
+        Dictionary of parameters to use for the FilterBankLayer.
+        If None, a default Chebyshev Type II filter with transition bandwidth of
+        2 Hz and stop-band ripple of 30 dB will be used.
     verbose: bool, default False
         Verbose parameter to create the filter using mne.
 
@@ -101,7 +115,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         cnn_max_norm: float = 2,
         linear_max_norm: float = 0.5,
         verbose: bool = False,
-        filter_parameters: Optional[dict] = None,
+        filter_parameters: dict[Any, Any] | None = None,
     ):
         super().__init__(
             n_chans=n_chans,

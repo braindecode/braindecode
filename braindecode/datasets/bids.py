@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseConcatDataset, BaseDataset, WindowsDataset
+from .base import BaseConcatDataset, RawDataset, WindowsDataset
 
 
 def _description_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
@@ -186,12 +186,12 @@ class BIDSDataset(BaseConcatDataset):
         )
         super().__init__(all_base_ds)
 
-    def _get_dataset(self, bids_path: mne_bids.BIDSPath) -> BaseDataset:
+    def _get_dataset(self, bids_path: mne_bids.BIDSPath) -> RawDataset:
         description = _description_from_bids_path(bids_path)
         raw = mne_bids.read_raw_bids(bids_path, verbose=False)
         if self.preload:
             raw.load_data()
-        return BaseDataset(raw, description)
+        return RawDataset(raw, description)
 
 
 class BIDSEpochsDataset(BIDSDataset):

@@ -31,6 +31,8 @@ from braindecode.modules import (
 class IFNet(EEGModuleMixin, nn.Module):
     """IFNetV2 from Wang J et al (2023) [ifnet]_.
 
+    :bdg-success:`Convolution` :bdg-primary:`Filterbank`
+
     .. figure:: https://raw.githubusercontent.com/Jiaheng-Wang/IFNet/main/IFNet.png
         :align: center
         :alt: IFNetV2 Architecture

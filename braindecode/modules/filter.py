@@ -17,9 +17,8 @@ class FilterBankLayer(nn.Module):
     It uses MNE's `create_filter` function to create the band-specific filters and
     applies them to multi-channel time-series data. Each filter in the bank corresponds to a
     specific frequency band and is applied to all channels of the input data. The filtering is
-    performed using FFT-based convolution via the `fftconvolve` function from
-    :func:`torchaudio.functional if the method is FIR, and `filtfilt` function from
-    :func:`torchaudio.functional if the method is IIR.
+    performed using FFT-based convolution via the ``torchaudio.functional`` if the method is FIR,
+    and ``torchaudio.functional`` if the method is IIR.
 
     The default configuration creates 9 non-overlapping frequency bands with a 4 Hz bandwidth,
     spanning from 4 Hz to 40 Hz (i.e., 4-8 Hz, 8-12 Hz, ..., 36-40 Hz). This setup is based on the
@@ -110,11 +109,6 @@ class FilterBankLayer(nn.Module):
         or "firwin2" to use :func:`scipy.signal.firwin2`. "firwin" uses
         a time-domain design technique that generally gives improved
         attenuation using fewer samples than "firwin2".
-    pad : str, default='reflect_limited'
-        The type of padding to use. Supports all func:`numpy.pad()` mode options.
-        Can also be "reflect_limited", which pads with a reflected version of
-        each vector mirrored on the first and last values of the vector,
-        followed by zeros. Only used for ``method='fir'``.
     verbose: bool | str | int | None, default=True
         Control verbosity of the logging output. If ``None``, use the default
         verbosity level. See the func:`mne.verbose` for details.
@@ -184,7 +178,6 @@ class FilterBankLayer(nn.Module):
                     "The band_filters items should be splitable in 2 values."
                 )
 
-        # and we accepted as
         self.band_filters = band_filters
         self.n_bands = len(band_filters)
         self.phase = phase

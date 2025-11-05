@@ -27,6 +27,8 @@ from braindecode.modules import (
 class CTNet(EEGModuleMixin, nn.Module):
     """CTNet from Zhao, W et al (2024) [ctnet]_.
 
+    :bdg-success:`Convolution` :bdg-info:`Small Attention`
+
      A Convolutional Transformer Network for EEG-Based Motor Imagery Classification
 
      .. figure:: https://raw.githubusercontent.com/snailpt/CTNet/main/architecture.png
@@ -39,16 +41,19 @@ class CTNet(EEGModuleMixin, nn.Module):
     The architecture consists of three main components:
 
     1. **Convolutional Module**:
+
         - Apply :class:`EEGNet` to perform some feature extraction, denoted here as
-        _PatchEmbeddingEEGNet module.
+          _PatchEmbeddingEEGNet module.
 
     2. **Transformer Encoder Module**:
+
         - Utilizes multi-head self-attention mechanisms as EEGConformer but
-        with residual blocks.
+          with residual blocks.
 
     3. **Classifier Module**:
+
         - Combines features from both the convolutional module
-        and the Transformer encoder.
+          and the Transformer encoder.
         - Flattens the combined features and applies dropout for regularization.
         - Uses a fully connected layer to produce the final classification output.
 

@@ -10,7 +10,7 @@ from braindecode.models.base import EEGModuleMixin
 class DeepSleepNet(EEGModuleMixin, nn.Module):
     """DeepSleepNet from Supratak et al. (2017) [Supratak2017]_.
 
-    :bdg-success:`Convolution` :bdg-info:`Recurrent`
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
     .. figure:: https://raw.githubusercontent.com/akaraspt/deepsleepnet/master/img/deepsleepnet.png
         :align: center
@@ -43,16 +43,21 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     - :class:`_RepresentationLearning` **(dual-path CNN → epoch feature)**
 
-       - *Operations.*
-       - **Small-filter CNN** 4 times:
-       - :class:`~torch.nn.Conv1d`
-       - :class:`~torch.nn.BatchNorm1d`
-       - :class:`~torch.nn.ReLU`
-       - :class:`~torch.nn.MaxPool1d` after.
-       First conv uses **filter length ≈ Fs/2** and **stride ≈ Fs/16** to emphasize *timing* of graphoelements.
+        - *Operations.*
+        - **Small-filter CNN** 4 times:
+
+            - :class:`~torch.nn.Conv1d`
+            - :class:`~torch.nn.BatchNorm1d`
+            - :class:`~torch.nn.ReLU`
+            - :class:`~torch.nn.MaxPool1d` after.
+
+        - First conv uses **filter length ≈ Fs/2** and **stride ≈ Fs/16** to emphasize *timing* of graphoelements.
+
     - **Large-filter CNN**:
+
         - Same stack but first conv uses **filter length ≈ 4·Fs** and
         - **stride ≈ Fs/2** to emphasize *frequency* content.
+
     - Outputs from both paths are **concatenated** into the epoch embedding ``a_t``.
 
     - *Rationale.*
@@ -81,20 +86,22 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     - **Temporal (where time-domain patterns are learned).**
 
-    Both CNN paths use **1-D temporal convolutions**. The *small-filter* path (first kernel ≈ Fs/2,
-    stride ≈ Fs/16) captures *when* characteristic transients occur; the *large-filter* path
-    (first kernel ≈ 4·Fs, stride ≈ Fs/2) captures *which* frequency components dominate over the
-    epoch. Deeper layers use **small kernels** to refine features with fewer parameters, interleaved
-    with **max pooling** for downsampling.
+      Both CNN paths use **1-D temporal convolutions**. The *small-filter* path (first kernel ≈ Fs/2,
+      stride ≈ Fs/16) captures *when* characteristic transients occur; the *large-filter* path
+      (first kernel ≈ 4·Fs, stride ≈ Fs/2) captures *which* frequency components dominate over the
+      epoch. Deeper layers use **small kernels** to refine features with fewer parameters, interleaved
+      with **max pooling** for downsampling.
 
     - **Spatial (how channels are processed).**
-    The original model operates on **single-channel** raw EEG; convolutions therefore mix only
-    along time (no spatial convolution across electrodes).
+
+      The original model operates on **single-channel** raw EEG; convolutions therefore mix only
+      along time (no spatial convolution across electrodes).
 
     - **Spectral (how frequency information emerges).**
-    No explicit Fourier/wavelet transform is used. The **large-filter path** serves as a
-    *frequency-sensitive* analyzer, while the **small-filter path** remains *time-sensitive*,
-    together functioning as a **two-band learned filter bank** at the first layer.
+
+      No explicit Fourier/wavelet transform is used. The **large-filter path** serves as a
+      *frequency-sensitive* analyzer, while the **small-filter path** remains *time-sensitive*,
+      together functioning as a **two-band learned filter bank** at the first layer.
 
     .. rubric:: Attention / Sequential Modules
 
@@ -112,9 +119,11 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
     - **Residual shortcut over sequence encoder.** Adds projected CNN features to BiLSTM outputs,
       improving gradient flow and retaining discriminative content from representation learning.
     - **Two-step training.**
+
         - (i) **Pretrain** the CNN paths with class-balanced sampling;
         - (ii) **fine-tune** the full network with sequential batches, using **lower LR** for CNNs and **higher LR** for the
-        sequence encoder.
+          sequence encoder.
+
     - **State handling.** BiLSTM states are **reinitialized per subject** so that temporal context
       does not leak across recordings.
 

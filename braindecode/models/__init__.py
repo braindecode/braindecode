@@ -6,6 +6,7 @@ from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
+from .bendr import BENDR
 from .biot import BIOT
 from .contrawr import ContraWR
 from .ctnet import CTNet
@@ -60,6 +61,7 @@ __all__ = [
     "AttentionBaseNet",
     "EEGModuleMixin",
     "BIOT",
+    "BENDR",
     "ContraWR",
     "CTNet",
     "Deep4Net",

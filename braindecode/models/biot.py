@@ -11,6 +11,8 @@ from braindecode.models.base import EEGModuleMixin
 class BIOT(EEGModuleMixin, nn.Module):
     """BIOT from Yang et al. (2023) [Yang2023]_
 
+    :bdg-danger:`Large Brain Model`
+
     .. figure:: https://braindecode.org/dev/_static/model/biot.jpg
        :align: center
        :alt: BioT
