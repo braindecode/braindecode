@@ -103,7 +103,7 @@ class Preprocessor(object):
                 # Copy the returned object's data back to the original
                 raw_or_epochs._data = result._data
                 raw_or_epochs.info = result.info
-                if hasattr(result, '_times'):
+                if hasattr(result, "_times"):
                     raw_or_epochs._times = result._times
             return raw_or_epochs
         else:

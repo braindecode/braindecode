@@ -17,7 +17,7 @@ from braindecode.util import _update_moabb_docstring
 def _is_standalone_function(func):
     """
     Determine if a function is standalone based on its module.
-    
+
     Standalone functions are those in mne.preprocessing, mne.channels, mne.filter, etc.
     that are not methods of mne.io.Raw.
     """
@@ -31,7 +31,7 @@ def _is_standalone_function(func):
 def _generate_init_method(func, force_copy_false=False):
     """
     Generate an __init__ method for a class based on the function's signature.
-    
+
     Parameters
     ----------
     func : callable
@@ -44,9 +44,9 @@ def _generate_init_method(func, force_copy_false=False):
 
     def init_method(self, *args, **kwargs):
         # For standalone functions with copy parameter, set copy=False by default
-        if force_copy_false and 'copy' in param_names and 'copy' not in kwargs:
-            kwargs['copy'] = False
-        
+        if force_copy_false and "copy" in param_names and "copy" not in kwargs:
+            kwargs["copy"] = False
+
         for name, value in zip(param_names, args):
             setattr(self, name, value)
         for name, value in kwargs.items():
@@ -74,19 +74,21 @@ def _generate_mne_pre_processor(function):
     doc = f" See more details in {import_path}"
 
     base_classes = (Preprocessor,)
-    
+
     # Automatically determine if function is standalone
     is_standalone = _is_standalone_function(function)
-    
+
     # Check if function has a 'copy' parameter
     sig = inspect.signature(function)
-    has_copy_param = 'copy' in sig.parameters
+    has_copy_param = "copy" in sig.parameters
     force_copy_false = is_standalone and has_copy_param
 
     if is_standalone:
         # For standalone functions, store the actual function object
         class_attrs = {
-            "__init__": _generate_init_method(function, force_copy_false=force_copy_false),
+            "__init__": _generate_init_method(
+                function, force_copy_false=force_copy_false
+            ),
             "__doc__": _update_moabb_docstring(function, doc),
             "fn": function,  # Store the function itself, not the name
             "_is_standalone": True,
