@@ -16,7 +16,7 @@ The Hub integration allows you to:
 We'll use the :class:`braindecode.datasets.NMT` dataset as an example.
 """
 
-# Authors: Kuntal Kokate, Bruno Aristimunha
+# Authors: Kuntal Kokate
 #
 # License: BSD (3-clause)
 

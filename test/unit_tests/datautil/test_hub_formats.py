@@ -1,4 +1,4 @@
-# Authors: Kuntal Kokate, Bruno Aristimunha
+# Authors: Kuntal Kokate
 #
 # License: BSD-3
 

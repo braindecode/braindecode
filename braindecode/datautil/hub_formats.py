@@ -5,7 +5,7 @@ This module provides Zarr format converters to transform EEG datasets for
 efficient storage and fast random access during training on the Hugging Face Hub.
 """
 
-# Authors: Kuntal Kokate, Bruno Aristimunha
+# Authors: Kuntal Kokate
 #
 # License: BSD (3-clause)
 

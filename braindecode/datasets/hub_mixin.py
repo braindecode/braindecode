@@ -5,7 +5,7 @@ This module provides push_to_hub() and from_pretrained() functionality
 for braindecode datasets, similar to the model Hub integration.
 """
 
-# Authors: Kuntal Kokate, Bruno Aristimunha
+# Authors: Kuntal Kokate
 #
 # License: BSD (3-clause)
 
