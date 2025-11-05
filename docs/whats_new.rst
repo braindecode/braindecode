@@ -34,6 +34,7 @@ Enhancements
 - Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
 - Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
 - Modify the interface of FBMSNet for consistency with FBCNet + Unit Tests (:gh:`819` by `Matthew Chen`_)
+- Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
 
 
 API changes
@@ -144,7 +145,6 @@ Enhancements
 - Adding :class:`braindecode.models.MSVTNet` (:gh:`659` by `Bruno Aristimunha`_ )
 - Creating the `FilterBanklayer` module for new models (:gh:`656` by `Bruno Aristimunha`_ )
 - Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
-- Adding :class:`braindecode.models.EEGSym` (:gh:`697` by `Pierre Guetschel`_ )
 - Adding :class:`braindecode.models.EEGMiner` (:gh:`667` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.CTNet`  (:gh:`666` by `Bruno Aristimunha`_ )
 - Fix warnings not being suppressed when creating a TUHAbnormal dataset in parallel (:gh:`670` by `Aphel`_)
