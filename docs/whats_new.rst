@@ -34,6 +34,7 @@ Enhancements
 - Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
 - Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
 - Modify the interface of FBMSNet for consistency with FBCNet + Unit Tests (:gh:`819` by `Matthew Chen`_)
+- Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
 
 
 API changes
