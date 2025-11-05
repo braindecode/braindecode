@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, List, Tuple, cast
 
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.datautil.channel_utils import (
@@ -18,8 +19,6 @@ class EEGSym(EEGModuleMixin, nn.Module):
     .. figure:: https://raw.githubusercontent.com/Serpeve/EEGSym/refs/heads/main/EEGSym_scheme_online.png
         :align: center
         :alt: EEGSym Architecture
-
-    TO-DO: Use more EEGInceptionERP components.
 
 
     Parameters
@@ -114,12 +113,16 @@ class EEGSym(EEGModuleMixin, nn.Module):
         ]
 
         self.n_channels_per_hemi = len(self.left_idx) + len(self.middle_idx)
+        ##################
+        # Build the model
+        ##################
+        self.include_extra_dim = Rearrange("batch channel time -> batch 1 channel time")
+
+        self.permute_layer = Rearrange(
+            "batch features z time space -> batch features z space time"
+        )
 
         # Build the model
-        self._build_model()
-
-    def _build_model(self):
-        # Initial inception modules
         self.inception_block1 = self._create_inception_block(
             in_channels=1,
             scales_samples=self.scales_samples,
@@ -132,7 +135,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
             in_channels=self.filters_per_branch * len(self.scales_samples),
             scales_samples=[max(1, s // 4) for s in self.scales_samples],
             filters_per_branch=self.filters_per_branch,
-            ncha=self.n_channels_per_hemi,  # Spatial dimension is still n_channels_per_hemi
+            ncha=self.n_channels_per_hemi,  #
             average_pool=2,
         )
 
@@ -168,7 +171,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
 
         # Temporal reduction
         self.temporal_reduction = nn.Sequential(
-            TemporalBlock(
+            _TemporalBlock(
                 in_channels=int(self.filters_per_branch * len(self.scales_samples) / 4),
                 filters=int(self.filters_per_branch * len(self.scales_samples) / 4),
                 kernel_size=4,
@@ -179,7 +182,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         )
 
         # Channel merging
-        self.channel_merging = ChannelMergingBlock(
+        self.channel_merging = _ChannelMergingBlock(
             in_channels=int(self.filters_per_branch * len(self.scales_samples) / 4),
             filters=int(self.filters_per_branch * len(self.scales_samples) / 4),
             groups=int(
@@ -197,7 +200,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         # Total reduction: 2^6 = 64
         temporal_dim_at_merging = self.n_times // 64
 
-        self.temporal_merging = TemporalMergingBlock(
+        self.temporal_merging = _TemporalMergingBlock(
             in_channels=int(self.filters_per_branch * len(self.scales_samples) / 4),
             filters=int(self.filters_per_branch * len(self.scales_samples) / 2),
             groups=int(self.filters_per_branch * len(self.scales_samples) / 4),
@@ -208,7 +211,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
 
         # Output layers
         self.output_blocks = nn.Sequential(
-            OutputBlock(
+            _OutputBlock(
                 in_channels=int(self.filters_per_branch * len(self.scales_samples) / 2),
                 activation=self.activation,
                 drop_prob=self.drop_prob,
@@ -231,7 +234,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         average_pool: int,
         init: bool = False,
     ):
-        return InceptionBlock(
+        return _InceptionBlock(
             in_channels=in_channels,
             scales_samples=scales_samples,
             filters_per_branch=filters_per_branch,
@@ -251,7 +254,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         average_pool: int,
         ncha: int = 1,
     ):
-        return ResidualBlock(
+        return _ResidualBlock(
             in_channels=in_channels,
             filters=filters,
             kernel_size=kernel_size,
@@ -278,7 +281,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         """
         # Input: (B, C, T) = (batch, channels, time)
         # Step 1: Add feature dimension
-        x = x.unsqueeze(1)  # (B, 1, C, T)
+        x = self.include_extra_dim(x)  # (B, 1, C, T)
 
         # Step 2: Split into left, right, and middle channels
         left_data = x[:, :, self.left_idx, :]  # (B, 1, n_left, T)
@@ -296,10 +299,10 @@ class EEGSym(EEGModuleMixin, nn.Module):
         # Step 4: Stack along Z dimension
         x = torch.stack([left_hemi, right_hemi], dim=2)  # (B, 1, 2, n_ch_per_hemi, T)
 
-        # Step 5: CRITICAL FIX - Permute to correct dimension order
+        # Step 5:
         # From: (B, F, Z, Space, Time)
         # To:   (B, F, Z, Time, Space)
-        x = x.permute(0, 1, 2, 4, 3)  # (B, 1, 2, T, n_ch_per_hemi)
+        x = self.permute_layer(x)
 
         # Now x is in correct format: (Batch, Features, Z, Time, Space)
 
@@ -328,7 +331,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         return x
 
 
-class InceptionBlock(nn.Module):
+class _InceptionBlock(nn.Module):
     """
     Inception module used in EEGSym architecture.
 
@@ -382,8 +385,8 @@ class InceptionBlock(nn.Module):
                     nn.Conv3d(
                         in_channels=in_channels,
                         out_channels=filters_per_branch,
-                        kernel_size=(1, scale, 1),  # FIXED: (Z, Time, Space)
-                        padding=(0, scale // 2, 0),  # FIXED: pad Time dimension
+                        kernel_size=(1, scale, 1),
+                        padding=(0, scale // 2, 0),
                     ),
                     nn.BatchNorm3d(filters_per_branch),
                     activation,
@@ -400,7 +403,7 @@ class InceptionBlock(nn.Module):
                         nn.Conv3d(
                             in_channels=filters_per_branch * len(scales_samples),
                             out_channels=filters_per_branch * len(scales_samples),
-                            kernel_size=(1, 1, ncha),  # FIXED: (Z, Time, Space)
+                            kernel_size=(1, 1, ncha),
                             padding=(0, 0, 0),
                         ),
                         nn.BatchNorm3d(filters_per_branch * len(scales_samples)),
@@ -410,7 +413,7 @@ class InceptionBlock(nn.Module):
                 )
 
         self.pool = (
-            nn.AvgPool3d(kernel_size=(1, average_pool, 1))  # FIXED: pool Time dimension
+            nn.AvgPool3d(kernel_size=(1, average_pool, 1))
             if average_pool != 1
             else nn.Identity()
         )
@@ -442,7 +445,7 @@ class InceptionBlock(nn.Module):
         return outputs
 
 
-class ResidualBlock(nn.Module):
+class _ResidualBlock(nn.Module):
     """
     Residual block used in EEGSym architecture.
 
@@ -486,8 +489,8 @@ class ResidualBlock(nn.Module):
             nn.Conv3d(
                 in_channels=in_channels,
                 out_channels=filters,
-                kernel_size=(1, kernel_size, 1),  # FIXED: (Z, Time, Space)
-                padding=(0, kernel_size // 2, 0),  # FIXED: pad Time dimension
+                kernel_size=(1, kernel_size, 1),
+                padding=(0, kernel_size // 2, 0),
             ),
             nn.BatchNorm3d(filters),
             activation,
@@ -552,7 +555,7 @@ class ResidualBlock(nn.Module):
         return x_out
 
 
-class TemporalBlock(nn.Module):
+class _TemporalBlock(nn.Module):
     """
     Temporal reduction block used in EEGSym architecture.
 
@@ -607,7 +610,7 @@ class TemporalBlock(nn.Module):
         return x_res
 
 
-class ChannelMergingBlock(nn.Module):
+class _ChannelMergingBlock(nn.Module):
     """
     Channel merging block used in EEGSym architecture.
 
@@ -693,7 +696,7 @@ class ChannelMergingBlock(nn.Module):
         return x
 
 
-class TemporalMergingBlock(nn.Module):
+class _TemporalMergingBlock(nn.Module):
     """
     Temporal merging block used in EEGSym architecture.
 
@@ -772,7 +775,7 @@ class TemporalMergingBlock(nn.Module):
         return x
 
 
-class OutputBlock(nn.Module):
+class _OutputBlock(nn.Module):
     """
     Output block used in EEGSym architecture.
 
@@ -793,13 +796,14 @@ class OutputBlock(nn.Module):
         in_channels: int,
         activation: nn.Module,
         drop_prob: float,
+        n_residual: int = 4,
     ):
         super().__init__()
         self.activation = activation
         self.drop_prob = drop_prob
 
         self.conv_blocks = nn.ModuleList()
-        for _ in range(4):
+        for _ in range(n_residual):
             self.conv_blocks.append(
                 nn.Sequential(
                     nn.Conv3d(
