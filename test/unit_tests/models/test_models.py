@@ -3,7 +3,8 @@
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Daniel Wilson <dan.c.wil@gmail.com>
-#          Bruno Aristimunha <b.aristimunha@gmail.com
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Matthew Chen <matt.chen42601@gmail.com>
 #
 # License: BSD-3
 
@@ -36,6 +37,7 @@ from braindecode.models import (
     EEGSimpleConv,
     EEGTCNet,
     FBCNet,
+    FBMSNet,
     HybridNet,
     IFNet,
     Labram,
@@ -1543,6 +1545,35 @@ def test_fbcnet_forward_pass(temporal_layer):
 
     assert output.shape == (batch_size, n_outputs)
 
+def test_fbcnet_specified_filter_parameters():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    n_bands = 9
+
+    model = FBCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        sfreq=250,
+        filter_parameters={"method": "fir",
+                           "filter_length": "auto",
+                           "l_trans_bandwidth": 1.0,
+                           "h_trans_bandwidth": 1.0,
+                           "phase": "zero",
+                           "iir_params": None,
+                           "fir_window": "hamming",
+                           "fir_design": "firwin",
+                           })
+
+    filter_bank_layer = model.spectral_filtering
+    assert filter_bank_layer.n_bands == 9
+    assert filter_bank_layer.phase == "zero"
+    assert filter_bank_layer.method == "fir"
+    assert filter_bank_layer.n_chans == 22
+    assert filter_bank_layer.method_iir is False
+
 
 @pytest.mark.parametrize(
     "n_chans, n_bands, n_filters_spat, stride_factor",
@@ -1643,6 +1674,110 @@ def test_fbcnet_invalid_temporal_layer():
             sfreq=250,
         )
 
+@pytest.mark.parametrize(
+    "temporal_layer", ['VarLayer', 'StdLayer', 'LogVarLayer',
+                       'MeanLayer', 'MaxLayer']
+)
+def test_fbmsnet_forward_pass(temporal_layer):
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    batch_size = 8
+    n_bands = 9
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        temporal_layer=temporal_layer,
+        sfreq=250
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+
+
+def test_fbmsnet_specified_filter_parameters():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    n_bands = 9
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        sfreq=250,
+        filter_parameters={"method": "fir",
+                           "filter_length": "auto",
+                           "l_trans_bandwidth": 1.0,
+                           "h_trans_bandwidth": 1.0,
+                           "phase": "zero",
+                           "iir_params": None,
+                           "fir_window": "hamming",
+                           "fir_design": "firwin",
+                           },
+    )
+
+    filter_bank_layer = model.spectral_filtering
+    assert filter_bank_layer.n_bands == 9
+    assert filter_bank_layer.phase == "zero"
+    assert filter_bank_layer.method == "fir"
+    assert filter_bank_layer.n_chans == 22
+    assert filter_bank_layer.method_iir is False
+
+
+@pytest.mark.parametrize("n_times", [100, 500, 1000, 5000, 10000])
+def test_fbmsnet_different_n_times(n_times):
+    n_chans = 22
+    n_outputs = 2
+    batch_size = 8
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=9,
+        sfreq=250,
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+
+
+@pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
+def test_fbmsnet_stride_factor_warning(stride_factor):
+    n_chans = 22
+    n_times = 1003  # Not divisible by stride_factor when stride_factor > 1
+    n_outputs = 2
+
+    if n_times % stride_factor != 0:
+        with pytest.warns(UserWarning, match="Input will be padded."):
+
+            _ = FBMSNet(
+                n_chans=n_chans,
+                n_outputs=n_outputs,
+                n_times=n_times,
+                stride_factor=stride_factor,
+                sfreq=250,
+            )
+
+
+def test_fbmsnet_invalid_temporal_layer():
+    with pytest.raises(NotImplementedError):
+        FBMSNet(
+            n_chans=22,
+            n_outputs=2,
+            n_times=1000,
+            temporal_layer='InvalidLayer',
+            sfreq=250,
+        )
 
 def test_initialize_weights_linear():
     linear = nn.Linear(10, 5)
