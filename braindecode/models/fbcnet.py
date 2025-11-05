@@ -69,7 +69,9 @@ class FBCNet(EEGModuleMixin, nn.Module):
     linear_max_norm : float, default=0.5
         Maximum norm for the final linear layer.
     filter_parameters: dict, default None
-        Parameters for the FilterBankLayer
+        Dictionary of parameters to use for the FilterBankLayer.
+        If None, a default Chebyshev Type II filter with transition bandwidth of
+        2 Hz and stop-band ripple of 30 dB will be used.
 
     References
     ----------
