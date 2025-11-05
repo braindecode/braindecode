@@ -195,10 +195,6 @@ def test_dense_spatial_filter_forward_collapse_false():
     assert output.shape[:2] == torch.Size([5, 33])
 
 
-# Issue with False, False option
-@pytest.mark.skipif(platform.system() == 'Linux'
-                    or platform.system() == 'Windows',
-                    reason="Not supported on Linux")
 @pytest.mark.parametrize(
     "bias_time,bias_spat", [(False, False), (False, True), (True, False), (True, True)]
 )
