@@ -20,9 +20,8 @@ from .eegminer import EEGMiner
 from .eegnet import EEGNet, EEGNetv4
 from .eegnex import EEGNeX
 from .eegsimpleconv import EEGSimpleConv
-from .eegtcnet import EEGTCNet
-from .syncnet import SyncNet
 from .eegsym import EEGSym
+from .eegtcnet import EEGTCNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
@@ -74,6 +73,7 @@ __all__ = [
     "EEGNet",
     "EEGNetv4",
     "EEGNeX",
+    "EEGSym",
     "EEGSimpleConv",
     "EEGTCNet",
     "FBCNet",
