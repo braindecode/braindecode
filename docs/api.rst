@@ -364,52 +364,128 @@ Preprocessing
 
 .. currentmodule:: braindecode.preprocessing
 
+Core Functions
+''''''''''''''
+
 .. autosummary::
    :toctree: generated/
 
+    preprocess
+    Preprocessor
     create_windows_from_events
     create_fixed_length_windows
     create_windows_from_target_channels
     exponential_moving_demean
     exponential_moving_standardize
     filterbank
-    preprocess
-    Preprocessor
-    AddChannels
-    AddEvents
-    AddProj
-    AddReferenceChannels
-    Anonymize
-    AnnotateAmplitude
-    AnnotateBreak
-    AnnotateMuscleZscore
-    AnnotateNan
-    ApplyGradientCompensation
-    ApplyHilbert
-    ApplyProj
-    CombineChannels
-    ComputeBridgedElectrodes
-    ComputeCurrentSourceDensity
-    Crop
-    CropByAnnotations
-    DelProj
-    DropChannels
-    EEGPrep
-    EqualizeChannels
+
+Signal Processing
+'''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    Resample
+    Resampling
     Filter
-    FixMagCoilTypes
-    FixStimArtifact
-    InterpolateBads
-    InterpolateBridgedElectrodes
-    InterpolateTo
-    MaxwellFilter
+    FilterData
     NotchFilter
+    SavgolFilter
+    ApplyHilbert
+    ApplyFunction
+    Rescale
     OversampledTemporalProjection
+
+Channel Management
+''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
     Pick
     PickChannels
     PickTypes
+    DropChannels
+    AddChannels
+    CombineChannels
+    RenameChannels
+    ReorderChannels
+    SetChannelTypes
+    InterpolateBads
+    InterpolateTo
+    InterpolateBridgedElectrodes
+    ComputeBridgedElectrodes
+    EqualizeChannels
+    EqualizeBads
+    FindBadChannelsLof
+
+Reference & Montage
+'''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    SetEEGReference
+    SetBipolarReference
+    AddReferenceChannels
+    SetMontage
+
+SSP Projections
+'''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    AddProj
+    ApplyProj
+    DelProj
+
+Data Transformation
+'''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    Crop
+    CropByAnnotations
+    ComputeCurrentSourceDensity
+    FixStimArtifact
+    MaxwellFilter
     RealignRaw
     RegressArtifact
+
+Artifact Detection & Annotation
+''''''''''''''''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    AnnotateAmplitude
+    AnnotateBreak
+    AnnotateMovement
+    AnnotateMuscleZscore
+    AnnotateNan
+
+Metadata & Configuration
+'''''''''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    Anonymize
+    SetAnnotations
+    SetMeasDate
+    AddEvents
+    FixMagCoilTypes
+    ApplyGradientCompensation
+
+EEGPrep Pipeline
+''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGPrep
     ReinterpolateRemovedChannels
     RemoveBadChannels
     RemoveBadChannelsNoLocs
@@ -419,17 +495,6 @@ Preprocessing
     RemoveDCOffset
     RemoveDrifts
     RemoveFlatChannels
-    RenameChannels
-    ReorderChannels
-    Resample
-    Resampling
-    Rescale
-    SavgolFilter
-    SetAnnotations
-    SetChannelTypes
-    SetEEGReference
-    SetMeasDate
-    SetMontage
 
 
 Data Utils

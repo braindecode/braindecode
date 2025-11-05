@@ -132,12 +132,15 @@ def _generate_mne_pre_processor(function):
 mne_functions = [
     # From mne.filter
     mne.filter.resample,
+    mne.filter.filter_data,
+    mne.filter.notch_filter,
     # From mne.io.Raw methods
     mne.io.Raw.add_channels,
     mne.io.Raw.add_events,
     mne.io.Raw.add_proj,
     mne.io.Raw.add_reference_channels,
     mne.io.Raw.anonymize,
+    mne.io.Raw.apply_function,
     mne.io.Raw.apply_gradient_compensation,
     mne.io.Raw.apply_hilbert,
     mne.io.Raw.apply_proj,
@@ -166,10 +169,13 @@ mne_functions = [
     # Standalone functions from mne.preprocessing
     mne.preprocessing.annotate_amplitude,
     mne.preprocessing.annotate_break,
+    mne.preprocessing.annotate_movement,
     mne.preprocessing.annotate_muscle_zscore,
     mne.preprocessing.annotate_nan,
     mne.preprocessing.compute_current_source_density,
     mne.preprocessing.compute_bridged_electrodes,
+    mne.preprocessing.equalize_bads,
+    mne.preprocessing.find_bad_channels_lof,
     mne.preprocessing.fix_stim_artifact,
     mne.preprocessing.interpolate_bridged_electrodes,
     mne.preprocessing.maxwell_filter,
@@ -179,6 +185,11 @@ mne_functions = [
     # Standalone functions from mne.channels
     mne.channels.combine_channels,
     mne.channels.equalize_channels,
+    mne.channels.rename_channels,
+    # Top-level mne functions for referencing
+    mne.add_reference_channels,
+    mne.set_bipolar_reference,
+    mne.set_eeg_reference,
 ]
 
 # Automatically generate and add classes to the global namespace

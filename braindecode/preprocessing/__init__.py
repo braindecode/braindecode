@@ -17,9 +17,11 @@ used with :func:`~braindecode.preprocessing.preprocess`.
 
 - :class:`~braindecode.preprocessing.Resample` : Resample data to different sampling frequency
 - :class:`~braindecode.preprocessing.Filter` : Apply bandpass, highpass, or lowpass filter
+- :class:`~braindecode.preprocessing.FilterData` : Low-level filter function for data arrays
 - :class:`~braindecode.preprocessing.NotchFilter` : Remove specific frequencies (e.g., 50/60 Hz power line noise)
 - :class:`~braindecode.preprocessing.SavgolFilter` : Apply Savitzky-Golay polynomial filter
 - :class:`~braindecode.preprocessing.ApplyHilbert` : Compute analytic signal or envelope
+- :class:`~braindecode.preprocessing.ApplyFunction` : Apply custom function to data
 - :class:`~braindecode.preprocessing.Rescale` : Rescale channel amplitudes
 - :class:`~braindecode.preprocessing.OversampledTemporalProjection` : Apply oversampled temporal projection
 
@@ -39,10 +41,13 @@ used with :func:`~braindecode.preprocessing.preprocess`.
 - :class:`~braindecode.preprocessing.InterpolateBridgedElectrodes` : Interpolate bridged electrodes
 - :class:`~braindecode.preprocessing.ComputeBridgedElectrodes` : Identify bridged electrodes
 - :class:`~braindecode.preprocessing.EqualizeChannels` : Make channel sets identical across datasets
+- :class:`~braindecode.preprocessing.EqualizeBads` : Equalize bad channels across instances
+- :class:`~braindecode.preprocessing.FindBadChannelsLof` : Find bad channels using LOF algorithm
 
 **Reference & Montage**
 
-- :class:`~braindecode.preprocessing.SetEEGReference` : Specify EEG reference
+- :class:`~braindecode.preprocessing.SetEEGReference` : Specify EEG reference (Raw method)
+- :class:`~braindecode.preprocessing.SetBipolarReference` : Set bipolar reference
 - :class:`~braindecode.preprocessing.AddReferenceChannels` : Add zero-filled reference channels
 - :class:`~braindecode.preprocessing.SetMontage` : Set channel positions/montage
 
@@ -66,6 +71,7 @@ used with :func:`~braindecode.preprocessing.preprocess`.
 
 - :class:`~braindecode.preprocessing.AnnotateAmplitude` : Annotate periods based on amplitude
 - :class:`~braindecode.preprocessing.AnnotateBreak` : Annotate breaks in the data
+- :class:`~braindecode.preprocessing.AnnotateMovement` : Annotate movement artifacts
 - :class:`~braindecode.preprocessing.AnnotateMuscleZscore` : Annotate muscle artifacts using z-score
 - :class:`~braindecode.preprocessing.AnnotateNan` : Annotate NaN values in data
 
@@ -132,9 +138,11 @@ from .mne_preprocess import (  # type: ignore[attr-defined]
     AddReferenceChannels,
     AnnotateAmplitude,
     AnnotateBreak,
+    AnnotateMovement,
     AnnotateMuscleZscore,
     AnnotateNan,
     Anonymize,
+    ApplyFunction,
     ApplyGradientCompensation,
     ApplyHilbert,
     ApplyProj,
@@ -145,8 +153,11 @@ from .mne_preprocess import (  # type: ignore[attr-defined]
     CropByAnnotations,
     DelProj,
     DropChannels,
+    EqualizeBads,
     EqualizeChannels,
     Filter,
+    FilterData,
+    FindBadChannelsLof,
     FixMagCoilTypes,
     FixStimArtifact,
     InterpolateBads,
@@ -166,6 +177,7 @@ from .mne_preprocess import (  # type: ignore[attr-defined]
     Rescale,
     SavgolFilter,
     SetAnnotations,
+    SetBipolarReference,
     SetChannelTypes,
     SetEEGReference,
     SetMeasDate,
@@ -197,8 +209,10 @@ __all__ = [
     "Anonymize",
     "AnnotateAmplitude",
     "AnnotateBreak",
+    "AnnotateMovement",
     "AnnotateMuscleZscore",
     "AnnotateNan",
+    "ApplyFunction",
     "ApplyGradientCompensation",
     "ApplyHilbert",
     "ApplyProj",
@@ -209,8 +223,11 @@ __all__ = [
     "CropByAnnotations",
     "DelProj",
     "DropChannels",
+    "EqualizeBads",
     "EqualizeChannels",
     "Filter",
+    "FilterData",
+    "FindBadChannelsLof",
     "FixMagCoilTypes",
     "FixStimArtifact",
     "InterpolateBads",
@@ -230,6 +247,7 @@ __all__ = [
     "Rescale",
     "SavgolFilter",
     "SetAnnotations",
+    "SetBipolarReference",
     "SetChannelTypes",
     "SetEEGReference",
     "SetMeasDate",
