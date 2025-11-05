@@ -35,6 +35,7 @@ Enhancements
 - Added :class:`braindecode.models.LUNA`  (:gh:`802` by `Bruno Aristimunha`_, `Thorir Mar Ingolfsson`_)
 - Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
 - Modify the interface of FBMSNet for consistency with FBCNet + Unit Tests (:gh:`819` by `Matthew Chen`_)
+- Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
 
 
 API changes

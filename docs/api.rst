@@ -73,6 +73,7 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     EEGNet
     EEGNeX
     EEGSimpleConv
+    EEGSym
     EEGTCNet
     FBCNet
     FBLightConvNet
