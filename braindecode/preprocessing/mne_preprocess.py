@@ -140,7 +140,6 @@ mne_functions = [
     mne.io.Raw.add_proj,
     mne.io.Raw.add_reference_channels,
     mne.io.Raw.anonymize,
-    mne.io.Raw.apply_function,
     mne.io.Raw.apply_gradient_compensation,
     mne.io.Raw.apply_hilbert,
     mne.io.Raw.apply_proj,

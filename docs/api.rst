@@ -392,7 +392,6 @@ Signal Processing
     NotchFilter
     SavgolFilter
     ApplyHilbert
-    ApplyFunction
     Rescale
     OversampledTemporalProjection
 

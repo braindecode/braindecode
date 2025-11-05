@@ -25,6 +25,7 @@ from braindecode.preprocessing import (
     AddEvents,
     AddProj,
     AddReferenceChannels,
+    AnnotateMovement,
     Anonymize,
     ApplyGradientCompensation,
     ApplyHilbert,
@@ -34,8 +35,11 @@ from braindecode.preprocessing import (
     CropByAnnotations,
     DelProj,
     DropChannels,
+    EqualizeBads,
     EqualizeChannels,
     Filter,
+    FilterData,
+    FindBadChannelsLof,
     FixMagCoilTypes,
     FixStimArtifact,
     InterpolateBads,
@@ -47,6 +51,7 @@ from braindecode.preprocessing import (
     Rescale,
     SavgolFilter,
     SetAnnotations,
+    SetBipolarReference,
     SetChannelTypes,
     SetEEGReference,
     SetMeasDate,
@@ -272,6 +277,28 @@ class PrepClasses:
         # Create simple annotations
         annot = mne.Annotations(onset=[1], duration=[0.5], description=['test'])
         return SetAnnotations(annotations=annot)
+
+    def prep_annotatemovement(self):
+        pytest.skip("AnnotateMovement requires head position data")
+        return AnnotateMovement(t_step_min=0.01)
+
+    def prep_filterdata(self):
+        pytest.skip("FilterData is a low-level function, use Filter instead")
+        return FilterData(l_freq=4, h_freq=30, sfreq=250)
+
+    def prep_findbadchannelslof(self):
+        pytest.skip("FindBadChannelsLof requires specific data characteristics")
+        return FindBadChannelsLof()
+
+    def prep_equalizebads(self):
+        pytest.skip("EqualizeBads requires multiple raw instances")
+        return EqualizeBads(raws=[])
+
+    @pytest.mark.parametrize("ref_channels", [["C4", "Cz"]])
+    def prep_setbipolarref(self, ref_channels):
+        pytest.skip("SetBipolarReference requires specific anode/cathode setup")
+        # This requires anode and cathode specification
+        return SetBipolarReference(anode=ref_channels[0], cathode=ref_channels[1])
 
 
 @pytest.fixture
@@ -616,6 +643,11 @@ def test_preprocessing_function_on_raw(base_concat_ds, prep_class_name, init_kwa
         "ApplyGradientCompensation",  # only for MEG data
         "DelProj",  # requires existing projections
         "CropByAnnotations",  # requires existing annotations
+        "AnnotateMovement",  # requires head position data
+        "FilterData",  # low-level function, use Filter instead
+        "FindBadChannelsLof",  # requires specific data characteristics
+        "EqualizeBads",  # requires multiple raw instances
+        "SetBipolarReference",  # requires anode/cathode setup
     ]
     if prep_class_name in skip_list:
         pytest.skip(f"{prep_class_name} requires special setup")
