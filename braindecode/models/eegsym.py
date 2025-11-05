@@ -128,8 +128,8 @@ class EEGSym(EEGModuleMixin, nn.Module):
         inception module. Default is (500, 250, 125) [eegsym2022]_.
     drop_prob : float, optional
         Dropout probability. Default is 0.25 [eegsym2022]_.
-    activation : nn.Module, optional
-        Activation function to use. Default is :class:`nn.ELU()` [eegsym2022]_.
+    activation : type[nn.Module], optional
+        Activation function class to use. Default is :class:`nn.ELU` [eegsym2022]_.
     spatial_resnet_repetitions : int, optional
         Number of repetitions of the spatial analysis operations at each step.
         Default is 5 [eegsym2022]_.
@@ -174,7 +174,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         filters_per_branch: int = 12,
         scales_time: Tuple[int, int, int] = (500, 250, 125),
         drop_prob: float = 0.25,
-        activation: nn.Module = nn.ELU(),
+        activation: type[nn.Module] = nn.ELU,
         spatial_resnet_repetitions: int = 5,
         left_right_chs: list[tuple[str, str]] | None = None,
         middle_chs: list[str] | None = None,
@@ -196,7 +196,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         self.filters_per_branch = filters_per_branch
         self.scales_time = scales_time
         self.drop_prob = drop_prob
-        self.activation = activation
+        self.activation = activation()
         self.spatial_resnet_repetitions = spatial_resnet_repetitions
 
         # Calculate scales in samples
@@ -207,7 +207,15 @@ class EEGSym(EEGModuleMixin, nn.Module):
         ch_names = [cast(dict[str, Any], ch)["ch_name"] for ch in self.chs_info]
         if left_right_chs is None:
             left_chs, right_chs, middle_chs = division_channels_idx(ch_names)
-            left_chs, right_chs = zip(*match_hemisphere_chans(left_chs, right_chs))
+            try:
+                # Try to match hemispheres based on channel naming
+                left_chs, right_chs = zip(*match_hemisphere_chans(left_chs, right_chs))
+            except (ValueError, IndexError):
+                # Fallback: if matching fails, treat all channels as one hemisphere
+                # This allows the model to work with arbitrary channel configurations
+                left_chs = ch_names
+                right_chs = ch_names
+                middle_chs = []
         else:
             left_chs, right_chs = zip(*left_right_chs)
             # middle_chs is guaranteed to be not None when left_right_chs is not None
@@ -215,12 +223,18 @@ class EEGSym(EEGModuleMixin, nn.Module):
             assert middle_chs is not None, (
                 "middle_chs must be provided with left_right_chs"
             )
-        self.left_idx, self.right_idx, self.middle_idx = [
-            [ch_names.index(ch) for ch in ch_subset]
-            for ch_subset in (left_chs, right_chs, middle_chs)
-        ]
 
-        self.n_channels_per_hemi = len(self.left_idx) + len(self.middle_idx)
+        # Convert to indices and store as tensors for TorchScript compatibility
+        left_idx = [ch_names.index(ch) for ch in left_chs]
+        right_idx = [ch_names.index(ch) for ch in right_chs]
+        middle_idx = [ch_names.index(ch) for ch in middle_chs]
+
+        # Register as buffers (non-trainable tensors) for TorchScript compatibility
+        self.register_buffer("left_idx", torch.tensor(left_idx, dtype=torch.long))
+        self.register_buffer("right_idx", torch.tensor(right_idx, dtype=torch.long))
+        self.register_buffer("middle_idx", torch.tensor(middle_idx, dtype=torch.long))
+
+        self.n_channels_per_hemi = len(left_idx) + len(middle_idx)
         ##################
         # Build the model
         ##################
@@ -367,9 +381,10 @@ class EEGSym(EEGModuleMixin, nn.Module):
         x = self.include_extra_dim(x)  # (B, 1, C, T)
 
         # Step 2: Split into left, right, and middle channels
-        left_data = x[:, :, self.left_idx, :]  # (B, 1, n_left, T)
-        right_data = x[:, :, self.right_idx, :]  # (B, 1, n_right, T)
-        middle_data = x[:, :, self.middle_idx, :]  # (B, 1, n_middle, T)
+        # Use index_select for TorchScript compatibility
+        left_data = torch.index_select(x, 2, self.left_idx)  # (B, 1, n_left, T)
+        right_data = torch.index_select(x, 2, self.right_idx)  # (B, 1, n_right, T)
+        middle_data = torch.index_select(x, 2, self.middle_idx)  # (B, 1, n_middle, T)
 
         # Step 3: Concatenate middle channels to both hemispheres
         left_hemi = torch.cat(
@@ -500,8 +515,8 @@ class _InceptionBlock(nn.Module):
             else nn.Identity()
         )
 
-    def forward(self, x_list):
-        outputs = []
+    def forward(self, x_list: list[torch.Tensor]) -> list[torch.Tensor]:
+        outputs: list[torch.Tensor] = []
         for x in x_list:
             # Apply temporal convolutions
             temp_outputs = [conv(x) for conv in self.temporal_convs]
@@ -523,7 +538,7 @@ class _InceptionBlock(nn.Module):
                     x_spatial = spatial_conv(x_out)
                     x_out = x_out + x_spatial  # Always use residual connection
 
-        outputs.append(x_out)
+            outputs.append(x_out)
         return outputs
 
 
@@ -613,7 +628,7 @@ class _ResidualBlock(nn.Module):
         else:
             self.spatial_convs = None
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_res = self.temporal_conv(x)
 
         # Trim temporal dimension if needed (due to even kernel sizes with padding)
@@ -679,7 +694,7 @@ class _TemporalBlock(nn.Module):
             nn.Dropout(drop_prob),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_res = self.conv(x)
 
         # Trim temporal dimension if needed (due to even kernel sizes with padding)
@@ -762,7 +777,7 @@ class _ChannelMergingBlock(nn.Module):
             nn.Dropout(drop_prob),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Apply 2 residual iterations
         # Each iteration: conv reduces dims, then Add broadcasts back
         for residual_conv in self.residual_convs:
@@ -842,7 +857,7 @@ class _TemporalMergingBlock(nn.Module):
             nn.Dropout(drop_prob),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Residual convolution with broadcasting
         x_res = self.residual_conv(x)
         x = x + x_res  # Broadcasts x_res (1,1,1) back to x shape (1,6,1)
@@ -895,7 +910,7 @@ class _OutputBlock(nn.Module):
                 )
             )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         for conv_block in self.conv_blocks:
             x_res = conv_block(x)
             x = x + x_res
