@@ -25,6 +25,8 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import ConcatDataset, Dataset
 
+from .hub_mixin import HubDatasetMixin
+
 
 def _create_description(description) -> pd.Series:
     if description is not None:
@@ -416,11 +418,14 @@ class WindowsDataset(BaseDataset):
         self._description = pd.concat([self.description, description])
 
 
-class BaseConcatDataset(ConcatDataset):
+class BaseConcatDataset(ConcatDataset, HubDatasetMixin):
     """A base class for concatenated datasets.
 
     Holds either mne.Raw or mne.Epoch in self.datasets and has
     a pandas DataFrame with additional description.
+
+    Includes Hugging Face Hub integration via HubDatasetMixin for
+    uploading and downloading datasets.
 
     Parameters
     ----------

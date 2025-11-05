@@ -116,8 +116,8 @@ class HubDatasetMixin:
                 "pip install huggingface-hub"
             )
 
-        if len(self.datasets) == 0:
-            raise ValueError("Cannot upload an empty dataset")
+        # Note: No need to check for empty datasets - PyTorch's ConcatDataset
+        # already prevents empty datasets in __init__
 
         # Create API instance
         api = HfApi(token=token)
@@ -245,7 +245,7 @@ This dataset was created using [braindecode](https://braindecode.org), a library
 - **Data type**: {'Windowed (Epochs)' if is_windowed else 'Continuous (Raw)'}
 - **Number of windows**: {n_windows}
 - **Total size**: {format_info['total_size_mb']:.2f} MB
-- **Storage format**: {format_info.get('recommended_format', 'hdf5')}
+- **Storage format**: {format_info.get('recommended_format', 'zarr')}
 
 ## Usage
 
