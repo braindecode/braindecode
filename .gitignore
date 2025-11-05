@@ -65,19 +65,3 @@ venv/
 examples/model_building/lightning_logs/*
 
 thesis/
-
-# Hub integration development files
-HUGGINGFACE_HUB_INTEGRATION.md
-IMPLEMENTATION_STATUS.md
-examples/datasets_io/plot_benchmark_hub_formats.py
-examples/datasets_io/plot_benchmark_hub_formats.py.bak
-examples/datasets_io/plot_benchmark_hub_formats_simple.py
-hub_formats_benchmark_results.csv
-fix_hub_upload.py
-hf_login_test.py
-nohup.out
-test_final_hub_integration.py
-test_hf_hub_integration.py
-test_hub_quick.py
-test_load_from_hub.py
-test_actual_hub.py
