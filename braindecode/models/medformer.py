@@ -2,7 +2,7 @@
 #          Nan Huang <nhuang1@charlotte.edu>
 #          Taida Li <tli14@charlotte.edu>
 #
-# License: BSD (3-clause)
+# License: MIT
 
 """Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification."""
 
@@ -13,24 +13,34 @@ from typing import List, Optional, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from braindecode.models.base import EEGModuleMixin
 
 
 class MEDFormer(EEGModuleMixin, nn.Module):
-    """Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
+    """Medformer from Wang et al. (2024) [Medformer2024]_.
 
-    Medformer from Wang et al. (2024) [Medformer2024]_.
+    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model`
 
-    :bdg-success:`Transformer` :bdg-success:`Multi-Scale`
+    .. figure:: https://raw.githubusercontent.com/DL4mHealth/Medformer/refs/heads/main/figs/medformer_architecture.png
+        :align: center
+        :alt: MEDFormer Architecture.
+
+        a) Workflow. b) For the input sample :math:`{x}_{\textrm{in}}`, the authors apply :math:`n` different patch lengths in parallel to create patched features :math:`{x}_p^{(i)}`, where :math:`i` ranges from 1 to :math:`n`.
+        Each patch length represents a different granularity. These patched features are then linearly transformed into :math:`{x}_e^{(i)}`, which are subsequently augmented into :math:`\\widetilde{x}_e^{(i)}`.
+        c) We obtain the final patch embedding :math:`{x}^{(i)}` by fusing augmented :math:`\\widetilde{{x}}_e^{(i)}` with the positional embedding :math:`{W}_{\text{pos}}` and the granularity embedding :math:`{W}_{\text{gr}}^{(i)}`.
+        Additionally, we design a granularity-specific router :math:`{u}^{(i)}` to capture integrated information for its respective granularity.
+        The authors compute both intra-granularity attention, which concentrates within individual granularities, and inter-granularity attention,
+        which leverages the routers to focus across different granularities, for extensive representation learning.
+
+    Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
 
     The Medformer architecture is designed for medical time series classification
     tasks, particularly for EEG and ECG data. It uses multi-granularity patching
     to capture features at different temporal scales through cross-channel patching,
     multi-granularity embedding, and two-stage multi-granularity self-attention.
 
-    .. versionadded:: 0.9
+    .. versionadded:: 1.3
 
     .. rubric:: Architecture Overview
 
@@ -74,9 +84,10 @@ class MEDFormer(EEGModuleMixin, nn.Module):
     References
     ----------
     .. [Medformer2024] Wang, Y., Huang, N., Li, T., Yan, Y., & Zhang, X. (2024).
-       Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series
-       Classification. arXiv preprint arXiv:2405.19363.
-       https://arxiv.org/abs/2405.19363
+        Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
+        In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, & C. Zhang (Eds),
+        Advances in Neural Information Processing Systems (Vol. 37, pp. 36314-36341).
+        doi:10.52202/079017-1145
 
     Notes
     -----
@@ -103,9 +114,10 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         no_inter_attn: bool = False,
         e_layers: int = 2,
         d_ff: int = 512,
-        activation: Optional[nn.Module] = None,
+        activation_trans: Optional[nn.Module] = nn.ReLU,
         single_channel: bool = False,
         output_attention: bool = True,
+        activation_class: Optional[nn.Module] = nn.GELU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -120,68 +132,76 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         # In the original Medformer paper:
         # - seq_len refers to the number of channels
         # - enc_in refers to the number of time points
-        seq_len = self.n_chans
-        enc_in = self.n_times
-        num_class = self.n_outputs
 
-        # Assign basic parameters to instance variables.
+        # Save model parameters as instance variables
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.drop_prob = drop_prob
+        self.no_inter_attn = no_inter_attn
+        self.e_layers = e_layers
+        self.d_ff = d_ff
+        self.activation_trans = activation_trans
         self.output_attention = output_attention
-        self.enc_in = enc_in
         self.single_channel = single_channel
-
-        # Set default activation
-        if activation is None:
-            activation = nn.ReLU()
+        self.activation_class = activation_class
 
         # Process the sequence and patch configurations.
         if patch_len_list is None:
             patch_len_list = [2, 8, 16]
 
+        self.patch_len_list = patch_len_list
         stride_list = patch_len_list  # Using the same values for strides.
+        self.stride_list = stride_list
         patch_num_list = [
-            int((seq_len - patch_len) / stride + 2)
+            int((self.n_chans - patch_len) / stride + 2)
             for patch_len, stride in zip(patch_len_list, stride_list)
         ]
+        self.patch_num_list = patch_num_list
 
         # Initialize the embedding layer.
         self.enc_embedding = _ListPatchEmbedding(
-            enc_in,
-            d_model,
-            seq_len,
-            patch_len_list,
-            stride_list,
-            drop_prob,
-            single_channel,
+            enc_in=self.n_times,
+            d_model=self.d_model,
+            seq_len=self.n_chans,
+            patch_len_list=self.patch_len_list,
+            stride_list=self.stride_list,
+            dropout=self.drop_prob,
+            single_channel=self.single_channel,
         )
-
         # Build the encoder with multiple layers.
         self.encoder = _Encoder(
             [
                 _EncoderLayer(
-                    _MedformerLayer(
-                        len(patch_len_list),
-                        d_model,
-                        n_heads,
-                        drop_prob,
-                        output_attention,
-                        no_inter_attn,
+                    attention=_MedformerLayer(
+                        num_blocks=len(self.patch_len_list),
+                        d_model=self.d_model,
+                        n_heads=self.n_heads,
+                        dropout=self.drop_prob,
+                        output_attention=self.output_attention,
+                        no_inter=self.no_inter_attn,
                     ),
-                    d_model,
-                    d_ff,
-                    dropout=drop_prob,
-                    activation=activation,
+                    d_model=self.d_model,
+                    d_ff=self.d_ff,
+                    dropout=self.drop_prob,
+                    activation=self.activation_trans()
+                    if self.activation_trans is not None
+                    else nn.ReLU(),
                 )
-                for _ in range(e_layers)
+                for _ in range(self.e_layers)
             ],
-            norm_layer=torch.nn.LayerNorm(d_model),
+            norm_layer=torch.nn.LayerNorm(self.d_model),
         )
 
         # For classification tasks, add additional layers.
-        self.act = F.gelu
-        self.dropout = nn.Dropout(drop_prob)
+        self.activation_layer = (
+            self.activation_class() if self.activation_class is not None else nn.GELU()
+        )
+        self.dropout = nn.Dropout(self.drop_prob)
         self.final_layer = nn.Linear(
-            d_model * len(patch_num_list) * (1 if not single_channel else enc_in),
-            num_class,
+            self.d_model
+            * len(self.patch_num_list)
+            * (1 if not self.single_channel else self.n_times),
+            self.n_outputs,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -197,20 +217,15 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor of shape (batch_size, n_outputs).
         """
-        # Medformer expects input of shape (batch, seq_len, enc_in)
-        # where seq_len is n_chans and enc_in is n_times
-        # So we need to transpose from (batch, n_chans, n_times) to (batch, n_chans, n_times)
-        # which is already the correct shape!
-
         # Embedding
         enc_out = self.enc_embedding(x)
-        enc_out, attns = self.encoder(enc_out, attn_mask=None)
+        enc_out, _ = self.encoder(enc_out, attn_mask=None)
 
         if self.single_channel:
-            enc_out = torch.reshape(enc_out, (-1, self.enc_in, *enc_out.shape[-2:]))
+            enc_out = torch.reshape(enc_out, (-1, self.n_times, *enc_out.shape[-2:]))
 
         # Output
-        output = self.act(enc_out)
+        output = self.activation_layer(enc_out)
         output = self.dropout(output)
         output = output.reshape(
             output.shape[0], -1
