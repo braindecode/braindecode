@@ -109,11 +109,6 @@ class FilterBankLayer(nn.Module):
         or "firwin2" to use :func:`scipy.signal.firwin2`. "firwin" uses
         a time-domain design technique that generally gives improved
         attenuation using fewer samples than "firwin2".
-    pad : str, default='reflect_limited'
-        The type of padding to use. Supports all func:`numpy.pad()` mode options.
-        Can also be "reflect_limited", which pads with a reflected version of
-        each vector mirrored on the first and last values of the vector,
-        followed by zeros. Only used for ``method='fir'``.
     verbose: bool | str | int | None, default=True
         Control verbosity of the logging output. If ``None``, use the default
         verbosity level. See the func:`mne.verbose` for details.
@@ -183,7 +178,6 @@ class FilterBankLayer(nn.Module):
                     "The band_filters items should be splitable in 2 values."
                 )
 
-        # and we accepted as
         self.band_filters = band_filters
         self.n_bands = len(band_filters)
         self.phase = phase
