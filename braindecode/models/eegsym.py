@@ -1,16 +1,14 @@
 from __future__ import annotations
-import re
-from math import ceil
+
+from typing import Any, List, Tuple, cast
 
 import torch
-
-import numpy as np
-import mne
-from mne.channels import make_standard_montage
-from re import search
-
 from torch import nn
-from typing import List, Tuple
+
+from braindecode.datautil.channel_utils import (
+    division_channels_idx,
+    match_hemisphere_chans,
+)
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -67,11 +65,11 @@ class EEGSym(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # Model parameters
-        filters_per_branch: int = 8,
+        filters_per_branch: int = 12,
         scales_time: Tuple[int, int, int] = (500, 250, 125),
         drop_prob: float = 0.25,
         activation: nn.Module = nn.ELU(),
-        spatial_resnet_repetitions: int = 1,
+        spatial_resnet_repetitions: int = 5,
         left_right_chs: list[tuple[str, str]] | None = None,
         middle_chs: list[str] | None = None,
     ):
@@ -98,12 +96,18 @@ class EEGSym(EEGModuleMixin, nn.Module):
         # Calculate scales in samples
         self.scales_samples = [int(s * self.sfreq / 2000) * 2 + 1 for s in scales_time]
 
-        ch_names = [ch["ch_name"] for ch in self.chs_info]
+        # Note: chs_info is actually list[dict] despite base class type hint saying list[str]
+        ch_names = [cast(dict[str, Any], ch)["ch_name"] for ch in self.chs_info]
         if left_right_chs is None:
             left_chs, right_chs, middle_chs = division_channels_idx(ch_names)
             left_chs, right_chs = zip(*match_hemisphere_chans(left_chs, right_chs))
         else:
             left_chs, right_chs = zip(*left_right_chs)
+            # middle_chs is guaranteed to be not None when left_right_chs is not None
+            # (checked in __init__ validation)
+            assert middle_chs is not None, (
+                "middle_chs must be provided with left_right_chs"
+            )
         self.left_idx, self.right_idx, self.middle_idx = [
             [ch_names.index(ch) for ch in ch_subset]
             for ch_subset in (left_chs, right_chs, middle_chs)
@@ -128,29 +132,37 @@ class EEGSym(EEGModuleMixin, nn.Module):
             in_channels=self.filters_per_branch * len(self.scales_samples),
             scales_samples=[max(1, s // 4) for s in self.scales_samples],
             filters_per_branch=self.filters_per_branch,
-            ncha=1,
+            ncha=self.n_channels_per_hemi,  # Spatial dimension is still n_channels_per_hemi
             average_pool=2,
         )
 
-        # Residual blocks
+        # Residual blocks (spatial dim is still n_channels_per_hemi through the network)
         self.residual_blocks = nn.Sequential(
             self._create_residual_block(
                 in_channels=self.filters_per_branch * len(self.scales_samples),
-                filters=int(self.filters_per_branch * len(self.scales_samples) / 2),
+                filters=self.filters_per_branch
+                * len(self.scales_samples),  # No reduction
                 kernel_size=16,
                 average_pool=2,
+                ncha=self.n_channels_per_hemi,
             ),
             self._create_residual_block(
-                in_channels=int(self.filters_per_branch * len(self.scales_samples) / 2),
-                filters=int(self.filters_per_branch * len(self.scales_samples) / 2),
+                in_channels=self.filters_per_branch * len(self.scales_samples),
+                filters=int(
+                    self.filters_per_branch * len(self.scales_samples) / 2
+                ),  # Reduce by /2
                 kernel_size=8,
                 average_pool=2,
+                ncha=self.n_channels_per_hemi,
             ),
             self._create_residual_block(
                 in_channels=int(self.filters_per_branch * len(self.scales_samples) / 2),
-                filters=int(self.filters_per_branch * len(self.scales_samples) / 4),
+                filters=int(
+                    self.filters_per_branch * len(self.scales_samples) / 4
+                ),  # Reduce by /2
                 kernel_size=4,
                 average_pool=2,
+                ncha=self.n_channels_per_hemi,
             ),
         )
 
@@ -170,16 +182,26 @@ class EEGSym(EEGModuleMixin, nn.Module):
         self.channel_merging = ChannelMergingBlock(
             in_channels=int(self.filters_per_branch * len(self.scales_samples) / 4),
             filters=int(self.filters_per_branch * len(self.scales_samples) / 4),
-            groups=int(self.filters_per_branch * len(self.scales_samples) / 8),
+            groups=int(
+                self.filters_per_branch * len(self.scales_samples) / 12
+            ),  # 36/12=3 groups
+            ncha=self.n_channels_per_hemi,
+            division=2,
             activation=self.activation,
             drop_prob=self.drop_prob,
         )
 
         # Temporal merging
+        # Calculate temporal dimension at this point
+        # After: Inc1 (pool/2), Inc2 (pool/2), Res1-3 (pool/2 each), TempRed (pool/2)
+        # Total reduction: 2^6 = 64
+        temporal_dim_at_merging = self.n_times // 64
+
         self.temporal_merging = TemporalMergingBlock(
             in_channels=int(self.filters_per_branch * len(self.scales_samples) / 4),
             filters=int(self.filters_per_branch * len(self.scales_samples) / 2),
             groups=int(self.filters_per_branch * len(self.scales_samples) / 4),
+            n_times=temporal_dim_at_merging,
             activation=self.activation,
             drop_prob=self.drop_prob,
         )
@@ -196,9 +218,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
 
         # Final fully connected layer
         self.final_layer = nn.Linear(
-            in_features=int(
-                int(self.filters_per_branch * len(self.scales_samples) / 2) * 2
-            ),
+            in_features=int(self.filters_per_branch * len(self.scales_samples) / 2),
             out_features=self.n_outputs,
         )
 
@@ -224,15 +244,22 @@ class EEGSym(EEGModuleMixin, nn.Module):
         )
 
     def _create_residual_block(
-        self, in_channels: int, filters: int, kernel_size: int, average_pool: int
+        self,
+        in_channels: int,
+        filters: int,
+        kernel_size: int,
+        average_pool: int,
+        ncha: int = 1,
     ):
         return ResidualBlock(
             in_channels=in_channels,
             filters=filters,
             kernel_size=kernel_size,
+            ncha=ncha,
             activation=self.activation,
             drop_prob=self.drop_prob,
             average_pool=average_pool,
+            spatial_resnet_repetitions=self.spatial_resnet_repetitions,
         )
 
     def forward(self, x):
@@ -249,34 +276,51 @@ class EEGSym(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor of shape (batch_size, n_classes).
         """
-        # Reshape and split into left and right hemispheres
-        x = x[  # (batch_size, 1, 2, n_channels_per_hemi, n_times)
-            :,
-            (self.left_idx + self.middle_idx, self.right_idx + self.middle_idx),
-            :,
-        ].unsqueeze(1)
+        # Input: (B, C, T) = (batch, channels, time)
+        # Step 1: Add feature dimension
+        x = x.unsqueeze(1)  # (B, 1, C, T)
+
+        # Step 2: Split into left, right, and middle channels
+        left_data = x[:, :, self.left_idx, :]  # (B, 1, n_left, T)
+        right_data = x[:, :, self.right_idx, :]  # (B, 1, n_right, T)
+        middle_data = x[:, :, self.middle_idx, :]  # (B, 1, n_middle, T)
+
+        # Step 3: Concatenate middle channels to both hemispheres
+        left_hemi = torch.cat(
+            [left_data, middle_data], dim=2
+        )  # (B, 1, n_left+n_middle, T)
+        right_hemi = torch.cat(
+            [right_data, middle_data], dim=2
+        )  # (B, 1, n_right+n_middle, T)
+
+        # Step 4: Stack along Z dimension
+        x = torch.stack([left_hemi, right_hemi], dim=2)  # (B, 1, 2, n_ch_per_hemi, T)
+
+        # Step 5: CRITICAL FIX - Permute to correct dimension order
+        # From: (B, F, Z, Space, Time)
+        # To:   (B, F, Z, Time, Space)
+        x = x.permute(0, 1, 2, 4, 3)  # (B, 1, 2, T, n_ch_per_hemi)
+
+        # Now x is in correct format: (Batch, Features, Z, Time, Space)
 
         # Initial inception modules
-        x = self.inception_block1([x])
-        x = self.inception_block2(x)
+        x = self.inception_block1([x])[0]  # Returns list, take first element
+        x = self.inception_block2([x])[0]  # Returns list, take first element
 
         # Residual blocks
-        x = [self.residual_blocks(xi) for xi in x]
+        x = self.residual_blocks(x)
 
         # Temporal reduction
-        x = [self.temporal_reduction(xi) for xi in x]
+        x = self.temporal_reduction(x)
 
         # Channel merging
-        x = [self.channel_merging(xi) for xi in x]
+        x = self.channel_merging(x)
 
         # Temporal merging
-        x = [self.temporal_merging(xi) for xi in x]
+        x = self.temporal_merging(x)
 
         # Output blocks
-        x = [self.output_blocks(xi) for xi in x]
-
-        # Concatenate outputs
-        x = torch.cat(x, dim=1)
+        x = self.output_blocks(x)
 
         # Final fully connected layer
         x = self.final_layer(x)
@@ -338,8 +382,8 @@ class InceptionBlock(nn.Module):
                     nn.Conv3d(
                         in_channels=in_channels,
                         out_channels=filters_per_branch,
-                        kernel_size=(1, 1, scale),
-                        padding=(0, 0, scale // 2),
+                        kernel_size=(1, scale, 1),  # FIXED: (Z, Time, Space)
+                        padding=(0, scale // 2, 0),  # FIXED: pad Time dimension
                     ),
                     nn.BatchNorm3d(filters_per_branch),
                     activation,
@@ -356,8 +400,7 @@ class InceptionBlock(nn.Module):
                         nn.Conv3d(
                             in_channels=filters_per_branch * len(scales_samples),
                             out_channels=filters_per_branch * len(scales_samples),
-                            kernel_size=(1, ncha, 1),
-                            groups=filters_per_branch * len(scales_samples),
+                            kernel_size=(1, 1, ncha),  # FIXED: (Z, Time, Space)
                             padding=(0, 0, 0),
                         ),
                         nn.BatchNorm3d(filters_per_branch * len(scales_samples)),
@@ -367,7 +410,7 @@ class InceptionBlock(nn.Module):
                 )
 
         self.pool = (
-            nn.AvgPool3d(kernel_size=(1, 1, average_pool))
+            nn.AvgPool3d(kernel_size=(1, average_pool, 1))  # FIXED: pool Time dimension
             if average_pool != 1
             else nn.Identity()
         )
@@ -379,6 +422,10 @@ class InceptionBlock(nn.Module):
             temp_outputs = [conv(x) for conv in self.temporal_convs]
             x_out = torch.cat(temp_outputs, dim=1)
 
+            # Trim temporal dimension if needed (due to even kernel sizes with padding)
+            if x_out.shape[3] > x.shape[3]:
+                x_out = x_out[:, :, :, : x.shape[3], :]
+
             # Residual connection
             x_out = x_out + x
 
@@ -388,11 +435,8 @@ class InceptionBlock(nn.Module):
             # Apply spatial convolutions
             if hasattr(self, "spatial_convs"):
                 for spatial_conv in self.spatial_convs:
-                    if self.init:
-                        x_out = spatial_conv(x_out)
-                    else:
-                        x_spatial = spatial_conv(x_out)
-                        x_out = x_out + x_spatial
+                    x_spatial = spatial_conv(x_out)
+                    x_out = x_out + x_spatial  # Always use residual connection
 
         outputs.append(x_out)
         return outputs
@@ -427,9 +471,11 @@ class ResidualBlock(nn.Module):
         in_channels: int,
         filters: int,
         kernel_size: int,
+        ncha: int,
         activation: nn.Module,
         drop_prob: float,
         average_pool: int,
+        spatial_resnet_repetitions: int = 5,
     ):
         super().__init__()
         self.activation = activation
@@ -440,21 +486,69 @@ class ResidualBlock(nn.Module):
             nn.Conv3d(
                 in_channels=in_channels,
                 out_channels=filters,
-                kernel_size=(1, 1, kernel_size),
-                padding=(0, 0, kernel_size // 2),
+                kernel_size=(1, kernel_size, 1),  # FIXED: (Z, Time, Space)
+                padding=(0, kernel_size // 2, 0),  # FIXED: pad Time dimension
             ),
             nn.BatchNorm3d(filters),
             activation,
             nn.Dropout(drop_prob),
         )
 
+        # Projection layer for dimension matching if needed
+        if in_channels != filters:
+            self.projection = nn.Conv3d(
+                in_channels=in_channels,
+                out_channels=filters,
+                kernel_size=(1, 1, 1),
+            )
+        else:
+            self.projection = None
+
         # Average pooling
-        self.avg_pool = nn.AvgPool3d(kernel_size=(1, 1, average_pool))
+        self.avg_pool = nn.AvgPool3d(
+            kernel_size=(1, average_pool, 1)
+        )  # FIXED: pool Time
+
+        # Spatial convolutions (multiple repetitions like in InceptionBlock)
+        if ncha != 1:
+            self.spatial_convs = nn.ModuleList()
+            for _ in range(spatial_resnet_repetitions):
+                self.spatial_convs.append(
+                    nn.Sequential(
+                        nn.Conv3d(
+                            in_channels=filters,
+                            out_channels=filters,
+                            kernel_size=(1, 1, ncha),  # Spatial convolution
+                            padding=(0, 0, 0),
+                        ),
+                        nn.BatchNorm3d(filters),
+                        activation,
+                        nn.Dropout(drop_prob),
+                    )
+                )
+        else:
+            self.spatial_convs = None
 
     def forward(self, x):
         x_res = self.temporal_conv(x)
-        x_res = x_res[..., : x.shape[-1]] + x
-        x_out = self.avg_pool(x_res)
+
+        # Trim temporal dimension if needed (due to even kernel sizes with padding)
+        if x_res.shape[3] > x.shape[3]:
+            x_res = x_res[:, :, :, : x.shape[3], :]
+
+        # Handle channel dimension mismatch if needed
+        if self.projection is not None:
+            x = self.projection(x)
+
+        x_out = x_res + x  # Residual connection
+        x_out = self.avg_pool(x_out)
+
+        # Apply spatial convolutions if present (multiple repetitions)
+        if self.spatial_convs is not None:
+            for spatial_conv in self.spatial_convs:
+                x_spatial = spatial_conv(x_out)
+                x_out = x_out + x_spatial  # Residual connection with broadcasting
+
         return x_out
 
 
@@ -494,8 +588,8 @@ class TemporalBlock(nn.Module):
             nn.Conv3d(
                 in_channels=in_channels,
                 out_channels=filters,
-                kernel_size=(1, 1, kernel_size),
-                padding=(0, 0, kernel_size // 2),
+                kernel_size=(1, kernel_size, 1),
+                padding=(0, kernel_size // 2, 0),
             ),
             nn.BatchNorm3d(filters),
             activation,
@@ -504,6 +598,11 @@ class TemporalBlock(nn.Module):
 
     def forward(self, x):
         x_res = self.conv(x)
+
+        # Trim temporal dimension if needed (due to even kernel sizes with padding)
+        if x_res.shape[3] > x.shape[3]:
+            x_res = x_res[:, :, :, : x.shape[3], :]
+
         x_res = x_res + x
         return x_res
 
@@ -512,6 +611,10 @@ class ChannelMergingBlock(nn.Module):
     """
     Channel merging block used in EEGSym architecture.
 
+    This block performs hemisphere merging through:
+    1. Two residual convolution iterations (with full spatial kernel)
+    2. One grouped convolution (merges Z dimension from 2 to 1)
+
     Parameters
     ----------
     in_channels : int
@@ -519,7 +622,11 @@ class ChannelMergingBlock(nn.Module):
     filters : int
         Number of filters for the convolutional layers.
     groups : int
-        Number of groups for the convolutional layers.
+        Number of groups for the final grouped convolution.
+    ncha : int
+        Number of spatial channels to merge.
+    division : int
+        Z dimension size to merge (typically 2 for two hemispheres).
     activation : nn.Module
         Activation function to use.
     drop_prob : float
@@ -531,6 +638,8 @@ class ChannelMergingBlock(nn.Module):
         in_channels: int,
         filters: int,
         groups: int,
+        ncha: int,
+        division: int,
         activation: nn.Module,
         drop_prob: float,
     ):
@@ -538,11 +647,31 @@ class ChannelMergingBlock(nn.Module):
         self.activation = activation
         self.drop_prob = drop_prob
 
-        self.conv = nn.Sequential(
+        # TWO residual convolution iterations
+        # Each reduces spatial dimension: ncha → 1
+        self.residual_convs = nn.ModuleList()
+        for _ in range(2):
+            self.residual_convs.append(
+                nn.Sequential(
+                    nn.Conv3d(
+                        in_channels=in_channels,
+                        out_channels=filters,
+                        kernel_size=(division, 1, ncha),  # (Z, Time, Space)
+                        padding=(0, 0, 0),  # Valid padding
+                    ),
+                    nn.BatchNorm3d(filters),
+                    activation,
+                    nn.Dropout(drop_prob),
+                )
+            )
+
+        # Final grouped convolution
+        # Merges Z dimension: 2 → 1
+        self.grouped_conv = nn.Sequential(
             nn.Conv3d(
                 in_channels=in_channels,
                 out_channels=filters,
-                kernel_size=(2, 1, 1),
+                kernel_size=(division, 1, ncha),  # (Z, Time, Space)
                 groups=groups,
                 padding=(0, 0, 0),
             ),
@@ -552,29 +681,40 @@ class ChannelMergingBlock(nn.Module):
         )
 
     def forward(self, x):
-        x_res = self.conv(x)
-        x_res = x_res + x
-        return x_res
+        # Apply 2 residual iterations
+        # Each iteration: conv reduces dims, then Add broadcasts back
+        for residual_conv in self.residual_convs:
+            x_res = residual_conv(x)
+            x = x + x_res  # Broadcasts x_res (1,T,1) to match x (2,T,5)
+
+        # Apply final grouped conv (permanently reduces dimensions)
+        x = self.grouped_conv(x)
+
+        return x
 
 
 class TemporalMergingBlock(nn.Module):
     """
     Temporal merging block used in EEGSym architecture.
 
+    This block performs temporal dimension collapse through:
+    1. One residual convolution (temporal collapse with residual connection)
+    2. One grouped convolution (temporal collapse + double filters)
+
     Parameters
     ----------
     in_channels : int
         Number of input channels.
     filters : int
-        Number of filters for the convolutional layers.
+        Number of output filters (should be 2x input channels).
     groups : int
-        Number of groups for the convolutional layers.
+        Number of groups for the grouped convolution.
+    n_times : int
+        Current temporal dimension size.
     activation : nn.Module
         Activation function to use.
     drop_prob : float
         Dropout probability.
-    residual : bool
-        If True, includes residual connections.
     """
 
     def __init__(
@@ -582,6 +722,7 @@ class TemporalMergingBlock(nn.Module):
         in_channels: int,
         filters: int,
         groups: int,
+        n_times: int,
         activation: nn.Module,
         drop_prob: float,
     ):
@@ -589,11 +730,29 @@ class TemporalMergingBlock(nn.Module):
         self.activation = activation
         self.drop_prob = drop_prob
 
-        self.conv = nn.Sequential(
+        # Calculate temporal kernel size
+        # At this point in network, temporal dim has been reduced by pooling
+        self.temporal_kernel = n_times  # Should be 6 for 384 input samples
+
+        # Residual convolution (collapses time dimension)
+        self.residual_conv = nn.Sequential(
             nn.Conv3d(
                 in_channels=in_channels,
-                out_channels=filters,
-                kernel_size=(1, 1, 1),
+                out_channels=in_channels,  # Same channels for residual
+                kernel_size=(1, self.temporal_kernel, 1),  # (Z, Time, Space)
+                padding=(0, 0, 0),  # Valid padding - reduces time to 1
+            ),
+            nn.BatchNorm3d(in_channels),
+            activation,
+            nn.Dropout(drop_prob),
+        )
+
+        # Grouped convolution (collapses time dimension, doubles filters)
+        self.grouped_conv = nn.Sequential(
+            nn.Conv3d(
+                in_channels=in_channels,
+                out_channels=filters,  # Double the channels
+                kernel_size=(1, self.temporal_kernel, 1),  # (Z, Time, Space)
                 groups=groups,
                 padding=(0, 0, 0),
             ),
@@ -603,9 +762,14 @@ class TemporalMergingBlock(nn.Module):
         )
 
     def forward(self, x):
-        x_res = self.conv(x)
-        x_res = x_res + x
-        return x_res
+        # Residual convolution with broadcasting
+        x_res = self.residual_conv(x)
+        x = x + x_res  # Broadcasts x_res (1,1,1) back to x shape (1,6,1)
+
+        # Grouped convolution (reduces time to 1, doubles channels)
+        x = self.grouped_conv(x)
+
+        return x
 
 
 class OutputBlock(nn.Module):
@@ -655,102 +819,3 @@ class OutputBlock(nn.Module):
             x_res = conv_block(x)
             x = x + x_res
         return x
-
-
-def match_hemisphere_chans(left_chs, right_chs):
-    """
-    This function matches the channels of the left and right hemispheres based on their names.
-    It returns a list of tuples with matched channel names.
-
-    Parameters
-    ----------
-    left_chs : list of str
-        A list of channel names from the left hemisphere.
-    right_chs : list of str
-        A list of channel names from the right hemisphere.
-
-    Returns
-    -------
-    list of tuples
-        Returns a list of tuples with matched channel names from the left and right hemispheres.
-    Raises
-    ------
-    ValueError
-        If the left anr right channels do not match.
-    """
-    if len(left_chs) != len(right_chs):
-        raise ValueError("Left and right channels do not match.")
-    right_chs = list(right_chs)
-    regexp = r"\d+"
-    out = []
-    for left in left_chs:
-        match = re.search(regexp, left)
-        if match is None:
-            raise ValueError(f"Channel '{left}' does not contain a number.")
-        chan_idx = 1 + int(match.group())
-        target_r = re.sub(regexp, str(chan_idx), left)
-        for right in right_chs:
-            if right == target_r:
-                out.append((left, right))
-                right_chs.remove(right)
-                break
-        else:
-            raise ValueError(
-                f"Found no right hemisphere matching channel for '{left}'."
-            )
-    return out
-
-
-def division_channels_idx(ch_names):
-    """
-    This function divides a list of EEG channel names into three lists: left,
-    right, and middle, based on their names.  It categorizes each channel
-    by its number: odd-numbered channels go into the left list, even-numbered
-    channels into the right list, and channels without numbers into the
-    middle list.
-
-    Parameters
-    ----------
-    ch_names : list of str
-        A list of EEG channel names to be divided based on their numbering and arranged.
-
-    Returns
-    -------
-    tuple of lists
-        Returns three lists containing the left, right, and middle channel names in the original list:
-        - left: Odd-numbered channels.
-        - right: Even-numbered channels.
-        - middle: Channels that do not contain numbers.
-
-    Notes
-    -----
-    The function identifies channel numbers by searching for numeric characters in the channel names.
-    Odd-numbered channels are classified as left, even-numbered as right, and channels without numbers go into the middle list.
-    Each list is sorted by the channel's y-coordinate if 'front_to_back' is set to True.
-
-    Examples
-    --------
-    >>> channels = ['FP1', 'FP2', 'O1', 'O2', 'FZ']
-    >>> division_channels_idx(channels)
-    (['FP1, 'O1'], ['FP2', 'O2'], ['Fz'])
-    """
-    left, right, middle = [], [], []
-    for ch in ch_names:
-        number = search(r"\d+", ch)
-        if number is not None:
-            (left if int(number[0]) % 2 else right).append(ch)
-        else:
-            middle.append(ch)
-
-    return left, right, middle
-
-
-if __name__ == "__main__":
-    ch_names = ["FP1", "FP2", "O1", "O2", "FZ"]
-    chs_info = [{"ch_name": ch} for ch in ch_names]
-    x = torch.zeros(1, 5, 1000)
-
-    model = EEGSym(chs_info=chs_info, n_times=1000, n_outputs=2, sfreq=250)
-
-    with torch.no_grad():
-        out = model(x)
