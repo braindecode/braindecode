@@ -89,12 +89,6 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         Advances in Neural Information Processing Systems (Vol. 37, pp. 36314-36341).
         doi:10.52202/079017-1145
 
-    Notes
-    -----
-    The model expects input tensors of shape ``(batch_size, n_chans, n_times)``,
-    which is the standard format in Braindecode. Internally, the model processes
-    the data with channels corresponding to the spatial dimension and time points
-    being embedded into patches.
     """
 
     def __init__(
@@ -236,7 +230,7 @@ class MEDFormer(EEGModuleMixin, nn.Module):
 
 class _PositionalEmbedding(nn.Module):
     def __init__(self, d_model: int, max_len: int = 5000):
-        super(_PositionalEmbedding, self).__init__()
+        super().__init__()
         # If d_model is odd, temporarily work with d_model + 1.
         if d_model % 2 == 1:
             d_model_adj = d_model + 1
@@ -271,10 +265,10 @@ class _CrossChannelTokenEmbedding(nn.Module):
     def __init__(
         self, c_in: int, l_patch: int, d_model: int, stride: Optional[int] = None
     ):
-        super(_CrossChannelTokenEmbedding, self).__init__()
+        super().__init__()
         if stride is None:
             stride = l_patch
-        self.tokenConv = nn.Conv2d(
+        self.token_conv = nn.Conv2d(
             in_channels=1,
             out_channels=d_model,
             kernel_size=(c_in, l_patch),
@@ -290,7 +284,7 @@ class _CrossChannelTokenEmbedding(nn.Module):
                 )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.tokenConv(x)
+        x = self.token_conv(x)
         return x
 
 
@@ -305,7 +299,7 @@ class _ListPatchEmbedding(nn.Module):
         dropout: float,
         single_channel: bool = False,
     ):
-        super(_ListPatchEmbedding, self).__init__()
+        super().__init__()
         self.patch_len_list = patch_len_list
         self.stride_list = stride_list
         self.paddings = [nn.ReplicationPad1d((0, stride)) for stride in stride_list]
@@ -333,8 +327,8 @@ class _ListPatchEmbedding(nn.Module):
     ) -> List[torch.Tensor]:  # (batch_size, seq_len, enc_in)
         x = x.permute(0, 2, 1)  # (batch_size, enc_in, seq_len)
         if self.single_channel:
-            B, C, L = x.shape
-            x = torch.reshape(x, (B * C, 1, L))
+            batch_size, n_channels, seq_length = x.shape
+            x = torch.reshape(x, (batch_size * n_channels, 1, seq_length))
 
         x_list = []
         for padding, value_embedding in zip(self.paddings, self.value_embeddings):
@@ -364,7 +358,7 @@ class _AttentionLayer(nn.Module):
         d_keys: Optional[int] = None,
         d_values: Optional[int] = None,
     ):
-        super(_AttentionLayer, self).__init__()
+        super().__init__()
 
         d_keys = d_keys or (d_model // n_heads)
         d_values = d_values or (d_model // n_heads)
@@ -385,25 +379,27 @@ class _AttentionLayer(nn.Module):
         tau: Optional[torch.Tensor] = None,
         delta: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        B, L, _ = queries.shape
-        _, S, _ = keys.shape
-        H = self.n_heads
+        batch_size, query_len, _ = queries.shape
+        _, key_len, _ = keys.shape
+        num_heads = self.n_heads
 
-        queries = self.query_projection(queries).view(B, L, H, -1)  # multi-head
-        keys = self.key_projection(keys).view(B, S, H, -1)
-        values = self.value_projection(values).view(B, S, H, -1)
+        queries = self.query_projection(queries).view(
+            batch_size, query_len, num_heads, -1
+        )  # multi-head
+        keys = self.key_projection(keys).view(batch_size, key_len, num_heads, -1)
+        values = self.value_projection(values).view(batch_size, key_len, num_heads, -1)
 
         out, attn = self.inner_attention(
             queries, keys, values, attn_mask, tau=tau, delta=delta
         )
-        out = out.view(B, L, -1)
+        out = out.view(batch_size, query_len, -1)
 
         return self.out_projection(out), attn
 
 
 class _TriangularCausalMask:
-    def __init__(self, B: int, L: int, device: str = "cpu"):
-        mask_shape = [B, 1, L, L]
+    def __init__(self, batch_size: int, seq_len: int, device: str = "cpu"):
+        mask_shape = [batch_size, 1, seq_len, seq_len]
         with torch.no_grad():
             self._mask = torch.triu(
                 torch.ones(mask_shape, dtype=torch.bool), diagonal=1
@@ -418,12 +414,11 @@ class _FullAttention(nn.Module):
     def __init__(
         self,
         mask_flag: bool = True,
-        factor: int = 5,
         scale: Optional[float] = None,
         attention_dropout: float = 0.1,
         output_attention: bool = False,
     ):
-        super(_FullAttention, self).__init__()
+        super().__init__()
         self.scale = scale
         self.mask_flag = mask_flag
         self.output_attention = output_attention
@@ -435,30 +430,30 @@ class _FullAttention(nn.Module):
         keys: torch.Tensor,
         values: torch.Tensor,
         attn_mask: Optional[_TriangularCausalMask],
-        tau: Optional[torch.Tensor] = None,
-        delta: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        B, L, H, E = queries.shape
-        _, S, _, D = values.shape
-        scale = self.scale or 1.0 / sqrt(E)
+        batch_size, query_len, _, embed_dim = queries.shape
+        _, _, _, _ = values.shape
+        scale = self.scale or 1.0 / sqrt(embed_dim)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
         if self.mask_flag:
             if attn_mask is None:
-                attn_mask = _TriangularCausalMask(B, L, device=queries.device)
+                attn_mask = _TriangularCausalMask(
+                    batch_size, query_len, device=queries.device
+                )
 
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
-        A = self.dropout(
+        attention_weights = self.dropout(
             torch.softmax(scale * scores, dim=-1)
         )  # Scaled Dot-Product Attention
-        V = torch.einsum("bhls,bshd->blhd", A, values)
+        output_values = torch.einsum("bhls,bshd->blhd", attention_weights, values)
 
         if self.output_attention:
-            return V.contiguous(), A
+            return output_values.contiguous(), attention_weights
         else:
-            return V.contiguous(), None
+            return output_values.contiguous(), None
 
 
 class _MedformerLayer(nn.Module):
@@ -471,14 +466,13 @@ class _MedformerLayer(nn.Module):
         output_attention: bool = False,
         no_inter: bool = False,
     ):
-        super(_MedformerLayer, self).__init__()
+        super().__init__()
 
         self.intra_attentions = nn.ModuleList(
             [
                 _AttentionLayer(
                     _FullAttention(
-                        False,
-                        factor=1,
+                        mask_flag=False,
                         attention_dropout=dropout,
                         output_attention=output_attention,
                     ),
@@ -494,8 +488,7 @@ class _MedformerLayer(nn.Module):
         else:
             self.inter_attention = _AttentionLayer(
                 _FullAttention(
-                    False,
-                    factor=1,
+                    mask_flag=False,
                     attention_dropout=dropout,
                     output_attention=output_attention,
                 ),
@@ -515,11 +508,11 @@ class _MedformerLayer(nn.Module):
         x_intra = []
         attn_out = []
         for x_in, layer, mask in zip(x, self.intra_attentions, attn_mask):
-            _x_out, _attn = layer(
+            x_out_temp, attn_temp = layer(
                 x_in, x_in, x_in, attn_mask=mask, tau=tau, delta=delta
             )
-            x_intra.append(_x_out)  # (B, Li, D)
-            attn_out.append(_attn)
+            x_intra.append(x_out_temp)  # (B, Li, D)
+            attn_out.append(attn_temp)
         if self.inter_attention is not None:
             # Inter attention
             routers = torch.cat([x[:, -1:] for x in x_intra], dim=1)  # (B, N, D)
@@ -545,7 +538,7 @@ class _EncoderLayer(nn.Module):
         dropout: float,
         activation: Optional[nn.Module] = None,
     ):
-        super(_EncoderLayer, self).__init__()
+        super().__init__()
         d_ff = d_ff or 4 * d_model
         self.attention = attention
         self.conv1 = nn.Conv1d(in_channels=d_model, out_channels=d_ff, kernel_size=1)
@@ -563,20 +556,23 @@ class _EncoderLayer(nn.Module):
         delta: Optional[torch.Tensor] = None,
     ) -> Tuple[List[torch.Tensor], List[Optional[torch.Tensor]]]:
         new_x, attn = self.attention(x, attn_mask=attn_mask, tau=tau, delta=delta)
-        x = [_x + self.dropout(_nx) for _x, _nx in zip(x, new_x)]
+        x = [x_orig + self.dropout(x_new) for x_orig, x_new in zip(x, new_x)]
 
-        y = x = [self.norm1(_x) for _x in x]
-        y = [self.dropout(self.activation(self.conv1(_y.transpose(-1, 1)))) for _y in y]
-        y = [self.dropout(self.conv2(_y).transpose(-1, 1)) for _y in y]
+        y = x = [self.norm1(x_val) for x_val in x]
+        y = [
+            self.dropout(self.activation(self.conv1(y_val.transpose(-1, 1))))
+            for y_val in y
+        ]
+        y = [self.dropout(self.conv2(y_val).transpose(-1, 1)) for y_val in y]
 
-        return [self.norm2(_x + _y) for _x, _y in zip(x, y)], attn
+        return [self.norm2(x_val + y_val) for x_val, y_val in zip(x, y)], attn
 
 
 class _Encoder(nn.Module):
     def __init__(
         self, attn_layers: List[nn.Module], norm_layer: Optional[nn.Module] = None
     ):
-        super(_Encoder, self).__init__()
+        super().__init__()
         self.attn_layers = nn.ModuleList(attn_layers)
         self.norm = norm_layer
 
