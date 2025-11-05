@@ -139,6 +139,7 @@ preprocess(dataset, preprocessors)
 # Sampling frequency
 sfreq = dataset.datasets[0].raw.info["sfreq"]
 
+######################################################################
 # Create windows
 window_size_samples = int(sfreq * 2)  # 2-second windows
 window_stride_samples = int(window_size_samples * 0.5)  # 50% overlap
