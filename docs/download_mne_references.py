@@ -25,9 +25,9 @@ def update_references():
         "https://raw.githubusercontent.com/mne-tools/mne-python/main/doc/references.bib"
     )
 
-    # Validate URL scheme to avoid unsafe schemes like file:
+    # Validate URL to avoid unsafe schemes or unexpected hosts (Codacy)
     parsed = urlparse(mne_url)
-    if parsed.scheme not in ("http", "https"):
+    if parsed.scheme != "https" or parsed.netloc != "raw.githubusercontent.com":
         return False
 
     try:
