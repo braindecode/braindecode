@@ -1,8 +1,10 @@
 """Download MNE-Python references to merge with Braindecode references."""
 
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def update_references():
@@ -23,18 +25,23 @@ def update_references():
         "https://raw.githubusercontent.com/mne-tools/mne-python/main/doc/references.bib"
     )
 
+    # Validate URL scheme to avoid unsafe schemes like file:
+    parsed = urlparse(mne_url)
+    if parsed.scheme not in ("http", "https"):
+        return False
+
     try:
         # Download MNE references
         with urllib.request.urlopen(mne_url, timeout=5) as response:
             mne_content = response.read().decode("utf-8")
-    except Exception:
+    except urllib.error.URLError:
         return False
 
     # Read current file
     try:
         with open(bib_file, "r", encoding="utf-8") as f:
             current_content = f.read()
-    except Exception:
+    except OSError:
         return False
 
     # Check if MNE section already exists
@@ -54,7 +61,7 @@ def update_references():
         with open(bib_file, "w", encoding="utf-8") as f:
             f.write(merged)
         return True
-    except Exception:
+    except OSError:
         return False
 
 
