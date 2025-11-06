@@ -8,8 +8,7 @@ Braindecode that wrap MNE-Python functionality. These classes provide a
 convenient and type-safe way to preprocess EEG data.
 """
 
-# Authors: Copilot
-#          Bruno Aristimunha <b.aristimunha@gmail.com>
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -206,22 +205,26 @@ print("\nPreprocessing complete!")
 ###############################################################################
 # Summary
 # -------
-# Braindecode provides 31 preprocessing classes that wrap MNE-Python
+# Braindecode provides 45 preprocessing classes that wrap MNE-Python
 # functionality:
 #
 # **Signal Processing**: Resample, Filter, NotchFilter, SavgolFilter,
-# ApplyHilbert, Rescale
+# ApplyHilbert, Rescale, OversampledTemporalProjection
 #
-# **Channel Management**: Pick, DropChannels, AddChannels, RenameChannels,
-# ReorderChannels, SetChannelTypes, InterpolateBads, InterpolateTo,
-# EqualizeChannels
+# **Channel Management**: Pick, PickChannels, PickTypes, DropChannels,
+# AddChannels, CombineChannels, RenameChannels, ReorderChannels,
+# SetChannelTypes, InterpolateBads, InterpolateTo, InterpolateBridgedElectrodes,
+# ComputeBridgedElectrodes, EqualizeChannels
 #
 # **Reference & Montage**: SetEEGReference, AddReferenceChannels, SetMontage
 #
 # **SSP Projections**: AddProj, ApplyProj, DelProj
 #
 # **Data Transformation**: Crop, CropByAnnotations, ComputeCurrentSourceDensity,
-# FixStimArtifact
+# FixStimArtifact, MaxwellFilter, RealignRaw, RegressArtifact
+#
+# **Artifact Detection & Annotation**: AnnotateAmplitude, AnnotateBreak,
+# AnnotateMovement, AnnotateMuscleZscore, AnnotateNan
 #
 # **Metadata & Configuration**: Anonymize, SetAnnotations, SetMeasDate,
 # AddEvents, FixMagCoilTypes, ApplyGradientCompensation
