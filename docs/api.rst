@@ -332,7 +332,7 @@ Common Datasets
    :toctree: generated/
 
     BCICompetitionIVDataset4
-    BNCI2014001
+    BNCI2014_001
     HGD
     MOABBDataset
     NMT

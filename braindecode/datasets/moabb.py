@@ -169,8 +169,8 @@ class MOABBDataset(BaseConcatDataset):
         super().__init__(all_base_ds)
 
 
-class BNCI2014001(MOABBDataset):
-    doc = """See moabb.datasets.bnci.BNCI2014001
+class BNCI2014_001(MOABBDataset):
+    doc = """See moabb.datasets.bnci.BNCI2014_001
 
     Parameters
     ----------
@@ -179,14 +179,14 @@ class BNCI2014001(MOABBDataset):
         subjects is fetched.
     """
     try:
-        from moabb.datasets import BNCI2014001
+        from moabb.datasets import BNCI2014_001
 
-        __doc__ = _update_moabb_docstring(BNCI2014001, doc)
+        __doc__ = _update_moabb_docstring(BNCI2014_001, doc)
     except ModuleNotFoundError:
         pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
 
     def __init__(self, subject_ids):
-        super().__init__("BNCI2014001", subject_ids=subject_ids)
+        super().__init__("BNCI2014_001", subject_ids=subject_ids)
 
 
 class HGD(MOABBDataset):
