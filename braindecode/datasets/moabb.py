@@ -15,6 +15,7 @@ from typing import Any
 
 import mne
 import pandas as pd
+from mne.utils import deprecated
 
 from braindecode.util import _update_moabb_docstring
 
@@ -207,3 +208,12 @@ class HGD(MOABBDataset):
 
     def __init__(self, subject_ids):
         super().__init__("Schirrmeister2017", subject_ids=subject_ids)
+
+
+@deprecated(
+    "`BNCI2014001` was renamed to `BNCI2014_001` in v1.13; this alias will be removed in v1.14."
+)
+class BNCI2014001(BNCI2014_001):
+    """Deprecated alias for EEGNet."""
+
+    pass
