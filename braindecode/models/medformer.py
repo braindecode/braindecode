@@ -36,16 +36,31 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         Intra-granularity attention focuses within individual granularities, and inter-granularity attention
         leverages the routers to integrate information across granularities.
 
-    Extended Summary
-    ----------------
     The **MedFormer** is a multi-granularity patching transformer tailored to medical
     time-series (MedTS) classification, with an emphasis on EEG and ECG signals. It captures
     local temporal dynamics, inter-channel correlations, and multi-scale temporal structure
     through cross-channel patching, multi-granularity embeddings, and two-stage attention
     [Medformer2024]_.
 
-    Architecture Overview
-    ---------------------
+    Notes
+    -----
+    - MedFormer outperforms strong baselines across six metrics on five MedTS datasets in a
+      subject-independent evaluation [Medformer2024]_.
+    - Cross-channel patching provides the largest F1 improvement in ablation studies (average
+      +6.10%), highlighting its importance for MedTS tasks [Medformer2024]_.
+    - Setting :attr:`no_inter_attn` to ``True`` disables inter-granularity attention while retaining
+      intra-granularity attention.
+
+    References
+    ----------
+    .. [Medformer2024] Wang, Y., Huang, N., Li, T., Yan, Y., & Zhang, X. (2024).
+       Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
+       In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, & C. Zhang (Eds.),
+       Advances in Neural Information Processing Systems (Vol. 37, pp. 36314-36341).
+       doi:10.52202/079017-1145.
+
+    .. rubric:: Architecture Overview
+
     MedFormer integrates three mechanisms to enhance representation learning [Medformer2024]_:
 
     1. **Cross-channel patching.** Leverages inter-channel correlations by forming patches
@@ -56,8 +71,8 @@ class MEDFormer(EEGModuleMixin, nn.Module):
     3. **Two-stage multi-granularity self-attention.** Learns intra- and inter-granularity
        correlations to fuse information across temporal scales.
 
-    Macro Components
-    ----------------
+    .. rubric:: Macro Components
+
     ``MEDFormer.enc_embedding`` (Embedding Layer)
         **Operations.** :class:`_ListPatchEmbedding` with multiple
         :class:`_CrossChannelTokenEmbedding` modules performs parallel feature extraction,
@@ -81,8 +96,8 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         **Role.** Captures scale-specific features and aggregates complementary information while
         reducing complexity from :math:`O((\\sum N_i)^2)`.
 
-    Temporal, Spatial, and Spectral Encoding
-    ----------------------------------------
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
     - **Temporal:** Multiple patch lengths in :attr:`patch_len_list` capture features at several
       temporal granularities, while intra-granularity attention supports long-range temporal
       dependencies.
@@ -91,23 +106,14 @@ class MEDFormer(EEGModuleMixin, nn.Module):
     - **Spectral:** Differing patch lengths simulate multiple sampling frequencies analogous to
       clinically relevant bands (e.g., alpha, beta, gamma).
 
-    Additional Mechanisms
-    ---------------------
+    .. rubric:: Additional Mechanisms
+
     - **Granularity router:** Each granularity :math:`i` receives a dedicated router token
       :math:`\\mathbf{u}^{(i)}`. Intra-attention updates the token, and inter-attention exchanges
       aggregated information across scales.
     - **Complexity:** Router-mediated two-stage attention maintains :math:`O(T^2)` complexity for
       suitable patch lengths (e.g., power series), preserving transformer-like efficiency while
       modeling multiple granularities.
-
-    Notes
-    -----
-    - MedFormer outperforms strong baselines across six metrics on five MedTS datasets in a
-      subject-independent evaluation [Medformer2024]_.
-    - Cross-channel patching provides the largest F1 improvement in ablation studies (average
-      +6.10%), highlighting its importance for MedTS tasks [Medformer2024]_.
-    - Setting :attr:`no_inter_attn` to ``True`` disables inter-granularity attention while retaining
-      intra-granularity attention.
 
     Parameters
     ----------
@@ -134,15 +140,6 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         If ``True``, returns attention weights for interpretability. The default is ``True``.
     activation_class : nn.Module, optional
         Activation used in the final classification layer. The default is :class:`nn.GELU`.
-
-    References
-    ----------
-    .. [Medformer2024] Wang, Y., Huang, N., Li, T., Yan, Y., & Zhang, X. (2024).
-       Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
-       In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, & C. Zhang (Eds.),
-       Advances in Neural Information Processing Systems (Vol. 37, pp. 36314-36341).
-       doi:10.52202/079017-1145.
-
     """
 
     def __init__(
