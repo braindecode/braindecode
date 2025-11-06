@@ -39,6 +39,8 @@ Enhancements
 
 API changes
 ~~~~~~~~~~~
+- Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
+
 
 Bugs
 ~~~~

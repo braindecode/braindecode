@@ -214,6 +214,6 @@ class HGD(MOABBDataset):
     "`BNCI2014001` was renamed to `BNCI2014_001` in v1.13; this alias will be removed in v1.14."
 )
 class BNCI2014001(BNCI2014_001):
-    """Deprecated alias for EEGNet."""
+    """Deprecated alias for BNCI2014001."""
 
     pass
