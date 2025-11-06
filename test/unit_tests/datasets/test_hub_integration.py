@@ -3,7 +3,6 @@
 # License: BSD-3
 
 import json
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -133,28 +132,25 @@ def test_push_to_hub_custom_compression(
     mock_create_repo.assert_called_once()
 
 
-def test_dataset_card_generation(setup_concat_windows_dataset):
+def test_dataset_card_generation(setup_concat_windows_dataset, tmp_path):
     """Test that dataset card (README) is generated correctly."""
     pytest.importorskip("huggingface_hub")
 
     dataset = setup_concat_windows_dataset
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp_path = Path(tmpdir)
+    # Call the internal method to generate dataset card
+    dataset._save_dataset_card(tmp_path)
 
-        # Call the internal method to generate dataset card
-        dataset._save_dataset_card(tmp_path)
+    readme_path = tmp_path / "README.md"
+    assert readme_path.exists()
 
-        readme_path = tmp_path / "README.md"
-        assert readme_path.exists()
-
-        # Check content
-        content = readme_path.read_text()
-        assert "braindecode" in content
-        assert "Number of recordings" in content
-        assert "Sampling frequency" in content
-        assert "Usage" in content
-        assert "zarr" in content.lower()  # Should mention Zarr format
+    # Check content
+    content = readme_path.read_text()
+    assert "braindecode" in content
+    assert "Number of recordings" in content
+    assert "Sampling frequency" in content
+    assert "Usage" in content
+    assert "zarr" in content.lower()  # Should mention Zarr format
 
 
 # =============================================================================
@@ -162,7 +158,7 @@ def test_dataset_card_generation(setup_concat_windows_dataset):
 # =============================================================================
 
 
-def test_local_save_and_load_zarr(setup_concat_windows_dataset):
+def test_local_save_and_load_zarr(setup_concat_windows_dataset, tmp_path):
     """Test local save in Zarr format and load using file path."""
     pytest.importorskip("huggingface_hub")
     pytest.importorskip("zarr")
@@ -171,17 +167,16 @@ def test_local_save_and_load_zarr(setup_concat_windows_dataset):
 
     dataset = setup_concat_windows_dataset
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Save as Zarr
-        zarr_path = Path(tmpdir) / "dataset.zarr"
-        convert_to_zarr(dataset, zarr_path)
+    # Save as Zarr
+    zarr_path = tmp_path / "dataset.zarr"
+    convert_to_zarr(dataset, zarr_path)
 
-        # Load back
-        loaded = load_from_zarr(zarr_path, preload=True)
+    # Load back
+    loaded = load_from_zarr(zarr_path, preload=True)
 
-        # Verify
-        assert len(loaded.datasets) == len(dataset.datasets)
-        assert len(loaded) == len(dataset)
+    # Verify
+    assert len(loaded.datasets) == len(dataset.datasets)
+    assert len(loaded) == len(dataset)
 
 
 # =============================================================================
@@ -189,59 +184,56 @@ def test_local_save_and_load_zarr(setup_concat_windows_dataset):
 # =============================================================================
 
 
-@patch("huggingface_hub.snapshot_download")
-def test_from_pretrained_zarr_mock(mock_snapshot):
+@patch("braindecode.datasets.hub_mixin.snapshot_download")
+def test_from_pretrained_zarr_mock(mock_snapshot, tmp_path):
     """Test from_pretrained with Zarr format (mocked Hub download)."""
     pytest.importorskip("huggingface_hub")
     pytest.importorskip("zarr")
 
-    # Create a temporary Zarr directory to return from mock
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create mock dataset
-        from braindecode.datautil.hub_formats import convert_to_zarr
+    from braindecode.datautil.hub_formats import convert_to_zarr
 
-        mock_dataset = MOABBDataset(
-            dataset_name="FakeDataset", subject_ids=[1], dataset_kwargs=bnci_kwargs
-        )
-        mock_windows = create_windows_from_events(
-            concat_ds=mock_dataset,
-            trial_start_offset_samples=0,
-            trial_stop_offset_samples=0,
-            use_mne_epochs=True,
-        )
+    # Create mock dataset
+    mock_dataset = MOABBDataset(
+        dataset_name="FakeDataset", subject_ids=[1], dataset_kwargs=bnci_kwargs
+    )
+    mock_windows = create_windows_from_events(
+        concat_ds=mock_dataset,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        use_mne_epochs=True,
+    )
 
-        zarr_path = Path(tmpdir) / "dataset.zarr"
-        convert_to_zarr(mock_windows, zarr_path)
+    zarr_path = tmp_path / "dataset.zarr"
+    convert_to_zarr(mock_windows, zarr_path)
 
-        format_info_path = Path(tmpdir) / "format_info.json"
-        with open(format_info_path, "w") as f:
-            json.dump({"format": "zarr"}, f)
+    format_info_path = tmp_path / "format_info.json"
+    with open(format_info_path, "w") as f:
+        json.dump({"format": "zarr"}, f)
 
-        # Mock snapshot_download to return our temp directory
-        mock_snapshot.return_value = tmpdir
+    # Mock snapshot_download to return our temp directory
+    mock_snapshot.return_value = str(tmp_path)
 
-        # Test from_pretrained
-        loaded = BaseConcatDataset.from_pretrained("mock-user/mock-dataset")
+    # Test from_pretrained
+    loaded = BaseConcatDataset.from_pretrained("mock-user/mock-dataset")
 
-        assert isinstance(loaded, BaseConcatDataset)
-        assert len(loaded.datasets) > 0
+    assert isinstance(loaded, BaseConcatDataset)
+    assert len(loaded.datasets) > 0
 
 
-@patch("huggingface_hub.snapshot_download")
-def test_from_pretrained_wrong_format(mock_snapshot):
+@patch("braindecode.datasets.hub_mixin.snapshot_download")
+def test_from_pretrained_wrong_format(mock_snapshot, tmp_path):
     """Test from_pretrained with non-zarr format raises error."""
     pytest.importorskip("huggingface_hub")
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create format_info with wrong format
-        format_info_path = Path(tmpdir) / "format_info.json"
-        with open(format_info_path, "w") as f:
-            json.dump({"format": "hdf5"}, f)
+    # Create format_info with wrong format
+    format_info_path = tmp_path / "format_info.json"
+    with open(format_info_path, "w") as f:
+        json.dump({"format": "hdf5"}, f)
 
-        mock_snapshot.return_value = tmpdir
+    mock_snapshot.return_value = str(tmp_path)
 
-        with pytest.raises(RuntimeError, match="only 'zarr' format is supported"):
-            BaseConcatDataset.from_pretrained("mock-user/mock-dataset")
+    with pytest.raises(RuntimeError, match="only 'zarr' format is supported"):
+        BaseConcatDataset.from_pretrained("mock-user/mock-dataset")
 
 
 @patch("huggingface_hub.snapshot_download")
@@ -265,7 +257,9 @@ def test_from_pretrained_not_found(mock_snapshot):
 # =============================================================================
 
 
-def test_hub_integration_preserves_preprocessing_kwargs(setup_concat_windows_dataset):
+def test_hub_integration_preserves_preprocessing_kwargs(
+    setup_concat_windows_dataset, tmp_path
+):
     """Test that preprocessing kwargs are preserved in Hub format."""
     pytest.importorskip("huggingface_hub")
     pytest.importorskip("zarr")
@@ -277,15 +271,14 @@ def test_hub_integration_preserves_preprocessing_kwargs(setup_concat_windows_dat
     # Add some preprocessing kwargs
     dataset.window_kwargs = {"test_param": "test_value"}
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        zarr_path = Path(tmpdir) / "dataset.zarr"
-        convert_to_zarr(dataset, zarr_path)
+    zarr_path = tmp_path / "dataset.zarr"
+    convert_to_zarr(dataset, zarr_path)
 
-        loaded = load_from_zarr(zarr_path)
+    loaded = load_from_zarr(zarr_path)
 
-        # Check that kwargs are preserved
-        assert hasattr(loaded, "window_kwargs")
-        assert loaded.window_kwargs == {"test_param": "test_value"}
+    # Check that kwargs are preserved
+    assert hasattr(loaded, "window_kwargs")
+    assert loaded.window_kwargs == {"test_param": "test_value"}
 
 
 # =============================================================================
@@ -320,19 +313,18 @@ def test_push_to_hub_upload_failure(setup_concat_windows_dataset):
                 dataset.push_to_hub("test-repo")
 
 
-def test_from_pretrained_missing_zarr_directory(tmpdir):
+@patch("braindecode.datasets.hub_mixin.snapshot_download")
+def test_from_pretrained_missing_zarr_directory(mock_snapshot, tmp_path):
     """Test from_pretrained when zarr directory is missing."""
     pytest.importorskip("huggingface_hub")
     pytest.importorskip("zarr")
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create format_info but no zarr directory
-        format_info_path = Path(tmpdir) / "format_info.json"
-        with open(format_info_path, "w") as f:
-            json.dump({"format": "zarr"}, f)
+    # Create format_info but no zarr directory
+    format_info_path = tmp_path / "format_info.json"
+    with open(format_info_path, "w") as f:
+        json.dump({"format": "zarr"}, f)
 
-        with patch("huggingface_hub.snapshot_download") as mock:
-            mock.return_value = tmpdir
+    mock_snapshot.return_value = str(tmp_path)
 
-            with pytest.raises(RuntimeError, match="Zarr dataset not found"):
-                BaseConcatDataset.from_pretrained("test-user/test-dataset")
+    with pytest.raises(RuntimeError, match="Zarr dataset not found"):
+        BaseConcatDataset.from_pretrained("test-user/test-dataset")

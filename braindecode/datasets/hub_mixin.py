@@ -10,21 +10,29 @@ for braindecode datasets, similar to the model Hub integration.
 # License: BSD (3-clause)
 
 import json
+import logging
+import tempfile
 import warnings
 from pathlib import Path
 from typing import Optional, Union
+
+import braindecode
 
 try:
     from huggingface_hub import (
         HfApi,
         create_repo,
         hf_hub_download,
+        snapshot_download,
         upload_folder,
     )
     from huggingface_hub.utils import HfHubHTTPError
+
     HF_HUB_AVAILABLE = True
 except ImportError:
     HF_HUB_AVAILABLE = False
+
+log = logging.getLogger(__name__)
 
 
 class HubDatasetMixin:
@@ -113,7 +121,7 @@ class HubDatasetMixin:
         if not HF_HUB_AVAILABLE:
             raise ImportError(
                 "huggingface-hub is not installed. Install with: "
-                "pip install huggingface-hub"
+                "pip install braindecode[hub]"
             )
 
         # Note: No need to check for empty datasets - PyTorch's ConcatDataset
@@ -121,6 +129,9 @@ class HubDatasetMixin:
 
         # Create API instance
         api = HfApi(token=token)
+
+        # Prevent circular import
+        from ..datautil.hub_formats import convert_to_zarr, get_format_info
 
         # Create repository if it doesn't exist
         try:
@@ -134,16 +145,12 @@ class HubDatasetMixin:
         except Exception as e:
             raise RuntimeError(f"Failed to create repository: {e}")
 
-        # Import converter (lazy import to avoid circular dependency)
-        from ..datautil.hub_formats import convert_to_zarr, get_format_info
-
         # Create a temporary directory for upload
-        import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
 
             # Convert dataset to Zarr format
-            print("Converting dataset to Zarr format...")
+            log.info("Converting dataset to Zarr format...")
             dataset_path = tmp_path / "dataset.zarr"
             convert_to_zarr(
                 self,
@@ -163,6 +170,7 @@ class HubDatasetMixin:
                         "format": "zarr",
                         "compression": compression,
                         "compression_level": compression_level,
+                        "braindecode_version": braindecode.__version__,
                         **get_format_info(self),
                     },
                     f,
@@ -177,7 +185,7 @@ class HubDatasetMixin:
                 )
 
             # Upload folder to Hub
-            print(f"Uploading to Hugging Face Hub ({repo_id})...")
+            log.info(f"Uploading to Hugging Face Hub ({repo_id})...")
             try:
                 url = upload_folder(
                     repo_id=repo_id,
@@ -187,8 +195,8 @@ class HubDatasetMixin:
                     token=token,
                     create_pr=create_pr,
                 )
-                print(f"✅ Dataset uploaded successfully!")
-                print(f"   URL: https://huggingface.co/datasets/{repo_id}")
+                log.info(f"Dataset uploaded successfully to {repo_id}")
+                log.info(f"URL: https://huggingface.co/datasets/{repo_id}")
                 return url
             except Exception as e:
                 raise RuntimeError(f"Failed to upload dataset: {e}")
@@ -201,27 +209,27 @@ class HubDatasetMixin:
         path : Path
             Directory where README.md will be saved.
         """
-        # Lazy import to avoid circular dependency
-        from ..datautil.hub_formats import get_format_info
+        from ..datautil.hub_formats import WindowsDataset, EEGWindowsDataset, get_format_info
 
-        is_windowed = hasattr(self.datasets[0], "windows")
+        # Get info, which also validates uniformity across all datasets
+        format_info = get_format_info(self)
 
-        # Gather dataset information
         n_recordings = len(self.datasets)
-
-        # Get info about first recording
         first_ds = self.datasets[0]
-        if is_windowed:
+
+        # Get dataset-specific info based on type
+        if isinstance(first_ds, WindowsDataset):
             n_channels = len(first_ds.windows.ch_names)
             sfreq = first_ds.windows.info["sfreq"]
-            n_windows = len(first_ds.windows)
-        else:
+            n_windows = format_info["total_samples"]
+            data_type = "Windowed (Epochs)"
+        elif isinstance(first_ds, EEGWindowsDataset):
             n_channels = len(first_ds.raw.ch_names)
             sfreq = first_ds.raw.info["sfreq"]
-            n_windows = "N/A (continuous data)"
-
-        # Get format info
-        format_info = get_format_info(self)
+            n_windows = format_info["total_samples"]
+            data_type = "Windowed (EEG)"
+        else:
+            raise TypeError(f"Unsupported dataset type: {type(first_ds)}")
 
         # Create README content
         readme_content = f"""---
@@ -242,10 +250,10 @@ This dataset was created using [braindecode](https://braindecode.org), a library
 - **Number of recordings**: {n_recordings}
 - **Number of channels**: {n_channels}
 - **Sampling frequency**: {sfreq} Hz
-- **Data type**: {'Windowed (Epochs)' if is_windowed else 'Continuous (Raw)'}
+- **Data type**: {data_type}
 - **Number of windows**: {n_windows}
 - **Total size**: {format_info['total_size_mb']:.2f} MB
-- **Storage format**: {format_info.get('recommended_format', 'zarr')}
+- **Storage format**: zarr
 
 ## Usage
 
@@ -255,13 +263,13 @@ To load this dataset:
 from braindecode.datasets import BaseConcatDataset
 
 # Load dataset from Hugging Face Hub
-dataset = BaseConcatDataset.from_pretrained("{path.name.replace('tmpdir', 'username/dataset-name')}")
+dataset = BaseConcatDataset.from_pretrained("username/dataset-name")
 
 # Access data
-for i in range(len(dataset)):
-    X, y = dataset[i]
-    # X: EEG data array (shape: [n_channels, n_times])
-    # y: label/target
+X, y, metainfo = dataset[0]
+# X: EEG data (n_channels, n_times)
+# y: label/target
+# metainfo: window indices
 ```
 
 ## Using with PyTorch DataLoader
@@ -277,33 +285,16 @@ train_loader = DataLoader(
     num_workers=4
 )
 
-# Iterate over batches
-for X_batch, y_batch in train_loader:
-    # X_batch shape: [batch_size, n_channels, n_times]
-    # y_batch shape: [batch_size]
-    pass
-```
-
-## Citation
-
-If you use this dataset in your research, please cite braindecode:
-
-```bibtex
-@article{{schirrmeister2017deep,
-  title={{Deep learning with convolutional neural networks for EEG decoding and visualization}},
-  author={{Schirrmeister, Robin Tibor and Springenberg, Jost Tobias and Fiederer, Lukas Dominique Josef and Glasstetter, Martin and Eggensperger, Katharina and Tangermann, Michael and Hutter, Frank and Burgard, Wolfram and Ball, Tonio}},
-  journal={{Human brain mapping}},
-  volume={{38}},
-  number={{11}},
-  pages={{5391--5420}},
-  year={{2017}},
-  publisher={{Wiley Online Library}}
-}}
+# Training loop
+for X, y, _ in train_loader:
+    # X shape: [batch_size, n_channels, n_times]
+    # y shape: [batch_size]
+    # Process your batch...
 ```
 
 ## Dataset Format
 
-This dataset is stored in **{format_info.get('recommended_format', 'zarr')}** format, optimized for:
+This dataset is stored in **Zarr** format, optimized for:
 - Fast random access during training (critical for PyTorch DataLoader)
 - Efficient compression with blosc
 - Cloud-native storage compatibility
@@ -371,14 +362,13 @@ For more information about braindecode, visit: https://braindecode.org
         if not HF_HUB_AVAILABLE:
             raise ImportError(
                 "huggingface-hub is not installed. Install with: "
-                "pip install huggingface-hub"
+                "pip install braindecode[hub]"
             )
 
-        print(f"Loading dataset from Hugging Face Hub ({repo_id})...")
+        log.info(f"Loading dataset from Hugging Face Hub ({repo_id})...")
 
-        # Lazy import loader to avoid circular dependency
+        # Prevent circular import
         from ..datautil.hub_formats import load_from_zarr
-        from huggingface_hub import snapshot_download
 
         try:
             # Download the entire dataset directory
@@ -415,9 +405,11 @@ For more information about braindecode, visit: https://braindecode.org
 
             dataset = load_from_zarr(zarr_path, preload=preload)
 
-            print(f"✅ Dataset loaded successfully!")
-            print(f"   Recordings: {len(dataset.datasets)}")
-            print(f"   Total windows/samples: {format_info.get('total_samples', 'N/A')}")
+            log.info(f"Dataset loaded successfully from {repo_id}")
+            log.info(f"Recordings: {len(dataset.datasets)}")
+            log.info(
+                f"Total windows/samples: {format_info.get('total_samples', 'N/A')}"
+            )
 
             return dataset
 

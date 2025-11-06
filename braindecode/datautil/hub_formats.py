@@ -25,9 +25,12 @@ try:
 except ImportError:
     ZARR_AVAILABLE = False
 
-# Use TYPE_CHECKING to avoid circular imports at runtime
+# Import dataset classes for type checking
 if TYPE_CHECKING:
-    from ..datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
+    from ..datasets.base import BaseConcatDataset
+
+# Runtime imports for isinstance checks
+from ..datasets.base import BaseDataset, EEGWindowsDataset, WindowsDataset
 
 
 # =============================================================================
@@ -105,12 +108,28 @@ def convert_to_zarr(
     store = zarr.DirectoryStore(output_path)
     root = zarr.group(store=store, overwrite=overwrite)
 
-    # Determine if we have raw or windowed data
-    is_windowed = hasattr(dataset.datasets[0], "windows")
+    # Determine dataset types - check first dataset for consistency
+    first_ds = dataset.datasets[0]
+
+    # Identify dataset type using isinstance (order matters - check subclasses first)
+    if isinstance(first_ds, WindowsDataset):
+        dataset_type = "WindowsDataset"
+    elif isinstance(first_ds, EEGWindowsDataset):
+        dataset_type = "EEGWindowsDataset"
+    elif isinstance(first_ds, BaseDataset):
+        # BaseDataset represents continuous (non-windowed) raw data
+        raise NotImplementedError(
+            "Saving continuous BaseDataset (non-windowed raw data) to Hub is not yet "
+            "supported. Please create windows from your dataset using "
+            "braindecode.preprocessing.create_windows_from_events() or "
+            "create_fixed_length_windows() before uploading to Hub."
+        )
+    else:
+        raise TypeError(f"Unsupported dataset type: {type(first_ds)}")
 
     # Store global metadata
     root.attrs["n_datasets"] = len(dataset.datasets)
-    root.attrs["is_windowed"] = is_windowed
+    root.attrs["dataset_type"] = dataset_type
     root.attrs["braindecode_version"] = "1.0"
 
     # Save preprocessing kwargs
@@ -134,18 +153,18 @@ def convert_to_zarr(
     for i_ds, ds in enumerate(dataset.datasets):
         grp = root.create_group(f"recording_{i_ds}")
 
-        if is_windowed:
-            _save_windowed_dataset_zarr(grp, ds, compressor)
-        else:
-            _save_raw_dataset_zarr(grp, ds, compressor)
+        if dataset_type == "WindowsDataset":
+            _save_windows_dataset_zarr(grp, ds, compressor)
+        elif dataset_type == "EEGWindowsDataset":
+            _save_eegwindows_dataset_zarr(grp, ds, compressor)
 
     return output_path
 
 
-def _save_windowed_dataset_zarr(
+def _save_windows_dataset_zarr(
     grp: zarr.Group, ds: WindowsDataset, compressor
 ) -> None:
-    """Save a windowed dataset to Zarr group."""
+    """Save a WindowsDataset (with mne.Epochs) to Zarr group."""
     # Get all windows data
     data = ds.windows.get_data()  # Shape: (n_epochs, n_channels, n_times)
 
@@ -174,18 +193,30 @@ def _save_windowed_dataset_zarr(
         grp.attrs["target_name"] = ds.target_name
 
 
-def _save_raw_dataset_zarr(grp: zarr.Group, ds: BaseDataset, compressor) -> None:
-    """Save a raw continuous dataset to Zarr group."""
-    # Get raw data
-    data = ds.raw.get_data()  # Shape: (n_channels, n_times)
+def _save_eegwindows_dataset_zarr(
+    grp: zarr.Group, ds: EEGWindowsDataset, compressor
+) -> None:
+    """Save an EEGWindowsDataset (windowed data with mne.Raw) to Zarr group."""
+    # EEGWindowsDataset has windowed data stored in raw attribute with metadata
+    # We need to extract each window based on crop_inds
+    windows_list = []
+    for i in range(len(ds)):
+        X, y, crop_inds = ds[i]
+        windows_list.append(X)
 
-    # Save data
+    data = np.stack(windows_list, axis=0)  # Shape: (n_windows, n_channels, n_times)
+
+    # Save data with chunking for random access
     grp.create_dataset(
         "data",
         data=data.astype(np.float32),
-        chunks=(data.shape[0], min(10000, data.shape[1])),
+        chunks=(1, data.shape[1], data.shape[2]),
         compressor=compressor,
     )
+
+    # Save metadata
+    metadata_json = ds.metadata.to_json(orient="split", date_format="iso")
+    grp.attrs["metadata"] = metadata_json
 
     # Save description
     description_json = ds.description.to_json(date_format="iso")
@@ -195,9 +226,9 @@ def _save_raw_dataset_zarr(grp: zarr.Group, ds: BaseDataset, compressor) -> None
     info_dict = _mne_info_to_dict(ds.raw.info)
     grp.attrs["info"] = json.dumps(info_dict)
 
-    # Save target name
-    if hasattr(ds, "target_name") and ds.target_name is not None:
-        grp.attrs["target_name"] = ds.target_name
+    # Save targets_from and last_target_only settings
+    grp.attrs["targets_from"] = ds.targets_from
+    grp.attrs["last_target_only"] = ds.last_target_only
 
 
 def load_from_zarr(
@@ -239,7 +270,7 @@ def load_from_zarr(
             "Zarr is not installed. Install with: pip install zarr"
         )
 
-    # Import at runtime to avoid circular dependency
+    # Prevent circular import
     from ..datasets.base import BaseConcatDataset
 
     input_path = Path(input_path)
@@ -252,7 +283,13 @@ def load_from_zarr(
     root = zarr.group(store=store)
 
     n_datasets = root.attrs["n_datasets"]
-    is_windowed = root.attrs["is_windowed"]
+    dataset_type = root.attrs.get("dataset_type", None)
+
+    # For backwards compatibility with old format
+    if dataset_type is None:
+        # Old format used is_windowed attribute
+        is_windowed = root.attrs.get("is_windowed", False)
+        dataset_type = "WindowsDataset" if is_windowed else "BaseDataset"
 
     # Determine which datasets to load
     if ids_to_load is None:
@@ -262,10 +299,12 @@ def load_from_zarr(
     for i_ds in ids_to_load:
         grp = root[f"recording_{i_ds}"]
 
-        if is_windowed:
-            ds = _load_windowed_dataset_zarr(grp, preload)
+        if dataset_type == "WindowsDataset":
+            ds = _load_windows_dataset_zarr(grp, preload)
+        elif dataset_type == "EEGWindowsDataset":
+            ds = _load_eegwindows_dataset_zarr(grp, preload)
         else:
-            ds = _load_raw_dataset_zarr(grp, preload)
+            raise ValueError(f"Unsupported dataset_type: {dataset_type}")
 
         datasets.append(ds)
 
@@ -285,11 +324,9 @@ def load_from_zarr(
     return concat_ds
 
 
-def _load_windowed_dataset_zarr(grp: zarr.Group, preload: bool):
-    """Load a windowed dataset from Zarr group."""
+def _load_windows_dataset_zarr(grp: zarr.Group, preload: bool):
+    """Load a WindowsDataset (with mne.Epochs) from Zarr group."""
     import mne
-    # Import at runtime to avoid circular dependency
-    from ..datasets.base import WindowsDataset
 
     # Load metadata
     metadata = pd.read_json(grp.attrs["metadata"], orient="split")
@@ -331,11 +368,12 @@ def _load_windowed_dataset_zarr(grp: zarr.Group, preload: bool):
     return ds
 
 
-def _load_raw_dataset_zarr(grp: zarr.Group, preload: bool):
-    """Load a raw dataset from Zarr group."""
+def _load_eegwindows_dataset_zarr(grp: zarr.Group, preload: bool):
+    """Load an EEGWindowsDataset (windowed data with mne.Raw) from Zarr group."""
     import mne
-    # Import at runtime to avoid circular dependency
-    from ..datasets.base import BaseDataset
+
+    # Load metadata
+    metadata = pd.read_json(grp.attrs["metadata"], orient="split")
 
     # Load description
     description = pd.read_json(grp.attrs["description"], typ="series")
@@ -355,14 +393,27 @@ def _load_raw_dataset_zarr(grp: zarr.Group, preload: bool):
             UserWarning,
         )
 
-    # Create Raw object
-    raw = mne.io.RawArray(data, info)
+    # EEGWindowsDataset stores windowed data but uses mne.Raw instead of mne.Epochs
+    # We need to reconstruct the data in a format that EEGWindowsDataset expects
+    # Concatenate all windows into a single continuous raw array
+    n_windows, n_channels, n_times_per_window = data.shape
+    continuous_data = data.reshape(n_channels, n_windows * n_times_per_window)
 
-    # Get target name
-    target_name = grp.attrs.get("target_name", None)
+    # Create Raw object
+    raw = mne.io.RawArray(continuous_data, info)
+
+    # Load EEGWindowsDataset-specific attributes
+    targets_from = grp.attrs.get("targets_from", "metadata")
+    last_target_only = grp.attrs.get("last_target_only", True)
 
     # Create dataset
-    ds = BaseDataset(raw, description, target_name=target_name)
+    ds = EEGWindowsDataset(
+        raw=raw,
+        metadata=metadata,
+        description=description,
+        targets_from=targets_from,
+        last_target_only=last_target_only,
+    )
 
     return ds
 
@@ -426,8 +477,11 @@ def _dict_to_mne_info(info_dict: Dict):
     return info
 
 
-def get_format_info(dataset: BaseConcatDataset) -> Dict:
+def get_format_info(dataset: "BaseConcatDataset") -> Dict:
     """Get dataset information for Hub metadata.
+
+    Validates that all datasets in the concat have uniform properties
+    (channels, sampling frequency) and raises an error if not.
 
     Parameters
     ----------
@@ -438,19 +492,80 @@ def get_format_info(dataset: BaseConcatDataset) -> Dict:
     -------
     dict
         Dictionary with dataset statistics and format info.
+
+    Raises
+    ------
+    ValueError
+        If datasets have inconsistent channels or sampling frequencies.
     """
+    if len(dataset.datasets) == 0:
+        raise ValueError("Cannot get format info for empty dataset")
+
+    # Determine dataset type from first dataset
+    first_ds = dataset.datasets[0]
+    if isinstance(first_ds, WindowsDataset):
+        dataset_type = "WindowsDataset"
+        first_ch_names = first_ds.windows.ch_names
+        first_sfreq = first_ds.windows.info["sfreq"]
+    elif isinstance(first_ds, EEGWindowsDataset):
+        dataset_type = "EEGWindowsDataset"
+        first_ch_names = first_ds.raw.ch_names
+        first_sfreq = first_ds.raw.info["sfreq"]
+    else:
+        raise TypeError(f"Unsupported dataset type: {type(first_ds)}")
+
+    # Validate uniformity across all datasets
+    for i, ds in enumerate(dataset.datasets):
+        if dataset_type == "WindowsDataset":
+            if not isinstance(ds, WindowsDataset):
+                raise ValueError(
+                    f"Mixed dataset types in concat: dataset 0 is WindowsDataset "
+                    f"but dataset {i} is {type(ds).__name__}"
+                )
+            if ds.windows.ch_names != first_ch_names:
+                raise ValueError(
+                    f"Inconsistent channel names: dataset 0 has {first_ch_names} "
+                    f"but dataset {i} has {ds.windows.ch_names}"
+                )
+            if ds.windows.info["sfreq"] != first_sfreq:
+                raise ValueError(
+                    f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
+                    f"but dataset {i} has {ds.windows.info['sfreq']} Hz"
+                )
+        elif dataset_type == "EEGWindowsDataset":
+            if not isinstance(ds, EEGWindowsDataset):
+                raise ValueError(
+                    f"Mixed dataset types in concat: dataset 0 is EEGWindowsDataset "
+                    f"but dataset {i} is {type(ds).__name__}"
+                )
+            if ds.raw.ch_names != first_ch_names:
+                raise ValueError(
+                    f"Inconsistent channel names: dataset 0 has {first_ch_names} "
+                    f"but dataset {i} has {ds.raw.ch_names}"
+                )
+            if ds.raw.info["sfreq"] != first_sfreq:
+                raise ValueError(
+                    f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
+                    f"but dataset {i} has {ds.raw.info['sfreq']} Hz"
+                )
+
     # Calculate dataset size
-    is_windowed = hasattr(dataset.datasets[0], "windows")
     total_samples = 0
     total_size_mb = 0
 
     for ds in dataset.datasets:
-        if is_windowed:
+        if dataset_type == "WindowsDataset":
             data = ds.windows.get_data()
-        else:
-            data = ds.raw.get_data()
+            total_samples += data.shape[0]
+        elif dataset_type == "EEGWindowsDataset":
+            # For EEGWindowsDataset, count number of windows from metadata
+            total_samples += len(ds.metadata)
+            # Estimate size by extracting windows
+            for i in range(len(ds)):
+                X, _, _ = ds[i]
+                total_size_mb += X.nbytes / (1024 * 1024)
+            continue  # Skip the size calculation below
 
-        total_samples += data.shape[0] if is_windowed else 1
         total_size_mb += data.nbytes / (1024 * 1024)
 
     n_recordings = len(dataset.datasets)
@@ -459,6 +574,4 @@ def get_format_info(dataset: BaseConcatDataset) -> Dict:
         "n_recordings": n_recordings,
         "total_samples": total_samples,
         "total_size_mb": round(total_size_mb, 2),
-        "is_windowed": is_windowed,
-        "recommended_format": "zarr",
     }

@@ -89,33 +89,6 @@ def test_zarr_round_trip_windows(setup_concat_windows_dataset, tmpdir):
         assert original_ds.windows.metadata.shape == loaded_ds.windows.metadata.shape
 
 
-def test_zarr_round_trip_raw(setup_concat_raw_dataset, tmpdir):
-    """Test Zarr conversion and loading preserves raw data."""
-    pytest.importorskip("zarr")
-
-    dataset = setup_concat_raw_dataset
-    output_path = Path(tmpdir) / "test_dataset_raw.zarr"
-
-    # Convert to Zarr
-    convert_to_zarr(dataset, output_path)
-    assert output_path.exists()
-
-    # Load from Zarr
-    loaded_dataset = load_from_zarr(output_path, preload=True)
-
-    # Verify data integrity
-    assert len(loaded_dataset.datasets) == len(dataset.datasets)
-
-    for i, (original_ds, loaded_ds) in enumerate(
-        zip(dataset.datasets, loaded_dataset.datasets)
-    ):
-        original_data = original_ds.raw.get_data()
-        loaded_data = loaded_ds.raw.get_data()
-
-        assert original_data.shape == loaded_data.shape
-        np.testing.assert_allclose(original_data, loaded_data, rtol=1e-5)
-
-
 def test_zarr_compression(setup_concat_windows_dataset, tmpdir):
     """Test Zarr compression options."""
     pytest.importorskip("zarr")
@@ -236,24 +209,9 @@ def test_get_format_info_windows(setup_concat_windows_dataset):
     assert "n_recordings" in info
     assert "total_samples" in info
     assert "total_size_mb" in info
-    assert "is_windowed" in info
-    assert "recommended_format" in info
 
     assert info["n_recordings"] == len(dataset.datasets)
-    assert info["is_windowed"] is True
-    assert info["recommended_format"] == "zarr"
     assert info["total_size_mb"] > 0
-
-
-def test_get_format_info_raw(setup_concat_raw_dataset):
-    """Test get_format_info returns correct information for raw dataset."""
-    dataset = setup_concat_raw_dataset
-    info = get_format_info(dataset)
-
-    assert info["n_recordings"] == len(dataset.datasets)
-    assert info["is_windowed"] is False
-    assert info["total_size_mb"] > 0
-    assert info["recommended_format"] == "zarr"
 
 
 # =============================================================================
