@@ -98,13 +98,9 @@ class Preprocessor(object):
     def _try_apply(self, raw_or_epochs):
         if callable(self.fn):
             result = self.fn(raw_or_epochs, **self.kwargs)
-            # For standalone functions that return a new object, replace the input
+            # For standalone functions that return a new object, propagate it back
             if result is not None and result is not raw_or_epochs:
-                # Copy the returned object's data back to the original
-                raw_or_epochs._data = result._data
-                raw_or_epochs.info = result.info
-                if hasattr(result, "_times"):
-                    raw_or_epochs._times = result._times
+                return result
             return raw_or_epochs
         else:
             if not hasattr(raw_or_epochs, self.fn):
@@ -260,16 +256,21 @@ def _preprocess(
         if raw_or_epochs.preload and copy_data:
             raw_or_epochs._data = raw_or_epochs._data.copy()
         for preproc in preprocessors:
-            preproc.apply(raw_or_epochs)
+            raw_or_epochs = preproc.apply(raw_or_epochs)
+        return raw_or_epochs
 
     if hasattr(ds, "raw"):
         if isinstance(ds, EEGWindowsDataset):
             warn(
                 f"Applying preprocessors {preprocessors} to the mne.io.Raw of an EEGWindowsDataset."
             )
-        _preprocess_raw_or_epochs(ds.raw, preprocessors)
+        processed = _preprocess_raw_or_epochs(ds.raw, preprocessors)
+        if processed is not ds.raw:
+            ds.raw = processed
     elif hasattr(ds, "windows"):
-        _preprocess_raw_or_epochs(ds.windows, preprocessors)
+        processed = _preprocess_raw_or_epochs(ds.windows, preprocessors)
+        if processed is not ds.windows:
+            ds.windows = processed
     else:
         raise ValueError(
             "Can only preprocess concatenation of RecordDataset, "
