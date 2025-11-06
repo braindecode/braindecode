@@ -99,6 +99,7 @@ models_mandatory_parameters = [
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BENDR", ["n_chans", "n_outputs", "n_times"], None),
+    ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
 ]
 
 ################################################################

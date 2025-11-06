@@ -80,6 +80,7 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     FBMSNet
     IFNet
     Labram
+    MEDFormer
     MSVTNet
     PBT
     SCCNet
