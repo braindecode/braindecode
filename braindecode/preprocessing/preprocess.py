@@ -169,7 +169,8 @@ class Preprocessor(object):
         return cls(fn, apply_on_array=apply_on_array, **kwargs)
 
     def __repr__(self):
-        return f"Preprocessor(fn={self.fn.__repr__()}, apply_on_array={self.apply_on_array}, kwargs={self.kwargs})"
+        cls_name = self.__class__.__name__
+        return f"{cls_name}(fn={self.fn.__repr__()}, apply_on_array={self.apply_on_array}, kwargs={self.kwargs})"
 
     def __eq__(self, other):
         if not isinstance(other, Preprocessor):
