@@ -18,7 +18,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class MEDFormer(EEGModuleMixin, nn.Module):
-    """Medformer from Wang et al. (2024) [Medformer2024]_.
+    r"""Medformer from Wang et al. (2024) [Medformer2024]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Large Brain Model`
 
@@ -42,23 +42,6 @@ class MEDFormer(EEGModuleMixin, nn.Module):
     through cross-channel patching, multi-granularity embeddings, and two-stage attention
     [Medformer2024]_.
 
-    Notes
-    -----
-    - MedFormer outperforms strong baselines across six metrics on five MedTS datasets in a
-      subject-independent evaluation [Medformer2024]_.
-    - Cross-channel patching provides the largest F1 improvement in ablation studies (average
-      +6.10%), highlighting its importance for MedTS tasks [Medformer2024]_.
-    - Setting :attr:`no_inter_attn` to ``True`` disables inter-granularity attention while retaining
-      intra-granularity attention.
-
-    References
-    ----------
-    .. [Medformer2024] Wang, Y., Huang, N., Li, T., Yan, Y., & Zhang, X. (2024).
-       Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
-       In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, & C. Zhang (Eds.),
-       Advances in Neural Information Processing Systems (Vol. 37, pp. 36314-36341).
-       doi:10.52202/079017-1145.
-
     .. rubric:: Architecture Overview
 
     MedFormer integrates three mechanisms to enhance representation learning [Medformer2024]_:
@@ -74,28 +57,64 @@ class MEDFormer(EEGModuleMixin, nn.Module):
     .. rubric:: Macro Components
 
     ``MEDFormer.enc_embedding`` (Embedding Layer)
-        **Operations.** :class:`_ListPatchEmbedding` with multiple
-        :class:`_CrossChannelTokenEmbedding` modules performs parallel feature extraction,
-        augmented by positional embeddings (:class:`_PositionalEmbedding`) and learnable
-        granularity embeddings.
+        **Operations.** :class:`~braindecode.models.medformer._ListPatchEmbedding` implements
+        cross-channel multi-granularity patching. For each patch length :math:`L_i`, the input
+        :math:`\mathbf{x}_{\text{in}} \in \mathbb{R}^{T \times C}` is segmented into
+        :math:`N_i` cross-channel non-overlapping patches
+        :math:`\mathbf{x}_p^{(i)} \in \mathbb{R}^{N_i \times (L_i \cdot C)}`, where
+        :math:`N_i = \lceil T/L_i \rceil`. Each patch is linearly projected via
+        :class:`~braindecode.models.medformer._CrossChannelTokenEmbedding` to obtain
+        :math:`\mathbf{x}_e^{(i)} \in \mathbb{R}^{N_i \times D}`. Data augmentations
+        (masking, jittering) produce augmented embeddings :math:`\tilde{\mathbf{x}}_e^{(i)}`.
+        The final embedding combines augmented patches, fixed positional embeddings
+        (:class:`~braindecode.models.medformer._PositionalEmbedding`), and learnable
+        granularity embeddings :math:`\mathbf{W}_{\text{gr}}^{(i)}`:
 
-        **Role.** Converts raw input :math:`\\mathbf{x}_{\\textrm{in}} \\in \\mathbb{R}^{T \\times C}`
-        into granularity-specific patch embeddings :math:`\\mathbf{x}^{(i)}` enriched with positional
-        and granularity information.
+        .. math::
+            \mathbf{x}^{(i)} = \tilde{\mathbf{x}}_e^{(i)} + \mathbf{W}_{\text{pos}}[1:N_i] + \mathbf{W}_{\text{gr}}^{(i)}
+
+        Additionally, a router token is initialized for each granularity:
+
+        .. math::
+            \mathbf{u}^{(i)} = \mathbf{W}_{\text{pos}}[N_i+1] + \mathbf{W}_{\text{gr}}^{(i)}
+
+        **Role.** Converts raw input into granularity-specific patch embeddings
+        :math:`\{\mathbf{x}^{(1)}, \ldots, \mathbf{x}^{(n)}\}` and router embeddings
+        :math:`\{\mathbf{u}^{(1)}, \ldots, \mathbf{u}^{(n)}\}` for multi-scale processing.
 
     ``MEDFormer.encoder`` (Transformer Encoder Stack)
-        **Operations.** A stack of :class:`_EncoderLayer` modules, each containing a
-        :class:`_MedformerLayer`, implements two-stage self-attention.
+        **Operations.** A stack of :class:`~braindecode.models.medformer._EncoderLayer` modules,
+        each containing a :class:`~braindecode.models.medformer._MedformerLayer` that implements
+        two-stage self-attention. The two-stage mechanism splits self-attention into:
 
-        **Role.** Learns representations and correlations within and across temporal scales.
+        **(a) Intra-Granularity Self-Attention.** For granularity :math:`i`, the patch embedding
+        :math:`\mathbf{x}^{(i)} \in \mathbb{R}^{N_i \times D}` and router embedding
+        :math:`\mathbf{u}^{(i)} \in \mathbb{R}^{1 \times D}` are concatenated:
 
-    ``_MedformerLayer`` (Two-Stage Attention)
-        **Operations.** Applies intra-attention to concatenated patch and router embeddings,
-        followed by inter-attention among all granularity routers :math:`\\mathbf{U}`.
+        .. math::
+            \mathbf{z}^{(i)} = [\mathbf{x}^{(i)} \| \mathbf{u}^{(i)}] \in \mathbb{R}^{(N_i+1) \times D}
 
-        **Role.** Captures scale-specific features and aggregates complementary information while
-        reducing complexity from :math:`O((\\sum N_i)^2)`.
+        Self-attention is applied to update both embeddings:
 
+        .. math::
+            \mathbf{x}^{(i)} &\leftarrow \text{Attn}_{\text{intra}}(\mathbf{x}^{(i)}, \mathbf{z}^{(i)}, \mathbf{z}^{(i)})\\
+            \mathbf{u}^{(i)} &\leftarrow \text{Attn}_{\text{intra}}(\mathbf{u}^{(i)}, \mathbf{z}^{(i)}, \mathbf{z}^{(i)})
+
+        This captures temporal features within each granularity independently.
+
+        **(b) Inter-Granularity Self-Attention.** All router embeddings are concatenated:
+
+        .. math::
+            \mathbf{U} = [\mathbf{u}^{(1)} \| \mathbf{u}^{(2)} \| \cdots \| \mathbf{u}^{(n)}] \in \mathbb{R}^{n \times D}
+
+        Self-attention among routers exchanges information across granularities:
+
+        .. math::
+            \mathbf{u}^{(i)} \leftarrow \text{Attn}_{\text{inter}}(\mathbf{u}^{(i)}, \mathbf{U}, \mathbf{U})
+
+        **Role.** Learns representations and correlations within and across temporal scales while
+        reducing complexity from :math:`O((\sum_i N_i)^2)` to
+        :math:`O(\sum_i N_i^2 + n^2)` through the router mechanism.
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
     - **Temporal:** Multiple patch lengths in :attr:`patch_len_list` capture features at several
@@ -140,6 +159,23 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         If ``True``, returns attention weights for interpretability. The default is ``True``.
     activation_class : nn.Module, optional
         Activation used in the final classification layer. The default is :class:`nn.GELU`.
+
+    Notes
+    -----
+    - MedFormer outperforms strong baselines across six metrics on five MedTS datasets in a
+      subject-independent evaluation [Medformer2024]_.
+    - Cross-channel patching provides the largest F1 improvement in ablation studies (average
+      +6.10%), highlighting its importance for MedTS tasks [Medformer2024]_.
+    - Setting :attr:`no_inter_attn` to ``True`` disables inter-granularity attention while retaining
+      intra-granularity attention.
+
+    References
+    ----------
+    .. [Medformer2024] Wang, Y., Huang, N., Li, T., Yan, Y., & Zhang, X. (2024).
+       Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
+       In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, & C. Zhang (Eds.),
+       Advances in Neural Information Processing Systems (Vol. 37, pp. 36314-36341).
+       doi:10.52202/079017-1145.
     """
 
     def __init__(
