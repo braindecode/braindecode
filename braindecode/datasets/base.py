@@ -28,7 +28,8 @@ from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset
 from typing_extensions import TypeVar
 
-from .hub_mixin import HubDatasetMixin
+from .hub import HubDatasetMixin
+from .registry import register_dataset
 
 
 def _create_description(description) -> pd.Series:
@@ -178,10 +179,12 @@ class RawDataset(RecordDataset):
     "If you want to type a Braindecode dataset (i.e. RawDataset|EEGWindowsDataset|WindowsDataset), "
     "use the RecordDataset class instead."
 )
+@register_dataset
 class BaseDataset(RawDataset):
     pass
 
 
+@register_dataset
 class EEGWindowsDataset(RecordDataset):
     """Returns windows from an mne.Raw object, its window indices, along with a target.
 
@@ -287,6 +290,7 @@ class EEGWindowsDataset(RecordDataset):
         return len(self.crop_inds)
 
 
+@register_dataset
 class WindowsDataset(RecordDataset):
     """Returns windows from an mne.Epochs object along with a target.
 
@@ -403,6 +407,7 @@ class WindowsDataset(RecordDataset):
         self._description = pd.concat([self.description, description])
 
 
+@register_dataset
 class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     """A base class for concatenated datasets.
 

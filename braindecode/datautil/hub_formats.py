@@ -3,6 +3,8 @@ Format converters for Hugging Face Hub integration.
 
 This module provides Zarr format converters to transform EEG datasets for
 efficient storage and fast random access during training on the Hugging Face Hub.
+
+This is a high-level wrapper around hub_formats_core that works with dataset objects.
 """
 
 # Authors: Kuntal Kokate
@@ -12,12 +14,15 @@ efficient storage and fast random access during training on the Hugging Face Hub
 from __future__ import annotations
 
 import json
-import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 import numpy as np
-import pandas as pd
+
+# Import core functions from hub module
+from ..datasets import hub as hub_core
+# Import registry for dynamic class lookup (avoids circular imports)
+from ..datasets.registry import get_dataset_type
 
 try:
     import zarr
@@ -25,12 +30,9 @@ try:
 except ImportError:
     ZARR_AVAILABLE = False
 
-# Import dataset classes for type checking
+# Import dataset classes for type checking only
 if TYPE_CHECKING:
     from ..datasets.base import BaseConcatDataset
-
-# Runtime imports for isinstance checks
-from ..datasets.base import BaseDataset, EEGWindowsDataset, WindowsDataset
 
 
 # =============================================================================
@@ -111,12 +113,10 @@ def convert_to_zarr(
     # Determine dataset types - check first dataset for consistency
     first_ds = dataset.datasets[0]
 
-    # Identify dataset type using isinstance (order matters - check subclasses first)
-    if isinstance(first_ds, WindowsDataset):
-        dataset_type = "WindowsDataset"
-    elif isinstance(first_ds, EEGWindowsDataset):
-        dataset_type = "EEGWindowsDataset"
-    elif isinstance(first_ds, BaseDataset):
+    # Identify dataset type using registry
+    dataset_type = get_dataset_type(first_ds)
+
+    if dataset_type == "BaseDataset":
         # BaseDataset represents continuous (non-windowed) raw data
         raise NotImplementedError(
             "Saving continuous BaseDataset (non-windowed raw data) to Hub is not yet "
@@ -124,8 +124,8 @@ def convert_to_zarr(
             "braindecode.preprocessing.create_windows_from_events() or "
             "create_fixed_length_windows() before uploading to Hub."
         )
-    else:
-        raise TypeError(f"Unsupported dataset type: {type(first_ds)}")
+    elif dataset_type not in ["WindowsDataset", "EEGWindowsDataset"]:
+        raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
     # Store global metadata
     root.attrs["n_datasets"] = len(dataset.datasets)
@@ -140,14 +140,7 @@ def convert_to_zarr(
                 root.attrs[kwarg_name] = json.dumps(kwargs)
 
     # Determine compressor
-    if compression == "blosc":
-        compressor = zarr.Blosc(cname="zstd", clevel=compression_level)
-    elif compression == "zstd":
-        compressor = zarr.Blosc(cname="zstd", clevel=compression_level)
-    elif compression == "gzip":
-        compressor = zarr.Blosc(cname="gzip", clevel=compression_level)
-    else:
-        compressor = None
+    compressor = hub_core._create_compressor(compression, compression_level)
 
     # Save each recording
     for i_ds, ds in enumerate(dataset.datasets):
@@ -165,70 +158,41 @@ def _save_windows_dataset_zarr(
     grp: zarr.Group, ds: WindowsDataset, compressor
 ) -> None:
     """Save a WindowsDataset (with mne.Epochs) to Zarr group."""
-    # Get all windows data
+    # Extract data from dataset
     data = ds.windows.get_data()  # Shape: (n_epochs, n_channels, n_times)
+    metadata = ds.windows.metadata
+    description = ds.description
+    info_dict = hub_core._mne_info_to_dict(ds.windows.info)
+    target_name = ds.target_name if hasattr(ds, "target_name") else None
 
-    # Save data with chunking for random access
-    grp.create_dataset(
-        "data",
-        data=data.astype(np.float32),
-        chunks=(1, data.shape[1], data.shape[2]),
-        compressor=compressor,
+    # Call core function to save
+    hub_core._save_windows_to_zarr(
+        grp, data, metadata, description, info_dict, compressor, target_name
     )
-
-    # Save metadata
-    metadata_json = ds.windows.metadata.to_json(orient="split", date_format="iso")
-    grp.attrs["metadata"] = metadata_json
-
-    # Save description
-    description_json = ds.description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
-
-    # Save MNE info
-    info_dict = _mne_info_to_dict(ds.windows.info)
-    grp.attrs["info"] = json.dumps(info_dict)
-
-    # Save target name
-    if hasattr(ds, "target_name") and ds.target_name is not None:
-        grp.attrs["target_name"] = ds.target_name
 
 
 def _save_eegwindows_dataset_zarr(
     grp: zarr.Group, ds: EEGWindowsDataset, compressor
 ) -> None:
     """Save an EEGWindowsDataset (windowed data with mne.Raw) to Zarr group."""
-    # EEGWindowsDataset has windowed data stored in raw attribute with metadata
-    # We need to extract each window based on crop_inds
+    # Extract windows from dataset
     windows_list = []
     for i in range(len(ds)):
         X, y, crop_inds = ds[i]
         windows_list.append(X)
 
     data = np.stack(windows_list, axis=0)  # Shape: (n_windows, n_channels, n_times)
+    metadata = ds.metadata
+    description = ds.description
+    info_dict = hub_core._mne_info_to_dict(ds.raw.info)
+    targets_from = ds.targets_from
+    last_target_only = ds.last_target_only
 
-    # Save data with chunking for random access
-    grp.create_dataset(
-        "data",
-        data=data.astype(np.float32),
-        chunks=(1, data.shape[1], data.shape[2]),
-        compressor=compressor,
+    # Call core function to save
+    hub_core._save_eegwindows_to_zarr(
+        grp, data, metadata, description, info_dict,
+        targets_from, last_target_only, compressor
     )
-
-    # Save metadata
-    metadata_json = ds.metadata.to_json(orient="split", date_format="iso")
-    grp.attrs["metadata"] = metadata_json
-
-    # Save description
-    description_json = ds.description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
-
-    # Save MNE info
-    info_dict = _mne_info_to_dict(ds.raw.info)
-    grp.attrs["info"] = json.dumps(info_dict)
-
-    # Save targets_from and last_target_only settings
-    grp.attrs["targets_from"] = ds.targets_from
-    grp.attrs["last_target_only"] = ds.last_target_only
 
 
 def load_from_zarr(
@@ -269,9 +233,6 @@ def load_from_zarr(
         raise ImportError(
             "Zarr is not installed. Install with: pip install zarr"
         )
-
-    # Prevent circular import
-    from ..datasets.base import BaseConcatDataset
 
     input_path = Path(input_path)
 
@@ -327,27 +288,15 @@ def load_from_zarr(
 def _load_windows_dataset_zarr(grp: zarr.Group, preload: bool):
     """Load a WindowsDataset (with mne.Epochs) from Zarr group."""
     import mne
+    from ..datasets.registry import get_dataset_class
 
-    # Load metadata
-    metadata = pd.read_json(grp.attrs["metadata"], orient="split")
+    # Load raw data using core function
+    data, metadata, description, info_dict, target_name = hub_core._load_windows_from_zarr(
+        grp, preload
+    )
 
-    # Load description
-    description = pd.read_json(grp.attrs["description"], typ="series")
-
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
-    info = _dict_to_mne_info(info_dict)
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
+    # Convert info dict back to MNE Info
+    info = hub_core._dict_to_mne_info(info_dict)
 
     # Create Epochs object
     events = np.column_stack([
@@ -358,12 +307,13 @@ def _load_windows_dataset_zarr(grp: zarr.Group, preload: bool):
 
     epochs = mne.EpochsArray(data, info, events=events, metadata=metadata)
 
-    # Create dataset
+    # Create dataset using registry
+    WindowsDataset = get_dataset_class("WindowsDataset")
     ds = WindowsDataset(epochs, description)
 
     # Restore target name
-    if "target_name" in grp.attrs:
-        ds.target_name = grp.attrs["target_name"]
+    if target_name is not None:
+        ds.target_name = target_name
 
     return ds
 
@@ -371,30 +321,17 @@ def _load_windows_dataset_zarr(grp: zarr.Group, preload: bool):
 def _load_eegwindows_dataset_zarr(grp: zarr.Group, preload: bool):
     """Load an EEGWindowsDataset (windowed data with mne.Raw) from Zarr group."""
     import mne
+    from ..datasets.registry import get_dataset_class
 
-    # Load metadata
-    metadata = pd.read_json(grp.attrs["metadata"], orient="split")
+    # Load raw data using core function
+    data, metadata, description, info_dict, targets_from, last_target_only = (
+        hub_core._load_eegwindows_from_zarr(grp, preload)
+    )
 
-    # Load description
-    description = pd.read_json(grp.attrs["description"], typ="series")
-
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
-    info = _dict_to_mne_info(info_dict)
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
+    # Convert info dict back to MNE Info
+    info = hub_core._dict_to_mne_info(info_dict)
 
     # EEGWindowsDataset stores windowed data but uses mne.Raw instead of mne.Epochs
-    # We need to reconstruct the data in a format that EEGWindowsDataset expects
     # Concatenate all windows into a single continuous raw array
     n_windows, n_channels, n_times_per_window = data.shape
     continuous_data = data.reshape(n_channels, n_windows * n_times_per_window)
@@ -402,11 +339,8 @@ def _load_eegwindows_dataset_zarr(grp: zarr.Group, preload: bool):
     # Create Raw object
     raw = mne.io.RawArray(continuous_data, info)
 
-    # Load EEGWindowsDataset-specific attributes
-    targets_from = grp.attrs.get("targets_from", "metadata")
-    last_target_only = grp.attrs.get("last_target_only", True)
-
-    # Create dataset
+    # Create dataset using registry
+    EEGWindowsDataset = get_dataset_class("EEGWindowsDataset")
     ds = EEGWindowsDataset(
         raw=raw,
         metadata=metadata,
@@ -421,60 +355,6 @@ def _load_eegwindows_dataset_zarr(grp: zarr.Group, preload: bool):
 # =============================================================================
 # Utility Functions
 # =============================================================================
-
-
-def _mne_info_to_dict(info) -> Dict:
-    """Convert MNE Info object to dictionary for JSON serialization.
-
-    Parameters
-    ----------
-    info : mne.Info
-        MNE Info object.
-
-    Returns
-    -------
-    dict
-        Serializable dictionary with essential info.
-    """
-    return {
-        "ch_names": info["ch_names"],
-        "sfreq": float(info["sfreq"]),
-        "ch_types": [str(ch_type) for ch_type in info.get_channel_types()],
-        "lowpass": float(info["lowpass"]) if info["lowpass"] is not None else None,
-        "highpass": float(info["highpass"]) if info["highpass"] is not None else None,
-    }
-
-
-def _dict_to_mne_info(info_dict: Dict):
-    """Convert dictionary back to MNE Info object.
-
-    Parameters
-    ----------
-    info_dict : dict
-        Dictionary with channel info.
-
-    Returns
-    -------
-    mne.Info
-        MNE Info object.
-    """
-    import mne
-
-    info = mne.create_info(
-        ch_names=info_dict["ch_names"],
-        sfreq=info_dict["sfreq"],
-        ch_types=info_dict["ch_types"],
-    )
-
-    # Use _unlock() context manager to set lowpass/highpass
-    # These cannot be set directly in newer MNE versions
-    with info._unlock():
-        if info_dict.get("lowpass") is not None:
-            info["lowpass"] = info_dict["lowpass"]
-        if info_dict.get("highpass") is not None:
-            info["highpass"] = info_dict["highpass"]
-
-    return info
 
 
 def get_format_info(dataset: "BaseConcatDataset") -> Dict:
@@ -501,27 +381,30 @@ def get_format_info(dataset: "BaseConcatDataset") -> Dict:
     if len(dataset.datasets) == 0:
         raise ValueError("Cannot get format info for empty dataset")
 
-    # Determine dataset type from first dataset
+    # Determine dataset type from first dataset using registry
     first_ds = dataset.datasets[0]
-    if isinstance(first_ds, WindowsDataset):
-        dataset_type = "WindowsDataset"
+    dataset_type = get_dataset_type(first_ds)
+
+    if dataset_type == "WindowsDataset":
         first_ch_names = first_ds.windows.ch_names
         first_sfreq = first_ds.windows.info["sfreq"]
-    elif isinstance(first_ds, EEGWindowsDataset):
-        dataset_type = "EEGWindowsDataset"
+    elif dataset_type == "EEGWindowsDataset":
         first_ch_names = first_ds.raw.ch_names
         first_sfreq = first_ds.raw.info["sfreq"]
     else:
-        raise TypeError(f"Unsupported dataset type: {type(first_ds)}")
+        raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
     # Validate uniformity across all datasets
     for i, ds in enumerate(dataset.datasets):
+        # Check type consistency using registry
+        ds_type = get_dataset_type(ds)
+        if ds_type != dataset_type:
+            raise ValueError(
+                f"Mixed dataset types in concat: dataset 0 is {dataset_type} "
+                f"but dataset {i} is {ds_type}"
+            )
+
         if dataset_type == "WindowsDataset":
-            if not isinstance(ds, WindowsDataset):
-                raise ValueError(
-                    f"Mixed dataset types in concat: dataset 0 is WindowsDataset "
-                    f"but dataset {i} is {type(ds).__name__}"
-                )
             if ds.windows.ch_names != first_ch_names:
                 raise ValueError(
                     f"Inconsistent channel names: dataset 0 has {first_ch_names} "
@@ -533,11 +416,6 @@ def get_format_info(dataset: "BaseConcatDataset") -> Dict:
                     f"but dataset {i} has {ds.windows.info['sfreq']} Hz"
                 )
         elif dataset_type == "EEGWindowsDataset":
-            if not isinstance(ds, EEGWindowsDataset):
-                raise ValueError(
-                    f"Mixed dataset types in concat: dataset 0 is EEGWindowsDataset "
-                    f"but dataset {i} is {type(ds).__name__}"
-                )
             if ds.raw.ch_names != first_ch_names:
                 raise ValueError(
                     f"Inconsistent channel names: dataset 0 has {first_ch_names} "
