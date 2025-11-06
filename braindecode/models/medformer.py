@@ -26,68 +26,122 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         :align: center
         :alt: MEDFormer Architecture.
 
-        a) Workflow. b) For the input sample :math:`{x}_{\textrm{in}}`, the authors apply :math:`n` different patch lengths in parallel to create patched features :math:`{x}_p^{(i)}`, where :math:`i` ranges from 1 to :math:`n`.
-        Each patch length represents a different granularity. These patched features are then linearly transformed into :math:`{x}_e^{(i)}`, which are subsequently augmented into :math:`\\widetilde{x}_e^{(i)}`.
-        c) We obtain the final patch embedding :math:`{x}^{(i)}` by fusing augmented :math:`\\widetilde{{x}}_e^{(i)}` with the positional embedding :math:`{W}_{\text{pos}}` and the granularity embedding :math:`{W}_{\text{gr}}^{(i)}`.
-        Additionally, we design a granularity-specific router :math:`{u}^{(i)}` to capture integrated information for its respective granularity.
-        The authors compute both intra-granularity attention, which concentrates within individual granularities, and inter-granularity attention,
-        which leverages the routers to focus across different granularities, for extensive representation learning.
+        a) Workflow. b) For the input sample :math:`{x}_{\\textrm{in}}`, the authors apply :math:`n`
+        different patch lengths in parallel to create patched features :math:`{x}_p^{(i)}`, where :math:`i`
+        ranges from 1 to :math:`n`. Each patch length represents a different granularity. These patched
+        features are linearly transformed into :math:`{x}_e^{(i)}` and augmented into :math:`\\widetilde{x}_e^{(i)}`.
+        c) The final patch embedding :math:`{x}^{(i)}` fuses augmented :math:`\\widetilde{{x}}_e^{(i)}` with the
+        positional embedding :math:`{W}_{\\text{pos}}` and the granularity embedding :math:`{W}_{\\text{gr}}^{(i)}`.
+        Each granularity employs a router :math:`{u}^{(i)}` to capture aggregated information.
+        Intra-granularity attention focuses within individual granularities, and inter-granularity attention
+        leverages the routers to integrate information across granularities.
 
-    Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
+    Extended Summary
+    ----------------
+    The **MedFormer** is a multi-granularity patching transformer tailored to medical
+    time-series (MedTS) classification, with an emphasis on EEG and ECG signals. It captures
+    local temporal dynamics, inter-channel correlations, and multi-scale temporal structure
+    through cross-channel patching, multi-granularity embeddings, and two-stage attention
+    [Medformer2024]_.
 
-    The Medformer architecture is designed for medical time series classification
-    tasks, particularly for EEG and ECG data. It uses multi-granularity patching
-    to capture features at different temporal scales through cross-channel patching,
-    multi-granularity embedding, and two-stage multi-granularity self-attention.
+    Architecture Overview
+    ---------------------
+    MedFormer integrates three mechanisms to enhance representation learning [Medformer2024]_:
 
-    .. versionadded:: 1.3
+    1. **Cross-channel patching.** Leverages inter-channel correlations by forming patches
+       across multiple channels and timestamps, capturing multi-timestamp and cross-channel
+       patterns.
+    2. **Multi-granularity embedding.** Extracts features at different temporal scales from
+       :attr:`patch_len_list`, emulating frequency-band behavior without hand-crafted filters.
+    3. **Two-stage multi-granularity self-attention.** Learns intra- and inter-granularity
+       correlations to fuse information across temporal scales.
 
-    .. rubric:: Architecture Overview
+    Macro Components
+    ----------------
+    ``MEDFormer.enc_embedding`` (Embedding Layer)
+        **Operations.** :class:`_ListPatchEmbedding` with multiple
+        :class:`_CrossChannelTokenEmbedding` modules performs parallel feature extraction,
+        augmented by positional embeddings (:class:`_PositionalEmbedding`) and learnable
+        granularity embeddings.
 
-    Medformer incorporates three novel mechanisms:
+        **Role.** Converts raw input :math:`\\mathbf{x}_{\\textrm{in}} \\in \\mathbb{R}^{T \\times C}`
+        into granularity-specific patch embeddings :math:`\\mathbf{x}^{(i)}` enriched with positional
+        and granularity information.
 
-    - **Cross-channel patching**: Leverages inter-channel correlations by creating
-      patches that span multiple channels.
-    - **Multi-granularity embedding**: Captures features at different temporal scales
-      using multiple patch lengths.
-    - **Two-stage multi-granularity self-attention**: Learns features and correlations
-      within (intra-granularity) and among (inter-granularity) different temporal scales.
+    ``MEDFormer.encoder`` (Transformer Encoder Stack)
+        **Operations.** A stack of :class:`_EncoderLayer` modules, each containing a
+        :class:`_MedformerLayer`, implements two-stage self-attention.
+
+        **Role.** Learns representations and correlations within and across temporal scales.
+
+    ``_MedformerLayer`` (Two-Stage Attention)
+        **Operations.** Applies intra-attention to concatenated patch and router embeddings,
+        followed by inter-attention among all granularity routers :math:`\\mathbf{U}`.
+
+        **Role.** Captures scale-specific features and aggregates complementary information while
+        reducing complexity from :math:`O((\\sum N_i)^2)`.
+
+    Temporal, Spatial, and Spectral Encoding
+    ----------------------------------------
+    - **Temporal:** Multiple patch lengths in :attr:`patch_len_list` capture features at several
+      temporal granularities, while intra-granularity attention supports long-range temporal
+      dependencies.
+    - **Spatial:** Cross-channel patching embeds inter-channel dependencies by applying kernels
+      that span every input channel.
+    - **Spectral:** Differing patch lengths simulate multiple sampling frequencies analogous to
+      clinically relevant bands (e.g., alpha, beta, gamma).
+
+    Additional Mechanisms
+    ---------------------
+    - **Granularity router:** Each granularity :math:`i` receives a dedicated router token
+      :math:`\\mathbf{u}^{(i)}`. Intra-attention updates the token, and inter-attention exchanges
+      aggregated information across scales.
+    - **Complexity:** Router-mediated two-stage attention maintains :math:`O(T^2)` complexity for
+      suitable patch lengths (e.g., power series), preserving transformer-like efficiency while
+      modeling multiple granularities.
+
+    Notes
+    -----
+    - MedFormer outperforms strong baselines across six metrics on five MedTS datasets in a
+      subject-independent evaluation [Medformer2024]_.
+    - Cross-channel patching provides the largest F1 improvement in ablation studies (average
+      +6.10%), highlighting its importance for MedTS tasks [Medformer2024]_.
+    - Setting :attr:`no_inter_attn` to ``True`` disables inter-granularity attention while retaining
+      intra-granularity attention.
 
     Parameters
     ----------
     patch_len_list : list of int, optional
-        List of patch lengths for multi-granularity patching. Each value specifies
-        a different temporal scale for feature extraction. For example, [2, 8, 16]
-        will create patches of 2, 8, and 16 channels respectively.
-        Default is [2, 8, 16].
+        Patch lengths for multi-granularity patching; each entry selects a temporal scale.
+        The default is ``[14, 44, 45]``.
     d_model : int, optional
-        Dimension of the model embeddings. Default is 128.
+        Embedding dimensionality. The default is ``128``.
     num_heads : int, optional
-        Number of attention heads. Must divide d_model evenly. Default is 8.
+        Number of attention heads, which must divide :attr:`d_model`. The default is ``8``.
     drop_prob : float, optional
-        Dropout probability. Default is 0.1.
+        Dropout probability. The default is ``0.1``.
     no_inter_attn : bool, optional
-        If True, disables inter-granularity attention. Default is False.
+        If ``True``, disables inter-granularity attention. The default is ``False``.
     n_layers : int, optional
-        Number of encoder layers. Default is 6.
+        Number of encoder layers. The default is ``6``.
     dim_feedforward : int, optional
-        Dimension of the feedforward network. Default is 256.
-    activation : nn.Module, optional
-        Activation function module. Default is nn.ReLU().
+        Feedforward dimensionality. The default is ``256``.
+    activation_trans : nn.Module, optional
+        Activation module used in transformer encoder layers. The default is :class:`nn.ReLU`.
     single_channel : bool, optional
-        If True, treats each channel independently. This increases model capacity
-        but also computational cost. Default is False.
+        If ``True``, processes each channel independently, increasing capacity and cost. The default is ``False``.
     output_attention : bool, optional
-        If True, model can output attention weights (useful for interpretability).
-        Default is True.
+        If ``True``, returns attention weights for interpretability. The default is ``True``.
+    activation_class : nn.Module, optional
+        Activation used in the final classification layer. The default is :class:`nn.GELU`.
 
     References
     ----------
     .. [Medformer2024] Wang, Y., Huang, N., Li, T., Yan, Y., & Zhang, X. (2024).
-        Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
-        In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, & C. Zhang (Eds),
-        Advances in Neural Information Processing Systems (Vol. 37, pp. 36314-36341).
-        doi:10.52202/079017-1145
+       Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification.
+       In A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, & C. Zhang (Eds.),
+       Advances in Neural Information Processing Systems (Vol. 37, pp. 36314-36341).
+       doi:10.52202/079017-1145.
 
     """
 
