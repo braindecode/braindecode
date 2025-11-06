@@ -22,6 +22,7 @@ import inspect
 import os
 import os.path as op
 import sys
+import warnings
 
 import matplotlib
 
@@ -36,10 +37,16 @@ from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey
 # Merge MNE-Python references during build
 try:
     from download_mne_references import update_references
+except ImportError:
+    update_references = None
 
-    update_references()
-except Exception:
-    pass  # Silently continue if download fails
+if update_references is not None:
+    try:
+        update_references()
+    except Exception as e:
+        # Don't fail the build if updating references fails; emit a warning
+
+        warnings.warn(f"MNE references update failed: {e}")
 
 # -- General configuration ------------------------------------------------
 
