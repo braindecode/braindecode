@@ -19,7 +19,7 @@ from braindecode.preprocessing import Preprocessor, preprocess
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1])
 
 ###############################################################################
 # The dataset has a pandas DataFrame with additional description of its internal datasets

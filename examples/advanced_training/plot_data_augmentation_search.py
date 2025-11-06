@@ -53,7 +53,7 @@ from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 ######################################################################
 # Preprocessing
