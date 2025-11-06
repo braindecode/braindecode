@@ -1,4 +1,3 @@
-
 """.. _fixed-length-windows:
 
 Fixed-Length Windows Extraction
@@ -12,7 +11,7 @@ Fixed-Length Windows Extraction
 
 ######################################################################
 # Introduction to Fixed-Length Windows Function
-# -------------------------------------
+# ----------------------------------------------
 #
 # In many EEG decoding tasks, such as self-supervised pre-training,
 # it is useful to split long continuous recordings
@@ -110,13 +109,16 @@ Fixed-Length Windows Extraction
 # **verbose** : bool | str | int | None
 #     - Control verbosity of the logging output when calling mne.Epochs.
 
-
 ######################################################################
 # Example 1: Basic 2-Second, 50% Overlapping Windows
-# -------------
+# --------------------------------------------------
 #
+from numpy import multiply
+
 from braindecode.datasets import MOABBDataset
 from braindecode.preprocessing import (
+    Filter,
+    Pick,
     Preprocessor,
     create_fixed_length_windows,
     preprocess,
@@ -130,9 +132,9 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 ######################################################################
 # Preprocessing
 preprocessors = [
-    Preprocessor("pick_types", eeg=True, meg=False, stim=False),
+    Pick(eeg=True, meg=False, stim=False),
     Preprocessor(lambda data: multiply(data, 1e6)),
-    Preprocessor("filter", l_freq=4.0, h_freq=38.0),
+    Filter(l_freq=4.0, h_freq=38.0),
 ]
 preprocess(dataset, preprocessors)
 
@@ -166,18 +168,12 @@ windows_dataset = create_fixed_length_windows(
 # Let's inspect the output to better understand what we created.
 
 # Check how many windows were created
-print(
-    f"Number of windows: {len(windows_dataset)}"
-)
+print(f"Number of windows: {len(windows_dataset)}")
 
 # Each window contains EEG data of fixed size
 X, y = windows_dataset[0]
-print(
-    f"Window data shape: {X.shape}"
-)
-print(
-    f"Window label: {y}"
-)
+print(f"Window data shape: {X.shape}")
+print(f"Window label: {y}")
 
 ######################################################################
 # Working with Targets
@@ -209,12 +205,8 @@ windows_dataset = create_fixed_length_windows(
 )
 
 # View first few targets
-print(
-    "Targets for first 10 windows:"
-)
-print(
-    windows_dataset.datasets[0].windows.get_metadata()['target'][:10]
-)
+print("Targets for first 10 windows:")
+print(windows_dataset.datasets[0].windows.get_metadata()["target"][:10])
 
 
 ######################################################################
@@ -230,12 +222,10 @@ windows_with_rejection = create_fixed_length_windows(
     window_size_samples=200,
     window_stride_samples=100,
     reject=reject_criteria,
-    drop_last_window=True
+    drop_last_window=True,
 )
 
-print(
-    windows_with_rejection
-)
+print(windows_with_rejection)
 
 ######################################################################
 # Example: Using lazy metadata generation
@@ -248,15 +238,13 @@ lazy_windows = create_fixed_length_windows(
     window_size_samples=200,
     window_stride_samples=100,
     drop_last_window=True,
-    lazy_metadata=True
+    lazy_metadata=True,
 )
 
-print(
-    lazy_windows
-)
+print(lazy_windows)
 
 ######################################################################
-#Example: Shifted Windows
+# Example: Shifted Windows
 # ---------------------------------------
 #
 # You can also create shifted windows by using ``start_offset_samples`` or ``stop_offset_samples``.
@@ -274,6 +262,4 @@ shifted_windows_dataset = create_fixed_length_windows(
     preload=True,
 )
 
-print(
-    f"Number of shifted windows: {len(shifted_windows_dataset)}"
-)
+print(f"Number of shifted windows: {len(shifted_windows_dataset)}")
