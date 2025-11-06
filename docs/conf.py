@@ -33,6 +33,14 @@ import sphinx_gallery  # noqa
 from numpydoc import docscrape, numpydoc  # noqa
 from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey
 
+# Merge MNE-Python references during build
+try:
+    from download_mne_references import update_references
+
+    update_references()
+except Exception:
+    pass  # Silently continue if download fails
+
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.

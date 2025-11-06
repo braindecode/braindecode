@@ -21,7 +21,6 @@ used with :func:`~braindecode.preprocessing.preprocess`.
 - :class:`~braindecode.preprocessing.NotchFilter` : Remove specific frequencies (e.g., 50/60 Hz power line noise)
 - :class:`~braindecode.preprocessing.SavgolFilter` : Apply Savitzky-Golay polynomial filter
 - :class:`~braindecode.preprocessing.ApplyHilbert` : Compute analytic signal or envelope
-- :class:`~braindecode.preprocessing.ApplyFunction` : Apply custom function to data
 - :class:`~braindecode.preprocessing.Rescale` : Rescale channel amplitudes
 - :class:`~braindecode.preprocessing.OversampledTemporalProjection` : Apply oversampled temporal projection
 

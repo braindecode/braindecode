@@ -17,10 +17,9 @@ import mne
 from braindecode.datasets import MOABBDataset
 from braindecode.preprocessing import (
     Anonymize,
+    ApplyHilbert,
     Crop,
     Filter,
-    InterpolateBads,
-    NotchFilter,
     Pick,
     Resample,
     SetEEGReference,
@@ -50,11 +49,10 @@ print(f"After resampling: {dataset.datasets[0].raw.info['sfreq']} Hz")
 
 # 2. Remove power line noise and apply bandpass filter
 preprocessors_filtering = [
-    NotchFilter(freqs=[50]),  # Remove 50 Hz power line noise
     Filter(l_freq=4, h_freq=30),  # Bandpass filter 4-30 Hz
 ]
 preprocess(dataset, preprocessors_filtering)
-print("Applied notch filter at 50 Hz and bandpass filter 4-30 Hz")
+print("Applied bandpass filter 4-30 Hz")
 
 ###############################################################################
 # Channel Management
@@ -101,23 +99,12 @@ print(
     f"Set montage, number of positions: {len(dataset.datasets[0].raw.get_montage().get_positions()['ch_pos'])}"
 )
 
-# 7. Interpolate bad channels (if any were marked)
-# First, let's mark a channel as bad for demonstration
-dataset.datasets[0].raw.info["bads"] = ["Fz"]
-print(f"Marked bad channels: {dataset.datasets[0].raw.info['bads']}")
-
-preprocessors_interpolate = [
-    InterpolateBads(reset_bads=True),
-]
-preprocess(dataset, preprocessors_interpolate)
-print(f"Bad channels after interpolation: {dataset.datasets[0].raw.info['bads']}")
-
 ###############################################################################
 # Data Transformation
 # -------------------
 # Apply transformations to the data
 
-# 8. Crop data to specific time range
+# 7. Crop data to specific time range
 preprocessors_crop = [
     Crop(tmin=0, tmax=60),  # Keep only first 60 seconds
 ]
@@ -130,7 +117,7 @@ print(f"Data duration after crop: {dataset.datasets[0].raw.times[-1]:.1f} s")
 # -------------------------
 # Modify metadata and configuration
 
-# 9. Anonymize measurement information
+# 8. Anonymize measurement information
 preprocessors_anonymize = [
     Anonymize(),
 ]
@@ -142,13 +129,13 @@ print("Anonymized measurement information")
 # ------------------------------
 # Extract signal envelope using Hilbert transform
 
-# 10. Compute envelope (useful for some analyses)
+# 9. Compute envelope (useful for some analyses)
 # Note: This modifies the data, so use carefully
-# preprocessors_envelope = [
-#     ApplyHilbert(envelope=True),
-# ]
-# preprocess(dataset, preprocessors_envelope)
-# print("Computed signal envelope")
+preprocessors_envelope = [
+    ApplyHilbert(envelope=True),
+]
+preprocess(dataset, preprocessors_envelope)
+print("Computed signal envelope")
 
 ###############################################################################
 # Combining Multiple Preprocessing Steps
@@ -166,23 +153,19 @@ dataset_complete = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 montage = mne.channels.make_standard_montage("standard_1020")
 
 complete_pipeline = [
-    # 1. Set montage (must come before interpolation)
+    # 1. Set montage
     SetMontage(montage=montage, match_case=False, on_missing="ignore"),
-    # 2. Interpolate any bad channels
-    InterpolateBads(reset_bads=True),
-    # 3. Set reference
+    # 2. Set reference
     SetEEGReference(ref_channels="average"),
-    # 4. Remove power line noise
-    NotchFilter(freqs=[50]),
-    # 5. Bandpass filter
+    # 3. Bandpass filter
     Filter(l_freq=4, h_freq=30),
-    # 6. Downsample
+    # 4. Downsample
     Resample(sfreq=100),
-    # 7. Select only EEG channels
+    # 5. Select only EEG channels
     Pick(picks="eeg"),
-    # 8. Crop to region of interest
+    # 6. Crop to region of interest
     Crop(tmin=0, tmax=60),
-    # 9. Anonymize
+    # 7. Anonymize
     Anonymize(),
 ]
 
