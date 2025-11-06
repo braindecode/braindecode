@@ -69,9 +69,9 @@ class MEDFormer(EEGModuleMixin, nn.Module):
     no_inter_attn : bool, optional
         If True, disables inter-granularity attention. Default is False.
     e_layers : int, optional
-        Number of encoder layers. Default is 2.
+        Number of encoder layers. Default is 6.
     d_ff : int, optional
-        Dimension of the feedforward network. Default is 512.
+        Dimension of the feedforward network. Default is 256.
     activation : nn.Module, optional
         Activation function module. Default is nn.ReLU().
     single_channel : bool, optional
@@ -106,8 +106,8 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         n_heads: int = 8,
         drop_prob: float = 0.1,
         no_inter_attn: bool = False,
-        e_layers: int = 2,
-        d_ff: int = 512,
+        e_layers: int = 6,
+        d_ff: int = 256,
         activation_trans: Optional[nn.Module] = nn.ReLU,
         single_channel: bool = False,
         output_attention: bool = True,
