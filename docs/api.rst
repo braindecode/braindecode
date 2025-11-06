@@ -379,6 +379,23 @@ Core Functions
     exponential_moving_standardize
     filterbank
 
+EEGPrep Pipeline
+''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGPrep
+    ReinterpolateRemovedChannels
+    RemoveBadChannels
+    RemoveBadChannelsNoLocs
+    RemoveBadWindows
+    RemoveBursts
+    RemoveCommonAverageReference
+    RemoveDCOffset
+    RemoveDrifts
+    RemoveFlatChannels
+
 Signal Processing
 '''''''''''''''''
 
@@ -478,22 +495,7 @@ Metadata & Configuration
     FixMagCoilTypes
     ApplyGradientCompensation
 
-EEGPrep Pipeline
-''''''''''''''''
 
-.. autosummary::
-   :toctree: generated/
-
-    EEGPrep
-    ReinterpolateRemovedChannels
-    RemoveBadChannels
-    RemoveBadChannelsNoLocs
-    RemoveBadWindows
-    RemoveBursts
-    RemoveCommonAverageReference
-    RemoveDCOffset
-    RemoveDrifts
-    RemoveFlatChannels
 
 
 Data Utils
