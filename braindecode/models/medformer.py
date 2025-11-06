@@ -306,7 +306,13 @@ class MEDFormer(EEGModuleMixin, nn.Module):
 
         if self.single_channel:
             # Reshape back from (batch_size * n_chans, ...) to (batch_size, n_chans, ...)
-            enc_out = torch.reshape(enc_out, (-1, self.n_chans, *enc_out.shape[-2:]))
+            # Explicitly construct the reshape dimensions to be TorchScript compatible
+            batch_size = enc_out.shape[0] // self.n_chans
+            seq_len = enc_out.shape[1]
+            d_model = enc_out.shape[2]
+            enc_out = torch.reshape(
+                enc_out, (batch_size, self.n_chans, seq_len, d_model)
+            )
 
         # Output
         output = self.activation_layer(enc_out)
@@ -394,10 +400,16 @@ class _ListPatchEmbedding(nn.Module):
         super().__init__()
         self.patch_len_list = patch_len_list
         self.stride_list = stride_list
-        self.paddings = [nn.ReplicationPad1d((0, stride)) for stride in stride_list]
+        # Use ModuleList so TorchScript can statically infer module attribute types
+        self.paddings: nn.ModuleList = nn.ModuleList(
+            [nn.ReplicationPad1d((0, stride)) for stride in stride_list]
+        )
         self.single_channel = single_channel
         self.n_chans = n_chans
         self.n_times = n_times
+
+        # Number of different patch/granularity blocks (used to make loops TorchScript-friendly)
+        self.num_patches = len(patch_len_list)
 
         linear_layers = [
             _CrossChannelTokenEmbedding(
@@ -444,11 +456,18 @@ class _ListPatchEmbedding(nn.Module):
             x_new = x_new.squeeze(2).transpose(1, 2)  # (batch_size, patch_num, d_model)
             x_list.append(x_new)
 
-        x = [
-            x + cxt + self.position_embedding(x)
-            for x, cxt in zip(x_list, self.learnable_embeddings)
-        ]  # (batch_size, patch_num_1, d_model), (batch_size, patch_num_2, d_model), ...
-        return x
+        # Combine each patch embedding with its corresponding learnable granularity
+        # embedding and positional embedding. Use an explicit indexed loop so
+        # TorchScript can statically determine lengths instead of iterating over
+        # Python lists/ParameterList via zip.
+        out_list: List[torch.Tensor] = []
+        # Iterate over learnable_embeddings with enumerate (supported by TorchScript)
+        for idx, cxt in enumerate(self.learnable_embeddings):
+            xi = x_list[idx]
+            xi = xi + cxt + self.position_embedding(xi)
+            out_list.append(xi)
+
+        return out_list
 
 
 class _AttentionLayer(nn.Module):
@@ -500,7 +519,12 @@ class _AttentionLayer(nn.Module):
 
 
 class _TriangularCausalMask:
-    def __init__(self, batch_size: int, seq_len: int, device: str = "cpu"):
+    def __init__(
+        self, batch_size: int, seq_len: int, device: Optional[torch.device] = None
+    ):
+        # Normalize device to a torch.device for .to(device)
+        if device is None:
+            device = torch.device("cpu")
         mask_shape = [batch_size, 1, seq_len, seq_len]
         with torch.no_grad():
             self._mask = torch.triu(
@@ -536,23 +560,30 @@ class _FullAttention(nn.Module):
         queries: torch.Tensor,
         keys: torch.Tensor,
         values: torch.Tensor,
-        attn_mask: Optional[_TriangularCausalMask],
+        attn_mask: Optional[torch.Tensor],
         tau: Optional[torch.Tensor] = None,
         delta: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         batch_size, query_len, _, embed_dim = queries.shape
         _, _, _, _ = values.shape
-        scale = self.scale or 1.0 / sqrt(embed_dim)
+        # Avoid using `or` because TorchScript may fail to cast None/float
+        if self.scale is None:
+            scale = 1.0 / sqrt(embed_dim)
+        else:
+            scale = self.scale
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
         if self.mask_flag:
             if attn_mask is None:
-                attn_mask = _TriangularCausalMask(
-                    batch_size, query_len, device=queries.device
-                )
+                # create a triangular causal mask tensor of shape [B,1,L,L]
+                attn_mask = torch.triu(
+                    torch.ones([batch_size, 1, query_len, query_len], dtype=torch.bool),
+                    diagonal=1,
+                ).to(queries.device)
 
-            scores.masked_fill_(attn_mask.mask, -np.inf)
+            # attn_mask is expected to be a boolean tensor with same shape
+            scores.masked_fill_(attn_mask, -np.inf)
 
         attention_weights = self.dropout(
             torch.softmax(scale * scores, dim=-1)
@@ -612,25 +643,34 @@ class _MedformerLayer(nn.Module):
         tau: Optional[torch.Tensor] = None,
         delta: Optional[torch.Tensor] = None,
     ) -> Tuple[List[torch.Tensor], List[Optional[torch.Tensor]]]:
-        attn_mask = attn_mask or ([None] * len(x))
+        # Explicit None check because TorchScript cannot evaluate truthiness of lists
+        if attn_mask is None:
+            # Build a list of None with explicit typing for TorchScript
+            new_mask_list: List[Optional[torch.Tensor]] = []
+            for _ in range(len(x)):
+                new_mask_list.append(None)
+            attn_mask = new_mask_list
         # Intra attention
-        x_intra = []
-        attn_out = []
-        for x_in, layer, mask in zip(x, self.intra_attentions, attn_mask):
+        x_intra: List[torch.Tensor] = []
+        attn_out: List[Optional[torch.Tensor]] = []
+        # Iterate over ModuleList with enumerate (TorchScript supports enumerate over modules)
+        for idx, layer in enumerate(self.intra_attentions):
+            x_in_i = x[idx]
+            mask_i = attn_mask[idx]
             x_out_temp, attn_temp = layer(
-                x_in, x_in, x_in, attn_mask=mask, tau=tau, delta=delta
+                x_in_i, x_in_i, x_in_i, attn_mask=mask_i, tau=tau, delta=delta
             )
             x_intra.append(x_out_temp)  # (B, Li, D)
             attn_out.append(attn_temp)
         if self.inter_attention is not None:
             # Inter attention
-            routers = torch.cat([x[:, -1:] for x in x_intra], dim=1)  # (B, N, D)
+            routers = torch.cat([xi[:, -1:] for xi in x_intra], dim=1)  # (B, N, D)
             x_inter, attn_inter = self.inter_attention(
                 routers, routers, routers, attn_mask=None, tau=tau, delta=delta
             )
             x_out = [
-                torch.cat([x[:, :-1], x_inter[:, i : i + 1]], dim=1)  # (B, Li, D)
-                for i, x in enumerate(x_intra)
+                torch.cat([xi[:, :-1], x_inter[:, i : i + 1]], dim=1)  # (B, Li, D)
+                for i, xi in enumerate(x_intra)
             ]
             attn_out += [attn_inter]
         else:
@@ -697,7 +737,7 @@ class _Encoder(nn.Module):
         delta: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, List[List[Optional[torch.Tensor]]]]:
         # x [[B, L1, D], [B, L2, D], ...]
-        attns = []
+        attns: List[List[Optional[torch.Tensor]]] = []
         for attn_layer in self.attn_layers:
             x, attn = attn_layer(x, attn_mask=attn_mask, tau=tau, delta=delta)
             attns.append(attn)
@@ -709,7 +749,7 @@ class _Encoder(nn.Module):
 
         # concat all the routers
         x = torch.cat(
-            [x[:, -1, :].unsqueeze(1) for x in x], dim=1
+            [xi[:, -1, :].unsqueeze(1) for xi in x], dim=1
         )  # (batch_size, len(patch_len_list), d_model)
 
         if self.norm is not None:
