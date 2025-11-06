@@ -5,12 +5,15 @@
 # License: BSD-3
 
 import base64
+import inspect
 import json
 import re
 from typing import Any
 
 import numpy as np
 from mne.io.base import BaseRaw
+
+from braindecode import preprocessing
 
 __all__ = ["mne_store_metadata", "mne_load_metadata"]
 
@@ -22,6 +25,14 @@ _MARKER_END = "-->"
 
 # Marker key for numpy arrays
 _NP_ARRAY_TAG = "__numpy_array__"
+
+preprocessor_dict = {}
+
+
+def _init_preprocessor_dict():
+    for m in inspect.getmembers(preprocessing, inspect.isclass):
+        if issubclass(m[1], preprocessing.Preprocessor):
+            preprocessor_dict[m[0]] = m[1]
 
 
 def _numpy_decoder(dct):

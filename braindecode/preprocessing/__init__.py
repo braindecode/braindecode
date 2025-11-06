@@ -26,11 +26,16 @@ from .preprocess import (
     filterbank,
     preprocess,
 )
+from .util import _init_preprocessor_dict
 from .windowers import (
     create_fixed_length_windows,
     create_windows_from_events,
     create_windows_from_target_channels,
 )
+
+# Call this last in order to make sure the list is populated with
+# the preprocessors imported in this file.
+_init_preprocessor_dict()
 
 __all__ = [
     "exponential_moving_demean",
