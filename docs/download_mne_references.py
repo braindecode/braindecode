@@ -4,6 +4,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def update_references():
@@ -24,6 +25,10 @@ def update_references():
     MNE_URL = (
         "https://raw.githubusercontent.com/mne-tools/mne-python/main/doc/references.bib"
     )
+
+    parsed_url = urlparse(MNE_URL)
+    if parsed_url.scheme not in {"https", "http"} or not parsed_url.netloc:
+        return False
 
     try:
         # Download MNE references using Request object for better security control
