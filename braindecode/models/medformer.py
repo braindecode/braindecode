@@ -62,15 +62,15 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         Default is [2, 8, 16].
     d_model : int, optional
         Dimension of the model embeddings. Default is 128.
-    n_heads : int, optional
+    num_heads : int, optional
         Number of attention heads. Must divide d_model evenly. Default is 8.
     drop_prob : float, optional
         Dropout probability. Default is 0.1.
     no_inter_attn : bool, optional
         If True, disables inter-granularity attention. Default is False.
-    e_layers : int, optional
+    n_layers : int, optional
         Number of encoder layers. Default is 6.
-    d_ff : int, optional
+    dim_feedforward : int, optional
         Dimension of the feedforward network. Default is 256.
     activation : nn.Module, optional
         Activation function module. Default is nn.ReLU().
@@ -103,11 +103,11 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         # Model parameters
         patch_len_list: Optional[List[int]] = None,
         d_model: int = 128,
-        n_heads: int = 8,
+        num_heads: int = 8,
         drop_prob: float = 0.1,
         no_inter_attn: bool = False,
-        e_layers: int = 6,
-        d_ff: int = 256,
+        n_layers: int = 6,
+        dim_feedforward: int = 256,
         activation_trans: Optional[nn.Module] = nn.ReLU,
         single_channel: bool = False,
         output_attention: bool = True,
@@ -129,11 +129,11 @@ class MEDFormer(EEGModuleMixin, nn.Module):
 
         # Save model parameters as instance variables
         self.d_model = d_model
-        self.n_heads = n_heads
+        self.num_heads = num_heads
         self.drop_prob = drop_prob
         self.no_inter_attn = no_inter_attn
-        self.e_layers = e_layers
-        self.d_ff = d_ff
+        self.n_layers = n_layers
+        self.dim_feedforward = dim_feedforward
         self.activation_trans = activation_trans
         self.output_attention = output_attention
         self.single_channel = single_channel
@@ -171,19 +171,19 @@ class MEDFormer(EEGModuleMixin, nn.Module):
                     attention=_MedformerLayer(
                         num_blocks=len(self.patch_len_list),
                         d_model=self.d_model,
-                        n_heads=self.n_heads,
+                        num_heads=self.num_heads,
                         dropout=self.drop_prob,
                         output_attention=self.output_attention,
                         no_inter=self.no_inter_attn,
                     ),
                     d_model=self.d_model,
-                    d_ff=self.d_ff,
+                    dim_feedforward=self.dim_feedforward,
                     dropout=self.drop_prob,
                     activation=self.activation_trans()
                     if self.activation_trans is not None
                     else nn.ReLU(),
                 )
-                for _ in range(self.e_layers)
+                for _ in range(self.n_layers)
             ],
             norm_layer=torch.nn.LayerNorm(self.d_model),
         )
@@ -369,21 +369,21 @@ class _AttentionLayer(nn.Module):
         self,
         attention: nn.Module,
         d_model: int,
-        n_heads: int,
+        num_heads: int,
         d_keys: Optional[int] = None,
         d_values: Optional[int] = None,
     ):
         super().__init__()
 
-        d_keys = d_keys or (d_model // n_heads)
-        d_values = d_values or (d_model // n_heads)
+        d_keys = d_keys or (d_model // num_heads)
+        d_values = d_values or (d_model // num_heads)
 
         self.inner_attention = attention
-        self.query_projection = nn.Linear(d_model, d_keys * n_heads)
-        self.key_projection = nn.Linear(d_model, d_keys * n_heads)
-        self.value_projection = nn.Linear(d_model, d_values * n_heads)
-        self.out_projection = nn.Linear(d_values * n_heads, d_model)
-        self.n_heads = n_heads
+        self.query_projection = nn.Linear(d_model, d_keys * num_heads)
+        self.key_projection = nn.Linear(d_model, d_keys * num_heads)
+        self.value_projection = nn.Linear(d_model, d_values * num_heads)
+        self.out_projection = nn.Linear(d_values * num_heads, d_model)
+        self.num_heads = num_heads
 
     def forward(
         self,
@@ -396,7 +396,7 @@ class _AttentionLayer(nn.Module):
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         batch_size, query_len, _ = queries.shape
         _, key_len, _ = keys.shape
-        num_heads = self.n_heads
+        num_heads = self.num_heads
 
         queries = self.query_projection(queries).view(
             batch_size, query_len, num_heads, -1
@@ -483,7 +483,7 @@ class _MedformerLayer(nn.Module):
         self,
         num_blocks: int,
         d_model: int,
-        n_heads: int,
+        num_heads: int,
         dropout: float = 0.1,
         output_attention: bool = False,
         no_inter: bool = False,
@@ -499,7 +499,7 @@ class _MedformerLayer(nn.Module):
                         output_attention=output_attention,
                     ),
                     d_model,
-                    n_heads,
+                    num_heads,
                 )
                 for _ in range(num_blocks)
             ]
@@ -515,7 +515,7 @@ class _MedformerLayer(nn.Module):
                     output_attention=output_attention,
                 ),
                 d_model,
-                n_heads,
+                num_heads,
             )
 
     def forward(
@@ -556,15 +556,19 @@ class _EncoderLayer(nn.Module):
         self,
         attention: nn.Module,
         d_model: int,
-        d_ff: Optional[int],
+        dim_feedforward: Optional[int],
         dropout: float,
         activation: Optional[nn.Module] = None,
     ):
         super().__init__()
-        d_ff = d_ff or 4 * d_model
+        dim_feedforward = dim_feedforward or 4 * d_model
         self.attention = attention
-        self.conv1 = nn.Conv1d(in_channels=d_model, out_channels=d_ff, kernel_size=1)
-        self.conv2 = nn.Conv1d(in_channels=d_ff, out_channels=d_model, kernel_size=1)
+        self.conv1 = nn.Conv1d(
+            in_channels=d_model, out_channels=dim_feedforward, kernel_size=1
+        )
+        self.conv2 = nn.Conv1d(
+            in_channels=dim_feedforward, out_channels=d_model, kernel_size=1
+        )
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
