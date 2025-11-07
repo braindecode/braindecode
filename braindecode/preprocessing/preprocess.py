@@ -13,9 +13,9 @@ from __future__ import annotations
 import platform
 import sys
 from collections.abc import Iterable
-from copy import deepcopy
 from functools import cached_property, partial
 from importlib import import_module
+from inspect import signature
 from warnings import warn
 
 if sys.version_info < (3, 9):
@@ -83,6 +83,14 @@ class Preprocessor(object):
         self.apply_on_array = apply_on_array
         self.kwargs = kwargs
 
+    @property
+    def _all_attrs(self):
+        return ["fn", "apply_on_array", "kwargs"]
+
+    @property
+    def _init_attrs(self):
+        return [k for k in self._all_attrs if k in signature(self.__init__).parameters]
+
     @cached_property
     def _function(self):
         kwargs = dict(self.kwargs)
@@ -131,20 +139,18 @@ class Preprocessor(object):
             Dictionary with keys 'fn' and 'kwargs' representing the
             Preprocessor.
         """
-        out = {
-            "apply_on_array": self.apply_on_array,
-            "kwargs": deepcopy(self.kwargs),
-        }
-        if isinstance(self.fn, str):
-            out["fn"] = self.fn
-            out["fn_str"] = True
-        else:
+        out = {k: getattr(self, k) for k in self._init_attrs}
+        if "fn" in out and callable(self.fn):
             out["fn"] = self.fn.__module__ + "." + self.fn.__name__
-            out["fn_str"] = False
+        out["__class_path__"] = (
+            self.__class__.__module__ + "." + self.__class__.__name__
+        )
+        if "kwargs" not in out and self.kwargs:
+            out["kwargs"] = self.kwargs
         return out
 
     @classmethod
-    def deserialize(cls, data: dict):
+    def deserialize(cls_parent, data: dict):
         """Create a Preprocessor from its serializable representation.
 
         Parameters
@@ -157,29 +163,36 @@ class Preprocessor(object):
         Preprocessor
             The deserialized Preprocessor object.
         """
-        fn = data["fn"]
-        fn_str = data["fn_str"]
-        kwargs = data["kwargs"]
-        apply_on_array = data["apply_on_array"]
-        if not fn_str:
+        class_path = data.pop("__class_path__")
+        cls_name = class_path.split(".")[-1]
+        cls_module_name = ".".join(class_path.split(".")[:-1])
+        cls_module = import_module(cls_module_name)
+        cls = getattr(cls_module, cls_name)
+
+        kwargs = data.pop("kwargs") if "kwargs" in data else {}
+
+        fn = data.get("fn", None)
+        if fn is not None and "." in fn:  # callable function
             fn_name = fn.split(".")[-1]
             module_name = ".".join(fn.split(".")[:-1])
             module = import_module(module_name)
-            fn = getattr(module, fn_name)
-        return cls(fn, apply_on_array=apply_on_array, **kwargs)
+            data["fn"] = getattr(module, fn_name)
+
+        return cls(**data, **kwargs)
 
     def __repr__(self):
         cls_name = self.__class__.__name__
-        return f"{cls_name}(fn={self.fn.__repr__()}, apply_on_array={self.apply_on_array}, kwargs={self.kwargs})"
+        args_str = ", ".join(
+            f"{k}={getattr(self, k).__repr__()}" for k in self._init_attrs
+        )
+        return f"{cls_name}({args_str})"
 
     def __eq__(self, other):
         if not isinstance(other, Preprocessor):
             return False
-        return (
-            (self.fn == other.fn)
-            and (self.apply_on_array == other.apply_on_array)
-            and (self.kwargs == other.kwargs)
-        )
+        return all(
+            getattr(self, attr) == getattr(other, attr) for attr in self._all_attrs
+        ) and (self.__class__ == other.__class__)
 
 
 def preprocess(
