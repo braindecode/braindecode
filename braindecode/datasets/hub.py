@@ -45,6 +45,9 @@ try:
 except ImportError:
     pass
 
+import mne
+import pandas as pd
+
 log = logging.getLogger(__name__)
 
 
@@ -66,8 +69,6 @@ def _mne_info_to_dict(info):
 
 def _dict_to_mne_info(info_dict):
     """Convert dictionary back to MNE Info object."""
-    import mne
-
     info = mne.create_info(
         ch_names=info_dict["ch_names"],
         sfreq=info_dict["sfreq"],
@@ -88,8 +89,6 @@ def _dict_to_mne_info(info_dict):
 
 def _save_windows_to_zarr(grp, data, metadata, description, info, compressor, target_name):
     """Save windowed data to Zarr group (low-level function)."""
-    import pandas as pd
-
     # Save data with chunking for random access
     grp.create_dataset(
         "data",
@@ -117,8 +116,6 @@ def _save_windows_to_zarr(grp, data, metadata, description, info, compressor, ta
 
 def _save_eegwindows_to_zarr(grp, raw, metadata, description, info, targets_from, last_target_only, compressor):
     """Save EEG continuous raw data to Zarr group (low-level function)."""
-    import pandas as pd
-
     # Extract continuous data from Raw [n_channels, n_timepoints]
     continuous_data = raw.get_data()
 
@@ -150,8 +147,6 @@ def _save_eegwindows_to_zarr(grp, raw, metadata, description, info, targets_from
 
 def _load_windows_from_zarr(grp, preload):
     """Load windowed data from Zarr group (low-level function)."""
-    import pandas as pd
-
     # Load metadata
     metadata = pd.read_json(grp.attrs["metadata"], orient="split")
 
@@ -180,8 +175,6 @@ def _load_windows_from_zarr(grp, preload):
 
 def _load_eegwindows_from_zarr(grp, preload):
     """Load EEG continuous raw data from Zarr group (low-level function)."""
-    import pandas as pd
-
     # Load metadata
     metadata = pd.read_json(grp.attrs["metadata"], orient="split")
 
@@ -238,8 +231,6 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
 
 def _load_raw_from_zarr(grp, preload):
     """Load RawDataset continuous raw data from Zarr group (low-level function)."""
-    import pandas as pd
-
     # Load description
     description = pd.read_json(grp.attrs["description"], typ="series")
 

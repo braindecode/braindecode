@@ -7,7 +7,7 @@
 import pytest
 from pathlib import Path
 
-from braindecode.datasets import BaseConcatDataset, BNCI2014001
+from braindecode.datasets import BaseConcatDataset, BNCI2014_001
 from braindecode.preprocessing import create_windows_from_events
 
 
@@ -15,11 +15,11 @@ from braindecode.preprocessing import create_windows_from_events
 def setup_concat_windows_dataset():
     """Create a small windowed dataset for testing.
 
-    Uses BNCI2014001 dataset with subject_ids=[1, 2] which downloads
+    Uses BNCI2014_001 dataset with subject_ids=[1, 2] which downloads
     real EEG data for two subjects.
     """
     # Download data for subjects 1 and 2
-    dataset = BNCI2014001(subject_ids=[1, 2])
+    dataset = BNCI2014_001(subject_ids=[1, 2])
 
     # Use first 2 recordings to keep tests fast while testing multiple subjects
     windowed = create_windows_from_events(
@@ -107,7 +107,7 @@ def test_no_lazy_imports_in_hub_module():
 def test_registry_pattern_works():
     """Test that registry pattern allows access to dataset classes without circular imports."""
     from braindecode.datasets.registry import get_dataset_class, get_dataset_type
-    from braindecode.datasets import BNCI2014001
+    from braindecode.datasets import BNCI2014_001
     from braindecode.preprocessing import create_windows_from_events
 
     # Get classes from registry
@@ -121,7 +121,7 @@ def test_registry_pattern_works():
     assert isinstance(BaseConcatDataset, type)
 
     # Test get_dataset_type with actual dataset
-    dataset = BNCI2014001(subject_ids=[1])
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
         concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
@@ -141,7 +141,7 @@ def test_eegwindows_lossless_round_trip(tmp_path):
     import pandas as pd
 
     # Create EEGWindowsDataset with continuous raw (use_mne_epochs=False)
-    dataset = BNCI2014001(subject_ids=[1])
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
         concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
@@ -267,8 +267,8 @@ def test_rawdataset_lossless_round_trip(tmp_path):
     import numpy as np
     import pandas as pd
 
-    # Use BNCI2014001 to get real RawDataset
-    dataset = BNCI2014001(subject_ids=[1])
+    # Use BNCI2014_001 to get real RawDataset
+    dataset = BNCI2014_001(subject_ids=[1])
 
     # Get the first recording (which is a BaseDataset wrapping a RawDataset internally)
     # We need to create a RawDataset from it
@@ -322,8 +322,8 @@ def test_rawdataset_mixed_concat(tmp_path):
     pytest.importorskip("zarr")
     import numpy as np
 
-    # Use BNCI2014001 with 2 subjects
-    dataset = BNCI2014001(subject_ids=[1, 2])
+    # Use BNCI2014_001 with 2 subjects
+    dataset = BNCI2014_001(subject_ids=[1, 2])
 
     # Create RawDatasets from first 2 recordings
     from braindecode.datasets import RawDataset
@@ -442,7 +442,7 @@ def test_mixed_dataset_types_not_supported(tmp_path):
     from braindecode.datasets import RawDataset
 
     # Create a WindowsDataset
-    dataset = BNCI2014001(subject_ids=[1])
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
         concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
@@ -610,7 +610,7 @@ def test_lazy_loading_support(tmp_path):
     import warnings
 
     # Create and save a windowed dataset
-    dataset = BNCI2014001(subject_ids=[1])
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
         concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
@@ -645,7 +645,7 @@ def test_preprocessing_kwargs_preserved(tmp_path):
     pytest.importorskip("zarr")
 
     # Create windowed dataset with specific kwargs
-    dataset = BNCI2014001(subject_ids=[1])
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
         concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,
@@ -681,7 +681,7 @@ def test_zarr_round_trip_parametrized(tmp_path, use_mne_epochs):
     import numpy as np
 
     # Create dataset with parametrized type
-    dataset = BNCI2014001(subject_ids=[1])
+    dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
         concat_ds=BaseConcatDataset([dataset.datasets[0]]),
         trial_start_offset_samples=0,

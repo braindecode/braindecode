@@ -32,6 +32,8 @@ try:
 except ImportError:
     pass
 
+import mne
+
 # Import dataset classes for type checking only
 if TYPE_CHECKING:
     from ..datasets.base import BaseConcatDataset
@@ -305,8 +307,6 @@ def load_from_zarr(
 
 def _load_windows_dataset_zarr(grp: zarr.Group, preload: bool):
     """Load a WindowsDataset (with mne.Epochs) from Zarr group."""
-    import mne
-
     # Load raw data using core function
     data, metadata, description, info_dict, target_name = hub_core._load_windows_from_zarr(
         grp, preload
@@ -337,8 +337,6 @@ def _load_windows_dataset_zarr(grp: zarr.Group, preload: bool):
 
 def _load_eegwindows_dataset_zarr(grp: zarr.Group, preload: bool):
     """Load an EEGWindowsDataset (windowed data with mne.Raw) from Zarr group."""
-    import mne
-
     # Load raw data using core function
     data, metadata, description, info_dict, targets_from, last_target_only = (
         hub_core._load_eegwindows_from_zarr(grp, preload)
@@ -366,8 +364,6 @@ def _load_eegwindows_dataset_zarr(grp: zarr.Group, preload: bool):
 
 def _load_raw_dataset_zarr(grp: zarr.Group, preload: bool):
     """Load a RawDataset (continuous raw data without windows) from Zarr group."""
-    import mne
-
     # Load raw data using core function
     data, description, info_dict, target_name = (
         hub_core._load_raw_from_zarr(grp, preload)
