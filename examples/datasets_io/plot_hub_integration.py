@@ -19,14 +19,14 @@ The Hub integration allows you to:
 - **Collaborate** on dataset curation and preprocessing
 - **Access datasets** from anywhere with automatic caching
 
-We'll use the :class:`braindecode.datasets.BNCI2014001` dataset as an example.
+We'll use the :class:`braindecode.datasets.BNCI2014_001` dataset as an example.
 """
 
 # Authors: Kuntal Kokate
 #
 # License: BSD (3-clause)
 
-from braindecode.datasets import BaseConcatDataset, BNCI2014001
+from braindecode.datasets import BaseConcatDataset, BNCI2014_001
 from braindecode.preprocessing import create_windows_from_events, create_fixed_length_windows
 
 ###############################################################################
@@ -34,9 +34,9 @@ from braindecode.preprocessing import create_windows_from_events, create_fixed_l
 # --------------------------
 # We'll demonstrate all three supported dataset types.
 
-print("Loading BNCI2014001 dataset...")
+print("Loading BNCI2014_001 dataset...")
 # Load only subject 1 for this example
-dataset = BNCI2014001(subject_ids=[1])
+dataset = BNCI2014_001(subject_ids=[1])
 
 print(f"  Number of recordings: {len(dataset.datasets)}")
 print(f"  Channels: {len(dataset.datasets[0].raw.ch_names)}")
@@ -109,7 +109,7 @@ repo_id_windows = "your-username/bnci-windows"  # Change this!
 # print(f"\nUploading WindowsDataset to {repo_id_windows}...")
 # url = windows_dataset.push_to_hub(
 #     repo_id=repo_id_windows,
-#     commit_message="Upload BNCI2014001 WindowsDataset (epoched)",
+#     commit_message="Upload BNCI2014_001 WindowsDataset (epoched)",
 #     private=False,
 # )
 # print(f"✅ Uploaded to {url}!")
@@ -122,7 +122,7 @@ repo_id_eegwindows = "your-username/bnci-eegwindows"  # Change this!
 # print(f"\nUploading EEGWindowsDataset to {repo_id_eegwindows}...")
 # url = eegwindows_dataset.push_to_hub(
 #     repo_id=repo_id_eegwindows,
-#     commit_message="Upload BNCI2014001 EEGWindowsDataset (continuous)",
+#     commit_message="Upload BNCI2014_001 EEGWindowsDataset (continuous)",
 #     private=False,
 # )
 # print(f"✅ Uploaded to {url}!")
@@ -135,7 +135,7 @@ repo_id_raw = "your-username/bnci-raw"  # Change this!
 # print(f"\nUploading RawDataset to {repo_id_raw}...")
 # url = raw_dataset.push_to_hub(
 #     repo_id=repo_id_raw,
-#     commit_message="Upload BNCI2014001 RawDataset",
+#     commit_message="Upload BNCI2014_001 RawDataset",
 #     private=False,
 # )
 # print(f"✅ Uploaded to {url}!")
