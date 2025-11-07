@@ -20,6 +20,7 @@ from .eegminer import EEGMiner
 from .eegnet import EEGNet, EEGNetv4
 from .eegnex import EEGNeX
 from .eegsimpleconv import EEGSimpleConv
+from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
@@ -27,6 +28,7 @@ from .fbmsnet import FBMSNet
 from .hybrid import HybridNet
 from .ifnet import IFNet
 from .labram import Labram
+from .medformer import MEDFormer
 from .msvtnet import MSVTNet
 from .patchedtransformer import PBT
 from .sccnet import SCCNet
@@ -72,6 +74,7 @@ __all__ = [
     "EEGNet",
     "EEGNetv4",
     "EEGNeX",
+    "EEGSym",
     "EEGSimpleConv",
     "EEGTCNet",
     "FBCNet",
@@ -80,6 +83,7 @@ __all__ = [
     "HybridNet",
     "IFNet",
     "Labram",
+    "MEDFormer",
     "MSVTNet",
     "PBT",
     "SCCNet",

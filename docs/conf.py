@@ -22,6 +22,7 @@ import inspect
 import os
 import os.path as op
 import sys
+import warnings
 
 import matplotlib
 
@@ -32,6 +33,32 @@ from datetime import datetime, timezone
 import sphinx_gallery  # noqa
 from numpydoc import docscrape, numpydoc  # noqa
 from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey
+
+# Merge MNE-Python references during build
+try:
+    import logging
+    import sys
+    from pathlib import Path
+
+    # Add current directory to path so we can import download_mne_references
+    docs_dir = Path(__file__).parent.absolute()
+    if str(docs_dir) not in sys.path:
+        sys.path.insert(0, str(docs_dir))
+
+    logger = logging.getLogger(__name__)
+    from download_mne_references import update_references
+
+    logger.info("Attempting to merge MNE-Python references...")
+    result = update_references()
+    if result:
+        logger.info("MNE-Python references merged successfully or skipped gracefully")
+    else:
+        logger.warning("MNE references update returned False")
+except ImportError as e:
+    warnings.warn(f"Could not import download_mne_references module: {e}")
+except Exception as e:
+    # Don't fail the build if updating references fails; emit a warning
+    warnings.warn(f"MNE references update encountered an issue: {e}")
 
 # -- General configuration ------------------------------------------------
 

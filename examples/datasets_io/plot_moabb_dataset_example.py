@@ -15,11 +15,11 @@ with Braindecode.
 # License: BSD (3-clause)
 
 from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing import Preprocessor, preprocess
+from braindecode.preprocessing import preprocess
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1])
 
 ###############################################################################
 # The dataset has a pandas DataFrame with additional description of its internal datasets
@@ -35,11 +35,23 @@ for x, y in dataset:
 
 ##############################################################################
 # We can apply preprocessing transforms that are defined in mne and work
-# in-place, such as resampling, bandpass filtering, or electrode selection.
+# in-place. Braindecode provides dedicated preprocessing classes for common
+# operations, or you can use the generic Preprocessor class.
+
+# Using the new dedicated preprocessing classes (recommended):
+from braindecode.preprocessing import Pick, Resample
+
 preprocessors = [
-    Preprocessor("pick_types", eeg=True, meg=False, stim=True),
-    Preprocessor("resample", sfreq=100),
+    Pick(picks="eeg", exclude=()),  # Keep only EEG channels
+    Resample(sfreq=100),  # Resample to 100 Hz
 ]
+
+# Alternative: using the generic Preprocessor class (legacy approach):
+# preprocessors = [
+#     Preprocessor("pick_types", eeg=True, meg=False, stim=True),
+#     Preprocessor("resample", sfreq=100),
+# ]
+
 print(dataset.datasets[0].raw.info["sfreq"])
 preprocess(dataset, preprocessors)
 print(dataset.datasets[0].raw.info["sfreq"])

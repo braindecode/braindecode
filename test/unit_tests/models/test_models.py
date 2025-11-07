@@ -41,6 +41,7 @@ from braindecode.models import (
     HybridNet,
     IFNet,
     Labram,
+    MEDFormer,
     SCCNet,
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
@@ -2059,3 +2060,70 @@ def test_bendr_dropout_configurations(drop_prob):
             rtol=1e-5,
             atol=1e-7,
         )
+
+
+@pytest.mark.parametrize(
+    "no_inter_attn,single_channel,output_attention",
+    [
+        (False, False, False),
+        (False, False, True),
+        (False, True, False),
+        (False, True, True),
+        (True, False, False),
+        (True, False, True),
+        (True, True, False),
+        (True, True, True),
+    ],
+)
+def test_medformer_boolean_combinations(no_inter_attn, single_channel, output_attention):
+    """
+    Test all combinations of MEDFormer boolean parameters.
+    Ensures all 8 combinations work correctly.
+    """
+    set_random_seeds(0, False)
+
+    model = MEDFormer(
+        n_chans=22,
+        n_outputs=4,
+        n_times=1000,
+        no_inter_attn=no_inter_attn,
+        single_channel=single_channel,
+        output_attention=output_attention,
+    )
+
+    x = torch.randn(2, 22, 1000)
+    y = model(x)
+    assert y.shape == (2, 4)
+
+    # Verify parameters are correctly set
+    assert model.single_channel == single_channel
+    assert model.output_attention == output_attention
+
+    # Check inter_attention based on no_inter_attn
+    first_medformer_layer = model.encoder.attn_layers[0].attention
+    if no_inter_attn:
+        assert first_medformer_layer.inter_attention is None
+    else:
+        assert first_medformer_layer.inter_attention is not None
+
+
+@pytest.mark.parametrize("patch_len_list", [[2, 8, 16], [4, 8], [2, 4, 8, 16]])
+def test_medformer_patch_len_configurations(patch_len_list):
+    """
+    Test MEDFormer with different patch length configurations.
+    """
+    set_random_seeds(0, False)
+
+    model = MEDFormer(
+        n_chans=22,
+        n_outputs=4,
+        n_times=1000,
+        patch_len_list=patch_len_list,
+    )
+
+    x = torch.randn(2, 22, 1000)
+    y = model(x)
+    assert y.shape == (2, 4)
+
+    # Check that the number of patch embeddings matches
+    assert len(model.enc_embedding.value_embeddings) == len(patch_len_list)
