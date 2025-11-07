@@ -23,12 +23,15 @@ import braindecode
 # Import registry for dynamic class lookup (avoids circular imports)
 from .registry import get_dataset_class, get_dataset_type, is_registered_dataset
 
+# Optional dependencies
+ZARR_AVAILABLE = False
 try:
     import zarr
     ZARR_AVAILABLE = True
 except ImportError:
-    ZARR_AVAILABLE = False
+    pass
 
+HF_HUB_AVAILABLE = False
 try:
     from huggingface_hub import (
         HfApi,
@@ -38,10 +41,9 @@ try:
         upload_folder,
     )
     from huggingface_hub.utils import HfHubHTTPError
-
     HF_HUB_AVAILABLE = True
 except ImportError:
-    HF_HUB_AVAILABLE = False
+    pass
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +74,9 @@ def _dict_to_mne_info(info_dict):
         ch_types=info_dict["ch_types"],
     )
 
-    # Use _unlock() context manager to set lowpass/highpass
+    # Use _unlock() to set filter info when reconstructing from saved metadata
+    # This is necessary because MNE protects these fields to prevent users from
+    # setting filter parameters without actually filtering the data
     with info._unlock():
         if info_dict.get("lowpass") is not None:
             info["lowpass"] = info_dict["lowpass"]
@@ -92,6 +96,7 @@ def _save_windows_to_zarr(grp, data, metadata, description, info, compressor, ta
         data=data.astype(np.float32),
         chunks=(1, data.shape[1], data.shape[2]),
         compressor=compressor,
+        dtype=np.float32,
     )
 
     # Save metadata
@@ -110,16 +115,21 @@ def _save_windows_to_zarr(grp, data, metadata, description, info, compressor, ta
         grp.attrs["target_name"] = target_name
 
 
-def _save_eegwindows_to_zarr(grp, data, metadata, description, info, targets_from, last_target_only, compressor):
-    """Save EEG windowed data to Zarr group (low-level function)."""
+def _save_eegwindows_to_zarr(grp, raw, metadata, description, info, targets_from, last_target_only, compressor):
+    """Save EEG continuous raw data to Zarr group (low-level function)."""
     import pandas as pd
 
-    # Save data with chunking for random access
+    # Extract continuous data from Raw [n_channels, n_timepoints]
+    continuous_data = raw.get_data()
+
+    # Save continuous data with chunking optimized for window extraction
+    # Chunk size: all channels, 10000 timepoints for efficient random access
     grp.create_dataset(
         "data",
-        data=data.astype(np.float32),
-        chunks=(1, data.shape[1], data.shape[2]),
+        data=continuous_data.astype(np.float32),
+        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
         compressor=compressor,
+        dtype=np.float32,
     )
 
     # Save metadata
@@ -169,7 +179,7 @@ def _load_windows_from_zarr(grp, preload):
 
 
 def _load_eegwindows_from_zarr(grp, preload):
-    """Load EEG windowed data from Zarr group (low-level function)."""
+    """Load EEG continuous raw data from Zarr group (low-level function)."""
     import pandas as pd
 
     # Load metadata
@@ -197,6 +207,60 @@ def _load_eegwindows_from_zarr(grp, preload):
     last_target_only = grp.attrs.get("last_target_only", True)
 
     return data, metadata, description, info_dict, targets_from, last_target_only
+
+
+def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
+    """Save RawDataset continuous raw data to Zarr group (low-level function)."""
+    # Extract continuous data from Raw [n_channels, n_timepoints]
+    continuous_data = raw.get_data()
+
+    # Save continuous data with chunking optimized for efficient access
+    # Chunk size: all channels, 10000 timepoints for efficient random access
+    grp.create_dataset(
+        "data",
+        data=continuous_data.astype(np.float32),
+        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
+        compressor=compressor,
+        dtype=np.float32,
+    )
+
+    # Save description
+    description_json = description.to_json(date_format="iso")
+    grp.attrs["description"] = description_json
+
+    # Save MNE info
+    grp.attrs["info"] = json.dumps(info)
+
+    # Save target name if provided
+    if target_name is not None:
+        grp.attrs["target_name"] = target_name
+
+
+def _load_raw_from_zarr(grp, preload):
+    """Load RawDataset continuous raw data from Zarr group (low-level function)."""
+    import pandas as pd
+
+    # Load description
+    description = pd.read_json(grp.attrs["description"], typ="series")
+
+    # Load info
+    info_dict = json.loads(grp.attrs["info"])
+
+    # Load data
+    if preload:
+        data = grp["data"][:]
+    else:
+        data = grp["data"][:]
+        warnings.warn(
+            "Lazy loading from Zarr not fully implemented yet. "
+            "Loading all data into memory.",
+            UserWarning,
+        )
+
+    # Load target name
+    target_name = grp.attrs.get("target_name", None)
+
+    return data, description, info_dict, target_name
 
 
 def _create_compressor(compression, compression_level):
@@ -407,6 +471,11 @@ class HubDatasetMixin:
             sfreq = first_ds.raw.info["sfreq"]
             n_windows = format_info["total_samples"]
             data_type = "Windowed (EEG)"
+        elif dataset_type == "RawDataset":
+            n_channels = len(first_ds.raw.ch_names)
+            sfreq = first_ds.raw.info["sfreq"]
+            n_windows = format_info["total_samples"]  # Total timepoints
+            data_type = "Continuous (Raw)"
         else:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
@@ -625,23 +694,96 @@ For more information about braindecode, visit: https://braindecode.org
 
         if dataset_type == "BaseDataset":
             raise NotImplementedError(
-                "Saving continuous BaseDataset (non-windowed raw data) to Hub is not yet "
-                "supported. Please create windows from your dataset using "
+                "Saving BaseDataset to Hub is not yet supported. "
+                "Please create windows from your dataset using "
                 "braindecode.preprocessing.create_windows_from_events() or "
                 "create_fixed_length_windows() before uploading to Hub."
             )
-        elif dataset_type not in ["WindowsDataset", "EEGWindowsDataset"]:
+        elif dataset_type not in ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
+
+        # Get reference channel names and sfreq from first dataset
+        if dataset_type == "WindowsDataset":
+            first_ch_names = first_ds.windows.ch_names
+            first_sfreq = first_ds.windows.info["sfreq"]
+        elif dataset_type == "EEGWindowsDataset":
+            first_ch_names = first_ds.raw.ch_names
+            first_sfreq = first_ds.raw.info["sfreq"]
+        elif dataset_type == "RawDataset":
+            first_ch_names = first_ds.raw.ch_names
+            first_sfreq = first_ds.raw.info["sfreq"]
+
+        # Validate all datasets have uniform properties (type, channels, sfreq)
+        for i, ds in enumerate(self.datasets):
+            # Check dataset type consistency
+            ds_type = get_dataset_type(ds)
+            if ds_type != dataset_type:
+                raise ValueError(
+                    f"Mixed dataset types in concat: dataset 0 is {dataset_type} "
+                    f"but dataset {i} is {ds_type}"
+                )
+
+            # Check channel names consistency
+            if dataset_type == "WindowsDataset":
+                if ds.windows.ch_names != first_ch_names:
+                    raise ValueError(
+                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
+                        f"but dataset {i} has {ds.windows.ch_names}"
+                    )
+                if ds.windows.info["sfreq"] != first_sfreq:
+                    raise ValueError(
+                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
+                        f"but dataset {i} has {ds.windows.info['sfreq']} Hz. "
+                        f"Please resample all datasets to a common frequency before saving. "
+                        f"Example:\n"
+                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
+                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
+                        f"  preprocess(concat_ds, preprocessors)"
+                    )
+            elif dataset_type == "EEGWindowsDataset":
+                if ds.raw.ch_names != first_ch_names:
+                    raise ValueError(
+                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
+                        f"but dataset {i} has {ds.raw.ch_names}"
+                    )
+                if ds.raw.info["sfreq"] != first_sfreq:
+                    raise ValueError(
+                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
+                        f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
+                        f"Please resample all datasets to a common frequency before saving. "
+                        f"Example:\n"
+                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
+                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
+                        f"  preprocess(concat_ds, preprocessors)"
+                    )
+            elif dataset_type == "RawDataset":
+                if ds.raw.ch_names != first_ch_names:
+                    raise ValueError(
+                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
+                        f"but dataset {i} has {ds.raw.ch_names}"
+                    )
+                if ds.raw.info["sfreq"] != first_sfreq:
+                    raise ValueError(
+                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
+                        f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
+                        f"Please resample all datasets to a common frequency before saving. "
+                        f"Example:\n"
+                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
+                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
+                        f"  preprocess(concat_ds, preprocessors)"
+                    )
 
         # Store global metadata
         root.attrs["n_datasets"] = len(self.datasets)
         root.attrs["dataset_type"] = dataset_type
         root.attrs["braindecode_version"] = "1.0"
 
-        # Save preprocessing kwargs
+        # Save preprocessing kwargs (check first dataset, assuming uniform preprocessing)
+        # These are typically set by windowing functions on individual datasets
         for kwarg_name in ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"]:
-            if hasattr(self, kwarg_name):
-                kwargs = getattr(self, kwarg_name)
+            # Check first dataset for these attributes
+            if hasattr(first_ds, kwarg_name):
+                kwargs = getattr(first_ds, kwarg_name)
                 if kwargs:
                     root.attrs[kwarg_name] = json.dumps(kwargs)
 
@@ -666,23 +808,30 @@ For more information about braindecode, visit: https://braindecode.org
                 )
 
             elif dataset_type == "EEGWindowsDataset":
-                # Extract windows from EEGWindowsDataset
-                windows_list = []
-                for i in range(len(ds)):
-                    X, y, crop_inds = ds[i]
-                    windows_list.append(X)
-
-                data = np.stack(windows_list, axis=0)
+                # Get continuous raw data and metadata from EEGWindowsDataset
+                raw = ds.raw
                 metadata = ds.metadata
                 description = ds.description
                 info_dict = _mne_info_to_dict(ds.raw.info)
                 targets_from = ds.targets_from
                 last_target_only = ds.last_target_only
 
-                # Save using inlined function
+                # Save using inlined function (saves continuous raw directly)
                 _save_eegwindows_to_zarr(
-                    grp, data, metadata, description, info_dict,
+                    grp, raw, metadata, description, info_dict,
                     targets_from, last_target_only, compressor
+                )
+
+            elif dataset_type == "RawDataset":
+                # Get continuous raw data from RawDataset
+                raw = ds.raw
+                description = ds.description
+                info_dict = _mne_info_to_dict(ds.raw.info)
+                target_name = ds.target_name if hasattr(ds, "target_name") else None
+
+                # Save using inlined function
+                _save_raw_to_zarr(
+                    grp, raw, description, info_dict, target_name, compressor
                 )
 
     def _get_format_info_inline(self):
@@ -704,6 +853,14 @@ For more information about braindecode, visit: https://braindecode.org
         elif dataset_type == "EEGWindowsDataset":
             first_ch_names = first_ds.raw.ch_names
             first_sfreq = first_ds.raw.info["sfreq"]
+        elif dataset_type == "RawDataset":
+            first_ch_names = first_ds.raw.ch_names
+            first_sfreq = first_ds.raw.info["sfreq"]
+        elif dataset_type == "BaseDataset":
+            raise NotImplementedError(
+                "Hub operations with BaseDataset are not supported. "
+                "Please create windows from your dataset first."
+            )
         else:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
@@ -726,7 +883,12 @@ For more information about braindecode, visit: https://braindecode.org
                 if ds.windows.info["sfreq"] != first_sfreq:
                     raise ValueError(
                         f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                        f"but dataset {i} has {ds.windows.info['sfreq']} Hz"
+                        f"but dataset {i} has {ds.windows.info['sfreq']} Hz. "
+                        f"Please resample all datasets to a common frequency before saving. "
+                        f"Example:\n"
+                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
+                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
+                        f"  preprocess(concat_ds, preprocessors)"
                     )
             elif dataset_type == "EEGWindowsDataset":
                 if ds.raw.ch_names != first_ch_names:
@@ -737,7 +899,28 @@ For more information about braindecode, visit: https://braindecode.org
                 if ds.raw.info["sfreq"] != first_sfreq:
                     raise ValueError(
                         f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                        f"but dataset {i} has {ds.raw.info['sfreq']} Hz"
+                        f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
+                        f"Please resample all datasets to a common frequency before saving. "
+                        f"Example:\n"
+                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
+                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
+                        f"  preprocess(concat_ds, preprocessors)"
+                    )
+            elif dataset_type == "RawDataset":
+                if ds.raw.ch_names != first_ch_names:
+                    raise ValueError(
+                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
+                        f"but dataset {i} has {ds.raw.ch_names}"
+                    )
+                if ds.raw.info["sfreq"] != first_sfreq:
+                    raise ValueError(
+                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
+                        f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
+                        f"Please resample all datasets to a common frequency before saving. "
+                        f"Example:\n"
+                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
+                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
+                        f"  preprocess(concat_ds, preprocessors)"
                     )
 
         # Calculate dataset size
@@ -754,6 +937,12 @@ For more information about braindecode, visit: https://braindecode.org
                 for i in range(len(ds)):
                     X, _, _ = ds[i]
                     total_size_mb += X.nbytes / (1024 * 1024)
+            elif dataset_type == "RawDataset":
+                # RawDataset has continuous raw data without windows
+                # Use number of timepoints as "samples"
+                data = ds.raw.get_data()
+                total_samples += data.shape[1]  # Number of timepoints
+                total_size_mb += data.nbytes / (1024 * 1024)
 
         n_recordings = len(self.datasets)
 
@@ -790,6 +979,7 @@ For more information about braindecode, visit: https://braindecode.org
         # Get dataset classes from registry
         WindowsDataset = get_dataset_class("WindowsDataset")
         EEGWindowsDataset = get_dataset_class("EEGWindowsDataset")
+        RawDataset = get_dataset_class("RawDataset")
         BaseConcatDataset = get_dataset_class("BaseConcatDataset")
 
         datasets = []
@@ -821,10 +1011,9 @@ For more information about braindecode, visit: https://braindecode.org
                 )
 
                 # Convert to MNE objects and create dataset
+                # Data is already in continuous format [n_channels, n_timepoints]
                 info = _dict_to_mne_info(info_dict)
-                n_windows, n_channels, n_times_per_window = data.shape
-                continuous_data = data.reshape(n_channels, n_windows * n_times_per_window)
-                raw = mne.io.RawArray(continuous_data, info)
+                raw = mne.io.RawArray(data, info)
                 ds = EEGWindowsDataset(
                     raw=raw,
                     metadata=metadata,
@@ -832,6 +1021,20 @@ For more information about braindecode, visit: https://braindecode.org
                     targets_from=targets_from,
                     last_target_only=last_target_only,
                 )
+
+            elif dataset_type == "RawDataset":
+                # Load using inlined function
+                data, description, info_dict, target_name = (
+                    _load_raw_from_zarr(grp, preload)
+                )
+
+                # Convert to MNE objects and create dataset
+                # Data is in continuous format [n_channels, n_timepoints]
+                info = _dict_to_mne_info(info_dict)
+                raw = mne.io.RawArray(data, info)
+                ds = RawDataset(raw, description)
+                if target_name is not None:
+                    ds.target_name = target_name
 
             else:
                 raise ValueError(f"Unsupported dataset_type: {dataset_type}")
@@ -841,7 +1044,7 @@ For more information about braindecode, visit: https://braindecode.org
         # Create concat dataset
         concat_ds = BaseConcatDataset(datasets)
 
-        # Restore preprocessing kwargs
+        # Restore preprocessing kwargs (set on individual datasets, not concat)
         for kwarg_name in [
             "raw_preproc_kwargs",
             "window_kwargs",
@@ -849,6 +1052,8 @@ For more information about braindecode, visit: https://braindecode.org
         ]:
             if kwarg_name in root.attrs:
                 kwargs = json.loads(root.attrs[kwarg_name])
-                setattr(concat_ds, kwarg_name, kwargs)
+                # Set on each individual dataset (where they were originally stored)
+                for ds in datasets:
+                    setattr(ds, kwarg_name, kwargs)
 
         return concat_ds

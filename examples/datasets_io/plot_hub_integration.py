@@ -1,92 +1,153 @@
 """.. _hub-integration:
 
-Uploading and downloading datasets from Hugging Face Hub
-=========================================================
+Uploading and downloading datasets to Hugging Face Hub
+=======================================================
 
 This example demonstrates how to upload and download EEG datasets to/from
 the Hugging Face Hub using braindecode.
 
+The Hub integration supports three dataset types:
+
+1. **WindowsDataset** - Epoched data (mne.Epochs-based)
+2. **EEGWindowsDataset** - Continuous raw data with windowing metadata
+3. **RawDataset** - Continuous raw data without windowing
+
 The Hub integration allows you to:
 
-1. **Share datasets** with the community
-2. **Version control** your datasets
-3. **Collaborate** with others on dataset curation
-4. **Access datasets** from anywhere with a simple API
+- **Share datasets** with the research community
+- **Version control** your datasets with git-like versioning
+- **Collaborate** on dataset curation and preprocessing
+- **Access datasets** from anywhere with automatic caching
 
-We'll use the :class:`braindecode.datasets.NMT` dataset as an example.
+We'll use the :class:`braindecode.datasets.BNCI2014001` dataset as an example.
 """
 
 # Authors: Kuntal Kokate
 #
 # License: BSD (3-clause)
 
-from braindecode.datasets import BaseConcatDataset, NMT
-from braindecode.preprocessing import create_fixed_length_windows
+from braindecode.datasets import BaseConcatDataset, BNCI2014001
+from braindecode.preprocessing import create_windows_from_events, create_fixed_length_windows
 
 ###############################################################################
-# Load and prepare a dataset
-# ---------------------------
-# First, we'll load a small subset of the NMT dataset and create windows.
+# Load and prepare datasets
+# --------------------------
+# We'll demonstrate all three supported dataset types.
 
-print("Loading NMT dataset...")
-# Load only 2 subjects for this example
-dataset = NMT(recording_ids=[0, 1], preload=True)
+print("Loading BNCI2014001 dataset...")
+# Load only subject 1 for this example
+dataset = BNCI2014001(subject_ids=[1])
 
 print(f"  Number of recordings: {len(dataset.datasets)}")
 print(f"  Channels: {len(dataset.datasets[0].raw.ch_names)}")
 print(f"  Sampling frequency: {dataset.datasets[0].raw.info['sfreq']} Hz")
 
-# Create fixed-length windows
-sfreq = dataset.datasets[0].raw.info["sfreq"]
-windows_dataset = create_fixed_length_windows(
-    dataset,
-    start_offset_samples=0,
-    stop_offset_samples=None,
-    window_size_samples=int(4 * sfreq),  # 4-second windows
-    window_stride_samples=int(2 * sfreq),  # 2-second stride
-    drop_last_window=True,
-    preload=True,
+###############################################################################
+# Example 1: WindowsDataset (Epoched data)
+# -----------------------------------------
+# Create epoched data using mne.Epochs (use_mne_epochs=True)
+
+print("\n1. Creating WindowsDataset (epoched data)...")
+windows_dataset = create_windows_from_events(
+    concat_ds=BaseConcatDataset([dataset.datasets[0]]),
+    trial_start_offset_samples=0,
+    trial_stop_offset_samples=0,
+    use_mne_epochs=True,  # Creates WindowsDataset with mne.Epochs
 )
 
-print(f"\n  Total windows created: {len(windows_dataset)}")
+print(f"   Total windows: {len(windows_dataset)}")
+print(f"   Dataset type: WindowsDataset (epoched)")
 
 ###############################################################################
-# Upload dataset to Hugging Face Hub
-# -----------------------------------
+# Example 2: EEGWindowsDataset (Continuous with windowing)
+# ---------------------------------------------------------
+# Create continuous raw data with windowing metadata (use_mne_epochs=False)
+
+print("\n2. Creating EEGWindowsDataset (continuous with windowing)...")
+eegwindows_dataset = create_windows_from_events(
+    concat_ds=BaseConcatDataset([dataset.datasets[0]]),
+    trial_start_offset_samples=0,
+    trial_stop_offset_samples=0,
+    use_mne_epochs=False,  # Creates EEGWindowsDataset with continuous raw
+)
+
+print(f"   Total windows: {len(eegwindows_dataset)}")
+print(f"   Dataset type: EEGWindowsDataset (continuous)")
+
+###############################################################################
+# Example 3: RawDataset (Continuous without windowing)
+# -----------------------------------------------------
+# Use the original raw data without any windowing
+
+print("\n3. Using RawDataset (continuous without windowing)...")
+raw_dataset = BaseConcatDataset([dataset.datasets[0]])
+
+print(f"   Number of recordings: {len(raw_dataset.datasets)}")
+print(f"   Dataset type: RawDataset (continuous, no windows)")
+
+###############################################################################
+# Upload datasets to Hugging Face Hub
+# ------------------------------------
 # To upload a dataset, you need to:
 #
 # 1. Create a Hugging Face account at https://huggingface.co
 # 2. Login using: ``huggingface-cli login``
-# 3. Choose a repository name (e.g., "username/nmt-sample-dataset")
+# 3. Choose a repository name (e.g., "username/dataset-name")
 #
 # **Note:** This example shows the code but doesn't actually upload.
 # Uncomment the code below to perform an actual upload.
-
-# Set your repository ID
-repo_id = "your-username/nmt-sample-dataset"  # Change this!
 
 print("\n" + "=" * 70)
 print("UPLOADING TO HUGGING FACE HUB")
 print("=" * 70)
 
-# Uncomment the following lines to actually upload:
-# print(f"\nUploading dataset to {repo_id}...")
+# Example 1: Upload WindowsDataset
+# ---------------------------------
+repo_id_windows = "your-username/bnci-windows"  # Change this!
+
+# Uncomment to upload:
+# print(f"\nUploading WindowsDataset to {repo_id_windows}...")
 # url = windows_dataset.push_to_hub(
-#     repo_id=repo_id,
-#     commit_message="Upload NMT sample dataset with 4s windows",
-#     private=False,  # Set to True for private datasets
+#     repo_id=repo_id_windows,
+#     commit_message="Upload BNCI2014001 WindowsDataset (epoched)",
+#     private=False,
 # )
-# print(f"✅ Dataset uploaded successfully!")
-# print(f"   URL: https://huggingface.co/datasets/{repo_id}")
+# print(f"✅ Uploaded to {url}!")
+
+# Example 2: Upload EEGWindowsDataset
+# ------------------------------------
+repo_id_eegwindows = "your-username/bnci-eegwindows"  # Change this!
+
+# Uncomment to upload:
+# print(f"\nUploading EEGWindowsDataset to {repo_id_eegwindows}...")
+# url = eegwindows_dataset.push_to_hub(
+#     repo_id=repo_id_eegwindows,
+#     commit_message="Upload BNCI2014001 EEGWindowsDataset (continuous)",
+#     private=False,
+# )
+# print(f"✅ Uploaded to {url}!")
+
+# Example 3: Upload RawDataset
+# -----------------------------
+repo_id_raw = "your-username/bnci-raw"  # Change this!
+
+# Uncomment to upload:
+# print(f"\nUploading RawDataset to {repo_id_raw}...")
+# url = raw_dataset.push_to_hub(
+#     repo_id=repo_id_raw,
+#     commit_message="Upload BNCI2014001 RawDataset",
+#     private=False,
+# )
+# print(f"✅ Uploaded to {url}!")
 
 print("""
-To upload this dataset, uncomment the code above and:
+To upload datasets, uncomment the code above and:
 1. Replace 'your-username' with your Hugging Face username
 2. Login with: huggingface-cli login
 3. Run this script
 
-The dataset will be converted to Zarr format (optimized for training)
-and uploaded with metadata, making it easy for others to discover and use.
+All datasets are converted to Zarr format (optimized for fast loading)
+and uploaded with auto-generated dataset cards.
 """)
 
 ###############################################################################
@@ -104,25 +165,52 @@ and uploaded with metadata, making it easy for others to discover and use.
 # but can be customized if needed.
 
 ###############################################################################
-# Download dataset from Hugging Face Hub
-# ---------------------------------------
-# Loading a dataset from the Hub is even simpler!
+# Download datasets from Hugging Face Hub
+# ----------------------------------------
+# Loading datasets from the Hub is simple and automatic!
 
 print("\n" + "=" * 70)
 print("DOWNLOADING FROM HUGGING FACE HUB")
 print("=" * 70)
 
-# Example: Loading a public dataset (replace with actual repo)
-# public_repo = "username/nmt-sample-dataset"
+# Example 1: Download WindowsDataset
+# -----------------------------------
+# public_repo_windows = "username/bnci-windows"
 
 # Uncomment to download:
-# print(f"\nDownloading dataset from {public_repo}...")
-# loaded_dataset = BaseConcatDataset.from_pretrained(
-#     public_repo,
+# print(f"\nDownloading WindowsDataset from {public_repo_windows}...")
+# loaded_windows = BaseConcatDataset.from_pretrained(
+#     public_repo_windows,
 #     preload=True,  # Load into memory (False for lazy loading)
 # )
-# print(f"✅ Dataset loaded!")
-# print(f"   Number of windows: {len(loaded_dataset)}")
+# print(f"✅ Loaded WindowsDataset!")
+# print(f"   Number of windows: {len(loaded_windows)}")
+
+# Example 2: Download EEGWindowsDataset
+# --------------------------------------
+# public_repo_eeg = "username/bnci-eegwindows"
+
+# Uncomment to download:
+# print(f"\nDownloading EEGWindowsDataset from {public_repo_eeg}...")
+# loaded_eeg = BaseConcatDataset.from_pretrained(
+#     public_repo_eeg,
+#     preload=True,
+# )
+# print(f"✅ Loaded EEGWindowsDataset!")
+# print(f"   Number of windows: {len(loaded_eeg)}")
+
+# Example 3: Download RawDataset
+# -------------------------------
+# public_repo_raw = "username/bnci-raw"
+
+# Uncomment to download:
+# print(f"\nDownloading RawDataset from {public_repo_raw}...")
+# loaded_raw = BaseConcatDataset.from_pretrained(
+#     public_repo_raw,
+#     preload=True,
+# )
+# print(f"✅ Loaded RawDataset!")
+# print(f"   Number of recordings: {len(loaded_raw.datasets)}")
 
 print("""
 To download a dataset from the Hub:
@@ -130,8 +218,8 @@ To download a dataset from the Hub:
 >>> from braindecode.datasets import BaseConcatDataset
 >>> dataset = BaseConcatDataset.from_pretrained("username/dataset-name")
 
-The dataset will be automatically downloaded and cached locally.
-Subsequent loads will be faster as they use the cached version.
+Datasets are automatically downloaded and cached locally.
+Subsequent loads use the cache for faster access.
 """)
 
 ###############################################################################
@@ -159,9 +247,14 @@ print(f"  Total batches: {len(train_loader)}")
 
 # Iterate over a few batches
 print("\n  Sample batches:")
-for i, (X_batch, y_batch) in enumerate(train_loader):
+for i, batch_data in enumerate(train_loader):
     if i >= 3:  # Show only 3 batches
         break
+    # Handle both 2-tuple (X, y) and 3-tuple (X, y, inds) returns
+    if len(batch_data) == 3:
+        X_batch, y_batch, _ = batch_data
+    else:
+        X_batch, y_batch = batch_data
     print(f"    Batch {i+1}: X shape={tuple(X_batch.shape)}, "
           f"y shape={tuple(y_batch.shape)}")
 
@@ -247,13 +340,19 @@ print("\n" + "=" * 70)
 print("SUMMARY")
 print("=" * 70)
 print("""
-Hugging Face Hub integration makes it easy to:
+Hugging Face Hub integration supports three dataset types:
 
-✓ Share datasets with the community
-✓ Version control your data
+✓ WindowsDataset - Epoched data (mne.Epochs)
+✓ EEGWindowsDataset - Continuous with windowing metadata
+✓ RawDataset - Continuous without windowing
+
+Benefits:
+✓ Share datasets with the research community
+✓ Version control with git-like versioning
 ✓ Collaborate on dataset curation
 ✓ Access datasets from anywhere
-✓ Automatically cache downloads for faster loading
+✓ Automatic caching for faster repeated loads
+✓ Optimized Zarr format for fast training
 
 For more information:
 - Hugging Face Hub: https://huggingface.co

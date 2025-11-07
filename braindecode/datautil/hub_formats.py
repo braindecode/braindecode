@@ -22,13 +22,15 @@ import numpy as np
 # Import core functions from hub module
 from ..datasets import hub as hub_core
 # Import registry for dynamic class lookup (avoids circular imports)
-from ..datasets.registry import get_dataset_type
+from ..datasets.registry import get_dataset_class, get_dataset_type
 
+# Optional dependencies
+ZARR_AVAILABLE = False
 try:
     import zarr
     ZARR_AVAILABLE = True
 except ImportError:
-    ZARR_AVAILABLE = False
+    pass
 
 # Import dataset classes for type checking only
 if TYPE_CHECKING:
@@ -117,14 +119,14 @@ def convert_to_zarr(
     dataset_type = get_dataset_type(first_ds)
 
     if dataset_type == "BaseDataset":
-        # BaseDataset represents continuous (non-windowed) raw data
+        # BaseDataset represents abstract base class
         raise NotImplementedError(
-            "Saving continuous BaseDataset (non-windowed raw data) to Hub is not yet "
-            "supported. Please create windows from your dataset using "
+            "Saving BaseDataset to Hub is not yet supported. "
+            "Please create windows from your dataset using "
             "braindecode.preprocessing.create_windows_from_events() or "
             "create_fixed_length_windows() before uploading to Hub."
         )
-    elif dataset_type not in ["WindowsDataset", "EEGWindowsDataset"]:
+    elif dataset_type not in ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]:
         raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
     # Store global metadata
@@ -150,6 +152,8 @@ def convert_to_zarr(
             _save_windows_dataset_zarr(grp, ds, compressor)
         elif dataset_type == "EEGWindowsDataset":
             _save_eegwindows_dataset_zarr(grp, ds, compressor)
+        elif dataset_type == "RawDataset":
+            _save_raw_dataset_zarr(grp, ds, compressor)
 
     return output_path
 
@@ -174,24 +178,35 @@ def _save_windows_dataset_zarr(
 def _save_eegwindows_dataset_zarr(
     grp: zarr.Group, ds: EEGWindowsDataset, compressor
 ) -> None:
-    """Save an EEGWindowsDataset (windowed data with mne.Raw) to Zarr group."""
-    # Extract windows from dataset
-    windows_list = []
-    for i in range(len(ds)):
-        X, y, crop_inds = ds[i]
-        windows_list.append(X)
-
-    data = np.stack(windows_list, axis=0)  # Shape: (n_windows, n_channels, n_times)
+    """Save an EEGWindowsDataset (continuous raw with metadata) to Zarr group."""
+    # Get continuous raw data and metadata from dataset
+    raw = ds.raw
     metadata = ds.metadata
     description = ds.description
     info_dict = hub_core._mne_info_to_dict(ds.raw.info)
     targets_from = ds.targets_from
     last_target_only = ds.last_target_only
 
-    # Call core function to save
+    # Call core function to save (saves continuous raw directly)
     hub_core._save_eegwindows_to_zarr(
-        grp, data, metadata, description, info_dict,
+        grp, raw, metadata, description, info_dict,
         targets_from, last_target_only, compressor
+    )
+
+
+def _save_raw_dataset_zarr(
+    grp: zarr.Group, ds, compressor
+) -> None:
+    """Save a RawDataset (continuous raw data without windows) to Zarr group."""
+    # Get continuous raw data from dataset
+    raw = ds.raw
+    description = ds.description
+    info_dict = hub_core._mne_info_to_dict(ds.raw.info)
+    target_name = ds.target_name if hasattr(ds, "target_name") else None
+
+    # Call core function to save
+    hub_core._save_raw_to_zarr(
+        grp, raw, description, info_dict, target_name, compressor
     )
 
 
@@ -264,12 +279,15 @@ def load_from_zarr(
             ds = _load_windows_dataset_zarr(grp, preload)
         elif dataset_type == "EEGWindowsDataset":
             ds = _load_eegwindows_dataset_zarr(grp, preload)
+        elif dataset_type == "RawDataset":
+            ds = _load_raw_dataset_zarr(grp, preload)
         else:
             raise ValueError(f"Unsupported dataset_type: {dataset_type}")
 
         datasets.append(ds)
 
-    # Create concat dataset
+    # Create concat dataset using registry
+    BaseConcatDataset = get_dataset_class("BaseConcatDataset")
     concat_ds = BaseConcatDataset(datasets)
 
     # Restore preprocessing kwargs
@@ -288,7 +306,6 @@ def load_from_zarr(
 def _load_windows_dataset_zarr(grp: zarr.Group, preload: bool):
     """Load a WindowsDataset (with mne.Epochs) from Zarr group."""
     import mne
-    from ..datasets.registry import get_dataset_class
 
     # Load raw data using core function
     data, metadata, description, info_dict, target_name = hub_core._load_windows_from_zarr(
@@ -321,7 +338,6 @@ def _load_windows_dataset_zarr(grp: zarr.Group, preload: bool):
 def _load_eegwindows_dataset_zarr(grp: zarr.Group, preload: bool):
     """Load an EEGWindowsDataset (windowed data with mne.Raw) from Zarr group."""
     import mne
-    from ..datasets.registry import get_dataset_class
 
     # Load raw data using core function
     data, metadata, description, info_dict, targets_from, last_target_only = (
@@ -331,13 +347,9 @@ def _load_eegwindows_dataset_zarr(grp: zarr.Group, preload: bool):
     # Convert info dict back to MNE Info
     info = hub_core._dict_to_mne_info(info_dict)
 
-    # EEGWindowsDataset stores windowed data but uses mne.Raw instead of mne.Epochs
-    # Concatenate all windows into a single continuous raw array
-    n_windows, n_channels, n_times_per_window = data.shape
-    continuous_data = data.reshape(n_channels, n_windows * n_times_per_window)
-
-    # Create Raw object
-    raw = mne.io.RawArray(continuous_data, info)
+    # EEGWindowsDataset stores continuous raw data [n_channels, n_timepoints]
+    # Data is already in continuous format, use directly
+    raw = mne.io.RawArray(data, info)
 
     # Create dataset using registry
     EEGWindowsDataset = get_dataset_class("EEGWindowsDataset")
@@ -348,6 +360,32 @@ def _load_eegwindows_dataset_zarr(grp: zarr.Group, preload: bool):
         targets_from=targets_from,
         last_target_only=last_target_only,
     )
+
+    return ds
+
+
+def _load_raw_dataset_zarr(grp: zarr.Group, preload: bool):
+    """Load a RawDataset (continuous raw data without windows) from Zarr group."""
+    import mne
+
+    # Load raw data using core function
+    data, description, info_dict, target_name = (
+        hub_core._load_raw_from_zarr(grp, preload)
+    )
+
+    # Convert info dict back to MNE Info
+    info = hub_core._dict_to_mne_info(info_dict)
+
+    # Data is in continuous format [n_channels, n_timepoints]
+    raw = mne.io.RawArray(data, info)
+
+    # Create dataset using registry
+    RawDataset = get_dataset_class("RawDataset")
+    ds = RawDataset(raw, description)
+
+    # Restore target name
+    if target_name is not None:
+        ds.target_name = target_name
 
     return ds
 
@@ -391,6 +429,14 @@ def get_format_info(dataset: "BaseConcatDataset") -> Dict:
     elif dataset_type == "EEGWindowsDataset":
         first_ch_names = first_ds.raw.ch_names
         first_sfreq = first_ds.raw.info["sfreq"]
+    elif dataset_type == "RawDataset":
+        first_ch_names = first_ds.raw.ch_names
+        first_sfreq = first_ds.raw.info["sfreq"]
+    elif dataset_type == "BaseDataset":
+        raise NotImplementedError(
+            "Hub operations with BaseDataset are not supported. "
+            "Please create windows from your dataset first."
+        )
     else:
         raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
@@ -413,7 +459,12 @@ def get_format_info(dataset: "BaseConcatDataset") -> Dict:
             if ds.windows.info["sfreq"] != first_sfreq:
                 raise ValueError(
                     f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                    f"but dataset {i} has {ds.windows.info['sfreq']} Hz"
+                    f"but dataset {i} has {ds.windows.info['sfreq']} Hz. "
+                    f"Please resample all datasets to a common frequency before saving. "
+                    f"Example:\n"
+                    f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
+                    f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
+                    f"  preprocess(concat_ds, preprocessors)"
                 )
         elif dataset_type == "EEGWindowsDataset":
             if ds.raw.ch_names != first_ch_names:
@@ -424,7 +475,28 @@ def get_format_info(dataset: "BaseConcatDataset") -> Dict:
             if ds.raw.info["sfreq"] != first_sfreq:
                 raise ValueError(
                     f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                    f"but dataset {i} has {ds.raw.info['sfreq']} Hz"
+                    f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
+                    f"Please resample all datasets to a common frequency before saving. "
+                    f"Example:\n"
+                    f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
+                    f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
+                    f"  preprocess(concat_ds, preprocessors)"
+                )
+        elif dataset_type == "RawDataset":
+            if ds.raw.ch_names != first_ch_names:
+                raise ValueError(
+                    f"Inconsistent channel names: dataset 0 has {first_ch_names} "
+                    f"but dataset {i} has {ds.raw.ch_names}"
+                )
+            if ds.raw.info["sfreq"] != first_sfreq:
+                raise ValueError(
+                    f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
+                    f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
+                    f"Please resample all datasets to a common frequency before saving. "
+                    f"Example:\n"
+                    f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
+                    f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
+                    f"  preprocess(concat_ds, preprocessors)"
                 )
 
     # Calculate dataset size
@@ -443,6 +515,11 @@ def get_format_info(dataset: "BaseConcatDataset") -> Dict:
                 X, _, _ = ds[i]
                 total_size_mb += X.nbytes / (1024 * 1024)
             continue  # Skip the size calculation below
+        elif dataset_type == "RawDataset":
+            # RawDataset has continuous raw data without windows
+            # Use number of timepoints as "samples"
+            data = ds.raw.get_data()
+            total_samples += data.shape[1]  # Number of timepoints
 
         total_size_mb += data.nbytes / (1024 * 1024)
 

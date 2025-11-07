@@ -100,6 +100,7 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
 T = TypeVar("T", bound=RecordDataset)
 
 
+@register_dataset
 class RawDataset(RecordDataset):
     """Returns samples from an mne.io.Raw object along with a target.
 
@@ -378,33 +379,6 @@ class WindowsDataset(RecordDataset):
 
     def __len__(self) -> int:
         return len(self.windows.events)
-
-
-    @property
-    def description(self) -> pd.Series:
-        return self._description
-
-    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
-        """Update (add or overwrite) the dataset description.
-
-        Parameters
-        ----------
-        description: dict | pd.Series
-            Description in the form key: value.
-        overwrite: bool
-            Has to be True if a key in description already exists in the
-            dataset description.
-        """
-        description = _create_description(description)
-        for key, value in description.items():
-            # if they key is already in the existing description, drop it
-            if key in self._description:
-                assert overwrite, (
-                    f"'{key}' already in description. Please "
-                    f"rename or set overwrite to True."
-                )
-                self._description.pop(key)
-        self._description = pd.concat([self.description, description])
 
 
 @register_dataset
