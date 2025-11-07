@@ -120,15 +120,7 @@ def convert_to_zarr(
     # Identify dataset type using registry
     dataset_type = get_dataset_type(first_ds)
 
-    if dataset_type == "BaseDataset":
-        # BaseDataset represents abstract base class
-        raise NotImplementedError(
-            "Saving BaseDataset to Hub is not yet supported. "
-            "Please create windows from your dataset using "
-            "braindecode.preprocessing.create_windows_from_events() or "
-            "create_fixed_length_windows() before uploading to Hub."
-        )
-    elif dataset_type not in ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]:
+    if dataset_type not in ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]:
         raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
     # Store global metadata
@@ -496,28 +488,19 @@ def get_format_info(dataset: "BaseConcatDataset") -> Dict:
                 )
 
     # Calculate dataset size
-    total_samples = 0
+    # BaseConcatDataset's __len__ already sums len(ds) for all datasets
+    total_samples = len(dataset)
     total_size_mb = 0
 
     for ds in dataset.datasets:
         if dataset_type == "WindowsDataset":
-            data = ds.windows.get_data()
-            total_samples += data.shape[0]
+            # Use MNE's internal _size property to avoid loading data
+            total_size_mb += ds.windows._size / (1024 * 1024)
         elif dataset_type == "EEGWindowsDataset":
-            # For EEGWindowsDataset, count number of windows from metadata
-            total_samples += len(ds.metadata)
-            # Estimate size by extracting windows
-            for i in range(len(ds)):
-                X, _, _ = ds[i]
-                total_size_mb += X.nbytes / (1024 * 1024)
-            continue  # Skip the size calculation below
+            # Use raw object's size (not extracted windows)
+            total_size_mb += ds.raw._size / (1024 * 1024)
         elif dataset_type == "RawDataset":
-            # RawDataset has continuous raw data without windows
-            # Use number of timepoints as "samples"
-            data = ds.raw.get_data()
-            total_samples += data.shape[1]  # Number of timepoints
-
-        total_size_mb += data.nbytes / (1024 * 1024)
+            total_size_mb += ds.raw._size / (1024 * 1024)
 
     n_recordings = len(dataset.datasets)
 

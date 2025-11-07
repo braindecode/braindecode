@@ -456,12 +456,12 @@ class HubDatasetMixin:
             n_channels = len(first_ds.windows.ch_names)
             sfreq = first_ds.windows.info["sfreq"]
             n_windows = format_info["total_samples"]
-            data_type = "Windowed (Epochs)"
+            data_type = "Windowed (from Epochs object)"
         elif dataset_type == "EEGWindowsDataset":
             n_channels = len(first_ds.raw.ch_names)
             sfreq = first_ds.raw.info["sfreq"]
             n_windows = format_info["total_samples"]
-            data_type = "Windowed (EEG)"
+            data_type = "Windowed (from Raw object)"
         elif dataset_type == "RawDataset":
             n_channels = len(first_ds.raw.ch_names)
             sfreq = first_ds.raw.info["sfreq"]
@@ -683,14 +683,7 @@ For more information about braindecode, visit: https://braindecode.org
         first_ds = self.datasets[0]
         dataset_type = get_dataset_type(first_ds)
 
-        if dataset_type == "BaseDataset":
-            raise NotImplementedError(
-                "Saving BaseDataset to Hub is not yet supported. "
-                "Please create windows from your dataset using "
-                "braindecode.preprocessing.create_windows_from_events() or "
-                "create_fixed_length_windows() before uploading to Hub."
-            )
-        elif dataset_type not in ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]:
+        if dataset_type not in ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
         # Get reference channel names and sfreq from first dataset
@@ -910,25 +903,19 @@ For more information about braindecode, visit: https://braindecode.org
                     )
 
         # Calculate dataset size
-        total_samples = 0
+        # BaseConcatDataset's __len__ already sums len(ds) for all datasets
+        total_samples = len(self)
         total_size_mb = 0
 
         for ds in self.datasets:
             if dataset_type == "WindowsDataset":
-                data = ds.windows.get_data()
-                total_samples += data.shape[0]
-                total_size_mb += data.nbytes / (1024 * 1024)
+                # Use MNE's internal _size property to avoid loading data
+                total_size_mb += ds.windows._size / (1024 * 1024)
             elif dataset_type == "EEGWindowsDataset":
-                total_samples += len(ds.metadata)
-                for i in range(len(ds)):
-                    X, _, _ = ds[i]
-                    total_size_mb += X.nbytes / (1024 * 1024)
+                # Use raw object's size (not extracted windows)
+                total_size_mb += ds.raw._size / (1024 * 1024)
             elif dataset_type == "RawDataset":
-                # RawDataset has continuous raw data without windows
-                # Use number of timepoints as "samples"
-                data = ds.raw.get_data()
-                total_samples += data.shape[1]  # Number of timepoints
-                total_size_mb += data.nbytes / (1024 * 1024)
+                total_size_mb += ds.raw._size / (1024 * 1024)
 
         n_recordings = len(self.datasets)
 
@@ -955,12 +942,7 @@ For more information about braindecode, visit: https://braindecode.org
         root = zarr.group(store=store)
 
         n_datasets = root.attrs["n_datasets"]
-        dataset_type = root.attrs.get("dataset_type", None)
-
-        # For backwards compatibility
-        if dataset_type is None:
-            is_windowed = root.attrs.get("is_windowed", False)
-            dataset_type = "WindowsDataset" if is_windowed else "BaseDataset"
+        dataset_type = root.attrs["dataset_type"]
 
         # Get dataset classes from registry
         WindowsDataset = get_dataset_class("WindowsDataset")
