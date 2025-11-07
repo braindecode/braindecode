@@ -856,11 +856,6 @@ For more information about braindecode, visit: https://braindecode.org
         elif dataset_type == "RawDataset":
             first_ch_names = first_ds.raw.ch_names
             first_sfreq = first_ds.raw.info["sfreq"]
-        elif dataset_type == "BaseDataset":
-            raise NotImplementedError(
-                "Hub operations with BaseDataset are not supported. "
-                "Please create windows from your dataset first."
-            )
         else:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
