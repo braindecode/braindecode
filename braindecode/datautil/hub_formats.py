@@ -246,7 +246,7 @@ def load_from_zarr(
     """
     if not ZARR_AVAILABLE:
         raise ImportError(
-            "Zarr is not installed. Install with: pip install zarr"
+            "Zarr is not installed. Install with: pip install braindecode[hub]"
         )
 
     input_path = Path(input_path)
