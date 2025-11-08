@@ -40,11 +40,14 @@ def _generate_init_method(func, force_copy_false=False):
     """
     func_name = func.__name__
     parameters = list(inspect.signature(func).parameters.values())
-    param_names = [param.name for param in parameters if param.name != "self"]
+    param_names = [
+        param.name
+        for param in parameters[1:]  # Skip 'self' or 'raw' or 'epochs'
+    ]
     all_mandatory = [
         param.name
-        for param in parameters
-        if param.default == inspect.Parameter.empty and param.name != "self"
+        for param in parameters[1:]  # Skip 'self' or 'raw' or 'epochs'
+        if param.default == inspect.Parameter.empty
     ]
 
     def init_method(self, *args, **kwargs):
