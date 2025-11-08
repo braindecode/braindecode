@@ -266,7 +266,9 @@ def test_new_filterbank(base_concat_ds):
                 "kwargs": {"picks": ["C4", "Cz"]},
             },
             {
-                "__class_path__": "braindecode.preprocessing.mne_preprocess.Filterbank",
+                "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
+                "fn": "braindecode.preprocessing.preprocess.filterbank",
+                'apply_on_array': False,
                 "kwargs": {
                     "frequency_bands": [(0, 4), (4, 8), (8, 13)],
                     "drop_original_signals": False,
@@ -418,7 +420,9 @@ def test_new_filterbank_order_channels_by_freq(base_concat_ds):
                 "kwargs": {"picks": ["C4", "Cz"]},
             },
             {
-                "__class_path__": "braindecode.preprocessing.mne_preprocess.Filterbank",
+                "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
+                "fn": "braindecode.preprocessing.preprocess.filterbank",
+                'apply_on_array': False,
                 "kwargs": {
                     "frequency_bands": [(0, 4), (4, 8), (8, 13)],
                     "drop_original_signals": False,

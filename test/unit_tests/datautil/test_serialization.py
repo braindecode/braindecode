@@ -190,8 +190,8 @@ def test_load_save_raw_preproc_kwargs(setup_concat_raw_dataset, tmpdir):
     for ds in loaded_concat_raw_dataset.datasets:
         assert ds.raw_preproc_kwargs == [
             {
+                '__class_path__': 'braindecode.preprocessing.preprocess.Preprocessor',
                 "fn": "pick_channels",
-                "fn_str": True,
                 "kwargs": {"ch_names": ["C3"]},
                 "apply_on_array": False,
             },
@@ -250,10 +250,10 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
         ]
         assert ds.raw_preproc_kwargs == [
             {
+                '__class_path__': 'braindecode.preprocessing.preprocess.Preprocessor',
                 "fn": "pick_channels",
                 "kwargs": {"ch_names": ["Cz"]},
                 "apply_on_array": False,
-                "fn_str": True,
             },
         ]
 
