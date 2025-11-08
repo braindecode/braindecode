@@ -87,10 +87,8 @@ def test_preprocess_raw_kwargs(base_concat_ds):
         ds.raw_preproc_kwargs
         == [
             {
-                "fn": "crop",
+                "__class_path__": "braindecode.preprocessing.mne_preprocess.Crop",
                 "kwargs": {"tmax": 10, "include_tmax": False},
-                "apply_on_array": False,
-                "fn_str": True,
             },
         ]
         for ds in base_concat_ds.datasets
@@ -108,10 +106,8 @@ def test_preprocess_windows_kwargs(windows_concat_ds):
         ds.raw_preproc_kwargs
         == [
             {
-                "fn": "crop",
+                "__class_path__": "braindecode.preprocessing.mne_preprocess.Crop",
                 "kwargs": {"tmin": 0, "tmax": 0.1, "include_tmax": False},
-                "apply_on_array": False,
-                "fn_str": True,
             },
         ]
         for ds in windows_concat_ds.datasets
@@ -191,19 +187,15 @@ def test_new_filterbank(base_concat_ds):
         ds.raw_preproc_kwargs
         == [
             {
-                "fn": "pick",
+                "__class_path__": "braindecode.preprocessing.mne_preprocess.Pick",
                 "kwargs": {"picks": ["C4", "Cz"]},
-                "apply_on_array": False,
-                "fn_str": True,
             },
             {
-                "fn": "braindecode.preprocessing.preprocess.filterbank",
+                "__class_path__": "braindecode.preprocessing.mne_preprocess.Filterbank",
                 "kwargs": {
                     "frequency_bands": [(0, 4), (4, 8), (8, 13)],
                     "drop_original_signals": False,
                 },
-                "apply_on_array": False,
-                "fn_str": False,
             },
         ]
         for ds in base_concat_ds.datasets
@@ -222,10 +214,8 @@ def test_replace_inplace(base_concat_ds):
 def test_set_raw_preproc_kwargs(base_concat_ds):
     raw_preproc_kwargs = [
         {
-            "fn": "crop",
+            "__class_path__": "braindecode.preprocessing.mne_preprocess.Crop",
             "kwargs": {"tmax": 10, "include_tmax": False},
-            "apply_on_array": False,
-            "fn_str": True,
         }
     ]
     preprocessors = [Crop(tmax=10, include_tmax=False)]
@@ -239,10 +229,8 @@ def test_set_raw_preproc_kwargs(base_concat_ds):
 def test_set_window_preproc_kwargs(windows_concat_ds):
     window_preproc_kwargs = [
         {
-            "fn": "crop",
+            "__class_path__": "braindecode.preprocessing.mne_preprocess.Crop",
             "kwargs": {"tmax": 10, "include_tmax": False},
-            "apply_on_array": False,
-            "fn_str": True,
         }
     ]
     preprocessors = [Crop(tmax=10, include_tmax=False)]
@@ -272,10 +260,8 @@ def test_preprocess_save_dir(
 ):
     preproc_kwargs = [
         {
-            "fn": "crop",
+            "__class_path__": "braindecode.preprocessing.mne_preprocess.Crop",
             "kwargs": {"tmin": 0, "tmax": 0.1, "include_tmax": False},
-            "apply_on_array": False,
-            "fn_str": True,
         }
     ]
     preprocessors = [Crop(tmin=0, tmax=0.1, include_tmax=False)]
@@ -353,20 +339,16 @@ def test_new_filterbank_order_channels_by_freq(base_concat_ds):
         ds.raw_preproc_kwargs
         == [
             {
-                "fn": "pick",
+                "__class_path__": "braindecode.preprocessing.mne_preprocess.Pick",
                 "kwargs": {"picks": ["C4", "Cz"]},
-                "apply_on_array": False,
-                "fn_str": True,
             },
             {
-                "fn": "braindecode.preprocessing.preprocess.filterbank",
+                "__class_path__": "braindecode.preprocessing.mne_preprocess.Filterbank",
                 "kwargs": {
                     "frequency_bands": [(0, 4), (4, 8), (8, 13)],
                     "drop_original_signals": False,
                     "order_by_frequency_band": True,
                 },
-                "apply_on_array": False,
-                "fn_str": False,
             },
         ]
         for ds in base_concat_ds.datasets

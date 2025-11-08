@@ -106,10 +106,10 @@ def test_preprocess_raw_str(base_concat_ds):
         ds.raw_preproc_kwargs
         == [
             {
+                "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
                 "fn": "crop",
                 "kwargs": {"tmax": 10, "include_tmax": False},
                 "apply_on_array": False,
-                "fn_str": True,
             },
         ]
         for ds in base_concat_ds.datasets
@@ -132,10 +132,10 @@ def test_preprocess_windows_str(windows_concat_ds):
         ds.raw_preproc_kwargs
         == [
             {
+                "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
                 "fn": "crop",
                 "kwargs": {"tmin": 0, "tmax": 0.1, "include_tmax": False},
                 "apply_on_array": False,
-                "fn_str": True,
             },
         ]
         for ds in windows_concat_ds.datasets
@@ -158,10 +158,10 @@ def test_preprocess_mne_windows_str(mne_windows_concat_ds):
         ds.window_preproc_kwargs
         == [
             {
+                "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
                 "fn": "crop",
                 "kwargs": {"tmin": 0, "tmax": 0.1, "include_tmax": False},
                 "apply_on_array": False,
-                "fn_str": True,
             },
         ]
         for ds in mne_windows_concat_ds.datasets
@@ -229,10 +229,10 @@ def test_scale_continuous(base_concat_ds):
 
     assert all(
         {
+            "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
             "fn": "pick_types",
             "kwargs": {"eeg": True, "meg": False, "stim": False},
             "apply_on_array": False,
-            "fn_str": True,
         }
         in ds.raw_preproc_kwargs
         for ds in base_concat_ds.datasets
@@ -257,10 +257,10 @@ def test_scale_windows(windows_concat_ds):
 
     assert all(
         {
+            "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
             "fn": "pick_types",
             "kwargs": {"eeg": True, "meg": False, "stim": False},
             "apply_on_array": False,
-            "fn_str": True,
         }
         in ds.raw_preproc_kwargs
         for ds in windows_concat_ds.datasets
@@ -402,19 +402,19 @@ def test_filterbank(base_concat_ds):
         ds.raw_preproc_kwargs
         == [
             {
+                "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
                 "fn": "pick_channels",
                 "kwargs": {"ch_names": ["C4", "Cz"], "ordered": True},
                 "apply_on_array": False,
-                "fn_str": True,
             },
             {
+                "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
                 "fn": "braindecode.preprocessing.preprocess.filterbank",
                 "kwargs": {
                     "frequency_bands": [(0, 4), (4, 8), (8, 13)],
                     "drop_original_signals": False,
                 },
                 "apply_on_array": False,
-                "fn_str": False,
             },
         ]
         for ds in base_concat_ds.datasets
@@ -442,12 +442,13 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
         ds.raw_preproc_kwargs
         == [
             {
+                "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
                 "fn": "pick_channels",
                 "kwargs": {"ch_names": ["C4", "Cz"], "ordered": True},
                 "apply_on_array": False,
-                "fn_str": True,
             },
             {
+                "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
                 "fn": "braindecode.preprocessing.preprocess.filterbank",
                 "kwargs": {
                     "frequency_bands": [(0, 4), (4, 8), (8, 13)],
@@ -455,7 +456,6 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
                     "order_by_frequency_band": True,
                 },
                 "apply_on_array": False,
-                "fn_str": False,
             },
         ]
         for ds in base_concat_ds.datasets
@@ -474,10 +474,10 @@ def test_replace_inplace(base_concat_ds):
 def test_set_raw_preproc_kwargs(base_concat_ds):
     raw_preproc_kwargs = [
         {
+            "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
             "fn": "crop",
             "kwargs": {"tmax": 10, "include_tmax": False},
             "apply_on_array": False,
-            "fn_str": True,
         }
     ]
     preprocessors = [Preprocessor("crop", tmax=10, include_tmax=False)]
@@ -491,10 +491,10 @@ def test_set_raw_preproc_kwargs(base_concat_ds):
 def test_set_window_preproc_kwargs(windows_concat_ds):
     window_preproc_kwargs = [
         {
+            "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
             "fn": "crop",
             "kwargs": {"tmax": 10, "include_tmax": False},
             "apply_on_array": False,
-            "fn_str": True,
         }
     ]
     preprocessors = [Preprocessor("crop", tmax=10, include_tmax=False)]
@@ -544,10 +544,10 @@ def test_preprocess_save_dir(
 ):
     preproc_kwargs = [
         {
+            "__class_path__": "braindecode.preprocessing.preprocess.Preprocessor",
             "fn": "crop",
             "kwargs": {"tmin": 0, "tmax": 0.1, "include_tmax": False},
             "apply_on_array": False,
-            "fn_str": True,
         }
     ]
     preprocessors = [Preprocessor("crop", tmin=0, tmax=0.1, include_tmax=False)]
