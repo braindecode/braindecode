@@ -28,6 +28,7 @@ from .fbmsnet import FBMSNet
 from .hybrid import HybridNet
 from .ifnet import IFNet
 from .labram import Labram
+from .medformer import MEDFormer
 from .msvtnet import MSVTNet
 from .patchedtransformer import PBT
 from .sccnet import SCCNet
@@ -82,6 +83,7 @@ __all__ = [
     "HybridNet",
     "IFNet",
     "Labram",
+    "MEDFormer",
     "MSVTNet",
     "PBT",
     "SCCNet",

@@ -28,7 +28,7 @@ from braindecode.preprocessing import create_windows_from_events
 # it fetched from MOABB. In this example, we're using Dataset 2a from BCI
 # Competition IV.
 
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1])
 
 ###############################################################################
 # Splitting

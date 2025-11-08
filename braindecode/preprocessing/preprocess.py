@@ -356,16 +356,21 @@ def _preprocess(
         if raw_or_epochs.preload and copy_data:
             raw_or_epochs._data = raw_or_epochs._data.copy()
         for preproc in preprocessors:
-            preproc.apply(raw_or_epochs)
+            raw_or_epochs = preproc.apply(raw_or_epochs)
+        return raw_or_epochs
 
     if hasattr(ds, "raw"):
         if isinstance(ds, EEGWindowsDataset):
             warn(
                 f"Applying preprocessors {preprocessors} to the mne.io.Raw of an EEGWindowsDataset."
             )
-        _preprocess_raw_or_epochs(ds.raw, preprocessors)
+        processed = _preprocess_raw_or_epochs(ds.raw, preprocessors)
+        if processed is not ds.raw:
+            ds.raw = processed
     elif hasattr(ds, "windows"):
-        _preprocess_raw_or_epochs(ds.windows, preprocessors)
+        processed = _preprocess_raw_or_epochs(ds.windows, preprocessors)
+        if processed is not ds.windows:
+            ds.windows = processed
     else:
         raise ValueError(
             "Can only preprocess concatenation of RecordDataset, "

@@ -47,7 +47,7 @@ def _get_raw(tmpdir_factory, description=None):
 @pytest.fixture(scope="module")
 def concat_ds_targets():
     raws, description = fetch_data_with_moabb(
-        dataset_name="BNCI2014001", subject_ids=4)
+        dataset_name="BNCI2014_001", subject_ids=4)
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
     ds = RawDataset(raws[0], description.iloc[0])
@@ -857,8 +857,8 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
         drop_last_window=False,
         verbose=True,
     )
-
-    assert "Used Annotations descriptions: ['left_hand', 'tongue']" in caplog.text
+    options = ["np.str_('left_hand'), np.str_('tongue')", "'left_hand', 'tongue'"]
+    assert any(f"Used Annotations descriptions: [{opt}]" in caplog.text for opt in options)
     caplog.clear()
 
     # verbose is False, so we expect to see the used annotations descriptions

@@ -36,7 +36,7 @@ from braindecode.preprocessing.windowers import (
 # inplace during preprocessing. To avoid the long setup time caused by calling
 # the dataset/windowing functions multiple times, we instantiate the dataset
 # objects once and deep-copy them in fixture.
-raw_ds = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1, 2])
+raw_ds = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1, 2])
 windows_ds = create_fixed_length_windows(
     raw_ds,
     start_offset_samples=100,

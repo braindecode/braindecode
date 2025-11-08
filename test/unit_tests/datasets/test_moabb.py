@@ -8,7 +8,7 @@ from pandas import DataFrame
 
 from braindecode.datasets import MOABBDataset
 from braindecode.datasets.moabb import (
-    BNCI2014001,
+    BNCI2014_001,
     _fetch_and_unpack_moabb_data,
     _find_dataset_in_moabb,
 )
@@ -73,6 +73,6 @@ def test_not_found_dataset_in_moabb():
         _find_dataset_in_moabb("NotExistingDataset")
 
 
-def test_BNCI2014001():
-    dataset = BNCI2014001([1])
+def test_BNCI2014_001():
+    dataset = BNCI2014_001([1])
     assert len(dataset.datasets) == 12

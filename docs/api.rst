@@ -80,6 +80,7 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     FBMSNet
     IFNet
     Labram
+    MEDFormer
     MSVTNet
     PBT
     SCCNet
@@ -332,7 +333,7 @@ Common Datasets
    :toctree: generated/
 
     BCICompetitionIVDataset4
-    BNCI2014001
+    BNCI2014_001
     HGD
     MOABBDataset
     NMT
@@ -364,37 +365,28 @@ Preprocessing
 
 .. currentmodule:: braindecode.preprocessing
 
+Core Functions
+''''''''''''''
+
 .. autosummary::
    :toctree: generated/
 
+    preprocess
+    Preprocessor
     create_windows_from_events
     create_fixed_length_windows
     create_windows_from_target_channels
     exponential_moving_demean
     exponential_moving_standardize
     filterbank
-    preprocess
-    Preprocessor
-    EEGPrep
 
-
-Preprocessing Transform
-''''''''''''''''''''''''
-
-These modules implement various preprocessing transforms that can be applied
-to EEG data, including cropping, filtering, resampling, and channel selection.
-
-:py:mod:`braindecode.preprocessing`:
-
-.. currentmodule:: braindecode.preprocessing
+EEGPrep Pipeline
+''''''''''''''''
 
 .. autosummary::
    :toctree: generated/
 
-    Crop
-    DropChannels
-    Filter
-    Pick
+    EEGPrep
     ReinterpolateRemovedChannels
     RemoveBadChannels
     RemoveBadChannelsNoLocs
@@ -404,9 +396,107 @@ to EEG data, including cropping, filtering, resampling, and channel selection.
     RemoveDCOffset
     RemoveDrifts
     RemoveFlatChannels
+
+Signal Processing
+'''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
     Resample
     Resampling
+    Filter
+    FilterData
+    NotchFilter
+    SavgolFilter
+    ApplyHilbert
+    Rescale
+    OversampledTemporalProjection
+
+Channel Management
+''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    Pick
+    PickChannels
+    PickTypes
+    DropChannels
+    AddChannels
+    CombineChannels
+    RenameChannels
+    ReorderChannels
+    SetChannelTypes
+    InterpolateBads
+    InterpolateTo
+    InterpolateBridgedElectrodes
+    ComputeBridgedElectrodes
+    EqualizeChannels
+    EqualizeBads
+    FindBadChannelsLof
+
+Reference & Montage
+'''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
     SetEEGReference
+    SetBipolarReference
+    AddReferenceChannels
+    SetMontage
+
+SSP Projections
+'''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    AddProj
+    ApplyProj
+    DelProj
+
+Data Transformation
+'''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    Crop
+    CropByAnnotations
+    ComputeCurrentSourceDensity
+    FixStimArtifact
+    MaxwellFilter
+    RealignRaw
+    RegressArtifact
+
+Artifact Detection & Annotation
+''''''''''''''''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    AnnotateAmplitude
+    AnnotateBreak
+    AnnotateMovement
+    AnnotateMuscleZscore
+    AnnotateNan
+
+Metadata & Configuration
+'''''''''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    Anonymize
+    SetAnnotations
+    SetMeasDate
+    AddEvents
+    FixMagCoilTypes
+    ApplyGradientCompensation
+
+
 
 
 Data Utils

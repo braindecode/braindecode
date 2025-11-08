@@ -36,7 +36,7 @@ from braindecode.samplers.ssl import (
 
 @pytest.fixture(scope="module")
 def windows_ds():
-    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014001", subject_ids=4)
+    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014_001", subject_ids=4)
     ds = [RawDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
 
@@ -55,7 +55,7 @@ def windows_ds():
 
 @pytest.fixture(scope="module")
 def target_windows_ds():
-    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014001", subject_ids=4)
+    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014_001", subject_ids=4)
     ds = [RawDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
 
