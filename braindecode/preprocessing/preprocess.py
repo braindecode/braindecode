@@ -187,12 +187,21 @@ class Preprocessor(object):
         )
         return f"{cls_name}({args_str})"
 
+    def _same_attr(self, other, attr):
+        a = getattr(self, attr)
+        b = getattr(other, attr)
+        if attr == "fn" and callable(a):
+            return a.__module__ == b.__module__ and a.__name__ == b.__name__
+        if isinstance(a, np.ndarray):
+            return np.array_equal(a, b)
+        return a == b
+
     def __eq__(self, other):
         if not isinstance(other, Preprocessor):
             return False
-        return all(
-            getattr(self, attr) == getattr(other, attr) for attr in self._all_attrs
-        ) and (self.__class__ == other.__class__)
+        return all(self._same_attr(other, attr) for attr in self._all_attrs) and (
+            self.__class__ == other.__class__
+        )
 
 
 def preprocess(

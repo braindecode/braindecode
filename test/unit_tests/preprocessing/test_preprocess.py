@@ -26,6 +26,7 @@ from braindecode.preprocessing.preprocess import (
     filterbank,
     preprocess,
 )
+from braindecode.preprocessing.util import preprocessor_dict
 from braindecode.preprocessing.windowers import (
     create_fixed_length_windows,
     create_windows_from_events,
@@ -630,3 +631,55 @@ def test_preprocessors_with_misc_channels():
     # This is only valid for preprocessors that use mne functions which do not modify
     # `misc` channels.
     np.testing.assert_array_equal(concat_ds.datasets[0].raw.get_data()[-2:, :], targets)
+
+
+PREPROCESSORS_DEFAULTS: list[tuple[str, list, dict]] = [
+    # Base preprocessor:
+    ("Preprocessor", ["filter"], {}),
+    ("Preprocessor", [np.max], {"apply_on_array": True}),
+    ("Preprocessor", [], {"fn": "filter"}),
+    ("Preprocessor", [], {"fn": "filter", "apply_on_array": True}),
+    ("Preprocessor", [], {"fn": "filter", "apply_on_array": False}),
+    ("Preprocessor", [], {"fn": "filter", "apply_on_array": False, "l_freq": 0.0}),
+    # MNE preprocessors:
+    ("Crop", [], {}),
+    ("DropChannels", [[]], {}),
+    ("DropChannels", [], {"ch_names": []}),
+    ("Filter", [], {"l_freq": 0.0, "h_freq": 1.0}),
+    ("Pick", [[]], {}),
+    ("Resample", [1.0], {}),
+    ("SetEEGReference", [], {}),
+    # EEGPrep preprocessors:
+    ("EEGPrep", [], {}),
+    ("ReinterpolateRemovedChannels", [], {}),
+    ("RemoveBadChannels", [], {}),
+    ("RemoveBadChannelsNoLocs", [], {}),
+    ("RemoveBadWindows", [], {}),
+    ("RemoveBursts", [], {}),
+    ("RemoveCommonAverageReference", [], {}),
+    ("RemoveDCOffset", [], {}),
+    ("RemoveDrifts", [], {}),
+    ("RemoveFlatChannels", [], {}),
+    ("Resampling", [1.0], {}),
+]
+
+
+def test_preprocessors_defaults_complete():
+    defaults = set([name for name, _, _ in PREPROCESSORS_DEFAULTS])
+    assert defaults == preprocessor_dict.keys()
+
+
+@pytest.mark.parametrize("preprocessor_name, args, kwargs", PREPROCESSORS_DEFAULTS)
+def test_serialization(preprocessor_name, args, kwargs):
+    preprocessor = preprocessor_dict[preprocessor_name](*args, **kwargs)
+    serialized = preprocessor.serialize()
+    deserialized = preprocessor_dict[preprocessor_name].deserialize(serialized)
+    # This is identical to Preprocessor.__eq__, but allows to see which attribute fails
+    assert preprocessor.__class__ == deserialized.__class__
+    for attr in preprocessor._all_attrs:
+        a = getattr(preprocessor, attr)
+        b = getattr(deserialized, attr)
+        err_msg = f"Attribute {attr} does not match: {a} != {b}"
+        assert preprocessor._same_attr(deserialized, attr), err_msg
+    # Identical to above:
+    assert preprocessor == deserialized
