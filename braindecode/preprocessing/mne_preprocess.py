@@ -105,10 +105,14 @@ def _generate_mne_pre_processor(function):
     class_name = "".join(word.title() for word in function.__name__.split("_")).replace(
         "Eeg", "EEG"
     )
+
+    # Automatically determine if function is standalone
+    is_standalone = _is_standalone_function(function)
+
     # Create a wrapper note that references the original MNE function
     # For Raw methods, use mne.io.Raw.method_name format with :meth:
     # For standalone functions, use the function name only with :func:
-    if hasattr(mne.io.Raw, function.__name__):
+    if not is_standalone:
         ref_path = f"mne.io.Raw.{function.__name__}"
         ref_role = "meth"
     else:
@@ -132,9 +136,6 @@ def _generate_mne_pre_processor(function):
 
     base_classes = (Preprocessor,)
 
-    # Automatically determine if function is standalone
-    is_standalone = _is_standalone_function(function)
-
     # Check if function has a 'copy' parameter
     sig = inspect.signature(function)
     has_copy_param = "copy" in sig.parameters
@@ -150,6 +151,7 @@ def _generate_mne_pre_processor(function):
         "__init__": _generate_init_method(function, force_copy_false),
         "__doc__": wrapper_note + (function.__doc__ or ""),
         "__repr__": _generate_repr_method(class_name),
+        "fn": function if is_standalone else function.__name__,
         "_is_standalone": is_standalone,
     }
     generated_class = type(class_name, base_classes, class_attrs)

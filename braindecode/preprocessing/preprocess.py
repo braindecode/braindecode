@@ -120,7 +120,7 @@ class Preprocessor(object):
     def apply(self, raw_or_epochs: BaseRaw | BaseEpochs):
         function = self._function
         try:
-            function(raw_or_epochs)
+            result = function(raw_or_epochs)
         except RuntimeError:
             # Maybe the function needs the data to be loaded and the data was
             # not loaded yet. Not all MNE functions need data to be loaded,
@@ -128,7 +128,10 @@ class Preprocessor(object):
             # without preloading data which can make the overall preprocessing
             # pipeline substantially faster.
             raw_or_epochs.load_data()
-            function(raw_or_epochs)
+            result = function(raw_or_epochs)
+        if result is not None:
+            return result
+        return raw_or_epochs
 
     def serialize(self):
         """Return a serializable representation of the Preprocessor.
