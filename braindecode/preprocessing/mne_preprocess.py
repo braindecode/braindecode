@@ -142,13 +142,12 @@ def _generate_mne_pre_processor(function):
     # Check if function has a 'copy' parameter
     sig = inspect.signature(function)
     has_copy_param = "copy" in sig.parameters
-    force_copy_false = is_standalone and has_copy_param    
+    force_copy_false = is_standalone and has_copy_param
     class_attrs = {
         "__init__": _generate_init_method(function, force_copy_false),
-        "__doc__": _update_moabb_docstring(function, doc),
+        "__doc__": wrapper_note + (function.__doc__ or ""),
         "__repr__": _generate_repr_method(class_name),
         "_is_standalone": is_standalone,
-      
     }
     generated_class = type(class_name, base_classes, class_attrs)
 
