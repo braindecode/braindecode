@@ -17,7 +17,21 @@ What's new
 
 .. _current:
 
-Current 1.3 (dev)
+Current 1.4 (dev)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- To be announced for v1.4.0 release (November 22, 2025)
+
+API changes
+~~~~~~~~~~~
+
+Bugs
+~~~~
+
+
+Version 1.3
 ----------------------
 
 Enhancements
