@@ -857,8 +857,8 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
         drop_last_window=False,
         verbose=True,
     )
-
-    assert "Used Annotations descriptions: ['left_hand', 'tongue']" in caplog.text
+    options = ["np.str_('left_hand'), np.str_('tongue')", "'left_hand', 'tongue'"]
+    assert any(f"Used Annotations descriptions: [{opt}]" in caplog.text for opt in options)
     caplog.clear()
 
     # verbose is False, so we expect to see the used annotations descriptions

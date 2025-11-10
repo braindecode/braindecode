@@ -77,6 +77,14 @@ class EEGPrepBasePreprocessor(Preprocessor):
         self.record_orig_chanlocs = record_orig_chanlocs
         self.force_dtype = np.dtype(force_dtype) if force_dtype is not None else None
 
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + [
+            "can_change_duration",
+            "record_orig_chanlocs",
+            "force_dtype",
+        ]
+
     @abstractmethod
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
@@ -380,31 +388,46 @@ class EEGPrep(EEGPrepBasePreprocessor):
             can_change_duration=can_change_duration or False,
         )
         self.resample_to = resample_to
-        self.reinterpolate = bad_channel_reinterpolate
+        self.bad_channel_reinterpolate = bad_channel_reinterpolate
         self.common_avg_ref = common_avg_ref
         self.burst_removal_cutoff = burst_removal_cutoff
         self.bad_window_max_bad_channels = bad_window_max_bad_channels
+        self.bad_channel_corr_threshold = bad_channel_corr_threshold
+        self.highpass_frequencies = highpass_frequencies
+        self.flatline_maxdur = flatline_maxdur
+        self.bad_channel_hf_threshold = bad_channel_hf_threshold
+        self.bad_channel_max_broken_time = bad_channel_max_broken_time
+        self.bad_window_tolerances = bad_window_tolerances
+        self.refdata_max_bad_channels = refdata_max_bad_channels
+        self.refdata_max_tolerances = refdata_max_tolerances
+        self.num_samples = num_samples
+        self.subset_size = subset_size
+        self.bad_channel_nolocs_threshold = bad_channel_nolocs_threshold
+        self.bad_channel_nolocs_exclude_frac = bad_channel_nolocs_exclude_frac
+        self.max_mem_mb = max_mem_mb
 
-        if bad_channel_corr_threshold is None:
+    @property
+    def clean_artifacts_params(self):
+        if self.bad_channel_corr_threshold is None:
             line_noise_crit = None
         else:
-            line_noise_crit = bad_channel_hf_threshold
-        self.clean_artifacts_params = dict(
-            ChannelCriterion=bad_channel_corr_threshold,
+            line_noise_crit = self.bad_channel_hf_threshold
+        return dict(
+            ChannelCriterion=self.bad_channel_corr_threshold,
             LineNoiseCriterion=line_noise_crit,
-            BurstCriterion=burst_removal_cutoff,
-            WindowCriterion=bad_window_max_bad_channels,
-            Highpass=highpass_frequencies,
-            ChannelCriterionMaxBadTime=bad_channel_max_broken_time,
-            BurstCriterionRefMaxBadChns=refdata_max_bad_channels,
-            BurstCriterionRefTolerances=refdata_max_tolerances,
-            WindowCriterionTolerances=bad_window_tolerances,
-            FlatlineCriterion=flatline_maxdur,
-            NumSamples=num_samples,
-            SubsetSize=subset_size,
-            NoLocsChannelCriterion=bad_channel_nolocs_threshold,
-            NoLocsChannelCriterionExcluded=bad_channel_nolocs_exclude_frac,
-            MaxMem=max_mem_mb,
+            BurstCriterion=self.burst_removal_cutoff,
+            WindowCriterion=self.bad_window_max_bad_channels,
+            Highpass=self.highpass_frequencies,
+            ChannelCriterionMaxBadTime=self.bad_channel_max_broken_time,
+            BurstCriterionRefMaxBadChns=self.refdata_max_bad_channels,
+            BurstCriterionRefTolerances=self.refdata_max_tolerances,
+            WindowCriterionTolerances=self.bad_window_tolerances,
+            FlatlineCriterion=self.flatline_maxdur,
+            NumSamples=self.num_samples,
+            SubsetSize=self.subset_size,
+            NoLocsChannelCriterion=self.bad_channel_nolocs_threshold,
+            NoLocsChannelCriterionExcluded=self.bad_channel_nolocs_exclude_frac,
+            MaxMem=self.max_mem_mb,
             # For reference, the function additionally accepts these (legacy etc.)
             # arguments, which we're not exposing here (current defaults as below):
             # BurstRejection='off',
@@ -413,6 +436,29 @@ class EEGPrep(EEGPrepBasePreprocessor):
             # Channels_ignore=None,
             # availableRAM_GB=None,
         )
+
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + [
+            "resample_to",
+            "bad_channel_reinterpolate",
+            "common_avg_ref",
+            "burst_removal_cutoff",
+            "bad_window_max_bad_channels",
+            "bad_channel_corr_threshold",
+            "highpass_frequencies",
+            "flatline_maxdur",
+            "bad_channel_hf_threshold",
+            "bad_channel_max_broken_time",
+            "bad_window_tolerances",
+            "refdata_max_bad_channels",
+            "refdata_max_tolerances",
+            "num_samples",
+            "subset_size",
+            "bad_channel_nolocs_threshold",
+            "bad_channel_nolocs_exclude_frac",
+            "max_mem_mb",
+        ]
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
@@ -449,7 +495,9 @@ class EEGPrep(EEGPrepBasePreprocessor):
             eeg["data"] = eeg["data"].astype(np.float32)
 
         # optionally reinterpolate dropped channels
-        if self.reinterpolate and (len(orig_chanlocs) > len(eeg["chanlocs"])):
+        if self.bad_channel_reinterpolate and (
+            len(orig_chanlocs) > len(eeg["chanlocs"])
+        ):
             eeg = eegprep.eeg_interp(eeg, orig_chanlocs)
 
         # optionally apply common average reference
@@ -512,6 +560,13 @@ class RemoveFlatChannels(EEGPrepBasePreprocessor):
         super().__init__(record_orig_chanlocs=True)
         self.max_flatline_duration = max_flatline_duration
         self.max_allowed_jitter = max_allowed_jitter
+
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + [
+            "max_flatline_duration",
+            "max_allowed_jitter",
+        ]
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
@@ -609,6 +664,14 @@ class RemoveDrifts(EEGPrepBasePreprocessor):
         self.attenuation = attenuation
         self.method = method
 
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + [
+            "transition",
+            "attenuation",
+            "method",
+        ]
+
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
         eeg = eegprep.clean_drifts(
@@ -674,6 +737,10 @@ class Resampling(EEGPrepBasePreprocessor):
     ):
         super().__init__(can_change_duration=True)
         self.sfreq = sfreq
+
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + ["sfreq"]
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
@@ -779,6 +846,17 @@ class RemoveBadChannels(EEGPrepBasePreprocessor):
         self.num_samples = num_samples
         self.subset_size = subset_size
 
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + [
+            "corr_threshold",
+            "noise_threshold",
+            "window_len",
+            "max_broken_time",
+            "num_samples",
+            "subset_size",
+        ]
+
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
         eeg = eegprep.clean_channels(
@@ -868,6 +946,16 @@ class RemoveBadChannelsNoLocs(EEGPrepBasePreprocessor):
         self.window_len = window_len
         self.max_broken_time = max_broken_time
         self.linenoise_aware = linenoise_aware
+
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + [
+            "min_corr",
+            "ignored_quantile",
+            "window_len",
+            "max_broken_time",
+            "linenoise_aware",
+        ]
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
@@ -981,6 +1069,19 @@ class RemoveBursts(EEGPrepBasePreprocessor):
         self.ref_tolerances = ref_tolerances
         self.ref_wndlen = ref_wndlen
         self.maxmem = maxmem
+
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + [
+            "cutoff",
+            "window_len",
+            "step_size",
+            "max_dims",
+            "ref_maxbadchannels",
+            "ref_tolerances",
+            "ref_wndlen",
+            "maxmem",
+        ]
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
@@ -1097,6 +1198,20 @@ class RemoveBadWindows(EEGPrepBasePreprocessor):
         self.truncate_quant = truncate_quant
         self.step_sizes = step_sizes
         self.shape_range = shape_range
+
+    @property
+    def _all_attrs(self):
+        return super()._all_attrs + [
+            "max_bad_channels",
+            "zthresholds",
+            "window_len",
+            "window_overlap",
+            "max_dropout_fraction",
+            "min_clean_fraction",
+            "truncate_quant",
+            "step_sizes",
+            "shape_range",
+        ]
 
     def apply_eeg(self, eeg: dict[str, Any], raw: BaseRaw) -> dict[str, Any]:
         """Apply the preprocessor to an EEGLAB EEG structure."""
