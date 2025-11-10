@@ -29,6 +29,7 @@ from .hybrid import HybridNet
 from .ifnet import IFNet
 from .labram import Labram
 from .luna import LUNA
+from .medformer import MEDFormer
 from .msvtnet import MSVTNet
 from .patchedtransformer import PBT
 from .sccnet import SCCNet
@@ -89,6 +90,7 @@ __all__ = [
     "Labram",
     "LUNA",
     "extract_channel_locations_from_chs_info",
+    "MEDFormer",
     "MSVTNet",
     "PBT",
     "SCCNet",
