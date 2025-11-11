@@ -498,8 +498,6 @@ class HubDatasetMixin:
         This is an inline version of hub_formats.load_from_zarr() that avoids
         circular import by using hub_formats_core directly.
         """
-        import mne
-
         if not input_path.exists():
             raise FileNotFoundError(f"{input_path} does not exist.")
 
