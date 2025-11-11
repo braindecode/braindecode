@@ -34,8 +34,10 @@ from . import hub_validation
 from .registry import get_dataset_class, get_dataset_type
 
 # Lazy import zarr and huggingface_hub
-zarr = _soft_import("zarr", strict=False)
-huggingface_hub = _soft_import("huggingface_hub", strict=False)
+zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
+huggingface_hub = _soft_import(
+    "huggingface_hub", purpose="hugging face integration", strict=False
+)
 
 log = logging.getLogger(__name__)
 
