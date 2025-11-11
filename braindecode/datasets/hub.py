@@ -17,44 +17,25 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
+import mne
 import numpy as np
+import pandas as pd
+from mne.utils import _soft_import
 
 if TYPE_CHECKING:
     from .base import BaseDataset
 
 import braindecode
 
+# Import shared validation utilities
+from . import hub_validation
+
 # Import registry for dynamic class lookup (avoids circular imports)
 from .registry import get_dataset_class, get_dataset_type
 
-# Optional dependencies
-ZARR_AVAILABLE = False
-try:
-    import zarr
-
-    ZARR_AVAILABLE = True
-except ImportError:
-    pass
-
-HF_HUB_AVAILABLE = False
-try:
-    from huggingface_hub import (
-        HfApi,
-        create_repo,
-        snapshot_download,
-        upload_folder,
-    )
-    from huggingface_hub.utils import HfHubHTTPError
-
-    HF_HUB_AVAILABLE = True
-except ImportError:
-    pass
-
-import mne
-import pandas as pd
-
-# Import shared validation utilities
-from . import hub_validation
+# Lazy import zarr and huggingface_hub
+zarr = _soft_import("zarr", strict=False)
+huggingface_hub = _soft_import("huggingface_hub", strict=False)
 
 log = logging.getLogger(__name__)
 
@@ -173,6 +154,7 @@ def _load_windows_from_zarr(grp, preload):
         data = grp["data"][:]
     else:
         data = grp["data"][:]
+        # TODO: Implement lazy loading properly
         warnings.warn(
             "Lazy loading from Zarr not fully implemented yet. "
             "Loading all data into memory.",
@@ -254,6 +236,7 @@ def _load_raw_from_zarr(grp, preload):
         data = grp["data"][:]
     else:
         data = grp["data"][:]
+        # TODO: Implement lazy loading properly
         warnings.warn(
             "Lazy loading from Zarr not fully implemented yet. "
             "Loading all data into memory.",
@@ -268,7 +251,7 @@ def _load_raw_from_zarr(grp, preload):
 
 def _create_compressor(compression, compression_level):
     """Create a Zarr compressor object."""
-    if not ZARR_AVAILABLE:
+    if zarr is False:
         raise ImportError(
             "Zarr is not installed. Install with: pip install braindecode[hub]"
         )
@@ -456,24 +439,18 @@ class HubDatasetMixin:
         ...     compression_level=5
         ... )
         """
-        if not HF_HUB_AVAILABLE:
+        if huggingface_hub is False or zarr is False:
             raise ImportError(
-                "huggingface-hub is not installed. Install with: "
+                "huggingface-hub or zarr is not installed. Install with: "
                 "pip install braindecode[hub]"
             )
 
-        # Note: No need to check for empty datasets - PyTorch's ConcatDataset
-        # already prevents empty datasets in __init__
-
-        if not ZARR_AVAILABLE:
-            raise ImportError("Zarr is not installed. Install with: pip install zarr")
-
         # Create API instance
-        _ = HfApi(token=token)
+        _ = huggingface_hub.HfApi(token=token)
 
         # Create repository if it doesn't exist
         try:
-            create_repo(
+            huggingface_hub.create_repo(
                 repo_id=repo_id,
                 token=token,
                 private=private,
@@ -525,7 +502,7 @@ class HubDatasetMixin:
             # Upload folder to Hub
             log.info(f"Uploading to Hugging Face Hub ({repo_id})...")
             try:
-                url = upload_folder(
+                url = huggingface_hub.upload_folder(
                     repo_id=repo_id,
                     folder_path=str(tmp_path),
                     repo_type="dataset",
@@ -641,22 +618,17 @@ class HubDatasetMixin:
         >>> from torch.utils.data import DataLoader
         >>> loader = DataLoader(dataset, batch_size=32, shuffle=True)
         """
-        if not HF_HUB_AVAILABLE:
+        if zarr is False or hub_validation is False:
             raise ImportError(
-                "huggingface-hub is not installed. Install with: "
+                "huggingface hub functionality is not installed. Install with: "
                 "pip install braindecode[hub]"
-            )
-
-        if not ZARR_AVAILABLE:
-            raise ImportError(
-                "Zarr is not installed. Install with: pip install braindecode[hub]"
             )
 
         log.info(f"Loading dataset from Hugging Face Hub ({repo_id})...")
 
         try:
             # Download the entire dataset directory
-            dataset_dir = snapshot_download(
+            dataset_dir = huggingface_hub.snapshot_download(
                 repo_id=repo_id,
                 repo_type="dataset",
                 token=token,
@@ -697,7 +669,7 @@ class HubDatasetMixin:
 
             return dataset
 
-        except HfHubHTTPError as e:
+        except zarr.util.HfHubHTTPError as e:
             if e.response.status_code == 404:
                 raise FileNotFoundError(
                     f"Dataset '{repo_id}' not found on Hugging Face Hub. "
@@ -811,9 +783,7 @@ class HubDatasetMixin:
             raise ValueError("Cannot get format info for empty dataset")
 
         # Validate uniformity across all datasets using shared validation
-        dataset_type, first_ch_names, first_sfreq = (
-            hub_validation.validate_dataset_uniformity(self.datasets)
-        )
+        dataset_type, _, _ = hub_validation.validate_dataset_uniformity(self.datasets)
 
         # Calculate dataset size
         # BaseConcatDataset's __len__ already sums len(ds) for all datasets
