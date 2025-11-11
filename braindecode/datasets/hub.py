@@ -384,8 +384,8 @@ class HubDatasetMixin:
                 f"{output_path} already exists. Set overwrite=True to replace it."
             )
 
-        # Create zarr store
-        store = zarr.DirectoryStore(output_path)
+        # Create zarr store (zarr v3!)
+        store = zarr.storage.LocalStore(str(output_path))
         root = zarr.group(store=store, overwrite=False)
 
         # Validate uniformity across all datasets using shared validation
@@ -510,8 +510,8 @@ class HubDatasetMixin:
         if not input_path.exists():
             raise FileNotFoundError(f"{input_path} does not exist.")
 
-        # Open zarr store
-        store = zarr.DirectoryStore(input_path)
+        # Open zarr store (zarr v3 uses LocalStore instead of DirectoryStore)
+        store = zarr.storage.LocalStore(str(input_path))
         root = zarr.group(store=store)
 
         n_datasets = root.attrs["n_datasets"]
@@ -648,12 +648,13 @@ def _save_windows_to_zarr(
 ):
     """Save windowed data to Zarr group (low-level function)."""
     # Save data with chunking for random access
-    grp.create_dataset(
+    # Zarr v3 uses create_array instead of create_dataset
+    # When providing data, don't specify shape (it's inferred from data)
+    grp.create_array(
         "data",
         data=data.astype(np.float32),
         chunks=(1, data.shape[1], data.shape[2]),
-        compressor=compressor,
-        dtype=np.float32,
+        compressors=[compressor] if compressor else None,
     )
 
     # Save metadata
@@ -681,12 +682,11 @@ def _save_eegwindows_to_zarr(
 
     # Save continuous data with chunking optimized for window extraction
     # Chunk size: all channels, 10000 timepoints for efficient random access
-    grp.create_dataset(
+    grp.create_array(
         "data",
         data=continuous_data.astype(np.float32),
         chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
-        compressor=compressor,
-        dtype=np.float32,
+        compressors=[compressor] if compressor else None,
     )
 
     # Save metadata
@@ -770,12 +770,11 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
 
     # Save continuous data with chunking optimized for efficient access
     # Chunk size: all channels, 10000 timepoints for efficient random access
-    grp.create_dataset(
+    grp.create_array(
         "data",
         data=continuous_data.astype(np.float32),
         chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
-        compressor=compressor,
-        dtype=np.float32,
+        compressors=[compressor] if compressor else None,
     )
 
     # Save description
@@ -817,18 +816,21 @@ def _load_raw_from_zarr(grp, preload):
 
 
 def _create_compressor(compression, compression_level):
-    """Create a Zarr compressor object."""
+    """Create a Zarr compressor object (zarr v3 codec)."""
     if zarr is False:
         raise ImportError(
             "Zarr is not installed. Install with: pip install braindecode[hub]"
         )
 
+    # Zarr v3 uses codecs instead of compressors
+    from zarr.codecs import BloscCodec, GzipCodec, ZstdCodec
+
     if compression == "blosc":
-        return zarr.Blosc(cname="zstd", clevel=compression_level)
+        return BloscCodec(cname="zstd", clevel=compression_level)
     elif compression == "zstd":
-        return zarr.Blosc(cname="zstd", clevel=compression_level)
+        return ZstdCodec(level=compression_level)
     elif compression == "gzip":
-        return zarr.Blosc(cname="gzip", clevel=compression_level)
+        return GzipCodec(level=compression_level)
     else:
         return None
 
