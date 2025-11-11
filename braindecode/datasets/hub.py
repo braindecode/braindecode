@@ -372,6 +372,13 @@ class HubDatasetMixin:
         compression_level: int,
     ) -> None:
         """Convert dataset to Zarr format (inline implementation)."""
+
+        if zarr is False or huggingface_hub is False:
+            raise ImportError(
+                "huggingface hub functionality is not installed. Install with: "
+                "pip install braindecode[hub]"
+            )
+
         if output_path.exists():
             raise FileExistsError(
                 f"{output_path} already exists. Set overwrite=True to replace it."
