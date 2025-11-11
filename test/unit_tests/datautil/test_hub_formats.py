@@ -4,10 +4,16 @@
 
 """Simple tests for Zarr format converters."""
 
+import inspect
 
+import mne
+import numpy as np
+import pandas as pd
 import pytest
 
-from braindecode.datasets import BNCI2014_001, BaseConcatDataset
+from braindecode.datasets import BNCI2014_001, BaseConcatDataset, RawDataset
+from braindecode.datasets.registry import get_dataset_type
+from braindecode.datautil import hub_formats
 from braindecode.datautil.hub_formats import (
     convert_to_zarr,
     get_format_info,
@@ -85,7 +91,6 @@ def test_zarr_round_trip_eegwindows(setup_concat_eegwindows_dataset, tmp_path):
     assert len(loaded.datasets) == len(dataset.datasets)
     assert loaded.datasets[0].raw.info["sfreq"] == dataset.datasets[0].raw.info["sfreq"]
     # Verify it's actually an EEGWindowsDataset
-    from braindecode.datasets.registry import get_dataset_type
     assert get_dataset_type(loaded.datasets[0]) == "EEGWindowsDataset"
 
 
@@ -120,11 +125,6 @@ def test_get_format_info_eegwindows(setup_concat_eegwindows_dataset):
 def test_zarr_round_trip_rawdataset(tmp_path):
     """Test saving and loading RawDataset in Zarr format."""
     pytest.importorskip("zarr")
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import RawDataset
 
     # Create a simple RawDataset
     ch_names = ["C3", "C4", "Cz"]
@@ -135,7 +135,6 @@ def test_zarr_round_trip_rawdataset(tmp_path):
     raw_ds = RawDataset(raw, pd.Series({"subject": "1"}))
 
     # Create BaseConcatDataset
-    from braindecode.datasets import BaseConcatDataset
     dataset = BaseConcatDataset([raw_ds])
 
     zarr_path = tmp_path / "rawdataset.zarr"
@@ -152,18 +151,11 @@ def test_zarr_round_trip_rawdataset(tmp_path):
     assert len(loaded.datasets) == len(dataset.datasets)
     assert loaded.datasets[0].raw.info["sfreq"] == dataset.datasets[0].raw.info["sfreq"]
     # Verify it's actually a RawDataset
-    from braindecode.datasets.registry import get_dataset_type
     assert get_dataset_type(loaded.datasets[0]) == "RawDataset"
 
 
 def test_get_format_info_rawdataset():
     """Test getting format information from RawDataset."""
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import BaseConcatDataset, RawDataset
-
     # Create a simple RawDataset
     ch_names = ["C3", "C4", "Cz"]
     sfreq = 100
@@ -187,11 +179,6 @@ def test_get_format_info_rawdataset():
 def test_zarr_load_specific_ids(tmp_path):
     """Test loading specific recording IDs with ids_to_load parameter."""
     pytest.importorskip("zarr")
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import BaseConcatDataset, RawDataset
 
     # Create multiple RawDatasets
     ch_names = ["C3", "C4", "Cz"]
@@ -224,11 +211,6 @@ def test_zarr_load_specific_ids(tmp_path):
 def test_zarr_overwrite_protection(tmp_path):
     """Test overwrite parameter prevents accidental data loss."""
     pytest.importorskip("zarr")
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import BaseConcatDataset, RawDataset
 
     # Create a simple dataset
     ch_names = ["C3", "C4"]
@@ -256,9 +238,6 @@ def test_zarr_overwrite_protection(tmp_path):
 
 def test_no_lazy_imports_in_hub_formats():
     """Verify that hub_formats module has global imports only."""
-    import inspect
-
-    from braindecode.datautil import hub_formats
 
     # Get all functions in the hub_formats module
     functions = [
