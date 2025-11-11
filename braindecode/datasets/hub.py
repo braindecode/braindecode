@@ -221,17 +221,19 @@ class HubDatasetMixin:
         # Get dataset-specific info based on type using registry
         dataset_type = get_dataset_type(first_ds)
 
-        sfreq = first_ds.raw.info["sfreq"]
         n_windows = format_info["total_samples"]
 
         if dataset_type == "WindowsDataset":
             n_channels = len(first_ds.windows.ch_names)
             data_type = "Windowed (from Epochs object)"
+            sfreq = first_ds.windows.info["sfreq"]
         elif dataset_type == "EEGWindowsDataset":
             n_channels = len(first_ds.raw.ch_names)
+            sfreq = first_ds.raw.info["sfreq"]
             data_type = "Windowed (from Raw object)"
         elif dataset_type == "RawDataset":
             n_channels = len(first_ds.raw.ch_names)
+            sfreq = first_ds.raw.info["sfreq"]
             data_type = "Continuous (Raw)"
         else:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
