@@ -140,5 +140,5 @@ def _raise_sfreq_error(expected: float, actual: float, idx: int):
         f"Inconsistent sampling frequencies: dataset 0 has {expected} Hz "
         f"but dataset {idx} has {actual} Hz. "
         f"Please resample all datasets to a common frequency before saving. "
-        f"Use braindecode.preprocessing.preprocess() with Preprocessor('resample', sfreq={expected})."
+        f"Use braindecode.preprocessing.Resample with Resample(sfreq={expected})."
     )
