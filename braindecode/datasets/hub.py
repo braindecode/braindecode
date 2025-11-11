@@ -390,7 +390,7 @@ class HubDatasetMixin:
         # Store global metadata
         root.attrs["n_datasets"] = len(self.datasets)
         root.attrs["dataset_type"] = dataset_type
-        root.attrs["braindecode_version"] = "1.0"
+        root.attrs["braindecode_version"] = braindecode.__version__
 
         # Save preprocessing kwargs (check first dataset, assuming uniform preprocessing)
         # These are typically set by windowing functions on individual datasets
