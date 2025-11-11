@@ -5,9 +5,21 @@
 """Simple tests for Hugging Face Hub integration."""
 
 
+import inspect
+import warnings
+from unittest import mock
+
+import mne
+import numpy as np
+import pandas as pd
 import pytest
 
-from braindecode.datasets import BNCI2014_001, BaseConcatDataset
+from braindecode.datasets import (
+    BNCI2014_001,
+    BaseConcatDataset,
+    RawDataset,
+)
+from braindecode.datasets.registry import get_dataset_class, get_dataset_type
 from braindecode.preprocessing import create_windows_from_events
 
 
@@ -86,31 +98,35 @@ def test_zarr_save_and_load(setup_concat_windows_dataset, tmp_path):
 
 
 def test_no_lazy_imports_in_hub_module():
-    """Verify that hub module uses registry pattern instead of lazy imports."""
-    import inspect
+    """Verify that hub module uses registry pattern instead of lazy imports.
 
-    from braindecode.datasets import hub
+    Tests with mocked zarr and huggingface_hub to ensure modules can be imported
+    even when optional dependencies are not available.
+    """
+    # Mock zarr and huggingface_hub to simulate missing dependencies
+    with mock.patch.dict('sys.modules', {
+        'zarr': mock.MagicMock(),
+        'huggingface_hub': mock.MagicMock(),
+    }):
+        # Import hub module (should work even with mocked dependencies)
+        from braindecode.datasets import hub
 
-    # Get all functions in the hub module
-    functions = [
-        obj for name, obj in inspect.getmembers(hub)
-        if inspect.isfunction(obj) and obj.__module__ == hub.__name__
-    ]
+        # Get all functions in the hub module
+        functions = [
+            obj for name, obj in inspect.getmembers(hub)
+            if inspect.isfunction(obj) and obj.__module__ == hub.__name__
+        ]
 
-    # Check that no functions have 'from .base import' (which would be circular)
-    for func in functions:
-        source = inspect.getsource(func)
-        # No function should have 'from .base import' or 'from ..datasets.base import'
-        assert "from .base import" not in source, f"{func.__name__} has circular import"
-        assert "from ..datasets.base import" not in source, f"{func.__name__} has circular import"
+        # Check that no functions have 'from .base import' (which would be circular)
+        for func in functions:
+            source = inspect.getsource(func)
+            # No function should have 'from .base import' or 'from ..datasets.base import'
+            assert "from .base import" not in source, f"{func.__name__} has circular import"
+            assert "from ..datasets.base import" not in source, f"{func.__name__} has circular import"
 
 
 def test_registry_pattern_works():
     """Test that registry pattern allows access to dataset classes without circular imports."""
-    from braindecode.datasets import BNCI2014_001
-    from braindecode.datasets.registry import get_dataset_class, get_dataset_type
-    from braindecode.preprocessing import create_windows_from_events
-
     # Get classes from registry
     WindowsDataset = get_dataset_class("WindowsDataset")
     EEGWindowsDataset = get_dataset_class("EEGWindowsDataset")
@@ -138,8 +154,6 @@ def test_registry_pattern_works():
 def test_eegwindows_lossless_round_trip(tmp_path):
     """Test that EEGWindowsDataset has lossless round-trip with continuous data preserved."""
     pytest.importorskip("zarr")
-    import numpy as np
-    import pandas as pd
 
     # Create EEGWindowsDataset with continuous raw (use_mne_epochs=False)
     dataset = BNCI2014_001(subject_ids=[1])
@@ -168,7 +182,6 @@ def test_eegwindows_lossless_round_trip(tmp_path):
     loaded = windowed._load_from_zarr_inline(zarr_path, preload=True)
 
     # Verify it's an EEGWindowsDataset
-    from braindecode.datasets.registry import get_dataset_type
     assert get_dataset_type(loaded.datasets[0]) == "EEGWindowsDataset"
 
     # Verify continuous raw data is preserved (allowing for float32 precision)
@@ -200,11 +213,6 @@ def test_eegwindows_lossless_round_trip(tmp_path):
 def test_rawdataset_basic_save_load(tmp_path):
     """Test basic RawDataset save and load functionality."""
     pytest.importorskip("zarr")
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import BaseConcatDataset, RawDataset
 
     # Create a simple RawDataset with synthetic data
     n_channels = 3
@@ -239,7 +247,6 @@ def test_rawdataset_basic_save_load(tmp_path):
     loaded = concat_ds._load_from_zarr_inline(zarr_path, preload=True)
 
     # Verify dataset type
-    from braindecode.datasets.registry import get_dataset_type
     assert get_dataset_type(loaded.datasets[0]) == "RawDataset"
 
     # Verify data preservation (within float32 precision)
@@ -266,15 +273,12 @@ def test_rawdataset_basic_save_load(tmp_path):
 def test_rawdataset_lossless_round_trip(tmp_path):
     """Test that RawDataset has lossless round-trip with continuous data preserved."""
     pytest.importorskip("zarr")
-    import numpy as np
-    import pandas as pd
 
     # Use BNCI2014_001 to get real RawDataset
     dataset = BNCI2014_001(subject_ids=[1])
 
     # Get the first recording (which is a BaseDataset wrapping a RawDataset internally)
     # We need to create a RawDataset from it
-    from braindecode.datasets import RawDataset
     first_recording = dataset.datasets[0]
     raw_dataset = RawDataset(first_recording.raw, first_recording.description)
 
@@ -297,7 +301,6 @@ def test_rawdataset_lossless_round_trip(tmp_path):
     loaded = concat_ds._load_from_zarr_inline(zarr_path, preload=True)
 
     # Verify it's a RawDataset
-    from braindecode.datasets.registry import get_dataset_type
     assert get_dataset_type(loaded.datasets[0]) == "RawDataset"
 
     # Verify continuous raw data is preserved (allowing for float32 precision)
@@ -327,7 +330,6 @@ def test_rawdataset_mixed_concat(tmp_path):
     dataset = BNCI2014_001(subject_ids=[1, 2])
 
     # Create RawDatasets from first 2 recordings
-    from braindecode.datasets import RawDataset
     raw_ds1 = RawDataset(dataset.datasets[0].raw, dataset.datasets[0].description)
     raw_ds2 = RawDataset(dataset.datasets[1].raw, dataset.datasets[1].description)
 
@@ -349,7 +351,6 @@ def test_rawdataset_mixed_concat(tmp_path):
     assert len(loaded.datasets) == 2
 
     # Verify both are RawDatasets
-    from braindecode.datasets.registry import get_dataset_type
     assert get_dataset_type(loaded.datasets[0]) == "RawDataset"
     assert get_dataset_type(loaded.datasets[1]) == "RawDataset"
 
@@ -361,11 +362,6 @@ def test_rawdataset_mixed_concat(tmp_path):
 def test_rawdataset_dataset_card(tmp_path):
     """Test that dataset card (README) is generated correctly for RawDataset."""
     pytest.importorskip("huggingface_hub")
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import RawDataset
 
     # Create a simple RawDataset
     n_channels = 3
@@ -398,12 +394,6 @@ def test_rawdataset_dataset_card(tmp_path):
 
 def test_rawdataset_format_info():
     """Test that format info is correctly computed for RawDataset."""
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import RawDataset
-
     # Create two simple RawDatasets
     n_channels = 3
     n_times_1 = 1000
@@ -439,7 +429,6 @@ def test_rawdataset_format_info():
 def test_mixed_dataset_types_not_supported(tmp_path):
     """Test that mixing different dataset types raises clear error."""
     pytest.importorskip("zarr")
-    from braindecode.datasets import RawDataset
 
     # Create a WindowsDataset
     dataset = BNCI2014_001(subject_ids=[1])
@@ -476,11 +465,6 @@ def test_mixed_dataset_types_not_supported(tmp_path):
 def test_inconsistent_channels_not_supported(tmp_path):
     """Test that datasets with different channels raise clear error."""
     pytest.importorskip("zarr")
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import RawDataset
 
     # Create RawDataset with 3 channels
     n_channels_1 = 3
@@ -518,11 +502,6 @@ def test_inconsistent_channels_not_supported(tmp_path):
 def test_inconsistent_sfreq_not_supported(tmp_path):
     """Test that datasets with different sampling frequencies raise clear error."""
     pytest.importorskip("zarr")
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import RawDataset
 
     # Create RawDataset with 100 Hz
     ch_names = ["ch0", "ch1", "ch2"]
@@ -563,11 +542,6 @@ def test_inconsistent_sfreq_not_supported(tmp_path):
 def test_different_lengths_allowed(tmp_path):
     """Test that datasets with different lengths (but same channels/sfreq) are allowed."""
     pytest.importorskip("zarr")
-    import mne
-    import numpy as np
-    import pandas as pd
-
-    from braindecode.datasets import RawDataset
 
     # Create RawDataset with 1000 timepoints
     ch_names = ["ch0", "ch1", "ch2"]
@@ -610,7 +584,6 @@ def test_lazy_loading_support(tmp_path):
     so data is always loaded into memory with a warning.
     """
     pytest.importorskip("zarr")
-    import warnings
 
     # Create and save a windowed dataset
     dataset = BNCI2014_001(subject_ids=[1])
@@ -681,7 +654,6 @@ def test_preprocessing_kwargs_preserved(tmp_path):
 def test_zarr_round_trip_parametrized(tmp_path, use_mne_epochs):
     """Parametrized test for WindowsDataset and EEGWindowsDataset round-trip."""
     pytest.importorskip("zarr")
-    import numpy as np
 
     # Create dataset with parametrized type
     dataset = BNCI2014_001(subject_ids=[1])
@@ -703,7 +675,6 @@ def test_zarr_round_trip_parametrized(tmp_path, use_mne_epochs):
     loaded = windowed._load_from_zarr_inline(zarr_path, preload=True)
 
     # Verify type
-    from braindecode.datasets.registry import get_dataset_type
     assert get_dataset_type(loaded.datasets[0]) == expected_type
 
     # Verify data
