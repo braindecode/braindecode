@@ -356,7 +356,7 @@ class HubDatasetMixin:
 
             return dataset
 
-        except zarr.utils.HfHubHTTPError as e:
+        except huggingface_hub.utils.HfHubHTTPError as e:
             if e.response.status_code == 404:
                 raise FileNotFoundError(
                     f"Dataset '{repo_id}' not found on Hugging Face Hub. "
