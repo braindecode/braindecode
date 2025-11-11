@@ -9,6 +9,7 @@ for braindecode datasets, similar to the model Hub integration.
 #
 # License: BSD (3-clause)
 
+import io
 import json
 import logging
 import tempfile
@@ -47,6 +48,9 @@ except ImportError:
 
 import mne
 import pandas as pd
+
+# Import shared validation utilities
+from . import hub_validation
 
 log = logging.getLogger(__name__)
 
@@ -148,10 +152,10 @@ def _save_eegwindows_to_zarr(grp, raw, metadata, description, info, targets_from
 def _load_windows_from_zarr(grp, preload):
     """Load windowed data from Zarr group (low-level function)."""
     # Load metadata
-    metadata = pd.read_json(grp.attrs["metadata"], orient="split")
+    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
 
     # Load description
-    description = pd.read_json(grp.attrs["description"], typ="series")
+    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
 
     # Load info
     info_dict = json.loads(grp.attrs["info"])
@@ -176,10 +180,10 @@ def _load_windows_from_zarr(grp, preload):
 def _load_eegwindows_from_zarr(grp, preload):
     """Load EEG continuous raw data from Zarr group (low-level function)."""
     # Load metadata
-    metadata = pd.read_json(grp.attrs["metadata"], orient="split")
+    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
 
     # Load description
-    description = pd.read_json(grp.attrs["description"], typ="series")
+    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
 
     # Load info
     info_dict = json.loads(grp.attrs["info"])
@@ -232,7 +236,7 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
 def _load_raw_from_zarr(grp, preload):
     """Load RawDataset continuous raw data from Zarr group (low-level function)."""
     # Load description
-    description = pd.read_json(grp.attrs["description"], typ="series")
+    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
 
     # Load info
     info_dict = json.loads(grp.attrs["info"])
@@ -257,7 +261,7 @@ def _load_raw_from_zarr(grp, preload):
 def _create_compressor(compression, compression_level):
     """Create a Zarr compressor object."""
     if not ZARR_AVAILABLE:
-        raise ImportError("Zarr is not installed. Install with: pip install zarr")
+        raise ImportError("Zarr is not installed. Install with: pip install braindecode[hub]")
 
     if compression == "blosc":
         return zarr.Blosc(cname="zstd", clevel=compression_level)
@@ -605,7 +609,7 @@ For more information about braindecode, visit: https://braindecode.org
             )
 
         if not ZARR_AVAILABLE:
-            raise ImportError("Zarr is not installed. Install with: pip install zarr")
+            raise ImportError("Zarr is not installed. Install with: pip install braindecode[hub]")
 
         log.info(f"Loading dataset from Hugging Face Hub ({repo_id})...")
 
@@ -679,83 +683,13 @@ For more information about braindecode, visit: https://braindecode.org
         store = zarr.DirectoryStore(output_path)
         root = zarr.group(store=store, overwrite=False)
 
-        # Determine dataset type using registry
+        # Validate uniformity across all datasets using shared validation
+        dataset_type, first_ch_names, first_sfreq = hub_validation.validate_dataset_uniformity(
+            self.datasets
+        )
+
+        # Keep reference to first dataset for preprocessing kwargs
         first_ds = self.datasets[0]
-        dataset_type = get_dataset_type(first_ds)
-
-        if dataset_type not in ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]:
-            raise TypeError(f"Unsupported dataset type: {dataset_type}")
-
-        # Get reference channel names and sfreq from first dataset
-        if dataset_type == "WindowsDataset":
-            first_ch_names = first_ds.windows.ch_names
-            first_sfreq = first_ds.windows.info["sfreq"]
-        elif dataset_type == "EEGWindowsDataset":
-            first_ch_names = first_ds.raw.ch_names
-            first_sfreq = first_ds.raw.info["sfreq"]
-        elif dataset_type == "RawDataset":
-            first_ch_names = first_ds.raw.ch_names
-            first_sfreq = first_ds.raw.info["sfreq"]
-
-        # Validate all datasets have uniform properties (type, channels, sfreq)
-        for i, ds in enumerate(self.datasets):
-            # Check dataset type consistency
-            ds_type = get_dataset_type(ds)
-            if ds_type != dataset_type:
-                raise ValueError(
-                    f"Mixed dataset types in concat: dataset 0 is {dataset_type} "
-                    f"but dataset {i} is {ds_type}"
-                )
-
-            # Check channel names consistency
-            if dataset_type == "WindowsDataset":
-                if ds.windows.ch_names != first_ch_names:
-                    raise ValueError(
-                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
-                        f"but dataset {i} has {ds.windows.ch_names}"
-                    )
-                if ds.windows.info["sfreq"] != first_sfreq:
-                    raise ValueError(
-                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                        f"but dataset {i} has {ds.windows.info['sfreq']} Hz. "
-                        f"Please resample all datasets to a common frequency before saving. "
-                        f"Example:\n"
-                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
-                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
-                        f"  preprocess(concat_ds, preprocessors)"
-                    )
-            elif dataset_type == "EEGWindowsDataset":
-                if ds.raw.ch_names != first_ch_names:
-                    raise ValueError(
-                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
-                        f"but dataset {i} has {ds.raw.ch_names}"
-                    )
-                if ds.raw.info["sfreq"] != first_sfreq:
-                    raise ValueError(
-                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                        f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
-                        f"Please resample all datasets to a common frequency before saving. "
-                        f"Example:\n"
-                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
-                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
-                        f"  preprocess(concat_ds, preprocessors)"
-                    )
-            elif dataset_type == "RawDataset":
-                if ds.raw.ch_names != first_ch_names:
-                    raise ValueError(
-                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
-                        f"but dataset {i} has {ds.raw.ch_names}"
-                    )
-                if ds.raw.info["sfreq"] != first_sfreq:
-                    raise ValueError(
-                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                        f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
-                        f"Please resample all datasets to a common frequency before saving. "
-                        f"Example:\n"
-                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
-                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
-                        f"  preprocess(concat_ds, preprocessors)"
-                    )
 
         # Store global metadata
         root.attrs["n_datasets"] = len(self.datasets)
@@ -827,80 +761,10 @@ For more information about braindecode, visit: https://braindecode.org
         if len(self.datasets) == 0:
             raise ValueError("Cannot get format info for empty dataset")
 
-        # Determine dataset type from first dataset using registry
-        first_ds = self.datasets[0]
-        dataset_type = get_dataset_type(first_ds)
-
-        if dataset_type == "WindowsDataset":
-            first_ch_names = first_ds.windows.ch_names
-            first_sfreq = first_ds.windows.info["sfreq"]
-        elif dataset_type == "EEGWindowsDataset":
-            first_ch_names = first_ds.raw.ch_names
-            first_sfreq = first_ds.raw.info["sfreq"]
-        elif dataset_type == "RawDataset":
-            first_ch_names = first_ds.raw.ch_names
-            first_sfreq = first_ds.raw.info["sfreq"]
-        else:
-            raise TypeError(f"Unsupported dataset type: {dataset_type}")
-
-        # Validate uniformity across all datasets
-        for i, ds in enumerate(self.datasets):
-            # Check if all datasets are the same type
-            ds_type = get_dataset_type(ds)
-            if ds_type != dataset_type:
-                raise ValueError(
-                    f"Mixed dataset types in concat: dataset 0 is {dataset_type} "
-                    f"but dataset {i} is {ds_type}"
-                )
-
-            if dataset_type == "WindowsDataset":
-                if ds.windows.ch_names != first_ch_names:
-                    raise ValueError(
-                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
-                        f"but dataset {i} has {ds.windows.ch_names}"
-                    )
-                if ds.windows.info["sfreq"] != first_sfreq:
-                    raise ValueError(
-                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                        f"but dataset {i} has {ds.windows.info['sfreq']} Hz. "
-                        f"Please resample all datasets to a common frequency before saving. "
-                        f"Example:\n"
-                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
-                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
-                        f"  preprocess(concat_ds, preprocessors)"
-                    )
-            elif dataset_type == "EEGWindowsDataset":
-                if ds.raw.ch_names != first_ch_names:
-                    raise ValueError(
-                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
-                        f"but dataset {i} has {ds.raw.ch_names}"
-                    )
-                if ds.raw.info["sfreq"] != first_sfreq:
-                    raise ValueError(
-                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                        f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
-                        f"Please resample all datasets to a common frequency before saving. "
-                        f"Example:\n"
-                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
-                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
-                        f"  preprocess(concat_ds, preprocessors)"
-                    )
-            elif dataset_type == "RawDataset":
-                if ds.raw.ch_names != first_ch_names:
-                    raise ValueError(
-                        f"Inconsistent channel names: dataset 0 has {first_ch_names} "
-                        f"but dataset {i} has {ds.raw.ch_names}"
-                    )
-                if ds.raw.info["sfreq"] != first_sfreq:
-                    raise ValueError(
-                        f"Inconsistent sampling frequencies: dataset 0 has {first_sfreq} Hz "
-                        f"but dataset {i} has {ds.raw.info['sfreq']} Hz. "
-                        f"Please resample all datasets to a common frequency before saving. "
-                        f"Example:\n"
-                        f"  from braindecode.preprocessing import preprocess, Preprocessor\n"
-                        f"  preprocessors = [Preprocessor('resample', sfreq={first_sfreq})]\n"
-                        f"  preprocess(concat_ds, preprocessors)"
-                    )
+        # Validate uniformity across all datasets using shared validation
+        dataset_type, first_ch_names, first_sfreq = hub_validation.validate_dataset_uniformity(
+            self.datasets
+        )
 
         # Calculate dataset size
         # BaseConcatDataset's __len__ already sums len(ds) for all datasets

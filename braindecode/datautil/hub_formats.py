@@ -14,6 +14,7 @@ HubDatasetMixin methods for all actual implementations.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
@@ -86,10 +87,13 @@ def convert_to_zarr(
     """
     output_path = Path(output_path)
 
-    if output_path.exists() and not overwrite:
-        raise FileExistsError(
-            f"{output_path} already exists. Set overwrite=True to replace it."
-        )
+    if output_path.exists():
+        if not overwrite:
+            raise FileExistsError(
+                f"{output_path} already exists. Set overwrite=True to replace it."
+            )
+        # Remove existing directory if overwrite is True
+        shutil.rmtree(output_path)
 
     # Delegate to HubDatasetMixin method
     dataset._convert_to_zarr_inline(output_path, compression, compression_level)
