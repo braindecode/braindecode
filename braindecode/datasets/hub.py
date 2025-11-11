@@ -40,320 +40,6 @@ huggingface_hub = _soft_import("huggingface_hub", strict=False)
 log = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Core Zarr I/O Utilities (inlined to avoid circular imports)
-# =============================================================================
-
-
-def _mne_info_to_dict(info):
-    """Convert MNE Info object to dictionary for JSON serialization."""
-    return {
-        "ch_names": info["ch_names"],
-        "sfreq": float(info["sfreq"]),
-        "ch_types": [str(ch_type) for ch_type in info.get_channel_types()],
-        "lowpass": float(info["lowpass"]) if info["lowpass"] is not None else None,
-        "highpass": float(info["highpass"]) if info["highpass"] is not None else None,
-    }
-
-
-def _dict_to_mne_info(info_dict):
-    """Convert dictionary back to MNE Info object."""
-    info = mne.create_info(
-        ch_names=info_dict["ch_names"],
-        sfreq=info_dict["sfreq"],
-        ch_types=info_dict["ch_types"],
-    )
-
-    # Use _unlock() to set filter info when reconstructing from saved metadata
-    # This is necessary because MNE protects these fields to prevent users from
-    # setting filter parameters without actually filtering the data
-    with info._unlock():
-        if info_dict.get("lowpass") is not None:
-            info["lowpass"] = info_dict["lowpass"]
-        if info_dict.get("highpass") is not None:
-            info["highpass"] = info_dict["highpass"]
-
-    return info
-
-
-def _save_windows_to_zarr(
-    grp, data, metadata, description, info, compressor, target_name
-):
-    """Save windowed data to Zarr group (low-level function)."""
-    # Save data with chunking for random access
-    grp.create_dataset(
-        "data",
-        data=data.astype(np.float32),
-        chunks=(1, data.shape[1], data.shape[2]),
-        compressor=compressor,
-        dtype=np.float32,
-    )
-
-    # Save metadata
-    metadata_json = metadata.to_json(orient="split", date_format="iso")
-    grp.attrs["metadata"] = metadata_json
-
-    # Save description
-    description_json = description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
-
-    # Save MNE info
-    grp.attrs["info"] = json.dumps(info)
-
-    # Save target name if provided
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
-
-
-def _save_eegwindows_to_zarr(
-    grp, raw, metadata, description, info, targets_from, last_target_only, compressor
-):
-    """Save EEG continuous raw data to Zarr group (low-level function)."""
-    # Extract continuous data from Raw [n_channels, n_timepoints]
-    continuous_data = raw.get_data()
-
-    # Save continuous data with chunking optimized for window extraction
-    # Chunk size: all channels, 10000 timepoints for efficient random access
-    grp.create_dataset(
-        "data",
-        data=continuous_data.astype(np.float32),
-        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
-        compressor=compressor,
-        dtype=np.float32,
-    )
-
-    # Save metadata
-    metadata_json = metadata.to_json(orient="split", date_format="iso")
-    grp.attrs["metadata"] = metadata_json
-
-    # Save description
-    description_json = description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
-
-    # Save MNE info
-    grp.attrs["info"] = json.dumps(info)
-
-    # Save EEGWindowsDataset-specific attributes
-    grp.attrs["targets_from"] = targets_from
-    grp.attrs["last_target_only"] = last_target_only
-
-
-def _load_windows_from_zarr(grp, preload):
-    """Load windowed data from Zarr group (low-level function)."""
-    # Load metadata
-    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
-
-    # Load description
-    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
-
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        # TODO: Implement lazy loading properly
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
-
-    # Load target name
-    target_name = grp.attrs.get("target_name", None)
-
-    return data, metadata, description, info_dict, target_name
-
-
-def _load_eegwindows_from_zarr(grp, preload):
-    """Load EEG continuous raw data from Zarr group (low-level function)."""
-    # Load metadata
-    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
-
-    # Load description
-    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
-
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
-
-    # Load EEGWindowsDataset-specific attributes
-    targets_from = grp.attrs.get("targets_from", "metadata")
-    last_target_only = grp.attrs.get("last_target_only", True)
-
-    return data, metadata, description, info_dict, targets_from, last_target_only
-
-
-def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
-    """Save RawDataset continuous raw data to Zarr group (low-level function)."""
-    # Extract continuous data from Raw [n_channels, n_timepoints]
-    continuous_data = raw.get_data()
-
-    # Save continuous data with chunking optimized for efficient access
-    # Chunk size: all channels, 10000 timepoints for efficient random access
-    grp.create_dataset(
-        "data",
-        data=continuous_data.astype(np.float32),
-        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
-        compressor=compressor,
-        dtype=np.float32,
-    )
-
-    # Save description
-    description_json = description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
-
-    # Save MNE info
-    grp.attrs["info"] = json.dumps(info)
-
-    # Save target name if provided
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
-
-
-def _load_raw_from_zarr(grp, preload):
-    """Load RawDataset continuous raw data from Zarr group (low-level function)."""
-    # Load description
-    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
-
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        # TODO: Implement lazy loading properly
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
-
-    # Load target name
-    target_name = grp.attrs.get("target_name", None)
-
-    return data, description, info_dict, target_name
-
-
-def _create_compressor(compression, compression_level):
-    """Create a Zarr compressor object."""
-    if zarr is False:
-        raise ImportError(
-            "Zarr is not installed. Install with: pip install braindecode[hub]"
-        )
-
-    if compression == "blosc":
-        return zarr.Blosc(cname="zstd", clevel=compression_level)
-    elif compression == "zstd":
-        return zarr.Blosc(cname="zstd", clevel=compression_level)
-    elif compression == "gzip":
-        return zarr.Blosc(cname="gzip", clevel=compression_level)
-    else:
-        return None
-
-
-def _generate_readme_content(
-    format_info,
-    n_recordings: int,
-    n_channels: int,
-    sfreq,
-    data_type: str,
-    n_windows: int,
-):
-    """Generate README.md content for a dataset uploaded to the Hub."""
-    # Use safe access for total size and format sfreq nicely
-    total_size_mb = (
-        format_info.get("total_size_mb", 0.0) if isinstance(format_info, dict) else 0.0
-    )
-    sfreq_str = f"{sfreq:g}" if sfreq is not None else "N/A"
-
-    return f"""---
-tags:
-- braindecode
-- eeg
-- neuroscience
-- brain-computer-interface
-license: unknown
----
-
-# EEG Dataset
-
-This dataset was created using [braindecode](https://braindecode.org), a library for deep learning with EEG/MEG/ECoG signals.
-
-## Dataset Information
-
-| Property | Value |
-|---|---:|
-| Number of recordings | {n_recordings} |
-| Dataset type | {data_type} |
-| Number of channels | {n_channels} |
-| Sampling frequency | {sfreq_str} Hz |
-| Number of windows / samples | {n_windows} |
-| Total size | {total_size_mb:.2f} MB |
-| Storage format | zarr |
-
-## Usage
-
-To load this dataset::
-
-    .. code-block:: python
-
-        from braindecode.datasets import BaseConcatDataset
-
-        # Load dataset from Hugging Face Hub
-        dataset = BaseConcatDataset.from_pretrained("username/dataset-name")
-
-        # Access data
-        X, y, metainfo = dataset[0]
-        # X: EEG data (n_channels, n_times)
-        # y: label/target
-        # metainfo: window indices
-
-## Using with PyTorch DataLoader
-
-::
-
-    from torch.utils.data import DataLoader
-
-    # Create DataLoader for training
-    train_loader = DataLoader(
-        dataset,
-        batch_size=32,
-        shuffle=True,
-        num_workers=4
-    )
-
-    # Training loop
-    for X, y, _ in train_loader:
-        # X shape: [batch_size, n_channels, n_times]
-        # y shape: [batch_size]
-        # Process your batch...
-
-## Dataset Format
-
-This dataset is stored in **Zarr** format, optimized for:
-- Fast random access during training (critical for PyTorch DataLoader)
-- Efficient compression with blosc
-- Cloud-native storage compatibility
-
-For more information about braindecode, visit: https://braindecode.org
-"""
-
-
 class HubDatasetMixin:
     """
     Mixin class for Hugging Face Hub integration with EEG datasets.
@@ -915,3 +601,317 @@ class HubDatasetMixin:
                     setattr(ds, kwarg_name, kwargs)
 
         return concat_ds
+
+
+# =============================================================================
+# Core Zarr I/O Utilities (inlined to avoid circular imports)
+# =============================================================================
+
+
+def _mne_info_to_dict(info):
+    """Convert MNE Info object to dictionary for JSON serialization."""
+    return {
+        "ch_names": info["ch_names"],
+        "sfreq": float(info["sfreq"]),
+        "ch_types": [str(ch_type) for ch_type in info.get_channel_types()],
+        "lowpass": float(info["lowpass"]) if info["lowpass"] is not None else None,
+        "highpass": float(info["highpass"]) if info["highpass"] is not None else None,
+    }
+
+
+def _dict_to_mne_info(info_dict):
+    """Convert dictionary back to MNE Info object."""
+    info = mne.create_info(
+        ch_names=info_dict["ch_names"],
+        sfreq=info_dict["sfreq"],
+        ch_types=info_dict["ch_types"],
+    )
+
+    # Use _unlock() to set filter info when reconstructing from saved metadata
+    # This is necessary because MNE protects these fields to prevent users from
+    # setting filter parameters without actually filtering the data
+    with info._unlock():
+        if info_dict.get("lowpass") is not None:
+            info["lowpass"] = info_dict["lowpass"]
+        if info_dict.get("highpass") is not None:
+            info["highpass"] = info_dict["highpass"]
+
+    return info
+
+
+def _save_windows_to_zarr(
+    grp, data, metadata, description, info, compressor, target_name
+):
+    """Save windowed data to Zarr group (low-level function)."""
+    # Save data with chunking for random access
+    grp.create_dataset(
+        "data",
+        data=data.astype(np.float32),
+        chunks=(1, data.shape[1], data.shape[2]),
+        compressor=compressor,
+        dtype=np.float32,
+    )
+
+    # Save metadata
+    metadata_json = metadata.to_json(orient="split", date_format="iso")
+    grp.attrs["metadata"] = metadata_json
+
+    # Save description
+    description_json = description.to_json(date_format="iso")
+    grp.attrs["description"] = description_json
+
+    # Save MNE info
+    grp.attrs["info"] = json.dumps(info)
+
+    # Save target name if provided
+    if target_name is not None:
+        grp.attrs["target_name"] = target_name
+
+
+def _save_eegwindows_to_zarr(
+    grp, raw, metadata, description, info, targets_from, last_target_only, compressor
+):
+    """Save EEG continuous raw data to Zarr group (low-level function)."""
+    # Extract continuous data from Raw [n_channels, n_timepoints]
+    continuous_data = raw.get_data()
+
+    # Save continuous data with chunking optimized for window extraction
+    # Chunk size: all channels, 10000 timepoints for efficient random access
+    grp.create_dataset(
+        "data",
+        data=continuous_data.astype(np.float32),
+        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
+        compressor=compressor,
+        dtype=np.float32,
+    )
+
+    # Save metadata
+    metadata_json = metadata.to_json(orient="split", date_format="iso")
+    grp.attrs["metadata"] = metadata_json
+
+    # Save description
+    description_json = description.to_json(date_format="iso")
+    grp.attrs["description"] = description_json
+
+    # Save MNE info
+    grp.attrs["info"] = json.dumps(info)
+
+    # Save EEGWindowsDataset-specific attributes
+    grp.attrs["targets_from"] = targets_from
+    grp.attrs["last_target_only"] = last_target_only
+
+
+def _load_windows_from_zarr(grp, preload):
+    """Load windowed data from Zarr group (low-level function)."""
+    # Load metadata
+    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
+
+    # Load description
+    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
+
+    # Load info
+    info_dict = json.loads(grp.attrs["info"])
+
+    # Load data
+    if preload:
+        data = grp["data"][:]
+    else:
+        data = grp["data"][:]
+        # TODO: Implement lazy loading properly
+        warnings.warn(
+            "Lazy loading from Zarr not fully implemented yet. "
+            "Loading all data into memory.",
+            UserWarning,
+        )
+
+    # Load target name
+    target_name = grp.attrs.get("target_name", None)
+
+    return data, metadata, description, info_dict, target_name
+
+
+def _load_eegwindows_from_zarr(grp, preload):
+    """Load EEG continuous raw data from Zarr group (low-level function)."""
+    # Load metadata
+    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
+
+    # Load description
+    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
+
+    # Load info
+    info_dict = json.loads(grp.attrs["info"])
+
+    # Load data
+    if preload:
+        data = grp["data"][:]
+    else:
+        data = grp["data"][:]
+        warnings.warn(
+            "Lazy loading from Zarr not fully implemented yet. "
+            "Loading all data into memory.",
+            UserWarning,
+        )
+
+    # Load EEGWindowsDataset-specific attributes
+    targets_from = grp.attrs.get("targets_from", "metadata")
+    last_target_only = grp.attrs.get("last_target_only", True)
+
+    return data, metadata, description, info_dict, targets_from, last_target_only
+
+
+def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
+    """Save RawDataset continuous raw data to Zarr group (low-level function)."""
+    # Extract continuous data from Raw [n_channels, n_timepoints]
+    continuous_data = raw.get_data()
+
+    # Save continuous data with chunking optimized for efficient access
+    # Chunk size: all channels, 10000 timepoints for efficient random access
+    grp.create_dataset(
+        "data",
+        data=continuous_data.astype(np.float32),
+        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
+        compressor=compressor,
+        dtype=np.float32,
+    )
+
+    # Save description
+    description_json = description.to_json(date_format="iso")
+    grp.attrs["description"] = description_json
+
+    # Save MNE info
+    grp.attrs["info"] = json.dumps(info)
+
+    # Save target name if provided
+    if target_name is not None:
+        grp.attrs["target_name"] = target_name
+
+
+def _load_raw_from_zarr(grp, preload):
+    """Load RawDataset continuous raw data from Zarr group (low-level function)."""
+    # Load description
+    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
+
+    # Load info
+    info_dict = json.loads(grp.attrs["info"])
+
+    # Load data
+    if preload:
+        data = grp["data"][:]
+    else:
+        data = grp["data"][:]
+        # TODO: Implement lazy loading properly
+        warnings.warn(
+            "Lazy loading from Zarr not fully implemented yet. "
+            "Loading all data into memory.",
+            UserWarning,
+        )
+
+    # Load target name
+    target_name = grp.attrs.get("target_name", None)
+
+    return data, description, info_dict, target_name
+
+
+def _create_compressor(compression, compression_level):
+    """Create a Zarr compressor object."""
+    if zarr is False:
+        raise ImportError(
+            "Zarr is not installed. Install with: pip install braindecode[hub]"
+        )
+
+    if compression == "blosc":
+        return zarr.Blosc(cname="zstd", clevel=compression_level)
+    elif compression == "zstd":
+        return zarr.Blosc(cname="zstd", clevel=compression_level)
+    elif compression == "gzip":
+        return zarr.Blosc(cname="gzip", clevel=compression_level)
+    else:
+        return None
+
+
+def _generate_readme_content(
+    format_info,
+    n_recordings: int,
+    n_channels: int,
+    sfreq,
+    data_type: str,
+    n_windows: int,
+):
+    """Generate README.md content for a dataset uploaded to the Hub."""
+    # Use safe access for total size and format sfreq nicely
+    total_size_mb = (
+        format_info.get("total_size_mb", 0.0) if isinstance(format_info, dict) else 0.0
+    )
+    sfreq_str = f"{sfreq:g}" if sfreq is not None else "N/A"
+
+    return f"""---
+tags:
+- braindecode
+- eeg
+- neuroscience
+- brain-computer-interface
+license: unknown
+---
+
+# EEG Dataset
+
+This dataset was created using [braindecode](https://braindecode.org), a library for deep learning with EEG/MEG/ECoG signals.
+
+## Dataset Information
+
+| Property | Value |
+|---|---:|
+| Number of recordings | {n_recordings} |
+| Dataset type | {data_type} |
+| Number of channels | {n_channels} |
+| Sampling frequency | {sfreq_str} Hz |
+| Number of windows / samples | {n_windows} |
+| Total size | {total_size_mb:.2f} MB |
+| Storage format | zarr |
+
+## Usage
+
+To load this dataset::
+
+    .. code-block:: python
+
+        from braindecode.datasets import BaseConcatDataset
+
+        # Load dataset from Hugging Face Hub
+        dataset = BaseConcatDataset.from_pretrained("username/dataset-name")
+
+        # Access data
+        X, y, metainfo = dataset[0]
+        # X: EEG data (n_channels, n_times)
+        # y: label/target
+        # metainfo: window indices
+
+## Using with PyTorch DataLoader
+
+::
+
+    from torch.utils.data import DataLoader
+
+    # Create DataLoader for training
+    train_loader = DataLoader(
+        dataset,
+        batch_size=32,
+        shuffle=True,
+        num_workers=4
+    )
+
+    # Training loop
+    for X, y, _ in train_loader:
+        # X shape: [batch_size, n_channels, n_times]
+        # y shape: [batch_size]
+        # Process your batch...
+
+## Dataset Format
+
+This dataset is stored in **Zarr** format, optimized for:
+- Fast random access during training (critical for PyTorch DataLoader)
+- Efficient compression with blosc
+- Cloud-native storage compatibility
+
+For more information about braindecode, visit: https://braindecode.org
+"""
