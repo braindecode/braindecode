@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 import braindecode
 
 # Import shared validation utilities
-from ..datautil import hub_validation
+from . import hub_validation
 
 # Import registry for dynamic class lookup (avoids circular imports)
 from .registry import get_dataset_class, get_dataset_type
