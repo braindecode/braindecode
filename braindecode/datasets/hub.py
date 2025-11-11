@@ -831,6 +831,7 @@ def _generate_readme_content(
     sfreq,
     data_type: str,
     n_windows: int,
+    format: str = "zarr",
 ):
     """Generate README.md content for a dataset uploaded to the Hub."""
     # Use safe access for total size and format sfreq nicely
@@ -862,7 +863,7 @@ This dataset was created using [braindecode](https://braindecode.org), a library
 | Sampling frequency | {sfreq_str} Hz |
 | Number of windows / samples | {n_windows} |
 | Total size | {total_size_mb:.2f} MB |
-| Storage format | zarr |
+| Storage format | {format} |
 
 ## Usage
 
@@ -896,9 +897,10 @@ To load this dataset::
     )
 
     # Training loop
-    for X, y, _ in train_loader:
+    for X, y, metainfo in train_loader:
         # X shape: [batch_size, n_channels, n_times]
         # y shape: [batch_size]
+        # metainfo shape: [batch_size, 2] (start and end indices)
         # Process your batch...
 
 ## Dataset Format
