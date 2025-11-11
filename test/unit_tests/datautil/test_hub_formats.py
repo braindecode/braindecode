@@ -4,12 +4,16 @@
 
 """Simple tests for Zarr format converters."""
 
-import pytest
-from pathlib import Path
 
-from braindecode.datasets import BaseConcatDataset, BNCI2014_001
+import pytest
+
+from braindecode.datasets import BNCI2014_001, BaseConcatDataset
+from braindecode.datautil.hub_formats import (
+    convert_to_zarr,
+    get_format_info,
+    load_from_zarr,
+)
 from braindecode.preprocessing import create_windows_from_events
-from braindecode.datautil.hub_formats import convert_to_zarr, load_from_zarr, get_format_info
 
 
 @pytest.fixture()
@@ -116,9 +120,10 @@ def test_get_format_info_eegwindows(setup_concat_eegwindows_dataset):
 def test_zarr_round_trip_rawdataset(tmp_path):
     """Test saving and loading RawDataset in Zarr format."""
     pytest.importorskip("zarr")
-    import numpy as np
     import mne
+    import numpy as np
     import pandas as pd
+
     from braindecode.datasets import RawDataset
 
     # Create a simple RawDataset
@@ -153,10 +158,11 @@ def test_zarr_round_trip_rawdataset(tmp_path):
 
 def test_get_format_info_rawdataset():
     """Test getting format information from RawDataset."""
-    import numpy as np
     import mne
+    import numpy as np
     import pandas as pd
-    from braindecode.datasets import RawDataset, BaseConcatDataset
+
+    from braindecode.datasets import BaseConcatDataset, RawDataset
 
     # Create a simple RawDataset
     ch_names = ["C3", "C4", "Cz"]
@@ -181,10 +187,11 @@ def test_get_format_info_rawdataset():
 def test_zarr_load_specific_ids(tmp_path):
     """Test loading specific recording IDs with ids_to_load parameter."""
     pytest.importorskip("zarr")
-    import numpy as np
     import mne
+    import numpy as np
     import pandas as pd
-    from braindecode.datasets import RawDataset, BaseConcatDataset
+
+    from braindecode.datasets import BaseConcatDataset, RawDataset
 
     # Create multiple RawDatasets
     ch_names = ["C3", "C4", "Cz"]
@@ -217,10 +224,11 @@ def test_zarr_load_specific_ids(tmp_path):
 def test_zarr_overwrite_protection(tmp_path):
     """Test overwrite parameter prevents accidental data loss."""
     pytest.importorskip("zarr")
-    import numpy as np
     import mne
+    import numpy as np
     import pandas as pd
-    from braindecode.datasets import RawDataset, BaseConcatDataset
+
+    from braindecode.datasets import BaseConcatDataset, RawDataset
 
     # Create a simple dataset
     ch_names = ["C3", "C4"]
@@ -248,8 +256,9 @@ def test_zarr_overwrite_protection(tmp_path):
 
 def test_no_lazy_imports_in_hub_formats():
     """Verify that hub_formats module has global imports only."""
-    from braindecode.datautil import hub_formats
     import inspect
+
+    from braindecode.datautil import hub_formats
 
     # Get all functions in the hub_formats module
     functions = [

@@ -8,7 +8,8 @@ This module provides validation functions used by hub.py to avoid code duplicati
 #
 # License: BSD (3-clause)
 
-from typing import Tuple, List, Any
+from typing import Any, List, Tuple
+
 from .registry import get_dataset_type
 
 

@@ -4,10 +4,10 @@
 
 """Simple tests for Hugging Face Hub integration."""
 
-import pytest
-from pathlib import Path
 
-from braindecode.datasets import BaseConcatDataset, BNCI2014_001
+import pytest
+
+from braindecode.datasets import BNCI2014_001, BaseConcatDataset
 from braindecode.preprocessing import create_windows_from_events
 
 
@@ -87,8 +87,9 @@ def test_zarr_save_and_load(setup_concat_windows_dataset, tmp_path):
 
 def test_no_lazy_imports_in_hub_module():
     """Verify that hub module uses registry pattern instead of lazy imports."""
-    from braindecode.datasets import hub
     import inspect
+
+    from braindecode.datasets import hub
 
     # Get all functions in the hub module
     functions = [
@@ -106,8 +107,8 @@ def test_no_lazy_imports_in_hub_module():
 
 def test_registry_pattern_works():
     """Test that registry pattern allows access to dataset classes without circular imports."""
-    from braindecode.datasets.registry import get_dataset_class, get_dataset_type
     from braindecode.datasets import BNCI2014_001
+    from braindecode.datasets.registry import get_dataset_class, get_dataset_type
     from braindecode.preprocessing import create_windows_from_events
 
     # Get classes from registry
@@ -199,9 +200,10 @@ def test_eegwindows_lossless_round_trip(tmp_path):
 def test_rawdataset_basic_save_load(tmp_path):
     """Test basic RawDataset save and load functionality."""
     pytest.importorskip("zarr")
+    import mne
     import numpy as np
     import pandas as pd
-    import mne
+
     from braindecode.datasets import BaseConcatDataset, RawDataset
 
     # Create a simple RawDataset with synthetic data
@@ -320,7 +322,6 @@ def test_rawdataset_lossless_round_trip(tmp_path):
 def test_rawdataset_mixed_concat(tmp_path):
     """Test that mixed RawDataset concat works correctly."""
     pytest.importorskip("zarr")
-    import numpy as np
 
     # Use BNCI2014_001 with 2 subjects
     dataset = BNCI2014_001(subject_ids=[1, 2])
@@ -360,9 +361,10 @@ def test_rawdataset_mixed_concat(tmp_path):
 def test_rawdataset_dataset_card(tmp_path):
     """Test that dataset card (README) is generated correctly for RawDataset."""
     pytest.importorskip("huggingface_hub")
-    import numpy as np
     import mne
+    import numpy as np
     import pandas as pd
+
     from braindecode.datasets import RawDataset
 
     # Create a simple RawDataset
@@ -396,9 +398,10 @@ def test_rawdataset_dataset_card(tmp_path):
 
 def test_rawdataset_format_info():
     """Test that format info is correctly computed for RawDataset."""
-    import numpy as np
     import mne
+    import numpy as np
     import pandas as pd
+
     from braindecode.datasets import RawDataset
 
     # Create two simple RawDatasets
@@ -436,9 +439,6 @@ def test_rawdataset_format_info():
 def test_mixed_dataset_types_not_supported(tmp_path):
     """Test that mixing different dataset types raises clear error."""
     pytest.importorskip("zarr")
-    import numpy as np
-    import mne
-    import pandas as pd
     from braindecode.datasets import RawDataset
 
     # Create a WindowsDataset
@@ -476,9 +476,10 @@ def test_mixed_dataset_types_not_supported(tmp_path):
 def test_inconsistent_channels_not_supported(tmp_path):
     """Test that datasets with different channels raise clear error."""
     pytest.importorskip("zarr")
-    import numpy as np
     import mne
+    import numpy as np
     import pandas as pd
+
     from braindecode.datasets import RawDataset
 
     # Create RawDataset with 3 channels
@@ -517,9 +518,10 @@ def test_inconsistent_channels_not_supported(tmp_path):
 def test_inconsistent_sfreq_not_supported(tmp_path):
     """Test that datasets with different sampling frequencies raise clear error."""
     pytest.importorskip("zarr")
-    import numpy as np
     import mne
+    import numpy as np
     import pandas as pd
+
     from braindecode.datasets import RawDataset
 
     # Create RawDataset with 100 Hz
@@ -561,9 +563,10 @@ def test_inconsistent_sfreq_not_supported(tmp_path):
 def test_different_lengths_allowed(tmp_path):
     """Test that datasets with different lengths (but same channels/sfreq) are allowed."""
     pytest.importorskip("zarr")
-    import numpy as np
     import mne
+    import numpy as np
     import pandas as pd
+
     from braindecode.datasets import RawDataset
 
     # Create RawDataset with 1000 timepoints

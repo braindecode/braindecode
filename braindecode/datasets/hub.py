@@ -15,19 +15,23 @@ import logging
 import tempfile
 import warnings
 from pathlib import Path
-from typing import Optional, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from .base import BaseDataset
 
 import braindecode
 
 # Import registry for dynamic class lookup (avoids circular imports)
-from .registry import get_dataset_class, get_dataset_type, is_registered_dataset
+from .registry import get_dataset_class, get_dataset_type
 
 # Optional dependencies
 ZARR_AVAILABLE = False
 try:
     import zarr
+
     ZARR_AVAILABLE = True
 except ImportError:
     pass
@@ -37,11 +41,11 @@ try:
     from huggingface_hub import (
         HfApi,
         create_repo,
-        hf_hub_download,
         snapshot_download,
         upload_folder,
     )
     from huggingface_hub.utils import HfHubHTTPError
+
     HF_HUB_AVAILABLE = True
 except ImportError:
     pass
@@ -91,7 +95,9 @@ def _dict_to_mne_info(info_dict):
     return info
 
 
-def _save_windows_to_zarr(grp, data, metadata, description, info, compressor, target_name):
+def _save_windows_to_zarr(
+    grp, data, metadata, description, info, compressor, target_name
+):
     """Save windowed data to Zarr group (low-level function)."""
     # Save data with chunking for random access
     grp.create_dataset(
@@ -118,7 +124,9 @@ def _save_windows_to_zarr(grp, data, metadata, description, info, compressor, ta
         grp.attrs["target_name"] = target_name
 
 
-def _save_eegwindows_to_zarr(grp, raw, metadata, description, info, targets_from, last_target_only, compressor):
+def _save_eegwindows_to_zarr(
+    grp, raw, metadata, description, info, targets_from, last_target_only, compressor
+):
     """Save EEG continuous raw data to Zarr group (low-level function)."""
     # Extract continuous data from Raw [n_channels, n_timepoints]
     continuous_data = raw.get_data()
@@ -261,7 +269,9 @@ def _load_raw_from_zarr(grp, preload):
 def _create_compressor(compression, compression_level):
     """Create a Zarr compressor object."""
     if not ZARR_AVAILABLE:
-        raise ImportError("Zarr is not installed. Install with: pip install braindecode[hub]")
+        raise ImportError(
+            "Zarr is not installed. Install with: pip install braindecode[hub]"
+        )
 
     if compression == "blosc":
         return zarr.Blosc(cname="zstd", clevel=compression_level)
@@ -271,6 +281,94 @@ def _create_compressor(compression, compression_level):
         return zarr.Blosc(cname="gzip", clevel=compression_level)
     else:
         return None
+
+
+def _generate_readme_content(
+    format_info,
+    n_recordings: int,
+    n_channels: int,
+    sfreq,
+    data_type: str,
+    n_windows: int,
+):
+    """Generate README.md content for a dataset uploaded to the Hub."""
+    # Use safe access for total size and format sfreq nicely
+    total_size_mb = (
+        format_info.get("total_size_mb", 0.0) if isinstance(format_info, dict) else 0.0
+    )
+    sfreq_str = f"{sfreq:g}" if sfreq is not None else "N/A"
+
+    return f"""---
+tags:
+- braindecode
+- eeg
+- neuroscience
+- brain-computer-interface
+license: unknown
+---
+
+# EEG Dataset
+
+This dataset was created using [braindecode](https://braindecode.org), a library for deep learning with EEG/MEG/ECoG signals.
+
+## Dataset Information
+
+| Property | Value |
+|---|---:|
+| Number of recordings | {n_recordings} |
+| Dataset type | {data_type} |
+| Number of channels | {n_channels} |
+| Sampling frequency | {sfreq_str} Hz |
+| Number of windows / samples | {n_windows} |
+| Total size | {total_size_mb:.2f} MB |
+| Storage format | zarr |
+
+## Usage
+
+To load this dataset::
+
+    .. code-block:: python
+
+        from braindecode.datasets import BaseConcatDataset
+
+        # Load dataset from Hugging Face Hub
+        dataset = BaseConcatDataset.from_pretrained("username/dataset-name")
+
+        # Access data
+        X, y, metainfo = dataset[0]
+        # X: EEG data (n_channels, n_times)
+        # y: label/target
+        # metainfo: window indices
+
+## Using with PyTorch DataLoader
+
+::
+
+    from torch.utils.data import DataLoader
+
+    # Create DataLoader for training
+    train_loader = DataLoader(
+        dataset,
+        batch_size=32,
+        shuffle=True,
+        num_workers=4
+    )
+
+    # Training loop
+    for X, y, _ in train_loader:
+        # X shape: [batch_size, n_channels, n_times]
+        # y shape: [batch_size]
+        # Process your batch...
+
+## Dataset Format
+
+This dataset is stored in **Zarr** format, optimized for:
+- Fast random access during training (critical for PyTorch DataLoader)
+- Efficient compression with blosc
+- Cloud-native storage compatibility
+
+For more information about braindecode, visit: https://braindecode.org
+"""
 
 
 class HubDatasetMixin:
@@ -293,6 +391,8 @@ class HubDatasetMixin:
     >>> # Load dataset from Hub
     >>> dataset = BaseConcatDataset.from_pretrained("username/nmt-dataset")
     """
+
+    datasets: List["BaseDataset"]  # Attribute provided by inheriting class
 
     def push_to_hub(
         self,
@@ -369,7 +469,7 @@ class HubDatasetMixin:
             raise ImportError("Zarr is not installed. Install with: pip install zarr")
 
         # Create API instance
-        api = HfApi(token=token)
+        _ = HfApi(token=token)
 
         # Create repository if it doesn't exist
         try:
@@ -474,76 +574,15 @@ class HubDatasetMixin:
         else:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
-        # Create README content
-        readme_content = f"""---
-tags:
-- braindecode
-- eeg
-- neuroscience
-- brain-computer-interface
-license: unknown
----
-
-# EEG Dataset
-
-This dataset was created using [braindecode](https://braindecode.org), a library for deep learning with EEG/MEG/ECoG signals.
-
-## Dataset Information
-
-- **Number of recordings**: {n_recordings}
-- **Number of channels**: {n_channels}
-- **Sampling frequency**: {sfreq} Hz
-- **Data type**: {data_type}
-- **Number of windows**: {n_windows}
-- **Total size**: {format_info['total_size_mb']:.2f} MB
-- **Storage format**: zarr
-
-## Usage
-
-To load this dataset:
-
-```python
-from braindecode.datasets import BaseConcatDataset
-
-# Load dataset from Hugging Face Hub
-dataset = BaseConcatDataset.from_pretrained("username/dataset-name")
-
-# Access data
-X, y, metainfo = dataset[0]
-# X: EEG data (n_channels, n_times)
-# y: label/target
-# metainfo: window indices
-```
-
-## Using with PyTorch DataLoader
-
-```python
-from torch.utils.data import DataLoader
-
-# Create DataLoader for training
-train_loader = DataLoader(
-    dataset,
-    batch_size=32,
-    shuffle=True,
-    num_workers=4
-)
-
-# Training loop
-for X, y, _ in train_loader:
-    # X shape: [batch_size, n_channels, n_times]
-    # y shape: [batch_size]
-    # Process your batch...
-```
-
-## Dataset Format
-
-This dataset is stored in **Zarr** format, optimized for:
-- Fast random access during training (critical for PyTorch DataLoader)
-- Efficient compression with blosc
-- Cloud-native storage compatibility
-
-For more information about braindecode, visit: https://braindecode.org
-"""
+        # Create README content and save
+        readme_content = _generate_readme_content(
+            format_info=format_info,
+            n_recordings=n_recordings,
+            n_channels=n_channels,
+            sfreq=sfreq,
+            data_type=data_type,
+            n_windows=n_windows,
+        )
 
         # Save README
         readme_path = path / "README.md"
@@ -609,7 +648,9 @@ For more information about braindecode, visit: https://braindecode.org
             )
 
         if not ZARR_AVAILABLE:
-            raise ImportError("Zarr is not installed. Install with: pip install braindecode[hub]")
+            raise ImportError(
+                "Zarr is not installed. Install with: pip install braindecode[hub]"
+            )
 
         log.info(f"Loading dataset from Hugging Face Hub ({repo_id})...")
 
@@ -684,9 +725,7 @@ For more information about braindecode, visit: https://braindecode.org
         root = zarr.group(store=store, overwrite=False)
 
         # Validate uniformity across all datasets using shared validation
-        dataset_type, first_ch_names, first_sfreq = hub_validation.validate_dataset_uniformity(
-            self.datasets
-        )
+        dataset_type, _, _ = hub_validation.validate_dataset_uniformity(self.datasets)
 
         # Keep reference to first dataset for preprocessing kwargs
         first_ds = self.datasets[0]
@@ -698,7 +737,11 @@ For more information about braindecode, visit: https://braindecode.org
 
         # Save preprocessing kwargs (check first dataset, assuming uniform preprocessing)
         # These are typically set by windowing functions on individual datasets
-        for kwarg_name in ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"]:
+        for kwarg_name in [
+            "raw_preproc_kwargs",
+            "window_kwargs",
+            "window_preproc_kwargs",
+        ]:
             # Check first dataset for these attributes
             if hasattr(first_ds, kwarg_name):
                 kwargs = getattr(first_ds, kwarg_name)
@@ -736,8 +779,14 @@ For more information about braindecode, visit: https://braindecode.org
 
                 # Save using inlined function (saves continuous raw directly)
                 _save_eegwindows_to_zarr(
-                    grp, raw, metadata, description, info_dict,
-                    targets_from, last_target_only, compressor
+                    grp,
+                    raw,
+                    metadata,
+                    description,
+                    info_dict,
+                    targets_from,
+                    last_target_only,
+                    compressor,
                 )
 
             elif dataset_type == "RawDataset":
@@ -762,8 +811,8 @@ For more information about braindecode, visit: https://braindecode.org
             raise ValueError("Cannot get format info for empty dataset")
 
         # Validate uniformity across all datasets using shared validation
-        dataset_type, first_ch_names, first_sfreq = hub_validation.validate_dataset_uniformity(
-            self.datasets
+        dataset_type, first_ch_names, first_sfreq = (
+            hub_validation.validate_dataset_uniformity(self.datasets)
         )
 
         # Calculate dataset size
@@ -826,11 +875,13 @@ For more information about braindecode, visit: https://braindecode.org
 
                 # Convert to MNE objects and create dataset
                 info = _dict_to_mne_info(info_dict)
-                events = np.column_stack([
-                    metadata["i_start_in_trial"].values,
-                    np.zeros(len(metadata), dtype=int),
-                    metadata["target"].values,
-                ])
+                events = np.column_stack(
+                    [
+                        metadata["i_start_in_trial"].values,
+                        np.zeros(len(metadata), dtype=int),
+                        metadata["target"].values,
+                    ]
+                )
                 epochs = mne.EpochsArray(data, info, events=events, metadata=metadata)
                 ds = WindowsDataset(epochs, description)
                 if target_name is not None:
@@ -838,9 +889,14 @@ For more information about braindecode, visit: https://braindecode.org
 
             elif dataset_type == "EEGWindowsDataset":
                 # Load using inlined function
-                data, metadata, description, info_dict, targets_from, last_target_only = (
-                    _load_eegwindows_from_zarr(grp, preload)
-                )
+                (
+                    data,
+                    metadata,
+                    description,
+                    info_dict,
+                    targets_from,
+                    last_target_only,
+                ) = _load_eegwindows_from_zarr(grp, preload)
 
                 # Convert to MNE objects and create dataset
                 # Data is already in continuous format [n_channels, n_timepoints]
@@ -856,8 +912,8 @@ For more information about braindecode, visit: https://braindecode.org
 
             elif dataset_type == "RawDataset":
                 # Load using inlined function
-                data, description, info_dict, target_name = (
-                    _load_raw_from_zarr(grp, preload)
+                data, description, info_dict, target_name = _load_raw_from_zarr(
+                    grp, preload
                 )
 
                 # Convert to MNE objects and create dataset

@@ -26,8 +26,10 @@ We'll use the :class:`braindecode.datasets.BNCI2014_001` dataset as an example.
 #
 # License: BSD (3-clause)
 
-from braindecode.datasets import BaseConcatDataset, BNCI2014_001
-from braindecode.preprocessing import create_windows_from_events, create_fixed_length_windows
+from braindecode.datasets import BNCI2014_001, BaseConcatDataset
+from braindecode.preprocessing import (
+    create_windows_from_events,
+)
 
 ###############################################################################
 # Load and prepare datasets
@@ -56,7 +58,7 @@ windows_dataset = create_windows_from_events(
 )
 
 print(f"   Total windows: {len(windows_dataset)}")
-print(f"   Dataset type: WindowsDataset (epoched)")
+print("   Dataset type: WindowsDataset (epoched)")
 
 ###############################################################################
 # Example 2: EEGWindowsDataset (Continuous with windowing)
@@ -72,7 +74,7 @@ eegwindows_dataset = create_windows_from_events(
 )
 
 print(f"   Total windows: {len(eegwindows_dataset)}")
-print(f"   Dataset type: EEGWindowsDataset (continuous)")
+print("   Dataset type: EEGWindowsDataset (continuous)")
 
 ###############################################################################
 # Example 3: RawDataset (Continuous without windowing)
@@ -83,7 +85,7 @@ print("\n3. Using RawDataset (continuous without windowing)...")
 raw_dataset = BaseConcatDataset([dataset.datasets[0]])
 
 print(f"   Number of recordings: {len(raw_dataset.datasets)}")
-print(f"   Dataset type: RawDataset (continuous, no windows)")
+print("   Dataset type: RawDataset (continuous, no windows)")
 
 ###############################################################################
 # Upload datasets to Hugging Face Hub
@@ -242,7 +244,7 @@ train_loader = DataLoader(
 )
 
 print("\nDataLoader created:")
-print(f"  Batch size: 32")
+print("  Batch size: 32")
 print(f"  Total batches: {len(train_loader)}")
 
 # Iterate over a few batches
@@ -255,8 +257,10 @@ for i, batch_data in enumerate(train_loader):
         X_batch, y_batch, _ = batch_data
     else:
         X_batch, y_batch = batch_data
-    print(f"    Batch {i+1}: X shape={tuple(X_batch.shape)}, "
-          f"y shape={tuple(y_batch.shape)}")
+    print(
+        f"    Batch {i + 1}: X shape={tuple(X_batch.shape)}, "
+        f"y shape={tuple(y_batch.shape)}"
+    )
 
 print("""
 This works the same way for datasets loaded from the Hub!
