@@ -26,10 +26,21 @@ We'll use the :class:`braindecode.datasets.BNCI2014_001` dataset as an example.
 #
 # License: BSD (3-clause)
 
+import os
+
+from huggingface_hub import login
+
 from braindecode.datasets import BNCI2014_001, BaseConcatDataset
 from braindecode.preprocessing import (
     create_windows_from_events,
 )
+
+# Login to Hugging Face Hub using token from environment variable
+hf_token = os.environ.get("HUGGING_FACE_TOKEN")
+if hf_token:
+    login(token=hf_token)
+else:
+    print("Warning: HUGGING_FACE_TOKEN not set. Hub uploads will fail.")
 
 ###############################################################################
 # Load and prepare datasets
@@ -105,51 +116,46 @@ print("=" * 70)
 
 # Example 1: Upload WindowsDataset
 # ---------------------------------
-repo_id_windows = "your-username/bnci-windows"  # Change this!
+repo_id_windows = "braindecode/example_dataset-windows"
 
-# Uncomment to upload:
-# print(f"\nUploading WindowsDataset to {repo_id_windows}...")
-# url = windows_dataset.push_to_hub(
-#     repo_id=repo_id_windows,
-#     commit_message="Upload BNCI2014_001 WindowsDataset (epoched)",
-#     private=False,
-# )
-# print(f"✅ Uploaded to {url}!")
+print(f"\nUploading WindowsDataset to {repo_id_windows}...")
+url = windows_dataset.push_to_hub(
+    repo_id=repo_id_windows,
+    commit_message="Upload BNCI2014_001 WindowsDataset (epoched)",
+    private=False,
+)
+print(f"✅ Uploaded to {url}!")
 
 # Example 2: Upload EEGWindowsDataset
 # ------------------------------------
-repo_id_eegwindows = "your-username/bnci-eegwindows"  # Change this!
+repo_id_eegwindows = "braindecode/example_dataset-eegwindows"
 
-# Uncomment to upload:
-# print(f"\nUploading EEGWindowsDataset to {repo_id_eegwindows}...")
-# url = eegwindows_dataset.push_to_hub(
-#     repo_id=repo_id_eegwindows,
-#     commit_message="Upload BNCI2014_001 EEGWindowsDataset (continuous)",
-#     private=False,
-# )
-# print(f"✅ Uploaded to {url}!")
+print(f"\nUploading EEGWindowsDataset to {repo_id_eegwindows}...")
+url = eegwindows_dataset.push_to_hub(
+    repo_id=repo_id_eegwindows,
+    commit_message="Upload BNCI2014_001 EEGWindowsDataset (continuous)",
+    private=False,
+)
+print(f"✅ Uploaded to {url}!")
 
 # Example 3: Upload RawDataset
 # -----------------------------
-repo_id_raw = "your-username/bnci-raw"  # Change this!
+repo_id_raw = "braindecode/example_dataset-raw"
 
-# Uncomment to upload:
-# print(f"\nUploading RawDataset to {repo_id_raw}...")
-# url = raw_dataset.push_to_hub(
-#     repo_id=repo_id_raw,
-#     commit_message="Upload BNCI2014_001 RawDataset",
-#     private=False,
-# )
-# print(f"✅ Uploaded to {url}!")
+print(f"\nUploading RawDataset to {repo_id_raw}...")
+url = raw_dataset.push_to_hub(
+    repo_id=repo_id_raw,
+    commit_message="Upload BNCI2014_001 RawDataset",
+    private=False,
+)
+print(f"✅ Uploaded to {url}!")
 
 print("""
-To upload datasets, uncomment the code above and:
-1. Replace 'your-username' with your Hugging Face username
-2. Login with: huggingface-cli login
-3. Run this script
-
+The example above demonstrates uploading to the Hugging Face Hub.
 All datasets are converted to Zarr format (optimized for fast loading)
 and uploaded with auto-generated dataset cards.
+
+For your own datasets, replace the repo_id with your Hugging Face username.
 """)
 
 ###############################################################################
@@ -177,49 +183,42 @@ print("=" * 70)
 
 # Example 1: Download WindowsDataset
 # -----------------------------------
-# public_repo_windows = "username/bnci-windows"
+public_repo_windows = "braindecode/example_dataset-windows"
 
-# Uncomment to download:
-# print(f"\nDownloading WindowsDataset from {public_repo_windows}...")
-# loaded_windows = BaseConcatDataset.from_pretrained(
-#     public_repo_windows,
-#     preload=True,  # Load into memory (False for lazy loading)
-# )
-# print(f"✅ Loaded WindowsDataset!")
-# print(f"   Number of windows: {len(loaded_windows)}")
+print(f"\nDownloading WindowsDataset from {public_repo_windows}...")
+loaded_windows = BaseConcatDataset.from_pretrained(
+    public_repo_windows,
+    preload=True,  # Load into memory (False for lazy loading)
+)
+print("✅ Loaded WindowsDataset!")
+print(f"   Number of windows: {len(loaded_windows)}")
 
 # Example 2: Download EEGWindowsDataset
 # --------------------------------------
-# public_repo_eeg = "username/bnci-eegwindows"
+public_repo_eeg = "braindecode/example_dataset-eegwindows"
 
-# Uncomment to download:
-# print(f"\nDownloading EEGWindowsDataset from {public_repo_eeg}...")
-# loaded_eeg = BaseConcatDataset.from_pretrained(
-#     public_repo_eeg,
-#     preload=True,
-# )
-# print(f"✅ Loaded EEGWindowsDataset!")
-# print(f"   Number of windows: {len(loaded_eeg)}")
+print(f"\nDownloading EEGWindowsDataset from {public_repo_eeg}...")
+loaded_eeg = BaseConcatDataset.from_pretrained(
+    public_repo_eeg,
+    preload=True,
+)
+print("✅ Loaded EEGWindowsDataset!")
+print(f"   Number of windows: {len(loaded_eeg)}")
 
 # Example 3: Download RawDataset
 # -------------------------------
-# public_repo_raw = "username/bnci-raw"
+public_repo_raw = "braindecode/example_dataset-raw"
 
-# Uncomment to download:
-# print(f"\nDownloading RawDataset from {public_repo_raw}...")
-# loaded_raw = BaseConcatDataset.from_pretrained(
-#     public_repo_raw,
-#     preload=True,
-# )
-# print(f"✅ Loaded RawDataset!")
-# print(f"   Number of recordings: {len(loaded_raw.datasets)}")
+print(f"\nDownloading RawDataset from {public_repo_raw}...")
+loaded_raw = BaseConcatDataset.from_pretrained(
+    public_repo_raw,
+    preload=True,
+)
+print("✅ Loaded RawDataset!")
+print(f"   Number of recordings: {len(loaded_raw.datasets)}")
 
 print("""
-To download a dataset from the Hub:
-
->>> from braindecode.datasets import BaseConcatDataset
->>> dataset = BaseConcatDataset.from_pretrained("username/dataset-name")
-
+The example above demonstrates downloading datasets from the Hub.
 Datasets are automatically downloaded and cached locally.
 Subsequent loads use the cache for faster access.
 """)
@@ -331,10 +330,10 @@ The Hub integration is fully compatible with PyTorch's training pipeline.
 #    .. code-block:: python
 #
 #        # Upload
-#        dataset.push_to_hub("username/my-dataset")
+#        dataset.push_to_hub("braindecode/example_dataset")
 #
 #        # Test download
-#        test_dataset = BaseConcatDataset.from_pretrained("username/my-dataset")
+#        test_dataset = BaseConcatDataset.from_pretrained("braindecode/example_dataset")
 #        assert len(test_dataset) == len(dataset)
 #
 # 4. **Consider privacy** - Ensure you have permission to share the data and
