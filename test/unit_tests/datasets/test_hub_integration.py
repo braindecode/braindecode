@@ -167,8 +167,7 @@ def test_eegwindows_lossless_round_trip(tmp_path):
     # Store original continuous raw data
     original_raw_data = windowed.datasets[0].raw.get_data()
     original_metadata = windowed.datasets[0].metadata.copy()
-    original_n_channels = original_raw_data.shape[0]
-    original_n_timepoints = original_raw_data.shape[1]
+
 
     # Save to Zarr
     zarr_path = tmp_path / "dataset.zarr"
