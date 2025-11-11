@@ -19,7 +19,7 @@ import warnings
 from abc import abstractmethod
 from collections.abc import Callable
 from glob import glob
-from typing import Generic, Iterable, no_type_check
+from typing import Any, Generic, Iterable, no_type_check
 
 import mne.io
 import numpy as np
@@ -133,6 +133,7 @@ class RawDataset(RecordDataset):
 
         # save target name for load/save later
         self.target_name = self._target_name(target_name)
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index):
         X = self.raw[:, index][0]
@@ -241,6 +242,7 @@ class EEGWindowsDataset(RecordDataset):
         ].to_numpy()
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -341,6 +343,8 @@ class WindowsDataset(RecordDataset):
         ].to_numpy()
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
+        self.window_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -805,7 +809,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 kwargs = getattr(ds, kwargs_name)
                 if kwargs is not None:
                     with open(kwargs_file_path, "w") as f:
-                        json.dump(kwargs, f)
+                        json.dump(kwargs, f, indent=2)
 
     @staticmethod
     def _save_target_name(sub_dir, ds):
