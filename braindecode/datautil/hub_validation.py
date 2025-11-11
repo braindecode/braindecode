@@ -10,7 +10,7 @@ This module provides validation functions used by hub.py to avoid code duplicati
 
 from typing import Any, List, Tuple
 
-from .registry import get_dataset_type
+from ..datasets.registry import get_dataset_type
 
 
 def validate_dataset_uniformity(
