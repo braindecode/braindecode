@@ -386,8 +386,8 @@ class HubDatasetMixin:
                 f"{output_path} already exists. Set overwrite=True to replace it."
             )
 
-        # Create zarr store (zarr v3!)
-        store = zarr.storage.LocalStore(str(output_path))
+        # Create zarr store (zarr v2 API)
+        store = zarr.DirectoryStore(str(output_path))
         root = zarr.group(store=store, overwrite=False)
 
         # Validate uniformity across all datasets using shared validation
@@ -400,6 +400,17 @@ class HubDatasetMixin:
         root.attrs["n_datasets"] = len(self.datasets)
         root.attrs["dataset_type"] = dataset_type
         root.attrs["braindecode_version"] = braindecode.__version__
+
+        # Track dependency versions for reproducibility
+        root.attrs["mne_version"] = mne.__version__
+        root.attrs["numpy_version"] = np.__version__
+        root.attrs["pandas_version"] = pd.__version__
+        root.attrs["zarr_version"] = zarr.__version__
+        try:
+            import scipy
+            root.attrs["scipy_version"] = scipy.__version__
+        except ImportError:
+            pass
 
         # Save preprocessing kwargs (check first dataset, assuming uniform preprocessing)
         # These are typically set by windowing functions on individual datasets
@@ -512,8 +523,8 @@ class HubDatasetMixin:
         if not input_path.exists():
             raise FileNotFoundError(f"{input_path} does not exist.")
 
-        # Open zarr store (zarr v3 uses LocalStore instead of DirectoryStore)
-        store = zarr.storage.LocalStore(str(input_path))
+        # Open zarr store (zarr v2 API)
+        store = zarr.DirectoryStore(str(input_path))
         root = zarr.group(store=store)
 
         n_datasets = root.attrs["n_datasets"]
@@ -650,13 +661,11 @@ def _save_windows_to_zarr(
 ):
     """Save windowed data to Zarr group (low-level function)."""
     # Save data with chunking for random access
-    # Zarr v3 uses create_array instead of create_dataset
-    # When providing data, don't specify shape (it's inferred from data)
-    grp.create_array(
+    grp.create_dataset(
         "data",
         data=data.astype(np.float32),
         chunks=(1, data.shape[1], data.shape[2]),
-        compressors=[compressor] if compressor else None,
+        compressor=compressor,
     )
 
     # Save metadata
@@ -684,11 +693,11 @@ def _save_eegwindows_to_zarr(
 
     # Save continuous data with chunking optimized for window extraction
     # Chunk size: all channels, 10000 timepoints for efficient random access
-    grp.create_array(
+    grp.create_dataset(
         "data",
         data=continuous_data.astype(np.float32),
         chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
-        compressors=[compressor] if compressor else None,
+        compressor=compressor,
     )
 
     # Save metadata
@@ -772,11 +781,11 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
 
     # Save continuous data with chunking optimized for efficient access
     # Chunk size: all channels, 10000 timepoints for efficient random access
-    grp.create_array(
+    grp.create_dataset(
         "data",
         data=continuous_data.astype(np.float32),
         chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
-        compressors=[compressor] if compressor else None,
+        compressor=compressor,
     )
 
     # Save description
@@ -818,21 +827,21 @@ def _load_raw_from_zarr(grp, preload):
 
 
 def _create_compressor(compression, compression_level):
-    """Create a Zarr compressor object (zarr v3 codec)."""
+    """Create a Zarr compressor object (zarr v2 API)."""
     if zarr is False:
         raise ImportError(
             "Zarr is not installed. Install with: pip install braindecode[hub]"
         )
 
-    # Zarr v3 uses codecs instead of compressors
-    from zarr.codecs import BloscCodec, GzipCodec, ZstdCodec
+    # Zarr v2 uses numcodecs compressors
+    from numcodecs import Blosc, GZip, Zstd
 
     if compression == "blosc":
-        return BloscCodec(cname="zstd", clevel=compression_level)
+        return Blosc(cname="zstd", clevel=compression_level)
     elif compression == "zstd":
-        return ZstdCodec(level=compression_level)
+        return Zstd(level=compression_level)
     elif compression == "gzip":
-        return GzipCodec(level=compression_level)
+        return GZip(level=compression_level)
     else:
         return None
 
