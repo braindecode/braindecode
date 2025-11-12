@@ -20,7 +20,9 @@ from typing import TYPE_CHECKING, List, Optional, Union
 import mne
 import numpy as np
 import pandas as pd
+import scipy
 from mne.utils import _soft_import
+from numcodecs import Blosc, GZip, Zstd
 
 if TYPE_CHECKING:
     from .base import BaseDataset
@@ -406,12 +408,7 @@ class HubDatasetMixin:
         root.attrs["numpy_version"] = np.__version__
         root.attrs["pandas_version"] = pd.__version__
         root.attrs["zarr_version"] = zarr.__version__
-        try:
-            import scipy
-
-            root.attrs["scipy_version"] = scipy.__version__
-        except ImportError:
-            pass
+        root.attrs["scipy_version"] = scipy.__version__
 
         # Save preprocessing kwargs (check first dataset, assuming uniform preprocessing)
         # These are typically set by windowing functions on individual datasets
@@ -622,7 +619,7 @@ class HubDatasetMixin:
 
 
 # =============================================================================
-# Core Zarr I/O Utilities (inlined to avoid circular imports)
+# Core Zarr I/O Utilities
 # =============================================================================
 
 
@@ -835,7 +832,6 @@ def _create_compressor(compression, compression_level):
         )
 
     # Zarr v2 uses numcodecs compressors
-    from numcodecs import Blosc, GZip, Zstd
 
     if compression == "blosc":
         return Blosc(cname="zstd", clevel=compression_level)

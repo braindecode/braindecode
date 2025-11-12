@@ -114,41 +114,46 @@ print("\n" + "=" * 70)
 print("UPLOADING TO HUGGING FACE HUB")
 print("=" * 70)
 
-# Example 1: Upload WindowsDataset
-# ---------------------------------
-repo_id_windows = "braindecode/example_dataset-windows"
+# Skip Hub operations if no token is available (e.g., during docs build)
+if not hf_token:
+    print("\n⚠️  Skipping Hub upload examples (no HUGGING_FACE_TOKEN set)")
+    print("To run this example with actual uploads, set HUGGING_FACE_TOKEN")
+else:
+    # Example 1: Upload WindowsDataset
+    # ---------------------------------
+    repo_id_windows = "braindecode/example_dataset-windows"
 
-print(f"\nUploading WindowsDataset to {repo_id_windows}...")
-url = windows_dataset.push_to_hub(
-    repo_id=repo_id_windows,
-    commit_message="Upload BNCI2014_001 WindowsDataset (epoched)",
-    private=False,
-)
-print(f"✅ Uploaded to {url}!")
+    print(f"\nUploading WindowsDataset to {repo_id_windows}...")
+    url = windows_dataset.push_to_hub(
+        repo_id=repo_id_windows,
+        commit_message="Upload BNCI2014_001 WindowsDataset (epoched)",
+        private=False,
+    )
+    print(f"✅ Uploaded to {url}!")
 
-# Example 2: Upload EEGWindowsDataset
-# ------------------------------------
-repo_id_eegwindows = "braindecode/example_dataset-eegwindows"
+    # Example 2: Upload EEGWindowsDataset
+    # ------------------------------------
+    repo_id_eegwindows = "braindecode/example_dataset-eegwindows"
 
-print(f"\nUploading EEGWindowsDataset to {repo_id_eegwindows}...")
-url = eegwindows_dataset.push_to_hub(
-    repo_id=repo_id_eegwindows,
-    commit_message="Upload BNCI2014_001 EEGWindowsDataset (continuous)",
-    private=False,
-)
-print(f"✅ Uploaded to {url}!")
+    print(f"\nUploading EEGWindowsDataset to {repo_id_eegwindows}...")
+    url = eegwindows_dataset.push_to_hub(
+        repo_id=repo_id_eegwindows,
+        commit_message="Upload BNCI2014_001 EEGWindowsDataset (continuous)",
+        private=False,
+    )
+    print(f"✅ Uploaded to {url}!")
 
-# Example 3: Upload RawDataset
-# -----------------------------
-repo_id_raw = "braindecode/example_dataset-raw"
+    # Example 3: Upload RawDataset
+    # -----------------------------
+    repo_id_raw = "braindecode/example_dataset-raw"
 
-print(f"\nUploading RawDataset to {repo_id_raw}...")
-url = raw_dataset.push_to_hub(
-    repo_id=repo_id_raw,
-    commit_message="Upload BNCI2014_001 RawDataset",
-    private=False,
-)
-print(f"✅ Uploaded to {url}!")
+    print(f"\nUploading RawDataset to {repo_id_raw}...")
+    url = raw_dataset.push_to_hub(
+        repo_id=repo_id_raw,
+        commit_message="Upload BNCI2014_001 RawDataset",
+        private=False,
+    )
+    print(f"✅ Uploaded to {url}!")
 
 print("""
 The example above demonstrates uploading to the Hugging Face Hub.
@@ -181,41 +186,46 @@ print("\n" + "=" * 70)
 print("DOWNLOADING FROM HUGGING FACE HUB")
 print("=" * 70)
 
-# Example 1: Download WindowsDataset
-# -----------------------------------
-public_repo_windows = "braindecode/example_dataset-windows"
+# Skip Hub downloads if no token (docs build)
+if not hf_token:
+    print("\n⚠️  Skipping Hub download examples (no HUGGING_FACE_TOKEN set)")
+    print("To run this example with actual downloads, set HUGGING_FACE_TOKEN")
+else:
+    # Example 1: Download WindowsDataset
+    # -----------------------------------
+    public_repo_windows = "braindecode/example_dataset-windows"
 
-print(f"\nDownloading WindowsDataset from {public_repo_windows}...")
-loaded_windows = BaseConcatDataset.from_pretrained(
-    public_repo_windows,
-    preload=True,  # Load into memory (False for lazy loading)
-)
-print("✅ Loaded WindowsDataset!")
-print(f"   Number of windows: {len(loaded_windows)}")
+    print(f"\nDownloading WindowsDataset from {public_repo_windows}...")
+    loaded_windows = BaseConcatDataset.from_pretrained(
+        public_repo_windows,
+        preload=True,  # Load into memory (False for lazy loading)
+    )
+    print("✅ Loaded WindowsDataset!")
+    print(f"   Number of windows: {len(loaded_windows)}")
 
-# Example 2: Download EEGWindowsDataset
-# --------------------------------------
-public_repo_eeg = "braindecode/example_dataset-eegwindows"
+    # Example 2: Download EEGWindowsDataset
+    # --------------------------------------
+    public_repo_eeg = "braindecode/example_dataset-eegwindows"
 
-print(f"\nDownloading EEGWindowsDataset from {public_repo_eeg}...")
-loaded_eeg = BaseConcatDataset.from_pretrained(
-    public_repo_eeg,
-    preload=True,
-)
-print("✅ Loaded EEGWindowsDataset!")
-print(f"   Number of windows: {len(loaded_eeg)}")
+    print(f"\nDownloading EEGWindowsDataset from {public_repo_eeg}...")
+    loaded_eeg = BaseConcatDataset.from_pretrained(
+        public_repo_eeg,
+        preload=True,
+    )
+    print("✅ Loaded EEGWindowsDataset!")
+    print(f"   Number of windows: {len(loaded_eeg)}")
 
-# Example 3: Download RawDataset
-# -------------------------------
-public_repo_raw = "braindecode/example_dataset-raw"
+    # Example 3: Download RawDataset
+    # -------------------------------
+    public_repo_raw = "braindecode/example_dataset-raw"
 
-print(f"\nDownloading RawDataset from {public_repo_raw}...")
-loaded_raw = BaseConcatDataset.from_pretrained(
-    public_repo_raw,
-    preload=True,
-)
-print("✅ Loaded RawDataset!")
-print(f"   Number of recordings: {len(loaded_raw.datasets)}")
+    print(f"\nDownloading RawDataset from {public_repo_raw}...")
+    loaded_raw = BaseConcatDataset.from_pretrained(
+        public_repo_raw,
+        preload=True,
+    )
+    print("✅ Loaded RawDataset!")
+    print(f"   Number of recordings: {len(loaded_raw.datasets)}")
 
 print("""
 The example above demonstrates downloading datasets from the Hub.

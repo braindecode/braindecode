@@ -13,12 +13,16 @@ import mne
 import numpy as np
 import pandas as pd
 import pytest
+import scipy
+import zarr
+from numcodecs import Blosc, GZip, Zstd
 
 from braindecode.datasets import (
     BNCI2014_001,
     BaseConcatDataset,
     RawDataset,
 )
+from braindecode.datasets.hub import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
 from braindecode.preprocessing import create_windows_from_events
 
@@ -696,3 +700,155 @@ def test_zarr_round_trip_parametrized(tmp_path, use_mne_epochs):
             rtol=1e-6,
             atol=1e-7
         )
+
+
+def test_compression_types(tmp_path):
+    """Test different compression types: gzip, zstd, None."""
+    pytest.importorskip("zarr")
+
+    # Create a simple RawDataset
+    ch_names = ["ch0", "ch1"]
+    sfreq = 100
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
+    data = np.random.randn(2, 500)
+    raw = mne.io.RawArray(data, info)
+    raw_ds = RawDataset(raw, pd.Series({"subject": "1"}))
+    concat_ds = BaseConcatDataset([raw_ds])
+
+    # Test gzip compression
+    zarr_path_gzip = tmp_path / "test_gzip.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path_gzip,
+        compression="gzip",
+        compression_level=6,
+    )
+    assert zarr_path_gzip.exists()
+    loaded_gzip = concat_ds._load_from_zarr_inline(zarr_path_gzip, preload=True)
+    np.testing.assert_allclose(
+        raw_ds.raw.get_data(),
+        loaded_gzip.datasets[0].raw.get_data(),
+        rtol=1e-6,
+    )
+
+    # Test zstd compression
+    zarr_path_zstd = tmp_path / "test_zstd.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path_zstd,
+        compression="zstd",
+        compression_level=3,
+    )
+    assert zarr_path_zstd.exists()
+    loaded_zstd = concat_ds._load_from_zarr_inline(zarr_path_zstd, preload=True)
+    np.testing.assert_allclose(
+        raw_ds.raw.get_data(),
+        loaded_zstd.datasets[0].raw.get_data(),
+        rtol=1e-6,
+    )
+
+    # Test no compression (None)
+    zarr_path_none = tmp_path / "test_none.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path_none,
+        compression=None,
+        compression_level=5,
+    )
+    assert zarr_path_none.exists()
+    loaded_none = concat_ds._load_from_zarr_inline(zarr_path_none, preload=True)
+    np.testing.assert_allclose(
+        raw_ds.raw.get_data(),
+        loaded_none.datasets[0].raw.get_data(),
+        rtol=1e-6,
+    )
+
+
+def test_dependency_version_metadata(tmp_path):
+    """Test that dependency versions are saved in Zarr metadata."""
+    pytest.importorskip("zarr")
+
+    # Create a simple dataset
+    ch_names = ["ch0"]
+    sfreq = 100
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
+    data = np.random.randn(1, 100)
+    raw = mne.io.RawArray(data, info)
+    raw_ds = RawDataset(raw, pd.Series({"subject": "1"}))
+    concat_ds = BaseConcatDataset([raw_ds])
+
+    # Save to Zarr
+    zarr_path = tmp_path / "test_versions.zarr"
+    concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+
+    # Open Zarr and verify version metadata
+    store = zarr.DirectoryStore(str(zarr_path))
+    root = zarr.group(store=store)
+
+    # Check that all dependency versions are saved
+    assert "mne_version" in root.attrs
+    assert "numpy_version" in root.attrs
+    assert "pandas_version" in root.attrs
+    assert "zarr_version" in root.attrs
+    assert "scipy_version" in root.attrs
+
+    # Verify versions match current environment
+    assert root.attrs["mne_version"] == mne.__version__
+    assert root.attrs["numpy_version"] == np.__version__
+    assert root.attrs["pandas_version"] == pd.__version__
+    assert root.attrs["zarr_version"] == zarr.__version__
+    assert root.attrs["scipy_version"] == scipy.__version__
+
+
+def test_load_nonexistent_file_error(tmp_path):
+    """Test that loading from non-existent path raises FileNotFoundError."""
+    pytest.importorskip("zarr")
+
+    nonexistent_path = tmp_path / "does_not_exist.zarr"
+
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        BaseConcatDataset._load_from_zarr_inline(nonexistent_path, preload=True)
+
+
+def test_overwrite_existing_file_error(tmp_path):
+    """Test that saving to existing path raises FileExistsError without overwrite."""
+    pytest.importorskip("zarr")
+
+    # Create a simple dataset
+    ch_names = ["ch0"]
+    sfreq = 100
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
+    data = np.random.randn(1, 100)
+    raw = mne.io.RawArray(data, info)
+    raw_ds = RawDataset(raw, pd.Series({"subject": "1"}))
+    concat_ds = BaseConcatDataset([raw_ds])
+
+    # Save once
+    zarr_path = tmp_path / "test_overwrite.zarr"
+    concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+
+    # Try to save again without overwrite - should fail
+    with pytest.raises(FileExistsError, match="already exists"):
+        concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+
+
+def test_create_compressor_function():
+    """Test the _create_compressor function with different compression types."""
+    pytest.importorskip("zarr")
+
+    # Test blosc
+    compressor = _create_compressor("blosc", 5)
+    assert isinstance(compressor, Blosc)
+    assert compressor.clevel == 5
+    assert compressor.cname == "zstd"
+
+    # Test gzip
+    compressor = _create_compressor("gzip", 6)
+    assert isinstance(compressor, GZip)
+    assert compressor.level == 6
+
+    # Test zstd
+    compressor = _create_compressor("zstd", 3)
+    assert isinstance(compressor, Zstd)
+    assert compressor.level == 3
+
+    # Test None compression
+    compressor = _create_compressor(None, 5)
+    assert compressor is None
