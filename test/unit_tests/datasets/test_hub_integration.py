@@ -860,3 +860,214 @@ def test_create_compressor_function():
     # Test None compression
     compressor = _create_compressor(None, 5)
     assert compressor is None
+
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_push_to_hub_import_error(setup_concat_windows_dataset, tmp_path):
+    """Test that push_to_hub raises ImportError when huggingface_hub not available."""
+    dataset = setup_concat_windows_dataset
+
+    # Mock the _soft_import to return False for huggingface_hub
+    with mock.patch('braindecode.datasets.hub.huggingface_hub', False):
+        with pytest.raises(ImportError, match="huggingface-hub or zarr is not installed"):
+            dataset.push_to_hub(
+                repo_id="test/repo",
+                compression="blosc",
+                compression_level=5,
+            )
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
+    """Test push_to_hub with mocked HuggingFace Hub API calls."""
+    hf_hub = pytest.importorskip("huggingface_hub")
+
+    dataset = setup_concat_windows_dataset
+    repo_id = "test-user/test-dataset"
+
+    expected_url = f"https://huggingface.co/datasets/{repo_id}"
+
+    # Create mocks for the huggingface_hub module functions
+    mock_hf_api = mock.MagicMock()
+    mock_create_repo = mock.MagicMock(return_value=None)
+    mock_upload_folder = mock.MagicMock(return_value=expected_url)
+
+    with mock.patch.object(hf_hub, 'HfApi', return_value=mock_hf_api):
+        with mock.patch.object(hf_hub, 'create_repo', mock_create_repo):
+            with mock.patch.object(hf_hub, 'upload_folder', mock_upload_folder):
+                with mock.patch.object(dataset, '_convert_to_zarr_inline') as mock_convert:
+                    with mock.patch.object(dataset, '_save_dataset_card') as mock_save_card:
+                        # Call push_to_hub
+                        result_url = dataset.push_to_hub(
+                            repo_id=repo_id,
+                            compression="blosc",
+                            compression_level=5,
+                            private=False,
+                            token="test_token",
+                            commit_message="Test commit",
+                            create_pr=False,
+                        )
+
+    # Verify the URL was returned
+    assert result_url == expected_url
+
+    # Verify create_repo was called with correct parameters
+    mock_create_repo.assert_called_once_with(
+        repo_id=repo_id,
+        repo_type="dataset",
+        exist_ok=True,
+        private=False,
+        token="test_token",
+    )
+
+    # Verify _convert_to_zarr_inline was called
+    assert mock_convert.called
+
+    # Verify _save_dataset_card was called
+    assert mock_save_card.called
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_push_to_hub_upload_failure(setup_concat_windows_dataset, tmp_path):
+    """Test that push_to_hub raises RuntimeError when upload fails."""
+    hf_hub = pytest.importorskip("huggingface_hub")
+
+    dataset = setup_concat_windows_dataset
+    repo_id = "test-user/test-dataset"
+
+    # Create mocks
+    mock_hf_api = mock.MagicMock()
+    mock_create_repo = mock.MagicMock(return_value=None)
+
+    with mock.patch.object(hf_hub, 'HfApi', return_value=mock_hf_api):
+        with mock.patch.object(hf_hub, 'create_repo', mock_create_repo):
+            with mock.patch.object(hf_hub, 'upload_folder', side_effect=Exception("Upload failed")):
+                with mock.patch.object(dataset, '_convert_to_zarr_inline'):
+                    with mock.patch.object(dataset, '_save_dataset_card'):
+                        with pytest.raises(RuntimeError, match="Failed to upload dataset"):
+                            dataset.push_to_hub(
+                                repo_id=repo_id,
+                                compression="blosc",
+                                compression_level=5,
+                            )
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_from_pretrained_import_error(tmp_path):
+    """Test that from_pretrained raises ImportError when dependencies not available."""
+    # Mock huggingface_hub as not available
+    with mock.patch('braindecode.datasets.hub.huggingface_hub', False):
+        with pytest.raises(ImportError, match="huggingface hub functionality is not installed"):
+            BaseConcatDataset.from_pretrained(
+                repo_id="test/repo",
+                cache_dir=tmp_path,
+            )
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_from_pretrained_404_error(tmp_path):
+    """Test that from_pretrained raises FileNotFoundError for 404 errors."""
+    hf_hub = pytest.importorskip("huggingface_hub")
+    from huggingface_hub.errors import HfHubHTTPError
+
+    repo_id = "test-user/nonexistent-dataset"
+
+    # Mock 404 error from HuggingFace Hub
+    mock_response = mock.MagicMock()
+    mock_response.status_code = 404
+    http_error = HfHubHTTPError("Not found", response=mock_response)
+
+    with mock.patch.object(hf_hub, 'snapshot_download', side_effect=http_error):
+        with pytest.raises(FileNotFoundError, match="Dataset .* not found on Hugging Face Hub"):
+            BaseConcatDataset.from_pretrained(
+                repo_id=repo_id,
+                cache_dir=tmp_path,
+            )
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_create_compressor_zarr_not_available():
+    """Test that _create_compressor raises ImportError when zarr not available."""
+    with mock.patch('braindecode.datasets.hub.zarr', False):
+        with pytest.raises(ImportError, match="Zarr is not installed"):
+            _create_compressor("blosc", 5)
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_create_compressor_numcodecs_not_available():
+    """Test that _create_compressor raises ImportError when numcodecs not available."""
+    pytest.importorskip("zarr")
+
+    with mock.patch('braindecode.datasets.hub.NUMCODECS_AVAILABLE', False):
+        with pytest.raises(ImportError, match="numcodecs is not installed"):
+            _create_compressor("blosc", 5)
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_save_dataset_card_all_dataset_types(tmp_path):
+    """Test _save_dataset_card for RawDataset (WindowsDataset already tested)."""
+    pytest.importorskip("huggingface_hub")
+    pytest.importorskip("zarr")
+
+    # Create a simple RawDataset for testing
+    sfreq = 100
+    n_channels = 3
+    n_times = 1000
+    rng = np.random.RandomState(42)
+
+    info = mne.create_info(ch_names=["C3", "C4", "Cz"], sfreq=sfreq, ch_types="eeg")
+    data = rng.randn(n_channels, n_times)
+    raw = mne.io.RawArray(data, info)
+
+    # Create a RawDataset for testing
+    raw_dataset = BaseConcatDataset(
+        [RawDataset(raw=raw.copy(), description=pd.Series({"subject": 1}))]
+    )
+
+    # Create the output directory
+    raw_path = tmp_path / "raw"
+    raw_path.mkdir(parents=True, exist_ok=True)
+
+    # Test dataset card generation for RawDataset
+    raw_dataset._save_dataset_card(raw_path)
+    raw_readme = (raw_path / "README.md").read_text()
+    assert "Continuous (Raw)" in raw_readme or "raw" in raw_readme.lower()
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_push_to_hub_default_commit_message(setup_concat_windows_dataset, tmp_path):
+    """Test that push_to_hub generates default commit message when not provided."""
+    hf_hub = pytest.importorskip("huggingface_hub")
+
+    dataset = setup_concat_windows_dataset
+    repo_id = "test-user/test-dataset"
+
+    expected_url = f"https://huggingface.co/datasets/{repo_id}"
+
+    # Track the commit message used
+    captured_commit_message = None
+
+    def capture_upload_folder(*args, **kwargs):
+        nonlocal captured_commit_message
+        captured_commit_message = kwargs.get("commit_message")
+        return expected_url
+
+    mock_hf_api = mock.MagicMock()
+    mock_create_repo = mock.MagicMock(return_value=None)
+
+    with mock.patch.object(hf_hub, 'HfApi', return_value=mock_hf_api):
+        with mock.patch.object(hf_hub, 'create_repo', mock_create_repo):
+            with mock.patch.object(hf_hub, 'upload_folder', side_effect=capture_upload_folder):
+                with mock.patch.object(dataset, '_convert_to_zarr_inline'):
+                    with mock.patch.object(dataset, '_save_dataset_card'):
+                        # Call push_to_hub WITHOUT commit_message
+                        dataset.push_to_hub(
+                            repo_id=repo_id,
+                            compression="blosc",
+                            compression_level=5,
+                        )
+
+    # Verify a default commit message was generated
+    assert captured_commit_message is not None
+    assert "Upload" in captured_commit_message or "EEG dataset" in captured_commit_message
