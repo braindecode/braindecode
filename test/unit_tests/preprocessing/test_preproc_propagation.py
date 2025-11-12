@@ -34,7 +34,7 @@ def simple_raw():
 
 
 def test_raw_preproc_kwargs_propagation_eeg_windows(simple_raw):
-    """Test that raw_preproc_kwargs is propagated to EEGWindowsDataset."""
+    """Test that raw_preproc_kwargs is propagated to EEGWindowsDataset and includes windowing."""
     # Create dataset
     ds = RawDataset(simple_raw, description={"subject": 1})
     concat_ds = BaseConcatDataset([ds])
@@ -60,15 +60,18 @@ def test_raw_preproc_kwargs_propagation_eeg_windows(simple_raw):
         use_mne_epochs=False,
     )
 
-    # Verify raw_preproc_kwargs was propagated
+    # Verify raw_preproc_kwargs was propagated AND windowing step was added
     windows_ds = windows_concat_ds.datasets[0]
     assert hasattr(windows_ds, "raw_preproc_kwargs")
-    assert len(windows_ds.raw_preproc_kwargs) == 1
+    assert len(windows_ds.raw_preproc_kwargs) == 2  # filter + windowing
     assert windows_ds.raw_preproc_kwargs[0]["fn"] == "filter"
+    assert windows_ds.raw_preproc_kwargs[1]["fn"] == "create_windows_from_events"
+    assert "__class_path__" in windows_ds.raw_preproc_kwargs[1]
+    assert "kwargs" in windows_ds.raw_preproc_kwargs[1]
 
 
 def test_raw_preproc_kwargs_propagation_windows_dataset(simple_raw):
-    """Test that raw_preproc_kwargs is propagated to WindowsDataset (mne.Epochs)."""
+    """Test that raw_preproc_kwargs is propagated to WindowsDataset (mne.Epochs) and includes windowing."""
     # Create dataset
     ds = RawDataset(simple_raw, description={"subject": 1})
     concat_ds = BaseConcatDataset([ds])
@@ -94,15 +97,18 @@ def test_raw_preproc_kwargs_propagation_windows_dataset(simple_raw):
         use_mne_epochs=True,
     )
 
-    # Verify raw_preproc_kwargs was propagated
+    # Verify raw_preproc_kwargs was propagated AND windowing step was added
     windows_ds = windows_concat_ds.datasets[0]
     assert hasattr(windows_ds, "raw_preproc_kwargs")
-    assert len(windows_ds.raw_preproc_kwargs) == 1
+    assert len(windows_ds.raw_preproc_kwargs) == 2  # filter + windowing
     assert windows_ds.raw_preproc_kwargs[0]["fn"] == "filter"
+    assert windows_ds.raw_preproc_kwargs[1]["fn"] == "create_windows_from_events"
+    assert "__class_path__" in windows_ds.raw_preproc_kwargs[1]
+    assert "kwargs" in windows_ds.raw_preproc_kwargs[1]
 
 
 def test_raw_preproc_kwargs_propagation_fixed_length(simple_raw):
-    """Test that raw_preproc_kwargs is propagated with create_fixed_length_windows."""
+    """Test that raw_preproc_kwargs is propagated with create_fixed_length_windows and includes windowing."""
     # Create dataset
     ds = RawDataset(simple_raw, description={"subject": 1}, target_name="subject")
     concat_ds = BaseConcatDataset([ds])
@@ -126,11 +132,14 @@ def test_raw_preproc_kwargs_propagation_fixed_length(simple_raw):
         drop_last_window=False,
     )
 
-    # Verify raw_preproc_kwargs was propagated
+    # Verify raw_preproc_kwargs was propagated AND windowing step was added
     windows_ds = windows_concat_ds.datasets[0]
     assert hasattr(windows_ds, "raw_preproc_kwargs")
-    assert len(windows_ds.raw_preproc_kwargs) == 1
+    assert len(windows_ds.raw_preproc_kwargs) == 2  # filter + windowing
     assert windows_ds.raw_preproc_kwargs[0]["fn"] == "filter"
+    assert windows_ds.raw_preproc_kwargs[1]["fn"] == "create_fixed_length_windows"
+    assert "__class_path__" in windows_ds.raw_preproc_kwargs[1]
+    assert "kwargs" in windows_ds.raw_preproc_kwargs[1]
 
 
 def test_preprocessing_before_and_after_windowing(simple_raw):
@@ -138,9 +147,9 @@ def test_preprocessing_before_and_after_windowing(simple_raw):
 
     This test verifies that:
     1. Preprocessing applied to RawDataset is stored in raw_preproc_kwargs
-    2. These kwargs are propagated to WindowsDataset during windowing
+    2. Windowing operation is added to raw_preproc_kwargs
     3. Additional preprocessing on WindowsDataset is stored in window_preproc_kwargs
-    4. The raw_preproc_kwargs remains intact after window preprocessing
+    4. The raw_preproc_kwargs (including windowing) remains intact after window preprocessing
     """
     # Create dataset
     ds = RawDataset(simple_raw, description={"subject": 1})
@@ -167,11 +176,12 @@ def test_preprocessing_before_and_after_windowing(simple_raw):
         use_mne_epochs=True,  # Use mne.Epochs (WindowsDataset)
     )
 
-    # Verify propagation
+    # Verify propagation and windowing step addition
     windows_ds = windows_concat_ds.datasets[0]
     assert hasattr(windows_ds, "raw_preproc_kwargs")
-    assert len(windows_ds.raw_preproc_kwargs) == 1
+    assert len(windows_ds.raw_preproc_kwargs) == 2  # filter + windowing
     assert windows_ds.raw_preproc_kwargs[0]["fn"] == "filter"
+    assert windows_ds.raw_preproc_kwargs[1]["fn"] == "create_windows_from_events"
     assert hasattr(windows_ds, "window_preproc_kwargs")
     assert len(windows_ds.window_preproc_kwargs) == 0
 
@@ -183,8 +193,9 @@ def test_preprocessing_before_and_after_windowing(simple_raw):
 
     # Verify both kwargs are preserved
     assert hasattr(windows_ds, "raw_preproc_kwargs")
-    assert len(windows_ds.raw_preproc_kwargs) == 1
+    assert len(windows_ds.raw_preproc_kwargs) == 2  # filter + windowing
     assert windows_ds.raw_preproc_kwargs[0]["fn"] == "filter"
+    assert windows_ds.raw_preproc_kwargs[1]["fn"] == "create_windows_from_events"
 
     assert hasattr(windows_ds, "window_preproc_kwargs")
     assert len(windows_ds.window_preproc_kwargs) == 1

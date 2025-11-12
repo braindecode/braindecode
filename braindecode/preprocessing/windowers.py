@@ -628,11 +628,26 @@ def _create_windows_from_events(
             metadata=metadata,
             description=ds.description,
         )
-    # add window_kwargs and raw_preproc_kwargs to windows dataset
+    
+    # Serialize the windowing operation
+    windowing_kwargs_dict = window_kwargs[0][1]
+    windowing_serialized = _serialize_windowing_operation(
+        create_windows_from_events.__name__, 
+        windowing_kwargs_dict
+    )
+    
+    # Propagate raw_preproc_kwargs and append windowing operation
+    if hasattr(ds, "raw_preproc_kwargs"):
+        # Copy existing preprocessing steps and add windowing operation
+        windows_ds.raw_preproc_kwargs = list(ds.raw_preproc_kwargs)
+        windows_ds.raw_preproc_kwargs.append(windowing_serialized)
+    else:
+        # Just add windowing operation
+        windows_ds.raw_preproc_kwargs = [windowing_serialized]
+    
+    # Keep window_kwargs for backwards compatibility
     setattr(windows_ds, "window_kwargs", window_kwargs)
-    kwargs_name = "raw_preproc_kwargs"
-    if hasattr(ds, kwargs_name):
-        setattr(windows_ds, kwargs_name, getattr(ds, kwargs_name))
+    
     return windows_ds
 
 
@@ -747,11 +762,26 @@ def _create_fixed_length_windows(
         targets_from=targets_from,
         last_target_only=last_target_only,
     )
-    # add window_kwargs and raw_preproc_kwargs to windows dataset
+    
+    # Serialize the windowing operation
+    windowing_kwargs_dict = window_kwargs[0][1]
+    windowing_serialized = _serialize_windowing_operation(
+        create_fixed_length_windows.__name__, 
+        windowing_kwargs_dict
+    )
+    
+    # Propagate raw_preproc_kwargs and append windowing operation
+    if hasattr(ds, "raw_preproc_kwargs"):
+        # Copy existing preprocessing steps and add windowing operation
+        windows_ds.raw_preproc_kwargs = list(ds.raw_preproc_kwargs)
+        windows_ds.raw_preproc_kwargs.append(windowing_serialized)
+    else:
+        # Just add windowing operation
+        windows_ds.raw_preproc_kwargs = [windowing_serialized]
+    
+    # Keep window_kwargs for backwards compatibility
     setattr(windows_ds, "window_kwargs", window_kwargs)
-    kwargs_name = "raw_preproc_kwargs"
-    if hasattr(ds, kwargs_name):
-        setattr(windows_ds, kwargs_name, getattr(ds, kwargs_name))
+    
     return windows_ds
 
 
@@ -841,10 +871,26 @@ def _create_windows_from_target_channels(
         targets_from=targets_from,
         last_target_only=last_target_only,
     )
+    
+    # Serialize the windowing operation
+    windowing_kwargs_dict = window_kwargs[0][1]
+    windowing_serialized = _serialize_windowing_operation(
+        create_windows_from_target_channels.__name__, 
+        windowing_kwargs_dict
+    )
+    
+    # Propagate raw_preproc_kwargs and append windowing operation
+    if hasattr(ds, "raw_preproc_kwargs"):
+        # Copy existing preprocessing steps and add windowing operation
+        windows_ds.raw_preproc_kwargs = list(ds.raw_preproc_kwargs)
+        windows_ds.raw_preproc_kwargs.append(windowing_serialized)
+    else:
+        # Just add windowing operation
+        windows_ds.raw_preproc_kwargs = [windowing_serialized]
+    
+    # Keep window_kwargs for backwards compatibility
     setattr(windows_ds, "window_kwargs", window_kwargs)
-    kwargs_name = "raw_preproc_kwargs"
-    if hasattr(ds, kwargs_name):
-        setattr(windows_ds, kwargs_name, getattr(ds, kwargs_name))
+    
     return windows_ds
 
 
@@ -1035,3 +1081,27 @@ def _get_windowing_kwargs(windowing_func_locals):
     input_kwargs.pop("ds")
     windowing_kwargs = {k: v for k, v in input_kwargs.items()}
     return windowing_kwargs
+
+
+def _serialize_windowing_operation(func_name, kwargs):
+    """Serialize a windowing operation in the same format as Preprocessor.serialize().
+    
+    Parameters
+    ----------
+    func_name : str
+        Name of the windowing function (e.g., 'create_windows_from_events')
+    kwargs : dict
+        Dictionary of windowing parameters
+    
+    Returns
+    -------
+    dict
+        Serialized representation with __class_path__, fn, and kwargs keys
+    """
+    # Create a serialized dict similar to Preprocessor.serialize()
+    serialized = {
+        "__class_path__": f"braindecode.preprocessing.windowers.{func_name}",
+        "fn": func_name,
+        "kwargs": dict(kwargs),  # Make a copy to avoid modifying the original
+    }
+    return serialized
