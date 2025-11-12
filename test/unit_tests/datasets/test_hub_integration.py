@@ -904,7 +904,7 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
                             compression="blosc",
                             compression_level=5,
                             private=False,
-                            token="test_token",
+                            token=None,
                             commit_message="Test commit",
                             create_pr=False,
                         )
@@ -918,7 +918,7 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
         repo_type="dataset",
         exist_ok=True,
         private=False,
-        token="test_token",
+        token=None,
     )
 
     # Verify _convert_to_zarr_inline was called
