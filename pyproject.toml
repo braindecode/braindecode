@@ -93,6 +93,8 @@ docs = [
     'pre-commit',
     'openneuro-py',
     'plotly',
+    'huggingface_hub[torch]>=0.20.0',
+    'zarr>=2.18,<3.0',
 ]
 all = [
     "braindecode[moabb,hug,tests,docs,eegprep]"
