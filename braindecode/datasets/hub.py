@@ -22,7 +22,15 @@ import numpy as np
 import pandas as pd
 import scipy
 from mne.utils import _soft_import
-from numcodecs import Blosc, GZip, Zstd
+
+# Optional imports for Hub functionality
+try:
+    from numcodecs import Blosc, GZip, Zstd
+
+    NUMCODECS_AVAILABLE = True
+except ImportError:
+    NUMCODECS_AVAILABLE = False
+    Blosc = GZip = Zstd = None
 
 if TYPE_CHECKING:
     from .base import BaseDataset
@@ -831,8 +839,12 @@ def _create_compressor(compression, compression_level):
             "Zarr is not installed. Install with: pip install braindecode[hub]"
         )
 
-    # Zarr v2 uses numcodecs compressors
+    if not NUMCODECS_AVAILABLE:
+        raise ImportError(
+            "numcodecs is not installed. Install with: pip install braindecode[hub]"
+        )
 
+    # Zarr v2 uses numcodecs compressors
     if compression == "blosc":
         return Blosc(cname="zstd", clevel=compression_level)
     elif compression == "zstd":

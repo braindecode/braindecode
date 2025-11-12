@@ -14,8 +14,16 @@ import numpy as np
 import pandas as pd
 import pytest
 import scipy
-import zarr
-from numcodecs import Blosc, GZip, Zstd
+
+# Optional imports for Hub functionality
+try:
+    import zarr
+    from numcodecs import Blosc, GZip, Zstd
+    ZARR_AVAILABLE = True
+except ImportError:
+    ZARR_AVAILABLE = False
+    zarr = None
+    Blosc = GZip = Zstd = None
 
 from braindecode.datasets import (
     BNCI2014_001,
