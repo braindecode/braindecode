@@ -677,6 +677,9 @@ def _save_windows_to_zarr(
     # Save metadata
     metadata_json = metadata.to_json(orient="split", date_format="iso")
     grp.attrs["metadata"] = metadata_json
+    # Save dtypes to preserve them across platforms (int32 vs int64, etc.)
+    metadata_dtypes = metadata.dtypes.apply(lambda x: str(x)).to_json()
+    grp.attrs["metadata_dtypes"] = metadata_dtypes
 
     # Save description
     description_json = description.to_json(date_format="iso")
@@ -709,6 +712,9 @@ def _save_eegwindows_to_zarr(
     # Save metadata
     metadata_json = metadata.to_json(orient="split", date_format="iso")
     grp.attrs["metadata"] = metadata_json
+    # Save dtypes to preserve them across platforms (int32 vs int64, etc.)
+    metadata_dtypes = metadata.dtypes.apply(lambda x: str(x)).to_json()
+    grp.attrs["metadata_dtypes"] = metadata_dtypes
 
     # Save description
     description_json = description.to_json(date_format="iso")
@@ -726,6 +732,10 @@ def _load_windows_from_zarr(grp, preload):
     """Load windowed data from Zarr group (low-level function)."""
     # Load metadata
     metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
+    # Restore dtypes to preserve them across platforms (int32 vs int64, etc.)
+    dtypes_dict = pd.read_json(io.StringIO(grp.attrs["metadata_dtypes"]), typ="series")
+    for col, dtype_str in dtypes_dict.items():
+        metadata[col] = metadata[col].astype(dtype_str)
 
     # Load description
     description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
@@ -755,6 +765,10 @@ def _load_eegwindows_from_zarr(grp, preload):
     """Load EEG continuous raw data from Zarr group (low-level function)."""
     # Load metadata
     metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
+    # Restore dtypes to preserve them across platforms (int32 vs int64, etc.)
+    dtypes_dict = pd.read_json(io.StringIO(grp.attrs["metadata_dtypes"]), typ="series")
+    for col, dtype_str in dtypes_dict.items():
+        metadata[col] = metadata[col].astype(dtype_str)
 
     # Load description
     description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
