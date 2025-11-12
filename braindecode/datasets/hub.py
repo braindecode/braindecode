@@ -408,6 +408,7 @@ class HubDatasetMixin:
         root.attrs["zarr_version"] = zarr.__version__
         try:
             import scipy
+
             root.attrs["scipy_version"] = scipy.__version__
         except ImportError:
             pass
