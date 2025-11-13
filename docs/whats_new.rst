@@ -41,6 +41,7 @@ Enhancements
 - Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
 - Adding tutorial for :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`746` by `Aniela Bulicz` and `Arina Schippers` and `Aron van Zuijlen`)
 - Including interface with Hugging Face Hub for dataset sharing and loading (:gh:`820` by `Kuntal Kokate`_ and `Bruno Aristimunha`_ )
+- Windowing operations are now logged in preprocessing history. :func:`braindecode.preprocessing.windowers.create_windows_from_events`, :func:`braindecode.preprocessing.windowers.create_fixed_length_windows`, and :func:`braindecode.preprocessing.windowers.create_windows_from_target_channels` now append their parameters to ``raw_preproc_kwargs`` to maintain a complete log chain of all data transformations (:gh:`836` by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
