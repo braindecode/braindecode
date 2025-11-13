@@ -75,6 +75,7 @@ tests = [
     'pytest_cases',
     'mypy'
 ]
+
 docs = [
     'sphinx_gallery',
     'sphinx_rtd_theme',
@@ -93,11 +94,14 @@ docs = [
     'pre-commit',
     'openneuro-py',
     'plotly',
-    'huggingface_hub[torch]>=0.20.0',
-    'zarr>=2.18,<3.0',
 ]
+
 all = [
-    "braindecode[moabb,hug,tests,docs,eegprep]"
+    "braindecode[moabb]",
+    "braindecode[hub]",
+    "braindecode[tests]",
+    "braindecode[docs]",
+    "braindecode[eegprep]",
 ]
 
 [tool.setuptools]
