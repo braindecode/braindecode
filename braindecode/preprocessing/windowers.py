@@ -628,14 +628,13 @@ def _create_windows_from_events(
             metadata=metadata,
             description=ds.description,
         )
-    
+
     # Serialize the windowing operation
     windowing_kwargs_dict = window_kwargs[0][1]
     windowing_serialized = _serialize_windowing_operation(
-        create_windows_from_events.__name__, 
-        windowing_kwargs_dict
+        create_windows_from_events.__name__, windowing_kwargs_dict
     )
-    
+
     # Propagate raw_preproc_kwargs and append windowing operation
     if hasattr(ds, "raw_preproc_kwargs"):
         # Copy existing preprocessing steps and add windowing operation
@@ -644,10 +643,10 @@ def _create_windows_from_events(
     else:
         # Just add windowing operation
         windows_ds.raw_preproc_kwargs = [windowing_serialized]
-    
+
     # Keep window_kwargs for backwards compatibility
     setattr(windows_ds, "window_kwargs", window_kwargs)
-    
+
     return windows_ds
 
 
@@ -762,14 +761,13 @@ def _create_fixed_length_windows(
         targets_from=targets_from,
         last_target_only=last_target_only,
     )
-    
+
     # Serialize the windowing operation
     windowing_kwargs_dict = window_kwargs[0][1]
     windowing_serialized = _serialize_windowing_operation(
-        create_fixed_length_windows.__name__, 
-        windowing_kwargs_dict
+        create_fixed_length_windows.__name__, windowing_kwargs_dict
     )
-    
+
     # Propagate raw_preproc_kwargs and append windowing operation
     if hasattr(ds, "raw_preproc_kwargs"):
         # Copy existing preprocessing steps and add windowing operation
@@ -778,10 +776,10 @@ def _create_fixed_length_windows(
     else:
         # Just add windowing operation
         windows_ds.raw_preproc_kwargs = [windowing_serialized]
-    
+
     # Keep window_kwargs for backwards compatibility
     setattr(windows_ds, "window_kwargs", window_kwargs)
-    
+
     return windows_ds
 
 
@@ -871,14 +869,13 @@ def _create_windows_from_target_channels(
         targets_from=targets_from,
         last_target_only=last_target_only,
     )
-    
+
     # Serialize the windowing operation
     windowing_kwargs_dict = window_kwargs[0][1]
     windowing_serialized = _serialize_windowing_operation(
-        create_windows_from_target_channels.__name__, 
-        windowing_kwargs_dict
+        create_windows_from_target_channels.__name__, windowing_kwargs_dict
     )
-    
+
     # Propagate raw_preproc_kwargs and append windowing operation
     if hasattr(ds, "raw_preproc_kwargs"):
         # Copy existing preprocessing steps and add windowing operation
@@ -887,10 +884,10 @@ def _create_windows_from_target_channels(
     else:
         # Just add windowing operation
         windows_ds.raw_preproc_kwargs = [windowing_serialized]
-    
+
     # Keep window_kwargs for backwards compatibility
     setattr(windows_ds, "window_kwargs", window_kwargs)
-    
+
     return windows_ds
 
 
@@ -1085,14 +1082,14 @@ def _get_windowing_kwargs(windowing_func_locals):
 
 def _serialize_windowing_operation(func_name, kwargs):
     """Serialize a windowing operation in the same format as Preprocessor.serialize().
-    
+
     Parameters
     ----------
     func_name : str
         Name of the windowing function (e.g., 'create_windows_from_events')
     kwargs : dict
         Dictionary of windowing parameters
-    
+
     Returns
     -------
     dict
