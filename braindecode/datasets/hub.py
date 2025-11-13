@@ -678,7 +678,7 @@ def _save_windows_to_zarr(
     metadata_json = metadata.to_json(orient="split", date_format="iso")
     grp.attrs["metadata"] = metadata_json
     # Save dtypes to preserve them across platforms (int32 vs int64, etc.)
-    metadata_dtypes = metadata.dtypes.apply(lambda x: str(x)).to_json()
+    metadata_dtypes = metadata.dtypes.apply(str).to_json()
     grp.attrs["metadata_dtypes"] = metadata_dtypes
 
     # Save description
