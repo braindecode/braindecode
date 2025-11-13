@@ -1,9 +1,8 @@
 """
 Dataset registry for Hub integration.
 
-This module provides a registry pattern to avoid circular imports between
-base.py (dataset definitions) and hub.py (Hub mixin). Dataset classes
-register themselves when defined, and Hub methods look up classes dynamically.
+Datasets register themselves here so Hub code can look them up by name
+without direct imports (avoiding circular dependencies).
 """
 
 # Authors: Kuntal Kokate
@@ -20,9 +19,6 @@ def register_dataset(cls: Type) -> Type:
     """
     Decorator to register a dataset class in the global registry.
 
-    This allows Hub integration code to look up dataset classes by name
-    without importing them directly, avoiding circular imports.
-
     Parameters
     ----------
     cls : Type
@@ -32,15 +28,16 @@ def register_dataset(cls: Type) -> Type:
     -------
     Type
         The same class (unchanged), so this can be used as a decorator.
-
-    Examples
-    --------
-    >>> @register_dataset
-    >>> class WindowsDataset(BaseDataset):
-    >>>     pass
     """
     _DATASET_REGISTRY[cls.__name__] = cls
     return cls
+
+
+def _available_datasets_str() -> str:
+    """Return a human-readable list of registered dataset class names."""
+    if not _DATASET_REGISTRY:
+        return "<no registered datasets>"
+    return ", ".join(_DATASET_REGISTRY.keys())
 
 
 def get_dataset_class(name: str) -> Type:
@@ -61,26 +58,19 @@ def get_dataset_class(name: str) -> Type:
     ------
     KeyError
         If the class name is not registered.
-
-    Examples
-    --------
-    >>> WindowsDataset = get_dataset_class('WindowsDataset')
-    >>> dataset = WindowsDataset(...)
     """
-    if name not in _DATASET_REGISTRY:
+    try:
+        return _DATASET_REGISTRY[name]
+    except KeyError as exc:
         raise KeyError(
             f"Dataset class '{name}' not found in registry. "
-            f"Available classes: {list(_DATASET_REGISTRY.keys())}"
-        )
-    return _DATASET_REGISTRY[name]
+            f"Available classes: {_available_datasets_str()}"
+        ) from exc
 
 
 def get_dataset_type(obj: Any) -> str:
     """
     Get the registered type name for a dataset instance.
-
-    This function checks if the object is an instance of any registered
-    dataset class and returns the class name.
 
     Parameters
     ----------
@@ -96,29 +86,20 @@ def get_dataset_type(obj: Any) -> str:
     ------
     TypeError
         If the object is not an instance of any registered dataset class.
-
-    Examples
-    --------
-    >>> dataset = WindowsDataset(...)
-    >>> get_dataset_type(dataset)
-    'WindowsDataset'
     """
-    for name, cls in _DATASET_REGISTRY.items():
+    for cls in _DATASET_REGISTRY.values():
         if isinstance(obj, cls):
-            return name
+            return cls.__name__
 
     raise TypeError(
         f"Object of type {type(obj).__name__} is not a registered dataset class. "
-        f"Available classes: {list(_DATASET_REGISTRY.keys())}"
+        f"Available classes: {_available_datasets_str()}"
     )
 
 
 def is_registered_dataset(obj: Any, class_name: str) -> bool:
     """
     Check if an object is an instance of a registered dataset class.
-
-    This is a safer alternative to isinstance() that works without
-    importing the concrete class.
 
     Parameters
     ----------
@@ -131,17 +112,9 @@ def is_registered_dataset(obj: Any, class_name: str) -> bool:
     -------
     bool
         True if obj is an instance of the named class, False otherwise.
-
-    Examples
-    --------
-    >>> dataset = WindowsDataset(...)
-    >>> is_registered_dataset(dataset, 'WindowsDataset')
-    True
-    >>> is_registered_dataset(dataset, 'EEGWindowsDataset')
-    False
     """
     try:
         cls = get_dataset_class(class_name)
-        return isinstance(obj, cls)
     except KeyError:
         return False
+    return isinstance(obj, cls)
