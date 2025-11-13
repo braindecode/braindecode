@@ -54,7 +54,7 @@ them if you want to contribute to Braindecode.
 
 .. code-block:: bash
 
-   pip install -e .[moabb,tests,docs]
+   pip install -e .[all]
 
 
 Testing if your installation is working
