@@ -196,7 +196,7 @@ else:
     public_repo_windows = "braindecode/example_dataset-windows"
 
     print(f"\nDownloading WindowsDataset from {public_repo_windows}...")
-    loaded_windows = BaseConcatDataset.from_pretrained(
+    loaded_windows = BaseConcatDataset.pull_from_hub(
         public_repo_windows,
         preload=True,  # Load into memory (False for lazy loading)
     )
@@ -208,7 +208,7 @@ else:
     public_repo_eeg = "braindecode/example_dataset-eegwindows"
 
     print(f"\nDownloading EEGWindowsDataset from {public_repo_eeg}...")
-    loaded_eeg = BaseConcatDataset.from_pretrained(
+    loaded_eeg = BaseConcatDataset.pull_from_hub(
         public_repo_eeg,
         preload=True,
     )
@@ -220,7 +220,7 @@ else:
     public_repo_raw = "braindecode/example_dataset-raw"
 
     print(f"\nDownloading RawDataset from {public_repo_raw}...")
-    loaded_raw = BaseConcatDataset.from_pretrained(
+    loaded_raw = BaseConcatDataset.pull_from_hub(
         public_repo_raw,
         preload=True,
     )
@@ -343,7 +343,7 @@ The Hub integration is fully compatible with PyTorch's training pipeline.
 #        dataset.push_to_hub("braindecode/example_dataset")
 #
 #        # Test download
-#        test_dataset = BaseConcatDataset.from_pretrained("braindecode/example_dataset")
+#        test_dataset = BaseConcatDataset.pull_from_hub("braindecode/example_dataset")
 #        assert len(test_dataset) == len(dataset)
 #
 # 4. **Consider privacy** - Ensure you have permission to share the data and
