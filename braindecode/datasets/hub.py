@@ -878,7 +878,7 @@ def _generate_readme_content(
     n_windows: int,
     format: str = "zarr",
 ):
-    """
+    """Generate README.md content for a dataset uploaded to the Hub."""
     # Use safe access for total size and format sfreq nicely
     total_size_mb = (
         format_info.get("total_size_mb", 0.0) if isinstance(format_info, dict) else 0.0
