@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import scipy
 from mne.utils import _soft_import
-
+# TODO: Simplify this logic in the future with zarr v3+ only
 # Optional imports for Hub functionality
 try:
     from numcodecs import Blosc, GZip, Zstd
@@ -56,7 +56,7 @@ class HubDatasetMixin:
     """
     Mixin class for Hugging Face Hub integration with EEG datasets.
 
-    This class adds `push_to_hub()` and `from_pretrained()` methods to
+    This class adds `push_to_hub()` and `pull_from_hub()` methods to
     BaseConcatDataset, enabling easy upload and download of datasets
     to/from the Hugging Face Hub.
 
@@ -70,7 +70,7 @@ class HubDatasetMixin:
     ... )
     >>>
     >>> # Load dataset from Hub
-    >>> dataset = BaseConcatDataset.from_pretrained("username/nmt-dataset")
+    >>> dataset = BaseConcatDataset.pull_from_hub("username/nmt-dataset")
     """
 
     datasets: List["BaseDataset"]  # Attribute provided by inheriting class
@@ -264,7 +264,7 @@ class HubDatasetMixin:
             f.write(readme_content)
 
     @classmethod
-    def from_pretrained(
+    def pull_from_hub(
         cls,
         repo_id: str,
         preload: bool = True,
@@ -630,7 +630,7 @@ class HubDatasetMixin:
 # Core Zarr I/O Utilities
 # =============================================================================
 
-
+# TODO: remove when this MNE is solved https://github.com/mne-tools/mne-python/issues/13487
 def _mne_info_to_dict(info):
     """Convert MNE Info object to dictionary for JSON serialization."""
     return {
@@ -868,7 +868,7 @@ def _create_compressor(compression, compression_level):
     else:
         return None
 
-
+# TODO: improve content
 def _generate_readme_content(
     format_info,
     n_recordings: int,
