@@ -1,7 +1,7 @@
 """
 Hugging Face Hub integration for EEG datasets.
 
-This module provides push_to_hub() and from_pretrained() functionality
+This module provides push_to_hub() and pull_from_hub() functionality
 for braindecode datasets, similar to the model Hub integration.
 """
 
@@ -309,7 +309,7 @@ class HubDatasetMixin:
         Examples
         --------
         >>> from braindecode.datasets import BaseConcatDataset
-        >>> dataset = BaseConcatDataset.from_pretrained("username/nmt-dataset")
+        >>> dataset = BaseConcatDataset.pull_from_hub("username/nmt-dataset")
         >>> print(f"Loaded {len(dataset)} windows")
         >>>
         >>> # Use with PyTorch
@@ -922,7 +922,7 @@ To load this dataset::
         from braindecode.datasets import BaseConcatDataset
 
         # Load dataset from Hugging Face Hub
-        dataset = BaseConcatDataset.from_pretrained("username/dataset-name")
+        dataset = BaseConcatDataset.pull_from_hub("username/dataset-name")
 
         # Access data
         X, y, metainfo = dataset[0]
