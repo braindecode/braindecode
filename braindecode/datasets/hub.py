@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import scipy
 from mne.utils import _soft_import
+
 # TODO: Simplify this logic in the future with zarr v3+ only
 # Optional imports for Hub functionality
 try:
@@ -630,6 +631,7 @@ class HubDatasetMixin:
 # Core Zarr I/O Utilities
 # =============================================================================
 
+
 # TODO: remove when this MNE is solved https://github.com/mne-tools/mne-python/issues/13487
 def _mne_info_to_dict(info):
     """Convert MNE Info object to dictionary for JSON serialization."""
@@ -867,6 +869,7 @@ def _create_compressor(compression, compression_level):
         return GZip(level=compression_level)
     else:
         return None
+
 
 # TODO: improve content
 def _generate_readme_content(
