@@ -28,6 +28,9 @@ from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset
 from typing_extensions import TypeVar
 
+from .hub import HubDatasetMixin
+from .registry import register_dataset
+
 
 def _create_description(description) -> pd.Series:
     if description is not None:
@@ -97,6 +100,7 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
 T = TypeVar("T", bound=RecordDataset)
 
 
+@register_dataset
 class RawDataset(RecordDataset):
     """Returns samples from an mne.io.Raw object along with a target.
 
@@ -177,10 +181,12 @@ class RawDataset(RecordDataset):
     "If you want to type a Braindecode dataset (i.e. RawDataset|EEGWindowsDataset|WindowsDataset), "
     "use the RecordDataset class instead."
 )
+@register_dataset
 class BaseDataset(RawDataset):
     pass
 
 
+@register_dataset
 class EEGWindowsDataset(RecordDataset):
     """Returns windows from an mne.Raw object, its window indices, along with a target.
 
@@ -287,6 +293,7 @@ class EEGWindowsDataset(RecordDataset):
         return len(self.crop_inds)
 
 
+@register_dataset
 class WindowsDataset(RecordDataset):
     """Returns windows from an mne.Epochs object along with a target.
 
@@ -378,11 +385,15 @@ class WindowsDataset(RecordDataset):
         return len(self.windows.events)
 
 
-class BaseConcatDataset(ConcatDataset, Generic[T]):
+@register_dataset
+class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     """A base class for concatenated datasets.
 
     Holds either mne.Raw or mne.Epoch in self.datasets and has
     a pandas DataFrame with additional description.
+
+    Includes Hugging Face Hub integration via HubDatasetMixin for
+    uploading and downloading datasets.
 
     Parameters
     ----------
