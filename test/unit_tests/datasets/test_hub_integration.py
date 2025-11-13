@@ -959,7 +959,7 @@ def test_from_pull_from_hub_import_error(tmp_path):
     # Mock huggingface_hub as not available
     with mock.patch('braindecode.datasets.hub.huggingface_hub', False):
         with pytest.raises(ImportError, match="huggingface hub functionality is not installed"):
-            BaseConcatDataset.from_pretrapull_from_hubined(
+            BaseConcatDataset.pull_from_hub(
                 repo_id="test/repo",
                 cache_dir=tmp_path,
             )
