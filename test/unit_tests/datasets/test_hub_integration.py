@@ -61,9 +61,9 @@ def test_hub_mixin_methods_exist(setup_concat_windows_dataset):
 
     # Check that methods exist
     assert hasattr(dataset, "push_to_hub")
-    assert hasattr(dataset, "from_pretrained")
+    assert hasattr(dataset, "pull_from_hub")
     assert callable(dataset.push_to_hub)
-    assert callable(dataset.from_pretrained)
+    assert callable(dataset.pull_from_hub)
 
 
 def test_dataset_card_generation(setup_concat_windows_dataset, tmp_path):
@@ -954,20 +954,20 @@ def test_push_to_hub_upload_failure(setup_concat_windows_dataset, tmp_path):
 
 
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
-def test_from_pretrained_import_error(tmp_path):
-    """Test that from_pretrained raises ImportError when dependencies not available."""
+def test_from_pull_from_hub_import_error(tmp_path):
+    """Test that pull_from_hub raises ImportError when dependencies not available."""
     # Mock huggingface_hub as not available
     with mock.patch('braindecode.datasets.hub.huggingface_hub', False):
         with pytest.raises(ImportError, match="huggingface hub functionality is not installed"):
-            BaseConcatDataset.from_pretrained(
+            BaseConcatDataset.from_pretrapull_from_hubined(
                 repo_id="test/repo",
                 cache_dir=tmp_path,
             )
 
 
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
-def test_from_pretrained_404_error(tmp_path):
-    """Test that from_pretrained raises FileNotFoundError for 404 errors."""
+def test_pull_from_hub_404_error(tmp_path):
+    """Test that pull_from_hub raises FileNotFoundError for 404 errors."""
     hf_hub = pytest.importorskip("huggingface_hub")
     from huggingface_hub.errors import HfHubHTTPError
 
@@ -980,7 +980,7 @@ def test_from_pretrained_404_error(tmp_path):
 
     with mock.patch.object(hf_hub, 'snapshot_download', side_effect=http_error):
         with pytest.raises(FileNotFoundError, match="Dataset .* not found on Hugging Face Hub"):
-            BaseConcatDataset.from_pretrained(
+            BaseConcatDataset.pull_from_hub(
                 repo_id=repo_id,
                 cache_dir=tmp_path,
             )
