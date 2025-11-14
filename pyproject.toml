@@ -33,12 +33,13 @@ classifiers = [
     "Intended Audience :: Science/Research",
     'Topic :: Software Development :: Build Tools',
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
 ]
 readme = "README.rst"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     'mne>=1.10.0',
     'mne_bids>=0.16',
