@@ -27,18 +27,26 @@ Enhancements
 - Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
 - Added :class:`braindecode.models.BENDR`  (:gh:`802` by `Bruno Aristimunha`_ )
 - Adding a tutorial for fine-tuning a pre-trained foundation model (:gh:`794` by `Pierre Guetschel`_)
+- Added 25 new MNE preprocessing functions, expanding from 6 to 31 total preprocessing classes. New functions include: :class:`braindecode.preprocessing.NotchFilter`, :class:`braindecode.preprocessing.SavgolFilter`, :class:`braindecode.preprocessing.ApplyHilbert`, :class:`braindecode.preprocessing.InterpolateBads`, :class:`braindecode.preprocessing.InterpolateTo`, :class:`braindecode.preprocessing.RenameChannels`, :class:`braindecode.preprocessing.ReorderChannels`, :class:`braindecode.preprocessing.EqualizeChannels`, :class:`braindecode.preprocessing.AddChannels`, :class:`braindecode.preprocessing.SetMontage`, :class:`braindecode.preprocessing.AddReferenceChannels`, :class:`braindecode.preprocessing.AddProj`, :class:`braindecode.preprocessing.ApplyProj`, :class:`braindecode.preprocessing.DelProj`, :class:`braindecode.preprocessing.ComputeCurrentSourceDensity`, :class:`braindecode.preprocessing.FixStimArtifact`, :class:`braindecode.preprocessing.CropByAnnotations`, :class:`braindecode.preprocessing.Anonymize`, :class:`braindecode.preprocessing.SetAnnotations`, :class:`braindecode.preprocessing.SetChannelTypes`, :class:`braindecode.preprocessing.SetMeasDate`, :class:`braindecode.preprocessing.FixMagCoilTypes`, :class:`braindecode.preprocessing.ApplyGradientCompensation`, :class:`braindecode.preprocessing.AddEvents`, and :class:`braindecode.preprocessing.Rescale` (:gh:`801` by `Bruno Aristimunha`_)
 - Adding artifact removal preprocessing steps, incl. :class:`braindecode.preprocessing.EEGPrep` (:gh:`796` by `Christian Kothe`_)
 - Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
 - Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
 - Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
 - Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
+- Added :class:`braindecode.models.LUNA`  (:gh:`802` by `Bruno Aristimunha`_, `Thorir Mar Ingolfsson`_)
+- Improve :class:`braindecode.preprocessing.Preprocessor` serialisation (:gh:`813` by `Pierre Guetschel`_ )
 - Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
 - Including SIENA dataset and CHB_MIT datasets (:gh:`818` by `Jonathan Dan`_ and `Bruno Aristimunha`_ )
 - Modify the interface of FBMSNet for consistency with FBCNet + Unit Tests (:gh:`819` by `Matthew Chen`_)
-
+- Adding :class:`braindecode.models.MEDFormer`  (:gh:`821` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
+- Adding tutorial for :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`746` by `Aniela Bulicz` and `Arina Schippers` and `Aron van Zuijlen`)
+- Including interface with Hugging Face Hub for dataset sharing and loading (:gh:`820` by `Kuntal Kokate`_ and `Bruno Aristimunha`_ )
 
 API changes
 ~~~~~~~~~~~
+- Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
+
 
 Bugs
 ~~~~
@@ -421,3 +429,5 @@ Authors
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _Matthew Chen: https://github.com/MatthewChen37
 .. _Jonathan Dan: https://github.com/danjjl
+.. _Thorir Mar Ingolfsson: https://github.com/Thoriri
+.. _Aniela Bulicz: github.com/AryaDro

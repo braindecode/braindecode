@@ -66,7 +66,7 @@ of the learning rate and dropout probability on the model's performance.
 from braindecode.datasets.moabb import MOABBDataset
 
 subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 ######################################################################
 # Preprocessing

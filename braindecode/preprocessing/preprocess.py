@@ -13,7 +13,9 @@ from __future__ import annotations
 import platform
 import sys
 from collections.abc import Iterable
-from functools import partial
+from functools import cached_property, partial
+from importlib import import_module
+from inspect import signature
 from warnings import warn
 
 if sys.version_info < (3, 9):
@@ -32,6 +34,7 @@ from braindecode.datasets.base import (
     BaseConcatDataset,
     EEGWindowsDataset,
     RawDataset,
+    RecordDataset,
     WindowsDataset,
 )
 from braindecode.datautil.serialization import (
@@ -69,7 +72,30 @@ class Preprocessor(object):
     def __init__(self, fn: Callable | str, *, apply_on_array: bool = True, **kwargs):
         if hasattr(fn, "__name__") and fn.__name__ == "<lambda>":
             warn("Preprocessing choices with lambda functions cannot be saved.")
-        if callable(fn) and apply_on_array:
+        if apply_on_array and not callable(fn):
+            warn(
+                "apply_on_array can only be True if fn is a callable function. "
+                "Automatically correcting to apply_on_array=False."
+            )
+            apply_on_array = False
+        # We store the exact input parameters. Simpler for serialization.
+        self.fn = fn
+        self.apply_on_array = apply_on_array
+        self.kwargs = kwargs
+
+    @property
+    def _all_attrs(self):
+        return ["fn", "apply_on_array", "kwargs"]
+
+    @property
+    def _init_attrs(self):
+        return [k for k in self._all_attrs if k in signature(self.__init__).parameters]
+
+    @cached_property
+    def _function(self):
+        kwargs = dict(self.kwargs)
+        fn = self.fn
+        if self.apply_on_array:
             channel_wise = kwargs.pop("channel_wise", False)
             picks = kwargs.pop("picks", None)
             n_jobs = kwargs.pop("n_jobs", 1)
@@ -80,12 +106,21 @@ class Preprocessor(object):
                 n_jobs=n_jobs,
             )
             fn = "apply_function"
-        self.fn = fn
-        self.kwargs = kwargs
+
+        if callable(fn):
+            return partial(fn, **kwargs)
+        return partial(self._apply_str, fn=fn, **kwargs)
+
+    @staticmethod
+    def _apply_str(raw_or_epochs: BaseRaw | BaseEpochs, fn: str, **kwargs):
+        if not hasattr(raw_or_epochs, fn):
+            raise AttributeError(f"MNE object does not have a {fn} method.")
+        return getattr(raw_or_epochs, fn)(**kwargs)
 
     def apply(self, raw_or_epochs: BaseRaw | BaseEpochs):
+        function = self._function
         try:
-            self._try_apply(raw_or_epochs)
+            result = function(raw_or_epochs)
         except RuntimeError:
             # Maybe the function needs the data to be loaded and the data was
             # not loaded yet. Not all MNE functions need data to be loaded,
@@ -93,15 +128,83 @@ class Preprocessor(object):
             # without preloading data which can make the overall preprocessing
             # pipeline substantially faster.
             raw_or_epochs.load_data()
-            self._try_apply(raw_or_epochs)
+            result = function(raw_or_epochs)
+        if result is not None:
+            return result
+        return raw_or_epochs
 
-    def _try_apply(self, raw_or_epochs):
-        if callable(self.fn):
-            self.fn(raw_or_epochs, **self.kwargs)
-        else:
-            if not hasattr(raw_or_epochs, self.fn):
-                raise AttributeError(f"MNE object does not have a {self.fn} method.")
-            getattr(raw_or_epochs, self.fn)(**self.kwargs)
+    def serialize(self):
+        """Return a serializable representation of the Preprocessor.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys 'fn' and 'kwargs' representing the
+            Preprocessor.
+        """
+        out = {k: getattr(self, k) for k in self._init_attrs}
+        if "fn" in out and callable(self.fn):
+            out["fn"] = self.fn.__module__ + "." + self.fn.__name__
+        out["__class_path__"] = (
+            self.__class__.__module__ + "." + self.__class__.__name__
+        )
+        if "kwargs" not in out and self.kwargs:
+            out["kwargs"] = self.kwargs
+        return out
+
+    @classmethod
+    def deserialize(cls_parent, data: dict):
+        """Create a Preprocessor from its serializable representation.
+
+        Parameters
+        ----------
+        data : dict
+            Dictionary with keys 'fn' and 'kwargs' representing the
+            Preprocessor.
+        Returns
+        -------
+        Preprocessor
+            The deserialized Preprocessor object.
+        """
+        class_path = data.pop("__class_path__")
+        cls_name = class_path.split(".")[-1]
+        cls_module_name = ".".join(class_path.split(".")[:-1])
+        cls_module = import_module(cls_module_name)
+        cls = getattr(cls_module, cls_name)
+
+        kwargs = data.pop("kwargs") if "kwargs" in data else {}
+
+        fn = data.get("fn", None)
+        if fn is not None and "." in fn:  # callable function
+            fn_name = fn.split(".")[-1]
+            module_name = ".".join(fn.split(".")[:-1])
+            module = import_module(module_name)
+            data["fn"] = getattr(module, fn_name)
+
+        return cls(**data, **kwargs)
+
+    def __repr__(self):
+        cls_name = self.__class__.__name__
+        args_str = ", ".join(
+            f"{k}={getattr(self, k).__repr__()}" for k in self._init_attrs
+        )
+        return f"{cls_name}({args_str})"
+
+    def _same_attr(self, other, attr):
+        a = getattr(self, attr)
+        b = getattr(other, attr)
+        if attr == "fn" and callable(a):
+            return a.__module__ == b.__module__ and a.__name__ == b.__name__
+        if isinstance(a, np.ndarray):
+            return np.array_equal(a, b)
+        return a == b
+
+    def __eq__(self, other):
+        if not isinstance(other, Preprocessor):
+            return False
+        return all(self._same_attr(other, attr) for attr in self._all_attrs) and (
+            self.__class__ == other.__class__
+        )
 
 
 def preprocess(
@@ -223,7 +326,12 @@ def _replace_inplace(concat_ds, new_concat_ds):
 
 
 def _preprocess(
-    ds, ds_index, preprocessors, save_dir=None, overwrite=False, copy_data=False
+    ds: RecordDataset,
+    ds_index,
+    preprocessors,
+    save_dir=None,
+    overwrite=False,
+    copy_data=False,
 ):
     """Apply preprocessor(s) to Raw or Epochs object.
 
@@ -251,16 +359,21 @@ def _preprocess(
         if raw_or_epochs.preload and copy_data:
             raw_or_epochs._data = raw_or_epochs._data.copy()
         for preproc in preprocessors:
-            preproc.apply(raw_or_epochs)
+            raw_or_epochs = preproc.apply(raw_or_epochs)
+        return raw_or_epochs
 
     if hasattr(ds, "raw"):
         if isinstance(ds, EEGWindowsDataset):
             warn(
                 f"Applying preprocessors {preprocessors} to the mne.io.Raw of an EEGWindowsDataset."
             )
-        _preprocess_raw_or_epochs(ds.raw, preprocessors)
+        processed = _preprocess_raw_or_epochs(ds.raw, preprocessors)
+        if processed is not ds.raw:
+            ds.raw = processed
     elif hasattr(ds, "windows"):
-        _preprocess_raw_or_epochs(ds.windows, preprocessors)
+        processed = _preprocess_raw_or_epochs(ds.windows, preprocessors)
+        if processed is not ds.windows:
+            ds.windows = processed
     else:
         raise ValueError(
             "Can only preprocess concatenation of RecordDataset, "
@@ -277,25 +390,6 @@ def _preprocess(
         return ds
 
 
-def _get_preproc_kwargs(preprocessors):
-    preproc_kwargs = []
-    for p in preprocessors:
-        # in case of a mne function, fn is a str, kwargs is a dict
-        func_name = p.fn
-        func_kwargs = p.kwargs
-        # in case of another function
-        # if apply_on_array=False
-        if callable(p.fn):
-            func_name = p.fn.__name__
-        # if apply_on_array=True
-        else:
-            if "fun" in p.fn:
-                func_name = p.kwargs["fun"].func.__name__
-                func_kwargs = p.kwargs["fun"].keywords
-        preproc_kwargs.append((func_name, func_kwargs))
-    return preproc_kwargs
-
-
 def _set_preproc_kwargs(ds, preprocessors):
     """Record preprocessing keyword arguments in RecordDataset.
 
@@ -306,7 +400,7 @@ def _set_preproc_kwargs(ds, preprocessors):
     preprocessors : list
         List of preprocessors.
     """
-    preproc_kwargs = _get_preproc_kwargs(preprocessors)
+    preproc_kwargs = [p.serialize() for p in preprocessors]
     if isinstance(ds, WindowsDataset):
         kind = "window"
     elif isinstance(ds, EEGWindowsDataset):
@@ -315,7 +409,8 @@ def _set_preproc_kwargs(ds, preprocessors):
         kind = "raw"
     else:
         raise TypeError(f"ds must be a RecordDataset, got {type(ds)}")
-    setattr(ds, kind + "_preproc_kwargs", preproc_kwargs)
+    old_preproc_kwargs = getattr(ds, kind + "_preproc_kwargs")
+    old_preproc_kwargs.extend(preproc_kwargs)
 
 
 def exponential_moving_standardize(

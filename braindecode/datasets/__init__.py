@@ -13,7 +13,7 @@ from .bcicomp import BCICompetitionIVDataset4
 from .bids import BIDSDataset, BIDSEpochsDataset
 from .chb_mit import CHBMIT
 from .mne import create_from_mne_epochs, create_from_mne_raw
-from .moabb import BNCI2014001, HGD, MOABBDataset
+from .moabb import BNCI2014_001, HGD, MOABBDataset
 from .nmt import NMT
 from .siena import SIENA
 from .sleep_physio_challe_18 import SleepPhysionetChallenge2018
@@ -31,7 +31,7 @@ __all__ = [
     "BIDSEpochsDataset",
     "MOABBDataset",
     "HGD",
-    "BNCI2014001",
+    "BNCI2014_001",
     "create_from_mne_raw",
     "create_from_mne_epochs",
     "TUH",

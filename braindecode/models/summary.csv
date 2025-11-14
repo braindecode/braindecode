@@ -13,6 +13,7 @@ EEGInceptionMI,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times",55
 EEGITNet,Motor Imagery,Classification,125,"n_chans, n_outputs, n_times",5212,"EEGITNet(n_chans=22,  n_outputs=4,  n_times=500)","Convolution,Recurrent"
 EEGNet,General,Classification,128,"n_chans, n_outputs, n_times",2484,"EEGNet(n_chans=22,  n_outputs=4,  n_times=512)","Convolution"
 EEGNeX,Motor Imagery,Classification,125,"n_chans, n_outputs, n_times",55940,"EEGNeX(n_chans=22,  n_outputs=4,  n_times=500)","Convolution"
+EEGSym,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sfreq",299218,"EEGSym(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,Channel"
 EEGMiner,Emotion Recognition,Classification,128,"n_chans, n_outputs, n_times, sfreq",7572,"EEGMiner(n_chans=62, n_outputs=2, n_times=2560, sfreq=128)","Convolution,Interpretability"
 EEGSimpleConv,Motor Imagery,Classification,80,"n_chans, n_outputs, sfreq",730404,"EEGSimpleConv(n_chans=22,  n_outputs=4,  n_times=320, sfreq=80)","Convolution"
 EEGTCNet,Motor Imagery,Classification,250,"n_chans, n_outputs",4516,"EEGTCNet(n_chans=22,  n_outputs=4,  n_times=1000, kern_length=32)","Convolution,Recurrent"
@@ -40,3 +41,5 @@ IFNet,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sfreq",9860
 PBT,General,Classification,250,"n_chans, n_outputs, n_times",818948,"PBT(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Large Brain Model"
 SSTDPN,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times",19502,"SSTDPN(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Small Attention"
 BENDR,General,"Classification,Embedding",250,"n_chans, n_times, n_outputs",157141049,"BENDR(n_chans=22, n_outputs=4, n_times=1000)","Large Brain Model,Convolution"
+LUNA,General,"Classification,Embedding",128,"n_chans, n_times, sfreq, chs_info",7100731,"LUNA(n_chans=22, n_times=512, sfreq=128)","Convolution,Channel,Large Brain Model"
+MEDFormer,General,Classification,250,"n_chans, n_outputs, n_times",5313924,"MEDFormer(n_chans=22, n_outputs=4, n_times=1000)","Large Brain Model,Convolution"

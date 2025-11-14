@@ -19,7 +19,7 @@ import warnings
 from abc import abstractmethod
 from collections.abc import Callable
 from glob import glob
-from typing import Generic, Iterable, no_type_check
+from typing import Any, Generic, Iterable, no_type_check
 
 import mne.io
 import numpy as np
@@ -27,6 +27,9 @@ import pandas as pd
 from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset
 from typing_extensions import TypeVar
+
+from .hub import HubDatasetMixin
+from .registry import register_dataset
 
 
 def _create_description(description) -> pd.Series:
@@ -97,6 +100,7 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
 T = TypeVar("T", bound=RecordDataset)
 
 
+@register_dataset
 class RawDataset(RecordDataset):
     """Returns samples from an mne.io.Raw object along with a target.
 
@@ -129,6 +133,7 @@ class RawDataset(RecordDataset):
 
         # save target name for load/save later
         self.target_name = self._target_name(target_name)
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index):
         X = self.raw[:, index][0]
@@ -176,10 +181,12 @@ class RawDataset(RecordDataset):
     "If you want to type a Braindecode dataset (i.e. RawDataset|EEGWindowsDataset|WindowsDataset), "
     "use the RecordDataset class instead."
 )
+@register_dataset
 class BaseDataset(RawDataset):
     pass
 
 
+@register_dataset
 class EEGWindowsDataset(RecordDataset):
     """Returns windows from an mne.Raw object, its window indices, along with a target.
 
@@ -235,6 +242,7 @@ class EEGWindowsDataset(RecordDataset):
         ].to_numpy()
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -285,6 +293,7 @@ class EEGWindowsDataset(RecordDataset):
         return len(self.crop_inds)
 
 
+@register_dataset
 class WindowsDataset(RecordDataset):
     """Returns windows from an mne.Epochs object along with a target.
 
@@ -334,6 +343,8 @@ class WindowsDataset(RecordDataset):
         ].to_numpy()
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
+        self.window_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -374,11 +385,15 @@ class WindowsDataset(RecordDataset):
         return len(self.windows.events)
 
 
-class BaseConcatDataset(ConcatDataset, Generic[T]):
+@register_dataset
+class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     """A base class for concatenated datasets.
 
     Holds either mne.Raw or mne.Epoch in self.datasets and has
     a pandas DataFrame with additional description.
+
+    Includes Hugging Face Hub integration via HubDatasetMixin for
+    uploading and downloading datasets.
 
     Parameters
     ----------
@@ -794,7 +809,7 @@ class BaseConcatDataset(ConcatDataset, Generic[T]):
                 kwargs = getattr(ds, kwargs_name)
                 if kwargs is not None:
                     with open(kwargs_file_path, "w") as f:
-                        json.dump(kwargs, f)
+                        json.dump(kwargs, f, indent=2)
 
     @staticmethod
     def _save_target_name(sub_dir, ds):
