@@ -14,24 +14,15 @@ Braindecode Homepage
 
 .. LOGO
 
-.. raw:: html
-
-   <div class="braindecode-hero">
-      <h1 class="braindecode-hero__title">BRAINDECODE</h1>
-
-.. image:: _static/braindecode.svg
+.. image:: _static/braindecode_horizontal.svg
    :alt: Braindecode
    :class: logo mainlogo only-light
    :align: center
 
-.. image:: _static/braindecode.svg
+.. image:: _static/braindecode_horizontal.svg
    :alt: Braindecode
    :class: logo mainlogo only-dark
    :align: center
-
-.. raw:: html
-
-   </div>
 
 .. rst-class:: h4 text-center font-weight-light my-4
 
