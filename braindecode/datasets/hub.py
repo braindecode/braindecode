@@ -23,16 +23,6 @@ import pandas as pd
 import scipy
 from mne.utils import _soft_import
 
-# TODO: Simplify this logic in the future with zarr v3+ only
-# Optional imports for Hub functionality
-try:
-    from numcodecs import Blosc, GZip, Zstd
-
-    NUMCODECS_AVAILABLE = True
-except ImportError:
-    NUMCODECS_AVAILABLE = False
-    Blosc = GZip = Zstd = None
-
 if TYPE_CHECKING:
     from .base import BaseDataset
 
@@ -397,9 +387,8 @@ class HubDatasetMixin:
                 f"{output_path} already exists. Set overwrite=True to replace it."
             )
 
-        # Create zarr store (zarr v2 API)
-        store = zarr.DirectoryStore(str(output_path))
-        root = zarr.group(store=store, overwrite=False)
+        # Create zarr store (zarr v3 API)
+        root = zarr.open(str(output_path), mode="w")
 
         # Validate uniformity across all datasets using shared validation
         dataset_type, _, _ = hub_validation.validate_dataset_uniformity(self.datasets)
@@ -530,9 +519,8 @@ class HubDatasetMixin:
         if not input_path.exists():
             raise FileNotFoundError(f"{input_path} does not exist.")
 
-        # Open zarr store (zarr v2 API)
-        store = zarr.DirectoryStore(str(input_path))
-        root = zarr.group(store=store)
+        # Open zarr store (zarr v3 API)
+        root = zarr.open(str(input_path), mode="r")
 
         n_datasets = root.attrs["n_datasets"]
         dataset_type = root.attrs["dataset_type"]
@@ -669,11 +657,17 @@ def _save_windows_to_zarr(
 ):
     """Save windowed data to Zarr group (low-level function)."""
     # Save data with chunking for random access
-    grp.create_dataset(
+    # In Zarr v3, use create_array with compressors parameter
+    data_array = data.astype(np.float32)
+    
+    # Zarr v3 expects compressors as a list
+    compressors_list = [compressor] if compressor is not None else None
+    
+    grp.create_array(
         "data",
-        data=data.astype(np.float32),
-        chunks=(1, data.shape[1], data.shape[2]),
-        compressor=compressor,
+        data=data_array,
+        chunks=(1, data_array.shape[1], data_array.shape[2]),
+        compressors=compressors_list,
     )
 
     # Save metadata
@@ -704,11 +698,17 @@ def _save_eegwindows_to_zarr(
 
     # Save continuous data with chunking optimized for window extraction
     # Chunk size: all channels, 10000 timepoints for efficient random access
-    grp.create_dataset(
+    # In Zarr v3, use create_array with compressors parameter
+    continuous_float = continuous_data.astype(np.float32)
+    
+    # Zarr v3 expects compressors as a list
+    compressors_list = [compressor] if compressor is not None else None
+    
+    grp.create_array(
         "data",
-        data=continuous_data.astype(np.float32),
-        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
-        compressor=compressor,
+        data=continuous_float,
+        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
+        compressors=compressors_list,
     )
 
     # Save metadata
@@ -803,11 +803,17 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
 
     # Save continuous data with chunking optimized for efficient access
     # Chunk size: all channels, 10000 timepoints for efficient random access
-    grp.create_dataset(
+    # In Zarr v3, use create_array with compressors parameter
+    continuous_float = continuous_data.astype(np.float32)
+    
+    # Zarr v3 expects compressors as a list
+    compressors_list = [compressor] if compressor is not None else None
+    
+    grp.create_array(
         "data",
-        data=continuous_data.astype(np.float32),
-        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
-        compressor=compressor,
+        data=continuous_float,
+        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
+        compressors=compressors_list,
     )
 
     # Save description
@@ -849,24 +855,32 @@ def _load_raw_from_zarr(grp, preload):
 
 
 def _create_compressor(compression, compression_level):
-    """Create a Zarr compressor object (zarr v2 API)."""
+    """Create a Zarr v3 compressor codec.
+    
+    Returns compressor dict compatible with Zarr v3 create_array API.
+    """
     if zarr is False:
         raise ImportError(
             "Zarr is not installed. Install with: pip install braindecode[hub]"
         )
 
-    if not NUMCODECS_AVAILABLE:
-        raise ImportError(
-            "numcodecs is not installed. Install with: pip install braindecode[hub]"
-        )
-
-    # Zarr v2 uses numcodecs compressors
+    # Zarr v3 uses codec dicts for the compressors parameter
     if compression == "blosc":
-        return Blosc(cname="zstd", clevel=compression_level)
+        # Use Zstandard codec (built-in to Zarr v3)
+        return {
+            "name": "zstd",
+            "configuration": {"level": compression_level},
+        }
     elif compression == "zstd":
-        return Zstd(level=compression_level)
+        return {
+            "name": "zstd",
+            "configuration": {"level": compression_level},
+        }
     elif compression == "gzip":
-        return GZip(level=compression_level)
+        return {
+            "name": "gzip",
+            "configuration": {"level": compression_level},
+        }
     else:
         return None
 

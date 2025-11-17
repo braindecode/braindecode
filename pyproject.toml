@@ -72,8 +72,7 @@ documentation = "https://braindecode.org/stable/index.html"
 [project.optional-dependencies]
 moabb = ["moabb>=1.2.0"]
 eegprep = ["eegprep[eeglabio]>=0.1.1"]
-# to-do: check if zarr version can be relaxed
-hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=2.18,<3.0"]
+hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
 tests = [
     'pytest',
     'pytest-cov',
