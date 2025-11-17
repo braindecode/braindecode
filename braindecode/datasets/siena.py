@@ -16,13 +16,13 @@ It reorganizes the file structure to comply with the BIDS specification. To this
 # License: BSD (3-clause)
 from __future__ import annotations
 
-import glob
 import os
 from pathlib import Path
 
 from mne.datasets import fetch_dataset
 
 from braindecode.datasets import BIDSDataset
+from braindecode.datasets.utils import correct_dataset_path
 
 SIENA_URL = "https://zenodo.org/records/10640762/files/BIDS_Siena.zip"
 SIENA_archive_name = "SIENA.zip"
@@ -132,24 +132,28 @@ class SIENA(BIDSDataset):
     """
 
     def __init__(self, root=None, *args, **kwargs):
-        # correct the path if needed
-        path_root = root
-        if path_root is not None:
-            list_tsv = glob.glob(f"{path_root}/**/participants.tsv", recursive=True)
-            if isinstance(list_tsv, list) and len(list_tsv) > 0:
-                path_root = Path(list_tsv[0]).parent
-
         # Download dataset if not present
-        if path_root is None or len(list_tsv) == 0:
+        if root is None:
             path_root = fetch_dataset(
                 dataset_params=SIENA_dataset_params,
-                path=Path(path_root) if path_root is not None else None,
+                path=None,
                 processor="unzip",
                 force_update=False,
             )
             # First time we fetch the dataset, we need to move the files to the
             # correct directory.
-            path_root = _correct_path(path_root)
+            path_root = correct_dataset_path(
+                path_root, SIENA_archive_name, "BIDS_Siena"
+            )
+        else:
+            # Validate that the provided root is a valid BIDS dataset
+            if not Path(f"{root}/participants.tsv").exists():
+                raise ValueError(
+                    f"The provided root directory {root} does not contain a valid "
+                    "BIDS dataset (missing participants.tsv). Please ensure the "
+                    "root points directly to the BIDS dataset directory."
+                )
+            path_root = root
 
         kwargs["root"] = path_root
 
@@ -160,39 +164,3 @@ class SIENA(BIDSDataset):
             **kwargs,
         )
 
-
-def _correct_path(path: str):
-    """
-    Check if the path is correct and rename the file if needed.
-
-    Parameters
-    ----------
-    path: basestring
-        Path to the file.
-
-    Returns
-    -------
-    path: basestring
-        Corrected path.
-    """
-    if not Path(path).exists():
-        unzip_file_name = f"{SIENA_archive_name}.unzip"
-        if (Path(path).parent / unzip_file_name).exists():
-            try:
-                os.rename(
-                    src=Path(path).parent / unzip_file_name,
-                    dst=Path(path),
-                )
-
-            except PermissionError:
-                raise PermissionError(
-                    f"Please rename {Path(path).parent / unzip_file_name}"
-                    + f"manually to {path} and try again."
-                )
-
-    # Check if the BIDS_Siena folder exists inside the path
-    bids_siena_path = os.path.join(path, "BIDS_Siena")
-    if Path(bids_siena_path).exists():
-        path = bids_siena_path
-
-    return path

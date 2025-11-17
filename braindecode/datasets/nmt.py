@@ -32,6 +32,7 @@ from joblib import Parallel, delayed
 from mne.datasets import fetch_dataset
 
 from braindecode.datasets.base import BaseConcatDataset, RawDataset
+from braindecode.datasets.utils import correct_dataset_path
 
 NMT_URL = "https://zenodo.org/record/10909103/files/NMT.zip"
 NMT_archive_name = "NMT.zip"
@@ -96,22 +97,26 @@ class NMT(BaseConcatDataset):
         preload=False,
         n_jobs=1,
     ):
-        # correct the path if needed
-        if path is not None:
-            list_csv = glob.glob(f"{path}/**/Labels.csv", recursive=True)
-            if isinstance(list_csv, list) and len(list_csv) > 0:
-                path = Path(list_csv[0]).parent
-
-        if path is None or len(list_csv) == 0:
+        # Download dataset if not present
+        if path is None:
             path = fetch_dataset(
                 dataset_params=NMT_dataset_params,
-                path=Path(path) if path is not None else None,
+                path=path=Path(path) if path is not None else None,
                 processor="unzip",
                 force_update=False,
             )
             # First time we fetch the dataset, we need to move the files to the
             # correct directory.
-            path = _correct_path(path)
+            path = correct_dataset_path(path, NMT_archive_name, "nmt_scalp_eeg_dataset")
+        else:
+            # Validate that the provided path is a valid NMT dataset
+            if not Path(f"{path}/Labels.csv").exists():
+                raise ValueError(
+                    f"The provided path {path} does not contain a valid "
+                    "NMT dataset (missing Labels.csv). Please ensure the "
+                    "path points directly to the NMT dataset directory."
+                )
+            path = correct_dataset_path(path, NMT_archive_name, "nmt_scalp_eeg_dataset")
 
         # Get all file paths
         file_paths = glob.glob(
@@ -175,38 +180,6 @@ class NMT(BaseConcatDataset):
         base_dataset = RawDataset(raw, d, target_name)
         return base_dataset
 
-
-def _correct_path(path: str):
-    """
-    Check if the path is correct and rename the file if needed.
-
-    Parameters
-    ----------
-    path: basestring
-        Path to the file.
-
-    Returns
-    -------
-    path: basestring
-        Corrected path.
-    """
-    if not Path(path).exists():
-        unzip_file_name = f"{NMT_archive_name}.unzip"
-        if (Path(path).parent / unzip_file_name).exists():
-            try:
-                os.rename(
-                    src=Path(path).parent / unzip_file_name,
-                    dst=Path(path),
-                )
-
-            except PermissionError:
-                raise PermissionError(
-                    f"Please rename {Path(path).parent / unzip_file_name}"
-                    + f"manually to {path} and try again."
-                )
-        path = os.path.join(path, "nmt_scalp_eeg_dataset")
-
-    return path
 
 
 def _get_header(*args):
