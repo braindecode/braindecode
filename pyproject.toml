@@ -6,7 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "braindecode"
 dynamic = ["version"]
 description = "Deep learning software to decode EEG, ECG or MEG signals"
-authors = [{ name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" }]
+authors =  [
+    { name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" },
+    { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
+    { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
+]
 maintainers = [
     { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
     { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
@@ -49,11 +53,11 @@ dependencies = [
     'matplotlib',
     'h5py',
     'skorch>=1.2.0',
-    "torch>=2.0,<3.0",
-    "torchaudio>=2.0,<3.0",
+    "torch>=2.0",
+    "torchaudio>=2.0",
     'einops',
     'joblib',
-    'torchinfo~=1.8',
+    'torchinfo',
     'wfdb',
     'h5py',
     'linear_attention_transformer',
@@ -102,8 +106,9 @@ all = [
     "braindecode[hub]",
     "braindecode[tests]",
     "braindecode[docs]",
-    "braindecode[eegprep]",
 ]
+# return later
+#   "braindecode[eegprep]",
 
 [tool.setuptools]
 py-modules = []
