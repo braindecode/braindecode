@@ -356,12 +356,12 @@ html_show_sphinx = False
 htmlhelp_basename = "Braindecode-doc"
 
 # accommodate different logo shapes (width values in rem)
-xs = "6"
-sm = "8"
-md = "10"
-lg = "14"
-xl = "16"
-xxl = "18"
+xs = "7"
+sm = "9"
+md = "11"
+lg = "16"
+xl = "18"
+xxl = "20"
 
 html_context = {
     "build_dev_html": bool(int(os.environ.get("BUILD_DEV_HTML", False))),

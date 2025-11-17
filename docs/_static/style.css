@@ -137,6 +137,19 @@ ul.funders li img {
     object-fit: contain;
 }
 
+.institution-logo-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.institution-logo {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    padding: 0.5rem;
+}
+
 /* these two also affect collapsible divs */
 h5.card-header {
     margin-top: 0px;
