@@ -97,11 +97,15 @@ class NMT(BaseConcatDataset):
         preload=False,
         n_jobs=1,
     ):
+        # Convert empty string to None for consistency
+        if path == "":
+            path = None
+
         # Download dataset if not present
         if path is None:
             path = fetch_dataset(
                 dataset_params=NMT_dataset_params,
-                path=Path(path) if path is not None else None,
+                path=None,
                 processor="unzip",
                 force_update=False,
             )

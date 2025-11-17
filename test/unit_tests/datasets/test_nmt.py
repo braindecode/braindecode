@@ -94,21 +94,21 @@ def test_path_does_not_exist_but_unzip_file_does(setup_file_structure):
     # Path before renaming
     original_path = setup_file_structure / "original"
     unzip_file_path = original_path / f"{NMT_archive_name}.unzip"
-    expected_new_path = original_path / "original" / "nmt_scalp_eeg_dataset"
-    # Updated expectation based on function's behavior
+    test_path = original_path / "original"
 
     # Call the function
     corrected_path = correct_dataset_path(
-        str(original_path / "original"),
+        str(test_path),
         NMT_archive_name,
         "nmt_scalp_eeg_dataset",
     )
     # Path that does not exist to trigger renaming
 
     # Assert the unzip file has been renamed to the original path
-    # (not directly checking here because rename is not creating a folder,
-    # just renaming the path)
-    assert corrected_path == str(expected_new_path)
+    # The function renames the .unzip file to the expected path, then
+    # checks if subfolder exists. Since we don't create the subfolder,
+    # it should return the renamed path
+    assert corrected_path == str(test_path)
     assert not unzip_file_path.exists()
     # Ensuring the unzip file was renamed (implied by the disappearance)
 
