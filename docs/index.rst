@@ -19,12 +19,12 @@ Braindecode Homepage
    <div class="braindecode-hero">
       <h1 class="braindecode-hero__title">BRAINDECODE</h1>
 
-.. image:: _static/braindecode.png
+.. image:: _static/braindecode.svg
    :alt: Braindecode
    :class: logo mainlogo only-light
    :align: center
 
-.. image:: _static/braindecode.png
+.. image:: _static/braindecode.svg
    :alt: Braindecode
    :class: logo mainlogo only-dark
    :align: center

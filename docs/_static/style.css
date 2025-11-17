@@ -329,4 +329,6 @@ html[data-theme="dark"] .braindecode-hero__title {
 .braindecode-hero img.logo.mainlogo {
     display: block;
     margin: 0 auto;
+    max-width: 500px;
+    width: 100%;
 }
