@@ -356,12 +356,12 @@ html_show_sphinx = False
 htmlhelp_basename = "Braindecode-doc"
 
 # accommodate different logo shapes (width values in rem)
-xs = "2"
-sm = "2.5"
-md = "3"
-lg = "4.5"
-xl = "5"
-xxl = "6"
+xs = "7"
+sm = "9"
+md = "11"
+lg = "16"
+xl = "18"
+xxl = "20"
 
 html_context = {
     "build_dev_html": bool(int(os.environ.get("BUILD_DEV_HTML", False))),
@@ -371,17 +371,29 @@ html_context = {
     "icon_links_label": "Quick Links",  # for screen reader
     "show_toc_level": 1,
     "institutions": [
-        dict(
-            name="University of Freiburg",
-            img="unifreiburg.png",
-            url="https://www.ieeg.uni-freiburg.de/",
-            size=lg,
-        ),
+        # dict(
+        #     name="University of Freiburg",
+        #     img="unifreiburg.png",
+        #     url="https://www.ieeg.uni-freiburg.de/",
+        #     size=lg,
+        # ),
         dict(
             name="Institut national de recherche en informatique et en automatique",  # noqa E501
             img="inria.png",
             url="https://www.inria.fr/",
             size=xl,
+        ),
+        dict(
+            name="University of California San Diego",
+            img="ucsd.png",
+            url="https://sccn.ucsd.edu",
+            size=lg,
+        ),
+        dict(
+            name="Donders Institute for Brain, Cognition, and Behaviour",
+            img="donders.png",
+            url="https://www.ru.nl/en/donders-institute",
+            size=lg,
         ),
     ],
     "navbar_align": "content",
