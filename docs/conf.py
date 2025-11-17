@@ -371,17 +371,23 @@ html_context = {
     "icon_links_label": "Quick Links",  # for screen reader
     "show_toc_level": 1,
     "institutions": [
-        dict(
-            name="University of Freiburg",
-            img="unifreiburg.png",
-            url="https://www.ieeg.uni-freiburg.de/",
-            size=lg,
-        ),
+        # dict(
+        #     name="University of Freiburg",
+        #     img="unifreiburg.png",
+        #     url="https://www.ieeg.uni-freiburg.de/",
+        #     size=lg,
+        # ),
         dict(
             name="Institut national de recherche en informatique et en automatique",  # noqa E501
             img="inria.png",
             url="https://www.inria.fr/",
             size=xl,
+        ),
+        dict(
+            name="University of California San Diego",
+            img="ucsd.png",
+            url="https://sccn.ucsd.edu",
+            size=xxl,
         ),
     ],
     "navbar_align": "content",
