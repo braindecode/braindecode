@@ -6,7 +6,8 @@ import platform
 
 import pytest
 
-from braindecode.datasets.nmt import NMT_archive_name, _correct_path, _NMTMock
+from braindecode.datasets.nmt import NMT_archive_name, _NMTMock
+from braindecode.datasets.utils import correct_dataset_path
 
 
 # Skip if OS is Windows
@@ -76,7 +77,12 @@ def test_path_exists(tmp_path):
     (test_file / "nmt_scalp_eeg_dataset").mkdir()
 
     # Assert that the path returned is the same since it exists
-    assert _correct_path(str(test_file)) == str(test_file)
+    assert (
+        correct_dataset_path(
+            str(test_file), NMT_archive_name, "nmt_scalp_eeg_dataset"
+        )
+        == str(test_file / "nmt_scalp_eeg_dataset")
+    )
 
 
 def test_path_does_not_exist_but_unzip_file_does(setup_file_structure):
@@ -92,7 +98,11 @@ def test_path_does_not_exist_but_unzip_file_does(setup_file_structure):
     # Updated expectation based on function's behavior
 
     # Call the function
-    corrected_path = _correct_path(str(original_path / "original"))
+    corrected_path = correct_dataset_path(
+        str(original_path / "original"),
+        NMT_archive_name,
+        "nmt_scalp_eeg_dataset",
+    )
     # Path that does not exist to trigger renaming
 
     # Assert the unzip file has been renamed to the original path
@@ -103,8 +113,9 @@ def test_path_does_not_exist_but_unzip_file_does(setup_file_structure):
     # Ensuring the unzip file was renamed (implied by the disappearance)
 
 
-def test_permission_error_when_renaming_unzip_file(monkeypatch,
-                                                   setup_file_structure):
+def test_permission_error_when_renaming_unzip_file(
+    monkeypatch, setup_file_structure
+):
     """Test if the function raises a PermissionError
     when renaming is not possible.
     """
@@ -120,4 +131,8 @@ def test_permission_error_when_renaming_unzip_file(monkeypatch,
 
     # Assert that PermissionError is raised
     with pytest.raises(PermissionError):
-        _correct_path(str(expected_new_path))
+        correct_dataset_path(
+            str(expected_new_path),
+            NMT_archive_name,
+            "nmt_scalp_eeg_dataset",
+        )

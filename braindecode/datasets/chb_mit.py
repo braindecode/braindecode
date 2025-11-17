@@ -16,7 +16,6 @@ It reorganizes the file structure to comply with the BIDS specification. To this
 # License: BSD (3-clause)
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from mne.datasets import fetch_dataset
@@ -171,4 +170,3 @@ class CHBMIT(BIDSDataset):
             check=False,
             **kwargs,
         )
-

@@ -101,7 +101,7 @@ class NMT(BaseConcatDataset):
         if path is None:
             path = fetch_dataset(
                 dataset_params=NMT_dataset_params,
-                path=path=Path(path) if path is not None else None,
+                path=Path(path) if path is not None else None,
                 processor="unzip",
                 force_update=False,
             )
@@ -179,7 +179,6 @@ class NMT(BaseConcatDataset):
         d["train"] = "train" in d.path.split(os.sep)
         base_dataset = RawDataset(raw, d, target_name)
         return base_dataset
-
 
 
 def _get_header(*args):
