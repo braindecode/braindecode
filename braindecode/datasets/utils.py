@@ -10,27 +10,39 @@ import os
 from pathlib import Path
 
 
-def correct_dataset_path(
+def _correct_dataset_path(
     path: str, archive_name: str, subfolder_name: str | None = None
 ) -> str:
     """
-    Check if the path is correct and rename the file if needed.
+    Correct the dataset path after download and extraction.
+
+    This function handles two common post-download scenarios:
+    1. Renames '.unzip' suffixed directories created by some extraction tools
+    2. Navigates into a subfolder if the archive extracts to a nested directory
 
     Parameters
     ----------
     path : str
-        Path to the dataset.
+        Expected path to the dataset directory.
     archive_name : str
-        Name of the archive file (e.g., "chb_mit_bids.zip", "NMT.zip").
+        Name of the downloaded archive file without extension
+        (e.g., "chb_mit_bids", "NMT").
     subfolder_name : str | None
-        Name of the subfolder inside the archive. If provided, the function will
-        check if this subfolder exists and use it as the path. If None, the path
-        will be used as-is after potential renaming. Default is None.
+        Name of the subfolder within the extracted archive that contains the
+        actual data. If provided and the subfolder exists, the path will be
+        updated to point to it. If None, only renaming is attempted.
+        Default is None.
 
     Returns
     -------
     str
-        Corrected path.
+        The corrected path to the dataset directory.
+
+    Raises
+    ------
+    PermissionError
+        If the '.unzip' directory exists but cannot be renamed due to
+        insufficient permissions.
     """
     if not Path(path).exists():
         unzip_file_name = f"{archive_name}.unzip"

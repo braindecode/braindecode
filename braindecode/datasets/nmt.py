@@ -32,7 +32,7 @@ from joblib import Parallel, delayed
 from mne.datasets import fetch_dataset
 
 from braindecode.datasets.base import BaseConcatDataset, RawDataset
-from braindecode.datasets.utils import correct_dataset_path
+from braindecode.datasets.utils import _correct_dataset_path
 
 NMT_URL = "https://zenodo.org/record/10909103/files/NMT.zip"
 NMT_archive_name = "NMT.zip"
@@ -111,7 +111,9 @@ class NMT(BaseConcatDataset):
             )
             # First time we fetch the dataset, we need to move the files to the
             # correct directory.
-            path = correct_dataset_path(path, NMT_archive_name, "nmt_scalp_eeg_dataset")
+            path = _correct_dataset_path(
+                path, NMT_archive_name, "nmt_scalp_eeg_dataset"
+            )
         else:
             # Validate that the provided path is a valid NMT dataset
             if not Path(f"{path}/Labels.csv").exists():
@@ -120,7 +122,9 @@ class NMT(BaseConcatDataset):
                     "NMT dataset (missing Labels.csv). Please ensure the "
                     "path points directly to the NMT dataset directory."
                 )
-            path = correct_dataset_path(path, NMT_archive_name, "nmt_scalp_eeg_dataset")
+            path = _correct_dataset_path(
+                path, NMT_archive_name, "nmt_scalp_eeg_dataset"
+            )
 
         # Get all file paths
         file_paths = glob.glob(
@@ -267,15 +271,23 @@ class _NMTMock(NMT):
     @mock.patch("glob.glob", return_value=_NMT_PATHS.keys())
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
+    @mock.patch("mne.datasets.fetch_dataset")
+    @mock.patch("braindecode.datasets.nmt._correct_dataset_path")
     def __init__(
         self,
         mock_glob,
+        mock_fetch,
+        mock_correct_path,
         path,
         recording_ids=None,
         target_name="pathological",
         preload=False,
         n_jobs=1,
     ):
+        # Mock fetch_dataset to return a valid path without downloading
+        mock_fetch.return_value = "mocked_nmt_path"
+        # Mock _correct_dataset_path to return the path as-is
+        mock_correct_path.side_effect = lambda p, *args, **kwargs: p
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
             super().__init__(

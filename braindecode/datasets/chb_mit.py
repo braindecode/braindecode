@@ -21,7 +21,7 @@ from pathlib import Path
 from mne.datasets import fetch_dataset
 
 from braindecode.datasets import BIDSDataset
-from braindecode.datasets.utils import correct_dataset_path
+from braindecode.datasets.utils import _correct_dataset_path
 
 CHB_MIT_URL = "https://zenodo.org/records/10259996/files/BIDS_CHB-MIT.zip"
 CHB_MIT_archive_name = "chb_mit_bids.zip"
@@ -149,7 +149,7 @@ class CHBMIT(BIDSDataset):
             )
             # First time we fetch the dataset, we need to move the files to the
             # correct directory.
-            path_root = correct_dataset_path(
+            path_root = _correct_dataset_path(
                 path_root, CHB_MIT_archive_name, "BIDS_CHB-MIT"
             )
         else:

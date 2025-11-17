@@ -21,7 +21,7 @@ from pathlib import Path
 from mne.datasets import fetch_dataset
 
 from braindecode.datasets import BIDSDataset
-from braindecode.datasets.utils import correct_dataset_path
+from braindecode.datasets.utils import _correct_dataset_path
 
 SIENA_URL = "https://zenodo.org/records/10640762/files/BIDS_Siena.zip"
 SIENA_archive_name = "SIENA.zip"
@@ -141,7 +141,7 @@ class SIENA(BIDSDataset):
             )
             # First time we fetch the dataset, we need to move the files to the
             # correct directory.
-            path_root = correct_dataset_path(
+            path_root = _correct_dataset_path(
                 path_root, SIENA_archive_name, "BIDS_Siena"
             )
         else:

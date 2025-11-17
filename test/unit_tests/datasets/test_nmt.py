@@ -7,7 +7,7 @@ import platform
 import pytest
 
 from braindecode.datasets.nmt import NMT_archive_name, _NMTMock
-from braindecode.datasets.utils import correct_dataset_path
+from braindecode.datasets.utils import _correct_dataset_path
 
 
 # Skip if OS is Windows
@@ -78,7 +78,7 @@ def test_path_exists(tmp_path):
 
     # Assert that the path returned is the same since it exists
     assert (
-        correct_dataset_path(
+        _correct_dataset_path(
             str(test_file), NMT_archive_name, "nmt_scalp_eeg_dataset"
         )
         == str(test_file / "nmt_scalp_eeg_dataset")
@@ -97,7 +97,7 @@ def test_path_does_not_exist_but_unzip_file_does(setup_file_structure):
     test_path = original_path / "original"
 
     # Call the function
-    corrected_path = correct_dataset_path(
+    corrected_path = _correct_dataset_path(
         str(test_path),
         NMT_archive_name,
         "nmt_scalp_eeg_dataset",
@@ -131,7 +131,7 @@ def test_permission_error_when_renaming_unzip_file(
 
     # Assert that PermissionError is raised
     with pytest.raises(PermissionError):
-        correct_dataset_path(
+        _correct_dataset_path(
             str(expected_new_path),
             NMT_archive_name,
             "nmt_scalp_eeg_dataset",
