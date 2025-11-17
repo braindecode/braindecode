@@ -71,7 +71,7 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.2.0"]
-eegprep = ["eegprep[eeglabio]>=0.1.1"]
+eegprep = ["eegprep>=0.1.1"]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
 tests = [
     'pytest',
@@ -106,8 +106,9 @@ all = [
     "braindecode[hub]",
     "braindecode[tests]",
     "braindecode[docs]",
-    "braindecode[eegprep]",
 ]
+# return later
+#   "braindecode[eegprep]",
 
 [tool.setuptools]
 py-modules = []
