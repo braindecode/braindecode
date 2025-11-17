@@ -15,10 +15,11 @@ from typing import Any
 
 import mne
 import pandas as pd
+from mne.utils import deprecated
 
 from braindecode.util import _update_moabb_docstring
 
-from .base import BaseConcatDataset, BaseDataset
+from .base import BaseConcatDataset, RawDataset
 
 
 def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
@@ -164,13 +165,13 @@ class MOABBDataset(BaseConcatDataset):
             dataset_load_kwargs=dataset_load_kwargs,
         )
         all_base_ds = [
-            BaseDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
+            RawDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
         ]
         super().__init__(all_base_ds)
 
 
-class BNCI2014001(MOABBDataset):
-    doc = """See moabb.datasets.bnci.BNCI2014001
+class BNCI2014_001(MOABBDataset):
+    doc = """See moabb.datasets.bnci.BNCI2014_001
 
     Parameters
     ----------
@@ -179,14 +180,14 @@ class BNCI2014001(MOABBDataset):
         subjects is fetched.
     """
     try:
-        from moabb.datasets import BNCI2014001
+        from moabb.datasets import BNCI2014_001
 
-        __doc__ = _update_moabb_docstring(BNCI2014001, doc)
+        __doc__ = _update_moabb_docstring(BNCI2014_001, doc)
     except ModuleNotFoundError:
         pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
 
     def __init__(self, subject_ids):
-        super().__init__("BNCI2014001", subject_ids=subject_ids)
+        super().__init__("BNCI2014_001", subject_ids=subject_ids)
 
 
 class HGD(MOABBDataset):
@@ -207,3 +208,12 @@ class HGD(MOABBDataset):
 
     def __init__(self, subject_ids):
         super().__init__("Schirrmeister2017", subject_ids=subject_ids)
+
+
+@deprecated(
+    "`BNCI2014001` was renamed to `BNCI2014_001` in v1.13; this alias will be removed in v1.14."
+)
+class BNCI2014001(BNCI2014_001):
+    """Deprecated alias for BNCI2014001."""
+
+    pass

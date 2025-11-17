@@ -6,6 +6,7 @@ from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
+from .bendr import BENDR
 from .biot import BIOT
 from .contrawr import ContraWR
 from .ctnet import CTNet
@@ -20,6 +21,7 @@ from .eegminer import EEGMiner
 from .eegnet import EEGNet, EEGNetv4
 from .eegnex import EEGNeX
 from .eegsimpleconv import EEGSimpleConv
+from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
@@ -27,6 +29,8 @@ from .fbmsnet import FBMSNet
 from .hybrid import HybridNet
 from .ifnet import IFNet
 from .labram import Labram
+from .luna import LUNA
+from .medformer import MEDFormer
 from .msvtnet import MSVTNet
 from .patchedtransformer import PBT
 from .sccnet import SCCNet
@@ -47,7 +51,11 @@ from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
 from .tsinception import TSception
 from .usleep import USleep
-from .util import _init_models_dict, models_mandatory_parameters
+from .util import (
+    _init_models_dict,
+    extract_channel_locations_from_chs_info,
+    models_mandatory_parameters,
+)
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
@@ -59,6 +67,7 @@ __all__ = [
     "AttentionBaseNet",
     "EEGModuleMixin",
     "BIOT",
+    "BENDR",
     "ContraWR",
     "CTNet",
     "Deep4Net",
@@ -72,6 +81,7 @@ __all__ = [
     "EEGNet",
     "EEGNetv4",
     "EEGNeX",
+    "EEGSym",
     "EEGSimpleConv",
     "EEGTCNet",
     "FBCNet",
@@ -80,6 +90,9 @@ __all__ = [
     "HybridNet",
     "IFNet",
     "Labram",
+    "LUNA",
+    "extract_channel_locations_from_chs_info",
+    "MEDFormer",
     "MSVTNet",
     "PBT",
     "SCCNet",

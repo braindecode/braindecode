@@ -34,6 +34,9 @@ All the models are implemented as subclasses of :py:class:`EEGModuleMixin`, whic
 base class for all EEG models in Braindecode. The :class:`EEGModuleMixin` class
 provides a common interface for all EEG models and derivate variables names if necessary.
 
+Also, all models inherit from :class:`PyTorchModelHubMixin`, which provides functionality to
+save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` package is installed.
+
 :py:mod:`braindecode.models.base`:
 
 .. currentmodule:: braindecode.models
@@ -57,6 +60,7 @@ provides a common interface for all EEG models and derivate variables names if n
     AttnSleep
     BDTCN
     BIOT
+    BENDR
     ContraWR
     CTNet
     Deep4Net
@@ -70,12 +74,15 @@ provides a common interface for all EEG models and derivate variables names if n
     EEGNet
     EEGNeX
     EEGSimpleConv
+    EEGSym
     EEGTCNet
     FBCNet
     FBLightConvNet
     FBMSNet
     IFNet
     Labram
+    LUNA
+    MEDFormer
     MSVTNet
     PBT
     SCCNet
@@ -316,7 +323,8 @@ Base classes
    :toctree: generated/
 
     BaseConcatDataset
-    BaseDataset
+    RecordDataset
+    RawDataset
     WindowsDataset
     BIDSDataset
     BIDSEpochsDataset
@@ -329,7 +337,7 @@ Common Datasets
    :toctree: generated/
 
     BCICompetitionIVDataset4
-    BNCI2014001
+    BNCI2014_001
     HGD
     MOABBDataset
     NMT
@@ -361,23 +369,139 @@ Preprocessing
 
 .. currentmodule:: braindecode.preprocessing
 
+Core Functions
+''''''''''''''
+
 .. autosummary::
    :toctree: generated/
 
+    preprocess
+    Preprocessor
     create_windows_from_events
     create_fixed_length_windows
     create_windows_from_target_channels
     exponential_moving_demean
     exponential_moving_standardize
     filterbank
-    preprocess
-    Preprocessor
+
+EEGPrep Pipeline
+''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGPrep
+    ReinterpolateRemovedChannels
+    RemoveBadChannels
+    RemoveBadChannelsNoLocs
+    RemoveBadWindows
+    RemoveBursts
+    RemoveCommonAverageReference
+    RemoveDCOffset
+    RemoveDrifts
+    RemoveFlatChannels
+
+Signal Processing
+'''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
     Resample
-    DropChannels
-    SetEEGReference
+    Resampling
     Filter
+    FilterData
+    NotchFilter
+    SavgolFilter
+    ApplyHilbert
+    Rescale
+    OversampledTemporalProjection
+
+Channel Management
+''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
     Pick
+    PickChannels
+    PickTypes
+    DropChannels
+    AddChannels
+    CombineChannels
+    RenameChannels
+    ReorderChannels
+    SetChannelTypes
+    InterpolateBads
+    InterpolateTo
+    InterpolateBridgedElectrodes
+    ComputeBridgedElectrodes
+    EqualizeChannels
+    EqualizeBads
+    FindBadChannelsLof
+
+Reference & Montage
+'''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    SetEEGReference
+    SetBipolarReference
+    AddReferenceChannels
+    SetMontage
+
+SSP Projections
+'''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    AddProj
+    ApplyProj
+    DelProj
+
+Data Transformation
+'''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
     Crop
+    CropByAnnotations
+    ComputeCurrentSourceDensity
+    FixStimArtifact
+    MaxwellFilter
+    RealignRaw
+    RegressArtifact
+
+Artifact Detection & Annotation
+''''''''''''''''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    AnnotateAmplitude
+    AnnotateBreak
+    AnnotateMovement
+    AnnotateMuscleZscore
+    AnnotateNan
+
+Metadata & Configuration
+'''''''''''''''''''''''''
+
+.. autosummary::
+   :toctree: generated/
+
+    Anonymize
+    SetAnnotations
+    SetMeasDate
+    AddEvents
+    FixMagCoilTypes
+    ApplyGradientCompensation
+
+
+
 
 Data Utils
 ==========

@@ -6,7 +6,7 @@
 
 import mne
 
-from braindecode.datasets import BaseConcatDataset, BaseDataset
+from braindecode.datasets import BaseConcatDataset, RawDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import create_windows_from_events
 
@@ -30,7 +30,7 @@ def concat_ds_targets():
 
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
-    ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
+    ds = [RawDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
     return concat_ds, targets
 

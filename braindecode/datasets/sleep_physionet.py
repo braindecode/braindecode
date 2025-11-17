@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from mne.datasets.sleep_physionet.age import fetch_data
 
-from .base import BaseConcatDataset, BaseDataset
+from .base import BaseConcatDataset, RawDataset
 
 
 class SleepPhysionet(BaseConcatDataset):
@@ -71,7 +71,7 @@ class SleepPhysionet(BaseConcatDataset):
                 crop_wake_mins=crop_wake_mins,
                 crop=crop,
             )
-            base_ds = BaseDataset(raw, desc)
+            base_ds = RawDataset(raw, desc)
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
 

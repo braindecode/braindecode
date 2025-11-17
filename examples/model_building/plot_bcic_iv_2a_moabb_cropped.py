@@ -195,7 +195,7 @@ if cuda:
 model.to_dense_prediction_model()
 
 ######################################################################
-# To know the models’ output shape without the last layer, we calculate the
+# To know the models' output shape without the last layer, we calculate the
 # shape of model output for a dummy input.
 #
 

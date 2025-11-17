@@ -16,7 +16,7 @@ import pytest
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from braindecode.datasets import BaseConcatDataset, BaseDataset
+from braindecode.datasets import BaseConcatDataset, RawDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_fixed_length_windows,
@@ -36,8 +36,8 @@ from braindecode.samplers.ssl import (
 
 @pytest.fixture(scope="module")
 def windows_ds():
-    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014001", subject_ids=4)
-    ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
+    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014_001", subject_ids=4)
+    ds = [RawDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
 
     windows_ds = create_fixed_length_windows(
@@ -55,8 +55,8 @@ def windows_ds():
 
 @pytest.fixture(scope="module")
 def target_windows_ds():
-    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014001", subject_ids=4)
-    ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
+    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014_001", subject_ids=4)
+    ds = [RawDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
 
     windows_ds = create_windows_from_events(

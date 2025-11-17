@@ -97,7 +97,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     - **Temporal (where time-domain patterns are learned).**
         Wide kernels in the stem (``(1, L_t)``) act as a learned filter bank for oscillatory
-        bands/transients; the attention block’s depthwise temporal conv (``(1, L_a)``) sharpens
+        bands/transients; the attention block's depthwise temporal conv (``(1, L_a)``) sharpens
         short-term dynamics after downsampling. Pool sizes/strides (``P₁,S₁`` then ``P₂,S₂``)
         set the token rate and effective temporal resolution.
 
@@ -127,23 +127,24 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Additional Mechanisms
 
-        - **Attention variants at a glance.**
-        - ``"se"``: Squeeze-and-Excitation (global pooling → bottleneck → gates).
-        - ``"gsop"``: Global second-order pooling (covariance-aware channel weights).
-        - ``"fca"``: Frequency Channel Attention (DCT summary; uses ``seq_len`` and ``freq_idx``).
-        - ``"encnet"``: EncNet with learned codewords (uses ``n_codewords``).
-        - ``"eca"``: Efficient Channel Attention (local 1-D conv over channel descriptor; uses ``kernel_size``).
-        - ``"ge"``: Gather–Excite (context pooling with optional MLP; can use ``extra_params``).
-        - ``"gct"``: Gated Channel Transformation (global context normalization + gating).
-        - ``"srm"``: Style-based recalibration (mean–std descriptors; optional MLP).
-        - ``"cbam"``: Channel then temporal attention (uses ``kernel_size``).
-        - ``"cat"`` / ``"catlite"``: Collaborative (channel ± temporal) attention; *lite* omits temporal.
-        - **Auto-compatibility on short inputs.**
+    **Attention variants at a glance:**
 
-    If the input duration is too short for the configured kernels/pools, the implementation
-    **automatically rescales** temporal lengths/strides downward (with a warning) to keep
-    shapes valid and preserve the pipeline semantics.
+    - ``"se"``: Squeeze-and-Excitation (global pooling → bottleneck → gates).
+    - ``"gsop"``: Global second-order pooling (covariance-aware channel weights).
+    - ``"fca"``: Frequency Channel Attention (DCT summary; uses ``seq_len`` and ``freq_idx``).
+    - ``"encnet"``: EncNet with learned codewords (uses ``n_codewords``).
+    - ``"eca"``: Efficient Channel Attention (local 1-D conv over channel descriptor; uses ``kernel_size``).
+    - ``"ge"``: Gather–Excite (context pooling with optional MLP; can use ``extra_params``).
+    - ``"gct"``: Gated Channel Transformation (global context normalization + gating).
+    - ``"srm"``: Style-based recalibration (mean–std descriptors; optional MLP).
+    - ``"cbam"``: Channel then temporal attention (uses ``kernel_size``).
+    - ``"cat"`` / ``"catlite"``: Collaborative (channel ± temporal) attention; *lite* omits temporal.
 
+    **Auto-compatibility on short inputs:**
+
+        If the input duration is too short for the configured kernels/pools, the implementation
+        **automatically rescales** temporal lengths/strides downward (with a warning) to keep
+        shapes valid and preserve the pipeline semantics.
 
     .. rubric:: Usage and Configuration
 
@@ -158,9 +159,9 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     - ``drop_prob_inp`` and ``drop_prob_attn``: regularize stem and attention stages.
     - **Training tips.**
 
-    Start with moderate pooling (e.g., ``P₁=75,S₁=15``) and ELU activations; enable attention
-    only after the stem learns stable filters. For small datasets, prefer simpler modes
-    (``"se"``, ``"eca"``) before heavier ones (``"gsop"``, ``"encnet"``).
+        Start with moderate pooling (e.g., ``P₁=75,S₁=15``) and ELU activations; enable attention
+        only after the stem learns stable filters. For small datasets, prefer simpler modes
+        (``"se"``, ``"eca"``) before heavier ones (``"gsop"``, ``"encnet"``).
 
     Notes
     -----
@@ -170,6 +171,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
       specific variants (CBAM/CAT).
     - The paper and original code with more details about the methodological
       choices are available at the [Martin2023]_ and [MartinCode]_.
+
     .. versionadded:: 0.9
 
     Parameters
@@ -198,19 +200,21 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         the depth of the network after the initial layer. Default is 16.
     attention_mode : str, optional
         The type of attention mechanism to apply. If `None`, no attention is applied.
-            - "se" for Squeeze-and-excitation network
-            - "gsop" for Global Second-Order Pooling
-            - "fca" for Frequency Channel Attention Network
-            - "encnet" for context encoding module
-            - "eca" for Efficient channel attention for deep convolutional neural networks
-            - "ge" for Gather-Excite
-            - "gct" for Gated Channel Transformation
-            - "srm" for Style-based Recalibration Module
-            - "cbam" for Convolutional Block Attention Module
-            - "cat" for Learning to collaborate channel and temporal attention
-            from multi-information fusion
-            - "catlite" for Learning to collaborate channel attention
-        from multi-information fusion (lite version, cat w/o temporal attention)
+
+        - "se" for Squeeze-and-excitation network
+        - "gsop" for Global Second-Order Pooling
+        - "fca" for Frequency Channel Attention Network
+        - "encnet" for context encoding module
+        - "eca" for Efficient channel attention for deep convolutional neural networks
+        - "ge" for Gather-Excite
+        - "gct" for Gated Channel Transformation
+        - "srm" for Style-based Recalibration Module
+        - "cbam" for Convolutional Block Attention Module
+        - "cat" for Learning to collaborate channel and temporal attention
+          from multi-information fusion
+        - "catlite" for Learning to collaborate channel attention
+          from multi-information fusion (lite version, cat w/o temporal attention)
+
     pool_length : int, default=8
         The length of the window for the average pooling operation.
     pool_stride : int, default=8
@@ -499,6 +503,7 @@ class _ChannelAttentionBlock(nn.Module):
     ----------
     attention_mode : str, optional
         The type of attention mechanism to apply. If `None`, no attention is applied.
+
         - "se" for Squeeze-and-excitation network
         - "gsop" for Global Second-Order Pooling
         - "fca" for Frequency Channel Attention Network

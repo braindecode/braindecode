@@ -19,8 +19,8 @@ from joblib import Parallel, delayed
 
 from ..datasets.base import (
     BaseConcatDataset,
-    BaseDataset,
     EEGWindowsDataset,
+    RawDataset,
     WindowsDataset,
 )
 
@@ -35,7 +35,7 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
 
 
 def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
-    """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
+    """Load a stored BaseConcatDataset from
     files.
 
     Parameters
@@ -52,7 +52,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
 
     Returns
     -------
-    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
+    concat_dataset: BaseConcatDataset
     """
     # assume we have a single concat dataset to load
     is_raw = (path / "0-raw.fif").is_file()
@@ -87,7 +87,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
         for i_signal, signal in enumerate(all_signals):
             if is_raw:
                 datasets.append(
-                    BaseDataset(
+                    RawDataset(
                         signal, description.iloc[i_signal], target_name=target_name
                     )
                 )
@@ -175,7 +175,7 @@ def _load_signals(fif_file, preload, is_raw):
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_jobs=1):
-    """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
+    """Load a stored BaseConcatDataset from
     files.
 
     Parameters
@@ -194,7 +194,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_job
 
     Returns
     -------
-    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
+    concat_dataset: BaseConcatDataset
     """
     # Make sure we always work with a pathlib.Path
     path = Path(path)
@@ -266,7 +266,7 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
         target_name = json.load(open(target_file_path, "r"))["target_name"]
 
     if is_raw and (not has_stored_windows):
-        dataset = BaseDataset(signals, description, target_name)
+        dataset = RawDataset(signals, description, target_name)
     else:
         window_kwargs = _load_kwargs_json("window_kwargs", sub_dir)
         windows_ds_kwargs = [
@@ -302,7 +302,6 @@ def _load_kwargs_json(kwargs_name, sub_dir):
     kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
     if os.path.exists(kwargs_file_path):
         kwargs = json.load(open(kwargs_file_path, "r"))
-        kwargs = [tuple(kwarg) for kwarg in kwargs]
         return kwargs
 
 

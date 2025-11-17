@@ -23,7 +23,7 @@ from braindecode.preprocessing import (
 ###############################################################################
 # First, we load some dataset using MOABB.
 dataset = MOABBDataset(
-    dataset_name="BNCI2014001",
+    dataset_name="BNCI2014_001",
     subject_ids=[1],
 )
 

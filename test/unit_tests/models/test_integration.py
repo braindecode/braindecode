@@ -503,7 +503,16 @@ def test_model_exported(model):
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
-    # example input matching your model’s expected shape
+    # Models known to have export issues on Windows (e.g., non-pytree-compatible attributes)
+    if sys.platform.startswith("win"):
+        not_exportable_models_win = [
+            "LUNA",  # Has _channel_location_cache dict that breaks pytree on Windows
+        ]
+        model_name = model.__class__.__name__
+        if model_name in not_exportable_models_win:
+            pytest.skip(f"{model_name} export is not compatible on Windows")
+
+    # example input matching your model's expected shape
     try:
         n_chans = model.n_chans
     except ValueError:
@@ -514,7 +523,7 @@ def test_model_exported(model):
         n_times = default_signal_params["n_times"]
     example_input = torch.randn(1, n_chans, n_times)
 
-    # this will raise if the model isn’t fully traceable
+    # this will raise if the model isn't fully traceable
     exported_prog: ExportedProgram = export(model, args=(example_input,), strict=False)
 
     # sanity check: we got the right return type
@@ -535,6 +544,8 @@ def test_model_torch_script(model):
         "Labram",
         "EEGMiner",
         "SSTDPN",
+        "BENDR",
+        "LUNA",
     ]
 
     if model.__class__.__name__ in not_working_models:
@@ -545,7 +556,7 @@ def test_model_torch_script(model):
     final_plain_model = convert_model_to_plain(model)
     final_plain_model.eval()
 
-    # example input matching your model’s expected shape
+    # example input matching your model's expected shape
     try:
         n_chans = model.n_chans
     except ValueError:

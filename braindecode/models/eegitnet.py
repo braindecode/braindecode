@@ -11,6 +11,8 @@ from braindecode.modules import DepthwiseConv2d, Ensure4d, InceptionBlock
 class EEGITNet(EEGModuleMixin, nn.Sequential):
     """EEG-ITNet from Salami, et al (2022) [Salami2022]_
 
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
+
     .. figure:: https://braindecode.org/dev/_static/model/eegitnet.jpg
         :align: center
         :alt: EEG-ITNet Architecture

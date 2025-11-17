@@ -24,7 +24,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         :alt: SSTDPN Architecture
         :width: 1000px
 
-    The **Spatial–Spectral** and **Temporal - Dual Prototype Network** (SST-DPN)
+    The **Spatial-Spectral** and **Temporal - Dual Prototype Network** (SST-DPN)
     is an end-to-end 1D convolutional architecture designed for motor imagery (MI) EEG decoding,
     aiming to address challenges related to discriminative feature extraction and
     small-sample sizes [Han2025]_.
@@ -37,9 +37,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     SST-DPN consists of a feature extractor (_SSTEncoder, comprising Adaptive Spatial-Spectral
     Fusion and Multi-scale Variance Pooling) followed by Dual Prototype Learning classification [Han2025]_.
 
-    1. **Adaptive Spatial–Spectral Fusion (ASSF)**: Uses :class:`_DepthwiseTemporalConv1d` to generate a
-        multi-channel spatial–spectral representation, followed by :class:`_SpatSpectralAttn`
-        (Spatial-Spectral Attention) to model relationships and highlight key spatial–spectral
+    1. **Adaptive Spatial-Spectral Fusion (ASSF)**: Uses :class:`_DepthwiseTemporalConv1d` to generate a
+        multi-channel spatial-spectral representation, followed by :class:`_SpatSpectralAttn`
+        (Spatial-Spectral Attention) to model relationships and highlight key spatial-spectral
         channels [Han2025]_.
 
     2. **Multi-scale Variance Pooling (MVP)**: Applies :class:`_MultiScaleVarPooler` with variance pooling
@@ -57,7 +57,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     - `SSTDPN.encoder` **(Feature Extractor)**
 
-        - *Operations.* Combines Adaptive Spatial–Spectral Fusion and Multi-scale Variance Pooling
+        - *Operations.* Combines Adaptive Spatial-Spectral Fusion and Multi-scale Variance Pooling
           via an internal :class:`_SSTEncoder`.
         - *Role.* Maps the raw MI-EEG trial :math:`X_i \in \mathbb{R}^{C \times T}` to the
           feature space :math:`z_i \in \mathbb{R}^d`.
@@ -69,11 +69,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
           depth multiplier `n_spectral_filters_temporal` (equivalent to :math:`F_1` in the paper).
         - *Role.* Extracts multiple distinct spectral bands from each EEG channel independently.
 
-    - `_SSTEncoder.spt_attn` **(Spatial–Spectral Attention for Channel Gating)**
+    - `_SSTEncoder.spt_attn` **(Spatial-Spectral Attention for Channel Gating)**
 
         - *Operations.* Internal :class:`_SpatSpectralAttn` module using Global Context Embedding
           via variance-based pooling, followed by adaptive channel normalization and gating.
-        - *Role.* Reweights channels in the spatial–spectral dimension to extract efficient and
+        - *Role.* Reweights channels in the spatial-spectral dimension to extract efficient and
           discriminative features by emphasizing task-relevant regions and frequency bands.
 
     - `_SSTEncoder.chan_conv` **(Pointwise Fusion across Channels)**
@@ -81,7 +81,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         - *Operations.* A 1D pointwise convolution with `n_fused_filters` output channels
           (equivalent to :math:`F_2` in the paper), followed by BatchNorm and the specified
           `activation` function (default: ELU).
-        - *Role.* Fuses the weighted spatial–spectral features across all electrodes to produce
+        - *Role.* Fuses the weighted spatial-spectral features across all electrodes to produce
           a fused representation :math:`X_{fused} \in \mathbb{R}^{F_2 \times T}`.
 
     - `_SSTEncoder.mvp` **(Multi-scale Variance Pooling for Temporal Extraction)**
@@ -109,11 +109,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     * **Spatial.**
        The initial convolution at the classes :class:`_DepthwiseTemporalConv1d` groups parameter :math:`h=1`,
        meaning :math:`F_1` temporal filters are shared across channels. The Spatial-Spectral Attention
-       mechanism explicitly models the relationships among these channels in the spatial–spectral
+       mechanism explicitly models the relationships among these channels in the spatial-spectral
        dimension, allowing for finer-grained spatial feature modeling compared to conventional
        GCNs according to the authors [Han2025]_.
        In other words, all electrode channels share :math:`F_1` temporal filters
-       independently to produce the spatial–spectral representation.
+       independently to produce the spatial-spectral representation.
 
     * **Spectral.**
        Spectral information is implicitly extracted via the :math:`F_1` filters in :class:`_DepthwiseTemporalConv1d`.
@@ -123,7 +123,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     .. rubric:: Additional Mechanisms
 
-    - **Attention.** A lightweight Spatial-Spectral Attention mechanism models spatial–spectral relationships
+    - **Attention.** A lightweight Spatial-Spectral Attention mechanism models spatial-spectral relationships
         at the channel level, distinct from applying attention to deep feature dimensions,
         which is common in comparison methods like :class:`ATCNet`.
     - **Regularization.** Dual Prototype Learning acts as a regularization technique

@@ -11,6 +11,7 @@
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
+#          Matthew Chen <matt.chen42601@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -25,7 +26,12 @@ import pandas as pd
 from joblib import Parallel, delayed
 from numpy.typing import ArrayLike
 
-from ..datasets.base import BaseConcatDataset, EEGWindowsDataset, WindowsDataset
+from ..datasets.base import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    RawDataset,
+    WindowsDataset,
+)
 
 
 class _LazyDataFrame:
@@ -189,7 +195,7 @@ def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
 
 # XXX it's called concat_ds...
 def create_windows_from_events(
-    concat_ds: BaseConcatDataset,
+    concat_ds: BaseConcatDataset[RawDataset],
     trial_start_offset_samples: int = 0,
     trial_stop_offset_samples: int = 0,
     window_size_samples: int | None = None,
@@ -206,7 +212,7 @@ def create_windows_from_events(
     use_mne_epochs: bool | None = None,
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
-):
+) -> BaseConcatDataset[WindowsDataset | EEGWindowsDataset]:
     """Create windows based on events in mne.Raw.
 
     This function extracts windows of size window_size_samples in the interval
@@ -228,7 +234,7 @@ def create_windows_from_events(
 
     Parameters
     ----------
-    concat_ds: BaseConcatDataset
+    concat_ds: BaseConcatDataset[RawDataset]
         A concat of base datasets each holding raw and description.
     trial_start_offset_samples: int
         Start offset from original trial onsets, in samples. Defaults to zero.
@@ -268,7 +274,7 @@ def create_windows_from_events(
         rejection based on flatness is done. See mne.Epochs.
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
     accepted_bads_ratio: float, optional
         Acceptable proportion of trials with inconsistent length in a raw. If
         the number of trials whose length is exceeded by the window size is
@@ -286,7 +292,7 @@ def create_windows_from_events(
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset
+    windows_datasets: BaseConcatDataset[WindowsDataset | EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
     """
     _check_windowing_arguments(
@@ -341,7 +347,7 @@ def create_windows_from_events(
 
 
 def create_fixed_length_windows(
-    concat_ds: BaseConcatDataset,
+    concat_ds: BaseConcatDataset[RawDataset],
     start_offset_samples: int = 0,
     stop_offset_samples: int | None = None,
     window_size_samples: int | None = None,
@@ -358,12 +364,12 @@ def create_fixed_length_windows(
     on_missing: str = "error",
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
-):
+) -> BaseConcatDataset[EEGWindowsDataset]:
     """Windower that creates sliding windows.
 
     Parameters
     ----------
-    concat_ds: ConcatDataset
+    concat_ds: ConcatDataset[RawDataset]
         A concat of base datasets each holding raw and description.
     start_offset_samples: int
         Start offset from beginning of recording in samples.
@@ -398,7 +404,7 @@ def create_fixed_length_windows(
         by using the _LazyDataFrame (experimental).
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
     n_jobs: int
         Number of jobs to use to parallelize the windowing.
     verbose: bool | str | int | None
@@ -406,7 +412,7 @@ def create_fixed_length_windows(
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset
+    windows_datasets: BaseConcatDataset[EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
     """
     stop_offset_samples, drop_last_window = (
@@ -473,11 +479,11 @@ def _create_windows_from_events(
     verbose="error",
     use_mne_epochs=False,
 ):
-    """Create WindowsDataset from BaseDataset based on events.
+    """Create WindowsDataset from RawDataset based on events.
 
     Parameters
     ----------
-    ds : BaseDataset
+    ds : RawDataset
         Dataset containing continuous data and description.
     infer_mapping : bool
         If True, extract all events from all datasets and map them to
@@ -509,7 +515,7 @@ def _create_windows_from_events(
             }
         )
 
-    events, events_id = mne.events_from_annotations(ds.raw, mapping)
+    events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
     onsets = events[:, 0]
     # Onsets are relative to the beginning of the recording
     filtered_durations = np.array(
@@ -648,11 +654,11 @@ def _create_fixed_length_windows(
     on_missing="error",
     verbose="error",
 ):
-    """Create WindowsDataset from BaseDataset with sliding windows.
+    """Create WindowsDataset from RawDataset with sliding windows.
 
     Parameters
     ----------
-    ds : BaseDataset
+    ds : RawDataset
         Dataset containing continuous data and description.
 
     See `create_fixed_length_windows` for description of other parameters.
@@ -750,7 +756,7 @@ def _create_fixed_length_windows(
 
 
 def create_windows_from_target_channels(
-    concat_ds,
+    concat_ds: BaseConcatDataset[RawDataset],
     window_size_samples=None,
     preload=False,
     picks=None,
@@ -759,7 +765,7 @@ def create_windows_from_target_channels(
     n_jobs=1,
     last_target_only=True,
     verbose="error",
-):
+) -> BaseConcatDataset[EEGWindowsDataset]:
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_target_channels)(
             ds,
@@ -788,11 +794,11 @@ def _create_windows_from_target_channels(
     on_missing="error",
     verbose="error",
 ):
-    """Create WindowsDataset from BaseDataset using targets `misc` channels from mne.Raw.
+    """Create WindowsDataset from RawDataset using targets `misc` channels from mne.Raw.
 
     Parameters
     ----------
-    ds : BaseDataset
+    ds : RawDataset
         Dataset containing continuous data and description.
 
     See `create_fixed_length_windows` for description of other parameters.
