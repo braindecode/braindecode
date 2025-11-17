@@ -7,7 +7,7 @@ name = "braindecode"
 dynamic = ["version"]
 description = "Deep learning software to decode EEG, ECG or MEG signals"
 authors =  [
-    { name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" }
+    { name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" },
     { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
     { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
 ]
