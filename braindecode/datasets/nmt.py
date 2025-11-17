@@ -268,26 +268,33 @@ _NMT_PATHS = {
 class _NMTMock(NMT):
     """Mocked class for testing and examples."""
 
-    @mock.patch("glob.glob", return_value=_NMT_PATHS.keys())
-    @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
-    @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
-    @mock.patch("mne.datasets.fetch_dataset")
+    @mock.patch("pathlib.Path.exists", return_value=True)
     @mock.patch("braindecode.datasets.nmt._correct_dataset_path")
+    @mock.patch("mne.datasets.fetch_dataset")
+    @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
+    @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
+    @mock.patch("glob.glob", return_value=_NMT_PATHS.keys())
     def __init__(
         self,
         mock_glob,
         mock_fetch,
         mock_correct_path,
+        mock_path_exists,
         path,
         recording_ids=None,
         target_name="pathological",
         preload=False,
         n_jobs=1,
     ):
+        # Prevent download by providing a dummy path if empty/None
+        if not path:
+            path = "mocked_nmt_path"
+
         # Mock fetch_dataset to return a valid path without downloading
-        mock_fetch.return_value = "mocked_nmt_path"
+        mock_fetch.return_value = path
         # Mock _correct_dataset_path to return the path as-is
         mock_correct_path.side_effect = lambda p, *args, **kwargs: p
+
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
             super().__init__(
