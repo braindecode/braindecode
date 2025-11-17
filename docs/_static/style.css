@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap");
+
 :root {
     --text-align: justify;
     --pst-font-size-base: 16px;
@@ -135,6 +137,19 @@ ul.funders li img {
     width: 30px;
     max-height: 24px;
     object-fit: contain;
+}
+
+.institution-logo-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.institution-logo {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    padding: 0.5rem;
 }
 
 /* these two also affect collapsible divs */
@@ -282,3 +297,38 @@ figure.unavailable::after {
 /* Slim the active indicator bar */
 .bd-sidebar nav .nav-link.active,
 .bd-sidebar nav .active > .nav-link { border-left-width: 2px; }
+
+/* ********************************************************** Homepage Hero */
+
+.braindecode-hero {
+    text-align: center;
+    margin: 0 0 1.25rem;
+}
+
+.braindecode-hero__title {
+    display: block;
+    text-align: center;
+    font-family: "Montserrat", var(--pst-font-family-base, system-ui), sans-serif;
+    font-weight: 800;
+    font-size: clamp(3.6rem, 9vw, 5.9rem);
+    line-height: 1.08;
+    margin: 0 0 .85rem;
+    color: var(--pst-color-text, #111827);
+    letter-spacing: .01em;
+}
+
+html[data-theme="light"] .braindecode-hero__title {
+    color: #3a6790ff;
+}
+
+html[data-theme="dark"] .braindecode-hero__title {
+    color: #3a6790ff;
+    text-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
+}
+
+.braindecode-hero img.logo.mainlogo {
+    display: block;
+    margin: 0 auto;
+    max-width: 500px;
+    width: 100%;
+}
