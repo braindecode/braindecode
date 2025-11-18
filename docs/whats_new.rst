@@ -45,7 +45,7 @@ Enhancements
 API changes
 ~~~~~~~~~~~
 - Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
-
+- Drop support for Python 3.10 and increase support to Python 3.13 and python 3.14 (:gh:`840` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
