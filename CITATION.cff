@@ -1,0 +1,70 @@
+# YAML 1.2
+---
+# Metadata for citation of this software according to the CFF format (https://citation-file-format.github.io/)
+cff-version: 1.2.0
+title: "Braindecode: toolbox for decoding raw electrophysiological brain data with deep learning models"
+abstract: "Braindecode is an open-source Python toolbox for decoding raw electrophysiological brain data with deep learning models. It includes dataset fetchers, data preprocessing and visualization tools, as well as implementations of several deep learning architectures and data augmentations for analysis of EEG, ECoG and MEG."
+authors:
+  - given-names: Bruno
+    family-names: Aristimunha
+    affiliation: "LISN-CNRS, Université Paris-Saclay & TAU, Inria, Gif-sur-Yvette, France"
+    orcid: "https://orcid.org/0000-0001-5258-2995"
+  - given-names: Pierre
+    family-names: Guetshel
+    affiliation: "Donders Institute for Brain, Cognition and Behaviour, Radboud University, Nijmegen, The Netherlands"
+    orcid: "https://orcid.org/0000-0002-8933-7640"
+  - given-names: Lukas
+    family-names: Gem
+    affiliation: Meta
+  - given-names: Cedric
+    family-names: Rommel
+    affiliation: Meta
+  - given-names: Hubert
+    family-names: Banville
+    affiliation: Meta
+  - given-names: Maciej
+    family-names: Sliwowski
+  - given-names: Daniel
+    family-names: Wilson
+  - given-names: Thomas
+    family-names: Moreau
+  - given-names: Théo
+    family-names: Gnassounou
+  - given-names: Joseph
+    family-names: Paillard
+  - given-names: Bruna
+    family-names: Junqueira Lopes
+  - given-names: Martin
+    family-names: Wimpff
+  - given-names: Sylvain
+    family-names: Chevallier
+    affiliation: "Parietal Team, Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+  - given-names: Sara
+    family-names: Sedlar
+  - given-names: Alexandre
+    family-names: Gramfort
+  - given-names: Robin
+    family-names: Tibor
+type: software
+repository-code: "https://github.com/braindecode/braindecode"
+license: BSD-3-Clause
+keywords:
+  - machine learning
+  - deep learning
+  - foundation model
+  - neuroscience
+  - neuroimaging
+  - mne
+  - brain-computer interface
+  - bci
+  - python
+  - magnetoencephalography
+  - meg
+  - electroencephalography
+  - eeg
+  - ieeg
+identifiers:
+  - description: "Code archive on Zenodo"
+    type: doi
+    value: 10.5281/zenodo.TODO #TODO
+...
