@@ -1194,3 +1194,100 @@ def mask_encoding(
     X[mask] = 0
 
     return X, y  # Return the masked tensor and labels
+
+
+def channels_recomb(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    random_state: int | np.random.RandomState | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Randomly re-reference channels in EEG data matrix.
+
+    Part of the augmentations proposed in [1]_
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG input example or batch.
+    y : torch.Tensor
+        EEG labels for the example or batch.
+    random_state: int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Defaults to None.
+
+    Returns
+    -------
+    torch.Tensor
+        Transformed inputs.
+    torch.Tensor
+        Transformed labels.
+
+    References
+    ----------
+    .. [1] Mohsenvand, M.N., Izadi, M.R. &amp; Maes, P.. (2020). Contrastive
+        Representation Learning for Electroencephalogram Classification. Proceedings
+        of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
+        Learning Research 136:238-253 Available from https://proceedings.mlr.press/v136/mohsenvand20a.html.
+
+    """
+
+    rng = check_random_state(random_state)
+    batch_size, n_channels, _ = X.shape
+
+    ch = rng.randint(0, n_channels, size=batch_size)
+
+    X_ch = X[torch.arange(batch_size), ch, :]
+    X = X - X_ch.unsqueeze(1)
+    X[torch.arange(batch_size), ch, :] = - X_ch
+
+    return X, y
+
+def amplitude_scale(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    scale : tuple,
+    random_state: int | np.random.RandomState | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Rescale amplitude of each channel based on a random sampled scaling value.
+
+    Part of the augmentations proposed in [1]_
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG input example or batch.
+    y : torch.Tensor
+        EEG labels for the example or batch.
+    scale : tuple of floats
+        Interval from which ypu sample the scaling value
+    random_state: int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Defaults to None.
+
+    Returns
+    -------
+    torch.Tensor
+        Transformed inputs.
+    torch.Tensor
+        Transformed labels.
+
+    References
+    ----------
+    .. [1] Mohsenvand, M.N., Izadi, M.R. &amp; Maes, P.. (2020). Contrastive
+        Representation Learning for Electroencephalogram Classification. Proceedings
+        of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
+        Learning Research 136:238-253 Available from https://proceedings.mlr.press/v136/mohsenvand20a.html.
+
+    """
+
+    rng = check_random_state(random_state)
+    batch_size, n_channels, _ = X.shape
+
+    s = torch.from_numpy(
+        rng.uniform(*scale, size=(batch_size, n_channels, 1))
+        ).to(X.dtype).to(X.device)
+
+    X = s*X
+
+    return X, y
+
