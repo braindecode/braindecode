@@ -1274,6 +1274,7 @@ class MaskEncoding(Transform):
             "n_segments": self.n_segments,
         }
 
+
 class ChannelsRecomb(Transform):
     """Randomly re-reference channels in EEG data matrix.
 
