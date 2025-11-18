@@ -467,10 +467,10 @@ def test_model_has_drop_prob_parameter(model_class):
         f" Found parameters: {param_names}"
     )
 
-
+# skip if windows or python 3.14
 @pytest.mark.skipif(
-    sys.platform.startswith("win"),
-    reason="torch.compile is known to have issues on Windows.",
+    sys.platform.startswith("win") or sys.version_info >= (3, 14),
+    reason="torch.compile is known to have issues on Windows or with Python 3.14.",
 )
 def test_model_compiled(model):
     """
@@ -529,9 +529,10 @@ def test_model_exported(model):
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
 
+# skip if windows or python 3.14
 @pytest.mark.skipif(
-    sys.platform.startswith("win"),
-    reason="torch.script is known to have issues on Windows.",
+    sys.platform.startswith("win") or sys.version_info >= (3, 14),
+    reason="torch.compile is known to have issues on Windows or with Python 3.14.",
 )
 def test_model_torch_script(model):
     """
