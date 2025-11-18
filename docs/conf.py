@@ -319,8 +319,8 @@ html_theme_options = {
         "version_match": switcher_version_match,
     },
     "logo": {
-        "image_light": "_static/braindecode_long.png",
-        "image_dark": "_static/braindecode_long.png",
+        "image_light": "_static/braindecode_long.svg",
+        "image_dark": "_static/braindecode_long.svg",
         "alt_text": "Braindecode Logo",
     },
     "footer_start": ["copyright"],
