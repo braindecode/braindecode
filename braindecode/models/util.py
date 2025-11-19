@@ -3,8 +3,9 @@
 #
 # License: BSD (3-clause)
 import inspect
+from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Literal, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -29,6 +30,16 @@ def _init_models_dict():
             models_dict[m[0]] = m[1]
 
 
+SigArgName = Literal[
+    "n_outputs",
+    "n_chans",
+    "chs_info",
+    "n_times",
+    "input_window_samples",
+    "sfreq",
+]
+
+
 ################################################################
 # Test cases for models
 #
@@ -50,7 +61,9 @@ def _init_models_dict():
 #   The keys of this dictionary can only be among those of
 #   default_signal_params.
 ################################################################
-models_mandatory_parameters = [
+models_mandatory_parameters: list[
+    tuple[str, list[SigArgName], dict[SigArgName, Any] | None]
+] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("BDTCN", ["n_chans", "n_outputs"], None),
     ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
@@ -64,40 +77,44 @@ models_mandatory_parameters = [
     (
         "SleepStagerBlanco2020",
         ["n_chans", "n_outputs", "n_times"],
-        dict(n_chans=4),  # n_chans dividable by n_groups=2
+        {"n_chans": 4},  # n_chans dividable by n_groups=2
     ),
     ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
         "AttnSleep",
         ["n_outputs", "n_times", "sfreq"],
-        dict(sfreq=100.0, n_times=3000, chs_info=[dict(ch_name="C1", kind="eeg")]),
+        {
+            "sfreq": 100.0,
+            "n_times": 3000,
+            "chs_info": [{"ch_name": "C1", "kind": "eeg"}],
+        },
     ),  # 1 channel
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128.0)),
+    ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 128.0}),
     ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
     ("Labram", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
     ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("ContraWR", ["n_chans", "n_outputs", "sfreq", "n_times"], dict(sfreq=200.0)),
+    ("ContraWR", ["n_chans", "n_outputs", "sfreq", "n_times"], {"sfreq": 200.0}),
     ("EEGNeX", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGSym", ["chs_info", "n_chans", "n_outputs", "n_times", "sfreq"], None),
-    ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
+    ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
+    ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=250.0)),
-    ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
+    ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
+    ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("SignalJEPA", ["chs_info"], None),
     ("SignalJEPA_Contextual", ["chs_info", "n_times", "n_outputs"], None),
     ("SignalJEPA_PostLocal", ["n_chans", "n_times", "n_outputs"], None),
     ("SignalJEPA_PreLocal", ["n_chans", "n_times", "n_outputs"], None),
-    ("FBCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
-    ("FBMSNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
-    ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
-    ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
+    ("FBCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    ("FBMSNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BENDR", ["n_chans", "n_outputs", "n_times"], None),
@@ -114,6 +131,57 @@ models_mandatory_parameters = [
 non_classification_models = [
     "SignalJEPA",
 ]
+
+################################################################
+
+rng = np.random.default_rng(12)
+# Generating the channel info
+chs_info = [
+    {
+        "ch_name": f"C{i}",
+        "kind": "eeg",
+        "loc": rng.random(12),
+    }
+    for i in range(1, 4)
+]
+default_signal_params = dict(
+    n_times=1000,
+    sfreq=250.0,
+    n_outputs=2,
+    chs_info=chs_info,
+    n_chans=len(chs_info),
+    input_window_seconds=4.0,
+)
+
+
+def _get_signal_params(
+    signal_params: dict[str, Any] | None, required_params: list[str] | None = None
+):
+    """Get signal parameters for model initialization in tests."""
+    sp = deepcopy(default_signal_params)
+    if signal_params is not None:
+        sp.update(signal_params)
+        if "chs_info" in signal_params and "n_chans" not in signal_params:
+            sp["n_chans"] = len(signal_params["chs_info"])
+        if "n_chans" in signal_params and "chs_info" not in signal_params:
+            sp["chs_info"] = [
+                {"ch_name": f"C{i}", "kind": "eeg", "loc": rng.random(12)}
+                for i in range(signal_params["n_chans"])
+            ]
+        assert isinstance(sp["n_times"], int)
+        assert isinstance(sp["sfreq"], float)
+        assert isinstance(sp["input_window_seconds"], float)
+        if "input_window_seconds" not in signal_params:
+            sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
+        if "sfreq" not in signal_params:
+            sp["sfreq"] = sp["n_times"] / sp["input_window_seconds"]
+        if "n_times" not in signal_params:
+            sp["n_times"] = int(sp["input_window_seconds"] * sp["sfreq"])
+    if required_params is not None:
+        sp = {
+            k: sp[k] for k in set((signal_params or {}).keys()).union(required_params)
+        }
+    return sp
 
 
 ################################################################
