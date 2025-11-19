@@ -14,8 +14,7 @@ authors:
     affiliation: "Donders Institute for Brain, Cognition and Behaviour, Radboud University, Nijmegen, The Netherlands"
     orcid: "https://orcid.org/0000-0002-8933-7640"
   - given-names: Lukas
-    family-names: Gem
-    affiliation: Meta
+    family-names: Gemein
   - given-names: Cedric
     family-names: Rommel
     affiliation: Meta
@@ -46,8 +45,8 @@ authors:
     family-names: Sedlar
   - given-names: Alexandre
     family-names: Gramfort
-  - given-names: Robin
-    family-names: Tibor
+  - given-names: Robin Tibor
+    family-names: Schirrmeister
 type: software
 repository-code: "https://github.com/braindecode/braindecode"
 license: BSD-3-Clause
