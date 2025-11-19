@@ -22,6 +22,8 @@ Current 1.3 (dev)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding augmentation :class:`braindecode.augmentation.AmplitudeScale` (:gh:`848` by `Bruna Lopes`_)
+- Adding augmentation :class:`braindecode.augmentation.ChannelsReref` (:gh:`848` by `Bruna Lopes`_)
 - Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
 - Including typing in the augmentation module (:gh:`709` by `Aphel`_)
 - Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
@@ -33,12 +35,15 @@ Enhancements
 - Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
 - Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
 - Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
+- Added :class:`braindecode.models.LUNA`  (:gh:`802` by `Bruno Aristimunha`_, `Thorir Mar Ingolfsson`_)
+- Improve :class:`braindecode.preprocessing.Preprocessor` serialisation (:gh:`813` by `Pierre Guetschel`_ )
 - Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
 - Modify the interface of FBMSNet for consistency with FBCNet + Unit Tests (:gh:`819` by `Matthew Chen`_)
 - Adding :class:`braindecode.models.MEDFormer`  (:gh:`821` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
 - Adding tutorial for :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`746` by `Aniela Bulicz` and `Arina Schippers` and `Aron van Zuijlen`)
-
+- Including interface with Hugging Face Hub for dataset sharing and loading (:gh:`820` by `Kuntal Kokate`_ and `Bruno Aristimunha`_ )
+- Added a tutorial for temporal generalization (:gh:`855` by `Matthew Chen`_)
 
 API changes
 ~~~~~~~~~~~
@@ -425,4 +430,5 @@ Authors
 .. _Christian Kothe: https://github.com/chkothe
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _Matthew Chen: https://github.com/MatthewChen37
+.. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: github.com/AryaDro

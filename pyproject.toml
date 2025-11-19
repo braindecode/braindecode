@@ -6,7 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "braindecode"
 dynamic = ["version"]
 description = "Deep learning software to decode EEG, ECG or MEG signals"
-authors = [{ name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" }]
+authors =  [
+    { name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" },
+    { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
+    { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
+]
 maintainers = [
     { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
     { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
@@ -57,6 +61,8 @@ dependencies = [
     'h5py',
     'linear_attention_transformer',
     'docstring_inheritance',
+    'rotary_embedding_torch',
+    'shap'
 ]
 [project.urls]
 homepage = "https://braindecode.org"
@@ -66,7 +72,8 @@ documentation = "https://braindecode.org/stable/index.html"
 [project.optional-dependencies]
 moabb = ["moabb>=1.2.0"]
 eegprep = ["eegprep[eeglabio]>=0.1.1"]
-hug = ["huggingface_hub[torch]>=0.20.0"]
+# to-do: check if zarr version can be relaxed
+hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=2.18,<3.0"]
 tests = [
     'pytest',
     'pytest-cov',
@@ -74,6 +81,7 @@ tests = [
     'pytest_cases',
     'mypy'
 ]
+
 docs = [
     'sphinx_gallery',
     'sphinx_rtd_theme',
@@ -93,8 +101,13 @@ docs = [
     'openneuro-py',
     'plotly',
 ]
+
 all = [
-    "braindecode[moabb,hug,tests,docs,eegprep]"
+    "braindecode[moabb]",
+    "braindecode[hub]",
+    "braindecode[tests]",
+    "braindecode[docs]",
+    "braindecode[eegprep]",
 ]
 
 [tool.setuptools]

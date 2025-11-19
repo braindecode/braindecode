@@ -32,7 +32,7 @@ from braindecode.preprocessing import (
 # ---------------------
 # We'll use a small MOABB dataset for demonstration
 
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1])
 
 ###############################################################################
 # Signal Processing
@@ -147,7 +147,7 @@ print("Complete Preprocessing Pipeline Example")
 print("=" * 60)
 
 # Reload dataset for complete pipeline demonstration
-dataset_complete = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
+dataset_complete = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[1])
 
 # Set montage first (needed for interpolation)
 montage = mne.channels.make_standard_montage("standard_1020")

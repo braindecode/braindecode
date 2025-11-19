@@ -38,22 +38,58 @@ def _generate_init_method(func, force_copy_false=False):
     force_copy_false : bool
         If True, forces copy=False by default for functions that have a copy parameter.
     """
+    func_name = func.__name__
     parameters = list(inspect.signature(func).parameters.values())
-    param_names = [param.name for param in parameters]
+    param_names = [
+        param.name
+        for param in parameters[1:]  # Skip 'self' or 'raw' or 'epochs'
+    ]
+    all_mandatory = [
+        param.name
+        for param in parameters[1:]  # Skip 'self' or 'raw' or 'epochs'
+        if param.default == inspect.Parameter.empty
+    ]
 
     def init_method(self, *args, **kwargs):
+        used = []
+        mandatory = list(all_mandatory)
+        init_kwargs = {}
+
         # For standalone functions with copy parameter, set copy=False by default
         if force_copy_false and "copy" in param_names and "copy" not in kwargs:
             kwargs["copy"] = False
 
         for name, value in zip(param_names, args):
-            setattr(self, name, value)
+            init_kwargs[name] = value
+            used.append(name)
+            if name in mandatory:
+                mandatory.remove(name)
         for name, value in kwargs.items():
-            setattr(self, name, value)
-        self.kwargs = kwargs
+            if name in used:
+                raise TypeError(f"Multiple values for argument '{name}'")
+            if name not in param_names:
+                raise TypeError(
+                    f"'{name}' is an invalid keyword argument for {func_name}()"
+                )
+            init_kwargs[name] = value
+            if name in mandatory:
+                mandatory.remove(name)
+        if len(mandatory) > 0:
+            raise TypeError(
+                f"{func_name}() missing required arguments: {', '.join(mandatory)}"
+            )
+        Preprocessor.__init__(self, fn=func_name, apply_on_array=False, **init_kwargs)
 
     init_method.__signature__ = inspect.signature(func)
     return init_method
+
+
+def _generate_repr_method(class_name):
+    def repr_method(self):
+        args_str = ", ".join(f"{k}={v.__repr__()}" for k, v in self.kwargs.items())
+        return f"{class_name}({args_str})"
+
+    return repr_method
 
 
 def _generate_mne_pre_processor(function):
@@ -69,10 +105,14 @@ def _generate_mne_pre_processor(function):
     class_name = "".join(word.title() for word in function.__name__.split("_")).replace(
         "Eeg", "EEG"
     )
+
+    # Automatically determine if function is standalone
+    is_standalone = _is_standalone_function(function)
+
     # Create a wrapper note that references the original MNE function
     # For Raw methods, use mne.io.Raw.method_name format with :meth:
     # For standalone functions, use the function name only with :func:
-    if hasattr(mne.io.Raw, function.__name__):
+    if not is_standalone:
         ref_path = f"mne.io.Raw.{function.__name__}"
         ref_role = "meth"
     else:
@@ -96,6 +136,10 @@ def _generate_mne_pre_processor(function):
 
     base_classes = (Preprocessor,)
 
+    # Check if function has a 'copy' parameter
+    sig = inspect.signature(function)
+    has_copy_param = "copy" in sig.parameters
+    force_copy_false = is_standalone and has_copy_param
     # Automatically determine if function is standalone
     is_standalone = _is_standalone_function(function)
 
@@ -103,26 +147,13 @@ def _generate_mne_pre_processor(function):
     sig = inspect.signature(function)
     has_copy_param = "copy" in sig.parameters
     force_copy_false = is_standalone and has_copy_param
-
-    if is_standalone:
-        # For standalone functions, store the actual function object
-        class_attrs = {
-            "__init__": _generate_init_method(
-                function, force_copy_false=force_copy_false
-            ),
-            "__doc__": wrapper_note + (function.__doc__ or ""),
-            "fn": function,  # Store the function itself, not the name
-            "_is_standalone": True,
-        }
-    else:
-        # For methods, store the function name as before
-        class_attrs = {
-            "__init__": _generate_init_method(function),
-            "__doc__": wrapper_note + (function.__doc__ or ""),
-            "fn": function.__name__,
-            "_is_standalone": False,
-        }
-
+    class_attrs = {
+        "__init__": _generate_init_method(function, force_copy_false),
+        "__doc__": wrapper_note + (function.__doc__ or ""),
+        "__repr__": _generate_repr_method(class_name),
+        "fn": function if is_standalone else function.__name__,
+        "_is_standalone": is_standalone,
+    }
     generated_class = type(class_name, base_classes, class_attrs)
 
     return generated_class

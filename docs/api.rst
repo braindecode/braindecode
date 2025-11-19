@@ -80,6 +80,7 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     FBMSNet
     IFNet
     Labram
+    LUNA
     MEDFormer
     MSVTNet
     PBT
@@ -572,6 +573,8 @@ frequency'domain transformations, and spatial transformations.
     Mixup
     SegmentationReconstruction
     MaskEncoding
+    AmplitudeScale
+    ChannelsReref
 
 
 The functional augmentation API contains the same transformations as the
@@ -599,6 +602,8 @@ transforms API, but they are implemented as functions.
     mixup
     segmentation_reconstruction
     mask_encoding
+    amplitude_scale
+    channels_rereference
 
 
 Classifier

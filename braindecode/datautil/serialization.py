@@ -138,7 +138,7 @@ def _load_signals(fif_file, preload, is_raw):
         with open(pkl_file, "rb") as f:
             signals = pickle.load(f)
 
-        if all(f.exists() for f in signals.filenames):
+        if all(Path(f).exists() for f in signals.filenames):
             if preload:
                 signals.load_data()
             return signals
@@ -302,7 +302,6 @@ def _load_kwargs_json(kwargs_name, sub_dir):
     kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
     if os.path.exists(kwargs_file_path):
         kwargs = json.load(open(kwargs_file_path, "r"))
-        kwargs = [tuple(kwarg) for kwarg in kwargs]
         return kwargs
 
 

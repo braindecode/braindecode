@@ -14,14 +14,14 @@ Braindecode Homepage
 
 .. LOGO
 
-.. image:: _static/braindecode.png
+.. image:: _static/braindecode.svg
    :alt: Braindecode
-   :class: logo, mainlogo, only-light
+   :class: logo mainlogo only-light
    :align: center
 
-.. image:: _static/braindecode.png
+.. image:: _static/braindecode.svg
    :alt: Braindecode
-   :class: logo, mainlogo, only-dark
+   :class: logo mainlogo only-dark
    :align: center
 
 .. rst-class:: h4 text-center font-weight-light my-4

@@ -2,10 +2,20 @@
 #
 # License: BSD-3
 
+from pathlib import Path
+
+import mne
 import pytest
 import torch
 
-from braindecode.models import Labram
+try:
+    from huggingface_hub import hf_hub_download
+    from safetensors.torch import load_file
+    HAS_SAFETENSORS = True
+except ImportError:
+    HAS_SAFETENSORS = False
+
+from braindecode.models import LUNA, Labram
 
 
 @pytest.fixture
@@ -451,3 +461,395 @@ def test_labram_wrong_channel_count(model_tokenizer, n_times):
     except RuntimeError:
         # Expected behavior
         pass
+
+
+# ==============================================================================
+# Tests for LUNA Model Variants (Base, Large, Huge)
+# ==============================================================================
+
+
+@pytest.fixture
+def luna_base_config():
+    """Configuration for LUNA Base variant."""
+    return {
+        "n_outputs": 2,
+        "n_chans": 22,
+        "n_times": 1000,
+        "embed_dim": 64,
+        "num_queries": 4,
+        "depth": 8,
+        "num_heads": 2,
+    }
+
+
+@pytest.fixture
+def luna_large_config():
+    """Configuration for LUNA Large variant."""
+    return {
+        "n_outputs": 2,
+        "n_chans": 22,
+        "n_times": 1000,
+        "embed_dim": 96,
+        "num_queries": 6,
+        "depth": 10,
+        "num_heads": 2,
+    }
+
+
+@pytest.fixture
+def luna_huge_config():
+    """Configuration for LUNA Huge variant."""
+    return {
+        "n_outputs": 2,
+        "n_chans": 22,
+        "n_times": 1000,
+        "embed_dim": 128,
+        "num_queries": 8,
+        "depth": 24,
+        "num_heads": 2,
+    }
+
+
+@pytest.fixture
+def luna_base_model(luna_base_config):
+    """Create LUNA Base model."""
+    return LUNA(**luna_base_config)
+
+
+@pytest.fixture
+def luna_large_model(luna_large_config):
+    """Create LUNA Large model."""
+    return LUNA(**luna_large_config)
+
+
+@pytest.fixture
+def luna_huge_model(luna_huge_config):
+    """Create LUNA Huge model."""
+    return LUNA(**luna_huge_config)
+
+
+@pytest.fixture
+def luna_base_pretrained_model():
+    """Load LUNA Base pretrained model from HuggingFace Hub.
+
+    This fixture downloads and caches the base model. Uses mne_data folder
+    for persistence across CI runs.
+
+    Model located at: https://huggingface.co/thorir/LUNA
+    """
+    if not HAS_SAFETENSORS:
+        pytest.skip("safetensors and huggingface_hub are required")
+
+    # Set cache directory to mne_data for CI persistence
+    mne_data_dir = mne.get_config('MNE_DATA')
+    if mne_data_dir is None:
+        mne_data_dir = str(Path.home() / 'mne_data')
+    cache_dir = str(Path(mne_data_dir) / 'luna_pretrained')
+
+    # Load from HuggingFace Hub with mne_data cache
+    try:
+        # Download the safetensors file
+        model_path = hf_hub_download(
+            repo_id="thorir/LUNA",
+            filename="LUNA_base.safetensors",
+            cache_dir=cache_dir,
+        )
+
+        # Create model instance
+        model = LUNA(
+            n_outputs=2,
+            n_chans=22,
+            n_times=1000,
+            embed_dim=64,
+            num_queries=4,
+            depth=8,
+        )
+
+        # Load weights using safetensors
+        state_dict = load_file(model_path)
+        model.load_state_dict(state_dict, strict=False)
+
+        return model
+    except Exception as e:
+        # Skip tests if model not available
+        pytest.skip(f"Pretrained model not available: {type(e).__name__}: {str(e)[:100]}")
+
+
+# ==============================================================================
+# Tests for LUNA Base Variant
+# ==============================================================================
+
+
+def test_luna_base_initialization(luna_base_model, luna_base_config):
+    """Test LUNA Base initialization with correct architecture."""
+    assert luna_base_model is not None
+    assert luna_base_model.embed_dim == 64
+    assert luna_base_model.num_queries == 4
+    assert luna_base_model.depth == 8
+    assert len(luna_base_model.blocks) == 8
+
+
+def test_luna_base_forward_pass(luna_base_model):
+    """Test LUNA Base forward pass produces correct output shape."""
+    x = torch.randn(2, 22, 1000)
+    with torch.no_grad():
+        output = luna_base_model(x)
+    assert output.shape == (2, 2)
+
+
+def test_luna_base_parameter_count(luna_base_model):
+    """Test LUNA Base has expected parameter count."""
+    total_params = sum(p.numel() for p in luna_base_model.parameters())
+    # Base should have roughly 7M parameters
+    assert 5_000_000 < total_params < 10_000_000
+
+
+def test_luna_base_different_batch_sizes(luna_base_model):
+    """Test LUNA Base with different batch sizes."""
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, 22, 1000)
+        with torch.no_grad():
+            output = luna_base_model(x)
+        assert output.shape == (batch_size, 2)
+
+
+def test_luna_base_gradient_flow(luna_base_model):
+    """Test that gradients flow correctly through LUNA Base."""
+    x = torch.randn(2, 22, 1000, requires_grad=True)
+    output = luna_base_model(x)
+    loss = output.sum()
+    loss.backward()
+
+    # Check that gradients exist in transformer blocks
+    assert any(p.grad is not None for p in luna_base_model.blocks[0].parameters())
+    # Check gradient in final classification head
+    assert luna_base_model.final_layer.decoder_ffn.fc1.weight.grad is not None
+
+
+# ==============================================================================
+# Tests for LUNA Large Variant
+# ==============================================================================
+
+
+def test_luna_large_initialization(luna_large_model, luna_large_config):
+    """Test LUNA Large initialization with correct architecture."""
+    assert luna_large_model is not None
+    assert luna_large_model.embed_dim == 96
+    assert luna_large_model.num_queries == 6
+    assert luna_large_model.depth == 10
+    assert len(luna_large_model.blocks) == 10
+
+
+def test_luna_large_forward_pass(luna_large_model):
+    """Test LUNA Large forward pass produces correct output shape."""
+    x = torch.randn(2, 22, 1000)
+    with torch.no_grad():
+        output = luna_large_model(x)
+    assert output.shape == (2, 2)
+
+
+def test_luna_large_parameter_count(luna_large_model):
+    """Test LUNA Large has expected parameter count."""
+    total_params = sum(p.numel() for p in luna_large_model.parameters())
+    # Large should have roughly 43M parameters
+    assert 30_000_000 < total_params < 60_000_000
+
+
+def test_luna_large_different_batch_sizes(luna_large_model):
+    """Test LUNA Large with different batch sizes."""
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, 22, 1000)
+        with torch.no_grad():
+            output = luna_large_model(x)
+        assert output.shape == (batch_size, 2)
+
+
+def test_luna_large_gradient_flow(luna_large_model):
+    """Test that gradients flow correctly through LUNA Large."""
+    x = torch.randn(2, 22, 1000, requires_grad=True)
+    output = luna_large_model(x)
+    loss = output.sum()
+    loss.backward()
+
+    # Check that gradients exist in transformer blocks
+    assert any(p.grad is not None for p in luna_large_model.blocks[0].parameters())
+    # Check gradient in final classification head
+    assert luna_large_model.final_layer.decoder_ffn.fc1.weight.grad is not None
+
+
+# ==============================================================================
+# Tests for LUNA Huge Variant
+# ==============================================================================
+
+
+def test_luna_huge_initialization(luna_huge_model, luna_huge_config):
+    """Test LUNA Huge initialization with correct architecture."""
+    assert luna_huge_model is not None
+    assert luna_huge_model.embed_dim == 128
+    assert luna_huge_model.num_queries == 8
+    assert luna_huge_model.depth == 24
+    assert len(luna_huge_model.blocks) == 24
+
+
+def test_luna_huge_forward_pass(luna_huge_model):
+    """Test LUNA Huge forward pass produces correct output shape."""
+    x = torch.randn(2, 22, 1000)
+    with torch.no_grad():
+        output = luna_huge_model(x)
+    assert output.shape == (2, 2)
+
+
+def test_luna_huge_parameter_count(luna_huge_model):
+    """Test LUNA Huge has expected parameter count."""
+    total_params = sum(p.numel() for p in luna_huge_model.parameters())
+    # Huge should have roughly 312M parameters
+    assert 250_000_000 < total_params < 350_000_000
+
+
+def test_luna_huge_different_batch_sizes(luna_huge_model):
+    """Test LUNA Huge with different batch sizes."""
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, 22, 1000)
+        with torch.no_grad():
+            output = luna_huge_model(x)
+        assert output.shape == (batch_size, 2)
+
+
+def test_luna_huge_gradient_flow(luna_huge_model):
+    """Test that gradients flow correctly through LUNA Huge."""
+    x = torch.randn(2, 22, 1000, requires_grad=True)
+    output = luna_huge_model(x)
+    loss = output.sum()
+    loss.backward()
+
+    # Check that gradients exist in transformer blocks
+    assert any(p.grad is not None for p in luna_huge_model.blocks[0].parameters())
+    # Check gradient in final classification head
+    assert luna_huge_model.final_layer.decoder_ffn.fc1.weight.grad is not None
+
+
+# ==============================================================================
+# Tests for LUNA Variant Comparisons
+# ==============================================================================
+
+
+def test_luna_variants_parameter_count_hierarchy(luna_base_model, luna_large_model, luna_huge_model):
+    """Test that parameter counts follow the hierarchy Base < Large < Huge."""
+    base_params = sum(p.numel() for p in luna_base_model.parameters())
+    large_params = sum(p.numel() for p in luna_large_model.parameters())
+    huge_params = sum(p.numel() for p in luna_huge_model.parameters())
+
+    assert base_params < large_params
+    assert large_params < huge_params
+
+
+def test_luna_variants_device_compatibility(luna_base_model, luna_large_model, luna_huge_model):
+    """Test LUNA variants work correctly on CPU."""
+    x = torch.randn(2, 22, 1000)
+
+    for model_name, model in [
+        ("Base", luna_base_model),
+        ("Large", luna_large_model),
+        ("Huge", luna_huge_model),
+    ]:
+        model.eval()
+        with torch.no_grad():
+            output = model(x)
+        assert output.shape == (2, 2), f"LUNA {model_name} output shape incorrect"
+
+        # Test CUDA if available
+        if torch.cuda.is_available():
+            model_cuda = model.cuda()
+            x_cuda = x.cuda()
+            with torch.no_grad():
+                output_cuda = model_cuda(x_cuda)
+            assert output_cuda.shape == (2, 2)
+            assert output_cuda.device.type == "cuda"
+
+
+def test_luna_variants_different_channel_counts(luna_base_config, luna_large_config, luna_huge_config):
+    """Test LUNA variants handle different channel counts."""
+    configs = [luna_base_config, luna_large_config, luna_huge_config]
+
+    for n_chans in [1, 4, 8, 16, 32, 64]:
+        for config in configs:
+            config["n_chans"] = n_chans
+            model = LUNA(**config)
+            model.eval()
+
+            x = torch.randn(2, n_chans, 1000)
+            with torch.no_grad():
+                output = model(x)
+            assert output.shape == (2, 2)
+
+
+def test_luna_variants_output_consistency(luna_base_config, luna_large_config, luna_huge_config):
+    """Test that all LUNA variants produce consistent output shapes."""
+    configs = [luna_base_config, luna_large_config, luna_huge_config]
+    test_input = torch.randn(2, 22, 1000)
+
+    for config in configs:
+        model = LUNA(**config)
+        model.eval()
+
+        with torch.no_grad():
+            output = model(test_input)
+
+        assert output.shape == (2, 2), f"Output shape mismatch for config {config}"
+
+
+# ==============================================================================
+# Tests for Pretrained Models
+# ==============================================================================
+
+
+def test_luna_base_pretrained_loads(luna_base_pretrained_model):
+    """Test that LUNA base pretrained model loads successfully from HuggingFace."""
+    assert luna_base_pretrained_model is not None
+    assert isinstance(luna_base_pretrained_model, LUNA)
+
+
+def test_luna_base_pretrained_forward_pass(luna_base_pretrained_model):
+    """Test pretrained base model forward pass."""
+    model = luna_base_pretrained_model
+    model.eval()
+
+    x = torch.randn(2, 22, 1000)
+    with torch.no_grad():
+        output = model(x)
+
+    assert output.shape == (2, 2)
+
+
+def test_luna_base_pretrained_parameter_count(luna_base_pretrained_model):
+    """Test pretrained base model has expected parameter count."""
+    total_params = sum(p.numel() for p in luna_base_pretrained_model.parameters())
+    # Base should have roughly 7M parameters
+    assert 5_000_000 < total_params < 10_000_000
+
+
+def test_luna_base_pretrained_different_batch_sizes(luna_base_pretrained_model):
+    """Test pretrained base model with different batch sizes."""
+    model = luna_base_pretrained_model
+    model.eval()
+
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, 22, 1000)
+        with torch.no_grad():
+            output = model(x)
+        assert output.shape == (batch_size, 2)
+
+
+def test_luna_base_pretrained_caching(luna_base_pretrained_model):
+    """Test that pretrained model weights are cached in mne_data."""
+
+    # Check that cache directory exists and has files
+    mne_data_dir = mne.get_config('MNE_DATA')
+    if mne_data_dir is None:
+        mne_data_dir = str(Path.home() / 'mne_data')
+    cache_dir = Path(mne_data_dir) / 'luna_pretrained'
+
+    if cache_dir.exists():
+        # Check that model files were downloaded
+        cache_files = list(cache_dir.rglob("*"))
+        assert len(cache_files) > 0, "Cache directory should contain downloaded files"
