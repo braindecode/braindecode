@@ -61,11 +61,11 @@ class CTNet(EEGModuleMixin, nn.Module):
     ----------
     activation : nn.Module, default=nn.GELU
         Activation function to use in the network.
-    heads : int, default=4
+    num_heads : int, default=4
         Number of attention heads in the Transformer encoder.
-    emb_size : int or None, default=None
+    embed_dim : int or None, default=None
         Embedding size (dimensionality) for the Transformer encoder.
-    depth : int, default=6
+    att_depth : int, default=6
         Number of encoder layers in the Transformer.
     n_filters_time : int, default=20
         Number of temporal filters in the first convolutional layer.
@@ -77,11 +77,11 @@ class CTNet(EEGModuleMixin, nn.Module):
         Pooling size for the first average pooling layer.
     pool_size_2 : int, default=8
         Pooling size for the second average pooling layer.
-    drop_prob_cnn : float, default=0.3
+        cnn_drop_prob: float, default=0.3
         Dropout probability after convolutional layers.
-    drop_prob_posi : float, default=0.1
+    att_positional_drop_prob : float, default=0.1
         Dropout probability for the positional encoding in the Transformer.
-    drop_prob_final : float, default=0.5
+    final_drop_prob : float, default=0.5
         Dropout probability before the final classification layer.
 
     Notes
@@ -111,13 +111,13 @@ class CTNet(EEGModuleMixin, nn.Module):
         # Model specific arguments
         activation_patch: nn.Module = nn.ELU,
         activation_transformer: nn.Module = nn.GELU,
-        drop_prob_cnn: float = 0.3,
-        drop_prob_posi: float = 0.1,
-        drop_prob_final: float = 0.5,
+        cnn_drop_prob: float = 0.3,
+        att_positional_drop_prob: float = 0.1,
+        final_drop_prob: float = 0.5,
         # other parameters
-        heads: int = 4,
-        emb_size: Optional[int] = 40,
-        depth: int = 6,
+        num_heads: int = 4,
+        embed_dim: Optional[int] = 40,
+        att_depth: int = 6,
         n_filters_time: Optional[int] = None,
         kernel_size: int = 64,
         depth_multiplier: Optional[int] = 2,
@@ -136,14 +136,14 @@ class CTNet(EEGModuleMixin, nn.Module):
 
         self.activation_patch = activation_patch
         self.activation_transformer = activation_transformer
-        self.drop_prob_cnn = drop_prob_cnn
+        self.cnn_drop_prob = cnn_drop_prob
         self.pool_size_1 = pool_size_1
         self.pool_size_2 = pool_size_2
         self.kernel_size = kernel_size
-        self.drop_prob_posi = drop_prob_posi
-        self.drop_prob_final = drop_prob_final
-        self.heads = heads
-        self.depth = depth
+        self.att_positional_drop_prob = att_positional_drop_prob
+        self.final_drop_prob = final_drop_prob
+        self.num_heads = num_heads
+        self.att_depth = att_depth
         # n_times - pool_size_1 / p
         self.sequence_length = math.floor(
             (
@@ -154,8 +154,8 @@ class CTNet(EEGModuleMixin, nn.Module):
             + 1
         )
 
-        self.depth_multiplier, self.n_filters_time, self.emb_size = self._resolve_dims(
-            depth_multiplier, n_filters_time, emb_size
+        self.depth_multiplier, self.n_filters_time, self.embed_dim = self._resolve_dims(
+            depth_multiplier, n_filters_time, embed_dim
         )
 
         # Layers
@@ -168,32 +168,32 @@ class CTNet(EEGModuleMixin, nn.Module):
             depth_multiplier=self.depth_multiplier,
             pool_size_1=self.pool_size_1,
             pool_size_2=self.pool_size_2,
-            drop_prob=self.drop_prob_cnn,
+            drop_prob=self.cnn_drop_prob,
             n_chans=self.n_chans,
             activation=self.activation_patch,
         )
 
         self.position = _PositionalEncoding(
-            emb_size=self.emb_size,
-            drop_prob=self.drop_prob_posi,
+            emb_size=self.embed_dim,
+            drop_prob=self.att_positional_drop_prob,
             n_times=self.n_times,
             pool_size=self.pool_size_1,
         )
 
         self.trans = _TransformerEncoder(
-            self.heads,
-            self.depth,
-            self.emb_size,
+            self.num_heads,
+            self.att_depth,
+            self.embed_dim,
             activation=self.activation_transformer,
         )
 
         self.flatten_drop_layer = nn.Sequential(
             nn.Flatten(),
-            nn.Dropout(p=self.drop_prob_final),
+            nn.Dropout(p=self.final_drop_prob),
         )
 
         self.final_layer = nn.Linear(
-            in_features=int(self.emb_size * self.sequence_length),
+            in_features=int(self.embed_dim * self.sequence_length),
             out_features=self.n_outputs,
         )
 
@@ -213,7 +213,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         """
         x = self.ensuredim(x)
         cnn = self.cnn(x)
-        cnn = cnn * math.sqrt(self.emb_size)
+        cnn = cnn * math.sqrt(self.embed_dim)
         cnn = self.position(cnn)
         trans = self.trans(cnn)
         features = cnn + trans

@@ -41,9 +41,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         Dropout probability for convolutional layers, by default 0.3.
     num_heads : int, optional
         Number of attention heads in the transformer encoder, by default 8.
-    feedforward_ratio : float, optional
+    ffn_ratio : float, optional
         Ratio to compute feedforward dimension in the transformer, by default 1.
-    drop_prob_trans : float, optional
+    att_drop_prob : float, optional
         Dropout probability for the transformer, by default 0.5.
     num_layers : int, optional
         Number of transformer encoder layers, by default 2.
@@ -85,8 +85,8 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         pool2_size: int = 7,
         drop_prob: float = 0.3,
         num_heads: int = 8,
-        feedforward_ratio: float = 1,
-        drop_prob_trans: float = 0.5,
+        ffn_ratio: float = 1,
+        att_drop_prob: float = 0.5,
         num_layers: int = 2,
         activation: Type[nn.Module] = nn.ELU,
         return_features: bool = False,
@@ -139,8 +139,8 @@ class MSVTNet(EEGModuleMixin, nn.Module):
             seq_len,
             d_model,
             num_heads,
-            feedforward_ratio,
-            drop_prob_trans,
+            ffn_ratio,
+            att_drop_prob,
             num_layers,
         )
 

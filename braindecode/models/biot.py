@@ -45,11 +45,11 @@ class BIOT(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    emb_size : int, optional
+    embed_dim : int, optional
         The size of the embedding layer, by default 256
-    att_num_heads : int, optional
+    num_heads : int, optional
         The number of attention heads, by default 8
-    n_layers : int, optional
+    att_depth : int, optional
         The number of transformer layers, by default 4
     activation: nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
@@ -76,9 +76,9 @@ class BIOT(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        emb_size=256,
-        att_num_heads=8,
-        n_layers=4,
+        embed_dim=256,
+        num_heads=8,
+        att_depth=4,
         sfreq=200,
         hop_length=100,
         return_feature=False,
@@ -91,8 +91,8 @@ class BIOT(EEGModuleMixin, nn.Module):
         drop_prob: float = 0.5,
         # Parameters for the encoder
         max_seq_len: int = 1024,
-        attn_dropout=0.2,
-        attn_layer_dropout=0.2,
+        att_drop_prob=0.2,
+        att_layer_drop_prob=0.2,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -103,10 +103,10 @@ class BIOT(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
-        self.emb_size = emb_size
+        self.embed_dim = embed_dim
         self.hop_length = hop_length
-        self.att_num_heads = att_num_heads
-        self.n_layers = n_layers
+        self.num_heads = num_heads
+        self.att_depth = att_depth
         self.return_feature = return_feature
         if (self.sfreq != 200) & (self.sfreq is not None):
             warn(
@@ -114,7 +114,7 @@ class BIOT(EEGModuleMixin, nn.Module):
                 + "no guarantee to generalize well with the default parameters",
                 UserWarning,
             )
-        if self.n_chans > emb_size:
+        if self.n_chans > embed_dim:
             warn(
                 "The number of channels is larger than the embedding size. "
                 + "This may cause overfitting. Consider using a larger "
@@ -142,20 +142,20 @@ class BIOT(EEGModuleMixin, nn.Module):
             self.n_fft = int(self.sfreq)
 
         self.encoder = _BIOTEncoder(
-            emb_size=emb_size,
-            att_num_heads=att_num_heads,
-            n_layers=n_layers,
+            emb_size=self.embed_dim,
+            num_heads=self.num_heads,
+            n_layers=self.att_depth,
             n_chans=self.n_chans,
             n_fft=self.n_fft,
             hop_length=hop_length,
             drop_prob=drop_prob,
             max_seq_len=max_seq_len,
-            attn_dropout=attn_dropout,
-            attn_layer_dropout=attn_layer_dropout,
+            attn_dropout=att_drop_prob,
+            attn_layer_dropout=att_layer_drop_prob,
         )
 
         self.final_layer = _ClassificationHead(
-            emb_size=emb_size,
+            emb_size=self.embed_dim,
             n_outputs=self.n_outputs,
             activation=activation,
         )
@@ -345,7 +345,7 @@ class _BIOTEncoder(nn.Module):
         The number of channels
     emb_size: int
         The size of the embedding layer
-    att_num_heads: int
+    num_heads: int
         The number of attention heads
     n_layers: int
         The number of transformer layers
@@ -358,7 +358,7 @@ class _BIOTEncoder(nn.Module):
     def __init__(
         self,
         emb_size=256,  # The size of the embedding layer
-        att_num_heads=8,  # The number of attention heads
+        num_heads=8,  # The number of attention heads
         n_chans=16,  # The number of channels
         n_layers=4,  # The number of transformer layers
         n_fft=200,  # Related with the frequency resolution
@@ -378,7 +378,7 @@ class _BIOTEncoder(nn.Module):
         )
         self.transformer = LinearAttentionTransformer(
             dim=emb_size,
-            heads=att_num_heads,
+            heads=num_heads,
             depth=n_layers,
             max_seq_len=max_seq_len,
             attn_layer_dropout=attn_layer_dropout,

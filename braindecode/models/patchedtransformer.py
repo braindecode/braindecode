@@ -146,9 +146,9 @@ class PBT(EEGModuleMixin, nn.Module):
     ----------
     d_input : int, optional
         Size (in samples) of each patch (token) extracted along the time axis.
-    d_model : int, optional
+    embed_dim : int, optional
         Transformer embedding dimensionality.
-    n_blocks : int, optional
+    att_depth : int, optional
         Number of Transformer encoder layers.
     num_heads : int, optional
         Number of attention heads.
@@ -190,8 +190,8 @@ class PBT(EEGModuleMixin, nn.Module):
         sfreq=None,
         # Model parameters
         d_input: int = 64,
-        d_model: int = 128,
-        n_blocks: int = 4,
+        embed_dim: int = 128,
+        att_depth: int = 4,
         num_heads: int = 4,
         drop_prob: float = 0.1,
         learnable_cls=True,
@@ -209,8 +209,8 @@ class PBT(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         # Store hyperparameters
         self.d_input = d_input
-        self.d_model = d_model
-        self.n_blocks = n_blocks
+        self.embed_dim = embed_dim
+        self.att_depth = att_depth
         self.num_heads = num_heads
         self.drop_prob = drop_prob
 
@@ -219,11 +219,11 @@ class PBT(EEGModuleMixin, nn.Module):
 
         # Classification token (learnable or fixed zero)
         if learnable_cls:
-            self.cls_token = nn.Parameter(torch.randn(1, 1, self.d_model) * 0.002)
+            self.cls_token = nn.Parameter(torch.randn(1, 1, self.embed_dim) * 0.002)
         else:
             # non-learnable zeroed tensor
             self.cls_token = torch.full(
-                size=(1, 1, self.d_model),
+                size=(1, 1, self.embed_dim),
                 fill_value=0,
                 requires_grad=False,
                 dtype=torch.float32,
@@ -234,20 +234,20 @@ class PBT(EEGModuleMixin, nn.Module):
             n_chans=self.n_chans, n_times=self.n_times, d_input=self.d_input
         )
 
-        # Linear patch projection from token raw-size -> d_model
+        # Linear patch projection from token raw-size -> embed_dim
         self.patching_projection = nn.Linear(
-            in_features=self.d_input, out_features=self.d_model, bias=False
+            in_features=self.d_input, out_features=self.embed_dim, bias=False
         )
 
-        # actual embedding table mapping indices -> d_model
+        # actual embedding table mapping indices -> embed_dim
         self.pos_embedding = nn.Embedding(
-            num_embeddings=self.num_embeddings + 1, embedding_dim=self.d_model
+            num_embeddings=self.num_embeddings + 1, embedding_dim=self.embed_dim
         )
 
         # Transformer encoder stack
         self.transformer_encoder = _TransformerEncoder(
-            n_blocks=n_blocks,
-            d_model=self.d_model,
+            att_depth=att_depth,
+            embed_dim=self.embed_dim,
             n_head=num_heads,
             drop_prob=drop_prob,
             bias=bias_transformer,
@@ -256,7 +256,7 @@ class PBT(EEGModuleMixin, nn.Module):
 
         # classification head on classify token - CLS token
         self.final_layer = nn.Linear(
-            in_features=d_model, out_features=self.n_outputs, bias=True
+            in_features=embed_dim, out_features=self.n_outputs, bias=True
         )
 
         # initialize weights
@@ -354,7 +354,7 @@ class _MHSA(nn.Module):
 
     Parameters
     ----------
-    d_model : int
+    embed_dim : int
         Dimensionality of the model / embeddings.
     n_head : int
         Number of attention heads.
@@ -366,25 +366,25 @@ class _MHSA(nn.Module):
 
     def __init__(
         self,
-        d_model: int,
+        embed_dim: int,
         n_head: int,
         bias: bool,
         drop_prob: float = 0.0,
     ) -> None:
         super().__init__()
 
-        assert d_model % n_head == 0, "d_model must be divisible by n_head"
+        assert embed_dim % n_head == 0, "embed_dim must be divisible by n_head"
 
         # qkv and output projection
-        self.attn = nn.Linear(d_model, 3 * d_model, bias=bias)
-        self.proj = nn.Linear(d_model, d_model, bias=bias)
+        self.attn = nn.Linear(embed_dim, 3 * embed_dim, bias=bias)
+        self.proj = nn.Linear(embed_dim, embed_dim, bias=bias)
 
         # dropout modules
         self.attn_drop_prob = nn.Dropout(drop_prob)
         self.resid_drop_prob = nn.Dropout(drop_prob)
 
         self.n_head = n_head
-        self.d_model = d_model
+        self.embed_dim = embed_dim
         self.drop_prob = drop_prob
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -393,7 +393,7 @@ class _MHSA(nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor of shape (B, T, C) where C == d_model.
+            Input tensor of shape (B, T, C) where C == embed_dim.
 
         Returns
         -------
@@ -404,7 +404,7 @@ class _MHSA(nn.Module):
         B, T, C = x.size()
 
         # project to q, k, v and reshape for multi-head attention
-        q, k, v = self.attn(x).split(self.d_model, dim=2)
+        q, k, v = self.attn(x).split(self.embed_dim, dim=2)
 
         # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
@@ -436,7 +436,7 @@ class _FeedForward(nn.Module):
 
     Parameters
     ----------
-    d_model : int
+    embed_dim : int
         Input and output dimensionality.
     dim_feedforward : int, optional
         Hidden dimensionality of the feed-forward layer. If None, must be provided by caller.
@@ -448,7 +448,7 @@ class _FeedForward(nn.Module):
 
     def __init__(
         self,
-        d_model: int,
+        embed_dim: int,
         dim_feedforward: Optional[int] = None,
         drop_prob: float = 0.0,
         bias: bool = False,
@@ -459,9 +459,9 @@ class _FeedForward(nn.Module):
         if dim_feedforward is None:
             raise ValueError("dim_feedforward must be provided")
 
-        self.proj_in = nn.Linear(d_model, dim_feedforward, bias=bias)
+        self.proj_in = nn.Linear(embed_dim, dim_feedforward, bias=bias)
         self.activation = activation()
-        self.proj = nn.Linear(dim_feedforward, d_model, bias=bias)
+        self.proj = nn.Linear(dim_feedforward, embed_dim, bias=bias)
         self.drop_prob = nn.Dropout(drop_prob)
         self.drop_prob1 = nn.Dropout(drop_prob)
 
@@ -485,7 +485,7 @@ class _TransformerEncoderLayer(nn.Module):
 
     def __init__(
         self,
-        d_model: int,
+        embed_dim: int,
         n_head: int,
         drop_prob: float = 0.0,
         dim_feedforward: Optional[int] = None,
@@ -495,17 +495,17 @@ class _TransformerEncoderLayer(nn.Module):
         super().__init__()
 
         if dim_feedforward is None:
-            dim_feedforward = 4 * d_model
+            dim_feedforward = 4 * embed_dim
             # note: preserve the original behaviour (print) from the provided code
             print(
-                "dim_feedforward is set to 4*d_model, the default in Vaswani et al. (Attention is all you need)"
+                "dim_feedforward is set to 4*embed_dim, the default in Vaswani et al. (Attention is all you need)"
             )
 
-        self.layer_norm_att = _LayerNorm(d_model, bias=bias)
-        self.mhsa = _MHSA(d_model, n_head, bias, drop_prob=drop_prob)
-        self.layer_norm_ff = _LayerNorm(d_model, bias=bias)
+        self.layer_norm_att = _LayerNorm(embed_dim, bias=bias)
+        self.mhsa = _MHSA(embed_dim, n_head, bias, drop_prob=drop_prob)
+        self.layer_norm_ff = _LayerNorm(embed_dim, bias=bias)
         self.feed_forward = _FeedForward(
-            d_model=d_model,
+            embed_dim=embed_dim,
             dim_feedforward=dim_feedforward,
             drop_prob=drop_prob,
             bias=bias,
@@ -518,7 +518,7 @@ class _TransformerEncoderLayer(nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input of shape (B, T, d_model).
+            Input of shape (B, T, embed_dim).
 
         Returns
         -------
@@ -535,9 +535,9 @@ class _TransformerEncoder(nn.Module):
 
     Parameters
     ----------
-    n_blocks : int
+    att_depth : int
         Number of encoder layers to stack.
-    d_model : int
+    embed_dim : int
         Dimensionality of embeddings.
     n_head : int
         Number of attention heads per layer.
@@ -549,8 +549,8 @@ class _TransformerEncoder(nn.Module):
 
     def __init__(
         self,
-        n_blocks: int,
-        d_model: int,
+        att_depth: int,
+        embed_dim: int,
         n_head: int,
         drop_prob: float,
         bias: bool,
@@ -561,14 +561,14 @@ class _TransformerEncoder(nn.Module):
         self.encoder_block = nn.ModuleList(
             [
                 _TransformerEncoderLayer(
-                    d_model=d_model,
+                    embed_dim=embed_dim,
                     n_head=n_head,
                     drop_prob=drop_prob,
                     dim_feedforward=None,
                     bias=bias,
                     activation=activation,
                 )
-                for _ in range(n_blocks)
+                for _ in range(att_depth)
             ]
         )
 
@@ -576,7 +576,7 @@ class _TransformerEncoder(nn.Module):
         self.apply(self._init_weights)
         for pn, p in self.named_parameters():
             if pn.endswith("proj.weight"):
-                torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * n_blocks))
+                torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * att_depth))
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:

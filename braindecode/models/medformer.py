@@ -139,7 +139,7 @@ class MEDFormer(EEGModuleMixin, nn.Module):
     patch_len_list : list of int, optional
         Patch lengths for multi-granularity patching; each entry selects a temporal scale.
         The default is ``[14, 44, 45]``.
-    d_model : int, optional
+    embed_dim : int, optional
         Embedding dimensionality. The default is ``128``.
     num_heads : int, optional
         Number of attention heads, which must divide :attr:`d_model`. The default is ``8``.
@@ -147,9 +147,9 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         Dropout probability. The default is ``0.1``.
     no_inter_attn : bool, optional
         If ``True``, disables inter-granularity attention. The default is ``False``.
-    n_layers : int, optional
+    att_depth : int, optional
         Number of encoder layers. The default is ``6``.
-    dim_feedforward : int, optional
+    ffn_dim : int, optional
         Feedforward dimensionality. The default is ``256``.
     activation_trans : nn.Module, optional
         Activation module used in transformer encoder layers. The default is :class:`nn.ReLU`.
@@ -189,12 +189,12 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         sfreq=None,
         # Model parameters
         patch_len_list: Optional[List[int]] = None,
-        d_model: int = 128,
+        embed_dim: int = 128,
         num_heads: int = 8,
         drop_prob: float = 0.1,
         no_inter_attn: bool = False,
-        n_layers: int = 6,
-        dim_feedforward: int = 256,
+        att_depth: int = 6,
+        ffn_dim: int = 256,
         activation_trans: Optional[nn.Module] = nn.ReLU,
         single_channel: bool = False,
         output_attention: bool = True,
@@ -215,12 +215,12 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         # - enc_in refers to the number of time points
 
         # Save model parameters as instance variables
-        self.d_model = d_model
+        self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.drop_prob = drop_prob
         self.no_inter_attn = no_inter_attn
-        self.n_layers = n_layers
-        self.dim_feedforward = dim_feedforward
+        self.att_depth = att_depth
+        self.ffn_dim = ffn_dim
         self.activation_trans = activation_trans
         self.output_attention = output_attention
         self.single_channel = single_channel
@@ -242,7 +242,7 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         # Initialize the embedding layer.
         self.enc_embedding = _ListPatchEmbedding(
             enc_in=self.n_times,
-            d_model=self.d_model,
+            d_model=self.embed_dim,
             seq_len=self.n_chans,
             patch_len_list=self.patch_len_list,
             stride_list=self.stride_list,
@@ -257,22 +257,22 @@ class MEDFormer(EEGModuleMixin, nn.Module):
                 _EncoderLayer(
                     attention=_MedformerLayer(
                         num_blocks=len(self.patch_len_list),
-                        d_model=self.d_model,
+                        d_model=self.embed_dim,
                         num_heads=self.num_heads,
                         dropout=self.drop_prob,
                         output_attention=self.output_attention,
                         no_inter=self.no_inter_attn,
                     ),
-                    d_model=self.d_model,
-                    dim_feedforward=self.dim_feedforward,
+                    d_model=self.embed_dim,
+                    dim_feedforward=self.ffn_dim,
                     dropout=self.drop_prob,
                     activation=self.activation_trans()
                     if self.activation_trans is not None
                     else nn.ReLU(),
                 )
-                for _ in range(self.n_layers)
+                for _ in range(self.att_depth)
             ],
-            norm_layer=torch.nn.LayerNorm(self.d_model),
+            norm_layer=torch.nn.LayerNorm(self.embed_dim),
         )
 
         # For classification tasks, add additional layers.
@@ -281,7 +281,7 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         )
         self.dropout = nn.Dropout(self.drop_prob)
         self.final_layer = nn.Linear(
-            self.d_model
+            self.embed_dim
             * len(self.patch_num_list)
             * (1 if not self.single_channel else self.n_chans),
             self.n_outputs,
