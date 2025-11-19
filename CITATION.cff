@@ -26,6 +26,9 @@ authors:
     family-names: Sliwowski
   - given-names: Daniel
     family-names: Wilson
+  - given-names: Simon
+    family-names: Brandt
+    affiliation: "Department of Physiology, University of Bern, Switzerland"
   - given-names: Thomas
     family-names: Moreau
   - given-names: Théo
