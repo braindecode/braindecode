@@ -1,6 +1,7 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
+#          Bruna Lopes <brunajaflopes@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -13,9 +14,11 @@ from mne.channels import make_standard_montage
 
 from .base import Transform
 from .functional import (
+    amplitude_scale,
     bandstop_filter,
     channels_dropout,
     channels_permute,
+    channels_rereference,
     channels_shuffle,
     frequency_shift,
     ft_surrogate,
@@ -1271,3 +1274,74 @@ class MaskEncoding(Transform):
             "segment_length": segment_length,
             "n_segments": self.n_segments,
         }
+
+
+class ChannelsReref(Transform):
+    """Randomly re-reference channels in EEG data matrix.
+
+    Part of the augmentations proposed in [1]_
+
+    Parameters
+    ----------
+    probability: float
+        Float setting the probability of applying the operation.
+    random_state: int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Used to decide whether or not to transform given the probability
+        argument, to sample which channels to shuffle and to carry the shuffle.
+        Defaults to None.
+
+    References
+    ----------
+    .. [1] Mohsenvand, M.N., Izadi, M.R. &amp; Maes, P.. (2020). Contrastive
+        Representation Learning for Electroencephalogram Classification. Proceedings
+        of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
+        Learning Research 136:238-253 Available from https://proceedings.mlr.press/v136/mohsenvand20a.html.
+
+    """
+
+    operation = staticmethod(channels_rereference)  # type: ignore[assignment]
+
+    def __init__(self, probability, random_state=None):
+        super().__init__(probability=probability, random_state=random_state)
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters"""
+        return {
+            "random_state": self.rng,
+        }
+
+
+class AmplitudeScale(Transform):
+    """Rescale amplitude based on a random sampled scaling value.
+
+    Part of the augmentations proposed in [1]_
+
+    Parameters
+    ----------
+    probability: float
+        Float setting the probability of applying the operation.
+    random_state: int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Used to decide whether or not to transform given the probability
+        argument, to sample which channels to shuffle and to carry the shuffle.
+        Defaults to None.
+
+    References
+    ----------
+    .. [1] Mohsenvand, M.N., Izadi, M.R. &amp; Maes, P.. (2020). Contrastive
+        Representation Learning for Electroencephalogram Classification. Proceedings
+        of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
+        Learning Research 136:238-253 Available from https://proceedings.mlr.press/v136/mohsenvand20a.html.
+
+    """
+
+    operation = staticmethod(amplitude_scale)  # type: ignore[assignment]
+
+    def __init__(self, probability, interval=(0.5, 2), random_state=None):
+        super().__init__(probability=probability, random_state=random_state)
+        self.scale = interval
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters"""
+        return {"random_state": self.rng, "scale": self.scale}
