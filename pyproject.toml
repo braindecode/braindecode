@@ -52,7 +52,7 @@ dependencies = [
     'scipy',
     'matplotlib',
     'h5py',
-    'skorch>=1.2.0',
+    'skorch>=1.3.0',
     "torch>=2.0",
     "torchaudio>=2.0",
     'einops',
