@@ -35,7 +35,7 @@ SigArgName = Literal[
     "n_chans",
     "chs_info",
     "n_times",
-    "input_window_samples",
+    "input_window_seconds",
     "sfreq",
 ]
 
