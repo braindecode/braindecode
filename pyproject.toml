@@ -102,12 +102,12 @@ docs = [
 
 all = [
     "braindecode[moabb]",
-    "braindecode[hub]",
     "braindecode[tests]",
     "braindecode[docs]",
 ]
 # return later
 #   "braindecode[eegprep]",
+#   "braindecode[hub]",
 
 [tool.setuptools]
 py-modules = []
