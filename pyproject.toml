@@ -59,7 +59,6 @@ dependencies = [
     'joblib',
     'torchinfo',
     'wfdb',
-    'h5py',
     'linear_attention_transformer',
     'docstring_inheritance',
     "rotary_embedding_torch",
