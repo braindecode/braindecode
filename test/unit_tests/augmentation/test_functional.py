@@ -1,13 +1,12 @@
 import pytest
 import torch
-from sklearn.utils import check_random_state
 
 from braindecode.augmentation.functional import (
     _analytic_transform,
+    amplitude_scale,
+    channels_rereference,
     channels_shuffle,
     segmentation_reconstruction,
-    channels_recomb,
-    amplitude_scale
 )
 
 
@@ -111,7 +110,7 @@ def test_amplitude_scale():
     assert torch.equal(transformed_X0, torch.zeros_like(X))
 
 
-def test_channel_recomb():
+def test_channel_reref():
     X0 = torch.zeros((5, 64, 100))  # sanity
     X1 = torch.ones((5, 64, 100))  # sanity
 
@@ -120,10 +119,8 @@ def test_channel_recomb():
     # Random labels for 5 examples
     random_state = 42
 
-    transformed_X0, _ = channels_recomb(X0, y, random_state)
-    transformed_X1, _ = channels_recomb(X1, y, random_state)
+    transformed_X0, _ = channels_rereference(X0, y, random_state)
+    transformed_X1, _ = channels_rereference(X1, y, random_state)
     # Check if the output is the same as the input
     assert torch.equal(transformed_X0, X0)
     assert torch.equal(transformed_X1.sum(dim=(1,2)), -100*torch.ones(5))
-
-

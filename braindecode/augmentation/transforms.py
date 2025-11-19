@@ -1,6 +1,7 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
+#          Bruna Lopes <brunajaflopes@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -17,7 +18,7 @@ from .functional import (
     bandstop_filter,
     channels_dropout,
     channels_permute,
-    channels_recomb,
+    channels_rereference,
     channels_shuffle,
     frequency_shift,
     ft_surrogate,
@@ -1275,7 +1276,7 @@ class MaskEncoding(Transform):
         }
 
 
-class ChannelsRecomb(Transform):
+class ChannelsReref(Transform):
     """Randomly re-reference channels in EEG data matrix.
 
     Part of the augmentations proposed in [1]_
@@ -1299,13 +1300,13 @@ class ChannelsRecomb(Transform):
 
     """
 
-    operation = staticmethod(channels_recomb)  # type: ignore[assignment]
+    operation = staticmethod(channels_rereference)  # type: ignore[assignment]
 
     def __init__(self, probability, random_state=None):
         super().__init__(probability=probability, random_state=random_state)
 
     def get_augmentation_params(self, *batch):
-        """Return transform parameters """
+        """Return transform parameters"""
         return {
             "random_state": self.rng,
         }
@@ -1337,13 +1338,10 @@ class AmplitudeScale(Transform):
 
     operation = staticmethod(amplitude_scale)  # type: ignore[assignment]
 
-    def __init__(self, probability, interval = (0.5,2), random_state=None):
+    def __init__(self, probability, interval=(0.5, 2), random_state=None):
         super().__init__(probability=probability, random_state=random_state)
         self.scale = interval
 
     def get_augmentation_params(self, *batch):
-        """Return transform parameters """
-        return {
-            "random_state": self.rng,
-            "scale": self.scale
-        }
+        """Return transform parameters"""
+        return {"random_state": self.rng, "scale": self.scale}

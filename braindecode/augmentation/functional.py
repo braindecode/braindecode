@@ -1,6 +1,7 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
+#          Bruna Lopes <brunajaflopes@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -1196,7 +1197,7 @@ def mask_encoding(
     return X, y  # Return the masked tensor and labels
 
 
-def channels_recomb(
+def channels_rereference(
     X: torch.Tensor,
     y: torch.Tensor,
     random_state: int | np.random.RandomState | None = None,
@@ -1227,7 +1228,7 @@ def channels_recomb(
     .. [1] Mohsenvand, M.N., Izadi, M.R. &amp; Maes, P.. (2020). Contrastive
         Representation Learning for Electroencephalogram Classification. Proceedings
         of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
-        Learning Research 136:238-253 Available from https://proceedings.mlr.press/v136/mohsenvand20a.html.
+        Learning Research 136:238-253
 
     """
 
@@ -1238,14 +1239,15 @@ def channels_recomb(
 
     X_ch = X[torch.arange(batch_size), ch, :]
     X = X - X_ch.unsqueeze(1)
-    X[torch.arange(batch_size), ch, :] = - X_ch
+    X[torch.arange(batch_size), ch, :] = -X_ch
 
     return X, y
+
 
 def amplitude_scale(
     X: torch.Tensor,
     y: torch.Tensor,
-    scale : tuple,
+    scale: tuple,
     random_state: int | np.random.RandomState | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Rescale amplitude of each channel based on a random sampled scaling value.
@@ -1276,18 +1278,20 @@ def amplitude_scale(
     .. [1] Mohsenvand, M.N., Izadi, M.R. &amp; Maes, P.. (2020). Contrastive
         Representation Learning for Electroencephalogram Classification. Proceedings
         of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
-        Learning Research 136:238-253 Available from https://proceedings.mlr.press/v136/mohsenvand20a.html.
+        Learning Research 136:238-253
 
     """
 
-    rng = check_random_state(random_state)
+    rng = torch.Generator()
+    rng.manual_seed(random_state)
     batch_size, n_channels, _ = X.shape
 
-    s = torch.from_numpy(
-        rng.uniform(*scale, size=(batch_size, n_channels, 1))
-        ).to(X.dtype).to(X.device)
+    # Parameter for scaling amplitude / channel / trial
+    l, h = scale
+    s = l + (h - l) * torch.rand(
+        batch_size, n_channels, 1, generator=rng, device=X.device, dtype=X.dtype
+    )
 
-    X = s*X
+    X = s * X
 
     return X, y
-
