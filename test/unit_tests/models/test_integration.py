@@ -30,17 +30,17 @@ from braindecode.models import (
     SyncNet,
     USleep,
 )
-from braindecode.models.util import _get_signal_params as get_sp
 from braindecode.models.util import (
+    _get_possible_signal_params,
     _summary_table,
     default_signal_params,
     models_dict,
     models_mandatory_parameters,
     non_classification_models,
 )
+from braindecode.models.util import _get_signal_params as get_sp
 
 rng = np.random.default_rng(12)
-
 
 
 def convert_model_to_plain(model):
@@ -156,68 +156,7 @@ def test_model_integration(model_name, required_params, signal_params):
     epo, _ = get_epochs_y(sp, n_epochs=batch_size)
     X = torch.tensor(epo.get_data(), dtype=torch.float32)
 
-    # List possible model kwargs:
-    output_kwargs = []
-    output_kwargs.append(dict(n_outputs=sp["n_outputs"]))
-
-    if "n_outputs" not in required_params:
-        output_kwargs.append(dict(n_outputs=None))
-
-    channel_kwargs = []
-    channel_kwargs.append(dict(chs_info=sp["chs_info"], n_chans=None))
-    if "chs_info" not in required_params:
-        channel_kwargs.append(dict(n_chans=sp["n_chans"], chs_info=None))
-    if "n_chans" not in required_params and "chs_info" not in required_params:
-        channel_kwargs.append(dict(n_chans=None, chs_info=None))
-    time_kwargs = []
-    time_kwargs.append(
-        dict(n_times=sp["n_times"], sfreq=sp["sfreq"], input_window_seconds=None)
-    )
-    time_kwargs.append(
-        dict(
-            n_times=None,
-            sfreq=sp["sfreq"],
-            input_window_seconds=sp["input_window_seconds"],
-        )
-    )
-    time_kwargs.append(
-        dict(
-            n_times=sp["n_times"],
-            sfreq=None,
-            input_window_seconds=sp["input_window_seconds"],
-        )
-    )
-    if "n_times" not in required_params and "sfreq" not in required_params:
-        time_kwargs.append(
-            dict(
-                n_times=None,
-                sfreq=None,
-                input_window_seconds=sp["input_window_seconds"],
-            )
-        )
-    if (
-        "n_times" not in required_params
-        and "input_window_seconds" not in required_params
-    ):
-        time_kwargs.append(
-            dict(n_times=None, sfreq=sp["sfreq"], input_window_seconds=None)
-        )
-    if "sfreq" not in required_params and "input_window_seconds" not in required_params:
-        time_kwargs.append(
-            dict(n_times=sp["n_times"], sfreq=None, input_window_seconds=None)
-        )
-    if (
-        "n_times" not in required_params
-        and "sfreq" not in required_params
-        and "input_window_seconds" not in required_params
-    ):
-        time_kwargs.append(dict(n_times=None, sfreq=None, input_window_seconds=None))
-    model_kwargs_list = [
-        dict(**o, **c, **t)
-        for o in output_kwargs
-        for c in channel_kwargs
-        for t in time_kwargs
-    ]
+    model_kwargs_list = _get_possible_signal_params(sp, required_params)
 
     for model_kwargs in model_kwargs_list:
         # test initialisation:

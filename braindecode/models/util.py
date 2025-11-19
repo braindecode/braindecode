@@ -144,19 +144,20 @@ chs_info = [
     }
     for i in range(1, 4)
 ]
-default_signal_params = dict(
-    n_times=1000,
-    sfreq=250.0,
-    n_outputs=2,
-    chs_info=chs_info,
-    n_chans=len(chs_info),
-    input_window_seconds=4.0,
-)
+default_signal_params: dict[SigArgName, Any] = {
+    "n_times": 1000,
+    "sfreq": 250.0,
+    "n_outputs": 2,
+    "chs_info": chs_info,
+    "n_chans": len(chs_info),
+    "input_window_seconds": 4.0,
+}
 
 
 def _get_signal_params(
-    signal_params: dict[str, Any] | None, required_params: list[str] | None = None
-):
+    signal_params: dict[SigArgName, Any] | None,
+    required_params: list[SigArgName] | None = None,
+) -> dict[SigArgName, Any]:
     """Get signal parameters for model initialization in tests."""
     sp = deepcopy(default_signal_params)
     if signal_params is not None:
@@ -182,6 +183,77 @@ def _get_signal_params(
             k: sp[k] for k in set((signal_params or {}).keys()).union(required_params)
         }
     return sp
+
+
+def _get_possible_signal_params(
+    signal_params: dict[SigArgName, Any], required_params: list[SigArgName]
+):
+    sp = signal_params
+
+    # List possible model kwargs:
+    output_kwargs = []
+    output_kwargs.append(dict(n_outputs=sp["n_outputs"]))
+
+    if "n_outputs" not in required_params:
+        output_kwargs.append(dict(n_outputs=None))
+
+    channel_kwargs = []
+    channel_kwargs.append(dict(chs_info=sp["chs_info"], n_chans=None))
+    if "chs_info" not in required_params:
+        channel_kwargs.append(dict(n_chans=sp["n_chans"], chs_info=None))
+    if "n_chans" not in required_params and "chs_info" not in required_params:
+        channel_kwargs.append(dict(n_chans=None, chs_info=None))
+
+    time_kwargs = []
+    time_kwargs.append(
+        dict(n_times=sp["n_times"], sfreq=sp["sfreq"], input_window_seconds=None)
+    )
+    time_kwargs.append(
+        dict(
+            n_times=None,
+            sfreq=sp["sfreq"],
+            input_window_seconds=sp["input_window_seconds"],
+        )
+    )
+    time_kwargs.append(
+        dict(
+            n_times=sp["n_times"],
+            sfreq=None,
+            input_window_seconds=sp["input_window_seconds"],
+        )
+    )
+    if "n_times" not in required_params and "sfreq" not in required_params:
+        time_kwargs.append(
+            dict(
+                n_times=None,
+                sfreq=None,
+                input_window_seconds=sp["input_window_seconds"],
+            )
+        )
+    if (
+        "n_times" not in required_params
+        and "input_window_seconds" not in required_params
+    ):
+        time_kwargs.append(
+            dict(n_times=None, sfreq=sp["sfreq"], input_window_seconds=None)
+        )
+    if "sfreq" not in required_params and "input_window_seconds" not in required_params:
+        time_kwargs.append(
+            dict(n_times=sp["n_times"], sfreq=None, input_window_seconds=None)
+        )
+    if (
+        "n_times" not in required_params
+        and "sfreq" not in required_params
+        and "input_window_seconds" not in required_params
+    ):
+        time_kwargs.append(dict(n_times=None, sfreq=None, input_window_seconds=None))
+
+    return [
+        dict(**o, **c, **t)
+        for o in output_kwargs
+        for c in channel_kwargs
+        for t in time_kwargs
+    ]
 
 
 ################################################################
