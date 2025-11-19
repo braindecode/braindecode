@@ -1,0 +1,145 @@
+try:
+    import pydantic
+except ImportError:
+    raise ImportError(
+        "pydantic is not installed. Install with: pip install braindecode[pydantic]"
+    )
+from inspect import signature
+from typing import Any
+
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import SigArgName, models_dict, models_mandatory_parameters
+
+
+def make_model_config(
+    model_class: type[EEGModuleMixin],
+    required: list[SigArgName],
+):
+    """Create a pydantic model config for a given model class.
+
+    Parameters
+    ----------
+    model_class : type[EEGModuleMixin]
+        The model class for which to create the config.
+    required : list of SigArgName
+        The required signal arguments for the model.
+
+    Returns
+    -------
+    type
+        A pydantic BaseModel subclass representing the model config.
+    """
+
+    class BraindecodeModelConfig(pydantic.BaseModel):
+        def create_instance(self) -> EEGModuleMixin:
+            kwargs = self.model_dump(mode="python")
+            if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
+                kwargs.pop("n_chans")
+            if (
+                kwargs.get("n_times") is not None
+                and kwargs.get("input_window_seconds") is not None
+                and kwargs.get("sfreq") is not None
+            ):
+                kwargs.pop("n_times")
+            return model_class(**kwargs)
+
+    @pydantic.model_validator(mode="before")
+    def validate_signal_params(cls, data: Any):
+        n_outputs = data.get("n_outputs")
+        n_chans = data.get("n_chans")
+        chs_info = data.get("chs_info")
+        n_times = data.get("n_times")
+        input_window_seconds = data.get("input_window_seconds")
+        sfreq = data.get("sfreq")
+
+        # Check that required parameters are provided or can be inferred
+        if "n_outputs" in required and n_outputs is None:
+            raise ValueError("n_outputs is a required parameter but was not provided.")
+        if "n_chans" in required and n_chans is None and chs_info is None:
+            raise ValueError(
+                "n_chans is required and could not be inferred. Either specify n_chans or chs_info."
+            )
+        if "chs_info" in required and chs_info is None:
+            raise ValueError("chs_info is a required parameter but was not provided.")
+        if "n_times" in required and (
+            n_times is None and (sfreq is None or input_window_seconds is None)
+        ):
+            raise ValueError(
+                "n_times is required and could not be inferred."
+                "Either specify n_times or input_window_seconds and sfreq."
+            )
+        if "sfreq" in required and (
+            sfreq is None and (n_times is None or input_window_seconds is None)
+        ):
+            raise ValueError(
+                "sfreq is required and could not be inferred."
+                "Either specify sfreq or input_window_seconds and n_times."
+            )
+        if "input_window_seconds" in required and (
+            input_window_seconds is None and (n_times is None or sfreq is None)
+        ):
+            raise ValueError(
+                "input_window_seconds is required and could not be inferred."
+                "Either specify input_window_seconds or n_times and sfreq."
+            )
+
+        # Infer missing parameters if possible, and check consistency
+        if chs_info is not None:
+            if n_chans is None:
+                data["n_chans"] = len(chs_info)
+            elif n_chans != len(chs_info):
+                raise ValueError(
+                    f"Provided {n_chans=} does not match length of chs_info: {len(chs_info)}."
+                )
+        if (
+            n_times is not None
+            and sfreq is not None
+            and input_window_seconds is not None
+        ):
+            if n_times != int(input_window_seconds * sfreq):
+                raise ValueError(
+                    f"Provided {n_times=} does not match {input_window_seconds=} * {sfreq=}."
+                )
+        elif n_times is None and sfreq is not None and input_window_seconds is not None:
+            data["n_times"] = int(input_window_seconds * sfreq)
+        elif sfreq is None and n_times is not None and input_window_seconds is not None:
+            data["sfreq"] = n_times / input_window_seconds
+        elif input_window_seconds is None and n_times is not None and sfreq is not None:
+            data["input_window_seconds"] = n_times / sfreq
+        return data
+
+    signature_params = signature(model_class.__init__, eval_str=True).parameters
+    has_args = any(p.kind == p.VAR_POSITIONAL for p in signature_params.values())
+    has_kwargs = any(p.kind == p.VAR_KEYWORD for p in signature_params.values())
+    if has_args:
+        raise ValueError("Model __init__ methods cannot have *args")
+
+    extra = "allow" if has_kwargs else "forbid"
+    fields = {}
+    for name, p in signature_params.items():
+        if name == "self" or p.kind == p.VAR_KEYWORD:
+            continue
+
+        annot = p.annotation if p.annotation is not p.empty else Any
+        fields[name] = (annot, p.default) if p.default is not p.empty else annot
+
+    model_config = pydantic.create_model(
+        model_class.__name__ + "Config",
+        __config__=pydantic.ConfigDict(arbitrary_types_allowed=True, extra=extra),
+        __doc__=f"Pydantic config of model {model_class.__name__}\n\n{model_class.__doc__}",
+        __base__=BraindecodeModelConfig,
+        __module__="braindecode.models.config",
+        __validators__={"validate_signal_params": validate_signal_params},
+        **fields,
+    )
+    return model_config
+
+
+# Automatically generate and add classes to the global namespace
+# and define __all__ based on generated classes
+__all__ = ["make_model_config"]
+for model_name, req, _ in models_mandatory_parameters:
+    model_cls = models_dict[model_name]
+    model_cfg = make_model_config(model_cls, req)
+    globals()[model_cfg.__name__] = model_cfg
+    __all__.append(model_cfg.__name__)
