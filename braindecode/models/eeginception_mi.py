@@ -71,7 +71,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         n_convs: int = 5,
         n_filters: int = 48,
         kernel_unit_s: float = 0.1,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
         chs_info=None,
         n_times=None,
     ):
@@ -247,7 +247,7 @@ class _InceptionModuleMI(nn.Module):
         n_convs,
         kernel_unit_s=0.1,
         sfreq=250,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -343,7 +343,7 @@ class _ResidualModuleMI(nn.Module):
 
     """
 
-    def __init__(self, in_channels, n_filters, activation: nn.Module = nn.ReLU):
+    def __init__(self, in_channels, n_filters, activation: type[nn.Module] = nn.ReLU):
         super().__init__()
         self.in_channels = in_channels
         self.n_filters = n_filters

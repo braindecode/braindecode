@@ -235,7 +235,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     kernel_size : int, default=9
         The kernel size used in certain types of attention mechanisms for convolution
         operations.
-    activation: nn.Module, default=nn.ELU
+    activation: type[nn.Module] = nn.ELU,
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     extra_params : bool, default=False
@@ -277,7 +277,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         freq_idx: int = 0,
         n_codewords: int = 4,
         kernel_size: int = 9,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         extra_params: bool = False,
     ):
         super(AttentionBaseNet, self).__init__()
@@ -453,7 +453,7 @@ class _FeatureExtractor(nn.Module):
         pool_length: int = 75,
         pool_stride: int = 15,
         drop_prob: float = 0.5,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
 
@@ -592,7 +592,7 @@ class _ChannelAttentionBlock(nn.Module):
         n_codewords: int = 4,
         kernel_size: int = 9,
         extra_params: bool = False,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
         self.conv = nn.Sequential(

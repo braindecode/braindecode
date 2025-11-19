@@ -202,8 +202,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         att_drop_prob=0.5,
         final_fc_length="auto",
         return_features=False,
-        activation: nn.Module = nn.ELU,
-        activation_transfor: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.ELU,
+        activation_transfor: type[nn.Module] = nn.GELU,
         n_times=None,
         chs_info=None,
         input_window_seconds=None,
@@ -318,7 +318,7 @@ class _PatchEmbedding(nn.Module):
         pool_time_length,
         stride_avg_pool,
         drop_prob,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
 
@@ -367,7 +367,7 @@ class _TransformerEncoderBlock(nn.Sequential):
         att_heads,
         att_drop,
         forward_expansion=4,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__(
             _ResidualAdd(
@@ -411,7 +411,12 @@ class _TransformerEncoder(nn.Sequential):
     """
 
     def __init__(
-        self, att_depth, emb_size, att_heads, att_drop, activation: nn.Module = nn.GELU
+        self,
+        att_depth,
+        emb_size,
+        att_heads,
+        att_drop,
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__(
             *[
@@ -431,7 +436,7 @@ class _FullyConnected(nn.Module):
         drop_prob_2=0.3,
         out_channels=256,
         hidden_channels=32,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         """Fully-connected layer for the transformer encoder.
 

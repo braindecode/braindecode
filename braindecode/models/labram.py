@@ -174,7 +174,7 @@ class Labram(EEGModuleMixin, nn.Module):
         init_scale=0.001,
         neural_tokenizer=True,
         attn_head_dim=None,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -1106,7 +1106,7 @@ class _WindowsAttentionBlock(nn.Module):
         attn_drop=0.0,
         drop_path=0.0,
         init_values=None,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
         norm_layer=nn.LayerNorm,
         window_size=None,
         attn_head_dim=None,
@@ -1229,7 +1229,7 @@ class _TemporalConv(nn.Module):
         padding_1=(0, 7),
         kernel_size_2=(1, 3),
         padding_2=(0, 1),
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
 

@@ -70,7 +70,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         time_conv_size_s=0.5,
         max_pool_size_s=0.125,
         pad_size_s=0.25,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
         input_window_seconds=None,
         n_outputs=5,
         drop_prob=0.25,
