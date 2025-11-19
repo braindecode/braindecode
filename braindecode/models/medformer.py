@@ -195,10 +195,10 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         no_inter_attn: bool = False,
         n_layers: int = 6,
         dim_feedforward: int = 256,
-        activation_trans: Optional[nn.Module] = nn.ReLU,
+        activation_trans: type[nn.Module] | None = nn.ReLU,
         single_channel: bool = False,
         output_attention: bool = True,
-        activation_class: Optional[nn.Module] = nn.GELU,
+        activation_class: type[nn.Module] | None = nn.GELU,
     ):
         super().__init__(
             n_outputs=n_outputs,

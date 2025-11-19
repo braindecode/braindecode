@@ -83,7 +83,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         final_conv_length="auto",
         conv_nonlin=square,
         pool_mode="mean",
-        activation_pool_nonlin: nn.Module = SafeLog,
+        activation_pool_nonlin: type[nn.Module] = SafeLog,
         split_first_layer=True,
         batch_norm=True,
         batch_norm_alpha=0.1,
