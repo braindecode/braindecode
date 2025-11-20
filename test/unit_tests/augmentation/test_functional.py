@@ -3,6 +3,8 @@ import torch
 
 from braindecode.augmentation.functional import (
     _analytic_transform,
+    amplitude_scale,
+    channels_rereference,
     channels_shuffle,
     segmentation_reconstruction,
 )
@@ -89,3 +91,36 @@ def test_segmentation_reconstruction():
     # preserve time sequence
     assert torch.equal(torch.bincount(transformed_y), torch.bincount(y))
     # preserve number of occurrences of each label
+
+
+def test_amplitude_scale():
+    X = torch.rand((5, 64, 100))
+    # Random EEG data for 5 examples, 64 channels, and 100 time points
+    y = torch.randint(0, 2, (5,))
+    # Random labels for 5 examples
+    random_state = 42
+
+    scale = (1,1) # sanity check
+    transformed_X1, _ = amplitude_scale(X, y, scale, random_state)
+    scale = (0,0) # sanity check
+    transformed_X0, _ = amplitude_scale(X, y, scale, random_state)
+
+    # Check if the output is the same as the input
+    assert torch.equal(transformed_X1, X)
+    assert torch.equal(transformed_X0, torch.zeros_like(X))
+
+
+def test_channel_reref():
+    X0 = torch.zeros((5, 64, 100))  # sanity
+    X1 = torch.ones((5, 64, 100))  # sanity
+
+    # Random EEG data for 5 examples, 64 channels, and 100 time points
+    y = torch.randint(0, 2, (5,))
+    # Random labels for 5 examples
+    random_state = 42
+
+    transformed_X0, _ = channels_rereference(X0, y, random_state)
+    transformed_X1, _ = channels_rereference(X1, y, random_state)
+    # Check if the output is the same as the input
+    assert torch.equal(transformed_X0, X0)
+    assert torch.equal(transformed_X1.sum(dim=(1,2)), -100*torch.ones(5))
