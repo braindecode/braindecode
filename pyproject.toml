@@ -104,10 +104,11 @@ all = [
     "braindecode[moabb]",
     "braindecode[tests]",
     "braindecode[docs]",
+    "braindecode[hub]",
 ]
 # return later
 #   "braindecode[eegprep]",
-#   "braindecode[hub]",
+#
 
 [tool.setuptools]
 py-modules = []
