@@ -1,6 +1,6 @@
-.. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
-   :target: https://codecov.io/gh/braindecode/braindecode
-   :alt: Code Coverage
+.. image:: https://zenodo.org/badge/232335424.svg
+   :target: https://doi.org/10.5281/zenodo.8214376
+   :alt: DOI
 
 .. image:: https://badges.gitter.im/braindecodechat/community.svg
    :alt: Join the chat at https://gitter.im/braindecodechat/community
@@ -12,6 +12,11 @@
 .. image:: https://circleci.com/gh/braindecode/braindecode.svg?style=svg
    :target: https://circleci.com/gh/braindecode/braindecode
    :alt: Doc build on CircleCI
+
+.. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
+   :target: https://codecov.io/gh/braindecode/braindecode
+   :alt: Code Coverage
+
 
 .. |Braindecode| image:: https://user-images.githubusercontent.com/42702466/177958779-b00628aa-9155-4c51-96d1-d8c345aff575.svg
 .. _braindecode: braindecode.org/
