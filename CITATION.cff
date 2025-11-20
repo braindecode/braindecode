@@ -54,6 +54,7 @@ authors:
     orcid: "https://orcid.org/0000-0001-9791-4404"
   - given-names: Robin Tibor
     family-names: Schirrmeister
+    orcid: https://orcid.org/0000-0002-5518-7445
 type: software
 repository-code: "https://github.com/braindecode/braindecode"
 license: BSD-3-Clause
