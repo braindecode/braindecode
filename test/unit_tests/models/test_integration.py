@@ -505,14 +505,14 @@ def test_model_exported(model):
     """
     # Models known to have export issues on Windows and Python 3.14+ (non-pytree-compatible attributes)
     model_name = model.__class__.__name__
-    
+
     if sys.platform.startswith("win"):
         not_exportable_models_win = [
             "LUNA",  # Has _channel_location_cache dict that breaks pytree on Windows
         ]
         if model_name in not_exportable_models_win:
             pytest.skip(f"{model_name} export is not compatible on Windows")
-    
+
     if sys.version_info >= (3, 14):
         not_exportable_models_py314 = [
             "LUNA",  # Has _channel_location_cache dict that breaks pytree on Python 3.14+
@@ -537,7 +537,7 @@ def test_model_exported(model):
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
 
-# skip if windows or python 3.14 
+# skip if windows or python 3.14
 @pytest.mark.skipif(
     sys.platform.startswith("win") or sys.version_info >= (3, 14),
     reason="torch.compile is known to have issues on Windows or with Python 3.14.",
