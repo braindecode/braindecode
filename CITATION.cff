@@ -17,6 +17,8 @@ authors:
     family-names: Gemein
   - given-names: Cedric
     family-names: Rommel
+    affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    orcid: "https://orcid.org/0000-0002-9416-0288"
     affiliation: Meta
   - given-names: Hubert
     family-names: Banville
