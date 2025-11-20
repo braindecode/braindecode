@@ -8,11 +8,11 @@ How to cite Braindecode
 Citing the Braindecode
 ----------------------
 
-If you are using the Braindecode library in a scientific context, please cite the software using
-the following Zenodo reference:
+If you use Braindecode in scientific work, please cite the software using the Zenodo DOI shown in the badge below:
 
-TODO!!!!
-
+.. image:: https://zenodo.org/badge/232335424.svg
+   :target: https://doi.org/10.5281/zenodo.8214376
+   :alt: DOI
 
 Additionally, we highly encourage you to cite the article that originally introduced
 the Braindecode library and has served as a foundational reference for many works
