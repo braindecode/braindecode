@@ -41,7 +41,7 @@ def make_model_config(
         A pydantic BaseModel subclass representing the model config.
     """
 
-    class BraindecodeModelConfig(pydantic.BaseModel):
+    class BaseBraindecodeModelConfig(pydantic.BaseModel):
         def create_instance(self) -> EEGModuleMixin:
             kwargs = self.model_dump(mode="python", exclude={"model_name_"})
             if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
@@ -146,7 +146,7 @@ def make_model_config(
             arbitrary_types_allowed=True, extra=extra, validate_default=True
         ),
         __doc__=f"Pydantic config of model {model_class.__name__}\n\n{model_class.__doc__}",
-        __base__=BraindecodeModelConfig,
+        __base__=BaseBraindecodeModelConfig,
         __module__="braindecode.models.config",
         __validators__={"validate_signal_params": validate_signal_params},
         **fields,
