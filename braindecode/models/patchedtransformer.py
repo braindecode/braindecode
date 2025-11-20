@@ -148,7 +148,7 @@ class PBT(EEGModuleMixin, nn.Module):
         Size (in samples) of each patch (token) extracted along the time axis.
     embed_dim : int, optional
         Transformer embedding dimensionality.
-    att_depth : int, optional
+    num_layers : int, optional
         Number of Transformer encoder layers.
     num_heads : int, optional
         Number of attention heads.
@@ -191,7 +191,7 @@ class PBT(EEGModuleMixin, nn.Module):
         # Model parameters
         d_input: int = 64,
         embed_dim: int = 128,
-        att_depth: int = 4,
+        num_layers: int = 4,
         num_heads: int = 4,
         drop_prob: float = 0.1,
         learnable_cls=True,
@@ -210,7 +210,7 @@ class PBT(EEGModuleMixin, nn.Module):
         # Store hyperparameters
         self.d_input = d_input
         self.embed_dim = embed_dim
-        self.att_depth = att_depth
+        self.num_layers = num_layers
         self.num_heads = num_heads
         self.drop_prob = drop_prob
 
@@ -246,7 +246,7 @@ class PBT(EEGModuleMixin, nn.Module):
 
         # Transformer encoder stack
         self.transformer_encoder = _TransformerEncoder(
-            att_depth=att_depth,
+            num_layers=num_layers,
             embed_dim=self.embed_dim,
             n_head=num_heads,
             drop_prob=drop_prob,
@@ -535,7 +535,7 @@ class _TransformerEncoder(nn.Module):
 
     Parameters
     ----------
-    att_depth : int
+    num_layers : int
         Number of encoder layers to stack.
     embed_dim : int
         Dimensionality of embeddings.
@@ -549,7 +549,7 @@ class _TransformerEncoder(nn.Module):
 
     def __init__(
         self,
-        att_depth: int,
+        num_layers: int,
         embed_dim: int,
         n_head: int,
         drop_prob: float,
@@ -568,7 +568,7 @@ class _TransformerEncoder(nn.Module):
                     bias=bias,
                     activation=activation,
                 )
-                for _ in range(att_depth)
+                for _ in range(num_layers)
             ]
         )
 
@@ -576,7 +576,7 @@ class _TransformerEncoder(nn.Module):
         self.apply(self._init_weights)
         for pn, p in self.named_parameters():
             if pn.endswith("proj.weight"):
-                torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * att_depth))
+                torch.nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * num_layers))
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:

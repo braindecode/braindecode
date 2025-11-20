@@ -49,7 +49,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         The size of the embedding layer, by default 256
     num_heads : int, optional
         The number of attention heads, by default 8
-    att_depth : int, optional
+    num_layers : int, optional
         The number of transformer layers, by default 4
     activation: nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
@@ -78,7 +78,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         self,
         embed_dim=256,
         num_heads=8,
-        att_depth=4,
+        num_layers=4,
         sfreq=200,
         hop_length=100,
         return_feature=False,
@@ -106,7 +106,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         self.embed_dim = embed_dim
         self.hop_length = hop_length
         self.num_heads = num_heads
-        self.att_depth = att_depth
+        self.num_layers = num_layers
         self.return_feature = return_feature
         if (self.sfreq != 200) & (self.sfreq is not None):
             warn(
@@ -144,7 +144,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         self.encoder = _BIOTEncoder(
             emb_size=self.embed_dim,
             num_heads=self.num_heads,
-            n_layers=self.att_depth,
+            n_layers=self.num_layers,
             n_chans=self.n_chans,
             n_fft=self.n_fft,
             hop_length=hop_length,

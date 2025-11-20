@@ -65,7 +65,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         Number of attention heads in the Transformer encoder.
     embed_dim : int or None, default=None
         Embedding size (dimensionality) for the Transformer encoder.
-    att_depth : int, default=6
+    num_layers : int, default=6
         Number of encoder layers in the Transformer.
     n_filters_time : int, default=20
         Number of temporal filters in the first convolutional layer.
@@ -117,7 +117,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         # other parameters
         num_heads: int = 4,
         embed_dim: Optional[int] = 40,
-        att_depth: int = 6,
+        num_layers: int = 6,
         n_filters_time: Optional[int] = None,
         kernel_size: int = 64,
         depth_multiplier: Optional[int] = 2,
@@ -143,7 +143,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         self.att_positional_drop_prob = att_positional_drop_prob
         self.final_drop_prob = final_drop_prob
         self.num_heads = num_heads
-        self.att_depth = att_depth
+        self.num_layers = num_layers
         # n_times - pool_size_1 / p
         self.sequence_length = math.floor(
             (
@@ -182,7 +182,7 @@ class CTNet(EEGModuleMixin, nn.Module):
 
         self.trans = _TransformerEncoder(
             self.num_heads,
-            self.att_depth,
+            self.num_layers,
             self.embed_dim,
             activation=self.activation_transformer,
         )

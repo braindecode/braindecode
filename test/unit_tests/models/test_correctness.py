@@ -100,7 +100,7 @@ def test_correctness_biot(real_data):
         n_chans=n_chans,
         n_times=n_times,
         sfreq=100,
-        att_depth=1,
+        num_layers=1,
         num_heads=2,
         hop_length=50,
         embed_dim=256,

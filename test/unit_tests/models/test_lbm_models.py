@@ -66,7 +66,7 @@ def model_config_tokenizer(n_times, n_chans, n_outputs, patch_size, emb_size, n_
         "n_outputs": n_outputs,
         "patch_size": patch_size,
         "embed_dim": emb_size,
-        "att_depth": n_layers,
+        "num_layers": n_layers,
         "att_num_heads": att_num_heads,
         "neural_tokenizer": True,
     }
@@ -82,7 +82,7 @@ def model_config_decoder(n_times, n_chans, n_outputs, patch_size, emb_size, n_la
         "embed_dim": emb_size,
         "conv_in_channels": 8,
         "conv_out_channels": 8,
-        "att_depth": n_layers,
+        "num_layers": n_layers,
         "att_num_heads": att_num_heads,
         "neural_tokenizer": False,
     }

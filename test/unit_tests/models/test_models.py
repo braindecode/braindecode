@@ -1023,7 +1023,7 @@ def default_biot_params():
     return {
         "embed_dim": 256,
         "num_heads": 8,
-        "att_depth": 4,
+        "num_layers": 4,
         "sfreq": 200,
         "hop_length": 50,
         "n_outputs": 2,
@@ -1038,7 +1038,7 @@ def test_initialization_default_parameters(default_biot_params):
 
     assert biot.embed_dim == 256
     assert biot.num_heads == 8
-    assert biot.att_depth == 4
+    assert biot.num_layers == 4
 
 
 def test_model_trainable_parameters_biot(default_biot_params):
@@ -1078,7 +1078,7 @@ def test_model_trainable_parameters_labram(default_labram_params):
     default_labram_params: dict with default parameters for Labram model
 
     """
-    labram_base = Labram(att_depth=12, att_num_heads=12,
+    labram_base = Labram(num_layers=12, att_num_heads=12,
                          **default_labram_params)
 
     labram_base_parameters = labram_base.get_torchinfo_statistics().trainable_params
@@ -1089,7 +1089,7 @@ def test_model_trainable_parameters_labram(default_labram_params):
     # ~ 5.8 M matching the paper
 
     labram_large = Labram(
-        att_depth=24,
+        num_layers=24,
         att_num_heads=16,
         conv_out_channels=16,
         embed_dim=400,
@@ -1101,7 +1101,7 @@ def test_model_trainable_parameters_labram(default_labram_params):
     # ~ 46 M matching the paper
 
     labram_huge = Labram(
-        att_depth=48,
+        num_layers=48,
         att_num_heads=16,
         conv_out_channels=32,
         embed_dim=800,
@@ -1129,7 +1129,7 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
 
     """
     labram_base = Labram(
-        att_depth=12,
+        num_layers=12,
         att_num_heads=12,
         use_mean_pooling=use_mean_pooling,
         **default_labram_params,
@@ -1160,7 +1160,7 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
 
 def test_labram_without_pos_embed(default_labram_params):
     labram_base_not_pos_emb = Labram(
-        att_depth=12, att_num_heads=12, use_abs_pos_emb=False,
+        num_layers=12, att_num_heads=12, use_abs_pos_emb=False,
         **default_labram_params
     )
 
@@ -1183,7 +1183,7 @@ def test_labram_n_outputs_0(default_labram_params):
 
     """
     default_labram_params["n_outputs"] = 0
-    labram_base = Labram(att_depth=12, att_num_heads=12,
+    labram_base = Labram(num_layers=12, att_num_heads=12,
                          **default_labram_params)
     # Defining a random data
     X = torch.rand(1, default_labram_params["n_chans"],

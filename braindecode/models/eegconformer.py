@@ -57,7 +57,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     - :class:`_TransformerEncoder` **(context over temporal tokens)**
 
         - *Operations.*
-        - A stack of ``att_depth`` encoder blocks. :class:`_TransformerEncoderBlock`
+        - A stack of ``num_layers`` encoder blocks. :class:`_TransformerEncoderBlock`
         - Each block applies LayerNorm :class:`torch.nn.LayerNorm`
         - Multi-Head Self-Attention (``num_heads``) with dropout + residual :class:`MultiHeadAttention` (:class:`torch.nn.Dropout`)
         - LayerNorm :class:`torch.nn.LayerNorm`
@@ -127,7 +127,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     - **Instantiation.** Choose ``n_filters_time`` (embedding size ``D``) and
         ``filter_time_length`` to match the rhythms of interest. Tune
         ``pool_time_length/stride`` to trade temporal resolution for sequence length.
-        Keep ``att_depth`` modest (e.g., 4–6) and set ``num_heads`` to divide ``D``.
+        Keep ``num_layers`` modest (e.g., 4–6) and set ``num_heads`` to divide ``D``.
         ``final_fc_length="auto"`` infers the flattened size from PatchEmbedding.
 
     Notes
@@ -160,7 +160,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         Length of stride between temporal pooling filters.
     drop_prob: float
         Dropout rate of the convolutional layer.
-    att_depth: int
+    num_layers: int
         Number of self-attention layers.
     num_heads: int
         Number of attention heads.
@@ -197,7 +197,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         pool_time_length=75,
         pool_time_stride=15,
         drop_prob=0.5,
-        att_depth=6,
+        num_layers=6,
         num_heads=10,
         att_drop_prob=0.5,
         final_fc_length="auto",
@@ -250,7 +250,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             self.final_fc_length = final_fc_length
 
         self.transformer = _TransformerEncoder(
-            att_depth=att_depth,
+            num_layers=num_layers,
             emb_size=n_filters_time,
             num_heads=num_heads,
             att_drop=att_drop_prob,
@@ -399,7 +399,7 @@ class _TransformerEncoder(nn.Sequential):
 
     Parameters
     ----------
-    att_depth : int
+    num_layers : int
         Number of transformer encoder blocks.
     emb_size : int
         Embedding size of the transformer encoder.
@@ -411,14 +411,14 @@ class _TransformerEncoder(nn.Sequential):
     """
 
     def __init__(
-        self, att_depth, emb_size, num_heads, att_drop, activation: nn.Module = nn.GELU
+        self, num_layers, emb_size, num_heads, att_drop, activation: nn.Module = nn.GELU
     ):
         super().__init__(
             *[
                 _TransformerEncoderBlock(
                     emb_size, num_heads, att_drop, activation=activation
                 )
-                for _ in range(att_depth)
+                for _ in range(num_layers)
             ]
         )
 

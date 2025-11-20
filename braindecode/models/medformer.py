@@ -147,9 +147,9 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         Dropout probability. The default is ``0.1``.
     no_inter_attn : bool, optional
         If ``True``, disables inter-granularity attention. The default is ``False``.
-    att_depth : int, optional
+    num_layers : int, optional
         Number of encoder layers. The default is ``6``.
-    ffn_dim : int, optional
+    dim_feedforward : int, optional
         Feedforward dimensionality. The default is ``256``.
     activation_trans : nn.Module, optional
         Activation module used in transformer encoder layers. The default is :class:`nn.ReLU`.
@@ -193,8 +193,8 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         num_heads: int = 8,
         drop_prob: float = 0.1,
         no_inter_attn: bool = False,
-        att_depth: int = 6,
-        ffn_dim: int = 256,
+        num_layers: int = 6,
+        dim_feedforward: int = 256,
         activation_trans: Optional[nn.Module] = nn.ReLU,
         single_channel: bool = False,
         output_attention: bool = True,
@@ -219,8 +219,8 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         self.num_heads = num_heads
         self.drop_prob = drop_prob
         self.no_inter_attn = no_inter_attn
-        self.att_depth = att_depth
-        self.ffn_dim = ffn_dim
+        self.num_layers = num_layers
+        self.dim_feedforward = dim_feedforward
         self.activation_trans = activation_trans
         self.output_attention = output_attention
         self.single_channel = single_channel
@@ -264,13 +264,13 @@ class MEDFormer(EEGModuleMixin, nn.Module):
                         no_inter=self.no_inter_attn,
                     ),
                     d_model=self.embed_dim,
-                    dim_feedforward=self.ffn_dim,
+                    dim_feedforward=self.dim_feedforward,
                     dropout=self.drop_prob,
                     activation=self.activation_trans()
                     if self.activation_trans is not None
                     else nn.ReLU(),
                 )
-                for _ in range(self.att_depth)
+                for _ in range(self.num_layers)
             ],
             norm_layer=torch.nn.LayerNorm(self.embed_dim),
         )
