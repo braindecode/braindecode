@@ -42,7 +42,8 @@ authors:
     family-names: Wimpff
   - given-names: Sylvain
     family-names: Chevallier
-    affiliation: "Parietal Team, Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    affiliation: "Tau Team, Université Paris-Saclay, Inria, Orsay, France"
+    orcid: "https://orcid.org/0000-0003-3027-8241"
   - given-names: Sara
     family-names: Sedlar
   - given-names: Alexandre
