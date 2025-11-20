@@ -351,8 +351,8 @@ def test_atcnet_n_params():
         input_window_seconds=4.5,
         sfreq=250,
         n_windows=n_windows,
-        att_head_dim=att_head_dim,
-        att_num_heads=att_num_heads,
+        head_dim=att_head_dim,
+        num_heads=att_num_heads,
     )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -1021,9 +1021,9 @@ def test_biot(n_chans, n_outputs, input_size_s):
 @pytest.fixture
 def default_biot_params():
     return {
-        "emb_size": 256,
-        "att_num_heads": 8,
-        "n_layers": 4,
+        "embed_dim": 256,
+        "num_heads": 8,
+        "att_depth": 4,
         "sfreq": 200,
         "hop_length": 50,
         "n_outputs": 2,
@@ -1036,9 +1036,9 @@ def test_initialization_default_parameters(default_biot_params):
     """Test BIOT initialization with default parameters."""
     biot = BIOT(**default_biot_params)
 
-    assert biot.emb_size == 256
-    assert biot.att_num_heads == 8
-    assert biot.n_layers == 4
+    assert biot.embed_dim == 256
+    assert biot.num_heads == 8
+    assert biot.att_depth == 4
 
 
 def test_model_trainable_parameters_biot(default_biot_params):
@@ -1047,12 +1047,10 @@ def test_model_trainable_parameters_biot(default_biot_params):
     biot_encoder = biot.encoder.parameters()
     biot_classifier = biot.final_layer.parameters()
 
-    trainable_params_bio = sum(
-        p.numel() for p in biot_encoder if p.requires_grad)
-    trainable_params_clf = sum(
-        p.numel() for p in biot_classifier if p.requires_grad)
+    trainable_params_bio = sum(p.numel() for p in biot_encoder if p.requires_grad)
+    trainable_params_clf = sum(p.numel() for p in biot_classifier if p.requires_grad)
 
-    assert trainable_params_bio == 3198464  # ~ 3.2 M according with Labram paper
+    assert trainable_params_bio == 3198464  # ~ 3.2 M according to Labram paper
     assert trainable_params_clf == 514
 
 
@@ -1080,7 +1078,7 @@ def test_model_trainable_parameters_labram(default_labram_params):
     default_labram_params: dict with default parameters for Labram model
 
     """
-    labram_base = Labram(n_layers=12, att_num_heads=12,
+    labram_base = Labram(att_depth=12, att_num_heads=12,
                          **default_labram_params)
 
     labram_base_parameters = labram_base.get_torchinfo_statistics().trainable_params
@@ -1091,10 +1089,10 @@ def test_model_trainable_parameters_labram(default_labram_params):
     # ~ 5.8 M matching the paper
 
     labram_large = Labram(
-        n_layers=24,
+        att_depth=24,
         att_num_heads=16,
-        out_channels=16,
-        emb_size=400,
+        conv_out_channels=16,
+        embed_dim=400,
         **default_labram_params,
     )
     labram_large_parameters = labram_large.get_torchinfo_statistics().trainable_params
@@ -1103,10 +1101,10 @@ def test_model_trainable_parameters_labram(default_labram_params):
     # ~ 46 M matching the paper
 
     labram_huge = Labram(
-        n_layers=48,
+        att_depth=48,
         att_num_heads=16,
-        out_channels=32,
-        emb_size=800,
+        conv_out_channels=32,
+        embed_dim=800,
         **default_labram_params,
     )
 
@@ -1131,7 +1129,7 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
 
     """
     labram_base = Labram(
-        n_layers=12,
+        att_depth=12,
         att_num_heads=12,
         use_mean_pooling=use_mean_pooling,
         **default_labram_params,
@@ -1162,7 +1160,7 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
 
 def test_labram_without_pos_embed(default_labram_params):
     labram_base_not_pos_emb = Labram(
-        n_layers=12, att_num_heads=12, use_abs_pos_emb=False,
+        att_depth=12, att_num_heads=12, use_abs_pos_emb=False,
         **default_labram_params
     )
 
@@ -1185,7 +1183,7 @@ def test_labram_n_outputs_0(default_labram_params):
 
     """
     default_labram_params["n_outputs"] = 0
-    labram_base = Labram(n_layers=12, att_num_heads=12,
+    labram_base = Labram(att_depth=12, att_num_heads=12,
                          **default_labram_params)
     # Defining a random data
     X = torch.rand(1, default_labram_params["n_chans"],
