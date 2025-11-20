@@ -9,8 +9,27 @@ import operator
 from inspect import signature
 from typing import Annotated, Any, Literal, get_origin
 
+import numpy as np
+from numpydantic import NDArray, Shape
+from typing_extensions import TypedDict
+
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import SigArgName, models_dict, models_mandatory_parameters
+
+
+class ChsInfoType(TypedDict, total=False):
+    cal: float
+    ch_name: str
+    coil_type: int
+    coord_frame: int
+    kind: str
+    loc: NDArray[Shape["12"], np.float64]
+    logno: int
+    range: float
+    scanno: int
+    unit: int
+    unit_mul: int
+
 
 SIGNAL_ARGS_TYPES = {
     "n_chans": int,
@@ -18,7 +37,7 @@ SIGNAL_ARGS_TYPES = {
     "sfreq": float,
     "input_window_seconds": float,
     "n_outputs": int,
-    "chs_info": list[dict[str, Any]],
+    "chs_info": list[ChsInfoType],
 }
 
 

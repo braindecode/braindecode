@@ -81,7 +81,8 @@ tests = [
     'mypy'
 ]
 pydantic = [
-    'pydantic>=2.0,<3.0'
+    'pydantic>=2.0,<3.0',
+    'numpydantic>=1.7',
 ]
 
 docs = [
