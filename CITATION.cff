@@ -32,8 +32,12 @@ authors:
     affiliation: "Department of Physiology, University of Bern, Switzerland"
   - given-names: Théo
     family-names: Gnassounou
+    affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    orcid: "https://orcid.org/0009-0001-2639-4373"
   - given-names: Joseph
     family-names: Paillard
+    affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    orcid: "https://orcid.org/0009-0007-3267-7824"
   - given-names: Bruna
     family-names: Junqueira Lopes
   - given-names: Martin
