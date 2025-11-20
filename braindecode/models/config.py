@@ -12,6 +12,15 @@ from typing import Annotated, Any, Literal
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import SigArgName, models_dict, models_mandatory_parameters
 
+SIGNAL_ARGS_TYPES = {
+    "n_chans": int,
+    "n_times": int,
+    "sfreq": float,
+    "input_window_seconds": float,
+    "n_outputs": int,
+    "chs_info": list[dict[str, Any]],
+}
+
 
 def make_model_config(
     model_class: type[EEGModuleMixin],
@@ -123,13 +132,19 @@ def make_model_config(
             continue
 
         annot = p.annotation if p.annotation is not p.empty else Any
+        # Most models did not specify types for signal args, so we add them here
+        if name in SIGNAL_ARGS_TYPES:
+            annot = SIGNAL_ARGS_TYPES[name] | None
+
         fields[name] = (annot, p.default) if p.default is not p.empty else annot
 
     name = model_class.__name__
     model_config = pydantic.create_model(
         f"{name}Config",
         model_name_=(Literal[name], name),
-        __config__=pydantic.ConfigDict(arbitrary_types_allowed=True, extra=extra),
+        __config__=pydantic.ConfigDict(
+            arbitrary_types_allowed=True, extra=extra, validate_default=True
+        ),
         __doc__=f"Pydantic config of model {model_class.__name__}\n\n{model_class.__doc__}",
         __base__=BraindecodeModelConfig,
         __module__="braindecode.models.config",
