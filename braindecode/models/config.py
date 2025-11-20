@@ -7,7 +7,7 @@ except ImportError:
 import functools
 import operator
 from inspect import signature
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_origin
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import SigArgName, models_dict, models_mandatory_parameters
@@ -131,7 +131,12 @@ def make_model_config(
         if name == "self" or p.kind == p.VAR_KEYWORD:
             continue
 
-        annot = p.annotation if p.annotation is not p.empty else Any
+        annot = p.annotation
+        if annot is p.empty:
+            annot = Any
+        # case with type[nn.Module]
+        elif get_origin(annot) is type:
+            annot = pydantic.ImportString
         # Most models did not specify types for signal args, so we add them here
         if name in SIGNAL_ARGS_TYPES:
             annot = SIGNAL_ARGS_TYPES[name] | None
