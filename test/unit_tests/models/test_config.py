@@ -17,8 +17,8 @@ from braindecode.models.util import (
 @pytest.mark.parametrize(
     "model_name, required, signal_params", models_mandatory_parameters
 )
-def test_make_model_config(model_name, required, signal_params):
-    """Test the make_model_config function."""
+def test_make_model_config_instantiation(model_name, required, signal_params):
+    """Test the make_model_config function for instance creation."""
     model_class = models_dict[model_name]
     ModelConfig = make_model_config(model_class, required)
 
@@ -28,3 +28,19 @@ def test_make_model_config(model_name, required, signal_params):
         cfg = ModelConfig(**model_kwargs)
         model = cfg.create_instance()
         assert isinstance(model, model_class)
+
+@pytest.mark.parametrize(
+    "model_name, required, signal_params", models_mandatory_parameters
+)
+def test_make_model_config_serialization(model_name, required, signal_params):
+    """Test the make_model_config function for serialization."""
+    model_class = models_dict[model_name]
+    ModelConfig = make_model_config(model_class, required)
+
+    sp = _get_signal_params(signal_params)
+    model_kwargs_list = _get_possible_signal_params(sp, required)
+    for model_kwargs in model_kwargs_list:
+        cfg = ModelConfig(**model_kwargs)
+        serialized = cfg.model_dump()
+        cfg_from_serialized = ModelConfig.model_validate(serialized)
+        assert cfg_from_serialized == cfg
