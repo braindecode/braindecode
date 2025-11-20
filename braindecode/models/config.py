@@ -4,8 +4,10 @@ except ImportError:
     raise ImportError(
         "pydantic is not installed. Install with: pip install braindecode[pydantic]"
     )
+import functools
+import operator
 from inspect import signature
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import SigArgName, models_dict, models_mandatory_parameters
@@ -32,7 +34,7 @@ def make_model_config(
 
     class BraindecodeModelConfig(pydantic.BaseModel):
         def create_instance(self) -> EEGModuleMixin:
-            kwargs = self.model_dump(mode="python")
+            kwargs = self.model_dump(mode="python", exclude={"model_name_"})
             if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
                 kwargs.pop("n_chans")
             if (
@@ -123,8 +125,10 @@ def make_model_config(
         annot = p.annotation if p.annotation is not p.empty else Any
         fields[name] = (annot, p.default) if p.default is not p.empty else annot
 
+    name = model_class.__name__
     model_config = pydantic.create_model(
-        model_class.__name__ + "Config",
+        f"{name}Config",
+        model_name_=(Literal[name], name),
         __config__=pydantic.ConfigDict(arbitrary_types_allowed=True, extra=extra),
         __doc__=f"Pydantic config of model {model_class.__name__}\n\n{model_class.__doc__}",
         __base__=BraindecodeModelConfig,
@@ -138,8 +142,22 @@ def make_model_config(
 # Automatically generate and add classes to the global namespace
 # and define __all__ based on generated classes
 __all__ = ["make_model_config"]
+models_configs = []
 for model_name, req, _ in models_mandatory_parameters:
     model_cls = models_dict[model_name]
     model_cfg = make_model_config(model_cls, req)
     globals()[model_cfg.__name__] = model_cfg
     __all__.append(model_cfg.__name__)
+    models_configs.append(model_cfg)
+
+BraindecodeModelConfig = Annotated[  # type: ignore
+    functools.reduce(operator.or_, models_configs),
+    pydantic.Field(discriminator="model_name_"),
+]
+
+# # Example usage:
+#
+# class DummyConfigWithModel(pydantic.BaseModel):
+#     model: BraindecodeModelConfig
+#
+# DummyConfigWithModel.model_validate({'model': dict(model_name_='EEGNet', n_chans=16, n_outputs=1, n_times=200)})
