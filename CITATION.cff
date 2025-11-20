@@ -48,6 +48,8 @@ authors:
     orcid: "https://orcid.org/0000-0003-3027-8241"
   - given-names: Alexandre
     family-names: Gramfort
+    affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    orcid: "https://orcid.org/0000-0001-9791-4404"
   - given-names: Robin Tibor
     family-names: Schirrmeister
 type: software
