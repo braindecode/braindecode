@@ -248,14 +248,44 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
                 },
             ]
         ]
-        assert ds.raw_preproc_kwargs == [
-            {
-                '__class_path__': 'braindecode.preprocessing.preprocess.Preprocessor',
-                "fn": "pick_channels",
-                "kwargs": {"ch_names": ["Cz"]},
-                "apply_on_array": False,
+        # raw_preproc_kwargs now contains both the windowing operation and the preprocessor
+        assert len(ds.raw_preproc_kwargs) == 2
+        # First entry: windowing operation
+        assert ds.raw_preproc_kwargs[0] == {
+            "__class_path__": "braindecode.preprocessing.windowers.create_windows_from_events",
+            "fn": "create_windows_from_events",
+            "kwargs": {
+                "infer_mapping": True,
+                "infer_window_size_stride": True,
+                "trial_start_offset_samples": 0,
+                "trial_stop_offset_samples": 0,
+                "window_size_samples": None,
+                "window_stride_samples": None,
+                "drop_last_window": False,
+                "mapping": {
+                    "feet": 0,
+                    "left_hand": 1,
+                    "right_hand": 2,
+                    "tongue": 3,
+                },
+                "preload": False,
+                "drop_bad_windows": None,
+                "picks": None,
+                "reject": None,
+                "flat": None,
+                "on_missing": "error",
+                "accepted_bads_ratio": 0.0,
+                "verbose": "error",
+                "use_mne_epochs": False,
             },
-        ]
+        }
+        # Second entry: pick_channels preprocessor
+        assert ds.raw_preproc_kwargs[1] == {
+            '__class_path__': 'braindecode.preprocessing.preprocess.Preprocessor',
+            "fn": "pick_channels",
+            "kwargs": {"ch_names": ["Cz"]},
+            "apply_on_array": False,
+        }
 
 
 def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
