@@ -38,16 +38,11 @@ jobs:
     - uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install uv
-      uses: astral-sh/setup-uv@v3
-      with:
-        enable-cache: true
-        cache-dependency-glob: "**/pyproject.toml"
 
     - name: Show Python Version
       run: python --version
     - name: Install Braindecode from Current Checkout
-      run: uv pip install --system -e .[all]
+      run: pip install -e .[all]
     # Show Braindecode Version
     - run: python -c "import braindecode; print(braindecode.__version__)"
 
