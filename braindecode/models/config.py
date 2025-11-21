@@ -6,8 +6,10 @@ except ImportError:
     )
 import functools
 import operator
+from collections.abc import Callable
 from inspect import signature
-from typing import Annotated, Any, Literal, get_origin
+from types import UnionType
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import numpy as np
 from numpydantic import NDArray, Shape
@@ -29,6 +31,19 @@ class ChsInfoType(TypedDict, total=False):
     scanno: int
     unit: int
     unit_mul: int
+
+
+def _replace_type_hints(type_hint: Any) -> Any:
+    origin = get_origin(type_hint)
+    args = get_args(type_hint)
+    if origin is type or origin is Callable or type_hint is Callable:
+        return pydantic.ImportString
+    if origin is None:
+        return type_hint
+    replaced_args = tuple(_replace_type_hints(arg) for arg in args)
+    if origin is UnionType:
+        origin = Union
+    return origin[replaced_args]
 
 
 SIGNAL_ARGS_TYPES = {
@@ -153,9 +168,9 @@ def make_model_config(
         annot = p.annotation
         if annot is p.empty:
             annot = Any
-        # case with type[nn.Module]
-        elif get_origin(annot) is type:
-            annot = pydantic.ImportString
+        # case with type[nn.Module] or callable
+        else:
+            annot = _replace_type_hints(annot)
         # Most models did not specify types for signal args, so we add them here
         if name in SIGNAL_ARGS_TYPES:
             annot = SIGNAL_ARGS_TYPES[name] | None

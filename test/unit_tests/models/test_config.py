@@ -36,7 +36,10 @@ def test_make_model_config_instantiation(model_name, required, signal_params):
     "model_name, required, signal_params", models_mandatory_parameters
 )
 def test_make_model_config_json_serialization(model_name, required, signal_params):
-    """Test the make_model_config function for serialization."""
+    """Test the make_model_config function for serialization.
+
+    If this test fails, this is probably due to a bad typing of the corresponding model's arguments.
+    """
     model_class = models_dict[model_name]
     ModelConfig = make_model_config(model_class, required)
 
