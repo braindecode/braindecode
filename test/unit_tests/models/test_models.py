@@ -343,7 +343,7 @@ def test_atcnet_n_params():
     """
     n_windows = 5
     att_head_dim = 8
-    att_num_heads = 2
+    num_heads = 2
 
     model = ATCNet(
         n_chans=22,
@@ -352,7 +352,7 @@ def test_atcnet_n_params():
         sfreq=250,
         n_windows=n_windows,
         head_dim=att_head_dim,
-        num_heads=att_num_heads,
+        num_heads=num_heads,
     )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -1078,7 +1078,7 @@ def test_model_trainable_parameters_labram(default_labram_params):
     default_labram_params: dict with default parameters for Labram model
 
     """
-    labram_base = Labram(num_layers=12, att_num_heads=12,
+    labram_base = Labram(num_layers=12, num_heads=12,
                          **default_labram_params)
 
     labram_base_parameters = labram_base.get_torchinfo_statistics().trainable_params
@@ -1090,7 +1090,7 @@ def test_model_trainable_parameters_labram(default_labram_params):
 
     labram_large = Labram(
         num_layers=24,
-        att_num_heads=16,
+        num_heads=16,
         conv_out_channels=16,
         embed_dim=400,
         **default_labram_params,
@@ -1102,7 +1102,7 @@ def test_model_trainable_parameters_labram(default_labram_params):
 
     labram_huge = Labram(
         num_layers=48,
-        att_num_heads=16,
+        num_heads=16,
         conv_out_channels=32,
         embed_dim=800,
         **default_labram_params,
@@ -1130,7 +1130,7 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
     """
     labram_base = Labram(
         num_layers=12,
-        att_num_heads=12,
+        num_heads=12,
         use_mean_pooling=use_mean_pooling,
         **default_labram_params,
     )
@@ -1160,7 +1160,7 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
 
 def test_labram_without_pos_embed(default_labram_params):
     labram_base_not_pos_emb = Labram(
-        num_layers=12, att_num_heads=12, use_abs_pos_emb=False,
+        num_layers=12, num_heads=12, use_abs_pos_emb=False,
         **default_labram_params
     )
 
@@ -1183,7 +1183,7 @@ def test_labram_n_outputs_0(default_labram_params):
 
     """
     default_labram_params["n_outputs"] = 0
-    labram_base = Labram(num_layers=12, att_num_heads=12,
+    labram_base = Labram(num_layers=12, num_heads=12,
                          **default_labram_params)
     # Defining a random data
     X = torch.rand(1, default_labram_params["n_chans"],

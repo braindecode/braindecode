@@ -91,7 +91,7 @@ class Labram(EEGModuleMixin, nn.Module):
         The number of convolutional output channels.
     num_layers :  int (default=12)
         The number of attention layers of the model.
-    att_num_heads : int (default=10)
+    num_heads : int (default=10)
         The number of attention heads.
     mlp_ratio : float (default=4.0)
         The expansion ratio of the mlp layer
@@ -159,7 +159,7 @@ class Labram(EEGModuleMixin, nn.Module):
         conv_in_channels=1,
         conv_out_channels=8,
         num_layers=12,
-        att_num_heads=10,
+        num_heads=10,
         mlp_ratio=4.0,
         qkv_bias=False,
         qk_norm=nn.LayerNorm,
@@ -292,7 +292,7 @@ class Labram(EEGModuleMixin, nn.Module):
             [
                 _WindowsAttentionBlock(
                     dim=self.embed_dim,
-                    num_heads=att_num_heads,
+                    num_heads=num_heads,
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
                     qk_norm=qk_norm,
