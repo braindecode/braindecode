@@ -1,4 +1,4 @@
-""".. _temporal-generalization:
+r""".. _temporal-generalization:
 
 Temporal generalization with Braindecode
 ========================================
@@ -35,23 +35,21 @@ For papers describing this method, see [2]_ and [3]_.
 # and preprocess it identically.
 
 import matplotlib.pyplot as plt
-import numpy as np
-from sklearn.preprocessing import LabelEncoder
-
 import mne
+import numpy as np
+import torch
+import torch.nn as nn
 from mne.datasets import sample
 from mne.decoding import (
     GeneralizingEstimator,
     SlidingEstimator,
     cross_val_multiscore,
 )
-
-import torch
-import torch.nn as nn
+from sklearn.preprocessing import LabelEncoder
+from skorch.callbacks import LRScheduler
 from torch.optim import AdamW
 
 from braindecode import EEGClassifier
-from skorch.callbacks import LRScheduler
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -115,11 +113,12 @@ print(n_classes, classes, n_chans, n_times)
 # scikit-learn estimator. We define a simple 3 layer multi-layer perceptron (MLP)
 # model with GELU activations:
 
+
 class BasicMLP(nn.Module):
+    """Simple 3 Layer MLP with GELU Activations between first
+    and second layer and second and third layers
     """
-     Simple 3 Layer MLP with GELU Activations between first
-     and second layer and second and third layers
-    """
+
     def __init__(self, n_chans, n_outputs, n_times):
         super().__init__()
         self.n_chans = n_chans
@@ -133,12 +132,13 @@ class BasicMLP(nn.Module):
             nn.GELU(),
             nn.Linear(self.n_chans, self.n_chans),
             nn.GELU(),
-            nn.Linear(self.n_chans, self.n_classes)
+            nn.Linear(self.n_chans, self.n_classes),
         )
 
     def forward(self, x):
         x_norm = self.norm(x)
         return self.model(x_norm)
+
 
 #################################################################################
 # Note that the original MNE tutorial used an sklearn pipeline and prepended a
@@ -184,14 +184,13 @@ sliding_estimator_mlp_clf = EEGClassifier(
     ],
     device=device,
     classes=classes,
-    verbose=False  # Otherwise it would print out every training run for each time point
+    verbose=False,  # Otherwise it would print out every training run for each time point
 )
 
 # n_jobs=1 because PyTorch models cannot be pickled and pickling is called by joblib when n_jobs > 1
-time_decoding_mlp = SlidingEstimator(sliding_estimator_mlp_clf,
-                                     n_jobs=1,
-                                     scoring="roc_auc",
-                                     verbose=True)
+time_decoding_mlp = SlidingEstimator(
+    sliding_estimator_mlp_clf, n_jobs=1, scoring="roc_auc", verbose=True
+)
 
 scores = cross_val_multiscore(time_decoding_mlp, X, y_encod, cv=5, n_jobs=1)
 
@@ -216,12 +215,13 @@ ax.set_title("Sensor space decoding")
 # approach to analyze the spatial filters/patterns. However, we can still use the Shapley Values
 # approach to analyze the spatial filters/patterns. The idea is to use the Shapley Values to
 # estimate the importance of each feature (i.e. each channel) in the models' decision making at
-# each time point. We will only calcualte the Shapley Values for one sample for the sake of
+# each time point. We will only calculate the Shapley Values for one sample for the sake of
 # simplicity. For this part, you will need to install the
 # `shap` package (URL: https://shap.readthedocs.io/) [4]_.
 
 time_decoding_mlp = time_decoding_mlp.fit(X, y_encod)
 import shap
+
 # We will use the first 100 samples as background
 background = torch.from_numpy(X[:100]).to(device).to(torch.float32)
 # We will use the 101st sample for demonstration
@@ -250,9 +250,14 @@ vis_shap = np.asarray(vis_shap)
 def plot_evoked(data, title):
     data = np.transpose(data)
     evoked_time_gen = mne.EvokedArray(data, epochs.info, tmin=epochs.times[0])
-    joint_kwargs = dict(ts_args=dict(time_unit="s", units=dict(grad='Shapley Value')),
-                        topomap_args=dict(time_unit="s"))
-    evoked_time_gen.plot_joint(times=np.arange(0.0, 0.500, 0.100), title=title, **joint_kwargs)
+    joint_kwargs = dict(
+        ts_args=dict(time_unit="s", units=dict(grad="Shapley Value")),
+        topomap_args=dict(time_unit="s"),
+    )
+    evoked_time_gen.plot_joint(
+        times=np.arange(0.0, 0.500, 0.100), title=title, **joint_kwargs
+    )
+
 
 ###################################################################################################
 # Plot the Shapley Values for the auditory/left.
@@ -291,13 +296,12 @@ generalizing_estimator_mlp_clf = EEGClassifier(
     ],
     device=device,
     classes=classes,
-    verbose=False  # Otherwise it would print out every training run for each time point
+    verbose=False,  # Otherwise it would print out every training run for each time point
 )
 
-generalizing_decoding_mlp = GeneralizingEstimator(generalizing_estimator_mlp_clf,
-                                                  n_jobs=1,
-                                                  scoring="roc_auc",
-                                                  verbose=True)
+generalizing_decoding_mlp = GeneralizingEstimator(
+    generalizing_estimator_mlp_clf, n_jobs=1, scoring="roc_auc", verbose=True
+)
 
 gen_scores = cross_val_multiscore(generalizing_decoding_mlp, X, y_encod, cv=3, n_jobs=1)
 
