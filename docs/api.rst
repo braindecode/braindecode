@@ -512,7 +512,7 @@ Data Utils
 
     save_concat_dataset
     load_concat_dataset
-    get_signal_args
+    infer_signal_properties
 
 Samplers
 ========

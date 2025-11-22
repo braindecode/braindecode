@@ -74,7 +74,7 @@ def _get_n_outputs(y, classes, mode):
         raise ValueError(f"Unknown mode {mode}")
 
 
-def get_signal_args(
+def infer_signal_properties(
     X,
     y,
     mode: Literal["classification", "regression"] = "classification",

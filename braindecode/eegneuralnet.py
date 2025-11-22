@@ -17,7 +17,7 @@ from skorch import NeuralNet
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
 from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
-from braindecode.datautil import get_signal_args
+from braindecode.datautil import infer_signal_properties
 
 from .models.util import models_dict
 from .training.scoring import (
@@ -193,7 +193,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             return
         if classes is None:
             classes = getattr(self, "classes", None)
-        signal_kwargs = get_signal_args(X, y, mode=self.mode, classes=classes)
+        signal_kwargs = infer_signal_properties(X, y, mode=self.mode, classes=classes)
         if not signal_kwargs:
             return
 
