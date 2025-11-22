@@ -83,15 +83,15 @@ class Labram(EEGModuleMixin, nn.Module):
     ----------
     patch_size : int
         The size of the patch to be used in the patch embedding.
-    emb_size : int
+    embed_dim : int
         The dimension of the embedding.
-    in_conv_channels : int
+    conv_in_channels : int
         The number of convolutional input channels.
-    out_channels : int
+    conv_out_channels : int
         The number of convolutional output channels.
-    n_layers :  int (default=12)
+    num_layers :  int (default=12)
         The number of attention layers of the model.
-    att_num_heads : int (default=10)
+    num_heads : int (default=10)
         The number of attention heads.
     mlp_ratio : float (default=4.0)
         The expansion ratio of the mlp layer
@@ -155,11 +155,11 @@ class Labram(EEGModuleMixin, nn.Module):
         sfreq=None,
         input_window_seconds=None,
         patch_size=200,
-        emb_size=200,
-        in_conv_channels=1,
-        out_channels=8,
-        n_layers=12,
-        att_num_heads=10,
+        embed_dim=200,
+        conv_in_channels=1,
+        conv_out_channels=8,
+        num_layers=12,
+        num_heads=10,
         mlp_ratio=4.0,
         qkv_bias=False,
         qk_norm: type[nn.Module] = nn.LayerNorm,
@@ -187,7 +187,7 @@ class Labram(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.patch_size = patch_size
-        self.num_features = self.emb_size = emb_size
+        self.num_features = self.embed_dim = embed_dim
         self.neural_tokenizer = neural_tokenizer
         self.init_scale = init_scale
 
@@ -199,20 +199,20 @@ class Labram(EEGModuleMixin, nn.Module):
             )
             self.patch_size = self.n_times
             self.num_features = None
-            self.emb_size = None
+            self.embed_dim = None
         else:
             self.patch_size = patch_size
         self.n_path = self.n_times // self.patch_size
 
-        if neural_tokenizer and in_conv_channels != 1:
+        if neural_tokenizer and conv_in_channels != 1:
             warn(
                 "The model is in Neural Tokenizer mode, but the variable "
-                + "`in_conv_channels` is different from the default values."
-                + "`in_conv_channels` is only needed for the Neural Decoder mode."
-                + "in_conv_channels is not used in the Neural Tokenizer mode.",
+                + "`conv_in_channels` is different from the default values."
+                + "`conv_in_channels` is only needed for the Neural Decoder mode."
+                + "conv_in_channels is not used in the Neural Tokenizer mode.",
                 UserWarning,
             )
-            in_conv_channels = 1
+            conv_in_channels = 1
             # If you can use the model in Neural Tokenizer mode,
         # temporal conv layer will be use over the patched dataset
         if neural_tokenizer:
@@ -231,7 +231,7 @@ class Labram(EEGModuleMixin, nn.Module):
                         (
                             "temporal_conv",
                             _TemporalConv(
-                                out_channels=out_channels, activation=activation
+                                out_channels=conv_out_channels, activation=activation
                             ),
                         ),
                     ]
@@ -249,8 +249,8 @@ class Labram(EEGModuleMixin, nn.Module):
                 _PatchEmbed(
                     n_times=self.n_times,
                     patch_size=patch_size,
-                    in_channels=in_conv_channels,
-                    emb_dim=self.emb_size,
+                    in_channels=conv_in_channels,
+                    emb_dim=self.embed_dim,
                 ),
             )
 
@@ -259,12 +259,12 @@ class Labram(EEGModuleMixin, nn.Module):
             out = self.patch_embed(dummy)
         # out.shape for tokenizer: (1, n_chans, emb_dim)
         # for decoder:        (1, n_patch, patch_size, emb_dim), but we want last dim
-        self.emb_size = out.shape[-1]
-        self.num_features = self.emb_size
+        self.embed_dim = out.shape[-1]
+        self.num_features = self.embed_dim
 
         # Defining the parameters
         # Creating a parameter list with cls token]
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, self.emb_size))
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
         # Positional embedding and time embedding are complementary
         # one is for the spatial information and the other is for the temporal
         # information.
@@ -273,26 +273,26 @@ class Labram(EEGModuleMixin, nn.Module):
         # information.
         if use_abs_pos_emb:
             self.position_embedding = nn.Parameter(
-                torch.zeros(1, self.n_chans + 1, self.emb_size),
+                torch.zeros(1, self.n_chans + 1, self.embed_dim),
                 requires_grad=True,
             )
         else:
             self.position_embedding = None
 
         self.temporal_embedding = nn.Parameter(
-            torch.zeros(1, self.patch_embed[0].n_patchs + 1, self.emb_size),
+            torch.zeros(1, self.patch_embed[0].n_patchs + 1, self.embed_dim),
             requires_grad=True,
         )
         self.pos_drop = nn.Dropout(p=drop_prob)
 
         dpr = [
-            x.item() for x in torch.linspace(0, drop_path_prob, n_layers)
+            x.item() for x in torch.linspace(0, drop_path_prob, num_layers)
         ]  # stochastic depth decay rule
         self.blocks = nn.ModuleList(
             [
                 _WindowsAttentionBlock(
-                    dim=self.emb_size,
-                    num_heads=att_num_heads,
+                    dim=self.embed_dim,
+                    num_heads=num_heads,
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
                     qk_norm=qk_norm,
@@ -310,14 +310,14 @@ class Labram(EEGModuleMixin, nn.Module):
                     attn_head_dim=attn_head_dim,
                     activation=activation,
                 )
-                for i in range(n_layers)
+                for i in range(num_layers)
             ]
         )
-        self.norm = nn.Identity() if use_mean_pooling else norm_layer(self.emb_size)
-        self.fc_norm = norm_layer(self.emb_size) if use_mean_pooling else None
+        self.norm = nn.Identity() if use_mean_pooling else norm_layer(self.embed_dim)
+        self.fc_norm = norm_layer(self.embed_dim) if use_mean_pooling else None
 
         if self.n_outputs > 0:
-            self.final_layer = nn.Linear(self.emb_size, self.n_outputs)
+            self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
         else:
             self.final_layer = nn.Identity()
 
@@ -415,7 +415,7 @@ class Labram(EEGModuleMixin, nn.Module):
             x = self.patch_embed(x)
             # x shape: (batch, n_chans, emb_dim)
             n_patch = self.n_chans
-            temporal = self.emb_size
+            temporal = self.embed_dim
         else:
             # For neural decoder: input is (batch, n_chans, n_times)
             # patch_embed returns (batch, n_patchs, emb_dim)
@@ -462,7 +462,7 @@ class Labram(EEGModuleMixin, nn.Module):
             # In decoder mode, we have n_patch patches and don't need to expand
             # Just broadcast the temporal embedding
             if temporal is None:
-                temporal = self.emb_size
+                temporal = self.embed_dim
 
             # Get temporal embeddings for n_patch patches
             n_time_tokens = min(n_patch, self.temporal_embedding.shape[1] - 1)
