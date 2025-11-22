@@ -1,0 +1,89 @@
+# YAML 1.2
+---
+# Metadata for citation of this software according to the CFF format (https://citation-file-format.github.io/)
+cff-version: 1.2.0
+title: "Braindecode: toolbox for decoding raw electrophysiological brain data with deep learning models"
+abstract: "Braindecode is an open-source Python toolbox for decoding raw electrophysiological brain data with deep learning models. It includes dataset fetchers, data preprocessing and visualization tools, as well as implementations of several deep learning architectures and data augmentations for analysis of EEG, ECoG and MEG."
+authors:
+  - given-names: Bruno
+    family-names: Aristimunha
+    affiliation: "LISN-CNRS, Université Paris-Saclay & TAU, Inria, Gif-sur-Yvette, France"
+    orcid: "https://orcid.org/0000-0001-5258-2995"
+  - given-names: Pierre
+    family-names: Guetshel
+    affiliation: "Donders Institute for Brain, Cognition and Behaviour, Radboud University, Nijmegen, The Netherlands"
+    orcid: "https://orcid.org/0000-0002-8933-7640"
+  - given-names: Martin
+    family-names: Wimpff
+    orcid: "https://orcid.org/0009-0001-7883-940X"
+  - given-names: Lukas
+    family-names: Gemein
+    orcid: "https://orcid.org/0000-0001-6670-2214"
+  - given-names: Cedric
+    family-names: Rommel
+    affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    orcid: "https://orcid.org/0000-0002-9416-0288"
+  - given-names: Hubert
+    family-names: Banville
+    affiliation: Meta
+    orcid: "https://orcid.org/0000-0002-3362-0244"
+  - given-names: Maciej
+    family-names: Sliwowski
+    orcid: "https://orcid.org/0000-0001-6744-1714"
+  - given-names: Daniel
+    family-names: Wilson
+    orcid: "https://orcid.org/0000-0001-9661-8582"
+  - given-names: Simon
+    family-names: Brandt
+    affiliation: "Department of Physiology, University of Bern, Switzerland"
+  - given-names: Théo
+    family-names: Gnassounou
+    affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    orcid: "https://orcid.org/0009-0001-2639-4373"
+  - given-names: Joseph
+    family-names: Paillard
+    affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    orcid: "https://orcid.org/0009-0007-3267-7824"
+  - given-names: Bruna
+    family-names: Junqueira Lopes
+    orcid: "https://orcid.org/0000-0003-4703-9343"
+  - given-names: Sara
+    family-names: Sedlar
+  - given-names: Thomas
+    family-names: Moreau
+    affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    orcid: "https://orcid.org/0000-0002-1523-3419"
+  - given-names: Sylvain
+    family-names: Chevallier
+    affiliation: "Tau Team, Université Paris-Saclay, Inria, Orsay, France"
+    orcid: "https://orcid.org/0000-0003-3027-8241"
+  - given-names: Alexandre
+    family-names: Gramfort
+    affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
+    orcid: "https://orcid.org/0000-0001-9791-4404"
+  - given-names: Robin Tibor
+    family-names: Schirrmeister
+    orcid: https://orcid.org/0000-0002-5518-7445
+type: software
+repository-code: "https://github.com/braindecode/braindecode"
+license: BSD-3-Clause
+keywords:
+  - machine learning
+  - deep learning
+  - foundation model
+  - neuroscience
+  - neuroimaging
+  - mne
+  - brain-computer interface
+  - bci
+  - python
+  - magnetoencephalography
+  - meg
+  - electroencephalography
+  - eeg
+  - ieeg
+identifiers:
+  - description: "Code archive on Zenodo"
+    type: doi
+    value: 10.5281/zenodo.8214376
+...
