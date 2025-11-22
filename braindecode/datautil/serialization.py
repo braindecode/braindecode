@@ -138,7 +138,7 @@ def _load_signals(fif_file, preload, is_raw):
         with open(pkl_file, "rb") as f:
             signals = pickle.load(f)
 
-        if all(f.exists() for f in signals.filenames):
+        if all(Path(f).exists() for f in signals.filenames):
             if preload:
                 signals.load_data()
             return signals
