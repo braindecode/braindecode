@@ -1,9 +1,16 @@
 import pytest
 from mne.utils import _soft_import
 
-pydantic = _soft_import("pydantic", strict=False, purpose="model config testing")
-numpydantic = _soft_import("numpydantic", strict=False, purpose="model config testing")
-if pydantic is False or numpydantic is False:
+pydantic = _soft_import(name="pydantic", purpose="model config testing", strict=False)
+
+try:
+    # NumPyDantic does not work with soft imports because the version is not within the __init__ of the package.
+    import numpydantic  # noqa: F401
+    numpydantic_imported = True
+except ImportError:
+    numpydantic_imported = False
+
+if pydantic is False or numpydantic_imported is False:
     pytest.skip("pydantic or numpydantic not installed, skipping", allow_module_level=True)
 
 import numpy as np
