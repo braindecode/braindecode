@@ -80,7 +80,19 @@ def infer_signal_properties(
     mode: Literal["classification", "regression"] = "classification",
     classes: list | None = None,
 ) -> dict[str, Any]:  # TODO
-    """Extract signal-related arguments from the data.
+    """Infers signal properties from the data.
+
+    The extracted signal properties are:
+
+      * n_chans: number of channels
+      * n_times: number of time points
+      * n_outputs: number of outputs
+      * chs_info: channel information
+      * sfreq: sampling frequency
+
+    The returned dictionary can serve as kwargs for model initialization.
+
+    Depending on the type of input passed, not all properties can be inferred.
 
     Parameters
     ----------
@@ -96,7 +108,8 @@ def infer_signal_properties(
     Returns
     -------
     signal_kwargs: dict
-        Dictionary with signal-related arguments
+        Dictionary with signal-properties. Can serve as kwargs for model
+        initialization.
     """
     signal_kwargs = dict()
     # Using shape to work both with torch.tensor and numpy.array:
