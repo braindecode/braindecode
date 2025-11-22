@@ -17,6 +17,7 @@ pydantic = _soft_import(name="pydantic", purpose="model configuration", strict=F
 try:
     from numpydantic import NDArray, Shape
 except ImportError:
+    # we can't use soft import for numpydantic because numpydantic does not define its version in __init__
     NDArray = Any  # type: ignore
     Shape = Any  # type: ignore
 
