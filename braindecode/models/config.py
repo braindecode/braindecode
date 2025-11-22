@@ -1,5 +1,3 @@
-import functools
-import operator
 from collections.abc import Callable
 from inspect import signature
 from types import UnionType
@@ -59,10 +57,25 @@ SIGNAL_ARGS_TYPES = {
 }
 
 
+class BaseBraindecodeModelConfig(pydantic.BaseModel):  # type: ignore
+    def create_instance(self) -> EEGModuleMixin:
+        model_cls = models_dict[self.model_name_]
+        kwargs = self.model_dump(mode="python", exclude={"model_name_"})
+        if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
+            kwargs.pop("n_chans")
+        if (
+            kwargs.get("n_times") is not None
+            and kwargs.get("input_window_seconds") is not None
+            and kwargs.get("sfreq") is not None
+        ):
+            kwargs.pop("n_times")
+        return model_cls(**kwargs)
+
+
 def make_model_config(
     model_class: type[EEGModuleMixin],
     required: list[SigArgName],
-):
+) -> type[BaseBraindecodeModelConfig]:
     """Create a pydantic model config for a given model class.
 
     Parameters
@@ -84,18 +97,6 @@ def make_model_config(
         )
 
     # ironically, we need to ignore the type here to have the soft dependency.
-    class BaseBraindecodeModelConfig(pydantic.BaseModel):  # type: ignore
-        def create_instance(self) -> EEGModuleMixin:
-            kwargs = self.model_dump(mode="python", exclude={"model_name_"})
-            if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
-                kwargs.pop("n_chans")
-            if (
-                kwargs.get("n_times") is not None
-                and kwargs.get("input_window_seconds") is not None
-                and kwargs.get("sfreq") is not None
-            ):
-                kwargs.pop("n_times")
-            return model_class(**kwargs)
 
     @pydantic.model_validator(mode="before")
     def validate_signal_params(cls, data: Any):
@@ -209,7 +210,7 @@ __all__ = ["make_model_config"]
 if not pydantic:
     pass
 else:
-    models_configs = []
+    models_configs: list[type[BaseBraindecodeModelConfig]] = []
     for model_name, req, _ in models_mandatory_parameters:
         model_cls = models_dict[model_name]
         model_cfg = make_model_config(model_cls, req)
@@ -218,7 +219,7 @@ else:
         models_configs.append(model_cfg)
 
     BraindecodeModelConfig = Annotated[  # type: ignore
-        functools.reduce(operator.or_, models_configs),
+        Union[tuple(models_configs)],
         pydantic.Field(discriminator="model_name_"),
     ]
 
