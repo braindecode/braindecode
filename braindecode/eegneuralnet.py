@@ -7,6 +7,7 @@
 import abc
 import inspect
 import logging
+from typing import Literal
 
 import mne
 import numpy as np
@@ -14,10 +15,10 @@ import torch
 from sklearn.metrics import get_scorer
 from skorch import NeuralNet
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
-from skorch.helper import SliceDataset
-from skorch.utils import is_dataset, noop, to_numpy, train_loss_score, valid_loss_score
+from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
-from .datasets.base import BaseConcatDataset, WindowsDataset
+from braindecode.datautil import get_signal_args
+
 from .models.util import models_dict
 from .training.scoring import (
     CroppedTimeSeriesEpochScoring,
@@ -174,8 +175,9 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             ("print_log", PrintLog()),
         ]
 
+    @property
     @abc.abstractmethod
-    def _get_n_outputs(self, y, classes):
+    def mode(self) -> Literal["classification", "regression"]:
         pass
 
     def _set_signal_args(self, X, y, classes):
@@ -191,50 +193,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             return
         if classes is None:
             classes = getattr(self, "classes", None)
-        # get kwargs from signal:
-        signal_kwargs = dict()
-        # Using shape to work both with torch.tensor and numpy.array:
-        if (
-            isinstance(X, mne.BaseEpochs)
-            or (hasattr(X, "shape") and len(X.shape) >= 2)
-            or isinstance(X, SliceDataset)
-        ):
-            if y is None:
-                raise ValueError("y must be specified if X is array-like.")
-            signal_kwargs["n_outputs"] = self._get_n_outputs(y, classes)
-            if isinstance(X, mne.BaseEpochs):
-                self.log.info("Using mne.Epochs to find signal-related parameters.")
-                signal_kwargs["n_times"] = len(X.times)
-                signal_kwargs["sfreq"] = X.info["sfreq"]
-                signal_kwargs["chs_info"] = X.info["chs"]
-            elif isinstance(X, SliceDataset):
-                self.log.info("Using SliceDataset to find signal-related parameters.")
-                Xshape = X[0].shape
-                signal_kwargs["n_times"] = Xshape[-1]
-                signal_kwargs["n_chans"] = Xshape[-2]
-            else:
-                self.log.info("Using array-like to find signal-related parameters.")
-                signal_kwargs["n_times"] = X.shape[-1]
-                signal_kwargs["n_chans"] = X.shape[-2]
-        elif is_dataset(X):
-            self.log.info(f"Using Dataset {X!r} to find signal-related parameters.")
-            X0 = X[0][0]
-            Xshape = X0.shape
-            signal_kwargs["n_times"] = Xshape[-1]
-            signal_kwargs["n_chans"] = Xshape[-2]
-            if isinstance(X, BaseConcatDataset) and all(
-                ds.targets_from == "metadata" for ds in X.datasets
-            ):
-                y_target = X.get_metadata().target
-                signal_kwargs["n_outputs"] = self._get_n_outputs(y_target, classes)
-            elif isinstance(X, WindowsDataset) and X.targets_from == "metadata":
-                y_target = X.windows.metadata.target
-                signal_kwargs["n_outputs"] = self._get_n_outputs(y_target, classes)
-        else:
-            self.log.warning(
-                "Can only infer signal shape of array-like and Datasets, "
-                f"got {type(X)!r}."
-            )
+        signal_kwargs = get_signal_args(X, y, mode=self.mode, classes=classes)
+        if not signal_kwargs:
             return
 
         # kick out missing kwargs:

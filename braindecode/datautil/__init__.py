@@ -11,6 +11,7 @@ from .serialization import (
     load_concat_dataset,
     save_concat_dataset,
 )
+from .util import get_signal_args
 
 
 def __getattr__(name):
@@ -59,4 +60,5 @@ __all__ = [
     "_check_save_dir_empty",
     "match_hemisphere_chans",
     "division_channels_idx",
+    "get_signal_args",
 ]
