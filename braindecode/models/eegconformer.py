@@ -57,9 +57,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     - :class:`_TransformerEncoder` **(context over temporal tokens)**
 
         - *Operations.*
-        - A stack of ``att_depth`` encoder blocks. :class:`_TransformerEncoderBlock`
+        - A stack of ``num_layers`` encoder blocks. :class:`_TransformerEncoderBlock`
         - Each block applies LayerNorm :class:`torch.nn.LayerNorm`
-        - Multi-Head Self-Attention (``att_heads``) with dropout + residual :class:`MultiHeadAttention` (:class:`torch.nn.Dropout`)
+        - Multi-Head Self-Attention (``num_heads``) with dropout + residual :class:`MultiHeadAttention` (:class:`torch.nn.Dropout`)
         - LayerNorm :class:`torch.nn.LayerNorm`
         - 2-layer feed-forward (≈4x expansion, :class:`torch.nn.GELU`) with dropout + residual.
 
@@ -100,7 +100,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
     .. rubric:: Attention / Sequential Modules
 
-    - **Type.** Standard multi-head self-attention (MHA) with ``att_heads`` heads over the token sequence.
+    - **Type.** Standard multi-head self-attention (MHA) with ``num_heads`` heads over the token sequence.
     - **Shapes.** Input/Output: ``(B, S_tokens, D)``; attention operates along the ``S_tokens`` axis.
     - **Role.** Re-weights and integrates evidence across pooled windows, capturing dependencies
       longer than any single token while leaving channel relationships to the convolutional stem.
@@ -127,7 +127,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     - **Instantiation.** Choose ``n_filters_time`` (embedding size ``D``) and
         ``filter_time_length`` to match the rhythms of interest. Tune
         ``pool_time_length/stride`` to trade temporal resolution for sequence length.
-        Keep ``att_depth`` modest (e.g., 4–6) and set ``att_heads`` to divide ``D``.
+        Keep ``num_layers`` modest (e.g., 4–6) and set ``num_heads`` to divide ``D``.
         ``final_fc_length="auto"`` infers the flattened size from PatchEmbedding.
 
     Notes
@@ -160,9 +160,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         Length of stride between temporal pooling filters.
     drop_prob: float
         Dropout rate of the convolutional layer.
-    att_depth: int
+    num_layers: int
         Number of self-attention layers.
-    att_heads: int
+    num_heads: int
         Number of attention heads.
     att_drop_prob: float
         Dropout rate of the self-attention layer.
@@ -197,8 +197,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         pool_time_length=75,
         pool_time_stride=15,
         drop_prob=0.5,
-        att_depth=6,
-        att_heads=10,
+        num_layers=6,
+        num_heads=10,
         att_drop_prob=0.5,
         final_fc_length="auto",
         return_features=False,
@@ -250,9 +250,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             self.final_fc_length = final_fc_length
 
         self.transformer = _TransformerEncoder(
-            att_depth=att_depth,
+            num_layers=num_layers,
             emb_size=n_filters_time,
-            att_heads=att_heads,
+            num_heads=num_heads,
             att_drop=att_drop_prob,
             activation=activation_transfor,
         )
@@ -364,7 +364,7 @@ class _TransformerEncoderBlock(nn.Sequential):
     def __init__(
         self,
         emb_size,
-        att_heads,
+        num_heads,
         att_drop,
         forward_expansion=4,
         activation: nn.Module = nn.GELU,
@@ -373,7 +373,7 @@ class _TransformerEncoderBlock(nn.Sequential):
             _ResidualAdd(
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
-                    MultiHeadAttention(emb_size, att_heads, att_drop),
+                    MultiHeadAttention(emb_size, num_heads, att_drop),
                     nn.Dropout(att_drop),
                 )
             ),
@@ -399,11 +399,11 @@ class _TransformerEncoder(nn.Sequential):
 
     Parameters
     ----------
-    att_depth : int
+    num_layers : int
         Number of transformer encoder blocks.
     emb_size : int
         Embedding size of the transformer encoder.
-    att_heads : int
+    num_heads : int
         Number of attention heads.
     att_drop : float
         Dropout probability for the attention layers.
@@ -411,14 +411,14 @@ class _TransformerEncoder(nn.Sequential):
     """
 
     def __init__(
-        self, att_depth, emb_size, att_heads, att_drop, activation: nn.Module = nn.GELU
+        self, num_layers, emb_size, num_heads, att_drop, activation: nn.Module = nn.GELU
     ):
         super().__init__(
             *[
                 _TransformerEncoderBlock(
-                    emb_size, att_heads, att_drop, activation=activation
+                    emb_size, num_heads, att_drop, activation=activation
                 )
-                for _ in range(att_depth)
+                for _ in range(num_layers)
             ]
         )
 
