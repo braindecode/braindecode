@@ -14,7 +14,11 @@ from braindecode.models.util import SigArgName, models_dict, models_mandatory_pa
 
 pydantic = _soft_import(name="pydantic", purpose="model configuration", strict=False)
 
-from numpydantic import NDArray, Shape
+try:
+    from numpydantic import NDArray, Shape
+except ImportError:
+    NDArray = Any  # type: ignore
+    Shape = Any  # type: ignore
 
 
 class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg]
@@ -23,7 +27,7 @@ class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg
     coil_type: int
     coord_frame: int
     kind: str
-    loc: NDArray[Shape["12"], np.float64]
+    loc: NDArray[Shape["12"], np.float64]  # type: ignore[misc]
     logno: int
     range: float
     scanno: int
