@@ -100,10 +100,10 @@ def test_correctness_biot(real_data):
         n_chans=n_chans,
         n_times=n_times,
         sfreq=100,
-        n_layers=1,
-        att_num_heads=2,
+        num_layers=1,
+        num_heads=2,
         hop_length=50,
-        emb_size=256,
+        embed_dim=256,
     )
 
     train_set = create_from_X_y(
