@@ -21,6 +21,7 @@ import mne
 import numpy as np
 import pandas as pd
 import scipy
+from mne._fiff.meas_info import Info
 from mne.utils import _soft_import
 
 if TYPE_CHECKING:
@@ -433,7 +434,7 @@ class HubDatasetMixin:
                 data = ds.windows.get_data()
                 metadata = ds.windows.metadata
                 description = ds.description
-                info_dict = _mne_info_to_dict(ds.windows.info)
+                info_dict = ds.windows.info.to_json_dict()
                 target_name = ds.target_name if hasattr(ds, "target_name") else None
 
                 # Save using inlined function
@@ -446,7 +447,7 @@ class HubDatasetMixin:
                 raw = ds.raw
                 metadata = ds.metadata
                 description = ds.description
-                info_dict = _mne_info_to_dict(ds.raw.info)
+                info_dict = ds.raw.info.to_json_dict()
                 targets_from = ds.targets_from
                 last_target_only = ds.last_target_only
 
@@ -466,7 +467,7 @@ class HubDatasetMixin:
                 # Get continuous raw data from RawDataset
                 raw = ds.raw
                 description = ds.description
-                info_dict = _mne_info_to_dict(ds.raw.info)
+                info_dict = ds.raw.info.to_json_dict()
                 target_name = ds.target_name if hasattr(ds, "target_name") else None
 
                 # Save using inlined function
@@ -542,7 +543,7 @@ class HubDatasetMixin:
                 )
 
                 # Convert to MNE objects and create dataset
-                info = _dict_to_mne_info(info_dict)
+                info = Info.from_json_dict(info_dict)
                 events = np.column_stack(
                     [
                         metadata["i_start_in_trial"].values,
@@ -568,7 +569,7 @@ class HubDatasetMixin:
 
                 # Convert to MNE objects and create dataset
                 # Data is already in continuous format [n_channels, n_timepoints]
-                info = _dict_to_mne_info(info_dict)
+                info = Info.from_json_dict(info_dict)
                 raw = mne.io.RawArray(data, info)
                 ds = EEGWindowsDataset(
                     raw=raw,
@@ -586,7 +587,7 @@ class HubDatasetMixin:
 
                 # Convert to MNE objects and create dataset
                 # Data is in continuous format [n_channels, n_timepoints]
-                info = _dict_to_mne_info(info_dict)
+                info = Info.from_json_dict(info_dict)
                 raw = mne.io.RawArray(data, info)
                 ds = RawDataset(raw, description)
                 if target_name is not None:
@@ -618,38 +619,6 @@ class HubDatasetMixin:
 # =============================================================================
 # Core Zarr I/O Utilities
 # =============================================================================
-
-
-# TODO: remove when this MNE is solved https://github.com/mne-tools/mne-python/issues/13487
-def _mne_info_to_dict(info):
-    """Convert MNE Info object to dictionary for JSON serialization."""
-    return {
-        "ch_names": info["ch_names"],
-        "sfreq": float(info["sfreq"]),
-        "ch_types": [str(ch_type) for ch_type in info.get_channel_types()],
-        "lowpass": float(info["lowpass"]) if info["lowpass"] is not None else None,
-        "highpass": float(info["highpass"]) if info["highpass"] is not None else None,
-    }
-
-
-def _dict_to_mne_info(info_dict):
-    """Convert dictionary back to MNE Info object."""
-    info = mne.create_info(
-        ch_names=info_dict["ch_names"],
-        sfreq=info_dict["sfreq"],
-        ch_types=info_dict["ch_types"],
-    )
-
-    # Use _unlock() to set filter info when reconstructing from saved metadata
-    # This is necessary because MNE protects these fields to prevent users from
-    # setting filter parameters without actually filtering the data
-    with info._unlock():
-        if info_dict.get("lowpass") is not None:
-            info["lowpass"] = info_dict["lowpass"]
-        if info_dict.get("highpass") is not None:
-            info["highpass"] = info_dict["highpass"]
-
-    return info
 
 
 def _save_windows_to_zarr(
