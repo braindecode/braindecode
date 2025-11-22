@@ -22,6 +22,8 @@ Current 1.3 (dev)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding augmentation :class:`braindecode.augmentation.AmplitudeScale` (:gh:`848` by `Bruna Lopes`_)
+- Adding augmentation :class:`braindecode.augmentation.ChannelsReref` (:gh:`848` by `Bruna Lopes`_)
 - Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
 - Including typing in the augmentation module (:gh:`709` by `Aphel`_)
 - Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
@@ -41,6 +43,7 @@ Enhancements
 - Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
 - Adding tutorial for :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`746` by `Aniela Bulicz` and `Arina Schippers` and `Aron van Zuijlen`)
 - Including interface with Hugging Face Hub for dataset sharing and loading (:gh:`820` by `Kuntal Kokate`_ and `Bruno Aristimunha`_ )
+- Added a tutorial for temporal generalization (:gh:`855` by `Matthew Chen`_)
 
 API changes
 ~~~~~~~~~~~
