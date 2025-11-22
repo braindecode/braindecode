@@ -48,6 +48,9 @@ Enhancements
 API changes
 ~~~~~~~~~~~
 - Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
+ - Model config helpers now soft-import ``pydantic``/``numpydantic``; if the optional
+   dependencies are missing the module skips config generation and warns to install
+   ``pip install braindecode[pydantic]``.
 
 
 Bugs
