@@ -139,6 +139,7 @@ class BasicMLP(nn.Module):
         x_norm = self.norm(x)
         return self.model(x_norm)
 
+
 #################################################################################
 # Note that the original MNE tutorial used an sklearn pipeline and prepended a
 # ``StandardScaler`` to the model. Instead, we will use a ``nn.BatchNorm1d``
@@ -220,6 +221,7 @@ ax.set_title("Sensor space decoding")
 
 time_decoding_mlp = time_decoding_mlp.fit(X, y_encod)
 import shap
+
 # We will use the first 100 samples as background
 background = torch.from_numpy(X[:100]).to(device).to(torch.float32)
 # We will use the 101st sample for demonstration
