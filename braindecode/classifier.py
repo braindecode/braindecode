@@ -8,7 +8,6 @@
 
 import warnings
 
-import numpy as np
 from skorch import NeuralNet
 from skorch.callbacks import EpochScoring
 from skorch.classifier import NeuralNetClassifier
@@ -237,13 +236,9 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             num_workers=self.get_iterator(X, training=False).loader.num_workers,
         )
 
-    def _get_n_outputs(self, y, classes):
-        classes_y = np.unique(y)
-        if classes is not None:
-            assert set(classes_y) <= set(classes)
-        else:
-            classes = classes_y
-        return len(classes)
+    @property
+    def mode(self):
+        return "classification"
 
     # Only add the 'accuracy' callback if we are not in cropped mode.
     @property
