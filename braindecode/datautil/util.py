@@ -80,6 +80,24 @@ def get_signal_args(
     mode: Literal["classification", "regression"] = "classification",
     classes: list | None = None,
 ) -> dict[str, Any]:  # TODO
+    """Extract signal-related arguments from the data.
+
+    Parameters
+    ----------
+    X: array-like or mne.BaseEpochs or Dataset
+        Input data
+    y: array-like or None
+        Targets
+    mode: "classification" or "regression"
+        Mode of the task
+    classes: list or None
+        List of classes for classification
+
+    Returns
+    -------
+    signal_kwargs: dict
+        Dictionary with signal-related arguments
+    """
     signal_kwargs = dict()
     # Using shape to work both with torch.tensor and numpy.array:
     if (
