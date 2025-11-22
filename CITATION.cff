@@ -13,21 +13,26 @@ authors:
     family-names: Guetshel
     affiliation: "Donders Institute for Brain, Cognition and Behaviour, Radboud University, Nijmegen, The Netherlands"
     orcid: "https://orcid.org/0000-0002-8933-7640"
+  - given-names: Martin
+    family-names: Wimpff
+    orcid: "https://orcid.org/0009-0001-7883-940X"
   - given-names: Lukas
     family-names: Gemein
+    orcid: "https://orcid.org/0000-0001-6670-2214"
   - given-names: Cedric
     family-names: Rommel
     affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
     orcid: "https://orcid.org/0000-0002-9416-0288"
-    affiliation: Meta
   - given-names: Hubert
     family-names: Banville
     affiliation: Meta
     orcid: "https://orcid.org/0000-0002-3362-0244"
   - given-names: Maciej
     family-names: Sliwowski
+    orcid: "https://orcid.org/0000-0001-6744-1714"
   - given-names: Daniel
     family-names: Wilson
+    orcid: "https://orcid.org/0000-0001-9661-8582"
   - given-names: Simon
     family-names: Brandt
     affiliation: "Department of Physiology, University of Bern, Switzerland"
@@ -41,8 +46,7 @@ authors:
     orcid: "https://orcid.org/0009-0007-3267-7824"
   - given-names: Bruna
     family-names: Junqueira Lopes
-  - given-names: Martin
-    family-names: Wimpff
+    orcid: "https://orcid.org/0000-0003-4703-9343"
   - given-names: Sara
     family-names: Sedlar
   - given-names: Thomas
