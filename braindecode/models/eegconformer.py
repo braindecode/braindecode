@@ -411,7 +411,12 @@ class _TransformerEncoder(nn.Sequential):
     """
 
     def __init__(
-        self, num_layers, emb_size, num_heads, att_drop, activation: type[nn.Module] = nn.GELU
+        self,
+        num_layers,
+        emb_size,
+        num_heads,
+        att_drop,
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__(
             *[
