@@ -211,7 +211,7 @@ print(windows_dataset.datasets[0].windows.get_metadata()["target"][:10])
 
 ######################################################################
 # Example: Rejecting Windows Based on Amplitude
-# ------------------------------------
+# --------------------------------------------------
 #
 # You can set rejection criteria to exclude windows with extreme values:
 
