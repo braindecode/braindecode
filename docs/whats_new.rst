@@ -44,6 +44,7 @@ Enhancements
 - Adding tutorial for :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`746` by `Aniela Bulicz` and `Arina Schippers` and `Aron van Zuijlen`)
 - Including interface with Hugging Face Hub for dataset sharing and loading (:gh:`820` by `Kuntal Kokate`_ and `Bruno Aristimunha`_ )
 - Refactor: standardized parameter names in transformer and LabRam modules (:gh:`850` by `José Mauricio`_)
+- Added a tutorial for temporal generalization (:gh:`857` by `Matthew Chen`_)
 
 API changes
 ~~~~~~~~~~~
