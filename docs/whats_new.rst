@@ -46,7 +46,8 @@ Enhancements
 
 API changes
 ~~~~~~~~~~~
-- Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
+- Deprecating the old naming of MOABB Dataset name (:gh:`826` by `Bruno Aristimunha`_)
+- Exposing the :func:`braindecode.datautil.get_signal_args` utility function (:gh:`856` by `Pierre Guetschel`_)
 
 
 Bugs
