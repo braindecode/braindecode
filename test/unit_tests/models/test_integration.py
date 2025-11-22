@@ -610,7 +610,8 @@ def test_if_models_with_embedding_parameter(model):
     # or return_features or feature
 
     parameters_related_with_emb = ["emb_size", "embedding_dim", "emb",
-                                   "return_features", "feature"]
+                                   "return_features", "feature", "embed_dim",
+                                   'emb_dim']
 
     # check if any of the parameters related to embedding are present in the model
     if not any(param in params for param in parameters_related_with_emb):
