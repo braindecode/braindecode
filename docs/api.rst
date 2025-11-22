@@ -64,6 +64,7 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     ContraWR
     CTNet
     Deep4Net
+    DilatedConvDecoder
     DeepSleepNet
     EEGConformer
     EEGInceptionERP
@@ -148,6 +149,7 @@ multi'head attention and squeeze and excitation layers.
     GatherExcite
     GSoP
     MultiHeadAttention
+    LocalSelfAttention
     SqueezeAndExcitation
 
 Blocks
@@ -212,6 +214,7 @@ include layers for handling different input shapes and dimensions.
     Chomp1d
     DropPath
     Ensure4d
+    SubjectLayers
     TimeDistributed
 
 Linear
