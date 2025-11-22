@@ -19,7 +19,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import SigArgName, models_dict, models_mandatory_parameters
 
 
-class ChsInfoType(TypedDict, total=False):
+class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg]
     cal: float
     ch_name: str
     coil_type: int
