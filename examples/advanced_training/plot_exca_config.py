@@ -5,14 +5,14 @@
 This example shows how to use the ``pydantic`` and ``exca`` libraries
 to configure and run EEG experiments with Braindecode.
 
-**Pydantic**, in a nutshell, is a library for data validation and settings management
+**Pydantic** is a library for data validation and settings management
 using Python type annotations. It allows defining structured configurations that can be
 validated and serialized easily.
 
 **Exca** builds on top of Pydantic, and allows you to seamlessly EXecute experiments
 and CAche their results.
 
-Braindecode implements a Pydantic configurations for each of its models in
+Braindecode implements a Pydantic configuration for each of its models in
 ``braindecode.models.config``.
 In this example, we will use these configurations to define an experiment that
 trains and evaluates different models on a motor-imagery dataset using Exca.
@@ -35,7 +35,7 @@ trains and evaluates different models on a motor-imagery dataset using Exca.
 # Dataset configs
 # ~~~~~~~~~~~~~~~~~~
 #
-# Our first configuration class is related to the data. It will allow is to load and prepare the dataset.
+# Our first configuration class is related to the data. It will allow us to load and prepare the dataset.
 import exca
 import pydantic
 
@@ -55,6 +55,7 @@ class WindowedMOABBDatasetConfig(pydantic.BaseModel):
     window_size_seconds: float = 4.0
     overlap_seconds: float = 0.0
 
+    @infra.apply
     def create_instance(self) -> MOABBDataset:
         # We don't apply any preprocessing here for simplicity, but in a real experiment,
         # you would typically want to filter the data, resample it, etc.
@@ -71,7 +72,7 @@ class WindowedMOABBDatasetConfig(pydantic.BaseModel):
 #
 # We can see that the config has an ``infra: exca.TaskInfra`` attribute,
 # and a method decorated with ``@infra.apply``.
-# This means that, when called, exca will cache the results of these methods in the specified folder (``None`` here, meaning no disk caching, but keeping data in RAM).
+# This means that, when called, exca will cache the result of this method (here, the cache is kept in RAM).
 # If the method is called again with the same configuration, the cached results will be returned instead of re-running the method.
 # This allows for easy and efficient experimentation.
 #
@@ -144,7 +145,7 @@ class TrainingConfig(pydantic.BaseModel):
 ######################################################################
 # We note that the model has type :class:`braindecode.models.config.BraindecodeModelConfig`. This type can match all the braindecode model configurations defined in :mod:`braindecode.models.config`.
 #
-# We also see that there is now a cache folder specified (``.cache/`` here). This means that the results of the ``train`` method will be cached on disk in this folder, instead of only in RAM.
+# We also see that there is now a cache folder specified (``.cache/`` here). This means that the results of the ``train()`` method will be cached on disk in this folder, instead of only in RAM.
 #
 #
 # Evaluation config
@@ -180,7 +181,11 @@ class EvaluationConfig(pydantic.BaseModel):
 
 
 #####################################################################
-# Exca also offers the possibility to run experiments remotely on a SLURM-managed cluster. In this example, we run everything locally by setting ``cluster=None`` but you can find more information about how to set up cluster execution in the Exca documentation: https://facebookresearch.github.io/exca/infra/introduction.html.
+# .. topic:: SLURM execution
+#     Exca also offers the possibility to run experiments remotely on a SLURM-managed cluster.
+#     In this example, we run everything locally by setting ``cluster=None``
+#     but you can find more information about how to set up cluster execution
+#     in the Exca documentation: https://facebookresearch.github.io/exca/infra/introduction.html.
 #
 # Instantiating the configurations
 # ------------------------------
@@ -247,8 +252,8 @@ eval_cfg = EvaluationConfig(trainer=train_cfg, dataset=test_dataset_cfg)
 
 
 #################################################################
-# To serialize the experiment's configuration, we can take advantage of Exca's ``config`` method, which is similar to Pydantic's ``model_dump`` method but will ensure that an experiment has a unique identifier (UID).
-# In particular, it will also include the `"model_name_"` field, which will allow us to distinguish between different model configurations later on.
+# To serialize the experiment's configuration, we can take advantage of Exca's ``config()`` method, which is similar to Pydantic's ``model_dump()`` method but will ensure that an experiment has a unique identifier (UID).
+# In particular, it will also include the ``"model_name_"`` field, which will allow us to distinguish between different model configurations later on.
 print(eval_cfg.infra.config(uid=True, exclude_defaults=True))
 
 
@@ -260,7 +265,7 @@ print(eval_cfg.infra.config(uid=True, exclude_defaults=True))
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # We can now run the training using the configurations we defined.
-# For this, we simply have to call the ``train`` method of the configuration.
+# For this, we simply have to call the ``train()`` method of the configuration.
 # we will time the execution to see the benefits of caching.
 #
 import time
@@ -272,7 +277,7 @@ t1 = time.time()
 print(f"Training took {t1 - t0:0.2f} seconds")
 
 #############################################################
-# If we call the ``train`` method again, using the same configuration parameters, even if it is a new instance, the results will be loaded from the cache
+# If we call the ``train()`` method again, using the same configuration parameters, even if it is a new instance, the results will be loaded from the cache:
 #
 
 train_cfg = TrainingConfig(
@@ -286,8 +291,8 @@ t1 = time.time()
 print(f"Rerunning training using cached results took {t1 - t0:0.4f} seconds")
 
 #############################################################
-# We can run the evaluation in the same way, by calling the ``evaluate`` method of the evaluation configuration.
-# Internally, this method calls the ``train`` method of the training configuration, which will also use the cache if available.
+# We can run the evaluation in the same way, by calling the ``evaluate()`` method of the evaluation configuration.
+# Internally, this method calls the ``train()`` method of the training configuration, which will also use the cache if available.
 #
 
 t0 = time.time()
@@ -353,7 +358,7 @@ for model_cfg in model_cfg_list:
         row["accuracy"] = eval_cfg.evaluate()
         results.append(row)
 #####################################################################
-# Displaying the results
+# Gathering and displaying the results
 # ------------------------------
 #
 # Loading results from cache
@@ -364,9 +369,9 @@ for model_cfg in model_cfg_list:
 #
 # Loading the results from cache is straightforward using Exca.
 # We simply need to re-instantiate the configurations with the same parameters,
-# and call the ``evaluate`` method again.
+# and call the ``evaluate()`` method again.
 # The cached results will be loaded in a few seconds instead of re-running the experiments:
-del results  # oups, we forgot the results
+del results  # oups, we forgot the results...
 
 t0 = time.time()
 results = []
