@@ -220,7 +220,9 @@ else:
 
     BraindecodeModelConfig = Annotated[  # type: ignore
         Union[tuple(models_configs)],
-        pydantic.Field(discriminator="model_name_"),
+        pydantic.Field(
+            discriminator="model_name_", description="Braindecode model configuration"
+        ),
     ]
 
 # # Example usage:
