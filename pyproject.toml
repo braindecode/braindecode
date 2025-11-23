@@ -70,7 +70,7 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.4.2"]
-eegprep = ["git+https://github.com/sccn/eegprep.git"]
+eegprep = ["eegprep @ git+https://github.com/sccn/eegprep.git"]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
 tests = [
     'pytest',
