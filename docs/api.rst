@@ -37,6 +37,10 @@ provides a common interface for all EEG models and derivate variables names if n
 Also, all models inherit from :class:`PyTorchModelHubMixin`, which provides functionality to
 save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` package is installed.
 
+:note: Auto-generated Pydantic configs are available when the optional
+       ``braindecode[pydantic]`` extra (which installs ``pydantic`` and ``numpydantic``)
+       is installed; otherwise config generation is skipped.
+
 :py:mod:`braindecode.models.base`:
 
 .. currentmodule:: braindecode.models
@@ -575,6 +579,8 @@ frequency'domain transformations, and spatial transformations.
     Mixup
     SegmentationReconstruction
     MaskEncoding
+    AmplitudeScale
+    ChannelsReref
 
 
 The functional augmentation API contains the same transformations as the
@@ -602,6 +608,8 @@ transforms API, but they are implemented as functions.
     mixup
     segmentation_reconstruction
     mask_encoding
+    amplitude_scale
+    channels_rereference
 
 
 Classifier

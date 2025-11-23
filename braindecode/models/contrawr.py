@@ -58,7 +58,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         emb_size: int = 256,
         res_channels: list[int] = [32, 64, 128],
         steps=20,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         drop_prob: float = 0.5,
         stride_res: int = 2,
         kernel_size_res: int = 3,
@@ -195,7 +195,7 @@ class _ResBlock(nn.Module):
         kernel_size=3,
         padding=1,
         drop_prob=0.5,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
     ):
         super().__init__()
         self.conv1 = nn.Conv2d(

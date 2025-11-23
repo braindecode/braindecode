@@ -2,6 +2,8 @@
 #
 # License: BSD (3-clause)
 
+from typing import Callable
+
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
@@ -81,9 +83,9 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         pool_time_length=75,
         pool_time_stride=15,
         final_conv_length="auto",
-        conv_nonlin=square,
+        conv_nonlin: Callable = square,
         pool_mode="mean",
-        activation_pool_nonlin: nn.Module = SafeLog,
+        activation_pool_nonlin: type[nn.Module] = SafeLog,
         split_first_layer=True,
         batch_norm=True,
         batch_norm_alpha=0.1,

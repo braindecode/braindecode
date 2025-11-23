@@ -85,7 +85,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
         temp_span: float = 0.05,
         bottleneck: int = 3,
         summary: int = -1,
-        activation: nn.Module = nn.LeakyReLU,
+        activation: type[nn.Module] = nn.LeakyReLU,
     ):
         super().__init__(
             n_outputs=n_outputs,
