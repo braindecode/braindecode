@@ -249,6 +249,18 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             else:
                 self.log.warning(f"Module {self.module!r} is missing parameter {k!r}.")
 
+        # kick out inferred signal kwargs if user specifies kwargs:
+        user_specified_kwargs = self.get_params_for("module").items()
+        if len(user_specified_kwargs) > 0:
+            self.log.info(
+                f"Overriding inferred parameters with user "
+                f"specified parameters{user_specified_kwargs!r}."
+            )
+            for k, v in self.get_params_for("module").items():
+                if k in module_kwargs:
+                    module_kwargs.pop(k)
+                    module_kwargs[k] = v
+
         # save kwargs to self:
         self.log.info(
             f"Passing additional parameters {module_kwargs!r} "
