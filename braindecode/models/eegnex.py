@@ -178,7 +178,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # Model parameters
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         depth_multiplier: int = 2,
         filter_1: int = 8,
         filter_2: int = 32,

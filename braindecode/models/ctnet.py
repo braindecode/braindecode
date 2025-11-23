@@ -109,8 +109,8 @@ class CTNet(EEGModuleMixin, nn.Module):
         n_times=None,
         input_window_seconds=None,
         # Model specific arguments
-        activation_patch: nn.Module = nn.ELU,
-        activation_transformer: nn.Module = nn.GELU,
+        activation_patch: type[nn.Module] = nn.ELU,
+        activation_transformer: type[nn.Module] = nn.GELU,
         cnn_drop_prob: float = 0.3,
         att_positional_drop_prob: float = 0.1,
         final_drop_prob: float = 0.5,
@@ -312,7 +312,7 @@ class _PatchEmbeddingEEGNet(nn.Module):
         pool_size_2: int = 8,
         drop_prob: float = 0.3,
         n_chans: int = 22,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
         n_filters_out = depth_multiplier * n_filters_time
@@ -416,7 +416,7 @@ class _TransformerEncoderBlock(nn.Module):
         drop_prob: float = 0.5,
         forward_expansion: int = 4,
         forward_drop_p: float = 0.5,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
         self.attention = _ResidualAdd(
@@ -466,7 +466,7 @@ class _TransformerEncoder(nn.Module):
         nheads: int,
         depth: int,
         dim_feedforward: int,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
         self.layers = nn.Sequential(
