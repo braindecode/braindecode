@@ -349,6 +349,42 @@ for model_cfg in model_cfg_list:
         row["accuracy"] = eval_cfg.evaluate()
         results.append(row)
 #####################################################################
+# Displaying the results
+# ------------------------------
+#
+# Loading results from cache
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# If experiments were done on a cluster, a likely scenario would be
+# to first run all experiments, and then later load and analyze the results.
+#
+# Loading the results from cache is straightforward using Exca.
+# We simply need to re-instantiate the configurations with the same parameters,
+# and call the ``evaluate`` method again.
+# The cached results will be loaded in a few seconds instead of re-running the experiments:
+del results  # oups, we forgot the results
+
+t0 = time.time()
+results = []
+for model_cfg in model_cfg_list:
+    for seed in [1, 2, 3]:
+        train_cfg = TrainingConfig(model=model_cfg, max_epochs=10, lr=0.1, seed=seed)
+        eval_cfg = EvaluationConfig(trainer=train_cfg)
+
+        # log configuration
+        row = flatten_nested_dict(
+            eval_cfg.infra.config(uid=True, exclude_defaults=True)
+        )
+        # evaluate and log accuracy:
+        row["accuracy"] = eval_cfg.evaluate()
+        results.append(row)
+t1 = time.time()
+
+print(f"Loading all results from cache took {t1 - t0:0.2f} seconds")
+##############################################################
+# Displaying the results
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
 # Finally, we can concatenate and display the results using pandas:
 import pandas as pd
 
