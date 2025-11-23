@@ -49,6 +49,7 @@ Enhancements
 API changes
 ~~~~~~~~~~~
 - Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
+- Drop support for Python 3.10 and increase support to Python 3.13 and python 3.14 (:gh:`840` by `Bruno Aristimunha`_)
  - Model config helpers now soft-import ``pydantic``/``numpydantic``; if the optional
    dependencies are missing the module skips config generation and warns to install
    ``pip install braindecode[pydantic]``.
