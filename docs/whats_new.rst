@@ -46,6 +46,7 @@ Enhancements
 - Including interface with Hugging Face Hub for dataset sharing and loading (:gh:`820` by `Kuntal Kokate`_ and `Bruno Aristimunha`_ )
 - Add automatically-generated pydantic models configs (:gh:`850` by `Pierre Guetschel`_ )
 - Refactor: standardized parameter names in transformer and LabRam modules (:gh:`850` by `José Mauricio`_)
+- Adding example Pydantic and Exca (:gh:`858` by `Pierre Guetschel`_)
 
 API changes
 ~~~~~~~~~~~
