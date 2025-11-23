@@ -827,31 +827,31 @@ def _create_compressor(compression, compression_level):
     """Create a Zarr v3 compressor codec.
 
     Returns compressor dict compatible with Zarr v3 create_array API.
+
+    Parameters
+    ----------
+    compression : str or None
+        Compression algorithm: "blosc", "zstd", "gzip", or None.
+    compression_level : int
+        Compression level (0-9).
+
+    Returns
+    -------
+    dict or None
+        Compressor configuration dict or None if no compression.
     """
     if zarr is False:
         raise ImportError(
             "Zarr is not installed. Install with: pip install braindecode[hub]"
         )
 
-    # Zarr v3 uses codec dicts for the compressors parameter
-    if compression == "blosc":
-        # Use Zstandard codec (built-in to Zarr v3)
-        return {
-            "name": "zstd",
-            "configuration": {"level": compression_level},
-        }
-    elif compression == "zstd":
-        return {
-            "name": "zstd",
-            "configuration": {"level": compression_level},
-        }
-    elif compression == "gzip":
-        return {
-            "name": "gzip",
-            "configuration": {"level": compression_level},
-        }
-    else:
+    if compression is None or compression not in ("blosc", "zstd", "gzip"):
         return None
+
+    # Map blosc to zstd (Zarr v3 uses zstd as the primary implementation)
+    name = "zstd" if compression == "blosc" else compression
+
+    return {"name": name, "configuration": {"level": compression_level}}
 
 
 # TODO: improve content
