@@ -9,8 +9,8 @@ to configure and run EEG experiments with Braindecode.
 using Python type annotations. It allows defining structured configurations that can be
 validated and serialized easily.
 
-**Exca** builds on top of Pydantic, and allows you to seamlessly **ex**ecute experiments
-and **ca**che their results.
+**Exca** builds on top of Pydantic, and allows you to seamlessly EXecute experiments
+and CAche their results.
 
 Braindecode implements a Pydantic configurations for each of its models in
 ``braindecode.models.config``.
@@ -27,80 +27,78 @@ trains and evaluates different models on a motor-imagery dataset using Exca.
 # License: BSD (3-clause)
 
 #####################################################################
-# Loading and preprocessing the dataset
+# Creating the experiment configurations
 # -------------------------------------
 #
-# We start by loading and preprocessing the MOABB motor imagery dataset.
-# We use a single subject for speed.
+# We will start by defining the configurations needed for our experiment using Pydantic and Exca.
 #
-# Loading
-# ~~~~~~~
+# Dataset configs
+# ~~~~~~~~~~~~~~~~~~
+#
+# Our first configuration class is related to the data. It will allow is to load and prepare the dataset.
+import exca
+import pydantic
 
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
-
-subject_id = 1
-dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
-
-
-######################################################################
-# Extracting windows
-# ~~~~~~~~~~~~~~~~~~
-#
-# We don't apply any preprocessing here for simplicity, but in a real experiment,
-# you would typically want to filter the data, resample it, etc.
-#
-# Instead, we directly extract windows from the raw data:
-
 from braindecode.preprocessing import create_windows_from_events
 
-windows_dataset = create_windows_from_events(dataset, preload=True)
 
-######################################################################
-# Split dataset into train and valid
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
+class WindowedMOABBDatasetConfig(pydantic.BaseModel):
+    infra: exca.TaskInfra = exca.TaskInfra(
+        folder=None,  # no disk caching
+        cluster=None,  # local execution
+        keep_in_ram=True,
+    )
+    dataset_name: str = "BNCI2014_001"
+    subject_id: list[int] | int | None = None
+    window_size_seconds: float = 4.0
+    overlap_seconds: float = 0.0
 
-splitted = windows_dataset.split("session")
-train_set = splitted["0train"]  # Session train
-valid_set = splitted["1test"]  # Session evaluation
-train_y = train_set.get_metadata().target.values
-test_y = valid_set.get_metadata().target.values
+    def create_instance(self) -> MOABBDataset:
+        # We don't apply any preprocessing here for simplicity, but in a real experiment,
+        # you would typically want to filter the data, resample it, etc.
+        # Instead, our config  directly extracts windows from the raw data.
+        dataset = MOABBDataset(
+            dataset_name=self.dataset_name, subject_ids=self.subject_id
+        )
+        windows_dataset = create_windows_from_events(dataset, preload=True)
 
-#####################################################################
-# Extract signal properties
-# ~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# We now extract the properties of the signals in the dataset (i.e., number of channels, number of time points, and number of classes).
-# For this, we will make use of the function :func:`braindecode.datautil.infer_signal_properties`.
-#
-from braindecode.datautil import infer_signal_properties
+        return windows_dataset
 
-signal_kwargs = infer_signal_properties(train_set, train_y, mode="classification")
-print(signal_kwargs)
 
-#####################################################################
-# Configuring and running experiment with Pydantic and Exca
-# ------------------------------------------------------
+#################################################################
 #
-# Defining the configuration classes
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# Now that out training and testing data is ready, we can define our experiment using Pydantic and Exca.
-# We define tho configurations: one for training a model, and one for testing it.
-#
-# We note in the training that the model has type :class:`braindecode.models.config.BraindecodeModelConfig`. This type can match all the braindecode model configurations defined in :mod:`braindecode.models.config`.
-# We can see that both configs have an ``ingra: exca.TaskInfra``,
+# We can see that the config has an ``infra: exca.TaskInfra`` attribute,
 # and a method decorated with ``@infra.apply``.
-# This means that, when called, exca will cache the results of these methods in the specified folder (``.cache/`` here).
+# This means that, when called, exca will cache the results of these methods in the specified folder (``None`` here, meaning no disk caching, but keeping data in RAM).
 # If the method is called again with the same configuration, the cached results will be returned instead of re-running the method.
 # This allows for easy and efficient experimentation.
 #
-# Exca also offers the possibility to run experiments remotely on a SLURM-managed cluster. In this example, we run everything locally by setting ``cluster=None`` but you can find more information about how to set up cluster execution in the [Exca documentation](https://facebookresearch.github.io/exca/infra/introduction.html).
+# Additionally, we define a small wrapper config to split the dataset into training and testing sets.
+# Here, no caching is applied since the split operation is fast.
 
 
-import exca
-import pydantic
+class DatasetSplitConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid")
+    dataset: WindowedMOABBDatasetConfig
+    key: str
+    by: str = "session"
+
+    def create_instance(self):
+        dataset = self.dataset.create_instance()
+        splitted = dataset.split(self.by)
+        return splitted[self.key]
+
+
+#####################################################################
+# Training config
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# Now that out data configs are ready, we can define our training config. It will require both the dataset and model configurations.
+# It will simply load the data, instantiate the model, and train the model on the data.
+#
+
 from skorch.callbacks import EarlyStopping
 from skorch.dataset import ValidSplit
 from torch.optim import Adam
@@ -114,6 +112,7 @@ class TrainingConfig(pydantic.BaseModel):
         cluster=None,  # local execution
     )
     model: BraindecodeModelConfig
+    dataset: DatasetSplitConfig
     max_epochs: int = 50
     batch_size: int = 32
     lr: float = 0.001
@@ -121,6 +120,11 @@ class TrainingConfig(pydantic.BaseModel):
 
     @infra.apply
     def train(self) -> EEGClassifier:
+        # Load training data
+        train_set = self.dataset.create_instance()
+        train_y = train_set.get_metadata()["target"].to_numpy()
+
+        # Instantiate the model
         model = self.model.create_instance()
         clf = EEGClassifier(
             model,
@@ -131,30 +135,55 @@ class TrainingConfig(pydantic.BaseModel):
             callbacks=["accuracy", EarlyStopping(patience=3)],
             optimizer=Adam,
         )
+
+        # Train the model
         clf.fit(train_set, train_y)
         return clf.module_.state_dict()
 
 
+######################################################################
+# We note that the model has type :class:`braindecode.models.config.BraindecodeModelConfig`. This type can match all the braindecode model configurations defined in :mod:`braindecode.models.config`.
+#
+# We also see that there is now a cache folder specified (``.cache/`` here). This means that the results of the ``train`` method will be cached on disk in this folder, instead of only in RAM.
+#
+#
+# Evaluation config
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# Finally, we define an evaluation config that will load the validation data,
+# load the trained model from the training config, and evaluate it on the validation data.
+#
 class EvaluationConfig(pydantic.BaseModel):
     infra: exca.TaskInfra = exca.TaskInfra(
         folder=".cache/",
         cluster=None,  # local execution
     )
+    dataset: DatasetSplitConfig
     trainer: TrainingConfig
 
     @infra.apply
     def evaluate(self) -> float:
+        # Load validation data
+        valid_set = self.dataset.create_instance()
+        test_y = valid_set.get_metadata()["target"].to_numpy()
+
+        # Load trained model
         state_dict = self.trainer.train()
         model = self.trainer.model.create_instance()
         model.load_state_dict(state_dict)
         clf = EEGClassifier(model)
         clf.initialize()
-        return clf.score(valid_set, test_y)
+
+        # Evaluate the model
+        score = clf.score(valid_set, test_y)
+        return score
 
 
 #####################################################################
+# Exca also offers the possibility to run experiments remotely on a SLURM-managed cluster. In this example, we run everything locally by setting ``cluster=None`` but you can find more information about how to set up cluster execution in the Exca documentation: https://facebookresearch.github.io/exca/infra/introduction.html.
+#
 # Instantiating the configurations
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ------------------------------
 #
 # Now that our configuration classes are defined, we can instantiate them.
 #
@@ -165,6 +194,7 @@ class EvaluationConfig(pydantic.BaseModel):
 
 from braindecode.models.config import EEGConformerConfig, EEGNetConfig
 
+signal_kwargs = {"n_times": 1000, "n_chans": 26, "n_outputs": 4}
 model_cfg = EEGNetConfig(**signal_kwargs)
 
 #################################################################
@@ -172,14 +202,19 @@ model_cfg = EEGNetConfig(**signal_kwargs)
 print(model_cfg.model_dump(mode="json"))
 
 #################################################################
-# Or if you only want the non-default keys:
+# Alternatively, if you only want the non-default keys:
 print(model_cfg.model_dump(exclude_defaults=True))
 
 #####################################################################
 # The config class is checking the arguments types and values, and
-# raises an error if something is wrong. For example, if we try to instantiate it using an incorrec type for ``n_times``, we get an error:
+# raises an error if something is wrong. For example, if we try to instantiate it using an incorrect type for ``n_times``, we get an error:
+
+# kept for restoration later:
 true_n_times = signal_kwargs["n_times"]
-signal_kwargs["n_times"] = 22.5  # float instead of int
+
+# float instead of int:
+signal_kwargs["n_times"] = 22.5
+
 try:
     EEGNetConfig(**signal_kwargs)
 except pydantic.ValidationError as e:
@@ -197,28 +232,32 @@ except pydantic.ValidationError as e:
 signal_kwargs["n_times"] = true_n_times
 
 #####################################################
-# Now that we have the model configuration, we can instantiate the training
-# and evaluation configurations:
+# We now have instantiated the model configuration.
+# Creating the dataset, training and evaluation configurations is very similar and
+# straightforward using the classes we defined earlier.
 #
-train_cfg = TrainingConfig(model=model_cfg)
-eval_cfg = EvaluationConfig(trainer=train_cfg)
+dataset_cfg = WindowedMOABBDatasetConfig(subject_id=1)
+
+train_dataset_cfg = DatasetSplitConfig(dataset=dataset_cfg, key="0train")
+test_dataset_cfg = DatasetSplitConfig(dataset=dataset_cfg, key="1test")
+
+train_cfg = TrainingConfig(model=model_cfg, dataset=train_dataset_cfg)
+
+eval_cfg = EvaluationConfig(trainer=train_cfg, dataset=test_dataset_cfg)
 
 
 #################################################################
-# And we can again print the configuration that defines our whole experiment using Pydantic's ``model_dump`` method:
-print(eval_cfg.model_dump(exclude_defaults=True))
-
-#################################################################
-# However, we see above that the model configuration could correspond to any model in Braindecode.
-#
-# Exca takes it into account when generating unique IDs for caching.
-# We can print the full configuration with unique IDs using Exca's ``config`` method:
+# To serialize the experiment's configuration, we can take advantage of Exca's ``config`` method, which is similar to Pydantic's ``model_dump`` method but will ensure that an experiment has a unique identifier (UID).
+# In particular, it will also include the `"model_name_"` field, which will allow us to distinguish between different model configurations later on.
 print(eval_cfg.infra.config(uid=True, exclude_defaults=True))
 
 
 #####################################################
 # Running the experiment
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ------------------------------
+#
+# Intermediate results are cached thanks to Exca
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # We can now run the training using the configurations we defined.
 # For this, we simply have to call the ``train`` method of the configuration.
@@ -286,7 +325,7 @@ flatten_nested_dict({"a": 1, "b": {"x": 1, "y": {"z": 2}}, "c": [4, 5]})
 
 #####################################################################
 # In a real experiment, we would launch all runs in parallel on a different nodes of a compute cluster.
-# Please refer to the [Exca documentation](https://facebookresearch.github.io/exca/infra/introduction.html) for more details on how to set up cluster execution.
+# Please refer to the Exca documentation for more details on how to set up cluster execution.
 # Here, for simplicity, we will just run them locally and sequentially.
 #
 # In this mini-example, we will compare the EEGNet and EEGConformer models on the same dataset, with multiple random seeds.
@@ -310,7 +349,7 @@ for model_cfg in model_cfg_list:
         row["accuracy"] = eval_cfg.evaluate()
         results.append(row)
 #####################################################################
-# Finally, display the results using pandas:
+# Finally, we can concatenate and display the results using pandas:
 import pandas as pd
 
 results_df = pd.DataFrame(results)
