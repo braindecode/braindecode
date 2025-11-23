@@ -275,7 +275,9 @@ print(f"Training took {t1 - t0:0.2f} seconds")
 # If we call the ``train`` method again, using the same configuration parameters, even if it is a new instance, the results will be loaded from the cache
 #
 
-train_cfg = TrainingConfig(model=EEGNetConfig(**signal_kwargs))
+train_cfg = TrainingConfig(
+    model=EEGNetConfig(**signal_kwargs), dataset=train_dataset_cfg
+)
 
 t0 = time.time()
 train_cfg.train()
@@ -338,8 +340,10 @@ model_cfg_list = [
 results = []
 for model_cfg in model_cfg_list:
     for seed in [1, 2, 3]:
-        train_cfg = TrainingConfig(model=model_cfg, max_epochs=10, lr=0.1, seed=seed)
-        eval_cfg = EvaluationConfig(trainer=train_cfg)
+        train_cfg = TrainingConfig(
+            model=model_cfg, dataset=train_dataset_cfg, max_epochs=10, lr=0.1, seed=seed
+        )
+        eval_cfg = EvaluationConfig(trainer=train_cfg, dataset=test_dataset_cfg)
 
         # log configuration
         row = flatten_nested_dict(
@@ -368,8 +372,10 @@ t0 = time.time()
 results = []
 for model_cfg in model_cfg_list:
     for seed in [1, 2, 3]:
-        train_cfg = TrainingConfig(model=model_cfg, max_epochs=10, lr=0.1, seed=seed)
-        eval_cfg = EvaluationConfig(trainer=train_cfg)
+        train_cfg = TrainingConfig(
+            model=model_cfg, dataset=train_dataset_cfg, max_epochs=10, lr=0.1, seed=seed
+        )
+        eval_cfg = EvaluationConfig(trainer=train_cfg, dataset=test_dataset_cfg)
 
         # log configuration
         row = flatten_nested_dict(
