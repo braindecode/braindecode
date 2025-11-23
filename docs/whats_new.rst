@@ -38,6 +38,7 @@ Enhancements
 - Added :class:`braindecode.models.LUNA`  (:gh:`802` by `Bruno Aristimunha`_, `Thorir Mar Ingolfsson`_)
 - Improve :class:`braindecode.preprocessing.Preprocessor` serialisation (:gh:`813` by `Pierre Guetschel`_ )
 - Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
+- Including SIENA dataset and CHB_MIT datasets (:gh:`818` by `Jonathan Dan`_ and `Bruno Aristimunha`_ )
 - Modify the interface of FBMSNet for consistency with FBCNet + Unit Tests (:gh:`819` by `Matthew Chen`_)
 - Adding :class:`braindecode.models.MEDFormer`  (:gh:`821` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
@@ -435,5 +436,6 @@ Authors
 .. _Christian Kothe: https://github.com/chkothe
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _Matthew Chen: https://github.com/MatthewChen37
+.. _Jonathan Dan: https://github.com/danjjl
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: github.com/AryaDro

@@ -339,10 +339,12 @@ Common Datasets
 
     BCICompetitionIVDataset4
     BNCI2014_001
+    CHBMIT
     HGD
     MOABBDataset
     NMT
     SleepPhysionet
+    SIENA
     SleepPhysionetChallenge2018
     TUH
     TUHAbnormal
