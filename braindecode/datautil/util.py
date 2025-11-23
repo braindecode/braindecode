@@ -11,8 +11,7 @@ from skorch.helper import SliceDataset
 from skorch.utils import is_dataset
 
 from braindecode.datasets.base import BaseConcatDataset, WindowsDataset
-
-# from braindecode.models.util import SigArgName
+from braindecode.models.util import SigArgName
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +78,7 @@ def infer_signal_properties(
     y,
     mode: Literal["classification", "regression"] = "classification",
     classes: list | None = None,
-) -> dict[str, Any]:  # TODO
+) -> dict[SigArgName, Any]:
     """Infers signal properties from the data.
 
     The extracted signal properties are:
@@ -111,7 +110,7 @@ def infer_signal_properties(
         Dictionary with signal-properties. Can serve as kwargs for model
         initialization.
     """
-    signal_kwargs = dict()
+    signal_kwargs: dict[SigArgName, Any] = {}
     # Using shape to work both with torch.tensor and numpy.array:
     if (
         isinstance(X, mne.BaseEpochs)
