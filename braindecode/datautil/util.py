@@ -84,11 +84,11 @@ def infer_signal_properties(
 
     The extracted signal properties are:
 
-      * n_chans: number of channels
-      * n_times: number of time points
-      * n_outputs: number of outputs
-      * chs_info: channel information
-      * sfreq: sampling frequency
+    + n_chans: number of channels
+    + n_times: number of time points
+    + n_outputs: number of outputs
+    + chs_info: channel information
+    + sfreq: sampling frequency
 
     The returned dictionary can serve as kwargs for model initialization.
 
