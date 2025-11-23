@@ -81,7 +81,7 @@ tests = [
     'mypy'
 ]
 typing = [
-    'pydantic>=2.0,<3.0',
+    'exca==0.4',
     'numpydantic>=1.7',
 ]
 
