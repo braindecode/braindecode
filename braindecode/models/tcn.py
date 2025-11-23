@@ -57,7 +57,7 @@ class BDTCN(EEGModuleMixin, nn.Module):
         n_filters=30,
         kernel_size=5,
         drop_prob=0.5,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -126,7 +126,7 @@ class TCN(nn.Module):
         n_filters=30,
         kernel_size=5,
         drop_prob=0.5,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
     ):
         super().__init__()
         self.mapping = {
@@ -221,7 +221,7 @@ class _TemporalBlock(nn.Module):
         dilation,
         padding,
         drop_prob,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
     ):
         super().__init__()
         self.conv1 = weight_norm(

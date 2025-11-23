@@ -68,7 +68,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         drop_prob=0.5,
         apply_batch_norm=False,
         return_feats=False,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
         chs_info=None,
         n_times=None,
     ):

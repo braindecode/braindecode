@@ -176,7 +176,7 @@ class BENDR(EEGModuleMixin, nn.Module):
         projection_head=False,  # Whether encoder should project back to input feature size (unused in original fine-tuning)
         drop_prob=0.1,  # General dropout probability (paper: 0.15 for pretraining, 0.0 for fine-tuning)
         layer_drop=0.0,  # Probability of dropping transformer layers during training (paper: 0.01 for pretraining)
-        activation=nn.GELU,  # Activation function
+        activation: type[nn.Module] = nn.GELU,  # Activation function
         # Transformer specific parameters
         transformer_layers=8,
         transformer_heads=8,

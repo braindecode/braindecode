@@ -31,7 +31,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/mne_data
-        key: test-2-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+        key: test-2-${{ runner.os }}-${{ matrix.python-version }}
         restore-keys: |
           test-2-${{ runner.os }}-${{ matrix.python-version }}-
           test-2-${{ runner.os }}-

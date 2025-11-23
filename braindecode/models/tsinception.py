@@ -78,7 +78,7 @@ class TSception(EEGModuleMixin, nn.Module):
         number_filter_spat: int = 6,
         hidden_size: int = 128,
         drop_prob: float = 0.5,
-        activation: nn.Module = nn.LeakyReLU,
+        activation: type[nn.Module] = nn.LeakyReLU,
         pool_size: int = 8,
         inception_windows: tuple[float, float, float] = (0.5, 0.25, 0.125),
     ):

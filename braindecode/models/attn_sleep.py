@@ -90,8 +90,8 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         d_ff=120,
         n_attn_heads=5,
         drop_prob=0.1,
-        activation_mrcnn: nn.Module = nn.GELU,
-        activation: nn.Module = nn.ReLU,
+        activation_mrcnn: type[nn.Module] = nn.GELU,
+        activation: type[nn.Module] = nn.ReLU,
         input_window_seconds=None,
         n_outputs=None,
         after_reduced_cnn_size=30,
@@ -230,7 +230,7 @@ class _SEBasicBlock(nn.Module):
         planes,
         stride=1,
         downsample=None,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
         *,
         reduction=16,
     ):
@@ -278,8 +278,8 @@ class _MRCNN(nn.Module):
         self,
         after_reduced_cnn_size,
         kernel_size=7,
-        activation: nn.Module = nn.GELU,
-        activation_se: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.GELU,
+        activation_se: type[nn.Module] = nn.ReLU,
     ):
         super(_MRCNN, self).__init__()
         drate = 0.5
@@ -325,7 +325,7 @@ class _MRCNN(nn.Module):
         )
 
     def _make_layer(
-        self, block, planes, blocks, stride=1, activate: nn.Module = nn.ReLU
+        self, block, planes, blocks, stride=1, activate: type[nn.Module] = nn.ReLU
     ):  # makes residual SE block
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
@@ -526,7 +526,9 @@ class _EncoderLayer(nn.Module):
 class _PositionwiseFeedForward(nn.Module):
     """Positionwise feed-forward network."""
 
-    def __init__(self, d_model, d_ff, dropout=0.1, activation: nn.Module = nn.ReLU):
+    def __init__(
+        self, d_model, d_ff, dropout=0.1, activation: type[nn.Module] = nn.ReLU
+    ):
         super().__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)

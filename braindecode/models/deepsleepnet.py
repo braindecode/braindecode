@@ -172,8 +172,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        activation_large: nn.Module = nn.ELU,
-        activation_small: nn.Module = nn.ReLU,
+        activation_large: type[nn.Module] = nn.ELU,
+        activation_small: type[nn.Module] = nn.ReLU,
         drop_prob: float = 0.5,
     ):
         super().__init__(
@@ -252,7 +252,7 @@ class _SmallCNN(nn.Module):
         The dropout rate for regularization. Values should be between 0 and 1.
     """
 
-    def __init__(self, activation: nn.Module = nn.ReLU, drop_prob: float = 0.5):
+    def __init__(self, activation: type[nn.Module] = nn.ReLU, drop_prob: float = 0.5):
         super().__init__()
         self.conv1 = nn.Sequential(
             nn.Conv2d(
@@ -328,7 +328,7 @@ class _LargeCNN(nn.Module):
 
     """
 
-    def __init__(self, activation: nn.Module = nn.ELU, drop_prob: float = 0.5):
+    def __init__(self, activation: type[nn.Module] = nn.ELU, drop_prob: float = 0.5):
         super().__init__()
 
         self.conv1 = nn.Sequential(

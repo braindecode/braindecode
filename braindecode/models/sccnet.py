@@ -155,7 +155,7 @@ class SCCNet(EEGModuleMixin, nn.Module):
         n_spatial_filters: int = 22,
         n_spatial_filters_smooth: int = 20,
         drop_prob: float = 0.5,
-        activation: nn.Module = LogActivation,
+        activation: type[nn.Module] = LogActivation,
         batch_norm_momentum: float = 0.1,
     ):
         super().__init__(

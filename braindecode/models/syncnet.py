@@ -89,7 +89,7 @@ class SyncNet(EEGModuleMixin, nn.Module):
         num_filters=1,
         filter_width=40,
         pool_size=40,
-        activation: nn.Module = nn.ReLU,
+        activation: type[nn.Module] = nn.ReLU,
         ampli_init_values: tuple[float, float] = (-0.05, 0.05),
         omega_init_values: tuple[float, float] = (0.0, 1.0),
         beta_init_values: tuple[float, float] = (0.0, 0.05),

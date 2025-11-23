@@ -8,9 +8,7 @@ from __future__ import annotations
 import inspect
 import os
 import sys
-from copy import deepcopy
 from types import MethodType
-from typing import Any
 
 import mne
 import numpy as np
@@ -33,31 +31,16 @@ from braindecode.models import (
     USleep,
 )
 from braindecode.models.util import (
+    _get_possible_signal_params,
     _summary_table,
+    default_signal_params,
     models_dict,
     models_mandatory_parameters,
     non_classification_models,
 )
+from braindecode.models.util import _get_signal_params as get_sp
 
 rng = np.random.default_rng(12)
-# Generating the channel info
-chs_info = [
-    {
-        "ch_name": f"C{i}",
-        "kind": "eeg",
-        "loc": rng.random(12),
-    }
-    for i in range(1, 4)
-]
-
-default_signal_params = dict(
-    n_times=1000,
-    sfreq=250.0,
-    n_outputs=2,
-    chs_info=chs_info,
-    n_chans=len(chs_info),
-    input_window_seconds=4.0,
-)
 
 
 def convert_model_to_plain(model):
@@ -73,7 +56,9 @@ def convert_model_to_plain(model):
 
     if isinstance(model, nn.Sequential):
         final_plain_model = nn.Sequential(*model.children())
-        final_plain_model.__dict__.update({k: v for k,v in model.__dict__.items() if k != '_modules'})
+        final_plain_model.__dict__.update(
+            {k: v for k, v in model.__dict__.items() if k != "_modules"}
+        )
     else:
         final_plain_model = nn.Module()
         for name, module in model.named_children():
@@ -99,33 +84,6 @@ def convert_model_to_plain(model):
             setattr(final_plain_model, name, bound_method)
 
     return final_plain_model
-
-
-def get_sp(
-    signal_params: dict[str, Any] | None, required_params: list[str] | None = None
-):
-    sp = deepcopy(default_signal_params)
-    if signal_params is not None:
-        sp.update(signal_params)
-        if "chs_info" in signal_params and "n_chans" not in signal_params:
-            sp["n_chans"] = len(signal_params["chs_info"])
-        if "n_chans" in signal_params and "chs_info" not in signal_params:
-            sp["chs_info"] = [
-                {"ch_name": f"C{i}", "kind": "eeg", "loc": rng.random(12)}
-                for i in range(signal_params["n_chans"])
-            ]
-        assert isinstance( sp["n_times"], int)
-        assert isinstance( sp["sfreq"], float)
-        assert isinstance( sp["input_window_seconds"], float)
-        if "input_window_seconds" not in signal_params:
-            sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
-        if "sfreq" not in signal_params:
-            sp["sfreq"] = sp["n_times"] / sp["input_window_seconds"]
-        if "n_times" not in signal_params:
-            sp["n_times"] = int(sp["input_window_seconds"] * sp["sfreq"])
-    if required_params is not None:
-        sp = {k: sp[k] for k in set((signal_params or {}).keys()).union(required_params)}
-    return sp
 
 
 @pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
@@ -198,68 +156,7 @@ def test_model_integration(model_name, required_params, signal_params):
     epo, _ = get_epochs_y(sp, n_epochs=batch_size)
     X = torch.tensor(epo.get_data(), dtype=torch.float32)
 
-    # List possible model kwargs:
-    output_kwargs = []
-    output_kwargs.append(dict(n_outputs=sp["n_outputs"]))
-
-    if "n_outputs" not in required_params:
-        output_kwargs.append(dict(n_outputs=None))
-
-    channel_kwargs = []
-    channel_kwargs.append(dict(chs_info=sp["chs_info"], n_chans=None))
-    if "chs_info" not in required_params:
-        channel_kwargs.append(dict(n_chans=sp["n_chans"], chs_info=None))
-    if "n_chans" not in required_params and "chs_info" not in required_params:
-        channel_kwargs.append(dict(n_chans=None, chs_info=None))
-    time_kwargs = []
-    time_kwargs.append(
-        dict(n_times=sp["n_times"], sfreq=sp["sfreq"], input_window_seconds=None)
-    )
-    time_kwargs.append(
-        dict(
-            n_times=None,
-            sfreq=sp["sfreq"],
-            input_window_seconds=sp["input_window_seconds"],
-        )
-    )
-    time_kwargs.append(
-        dict(
-            n_times=sp["n_times"],
-            sfreq=None,
-            input_window_seconds=sp["input_window_seconds"],
-        )
-    )
-    if "n_times" not in required_params and "sfreq" not in required_params:
-        time_kwargs.append(
-            dict(
-                n_times=None,
-                sfreq=None,
-                input_window_seconds=sp["input_window_seconds"],
-            )
-        )
-    if (
-        "n_times" not in required_params
-        and "input_window_seconds" not in required_params
-    ):
-        time_kwargs.append(
-            dict(n_times=None, sfreq=sp["sfreq"], input_window_seconds=None)
-        )
-    if "sfreq" not in required_params and "input_window_seconds" not in required_params:
-        time_kwargs.append(
-            dict(n_times=sp["n_times"], sfreq=None, input_window_seconds=None)
-        )
-    if (
-        "n_times" not in required_params
-        and "sfreq" not in required_params
-        and "input_window_seconds" not in required_params
-    ):
-        time_kwargs.append(dict(n_times=None, sfreq=None, input_window_seconds=None))
-    model_kwargs_list = [
-        dict(**o, **c, **t)
-        for o in output_kwargs
-        for c in channel_kwargs
-        for t in time_kwargs
-    ]
+    model_kwargs_list = _get_possible_signal_params(sp, required_params)
 
     for model_kwargs in model_kwargs_list:
         # test initialisation:
@@ -529,6 +426,7 @@ def test_model_exported(model):
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
 
+
 @pytest.mark.skipif(
     sys.platform.startswith("win"),
     reason="torch.script is known to have issues on Windows.",
@@ -615,18 +513,20 @@ def test_if_models_with_embedding_parameter(model):
 
     # check if any of the parameters related to embedding are present in the model
     if not any(param in params for param in parameters_related_with_emb):
-        pytest.skip(
-            f"{model_name} does not have an embedding parameter."
-        )
+        pytest.skip(f"{model_name} does not have an embedding parameter.")
     else:
         # getting the parameters name
-        emb_param = next((param for param in params if param in parameters_related_with_emb), None)
+        emb_param = next(
+            (param for param in params if param in parameters_related_with_emb), None
+        )
 
     # getting the emb parameter and re-initializing the model
     # changing only this parameters
     new_value = 128
 
-    model_dict = {name: (args, defaults) for name, args, defaults in models_mandatory_parameters}
+    model_dict = {
+        name: (args, defaults) for name, args, defaults in models_mandatory_parameters
+    }
 
     mandatory_parameters, sig_params = model_dict[model_name]
     signal_params = get_sp(sig_params, mandatory_parameters)
@@ -635,7 +535,9 @@ def test_if_models_with_embedding_parameter(model):
 
     model = models_dict[model_name](**signal_params)
 
-    print(f"Model {model_name} has an embedding parameter {emb_param} with value {new_value}.")
+    print(
+        f"Model {model_name} has an embedding parameter {emb_param} with value {new_value}."
+    )
     # assert not error when print the model
     try:
         print(model)

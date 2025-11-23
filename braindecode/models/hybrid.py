@@ -34,7 +34,7 @@ class HybridNet(nn.Module):
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         drop_prob: float = 0.5,
     ):
         super().__init__()

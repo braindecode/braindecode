@@ -235,7 +235,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         spt_attn_global_context_kernel: int = 250,
         spt_attn_epsilon: float = 1e-5,
         spt_attn_mode: str = "var",
-        activation: Optional[nn.Module] = nn.ELU,
+        activation: type[nn.Module] | None = nn.ELU,
     ) -> None:
         super().__init__(
             n_chans=n_chans,

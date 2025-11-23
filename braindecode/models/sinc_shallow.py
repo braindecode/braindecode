@@ -1,5 +1,4 @@
 import math
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -93,7 +92,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         num_time_filters: int = 32,
         time_filter_len: int = 33,
         depth_multiplier: int = 2,
-        activation: Optional[nn.Module] = nn.ELU,
+        activation: type[nn.Module] | None = nn.ELU,
         drop_prob: float = 0.5,
         first_freq: float = 5.0,
         min_freq: float = 1.0,

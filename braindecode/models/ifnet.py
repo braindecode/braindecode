@@ -240,7 +240,7 @@ class IFNet(EEGModuleMixin, nn.Module):
 class _InterFrequencyModule(nn.Module):
     """Module that combines outputs from different frequency bands."""
 
-    def __init__(self, activation: nn.Module = nn.GELU):
+    def __init__(self, activation: type[nn.Module] = nn.GELU):
         """
 
         Parameters
@@ -283,7 +283,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         stride_factor: int = 8,
         n_bands: int = 2,
         drop_prob: float = 0.5,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
         dim: int = 3,
     ):
         """

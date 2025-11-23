@@ -110,7 +110,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         n_dim: int = 3,
         stride_factor: int = 4,
         dilatability: int = 8,
-        activation: nn.Module = nn.SiLU,
+        activation: type[nn.Module] = nn.SiLU,
         kernels_weights: Sequence[int] = (15, 31, 63, 125),
         cnn_max_norm: float = 2,
         linear_max_norm: float = 0.5,

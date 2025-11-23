@@ -182,7 +182,7 @@ class USleep(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         time_conv_size_s=9 / 128,
         ensure_odd_conv_size=False,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         chs_info=None,
         n_times=None,
     ):
@@ -339,7 +339,7 @@ class _EncoderBlock(nn.Module):
         out_channels=2,
         kernel_size=9,
         downsample=2,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -380,7 +380,7 @@ class _DecoderBlock(nn.Module):
         kernel_size=9,
         upsample=2,
         with_skip_connection=True,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
         self.in_channels = in_channels

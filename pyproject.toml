@@ -81,6 +81,10 @@ tests = [
     'pytest_cases',
     'mypy'
 ]
+typing = [
+    'pydantic>=2.0,<3.0',
+    'numpydantic>=1.7',
+]
 
 docs = [
     'sphinx_gallery',
@@ -108,6 +112,7 @@ all = [
     "braindecode[tests]",
     "braindecode[docs]",
     "braindecode[eegprep]",
+    "braindecode[typing]",
 ]
 
 [tool.setuptools]

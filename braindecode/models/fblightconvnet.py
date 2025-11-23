@@ -111,7 +111,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         heads: int = 8,
         weight_softmax: bool = True,
         bias: bool = False,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         verbose: bool = False,
         filter_parameters: Optional[dict] = None,
     ):

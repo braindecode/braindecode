@@ -87,7 +87,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         drop_prob: float = 0.5,
         # Parameters for the encoder
         max_seq_len: int = 1024,
@@ -250,7 +250,9 @@ class _ClassificationHead(nn.Sequential):
         (batch, n_outputs)
     """
 
-    def __init__(self, emb_size: int, n_outputs: int, activation: nn.Module = nn.ELU):
+    def __init__(
+        self, emb_size: int, n_outputs: int, activation: type[nn.Module] = nn.ELU
+    ):
         super().__init__()
         self.activation_layer = activation()
         self.classification_head = nn.Linear(emb_size, n_outputs)

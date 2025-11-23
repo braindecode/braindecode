@@ -196,7 +196,7 @@ class PBT(EEGModuleMixin, nn.Module):
         drop_prob: float = 0.1,
         learnable_cls=True,
         bias_transformer=False,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -452,7 +452,7 @@ class _FeedForward(nn.Module):
         dim_feedforward: Optional[int] = None,
         drop_prob: float = 0.0,
         bias: bool = False,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ) -> None:
         super().__init__()
 
@@ -490,7 +490,7 @@ class _TransformerEncoderLayer(nn.Module):
         drop_prob: float = 0.0,
         dim_feedforward: Optional[int] = None,
         bias: bool = False,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ) -> None:
         super().__init__()
 
@@ -554,7 +554,7 @@ class _TransformerEncoder(nn.Module):
         n_head: int,
         drop_prob: float,
         bias: bool,
-        activation: nn.Module = nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ) -> None:
         super().__init__()
 
