@@ -105,6 +105,7 @@ all = [
     "braindecode[tests]",
     "braindecode[docs]",
     "braindecode[hub]",
+    "braindecode[eegprep]",
 ]
 # return later
 #   "braindecode[eegprep]",
