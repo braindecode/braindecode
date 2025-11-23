@@ -62,7 +62,7 @@ environment. We will use conda, but feel free to use any other
 solution:
 
 ```
-conda create --name braindecode python=3.10
+conda create --name braindecode python=3.11
 conda activate braindecode
 pip install -e .[moabb,tests,docs]
 ```
