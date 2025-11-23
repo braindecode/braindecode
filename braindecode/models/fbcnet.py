@@ -97,7 +97,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         temporal_layer: str = "LogVarLayer",
         n_dim: int = 3,
         stride_factor: int = 4,
-        activation: nn.Module = nn.SiLU,
+        activation: type[nn.Module] = nn.SiLU,
         linear_max_norm: float = 0.5,
         cnn_max_norm: float = 2.0,
         filter_parameters: dict[Any, Any] | None = None,

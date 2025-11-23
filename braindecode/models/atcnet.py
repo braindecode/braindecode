@@ -141,7 +141,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
     - Pool sizes ``P1,P2`` trade temporal resolution for stability/compute; they set
       ``T_c = T/(P1·P2)`` and thus window width ``T_w``.
     - ``n_windows`` controls the ensemble over shifts (compute ∝ windows).
-    - ``att_num_heads``, ``att_head_dim`` set attention capacity; keep ``H·d_h ≈ F2``.
+    - ``num_heads``, ``head_dim`` set attention capacity; keep ``H·d_h ≈ F2``.
     - ``tcn_depth``, ``tcn_kernel_size`` govern receptive field; larger values demand
       longer inputs (see minimum length above). The implementation warns and *rescales*
       kernels/pools/windows if inputs are too short.
@@ -194,10 +194,10 @@ class ATCNet(EEGModuleMixin, nn.Module):
         table 1 of the paper [1]_. Defaults to 0.3 as in [1]_.
     n_windows : int
         Number of sliding windows, denoted n in [1]_. Defaults to 5 as in [1]_.
-    att_head_dim : int
+    head_dim : int
         Embedding dimension used in each self-attention head, denoted dh in
         table 1 of the paper [1]_. Defaults to 8 as in [1]_.
-    att_num_heads : int
+    num_heads : int
         Number of attention heads, denoted H in table 1 of the paper [1]_.
         Defaults to 2 as in [1]_.
     att_dropout : float
@@ -248,13 +248,13 @@ class ATCNet(EEGModuleMixin, nn.Module):
         conv_block_depth_mult=2,
         conv_block_dropout=0.3,
         n_windows=5,
-        att_head_dim=8,
-        att_num_heads=2,
+        head_dim=8,
+        num_heads=2,
         att_drop_prob=0.5,
         tcn_depth=2,
         tcn_kernel_size=4,
         tcn_drop_prob=0.3,
-        tcn_activation: nn.Module = nn.ELU,
+        tcn_activation: type[nn.Module] = nn.ELU,
         concat=False,
         max_norm_const=0.25,
         chs_info=None,
@@ -316,8 +316,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.conv_block_depth_mult = conv_block_depth_mult
         self.conv_block_dropout = conv_block_dropout
         self.n_windows = n_windows
-        self.att_head_dim = att_head_dim
-        self.att_num_heads = att_num_heads
+        self.head_dim = head_dim
+        self.num_heads = num_heads
         self.att_dropout = att_drop_prob
         self.tcn_depth = tcn_depth
         self.tcn_kernel_size = tcn_kernel_size
@@ -356,8 +356,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
             [
                 _AttentionBlock(
                     in_shape=self.F2,
-                    head_dim=self.att_head_dim,
-                    num_heads=att_num_heads,
+                    head_dim=self.head_dim,
+                    num_heads=num_heads,
                     dropout=att_drop_prob,
                 )
                 for _ in range(self.n_windows)
@@ -656,7 +656,7 @@ class _TCNResidualBlock(nn.Module):
         kernel_size=4,
         n_filters=32,
         dropout=0.3,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         dilation=1,
     ):
         super().__init__()
