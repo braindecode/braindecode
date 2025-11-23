@@ -112,9 +112,6 @@ all = [
     "braindecode[eegprep]",
     "braindecode[typing]",
 ]
-# return later
-#   "braindecode[eegprep]",
-#
 
 [tool.setuptools]
 py-modules = []
