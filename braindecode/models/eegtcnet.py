@@ -63,7 +63,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # Model parameters
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         depth_multiplier: int = 2,
         filter_1: int = 8,
         kern_length: int = 64,
@@ -187,7 +187,7 @@ class _EEGNetTC(nn.Module):
         kern_length: int = 64,
         depth_multiplier: int = 2,
         drop_prob: float = 0.5,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
         self.activation = activation()
@@ -276,7 +276,7 @@ class _TCNBlock(nn.Module):
         kernel_size: int,
         filters: int,
         drop_prob: float,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
         self.activation = activation()
