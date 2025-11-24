@@ -37,32 +37,31 @@ classifiers = [
     "Intended Audience :: Science/Research",
     'Topic :: Software Development :: Build Tools',
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
 ]
 readme = "README.rst"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    'mne>=1.10.0',
+    'mne>=1.11.0',
     'mne_bids>=0.16',
     'numpy',
     'pandas',
     'scipy',
     'matplotlib',
     'h5py',
-    'skorch>=1.2.0',
-    "torch>=2.0,<3.0",
-    "torchaudio>=2.0,<3.0",
+    'skorch>=1.3.0',
+    "torch>=2.0",
+    "torchaudio>=2.0",
     'einops',
     'joblib',
-    'torchinfo~=1.8',
+    'torchinfo',
     'wfdb',
-    'h5py',
     'linear_attention_transformer',
     'docstring_inheritance',
-    'rotary_embedding_torch',
-    'shap'
+    "rotary_embedding_torch",
 ]
 [project.urls]
 homepage = "https://braindecode.org"
@@ -107,9 +106,9 @@ docs = [
 
 all = [
     "braindecode[moabb]",
-    "braindecode[hub]",
     "braindecode[tests]",
     "braindecode[docs]",
+    "braindecode[hub]",
     "braindecode[eegprep]",
     "braindecode[typing]",
 ]
