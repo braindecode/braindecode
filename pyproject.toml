@@ -102,6 +102,7 @@ docs = [
     'pre-commit',
     'openneuro-py',
     'plotly',
+    'shap',
 ]
 
 all = [
