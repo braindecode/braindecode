@@ -36,12 +36,16 @@ trains and evaluates different models on a motor-imagery dataset using Exca.
 # ~~~~~~~~~~~~~~~~~~
 #
 # Our first configuration class is related to the data. It will allow us to load and prepare the dataset.
+import warnings
+
 import exca
 import pydantic
 
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.preprocessing import create_windows_from_events
+
+warnings.simplefilter("ignore")
 
 
 class WindowedMOABBDatasetConfig(pydantic.BaseModel):
