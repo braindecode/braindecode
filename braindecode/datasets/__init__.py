@@ -11,9 +11,11 @@ from .base import (
 )
 from .bcicomp import BCICompetitionIVDataset4
 from .bids import BIDSDataset, BIDSEpochsDataset
+from .chb_mit import CHBMIT
 from .mne import create_from_mne_epochs, create_from_mne_raw
 from .moabb import BNCI2014_001, HGD, MOABBDataset
 from .nmt import NMT
+from .siena import SIENA
 from .sleep_physio_challe_18 import SleepPhysionetChallenge2018
 from .sleep_physionet import SleepPhysionet
 from .tuh import TUH, TUHAbnormal
@@ -34,7 +36,9 @@ __all__ = [
     "create_from_mne_epochs",
     "TUH",
     "TUHAbnormal",
+    "SIENA",
     "NMT",
+    "CHBMIT",
     "SleepPhysionet",
     "SleepPhysionetChallenge2018",
     "create_from_X_y",
