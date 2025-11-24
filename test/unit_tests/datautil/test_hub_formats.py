@@ -63,7 +63,8 @@ def test_zarr_round_trip(setup_concat_windows_dataset, tmp_path):
     convert_to_zarr(dataset, zarr_path, compression="blosc", compression_level=5)
 
     assert zarr_path.exists()
-    assert (zarr_path / ".zgroup").exists()
+    # Zarr v3 uses zarr.json for metadata (not .zgroup from v2)
+    assert (zarr_path / "zarr.json").exists()
 
     # Load from Zarr
     loaded = load_from_zarr(zarr_path, preload=True)
@@ -83,7 +84,8 @@ def test_zarr_round_trip_eegwindows(setup_concat_eegwindows_dataset, tmp_path):
     convert_to_zarr(dataset, zarr_path, compression="blosc", compression_level=5)
 
     assert zarr_path.exists()
-    assert (zarr_path / ".zgroup").exists()
+    # Zarr v3 uses zarr.json for metadata (not .zgroup from v2)
+    assert (zarr_path / "zarr.json").exists()
 
     # Load from Zarr
     loaded = load_from_zarr(zarr_path, preload=True)
@@ -143,7 +145,8 @@ def test_zarr_round_trip_rawdataset(tmp_path):
     convert_to_zarr(dataset, zarr_path, compression="blosc", compression_level=5)
 
     assert zarr_path.exists()
-    assert (zarr_path / ".zgroup").exists()
+    # Zarr v3 uses zarr.json for metadata (not .zgroup from v2)
+    assert (zarr_path / "zarr.json").exists()
 
     # Load from Zarr
     loaded = load_from_zarr(zarr_path, preload=True)
