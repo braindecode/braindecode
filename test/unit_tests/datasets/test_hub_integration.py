@@ -18,10 +18,12 @@ import scipy
 # Optional imports for Hub functionality
 try:
     import zarr
+    from numcodecs import Blosc, GZip, Zstd
     ZARR_AVAILABLE = True
 except ImportError:
     ZARR_AVAILABLE = False
     zarr = None
+    Blosc = GZip = Zstd = None
 
 from braindecode.datasets import (
     BNCI2014_001,
@@ -785,7 +787,8 @@ def test_dependency_version_metadata(tmp_path):
     concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
 
     # Open Zarr and verify version metadata
-    root = zarr.open(str(zarr_path), mode="r")
+    store = zarr.DirectoryStore(str(zarr_path))
+    root = zarr.group(store=store)
 
     # Check that all dependency versions are saved
     assert "mne_version" in root.attrs
@@ -838,23 +841,21 @@ def test_create_compressor_function():
     """Test the _create_compressor function with different compression types."""
     pytest.importorskip("zarr")
 
-    # Test blosc (maps to zstd in Zarr v3)
+    # Test blosc
     compressor = _create_compressor("blosc", 5)
-    assert isinstance(compressor, dict)
-    assert compressor["name"] == "zstd"
-    assert compressor["configuration"]["level"] == 5
+    assert isinstance(compressor, Blosc)
+    assert compressor.clevel == 5
+    assert compressor.cname == "zstd"
 
     # Test gzip
     compressor = _create_compressor("gzip", 6)
-    assert isinstance(compressor, dict)
-    assert compressor["name"] == "gzip"
-    assert compressor["configuration"]["level"] == 6
+    assert isinstance(compressor, GZip)
+    assert compressor.level == 6
 
     # Test zstd
     compressor = _create_compressor("zstd", 3)
-    assert isinstance(compressor, dict)
-    assert compressor["name"] == "zstd"
-    assert compressor["configuration"]["level"] == 3
+    assert isinstance(compressor, Zstd)
+    assert compressor.level == 3
 
     # Test None compression
     compressor = _create_compressor(None, 5)
@@ -995,19 +996,12 @@ def test_create_compressor_zarr_not_available():
 
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_create_compressor_numcodecs_not_available():
-    """Test that _create_compressor works without external dependencies (Zarr v3 built-in).
-
-    In Zarr v3, compression codecs are built-in and don't require numcodecs.
-    This test verifies that compression works with Zarr v3's built-in system.
-    """
+    """Test that _create_compressor raises ImportError when numcodecs not available."""
     pytest.importorskip("zarr")
 
-    # Zarr v3 should work without numcodecs since codecs are built-in
-    # Test that blosc/zstd still works
-    compressor = _create_compressor("blosc", 5)
-    assert compressor is not None
-    assert isinstance(compressor, dict)
-    assert compressor["name"] == "zstd"
+    with mock.patch('braindecode.datasets.hub.NUMCODECS_AVAILABLE', False):
+        with pytest.raises(ImportError, match="numcodecs is not installed"):
+            _create_compressor("blosc", 5)
 
 
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")

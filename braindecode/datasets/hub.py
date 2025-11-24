@@ -21,8 +21,17 @@ import mne
 import numpy as np
 import pandas as pd
 import scipy
-from mne._fiff.meas_info import Info
 from mne.utils import _soft_import
+
+# TODO: Simplify this logic in the future with zarr v3+ only
+# Optional imports for Hub functionality
+try:
+    from numcodecs import Blosc, GZip, Zstd
+
+    NUMCODECS_AVAILABLE = True
+except ImportError:
+    NUMCODECS_AVAILABLE = False
+    Blosc = GZip = Zstd = None
 
 if TYPE_CHECKING:
     from .base import BaseDataset
@@ -388,8 +397,9 @@ class HubDatasetMixin:
                 f"{output_path} already exists. Set overwrite=True to replace it."
             )
 
-        # Create zarr store (zarr v3 API)
-        root = zarr.open(str(output_path), mode="w")
+        # Create zarr store (zarr v2 API)
+        store = zarr.DirectoryStore(str(output_path))
+        root = zarr.group(store=store, overwrite=False)
 
         # Validate uniformity across all datasets using shared validation
         dataset_type, _, _ = hub_validation.validate_dataset_uniformity(self.datasets)
@@ -434,7 +444,7 @@ class HubDatasetMixin:
                 data = ds.windows.get_data()
                 metadata = ds.windows.metadata
                 description = ds.description
-                info_dict = ds.windows.info.to_json_dict()
+                info_dict = _mne_info_to_dict(ds.windows.info)
                 target_name = ds.target_name if hasattr(ds, "target_name") else None
 
                 # Save using inlined function
@@ -447,7 +457,7 @@ class HubDatasetMixin:
                 raw = ds.raw
                 metadata = ds.metadata
                 description = ds.description
-                info_dict = ds.raw.info.to_json_dict()
+                info_dict = _mne_info_to_dict(ds.raw.info)
                 targets_from = ds.targets_from
                 last_target_only = ds.last_target_only
 
@@ -467,7 +477,7 @@ class HubDatasetMixin:
                 # Get continuous raw data from RawDataset
                 raw = ds.raw
                 description = ds.description
-                info_dict = ds.raw.info.to_json_dict()
+                info_dict = _mne_info_to_dict(ds.raw.info)
                 target_name = ds.target_name if hasattr(ds, "target_name") else None
 
                 # Save using inlined function
@@ -520,8 +530,9 @@ class HubDatasetMixin:
         if not input_path.exists():
             raise FileNotFoundError(f"{input_path} does not exist.")
 
-        # Open zarr store (zarr v3 API)
-        root = zarr.open(str(input_path), mode="r")
+        # Open zarr store (zarr v2 API)
+        store = zarr.DirectoryStore(str(input_path))
+        root = zarr.group(store=store)
 
         n_datasets = root.attrs["n_datasets"]
         dataset_type = root.attrs["dataset_type"]
@@ -543,7 +554,7 @@ class HubDatasetMixin:
                 )
 
                 # Convert to MNE objects and create dataset
-                info = Info.from_json_dict(info_dict)
+                info = _dict_to_mne_info(info_dict)
                 events = np.column_stack(
                     [
                         metadata["i_start_in_trial"].values,
@@ -569,7 +580,7 @@ class HubDatasetMixin:
 
                 # Convert to MNE objects and create dataset
                 # Data is already in continuous format [n_channels, n_timepoints]
-                info = Info.from_json_dict(info_dict)
+                info = _dict_to_mne_info(info_dict)
                 raw = mne.io.RawArray(data, info)
                 ds = EEGWindowsDataset(
                     raw=raw,
@@ -587,7 +598,7 @@ class HubDatasetMixin:
 
                 # Convert to MNE objects and create dataset
                 # Data is in continuous format [n_channels, n_timepoints]
-                info = Info.from_json_dict(info_dict)
+                info = _dict_to_mne_info(info_dict)
                 raw = mne.io.RawArray(data, info)
                 ds = RawDataset(raw, description)
                 if target_name is not None:
@@ -621,22 +632,48 @@ class HubDatasetMixin:
 # =============================================================================
 
 
+# TODO: remove when this MNE is solved https://github.com/mne-tools/mne-python/issues/13487
+def _mne_info_to_dict(info):
+    """Convert MNE Info object to dictionary for JSON serialization."""
+    return {
+        "ch_names": info["ch_names"],
+        "sfreq": float(info["sfreq"]),
+        "ch_types": [str(ch_type) for ch_type in info.get_channel_types()],
+        "lowpass": float(info["lowpass"]) if info["lowpass"] is not None else None,
+        "highpass": float(info["highpass"]) if info["highpass"] is not None else None,
+    }
+
+
+def _dict_to_mne_info(info_dict):
+    """Convert dictionary back to MNE Info object."""
+    info = mne.create_info(
+        ch_names=info_dict["ch_names"],
+        sfreq=info_dict["sfreq"],
+        ch_types=info_dict["ch_types"],
+    )
+
+    # Use _unlock() to set filter info when reconstructing from saved metadata
+    # This is necessary because MNE protects these fields to prevent users from
+    # setting filter parameters without actually filtering the data
+    with info._unlock():
+        if info_dict.get("lowpass") is not None:
+            info["lowpass"] = info_dict["lowpass"]
+        if info_dict.get("highpass") is not None:
+            info["highpass"] = info_dict["highpass"]
+
+    return info
+
+
 def _save_windows_to_zarr(
     grp, data, metadata, description, info, compressor, target_name
 ):
     """Save windowed data to Zarr group (low-level function)."""
     # Save data with chunking for random access
-    # In Zarr v3, use create_array with compressors parameter
-    data_array = data.astype(np.float32)
-
-    # Zarr v3 expects compressors as a list
-    compressors_list = [compressor] if compressor is not None else None
-
-    grp.create_array(
+    grp.create_dataset(
         "data",
-        data=data_array,
-        chunks=(1, data_array.shape[1], data_array.shape[2]),
-        compressors=compressors_list,
+        data=data.astype(np.float32),
+        chunks=(1, data.shape[1], data.shape[2]),
+        compressor=compressor,
     )
 
     # Save metadata
@@ -667,17 +704,11 @@ def _save_eegwindows_to_zarr(
 
     # Save continuous data with chunking optimized for window extraction
     # Chunk size: all channels, 10000 timepoints for efficient random access
-    # In Zarr v3, use create_array with compressors parameter
-    continuous_float = continuous_data.astype(np.float32)
-
-    # Zarr v3 expects compressors as a list
-    compressors_list = [compressor] if compressor is not None else None
-
-    grp.create_array(
+    grp.create_dataset(
         "data",
-        data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
-        compressors=compressors_list,
+        data=continuous_data.astype(np.float32),
+        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
+        compressor=compressor,
     )
 
     # Save metadata
@@ -772,17 +803,11 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
 
     # Save continuous data with chunking optimized for efficient access
     # Chunk size: all channels, 10000 timepoints for efficient random access
-    # In Zarr v3, use create_array with compressors parameter
-    continuous_float = continuous_data.astype(np.float32)
-
-    # Zarr v3 expects compressors as a list
-    compressors_list = [compressor] if compressor is not None else None
-
-    grp.create_array(
+    grp.create_dataset(
         "data",
-        data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
-        compressors=compressors_list,
+        data=continuous_data.astype(np.float32),
+        chunks=(continuous_data.shape[0], min(10000, continuous_data.shape[1])),
+        compressor=compressor,
     )
 
     # Save description
@@ -824,34 +849,26 @@ def _load_raw_from_zarr(grp, preload):
 
 
 def _create_compressor(compression, compression_level):
-    """Create a Zarr v3 compressor codec.
-
-    Returns compressor dict compatible with Zarr v3 create_array API.
-
-    Parameters
-    ----------
-    compression : str or None
-        Compression algorithm: "blosc", "zstd", "gzip", or None.
-    compression_level : int
-        Compression level (0-9).
-
-    Returns
-    -------
-    dict or None
-        Compressor configuration dict or None if no compression.
-    """
+    """Create a Zarr compressor object (zarr v2 API)."""
     if zarr is False:
         raise ImportError(
             "Zarr is not installed. Install with: pip install braindecode[hub]"
         )
 
-    if compression is None or compression not in ("blosc", "zstd", "gzip"):
+    if not NUMCODECS_AVAILABLE:
+        raise ImportError(
+            "numcodecs is not installed. Install with: pip install braindecode[hub]"
+        )
+
+    # Zarr v2 uses numcodecs compressors
+    if compression == "blosc":
+        return Blosc(cname="zstd", clevel=compression_level)
+    elif compression == "zstd":
+        return Zstd(level=compression_level)
+    elif compression == "gzip":
+        return GZip(level=compression_level)
+    else:
         return None
-
-    # Map blosc to zstd (Zarr v3 uses zstd as the primary implementation)
-    name = "zstd" if compression == "blosc" else compression
-
-    return {"name": name, "configuration": {"level": compression_level}}
 
 
 # TODO: improve content

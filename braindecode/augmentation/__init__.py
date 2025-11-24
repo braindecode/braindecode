@@ -5,10 +5,8 @@ Utilities for data augmentation.
 from . import functional
 from .base import AugmentedDataLoader, Compose, IdentityTransform, Transform
 from .transforms import (
-    AmplitudeScale,
     BandstopFilter,
     ChannelsDropout,
-    ChannelsReref,
     ChannelsShuffle,
     ChannelsSymmetry,
     FrequencyShift,
@@ -48,7 +46,5 @@ __all__ = [
     "Mixup",
     "SegmentationReconstruction",
     "MaskEncoding",
-    "AmplitudeScale",
-    "ChannelsReref",
     "functional",
 ]

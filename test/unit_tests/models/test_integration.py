@@ -364,10 +364,10 @@ def test_model_has_drop_prob_parameter(model_class):
         f" Found parameters: {param_names}"
     )
 
-# skip if windows or python 3.14
+
 @pytest.mark.skipif(
-    sys.platform.startswith("win") or sys.version_info >= (3, 14),
-    reason="torch.compile is known to have issues on Windows or with Python 3.14.",
+    sys.platform.startswith("win"),
+    reason="torch.compile is known to have issues on Windows.",
 )
 def test_model_compiled(model):
     """
@@ -400,22 +400,14 @@ def test_model_exported(model):
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
-    # Models known to have export issues on Windows and Python 3.14+ (non-pytree-compatible attributes)
-    model_name = model.__class__.__name__
-
+    # Models known to have export issues on Windows (e.g., non-pytree-compatible attributes)
     if sys.platform.startswith("win"):
         not_exportable_models_win = [
             "LUNA",  # Has _channel_location_cache dict that breaks pytree on Windows
         ]
+        model_name = model.__class__.__name__
         if model_name in not_exportable_models_win:
             pytest.skip(f"{model_name} export is not compatible on Windows")
-
-    if sys.version_info >= (3, 14):
-        not_exportable_models_py314 = [
-            "LUNA",  # Has _channel_location_cache dict that breaks pytree on Python 3.14+
-        ] # TODO: fix LUNA export issues on Python 3.14+ one day
-        if model_name in not_exportable_models_py314:
-            pytest.skip(f"{model_name} export is not compatible on Python 3.14+")
 
     # example input matching your model's expected shape
     try:
@@ -434,10 +426,10 @@ def test_model_exported(model):
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
 
-# skip if windows or python 3.14
+
 @pytest.mark.skipif(
-    sys.platform.startswith("win") or sys.version_info >= (3, 14),
-    reason="torch.compile is known to have issues on Windows or with Python 3.14.",
+    sys.platform.startswith("win"),
+    reason="torch.script is known to have issues on Windows.",
 )
 def test_model_torch_script(model):
     """

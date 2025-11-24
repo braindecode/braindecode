@@ -339,12 +339,10 @@ Common Datasets
 
     BCICompetitionIVDataset4
     BNCI2014_001
-    CHBMIT
     HGD
     MOABBDataset
     NMT
     SleepPhysionet
-    SIENA
     SleepPhysionetChallenge2018
     TUH
     TUHAbnormal
@@ -518,7 +516,6 @@ Data Utils
 
     save_concat_dataset
     load_concat_dataset
-    infer_signal_properties
 
 Samplers
 ========
