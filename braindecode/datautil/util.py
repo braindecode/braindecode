@@ -2,6 +2,20 @@
 #
 # License: BSD (3-clause)
 
+import logging
+from typing import Any, Literal
+
+import mne
+import numpy as np
+from skorch.helper import SliceDataset
+from skorch.utils import is_dataset
+
+from braindecode.datasets.base import BaseConcatDataset, WindowsDataset
+
+# from braindecode.models.util import SigArgName
+
+log = logging.getLogger(__name__)
+
 
 def ms_to_samples(ms, fs):
     """
