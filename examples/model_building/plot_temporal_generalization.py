@@ -1,3 +1,6 @@
+# Authors: Matthew Chen <matt.chen42601@gmail.com>
+# License: BSD (3-clause)
+
 r""".. _temporal-generalization:
 
 Temporal generalization with Braindecode
@@ -25,18 +28,16 @@ For papers describing this method, see [2]_ and [3]_.
 
 """
 
-# Authors: Matthew Chen <matt.chen42601@gmail.com>
-# License: BSD (3-clause)
-
 ###########################################################################################
 # Loading and preprocessing the data
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# We will load in the same exact dataset as used in the MNE tutorial [1]_
+# We will load in the same exact MEG dataset as used in the MNE tutorial [1]_
 # and preprocess it identically.
 
 import matplotlib.pyplot as plt
 import mne
 import numpy as np
+import shap
 import torch
 import torch.nn as nn
 from mne.datasets import sample
@@ -45,11 +46,13 @@ from mne.decoding import (
     SlidingEstimator,
     cross_val_multiscore,
 )
-from sklearn.preprocessing import LabelEncoder
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from skorch.callbacks import LRScheduler
 from torch.optim import AdamW
 
 from braindecode import EEGClassifier
+from braindecode.models import EEGSimpleConv
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -220,7 +223,6 @@ ax.set_title("Sensor space decoding")
 # `shap` package (URL: https://shap.readthedocs.io/) [4]_.
 
 time_decoding_mlp = time_decoding_mlp.fit(X, y_encod)
-import shap
 
 # We will use the first 100 samples as background
 background = torch.from_numpy(X[:100]).to(device).to(torch.float32)
@@ -321,7 +323,7 @@ ax.legend()
 ax.axvline(0.0, color="k", linestyle="-")
 ax.set_title("Decoding MEG sensors over time")
 
-###################################################################################################
+####################################################################################################
 # Then we plot the full generalization matrix.
 fig, ax = plt.subplots(1, 1)
 im = ax.imshow(
@@ -340,6 +342,221 @@ ax.axvline(0, color="k")
 ax.axhline(0, color="k")
 cbar = plt.colorbar(im, ax=ax)
 cbar.set_label("AUC")
+
+
+###################################################################################################
+# (Optional) The importance of normalization
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# The following is an addendum to the original MNE tutorial analalyzing how crucial normalizing is
+# for temporal decoding/generalization. The original MNE tutorial used a ``StandardScaler`` to
+# normalize the input data beforehand for each channel, i.e. the mean and standard deviation of
+# each channel was computed across the entire dataset and then used to normalize each channel.
+# You could do the same thing with an ``EEGClassifier`` by using the ``StandardScaler`` in a
+# sklearn pipeline:
+
+# We aren't actually going to run this
+clf = make_pipeline(StandardScaler(), sliding_estimator_mlp_clf)
+
+###################################################################################################
+# However, since this is a deep learning library, we wanted to use something that aligns with
+# current deep learning practices, which is why we use a ``nn.BatchNorm1d`` layer to normalize
+# the input channels. Let's use another model from Braindecode, :py:mod:`EEGSimpleConv`,
+
+
+class DimWrapper(nn.Module):
+    """Wrapper that converts 2D input (batch, n_chans) to 3D (batch, n_chans, 1)
+
+    Helper module because the EEGSimpleConv model expects
+    input to be in the shape of (batch, n_chans, time), but since
+    we are only concerned with one time point, the data passed in is
+    in the shape of (batch, n_chans). This wrapper reshapes the input
+    to the shape of (batch, n_chans, 1) so that the model can be
+    trained on the data.
+    """
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x):
+        """Modify the input to be in the shape of (batch, n_chans, 1)
+
+        X form: (batch, n_chans)
+        Reshape to (batch, n_chans, 1)
+        """
+        if x.dim() == 2:
+            x = torch.unsqueeze(x, dim=-1)
+        return self.model(x)
+
+
+class WrappedEEGSimpleConvNoNorm(nn.Module):
+    """Wrapper that applies DimWrapper to EEGSimpleConv
+    and has no batch norm module.
+    """
+
+    def __init__(
+        self, n_chans, n_outputs, n_times, sfreq, feature_maps, kernel_size, n_convs
+    ):
+        super().__init__()
+        self.eeg_simple_conv = EEGSimpleConv(
+            n_chans=n_chans,
+            n_outputs=n_outputs,
+            n_times=n_times,
+            sfreq=sfreq,
+            feature_maps=feature_maps,
+            kernel_size=kernel_size,
+            n_convs=n_convs,
+        )
+        self.dim_wrapper = DimWrapper(self.eeg_simple_conv)
+
+    def forward(self, x):
+        return self.dim_wrapper(x)
+
+
+class WrappedEEGSimpleConvNorm(nn.Module):
+    """Wrapper that applies DimWrapper to EEGSimpleConv
+    and has batch norm module.
+    """
+
+    def __init__(
+        self, n_chans, n_outputs, n_times, sfreq, feature_maps, kernel_size, n_convs
+    ):
+        super().__init__()
+        self.eeg_simple_conv = EEGSimpleConv(
+            n_chans=n_chans,
+            n_outputs=n_outputs,
+            n_times=n_times,
+            sfreq=sfreq,
+            feature_maps=feature_maps,
+            kernel_size=kernel_size,
+            n_convs=n_convs,
+        )
+        self.dim_wrapper = DimWrapper(self.eeg_simple_conv)
+        self.norm = nn.BatchNorm1d(n_chans, affine=False, eps=0.0)
+
+    def forward(self, x):
+        x_norm = self.norm(x)
+        return self.dim_wrapper(x_norm)
+
+
+###################################################################################################
+# Note that we have to wrap the model to include a DimWrapper and a BatchNorm1d layer. We create
+# two different wrappers, one that applies the BatchNorm1d layer and one that does not. Now let's
+# perform temporal decoding with both similar to the previous example and compare the results.
+
+###################################################################################################
+# Without normalization
+# ----------------------
+
+
+sliding_estimator_simple_conv_no_norm_clf = EEGClassifier(
+    WrappedEEGSimpleConvNoNorm,
+    module__n_chans=n_chans,
+    module__n_outputs=n_classes,
+    module__n_times=1,
+    module__sfreq=epochs.info["sfreq"],
+    module__feature_maps=32,
+    module__kernel_size=4,
+    module__n_convs=3,
+    criterion=nn.CrossEntropyLoss,
+    optimizer=AdamW,
+    optimizer__lr=0.01,
+    batch_size=8,  # Lower batch sizes == more interesting? Why?
+    max_epochs=EPOCHS,
+    callbacks=[
+        "accuracy",
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=EPOCHS - 1)),
+    ],
+    device=device,
+    classes=classes,
+    verbose=False,  # Otherwise it would print out every training run for each time point
+)
+
+time_decoding_simple_conv_no_norm = SlidingEstimator(
+    sliding_estimator_simple_conv_no_norm_clf, n_jobs=1, scoring="roc_auc", verbose=True
+)
+
+# cv = 3 for sake of speed
+scores = cross_val_multiscore(
+    time_decoding_simple_conv_no_norm,
+    torch.from_numpy(X).to(torch.float32),
+    y_encod,
+    cv=3,
+    n_jobs=1,
+)
+
+# Mean scores across cross-validation splits
+scores = np.mean(scores, axis=0)
+
+# Plot
+fig, ax = plt.subplots()
+ax.plot(epochs.times, scores, label="score")
+ax.axhline(0.5, color="k", linestyle="--", label="chance")
+ax.set_xlabel("Times")
+ax.set_ylabel("AUC")  # Area Under the Curve
+ax.legend()
+ax.axvline(0.0, color="k", linestyle="-")
+ax.set_title("Sensor space decoding")
+
+###################################################################################################
+# With normalization
+# ----------------------
+
+sliding_estimator_simple_conv_norm_clf = EEGClassifier(
+    WrappedEEGSimpleConvNorm,
+    module__n_chans=n_chans,
+    module__n_outputs=n_classes,
+    module__n_times=1,
+    module__sfreq=epochs.info["sfreq"],
+    module__feature_maps=32,
+    module__kernel_size=4,
+    module__n_convs=3,
+    criterion=nn.CrossEntropyLoss,
+    optimizer=AdamW,
+    optimizer__lr=0.01,
+    batch_size=8,  # Lower batch sizes == more interesting? Why?
+    max_epochs=EPOCHS,
+    callbacks=[
+        "accuracy",
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=EPOCHS - 1)),
+    ],
+    device=device,
+    classes=classes,
+    verbose=False,  # Otherwise it would print out every training run for each time point
+)
+
+time_decoding_simple_conv_norm = SlidingEstimator(
+    sliding_estimator_simple_conv_norm_clf, n_jobs=1, scoring="roc_auc", verbose=True
+)
+
+# cv = 3 for sake of speed
+scores = cross_val_multiscore(
+    time_decoding_simple_conv_norm,
+    torch.from_numpy(X).to(torch.float32),
+    y_encod,
+    cv=3,
+    n_jobs=1,
+)
+
+# Mean scores across cross-validation splits
+scores = np.mean(scores, axis=0)
+
+# Plot
+fig, ax = plt.subplots()
+ax.plot(epochs.times, scores, label="score")
+ax.axhline(0.5, color="k", linestyle="--", label="chance")
+ax.set_xlabel("Times")
+ax.set_ylabel("AUC")  # Area Under the Curve
+ax.legend()
+ax.axvline(0.0, color="k", linestyle="-")
+ax.set_title("Sensor space decoding")
+
+###################################################################################################
+# Although performing slightly worse than the previous examples, the model with normalization still
+# resembles the original MNE tutorial. On the other hand, the model without normalization cannot
+# effectively temporally decode at all, essentially having approximately 0.5 AUC at all time
+# points. This suggests that normalizing the data before feeding it into the model is crucial
+# for temporal decoding.
 
 ###################################################################################################
 # References
