@@ -76,7 +76,7 @@ def _get_n_outputs(y, classes, mode):
 
 def infer_signal_properties(
     X,
-    y,
+    y=None,
     mode: Literal["classification", "regression"] = "classification",
     classes: list | None = None,
 ) -> dict[str, Any]:  # TODO

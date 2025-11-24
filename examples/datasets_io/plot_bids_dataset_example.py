@@ -36,3 +36,12 @@ bids_ds = BIDSDataset(dataset_root)
 ###############################################################################
 # And we can see that the events of this dataset are set in the ``.annotations`` attribute of the raw data:
 print(bids_ds.datasets[0].raw.annotations)
+
+
+###############################################################################
+# Finally, we can extract the properties of the signals contained in the dataset using the
+# :func:`braindecode.datautil.infer_signal_properties` function:
+from braindecode.datautil import infer_signal_properties
+
+sig_props = infer_signal_properties(bids_ds)
+print(sig_props)
