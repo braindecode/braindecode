@@ -20,10 +20,10 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.modules.attention import LocalSelfAttention
 from braindecode.modules.layers import SubjectLayers
 
-__all__ = ["DilatedConvDecoder"]
+__all__ = ["SimpleConv"]
 
 
-class DilatedConvDecoder(EEGModuleMixin, nn.Module):
+class SimpleConv(EEGModuleMixin, nn.Module):
     r"""Dilated Convolutional Decoder (SimpleConv) as the Brain Module from [brainmagik]_.
 
     :bdg-secondary:`Recurrent` :bdg-info:`Small Attention` :bdg-success:`Convolution`

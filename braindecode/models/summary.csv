@@ -40,7 +40,7 @@ FBLightConvNet,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sf
 IFNet,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sfreq",9860,"IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank"
 PBT,General,Classification,250,"n_chans, n_outputs, n_times",818948,"PBT(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Large Brain Model"
 SSTDPN,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times",19502,"SSTDPN(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Small Attention"
-DilatedConvDecoder,Speech Decoding,Classification,250,"n_chans, n_outputs, n_times, sfreq",145230,"DilatedConvDecoder(n_chans=64, n_outputs=29, n_times=160, sfreq=1000)","Convolution,Recurrent"
+SimpleConv,Speech Decoding,Classification,250,"n_chans, n_outputs, n_times, sfreq",145230,"SimpleConv(n_chans=64, n_outputs=29, n_times=160, sfreq=1000)","Convolution,Recurrent"
 BENDR,General,"Classification,Embedding",250,"n_chans, n_times, n_outputs",157141049,"BENDR(n_chans=22, n_outputs=4, n_times=1000)","Large Brain Model,Convolution"
 LUNA,General,"Classification,Embedding",128,"n_chans, n_times, sfreq, chs_info",7100731,"LUNA(n_chans=22, n_times=512, sfreq=128)","Convolution,Channel,Large Brain Model"
 MEDFormer,General,Classification,250,"n_chans, n_outputs, n_times",5313924,"MEDFormer(n_chans=22, n_outputs=4, n_times=1000)","Large Brain Model,Convolution"

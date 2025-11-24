@@ -117,7 +117,7 @@ models_mandatory_parameters: list[
     ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
-    ("DilatedConvDecoder", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("SimpleConv", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BENDR", ["n_chans", "n_outputs", "n_times"], None),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),

@@ -764,7 +764,7 @@ class LocalSelfAttention(nn.Module):
     """Local self attention with relative position embeddings.
 
     This module mirrors the decoder-specific attention block used in
-    :class:`braindecode.models.dilated_conv_decoder.DilatedConvDecoder`, but is
+    :class:`braindecode.models.dilated_conv_decoder.SimpleConv`, but is
     exposed here to make it reusable across models.
 
     Implements attention within a fixed radius around each position,

@@ -27,7 +27,7 @@ from braindecode.models import (
     ContraWR,
     Deep4Net,
     DeepSleepNet,
-    DilatedConvDecoder,
+    SimpleConv,
     EEGConformer,
     EEGInceptionERP,
     EEGInceptionMI,
@@ -52,7 +52,7 @@ from braindecode.models import (
     TSception,
     USleep,
 )
-from braindecode.models.dilated_conv_decoder import _LayerScale
+from braindecode.models.simpleconv import _LayerScale
 from braindecode.util import set_random_seeds
 
 
@@ -1862,12 +1862,12 @@ def test_fc_length_eegconformer():
 
 
 # ============================================================================
-# DilatedConvDecoder Tests
+# SimpleConv Tests
 # ============================================================================
 
 @pytest.fixture
 def dilated_conv_decoder_params():
-    """Fixture with common DilatedConvDecoder parameters."""
+    """Fixture with common SimpleConv parameters."""
     return dict(
         n_chans=22,
         n_outputs=4,
@@ -1880,12 +1880,12 @@ def dilated_conv_decoder_params():
 @pytest.mark.parametrize("sfreq", [100, 250, 500])
 @pytest.mark.parametrize("batch_size", [1, 4, 8])
 def test_dilated_conv_decoder_basic(dilated_conv_decoder_params, n_times, sfreq, batch_size):
-    """Test DilatedConvDecoder with various input sizes and sample rates."""
+    """Test SimpleConv with various input sizes and sample rates."""
     set_random_seeds(0, False)
     params = dilated_conv_decoder_params.copy()
     params.update({"n_times": n_times, "sfreq": sfreq})
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.eval()
 
     x = torch.randn(batch_size, params["n_chans"], n_times)
@@ -1903,7 +1903,7 @@ def test_dilated_conv_decoder_subject_embeddings(dilated_conv_decoder_params, su
     params = dilated_conv_decoder_params.copy()
     params.update({"n_subjects": n_subjects, "subject_dim": subject_dim})
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.eval()
 
     x = torch.randn(4, params["n_chans"], params["n_times"])
@@ -1925,7 +1925,7 @@ def test_dilated_conv_decoder_stft(dilated_conv_decoder_params, n_fft, fft_compl
     params = dilated_conv_decoder_params.copy()
     params.update({"n_fft": n_fft, "fft_complex": fft_complex})
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.eval()
 
     for batch_size in [1, 4, 8]:
@@ -1939,67 +1939,67 @@ def test_dilated_conv_decoder_parameter_validation():
     """Test parameter validation for all features."""
     # Invalid subject_layers
     with pytest.raises(ValueError, match="subject_layers=True requires subject_dim > 0"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
             subject_layers=True, subject_dim=0,
         )
 
     # Invalid depth
     with pytest.raises(ValueError, match="depth must be >= 1"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250, depth=0,
         )
 
     # Invalid kernel_size
     with pytest.raises(ValueError, match="kernel_size must be > 0"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250, kernel_size=0,
         )
 
     # initial_depth > 1 requires initial_linear > 0
     with pytest.raises(ValueError, match="initial_depth > 1 requires initial_linear > 0"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
             initial_linear=0, initial_depth=2,
         )
 
     # initial_linear < 0 is invalid
     with pytest.raises(ValueError, match="initial_linear must be >= 0"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250, initial_linear=-1,
         )
 
     # layer_scale must be > 0
     with pytest.raises(ValueError, match="layer_scale must be > 0"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
             skip=True, layer_scale=-0.1,
         )
 
     # post_skip requires skip=True
     with pytest.raises(ValueError, match="post_skip=True requires skip=True"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
             skip=False, post_skip=True,
         )
 
     # channel_dropout_type requires channel_dropout_prob > 0
     with pytest.raises(ValueError, match="channel_dropout_type requires channel_dropout_prob > 0"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
             channel_dropout_prob=0.0, channel_dropout_type="eeg",
         )
 
     # glu_context requires glu > 0
     with pytest.raises(ValueError, match="glu_context > 0 requires glu > 0"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
             glu=0, glu_context=1,
         )
 
     # glu_context must be < kernel_size
     with pytest.raises(ValueError, match="glu_context must be < kernel_size"):
-        DilatedConvDecoder(
+        SimpleConv(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
             kernel_size=4, glu=1, glu_context=4,
         )
@@ -2018,7 +2018,7 @@ def test_dilated_conv_decoder_gradient_flow(dilated_conv_decoder_params):
         params = dilated_conv_decoder_params.copy()
         params.update(config)
 
-        model = DilatedConvDecoder(**params)
+        model = SimpleConv(**params)
         model.train()
 
         x = torch.randn(
@@ -2060,7 +2060,7 @@ def test_dilated_conv_decoder_initial_layers(
         "initial_nonlin": initial_nonlin,
     })
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.eval()
 
     x = torch.randn(4, params["n_chans"], params["n_times"])
@@ -2092,7 +2092,7 @@ def test_dilated_conv_decoder_skip_connections(
     params = dilated_conv_decoder_params.copy()
     params.update({"skip": skip, "layer_scale": layer_scale, "post_skip": post_skip})
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.eval()
 
     x = torch.randn(4, params["n_chans"], params["n_times"])
@@ -2119,7 +2119,7 @@ def test_dilated_conv_decoder_channel_dropout(dilated_conv_decoder_params, dropo
     params = dilated_conv_decoder_params.copy()
     params.update({"channel_dropout_prob": dropout_prob})
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.train()
 
     x = torch.randn(4, params["n_chans"], params["n_times"])
@@ -2141,7 +2141,7 @@ def test_dilated_conv_decoder_channel_dropout_eval_mode(dilated_conv_decoder_par
     params = dilated_conv_decoder_params.copy()
     params.update({"channel_dropout_prob": 0.5})
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.eval()
 
     x = torch.randn(4, params["n_chans"], params["n_times"])
@@ -2177,7 +2177,7 @@ def test_dilated_conv_decoder_channel_dropout_with_ch_info():
         "chs_info": ch_info,
     }
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.train()
 
     x = torch.ones(4, 6, 1000)
@@ -2203,7 +2203,7 @@ def test_dilated_conv_decoder_glu(dilated_conv_decoder_params, glu, glu_context,
     params = dilated_conv_decoder_params.copy()
     params.update({"glu": glu, "glu_context": glu_context, "depth": depth})
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.train()
 
     x = torch.randn(4, params["n_chans"], params["n_times"])
@@ -2228,7 +2228,7 @@ def test_dilated_conv_decoder_glu_variants(dilated_conv_decoder_params, glu_glu)
     params = dilated_conv_decoder_params.copy()
     params.update({"glu": 1, "glu_glu": glu_glu, "depth": 2})
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.train()
 
     x = torch.randn(4, params["n_chans"], params["n_times"])
@@ -2244,7 +2244,7 @@ def test_dilated_conv_decoder_glu_eval_determinism(dilated_conv_decoder_params):
     params = dilated_conv_decoder_params.copy()
     params.update({"glu": 1, "depth": 2})
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.eval()
 
     x = torch.randn(4, params["n_chans"], params["n_times"])
@@ -2272,7 +2272,7 @@ def test_dilated_conv_decoder_glu_combined_features(dilated_conv_decoder_params)
         "depth": 2,
     })
 
-    model = DilatedConvDecoder(**params)
+    model = SimpleConv(**params)
     model.train()
 
     x = torch.randn(4, params["n_chans"], params["n_times"])

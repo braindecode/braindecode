@@ -68,7 +68,7 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     ContraWR
     CTNet
     Deep4Net
-    DilatedConvDecoder
+    SimpleConv
     DeepSleepNet
     EEGConformer
     EEGInceptionERP
