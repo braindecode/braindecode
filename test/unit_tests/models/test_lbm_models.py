@@ -49,7 +49,7 @@ def n_layers():
 
 
 @pytest.fixture
-def att_num_heads():
+def num_heads():
     return 4
 
 
@@ -59,31 +59,31 @@ def batch_size():
 
 
 @pytest.fixture
-def model_config_tokenizer(n_times, n_chans, n_outputs, patch_size, emb_size, n_layers, att_num_heads):
+def model_config_tokenizer(n_times, n_chans, n_outputs, patch_size, emb_size, n_layers, num_heads):
     return {
         "n_times": n_times,
         "n_chans": n_chans,
         "n_outputs": n_outputs,
         "patch_size": patch_size,
-        "emb_size": emb_size,
-        "n_layers": n_layers,
-        "att_num_heads": att_num_heads,
+        "embed_dim": emb_size,
+        "num_layers": n_layers,
+        "num_heads": num_heads,
         "neural_tokenizer": True,
     }
 
 
 @pytest.fixture
-def model_config_decoder(n_times, n_chans, n_outputs, patch_size, emb_size, n_layers, att_num_heads):
+def model_config_decoder(n_times, n_chans, n_outputs, patch_size, emb_size, n_layers, num_heads):
     return {
         "n_times": n_times,
         "n_chans": n_chans,
         "n_outputs": n_outputs,
         "patch_size": patch_size,
-        "emb_size": emb_size,
-        "in_conv_channels": 8,
-        "out_channels": 8,
-        "n_layers": n_layers,
-        "att_num_heads": att_num_heads,
+        "embed_dim": emb_size,
+        "conv_in_channels": 8,
+        "conv_out_channels": 8,
+        "num_layers": n_layers,
+        "num_heads": num_heads,
         "neural_tokenizer": False,
     }
 

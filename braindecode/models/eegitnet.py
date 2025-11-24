@@ -83,7 +83,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         tcn_padding: int = 3,
         drop_prob: float = 0.4,
         tcn_dilatation: int = 1,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -205,7 +205,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         out_channels,
         kernel_length,
         depth_multiplier=1,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         return nn.Sequential(
             nn.Conv2d(
@@ -260,7 +260,7 @@ class _TCBlock(nn.Module):
         dilatation,
         padding,
         drop_prob=0.4,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
         self.pad = padding

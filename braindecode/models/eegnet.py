@@ -143,7 +143,7 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
         pool1_kernel_size: int = 4,
         pool2_kernel_size: int = 8,
         conv_spatial_max_norm: int = 1,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         batch_norm_momentum: float = 0.01,
         batch_norm_affine: bool = True,
         batch_norm_eps: float = 1e-3,

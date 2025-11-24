@@ -176,7 +176,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         drop_prob=0.5,
         scales_samples_s=(0.5, 0.25, 0.125),
         n_filters=8,
-        activation: nn.Module = nn.ELU,
+        activation: type[nn.Module] = nn.ELU,
         batch_norm_alpha=0.01,
         depth_multiplier=2,
         pooling_sizes=(4, 2, 2, 2),

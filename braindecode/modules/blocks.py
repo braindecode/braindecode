@@ -99,7 +99,9 @@ class MLP(nn.Sequential):
 
 
 class FeedForwardBlock(nn.Sequential):
-    def __init__(self, emb_size, expansion, drop_p, activation: nn.Module = nn.GELU):
+    def __init__(
+        self, emb_size, expansion, drop_p, activation: type[nn.Module] = nn.GELU
+    ):
         super().__init__(
             nn.Linear(emb_size, expansion * emb_size),
             activation(),

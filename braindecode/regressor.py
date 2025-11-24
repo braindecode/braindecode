@@ -228,10 +228,6 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
                 y = np.array(y).reshape(-1, 1)
         super().fit(X=X, y=y, **kwargs)
 
-    def _get_n_outputs(self, y, classes):
-        if y is None:
-            return None
-        if y.ndim == 1:
-            return 1
-        else:
-            return y.shape[-1]
+    @property
+    def mode(self):
+        return "regression"
