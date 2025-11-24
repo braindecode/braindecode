@@ -181,7 +181,7 @@ class EvaluationConfig(pydantic.BaseModel):
 
 
 #####################################################################
-# .. topic:: SLURM execution
+# .. note:: SLURM execution
 #     Exca also offers the possibility to run experiments remotely on a SLURM-managed cluster.
 #     In this example, we run everything locally by setting ``cluster=None``
 #     but you can find more information about how to set up cluster execution
