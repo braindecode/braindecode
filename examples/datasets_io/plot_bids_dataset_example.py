@@ -43,5 +43,5 @@ print(bids_ds.datasets[0].raw.annotations)
 # :func:`braindecode.datautil.infer_signal_properties` function:
 from braindecode.datautil import infer_signal_properties
 
-sig_props = infer_signal_properties(bids_ds)
+sig_props = infer_signal_properties(bids_ds, mode="classification")
 print(sig_props)
