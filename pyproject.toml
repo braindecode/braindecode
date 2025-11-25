@@ -62,7 +62,6 @@ dependencies = [
     'linear_attention_transformer',
     'docstring_inheritance',
     'rotary_embedding_torch',
-    'shap'
 ]
 [project.urls]
 homepage = "https://braindecode.org"

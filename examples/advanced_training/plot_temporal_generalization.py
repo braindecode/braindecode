@@ -14,8 +14,8 @@ a pair of features :math:`X` and targets :math:`y`, where :math:`X` has more tha
 :math:`2` dimensions, we want to fit a model :math:`f` to :math:`X` and :math:`y` and
 evaluate the performance of :math:`f` on a new pair of features :math:`X'` and targets
 :math:`y'`. Typically, :math:`X` is in the shape of
-:math:`n_{\\text{epochs}} \\times n_{\\text{channels}} \\times n_{\\text{time}}`
-and :math:`y` is in the shape of :math:`n_{\\text{epochs}} \\times n_{\\text{classes}}`.
+:math:`n_{\text{epochs}} \times n_{\text{channels}} \times n_{\text{time}}`
+and :math:`y` is in the shape of :math:`n_{\text{epochs}} \times n_{\text{classes}}`.
 This tutorial is based on the MNE tutorial:
 https://mne.tools/stable/auto_tutorials/machine-learning/50_decoding.html#temporal-decoding.
 
@@ -213,6 +213,10 @@ ax.set_title("Sensor space decoding")
 ###################################################################################################
 # (Optional) Analyzing the spatial filters/patterns via Shapley Values
 # ---------------------------------------------------------------------
+#
+# You will need to install the `shap` package to run this part of the tutorial.
+# > pip install shap
+#
 # In the original tutorial, the model analyzed was a LogisticRegression model, which is a linear
 # classifier. Because our deep learning model is a non-linear classifier, we cannot use the same
 # approach to analyze the spatial filters/patterns. However, we can still use the Shapley Values
@@ -274,7 +278,7 @@ plot_evoked(vis_shap, "Visual/Left Shap Values (Predicted)")
 
 ###################################################################################################
 # Temporal Generalization
-# ~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~
 # Next, we will similarly emulate the temporal generalization of the original MNE tutorial,
 # which is an extension of the temporal decoding approach.
 # Instead of just predicting the target at each time point, it evaluates how well a model at a
@@ -346,7 +350,7 @@ cbar.set_label("AUC")
 
 ###################################################################################################
 # (Optional) The importance of normalization
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # The following is an addendum to the original MNE tutorial analalyzing how crucial normalizing is
 # for temporal decoding/generalization. The original MNE tutorial used a ``StandardScaler`` to
 # normalize the input data beforehand for each channel, i.e. the mean and standard deviation of
