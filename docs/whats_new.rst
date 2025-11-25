@@ -47,6 +47,7 @@ Enhancements
 - Adding a CITATION.cff file, allowing researchers to directly cite the Braindecode library via a Zenodo DOI (:gh:`847` by `Pierre Guetschel`_ )
 - Add automatically-generated pydantic models configs (:gh:`850` by `Pierre Guetschel`_ )
 - Refactor: standardized parameter names in transformer and LabRam modules (:gh:`850` by `José Mauricio`_)
+- Added a tutorial for temporal generalization (:gh:`857` by `Matthew Chen`_)
 
 API changes
 ~~~~~~~~~~~
@@ -442,3 +443,4 @@ Authors
 .. _Jonathan Dan: https://github.com/danjjl
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: github.com/AryaDro
+.. _Mattew Chew: https://github.com/MatthewChen37
