@@ -443,3 +443,4 @@ Authors
 .. _Jonathan Dan: https://github.com/danjjl
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: github.com/AryaDro
+.. _Mattew Chew: https://github.com/MatthewChen37
