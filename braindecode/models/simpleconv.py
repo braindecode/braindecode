@@ -24,7 +24,7 @@ __all__ = ["SimpleConv"]
 
 
 class SimpleConv(EEGModuleMixin, nn.Module):
-    r"""Dilated Convolutional Decoder (SimpleConv) as the Brain Module from [brainmagik]_.
+    r"""SimpleConv from the Brain Module [brainmagik]_.
 
     :bdg-secondary:`Recurrent` :bdg-info:`Small Attention` :bdg-success:`Convolution`
 
@@ -32,155 +32,6 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         :align: center
         :alt: SimpleConv Architecture
         :width: 1000px
-
-        For each layer, we note first the number of output channels, while the number of time steps is constant throughout the layers.
-        The model is composed of a spatial attention layer, then a 1x1 convolution without activation.
-        A 'Subject Layer' is selected based on the subject index s, which consists in a 1x1 convolution learnt only for that subject with no activation.
-        Then, we apply five convolutional blocks made of three convolutions.
-        The first two use residual skip connection and increasing dilation, followed by a BatchNorm layer and a GELU activation.
-        The third convolution is not residual, and uses a GLU activation (which halves the number of channels) and no normalization.
-        Finally, we apply two 1x1 convolutions with a GELU in between.
-
-    The **Dilated Convolutional Decoder**, sometimes referred to as SimpleConv [brainmagik]_,
-    functions as the **Brain Module** (or deep convolutional network) described in the
-    original paper by Défossez et al. (2023) for decoding speech perception from
-    non-invasive MEG/EEG recordings.
-
-    The model is a flexible encoder-decoder architecture adapted for Braindecode's
-    EEG workflows, originally designed for MEG decoding [brainmagik]_. Its primary role is to
-    map raw brain activity :math:`X \in \mathbb{R}^{C \times T}` into a latent
-    representation :math:`Z \in \mathbb{R}^{F \times T}` that is maximally aligned
-    with deep speech representations (e.g., wav2vec 2.0 features) using a contrastive
-    learning objective (CLIP loss).
-
-    The architecture leverages **dilated convolutions** to achieve large receptive
-    fields while maintaining temporal resolution [brainmagik]_.
-
-    Architectural Overview
-    ----------------------
-
-    The Brain Module processes input through a series of stages: input conditioning,
-    encoding via dilated convolution blocks, optional temporal processing (LSTM and
-    attention), and a symmetrical decoder.
-
-    1. **Input Conditioning:** Handles Spectrogram transformation (optional STFT/n_fft),
-       Channel Dropout, Subject-Specific Embeddings, and initial 1x1 convolutions.
-    2. **Encoder:** A series of dilated convolutional blocks that downsample the signal.
-    3. **Temporal Modeling:** Optional LSTM and local self-attention layers for sequence processing.
-    4. **Decoder:** Convolutional blocks that upsample the representation back to the original time dimension.
-    5. **Final Layer:** Optional output convolution and pooling for dimensionality matching or classification.
-
-    Macro Components
-    ----------------
-
-    - `DilatedConvDecoder.initial_layer` **(Initial Linear/1x1 Conditioning)**
-        - *Original Paper Role.* Used for feature conditioning and domain adaptation, consisting of one or more 1x1 convolutions applied before the main encoder.
-        - *Presence.* Enabled if `initial_linear > 0`.
-    - `DilatedConvDecoder.subject_layers_module` **(Participant Layer)**
-        - *Original Paper Role.* Learns a unique linear transformation matrix :math:`M_s \in \mathbb{R}^{D_1, D_1}` for each participant :math:`s`, applied along the channel dimension after the conceptual Spatial Attention layer.
-          This is designed to leverage inter-individual variability.
-        - *Presence.* Enabled if `subject_layers=True` and `subject_dim > 0`.
-    - `DilatedConvDecoder.encoder` **(Dilated Convolutional Encoding)**
-        - *Original Paper Role.* Maps the conditioned input to a compressed latent space. The paper describes this stack as **five blocks of three convolutional layers**.
-        - *Presence.* Implemented via the internal `_ConvSequence` module.
-    - `DilatedConvDecoder.lstm` **(Optional Temporal Modeling)**
-        - *Original Paper Role.* Provides temporal sequence modeling capability]. The implementation supports bidirectional processing and sequence flipping.
-        - *Presence.* Enabled if `lstm_layers > 0`.
-    - `DilatedConvDecoder.attentions` **(Optional Local Self-Attention)**
-        - *Original Paper Role.* Attention layers added after the LSTM for further temporal refinement.
-        - *Presence.* Enabled if `attention_layers > 0`, instantiated as :class:`braindecode.modules.attention.LocalSelfAttention` with windowed self-attention that preserves sequence length via residual connections.
-    - `DilatedConvDecoder.decoder` **(Dilated Convolutional Decoding)**
-        - *Original Paper Role.* Symmetrical reconstruction layers that map the temporal representations back to the original time dimension.
-        - *Presence.* Implemented via the internal `_ConvSequence` with `decode=True`.
-    - `DilatedConvDecoder.final_layer` **(Output Convolution/Pooling)**
-        - *Original Paper Role.* Applies a final 1x1 convolution (often followed by activation and another 1x1 convolution if `complex_out=True`) to achieve the final output dimensionality :math:`F` (matching the speech representations).
-          It also includes global average pooling if required for classification tasks.
-        - *Presence.* Always present, though its components vary based on `linear_out` and `complex_out`.
-
-    Key Architectural Mechanisms
-    ----------------------------
-
-    * **Dilated Convolutions and Receptive Field.**
-        The encoder blocks utilize dilated convolutions (in the first two layers of each block) where the dilation rate increases exponentially per layer (e.g., :math:`2^{2k \mod 5}` and :math:`2^{2k+1 \mod 5}` for block :math:`k`).
-        This mechanism allows the model to capture context across a **large receptive field** without drastically reducing the time dimension.
-    * **Residual Skip Connections.**
-        Skip (residual) connections are applied across the convolutional layers in the encoder and decoder blocks to stabilize training and improve gradient flow, particularly in deep networks. These can optionally use :class:`~braindecode.models.dilated_conv_decoder._LayerScale`.
-    * **Gated Activation.** The convolutional layers rely primarily on GELU activation.
-        Specifically, the third layer in each block uses a **Gated Linear Unit (GLU)** activation (implemented with :class:`torch.nn.GLU`), which gates intermediate representations for enhanced expressivity.
-    * **Input Transformation (STFT).**
-        The module optionally includes a Spectrogram transformation (if `n_fft` is set) before encoding, allowing the model to operate in the **spectrogram domain** rather than the raw time domain.
-    * **Local Self-Attention Refinement.**
-        Each attention stage wraps the encoded sequence in :class:`braindecode.modules.attention.LocalSelfAttention`, applying sliding-window self-attention with residual connections so temporal saliency can be adjusted without destabilising the convolutional backbone.
-    * **Regularization & Robustness Tooling.**
-        Dropout knobs (input, per-conv, LSTM), :class:`~braindecode.models.dilated_conv_decoder._ChannelDropout`, optional LayerScale, GLU gating, and subject-aware adapters (embeddings + :class:`braindecode.modules.layers.SubjectLayers`) provide avenues to combat overfitting and deal with inter-participant variability.
-    * **Temporal Alignment.**
-        To compensate for the expected delay between acoustic stimulus and neural response, the original paper's architecture shifts the input brain signal by **150 ms into the future** to facilitate alignment between brain representation :math:`Z` and speech representation :math:`Y`.
-
-    How the information is encoded temporally, spatially, and spectrally
-    --------------------------------------------------------------------
-
-    * **Temporal.**
-        The temporal axis is the primary processing dimension. The encoder :class:`~braindecode.models.dilated_conv_decoder._ConvSequence`
-        applies stacks of dilated 1D convolutions whose dilation grows geometrically
-        (`dilation_growth`) so each successive block aggregates progressively longer
-        context without collapsing the sample rate. Residual shortcuts (optionally scaled
-        via LayerScale) stabilise these wide receptive fields. When enabled, the :class:`~braindecode.models.dilated_conv_decoder._LSTM`
-        layer (optionally flipped or bidirectional) and the :class:`braindecode.modules.attention.LocalSelfAttention` blocks
-        refine sequential structure on the `(time, feature)` axis before the decoder
-        mirrors the stride pattern with transposed convolutions. Internal padding and
-        final adaptive pooling ensure that temporal
-        resolution matches the requested output while still leveraging the enlarged
-        receptive field.
-
-    * **Spatial.**
-        Spatial structure (sensors/electrodes) is shaped ahead of the temporal stack.
-        :class:`~braindecode.models.dilated_conv_decoder._ChannelDropout` can drop entire electrodes to promote robustness to missing
-        channels. When `subject_layers` is active, :class:`braindecode.modules.layers.SubjectLayers` injects per-subject
-        1x1 projections across the channel axis and :class:`~braindecode.models.dilated_conv_decoder._ScaledEmbedding` concatenates learned
-        subject embeddings as extra "virtual" channels. The optional initial 1x1 block
-        (and the ungrouped first convolution in :class:`~braindecode.models.dilated_conv_decoder._ConvSequence`) mixes all channels,
-        letting every temporal filter access the full montage, while later grouped
-        convolutions or residual skips preserve locality if desired.
-
-    * **Spectral.**
-        Spectral cues can be made explicit by enabling the STFT branch (`n_fft`), which
-        converts the waveform into torchaudio spectrogram bins (real/imag pairs when
-        `fft_complex=True`) that are flattened into the channel dimension. Otherwise,
-        spectral structure is learned implicitly: long temporal kernels act as trainable
-        band-pass filters, the dilated stack captures multi-scale rhythms, and GLU-gated
-        layers modulate harmonic content. The decoder recombines these multi-scale
-        features before the final readout, allowing the network to represent both narrow-
-        band oscillations and broadband transients relevant for downstream decoding.
-
-    .. rubric:: Additional Mechanisms
-
-    - **Attention.**
-        When `attention_layers > 0`, each stage adds a
-        :class:`braindecode.modules.attention.LocalSelfAttention` block after the
-        encoder (or :class:`~braindecode.models.dilated_conv_decoder._LSTM` output if
-        present). These modules form sliding-window self-attention over the time axis,
-        allowing the network to reweight features using local contextual cues while
-        keeping computational cost linear in sequence length. The attention output is
-        merged residually with the incoming representation so it acts as an adaptive,
-        low-cost refinement on top of the dilated convolutions.
-
-    - **Regularization.**
-        Several mechanisms curb overfitting and improve robustness: per-layer dropout
-        (`conv_drop_prob`) and input dropout (`dropout_input`) use
-        :class:`torch.nn.Dropout`, recurrent dropout (`lstm_drop_prob`) regularises the
-        LSTM stack, and :class:`~braindecode.models.dilated_conv_decoder._ChannelDropout`
-        randomly drops full sensor channels. Optional :class:`~braindecode.models.dilated_conv_decoder._LayerScale`
-        gently rescales residual branches, while GLU gating (`glu`, `glu_context`, :class:`torch.nn.GLU`) and subject-specific parameter
-        sharing (via :class:`~braindecode.modules.layers.SubjectLayers` and
-        :class:`~braindecode.models.dilated_conv_decoder._ScaledEmbedding`) encourage
-        sparse, participant-aware representations that generalise across recordings.
-
-    Notes
-    -----
-    * **Input/Output Shape:** Input is typically (batch, n_chans, n_times); output depends on configuration but is often (batch, n_outputs, n_times) or (batch, n_outputs) if pooling is applied.
-    * **Subject-Specific Features:** Subject embeddings (`subject_dim > 0`) or subject layers (`subject_layers=True`) require passing subject indices in the forward pass.
-    * **Temporal Padding:** Padding logic ensures temporal dimensions are maintained correctly through the encoder-decoder roundtrip.
-    * **Original Context:** The brain module was trained using a **contrastive CLIP loss**  to maximize discrimination between segments, showing improved performance over regression losses targeting low-level features like Mel spectrograms.
 
     Parameters
     ----------
@@ -320,6 +171,8 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         sfreq: float | None = None,
         chs_info: list[dict] | None = None,
         input_window_seconds: float | None = None,
+        ######## 
+        # Model related parameters
         # Architecture
         hidden_dim: int = 64,
         depth: int = 2,
@@ -328,7 +181,7 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         growth: float = 1.0,
         dilation_growth: int = 1,
         dilation_period: int | None = None,
-        # LSTM (optional)
+        # LSTM from DualPathRNN submodule
         lstm_layers: int = 0,
         lstm_drop_prob: float = 0.0,
         flip_lstm: bool = False,
@@ -389,62 +242,29 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         self.fft_complex = fft_complex
 
         # Validate inputs
-        if subject_layers and subject_dim == 0:
-            raise ValueError("subject_layers=True requires subject_dim > 0")
-        if complex_out and not linear_out:
-            raise ValueError(
-                "complex_out=True requires linear_out=True; "
-                "otherwise the decoder directly produces outputs."
-            )
-        if depth < 1:
-            raise ValueError(f"depth must be >= 1, got {depth}")
-        if kernel_size <= 0:
-            raise ValueError(f"kernel_size must be > 0, got {kernel_size}")
-        if stride < 1:
-            raise ValueError(f"stride must be >= 1, got {stride}")
-        if growth <= 0:
-            raise ValueError(f"growth must be > 0, got {growth}")
-        if dilation_growth < 1:
-            raise ValueError(f"dilation_growth must be >= 1, got {dilation_growth}")
-        if dilation_growth > 1 and kernel_size % 2 == 0:
-            raise ValueError(
-                "dilation_growth > 1 requires odd kernel_size "
-                f"(got kernel_size={kernel_size})"
-            )
-        if attention_heads < 1:
-            raise ValueError(f"attention_heads must be >= 1, got {attention_heads}")
-        if lstm_layers < 0:
-            raise ValueError(f"lstm_layers must be >= 0, got {lstm_layers}")
-        if attention_layers < 0:
-            raise ValueError(f"attention_layers must be >= 0, got {attention_layers}")
-        if initial_linear < 0:
-            raise ValueError(f"initial_linear must be >= 0, got {initial_linear}")
-        if initial_depth < 1:
-            raise ValueError(f"initial_depth must be >= 1, got {initial_depth}")
-        if initial_depth > 1 and initial_linear == 0:
-            raise ValueError("initial_depth > 1 requires initial_linear > 0")
-        if layer_scale is not None and layer_scale <= 0:
-            raise ValueError(f"layer_scale must be > 0, got {layer_scale}")
-        if post_skip and not skip:
-            raise ValueError("post_skip=True requires skip=True")
-        if not 0.0 <= channel_dropout_prob <= 1.0:
-            raise ValueError(
-                f"channel_dropout_prob must be in [0.0, 1.0], "
-                f"got {channel_dropout_prob}"
-            )
-        if channel_dropout_type is not None and channel_dropout_prob == 0.0:
-            raise ValueError("channel_dropout_type requires channel_dropout_prob > 0")
-        if glu < 0:
-            raise ValueError(f"glu must be >= 0, got {glu}")
-        if glu_context < 0:
-            raise ValueError(f"glu_context must be >= 0, got {glu_context}")
-        if glu_context > 0 and glu == 0:
-            raise ValueError("glu_context > 0 requires glu > 0")
-        if glu_context >= kernel_size:
-            raise ValueError(
-                f"glu_context must be < kernel_size "
-                f"(got {glu_context} >= {kernel_size})"
-            )
+        _validate_simpleconv_params(
+            subject_layers=subject_layers,
+            subject_dim=subject_dim,
+            complex_out=complex_out,
+            linear_out=linear_out,
+            depth=depth,
+            kernel_size=kernel_size,
+            stride=stride,
+            growth=growth,
+            dilation_growth=dilation_growth,
+            attention_heads=attention_heads,
+            lstm_layers=lstm_layers,
+            attention_layers=attention_layers,
+            initial_linear=initial_linear,
+            initial_depth=initial_depth,
+            layer_scale=layer_scale,
+            post_skip=post_skip,
+            skip=skip,
+            channel_dropout_prob=channel_dropout_prob,
+            channel_dropout_type=channel_dropout_type,
+            glu=glu,
+            glu_context=glu_context,
+        )
 
         self.depth = depth
         self.kernel_size = kernel_size
@@ -1095,3 +915,108 @@ class _ChannelDropout(nn.Module):
             f"rescale={self.rescale}, "
             f"channel_type={self.channel_type})"
         )
+
+
+def _validate_simpleconv_params(
+    subject_layers: bool,
+    subject_dim: int,
+    complex_out: bool,
+    linear_out: bool,
+    depth: int,
+    kernel_size: int,
+    stride: int,
+    growth: float,
+    dilation_growth: int,
+    attention_heads: int,
+    lstm_layers: int,
+    attention_layers: int,
+    initial_linear: int,
+    initial_depth: int,
+    layer_scale: float | None,
+    post_skip: bool,
+    skip: bool,
+    channel_dropout_prob: float,
+    channel_dropout_type: str | None,
+    glu: int,
+    glu_context: int,
+) -> None:
+    """Validate SimpleConv parameters.
+
+    Parameters
+    ----------
+    subject_layers : bool
+        Whether to use subject-specific layer transformations.
+    subject_dim : int
+        Dimension of subject embeddings.
+    complex_out : bool
+        Whether to apply complex output processing.
+    linear_out : bool
+        Whether to apply a final linear (1x1 conv) output layer.
+    depth : int
+        Number of encoder/decoder layer pairs.
+    kernel_size : int
+        Convolutional kernel size.
+    stride : int
+        Stride for downsampling/upsampling.
+    growth : float
+        Channel size multiplier per layer.
+    dilation_growth : int
+        Dilation multiplier per layer.
+    attention_heads : int
+        Number of attention heads.
+    lstm_layers : int
+        Number of LSTM layers.
+    attention_layers : int
+        Number of attention layers.
+    initial_linear : int
+        Number of initial linear layer output channels.
+    initial_depth : int
+        Number of initial linear layers.
+    layer_scale : float or None
+        LayerScale initialization value.
+    post_skip : bool
+        Whether to apply skip connections after activation.
+    skip : bool
+        Whether to use skip (residual) connections.
+    channel_dropout_prob : float
+        Channel dropout probability.
+    channel_dropout_type : str or None
+        Channel type to selectively drop.
+    glu : int
+        GLU gating interval.
+    glu_context : int
+        GLU context window size.
+
+    Raises
+    ------
+    ValueError
+        If any parameter combination is invalid.
+    """
+    validations = [
+        (subject_layers and subject_dim == 0, "subject_layers=True requires subject_dim > 0"),
+        (complex_out and not linear_out, "complex_out=True requires linear_out=True"),
+        (depth < 1, "depth must be >= 1"),
+        (kernel_size <= 0, "kernel_size must be > 0"),
+        (stride < 1, "stride must be >= 1"),
+        (growth <= 0, "growth must be > 0"),
+        (dilation_growth < 1, "dilation_growth must be >= 1"),
+        (dilation_growth > 1 and kernel_size % 2 == 0, "dilation_growth > 1 requires odd kernel_size"),
+        (attention_heads < 1, "attention_heads must be >= 1"),
+        (lstm_layers < 0, "lstm_layers must be >= 0"),
+        (attention_layers < 0, "attention_layers must be >= 0"),
+        (initial_linear < 0, "initial_linear must be >= 0"),
+        (initial_depth < 1, "initial_depth must be >= 1"),
+        (initial_depth > 1 and initial_linear == 0, "initial_depth > 1 requires initial_linear > 0"),
+        (layer_scale is not None and layer_scale <= 0, "layer_scale must be > 0"),
+        (post_skip and not skip, "post_skip=True requires skip=True"),
+        (not 0.0 <= channel_dropout_prob <= 1.0, "channel_dropout_prob must be in [0.0, 1.0]"),
+        (channel_dropout_type is not None and channel_dropout_prob == 0.0, "channel_dropout_type requires channel_dropout_prob > 0"),
+        (glu < 0, "glu must be >= 0"),
+        (glu_context < 0, "glu_context must be >= 0"),
+        (glu_context > 0 and glu == 0, "glu_context > 0 requires glu > 0"),
+        (glu_context >= kernel_size, "glu_context must be < kernel_size"),
+    ]
+
+    for condition, message in validations:
+        if condition:
+            raise ValueError(message)
