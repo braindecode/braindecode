@@ -54,6 +54,23 @@ from torch.optim import AdamW
 from braindecode import EEGClassifier
 from braindecode.models import EEGSimpleConv
 
+# Configure matplotlib for publication-quality plots
+plt.rcParams['figure.figsize'] = (10, 6)
+plt.rcParams['font.size'] = 11
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['axes.linewidth'] = 1.2
+plt.rcParams['grid.linewidth'] = 0.8
+plt.rcParams['xtick.labelsize'] = 10
+plt.rcParams['ytick.labelsize'] = 10
+plt.rcParams['axes.labelsize'] = 11
+plt.rcParams['legend.fontsize'] = 10
+plt.rcParams['figure.titlesize'] = 12
+plt.rcParams['axes.spines.left'] = True
+plt.rcParams['axes.spines.bottom'] = True
+plt.rcParams['axes.spines.top'] = False
+plt.rcParams['axes.spines.right'] = False
+plt.rcParams['grid.alpha'] = 0.3
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 data_path = sample.data_path()
@@ -201,14 +218,18 @@ scores = cross_val_multiscore(time_decoding_mlp, X, y_encod, cv=5, n_jobs=1)
 scores = np.mean(scores, axis=0)
 
 # Plot
-fig, ax = plt.subplots()
-ax.plot(epochs.times, scores, label="score")
-ax.axhline(0.5, color="k", linestyle="--", label="chance")
-ax.set_xlabel("Times")
-ax.set_ylabel("AUC")  # Area Under the Curve
-ax.legend()
-ax.axvline(0.0, color="k", linestyle="-")
-ax.set_title("Sensor space decoding")
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.plot(epochs.times, scores, label='Temporal Decoding', linewidth=2.5, color='#2E86AB')
+ax.axhline(0.5, color='#A23B72', linestyle='--', linewidth=1.8, label='Chance Level', alpha=0.8)
+ax.fill_between(epochs.times, 0.5, scores, where=(scores >= 0.5), alpha=0.15, color='#2E86AB')
+ax.set_xlabel("Time (s)", fontsize=11, fontweight='bold')
+ax.set_ylabel("AUC Score", fontsize=11, fontweight='bold')
+ax.legend(loc='lower right', frameon=True, shadow=False, fancybox=False)
+ax.axvline(0.0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
+ax.set_title("Temporal Decoding: MEG Sensor Space", fontsize=12, fontweight='bold', pad=15)
+ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+ax.set_ylim([0.4, 1.0])
+fig.tight_layout()
 
 ###################################################################################################
 # (Optional) Analyzing the spatial filters/patterns via Shapley Values
@@ -318,34 +339,41 @@ gen_scores = cross_val_multiscore(generalizing_decoding_mlp, X, y_encod, cv=3, n
 gen_scores = np.mean(gen_scores, axis=0)
 
 # Plot the diagonal (it's exactly the same as the time-by-time decoding above)
-fig, ax = plt.subplots()
-ax.plot(epochs.times, np.diag(gen_scores), label="score")
-ax.axhline(0.5, color="k", linestyle="--", label="chance")
-ax.set_xlabel("Times")
-ax.set_ylabel("AUC")
-ax.legend()
-ax.axvline(0.0, color="k", linestyle="-")
-ax.set_title("Decoding MEG sensors over time")
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.plot(epochs.times, np.diag(gen_scores), label='Diagonal Generalization', linewidth=2.5, color='#2E86AB')
+ax.axhline(0.5, color='#A23B72', linestyle='--', linewidth=1.8, label='Chance Level', alpha=0.8)
+ax.fill_between(epochs.times, 0.5, np.diag(gen_scores), where=(np.diag(gen_scores) >= 0.5), alpha=0.15, color='#2E86AB')
+ax.set_xlabel("Time (s)", fontsize=11, fontweight='bold')
+ax.set_ylabel("AUC Score", fontsize=11, fontweight='bold')
+ax.legend(loc='lower right', frameon=True, shadow=False, fancybox=False)
+ax.axvline(0.0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
+ax.set_title("Diagonal Generalization: MEG Sensor Space", fontsize=12, fontweight='bold', pad=15)
+ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+ax.set_ylim([0.4, 1.0])
+fig.tight_layout()
 
 ####################################################################################################
 # Then we plot the full generalization matrix.
-fig, ax = plt.subplots(1, 1)
+fig, ax = plt.subplots(1, 1, figsize=(10, 8))
 im = ax.imshow(
     gen_scores,
-    interpolation="lanczos",
-    origin="lower",
-    cmap="RdBu_r",
+    interpolation='lanczos',
+    origin='lower',
+    cmap='RdYlGn',
     extent=epochs.times[[0, -1, 0, -1]],
     vmin=0.0,
     vmax=1.0,
+    aspect='auto'
 )
-ax.set_xlabel("Testing Time (s)")
-ax.set_ylabel("Training Time (s)")
-ax.set_title("Temporal generalization")
-ax.axvline(0, color="k")
-ax.axhline(0, color="k")
-cbar = plt.colorbar(im, ax=ax)
-cbar.set_label("AUC")
+ax.set_xlabel("Testing Time (s)", fontsize=11, fontweight='bold')
+ax.set_ylabel("Training Time (s)", fontsize=11, fontweight='bold')
+ax.set_title("Temporal Generalization Matrix", fontsize=12, fontweight='bold', pad=15)
+ax.axvline(0, color='white', linewidth=1.5, linestyle='-', alpha=0.7)
+ax.axhline(0, color='white', linewidth=1.5, linestyle='-', alpha=0.7)
+cbar = plt.colorbar(im, ax=ax, pad=0.02)
+cbar.set_label("AUC Score", fontsize=11, fontweight='bold')
+cbar.ax.tick_params(labelsize=10)
+fig.tight_layout()
 
 
 ###################################################################################################
@@ -493,14 +521,18 @@ scores = cross_val_multiscore(
 scores = np.mean(scores, axis=0)
 
 # Plot
-fig, ax = plt.subplots()
-ax.plot(epochs.times, scores, label="score")
-ax.axhline(0.5, color="k", linestyle="--", label="chance")
-ax.set_xlabel("Times")
-ax.set_ylabel("AUC")  # Area Under the Curve
-ax.legend()
-ax.axvline(0.0, color="k", linestyle="-")
-ax.set_title("Sensor space decoding")
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.plot(epochs.times, scores, label='Without Normalization', linewidth=2.5, color='#E63946')
+ax.axhline(0.5, color='#A23B72', linestyle='--', linewidth=1.8, label='Chance Level', alpha=0.8)
+ax.fill_between(epochs.times, 0.5, scores, where=(scores >= 0.5), alpha=0.15, color='#E63946')
+ax.set_xlabel("Time (s)", fontsize=11, fontweight='bold')
+ax.set_ylabel("AUC Score", fontsize=11, fontweight='bold')
+ax.legend(loc='lower right', frameon=True, shadow=False, fancybox=False)
+ax.axvline(0.0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
+ax.set_title("EEGSimpleConv Without Normalization", fontsize=12, fontweight='bold', pad=15)
+ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+ax.set_ylim([0.4, 1.0])
+fig.tight_layout()
 
 ###################################################################################################
 # With normalization
@@ -546,14 +578,18 @@ scores = cross_val_multiscore(
 scores = np.mean(scores, axis=0)
 
 # Plot
-fig, ax = plt.subplots()
-ax.plot(epochs.times, scores, label="score")
-ax.axhline(0.5, color="k", linestyle="--", label="chance")
-ax.set_xlabel("Times")
-ax.set_ylabel("AUC")  # Area Under the Curve
-ax.legend()
-ax.axvline(0.0, color="k", linestyle="-")
-ax.set_title("Sensor space decoding")
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.plot(epochs.times, scores, label='With Normalization', linewidth=2.5, color='#06A77D')
+ax.axhline(0.5, color='#A23B72', linestyle='--', linewidth=1.8, label='Chance Level', alpha=0.8)
+ax.fill_between(epochs.times, 0.5, scores, where=(scores >= 0.5), alpha=0.15, color='#06A77D')
+ax.set_xlabel("Time (s)", fontsize=11, fontweight='bold')
+ax.set_ylabel("AUC Score", fontsize=11, fontweight='bold')
+ax.legend(loc='lower right', frameon=True, shadow=False, fancybox=False)
+ax.axvline(0.0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
+ax.set_title("EEGSimpleConv With Normalization", fontsize=12, fontweight='bold', pad=15)
+ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+ax.set_ylim([0.4, 1.0])
+fig.tight_layout()
 
 ###################################################################################################
 # Although performing slightly worse than the previous examples, the model with normalization still
