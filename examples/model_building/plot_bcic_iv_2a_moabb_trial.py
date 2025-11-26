@@ -148,7 +148,18 @@ valid_set = splitted["1test"]  # Session evaluation
 
 
 ######################################################################
-# Now we create the deep learning model! Braindecode comes with some
+# Now we create the deep learning model!
+# First thing we need to do is know the properties of our signals.
+# For this, we use the :func:`braindecode.datautil.infer_signal_properties` function:
+#
+from braindecode.datautil import infer_signal_properties
+
+sig_props = infer_signal_properties(train_set, mode="classification")
+print(sig_props)
+
+
+######################################################################
+# Braindecode comes with some
 # predefined convolutional neural network architectures for raw
 # time-domain EEG. Here, we use the :class:`ShallowFBCSPNet
 # <braindecode.models.ShallowFBCSPNet>` model from [3]_. These models are
@@ -175,16 +186,10 @@ if cuda:
 seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
-n_classes = 4
-classes = list(range(n_classes))
-# Extract number of chans and time steps from dataset
-n_chans = train_set[0][0].shape[0]
-n_times = train_set[0][0].shape[1]
-
 model = ShallowFBCSPNet(
-    n_chans,
-    n_classes,
-    n_times=n_times,
+    n_chans=sig_props["n_chans"],
+    n_outputs=sig_props["n_outputs"],
+    n_times=sig_props["n_times"],
     final_conv_length="auto",
 )
 
@@ -234,6 +239,7 @@ weight_decay = 0
 
 batch_size = 64
 n_epochs = 4
+classes = list(range(sig_props["n_outputs"]))
 
 clf = EEGClassifier(
     model,

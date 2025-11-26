@@ -1,3 +1,7 @@
+.. image:: https://zenodo.org/badge/232335424.svg
+   :target: https://doi.org/10.5281/zenodo.8214376
+   :alt: DOI
+
 .. image:: https://badges.gitter.im/braindecodechat/community.svg
    :alt: Join the chat at https://gitter.im/braindecodechat/community
    :target: https://gitter.im/braindecodechat/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
@@ -12,6 +16,7 @@
 .. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
    :target: https://codecov.io/gh/braindecode/braindecode
    :alt: Code Coverage
+
 
 .. |Braindecode| image:: https://user-images.githubusercontent.com/42702466/177958779-b00628aa-9155-4c51-96d1-d8c345aff575.svg
 .. _braindecode: braindecode.org/
@@ -69,7 +74,15 @@ https://gitter.im/braindecodechat/community
 Citing
 ======
 
-If you use this code in a scientific publication, please cite us as:
+If you use Braindecode in scientific work, please cite the software using the Zenodo DOI shown in the badge below:
+
+.. image:: https://zenodo.org/badge/232335424.svg
+   :target: https://doi.org/10.5281/zenodo.8214376
+   :alt: DOI
+
+Additionally, we highly encourage you to cite the article that originally introduced
+the Braindecode library and has served as a foundational reference for many works
+on deep learning with EEG recordings. Please use the following reference:
 
 .. code-block:: bibtex
 
