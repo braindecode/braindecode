@@ -49,7 +49,7 @@ jobs:
           make html
         env:
           HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
-      
+
       - name: Generate Notebooks from Examples
         run: |
           set -euo pipefail
@@ -63,7 +63,7 @@ jobs:
             out_path="$out_dir/$base.ipynb"
             python .github/scripts/convert_to_notebook.py --input "$f" --output "$out_path"
           done
-      
+
       - name: Upload HTML Docs as Artifacts
         uses: actions/upload-artifact@v4
         with:

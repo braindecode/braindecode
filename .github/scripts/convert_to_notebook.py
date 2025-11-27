@@ -18,7 +18,7 @@ from sphinx_gallery.py_source_parser import split_code_and_text_blocks
 def convert_script_to_notebook(src_file: Path, output_file: Path, gallery_conf):
     """
     Convert a single Python script to a Jupyter notebook.
-    
+
     Parameters
     ----------
     src_file : Path
@@ -40,7 +40,7 @@ def convert_script_to_notebook(src_file: Path, output_file: Path, gallery_conf):
         first_source = example_nb.cells[0].source if example_nb.cells else ""
     except (IndexError, AttributeError):
         first_source = ""
-    
+
     install_cmd = "%pip install braindecode"
     if "pip install" not in first_source or "braindecode" not in first_source:
         install_cell = nbformat.v4.new_code_cell(source=install_cmd)
@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     # Use default gallery configuration
     gallery_conf = copy.deepcopy(gen_gallery.DEFAULT_GALLERY_CONF)
-    
+
     print(f"Processing: {input_path}")
     try:
         convert_script_to_notebook(input_path, target_path, gallery_conf)
