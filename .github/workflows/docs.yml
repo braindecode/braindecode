@@ -49,6 +49,21 @@ jobs:
           make html
         env:
           HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+      
+      - name: Generate Notebooks from Examples
+        run: |
+          set -euo pipefail
+          echo "Converting Python examples to notebooks in docs/_build/html/auto_examples/_notebooks..."
+          mkdir -p docs/_build/html/auto_examples/_notebooks
+          find examples -type f -name '*.py' | while read -r f; do
+            rel="${f#examples/}"
+            out_dir="docs/_build/html/auto_examples/_notebooks/$(dirname "$rel")"
+            mkdir -p "$out_dir"
+            base="$(basename "$rel" .py)"
+            out_path="$out_dir/$base.ipynb"
+            python .github/scripts/convert_to_notebook.py --input "$f" --output "$out_path"
+          done
+      
       - name: Upload HTML Docs as Artifacts
         uses: actions/upload-artifact@v4
         with:

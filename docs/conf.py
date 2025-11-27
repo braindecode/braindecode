@@ -323,6 +323,16 @@ html_theme_options = {
         "image_dark": "_static/braindecode_long.svg",
         "alt_text": "Braindecode Logo",
     },
+    "secondary_sidebar_items": {
+        "**": [
+            "page-toc",
+            "sourcelink",
+            # Sphinx-Gallery-specific sidebar components
+            # https://sphinx-gallery.github.io/stable/advanced.html#using-sphinx-gallery-sidebar-components
+            "sg_download_links",
+            "sg_launcher_links",
+        ],
+    },
     "footer_start": ["copyright"],
     # 'pygment_light_style': 'default',
     "analytics": dict(google_analytics_id="G-7Q43R82K6D"),
