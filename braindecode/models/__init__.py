@@ -12,6 +12,7 @@ from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
+from .simpleconv import SimpleConv
 from .eegconformer import EEGConformer
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
@@ -71,6 +72,7 @@ __all__ = [
     "CTNet",
     "Deep4Net",
     "DeepSleepNet",
+    "SimpleConv",
     "EEGConformer",
     "EEGInceptionERP",
     "EEGInceptionMI",

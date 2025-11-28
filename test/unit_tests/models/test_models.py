@@ -27,6 +27,7 @@ from braindecode.models import (
     ContraWR,
     Deep4Net,
     DeepSleepNet,
+    SimpleConv,
     EEGConformer,
     EEGInceptionERP,
     EEGInceptionMI,
@@ -51,6 +52,7 @@ from braindecode.models import (
     TSception,
     USleep,
 )
+from braindecode.models.simpleconv import _LayerScale
 from braindecode.util import set_random_seeds
 
 
@@ -1859,6 +1861,427 @@ def test_fc_length_eegconformer():
     assert model is not None
 
 
+# ============================================================================
+# SimpleConv Tests
+# ============================================================================
+
+@pytest.fixture
+def dilated_conv_decoder_params():
+    """Fixture with common SimpleConv parameters."""
+    return dict(
+        n_chans=22,
+        n_outputs=4,
+        n_times=1000,
+        sfreq=250,
+    )
+
+
+@pytest.mark.parametrize("n_times", [500, 1000, 2000])
+@pytest.mark.parametrize("sfreq", [100, 250, 500])
+@pytest.mark.parametrize("batch_size", [1, 4, 8])
+def test_dilated_conv_decoder_basic(dilated_conv_decoder_params, n_times, sfreq, batch_size):
+    """Test SimpleConv with various input sizes and sample rates."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_times": n_times, "sfreq": sfreq})
+
+    model = SimpleConv(**params)
+    model.eval()
+
+    x = torch.randn(batch_size, params["n_chans"], n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+@pytest.mark.parametrize("subject_dim", [16, 32, 64])
+def test_dilated_conv_decoder_subject_embeddings(dilated_conv_decoder_params, subject_dim):
+    """Test subject embeddings with different dimensions and validation."""
+    set_random_seeds(0, False)
+    n_subjects = 30
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_subjects": n_subjects, "subject_dim": subject_dim})
+
+    model = SimpleConv(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, n_subjects, (4,))
+
+    output = model(x, subject_index=subject_idx)
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Test missing subject_index raises error
+    with pytest.raises(ValueError, match="subject_index is required"):
+        model(x)
+
+
+@pytest.mark.parametrize("n_fft,fft_complex", [(64, True), (256, False), (512, True)])
+def test_dilated_conv_decoder_stft(dilated_conv_decoder_params, n_fft, fft_complex):
+    """Test STFT with different FFT sizes and complex/power spectrograms."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_fft": n_fft, "fft_complex": fft_complex})
+
+    model = SimpleConv(**params)
+    model.eval()
+
+    for batch_size in [1, 4, 8]:
+        x = torch.randn(batch_size, params["n_chans"], params["n_times"])
+        output = model(x)
+        assert output.shape == (batch_size, params["n_outputs"])
+        assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_parameter_validation():
+    """Test parameter validation for all features."""
+    # Invalid subject_layers
+    with pytest.raises(ValueError, match="subject_layers=True requires subject_dim > 0"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            subject_layers=True, subject_dim=0,
+        )
+
+    # Invalid depth
+    with pytest.raises(ValueError, match="depth must be >= 1"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250, depth=0,
+        )
+
+    # Invalid kernel_size
+    with pytest.raises(ValueError, match="kernel_size must be > 0"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250, kernel_size=0,
+        )
+
+    # initial_depth > 1 requires initial_linear > 0
+    with pytest.raises(ValueError, match="initial_depth > 1 requires initial_linear > 0"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            initial_linear=0, initial_depth=2,
+        )
+
+    # initial_linear < 0 is invalid
+    with pytest.raises(ValueError, match="initial_linear must be >= 0"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250, initial_linear=-1,
+        )
+
+    # layer_scale must be > 0
+    with pytest.raises(ValueError, match="layer_scale must be > 0"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            skip=True, layer_scale=-0.1,
+        )
+
+    # post_skip requires skip=True
+    with pytest.raises(ValueError, match="post_skip=True requires skip=True"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            skip=False, post_skip=True,
+        )
+
+    # channel_dropout_type requires channel_dropout_prob > 0
+    with pytest.raises(ValueError, match="channel_dropout_type requires channel_dropout_prob > 0"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            channel_dropout_prob=0.0, channel_dropout_type="eeg",
+        )
+
+    # glu_context requires glu > 0
+    with pytest.raises(ValueError, match="glu_context > 0 requires glu > 0"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            glu=0, glu_context=1,
+        )
+
+    # glu_context must be < kernel_size
+    with pytest.raises(ValueError, match="glu_context must be < kernel_size"):
+        SimpleConv(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            kernel_size=4, glu=1, glu_context=4,
+        )
+
+
+def test_dilated_conv_decoder_gradient_flow(dilated_conv_decoder_params):
+    """Test gradient flow through model with various features."""
+    for config in [
+        {"glu": 1, "depth": 2},
+        {"n_subjects": 20, "subject_dim": 32},
+        {"initial_linear": 64},
+        {"skip": True, "layer_scale": 0.1},
+        {"channel_dropout_prob": 0.2},
+    ]:
+        set_random_seeds(0, False)
+        params = dilated_conv_decoder_params.copy()
+        params.update(config)
+
+        model = SimpleConv(**params)
+        model.train()
+
+        x = torch.randn(
+            4, params["n_chans"], params["n_times"],
+            requires_grad=True,
+        )
+        if "n_subjects" in config:
+            subject_idx = torch.randint(0, config["n_subjects"], (4,))
+            output = model(x, subject_index=subject_idx)
+        else:
+            output = model(x)
+
+        loss = output.sum()
+        loss.backward()
+
+        # Check gradients exist and are not NaN
+        assert x.grad is not None
+        assert not torch.isnan(x.grad).any()
+        for param in model.parameters():
+            if param.grad is not None:
+                assert not torch.isnan(param.grad).any()
+
+
+@pytest.mark.parametrize("initial_linear,initial_depth,initial_nonlin", [
+    (0, 1, False),
+    (32, 1, True),
+    (64, 2, False),
+    (128, 3, True),
+])
+def test_dilated_conv_decoder_initial_layers(
+    dilated_conv_decoder_params, initial_linear, initial_depth, initial_nonlin
+):
+    """Test initial layers with different configurations."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "initial_linear": initial_linear,
+        "initial_depth": initial_depth,
+        "initial_nonlin": initial_nonlin,
+    })
+
+    model = SimpleConv(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Verify initial_layer is created only when initial_linear > 0
+    if initial_linear > 0:
+        assert model.initial_layer is not None
+        assert len(model.initial_layer) >= initial_depth
+    else:
+        assert model.initial_layer is None
+
+
+@pytest.mark.parametrize("skip,layer_scale,post_skip", [
+    (False, 0.1, False),
+    (True, 0.05, False),
+    (True, 0.1, False),
+    (True, 0.5, False),
+    (True, 0.1, True),
+])
+def test_dilated_conv_decoder_skip_connections(
+    dilated_conv_decoder_params, skip, layer_scale, post_skip
+):
+    """Test skip connections, layer scale, and post-skip with various combinations."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"skip": skip, "layer_scale": layer_scale, "post_skip": post_skip})
+
+    model = SimpleConv(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Verify LayerScale modules exist only when skip=True
+    has_layer_scale = any(
+        isinstance(module, _LayerScale) for module in model.encoder.modules()
+    )
+    assert has_layer_scale == skip
+
+
+# ============================================================================
+# Channel Dropout Tests
+# ============================================================================
+
+@pytest.mark.parametrize("dropout_prob", [0.0, 0.1, 0.3, 0.5])
+def test_dilated_conv_decoder_channel_dropout(dilated_conv_decoder_params, dropout_prob):
+    """Test channel dropout with various probabilities."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"channel_dropout_prob": dropout_prob})
+
+    model = SimpleConv(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Verify dropout is None when prob=0
+    if dropout_prob == 0.0:
+        assert model.channel_dropout is None
+    else:
+        assert model.channel_dropout is not None
+
+
+def test_dilated_conv_decoder_channel_dropout_eval_mode(dilated_conv_decoder_params):
+    """Test channel dropout is disabled in eval mode (deterministic)."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"channel_dropout_prob": 0.5})
+
+    model = SimpleConv(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    with torch.no_grad():
+        output1 = model(x)
+        output2 = model(x)
+
+    torch.testing.assert_close(output1, output2)
+
+
+def test_dilated_conv_decoder_channel_dropout_with_ch_info():
+    """Test channel dropout with ch_info for selective channel dropout."""
+    set_random_seeds(0, False)
+
+    ch_info = [
+        {"ch_name": "Fp1", "ch_type": "eeg"},
+        {"ch_name": "Fp2", "ch_type": "eeg"},
+        {"ch_name": "F3", "ch_type": "eeg"},
+        {"ch_name": "F4", "ch_type": "eeg"},
+        {"ch_name": "A1", "ch_type": "ref"},
+        {"ch_name": "A2", "ch_type": "ref"},
+    ]
+
+    params = {
+        "n_chans": 6,
+        "n_outputs": 2,
+        "n_times": 1000,
+        "hidden_dim": 32,
+        "depth": 1,
+        "channel_dropout_prob": 0.5,
+        "channel_dropout_type": "eeg",
+        "chs_info": ch_info,
+    }
+
+    model = SimpleConv(**params)
+    model.train()
+
+    x = torch.ones(4, 6, 1000)
+    for _ in range(3):
+        output = model(x)
+        assert output.shape == (4, 2)
+        assert not torch.isnan(output).any()
+
+
+# ============================================================================
+# GLU (Gated Linear Units) Tests
+# ============================================================================
+
+@pytest.mark.parametrize("glu,glu_context,depth", [
+    (0, 0, 2),
+    (1, 0, 2),
+    (1, 1, 2),
+    (2, 1, 3),
+])
+def test_dilated_conv_decoder_glu(dilated_conv_decoder_params, glu, glu_context, depth):
+    """Test GLU with various intervals and context windows."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": glu, "glu_context": glu_context, "depth": depth})
+
+    model = SimpleConv(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Verify GLU modules only created when glu > 0
+    if glu > 0:
+        assert any(g is not None for g in model.encoder.glus)
+        assert any(g is not None for g in model.decoder.glus)
+    else:
+        assert all(g is None for g in model.encoder.glus)
+        assert all(g is None for g in model.decoder.glus)
+
+
+@pytest.mark.parametrize("glu_glu", [True, False])
+def test_dilated_conv_decoder_glu_variants(dilated_conv_decoder_params, glu_glu):
+    """Test GLU with nn.GLU vs standard activation gating."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 1, "glu_glu": glu_glu, "depth": 2})
+
+    model = SimpleConv(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_glu_eval_determinism(dilated_conv_decoder_params):
+    """Test GLU is deterministic in eval mode."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 1, "depth": 2})
+
+    model = SimpleConv(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    with torch.no_grad():
+        output1 = model(x)
+        output2 = model(x)
+
+    torch.testing.assert_close(output1, output2)
+
+
+def test_dilated_conv_decoder_glu_combined_features(dilated_conv_decoder_params):
+    """Test GLU combined with other features."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "glu": 1,
+        "glu_context": 1,
+        "initial_linear": 64,
+        "skip": True,
+        "layer_scale": 0.1,
+        "channel_dropout_prob": 0.1,
+        "subject_dim": 32,
+        "n_subjects": 50,
+        "depth": 2,
+    })
+
+    model = SimpleConv(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 50, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
 def test_bendr():
     """
     Test BENDR model forward pass with 3D inputs.
