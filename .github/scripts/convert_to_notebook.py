@@ -18,7 +18,7 @@ from sphinx_gallery.py_source_parser import split_code_and_text_blocks
 def convert_script_to_notebook(src_file: Path, output_file: Path, gallery_conf):
     """
     Convert a single Python script to a Jupyter notebook.
-
+    
     Parameters
     ----------
     src_file : Path
@@ -31,8 +31,11 @@ def convert_script_to_notebook(src_file: Path, output_file: Path, gallery_conf):
     # Parse the Python file
     file_conf, blocks = split_code_and_text_blocks(str(src_file))
 
-    # Convert to notebook
-    example_nb = jupyter_notebook(blocks, gallery_conf, str(src_file.parent))
+    # Convert to notebook (returns a dict, not a notebook object)
+    example_nb_dict = jupyter_notebook(blocks, gallery_conf, str(src_file.parent))
+    
+    # Convert dict to nbformat notebook object
+    example_nb = nbformat.from_dict(example_nb_dict)
 
     # Prepend an installation cell for braindecode
     # Check if first cell already has pip install
@@ -40,7 +43,7 @@ def convert_script_to_notebook(src_file: Path, output_file: Path, gallery_conf):
         first_source = example_nb.cells[0].source if example_nb.cells else ""
     except (IndexError, AttributeError):
         first_source = ""
-
+    
     install_cmd = "%pip install braindecode"
     if "pip install" not in first_source or "braindecode" not in first_source:
         install_cell = nbformat.v4.new_code_cell(source=install_cmd)
@@ -53,8 +56,6 @@ def convert_script_to_notebook(src_file: Path, output_file: Path, gallery_conf):
     # Save notebook
     save_notebook(example_nb, output_file)
     print(f"Notebook saved to: {output_file}")
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Convert Python example scripts to Jupyter notebooks."
