@@ -1,3 +1,7 @@
+.. image:: https://zenodo.org/badge/232335424.svg
+   :target: https://doi.org/10.5281/zenodo.8214376
+   :alt: DOI
+
 .. image:: https://badges.gitter.im/braindecodechat/community.svg
    :alt: Join the chat at https://gitter.im/braindecodechat/community
    :target: https://gitter.im/braindecodechat/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
@@ -12,6 +16,7 @@
 .. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
    :target: https://codecov.io/gh/braindecode/braindecode
    :alt: Code Coverage
+
 
 .. |Braindecode| image:: https://user-images.githubusercontent.com/42702466/177958779-b00628aa-9155-4c51-96d1-d8c345aff575.svg
 .. _braindecode: braindecode.org/
@@ -69,7 +74,15 @@ https://gitter.im/braindecodechat/community
 Citing
 ======
 
-If you use this code in a scientific publication, please cite us as:
+If you use Braindecode in scientific work, please cite the software using the Zenodo DOI shown in the badge below:
+
+.. image:: https://zenodo.org/badge/232335424.svg
+   :target: https://doi.org/10.5281/zenodo.8214376
+   :alt: DOI
+
+Additionally, we highly encourage you to cite the article that originally introduced
+the Braindecode library and has served as a foundational reference for many works
+on deep learning with EEG recordings. Please use the following reference:
 
 .. code-block:: bibtex
 
@@ -110,37 +123,13 @@ as well as the `MNE-Python <https://mne.tools>`_ software that is used by braind
 Licensing
 ^^^^^^^^^
 
-Braindecode is **BSD-licenced** (BSD-3-Clause):
+This project is primarily licensed under the BSD-3-Clause License.
 
-    This software is OSI Certified Open Source Software.
-    OSI Certified is a certification mark of the Open Source Initiative.
+Additional Components
+~~~~~~~~~~~~~~~~~~~~~
 
-    Copyright (c) 2011-2022, authors of Braindecode.
-    All rights reserved.
+Some components within this repository are licensed under the Creative Commons Attribution-NonCommercial 4.0 International
+License.
 
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are met:
-
-    * Redistributions of source code must retain the above copyright notice,
-      this list of conditions and the following disclaimer.
-
-    * Redistributions in binary form must reproduce the above copyright notice,
-      this list of conditions and the following disclaimer in the documentation
-      and/or other materials provided with the distribution.
-
-    * Neither the names of braindecode authors nor the names of any
-      contributors may be used to endorse or promote products derived from
-      this software without specific prior written permission.
-
-    **This software is provided by the copyright holders and contributors
-    "as is" and any express or implied warranties, including, but not
-    limited to, the implied warranties of merchantability and fitness for
-    a particular purpose are disclaimed. In no event shall the copyright
-    owner or contributors be liable for any direct, indirect, incidental,
-    special, exemplary, or consequential damages (including, but not
-    limited to, procurement of substitute goods or services; loss of use,
-    data, or profits; or business interruption) however caused and on any
-    theory of liability, whether in contract, strict liability, or tort
-    (including negligence or otherwise) arising in any way out of the use
-    of this software, even if advised of the possibility of such
-    damage.**
+Please refer to the ``LICENSE`` and ``NOTICE`` files for more detailed
+information.

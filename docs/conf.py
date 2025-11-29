@@ -1,3 +1,4 @@
+"""Our local Sphinx configuration file."""
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
@@ -17,21 +18,47 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
-import os
-import sys
 import inspect
+import os
 import os.path as op
+import sys
+import warnings
 
 import matplotlib
 
 matplotlib.use("agg")
-from datetime import datetime, timezone
 import faulthandler
+from datetime import datetime, timezone
 
 import sphinx_gallery  # noqa
-from sphinx_gallery.sorting import FileNameSortKey, ExplicitOrder
+from numpydoc import docscrape, numpydoc  # noqa
+from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey
 
-from numpydoc import numpydoc, docscrape  # noqa
+# Merge MNE-Python references during build
+try:
+    import logging
+    import sys
+    from pathlib import Path
+
+    # Add current directory to path so we can import download_mne_references
+    docs_dir = Path(__file__).parent.absolute()
+    if str(docs_dir) not in sys.path:
+        sys.path.insert(0, str(docs_dir))
+
+    logger = logging.getLogger(__name__)
+    from download_mne_references import update_references
+
+    logger.info("Attempting to merge MNE-Python references...")
+    result = update_references()
+    if result:
+        logger.info("MNE-Python references merged successfully or skipped gracefully")
+    else:
+        logger.warning("MNE references update returned False")
+except ImportError as e:
+    warnings.warn(f"Could not import download_mne_references module: {e}")
+except Exception as e:
+    # Don't fail the build if updating references fails; emit a warning
+    warnings.warn(f"MNE references update encountered an issue: {e}")
 
 # -- General configuration ------------------------------------------------
 
@@ -41,6 +68,10 @@ needs_sphinx = "2.0"
 curdir = os.path.dirname(__file__)
 sys.path.append(os.path.abspath(os.path.join(curdir, "..", "braindecode")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
+
+import sphinx_design
+
+print(f"--- Sphinx is using sphinx_design version: {sphinx_design.__version__} ---")
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
@@ -55,9 +86,12 @@ extensions = [
     "sphinx.ext.ifconfig",
     "sphinx.ext.intersphinx",
     "sphinx.ext.githubpages",
+    "sphinxcontrib.bibtex",
     "sphinx.ext.napoleon",
+    "sphinx_autodoc_typehints",
     "sphinx_gallery.gen_gallery",
     "sphinx.ext.linkcode",
+    "sphinx_sitemap",
     "sphinx_design",
     "numpydoc",
     "gh_substitutions",
@@ -83,6 +117,7 @@ def linkcode_resolve(domain, info):
     -----
     This has been adapted to deal with our "verbose" decorator.
     Adapted from SciPy (doc/source/conf.py).
+
     """
     repo = "https://github.com/braindecode/braindecode/"
     if domain != "py":
@@ -147,6 +182,9 @@ sys.path.append(os.path.abspath(os.path.join(curdir, "..", "mne")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
 autosummary_generate = True
+
+suppress_warnings = ["autosummary.generate", "misc.include"]
+
 autodoc_default_options = {"inherited-members": False}
 
 numpydoc_show_class_members = False
@@ -162,14 +200,16 @@ templates_path = ["_templates"]
 # source_suffix = ['.rst', '.md']
 source_suffix = ".rst"
 
+
 # The master toctree document.
 master_doc = "index"
 
 # General information about the project.
 
-
+bibtex_bibfiles = ["references.bib"]
+bibtex_reference_style = "author_year"
+bibtex_default_style = "unsrt"
 # -- Project information -----------------------------------------------------
-
 project = "Braindecode"
 td = datetime.now(tz=timezone.utc)
 
@@ -225,7 +265,6 @@ intersphinx_mapping = {
     "mne": ("http://mne.tools/stable", None),
     "skorch": ("https://skorch.readthedocs.io/en/stable/", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
-    "braindecode": ("https://braindecode.org/", None),
 }
 
 sphinx_gallery_conf = {
@@ -251,10 +290,8 @@ sphinx_gallery_conf = {
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-import sphinx_rtd_theme  # noqa
 
 html_theme = "pydata_sphinx_theme"
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 switcher_version_match = "dev" if release.endswith("dev0") else version
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -282,8 +319,8 @@ html_theme_options = {
         "version_match": switcher_version_match,
     },
     "logo": {
-        "image_light": "_static/braindecode_symbol.png",
-        "image_dark": "_static/braindecode_symbol.png",
+        "image_light": "_static/braindecode_long.svg",
+        "image_dark": "_static/braindecode_long.svg",
         "alt_text": "Braindecode Logo",
     },
     "footer_start": ["copyright"],
@@ -303,6 +340,9 @@ html_css_files = [
     "style.css",
 ]
 
+# Favicon for the site
+html_favicon = "_static/braindecode_symbol.png"
+
 # If true, links to the reST sources are added to the pages.
 html_show_sourcelink = False
 html_copy_source = False
@@ -316,12 +356,12 @@ html_show_sphinx = False
 htmlhelp_basename = "Braindecode-doc"
 
 # accommodate different logo shapes (width values in rem)
-xs = "2"
-sm = "2.5"
-md = "3"
-lg = "4.5"
-xl = "5"
-xxl = "6"
+xs = "7"
+sm = "9"
+md = "11"
+lg = "16"
+xl = "18"
+xxl = "20"
 
 html_context = {
     "build_dev_html": bool(int(os.environ.get("BUILD_DEV_HTML", False))),
@@ -331,17 +371,29 @@ html_context = {
     "icon_links_label": "Quick Links",  # for screen reader
     "show_toc_level": 1,
     "institutions": [
-        dict(
-            name="University of Freiburg",
-            img="unifreiburg.png",
-            url="https://www.ieeg.uni-freiburg.de/",
-            size=lg,
-        ),
+        # dict(
+        #     name="University of Freiburg",
+        #     img="unifreiburg.png",
+        #     url="https://www.ieeg.uni-freiburg.de/",
+        #     size=lg,
+        # ),
         dict(
             name="Institut national de recherche en informatique et en automatique",  # noqa E501
             img="inria.png",
             url="https://www.inria.fr/",
             size=xl,
+        ),
+        dict(
+            name="University of California San Diego",
+            img="ucsd.png",
+            url="https://sccn.ucsd.edu",
+            size=lg,
+        ),
+        dict(
+            name="Donders Institute for Brain, Cognition, and Behaviour",
+            img="donders.png",
+            url="https://www.ru.nl/en/donders-institute",
+            size=lg,
         ),
     ],
     "navbar_align": "content",
@@ -351,21 +403,31 @@ html_context = {
     "doc_path": "docs",
 }
 
-# -- Options for LaTeX output ---------------------------------------------
+html_sidebars = {
+    "cite": [],
+    "help": [],
+    "whats_new": [],
+    "api": [],
+}
 
+# -- Options for LaTeX output ---------------------------------------------
+latex_engine = "xelatex"
 latex_elements = {
+    "latex_engine": "xelatex",
     # The paper size ('letterpaper' or 'a4paper').
-    #
-    # 'papersize': 'letterpaper',
+    "papersize": "a4paper",
     # The font size ('10pt', '11pt' or '12pt').
     #
-    # 'pointsize': '10pt',
+    "pointsize": "14pt",
     # Additional stuff for the LaTeX preamble.
     #
-    # 'preamble': '',
+    "preamble": r"""\usepackage{microtype}
+    \usepackage{enumitem}
+    \setlist{nosep}
+    """,
     # Latex figure (float) alignment
     #
-    # 'figure_align': 'htbp',
+    "figure_align": "htbp",
 }
 
 latex_logo = "_static/braindecode_symbol.png"
@@ -379,11 +441,12 @@ latex_documents = [
         master_doc,
         "Braindecode.tex",
         "Braindecode",
-        "Robin Tibor Schirrmeister",
+        "Bruno Aristimunha",
         "manual",
     ),
 ]
-
+html_baseurl = "https://braindecode.org"
+sitemap_filename = "sitemap.xml"
 # -- Fontawesome support -----------------------------------------------------
 
 # here the "fab" and "fas" refer to "brand" and "solid" (determines which font
@@ -418,6 +481,16 @@ other_icons = (
     "cloud-download-alt",
     "wrench",
     "hourglass",
+    # Add your new icons here
+    "braille",
+    "repeat",
+    "lightbulb",
+    "layer-group",
+    "eye",
+    "circle-nodes",
+    "magnifying-glass-chart",
+    "share-nodes",
+    "clone",
 )
 icons = dict()
 for icon in brand_icons + fixed_icons + other_icons:
@@ -430,7 +503,7 @@ for icon, classes in icons.items():
     prolog += f"""
 .. |{icon}| raw:: html
 
-    <i class="{' '.join(classes)} fa-{icon}"></i>
+    <i class="{" ".join(classes)} fa-{icon}"></i>
 """
 
 prolog += """
@@ -445,7 +518,7 @@ prolog += """
 prolog += """
 .. |ensp| unicode:: U+2002 .. EN SPACE
 """
-
+rst_prolog = prolog
 # -- Options for manual page output ---------------------------------------
 
 # One entry per manual page. List of tuples

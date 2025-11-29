@@ -8,11 +8,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
+from braindecode.datasets import BaseConcatDataset, RawDataset, WindowsDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
-    create_windows_from_events,
     create_fixed_length_windows,
+    create_windows_from_events,
 )
 
 bnci_kwargs = {
@@ -58,7 +58,7 @@ def set_up():
     info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
     raw = mne.io.RawArray(data=rng.randn(2, 1000), info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    base_dataset = BaseDataset(raw, desc, target_name="age")
+    base_dataset = RawDataset(raw, desc, target_name="age")
 
     events = np.array([[100, 0, 1], [200, 0, 2], [300, 0, 1], [400, 0, 4], [500, 0, 3]])
     window_idxs = [(0, 0, 100), (0, 100, 200), (1, 0, 100), (2, 0, 100), (2, 50, 150)]
@@ -88,7 +88,7 @@ def concat_ds_targets():
 
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
-    ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
+    ds = [RawDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
     return concat_ds, targets
 
@@ -138,7 +138,7 @@ def test_target_in_subject_info(set_up):
     raw, _, _, _, _, _ = set_up
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
     with pytest.warns(UserWarning, match="'does_not_exist' not in description"):
-        BaseDataset(raw, desc, target_name="does_not_exist")
+        RawDataset(raw, desc, target_name="does_not_exist")
 
 
 def test_description_concat_dataset(concat_ds_targets):
@@ -425,7 +425,7 @@ def test_multi_target_dataset(set_up):
 def test_target_name_list(set_up):
     raw, _, _, _, _, _ = set_up
     target_names = ["pathological", "gender", "age"]
-    base_dataset = BaseDataset(
+    base_dataset = RawDataset(
         raw=raw,
         description={"pathological": True, "gender": "M", "age": 48},
         target_name=target_names,
@@ -436,7 +436,7 @@ def test_target_name_list(set_up):
 def test_description_incorrect_type(set_up):
     raw, _, _, _, _, _ = set_up
     with pytest.raises(ValueError):
-        BaseDataset(
+        RawDataset(
             raw=raw,
             description=("test", 4),
         )
@@ -447,13 +447,13 @@ def test_target_name_incorrect_type(set_up):
     with pytest.raises(
         ValueError, match="target_name has to be None, str, tuple or list"
     ):
-        BaseDataset(raw, target_name={"target": 1})
+        RawDataset(raw, target_name={"target": 1})
 
 
 def test_target_name_not_in_description(set_up):
     raw, _, _, _, _, _ = set_up
     with pytest.warns(UserWarning):
-        base_dataset = BaseDataset(raw, target_name=("pathological", "gender", "age"))
+        base_dataset = RawDataset(raw, target_name=("pathological", "gender", "age"))
     with pytest.raises(TypeError):
         x, y = base_dataset[0]
     base_dataset.set_description({"pathological": True, "gender": "M", "age": 48})

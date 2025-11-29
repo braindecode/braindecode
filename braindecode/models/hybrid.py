@@ -6,14 +6,12 @@ import torch
 from torch import nn
 from torch.nn import ConstantPad2d
 
-from .deep4 import Deep4Net
-from .util import to_dense_prediction_model
-from .shallow_fbcsp import ShallowFBCSPNet
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.deep4 import Deep4Net
+from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 
 
-class HybridNet(EEGModuleMixin, nn.Module):
-    """Hybrid ConvNet model from Schirrmeister et al 2017.
+class HybridNet(nn.Module):
+    """Hybrid ConvNet model from Schirrmeister, R T et al (2017)  [Schirrmeister2017]_.
 
     See [Schirrmeister2017]_ for details.
 
@@ -33,29 +31,13 @@ class HybridNet(EEGModuleMixin, nn.Module):
         n_chans=None,
         n_outputs=None,
         n_times=None,
-        in_chans=None,
-        n_classes=None,
-        input_window_samples=None,
-        add_log_softmax=True,
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,
+        activation: type[nn.Module] = nn.ELU,
+        drop_prob: float = 0.5,
     ):
-        n_chans, n_outputs, n_times = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-            chs_info=chs_info,
-            add_log_softmax=add_log_softmax,
-        )
+        super().__init__()
         self.mapping = {
             "final_conv.weight": "final_layer.weight",
             "final_conv.bias": "final_layer.bias",
@@ -74,6 +56,9 @@ class HybridNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
             chs_info=chs_info,
             final_conv_length=2,
+            activation_first_conv_nonlin=activation,
+            activation_later_conv_nonlin=activation,
+            drop_prob=drop_prob,
         )
         shallow_model = ShallowFBCSPNet(
             n_chans=n_chans,
@@ -86,44 +71,32 @@ class HybridNet(EEGModuleMixin, nn.Module):
             n_filters_spat=40,
             filter_time_length=28,
             final_conv_length=29,
+            drop_prob=drop_prob,
         )
-        del n_outputs, n_chans, n_times, input_window_seconds, sfreq, chs_info
-        del in_chans, n_classes, input_window_samples
+        new_conv_layer = nn.Conv2d(
+            deep_model.final_layer.conv_classifier.in_channels,
+            60,
+            kernel_size=deep_model.final_layer.conv_classifier.kernel_size,
+            stride=deep_model.final_layer.conv_classifier.stride,
+        )
+        deep_model.final_layer = new_conv_layer
 
-        reduced_deep_model = nn.Sequential()
-        for name, module in deep_model.named_children():
-            if name == "final_layer":
-                new_conv_layer = nn.Conv2d(
-                    module.conv_classifier.in_channels,
-                    60,
-                    kernel_size=module.conv_classifier.kernel_size,
-                    stride=module.conv_classifier.stride,
-                )
-                reduced_deep_model.add_module("deep_final_conv", new_conv_layer)
-                break
-            reduced_deep_model.add_module(name, module)
+        new_conv_layer = nn.Conv2d(
+            shallow_model.final_layer.conv_classifier.in_channels,
+            40,
+            kernel_size=shallow_model.final_layer.conv_classifier.kernel_size,
+            stride=shallow_model.final_layer.conv_classifier.stride,
+        )
+        shallow_model.final_layer = new_conv_layer
 
-        reduced_shallow_model = nn.Sequential()
-        for name, module in shallow_model.named_children():
-            if name == "final_layer":
-                new_conv_layer = nn.Conv2d(
-                    module.conv_classifier.in_channels,
-                    40,
-                    kernel_size=module.conv_classifier.kernel_size,
-                    stride=module.conv_classifier.stride,
-                )
-                reduced_shallow_model.add_module("shallow_final_conv", new_conv_layer)
-                break
-            reduced_shallow_model.add_module(name, module)
-
-        to_dense_prediction_model(reduced_deep_model)
-        to_dense_prediction_model(reduced_shallow_model)
-        self.reduced_deep_model = reduced_deep_model
-        self.reduced_shallow_model = reduced_shallow_model
+        deep_model.to_dense_prediction_model()
+        shallow_model.to_dense_prediction_model()
+        self.reduced_deep_model = deep_model
+        self.reduced_shallow_model = shallow_model
 
         self.final_layer = nn.Sequential(
-            nn.Conv2d(100, self.n_outputs, kernel_size=(1, 1), stride=1),
-            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
+            nn.Conv2d(100, n_outputs, kernel_size=(1, 1), stride=1),
+            nn.Identity(),
         )
 
     def forward(self, x):

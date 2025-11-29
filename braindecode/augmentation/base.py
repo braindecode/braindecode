@@ -5,28 +5,28 @@
 #          Valentin Iovene <val@too.gy>
 # License: BSD (3-clause)
 
-from typing import List, Tuple, Any, Optional, Union, Callable
 from numbers import Real
+from typing import Any, Callable, Optional, Union
 
-from sklearn.utils import check_random_state
 import torch
+from sklearn.utils import check_random_state
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 
 from .functional import identity
 
-Batch = List[Tuple[torch.Tensor, int, Any]]
+Batch = list[tuple[torch.Tensor, int, Any]]
 Output = Union[
     # just outputting X
     torch.Tensor,
     # outputting (X, y) where y can be a tensor or tuple of tensors
-    Tuple[torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]],
+    tuple[torch.Tensor, Union[torch.Tensor, tuple[torch.Tensor, ...]]],
 ]
 # (X, y) -> (X', y') where y' can be a tensor or a tuple of tensors
 Operation = Callable[
     [torch.Tensor, torch.Tensor],
-    Tuple[torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]],
+    tuple[torch.Tensor, Union[torch.Tensor, tuple[torch.Tensor, ...]]],
 ]
 
 
@@ -53,14 +53,14 @@ class Transform(torch.nn.Module):
     def __init__(self, probability=1.0, random_state=None):
         super().__init__()
         if self.forward.__func__ is Transform.forward:
-            assert callable(self.operation), "operation should be a " "``callable``. "
+            assert callable(self.operation), "operation should be a ``callable``. "
 
-        assert isinstance(
-            probability, Real
-        ), f"probability should be a ``real``. Got {type(probability)}."
-        assert (
-            probability <= 1.0 and probability >= 0.0
-        ), "probability should be between 0 and 1."
+        assert isinstance(probability, Real), (
+            f"probability should be a ``real``. Got {type(probability)}."
+        )
+        assert probability <= 1.0 and probability >= 0.0, (
+            "probability should be between 0 and 1."
+        )
         self._probability = probability
         self.rng = check_random_state(random_state)
 
@@ -189,7 +189,7 @@ class AugmentedDataLoader(DataLoader):
 
     Parameters
     ----------
-    dataset : BaseDataset
+    dataset : RecordDataset
         The dataset containing the signals.
     transforms : list | Transform, optional
         Transform or sequence of Transform to be applied to each batch.

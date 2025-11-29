@@ -5,6 +5,7 @@
 import numpy as np
 import torch
 from torch import nn
+
 from braindecode.util import set_random_seeds
 from braindecode.visualization.gradients import compute_amplitude_gradients_for_X
 

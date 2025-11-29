@@ -2,17 +2,22 @@
 Utilities for data manipulation.
 """
 
-from .serialization import (
-    save_concat_dataset,
-    load_concat_dataset,
-    _check_save_dir_empty,
+from .channel_utils import (
+    division_channels_idx,
+    match_hemisphere_chans,
 )
+from .serialization import (
+    _check_save_dir_empty,
+    load_concat_dataset,
+    save_concat_dataset,
+)
+from .util import infer_signal_properties
 
 
 def __getattr__(name):
     # ideas from https://stackoverflow.com/a/57110249/1469195
-    from warnings import warn
     import importlib
+    from warnings import warn
 
     if name == "create_from_X_y":
         warn(
@@ -47,3 +52,13 @@ def __getattr__(name):
         return windowers.__dict__[name]
 
     raise AttributeError("No possible import named " + name)
+
+
+__all__ = [
+    "load_concat_dataset",
+    "save_concat_dataset",
+    "_check_save_dir_empty",
+    "match_hemisphere_chans",
+    "division_channels_idx",
+    "infer_signal_properties",
+]

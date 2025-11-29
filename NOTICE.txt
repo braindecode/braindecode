@@ -1,0 +1,20 @@
+# BRAINDECODE Notice
+
+## Licensed Components
+
+### BSD-3-Clause Licensed Files
+
+All files within the `src/` directory are licensed under the BSD-3-Clause License.
+
+### CC BY-NC 4.0 Licensed Files
+
+The following components are licensed under the Creative Commons Attribution-NonCommercial 4.0 International License:
+
+- `braindecode/models/eegminer.py`
+
+As well as class later imported into the `braindecode.models.module` named as GeneralizedGaussianFilter.
+
+## License Links
+
+- [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause)
+- [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)

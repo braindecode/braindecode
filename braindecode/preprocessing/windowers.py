@@ -11,19 +11,164 @@
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
+#          Matthew Chen <matt.chen42601@gmail.com>
 #
 # License: BSD (3-clause)
 
 from __future__ import annotations
-import warnings
 
-import numpy as np
-from numpy.typing import ArrayLike
+import warnings
+from typing import Any, Callable
+
 import mne
+import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
+from numpy.typing import ArrayLike
 
-from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
+from ..datasets.base import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    RawDataset,
+    WindowsDataset,
+)
+
+
+class _LazyDataFrame:
+    """
+    DataFrame-like object that lazily computes values (experimental).
+
+    This class emulates some features of a pandas DataFrame, but computes
+    the values on-the-fly when they are accessed. This is useful for
+    very long DataFrames with repetitive values.
+    Only the methods used by EEGWindowsDataset on its metadata are implemented.
+
+    Parameters:
+    -----------
+    length: int
+        The length of the dataframe.
+    functions: dict[str, Callable[[int], Any]]
+        A dictionary mapping column names to functions that take an index and
+        return the value of the column at that index.
+    columns: list[str]
+        The names of the columns in the dataframe.
+    series: bool
+        Whether the object should emulate a series or a dataframe.
+    """
+
+    def __init__(
+        self,
+        length: int,
+        functions: dict[str, Callable[[int], Any]],
+        columns: list[str],
+        series: bool = False,
+    ):
+        if not (isinstance(length, int) and length >= 0):
+            raise ValueError("Length must be a positive integer.")
+        if not all(c in functions for c in columns):
+            raise ValueError("All columns must have a corresponding function.")
+        if series and len(columns) != 1:
+            raise ValueError("Series must have exactly one column.")
+        self.length = length
+        self.functions = functions
+        self.columns = columns
+        self.series = series
+
+    @property
+    def loc(self):
+        return self
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, key):
+        if not isinstance(key, tuple):
+            key = (key, self.columns)
+        if len(key) == 1:
+            key = (key[0], self.columns)
+        if not len(key) == 2:
+            raise IndexError(
+                f"index must be either [row] or [row, column], got [{', '.join(map(str, key))}]."
+            )
+        row, col = key
+        if col == slice(None):  # all columns (i.e., call to df[row, :])
+            col = self.columns
+        one_col = False
+        if isinstance(col, str):  # one column
+            one_col = True
+            col = [col]
+        else:  # multiple columns
+            col = list(col)
+        if not all(c in self.columns for c in col):
+            raise IndexError(
+                f"All columns must be present in the dataframe with columns {self.columns}. Got {col}."
+            )
+        if row == slice(None):  # all rows (i.e., call to df[:] or df[:, col])
+            return _LazyDataFrame(self.length, self.functions, col)
+        if not isinstance(row, int):
+            raise NotImplementedError(
+                "Row indexing only supports either a single integer or a null slice (i.e., df[:])."
+            )
+        if not (0 <= row < self.length):
+            raise IndexError(f"Row index {row} is out of bounds.")
+        if self.series or one_col:
+            return self.functions[col[0]](row)
+        return pd.Series({c: self.functions[c](row) for c in col})
+
+    def to_numpy(self):
+        return _LazyDataFrame(
+            length=self.length,
+            functions=self.functions,
+            columns=self.columns,
+            series=len(self.columns) == 1,
+        )
+
+    def to_list(self):
+        return self.to_numpy()
+
+
+class _FixedLengthWindowFunctions:
+    """Class defining functions for lazy metadata generation in fixed length windowing
+    to be used in combination with _LazyDataFrame (experimental)."""
+
+    def __init__(
+        self,
+        start_offset_samples: int,
+        last_potential_start: int,
+        window_stride_samples: int,
+        window_size_samples: int,
+        target: Any,
+    ):
+        self.start_offset_samples = start_offset_samples
+        self.last_potential_start = last_potential_start
+        self.window_stride_samples = window_stride_samples
+        self.window_size_samples = window_size_samples
+        self.target_val = target
+
+    @property
+    def length(self) -> int:
+        return int(
+            np.ceil(
+                (self.last_potential_start + 1 - self.start_offset_samples)
+                / self.window_stride_samples
+            )
+        )
+
+    def i_window_in_trial(self, i: int) -> int:
+        return i
+
+    def i_start_in_trial(self, i: int) -> int:
+        return self.start_offset_samples + i * self.window_stride_samples
+
+    def i_stop_in_trial(self, i: int) -> int:
+        return (
+            self.start_offset_samples
+            + i * self.window_stride_samples
+            + self.window_size_samples
+        )
+
+    def target(self, i: int) -> Any:
+        return self.target_val
 
 
 def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
@@ -50,7 +195,7 @@ def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
 
 # XXX it's called concat_ds...
 def create_windows_from_events(
-    concat_ds: BaseConcatDataset,
+    concat_ds: BaseConcatDataset[RawDataset],
     trial_start_offset_samples: int = 0,
     trial_stop_offset_samples: int = 0,
     window_size_samples: int | None = None,
@@ -67,7 +212,7 @@ def create_windows_from_events(
     use_mne_epochs: bool | None = None,
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
-):
+) -> BaseConcatDataset[WindowsDataset | EEGWindowsDataset]:
     """Create windows based on events in mne.Raw.
 
     This function extracts windows of size window_size_samples in the interval
@@ -89,7 +234,7 @@ def create_windows_from_events(
 
     Parameters
     ----------
-    concat_ds: BaseConcatDataset
+    concat_ds: BaseConcatDataset[RawDataset]
         A concat of base datasets each holding raw and description.
     trial_start_offset_samples: int
         Start offset from original trial onsets, in samples. Defaults to zero.
@@ -129,7 +274,7 @@ def create_windows_from_events(
         rejection based on flatness is done. See mne.Epochs.
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
     accepted_bads_ratio: float, optional
         Acceptable proportion of trials with inconsistent length in a raw. If
         the number of trials whose length is exceeded by the window size is
@@ -147,7 +292,7 @@ def create_windows_from_events(
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset
+    windows_datasets: BaseConcatDataset[WindowsDataset | EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
     """
     _check_windowing_arguments(
@@ -202,7 +347,7 @@ def create_windows_from_events(
 
 
 def create_fixed_length_windows(
-    concat_ds: BaseConcatDataset,
+    concat_ds: BaseConcatDataset[RawDataset],
     start_offset_samples: int = 0,
     stop_offset_samples: int | None = None,
     window_size_samples: int | None = None,
@@ -215,15 +360,16 @@ def create_fixed_length_windows(
     flat: dict[str, float] | None = None,
     targets_from: str = "metadata",
     last_target_only: bool = True,
+    lazy_metadata: bool = False,
     on_missing: str = "error",
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
-):
+) -> BaseConcatDataset[EEGWindowsDataset]:
     """Windower that creates sliding windows.
 
     Parameters
     ----------
-    concat_ds: ConcatDataset
+    concat_ds: ConcatDataset[RawDataset]
         A concat of base datasets each holding raw and description.
     start_offset_samples: int
         Start offset from beginning of recording in samples.
@@ -253,9 +399,12 @@ def create_fixed_length_windows(
     flat: dict | None
         Epoch rejection parameters based on flatness of signals. If None, no
         rejection based on flatness is done. See mne.Epochs.
+    lazy_metadata: bool
+        If True, metadata is not computed immediately, but only when accessed
+        by using the _LazyDataFrame (experimental).
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
     n_jobs: int
         Number of jobs to use to parallelize the windowing.
     verbose: bool | str | int | None
@@ -263,7 +412,7 @@ def create_fixed_length_windows(
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset
+    windows_datasets: BaseConcatDataset[EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
     """
     stop_offset_samples, drop_last_window = (
@@ -273,6 +422,7 @@ def create_fixed_length_windows(
             window_size_samples,
             window_stride_samples,
             drop_last_window,
+            lazy_metadata,
         )
     )
 
@@ -282,8 +432,7 @@ def create_fixed_length_windows(
         warnings.warn("Recordings have different lengths, they will not be batch-able!")
     if (window_size_samples is not None) and any(window_size_samples > lengths):
         raise ValueError(
-            f"Window size {window_size_samples} exceeds trial "
-            f"duration {lengths.min()}."
+            f"Window size {window_size_samples} exceeds trial duration {lengths.min()}."
         )
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
@@ -301,6 +450,7 @@ def create_fixed_length_windows(
             flat,
             targets_from,
             last_target_only,
+            lazy_metadata,
             on_missing,
             verbose,
         )
@@ -329,11 +479,11 @@ def _create_windows_from_events(
     verbose="error",
     use_mne_epochs=False,
 ):
-    """Create WindowsDataset from BaseDataset based on events.
+    """Create WindowsDataset from RawDataset based on events.
 
     Parameters
     ----------
-    ds : BaseDataset
+    ds : RawDataset
         Dataset containing continuous data and description.
     infer_mapping : bool
         If True, extract all events from all datasets and map them to
@@ -365,7 +515,7 @@ def _create_windows_from_events(
             }
         )
 
-    events, events_id = mne.events_from_annotations(ds.raw, mapping)
+    events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
     onsets = events[:, 0]
     # Onsets are relative to the beginning of the recording
     filtered_durations = np.array(
@@ -402,10 +552,17 @@ def _create_windows_from_events(
         # We could also just say we just assume window size=trial size
         # in case not given, without this condition...
         # but then would have to change functions overall
-        # to deal with varying window sizes hmmhmh
-        assert np.all(this_trial_sizes == window_size_samples), (
-            "All trial sizes should be the same if you do not supply a window " "size."
-        )
+        checker_trials_size = this_trial_sizes == window_size_samples
+
+        if not np.all(checker_trials_size):
+            trials_drops = int(len(this_trial_sizes) - sum(checker_trials_size))
+            warnings.warn(
+                f"Dropping trials with different windows size {trials_drops}",
+            )
+            bads_size_trials = checker_trials_size
+            events = events[checker_trials_size]
+            onsets = onsets[checker_trials_size]
+            stops = stops[checker_trials_size]
 
     description = events[:, -1]
 
@@ -493,14 +650,15 @@ def _create_fixed_length_windows(
     flat=None,
     targets_from="metadata",
     last_target_only=True,
+    lazy_metadata=False,
     on_missing="error",
     verbose="error",
 ):
-    """Create WindowsDataset from BaseDataset with sliding windows.
+    """Create WindowsDataset from RawDataset with sliding windows.
 
     Parameters
     ----------
-    ds : BaseDataset
+    ds : RawDataset
         Dataset containing continuous data and description.
 
     See `create_fixed_length_windows` for description of other parameters.
@@ -523,14 +681,6 @@ def _create_fixed_length_windows(
         window_stride_samples = window_size_samples
 
     last_potential_start = stop - window_size_samples
-    # already includes last incomplete window start
-    starts = np.arange(
-        start_offset_samples, last_potential_start + 1, window_stride_samples
-    )
-
-    if not drop_last_window and starts[-1] < last_potential_start:
-        # if last window does not end at trial stop, make it stop there
-        starts = np.append(starts, last_potential_start)
 
     # get targets from dataset description if they exist
     target = -1 if ds.target_name is None else ds.description[ds.target_name]
@@ -542,14 +692,47 @@ def _create_fixed_length_windows(
         else:
             target = mapping[target]
 
-    metadata = pd.DataFrame(
-        {
-            "i_window_in_trial": np.arange(len(starts)),
-            "i_start_in_trial": starts,
-            "i_stop_in_trial": starts + window_size_samples,
-            "target": len(starts) * [target],
-        }
-    )
+    if lazy_metadata:
+        factory = _FixedLengthWindowFunctions(
+            start_offset_samples,
+            last_potential_start,
+            window_stride_samples,
+            window_size_samples,
+            target,
+        )
+        metadata = _LazyDataFrame(
+            length=factory.length,
+            functions={
+                "i_window_in_trial": factory.i_window_in_trial,
+                "i_start_in_trial": factory.i_start_in_trial,
+                "i_stop_in_trial": factory.i_stop_in_trial,
+                "target": factory.target,
+            },
+            columns=[
+                "i_window_in_trial",
+                "i_start_in_trial",
+                "i_stop_in_trial",
+                "target",
+            ],
+        )
+    else:
+        # already includes last incomplete window start
+        starts = np.arange(
+            start_offset_samples, last_potential_start + 1, window_stride_samples
+        )
+
+        if not drop_last_window and starts[-1] < last_potential_start:
+            # if last window does not end at trial stop, make it stop there
+            starts = np.append(starts, last_potential_start)
+
+        metadata = pd.DataFrame(
+            {
+                "i_window_in_trial": np.arange(len(starts)),
+                "i_start_in_trial": starts,
+                "i_stop_in_trial": starts + window_size_samples,
+                "target": len(starts) * [target],
+            }
+        )
 
     window_kwargs.append(
         (
@@ -573,7 +756,7 @@ def _create_fixed_length_windows(
 
 
 def create_windows_from_target_channels(
-    concat_ds,
+    concat_ds: BaseConcatDataset[RawDataset],
     window_size_samples=None,
     preload=False,
     picks=None,
@@ -582,7 +765,7 @@ def create_windows_from_target_channels(
     n_jobs=1,
     last_target_only=True,
     verbose="error",
-):
+) -> BaseConcatDataset[EEGWindowsDataset]:
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_target_channels)(
             ds,
@@ -611,11 +794,11 @@ def _create_windows_from_target_channels(
     on_missing="error",
     verbose="error",
 ):
-    """Create WindowsDataset from BaseDataset using targets `misc` channels from mne.Raw.
+    """Create WindowsDataset from RawDataset using targets `misc` channels from mne.Raw.
 
     Parameters
     ----------
-    ds : BaseDataset
+    ds : RawDataset
         Dataset containing continuous data and description.
 
     See `create_fixed_length_windows` for description of other parameters.
@@ -761,8 +944,7 @@ def _compute_window_inds(
     window_stops = np.array(window_starts) + size
     if not (len(i_window_in_trials) == len(window_starts) == len(window_stops)):
         raise ValueError(
-            f"{len(i_window_in_trials)} == "
-            f"{len(window_starts)} == {len(window_stops)}"
+            f"{len(i_window_in_trials)} == {len(window_starts)} == {len(window_stops)}"
         )
 
     return i_trials, i_window_in_trials, window_starts, window_stops
@@ -792,6 +974,7 @@ def _check_and_set_fixed_length_window_arguments(
     window_size_samples,
     window_stride_samples,
     drop_last_window,
+    lazy_metadata,
 ):
     """Raises warnings for incorrect input arguments and will set correct default values for
     stop_offset_samples & drop_last_window, if necessary.
@@ -840,7 +1023,10 @@ def _check_and_set_fixed_length_window_arguments(
         == (window_stride_samples is None)
         == (drop_last_window is None)
     )
-
+    if not drop_last_window and lazy_metadata:
+        raise ValueError(
+            "Cannot have drop_last_window=False and lazy_metadata=True at the same time."
+        )
     return stop_offset_samples, drop_last_window
 
 

@@ -1,5 +1,4 @@
-"""
-Data Augmentation on BCIC IV 2a Dataset
+"""Data Augmentation on BCIC IV 2a Dataset
 =======================================
 
 This tutorial shows how to train EEG deep models with data augmentation. It
@@ -24,26 +23,27 @@ transform on the input signals.
 # Loading
 # ~~~~~~~
 
-from skorch.helper import predefined_split
 from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 ######################################################################
 # Preprocessing
 # ~~~~~~~~~~~~~
 #
 
+from numpy import multiply
+
 from braindecode.preprocessing import (
+    Preprocessor,
     exponential_moving_standardize,
     preprocess,
-    Preprocessor,
 )
-from numpy import multiply
 
 low_cut_hz = 4.0  # low cut frequency for filtering
 high_cut_hz = 38.0  # high cut frequency for filtering
@@ -124,8 +124,8 @@ transform = FrequencyShift(
 # Next, let us augment one session to show the resulting frequency shift. The
 # data of an mne Epoch is used here to make usage of mne functions.
 
-import torch
 import numpy as np
+import torch
 
 X = np.stack([X for X, y, i in train_set.datasets[0]])
 # This allows to apply the transform with a fixed shift (10 Hz) for
@@ -136,8 +136,8 @@ X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10.0, sfreq)  # 
 # The psd of the transformed session has now been shifted by 10 Hz, as one can
 # see on the psd plot.
 
-import mne
 import matplotlib.pyplot as plt
+import mne
 
 
 def plot_psd(data, axis, label, color):
@@ -174,8 +174,8 @@ plt.show()
 #
 # The model to be trained is defined as usual.
 
-from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = "cuda" if cuda else "cpu"
@@ -196,12 +196,12 @@ classes = list(range(n_classes))
 
 # Extract number of chans and time steps from dataset
 n_channels = train_set[0][0].shape[0]
-input_window_samples = train_set[0][0].shape[1]
+n_times = train_set[0][0].shape[1]
 
 model = ShallowFBCSPNet(
-    n_channels,
-    n_classes,
-    input_window_samples=input_window_samples,
+    n_chans=n_channels,
+    n_outputs=n_classes,
+    n_times=n_times,
     final_conv_length="auto",
 )
 
@@ -244,7 +244,7 @@ clf = EEGClassifier(
     model,
     iterator_train=AugmentedDataLoader,  # This tells EEGClassifier to use a custom DataLoader
     iterator_train__transforms=transforms,  # This sets the augmentations to use
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(valid_set),  # using valid_set for validation
     optimizer__lr=lr,

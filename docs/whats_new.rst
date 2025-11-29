@@ -4,26 +4,136 @@
 
 What's new
 ==========
-
 .. currentmodule:: braindecode
 
 .. NOTE: we are now using links to highlight new functions and classes.
-Please follow the examples below like :class:`braindecode.EEGClassifier`, so the
-whats_new page will have a link to the function/class documentation.
+    Please follow the examples below like :class:`braindecode.EEGClassifier`, so the
+    whats_new page will have a link to the function/class documentation.
 
 .. NOTE: there are 3 separate sections for changes, based on type:
-- "Enhancements" for new features
-- "Bugs" for bug fixes
-- "API changes" for backward-incompatible changes
+    - "Enhancements" for new features
+    - "Bugs" for bug fixes
+    - "API changes" for backward-incompatible changes
 
 .. _current:
 
-Current 0.9 (dev0)
+Current 1.3 (dev)
 ----------------------
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding augmentation :class:`braindecode.augmentation.AmplitudeScale` (:gh:`848` by `Bruna Lopes`_)
+- Adding augmentation :class:`braindecode.augmentation.ChannelsReref` (:gh:`848` by `Bruna Lopes`_)
+- Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
+- Including typing in the augmentation module (:gh:`709` by `Aphel`_)
+- Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
+- Added :class:`braindecode.models.BENDR`  (:gh:`802` by `Bruno Aristimunha`_ )
+- Adding a tutorial for fine-tuning a pre-trained foundation model (:gh:`794` by `Pierre Guetschel`_)
+- Added 25 new MNE preprocessing functions, expanding from 6 to 31 total preprocessing classes. New functions include: :class:`braindecode.preprocessing.NotchFilter`, :class:`braindecode.preprocessing.SavgolFilter`, :class:`braindecode.preprocessing.ApplyHilbert`, :class:`braindecode.preprocessing.InterpolateBads`, :class:`braindecode.preprocessing.InterpolateTo`, :class:`braindecode.preprocessing.RenameChannels`, :class:`braindecode.preprocessing.ReorderChannels`, :class:`braindecode.preprocessing.EqualizeChannels`, :class:`braindecode.preprocessing.AddChannels`, :class:`braindecode.preprocessing.SetMontage`, :class:`braindecode.preprocessing.AddReferenceChannels`, :class:`braindecode.preprocessing.AddProj`, :class:`braindecode.preprocessing.ApplyProj`, :class:`braindecode.preprocessing.DelProj`, :class:`braindecode.preprocessing.ComputeCurrentSourceDensity`, :class:`braindecode.preprocessing.FixStimArtifact`, :class:`braindecode.preprocessing.CropByAnnotations`, :class:`braindecode.preprocessing.Anonymize`, :class:`braindecode.preprocessing.SetAnnotations`, :class:`braindecode.preprocessing.SetChannelTypes`, :class:`braindecode.preprocessing.SetMeasDate`, :class:`braindecode.preprocessing.FixMagCoilTypes`, :class:`braindecode.preprocessing.ApplyGradientCompensation`, :class:`braindecode.preprocessing.AddEvents`, and :class:`braindecode.preprocessing.Rescale` (:gh:`801` by `Bruno Aristimunha`_)
+- Adding artifact removal preprocessing steps, incl. :class:`braindecode.preprocessing.EEGPrep` (:gh:`796` by `Christian Kothe`_)
+- Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
+- Better inheritance between the different dataset classes (:gh:`806` by `Pierre Guetschel`_ )
+- Fix minor documentation issues in Labram (:gh:`808` by `Matthew Chen`_)
+- Including missed tag in all the models and creating some test for it (:gh:`811` by `Bruno Aristimunha`_ )
+- Added :class:`braindecode.models.LUNA`  (:gh:`802` by `Bruno Aristimunha`_, `Thorir Mar Ingolfsson`_)
+- Improve :class:`braindecode.preprocessing.Preprocessor` serialisation (:gh:`813` by `Pierre Guetschel`_ )
+- Modify verbosity of create_window_from_events (:gh:`814` by `Matthew Chen`_)
+- Including SIENA dataset and CHB_MIT datasets (:gh:`818` by `Jonathan Dan`_ and `Bruno Aristimunha`_ )
+- Modify the interface of FBMSNet for consistency with FBCNet + Unit Tests (:gh:`819` by `Matthew Chen`_)
+- Adding :class:`braindecode.models.MEDFormer`  (:gh:`821` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
+- Adding tutorial for :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`746` by `Aniela Bulicz` and `Arina Schippers` and `Aron van Zuijlen`)
+- Including interface with Hugging Face Hub for dataset sharing and loading (:gh:`820` by `Kuntal Kokate`_ and `Bruno Aristimunha`_ )
+- Adding a CITATION.cff file, allowing researchers to directly cite the Braindecode library via a Zenodo DOI (:gh:`847` by `Pierre Guetschel`_ )
+- Add automatically-generated pydantic models configs (:gh:`850` by `Pierre Guetschel`_ )
+- Refactor: standardized parameter names in transformer and LabRam modules (:gh:`850` by `José Mauricio`_)
+- Added a tutorial for temporal generalization (:gh:`857` by `Matthew Chen`_)
 
+API changes
+~~~~~~~~~~~
+- Deprecating the old naming of MOABB Dataset name (:gh:`826` by `Bruno Aristimunha`_)
+- Exposing the :func:`braindecode.datautil.infer_signal_properties` utility function (:gh:`856` by `Pierre Guetschel`_)
+- Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
+- Drop support for Python 3.10 and increase support to Python 3.13 and python 3.14 (:gh:`840` by `Bruno Aristimunha`_)
+ - Model config helpers now soft-import ``pydantic``/``numpydantic``; if the optional
+   dependencies are missing the module skips config generation and warns to install
+   ``pip install braindecode[pydantic]``.
+
+
+Bugs
+~~~~
+- Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi Altaheri`_)
+- Fixing expired path when loading a preprocessed dataset that was moved (:gh:`786` by `Pierre Guetschel`_)
+- Fix OverflowError sometimes when saving description to a json file (:gh:`789` by `Pierre Guetschel`_)
+- Small adjustment in :class:`braindecode.models.Labram` model to allow pre-loading of weights (:gh:`792` by `Bruno Aristimunha`_)
+- Fixing many warnings for generating the documentation (:gh:`805` by `Bruno Aristimunha`_)
+
+Current 1.2 (stable)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Improving the docstring for :class:`braindecode.models.EEGNetv4`  (:gh:`768` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGConformer`  (:gh:`769` by `Bruno Aristimunha`_)
+- Experimental BIDS Iterable Dataset support (:gh:`766` by `Bruno Aristimunha`_ and `Pierre Guetschel`_)
+- Improving the docstring for :class:`braindecode.models.ATCNet`  (:gh:`771` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.AttentionBaseNet`  (:gh:`772` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGNeX`  (:gh:`773` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`774` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`775` by `Bruno Aristimunha`_), creating the models categorization, table and many details.
+
+
+API changes
+~~~~~~~~~~~
+- Using the name from the original name and deprecation models that we create for no reason, models :gh:`775` by `Bruno Aristimunha`_
+- Deprecated the version name in :class:`braindecode.models.EEGNetv4` in favour of :class:`braindecode.models.EEGNetv`.
+- Deprecated the version name in :class:`braindecode.models.SleepStagerEldele2021` in favour of :class:`braindecode.models.AttnSleep`.
+- Deprecated the version name in :class:`braindecode.models.TSceptionV1` in favour of :class:`braindecode.models.TSception`.
+
+Bugs
+~~~~
+
+
+Version 1.1.1
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Massive refactor of the model webpage
+
+API changes
+~~~~~~~~~~~
+
+
+Bugs
+~~~~
+- Fixing several models to be be compatibility with small windows size(:gh:`756` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.Deep4Net` (:gh:`752` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.ATCNet` (:gh:`754` by `Bruno Aristimunha`_)
+- Fix Labram model for small input (:gh:`757` by `Bruno Aristimunha`_)
+- Fix the CTNet parameters to make the embedding configuration easy (:gh:`760` by `Bruno Aristimunha`_)
+
+API changes
+~~~~~~~~~~~
+
+
+Version 1.0
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Make sure all the models start at train model (:gh:`745` by `Bruno Aristimunha`_)
+- Enable more models to be pytorch compatible (:gh:`732` by `Bruno Aristimunha`_ and `Lucas Heck`_)
+- Making the braindecode.models compatibility with torch compile, torch export and torch jit (:gh:`729` by `Bruno Aristimunha` and `Pierre Guetschel`_)
+- Reorder the modules, functional and re-organize the codebase (:gh:`728` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.IFNet` (:gh:`725` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBMSNet` (:gh:`724` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBCNet` (:gh:`722` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBLightConvNet` (:gh:`723` by `Bruno Aristimunha`_ )
+- Added dropdown menus for selecting `paradigm`, `type`, and `hyperparameters` on the model summary page. (:gh:`718` by `Ganasekhar Kalla`)
+- Adding model page (:gh:`715` by `Lucas Heck`_)
+- Inference of shape for string module when using :class:`skorch.helper.SliceDataset` (:gh:`716` by `Bruno Aristimunha`_)
+- Fix error when using n_njobs > 1 on Windows (:gh:`700` by `Arnaud Delorme`_)
 - Adding :class:`braindecode.models.AttentionBaseNet`  (:gh:`572` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `Mohammad Javad D`_  and `Bruno Aristimunha`_)
 - Adding an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
@@ -35,16 +145,47 @@ Enhancements
 - Adding cache and pre-processing option to :class:`braindecode.datasets.MOABBDataset` (:gh:`582` by `Bruno Aristimunha`_)
 - Add type hints to datasets (:gh:`590` by `Pierre Guetschel`_)
 - Add channel names and montage to  :class:`braindecode.datasets.TUH` (:gh:`593` by `Pierre Guetschel`_)
-- Add ``offset`` arg to :function:`braindecode.preprocessing.preprocess` (:gh:`599` by `Pierre Guetschel`_)
+- Add ``offset`` arg to :func:`braindecode.preprocessing.preprocess` (:gh:`599` by `Pierre Guetschel`_)
 - Add type hints to preprocessing (:gh:`600` by `Pierre Guetschel`_)
 - Add ``mypy`` type checks to pre-commit and CI (:gh:`606` by `Pierre Guetschel`_)
 - Code clarity changes in `windowers.py` (:gh:`615` by `John Muradeli`_)
 - Adding SegmentationReconstruction augmentation :class:`braindecode.augmentation.SegmentationReconstruction` (:gh:`608` by `Gustavo Rodrigues`_)
 - Add two models :class:`braindecode.models.ContraWR` and :class:`braindecode.models.SPARCNet` (:gh:`611` by `Bruno Aristimunha`_)
+- Add Sleep Physionet 18 dataset (:gh:`621` by `Hubert Banville`_ and `Bruno Aristimunha`_)
 - Optimize the CI by executing only the last commit (:gh:`612` by `Bruno Aristimunha`_)
+- Add experimental `lazy_metadata` parameter to :func:`braindecode.preprocessing.create_fixed_length_windows` (:gh:`597` by `Pierre Guetschel`_)
+- Increasing moabb version to 1.1.0 (:gh:`632` by `Bruno Aristimunha`_)
+- Add MaskEncoding augmentation :class:`braindecode.augmentation.MaskEncoding` (:gh:`631` by `Gustavo Rodrigues`_)
+- Adding :class:`braindecode.models.EEGNex`  (:gh:`635` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.TSception`  (:gh:`641` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.EEGTCNet`  (:gh:`640` by `Bruno Aristimunha`_ )
+- Ensure consistency in the last layer using tests (:gh:`642` by `Bruno Aristimunha`_ )
+- Ensuring consistency on the expose of the activation function (:gh:`637` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.SyncNet` (:gh:`643` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.MSVTNet` (:gh:`659` by `Bruno Aristimunha`_ )
+- Creating the `FilterBanklayer` module for new models (:gh:`656` by `Bruno Aristimunha`_ )
+- Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.EEGMiner` (:gh:`667` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.CTNet`  (:gh:`666` by `Bruno Aristimunha`_ )
+- Fix warnings not being suppressed when creating a TUHAbnormal dataset in parallel (:gh:`670` by `Aphel`_)
+- Exposing :class:`braindecode.models.EEGITNet` hyper-parameters (:gh:`672` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.SincShallowNet` (:gh:`678` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.SCCNet` (:gh:`679` by `Bruno Aristimunha`_ )
+- Fix error when using NMT dataset with n_jobs > 1 (:gh:`690` by `Aphel`_)
+- Adding support for distributed samplers (:gh:`695` by `Young Truong`_)
+- Adding :class:`braindecode.datasets.BIDSDataset` and :class:`braindecode.datasets.BIDSEpochsDataset` plus tutorial (:gh:`701` :gh:`702` :gh:`704` by `Pierre Guetschel`_ )
+- Add :class:`braindecode.models.SignalJEPA` plus downstream architectures (:gh:`703` by `Pierre Guetschel`_ )
+- Various improvements on documentation:
+
+  * :gh:`706` by `Pierre Guetschel`_
 
 Bugs
 ~~~~
+- Making the :class:`braindecode.models.SCCNet` more compatible with paper instead of source code (:gh:`742` by `Bruno Aristimunha`_)
+- Making the :class:`braindecode.models.EEGNeX` and :class:`braindecode.models.CTNet` more compatible with paper instead of source code (:gh:`740` by `Bruno Aristimunha`_)
+- Exposing extra variable to avoid problem with the parallel process (:gh:`736` by `Pierre Guetschel`_)
+- Fixing the IFNet (:gh:`739` by `Bruno Aristimunha`_)
+- Fix dead links in the documentation (:gh:`727` by `Lucas Heck`_)
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
 - Fix deprecated test and changing the what's new checker (:gh: 569 by `Bruno Aristimunha`_)
 - Fix issue with coverage CI and adding a condition on the test for avoid HTML errors (:gh: 591 by `Bruno Aristimunha`_)
@@ -55,15 +196,27 @@ Bugs
 - Fix `tmax` in `SleepPhysionet` (:gh:`612` by `John Muradeli`_)
 - Fix matplotlib colormaps deprecation (:gh:`608` by `Bruno Aristimunha`_)
 - Ensure mypy to work for every commit (:gh:`619` by `Bruno Aristimunha`_)
-
+- Deprecate moabb version 1.0.0 because of incorrect epoching (:gh:`627` by `Pierre Guetschel`_)
+- Fixing tutorial benchmark lazy eager loagin (:gh:`` by `Bruno Aristimunha`_ and `Aphel`_)
+- Improve doc build's time with better caching (:gh:`693` by `Thomas Moreau`_)
+- Fixing the MOABBDataset to work with the cache (:gh:`694` by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
-- Expose the ``use_mne_epochs parameter`` of :function:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
-
+- Removing deprecated variable ``use_log_softmax`` from :class:`braindecode.models.base` (:gh:`729` by `Bruno Aristimunha`_)
+- Removing function ``squeze_final_output`` with Expression because of not compatibility with torch script (:gh:`729` by `Bruno Aristimunha`_)
+- Expose the ``use_mne_epochs parameter`` of :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
+- Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
+- Normalizing the parameters for dropout as part of normalization of model parameters  (:gh:`624` by `Bruno Aristimunha`_)
+- Removing ``use_log_softmax`` and old parameters (:gh:`671` by `Bruno Aristimunha`_)
+- Moving :class:`braindecode.models.TCN` and :class:`braindecode.models.HybridNet` to module and creating :class:`braindecode.models.BDTCN` (:gh:`673` by `Bruno Aristimunha`_)
+- Removing dead parameters from :class:`braindecode.models.EEGNetv4` (:gh:`676` by `Bruno Aristimunha`_)
+- Including Linear Layer at the end :class:`braindecode.models.EEGNetv4` (:gh:`680` by `Bruno Aristimunha`_)
+- Expose ``copy_data`` parameter in :func:`braindecode.preprocessing.preprocess` (:gh:`736` by `Pierre Guetschel`_)
 
 .. _changes_0_8_0:
-Current 0.8 (11-2022)
+
+Version 0.8 (11-2022)
 ----------------------
 
 Enhancements
@@ -71,7 +224,7 @@ Enhancements
 - Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428` by `Cedric Rommel`_)
 - Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
 - Adding to :class:`braindecode.datasets.tuh.TUH` compatibility with version 3.0 of TUH dataset (:gh:`431` by `Mohammad Javad D`_, `Bruno Aristimunha`_, `Robin Tibor Schirrmeister`_, `Lukas Gemein`_, `Denis A. Engemann`_ and `Oskar Størmer`_)
-- Adding :class:`braindecode.models.DeepSleepNet` network for sleep staging (:gh:`417` by `Theo Gnassounou`_)
+- Adding :class:`braindecode.models.DeepSleepNet` network for sleep staging (:gh:`417` by `Théo Gnassounou`_)
 - Adding :class:`braindecode.models.EEGConformer` network (:gh:`454` by `Yonghao Song`_ and `Bruno Aristimunha`_)
 - Adding einops in the requirements (:gh:`466` by `Bruno Aristimunha`_)
 - Have moabb as an extra dependency (:gh:`467` by `Marco Zamboni`_)
@@ -96,7 +249,7 @@ Enhancements
 - Enabling data augmentation of single inputs (with no batch dimension). (:gh:`503` by `Cedric Rommel`_)
 - Adding `randomize` parameter to :class:`braindecode.samplers.SequenceSampler` (:gh:`504` by `Théo Gnassounou`_.)
 - Creating new preprocessor objects based on mne's raw/Epochs methods :class:`braindecode.preprocessing.Resample`, :class:`braindecode.preprocessing.DropChannels`, :class:`braindecode.preprocessing.SetEEGReference`, :class:`braindecode.preprocessing.Filter`, :class:`braindecode.preprocessing.Pick`, :class:`braindecode.preprocessing.Crop` (:gh:`500` by `Bruna Lopes`_ and `Bruno Aristimunha`_)
-- Moving :function:`braindecode.models.util.get_output_shape` and :function:`braindecode.models.util.to_dense_prediction_model` to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`514` by `Maciej Śliwowski`_)
+- Moving :class:`braindecode.models.util.get_output_shape` and :func:`braindecode.models.util.to_dense_prediction_model` to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`514` by `Maciej Śliwowski`_)
 - Automatically populate signal-related parameters in :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`517` by `Pierre Guetschel`_)
 - Adding a pure PyTorch tutorial (:gh:`523` by `Remi Delbouys`_  and `Bruno Aristimunha`_)
 - Add ``models_dict`` to :mod:`braindecode.models.util` (:gh:`524` by `Pierre Guetschel`_)
@@ -130,7 +283,7 @@ API changes
 
 .. _changes_0_7_0:
 
-Current 0.7 (10-2022)
+Version 0.7 (10-2022)
 ----------------------
 
 Enhancements
@@ -167,7 +320,7 @@ Enhancements
 ~~~~~~~~~~~~
 - Adding :class:`braindecode.samplers.SequenceSampler` along with support for returning sequences of windows in :class:`braindecode.datasets.BaseConcatDataset` and an updated sleep staging example to show how to train on sequences of windows (:gh:`263` by `Hubert Banville`_)
 - Adding Thinker Invariance Network :class:`braindecode.models.TIDNet` (:gh:`170` by `Ann-Kathrin Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
-- Adding a confusion matrix plot generator :func:`braindecode.visualization.plot_confusion_matrix` (:gh:`274` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+- Adding a confusion matrix plot generator :func:`braindecode.visualization.plot_confusion_matrix` (:gh:`274` by `Ann-Kathrin Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Adding data :ref:`augmentation_api` module (:gh:`254` by `Cedric Rommel`_, `Alex Gramfort`_ and `Thomas Moreau`_)
 - Adding Mixup augmentation :class:`braindecode.augmentation.Mixup` (:gh:`254` by `Simon Brandt`_)
 - Adding saving of preprocessing and windowing choices in :func:`braindecode.preprocessing.preprocess`, :func:`braindecode.preprocessing.create_windows_from_events` and :func:`braindecode.preprocessing.create_fixed_length_windows` to datasets to facilitate reproducibility (:gh:`287` by `Lukas Gemein`_)
@@ -176,7 +329,7 @@ Enhancements
 - Preprocessing and windowing choices are now saved on the level of individual datasets (:gh:`288` by `Lukas Gemein`_)
 - Serialization now happens entirely on dataset level creating subsets for individual datasets that contain 'fif' and 'json' files (:gh:`288` `Lukas Gemein`_)
 - Instantiation of TUH :class:`braindecode.datasets.tuh.TUH` and TUHAbnormal :class:`braindecode.datasets.tuh.TUHAbnormal`, as well as loading :func:`braindecode.datautil.serialization.load_concat_dataset` of stored datasets now support multiple workers (:gh:`288` by `Lukas Gemein`_)
-- Adding balanced sampling of sequences of windows with :class:`braindecode.samplers.BalancedSequenceSampler`  as proposed in U-Sleep paper (:gh:`295` by `Theo Gnassounou`_ and `Hubert Banville`_)
+- Adding balanced sampling of sequences of windows with :class:`braindecode.samplers.BalancedSequenceSampler`  as proposed in U-Sleep paper (:gh:`295` by `Théo Gnassounou`_ and `Hubert Banville`_)
 - :func:`braindecode.preprocessing.preprocess` can now work in parallel and serialize datasets to enable lazy-loading (i.e. `preload=False`) (:gh:`277` by `Hubert Banville`_)
 - Adding :class:`braindecode.models.TimeDistributed` to apply a module on a sequence (:gh:`318` by `Hubert Banville`_)
 - Adding time series targets decoding together with :class:`braindecode.datasets.BCICompetitionIVDataset4` and fingers flexion decoding from ECoG examples (:gh:`261` by `Maciej Śliwowski`_ and `Mohammed Fattouh`_)
@@ -196,7 +349,7 @@ Bugs
 API changes
 ~~~~~~~~~~~
 - Removing the default sampling frequency sfreq value in :func:`braindecode.datasets.create_windows_from_events` (:gh:`256` by `Ann-Kathrin Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
-- Made windowing arguments optional in :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` & :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`269` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+- Made windowing arguments optional in :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` & :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`269` by `Ann-Kathrin Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Deprecating preprocessing functions :func:`braindecode.preprocessing.zscore` and :func:`braindecode.preprocessing.scale` in favour of sklearn's implementation (:gh:`292` by `Hubert Banville`_)
 - :func:`braindecode.preprocessing.preprocess` now returns a :class:`braindecode.dataset.BaseConcatDataset` object (:gh:`277` by `Hubert Banville`_)
 
@@ -220,7 +373,7 @@ Enhancements
 - Removing code duplicate in BaseDataset and WindowsDataset (:gh:`159` by `Lukas Gemein`_)
 - Only load data if needed during preprocessing (e.g., allow timecrop without loading) (:gh:`164` by `Robin Tibor Schirrmeister`_)
 - Adding option to sort filtered channels by frequency band for the filterbank in :func:`braindecode.datautil.filterbank` (:gh:`185` by `Lukas Gemein`_)
-- Adding the USleep model :class:`braindecode.models.USleep` (:gh:`282` by `Theo Gnassounou`_ and `Omar Chehab`_)
+- Adding the USleep model :class:`braindecode.models.USleep` (:gh:`282` by `Théo Gnassounou`_ and `Omar Chehab`_)
 - Adding :class:`braindecode.models.SleepStagerEldele2021` and :class:`braindecode.models.SleepStagerBlanco2020` models for sleep staging  (:gh:`341` by `Divyesh Narayanan`_)
 
 Bugs
@@ -244,6 +397,7 @@ API changes
 Authors
 ~~~~~~~
 
+.. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl
@@ -252,7 +406,7 @@ Authors
 .. _Daniel Wilson: https://github.com/dcwil
 .. _Henrik Bonsmann: https://github.com/HenrikBons
 .. _Vytautas Jankauskas: https://github.com/vytjan
-.. _Theo Gnassounou: https://github.com/Tgnassou
+.. _Théo Gnassounou: https://github.com/Tgnassou
 .. _Omar Chehab: https://github.com/l-omar-chehab
 .. _Divyesh Narayanan: https://github.com/Div12345
 .. _Alex Gramfort: http://alexandre.gramfort.net
@@ -278,3 +432,17 @@ Authors
 .. _Yassine El Ouahidi: https://github.com/elouayas
 .. _John Muradeli: https://github.com/OverLordGoldDragon/
 .. _Gustavo Rodrigues: https://github.com/gustavohenriquesr
+.. _Aphel: https://github.com/itsaphel
+.. _Young Truong: https://github.com/dungscout96
+.. _Lucas Heck: https://github.com/lucas-heck
+.. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif
+.. _Hamdi Altaheri: https://github.com/Altaheri
+.. _José Mauricio: https://github.com/josemaurici
+.. _Can Han: https://github.com/hancan16
+.. _Christian Kothe: https://github.com/chkothe
+.. _Kuntal Kokate: https://github.com/Kkuntal990
+.. _Matthew Chen: https://github.com/MatthewChen37
+.. _Jonathan Dan: https://github.com/danjjl
+.. _Thorir Mar Ingolfsson: https://github.com/Thoriri
+.. _Aniela Bulicz: github.com/AryaDro
+.. _Mattew Chew: https://github.com/MatthewChen37

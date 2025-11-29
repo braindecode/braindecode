@@ -1,5 +1,8 @@
 include README.rst
 include LICENSE.txt
+include NOTICE.txt
+
+include braindecode/models/summary.csv
 
 recursive-include docs *.ipynb *.rst conf.py Makefile
 recursive-exclude docs *checkpoint.ipynb

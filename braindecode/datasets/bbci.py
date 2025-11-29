@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
+
 import logging
 import os.path
 import re
@@ -17,7 +18,8 @@ log = logging.getLogger(__name__)
 
 
 class BBCIDataset(object):
-    """
+    """BBCIDataset.
+
     Loader class for files created by saving BBCI files in matlab (make
     sure to save with '-v7.3' in matlab, see
     https://de.mathworks.com/help/matlab/import_export/mat-file-versions.html#buk6i87
@@ -121,7 +123,7 @@ class BBCIDataset(object):
     def _determine_chan_inds(all_sensor_names, sensor_names):
         assert sensor_names is not None
         chan_inds = [all_sensor_names.index(s) for s in sensor_names]
-        assert len(chan_inds) == len(sensor_names), "All" "sensors should be there."
+        assert len(chan_inds) == len(sensor_names), "Allsensors should be there."
         assert len(set(chan_inds)) == len(chan_inds), "No duplicated sensors wanted."
         return chan_inds
 

@@ -9,13 +9,17 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
+
+import warnings
 from typing import Any
 
-import pandas as pd
 import mne
+import pandas as pd
+from mne.utils import deprecated
 
-from .base import BaseDataset, BaseConcatDataset
 from braindecode.util import _update_moabb_docstring
+
+from .base import BaseConcatDataset, RawDataset
 
 
 def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
@@ -55,11 +59,17 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids=None, dataset_load_kwargs=
 
 
 def _annotations_from_moabb_stim_channel(raw, dataset):
-    # find events from stim channel
-    events = mne.find_events(raw)
+    # find events from the stim channel
+    stim_channels = mne.utils._get_stim_channel(None, raw.info, raise_error=False)
+    if len(stim_channels) > 0:
+        # returns an empty array if none found
+        events = mne.find_events(raw, shortest_event=0, verbose=False)
+        event_id = dataset.event_id
+    else:
+        events, event_id = mne.events_from_annotations(raw, verbose=False)
 
     # get annotations from events
-    event_desc = {k: v for v, k in dataset.event_id.items()}
+    event_desc = {k: v for v, k in event_id.items()}
     annots = mne.annotations_from_events(events, raw.info["sfreq"], event_desc)
 
     # set trial on and offset given by moabb
@@ -139,6 +149,15 @@ class MOABBDataset(BaseConcatDataset):
         dataset_kwargs: dict[str, Any] | None = None,
         dataset_load_kwargs: dict[str, Any] | None = None,
     ):
+        # soft dependency on moabb
+        from moabb import __version__ as moabb_version  # type: ignore
+
+        if moabb_version == "1.0.0":
+            warnings.warn(
+                "moabb version 1.0.0 generates incorrect annotations. "
+                "Please update to another version, version 0.5 or 1.1.0 "
+            )
+
         raws, description = fetch_data_with_moabb(
             dataset_name,
             subject_ids,
@@ -146,13 +165,13 @@ class MOABBDataset(BaseConcatDataset):
             dataset_load_kwargs=dataset_load_kwargs,
         )
         all_base_ds = [
-            BaseDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
+            RawDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
         ]
         super().__init__(all_base_ds)
 
 
-class BNCI2014001(MOABBDataset):
-    doc = """See moabb.datasets.bnci.BNCI2014001
+class BNCI2014_001(MOABBDataset):
+    doc = """See moabb.datasets.bnci.BNCI2014_001
 
     Parameters
     ----------
@@ -161,14 +180,14 @@ class BNCI2014001(MOABBDataset):
         subjects is fetched.
     """
     try:
-        from moabb.datasets import BNCI2014001
+        from moabb.datasets import BNCI2014_001
 
-        __doc__ = _update_moabb_docstring(BNCI2014001, doc)
+        __doc__ = _update_moabb_docstring(BNCI2014_001, doc)
     except ModuleNotFoundError:
         pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
 
     def __init__(self, subject_ids):
-        super().__init__("BNCI2014001", subject_ids=subject_ids)
+        super().__init__("BNCI2014_001", subject_ids=subject_ids)
 
 
 class HGD(MOABBDataset):
@@ -189,3 +208,12 @@ class HGD(MOABBDataset):
 
     def __init__(self, subject_ids):
         super().__init__("Schirrmeister2017", subject_ids=subject_ids)
+
+
+@deprecated(
+    "`BNCI2014001` was renamed to `BNCI2014_001` in v1.13; this alias will be removed in v1.14."
+)
+class BNCI2014001(BNCI2014_001):
+    """Deprecated alias for BNCI2014001."""
+
+    pass

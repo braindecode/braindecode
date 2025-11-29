@@ -1,10 +1,11 @@
-"""
+""".. _sleep-staging-usleep:
+
 Sleep staging on the Sleep Physionet dataset using U-Sleep network
 ==================================================================
 
 .. note::
     Please take a look at the simpler sleep staging example
-    :ref:`here <sphx_glr_auto_examples_plot_sleep_staging.py>`
+    :ref:`sleep-staging-physionet-chambon2018`
     before going through this example. The current example uses a more complex
     architecture and a sequence-to-sequence (seq2seq) approach.
 
@@ -34,10 +35,8 @@ windows using the openly accessible Sleep Physionet dataset [2]_ [3]_.
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
 # two recordings from two different individuals: we will use the first one to
-# train our network and the second one to evaluate performance (as in the `MNE`_
-# sleep staging example).
-#
-# .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
+# train our network and the second one to evaluate performance (as in the `MNE
+# sleep staging example <mne-clinical-60-sleep_>`_).
 #
 
 from braindecode.datasets import SleepPhysionet
@@ -57,8 +56,9 @@ dataset = SleepPhysionet(
 # done in [1]_ so that we keep the example as light as possible. No filtering
 # is described in [1]_.
 
-from braindecode.preprocessing import preprocess, Preprocessor
 from sklearn.preprocessing import robust_scale
+
+from braindecode.preprocessing import Preprocessor, preprocess
 
 preprocessors = [Preprocessor(robust_scale, channel_wise=True)]
 
@@ -153,8 +153,9 @@ class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y
 # neural network.
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import USleep
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -188,11 +189,11 @@ if cuda:
 # Training
 # --------
 #
-# We can now train our network. :class:`braindecode.EEGClassifier` is a
+# We can now train our network. :class:`braindecode.classifier.EEGClassifier` is a
 # braindecode object that is responsible for managing the training of neural
-# networks. It inherits from :class:`skorch.NeuralNetClassifier`, so the
+# networks. It inherits from :class:`skorch.classifier.NeuralNetClassifier`, so the
 # training logic is the same as in
-# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# `<skorch_>`_.
 #
 # .. note::
 #    We use different hyperparameters from [1]_, as these hyperparameters were
@@ -201,8 +202,9 @@ if cuda:
 #    optimization if reusing this code on a different dataset or with more
 #    recordings.
 
-from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
+from skorch.helper import predefined_split
+
 from braindecode import EEGClassifier
 
 lr = 1e-3
@@ -279,8 +281,9 @@ plt.show()
 
 ######################################################################
 # Finally, we also display the confusion matrix and classification report:
+from sklearn.metrics import classification_report, confusion_matrix
+
 from braindecode.visualization import plot_confusion_matrix
-from sklearn.metrics import confusion_matrix, classification_report
 
 y_true = np.array([valid_set[i][1] for i in valid_sampler])
 y_pred = clf.predict(valid_set)
@@ -331,3 +334,5 @@ ax.set_ylabel("Sleep stage")
 #        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
 #        Research Resource for Complex Physiologic Signals.
 #        Circulation 101(23):e215-e220
+#
+# .. include:: /links.inc

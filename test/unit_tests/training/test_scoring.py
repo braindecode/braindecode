@@ -3,7 +3,6 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
-import sys
 
 import numpy as np
 import pytest
@@ -14,7 +13,7 @@ from skorch import History
 from skorch.callbacks import Callback
 from skorch.utils import to_numpy, to_tensor
 from torch import optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.moabb import MOABBDataset
@@ -254,7 +253,6 @@ def test_cropped_time_series_trial_epoch_scoring():
         np.testing.assert_almost_equal(mock_skorch_net.history[0]["accuracy"], accuracy)
 
 
-@pytest.mark.skipif(sys.version_info != (3, 8), reason="Only for Python 3.8")
 def test_post_epoch_train_scoring():
     cuda = False
     set_random_seeds(seed=20170629, cuda=cuda)
@@ -280,7 +278,7 @@ def test_post_epoch_train_scoring():
     )
     X = X.reshape(40, 3, 100).astype(np.float32)
 
-    in_chans = X.shape[1]
+    n_chans = X.shape[1]
 
     train_set = EEGDataSet(X, y)
 
@@ -306,9 +304,9 @@ def test_post_epoch_train_scoring():
     # final_conv_length = auto ensures
     # we only get a single output in the time dimension
     model = ShallowFBCSPNet(
-        in_chans=in_chans,
-        n_classes=n_classes,
-        input_window_samples=train_set.X.shape[2],
+        n_chans=n_chans,
+        n_outputs=n_classes,
+        n_times=train_set.X.shape[2],
         pool_time_stride=1,
         pool_time_length=2,
         final_conv_length="auto",
@@ -318,7 +316,7 @@ def test_post_epoch_train_scoring():
 
     clf = EEGClassifier(
         model,
-        criterion=torch.nn.NLLLoss,
+        criterion=torch.nn.CrossEntropyLoss,
         optimizer=optim.AdamW,
         train_split=None,
         optimizer__lr=0.0625 * 0.01,
@@ -431,11 +429,11 @@ def test_predict_trials():
         drop_last_window=False,
     )
 
-    in_chans = windows_ds1[0][0].shape[0]
+    n_chans = windows_ds1[0][0].shape[0]
     n_classes = len(windows_ds1.get_metadata()["target"].unique())
     model = ShallowFBCSPNet(
-        in_chans=in_chans,
-        n_classes=n_classes,
+        n_chans=n_chans,
+        n_outputs=n_classes,
         n_times=window_size_samples,
     )
     model.to_dense_prediction_model()
@@ -465,7 +463,7 @@ def test_predict_trials():
     # cropped EEGClassifier, cropped data
     clf = EEGClassifier(
         model,
-        criterion=torch.nn.NLLLoss,
+        criterion=torch.nn.CrossEntropyLoss,
         optimizer=optim.AdamW,
         train_split=None,
         optimizer__lr=0.0625 * 0.01,
@@ -484,3 +482,51 @@ def test_predict_trials():
         "same result as '.predict'.",
     ):
         clf.predict_trials(windows_ds2)
+
+
+def test_post_epoch_train_scoring_uses_batch(monkeypatch):
+    import braindecode.training.scoring as scoring_module
+
+    if hasattr(scoring_module, "check_version"):
+        monkeypatch.setattr(
+            scoring_module, "check_version", lambda *args, **kwargs: False
+        )
+
+    class DummyNet:
+        def __init__(self):
+            self.device = "cpu"
+            self.history = History()
+            self.history.new_epoch()
+            self.evaluation_step_called_with_batch = False
+
+        def fit(self, X, y=None):
+            return self
+
+        def get_dataset(self, dataset):
+            return dataset
+
+        def get_iterator(self, dataset, training=False):
+            return DataLoader(dataset, batch_size=2)
+
+        def evaluation_step(self, batch, training=False):
+            assert isinstance(batch, (list, tuple))
+            self.evaluation_step_called_with_batch = True
+            X, _ = batch
+            return X
+
+    X = torch.zeros((4, 1))
+    y = torch.randint(0, 2, (4,))
+    dataset = TensorDataset(X, y)
+
+    pes = PostEpochTrainScoring(
+        lambda net, X, y: 0.0, lower_is_better=False, name="train_score"
+    )
+    pes.initialize()
+
+    net = DummyNet()
+    net.callbacks_ = [("", pes)]
+
+    pes.on_epoch_end(net, dataset, None)
+
+    assert net.history[0]["train_score"] == 0.0
+    assert net.evaluation_step_called_with_batch

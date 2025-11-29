@@ -3,15 +3,14 @@
 #
 # License: BSD-3
 import sys
-import pytest
 
 import mne
 import numpy as np
+import pytest
 import torch
 from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch.utils.data import Dataset, Subset
-
 
 from braindecode.classifier import EEGClassifier
 from braindecode.models import ShallowFBCSPNet
@@ -103,7 +102,7 @@ def test_trialwise_decoding():
     clf = EEGClassifier(
         model,
         cropped=False,
-        criterion=torch.nn.NLLLoss,
+        criterion=torch.nn.CrossEntropyLoss,
         optimizer=torch.optim.Adam,
         train_split=train_valid_split,
         optimizer__lr=0.001,

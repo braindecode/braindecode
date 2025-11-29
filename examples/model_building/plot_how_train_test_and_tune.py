@@ -1,4 +1,5 @@
-"""
+""".. _train-test-tune-model:
+
 How to train, test and tune your model?
 =======================================
 
@@ -8,7 +9,7 @@ models with Braindecode. We will use the BCIC IV 2a dataset [1]_ as a showcase e
 The methods shown can be applied to any standard supervised trial-based decoding setting.
 This tutorial will include additional parts of code like loading and preprocessing of data,
 defining a model, and other details which are not exclusive to this page (see
-`Cropped Decoding Tutorial <./plot_bcic_iv_2a_moabb_cropped.html>`__). Therefore we
+:ref:`Cropped Decoding Tutorial <bcic-iv-2a-moabb-cropped>`). Therefore we
 will not further elaborate on these parts and you can feel free to skip them.
 
 In general, we distinguish between "usual" training and evaluation and hyperparameter search.
@@ -87,12 +88,12 @@ and one for the two different hyperparameter tuning methods.
 #
 # In this example, we load the BCI Competition IV 2a data [1]_, for one
 # subject (subject id 3), using braindecode's wrapper to load via
-# `MOABB library <https://github.com/NeuroTechX/moabb>`__ [2]_.
+# `MOABB library <moabb_>`_ [2]_.
 #
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 ######################################################################
 # Preprocessing data
@@ -105,9 +106,9 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 import numpy as np
 
 from braindecode.preprocessing import (
+    Preprocessor,
     exponential_moving_standardize,
     preprocess,
-    Preprocessor,
 )
 
 low_cut_hz = 4.0  # low cut frequency for filtering
@@ -141,7 +142,7 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # events inside the dataset. One event is the demarcation of the stimulus or
 # the beginning of the trial. In this example, we want to analyse 0.5 [s] long
 # before the corresponding event and the duration of the event itself.
-# #Therefore, we set the ``trial_start_offset_seconds`` to -0.5 [s] and the
+# Therefore, we set the ``trial_start_offset_seconds`` to -0.5 [s] and the
 # ``trial_stop_offset_seconds`` to 0 [s].
 #
 # We extract from the dataset the sampling frequency, which is the same for
@@ -181,7 +182,7 @@ windows_dataset = create_windows_from_events(
 ######################################################################
 # We can easily split the dataset BCIC IV 2a dataset using additional
 # info stored in the description attribute, in this case the ``session``
-# column. We select ``0train`` for training and ``0test`` for testing.
+# column. We select ``0train`` for training and ``1test`` for testing.
 # For other datasets, you might have to choose another column and/or column.
 #
 # .. note::
@@ -205,8 +206,9 @@ test_set = splitted["1test"]  # Session evaluation
 #
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = "cuda" if cuda else "cpu"
@@ -219,12 +221,12 @@ n_classes = 4
 classes = list(range(n_classes))
 # Extract number of chans and time steps from dataset
 n_channels = windows_dataset[0][0].shape[0]
-input_window_samples = windows_dataset[0][0].shape[1]
+n_times = windows_dataset[0][0].shape[1]
 
 model = ShallowFBCSPNet(
-    n_channels,
-    n_classes,
-    input_window_samples=input_window_samples,
+    n_chans=n_channels,
+    n_outputs=n_classes,
+    n_times=n_times,
     final_conv_length="auto",
 )
 
@@ -271,7 +273,7 @@ n_epochs = 2
 
 clf = EEGClassifier(
     model,
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=None,
     optimizer__lr=lr,
@@ -301,8 +303,8 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 # training and testing subsets.
 #
 #
-import seaborn as sns
 import matplotlib.pyplot as plt
+import seaborn as sns
 from matplotlib.patches import Patch
 
 sns.set(font_scale=1.5)
@@ -366,9 +368,9 @@ plot_simple_train_test(
 # ``Subset`` from torch and ``predefined_split`` from skorch.
 #
 
-from torch.utils.data import Subset
 from sklearn.model_selection import train_test_split
-from skorch.helper import predefined_split, SliceDataset
+from skorch.helper import SliceDataset, predefined_split
+from torch.utils.data import Subset
 
 X_train = SliceDataset(train_set, idx=0)
 y_train = np.array([y for y in SliceDataset(train_set, idx=1)])
@@ -387,7 +389,7 @@ val_subset = Subset(train_set, val_indices)
 
 clf = EEGClassifier(
     model,
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(val_subset),
     optimizer__lr=lr,
@@ -413,13 +415,12 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # The following figure illustrates split of entire dataset into the
 # training, validation and testing subsets.
-# ``Making more compact plot_train_valid_test function.``
+# Making more compact ``plot_train_valid_test`` function.
 #
 
 
 def plot_train_valid_test(ax, all_dataset, train_subset, val_subset, test_set):
     """Create a sample plot for training, validation, testing."""
-
     bd_cmap = [
         "#3A6190",
         "#683E00",
@@ -483,18 +484,15 @@ plot_train_valid_test(
 #    estimate of the generalization performance.
 #
 # To implement this, we will make use of sklearn function
-# `cross_val_score <https://scikit-learn.org/stable/modules/generated/
-# sklearn.model_selection.cross_val_score.html>`__ and the `KFold
-# <https://scikit-learn.org/stable/modules/generated/sklearn.model_
-# selection.KFold.html>`__. CV splitter.
+# :func:`sklearn.model_selection.cross_val_score` and the
+# :class:`sklearn.model_selection.KFold` CV splitter.
 # The ``train_split`` argument has to be set to ``None``, as sklearn
 # will take care of the splitting.
 #
+from sklearn.model_selection import KFold, cross_val_score
 from skorch.callbacks import LRScheduler
 
 from braindecode import EEGClassifier
-
-from sklearn.model_selection import KFold, cross_val_score
 
 lr = 0.0625 * 0.01
 weight_decay = 0
@@ -503,7 +501,7 @@ n_epochs = 2
 
 clf = EEGClassifier(
     model,
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=None,
     optimizer__lr=lr,
@@ -537,7 +535,6 @@ print(
 
 def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
     """Create a sample plot for training, validation, testing."""
-
     bd_cmap = [
         "#3A6190",
         "#683E00",
@@ -625,14 +622,14 @@ plot_k_fold(
 #
 
 ######################################################################
-# We will again make use of the `sklearn <https://scikit-learn.org/stable/>`__
-# library to do the hyperparameter search. `GridSearchCV
-# <https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html>`__
+# We will again make use of the `<scikit-learn_>`_
+# library to do the hyperparameter search. :class:`GridSearchCV
+# <sklearn.model_selection.GridSearchCV>`
 # will perform a Grid Search over the parameters specified in ``param_grid``.
-# We use grid search for the model selection as a simple example, but you can use other strategies
-# as well.
-# (`List of the sklearn classes for model selection
-# <https://scikit-learn.org/stable/modules/classes.html#module-sklearn.model_selection>`__.)
+# We use grid search for the model selection as a simple example,
+# but you can use other strategies as well.
+# (:mod:`List of the sklearn classes for model selection
+# <sklearn.model_selection>`.)
 #
 
 import pandas as pd
@@ -676,8 +673,7 @@ best_parameters = best_run["params"]
 
 ######################################################################
 # To perform a full k-Fold CV just replace ``train_val_split`` from
-# above with the `KFold <https://scikit-learn.org/stable/modules/generated/
-# sklearn.model_selection.KFold.html>`__ cross-validator from sklearn.
+# above with the :class:`sklearn.model_selection.KFold` cross-validator.
 
 train_val_split = KFold(n_splits=5, shuffle=False)
 
@@ -698,3 +694,5 @@ train_val_split = KFold(n_splits=5, shuffle=False)
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
 #        Hum. Brain Mapping, 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
+#
+# .. include:: /links.inc

@@ -5,24 +5,26 @@
 
 
 import abc
-import logging
 import inspect
+import logging
+from typing import Literal
 
 import mne
 import numpy as np
 import torch
-from skorch import NeuralNet
 from sklearn.metrics import get_scorer
+from skorch import NeuralNet
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
-from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score, is_dataset
+from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
+from braindecode.datautil import infer_signal_properties
+
+from .models.util import models_dict
 from .training.scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
     PostEpochTrainScoring,
 )
-from .models.util import models_dict
-from .datasets.base import BaseConcatDataset, WindowsDataset
 
 log = logging.getLogger(__name__)
 
@@ -173,8 +175,9 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             ("print_log", PrintLog()),
         ]
 
+    @property
     @abc.abstractmethod
-    def _get_n_outputs(self, y, classes):
+    def mode(self) -> Literal["classification", "regression"]:
         pass
 
     def _set_signal_args(self, X, y, classes):
@@ -188,41 +191,10 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 "Skipping setting signal-related parameters from data."
             )
             return
-        # get kwargs from signal:
-        signal_kwargs = dict()
-        # Using shape to work both with torch.tensor and numpy.array:
-        if isinstance(X, mne.BaseEpochs) or (hasattr(X, "shape") and len(X.shape) >= 2):
-            if y is None:
-                raise ValueError("y must be specified if X is array-like.")
-            signal_kwargs["n_outputs"] = self._get_n_outputs(y, classes)
-            if isinstance(X, mne.BaseEpochs):
-                self.log.info("Using mne.Epochs to find signal-related parameters.")
-                signal_kwargs["n_times"] = len(X.times)
-                signal_kwargs["sfreq"] = X.info["sfreq"]
-                signal_kwargs["chs_info"] = X.info["chs"]
-            else:
-                self.log.info("Using array-like to find signal-related parameters.")
-                signal_kwargs["n_times"] = X.shape[-1]
-                signal_kwargs["n_chans"] = X.shape[-2]
-        elif is_dataset(X):
-            self.log.info(f"Using Dataset {X!r} to find signal-related parameters.")
-            X0 = X[0][0]
-            Xshape = X0.shape
-            signal_kwargs["n_times"] = Xshape[-1]
-            signal_kwargs["n_chans"] = Xshape[-2]
-            if isinstance(X, BaseConcatDataset) and all(
-                ds.targets_from == "metadata" for ds in X.datasets
-            ):
-                y_target = X.get_metadata().target
-                signal_kwargs["n_outputs"] = self._get_n_outputs(y_target, classes)
-            elif isinstance(X, WindowsDataset) and X.targets_from == "metadata":
-                y_target = X.windows.metadata.target
-                signal_kwargs["n_outputs"] = self._get_n_outputs(y_target, classes)
-        else:
-            self.log.warning(
-                "Can only infer signal shape of array-like and Datasets, "
-                f"got {type(X)!r}."
-            )
+        if classes is None:
+            classes = getattr(self, "classes", None)
+        signal_kwargs = infer_signal_properties(X, y, mode=self.mode, classes=classes)
+        if not signal_kwargs:
             return
 
         # kick out missing kwargs:
@@ -235,9 +207,19 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             if k in all_module_kwargs:
                 module_kwargs[k] = v
             else:
-                self.log.warning(
-                    f"Module {self.module!r} " f"is missing parameter {k!r}."
-                )
+                self.log.warning(f"Module {self.module!r} is missing parameter {k!r}.")
+
+        # kick out inferred signal kwargs if user specifies kwargs:
+        user_specified_kwargs = self.get_params_for("module").items()
+        if len(user_specified_kwargs) > 0:
+            self.log.info(
+                f"Overriding inferred parameters with user "
+                f"specified parameters{user_specified_kwargs!r}."
+            )
+            for k, v in self.get_params_for("module").items():
+                if k in module_kwargs:
+                    module_kwargs.pop(k)
+                    module_kwargs[k] = v
 
         # save kwargs to self:
         self.log.info(

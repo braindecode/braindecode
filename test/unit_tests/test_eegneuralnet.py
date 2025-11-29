@@ -12,17 +12,20 @@ import torch
 from scipy.special import softmax
 from sklearn.base import clone
 from skorch.callbacks import LRScheduler
+from skorch.helper import SliceDataset
 from skorch.utils import to_tensor
 from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode import EEGClassifier, EEGRegressor
 from braindecode.datasets import BaseConcatDataset, WindowsDataset
+from braindecode.eegneuralnet import _EEGNeuralNet
 from braindecode.models.base import EEGModuleMixin
+
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.training import CroppedLoss
-from braindecode.eegneuralnet import _EEGNeuralNet
+
 
 class MockDataset(torch.utils.data.Dataset):
     def __len__(self):
@@ -130,6 +133,12 @@ def windows_dataset_channels(epochs):
 
 
 @pytest.fixture
+def slice_dataset(windows_dataset_channels):
+    X = SliceDataset(windows_dataset_channels)
+    return X
+
+
+@pytest.fixture
 def concat_dataset_metadata(windows_dataset_metadata):
     return BaseConcatDataset([windows_dataset_metadata, windows_dataset_metadata])
 
@@ -162,7 +171,9 @@ def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
         batch_size=32,
     )
     eegneuralnet.initialize()
-    target_predict = preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
+    target_predict = (
+        preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
+    )
     preds = preds if isinstance(eegneuralnet, EEGRegressor) else softmax(preds, axis=1)
     np.testing.assert_array_equal(target_predict, eegneuralnet.predict(MockDataset()))
     np.testing.assert_allclose(preds, eegneuralnet.predict_proba(MockDataset()))
@@ -212,7 +223,9 @@ def test_cropped_predict_and_predict_proba_not_aggregate_predictions(
         aggregate_predictions=False,
     )
     eegneuralnet.initialize()
-    target_predict = preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
+    target_predict = (
+        preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
+    )
     np.testing.assert_array_equal(target_predict, eegneuralnet.predict(MockDataset()))
     np.testing.assert_array_equal(preds, eegneuralnet.predict_proba(MockDataset()))
 
@@ -456,29 +469,6 @@ def test_EEGRegressor_drop_index(Xy):
     assert isinstance(iterator, torch.utils.data.DataLoader)
 
 
-def test_EEGRegressor_get_n_outputs(preds):
-    # Initialize EEGRegressor
-
-    eeg_regressor = EEGRegressor(
-        MockModuleFinalLayer,
-        module__preds=preds,
-        cropped=False,
-        optimizer=optim.Adam,
-        batch_size=2,
-        train_split=None,
-        max_epochs=1,
-    )
-
-    # Test _get_n_outputs method
-    assert eeg_regressor._get_n_outputs(y=None,
-                                        classes=None) is None
-    assert eeg_regressor._get_n_outputs(y=np.array([0, 1, 2, 3, 4]),
-                                        classes=None) == 1
-    assert eeg_regressor._get_n_outputs(y=np.array(
-        [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]]),
-        classes=None) == 5
-
-
 def test_EEGRegressor_predict_trials(Xy, preds):
     X, y = Xy
     # Initialize EEGRegressor
@@ -494,36 +484,62 @@ def test_EEGRegressor_predict_trials(Xy, preds):
 
     eeg_regressor.fit(X, y=y)
 
-    preds, targets = eeg_regressor.predict_trials(X,
-                                                  return_targets=True)
+    preds, targets = eeg_regressor.predict_trials(X, return_targets=True)
     assert preds.shape[0] == len(X)
-    assert np.array_equal(targets, np.concatenate([X[i][1]
-                                                  for i in range(len(X))]))
+    assert np.array_equal(targets, np.concatenate([X[i][1] for i in range(len(X))]))
+
+
 from braindecode.eegneuralnet import CroppedTrialEpochScoring
 
+
 class ConcreteEEGNeuralNet(_EEGNeuralNet):
-    def _get_n_outputs(self, y, classes):
-        # provide your implementation here
-        pass
+    @property
+    def mode(self):
+        """"""
+
 
 @pytest.fixture()
 def net():
-    net = ConcreteEEGNeuralNet(module="EEGNetv4", criterion=CroppedTrialEpochScoring,
-                               cropped=False, max_epochs=1, train_split=None,
-                               n_times=5)
+    net = ConcreteEEGNeuralNet(
+        module="EEGNet",
+        criterion=CroppedTrialEpochScoring,
+        cropped=False,
+        max_epochs=1,
+        train_split=None,
+        n_times=5,
+    )
     return net
 
 
 def test_cropped_trial_epoch_scoring(net):
-    train_scoring = net._parse_str_callback('accuracy')[0][1]
-    valid_scoring = net._parse_str_callback('accuracy')[1][1]
+    train_scoring = net._parse_str_callback("accuracy")[0][1]
+    valid_scoring = net._parse_str_callback("accuracy")[1][1]
 
     assert train_scoring.on_train is True
-    assert train_scoring.name == 'train_accuracy'
+    assert train_scoring.name == "train_accuracy"
 
     assert valid_scoring.on_train is False
-    assert valid_scoring.name == 'valid_accuracy'
+    assert valid_scoring.name == "valid_accuracy"
 
-def test_get_n_outputs():
-    with pytest.raises(TypeError):
-        _EEGNeuralNet()._get_n_outputs(None, None)
+
+def test_set_signal_params_slice_dataset(eegneuralnet_cls, preds, slice_dataset):
+    if eegneuralnet_cls != EEGClassifier:
+        n_outputs = 1
+        y_train = np.array([0, 1, 2, 3, 4])
+    else:
+        n_outputs = 5
+        y_train = np.array([0, 1, 2, 3, 4])  # dummy values for y_train
+
+    net = eegneuralnet_cls(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(slice_dataset, y=y_train)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == n_outputs

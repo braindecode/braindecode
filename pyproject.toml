@@ -1,8 +1,16 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "braindecode"
-version = "0.8.1"
+dynamic = ["version"]
 description = "Deep learning software to decode EEG, ECG or MEG signals"
-authors = [{ name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" }]
+authors =  [
+    { name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" },
+    { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
+    { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
+]
 maintainers = [
     { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
     { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
@@ -29,28 +37,31 @@ classifiers = [
     "Intended Audience :: Science/Research",
     'Topic :: Software Development :: Build Tools',
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    'License :: OSI Approved :: BSD License',
-    'Programming Language :: Python :: 3.8',
-    'Programming Language :: Python :: 3.9',
-    'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
 ]
 readme = "README.rst"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 dependencies = [
-    'mne<1.6.0',
+    'mne>=1.11.0',
+    'mne_bids>=0.16',
     'numpy',
     'pandas',
     'scipy',
     'matplotlib',
     'h5py',
-    'skorch',
-    'torch',
+    'skorch>=1.3.0',
+    "torch>=2.0",
+    "torchaudio>=2.0",
     'einops',
     'joblib',
     'torchinfo',
+    'wfdb',
     'linear_attention_transformer',
-    'docstring_inheritance'
+    'docstring_inheritance',
+    'rotary_embedding_torch',
 ]
 [project.urls]
 homepage = "https://braindecode.org"
@@ -58,7 +69,9 @@ repository = "https://github.com/braindecode/braindecode"
 documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
-moabb = ["moabb >= 1.0.0"]
+moabb = ["moabb>=1.4.2"]
+eegprep = ["eegprep[eeglabio]>=0.2.23"]
+hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
 tests = [
     'pytest',
     'pytest-cov',
@@ -66,9 +79,18 @@ tests = [
     'pytest_cases',
     'mypy'
 ]
+typing = [
+    'pydantic>=2.0,<3.0',
+    'numpydantic>=1.7',
+]
+
 docs = [
     'sphinx_gallery',
     'sphinx_rtd_theme',
+    'sphinx-autodoc-typehints',
+    'sphinx-autobuild',
+    'sphinxcontrib-bibtex',
+    'sphinx_sitemap',
     'pydata_sphinx_theme',
     'numpydoc',
     'memory_profiler',
@@ -77,15 +99,26 @@ docs = [
     'sphinx_design',
     'lightning',
     'seaborn',
-    'pre-commit'
+    'pre-commit',
+    'openneuro-py',
+    'plotly',
+    'shap',
 ]
 
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+all = [
+    "braindecode[moabb]",
+    "braindecode[tests]",
+    "braindecode[docs]",
+    "braindecode[hub]",
+    "braindecode[eegprep]",
+    "braindecode[typing]",
+]
 
 [tool.setuptools]
 py-modules = []
+
+[tool.setuptools.dynamic]
+version = {attr = "braindecode.version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]  # list of folders that contain the packages (["."] by default)
@@ -94,4 +127,25 @@ exclude = []  # exclude packages matching these glob patterns (empty by default)
 namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 
 [tool.ruff]
-ignore-init-module-imports = true
+lint.ignore-init-module-imports = true
+line-length = 88
+target-version = "py311"
+
+
+[tool.isort]
+skip = [".gitignore"]
+skip_glob = ["test/*", "examples/*"]
+py_version = 311
+profile = "black"
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+known_first_party = ["braindecode"]
+lines_between_sections = 1
+
+[tool.pytest.ini_options]
+testpaths = [
+  "test",
+]
+# which files count as test modules
+python_files = ["test_*.py", "*_test.py"]
+# which functions inside them count as tests
+python_functions = ["test_*"]

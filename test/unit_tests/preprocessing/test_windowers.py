@@ -2,10 +2,12 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Hubert Banville <hubert.jbanville@gmail.com>
+#          Matthew Chen <matt.chen42601@gmail.com>
 #
 # License: BSD-3
 
 import copy
+import logging
 import platform
 import warnings
 
@@ -14,14 +16,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset, EEGWindowsDataset
+from braindecode.datasets.base import BaseConcatDataset, EEGWindowsDataset, RawDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing import (
-    create_windows_from_events,
     create_fixed_length_windows,
+    create_windows_from_events,
 )
 from braindecode.preprocessing.preprocess import Preprocessor, preprocess
-from braindecode.preprocessing.windowers import create_windows_from_target_channels
+from braindecode.preprocessing.windowers import (
+    _LazyDataFrame,
+    create_windows_from_target_channels,
+)
 from braindecode.util import create_mne_dummy_raw
 
 
@@ -41,10 +46,11 @@ def _get_raw(tmpdir_factory, description=None):
 
 @pytest.fixture(scope="module")
 def concat_ds_targets():
-    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014001", subject_ids=4)
+    raws, description = fetch_data_with_moabb(
+        dataset_name="BNCI2014_001", subject_ids=4)
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
-    ds = BaseDataset(raws[0], description.iloc[0])
+    ds = RawDataset(raws[0], description.iloc[0])
     concat_ds = BaseConcatDataset([ds])
     return concat_ds, targets
 
@@ -53,7 +59,7 @@ def concat_ds_targets():
 def lazy_loadable_dataset(tmpdir_factory):
     """Make a dataset of fif files that can be loaded lazily."""
     raw = _get_raw(tmpdir_factory)
-    base_ds = BaseDataset(raw, description=pd.Series({"file_id": 1}))
+    base_ds = RawDataset(raw, description=pd.Series({"file_id": 1}))
     concat_ds = BaseConcatDataset([base_ds])
 
     return concat_ds
@@ -104,7 +110,7 @@ def test_windows_from_events_n_jobs(lazy_loadable_dataset):
 
 def test_windows_from_events_mapping_filter(tmpdir_factory):
     raw = _get_raw(tmpdir_factory, 5 * ["T0", "T1"])
-    base_ds = BaseDataset(raw, description=pd.Series({"file_id": 1}))
+    base_ds = RawDataset(raw, description=pd.Series({"file_id": 1}))
     concat_ds = BaseConcatDataset([base_ds])
 
     windows = create_windows_from_events(
@@ -131,10 +137,10 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
 def test_windows_from_events_different_events(tmpdir_factory):
     description_expected = 5 * ["T0", "T1"] + 4 * ["T2", "T3"] + 2 * ["T1"]
     raw = _get_raw(tmpdir_factory, description_expected[:10])
-    base_ds = BaseDataset(raw, description=pd.Series({"file_id": 1}))
+    base_ds = RawDataset(raw, description=pd.Series({"file_id": 1}))
 
     raw_1 = _get_raw(tmpdir_factory, description_expected[10:])
-    base_ds_1 = BaseDataset(raw_1, description=pd.Series({"file_id": 2}))
+    base_ds_1 = RawDataset(raw_1, description=pd.Series({"file_id": 2}))
     concat_ds = BaseConcatDataset([base_ds, base_ds_1])
 
     windows = create_windows_from_events(
@@ -364,7 +370,7 @@ def test_fixed_length_windower(
     data = rng.randn(2, 1000)
     raw = mne.io.RawArray(data=data, info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    base_ds = BaseDataset(raw, desc, target_name="age")
+    base_ds = RawDataset(raw, desc, target_name="age")
     concat_ds = BaseConcatDataset([base_ds])
 
     if window_size_samples is None:
@@ -395,9 +401,10 @@ def test_fixed_length_windower(
     if not drop_last_window and idxs[-1] != stop_offset_samples - window_size_samples:
         idxs = np.append(idxs, stop_offset_samples - window_size_samples)
 
-    assert len(idxs) == epochs_data.shape[0], "Number of epochs different than expected"
+    assert len(
+        idxs) == epochs_data.shape[0], "Number of epochs different than expected"
     assert (
-            window_size_samples == epochs_data.shape[2]
+        window_size_samples == epochs_data.shape[2]
     ), "Window size different than expected"
     for j, idx in enumerate(idxs):
         np.testing.assert_allclose(
@@ -405,6 +412,104 @@ def test_fixed_length_windower(
             epochs_data[j, :],
             err_msg=f"Epochs different for epoch {j}",
         )
+
+
+@pytest.mark.parametrize(
+    "start_offset_samples,window_size_samples,window_stride_samples,drop_last_window,mapping",
+    [
+        (0, 100, 90, True, None),
+        (0, 100, 50, True, {48: 0}),
+        (0, 50, 50, True, None),
+        (0, None, 50, True, None),
+        (5, 10, 20, True, None),
+    ],
+)
+def test_fixed_length_windower_lazy(
+        start_offset_samples,
+        window_size_samples,
+        window_stride_samples,
+        drop_last_window,
+        mapping,
+):
+    rng = np.random.RandomState(42)
+    info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
+    data = rng.randn(2, 1000)
+    raw = mne.io.RawArray(data=data, info=info)
+    desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
+    base_ds = RawDataset(raw, desc, target_name="age")
+    concat_ds = BaseConcatDataset([base_ds])
+
+    if window_size_samples is None:
+        window_size_samples = base_ds.raw.n_times
+    stop_offset_samples = data.shape[1] - start_offset_samples
+    epochs_ds = create_fixed_length_windows(
+        concat_ds,
+        start_offset_samples=start_offset_samples,
+        stop_offset_samples=stop_offset_samples,
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=drop_last_window,
+        mapping=mapping,
+    )
+    epochs_ds_lazy = create_fixed_length_windows(
+        concat_ds,
+        start_offset_samples=start_offset_samples,
+        stop_offset_samples=stop_offset_samples,
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=drop_last_window,
+        mapping=mapping,
+        lazy_metadata=True,
+    )
+    assert len(epochs_ds) == len(epochs_ds_lazy)
+    for (X, y, i), (Xl, yl, il) in zip(epochs_ds, epochs_ds_lazy):
+        assert (X == Xl).all()
+        assert y == yl
+        assert i == il
+    # not supported yet:
+    # metadata = epochs_ds.get_metadata()
+    # metadata_lazy = epochs_ds_lazy.get_metadata()
+    for d, d_lazy in zip(epochs_ds.datasets, epochs_ds_lazy.datasets):
+        crop_inds = d.metadata.loc[
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
+        crop_inds_lazy = d_lazy.metadata.loc[
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
+        y = d.metadata.loc[:, "target"].to_list()
+        y_lazy = d_lazy.metadata.loc[:, "target"].to_list()
+        n = len(d.metadata)
+        assert n == len(d_lazy.metadata)
+        assert len(crop_inds) == len(crop_inds_lazy)
+        assert len(y) == len(y_lazy)
+        assert all(crop_inds[i].tolist() ==
+                   crop_inds_lazy[i].tolist() for i in range(n))
+        assert all(y[i] == y_lazy[i] for i in range(n))
+
+
+def test_lazy_dataframe():
+    with pytest.raises(ValueError, match="Length must be a positive integer."):
+        _ = _LazyDataFrame(
+            length=-1, functions=dict(a=lambda i: 2 * i), columns=["a"])
+    with pytest.raises(ValueError, match="All columns must have a corresponding function."):
+        _ = _LazyDataFrame(length=10, columns=['a'], functions=dict())
+    with pytest.raises(ValueError, match="Series must have exactly one column."):
+        _ = _LazyDataFrame(length=10, columns=['a', 'b'],
+                           functions=dict(a=lambda i: 2 * i, b=lambda i: 2 + i), series=True)
+    df = _LazyDataFrame(length=10, functions=dict(
+        a=lambda i: 2 * i), columns=["a"])
+    assert len(df) == 10
+    assert all(df[i, "a"] == 2 * i for i in range(10))
+    assert all((df[i] == pd.Series(dict(a=2 * i))).all() for i in range(10))
+    assert all((df[i, :] == pd.Series(dict(a=2 * i))).all() for i in range(10))
+    with pytest.raises(IndexError, match="index must be either \\[row\\] or"):
+        _ = df[0, 0, 0]
+    with pytest.raises(IndexError, match="All columns must be present in the dataframe"):
+        _ = df[0, "b"]
+    with pytest.raises(NotImplementedError, match="Row indexing only supports either a single"):
+        _ = df[0:2]
+    with pytest.raises(IndexError, match="out of bounds"):
+        _ = df[10]
 
 
 @pytest.mark.parametrize(
@@ -738,6 +843,52 @@ def test_window_sizes_from_events(concat_ds_targets):
     assert x.shape[-1] == expected_n_samples
 
 
+def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
+    logger = logging.getLogger("mne")
+    logger.propagate = True  # Temporarily propagate to root logger
+    caplog.set_level(logging.INFO)
+
+    # verbose is True, so we expect to see the used annotations descriptions
+    concat_ds, targets = concat_ds_targets
+    create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1,
+        trial_stop_offset_samples=0,
+        drop_last_window=False,
+        verbose=True,
+    )
+    options = ["np.str_('left_hand'), np.str_('tongue')", "'left_hand', 'tongue'"]
+    assert any(f"Used Annotations descriptions: [{opt}]" in caplog.text for opt in options)
+    caplog.clear()
+
+    # verbose is False, so we expect to see the used annotations descriptions
+    concat_ds, targets = concat_ds_targets
+    create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1,
+        trial_stop_offset_samples=0,
+        drop_last_window=False,
+        verbose=False,
+    )
+
+    assert "Used Annotations descriptions: ['left_hand', 'tongue']" not in caplog.text
+    caplog.clear()
+
+    # verbose is not specified, so it defaults to verbose="error"
+    concat_ds, targets = concat_ds_targets
+    create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1,
+        trial_stop_offset_samples=0,
+        drop_last_window=False,
+    )
+
+    assert "Used Annotations descriptions: ['left_hand', 'tongue']" not in caplog.text
+    caplog.clear()
+
+    logger.propagate = False  # Reset to default
+
+
 def test_window_sizes_too_large(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     # Window size larger than all trials
@@ -768,7 +919,8 @@ def test_window_sizes_too_large(concat_ds_targets):
     annots = concat_ds.datasets[0].raw.annotations
     annot_0 = annots[0]
     # Window equal original trials size
-    window_size = int(annot_0["duration"] * concat_ds.datasets[0].raw.info["sfreq"])
+    window_size = int(annot_0["duration"] *
+                      concat_ds.datasets[0].raw.info["sfreq"])
 
     # Make first trial 1 second shorter
     annot_0["duration"] -= 1
@@ -776,6 +928,8 @@ def test_window_sizes_too_large(concat_ds_targets):
     # Replace first trial by a new shorter one
     annots.delete(0)
     del annot_0["orig_time"]
+    del annot_0["extras"]  # empty extra dict
+
     annots.append(**annot_0)
     concat_ds.datasets[0].raw.set_annotations(annots)
     with pytest.warns(UserWarning, match=".* are being dropped as the window size .*"):
@@ -804,11 +958,12 @@ def dataset_target_time_series():
     targets = np.full((2, 1000), np.nan)
     targets_sfreq = 10
     targets_stride = int(signal_sfreq / targets_sfreq)
-    targets[:, ::targets_stride] = rng.randn(2, int(targets.shape[1] / targets_stride))
+    targets[:, ::targets_stride] = rng.randn(
+        2, int(targets.shape[1] / targets_stride))
 
     raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    base_dataset = BaseDataset(raw, desc, target_name=None)
+    base_dataset = RawDataset(raw, desc, target_name=None)
     concat_ds = BaseConcatDataset([base_dataset])
     windows_dataset = create_windows_from_target_channels(
         concat_ds,

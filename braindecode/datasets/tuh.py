@@ -8,20 +8,21 @@ TUH Abnormal EEG Corpus.
 # License: BSD (3-clause)
 
 from __future__ import annotations
-import re
-import os
+
 import glob
+import os
+import re
 import warnings
-from unittest import mock
 from datetime import datetime, timezone
 from typing import Iterable
+from unittest import mock
 
-import pandas as pd
-import numpy as np
 import mne
+import numpy as np
+import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseDataset, BaseConcatDataset
+from .base import BaseConcatDataset, RawDataset
 
 
 class TUH(BaseConcatDataset):
@@ -65,9 +66,9 @@ class TUH(BaseConcatDataset):
         n_jobs: int = 1,
     ):
         if set_montage:
-            assert (
-                rename_channels
-            ), "If set_montage is True, rename_channels must be True."
+            assert rename_channels, (
+                "If set_montage is True, rename_channels must be True."
+            )
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, "**/*.edf"), recursive=True)
@@ -81,13 +82,22 @@ class TUH(BaseConcatDataset):
                 # of recordings to load
                 recording_ids = range(recording_ids)
             descriptions = descriptions[recording_ids]
+
+        # workaround to ensure warnings are suppressed when running in parallel
+        def create_dataset(*args, **kwargs):
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", message=".*not in description. '__getitem__'"
+                )
+                return self._create_dataset(*args, **kwargs)
+
         # this is the second loop (slow)
         # create datasets gathering more info about the files touching them
         # reading the raws and potentially preloading the data
         # disable joblib for tests. mocking seems to fail otherwise
         if n_jobs == 1:
             base_datasets = [
-                self._create_dataset(
+                create_dataset(
                     descriptions[i],
                     target_name,
                     preload,
@@ -99,7 +109,7 @@ class TUH(BaseConcatDataset):
             ]
         else:
             base_datasets = Parallel(n_jobs)(
-                delayed(self._create_dataset)(
+                delayed(create_dataset)(
                     descriptions[i],
                     target_name,
                     preload,
@@ -204,7 +214,7 @@ class TUH(BaseConcatDataset):
             d["report"] = physician_report
         additional_description = pd.Series(d)
         description = pd.concat([description, additional_description])
-        base_dataset = BaseDataset(raw, description, target_name=target_name)
+        base_dataset = RawDataset(raw, description, target_name=target_name)
         return base_dataset
 
 
@@ -407,20 +417,16 @@ class TUHAbnormal(TUH):
         set_montage: bool = False,
         n_jobs: int = 1,
     ):
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message=".*not in description. '__getitem__'"
-            )
-            super().__init__(
-                path=path,
-                recording_ids=recording_ids,
-                preload=preload,
-                target_name=target_name,
-                add_physician_reports=add_physician_reports,
-                rename_channels=rename_channels,
-                set_montage=set_montage,
-                n_jobs=n_jobs,
-            )
+        super().__init__(
+            path=path,
+            recording_ids=recording_ids,
+            preload=preload,
+            target_name=target_name,
+            add_physician_reports=add_physician_reports,
+            rename_channels=rename_channels,
+            set_montage=set_montage,
+            n_jobs=n_jobs,
+        )
         additional_descriptions = []
         for file_path in self.description.path:
             additional_description = self._parse_additional_description_from_file_path(
@@ -439,9 +445,9 @@ class TUHAbnormal(TUH):
         # e.g.            v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/
         #                     s004_2013_08_15/00000021_s004_t000.edf
         assert "abnormal" in tokens or "normal" in tokens, "No pathology labels found."
-        assert (
-            "train" in tokens or "eval" in tokens
-        ), "No train or eval set information found."
+        assert "train" in tokens or "eval" in tokens, (
+            "No train or eval set information found."
+        )
         return {
             "version": tokens[-9],
             "train": "train" in tokens,

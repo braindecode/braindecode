@@ -1,4 +1,5 @@
-"""
+""".. _load-save-dataset:
+
 Load and save dataset example
 =============================
 
@@ -12,15 +13,17 @@ In this example, we show how to load and save braindecode datasets.
 import tempfile
 
 from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing import preprocess, Preprocessor
 from braindecode.datautil import load_concat_dataset
-from braindecode.preprocessing import create_windows_from_events
-
+from braindecode.preprocessing import (
+    Preprocessor,
+    create_windows_from_events,
+    preprocess,
+)
 
 ###############################################################################
 # First, we load some dataset using MOABB.
 dataset = MOABBDataset(
-    dataset_name="BNCI2014001",
+    dataset_name="BNCI2014_001",
     subject_ids=[1],
 )
 
@@ -92,3 +95,6 @@ windows_dataset_loaded = load_concat_dataset(
 )
 
 windows_dataset_loaded.description
+
+###############################################################################
+# .. include:: /links.inc

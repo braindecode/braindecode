@@ -1,4 +1,5 @@
-"""
+""".. _sleep-staging-physionet-eldele2021:
+
 Sleep staging on the Sleep Physionet dataset using Eldele2021
 =============================================================
 
@@ -22,13 +23,12 @@ to learn on sequences of EEG windows using the openly accessible Sleep Physionet
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
 # two recordings from two different individuals: we will use the first one to
-# train our network and the second one to evaluate performance (as in the `MNE`_
-# sleep staging example).
-#
-# .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
+# train our network and the second one to evaluate performance (as in the `MNE
+# sleep staging example <mne-clinical-60-sleep_>`_).
 #
 
 from numbers import Integral
+
 from braindecode.datasets import SleepPhysionet
 
 subject_ids = [0, 1]
@@ -44,8 +44,9 @@ dataset = SleepPhysionet(
 # Next, we preprocess the raw data. We convert the data to microvolts and apply
 # a lowpass filter.
 
-from braindecode.preprocessing import preprocess, Preprocessor
 from numpy import multiply
+
+from braindecode.preprocessing import Preprocessor, preprocess
 
 high_cut_hz = 30
 # Factor to convert from V to uV
@@ -66,7 +67,8 @@ preprocess(dataset, preprocessors)
 # ~~~~~~~~~~~~~~~
 #
 # We extract 30-s windows to be used in the classification task.
-# The Eldele2021 model takes a single channel as input. Here, the Fpz-Cz channel is used as it
+# The :class:`braindecode.models.AttnSleep` model takes a
+# single channel as input. Here, the Fpz-Cz channel is used as it
 # was found to give better performance than using the Pz-Oz channel
 
 from braindecode.preprocessing import create_windows_from_events
@@ -187,8 +189,10 @@ class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y
 
 import torch
 from torch import nn
+
+from braindecode.models import AttnSleep
+from braindecode.modules import TimeDistributed
 from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerEldele2021, TimeDistributed
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -201,8 +205,8 @@ n_classes = 5
 # Extract number of channels and time steps from dataset
 n_channels, input_size_samples = train_set[0][0].shape
 
-feat_extractor = SleepStagerEldele2021(
-    sfreq,
+feat_extractor = AttnSleep(
+    sfreq=sfreq,
     n_outputs=n_classes,
     n_times=input_size_samples,
     return_feats=True,
@@ -232,8 +236,9 @@ if cuda:
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
 
-from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
+from skorch.helper import predefined_split
+
 from braindecode import EEGClassifier
 
 lr = 1e-3
@@ -269,7 +274,7 @@ clf = EEGClassifier(
     device=device,
     classes=np.unique(y_train),
 )
-# Model training for a specified number of epochs. `y` is None as it is already
+# Model training for a specified number of epochs. ``y`` is ``None`` as it is already
 # supplied in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
 
@@ -301,7 +306,8 @@ plt.show()
 # Finally, we also display the confusion matrix and classification report:
 #
 
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import classification_report, confusion_matrix
+
 from braindecode.visualization import plot_confusion_matrix
 
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
@@ -365,3 +371,5 @@ ax.set_ylabel("Sleep stage")
 #        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
 #        Research Resource for Complex Physiologic Signals.
 #        Circulation 101(23):e215-e220
+#
+# .. include:: /links.inc

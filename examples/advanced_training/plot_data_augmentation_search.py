@@ -1,4 +1,5 @@
-"""
+""".. _bcic-iv-2a-best-data-aug:
+
 Searching the best data augmentation on BCIC IV 2a Dataset
 ====================================================================================
 
@@ -52,7 +53,7 @@ from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 ######################################################################
 # Preprocessing
@@ -61,12 +62,13 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # We apply a bandpass filter, from 4 to 38 Hz to focus motor imagery-related
 # brain activity
 
+from numpy import multiply
+
 from braindecode.preprocessing import (
+    Preprocessor,
     exponential_moving_standardize,
     preprocess,
-    Preprocessor,
 )
-from numpy import multiply
 
 low_cut_hz = 4.0  # low cut frequency for filtering
 high_cut_hz = 38.0  # high cut frequency for filtering
@@ -80,7 +82,7 @@ factor = 1e6
 # In time series targets setup, targets variables are stored in mne.Raw object as channels
 # of type `misc`. Thus those channels have to be selected for further processing. However,
 # many mne functions ignore `misc` channels and perform operations only on data channels
-# (see https://mne.tools/stable/glossary.html#term-data-channels).
+# (see `MNE's glossary on data channels <MNE-glossary-data-channels_>`_).
 
 preprocessors = [
     Preprocessor("pick_types", eeg=True, meg=False, stim=False),  # Keep EEG sensors
@@ -104,9 +106,10 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # to define how trials should be used.
 
 
-from braindecode.preprocessing import create_windows_from_events
-from skorch.helper import SliceDataset
 from numpy import array
+from skorch.helper import SliceDataset
+
+from braindecode.preprocessing import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
@@ -156,7 +159,8 @@ eval_set = splitted["1test"]  # Session evaluation
 # For the method ChannelsDropout, we analyse the parameter p_drop ∈ [0, 1].
 
 from numpy import linspace
-from braindecode.augmentation import FTSurrogate, SmoothTimeMask, ChannelsDropout
+
+from braindecode.augmentation import ChannelsDropout, FTSurrogate, SmoothTimeMask
 
 seed = 20200220
 
@@ -191,8 +195,8 @@ transforms_spatial = [
 # The model to be trained is defined as usual.
 import torch
 
-from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = "cuda" if cuda else "cpu"
@@ -215,12 +219,12 @@ n_classes = 4
 classes = list(range(n_classes))
 # Extract number of chans and time steps from dataset
 n_channels = train_set[0][0].shape[0]
-input_window_samples = train_set[0][0].shape[1]
+n_times = train_set[0][0].shape[1]
 
 model = ShallowFBCSPNet(
-    n_channels,
-    n_classes,
-    input_window_samples=input_window_samples,
+    n_chans=n_channels,
+    n_outputs=n_classes,
+    n_times=n_times,
     final_conv_length="auto",
 )
 
@@ -253,7 +257,7 @@ clf = EEGClassifier(
     model,
     iterator_train=AugmentedDataLoader,  # This tells EEGClassifier to use a custom DataLoader
     iterator_train__transforms=[],  # This sets is handled by GridSearchCV
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=None,  # GridSearchCV will control the split and train/validation over the dataset
     optimizer__lr=lr,
@@ -279,7 +283,7 @@ train_y = array(list(SliceDataset(train_set, idx=1)))
 #   Given the trialwise approach, here we use the KFold approach and
 #   GridSearchCV.
 
-from sklearn.model_selection import KFold, GridSearchCV
+from sklearn.model_selection import GridSearchCV, KFold
 
 cv = KFold(n_splits=2, shuffle=True, random_state=seed)
 fit_params = {"epochs": n_epochs}
@@ -312,8 +316,8 @@ search.fit(train_X, train_y, **fit_params)
 # Next, just perform an analysis of the best fit, and the parameters,
 # remembering the order that was adjusted.
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 search_results = pd.DataFrame(search.cv_results_)
 
@@ -365,3 +369,5 @@ plt.tight_layout()
 # .. [2] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A. (2021).
 #        Uncovering the structure of clinical EEG signals with self-supervised learning.
 #        Journal of Neural Engineering, 18(4), 046020.
+#
+# .. include:: /links.inc

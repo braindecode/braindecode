@@ -2,18 +2,95 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
-
+import torch
 from torch import nn
 from torch.nn import init
-from torch.nn.utils import weight_norm
+from torch.nn.utils.parametrizations import weight_norm
 
-from .modules import Ensure4d, Expression
-from .functions import squeeze_final_output
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import Chomp1d, Ensure4d, SqueezeFinalOutput
 
 
-class TCN(EEGModuleMixin, nn.Module):
-    """Temporal Convolutional Network (TCN) from Bai et al 2018.
+class BDTCN(EEGModuleMixin, nn.Module):
+    """Braindecode TCN from Gemein, L et al (2020) [gemein2020]_.
+
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
+
+    .. figure:: https://ars.els-cdn.com/content/image/1-s2.0-S1053811920305073-gr3_lrg.jpg
+       :align: center
+       :alt: Braindecode TCN Architecture
+
+    See [gemein2020]_ for details.
+
+    Parameters
+    ----------
+    n_filters: int
+        number of output filters of each convolution
+    n_blocks: int
+        number of temporal blocks in the network
+    kernel_size: int
+        kernel size of the convolutions
+    drop_prob: float
+        dropout probability
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
+
+    References
+    ----------
+    .. [gemein2020] Gemein, L. A., Schirrmeister, R. T., Chrabąszcz, P., Wilson, D.,
+       Boedecker, J., Schulze-Bonhage, A., ... & Ball, T. (2020). Machine-learning-based
+       diagnostics of EEG pathology. NeuroImage, 220, 117021.
+    """
+
+    def __init__(
+        self,
+        # Braindecode parameters
+        n_chans=None,
+        n_outputs=None,
+        chs_info=None,
+        n_times=None,
+        sfreq=None,
+        input_window_seconds=None,
+        # Model's parameters
+        n_blocks=3,
+        n_filters=30,
+        kernel_size=5,
+        drop_prob=0.5,
+        activation: type[nn.Module] = nn.ReLU,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
+
+        self.base_tcn = TCN(
+            n_chans=self.n_chans,
+            n_outputs=self.n_outputs,
+            n_blocks=n_blocks,
+            n_filters=n_filters,
+            kernel_size=kernel_size,
+            drop_prob=drop_prob,
+            activation=activation,
+        )
+
+        self.final_layer = torch.nn.Sequential(
+            torch.nn.AdaptiveAvgPool1d(1), torch.nn.Flatten()
+        )
+
+    def forward(self, x):
+        x = self.base_tcn(x)
+        x = self.final_layer(x)
+        return x
+
+
+class TCN(nn.Module):
+    """Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
 
     See [Bai2018]_ for details.
 
@@ -29,8 +106,9 @@ class TCN(EEGModuleMixin, nn.Module):
         kernel size of the convolutions
     drop_prob: float
         dropout probability
-    n_in_chans: int
-        Alias for `n_chans`.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     References
     ----------
@@ -48,29 +126,9 @@ class TCN(EEGModuleMixin, nn.Module):
         n_filters=30,
         kernel_size=5,
         drop_prob=0.5,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        n_in_chans=None,
-        add_log_softmax=False,
+        activation: type[nn.Module] = nn.ReLU,
     ):
-        (n_chans,) = deprecated_args(
-            self,
-            ("n_in_chans", "n_chans", n_in_chans, n_chans),
-        )
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_in_chans
-
+        super().__init__()
         self.mapping = {
             "fc.weight": "final_layer.fc.weight",
             "fc.bias": "final_layer.fc.bias",
@@ -78,11 +136,11 @@ class TCN(EEGModuleMixin, nn.Module):
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
-            n_inputs = self.n_chans if i == 0 else n_filters
+            n_inputs = n_chans if i == 0 else n_filters
             dilation_size = 2**i
             t_blocks.add_module(
                 "temporal_block_{:d}".format(i),
-                TemporalBlock(
+                _TemporalBlock(
                     n_inputs=n_inputs,
                     n_outputs=n_filters,
                     kernel_size=kernel_size,
@@ -90,15 +148,14 @@ class TCN(EEGModuleMixin, nn.Module):
                     dilation=dilation_size,
                     padding=(kernel_size - 1) * dilation_size,
                     drop_prob=drop_prob,
+                    activation=activation,
                 ),
             )
         self.temporal_blocks = t_blocks
 
-        # Here, change to final_layer
         self.final_layer = _FinalLayer(
             in_features=n_filters,
-            out_features=self.n_outputs,
-            add_log_softmax=add_log_softmax,
+            out_features=n_outputs,
         )
         self.min_len = 1
         for i in range(n_blocks):
@@ -106,9 +163,9 @@ class TCN(EEGModuleMixin, nn.Module):
             self.min_len += 2 * (kernel_size - 1) * dilation
 
         # start in eval mode
-        self.eval()
+        self.train()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
 
         Parameters
@@ -132,19 +189,18 @@ class TCN(EEGModuleMixin, nn.Module):
 
 
 class _FinalLayer(nn.Module):
-    def __init__(self, in_features, out_features, add_log_softmax=True):
+    def __init__(self, in_features, out_features):
         super().__init__()
 
         self.fc = nn.Linear(in_features=in_features, out_features=out_features)
 
-        if add_log_softmax:
-            self.out_fun = nn.LogSoftmax(dim=1)
-        else:
-            self.out_fun = nn.Identity()
+        self.out_fun = nn.Identity()
 
-        self.squeeze = Expression(squeeze_final_output)
+        self.squeeze = SqueezeFinalOutput()
 
-    def forward(self, x, batch_size, time_size, min_len):
+    def forward(
+        self, x: torch.Tensor, batch_size: int, time_size: int, min_len: int
+    ) -> torch.Tensor:
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
         fc_out = self.out_fun(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))
@@ -155,9 +211,17 @@ class _FinalLayer(nn.Module):
         return self.squeeze(out[:, :, :, None])
 
 
-class TemporalBlock(nn.Module):
+class _TemporalBlock(nn.Module):
     def __init__(
-        self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, drop_prob
+        self,
+        n_inputs,
+        n_outputs,
+        kernel_size,
+        stride,
+        dilation,
+        padding,
+        drop_prob,
+        activation: type[nn.Module] = nn.ReLU,
     ):
         super().__init__()
         self.conv1 = weight_norm(
@@ -171,7 +235,7 @@ class TemporalBlock(nn.Module):
             )
         )
         self.chomp1 = Chomp1d(padding)
-        self.relu1 = nn.ReLU()
+        self.relu1 = activation()
         self.dropout1 = nn.Dropout2d(drop_prob)
 
         self.conv2 = weight_norm(
@@ -185,13 +249,13 @@ class TemporalBlock(nn.Module):
             )
         )
         self.chomp2 = Chomp1d(padding)
-        self.relu2 = nn.ReLU()
+        self.relu2 = activation()
         self.dropout2 = nn.Dropout2d(drop_prob)
 
         self.downsample = (
             nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
         )
-        self.relu = nn.ReLU()
+        self.relu = activation()
 
         init.normal_(self.conv1.weight, 0, 0.01)
         init.normal_(self.conv2.weight, 0, 0.01)
@@ -209,15 +273,3 @@ class TemporalBlock(nn.Module):
         out = self.dropout2(out)
         res = x if self.downsample is None else self.downsample(x)
         return self.relu(out + res)
-
-
-class Chomp1d(nn.Module):
-    def __init__(self, chomp_size):
-        super().__init__()
-        self.chomp_size = chomp_size
-
-    def extra_repr(self):
-        return "chomp_size={}".format(self.chomp_size)
-
-    def forward(self, x):
-        return x[:, :, : -self.chomp_size].contiguous()

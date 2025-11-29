@@ -11,8 +11,8 @@ import h5py
 import mne
 import numpy as np
 import torch
-from torch import Tensor
 from sklearn.utils import check_random_state
+from torch import Tensor
 
 
 def set_random_seeds(seed, cuda, cudnn_benchmark=None):
@@ -403,7 +403,7 @@ def read_all_file_names(directory, extension):
     """
     assert extension.startswith(".")
     file_paths = glob.glob(directory + "**/*" + extension, recursive=True)
-    assert (
-        len(file_paths) > 0
-    ), f"something went wrong. Found no {extension} files in {directory}"
+    assert len(file_paths) > 0, (
+        f"something went wrong. Found no {extension} files in {directory}"
+    )
     return file_paths

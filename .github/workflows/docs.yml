@@ -17,37 +17,40 @@ jobs:
       ## Install Braindecode
       - name: Checking Out Repository
         uses: actions/checkout@v4
+      # Install python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       # Cache MNE Data
-      # The cache key here is fixed except for os
-      # so if you download a new mne dataset in the code, best to manually increment the key below
+      # Dedicated cache for docs (single platform: ubuntu-latest)
+      # Cache key includes hash of pyproject.toml to invalidate when dependencies change
       - name: Create/Restore MNE Data Cache
         id: cache-mne_data
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/mne_data
-          key: ${{ runner.os }}-v3
-      - uses: actions/setup-python@v4
+          key: docs-mne-data-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            docs-mne-data-
+      # Install uv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Show Python Version
-        run: python --version
-      # Update pip
-      - name: Update pip
-        run: pip install --upgrade pip
-      # Install with MOABB and docs dependencies
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      # Install with all dependencies for doc build to go through
       - name: Install with doc dependencies
-        run: pip install -e .[moabb,docs]
+        run: uv pip install --system -e .[all]
       # Show Braindecode Version
       - run: python -c "import braindecode; print(braindecode.__version__)"
-
-      - name: Checking Out Repository
-        uses: actions/checkout@v4
       - name: Create Docs
         run: |
           cd docs
           make html
+        env:
+          HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
       - name: Upload HTML Docs as Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: HTML-Docs
           path: ./docs/_build/

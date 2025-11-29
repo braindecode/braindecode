@@ -11,32 +11,97 @@ Dataset classes.
 # License: BSD (3-clause)
 
 from __future__ import annotations
-from collections.abc import Callable
-import os
+
 import json
+import os
 import shutil
-from typing import Iterable, no_type_check
 import warnings
+from abc import abstractmethod
+from collections.abc import Callable
 from glob import glob
+from typing import Any, Generic, Iterable, no_type_check
 
 import mne.io
 import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset, ConcatDataset
+from mne.utils.docs import deprecated
+from torch.utils.data import ConcatDataset, Dataset
+from typing_extensions import TypeVar
+
+from .hub import HubDatasetMixin
+from .registry import register_dataset
 
 
 def _create_description(description) -> pd.Series:
     if description is not None:
         if not isinstance(description, pd.Series) and not isinstance(description, dict):
             raise ValueError(
-                f"'{description}' has to be either a " f"pandas.Series or a dict."
+                f"'{description}' has to be either a pandas.Series or a dict."
             )
         if isinstance(description, dict):
             description = pd.Series(description)
     return description
 
 
-class BaseDataset(Dataset):
+class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]]):
+    def __init__(
+        self,
+        description: dict | pd.Series | None = None,
+        transform: Callable | None = None,
+    ):
+        self._description = _create_description(description)
+        self.transform = transform
+
+    @abstractmethod
+    def __len__(self) -> int:
+        pass
+
+    @property
+    def description(self) -> pd.Series:
+        return self._description
+
+    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
+        """Update (add or overwrite) the dataset description.
+
+        Parameters
+        ----------
+        description: dict | pd.Series
+            Description in the form key: value.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
+        """
+        description = _create_description(description)
+        if self.description is None:
+            self._description = description
+        else:
+            for key, value in description.items():
+                # if the key is already in the existing description, drop it
+                if key in self._description:
+                    assert overwrite, (
+                        f"'{key}' already in description. Please "
+                        f"rename or set overwrite to True."
+                    )
+                    self._description.pop(key)
+            self._description = pd.concat([self.description, description])
+
+    @property
+    def transform(self) -> Callable | None:
+        return self._transform
+
+    @transform.setter
+    def transform(self, value: Callable | None):
+        if value is not None and not callable(value):
+            raise ValueError("Transform needs to be a callable.")
+        self._transform = value
+
+
+# Type of the datasets contained in BaseConcatDataset
+T = TypeVar("T", bound=RecordDataset)
+
+
+@register_dataset
+class RawDataset(RecordDataset):
     """Returns samples from an mne.io.Raw object along with a target.
 
     Dataset which serves samples from an mne.io.Raw object along with a target.
@@ -63,12 +128,12 @@ class BaseDataset(Dataset):
         target_name: str | tuple[str, ...] | None = None,
         transform: Callable | None = None,
     ):
+        super().__init__(description, transform)
         self.raw = raw
-        self._description = _create_description(description)
-        self.transform = transform
 
         # save target name for load/save later
         self.target_name = self._target_name(target_name)
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index):
         X = self.raw[:, index][0]
@@ -83,45 +148,6 @@ class BaseDataset(Dataset):
 
     def __len__(self):
         return len(self.raw)
-
-    @property
-    def transform(self):
-        return self._transform
-
-    @transform.setter
-    def transform(self, value):
-        if value is not None and not callable(value):
-            raise ValueError("Transform needs to be a callable.")
-        self._transform = value
-
-    @property
-    def description(self) -> pd.Series:
-        return self._description
-
-    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
-        """Update (add or overwrite) the dataset description.
-
-        Parameters
-        ----------
-        description: dict | pd.Series
-            Description in the form key: value.
-        overwrite: bool
-            Has to be True if a key in description already exists in the
-            dataset description.
-        """
-        description = _create_description(description)
-        for key, value in description.items():
-            # if the key is already in the existing description, drop it
-            if self._description is not None and key in self._description:
-                assert overwrite, (
-                    f"'{key}' already in description. Please "
-                    f"rename or set overwrite to True."
-                )
-                self._description.pop(key)
-        if self._description is None:
-            self._description = description
-        else:
-            self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
         if target_name is not None and not isinstance(target_name, (str, tuple, list)):
@@ -149,7 +175,19 @@ class BaseDataset(Dataset):
         return target_name if len(target_name) > 1 else target_name[0]
 
 
-class EEGWindowsDataset(BaseDataset):
+@deprecated(
+    "The BaseDataset class is deprecated. "
+    "If you want to instantiate a dataset containing raws, use RawDataset instead. "
+    "If you want to type a Braindecode dataset (i.e. RawDataset|EEGWindowsDataset|WindowsDataset), "
+    "use the RecordDataset class instead."
+)
+@register_dataset
+class BaseDataset(RawDataset):
+    pass
+
+
+@register_dataset
+class EEGWindowsDataset(RecordDataset):
     """Returns windows from an mne.Raw object, its window indices, along with a target.
 
     Dataset which serves windows from an mne.Epochs object along with their
@@ -160,12 +198,12 @@ class EEGWindowsDataset(BaseDataset):
     required to serve information about the windowing (e.g., useful for cropped
     training).
     See `braindecode.datautil.windowers` to directly create a `WindowsDataset`
-    from a `BaseDataset` object.
+    from a `RawDataset` object.
 
     Parameters
     ----------
     windows : mne.Raw or mne.Epochs (Epochs is outdated)
-        Windows obtained through the application of a windower to a BaseDataset
+        Windows obtained through the application of a windower to a ``RawDataset``
         (see `braindecode.datautil.windowers`).
     description : dict | pandas.Series | None
         Holds additional info about the windows.
@@ -184,18 +222,17 @@ class EEGWindowsDataset(BaseDataset):
 
     def __init__(
         self,
-        raw: mne.io.BaseRaw | mne.BaseEpochs,
+        raw: mne.io.BaseRaw,
         metadata: pd.DataFrame,
         description: dict | pd.Series | None = None,
         transform: Callable | None = None,
         targets_from: str = "metadata",
         last_target_only: bool = True,
     ):
+        super().__init__(description, transform)
         self.raw = raw
         self.metadata = metadata
-        self._description = _create_description(description)
 
-        self.transform = transform
         self.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
             raise ValueError("Wrong value for parameter `targets_from`.")
@@ -205,6 +242,7 @@ class EEGWindowsDataset(BaseDataset):
         ].to_numpy()
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -254,44 +292,9 @@ class EEGWindowsDataset(BaseDataset):
     def __len__(self):
         return len(self.crop_inds)
 
-    @property
-    def transform(self):
-        return self._transform
 
-    @transform.setter
-    def transform(self, value):
-        if value is not None and not callable(value):
-            raise ValueError("Transform needs to be a callable.")
-        self._transform = value
-
-    @property
-    def description(self) -> pd.Series:
-        return self._description
-
-    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
-        """Update (add or overwrite) the dataset description.
-
-        Parameters
-        ----------
-        description: dict | pd.Series
-            Description in the form key: value.
-        overwrite: bool
-            Has to be True if a key in description already exists in the
-            dataset description.
-        """
-        description = _create_description(description)
-        for key, value in description.items():
-            # if they key is already in the existing description, drop it
-            if key in self._description:
-                assert overwrite, (
-                    f"'{key}' already in description. Please "
-                    f"rename or set overwrite to True."
-                )
-                self._description.pop(key)
-        self._description = pd.concat([self.description, description])
-
-
-class WindowsDataset(BaseDataset):
+@register_dataset
+class WindowsDataset(RecordDataset):
     """Returns windows from an mne.Epochs object along with a target.
 
     Dataset which serves windows from an mne.Epochs object along with their
@@ -302,12 +305,12 @@ class WindowsDataset(BaseDataset):
     required to serve information about the windowing (e.g., useful for cropped
     training).
     See `braindecode.datautil.windowers` to directly create a `WindowsDataset`
-    from a `BaseDataset` object.
+    from a ``RawDataset`` object.
 
     Parameters
     ----------
     windows : mne.Epochs
-        Windows obtained through the application of a windower to a BaseDataset
+        Windows obtained through the application of a windower to a RawDataset
         (see `braindecode.datautil.windowers`).
     description : dict | pandas.Series | None
         Holds additional info about the windows.
@@ -326,19 +329,22 @@ class WindowsDataset(BaseDataset):
         targets_from: str = "metadata",
         last_target_only: bool = True,
     ):
+        super().__init__(description, transform)
         self.windows = windows
-        self._description = _create_description(description)
-        self.transform = transform
         self.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
             raise ValueError("Wrong value for parameter `targets_from`.")
         self.targets_from = targets_from
 
-        self.crop_inds = self.windows.metadata.loc[
+        metadata = self.windows.metadata
+        assert metadata is not None, "WindowsDataset requires windows with metadata."
+        self.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
         ].to_numpy()
         if self.targets_from == "metadata":
-            self.y = self.windows.metadata.loc[:, "target"].to_list()
+            self.y = metadata.loc[:, "target"].to_list()
+        self.raw_preproc_kwargs: list[dict[str, Any]] = []
+        self.window_preproc_kwargs: list[dict[str, Any]] = []
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -378,66 +384,41 @@ class WindowsDataset(BaseDataset):
     def __len__(self) -> int:
         return len(self.windows.events)
 
-    @property
-    def transform(self):
-        return self._transform
 
-    @transform.setter
-    def transform(self, value):
-        if value is not None and not callable(value):
-            raise ValueError("Transform needs to be a callable.")
-        self._transform = value
+@register_dataset
+class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
+    """A base class for concatenated datasets.
 
-    @property
-    def description(self) -> pd.Series:
-        return self._description
+    Holds either mne.Raw or mne.Epoch in self.datasets and has
+    a pandas DataFrame with additional description.
 
-    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
-        """Update (add or overwrite) the dataset description.
-
-        Parameters
-        ----------
-        description: dict | pd.Series
-            Description in the form key: value.
-        overwrite: bool
-            Has to be True if a key in description already exists in the
-            dataset description.
-        """
-        description = _create_description(description)
-        for key, value in description.items():
-            # if they key is already in the existing description, drop it
-            if key in self._description:
-                assert overwrite, (
-                    f"'{key}' already in description. Please "
-                    f"rename or set overwrite to True."
-                )
-                self._description.pop(key)
-        self._description = pd.concat([self.description, description])
-
-
-class BaseConcatDataset(ConcatDataset):
-    """A base class for concatenated datasets. Holds either mne.Raw or
-    mne.Epoch in self.datasets and has a pandas DataFrame with additional
-    description.
+    Includes Hugging Face Hub integration via HubDatasetMixin for
+    uploading and downloading datasets.
 
     Parameters
     ----------
     list_of_ds : list
-        list of BaseDataset, BaseConcatDataset or WindowsDataset
+        list of RecordDataset
     target_transform : callable | None
         Optional function to call on targets before returning them.
+
     """
+
+    datasets: list[T]
 
     def __init__(
         self,
-        list_of_ds: list[BaseDataset | BaseConcatDataset | WindowsDataset]
-        | None = None,
+        list_of_ds: list[T | BaseConcatDataset[T]],
         target_transform: Callable | None = None,
     ):
         # if we get a list of BaseConcatDataset, get all the individual datasets
-        if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
-            list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
-        super().__init__(list_of_ds)
+        flattened_list_of_ds: list[T] = []
+        for ds in list_of_ds:
+            if isinstance(ds, BaseConcatDataset):
+                flattened_list_of_ds.extend(ds.datasets)
+            else:
+                flattened_list_of_ds.append(ds)
+        super().__init__(flattened_list_of_ds)
 
         self.target_transform = target_transform
 
@@ -478,8 +459,9 @@ class BaseConcatDataset(ConcatDataset):
         property: str | None = None,
         split_ids: list[int] | list[list[int]] | dict[str, list[int]] | None = None,
     ) -> dict[str, BaseConcatDataset]:
-        """Split the dataset based on information listed in its description
-        DataFrame or based on indices.
+        """Split the dataset based on information listed in its description.
+
+        The format could be based on a DataFrame or based on indices.
 
         Parameters
         ----------
@@ -492,7 +474,7 @@ class BaseConcatDataset(ConcatDataset):
             If a dict then each key will be used in the returned
             splits dict and each value should be a list of int.
         property : str
-            Some property which is listed in info DataFrame.
+            Some property which is listed in the info DataFrame.
         split_ids : list | dict
             List of indices to be combined in a subset.
             It can be a list of int or a list of list of int.
@@ -503,6 +485,7 @@ class BaseConcatDataset(ConcatDataset):
             A dictionary with the name of the split (a string) as key and the
             dataset as value.
         """
+
         args_not_none = [by is not None, property is not None, split_ids is not None]
         if sum(args_not_none) != 1:
             raise ValueError("Splitting requires exactly one argument.")
@@ -617,14 +600,14 @@ class BaseConcatDataset(ConcatDataset):
         if not (
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
-            raise ValueError("dataset should have either raw or windows " "attribute")
+            raise ValueError("dataset should have either raw or windows attribute")
         file_name_templates = ["{}-raw.fif", "{}-epo.fif"]
         description_file_name = os.path.join(path, "description.json")
         target_file_name = os.path.join(path, "target_name.json")
         if not overwrite:
-            from braindecode.datautil.serialization import (
+            from braindecode.datautil.serialization import (  # Import here to avoid circular import
                 _check_save_dir_empty,
-            )  # Import here to avoid circular import
+            )
 
             _check_save_dir_empty(path)
         else:
@@ -698,22 +681,23 @@ class BaseConcatDataset(ConcatDataset):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
     def save(self, path: str, overwrite: bool = False, offset: int = 0):
-        """Save datasets to files by creating one subdirectory for each dataset:
-        path/
-            0/
-                0-raw.fif | 0-epo.fif
-                description.json
-                raw_preproc_kwargs.json (if raws were preprocessed)
-                window_kwargs.json (if this is a windowed dataset)
-                window_preproc_kwargs.json  (if windows were preprocessed)
-                target_name.json (if target_name is not None and dataset is raw)
-            1/
-                1-raw.fif | 1-epo.fif
-                description.json
-                raw_preproc_kwargs.json (if raws were preprocessed)
-                window_kwargs.json (if this is a windowed dataset)
-                window_preproc_kwargs.json  (if windows were preprocessed)
-                target_name.json (if target_name is not None and dataset is raw)
+        """Save datasets to files by creating one subdirectory for each dataset::
+
+            path/
+                0/
+                    0-raw.fif | 0-epo.fif
+                    description.json
+                    raw_preproc_kwargs.json (if raws were preprocessed)
+                    window_kwargs.json (if this is a windowed dataset)
+                    window_preproc_kwargs.json  (if windows were preprocessed)
+                    target_name.json (if target_name is not None and dataset is raw)
+                1/
+                    1-raw.fif | 1-epo.fif
+                    description.json
+                    raw_preproc_kwargs.json (if raws were preprocessed)
+                    window_kwargs.json (if this is a windowed dataset)
+                    window_preproc_kwargs.json  (if windows were preprocessed)
+                    target_name.json (if target_name is not None and dataset is raw)
 
         Parameters
         ----------
@@ -734,7 +718,7 @@ class BaseConcatDataset(ConcatDataset):
         if not (
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
-            raise ValueError("dataset should have either raw or windows " "attribute")
+            raise ValueError("dataset should have either raw or windows attribute")
         path_contents = os.listdir(path)
         n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
         for i_ds, ds in enumerate(self.datasets):
@@ -810,7 +794,7 @@ class BaseConcatDataset(ConcatDataset):
     @staticmethod
     def _save_description(sub_dir, description):
         description_file_path = os.path.join(sub_dir, "description.json")
-        description.to_json(description_file_path)
+        description.to_json(description_file_path, default_handler=str)
 
     @staticmethod
     def _save_kwargs(sub_dir, ds):
@@ -825,7 +809,7 @@ class BaseConcatDataset(ConcatDataset):
                 kwargs = getattr(ds, kwargs_name)
                 if kwargs is not None:
                     with open(kwargs_file_path, "w") as f:
-                        json.dump(kwargs, f)
+                        json.dump(kwargs, f, indent=2)
 
     @staticmethod
     def _save_target_name(sub_dir, ds):

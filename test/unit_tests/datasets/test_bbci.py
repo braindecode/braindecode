@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 
 from unittest.mock import MagicMock
+
 from braindecode.datasets.bbci import BBCIDataset
 
 

@@ -1,40 +1,140 @@
 # Authors: Yonghao Song <eeyhsong@gmail.com>
 #
 # License: BSD (3-clause)
-import torch
-import torch.nn.functional as F
-from einops import rearrange
-from einops.layers.torch import Rearrange
-from torch import nn, Tensor
 import warnings
 
-from .base import EEGModuleMixin, deprecated_args
+import torch
+from einops.layers.torch import Rearrange
+from torch import Tensor, nn
+
+from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
-    """EEG Conformer.
+    """EEG Conformer from Song et al. (2022) [song2022]_.
 
-    Convolutional Transformer for EEG decoding.
+    :bdg-success:`Convolution` :bdg-info:`Small Attention`
 
-    The paper and original code with more details about the methodological
-    choices are available at the [Song2022]_ and [ConformerCode]_.
+    .. figure:: https://raw.githubusercontent.com/eeyhsong/EEG-Conformer/refs/heads/main/visualization/Fig1.png
+        :align: center
+        :alt: EEGConformer Architecture
+        :width: 600px
 
-    This neural network architecture receives a traditional braindecode input.
-    The input shape should be three-dimensional matrix representing the EEG
-    signals.
 
-         `(batch_size, n_channels, n_timesteps)`.
+    .. rubric:: Architectural Overview
 
-    The EEG Conformer architecture is composed of three modules:
-        - PatchEmbedding
-        - TransformerEncoder
-        - ClassificationHead
+    EEG-Conformer is a *convolution-first* model augmented with a *lightweight transformer
+    encoder*. The end-to-end flow is:
+
+    - (i) :class:`_PatchEmbedding` converts the continuous EEG into a compact sequence of tokens via a
+      :class:`ShallowFBCSPNet` temporal–spatial conv stem and temporal pooling;
+    - (ii) :class:`_TransformerEncoder` applies small multi-head self-attention to integrate
+      longer-range temporal context across tokens;
+    - (iii) :class:`_ClassificationHead` aggregates the sequence and performs a linear readout.
+      This preserves the strong inductive biases of shallow CNN filter banks while adding
+      just enough attention to capture dependencies beyond the pooling horizon [song2022]_.
+
+    .. rubric:: Macro Components
+
+    - :class:`_PatchEmbedding` **(Shallow conv stem → tokens)**
+
+        - *Operations.*
+        - A temporal convolution (`:class:torch.nn.Conv2d`) ``(1 x L_t)`` forms a data-driven "filter bank";
+        - A spatial convolution (`:class:torch.nn.Conv2d`) (n_chans x 1)`` projects across electrodes,
+          collapsing the channel axis into a virtual channel.
+        - **Normalization function** :class:`torch.nn.BatchNorm`
+        - **Activation function** :class:`torch.nn.ELU`
+        - **Average Pooling** :class:`torch.nn.AvgPool` along time (kernel ``(1, P)`` with stride ``(1, S)``)
+        -  final ``1x1`` :class:`torch.nn.Linear` projection.
+
+    The result is rearranged to a token sequence ``(B, S_tokens, D)``, where ``D = n_filters_time``.
+
+    *Interpretability/robustness.* Temporal kernels can be inspected as FIR filters;
+    the spatial conv yields channel projections analogous to :class:`ShallowFBCSPNet`'s learned
+    spatial filters. Temporal pooling stabilizes statistics and reduces sequence length.
+
+    - :class:`_TransformerEncoder` **(context over temporal tokens)**
+
+        - *Operations.*
+        - A stack of ``num_layers`` encoder blocks. :class:`_TransformerEncoderBlock`
+        - Each block applies LayerNorm :class:`torch.nn.LayerNorm`
+        - Multi-Head Self-Attention (``num_heads``) with dropout + residual :class:`MultiHeadAttention` (:class:`torch.nn.Dropout`)
+        - LayerNorm :class:`torch.nn.LayerNorm`
+        - 2-layer feed-forward (≈4x expansion, :class:`torch.nn.GELU`) with dropout + residual.
+
+    Shapes remain ``(B, S_tokens, D)`` throughout.
+
+    *Role.* Small attention focuses on interactions among *temporal patches* (not channels),
+    extending effective receptive fields at modest cost.
+
+    - :class:`ClassificationHead` **(aggregation + readout)**
+
+        - *Operations*.
+        - Flatten, :class:`torch.nn.Flatten` the sequence ``(B, S_tokens·D)`` -
+        - MLP (:class:`torch.nn.Linear` → activation (default: :class:`torch.nn.ELU`) → :class:`torch.nn.Dropout` → :class:`torch.nn.Linear`)
+        - final Linear to classes.
+
+    With ``return_features=True``, features before the last Linear can be exported for
+    linear probing or downstream tasks.
+
+    .. rubric:: Convolutional Details
+
+    - **Temporal (where time-domain patterns are learned).**
+        The initial ``(1 x L_t)`` conv per channel acts as a *learned filter bank* for oscillatory
+        bands and transients. Subsequent **AvgPool** along time performs local integration,
+        converting activations into “patches” (tokens). Pool length/stride control the
+        token rate and set the lower bound on temporal context within each token.
+
+    - **Spatial (how electrodes are processed).**
+        A single conv with kernel ``(n_chans x 1)`` spans the full montage to learn spatial
+        projections for each temporal feature map, collapsing the channel axis into a
+        virtual channel before tokenization. This mirrors the shallow spatial step in
+        :class:`ShallowFBCSPNet` (temporal filters → spatial projection → temporal condensation).
+
+    - **Spectral (how frequency content is captured).**
+        No explicit Fourier/wavelet stage is used. Spectral selectivity emerges implicitly
+        from the learned temporal kernels; pooling further smooths high-frequency noise.
+        The effective spectral resolution is thus governed by ``L_t`` and the pooling
+        configuration.
+
+    .. rubric:: Attention / Sequential Modules
+
+    - **Type.** Standard multi-head self-attention (MHA) with ``num_heads`` heads over the token sequence.
+    - **Shapes.** Input/Output: ``(B, S_tokens, D)``; attention operates along the ``S_tokens`` axis.
+    - **Role.** Re-weights and integrates evidence across pooled windows, capturing dependencies
+      longer than any single token while leaving channel relationships to the convolutional stem.
+      The design is intentionally *small*—attention refines rather than replaces convolutional feature extraction.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Parallel with ShallowFBCSPNet.** Both begin with a learned temporal filter bank,
+        spatial projection across electrodes, and early temporal condensation.
+        :class:`ShallowFBCSPNet` then computes band-power (via squaring/log-variance), whereas
+        EEG-Conformer applies BN/ELU and **continues with attention** over tokens to
+        refine temporal context before classification.
+
+    - **Tokenization knob.** ``pool_time_length`` and especially ``pool_time_stride`` set
+        the number of tokens ``S_tokens``. Smaller strides → more tokens and higher attention
+        capacity (but higher compute); larger strides → fewer tokens and stronger inductive bias.
+
+    - **Embedding dimension = filters.** ``n_filters_time`` serves double duty as both the
+        number of temporal filters in the stem and the transformer's embedding size ``D``,
+        simplifying dimensional alignment.
+
+    .. rubric:: Usage and Configuration
+
+    - **Instantiation.** Choose ``n_filters_time`` (embedding size ``D``) and
+        ``filter_time_length`` to match the rhythms of interest. Tune
+        ``pool_time_length/stride`` to trade temporal resolution for sequence length.
+        Keep ``num_layers`` modest (e.g., 4–6) and set ``num_heads`` to divide ``D``.
+        ``final_fc_length="auto"`` infers the flattened size from PatchEmbedding.
 
     Notes
     -----
     The authors recommend using data augmentation before using Conformer,
     e.g. segmentation and recombination,
-    Please refer to the original paper and code for more details.
+    Please refer to the original paper and code for more details [ConformerCode]_.
 
     The model was initially tuned on 4 seconds of 250 Hz data.
     Please adjust the scale of the temporal convolutional layer,
@@ -43,7 +143,10 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     .. versionadded:: 0.8
 
     We aggregate the parameters based on the parts of the models, or
-    when the parameters were used first, e.g. n_filters_time.
+    when the parameters were used first, e.g. ``n_filters_time``.
+
+    .. versionadded:: 1.1
+
 
     Parameters
     ----------
@@ -57,9 +160,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         Length of stride between temporal pooling filters.
     drop_prob: float
         Dropout rate of the convolutional layer.
-    att_depth: int
+    num_layers: int
         Number of self-attention layers.
-    att_heads: int
+    num_heads: int
         Number of attention heads.
     att_drop_prob: float
         Dropout rate of the self-attention layer.
@@ -68,15 +171,15 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     return_features: bool
         If True, the forward method returns the features before the
         last classification layer. Defaults to False.
-    n_classes :
-        Alias for n_outputs.
-    n_channels :
-        Alias for n_chans.
-    input_window_samples :
-        Alias for n_times.
+    activation: nn.Module
+        Activation function as parameter. Default is nn.ELU
+    activation_transfor: nn.Module
+        Activation function as parameter, applied at the FeedForwardBlock module
+        inside the transformer. Default is nn.GeLU
+
     References
     ----------
-    .. [Song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
+    .. [song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
        conformer: Convolutional transformer for EEG decoding and visualization.
        IEEE Transactions on Neural Systems and Rehabilitation Engineering,
        31, pp.710-719. https://ieeexplore.ieee.org/document/9991178
@@ -94,26 +197,18 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         pool_time_length=75,
         pool_time_stride=15,
         drop_prob=0.5,
-        att_depth=6,
-        att_heads=10,
+        num_layers=6,
+        num_heads=10,
         att_drop_prob=0.5,
         final_fc_length="auto",
         return_features=False,
+        activation: type[nn.Module] = nn.ELU,
+        activation_transfor: type[nn.Module] = nn.GELU,
         n_times=None,
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        n_classes=None,
-        n_channels=None,
-        input_window_samples=None,
-        add_log_softmax=True,
     ):
-        n_outputs, n_chans, n_times = deprecated_args(
-            self,
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("n_channels", "n_chans", n_channels, n_chans),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -121,7 +216,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         self.mapping = {
             "classification_head.fc.6.weight": "final_layer.final_layer.0.weight",
@@ -129,7 +223,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         }
 
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_classes, n_channels, input_window_samples
         if not (self.n_chans <= 64):
             warnings.warn(
                 "This model has only been tested on no more "
@@ -138,6 +231,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
                 UserWarning,
             )
 
+        self.return_features = return_features
+
         self.patch_embedding = _PatchEmbedding(
             n_filters_time=n_filters_time,
             filter_time_length=filter_time_length,
@@ -145,32 +240,38 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             pool_time_length=pool_time_length,
             stride_avg_pool=pool_time_stride,
             drop_prob=drop_prob,
+            activation=activation,
         )
 
         if final_fc_length == "auto":
             assert self.n_times is not None
-            final_fc_length = self.get_fc_size()
+            self.final_fc_length = self.get_fc_size()
+        else:
+            self.final_fc_length = final_fc_length
 
         self.transformer = _TransformerEncoder(
-            att_depth=att_depth,
+            num_layers=num_layers,
             emb_size=n_filters_time,
-            att_heads=att_heads,
+            num_heads=num_heads,
             att_drop=att_drop_prob,
+            activation=activation_transfor,
         )
 
-        self.fc = _FullyConnected(final_fc_length=final_fc_length)
-
-        self.final_layer = _FinalLayer(
-            n_classes=self.n_outputs,
-            return_features=return_features,
-            add_log_softmax=self.add_log_softmax,
+        self.fc = _FullyConnected(
+            final_fc_length=self.final_fc_length, activation=activation
         )
+
+        self.final_layer = nn.Linear(self.fc.hidden_channels, self.n_outputs)
 
     def forward(self, x: Tensor) -> Tensor:
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
         x = self.patch_embedding(x)
-        x = self.transformer(x)
-        x = self.fc(x)
+        feature = self.transformer(x)
+
+        if self.return_features:
+            return feature
+
+        x = self.fc(feature)
         x = self.final_layer(x)
         return x
 
@@ -217,6 +318,7 @@ class _PatchEmbedding(nn.Module):
         pool_time_length,
         stride_avg_pool,
         drop_prob,
+        activation: type[nn.Module] = nn.ELU,
     ):
         super().__init__()
 
@@ -224,7 +326,7 @@ class _PatchEmbedding(nn.Module):
             nn.Conv2d(1, n_filters_time, (1, filter_time_length), (1, 1)),
             nn.Conv2d(n_filters_time, n_filters_time, (n_channels, 1), (1, 1)),
             nn.BatchNorm2d(num_features=n_filters_time),
-            nn.ELU(),
+            activation(),
             nn.AvgPool2d(
                 kernel_size=(1, pool_time_length), stride=(1, stride_avg_pool)
             ),
@@ -246,72 +348,43 @@ class _PatchEmbedding(nn.Module):
         return x
 
 
-class _MultiHeadAttention(nn.Module):
-    def __init__(self, emb_size, num_heads, dropout):
-        super().__init__()
-        self.emb_size = emb_size
-        self.num_heads = num_heads
-        self.keys = nn.Linear(emb_size, emb_size)
-        self.queries = nn.Linear(emb_size, emb_size)
-        self.values = nn.Linear(emb_size, emb_size)
-        self.att_drop = nn.Dropout(dropout)
-        self.projection = nn.Linear(emb_size, emb_size)
-
-    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
-        queries = rearrange(self.queries(x), "b n (h d) -> b h n d", h=self.num_heads)
-        keys = rearrange(self.keys(x), "b n (h d) -> b h n d", h=self.num_heads)
-        values = rearrange(self.values(x), "b n (h d) -> b h n d", h=self.num_heads)
-        energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
-        if mask is not None:
-            fill_value = torch.finfo(torch.float32).min
-            energy.mask_fill(~mask, fill_value)
-
-        scaling = self.emb_size ** (1 / 2)
-        att = F.softmax(energy / scaling, dim=-1)
-        att = self.att_drop(att)
-        out = torch.einsum("bhal, bhlv -> bhav ", att, values)
-        out = rearrange(out, "b h n d -> b n (h d)")
-        out = self.projection(out)
-        return out
-
-
 class _ResidualAdd(nn.Module):
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
 
-    def forward(self, x, **kwargs):
+    def forward(self, x):
         res = x
-        x = self.fn(x, **kwargs)
+        x = self.fn(x)
         x += res
         return x
 
 
-class _FeedForwardBlock(nn.Sequential):
-    def __init__(self, emb_size, expansion, drop_p):
-        super().__init__(
-            nn.Linear(emb_size, expansion * emb_size),
-            nn.GELU(),
-            nn.Dropout(drop_p),
-            nn.Linear(expansion * emb_size, emb_size),
-        )
-
-
 class _TransformerEncoderBlock(nn.Sequential):
-    def __init__(self, emb_size, att_heads, att_drop, forward_expansion=4):
+    def __init__(
+        self,
+        emb_size,
+        num_heads,
+        att_drop,
+        forward_expansion=4,
+        activation: type[nn.Module] = nn.GELU,
+    ):
         super().__init__(
             _ResidualAdd(
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
-                    _MultiHeadAttention(emb_size, att_heads, att_drop),
+                    MultiHeadAttention(emb_size, num_heads, att_drop),
                     nn.Dropout(att_drop),
                 )
             ),
             _ResidualAdd(
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
-                    _FeedForwardBlock(
-                        emb_size, expansion=forward_expansion, drop_p=att_drop
+                    FeedForwardBlock(
+                        emb_size,
+                        expansion=forward_expansion,
+                        drop_p=att_drop,
+                        activation=activation,
                     ),
                     nn.Dropout(att_drop),
                 )
@@ -326,22 +399,31 @@ class _TransformerEncoder(nn.Sequential):
 
     Parameters
     ----------
-    att_depth : int
+    num_layers : int
         Number of transformer encoder blocks.
     emb_size : int
         Embedding size of the transformer encoder.
-    att_heads : int
+    num_heads : int
         Number of attention heads.
     att_drop : float
         Dropout probability for the attention layers.
 
     """
 
-    def __init__(self, att_depth, emb_size, att_heads, att_drop):
+    def __init__(
+        self,
+        num_layers,
+        emb_size,
+        num_heads,
+        att_drop,
+        activation: type[nn.Module] = nn.GELU,
+    ):
         super().__init__(
             *[
-                _TransformerEncoderBlock(emb_size, att_heads, att_drop)
-                for _ in range(att_depth)
+                _TransformerEncoderBlock(
+                    emb_size, num_heads, att_drop, activation=activation
+                )
+                for _ in range(num_layers)
             ]
         )
 
@@ -354,6 +436,7 @@ class _FullyConnected(nn.Module):
         drop_prob_2=0.3,
         out_channels=256,
         hidden_channels=32,
+        activation: type[nn.Module] = nn.ELU,
     ):
         """Fully-connected layer for the transformer encoder.
 
@@ -373,17 +456,16 @@ class _FullyConnected(nn.Module):
             Number of output channels for the second linear layer.
         return_features : bool
             Whether to return input features.
-        add_log_softmax: bool
-            Whether to add LogSoftmax non-linearity as the final layer.
         """
 
         super().__init__()
+        self.hidden_channels = hidden_channels
         self.fc = nn.Sequential(
             nn.Linear(final_fc_length, out_channels),
-            nn.ELU(),
+            activation(),
             nn.Dropout(drop_prob_1),
             nn.Linear(out_channels, hidden_channels),
-            nn.ELU(),
+            activation(),
             nn.Dropout(drop_prob_2),
         )
 
@@ -391,42 +473,3 @@ class _FullyConnected(nn.Module):
         x = x.contiguous().view(x.size(0), -1)
         out = self.fc(x)
         return out
-
-
-class _FinalLayer(nn.Module):
-    def __init__(
-        self, n_classes, hidden_channels=32, return_features=False, add_log_softmax=True
-    ):
-        """Classification head for the transformer encoder.
-
-        Parameters
-        ----------
-        n_classes : int
-            Number of classes for classification.
-        hidden_channels : int
-            Number of output channels for the second linear layer.
-        return_features : bool
-            Whether to return input features.
-        add_log_softmax : bool
-            Adding LogSoftmax or not.
-        """
-
-        super().__init__()
-        self.final_layer = nn.Sequential(
-            nn.Linear(hidden_channels, n_classes),
-        )
-        self.return_features = return_features
-        if add_log_softmax:
-            classification = nn.LogSoftmax(dim=1)
-        else:
-            classification = nn.Identity()
-        if not self.return_features:
-            self.final_layer.add_module("classification", classification)
-
-    def forward(self, x):
-        if self.return_features:
-            out = self.final_layer(x)
-            return out, x
-        else:
-            out = self.final_layer(x)
-            return out

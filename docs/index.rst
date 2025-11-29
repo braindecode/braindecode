@@ -16,12 +16,12 @@ Braindecode Homepage
 
 .. image:: _static/braindecode.svg
    :alt: Braindecode
-   :class: logo, mainlogo, only-light
+   :class: logo mainlogo only-light
    :align: center
 
 .. image:: _static/braindecode.svg
    :alt: Braindecode
-   :class: logo, mainlogo, only-dark
+   :class: logo mainlogo only-dark
    :align: center
 
 .. rst-class:: h4 text-center font-weight-light my-4
@@ -42,8 +42,9 @@ Braindecode Homepage
    :hidden:
 
    Install <install/install>
+   Models <models/models>
    Cite <cite>
    Tutorial and Examples <auto_examples/index>
-   API Reference <api>
+   API <api>
    Get help <help>
-   What’s new <whats_new>
+   What's new <whats_new>

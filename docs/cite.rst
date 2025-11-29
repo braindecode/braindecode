@@ -8,8 +8,15 @@ How to cite Braindecode
 Citing the Braindecode
 ----------------------
 
-If you are using the library in a scientific context, to cite the braindecode software,
-you can use the canonical journal article reference
+If you use Braindecode in scientific work, please cite the software using the Zenodo DOI shown in the badge below:
+
+.. image:: https://zenodo.org/badge/232335424.svg
+   :target: https://doi.org/10.5281/zenodo.8214376
+   :alt: DOI
+
+Additionally, we highly encourage you to cite the article that originally introduced
+the Braindecode library and has served as a foundational reference for many works
+on deep learning with EEG recordings. Please use the following reference:
 
 .. code-block:: bibtex
 

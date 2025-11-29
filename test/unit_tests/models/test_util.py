@@ -5,35 +5,18 @@
 
 import inspect
 
-import pytest
 import numpy as np
-from torch import nn
+import pytest
 from sklearn.preprocessing import OneHotEncoder
 
-from braindecode.models.modules import Expression
+from braindecode import models
 from braindecode.models.util import (
-    get_output_shape,
-    aggregate_probas,
-    _pad_shift_array,
     models_dict,
 )
-from braindecode import models
-
-
-def test_get_output_shape_1d_model():
-    model = nn.Conv1d(1, 1, 3)
-    out_shape = get_output_shape(model, in_chans=1, input_window_samples=5)
-    assert out_shape == (
-        1,
-        1,
-        3,
-    )
-
-
-def test_get_output_shape_2d_model():
-    model = nn.Sequential(Expression(lambda x: x.unsqueeze(-1)), nn.Conv2d(1, 1, (3, 1)))
-    out_shape = get_output_shape(model, in_chans=1, input_window_samples=5)
-    assert out_shape == (1, 1, 3, 1)
+from braindecode.modules.util import (
+    _pad_shift_array,
+    aggregate_probas,
+)
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64])
@@ -106,6 +89,7 @@ def test_models_dict():
             inspect.isclass(m)
             and issubclass(m, models.base.EEGModuleMixin)
             and m != models.base.EEGModuleMixin
+            and m.__name__ != "EEGNetv4"
         )
     ]
     models_list = list(models_dict.items())
