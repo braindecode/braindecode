@@ -378,6 +378,7 @@ html_context = {
     "default_mode": "light",
     "pygment_light_style": "tango",
     "pygment_dark_style": "native",
+    "doc_version": switcher_version_match,
     "icon_links_label": "Quick Links",  # for screen reader
     "show_toc_level": 1,
     "institutions": [
