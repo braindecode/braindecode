@@ -1,0 +1,29 @@
+{#
+  Custom launcher links for Sphinx-Gallery example pages.
+  This adds an "Open in Colab" button that opens the notebook version
+  of the current example.
+#}
+
+{% if pagename.startswith('auto_examples/') and not pagename.endswith('/index') and pagename != 'auto_examples/index' %}
+
+{#
+  Build the notebook path corresponding to this example page.
+  Pages live at auto_examples/<section>/<name>
+  Notebooks are published to gh-pages at <version>/auto_examples/_notebooks/<section>/<name>.ipynb
+  The version is either 'dev' for development or the version number (e.g., '1.2')
+#}
+{% set example_ipynb_repo_path = pagename.replace('auto_examples/', 'auto_examples/_notebooks/') + '.ipynb' %}
+{% set doc_version = doc_version|default('dev') %}
+
+<div class="sd-card sd-shadow-sm sd-mb-3">
+  <div class="sd-card-body" style="display:flex; flex-direction:column; align-items:center; text-align:center;">
+    <p class="sd-card-text sd-fs-5 sd-font-weight-bold sd-mb-2" style="margin-bottom:0.75rem;">Run this example</p>
+
+  {# Primary: open the generated notebook on Colab #}
+    <a class="sd-btn sd-btn-primary" style="display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:0.25rem; padding:0.5rem 0.75rem;" href="https://colab.research.google.com/github/braindecode/braindecode.github.io/blob/master/{{ doc_version }}/{{ example_ipynb_repo_path }}" target="_blank" rel="noopener">
+      <img alt="Open in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" style="vertical-align: middle; height: 20px;">
+    </a>
+
+  </div>
+</div>
+{% endif %}

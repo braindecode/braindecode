@@ -103,6 +103,7 @@ docs = [
     'openneuro-py',
     'plotly',
     'shap',
+    'nbformat',
 ]
 
 all = [
