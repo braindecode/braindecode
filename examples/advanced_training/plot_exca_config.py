@@ -49,6 +49,7 @@ warnings.simplefilter("ignore")
 
 
 class WindowedMOABBDatasetConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid")
     infra: exca.TaskInfra = exca.TaskInfra(
         folder=None,  # no disk caching
         cluster=None,  # local execution
@@ -112,6 +113,7 @@ from braindecode.models.config import BraindecodeModelConfig
 
 
 class TrainingConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid")
     infra: exca.TaskInfra = exca.TaskInfra(
         folder=".cache/",
         cluster=None,  # local execution
@@ -159,6 +161,7 @@ class TrainingConfig(pydantic.BaseModel):
 # load the trained model from the training config, and evaluate it on the validation data.
 #
 class EvaluationConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid")
     infra: exca.TaskInfra = exca.TaskInfra(
         folder=".cache/",
         cluster=None,  # local execution
