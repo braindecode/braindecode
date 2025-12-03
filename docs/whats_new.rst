@@ -48,6 +48,7 @@ Enhancements
 - Add automatically-generated pydantic models configs (:gh:`850` by `Pierre Guetschel`_ )
 - Refactor: standardized parameter names in transformer and LabRam modules (:gh:`850` by `José Mauricio`_)
 - Added a tutorial for temporal generalization (:gh:`857` by `Matthew Chen`_)
+- Including colab buttons to all tutorials (:gh:`861` by `Bruno Aristimunha`_ )
 - Adding example Pydantic and Exca (:gh:`858` by `Pierre Guetschel`_)
 
 API changes
