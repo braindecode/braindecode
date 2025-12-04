@@ -37,6 +37,7 @@ trains and evaluates different models on a motor-imagery dataset using Exca.
 #
 # Our first configuration class is related to the data. It will allow us to load and prepare the dataset.
 import warnings
+from typing import Annotated, Literal
 
 import exca
 import pydantic
@@ -50,6 +51,7 @@ warnings.simplefilter("ignore")
 
 class WindowedMOABBDatasetConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
+    dataset_type: Literal["moabb"] = "moabb"
     infra: exca.TaskInfra = exca.TaskInfra(
         folder=None,  # no disk caching
         cluster=None,  # local execution
@@ -87,6 +89,7 @@ class WindowedMOABBDatasetConfig(pydantic.BaseModel):
 
 class DatasetSplitConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
+    dataset_type: Literal["split"] = "split"
     dataset: WindowedMOABBDatasetConfig
     key: str
     by: str = "session"
@@ -95,6 +98,16 @@ class DatasetSplitConfig(pydantic.BaseModel):
         dataset = self.dataset.create_instance()
         splitted = dataset.split(self.by)
         return splitted[self.key]
+
+
+#################################################################
+# Finally, we define a union type for dataset configurations,
+# which can be either a ``WindowedMOABBDatasetConfig`` or a ``DatasetSplitConfig``.
+
+DatasetConfig = Annotated[
+    WindowedMOABBDatasetConfig | DatasetSplitConfig,
+    pydantic.Field(discriminator="dataset_type"),
+]
 
 
 #####################################################################
@@ -119,7 +132,7 @@ class TrainingConfig(pydantic.BaseModel):
         cluster=None,  # local execution
     )
     model: BraindecodeModelConfig
-    dataset: DatasetSplitConfig
+    train_dataset: DatasetConfig
     max_epochs: int = 50
     batch_size: int = 32
     lr: float = 0.001
@@ -128,7 +141,7 @@ class TrainingConfig(pydantic.BaseModel):
     @infra.apply
     def train(self) -> EEGClassifier:
         # Load training data
-        train_set = self.dataset.create_instance()
+        train_set = self.train_dataset.create_instance()
         train_y = train_set.get_metadata()["target"].to_numpy()
 
         # Instantiate the model
@@ -166,13 +179,13 @@ class EvaluationConfig(pydantic.BaseModel):
         folder=".cache/",
         cluster=None,  # local execution
     )
-    dataset: DatasetSplitConfig
+    test_dataset: DatasetConfig
     trainer: TrainingConfig
 
     @infra.apply
     def evaluate(self) -> float:
         # Load validation data
-        valid_set = self.dataset.create_instance()
+        valid_set = self.test_dataset.create_instance()
         test_y = valid_set.get_metadata()["target"].to_numpy()
 
         # Load trained model
@@ -253,9 +266,9 @@ dataset_cfg = WindowedMOABBDatasetConfig(subject_id=1)
 train_dataset_cfg = DatasetSplitConfig(dataset=dataset_cfg, key="0train")
 test_dataset_cfg = DatasetSplitConfig(dataset=dataset_cfg, key="1test")
 
-train_cfg = TrainingConfig(model=model_cfg, dataset=train_dataset_cfg)
+train_cfg = TrainingConfig(model=model_cfg, train_dataset=train_dataset_cfg)
 
-eval_cfg = EvaluationConfig(trainer=train_cfg, dataset=test_dataset_cfg)
+eval_cfg = EvaluationConfig(trainer=train_cfg, test_dataset=test_dataset_cfg)
 
 
 #################################################################
