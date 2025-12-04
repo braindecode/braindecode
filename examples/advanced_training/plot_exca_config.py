@@ -354,7 +354,7 @@ print(f"Training took {t1 - t0:0.2f} seconds")
 #
 
 train_cfg = TrainingConfig(
-    model=EEGNetConfig(**signal_kwargs), dataset=train_dataset_cfg
+    model=EEGNetConfig(**signal_kwargs), train_dataset=train_dataset_cfg
 )
 
 t0 = time.time()
@@ -419,9 +419,13 @@ results = []
 for model_cfg in model_cfg_list:
     for seed in [1, 2, 3]:
         train_cfg = TrainingConfig(
-            model=model_cfg, dataset=train_dataset_cfg, max_epochs=10, lr=0.1, seed=seed
+            model=model_cfg,
+            train_dataset=train_dataset_cfg,
+            max_epochs=10,
+            lr=0.1,
+            seed=seed,
         )
-        eval_cfg = EvaluationConfig(trainer=train_cfg, dataset=test_dataset_cfg)
+        eval_cfg = EvaluationConfig(trainer=train_cfg, test_dataset=test_dataset_cfg)
 
         # log configuration
         row = flatten_nested_dict(
@@ -451,9 +455,13 @@ results = []
 for model_cfg in model_cfg_list:
     for seed in [1, 2, 3]:
         train_cfg = TrainingConfig(
-            model=model_cfg, dataset=train_dataset_cfg, max_epochs=10, lr=0.1, seed=seed
+            model=model_cfg,
+            train_dataset=train_dataset_cfg,
+            max_epochs=10,
+            lr=0.1,
+            seed=seed,
         )
-        eval_cfg = EvaluationConfig(trainer=train_cfg, dataset=test_dataset_cfg)
+        eval_cfg = EvaluationConfig(trainer=train_cfg, test_dataset=test_dataset_cfg)
 
         # log configuration
         row = flatten_nested_dict(
