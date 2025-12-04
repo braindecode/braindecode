@@ -210,6 +210,9 @@ class EvaluationConfig(pydantic.BaseModel):
 # Instantiating the configurations
 # ------------------------------
 #
+# Instantiation option 1: from class constructors
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
 # Now that our configuration classes are defined, we can instantiate them.
 #
 # We will start with the model configuration.
@@ -272,6 +275,50 @@ eval_cfg = EvaluationConfig(trainer=train_cfg, test_dataset=test_dataset_cfg)
 
 
 #################################################################
+# Instantiation option 2: from nested dictionaries or JSON files
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# Alternatively, we can also instantiate the configurations from nested dictionaries or JSON files.
+# This can be useful when loading configurations from external sources.
+# Suppose we have the following JSON configuration for our evaluation.
+# We can load it as a nested dictionary using the ``json`` module:
+import json
+
+JSON_CFG = """{
+    "trainer": {
+        "model": {
+            "model_name_": "EEGNet",
+            "n_times": 1000,
+            "n_chans": 26,
+            "n_outputs": 4
+        },
+        "train_dataset": {
+            "dataset_type": "split",
+            "dataset": {"subject_id": 1},
+            "key": "0train"
+        }
+    },
+    "test_dataset": {
+        "dataset_type": "split",
+        "dataset": {"subject_id": 1},
+        "key": "1test"
+    }
+}"""
+NESTED_DICT_CFG = json.loads(JSON_CFG)
+print(NESTED_DICT_CFG)
+
+###############################################################
+# We can instantiate the evaluation configuration from the nested dictionary
+# using the ``model_validate()`` method of Pydantic,
+# and check that it is identical to the one we created using the class constructors:
+
+eval_cfg_from_dict = EvaluationConfig.model_validate(NESTED_DICT_CFG)
+assert eval_cfg_from_dict == eval_cfg
+
+#################################################################
+# Serializing the experiment configuration
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
 # To serialize the experiment's configuration, we can take advantage of Exca's ``config()`` method, which is similar to Pydantic's ``model_dump()`` method but will ensure that an experiment has a unique identifier (UID).
 # In particular, it will also include the ``"model_name_"`` field, which will allow us to distinguish between different model configurations later on.
 print(eval_cfg.infra.config(uid=True, exclude_defaults=True))
