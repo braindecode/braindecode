@@ -41,12 +41,16 @@ from typing import Annotated, Literal
 
 import exca
 import pydantic
+from moabb.datasets.utils import dataset_list
 
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.preprocessing import create_windows_from_events
 
 warnings.simplefilter("ignore")
+
+# The list of available MOABB datasets:
+DATASET_NAMES = tuple(ds.__name__ for ds in dataset_list)
 
 
 class WindowedMOABBDatasetConfig(pydantic.BaseModel):
@@ -57,7 +61,7 @@ class WindowedMOABBDatasetConfig(pydantic.BaseModel):
         cluster=None,  # local execution
         keep_in_ram=True,
     )
-    dataset_name: str = "BNCI2014_001"
+    dataset_name: Literal[DATASET_NAMES] = "BNCI2014_001"
     subject_id: list[int] | int | None = None
     window_size_seconds: float = 4.0
     overlap_seconds: float = 0.0
