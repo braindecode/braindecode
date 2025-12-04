@@ -79,7 +79,9 @@ class WindowedMOABBDatasetConfig(pydantic.BaseModel):
 #
 # We can see that the config has an ``infra: exca.TaskInfra`` attribute,
 # and a method decorated with ``@infra.apply``.
-# This means that, when called, exca will cache the result of this method (here, the cache is kept in RAM).
+# This means that, when called, exca will cache the result of this method.
+# Here, the cache is kept in RAM for simplicity (``folder=None``), but in a real experiment,
+# you would typically want to cache the results on disk, as shown in the training config.
 # If the method is called again with the same configuration, the cached results will be returned instead of re-running the method.
 # This allows for easy and efficient experimentation.
 #
