@@ -1,5 +1,6 @@
 # Authors: Meta Platforms, Inc. and affiliates (original)
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (Braindecode adaptation)
+#          Hubert Banville <hubertjb@meta.com> (Braindecode adaptation and Review)
 #
 # License: Attribution-NonCommercial 4.0 International
 
@@ -322,7 +323,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
         encoder_dims = [input_channels] + [
             int(round(hidden_dim * growth**k)) for k in range(depth)
         ]
-        decoder_input_dim = encoder_dims[-1]
+        in_channels_conv = encoder_dims[-1]
 
         # Configure activation function based on gelu parameter
         if gelu:
@@ -356,9 +357,10 @@ class BrainModule(EEGModuleMixin, nn.Module):
         # Decoder outputs directly to n_outputs (or to intermediate dims if linear_out)
         if not linear_out:
             encoder_params["activation_on_last"] = False
-            decoder_dims[-1] = self.n_outputs
+            in_channels_conv = self.n_outputs
 
-        self.decoder = _ConvSequence(decoder_dims, decode=True, **encoder_params)
+
+        self.decoder = _ConvSequence(in_channels_conv, decode=True, **encoder_params)
 
         # Final layer: combine output conv, pooling, and squeezing for classification
         # This is a named module for compatibility with test_model_integration_full_last_layer
@@ -367,13 +369,13 @@ class BrainModule(EEGModuleMixin, nn.Module):
         if linear_out:
             if complex_out:
                 final_modules["final_conv"] = nn.Sequential(
-                    nn.Conv1d(decoder_dims[-1], 2 * decoder_dims[-1], 1),
+                    nn.Conv1d(in_channels_conv, 2 * in_channels_conv, 1),
                     final_activation(),
-                    nn.Conv1d(2 * decoder_dims[-1], self.n_outputs, 1),
+                    nn.Conv1d(2 * in_channels_conv, self.n_outputs, 1),
                 )
             else:
                 final_modules["final_conv"] = nn.Conv1d(
-                    decoder_dims[-1], self.n_outputs, 1
+                    in_channels_conv, self.n_outputs, 1
                 )
 
         # Global pooling layer for classification tasks
