@@ -52,7 +52,7 @@ from braindecode.models import (
     TSception,
     USleep,
 )
-from braindecode.models.simpleconv import _LayerScale
+from braindecode.models.brainmodule import _LayerScale
 from braindecode.util import set_random_seeds
 
 

@@ -17,20 +17,19 @@ from torch import nn
 from torch.nn import functional as F
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.attention import LocalSelfAttention
 from braindecode.modules.layers import SubjectLayers
 
-__all__ = ["SimpleConv"]
+__all__ = ["BrainModule"]
 
 
-class SimpleConv(EEGModuleMixin, nn.Module):
-    r"""SimpleConv from the Brain Module [brainmagik]_.
+class BrainModule(EEGModuleMixin, nn.Module):
+    r"""BrainModule from the Brain Module [brainmagik]_, also known as SimpleConv.
 
-    :bdg-secondary:`Recurrent` :bdg-info:`Small Attention` :bdg-success:`Convolution`
+    :bdg-success:`Convolution`
 
     .. figure:: ../_static/model/simpleconv.png
         :align: center
-        :alt: SimpleConv Architecture
+        :alt: BrainModule Architecture
         :width: 1000px
 
     Parameters
@@ -53,18 +52,6 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         Improves receptive field. Note: requires odd kernel if > 1.
     dilation_period : int, optional
         Reset dilation to 1 every N layers. Useful to prevent dilation explosion.
-    lstm_layers : int, default=0
-        Number of LSTM layers. If 0, no LSTM is used.
-    lstm_dropout : float, default=0.0
-        Dropout probability for LSTM layers.
-    flip_lstm : bool, default=False
-        If True, LSTM processes the sequence backward then flips output.
-    bidirectional_lstm : bool, default=False
-        If True, LSTM is bidirectional. Reduces hidden size to keep output dim constant.
-    attention_layers : int, default=0
-        Number of attention layers to add after LSTM. If 0, no attention.
-    attention_heads : int, default=4
-        Number of attention heads (must divide hidden_dim evenly).
     conv_dropout : float, default=0.0
         Dropout probability for convolutional layers.
     dropout_input : float, default=0.0
@@ -181,14 +168,6 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         growth: float = 1.0,
         dilation_growth: int = 1,
         dilation_period: int | None = None,
-        # LSTM from DualPathRNN submodule
-        lstm_layers: int = 0,
-        lstm_drop_prob: float = 0.0,
-        flip_lstm: bool = False,
-        bidirectional_lstm: bool = False,
-        # Attention
-        attention_layers: int = 0,
-        attention_heads: int = 4,
         # Regularization
         conv_drop_prob: float = 0.0,
         dropout_input: float = 0.0,
@@ -252,9 +231,6 @@ class SimpleConv(EEGModuleMixin, nn.Module):
             stride=stride,
             growth=growth,
             dilation_growth=dilation_growth,
-            attention_heads=attention_heads,
-            lstm_layers=lstm_layers,
-            attention_layers=attention_layers,
             initial_linear=initial_linear,
             initial_depth=initial_depth,
             layer_scale=layer_scale,
@@ -273,8 +249,6 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         self.growth = growth
         self.dilation_growth = dilation_growth
         self.dilation_period = dilation_period
-        self.lstm_layers = lstm_layers
-        self.attention_layers = attention_layers
         self.skip = skip
         self.post_skip = post_skip
         self.layer_scale = layer_scale
@@ -350,11 +324,6 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         ]
         decoder_input_dim = encoder_dims[-1]
 
-        # LSTM may expand dimension
-        lstm_hidden = decoder_input_dim
-        if lstm_layers > 0:
-            lstm_hidden = decoder_input_dim
-
         # Configure activation function based on gelu parameter
         if gelu:
             activation_fn = nn.GELU
@@ -383,28 +352,6 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         )
 
         self.encoder = _ConvSequence(encoder_dims, **encoder_params)
-
-        # Build LSTM (optional)
-        self.lstm = None
-        if lstm_layers > 0:
-            self.lstm = _LSTM(
-                input_size=decoder_input_dim,
-                hidden_size=lstm_hidden,
-                dropout=lstm_drop_prob,
-                num_layers=lstm_layers,
-                bidirectional=bidirectional_lstm,
-            )
-            self._flip_lstm = flip_lstm
-
-        # Build attention layers (optional)
-        self.attentions = nn.ModuleList()
-        for _ in range(attention_layers):
-            self.attentions.append(
-                LocalSelfAttention(lstm_hidden, heads=attention_heads)
-            )
-
-        # Build decoder
-        decoder_dims = [int(round(lstm_hidden / growth**k)) for k in range(depth + 1)]
 
         # Decoder outputs directly to n_outputs (or to intermediate dims if linear_out)
         if not linear_out:
@@ -546,21 +493,6 @@ class SimpleConv(EEGModuleMixin, nn.Module):
         # Encode
         encoded = self.encoder(x)
 
-        # Optional LSTM
-        if self.lstm is not None:
-            # LSTM expects (time, batch, features)
-            encoded = encoded.permute(2, 0, 1)
-            if self._flip_lstm:
-                encoded = encoded.flip([0])
-            encoded, _ = self.lstm(encoded)
-            if self._flip_lstm:
-                encoded = encoded.flip([0])
-            encoded = encoded.permute(1, 2, 0)
-
-        # Optional attention
-        for attention in self.attentions:
-            encoded = encoded + attention(encoded)
-
         # Decode
         decoded = self.decoder(encoded)
 
@@ -691,57 +623,6 @@ class _LayerScale(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return (self.boost * self.scale[:, None]) * x
-
-
-class _LSTM(nn.Module):
-    """Wrapper for LSTM that normalizes output dimension for bidirectional mode.
-
-    If bidirectional, LSTM output is linearly projected to hidden_size so
-    downstream layers see consistent dimensions.
-    """
-
-    def __init__(
-        self,
-        input_size: int,
-        hidden_size: int,
-        num_layers: int,
-        dropout: float,
-        bidirectional: bool,
-    ):
-        super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            dropout=dropout,
-            bidirectional=bidirectional,
-        )
-        self.linear = None
-        if bidirectional:
-            self.linear = nn.Linear(2 * hidden_size, hidden_size)
-
-    def forward(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        """
-        Forward pass.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input of shape (time, batch, input_size).
-
-        Returns
-        -------
-        output : torch.Tensor
-            Output of shape (time, batch, hidden_size).
-        (h, c) : tuple
-            LSTM hidden state and cell state.
-        """
-        x, (h, c) = self.lstm(x)
-        if self.linear is not None:
-            x = self.linear(x)
-        return x, (h, c)
 
 
 def _pad_multiple(x: torch.Tensor, base: int) -> torch.Tensor:
@@ -927,9 +808,6 @@ def _validate_simpleconv_params(
     stride: int,
     growth: float,
     dilation_growth: int,
-    attention_heads: int,
-    lstm_layers: int,
-    attention_layers: int,
     initial_linear: int,
     initial_depth: int,
     layer_scale: float | None,
@@ -962,12 +840,6 @@ def _validate_simpleconv_params(
         Channel size multiplier per layer.
     dilation_growth : int
         Dilation multiplier per layer.
-    attention_heads : int
-        Number of attention heads.
-    lstm_layers : int
-        Number of LSTM layers.
-    attention_layers : int
-        Number of attention layers.
     initial_linear : int
         Number of initial linear layer output channels.
     initial_depth : int
@@ -1001,9 +873,6 @@ def _validate_simpleconv_params(
         (growth <= 0, "growth must be > 0"),
         (dilation_growth < 1, "dilation_growth must be >= 1"),
         (dilation_growth > 1 and kernel_size % 2 == 0, "dilation_growth > 1 requires odd kernel_size"),
-        (attention_heads < 1, "attention_heads must be >= 1"),
-        (lstm_layers < 0, "lstm_layers must be >= 0"),
-        (attention_layers < 0, "attention_layers must be >= 0"),
         (initial_linear < 0, "initial_linear must be >= 0"),
         (initial_depth < 1, "initial_depth must be >= 1"),
         (initial_depth > 1 and initial_linear == 0, "initial_depth > 1 requires initial_linear > 0"),
