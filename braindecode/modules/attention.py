@@ -758,3 +758,4 @@ class MultiHeadAttention(nn.Module):
         out = self.rearrange_unstack(out)
         out = self.projection(out)
         return out
+
