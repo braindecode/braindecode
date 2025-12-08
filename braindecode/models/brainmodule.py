@@ -359,7 +359,6 @@ class BrainModule(EEGModuleMixin, nn.Module):
             encoder_params["activation_on_last"] = False
             in_channels_conv = self.n_outputs
 
-
         self.decoder = _ConvSequence(in_channels_conv, decode=True, **encoder_params)
 
         # Final layer: combine output conv, pooling, and squeezing for classification
