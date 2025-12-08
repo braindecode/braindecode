@@ -907,10 +907,3 @@ def _validate_simpleconv_params(
     for condition, message in validations:
         if condition:
             raise ValueError(message)
-
-if __name__ == "__main__":
-    module = BrainModule(n_chans=32, n_outputs=10, n_times=1000)
-
-    x = torch.randn(4, 32, 1000)
-    out = module(x)
-    print(out.shape)  # Expected: (4, 10, 1000)
