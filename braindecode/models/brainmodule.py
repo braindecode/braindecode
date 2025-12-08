@@ -159,7 +159,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
         sfreq: float | None = None,
         chs_info: list[dict] | None = None,
         input_window_seconds: float | None = None,
-        ######## 
+        ########
         # Model related parameters
         # Architecture
         hidden_dim: int = 64,
@@ -357,9 +357,9 @@ class BrainModule(EEGModuleMixin, nn.Module):
         # Decoder outputs directly to n_outputs (or to intermediate dims if linear_out)
         if not linear_out:
             encoder_params["activation_on_last"] = False
-            in_channels_conv = self.n_outputs
+            encoder_dims[-1] = self.n_outputs
 
-        self.decoder = _ConvSequence(in_channels_conv, decode=True, **encoder_params)
+        self.decoder = _ConvSequence(encoder_dims, decode=True, **encoder_params)
 
         # Final layer: combine output conv, pooling, and squeezing for classification
         # This is a named module for compatibility with test_model_integration_full_last_layer
@@ -866,21 +866,36 @@ def _validate_simpleconv_params(
         If any parameter combination is invalid.
     """
     validations = [
-        (subject_layers and subject_dim == 0, "subject_layers=True requires subject_dim > 0"),
+        (
+            subject_layers and subject_dim == 0,
+            "subject_layers=True requires subject_dim > 0",
+        ),
         (complex_out and not linear_out, "complex_out=True requires linear_out=True"),
         (depth < 1, "depth must be >= 1"),
         (kernel_size <= 0, "kernel_size must be > 0"),
         (stride < 1, "stride must be >= 1"),
         (growth <= 0, "growth must be > 0"),
         (dilation_growth < 1, "dilation_growth must be >= 1"),
-        (dilation_growth > 1 and kernel_size % 2 == 0, "dilation_growth > 1 requires odd kernel_size"),
+        (
+            dilation_growth > 1 and kernel_size % 2 == 0,
+            "dilation_growth > 1 requires odd kernel_size",
+        ),
         (initial_linear < 0, "initial_linear must be >= 0"),
         (initial_depth < 1, "initial_depth must be >= 1"),
-        (initial_depth > 1 and initial_linear == 0, "initial_depth > 1 requires initial_linear > 0"),
+        (
+            initial_depth > 1 and initial_linear == 0,
+            "initial_depth > 1 requires initial_linear > 0",
+        ),
         (layer_scale is not None and layer_scale <= 0, "layer_scale must be > 0"),
         (post_skip and not skip, "post_skip=True requires skip=True"),
-        (not 0.0 <= channel_dropout_prob <= 1.0, "channel_dropout_prob must be in [0.0, 1.0]"),
-        (channel_dropout_type is not None and channel_dropout_prob == 0.0, "channel_dropout_type requires channel_dropout_prob > 0"),
+        (
+            not 0.0 <= channel_dropout_prob <= 1.0,
+            "channel_dropout_prob must be in [0.0, 1.0]",
+        ),
+        (
+            channel_dropout_type is not None and channel_dropout_prob == 0.0,
+            "channel_dropout_type requires channel_dropout_prob > 0",
+        ),
         (glu < 0, "glu must be >= 0"),
         (glu_context < 0, "glu_context must be >= 0"),
         (glu_context > 0 and glu == 0, "glu_context > 0 requires glu > 0"),

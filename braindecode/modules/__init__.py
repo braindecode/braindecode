@@ -10,7 +10,6 @@ from .attention import (
     EncNet,
     GatherExcite,
     GSoP,
-    LocalSelfAttention,
     MultiHeadAttention,
     SqueezeAndExcitation,
 )
@@ -59,7 +58,6 @@ __all__ = [
     "GatherExcite",
     "GSoP",
     "MultiHeadAttention",
-    "LocalSelfAttention",
     "SqueezeAndExcitation",
     "MLP",
     "FeedForwardBlock",

@@ -8,11 +8,11 @@ from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
 from .bendr import BENDR
 from .biot import BIOT
+from .brainmodule import BrainModule
 from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
-from .brainmodule import SimpleConv
 from .eegconformer import EEGConformer
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
