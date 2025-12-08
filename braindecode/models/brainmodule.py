@@ -355,11 +355,13 @@ class BrainModule(EEGModuleMixin, nn.Module):
         self.encoder = _ConvSequence(encoder_dims, **encoder_params)
 
         # Decoder outputs directly to n_outputs (or to intermediate dims if linear_out)
+        # Reverse the channel dimensions for the decoder (goes from deep to shallow)
+        decoder_dims = list(reversed(encoder_dims))
         if not linear_out:
             encoder_params["activation_on_last"] = False
-            encoder_dims[-1] = self.n_outputs
+            decoder_dims[-1] = self.n_outputs
 
-        self.decoder = _ConvSequence(encoder_dims, decode=True, **encoder_params)
+        self.decoder = _ConvSequence(decoder_dims, decode=True, **encoder_params)
 
         # Final layer: combine output conv, pooling, and squeezing for classification
         # This is a named module for compatibility with test_model_integration_full_last_layer
@@ -905,3 +907,10 @@ def _validate_simpleconv_params(
     for condition, message in validations:
         if condition:
             raise ValueError(message)
+
+if __name__ == "__main__":
+    module = BrainModule(n_chans=32, n_outputs=10, n_times=1000)
+
+    x = torch.randn(4, 32, 1000)
+    out = module(x)
+    print(out.shape)  # Expected: (4, 10, 1000)
