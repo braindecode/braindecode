@@ -148,6 +148,14 @@ net = EEGClassifier(
 # wrapper will automatically infer them, along with some other signal-related parameters,
 # from the input data at training time.
 #
+# Under the hood, the wrapper uses the :func:`braindecode.datautil.infer_signal_properties` function
+# to extract these parameters:
+from braindecode.datautil import infer_signal_properties
+
+sig_props = infer_signal_properties(epochs, y, mode="classification")
+print(f"Inferred signal properties:\n{sig_props}")
+
+#################################################################
 # Now that we have our model wrapped in a scikit-learn-compatible classifier,
 # we can train it by simply calling the ``fit`` method:
 
@@ -159,7 +167,7 @@ net.fit(epochs, y)
 print(net.module_)
 
 ######################################################################
-# And we can see that all the following parameters were automatically inferred
+# And we can see that all the following parameters were indeed automatically inferred
 # from the training data:
 
 print(

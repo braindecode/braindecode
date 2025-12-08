@@ -61,7 +61,7 @@ dependencies = [
     'wfdb',
     'linear_attention_transformer',
     'docstring_inheritance',
-    "rotary_embedding_torch",
+    'rotary_embedding_torch',
 ]
 [project.urls]
 homepage = "https://braindecode.org"
@@ -70,7 +70,7 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.4.2"]
-eegprep = ["eegprep @ git+https://github.com/sccn/eegprep.git", "eeglabio"]
+eegprep = ["eegprep[eeglabio]>=0.2.23"]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
 tests = [
     'pytest',
@@ -80,7 +80,7 @@ tests = [
     'mypy'
 ]
 typing = [
-    'pydantic>=2.0,<3.0',
+    'exca==0.4',
     'numpydantic>=1.7',
 ]
 
@@ -102,6 +102,8 @@ docs = [
     'pre-commit',
     'openneuro-py',
     'plotly',
+    'shap',
+    'nbformat',
 ]
 
 all = [
