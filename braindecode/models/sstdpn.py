@@ -17,7 +17,7 @@ from braindecode.models.base import EEGModuleMixin
 class SSTDPN(EEGModuleMixin, nn.Module):
     r"""SSTDPN from Can Han et al (2025) [Han2025]_.
 
-    :bdg-info:`Small Attention` :bdg-success:`Convolution`
+    :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`
 
     .. figure:: https://raw.githubusercontent.com/hancan16/SST-DPN/refs/heads/main/figs/framework.png
         :align: center

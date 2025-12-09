@@ -10,7 +10,7 @@ from braindecode.models.base import EEGModuleMixin
 class BENDR(EEGModuleMixin, nn.Module):
     """BENDR (BErt-inspired Neural Data Representations) from Kostas et al. (2021) [bendr]_.
 
-    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model`
+    :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
 
     .. figure:: https://www.frontiersin.org/files/Articles/653659/fnhum-15-653659-HTML/image_m/fnhum-15-653659-g001.jpg
         :align: center

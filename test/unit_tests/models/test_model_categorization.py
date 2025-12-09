@@ -15,11 +15,11 @@ from braindecode.models.util import models_dict
 CATEGORIZATION_BADGES = {
     "Convolution": ":bdg-success:`Convolution`",
     "Recurrent": ":bdg-secondary:`Recurrent`",
-    "Small Attention": ":bdg-info:`Small Attention`",
+    "Attention/Transformer": ":bdg-info:`Attention/Transformer`",
     "Filterbank": ":bdg-primary:`Filterbank`",
     "FilterBank": ":bdg-primary:`Filterbank`",  # Handle both cases
     "Interpretability": ":bdg-warning:`Interpretability`",
-    "Large Brain Model": ":bdg-danger:`Large Brain Model`",
+    "Foundation Model": ":bdg-danger:`Foundation Model`",
     "Channel": ":bdg-dark-line:`Channel`",
 }
 
@@ -113,8 +113,8 @@ def test_badge_format_consistency():
         for badge in found_badges:
             # Only check categorization badges (ignore other potential badges)
             if any(cat_name.lower() in badge.lower() for cat_name in [
-                "convolution", "recurrent", "attention", "filterbank",
-                "interpretability", "large brain model", "channel"
+                "convolution", "recurrent", "attention", "transformer", "filterbank",
+                "interpretability", "foundation model", "channel"
             ]):
                 assert badge in valid_badges, (
                     f"{model_name} has invalid badge format: {badge}\n"

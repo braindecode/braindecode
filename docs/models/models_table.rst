@@ -108,10 +108,10 @@ We are continually expanding this collection and welcome contributions! If you h
     /* --- Palette assign -------------------------------------------------- */
     function applyTagPalette(ctx) {
       var map = {
-        "Convolution":"tag-conv","Recurrent":"tag-recurrent","Small Attention":"tag-smallattn",
+        "Convolution":"tag-conv","Recurrent":"tag-recurrent","Attention/Transformer":"tag-smallattn",
         "Filterbank":"tag-filterbank","Interpretability":"tag-interp",
         "SPD":"tag-spd","Riemannian":"tag-spd",
-        "Large Brain Model":"tag-lbm","Graph Neural Network":"tag-gnn","Channel":"tag-channel"
+        "Foundation Model":"tag-lbm","Graph Neural Network":"tag-gnn","Channel":"tag-channel"
       };
       $(ctx).find('.tag').each(function () {
         var t = $(this).text().trim();
