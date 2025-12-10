@@ -4,34 +4,62 @@ Authors: Jonathan Lys (jonathan.lys@imt-atlantique.org)
 License: BSD 3 clause
 """
 
-from torch import nn
-from braindecode.models.base import EEGModuleMixin
-
+import json
 import math
 from typing import Union
 
+import requests
 import torch
 import torch.nn.functional as F
 from einops import rearrange
 from packaging import version
+from torch import nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
-try:
-    import flash_attn  # type: ignore
-
-    FLASH_AVALIABLE = True
-except ImportError:
-    FLASH_AVALIABLE = False
-    print(
-        "flash_attn not found, install it with `pip install flash_attn` if you want to use it"
-    )
+from braindecode.models.base import EEGModuleMixin
 
 
 class REVE(EEGModuleMixin, nn.Module):
-    """
-    REVE (Representation for EEG with versatile embeddings).
+    r"""
+    REVE (Representation for EEG with versatile embeddings) model from El Ouahidi et al. (2025) [reve]_.
 
-    Model described in [elouahidi2025reve]_.
+    :bdg-danger:`Large Brain Model`
+
+    This implementation is based on the one available at https://huggingface.co/brain-bzh/reve-base (although it is gated).
+
+    .. figure:: https://brain-bzh.github.io/reve/static/images/architecture.png
+        :align: center
+        :alt:  REVE Training pipeline overview
+        :width: 680px
+
+    REVE tokenizes EEG signal into latent patches that get fed into a Transformer encoder model.
+    The model uses a 4D positional encoding to contextualize the patches in space and time.
+
+    .. rubric:: Macro Components
+
+    - ``REVE.tokenization`` **patch extraction**
+
+      *Operations.* The EEG signal is split into overlapping patches along the time dimension,
+      generating :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + \mathbbold{1} \left[ (T - w) \bmod (w - o) \neq 0 \right]` patches of size :math:`w` with overlap :math:`o`, where :math:`T` is the length of the signal.
+
+    - ``REVE.4DPE`` **4D positional embedding**
+
+        *Operations.* The 4D positional embedding module combines a Fourier-based positional embedding and an MLP-based positional embedding.
+        The Fourier-based embedding encodes the 3D spatial positions of the EEG channels along with the temporal position of each patch using sinusoidal functions across multiple frequencies.
+        The MLP-based embedding processes the 4D positions through a small MLP to capture additional positional information.
+        The outputs of both embeddings are summed and normalized to produce the final 4D positional embedding.
+
+    - ``REVE.transformer`` **Transformer encoder**
+
+        *Operations.* The Transformer encoder consists of multiple layers of multi-head self-attention and feed-forward neural networks.
+        The chosen components are: GEGLU activation, RMSNorm normalization, and Flash Attention for efficient computation.
+        If Flash Attention is not available, it falls back to a standard scaled dot-product attention implementation.
+
+    - ``REVE.final_layer`` **Final prediction layer**
+
+        *Operations.* A linear layer that maps the flattened output of the Transformer encoder to the desired output shape for the specific EEG task.
+        We also prepend a Layer Norm for stability.
+
 
     Parameters
     ----------
@@ -58,10 +86,9 @@ class REVE(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [elouahidi2025reve] Yassine El Ouahidi · Jonathan Lys · Philipp Thölke · Nicolas Farrugia · Bastien Pasdeloup · Vincent Gripon · Karim Jerbi · Giulia Lioi (2025).
-       REVE: A Foundation Model for EEG - Adapting to Any Setup with Large-Scale Pretraining on 25,000 Subjects.
-       NeurIPS 2025.
-       Online: `https://arxiv.org/abs/2510.21585`
+    .. [reve] El Ouahidi, Y., Lys, J., Thölke, P., Farrugia, N., Pasdeloup, B., Gripon, V., Jerbi, K. & Lioi, G. (2025).
+        REVE: A Foundation Model for EEG - Adapting to Any Setup with Large-Scale Pretraining on 25,000 Subjects. NeurIPS.
+        Online: `https://arxiv.org/abs/2510.21585`
     """
 
     def __init__(
@@ -83,6 +110,7 @@ class REVE(EEGModuleMixin, nn.Module):
         noise_ratio=0.0025,
         patch_size=200,
         patch_overlap=20,
+        attention_pooling: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -92,66 +120,79 @@ class REVE(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        self.config = _ReveConfig(
-            embed_dim=embed_dim,
-            depth=depth,
-            heads=heads,
-            head_dim=head_dim,
-            mlp_dim_ratio=mlp_dim_ratio,
-            use_geglu=use_geglu,
-            freqs=freqs,
-            noise_ratio=noise_ratio,
-            patch_size=patch_size,
-            patch_overlap=patch_overlap,
-        )
 
-        self.embed_dim = self.config.embed_dim
-        self.freqs = self.config.freqs
-        self.patch_size = self.config.patch_size
-        self.overlap_size = self.config.patch_overlap
-        self.noise_ratio = self.config.noise_ratio
+        self.embed_dim = embed_dim
+        self.freqs = freqs
+        self.patch_size = patch_size
+        self.overlap_size = patch_overlap
+        self.noise_ratio = noise_ratio
+        self.depth = depth
+        self.heads = heads
+        self.head_dim = head_dim
+        self.mlp_dim_ratio = mlp_dim_ratio
+        self.use_geglu = use_geglu
 
-        self.transformer = TransformerBackbone(
-            dim=self.config.embed_dim,
-            depth=self.config.depth,
-            heads=self.config.heads,
-            head_dim=self.config.head_dim,
-            mlp_dim=int(self.config.embed_dim * self.config.mlp_dim_ratio),
-            geglu=self.config.use_geglu,
-        )
+        self.use_attention_pooling = attention_pooling
 
         self.to_patch_embedding = patch_embedding(self.embed_dim, self.patch_size)
+
         self.fourier4d = FourierEmb4D(self.embed_dim, freqs=self.freqs)
         self.mlp4d = mlp_pos_embedding(self.embed_dim)
-        self.ln = nn.LayerNorm(self.embed_dim)
+        self.ln = nn.LayerNorm(self.embed_dim)  # 4DPE module layernorm
 
-        self.final_layer = nn.Identity()
+        self.transformer = TransformerBackbone(
+            dim=self.embed_dim,
+            depth=self.depth,
+            heads=self.heads,
+            head_dim=self.head_dim,
+            mlp_dim=int(self.embed_dim * self.mlp_dim_ratio),
+            geglu=self.use_geglu,
+        )
+
+        final_dim = self._get_flattened_output_dim()
+        self.final_layer = nn.Sequential(
+            nn.Flatten(),
+            nn.LayerNorm(final_dim),
+            nn.Linear(final_dim, self.n_outputs),
+        )
 
         self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
 
-        self._position_bank = None
+        self._position_bank = RevePositionBank()
+
+    def _get_flattened_output_dim(self) -> int:
+        """Helper function to compute the flattened output dimension after the transformer."""
+
+        if self.use_attention_pooling:
+            return self.embed_dim
+
+        n_patches = math.ceil(
+            (self.n_times - self.patch_size) / (self.patch_size - self.overlap_size)
+        )
+
+        if (self.n_times - self.patch_size) % (
+            self.patch_size - self.overlap_size
+        ) == 0:
+            n_patches += 1
+
+        flat_dim = self.n_chans * n_patches * self.embed_dim
+        return flat_dim
 
     def get_positions(self, channel_names: list[str]) -> torch.Tensor:
+        """Fetch channel positions from the position bank.
+
+        Downloads and caches the position bank on first call.
+
+        Parameters
+        ----------
+        channel_names : list[str]
+            List of channel names for which to fetch positions.
+
+        Returns
+        -------
+        torch.Tensor
+            Tensor of shape (num_channels, 3) containing the (x, y, z) positions of the channels.
         """
-        Get the 3D positions for the given channel names using the REVE position bank.
-
-        Args:
-            channel_names (list[str]): List of channel names for which to retrieve positions.
-        Returns:
-            torch.Tensor: Tensor of shape (num_channels, 3) containing the (x, y, z) positions.
-        """
-
-        if self._position_bank is None:
-            try:
-                from transformers import AutoModel
-
-                self._position_bank = AutoModel.from_pretrained(
-                    "brain-bzh/reve-positions", trust_remote_code=True
-                )
-            except ImportError:
-                raise ImportError(
-                    "Please install transformers to use the REVE position bank: pip install transformers"
-                )
 
         return self._position_bank.forward(channel_names)
 
@@ -163,96 +204,94 @@ class REVE(EEGModuleMixin, nn.Module):
     ) -> Union[torch.Tensor, list[torch.Tensor]]:
         """
         Forward pass of the model.
-        Args:
-            eeg (torch.Tensor): Input EEG tensor of shape (batch_size, channels, sequence_length).
-            pos (torch.Tensor): Position tensor of shape (batch_size, channels, 3) representing (x, y, z) coordinates.
-            return_output (bool, optional): If True, returns the output from the transformer directly.
-                If False, applies the final layer and returns the processed output. Default is False.
+
+        Goes through the following steps:
+        1. Patch extraction from the EEG signal.
+        2. 4D positional embedding computation.
+        3. Transformer encoding.
+        4. Final layer processing (if `return_output` is False).
+
+        Parameters:
+        ----------
+        eeg : torch.Tensor
+            Input EEG tensor of shape (batch_size, channels, sequence_length).
+        pos : torch.Tensor
+            Position tensor of shape (batch_size, channels, 3) representing (x, y, z) coordinates.
+        return_output : bool, optional
+            If True, returns the output from the transformer directly.
+            If False, applies the final layer and returns the processed output. Default is False.
+
         Returns:
-            Union[torch.Tensor, list[torch.Tensor]]: The output tensor(s) from the model. If `return_output` is True,
-                returns the transformer output; otherwise, returns the output after the final layer.
+        -------
+        Union[torch.Tensor, list[torch.Tensor]]
+            The output tensor(s) from the model. If `return_output` is True,
+            returns the transformer output; otherwise, returns the output after the final layer.
         """
 
-        eeg = eeg.float()
         patches = eeg.unfold(
-            dimension=2, size=self.patch_size, step=self.patch_size - self.overlap_size
+            dimension=2,
+            size=self.patch_size,
+            step=self.patch_size - self.overlap_size,
         )
-        _b, c, h, _p = patches.shape
+        batch_size, channel, heights, _n_patches = patches.shape
 
-        pos = FourierEmb4D.add_time_patch(pos, h)
+        pos = FourierEmb4D.add_time_patch(pos, heights)
         pos_embed = self.ln(self.fourier4d(pos) + self.mlp4d(pos))
 
         x = (
             rearrange(
                 self.to_patch_embedding(patches),
                 "b c h e -> b (c h) e",
-                c=c,
-                h=h,
+                c=channel,
+                h=heights,
                 e=self.embed_dim,
             )
             + pos_embed
         )
         x = self.transformer(x, return_output)
+
         if return_output:
             return x
 
-        x = rearrange(x, "b (c h) e -> b c h e", b=_b, c=c, h=h, e=self.embed_dim)
+        x = rearrange(
+            x,
+            "b (c h) e -> b c h e",
+            b=batch_size,
+            c=channel,
+            h=heights,
+            e=self.embed_dim,
+        )
+
+        if self.use_attention_pooling:
+            x = self.attention_pooling(x)
+
         x = self.final_layer(x)
         return x
 
     def attention_pooling(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Apply attention pooling on the sequence dimension of x.
+        """Apply attention pooling on the sequence dimension of x.
 
-        Args:
-            x (torch.Tensor): Input tensor of shape (B, C, S, E), where B is the batch size,
-                              C is the number of channels, S is the sequence length,
-                              and E is the embedding dimension.
+        Parameters:
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (B, C, S, E), where B is the batch size,
+            C is the number of channels, S is the sequence length,
+            and E is the embedding dimension. Typically the output from the transformer.
         Returns:
-            torch.Tensor: Output tensor of shape (B, E) after attention pooling.
+        -------
+        torch.Tensor
+            Output tensor of shape (B, E) after attention pooling.
         """
 
-        b, c, s, e = x.shape
+        batch_size, _channels, _seq_len, _embed_dim = x.shape
         x = rearrange(x, "b c s e -> b (c s) e")  # (B, C*S, E)
-        query_output = self.cls_query_token.expand(b, -1, -1)  # (B, 1, E)
+        query_output = self.cls_query_token.expand(batch_size, -1, -1)  # (B, 1, E)
         attention_scores = torch.matmul(query_output, x.transpose(-1, -2)) / (
             self.embed_dim**0.5
         )  # (B, 1, C*S)
         attention_weights = torch.softmax(attention_scores, dim=-1)  # (B, 1, C*S)
         out = torch.matmul(attention_weights, x).squeeze(1)  # (B, E)
         return out
-
-
-# Configuration class for REVE
-
-
-class _ReveConfig:
-    model_type = "reve"
-
-    def __init__(
-        self,
-        embed_dim=512,
-        depth=22,
-        heads=8,
-        head_dim=64,
-        mlp_dim_ratio=2.66,
-        use_geglu=True,
-        freqs=4,
-        noise_ratio=0.0025,
-        patch_size=200,
-        patch_overlap=20,
-        **kwargs,
-    ):
-        self.embed_dim = embed_dim
-        self.depth = depth
-        self.heads = heads
-        self.head_dim = head_dim
-        self.mlp_dim_ratio = mlp_dim_ratio
-        self.use_geglu = use_geglu
-        self.freqs = freqs
-        self.noise_ratio = noise_ratio
-        self.patch_size = patch_size
-        self.patch_overlap = patch_overlap
 
 
 #################################################################################
@@ -334,41 +373,12 @@ class ClassicalAttention(nn.Module):
         return out
 
 
-class FlashAttention(nn.Module):
-    def __init__(self, num_heads: int):
-        super().__init__()
-        self.num_heads = num_heads
-
-    def forward(self, qkv: torch.Tensor) -> torch.Tensor:
-        batch_size, seq_len = qkv.shape[:2]
-
-        qkv = rearrange(
-            qkv, "b n (three h d) -> (b n) three h d", three=3, h=self.num_heads
-        )
-        cu_seqlens = torch.arange(
-            0, (batch_size + 1) * seq_len, seq_len, dtype=torch.int32, device=qkv.device
-        )
-
-        out = flash_attn.flash_attn_varlen_qkvpacked_func(
-            qkv,
-            cu_seqlens,
-            seq_len,  # max seq len
-            0.0,
-            causal=False,
-        )
-
-        out = rearrange(out, "(b n) h d -> b n (h d)", b=batch_size)
-        return out
-
-
 class Attention(nn.Module):
     """
-    Common API for both classical and flash attention
+    Multi-head self-attention layer with RMSNorm.
     """
 
-    def __init__(
-        self, dim: int, heads: int = 8, head_dim: int = 64, use_flash: bool = True
-    ):
+    def __init__(self, dim: int, heads: int = 8, head_dim: int = 64):
         super().__init__()
         inner_dim = head_dim * heads
         self.heads = heads
@@ -377,12 +387,7 @@ class Attention(nn.Module):
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
 
-        self.use_flash = use_flash
-        self.attend = (
-            FlashAttention(self.heads)
-            if use_flash
-            else ClassicalAttention(self.heads, use_sdpa=True)
-        )
+        self.attend = ClassicalAttention(self.heads, use_sdpa=True)
 
     def forward(self, x):
         x = self.norm(x)
@@ -397,6 +402,10 @@ class Attention(nn.Module):
 
 
 class TransformerBackbone(nn.Module):
+    """
+    Transformer backbone consisting of multiple layers of attention and feed-forward networks.
+    """
+
     def __init__(self, dim, depth, heads, head_dim, mlp_dim, geglu):
         super().__init__()
         self.dim = dim
@@ -409,7 +418,6 @@ class TransformerBackbone(nn.Module):
                             self.dim,
                             heads=heads,
                             head_dim=head_dim,
-                            use_flash=FLASH_AVALIABLE,
                         ),
                         FeedForward(self.dim, mlp_dim, geglu),
                     ]
@@ -419,7 +427,7 @@ class TransformerBackbone(nn.Module):
     def forward(
         self, x, return_out_layers=False
     ) -> Union[torch.Tensor, list[torch.Tensor]]:
-        out_layers = [x] if return_out_layers else None
+        out_layers = [x] if return_out_layers else []
         for attn, ff in self.layers:
             x = attn(x) + x
             x = ff(x) + x
@@ -483,13 +491,18 @@ class FourierEmb4D(nn.Module):
         """
         Expand the position tensor by adding a time dimension, handling batched data.
 
-        Args:
-        - pos (Tensor): Input tensor of shape (B, C, 3), where B is the batch size,
-        C is the number of channels, and 3 represents x, y, z.
-        - num_patches (int): The number of time patches.
+        Parameters:
+        ----------
+        pos : torch.Tensor
+            Input tensor of shape (B, C, 3), where B is the batch size,
+            C is the number of channels, and 3 represents x, y, z.
+        num_patches : int
+            The number of time patches.
 
         Returns:
-        - Tensor: Output tensor of shape (B, C * num_patches, 4), where each position is repeated with each time value.
+        -------
+        torch.Tensor
+            Output tensor of shape (B, C * num_patches, 4), where each position is repeated with each time value.
         """
         B, C, _ = pos.shape
         # Repeat each position for each time step
@@ -523,3 +536,33 @@ def mlp_pos_embedding(embed_dim):
         nn.Linear(4, embed_dim, bias=False), nn.GELU(), nn.LayerNorm(embed_dim)
     )
     return mlp_pos_embedding
+
+
+class RevePositionBank(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        url = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json"
+        response = requests.get(url)
+        config = json.loads(response.text)
+
+        self.position_names = config.keys()
+        self.mapping = {name: i for i, name in enumerate(self.position_names)}
+        positions = torch.tensor(list(config.values()))
+        self.register_buffer("embedding", positions)
+        assert self.embedding.shape == (len(self.mapping), 3)
+
+    def forward(self, channel_names: list[str]):
+        indices = [self.mapping[q] for q in channel_names if q in self.mapping]
+
+        if len(indices) < len(channel_names):
+            print(
+                f"Found {len(indices)} positions out of {len(channel_names)} channels"
+            )
+
+        indices = torch.tensor(indices, device=self.embedding.device)
+
+        return self.embedding[indices]
+
+    def get_all_positions(self):
+        return self.position_names
