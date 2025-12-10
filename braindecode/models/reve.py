@@ -543,7 +543,7 @@ class RevePositionBank(torch.nn.Module):
         super().__init__()
 
         url = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json"
-        response = requests.get(url)
+        response = requests.get(url, timeout=5)
         config = json.loads(response.text)
 
         self.position_names = config.keys()
