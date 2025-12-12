@@ -400,9 +400,9 @@ class _ConvSequence(nn.Module):
         super().__init__()
 
         if dilation_growth > 1:
-            assert (
-                kernel_size % 2 != 0
-            ), "Supports only odd kernel with dilation for now"
+            assert kernel_size % 2 != 0, (
+                "Supports only odd kernel with dilation for now"
+            )
 
         if activation is None:
             activation = nn.GELU
