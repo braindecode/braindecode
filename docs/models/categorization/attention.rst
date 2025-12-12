@@ -5,7 +5,7 @@
 .. _models_attention:
 
 |attention-icon| Attention/Transformer models
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. |attention-icon| image:: ../../_static/model_cat/attention.png
    :height: 56px

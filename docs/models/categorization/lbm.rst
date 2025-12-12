@@ -5,7 +5,7 @@
 .. _models_lbm:
 
 |lbm-icon| Foundation Models
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. |lbm-icon| image:: ../../_static/model_cat/lbm.png
    :height: 56px
