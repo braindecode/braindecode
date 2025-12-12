@@ -546,7 +546,7 @@ class RevePositionBank(torch.nn.Module):
         response = requests.get(url, timeout=5)
         config = json.loads(response.text)
 
-        self.position_names = config.keys()
+        self.position_names = list(config.keys())
         self.mapping = {name: i for i, name in enumerate(self.position_names)}
         positions = torch.tensor(list(config.values()))
         self.register_buffer("embedding", positions)

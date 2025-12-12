@@ -77,7 +77,8 @@ tests = [
     'pytest-cov',
     'codecov',
     'pytest_cases',
-    'mypy'
+    'mypy',
+    "transformers>=4.57.0",
 ]
 typing = [
     'exca==0.4',
