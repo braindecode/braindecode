@@ -26,7 +26,7 @@ from braindecode.modules.attention import (
 class AttentionBaseNet(EEGModuleMixin, nn.Module):
     """AttentionBaseNet from Wimpff M et al. (2023) [Martin2023]_.
 
-    :bdg-success:`Convolution` :bdg-info:`Small Attention`
+    :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
     .. figure:: https://content.cld.iop.org/journals/1741-2552/21/3/036020/revision2/jnead48b9f2_hr.jpg
         :align: center
