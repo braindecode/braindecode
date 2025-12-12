@@ -11,7 +11,7 @@ from braindecode.models.base import EEGModuleMixin
 class BIOT(EEGModuleMixin, nn.Module):
     """BIOT from Yang et al. (2023) [Yang2023]_
 
-    :bdg-danger:`Large Brain Model`
+    :bdg-danger:`Foundation Model`
 
     .. figure:: https://braindecode.org/dev/_static/model/biot.jpg
        :align: center
@@ -19,7 +19,7 @@ class BIOT(EEGModuleMixin, nn.Module):
 
     BIOT: Cross-data Biosignal Learning in the Wild.
 
-    BIOT is a large brain model for biosignal classification. It is
+    BIOT is a foundation model for biosignal classification. It is
     a wrapper around the `BIOTEncoder` and `ClassificationHead` modules.
 
     It is designed for N-dimensional biosignal data such as EEG, ECG, etc.

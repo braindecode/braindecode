@@ -16,7 +16,7 @@ from braindecode.models.base import EEGModuleMixin
 class PBT(EEGModuleMixin, nn.Module):
     r"""Patched Brain Transformer (PBT) model from Klein et al. (2025) [pbt]_.
 
-    :bdg-danger:`Large Brain Model`
+    :bdg-danger:`Foundation Model`
 
     This implementation was based in https://github.com/timonkl/PatchedBrainTransformer/
 
@@ -136,7 +136,7 @@ class PBT(EEGModuleMixin, nn.Module):
 
     .. warning::
 
-        **Important:** As the other Large Brain Models in Braindecode, :class:`PBT` is
+        **Important:** As the other Foundation Models in Braindecode, :class:`PBT` is
         designed for large-scale pre-training and fine-tuning. Training from
         scratch on small datasets may lead to suboptimal results. Cross-Dataset
         pre-training and subsequent fine-tuning is recommended to leverage the

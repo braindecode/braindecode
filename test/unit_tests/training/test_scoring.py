@@ -41,7 +41,7 @@ bnci_kwargs = {
 }
 
 
-class MockSkorchNet:
+class MockSkorchNet(sklearn.base.BaseEstimator):
     def __init__(self):
         self.device = "cpu"
         self.forward_iter = None
