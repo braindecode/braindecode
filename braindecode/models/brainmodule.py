@@ -4,13 +4,12 @@
 #
 # License: Attribution-NonCommercial 4.0 International
 
-"""Dilated Convolutional Decoder model adapted for Braindecode."""
+"""BrainModule: Dilated Convolutional Encoder for EEG classification."""
 
 from __future__ import annotations
 
 import math
 import typing as tp
-from functools import partial
 
 import torch
 import torchaudio as ta
@@ -24,7 +23,10 @@ __all__ = ["BrainModule"]
 
 
 class BrainModule(EEGModuleMixin, nn.Module):
-    r"""BrainModule from the Brain Module [brainmagik]_, also known as SimpleConv.
+    r"""BrainModule from Brain Module [brainmagik]_, also known as SimpleConv.
+
+    A dilated convolutional encoder for EEG classification, using residual
+    connections and optional GLU gating for improved expressivity.
 
     :bdg-success:`Convolution`
 
@@ -35,41 +37,33 @@ class BrainModule(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    hidden_dim : int, default=64
-        Base hidden dimension for convolutional layers. Actual layer sizes
-        grow or shrink according to the `growth` parameter.
-    depth : int, default=2
-        Number of encoder/decoder layer pairs.
-    kernel_size : int, default=5
-        Convolutional kernel size. Must be odd (e.g., 3, 5, 7) for dilation to work properly.
-        Default changed from 4 to 5 to support dilation_growth > 1.
-    stride : int, default=2
-        Stride for downsampling in encoder, upsampling in decoder.
+    hidden_dim : int, default=320
+        Hidden dimension for convolutional layers. Input is projected to this
+        dimension before the convolutional blocks.
+    depth : int, default=4
+        Number of convolutional blocks. Each block contains a dilated convolution
+        with batch normalization and activation, followed by a residual connection.
+    kernel_size : int, default=3
+        Convolutional kernel size. Must be odd for proper padding with dilation.
     growth : float, default=1.0
         Channel size multiplier: hidden_dim * (growth ** layer_index).
         Values > 1.0 grow channels deeper; < 1.0 shrink them.
-    dilation_growth : int, default=1
+        Note: growth != 1.0 disables residual connections between layers
+        with different channel sizes.
+    dilation_growth : int, default=2
         Dilation multiplier per layer (e.g., 2 means dilation doubles each layer).
-        Improves receptive field. Note: requires odd kernel if > 1.
-    dilation_period : int, optional
-        Reset dilation to 1 every N layers. Useful to prevent dilation explosion.
-    conv_dropout : float, default=0.0
+        Improves receptive field exponentially. Requires odd kernel_size.
+    dilation_period : int, default=5
+        Reset dilation to 1 every N layers. Prevents dilation from growing
+        too large and maintains local connectivity.
+    conv_drop_prob : float, default=0.0
         Dropout probability for convolutional layers.
     dropout_input : float, default=0.0
         Dropout probability applied to model input only.
-    batch_norm : bool, default=False
+    batch_norm : bool, default=True
         If True, apply batch normalization after each convolution.
-    relu_leakiness : float, default=0.0
-        Leakiness of LeakyReLU (0.0 = standard ReLU, >0 = leaky).
-    gelu : bool, default=False
-        If True, use GELU activation instead of ReLU/LeakyReLU.
-        Only applies when relu_leakiness is 0.0.
-    linear_out : bool, default=False
-        If True, apply a final 1x1 convolution to produce outputs.
-        Otherwise, the decoder directly outputs n_outputs channels.
-    complex_out : bool, default=False
-        If True and linear_out=True, apply a non-linearity between
-        intermediate and output convolutions.
+    activation : type[nn.Module], default=nn.GELU
+        Activation function class to use (e.g., nn.GELU, nn.ReLU, nn.ELU).
     n_subjects : int, default=200
         Number of unique subjects (for subject-specific pathways).
         Only used if subject_dim > 0.
@@ -91,42 +85,19 @@ class BrainModule(EEGModuleMixin, nn.Module):
     fft_complex : bool, default=True
         If True, keep complex spectrogram. If False, use power spectrogram.
         Only used when n_fft is not None.
-    initial_linear : int, default=0
-        Number of output channels for initial linear (1x1 conv) preprocessing layer.
-        If 0, no initial layer is applied. If > 0, applies one or more 1x1 convolutions
-        before the main encoder for feature conditioning and domain adaptation.
-    initial_depth : int, default=1
-        Number of 1x1 convolutional layers to apply before the encoder.
-        Only used if initial_linear > 0.
-    initial_nonlin : bool, default=False
-        If True, apply a non-linearity after the final initial layer.
-        Only used if initial_linear > 0.
-    layer_scale : float, optional
-        If not None, applies LayerScale to residual skip connections in encoder/decoder.
-        Helps stabilize training in deep networks with skip connections.
-        Typical value: 0.1. Higher values mean more aggressive scaling.
-    skip : bool, default=False
-        If True, adds skip (residual) connections in encoder and decoder blocks.
-        Skip connections help with gradient flow and training stability.
-    post_skip : bool, default=False
-        If True, applies skip connections after activation instead of before.
-        Only used if skip=True. Changes residual connection pattern.
     channel_dropout_prob : float, default=0.0
         Probability of dropping each channel during training (0.0 to 1.0).
         If 0.0, no channel dropout is applied.
     channel_dropout_type : str, optional
         If specified with chs_info, only drop channels of this type
         (e.g., 'eeg', 'ref', 'eog'). If None with dropout_prob > 0, drops any channel.
-    glu : int, default=0
-        If > 0, applies Gated Linear Units (GLU) every N encoder/decoder layers
-        where N = glu. GLUs gate intermediate representations for more expressivity.
+    glu : int, default=2
+        If > 0, applies Gated Linear Units (GLU) every N convolutional layers.
+        GLUs gate intermediate representations for more expressivity.
         If 0, no GLU is applied.
-    glu_context : int, default=0
+    glu_context : int, default=1
         Context window size for GLU gates. If > 0, uses contextual information
         from neighboring time steps for gating. Requires glu > 0.
-    glu_glu : bool, default=True
-        If True with glu > 0, uses nn.GLU for gating (doubles channels internally).
-        If False, uses standard activation for gating (no channel doubling).
 
     References
     ----------
@@ -137,11 +108,11 @@ class BrainModule(EEGModuleMixin, nn.Module):
     Notes
     -----
     - Input shape: (batch, n_chans, n_times)
-    - Output shape: (batch, n_outputs, n_times) [if decoder is used] or
-                    (batch, n_outputs) [if linear_out or final aggregation is applied]
-    - The model uses dilated convolutions to achieve large receptive fields
-      without losing temporal resolution excessively.
-    - Padding is computed to maintain temporal dimensions through layers when possible.
+    - Output shape: (batch, n_outputs)
+    - The model uses dilated convolutions with stride=1 to maintain temporal
+      resolution while achieving large receptive fields.
+    - Residual connections are applied at every layer where input and output
+      channels match.
     - Subject-specific features (subject_dim > 0, subject_layers) require passing
       subject indices in the forward pass as an optional parameter or via batch.
     - STFT processing (n_fft > 0) automatically transforms input to spectrogram domain.
@@ -162,23 +133,17 @@ class BrainModule(EEGModuleMixin, nn.Module):
         ########
         # Model related parameters
         # Architecture
-        hidden_dim: int = 64,
-        depth: int = 2,
-        kernel_size: int = 5,
-        stride: int = 2,
+        hidden_dim: int = 320,
+        depth: int = 4,
+        kernel_size: int = 3,
         growth: float = 1.0,
-        dilation_growth: int = 1,
-        dilation_period: int | None = None,
+        dilation_growth: int = 2,
+        dilation_period: int = 5,
         # Regularization
         conv_drop_prob: float = 0.0,
         dropout_input: float = 0.0,
-        batch_norm: bool = False,
-        relu_leakiness: float = 0.0,
-        gelu: bool = False,
-        # final layer
-        linear_out: bool = False,
-        complex_out: bool = False,
-        final_activation: type[nn.Module] = nn.ReLU,
+        batch_norm: bool = True,
+        activation: type[nn.Module] = nn.GELU,
         # Subject-specific features (optional)
         n_subjects: int = 200,
         subject_dim: int = 0,
@@ -189,21 +154,12 @@ class BrainModule(EEGModuleMixin, nn.Module):
         # STFT/Spectrogram (optional)
         n_fft: int | None = None,
         fft_complex: bool = True,
-        # Initial linear layers (optional)
-        initial_linear: int = 0,
-        initial_depth: int = 1,
-        initial_nonlin: bool = False,
-        # Skip connection features (optional)
-        layer_scale: float | None = None,
-        skip: bool = False,
-        post_skip: bool = False,
         # Channel dropout (optional)
         channel_dropout_prob: float = 0.0,
         channel_dropout_type: str | None = None,
         # GLU gates (optional)
-        glu: int = 0,
-        glu_context: int = 0,
-        glu_glu: bool = True,
+        glu: int = 2,
+        glu_context: int = 1,
     ):
         # Initialize EEGModuleMixin
         super().__init__(
@@ -220,39 +176,21 @@ class BrainModule(EEGModuleMixin, nn.Module):
         self.n_subjects = n_subjects
         self.n_fft = n_fft
         self.fft_complex = fft_complex
+        self.hidden_dim = hidden_dim
 
         # Validate inputs
-        _validate_simpleconv_params(
+        _validate_brainmodule_params(
             subject_layers=subject_layers,
             subject_dim=subject_dim,
-            complex_out=complex_out,
-            linear_out=linear_out,
             depth=depth,
             kernel_size=kernel_size,
-            stride=stride,
             growth=growth,
             dilation_growth=dilation_growth,
-            initial_linear=initial_linear,
-            initial_depth=initial_depth,
-            layer_scale=layer_scale,
-            post_skip=post_skip,
-            skip=skip,
             channel_dropout_prob=channel_dropout_prob,
             channel_dropout_type=channel_dropout_type,
             glu=glu,
             glu_context=glu_context,
         )
-
-        self.depth = depth
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.hidden_dim = hidden_dim
-        self.growth = growth
-        self.dilation_growth = dilation_growth
-        self.dilation_period = dilation_period
-        self.skip = skip
-        self.post_skip = post_skip
-        self.layer_scale = layer_scale
 
         # Initialize channel dropout (optional)
         self.channel_dropout = None
@@ -300,116 +238,39 @@ class BrainModule(EEGModuleMixin, nn.Module):
             else:
                 input_channels *= freq_bins
 
-        # Initialize initial linear layers (optional)
-        self.initial_layer = None
-        if initial_linear > 0:
-            initial_modules: list[nn.Module] = []
-            for k in range(initial_depth):
-                in_chans = input_channels if k == 0 else initial_linear
-                initial_modules.append(
-                    nn.Conv1d(in_chans, initial_linear, 1, bias=True)
-                )
-                if k < initial_depth - 1 or initial_nonlin:
-                    initial_modules.append(nn.LeakyReLU(relu_leakiness))
-                    if batch_norm:
-                        initial_modules.append(nn.BatchNorm1d(initial_linear))
-                    if conv_drop_prob > 0:
-                        initial_modules.append(nn.Dropout(conv_drop_prob))
-            self.initial_layer = nn.Sequential(*initial_modules)
-            input_channels = initial_linear
+        # Initial projection layer: project input channels to hidden_dim
+        # This is crucial for residual connections to work properly
+        self.input_projection = nn.Conv1d(input_channels, hidden_dim, 1)
 
-        # Build channel dimension sequences for encoder and decoder
-        # Use self.n_chans property to infer from chs_info if needed
-        encoder_dims = [input_channels] + [
+        # Build channel dimensions for encoder (all same size for residuals)
+        # With growth=1.0, all layers have hidden_dim channels (residuals work)
+        # With growth!=1.0, channels vary (residuals only where dims match)
+        encoder_dims = [hidden_dim] + [
             int(round(hidden_dim * growth**k)) for k in range(depth)
         ]
-        in_channels_conv = encoder_dims[-1]
 
-        # Configure activation function based on gelu parameter
-        if gelu:
-            activation_fn = nn.GELU
-        elif relu_leakiness:
-            activation_fn = partial(nn.LeakyReLU, relu_leakiness)
-        else:
-            activation_fn = nn.ReLU
-
-        # Build encoder
-        encoder_params: dict[str, tp.Any] = dict(
-            kernel=kernel_size,
-            stride=stride,
-            leakiness=relu_leakiness,
+        # Build encoder (stride=1, no downsampling)
+        self.encoder = _ConvSequence(
+            channels=encoder_dims,
+            kernel_size=kernel_size,
+            dilation_growth=dilation_growth,
+            dilation_period=dilation_period,
             dropout=conv_drop_prob,
             dropout_input=dropout_input,
             batch_norm=batch_norm,
-            dilation_growth=dilation_growth,
-            dilation_period=dilation_period,
-            skip=skip,
-            scale=layer_scale,
-            post_skip=post_skip,
             glu=glu,
             glu_context=glu_context,
-            glu_glu=glu_glu,
-            activation=activation_fn,
+            activation=activation,
         )
 
-        self.encoder = _ConvSequence(encoder_dims, **encoder_params)
-
-        # Decoder outputs directly to n_outputs (or to intermediate dims if linear_out)
-        # Reverse the channel dimensions for the decoder (goes from deep to shallow)
-        decoder_dims = list(reversed(encoder_dims))
-        if not linear_out:
-            encoder_params["activation_on_last"] = False
-            decoder_dims[-1] = self.n_outputs
-
-        self.decoder = _ConvSequence(decoder_dims, decode=True, **encoder_params)
-
-        # Final layer: combine output conv, pooling, and squeezing for classification
-        # This is a named module for compatibility with test_model_integration_full_last_layer
-        final_modules = nn.ModuleDict()
-
-        if linear_out:
-            if complex_out:
-                final_modules["final_conv"] = nn.Sequential(
-                    nn.Conv1d(in_channels_conv, 2 * in_channels_conv, 1),
-                    final_activation(),
-                    nn.Conv1d(2 * in_channels_conv, self.n_outputs, 1),
-                )
-            else:
-                final_modules["final_conv"] = nn.Conv1d(
-                    in_channels_conv, self.n_outputs, 1
-                )
-
-        # Global pooling layer for classification tasks
-        final_modules["pool"] = nn.AdaptiveAvgPool1d(1)
-        self.final_layer = nn.Sequential(*final_modules.values())
-
-    @torch.jit.export
-    def compute_valid_length(self, length: int) -> int:
-        """
-        Compute valid output length after encoder-decoder roundtrip.
-
-        Returns the nearest valid length such that convolution operations
-        do not leave partial time steps. If input length is already valid,
-        output will have the same length.
-
-        Parameters
-        ----------
-        length : int
-            Input time dimension.
-
-        Returns
-        -------
-        int
-            Valid length after encoder-decoder.
-        """
-        # Encoder: downsample by stride per layer
-        for _ in range(self.depth):
-            length = math.ceil(length / self.stride) + 1
-            length = max(length, 1)
-        # Decoder: upsample by stride per layer
-        for _ in range(self.depth):
-            length = (length - 1) * self.stride
-        return int(length)
+        # Final layer: temporal aggregation + output projection
+        # Use the last encoder dimension (may differ from hidden_dim if growth != 1)
+        final_hidden_dim = encoder_dims[-1]
+        self.final_layer = nn.Sequential(
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(start_dim=1),
+            nn.Linear(final_hidden_dim, self.n_outputs),
+        )
 
     def forward(
         self, x: torch.Tensor, subject_index: torch.Tensor | None = None
@@ -427,10 +288,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
         Returns
         -------
         torch.Tensor
-            Output logits/predictions. Shape depends on model configuration:
-            - If decoder without final layer: (batch, n_outputs, n_times)
-            - If linear_out=True: (batch, n_outputs, n_times)
-            Output is cropped to original input time dimension.
+            Output logits/predictions of shape (batch, n_outputs).
         """
         # Validate input shape
         if x.dim() != 3:
@@ -439,8 +297,6 @@ class BrainModule(EEGModuleMixin, nn.Module):
             )
         if x.shape[1] != self.n_chans:
             raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}")
-
-        original_length = x.shape[-1]
 
         # Apply STFT if enabled
         if self.stft is not None:
@@ -484,148 +340,149 @@ class BrainModule(EEGModuleMixin, nn.Module):
             )  # (batch, subject_dim, time)
             x = torch.cat([x, emb], dim=1)  # Concatenate along channel dimension
 
-        # Apply initial linear layers if enabled
-        if self.initial_layer is not None:
-            x = self.initial_layer(x)
+        # Project input to hidden dimension
+        x = self.input_projection(x)
 
-        # Pad to valid length for convolutions
-        padded_length = self.compute_valid_length(x.shape[-1])
-        if padded_length > x.shape[-1]:
-            x = F.pad(x, (0, padded_length - x.shape[-1]))
+        # Encode with residual dilated convolutions
+        x = self.encoder(x)
 
-        # Encode
-        encoded = self.encoder(x)
+        # Apply final layer (pool + linear)
+        x = self.final_layer(x)
 
-        # Decode
-        decoded = self.decoder(encoded)
-
-        # Apply final layer (output conv + pooling)
-        decoded = self.final_layer(decoded).squeeze(-1)
-
-        # Crop to original length
-        if decoded.shape[-1] > original_length:
-            decoded = decoded[..., :original_length]
-
-        return decoded
+        return x
 
 
 class _ConvSequence(nn.Module):
-    """Sequence of convolutional layers with optional dilation, skip connections, GLU."""
+    """Sequence of residual dilated convolutional layers with GLU activation.
+
+    This is a simplified encoder-only architecture that maintains temporal
+    resolution (stride=1) and applies residual connections at every layer
+    where input and output channels match.
+
+    Parameters
+    ----------
+    channels : Sequence[int]
+        Channel dimensions for each layer. E.g., [320, 320, 320, 320] for
+        a 3-layer network with 320 hidden dims.
+    kernel_size : int, default=3
+        Convolutional kernel size. Must be odd for proper padding with dilation.
+    dilation_growth : int, default=2
+        Dilation multiplier per layer. Improves receptive field exponentially.
+    dilation_period : int, default=5
+        Reset dilation to 1 every N layers.
+    dropout : float, default=0.0
+        Dropout probability after activation.
+    dropout_input : float, default=0.0
+        Dropout probability applied to input only.
+    batch_norm : bool, default=True
+        Whether to apply batch normalization.
+    glu : int, default=2
+        Apply GLU gating every N layers. If 0, no GLU.
+    glu_context : int, default=1
+        Context window for GLU convolution.
+    activation : type, default=nn.GELU
+        Activation function class.
+    """
 
     def __init__(
         self,
         channels: tp.Sequence[int],
-        kernel: int = 4,
-        dilation_growth: int = 1,
-        dilation_period: int | None = None,
-        stride: int = 2,
+        kernel_size: int = 3,
+        dilation_growth: int = 2,
+        dilation_period: int = 5,
         dropout: float = 0.0,
-        leakiness: float = 0.0,
-        groups: int = 1,
-        decode: bool = False,
-        batch_norm: bool = False,
         dropout_input: float = 0.0,
-        skip: bool = False,
-        scale: float | None = None,
-        rewrite: bool = False,
-        activation_on_last: bool = True,
-        post_skip: bool = False,
-        glu: int = 0,
-        glu_context: int = 0,
-        glu_glu: bool = True,
+        batch_norm: bool = True,
+        glu: int = 2,
+        glu_context: int = 1,
         activation: tp.Any = None,
     ) -> None:
         super().__init__()
-        dilation = 1
-        channels = tuple(channels)
-        self.skip = skip
+
+        if dilation_growth > 1:
+            assert (
+                kernel_size % 2 != 0
+            ), "Supports only odd kernel with dilation for now"
+
+        if activation is None:
+            activation = nn.GELU
+
         self.sequence = nn.ModuleList()
         self.glus = nn.ModuleList()
-        if activation is None:
-            activation = partial(nn.LeakyReLU, leakiness)
-        Conv = nn.Conv1d if not decode else nn.ConvTranspose1d
-        # build layers
+        self.skip_projections = nn.ModuleList()  # For when chin != chout
+
+        dilation = 1
+        channels = tuple(channels)
+
         for k, (chin, chout) in enumerate(zip(channels[:-1], channels[1:])):
             layers: tp.List[nn.Module] = []
-            is_last = k == len(channels) - 2
 
-            # Set dropout for the input of the conv sequence if defined
-            if k == 0 and dropout_input:
-                assert 0 < dropout_input < 1
+            # Input dropout (only on first layer)
+            if k == 0 and dropout_input > 0:
                 layers.append(nn.Dropout(dropout_input))
 
-            # conv layer
-            if dilation_growth > 1:
-                assert kernel % 2 != 0, "Supports only odd kernel with dilation for now"
+            # Reset dilation periodically
             if dilation_period and (k % dilation_period) == 0:
                 dilation = 1
-            pad = kernel // 2 * dilation
-            layers.append(
-                Conv(
-                    chin,
-                    chout,
-                    kernel,
-                    stride,
-                    pad,
-                    dilation=dilation,
-                    groups=groups if k > 0 else 1,
-                )
+
+            # Dilated convolution with proper padding to maintain temporal size
+            pad = kernel_size // 2 * dilation
+            layers.extend(
+                [
+                    nn.Conv1d(
+                        chin,
+                        chout,
+                        kernel_size=kernel_size,
+                        stride=1,  # Always stride=1 for residual connections
+                        padding=pad,
+                        dilation=dilation,
+                    ),
+                ]
             )
+
+            # Batch norm + activation + dropout
+            if batch_norm:
+                layers.append(nn.BatchNorm1d(num_features=chout))
+            layers.append(activation())
+            if dropout > 0:
+                layers.append(nn.Dropout(dropout))
+
             dilation *= dilation_growth
-            # non-linearity
-            if activation_on_last or not is_last:
-                if batch_norm:
-                    layers.append(nn.BatchNorm1d(num_features=chout))
-                layers.append(activation())
-                if dropout:
-                    layers.append(nn.Dropout(dropout))
-                if rewrite:
-                    layers += [nn.Conv1d(chout, chout, 1), nn.LeakyReLU(leakiness)]
-            if chin == chout and skip:
-                if scale is not None:
-                    layers.append(_LayerScale(chout, scale))
-                if post_skip:
-                    layers.append(Conv(chout, chout, 1, groups=chout, bias=False))
 
             self.sequence.append(nn.Sequential(*layers))
-            if glu and (k + 1) % glu == 0:
-                ch = 2 * chout if glu_glu else chout
-                act = nn.GLU(dim=1) if glu_glu else activation()
+
+            # Add skip projection if channels don't match (for growth != 1.0)
+            if chin != chout:
+                self.skip_projections.append(nn.Conv1d(chin, chout, 1))
+            else:
+                self.skip_projections.append(None)
+
+            # GLU gating every N layers
+            if glu > 0 and (k + 1) % glu == 0:
                 self.glus.append(
                     nn.Sequential(
-                        nn.Conv1d(chout, ch, 1 + 2 * glu_context, padding=glu_context),
-                        act,
+                        nn.Conv1d(
+                            chout, 2 * chout, 1 + 2 * glu_context, padding=glu_context
+                        ),
+                        nn.GLU(dim=1),
                     )
                 )
             else:
                 self.glus.append(None)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        for module, glu in zip(self.sequence, self.glus):
-            old_x = x
-            x = module(x)
-            if self.skip and x.shape == old_x.shape:
-                x = x + old_x
+        for module, glu, skip_proj in zip(
+            self.sequence, self.glus, self.skip_projections
+        ):
+            # Apply residual connection
+            # If channels match, add directly; otherwise use projection
+            if skip_proj is not None:
+                x = skip_proj(x) + module(x)
+            else:
+                x = x + module(x)
             if glu is not None:
                 x = glu(x)
         return x
-
-
-class _LayerScale(nn.Module):
-    """Layer scale: rescales residual outputs close to 0, learnable.
-
-    From [Touvron et al 2021] (https://arxiv.org/pdf/2103.17239.pdf).
-    Helps with training stability in deep networks with residual paths.
-    """
-
-    def __init__(self, channels: int, init: float = 0.1, boost: float = 5.0):
-        super().__init__()
-        self.scale = nn.Parameter(torch.zeros(channels, requires_grad=True))
-        self.scale.data[:] = init / boost
-        self.boost = boost
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return (self.boost * self.scale[:, None]) * x
 
 
 def _pad_multiple(x: torch.Tensor, base: int) -> torch.Tensor:
@@ -801,27 +658,19 @@ class _ChannelDropout(nn.Module):
         )
 
 
-def _validate_simpleconv_params(
+def _validate_brainmodule_params(
     subject_layers: bool,
     subject_dim: int,
-    complex_out: bool,
-    linear_out: bool,
     depth: int,
     kernel_size: int,
-    stride: int,
     growth: float,
     dilation_growth: int,
-    initial_linear: int,
-    initial_depth: int,
-    layer_scale: float | None,
-    post_skip: bool,
-    skip: bool,
     channel_dropout_prob: float,
     channel_dropout_type: str | None,
     glu: int,
     glu_context: int,
 ) -> None:
-    """Validate SimpleConv parameters.
+    """Validate BrainModule parameters.
 
     Parameters
     ----------
@@ -829,30 +678,14 @@ def _validate_simpleconv_params(
         Whether to use subject-specific layer transformations.
     subject_dim : int
         Dimension of subject embeddings.
-    complex_out : bool
-        Whether to apply complex output processing.
-    linear_out : bool
-        Whether to apply a final linear (1x1 conv) output layer.
     depth : int
-        Number of encoder/decoder layer pairs.
+        Number of convolutional blocks.
     kernel_size : int
         Convolutional kernel size.
-    stride : int
-        Stride for downsampling/upsampling.
     growth : float
         Channel size multiplier per layer.
     dilation_growth : int
         Dilation multiplier per layer.
-    initial_linear : int
-        Number of initial linear layer output channels.
-    initial_depth : int
-        Number of initial linear layers.
-    layer_scale : float or None
-        LayerScale initialization value.
-    post_skip : bool
-        Whether to apply skip connections after activation.
-    skip : bool
-        Whether to use skip (residual) connections.
     channel_dropout_prob : float
         Channel dropout probability.
     channel_dropout_type : str or None
@@ -872,24 +705,11 @@ def _validate_simpleconv_params(
             subject_layers and subject_dim == 0,
             "subject_layers=True requires subject_dim > 0",
         ),
-        (complex_out and not linear_out, "complex_out=True requires linear_out=True"),
         (depth < 1, "depth must be >= 1"),
         (kernel_size <= 0, "kernel_size must be > 0"),
-        (stride < 1, "stride must be >= 1"),
+        (kernel_size % 2 == 0, "kernel_size must be odd for proper padding"),
         (growth <= 0, "growth must be > 0"),
         (dilation_growth < 1, "dilation_growth must be >= 1"),
-        (
-            dilation_growth > 1 and kernel_size % 2 == 0,
-            "dilation_growth > 1 requires odd kernel_size",
-        ),
-        (initial_linear < 0, "initial_linear must be >= 0"),
-        (initial_depth < 1, "initial_depth must be >= 1"),
-        (
-            initial_depth > 1 and initial_linear == 0,
-            "initial_depth > 1 requires initial_linear > 0",
-        ),
-        (layer_scale is not None and layer_scale <= 0, "layer_scale must be > 0"),
-        (post_skip and not skip, "post_skip=True requires skip=True"),
         (
             not 0.0 <= channel_dropout_prob <= 1.0,
             "channel_dropout_prob must be in [0.0, 1.0]",

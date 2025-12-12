@@ -52,7 +52,6 @@ from braindecode.models import (
     TSception,
     USleep,
 )
-from braindecode.models.brainmodule import _LayerScale
 from braindecode.util import set_random_seeds
 
 
@@ -1956,31 +1955,10 @@ def test_dilated_conv_decoder_parameter_validation():
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250, kernel_size=0,
         )
 
-    # initial_depth > 1 requires initial_linear > 0
-    with pytest.raises(ValueError, match="initial_depth > 1 requires initial_linear > 0"):
+    # kernel_size must be odd
+    with pytest.raises(ValueError, match="kernel_size must be odd"):
         BrainModule(
-            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
-            initial_linear=0, initial_depth=2,
-        )
-
-    # initial_linear < 0 is invalid
-    with pytest.raises(ValueError, match="initial_linear must be >= 0"):
-        BrainModule(
-            n_chans=22, n_outputs=4, n_times=1000, sfreq=250, initial_linear=-1,
-        )
-
-    # layer_scale must be > 0
-    with pytest.raises(ValueError, match="layer_scale must be > 0"):
-        BrainModule(
-            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
-            skip=True, layer_scale=-0.1,
-        )
-
-    # post_skip requires skip=True
-    with pytest.raises(ValueError, match="post_skip=True requires skip=True"):
-        BrainModule(
-            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
-            skip=False, post_skip=True,
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250, kernel_size=4,
         )
 
     # channel_dropout_type requires channel_dropout_prob > 0
@@ -2001,7 +1979,7 @@ def test_dilated_conv_decoder_parameter_validation():
     with pytest.raises(ValueError, match="glu_context must be < kernel_size"):
         BrainModule(
             n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
-            kernel_size=4, glu=1, glu_context=4,
+            kernel_size=5, glu=1, glu_context=5,
         )
 
 
@@ -2010,9 +1988,8 @@ def test_dilated_conv_decoder_gradient_flow(dilated_conv_decoder_params):
     for config in [
         {"glu": 1, "depth": 2},
         {"n_subjects": 20, "subject_dim": 32},
-        {"initial_linear": 64},
-        {"skip": True, "layer_scale": 0.1},
         {"channel_dropout_prob": 0.2},
+        {"growth": 1.5, "depth": 3},
     ]:
         set_random_seeds(0, False)
         params = dilated_conv_decoder_params.copy()
@@ -2042,23 +2019,12 @@ def test_dilated_conv_decoder_gradient_flow(dilated_conv_decoder_params):
                 assert not torch.isnan(param.grad).any()
 
 
-@pytest.mark.parametrize("initial_linear,initial_depth,initial_nonlin", [
-    (0, 1, False),
-    (32, 1, True),
-    (64, 2, False),
-    (128, 3, True),
-])
-def test_dilated_conv_decoder_initial_layers(
-    dilated_conv_decoder_params, initial_linear, initial_depth, initial_nonlin
-):
-    """Test initial layers with different configurations."""
+@pytest.mark.parametrize("growth", [1.0, 1.5, 2.0])
+def test_dilated_conv_decoder_growth(dilated_conv_decoder_params, growth):
+    """Test different growth factors for channel expansion."""
     set_random_seeds(0, False)
     params = dilated_conv_decoder_params.copy()
-    params.update({
-        "initial_linear": initial_linear,
-        "initial_depth": initial_depth,
-        "initial_nonlin": initial_nonlin,
-    })
+    params.update({"growth": growth, "depth": 3, "hidden_dim": 64})
 
     model = BrainModule(**params)
     model.eval()
@@ -2068,44 +2034,6 @@ def test_dilated_conv_decoder_initial_layers(
 
     assert output.shape == (4, params["n_outputs"])
     assert not torch.isnan(output).any()
-
-    # Verify initial_layer is created only when initial_linear > 0
-    if initial_linear > 0:
-        assert model.initial_layer is not None
-        assert len(model.initial_layer) >= initial_depth
-    else:
-        assert model.initial_layer is None
-
-
-@pytest.mark.parametrize("skip,layer_scale,post_skip", [
-    (False, 0.1, False),
-    (True, 0.05, False),
-    (True, 0.1, False),
-    (True, 0.5, False),
-    (True, 0.1, True),
-])
-def test_dilated_conv_decoder_skip_connections(
-    dilated_conv_decoder_params, skip, layer_scale, post_skip
-):
-    """Test skip connections, layer scale, and post-skip with various combinations."""
-    set_random_seeds(0, False)
-    params = dilated_conv_decoder_params.copy()
-    params.update({"skip": skip, "layer_scale": layer_scale, "post_skip": post_skip})
-
-    model = BrainModule(**params)
-    model.eval()
-
-    x = torch.randn(4, params["n_chans"], params["n_times"])
-    output = model(x)
-
-    assert output.shape == (4, params["n_outputs"])
-    assert not torch.isnan(output).any()
-
-    # Verify LayerScale modules exist only when skip=True
-    has_layer_scale = any(
-        isinstance(module, _LayerScale) for module in model.encoder.modules()
-    )
-    assert has_layer_scale == skip
 
 
 # ============================================================================
@@ -2215,18 +2143,16 @@ def test_dilated_conv_decoder_glu(dilated_conv_decoder_params, glu, glu_context,
     # Verify GLU modules only created when glu > 0
     if glu > 0:
         assert any(g is not None for g in model.encoder.glus)
-        assert any(g is not None for g in model.decoder.glus)
     else:
         assert all(g is None for g in model.encoder.glus)
-        assert all(g is None for g in model.decoder.glus)
 
 
-@pytest.mark.parametrize("glu_glu", [True, False])
-def test_dilated_conv_decoder_glu_variants(dilated_conv_decoder_params, glu_glu):
-    """Test GLU with nn.GLU vs standard activation gating."""
+@pytest.mark.parametrize("depth", [2, 4, 6])
+def test_dilated_conv_decoder_depth_variants(dilated_conv_decoder_params, depth):
+    """Test different depth configurations."""
     set_random_seeds(0, False)
     params = dilated_conv_decoder_params.copy()
-    params.update({"glu": 1, "glu_glu": glu_glu, "depth": 2})
+    params.update({"depth": depth})
 
     model = BrainModule(**params)
     model.train()
@@ -2263,9 +2189,6 @@ def test_dilated_conv_decoder_glu_combined_features(dilated_conv_decoder_params)
     params.update({
         "glu": 1,
         "glu_context": 1,
-        "initial_linear": 64,
-        "skip": True,
-        "layer_scale": 0.1,
         "channel_dropout_prob": 0.1,
         "subject_dim": 32,
         "n_subjects": 50,
