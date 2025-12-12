@@ -29,7 +29,7 @@ from braindecode.modules.layers import DropPath
 class LUNA(EEGModuleMixin, nn.Module):
     """LUNA from Döner et al. [LUNA]_.
 
-    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model` :bdg-dark-line:`Channel`
+    :bdg-success:`Convolution` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 
     .. figure:: https://arxiv.org/html/2510.22257v1/x1.png
         :align: center
