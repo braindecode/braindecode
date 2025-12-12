@@ -67,6 +67,7 @@ Bugs
 - Fix OverflowError sometimes when saving description to a json file (:gh:`789` by `Pierre Guetschel`_)
 - Small adjustment in :class:`braindecode.models.Labram` model to allow pre-loading of weights (:gh:`792` by `Bruno Aristimunha`_)
 - Fixing many warnings for generating the documentation (:gh:`805` by `Bruno Aristimunha`_)
+- Fix test compatibility with scikit-learn 1.8+ by adding ``__sklearn_tags__`` support to test mocks (:gh:`868` by `Bruno Aristimunha`_)
 
 Current 1.2 (stable)
 ----------------------
