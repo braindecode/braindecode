@@ -1,6 +1,7 @@
 # Authors: Jonathan Lys <jonathan.lys@imt-atlantique.org>
 #
 # License: BSD (3-clause)
+import os
 from shutil import rmtree
 
 import torch
@@ -37,6 +38,7 @@ class TestHFLoadingReve:
             self.model_id,
             cache_dir=self.cache_dir,
             trust_remote_code=True,
+            token=os.getenv("HF_TOKEN_REVE")
         )
 
         model_bd: REVE = REVE.from_pretrained(
@@ -45,6 +47,7 @@ class TestHFLoadingReve:
             n_times=self.n_times,
             n_chans=self.n_chans,
             n_outputs=self.n_outputs,
+            token=os.getenv("HF_TOKEN_REVE"),
         )
 
         return model_hf, model_bd

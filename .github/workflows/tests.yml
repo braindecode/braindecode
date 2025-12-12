@@ -52,6 +52,9 @@ jobs:
     - run: python -c "import braindecode; print(braindecode.__version__)"
 
     ## Run Tests
+    - name: Set HF_TOKEN_REVE
+      run: |
+        echo "HF_TOKEN_REVE=${{ secrets.HF_TOKEN_REVE }}" >> $GITHUB_ENV
     - name: Run Tests # See https://stackoverflow.com/a/59959080/1469195 for the cov-report logic
       run: pytest --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
     - name: Upload Coverage to Codecov
