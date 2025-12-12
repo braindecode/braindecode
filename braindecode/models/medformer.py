@@ -20,7 +20,7 @@ from braindecode.models.base import EEGModuleMixin
 class MEDFormer(EEGModuleMixin, nn.Module):
     r"""Medformer from Wang et al. (2024) [Medformer2024]_.
 
-    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model`
+    :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
 
     .. figure:: https://raw.githubusercontent.com/DL4mHealth/Medformer/refs/heads/main/figs/medformer_architecture.png
         :align: center
