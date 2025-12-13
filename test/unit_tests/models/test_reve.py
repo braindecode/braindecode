@@ -4,11 +4,13 @@
 import os
 from shutil import rmtree
 
+import pytest
 import torch
 from transformers import AutoModel
 
 from braindecode.models.reve import REVE, RevePositionBank
 
+token_is_missing = os.getenv("HF_TOKEN_REVE") is None or os.getenv("HF_TOKEN_REVE") == ""
 
 class TestHFLoadingReve:
     batch_size = 2
@@ -34,7 +36,7 @@ class TestHFLoadingReve:
 
     def _init_models(self):
         """Helper to initialize both models"""
-        model_hf = model_hf = AutoModel.from_pretrained(
+        model_hf = AutoModel.from_pretrained(
             self.model_id,
             cache_dir=self.cache_dir,
             trust_remote_code=True,
@@ -73,6 +75,7 @@ class TestHFLoadingReve:
 
         self._cleanup()
 
+    @pytest.mark.skipif(token_is_missing, reason="HF token is missing")
     def test_model_outputs(self):
         """Test that the outputs from both implementations match"""
         ch_list = [f"E{i + 1}" for i in range(self.n_chans)]
