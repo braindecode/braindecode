@@ -452,7 +452,6 @@ log_reg = LogisticRegression(
     C=1.0,
     class_weight="balanced",
     solver="lbfgs",
-    multi_class="multinomial",
     random_state=random_state,
 )
 clf_pipe = make_pipeline(StandardScaler(), log_reg)
