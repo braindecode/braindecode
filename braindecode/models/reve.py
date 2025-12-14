@@ -6,7 +6,7 @@ License: BSD 3 clause
 
 import json
 import math
-from typing import Union
+from typing import Optional, Union
 
 import requests
 import torch
@@ -23,7 +23,7 @@ class REVE(EEGModuleMixin, nn.Module):
     r"""
     REVE (Representation for EEG with versatile embeddings) model from El Ouahidi et al. (2025) [reve]_.
 
-    :bdg-danger:`Large Brain Model`
+    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
     This implementation is based on the one available at https://huggingface.co/brain-bzh/reve-base (although it is gated).
 
@@ -160,6 +160,10 @@ class REVE(EEGModuleMixin, nn.Module):
 
         self._position_bank = RevePositionBank()
 
+        self.default_pos = None
+        if chs_info is not None:
+            self.default_pos = self.get_positions([ch["ch_name"] for ch in chs_info])
+
     def _get_flattened_output_dim(self) -> int:
         """Helper function to compute the flattened output dimension after the transformer."""
 
@@ -199,7 +203,7 @@ class REVE(EEGModuleMixin, nn.Module):
     def forward(
         self,
         eeg: torch.Tensor,
-        pos: torch.Tensor,
+        pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
     ) -> Union[torch.Tensor, list[torch.Tensor]]:
         """
@@ -235,6 +239,12 @@ class REVE(EEGModuleMixin, nn.Module):
         )
         batch_size, channel, heights, _n_patches = patches.shape
 
+        if pos is None:
+            if self.default_pos is None:
+                raise ValueError(
+                    "No positions provided and no default positions available. Please provide channel positions."
+                )
+            pos = self.default_pos.expand(batch_size, -1, -1).to(eeg.device)
         pos = FourierEmb4D.add_time_patch(pos, heights)
         pos_embed = self.ln(self.fourier4d(pos) + self.mlp4d(pos))
 
