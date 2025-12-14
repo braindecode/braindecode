@@ -8,12 +8,6 @@ from moabb.paradigms import LeftRightImagery
 
 from braindecode.datasets import BIDSDataset, BIDSEpochsDataset
 
-# TODO: Remove this skip when MOABB releases a fix for sklearn 1.8+ compatibility
-# See: https://github.com/braindecode/braindecode/issues/869
-pytestmark = pytest.mark.skip(
-    reason="MOABB Pipeline not compatible with sklearn 1.8+ (NotFittedError)"
-)
-
 
 @pytest.fixture(scope="module")
 def bids_dataset_root(tmpdir_factory):
