@@ -20,6 +20,7 @@ from torch.export import ExportedProgram, export
 
 from braindecode import EEGClassifier
 from braindecode.models import (
+    REVE,
     SSTDPN,
     EEGInceptionMI,
     EEGMiner,
@@ -279,7 +280,7 @@ def test_model_has_activation_parameter(model_class):
     Test that checks if the model class's __init__ method has a parameter
     named 'activation' or any parameter that starts with 'activation'.
     """
-    if model_class in [EEGMiner]:
+    if model_class in [EEGMiner, REVE]:
         pytest.skip(f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
     init_method = model_class.__init__
@@ -343,6 +344,7 @@ def test_model_has_drop_prob_parameter(model_class):
         FBMSNet,
         FBLightConvNet,
         SSTDPN,
+        REVE,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 

@@ -120,6 +120,7 @@ models_mandatory_parameters: list[
     ("BENDR", ["n_chans", "n_outputs", "n_times"], None),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("REVE", ["n_times", "n_outputs", "n_chans"], None),
 ]
 
 ################################################################
