@@ -77,8 +77,6 @@ class REVE(EEGModuleMixin, nn.Module):
         Whether to use GEGLU activation in the MLP (True) or GELU (False).
     freqs : int
         Number of frequencies for the Fourier positional embedding.
-    noise_ratio : float
-        Ratio of noise to add to the input during training.
     patch_size : int
         Size of each patch for patch embedding.
     patch_overlap : int
@@ -107,7 +105,6 @@ class REVE(EEGModuleMixin, nn.Module):
         mlp_dim_ratio=2.66,
         use_geglu=True,
         freqs=4,
-        noise_ratio=0.0025,
         patch_size=200,
         patch_overlap=20,
         attention_pooling: bool = False,
@@ -125,7 +122,6 @@ class REVE(EEGModuleMixin, nn.Module):
         self.freqs = freqs
         self.patch_size = patch_size
         self.overlap_size = patch_overlap
-        self.noise_ratio = noise_ratio
         self.depth = depth
         self.heads = heads
         self.head_dim = head_dim
@@ -150,11 +146,18 @@ class REVE(EEGModuleMixin, nn.Module):
         )
 
         final_dim = self._get_flattened_output_dim()
-        self.final_layer = nn.Sequential(
-            nn.Flatten(),
-            nn.LayerNorm(final_dim),
-            nn.Linear(final_dim, self.n_outputs),
-        )
+
+        if self.use_attention_pooling:
+            self.final_layer = nn.Sequential(
+                nn.LayerNorm(self.embed_dim),
+                nn.Linear(self.embed_dim, self.n_outputs),
+            )
+        else:
+            self.final_layer = nn.Sequential(
+                nn.Flatten(),
+                nn.LayerNorm(final_dim),
+                nn.Linear(final_dim, self.n_outputs),
+            )
 
         self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
 
@@ -183,9 +186,7 @@ class REVE(EEGModuleMixin, nn.Module):
         return flat_dim
 
     def get_positions(self, channel_names: list[str]) -> torch.Tensor:
-        """Fetch channel positions from the position bank.
-
-        Downloads and caches the position bank on first call.
+        """Fetch channel positions from the position bank. The position bank is downloaded when the model is instantiated.
 
         Parameters
         ----------
@@ -228,6 +229,8 @@ class REVE(EEGModuleMixin, nn.Module):
         Returns:
         -------
         Union[torch.Tensor, list[torch.Tensor]]
+            - If `return_output` is False: Returns a single `torch.Tensor` (output after final layer).
+            - If `return_output` is True: Returns a `list[torch.Tensor]` (outputs from transformer layers).
             The output tensor(s) from the model. If `return_output` is True,
             returns the transformer output; otherwise, returns the output after the final layer.
         """
@@ -237,7 +240,7 @@ class REVE(EEGModuleMixin, nn.Module):
             size=self.patch_size,
             step=self.patch_size - self.overlap_size,
         )
-        batch_size, channel, heights, _n_patches = patches.shape
+        batch_size, channel, n_patches, _n_patches = patches.shape
 
         if pos is None:
             if self.default_pos is None:
@@ -245,7 +248,7 @@ class REVE(EEGModuleMixin, nn.Module):
                     "No positions provided and no default positions available. Please provide channel positions."
                 )
             pos = self.default_pos.expand(batch_size, -1, -1).to(eeg.device)
-        pos = FourierEmb4D.add_time_patch(pos, heights)
+        pos = FourierEmb4D.add_time_patch(pos, n_patches)
         pos_embed = self.ln(self.fourier4d(pos) + self.mlp4d(pos))
 
         x = (
@@ -253,7 +256,7 @@ class REVE(EEGModuleMixin, nn.Module):
                 self.to_patch_embedding(patches),
                 "b c h e -> b (c h) e",
                 c=channel,
-                h=heights,
+                h=n_patches,
                 e=self.embed_dim,
             )
             + pos_embed
@@ -268,7 +271,7 @@ class REVE(EEGModuleMixin, nn.Module):
             "b (c h) e -> b c h e",
             b=batch_size,
             c=channel,
-            h=heights,
+            h=n_patches,
             e=self.embed_dim,
         )
 
@@ -392,7 +395,6 @@ class Attention(nn.Module):
         super().__init__()
         inner_dim = head_dim * heads
         self.heads = heads
-        self.scale = head_dim**-0.5
         self.norm = RMSNorm(dim)
         self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
         self.to_out = nn.Linear(inner_dim, dim, bias=False)
@@ -470,7 +472,8 @@ class FourierEmb4D(nn.Module):
     def forward(self, positions_: torch.Tensor) -> torch.Tensor:
         positions = positions_.clone()
         positions[:, :, -1] *= self.increment_time
-        *U, _ = positions.shape
+        input_shape = positions.shape
+        batch_dims = list(input_shape[:-1])
 
         freqs_w = torch.arange(self.freqs).to(positions)
         freqs_z = freqs_w[:, None]
@@ -488,11 +491,21 @@ class FourierEmb4D(nn.Module):
             + positions[..., 1] * p_y
             + positions[..., 2] * p_z
             + positions[..., 3] * p_w
-        ).view(*U, -1)
-        if self.dimension != 512:  # noqa
-            _, _, hd = loc.shape
-            diff = hd - self.dimension // 2
-            loc = loc[:, :, :-diff]
+        )
+        batch_dims.append(-1)
+        loc = loc.view(batch_dims)
+
+        half_dim = self.dimension // 2
+        current_dim = loc.shape[-1]
+        if current_dim != half_dim:
+            if current_dim > half_dim:
+                loc = loc[..., :half_dim]
+            else:
+                raise ValueError(
+                    f"Input dimension ({current_dim}) is too small for target "
+                    f"embedding dimension ({self.dimension}). Expected at least {half_dim}."
+                )
+
         emb = torch.cat([torch.cos(loc), torch.sin(loc)], dim=-1)
         return emb
 
@@ -549,18 +562,45 @@ def mlp_pos_embedding(embed_dim):
 
 
 class RevePositionBank(torch.nn.Module):
-    def __init__(self):
+    def __init__(
+        self,
+        url: str = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json",
+        timeout: int = 5,
+    ):
         super().__init__()
 
-        url = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json"
-        response = requests.get(url, timeout=5)
-        config = json.loads(response.text)
+        config = None
 
-        self.position_names = list(config.keys())
-        self.mapping = {name: i for i, name in enumerate(self.position_names)}
-        positions = torch.tensor(list(config.values()))
-        self.register_buffer("embedding", positions)
-        assert self.embedding.shape == (len(self.mapping), 3)
+        try:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+            config = json.loads(response.text)
+        except (requests.RequestException, json.JSONDecodeError) as e:
+            raise RuntimeError(
+                f"Failed to download or parse the position bank from {url}: {e}"
+            ) from e
+
+        try:
+            self.position_names = list(config.keys())
+            self.mapping = {name: i for i, name in enumerate(self.position_names)}
+            positions_data = list(config.values())
+            positions = torch.tensor(positions_data, dtype=torch.float32)
+            self.register_buffer("embedding", positions)
+
+            # Validate shape (N, 3)
+            if self.embedding.dim() != 2 or self.embedding.shape[1] != 3:
+                raise ValueError(
+                    f"Position data must have shape (N, 3), but got {self.embedding.shape}"
+                )
+
+            assert self.embedding.shape == (len(self.mapping), 3), (
+                f"Expected embedding shape ({len(self.mapping)}, 3), but got {self.embedding.shape}"
+            )
+
+        except (ValueError, TypeError, AssertionError) as e:
+            raise RuntimeError(
+                f"Invalid position data format in the downloaded config: {e}"
+            ) from e
 
     def forward(self, channel_names: list[str]):
         indices = [self.mapping[q] for q in channel_names if q in self.mapping]
