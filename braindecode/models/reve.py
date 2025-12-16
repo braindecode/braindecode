@@ -41,7 +41,7 @@ class REVE(EEGModuleMixin, nn.Module):
     - ``REVE.tokenization`` **patch extraction**
 
       *Operations.* The EEG signal is split into overlapping patches along the time dimension,
-      generating :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + \mathbbold{1} \left[ (T - w) \bmod (w - o) \neq 0 \right]` patches of size :math:`w` with overlap :math:`o`, where :math:`T` is the length of the signal.
+      generating :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + \mathbf{1} \left[ (T - w) \bmod (w - o) \neq 0 \right]` patches of size :math:`w` with overlap :math:`o`, where :math:`T` is the length of the signal.
 
     - ``REVE.4DPE`` **4D positional embedding**
 
@@ -234,6 +234,7 @@ class REVE(EEGModuleMixin, nn.Module):
         Union[torch.Tensor, list[torch.Tensor]]
             - If `return_output` is False: Returns a single `torch.Tensor` (output after final layer).
             - If `return_output` is True: Returns a `list[torch.Tensor]` (outputs from transformer layers).
+
             The output tensor(s) from the model. If `return_output` is True,
             returns the transformer output; otherwise, returns the output after the final layer.
         """
@@ -518,7 +519,7 @@ class FourierEmb4D(nn.Module):
         """
         Expand the position tensor by adding a time dimension, handling batched data.
 
-        Parameters:
+        Parameters
         ----------
         pos : torch.Tensor
             Input tensor of shape (B, C, 3), where B is the batch size,
@@ -526,7 +527,7 @@ class FourierEmb4D(nn.Module):
         num_patches : int
             The number of time patches.
 
-        Returns:
+        Returns
         -------
         torch.Tensor
             Output tensor of shape (B, C * num_patches, 4), where each position is repeated with each time value.
