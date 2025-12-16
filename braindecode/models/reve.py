@@ -21,16 +21,17 @@ from braindecode.models.base import EEGModuleMixin
 
 class REVE(EEGModuleMixin, nn.Module):
     r"""
-    REVE (Representation for EEG with versatile embeddings) model from El Ouahidi et al. (2025) [reve]_.
+    Representation for EEG with versatile embeddings - REVE model from El Ouahidi et al. (2025) [reve]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
-
-    This implementation is based on the one available at https://huggingface.co/brain-bzh/reve-base.
 
     .. figure:: https://brain-bzh.github.io/reve/static/images/architecture.png
         :align: center
         :alt:  REVE Training pipeline overview
-        :width: 680px
+        :width: 1000px
+        
+    This implementation is based on the one available at https://huggingface.co/brain-bzh/reve-base, pushed by the original authors.
+    The paper was presented at NeurIPS 2025.
 
     REVE tokenizes EEG signal into latent patches that get fed into a Transformer encoder model.
     The model uses a 4D positional encoding to contextualize the patches in space and time.
@@ -84,9 +85,11 @@ class REVE(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [reve] El Ouahidi, Y., Lys, J., Thölke, P., Farrugia, N., Pasdeloup, B., Gripon, V., Jerbi, K. & Lioi, G. (2025).
-        REVE: A Foundation Model for EEG - Adapting to Any Setup with Large-Scale Pretraining on 25,000 Subjects. NeurIPS.
-        Online: `https://arxiv.org/abs/2510.21585`
+    .. [reve] Ouahidi, Y. E., Lys, J., Thölke, P., Farrugia, N., Pasdeloup, B., Gripon, V., Jerbi, K. & Lioi, G. (2025). 
+        REVE: A Foundation Model for EEG - Adapting to Any Setup with Large-Scale Pretraining on 25,000 Subjects. 
+        The Thirty-Ninth Annual Conference on Neural Information Processing Systems. 
+        Retrieved from https://openreview.net/forum?id=ZeFMtRBy4Z
+
     """
 
     def __init__(
