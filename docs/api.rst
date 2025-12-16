@@ -63,8 +63,8 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     AttentionBaseNet
     AttnSleep
     BDTCN
-    BIOT
     BENDR
+    BIOT
     ContraWR
     CTNet
     Deep4Net
@@ -88,6 +88,7 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     MEDFormer
     MSVTNet
     PBT
+    REVE
     SCCNet
     ShallowFBCSPNet
     SignalJEPA
@@ -97,8 +98,8 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     SincShallowNet
     SleepStagerBlanco2020
     SleepStagerChambon2018
-    SSTDPN
     SPARCNet
+    SSTDPN
     SyncNet
     TIDNet
     TSception
