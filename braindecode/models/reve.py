@@ -25,7 +25,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
-    This implementation is based on the one available at https://huggingface.co/brain-bzh/reve-base (although it is gated).
+    This implementation is based on the one available at https://huggingface.co/brain-bzh/reve-base.
 
     .. figure:: https://brain-bzh.github.io/reve/static/images/architecture.png
         :align: center
@@ -216,7 +216,7 @@ class REVE(EEGModuleMixin, nn.Module):
         3. Transformer encoding.
         4. Final layer processing (if `return_output` is False).
 
-        Parameters:
+        Parameters
         ----------
         eeg : torch.Tensor
             Input EEG tensor of shape (batch_size, channels, sequence_length).
@@ -226,7 +226,7 @@ class REVE(EEGModuleMixin, nn.Module):
             If True, returns the output from the transformer directly.
             If False, applies the final layer and returns the processed output. Default is False.
 
-        Returns:
+        Returns
         -------
         Union[torch.Tensor, list[torch.Tensor]]
             - If `return_output` is False: Returns a single `torch.Tensor` (output after final layer).
@@ -240,7 +240,7 @@ class REVE(EEGModuleMixin, nn.Module):
             size=self.patch_size,
             step=self.patch_size - self.overlap_size,
         )
-        batch_size, channel, n_patches, _n_patches = patches.shape
+        batch_size, channel, n_patches, _ = patches.shape
 
         if pos is None:
             if self.default_pos is None:
@@ -284,13 +284,14 @@ class REVE(EEGModuleMixin, nn.Module):
     def attention_pooling(self, x: torch.Tensor) -> torch.Tensor:
         """Apply attention pooling on the sequence dimension of x.
 
-        Parameters:
+        Parameters
         ----------
         x : torch.Tensor
             Input tensor of shape (B, C, S, E), where B is the batch size,
             C is the number of channels, S is the sequence length,
             and E is the embedding dimension. Typically the output from the transformer.
-        Returns:
+
+        Returns
         -------
         torch.Tensor
             Output tensor of shape (B, E) after attention pooling.
