@@ -44,7 +44,7 @@ Enhancements
 - Adding :class:`braindecode.models.EEGSym` model (:gh:`697` by `Pierre Guetschel`_ and `Bruno Aristimunha`_ )
 - Adding tutorial for :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`746` by `Aniela Bulicz` and `Arina Schippers` and `Aron van Zuijlen`)
 - Including interface with Hugging Face Hub for dataset sharing and loading (:gh:`820` by `Kuntal Kokate`_ and `Bruno Aristimunha`_ )
-- Adding a CITATION.cff file, allowing researchers to directly cite the Braindecode library via a Zenodo DOI (:gh:`847` by `Pierre Guetschel`_ )
+- Adding a CITATION.cff file, allowing researchers to directly cite the Braindecode library via a Zenodo DOI (:gh:`847` and :gh:`872` by `Pierre Guetschel`_ )
 - Add automatically-generated pydantic models configs (:gh:`850` by `Pierre Guetschel`_ )
 - Refactor: standardized parameter names in transformer and LabRam modules (:gh:`850` by `José Mauricio`_)
 - Added a tutorial for temporal generalization (:gh:`857` by `Matthew Chen`_)
