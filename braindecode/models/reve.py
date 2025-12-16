@@ -21,7 +21,7 @@ from braindecode.models.base import EEGModuleMixin
 
 class REVE(EEGModuleMixin, nn.Module):
     r"""
-    Representation for EEG with versatile embeddings - REVE model from El Ouahidi et al. (2025) [reve]_.
+    **R**epresentation for **E**EG with **V**ersatile **E**mbeddings - **R**EVE model from El Ouahidi et al. (2025) [reve]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
@@ -36,17 +36,22 @@ class REVE(EEGModuleMixin, nn.Module):
     REVE tokenizes EEG signal into latent patches that get fed into a Transformer encoder model.
     The model uses a 4D positional encoding to contextualize the patches in space and time.
 
+    The positional enconding evolves both a Fourier-based positional embedding and an MLP-based positional embedding,
+    an natural extension of what was proposed in BrainModule [brainmodule]_.
+
     .. rubric:: Macro Components
 
     - ``REVE.tokenization`` **patch extraction**
 
       *Operations.* The EEG signal is split into overlapping patches along the time dimension,
-      generating :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + \mathbf{1} \left[ (T - w) \bmod (w - o) \neq 0 \right]` patches of size :math:`w` with overlap :math:`o`, where :math:`T` is the length of the signal.
+      generating :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + \mathbf{1} \left[ (T - w) \bmod (w - o) \neq 0 \right]` 
+      patches of size :math:`w` with overlap :math:`o`, where :math:`T` is the length of the signal.
 
     - ``REVE.4DPE`` **4D positional embedding**
 
         *Operations.* The 4D positional embedding module combines a Fourier-based positional embedding and an MLP-based positional embedding.
-        The Fourier-based embedding encodes the 3D spatial positions of the EEG channels along with the temporal position of each patch using sinusoidal functions across multiple frequencies.
+        The Fourier-based embedding encodes the 3D spatial positions of the EEG channels along with the temporal position of 
+        each patch using sinusoidal functions across multiple frequencies.
         The MLP-based embedding processes the 4D positions through a small MLP to capture additional positional information.
         The outputs of both embeddings are summed and normalized to produce the final 4D positional embedding.
 
@@ -89,7 +94,9 @@ class REVE(EEGModuleMixin, nn.Module):
         REVE: A Foundation Model for EEG - Adapting to Any Setup with Large-Scale Pretraining on 25,000 Subjects. 
         The Thirty-Ninth Annual Conference on Neural Information Processing Systems. 
         Retrieved from https://openreview.net/forum?id=ZeFMtRBy4Z
-
+    .. [brainmodule] Défossez, A., Caucheteux, C., Rapin, J., Kabeli, O., & King, J. R.
+       (2023). Decoding speech perception from non-invasive brain recordings. Nature
+       Machine Intelligence, 5(10), 1097-1107.
     """
 
     def __init__(
@@ -101,17 +108,17 @@ class REVE(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # REVE specific parameters
-        embed_dim=512,
-        depth=22,
-        heads=8,
-        head_dim=64,
-        mlp_dim_ratio=2.66,
-        use_geglu=True,
-        freqs=4,
-        patch_size=200,
-        patch_overlap=20,
+        embed_dim: int = 512,
+        depth: int = 22,
+        heads: int = 8,
+        head_dim: int = 64,
+        mlp_dim_ratio: float = 2.66,
+        use_geglu: bool = True,
+        freqs: int = 4,
+        patch_size: int = 200,
+        patch_overlap: int = 20,
         attention_pooling: bool = False,
-    ):
+        ):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
