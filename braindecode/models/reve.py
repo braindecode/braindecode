@@ -714,6 +714,19 @@ class FourierEmb4D(nn.Module):
 
 
 class RevePositionBank(torch.nn.Module):
+    """ Position bank for REVE model that maps standard EEG channel names to 3D coordinates.
+    
+    The position bank is downloaded from a remote JSON file on HuggingFace.
+
+    The coordinates come from the 92 datasets used during REVE pretraining.
+
+    Parameters
+    ----------
+    url : str, optional
+        URL to download the position bank JSON file. Default is the HuggingFace URL.
+    timeout : int, optional
+        Timeout in seconds for the HTTP request. Default is 5 seconds.
+    """
     def __init__(
         self,
         url: str = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json",
