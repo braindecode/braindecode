@@ -22,6 +22,7 @@ Current 1.3 (dev)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding :class:`braindecode.models.REVE` with comprehensive documentation covering architecture details, 4D positional encoding, and pretraining scale (:gh:`866` by `Jonathan Lys`_ )
 - Adding augmentation :class:`braindecode.augmentation.AmplitudeScale` (:gh:`848` by `Bruna Lopes`_)
 - Adding augmentation :class:`braindecode.augmentation.ChannelsReref` (:gh:`848` by `Bruna Lopes`_)
 - Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
@@ -59,10 +60,10 @@ API changes
 - Exposing the :func:`braindecode.datautil.infer_signal_properties` utility function (:gh:`856` by `Pierre Guetschel`_)
 - Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
 - Drop support for Python 3.10 and increase support to Python 3.13 and python 3.14 (:gh:`840` by `Bruno Aristimunha`_)
- - Model config helpers now soft-import ``pydantic``/``numpydantic``; if the optional
-   dependencies are missing the module skips config generation and warns to install
-   ``pip install braindecode[pydantic]``.
 
+  - Model config helpers now soft-import ``pydantic``/``numpydantic``; if the optional
+    dependencies are missing the module skips config generation and warns to install
+    ``pip install braindecode[pydantic]``.
 
 Bugs
 ~~~~
@@ -446,6 +447,7 @@ Authors
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _Matthew Chen: https://github.com/MatthewChen37
 .. _Jonathan Dan: https://github.com/danjjl
+.. _Jonathan Lys: https://github.com/jonathanlys01
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: github.com/AryaDro
 .. _Mattew Chew: https://github.com/MatthewChen37
