@@ -109,8 +109,10 @@ class REVE(EEGModuleMixin, nn.Module):
 
     - ``REVE.final_layer`` **Classification Head**
 
-      Two modes: (1) Flatten all tokens → :class:`~torch.nn.LayerNorm` → :class:`~torch.nn.Linear`, or (2) Attention pooling with a
-      learnable query token attending to all encoder outputs.
+      Two modes:
+
+      - Flatten all tokens → :class:`~torch.nn.LayerNorm` → :class:`~torch.nn.Linear`
+      - Attention pooling with a learnable query token attending to all encoder outputs
 
     .. rubric:: Known Limitations
 
