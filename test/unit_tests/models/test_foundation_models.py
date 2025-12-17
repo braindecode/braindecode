@@ -4,7 +4,6 @@
 
 import os
 from pathlib import Path
-from shutil import rmtree
 
 import mne
 import pytest
@@ -964,4 +963,3 @@ def test_reve_model_outputs_match():
     output_hf = model_hf(eeg_input, pos_hf, return_output=True)[-1]
 
     assert torch.allclose(output_hf, output_bd)
-

@@ -248,7 +248,9 @@ class REVE(EEGModuleMixin, nn.Module):
 
         self.use_attention_pooling = attention_pooling
 
-        self.to_patch_embedding = nn.Linear(in_features=self.patch_size, out_features=self.embed_dim)
+        self.to_patch_embedding = nn.Linear(
+            in_features=self.patch_size, out_features=self.embed_dim
+        )
 
         self.fourier4d = FourierEmb4D(self.embed_dim, freqs=self.freqs)
 
