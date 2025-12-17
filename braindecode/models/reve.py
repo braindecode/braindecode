@@ -3,10 +3,12 @@ REVE (Representation for EEG with versatile embeddings) model.
 Authors: Jonathan Lys (jonathan.lys@imt-atlantique.org)
 License: BSD 3 clause
 """
-import os
+
 import json
-import math
 import logging
+import math
+import os
+from pathlib import Path
 from typing import Optional, Union
 
 import requests
@@ -20,6 +22,7 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 from braindecode.models.base import EEGModuleMixin
 
 logger = logging.getLogger(__name__)
+
 
 class REVE(EEGModuleMixin, nn.Module):
     r"""
@@ -49,17 +52,17 @@ class REVE(EEGModuleMixin, nn.Module):
     fixed positional embeddings, making direct transfer to unseen electrode layouts infeasible. CBraMod uses
     convolution-based positional encoding that requires fine-tuning when adapting to new configurations.
     As noted in the CBraMod paper: *"fixing the pre-trained parameters during training on downstream
-    datasets will lead to a very large performance decline. 
+    datasets will lead to a very large performance decline.
 
     REVE's 4D positional encoding jointly encodes spatial :math:`(x, y, z)` and temporal :math:`(t)` positions
     using Fourier embeddings, enabling true cross-configuration transfer without retraining. The fourier embedding
     have inspirion on brainmodule [brainmodule]_, generalized to 4D for EEG with the channel spatial coordinates
-    and temporal patch index. 
+    and temporal patch index.
 
     .. rubric:: Linear Probing Performance
 
     A key advantage of REVE is producing useful latent representation without heavy fine-tuning. Under linear
-    probing (frozen encoder), This enables practical deployment in low-data scenarios where extensive 
+    probing (frozen encoder), This enables practical deployment in low-data scenarios where extensive
     fine-tuning is not feasible.
 
     .. rubric:: Architecture
@@ -138,8 +141,6 @@ class REVE(EEGModuleMixin, nn.Module):
     .. code-block:: python
 
         from braindecode.models import REVE
-import os
-from pathlib import Path
 
         model = REVE(
             n_outputs=4,  # e.g., 4-class motor imagery
@@ -247,12 +248,16 @@ from pathlib import Path
 
         self.use_attention_pooling = attention_pooling
 
-        self.to_patch_embedding =  nn.Sequential(nn.Linear(in_features=self.embed_dim, out_features=self.patch_size))
+        self.to_patch_embedding = nn.Sequential(
+            nn.Linear(in_features=self.embed_dim, out_features=self.patch_size)
+        )
 
         self.fourier4d = FourierEmb4D(self.embed_dim, freqs=self.freqs)
 
         self.mlp4d = nn.Sequential(
-            nn.Linear(4, self.embed_dim, bias=False), nn.GELU(), nn.LayerNorm(self.embed_dim)
+            nn.Linear(4, self.embed_dim, bias=False),
+            nn.GELU(),
+            nn.LayerNorm(self.embed_dim),
         )
 
         self.ln = nn.LayerNorm(self.embed_dim)  # 4DPE module layernorm
@@ -619,7 +624,7 @@ class FourierEmb4D(nn.Module):
     increment_time : float, optional
         The time increment to scale the time dimension. Default is 0.1.
     margin : float, optional
-        The margin to add to the position coordinates to avoid boundary issues. Default is 0.4.   
+        The margin to add to the position coordinates to avoid boundary issues. Default is 0.4.
 
     """
 
@@ -712,9 +717,8 @@ class FourierEmb4D(nn.Module):
         return pos_with_time
 
 
-
 class RevePositionBank(torch.nn.Module):
-    """ Position bank for REVE model that maps standard EEG channel names to 3D coordinates.
+    """Position bank for REVE model that maps standard EEG channel names to 3D coordinates.
 
     The position bank is cached locally in the library root to avoid repeated downloads.
 
@@ -729,19 +733,19 @@ class RevePositionBank(torch.nn.Module):
     cache_dir : str, optional
         Directory to cache the position bank. Default is the models folder within the library.
     """
+
     def __init__(
         self,
         url: str = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json",
         timeout: int = 5,
-        cache_dir: str = None,
+        cache_dir: Optional[str] = None,
     ):
         super().__init__()
-
 
         if cache_dir is None:
             # Use the model root directory
             cache_dir = str(Path(__file__).parent)
-        
+
         cache_file = os.path.join(cache_dir, ".cache", "reve_positions.json")
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
 
@@ -762,7 +766,7 @@ class RevePositionBank(torch.nn.Module):
                 response = requests.get(url, timeout=timeout)
                 response.raise_for_status()
                 config = json.loads(response.text)
-                
+
                 # Save to cache
                 with open(cache_file, "w") as f:
                     json.dump(config, f)
