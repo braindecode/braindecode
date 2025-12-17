@@ -40,6 +40,31 @@ class BIOT(EEGModuleMixin, nn.Module):
     The `ClassificationHead` is an ELU activation layer, followed by a simple
     linear layer that takes the output of the `BIOTEncoder` and outputs
     the classification probabilities.
+    
+    .. important::
+       **Pre-trained Weights Available**
+       
+       This model has pre-trained weights available on the Hugging Face Hub.
+       You can load them using:
+       
+       .. code-block:: python
+       
+           from braindecode.models import BIOT
+           
+           # Load pre-trained model from Hugging Face Hub
+           model = BIOT.from_pretrained("braindecode/biot-pretrained")
+       
+       To push your own trained model to the Hub:
+       
+       .. code-block:: python
+       
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-biot-model",
+               commit_message="Upload trained BIOT model"
+           )
+       
+       Requires installing ``braindecode[hug]`` for Hub integration.
 
     .. versionadded:: 0.9
 
