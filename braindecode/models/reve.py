@@ -35,9 +35,9 @@ class REVE(EEGModuleMixin, nn.Module):
         :alt:  REVE Training pipeline overview
         :width: 1000px
 
-    Foundation models have transformed by reducing induced biases reliance on task-specific data through large-scale
-    pretraining. While successful in language and vision, their adoption in EEG has lagged due to the
-    heterogeneity of public datasets, collected under varying protocols, devices, and electrode configurations.
+    Foundation models have transformed machine learning by reducing reliance on
+    task-specific data and induced biases through large-scale pretraining. While
+    successful in language and vision, their adoption in EEG has lagged due to the
     Existing EEG foundation models struggle to generalize across these variations, often restricting pretraining
     to a single setup and resulting in suboptimal performance, particularly under linear probing.
 
@@ -114,10 +114,12 @@ class REVE(EEGModuleMixin, nn.Module):
 
     - ``REVE.final_layer`` **Classification Head**
 
-      Two modes:
+      Two modes (controlled by the ``attention_pooling`` parameter):
 
-      - Flatten all tokens → :class:`~torch.nn.LayerNorm` → :class:`~torch.nn.Linear`
-      - Attention pooling with a learnable query token attending to all encoder outputs
+      - When ``attention_pooling`` is disabled (e.g., ``None`` or ``False``): flatten all tokens
+        → :class:`~torch.nn.LayerNorm` → :class:`~torch.nn.Linear`
+      - When ``attention_pooling`` is enabled: attention pooling with a learnable query token
+        attending to all encoder outputs
 
     .. rubric:: Known Limitations
 
