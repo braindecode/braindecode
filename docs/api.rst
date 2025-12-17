@@ -60,57 +60,57 @@ functionality to save and load models from the Hugging Face Hub, if the
 .. currentmodule:: braindecode.models
 
 .. autosummary::
-    :toctree: generated/
-    :recursive:
+   :toctree: generated/
+   :recursive:
 
-     ATCNet
-     AttentionBaseNet
-     AttnSleep
-     BDTCN
-     BIOT
-     BENDR
-     ContraWR
-     CTNet
-     Deep4Net
-     DeepSleepNet
-     EEGConformer
-     EEGInceptionERP
-     EEGInceptionMI
-     EEGITNet
-     EEGMiner
-     EEGNet
-     EEGNeX
-     EEGSimpleConv
-     EEGSym
-     EEGTCNet
-     FBCNet
-     FBLightConvNet
-     FBMSNet
-     IFNet
-     Labram
-     LUNA
-     MEDFormer
-     MSVTNet
-     PBT
-     SCCNet
-     ShallowFBCSPNet
-     SignalJEPA
-     SignalJEPA_Contextual
-     SignalJEPA_PostLocal
-     SignalJEPA_PreLocal
-     SincShallowNet
-     SleepStagerBlanco2020
-     SleepStagerChambon2018
-     SSTDPN
-     SPARCNet
-     SyncNet
-     TIDNet
-     TSception
-     USleep
+    ATCNet
+    AttentionBaseNet
+    AttnSleep
+    BDTCN
+    BENDR
+    BIOT
+    ContraWR
+    CTNet
+    Deep4Net
+    DeepSleepNet
+    EEGConformer
+    EEGInceptionERP
+    EEGInceptionMI
+    EEGITNet
+    EEGMiner
+    EEGNet
+    EEGNeX
+    EEGSimpleConv
+    EEGSym
+    EEGTCNet
+    FBCNet
+    FBLightConvNet
+    FBMSNet
+    IFNet
+    Labram
+    LUNA
+    MEDFormer
+    MSVTNet
+    PBT
+    REVE
+    SCCNet
+    ShallowFBCSPNet
+    SignalJEPA
+    SignalJEPA_Contextual
+    SignalJEPA_PostLocal
+    SignalJEPA_PreLocal
+    SincShallowNet
+    SleepStagerBlanco2020
+    SleepStagerChambon2018
+    SPARCNet
+    SSTDPN
+    SyncNet
+    TIDNet
+    TSception
+    USleep
 
-*********
- Modules
-*********
+
+Modules
 
 :py:mod:`braindecode.modules`:
 
