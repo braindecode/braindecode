@@ -1,10 +1,10 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
-
 import glob
 import os
 import random
+import re
 from warnings import warn
 
 import h5py
@@ -386,6 +386,10 @@ def update_estimator_docstring(base_class, docstring):
 
 def _update_moabb_docstring(base_class, docstring):
     base_doc = base_class.__doc__
+    # Clean up malformed rubrics from moabb docstrings
+    # Remove lines that have ".. rubric::" followed by content on same line or improper formatting
+
+    base_doc = re.sub(r"\.\. rubric:: (.+?)\n\s+\.\. note::", r".. note::", base_doc)
     out_docstring = base_doc + f"\n\n{docstring}"
     return out_docstring
 
