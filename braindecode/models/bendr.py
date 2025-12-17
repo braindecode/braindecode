@@ -8,7 +8,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class BENDR(EEGModuleMixin, nn.Module):
-    """BENDR (BErt-inspired Neural Data Representations) from Kostas et al (2021) [bendr]_.
+    r"""BENDR (BErt-inspired Neural Data Representations) from Kostas et al (2021) [bendr]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
 
@@ -324,7 +324,7 @@ class _ConvEncoderBENDR(nn.Module):
 
 
 class _BENDRContextualizer(nn.Module):
-    """Transformer-based contextualizer for BENDR."""
+    r"""Transformer-based contextualizer for BENDR."""
 
     def __init__(
         self,

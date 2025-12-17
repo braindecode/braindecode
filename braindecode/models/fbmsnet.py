@@ -17,7 +17,7 @@ from braindecode.modules import (
 
 
 class FBMSNet(EEGModuleMixin, nn.Module):
-    """FBMSNet from Liu et al (2022) [fbmsnet]_.
+    r"""FBMSNet from Liu et al (2022) [fbmsnet]_.
 
     :bdg-success:`Convolution` :bdg-primary:`Filterbank`
 
@@ -262,7 +262,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
 
 class _MixedConv2d(nn.Module):
-    """Mixed Grouped Convolution for multiscale feature extraction."""
+    r"""Mixed Grouped Convolution for multiscale feature extraction."""
 
     def __init__(
         self,

@@ -305,7 +305,7 @@ class PBT(EEGModuleMixin, nn.Module):
 
 
 class _LayerNorm(nn.Module):
-    """Layer normalization with optional bias.
+    r"""Layer normalization with optional bias.
 
     Simple wrapper around :func:`torch.nn.functional.layer_norm` exposing a
     learnable scale and optional bias.
@@ -346,7 +346,7 @@ class _LayerNorm(nn.Module):
 
 
 class _MHSA(nn.Module):
-    """Multi-head self-attention (MHSA) block.
+    r"""Multi-head self-attention (MHSA) block.
 
     Implements a standard multi-head attention mechanism with optional
     use of PyTorch's scaled_dot_product_attention (FlashAttention) when
@@ -429,7 +429,7 @@ class _MHSA(nn.Module):
 
 
 class _FeedForward(nn.Module):
-    """Position-wise feed-forward network from Transformer.
+    r"""Position-wise feed-forward network from Transformer.
 
     Implements the two-layer MLP with GELU activation and dropout used in
     Transformer architectures.
@@ -476,7 +476,7 @@ class _FeedForward(nn.Module):
 
 
 class _TransformerEncoderLayer(nn.Module):
-    """Single Transformer encoder layer (pre-norm) combining MHSA and feed-forward.
+    r"""Single Transformer encoder layer (pre-norm) combining MHSA and feed-forward.
 
     The block follows the pattern:
     x <- x + MHSA(_LayerNorm(x))
@@ -531,7 +531,7 @@ class _TransformerEncoderLayer(nn.Module):
 
 
 class _TransformerEncoder(nn.Module):
-    """Stack of Transformer encoder layers.
+    r"""Stack of Transformer encoder layers.
 
     Parameters
     ----------
@@ -593,7 +593,7 @@ class _TransformerEncoder(nn.Module):
 
 
 class _Patcher(nn.Module):
-    """Patching encoding helper.
+    r"""Patching encoding helper.
 
     This module "patchifies" the original X entry in a ViT manner.
 

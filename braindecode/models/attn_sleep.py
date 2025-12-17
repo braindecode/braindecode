@@ -16,7 +16,7 @@ from braindecode.modules import CausalConv1d
 
 
 class AttnSleep(EEGModuleMixin, nn.Module):
-    """Sleep Staging Architecture from Eldele et al  (2021) [Eldele2021]_.
+    r"""Sleep Staging Architecture from Eldele et al  (2021) [Eldele2021]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
@@ -423,7 +423,7 @@ class _MultiHeadedAttention(nn.Module):
 
 
 class _ResidualLayerNormAttn(nn.Module):
-    """A residual connection followed by a layer norm."""
+    r"""A residual connection followed by a layer norm."""
 
     def __init__(self, size, dropout, fn_attn):
         super().__init__()
@@ -462,7 +462,7 @@ class _ResidualLayerNormFF(nn.Module):
 
 
 class _TCE(nn.Module):
-    """
+    r"""
     Transformer Encoder.
 
     It is a stack of n layers.
@@ -482,7 +482,7 @@ class _TCE(nn.Module):
 
 
 class _EncoderLayer(nn.Module):
-    """
+    r"""
     An encoder layer.
 
     Made up of self-attention and a feed forward layer.
@@ -524,7 +524,7 @@ class _EncoderLayer(nn.Module):
 
 
 class _PositionwiseFeedForward(nn.Module):
-    """Positionwise feed-forward network."""
+    r"""Positionwise feed-forward network."""
 
     def __init__(
         self, d_model, d_ff, dropout=0.1, activation: type[nn.Module] = nn.ReLU
@@ -544,6 +544,6 @@ class _PositionwiseFeedForward(nn.Module):
     "`SleepStagerEldele2021` was renamed to `AttnSleep` in v1.12 to follow original author's name; this alias will be removed in v1.14."
 )
 class SleepStagerEldele2021(AttnSleep):
-    """Deprecated alias for SleepStagerEldele2021."""
+    r"""Deprecated alias for SleepStagerEldele2021."""
 
     pass

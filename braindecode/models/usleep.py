@@ -12,7 +12,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class USleep(EEGModuleMixin, nn.Module):
-    """
+    r"""
     Sleep staging architecture from Perslev et al (2021) [1]_.
 
     :bdg-success:`Convolution`
@@ -331,7 +331,7 @@ class USleep(EEGModuleMixin, nn.Module):
 
 
 class _EncoderBlock(nn.Module):
-    """Encoding block for a timeseries x of shape (B, C, T)."""
+    r"""Encoding block for a timeseries x of shape (B, C, T)."""
 
     def __init__(
         self,
@@ -371,7 +371,7 @@ class _EncoderBlock(nn.Module):
 
 
 class _DecoderBlock(nn.Module):
-    """Decoding block for a timeseries x of shape (B, C, T)."""
+    r"""Decoding block for a timeseries x of shape (B, C, T)."""
 
     def __init__(
         self,

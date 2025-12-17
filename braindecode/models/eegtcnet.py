@@ -13,7 +13,7 @@ from braindecode.modules import Chomp1d, MaxNormLinear
 
 
 class EEGTCNet(EEGModuleMixin, nn.Module):
-    """EEGTCNet model from Ingolfsson et al (2020) [ingolfsson2020]_.
+    r"""EEGTCNet model from Ingolfsson et al (2020) [ingolfsson2020]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
@@ -157,7 +157,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
 
 
 class _EEGNetTC(nn.Module):
-    """EEGNet Temporal Convolutional Network (TCN) block.
+    r"""EEGNet Temporal Convolutional Network (TCN) block.
 
     The main difference from our :class:`EEGNet` (braindecode) implementation is the
     kernel and dimensional order. Because of this, we decided to keep this
@@ -260,7 +260,7 @@ class _EEGNetTC(nn.Module):
 
 
 class _TCNBlock(nn.Module):
-    """
+    r"""
     Many differences from our Temporal Block (braindecode) implementation.
     Because of this, we decided to keep this implementation in a future issue;
     we will re-evaluate if it is necessary to maintain this separate

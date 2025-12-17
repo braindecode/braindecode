@@ -13,7 +13,7 @@ from braindecode.modules import CausalConv1d, Ensure4d, MaxNormLinear
 
 
 class ATCNet(EEGModuleMixin, nn.Module):
-    """ATCNet from Altaheri et al   (2022) [1]_.
+    r"""ATCNet from Altaheri et al   (2022) [1]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Attention/Transformer`
 
@@ -460,7 +460,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
 
 class _ConvBlock(nn.Module):
-    """Convolutional block proposed in ATCNet [1]_, inspired by the EEGNet.
+    r"""Convolutional block proposed in ATCNet [1]_, inspired by the EEGNet.
 
     architecture [2]_.
 
@@ -563,7 +563,7 @@ class _ConvBlock(nn.Module):
 
 
 class _AttentionBlock(nn.Module):
-    """Multi Head self Attention (MHA) block used in ATCNet [1]_, inspired from.
+    r"""Multi Head self Attention (MHA) block used in ATCNet [1]_, inspired from.
 
     [2]_.
 
@@ -638,7 +638,7 @@ class _AttentionBlock(nn.Module):
 
 
 class _TCNResidualBlock(nn.Module):
-    """Modified TCN Residual block as proposed in [1]_.
+    r"""Modified TCN Residual block as proposed in [1]_.
 
     Inspired from
     Temporal Convolutional Networks (TCN) [2]_.

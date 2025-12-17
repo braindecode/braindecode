@@ -14,7 +14,7 @@ from braindecode.modules import Conv2dWithConstraint, LinearWithConstraint
 
 
 class EEGNeX(EEGModuleMixin, nn.Module):
-    """EEGNeX model from Chen et al (2024) [eegnex]_.
+    r"""EEGNeX model from Chen et al (2024) [eegnex]_.
 
     :bdg-success:`Convolution`
 

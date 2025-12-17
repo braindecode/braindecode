@@ -9,7 +9,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
-    """Sleep staging architecture from Blanco et al (2020) from [Blanco2020]_
+    r"""Sleep staging architecture from Blanco et al (2020) from [Blanco2020]_
 
     :bdg-success:`Convolution`
 

@@ -24,7 +24,7 @@ from braindecode.modules.attention import (
 
 
 class AttentionBaseNet(EEGModuleMixin, nn.Module):
-    """AttentionBaseNet from Wimpff M et al (2023) [Martin2023]_.
+    r"""AttentionBaseNet from Wimpff M et al (2023) [Martin2023]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
@@ -409,7 +409,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
 
 class _FeatureExtractor(nn.Module):
-    """
+    r"""
     A module for feature extraction of the data with temporal and spatial.
 
     transformations.
@@ -489,7 +489,7 @@ class _FeatureExtractor(nn.Module):
 
 
 class _ChannelAttentionBlock(nn.Module):
-    """
+    r"""
     A neural network module implementing channel-wise attention mechanisms to enhance.
 
     feature representations by selectively emphasizing important channels and suppressing

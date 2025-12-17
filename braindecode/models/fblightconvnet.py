@@ -16,7 +16,7 @@ from braindecode.modules import (
 
 
 class FBLightConvNet(EEGModuleMixin, nn.Module):
-    """LightConvNet from Ma, X et al (2023) [lightconvnet]_.
+    r"""LightConvNet from Ma, X et al (2023) [lightconvnet]_.
 
     :bdg-success:`Convolution` :bdg-primary:`Filterbank`
 
@@ -235,7 +235,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
 
 
 class _LightweightConv1d(nn.Module):
-    """Lightweight 1D Convolution Module.
+    r"""Lightweight 1D Convolution Module.
 
     Applies a convolution operation with multiple heads, allowing for
     parallel filter applications. Optionally applies a softmax normalization

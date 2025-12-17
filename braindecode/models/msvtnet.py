@@ -11,7 +11,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class MSVTNet(EEGModuleMixin, nn.Module):
-    """MSVTNet model from Liu K et al (2024) from [msvt2024]_.
+    r"""MSVTNet model from Liu K et al (2024) from [msvt2024]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Attention/Transformer`
 
@@ -193,7 +193,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
 
 class _TSConv(nn.Sequential):
-    """
+    r"""
     Time-Distributed Separable Convolution block.
 
     The architecture consists of:
@@ -280,7 +280,7 @@ class _TSConv(nn.Sequential):
 
 
 class _PositionalEncoding(nn.Module):
-    """
+    r"""
     Positional encoding module that adds learnable positional embeddings.
 
     Parameters
@@ -303,7 +303,7 @@ class _PositionalEncoding(nn.Module):
 
 
 class _Transformer(nn.Module):
-    """
+    r"""
     Transformer encoder module with learnable class token and positional encoding.
 
     Parameters
@@ -359,7 +359,7 @@ class _Transformer(nn.Module):
 
 
 class _DenseLayers(nn.Sequential):
-    """
+    r"""
     Final classification layers.
 
     Parameters
