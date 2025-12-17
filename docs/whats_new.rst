@@ -22,7 +22,7 @@ Current 1.3 (dev)
 
 Enhancements
 ~~~~~~~~~~~~
-- Adding :class:`braindecode.models.REVE` (:gh:`866` by `Jonathan Lys`_ )
+- Adding :class:`braindecode.models.REVE` with comprehensive documentation covering architecture details, 4D positional encoding, and pretraining scale (:gh:`866` by `Jonathan Lys`_ )
 - Adding augmentation :class:`braindecode.augmentation.AmplitudeScale` (:gh:`848` by `Bruna Lopes`_)
 - Adding augmentation :class:`braindecode.augmentation.ChannelsReref` (:gh:`848` by `Bruna Lopes`_)
 - Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
