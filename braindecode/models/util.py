@@ -121,6 +121,16 @@ models_mandatory_parameters: list[
     ("BENDR", ["n_chans", "n_outputs", "n_times"], None),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "REVE",
+        ["n_times", "n_outputs", "n_chans", "chs_info"],
+        {
+            "sfreq": 200.0,
+            "n_chans": 19,
+            "n_times": 1_000,
+            "chs_info": [{"ch_name": f"E{i + 1}", "kind": "eeg"} for i in range(19)],
+        },
+    ),
 ]
 
 ################################################################

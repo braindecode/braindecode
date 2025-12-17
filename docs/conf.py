@@ -1,4 +1,5 @@
 """Our local Sphinx configuration file."""
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
@@ -336,6 +337,13 @@ html_theme_options = {
     "footer_start": ["copyright"],
     # 'pygment_light_style': 'default',
     "analytics": dict(google_analytics_id="G-7Q43R82K6D"),
+    "announcement": (
+        "<strong>Using Braindecode in academic work?</strong> "
+        "<a class='braindecode-announcement-cta' href='cite.html'>Cite Braindecode</a> "
+        "<span class='braindecode-announcement-secondary'>"
+        "DOI: <a href='https://doi.org/10.5281/zenodo.16279624'>10.5281/zenodo.16279624</a>"
+        "</span>"
+    ),
 }
 
 # The name of an image file (relative to this directory) to place at the top

@@ -33,6 +33,7 @@ from .luna import LUNA
 from .medformer import MEDFormer
 from .msvtnet import MSVTNet
 from .patchedtransformer import PBT
+from .reve import REVE
 from .sccnet import SCCNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
@@ -95,6 +96,7 @@ __all__ = [
     "MEDFormer",
     "MSVTNet",
     "PBT",
+    "REVE",
     "SCCNet",
     "ShallowFBCSPNet",
     "SignalJEPA",

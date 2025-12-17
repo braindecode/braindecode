@@ -2,6 +2,7 @@
 #
 # License: BSD-3
 
+import os
 from pathlib import Path
 
 import mne
@@ -15,7 +16,8 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, Labram
+from braindecode.models import LUNA, REVE, Labram
+from braindecode.models.reve import RevePositionBank
 
 
 @pytest.fixture
@@ -853,3 +855,111 @@ def test_luna_base_pretrained_caching(luna_base_pretrained_model):
         # Check that model files were downloaded
         cache_files = list(cache_dir.rglob("*"))
         assert len(cache_files) > 0, "Cache directory should contain downloaded files"
+
+
+# ==============================================================================
+# Tests for REVE Model
+# ==============================================================================
+
+# Check if HF token for REVE is available
+HF_TOKEN_REVE_MISSING = os.getenv("HF_TOKEN_REVE") is None or os.getenv("HF_TOKEN_REVE") == ""
+
+# REVE test constants
+REVE_BATCH_SIZE = 2
+REVE_N_CHANS = 32
+REVE_N_TIMES = 1000
+REVE_N_OUTPUTS = 10
+REVE_MODEL_ID = "brain-bzh/reve-base"
+REVE_POSITIONS_ID = "brain-bzh/reve-positions"
+
+
+def _get_reve_cache_dir():
+    """Get cache directory for REVE pretrained models."""
+    mne_data_dir = mne.get_config('MNE_DATA')
+    if mne_data_dir is None:
+        mne_data_dir = str(Path.home() / 'mne_data')
+    return str(Path(mne_data_dir) / 'reve_pretrained')
+
+
+def test_reve_positions_match():
+    """Test that the positions from both implementations match."""
+    try:
+        from transformers import AutoModel
+    except ImportError:
+        pytest.skip("transformers not installed")
+
+    cache_dir = _get_reve_cache_dir()
+    pos_bank_hf = AutoModel.from_pretrained(
+        REVE_POSITIONS_ID,
+        cache_dir=cache_dir,
+        trust_remote_code=True,
+    )
+    pos_bank_bd = RevePositionBank()
+
+    all_pos_hf = pos_bank_hf.get_all_positions()
+    all_pos_bd = pos_bank_bd.get_all_positions()
+
+    assert all_pos_hf == all_pos_bd, "Position names mismatch"
+
+    for pos in all_pos_bd:
+        pos_hf = pos_bank_hf([pos])
+        pos_bd = pos_bank_bd([pos])
+        assert torch.allclose(pos_hf, pos_bd)
+
+
+@pytest.mark.skipif(HF_TOKEN_REVE_MISSING, reason="HF token for REVE is missing")
+def test_reve_model_outputs_match():
+    """Test that the outputs from both implementations match."""
+    try:
+        from transformers import AutoModel
+    except ImportError:
+        pytest.skip("transformers not installed")
+
+    try:
+        import flash_attn  # noqa: F401
+    except ImportError:
+        pytest.skip("flash_attn not installed - outputs differ without it")
+
+    cache_dir = _get_reve_cache_dir()
+
+    # Load HuggingFace models
+    pos_bank_hf = AutoModel.from_pretrained(
+        REVE_POSITIONS_ID,
+        cache_dir=cache_dir,
+        trust_remote_code=True,
+    )
+    model_hf = AutoModel.from_pretrained(
+        REVE_MODEL_ID,
+        cache_dir=cache_dir,
+        trust_remote_code=True,
+        token=os.getenv("HF_TOKEN_REVE"),
+    )
+
+    # Load Braindecode model
+    model_bd = REVE.from_pretrained(
+        REVE_MODEL_ID,
+        cache_dir=cache_dir,
+        n_times=REVE_N_TIMES,
+        n_chans=REVE_N_CHANS,
+        n_outputs=REVE_N_OUTPUTS,
+        token=os.getenv("HF_TOKEN_REVE"),
+    )
+
+    ch_list = [f"E{i + 1}" for i in range(REVE_N_CHANS)]
+
+    torch.manual_seed(42)
+    eeg_input = torch.randn(REVE_BATCH_SIZE, REVE_N_CHANS, REVE_N_TIMES)
+
+    pos_hf = pos_bank_hf(ch_list)
+    pos_hf = pos_hf.unsqueeze(0).repeat(REVE_BATCH_SIZE, 1, 1)
+
+    pos_bd = model_bd.get_positions(ch_list)
+    pos_bd = pos_bd.unsqueeze(0).repeat(REVE_BATCH_SIZE, 1, 1)
+
+    assert torch.allclose(pos_hf, pos_bd)
+
+    # return_output is True to bypass the last layer
+    output_bd = model_bd(eeg_input, pos_bd, return_output=True)[-1]
+    output_hf = model_hf(eeg_input, pos_hf, return_output=True)[-1]
+
+    assert torch.allclose(output_hf, output_bd)
