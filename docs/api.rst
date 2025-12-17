@@ -130,6 +130,7 @@ stability.
 
 .. autosummary::
     :toctree: generated/activation
+    :template: class_in_subdir
     :recursive:
 
     LogActivation
@@ -145,6 +146,7 @@ squeeze and excitation layers.
 
 .. autosummary::
     :toctree: generated/attention
+    :template: class_in_subdir
     :recursive:
 
     CAT
@@ -170,6 +172,7 @@ perceptrons (MLPs) and inception blocks.
 
 .. autosummary::
     :toctree: generated/blocks
+    :template: class_in_subdir
     :recursive:
 
     MLP
@@ -187,6 +190,7 @@ constraints and pooling layers.
 
 .. autosummary::
     :toctree: generated/convolution
+    :template: class_in_subdir
     :recursive:
 
     AvgPool2dWithConv
@@ -204,6 +208,7 @@ These modules implement Filter Bank as Layer and generalizer Gaussian layer.
 
 .. autosummary::
     :toctree: generated/filter
+    :template: class_in_subdir
     :recursive:
 
     FilterBankLayer
@@ -220,6 +225,7 @@ input shapes and dimensions.
 
 .. autosummary::
     :toctree: generated/layers
+    :template: class_in_subdir
     :recursive:
 
     Chomp1d
@@ -238,6 +244,7 @@ initializations.
 
 .. autosummary::
     :toctree: generated/linear
+    :template: class_in_subdir
     :recursive:
 
     LinearWithConstraint
@@ -254,9 +261,15 @@ the log power and log variance of input data. Mostly used on FilterBank models.
 
 .. autosummary::
     :toctree: generated/stats
+    :template: class_in_subdir
     :recursive:
 
     StatLayer
+
+.. autosummary::
+    :toctree: generated/stats
+    :recursive:
+
     LogPowerLayer
     LogVarLayer
     MaxLayer
@@ -274,6 +287,7 @@ model.
 
 .. autosummary::
     :toctree: generated/util
+    :template: function_in_subdir
     :recursive:
 
     aggregate_probas
@@ -288,6 +302,7 @@ models with multiple outputs and wrappers for models with intermediate outputs.
 
 .. autosummary::
     :toctree: generated/wrapper
+    :template: class_in_subdir
     :recursive:
 
     Expression

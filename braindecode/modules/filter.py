@@ -113,6 +113,22 @@ class FilterBankLayer(nn.Module):
         Control verbosity of the logging output. If ``None``, use the default
         verbosity level. See the func:`mne.verbose` for details.
         Should only be passed as a keyword argument.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import FilterBankLayer
+    >>> module = FilterBankLayer(
+    ...     n_chans=2,
+    ...     sfreq=128,
+    ...     band_filters=[(4.0, 8.0), (8.0, 12.0)],
+    ...     method="fir",
+    ...     verbose=False,
+    ... )
+    >>> inputs = torch.randn(2, 2, 256)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 2, 2, 256])
     """
 
     def __init__(
@@ -401,6 +417,21 @@ class GeneralizedGaussianFilter(nn.Module):
         Minimum and maximum allowable values for the center frequency `f_mean` in Hz.
         Specified as (min_f_mean, max_f_mean). Default is (1.0, 45.0).
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import GeneralizedGaussianFilter
+    >>> module = GeneralizedGaussianFilter(
+    ...     in_channels=2,
+    ...     out_channels=2,
+    ...     sequence_length=256,
+    ...     sample_rate=128,
+    ...     inverse_fourier=True,
+    ... )
+    >>> inputs = torch.randn(3, 2, 256)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([3, 2, 256])
 
     Notes
     -----

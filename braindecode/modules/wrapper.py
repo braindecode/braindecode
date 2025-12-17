@@ -10,6 +10,16 @@ class Expression(nn.Module):
     expression_fn : callable
         Should accept variable number of objects of type
         `torch.autograd.Variable` to compute its output.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import Expression
+    >>> module = Expression(lambda x: x**2)
+    >>> inputs = torch.randn(2, 3)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 3])
     """
 
     def __init__(self, expression_fn):
@@ -49,6 +59,13 @@ class IntermediateOutputWrapper(nn.Module):
     >>> model = Deep4Net()
     >>> select_modules = ['conv_spat','conv_2','conv_3','conv_4'] # Specify intermediate outputs
     >>> model_pert = IntermediateOutputWrapper(select_modules,model) # Wrap model
+
+    >>> import torch
+    >>> base = torch.nn.Sequential(torch.nn.Linear(10, 8), torch.nn.ReLU(), torch.nn.Linear(8, 2))
+    >>> wrapped = IntermediateOutputWrapper(to_select=["0", "2"], model=base)
+    >>> outputs = wrapped(torch.randn(4, 10))
+    >>> len(outputs)
+    2
     """
 
     def __init__(self, to_select, model):
