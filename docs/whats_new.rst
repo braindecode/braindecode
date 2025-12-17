@@ -17,7 +17,32 @@ What's new
 
 .. _current:
 
-Current 1.3 (dev)
+
+Version 1.4  (Source - GitHub)
+-------------------------------
+
+Enhancements
+~~~~~~~~~~~~
+- None yet.
+
+API changes
+~~~~~~~~~~~
+- None yet.
+
+Requirements
+~~~~~~~~~~~~
+- None yet.
+
+Bugs
+~~~~
+- None yet.
+
+Code health
+~~~~~~~~~~~
+- None yet.
+
+
+Current 1.3 (stable)
 ----------------------
 
 Enhancements
@@ -73,8 +98,8 @@ Bugs
 - Fixing many warnings for generating the documentation (:gh:`805` by `Bruno Aristimunha`_)
 - Fix test compatibility with scikit-learn 1.8+ by adding ``__sklearn_tags__`` support to test mocks (:gh:`868` by `Bruno Aristimunha`_)
 
-Current 1.2 (stable)
-----------------------
+Current 1.2
+------------
 
 Enhancements
 ~~~~~~~~~~~~
@@ -447,5 +472,5 @@ Authors
 .. _Matthew Chen: https://github.com/MatthewChen37
 .. _Jonathan Dan: https://github.com/danjjl
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
-.. _Aniela Bulicz: github.com/AryaDro
+.. _Aniela Bulicz: https://github.com/AryaDro
 .. _Mattew Chew: https://github.com/MatthewChen37
