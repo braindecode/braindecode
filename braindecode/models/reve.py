@@ -21,7 +21,7 @@ from braindecode.models.base import EEGModuleMixin
 
 class REVE(EEGModuleMixin, nn.Module):
     r"""
-    **R**epresentation for **E**EG with **V**ersatile **E**mbeddings - **R**EVE model from El Ouahidi et al. (2025) [reve]_.
+    **R**\ epresentation for **E**\ EG with **V**\ ersatile **E**\ mbeddings - **REVE** from El Ouahidi et al. (2025) [reve]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
@@ -29,74 +29,170 @@ class REVE(EEGModuleMixin, nn.Module):
         :align: center
         :alt:  REVE Training pipeline overview
         :width: 1000px
-        
-    This implementation is based on the one available at https://huggingface.co/brain-bzh/reve-base, pushed by the original authors.
-    The paper was presented at NeurIPS 2025.
 
-    REVE tokenizes EEG signal into latent patches that get fed into a Transformer encoder model.
-    The model uses a 4D positional encoding to contextualize the patches in space and time.
+    REVE is a foundation model for EEG explicitly designed to **generalize across diverse EEG signals**
+    with varying electrode configurations, signal lengths, and recording protocols. Unlike prior EEG
+    foundation models that rely on fixed positional embeddings (e.g., LaBraM, BIOT), REVE introduces
+    a novel **4D positional encoding** scheme that enables processing of signals from **any electrode montage**.
 
-    The positional enconding evolves both a Fourier-based positional embedding and an MLP-based positional embedding,
-    an natural extension of what was proposed in BrainModule [brainmodule]_.
+    .. rubric:: Key Innovations
+
+    1. **Setup-Agnostic Architecture**: REVE can adapt to any EEG electrode configuration without
+       retraining, thanks to its 4D positional encoding that jointly encodes spatial (x, y, z)
+       and temporal positions using Fourier embeddings.
+
+    2. **Largest EEG Pretraining**: Pretrained on **60,000+ hours** of EEG data from **92 datasets**
+       spanning **25,000 subjects** - the largest EEG pretraining effort to date.
+
+    3. **Strong Linear Probing**: Unlike other EEG foundation models that require full fine-tuning,
+       REVE produces high-quality embeddings that work well with frozen encoders and simple linear probes.
+
+    4. **State-of-the-Art Performance**: Achieves SOTA results on 10 downstream tasks including
+       motor imagery, seizure detection, sleep staging, cognitive load, and emotion recognition.
+
+    .. rubric:: Architecture Details
+
+    The model follows a Masked Autoencoder (MAE) pretraining paradigm with modern Transformer components:
+
+    - **Normalization**: RMSNorm (more stable than LayerNorm at scale)
+    - **Activation**: GEGLU (Gated GELU, better than standard GELU)
+    - **Attention**: Flash Attention via PyTorch's SDPA for efficient computation
+    - **Default Configuration** (REVE-Base): 22 layers, 8 heads, 512 embedding dim (~72M params)
 
     .. rubric:: Macro Components
 
-    - ``REVE.tokenization`` **patch extraction**
+    - ``REVE.to_patch_embedding`` **Patch Tokenization**
 
-      *Operations.* The EEG signal is split into overlapping patches along the time dimension,
-      generating :math:`p = \left\lceil \frac{T - w}{w - o} \right\rceil + \mathbf{1} \left[ (T - w) \bmod (w - o) \neq 0 \right]` 
-      patches of size :math:`w` with overlap :math:`o`, where :math:`T` is the length of the signal.
+      *Operations.* The EEG signal is split into overlapping patches along the time dimension.
+      Each patch of ``patch_size`` samples (default: 200 at 200 Hz = 1 second) is linearly projected
+      to the embedding dimension. With ``patch_overlap`` (default: 20), the number of patches is:
 
-    - ``REVE.4DPE`` **4D positional embedding**
+      .. math::
 
-        *Operations.* The 4D positional embedding module combines a Fourier-based positional embedding and an MLP-based positional embedding.
-        The Fourier-based embedding encodes the 3D spatial positions of the EEG channels along with the temporal position of 
-        each patch using sinusoidal functions across multiple frequencies.
-        The MLP-based embedding processes the 4D positions through a small MLP to capture additional positional information.
-        The outputs of both embeddings are summed and normalized to produce the final 4D positional embedding.
+          p = \left\lceil \frac{T - w}{w - o} \right\rceil + \mathbf{1}[(T - w) \mod (w - o) \neq 0]
 
-    - ``REVE.transformer`` **Transformer encoder**
+      where :math:`T` is signal length, :math:`w` is patch size, and :math:`o` is overlap.
 
-        *Operations.* The Transformer encoder consists of multiple layers of multi-head self-attention and feed-forward neural networks.
-        The chosen components are: GEGLU activation, RMSNorm normalization, and Flash Attention for efficient computation.
-        If Flash Attention is not available, it falls back to a standard scaled dot-product attention implementation.
+    - ``REVE.fourier4d`` + ``REVE.mlp4d`` **4D Positional Embedding (4DPE)**
 
-    - ``REVE.final_layer`` **Final prediction layer**
+      *Operations.* The key innovation enabling setup-agnostic processing. Each token receives a
+      positional embedding encoding its 4D coordinates :math:`(x, y, z, t)`:
 
-        *Operations.* A linear layer that maps the flattened output of the Transformer encoder to the desired output shape for the specific EEG task.
-        We also prepend a Layer Norm for stability.
+      - **(x, y, z)**: 3D spatial coordinates of the electrode (from standardized position bank)
+      - **t**: Temporal patch index
 
+      The 4DPE combines two components (inspired by BrainModule [brainmodule]_):
+
+      1. **Fourier Embedding**: Sinusoidal encoding across multiple frequencies for smooth interpolation
+      2. **MLP Embedding**: Linear(4 → embed_dim) → GELU → LayerNorm for learnable refinement
+
+      Both are summed and normalized via LayerNorm.
+
+    - ``REVE.transformer`` **Transformer Encoder**
+
+      *Operations.* Standard Transformer encoder with Pre-LN architecture:
+
+      - Multi-head self-attention with RMSNorm
+      - Feed-forward network with GEGLU activation
+      - Residual connections around both components
+
+    - ``REVE.final_layer`` **Classification Head**
+
+      *Operations.* Task-specific prediction layer. Two modes available:
+
+      1. **Flatten mode** (default): Flatten all tokens → LayerNorm → Linear
+      2. **Attention pooling** (``attention_pooling=True``): Learnable [CLS] query attends to
+         all tokens → LayerNorm → Linear (more parameter-efficient for variable-length inputs)
+
+    .. rubric:: Pretrained Weights
+
+    Pretrained weights are available on HuggingFace:
+
+    - ``brain-bzh/reve-base``: 72M parameters, 512 embedding dim, 22 layers
+    - ``brain-bzh/reve-large``: Larger variant with 1250 embedding dim
+
+    .. rubric:: Usage Example
+
+    .. code-block:: python
+
+        from braindecode.models import REVE
+
+        # Initialize model (downloads position bank automatically)
+        model = REVE(
+            n_outputs=4,  # e.g., 4-class motor imagery
+            n_chans=22,
+            n_times=1000,  # 5 seconds at 200 Hz
+            sfreq=200,
+        )
+
+        # For known channel names, positions are fetched automatically
+        # model = REVE(..., chs_info=[{'ch_name': 'C3'}, {'ch_name': 'C4'}, ...])
+
+        # Forward pass
+        output = model(eeg_data)  # (batch, n_chans, n_times) -> (batch, n_outputs)
+
+    .. warning::
+
+        Input EEG data must be sampled at **200 Hz** to match pretraining. The model expects
+        input shape ``(batch_size, n_channels, n_times)``.
 
     Parameters
     ----------
-    embed_dim : int
-        Dimension of the embedding.
-    depth : int
-        Number of transformer layers.
-    heads : int
+    n_outputs : int, optional
+        Number of output classes/values for the prediction head.
+    n_chans : int, optional
+        Number of EEG channels.
+    chs_info : list of dict, optional
+        Channel information including names. If provided, electrode positions are
+        automatically fetched from the position bank using channel names.
+    n_times : int, optional
+        Number of time samples in the input.
+    input_window_seconds : float, optional
+        Length of input window in seconds.
+    sfreq : float, optional
+        Sampling frequency in Hz. Should be 200 Hz for pretrained weights.
+    embed_dim : int, default=512
+        Dimension of the token embeddings. Use 512 for REVE-Base, 1250 for REVE-Large.
+    depth : int, default=22
+        Number of Transformer encoder layers.
+    heads : int, default=8
         Number of attention heads.
-    head_dim : int
-        Dimension of each attention head.
-    mlp_dim_ratio : float
-        Ratio to compute the hidden dimension of the MLP from the embed_dim.
-    use_geglu : bool
-        Whether to use GEGLU activation in the MLP (True) or GELU (False).
-    freqs : int
-        Number of frequencies for the Fourier positional embedding.
-    patch_size : int
-        Size of each patch for patch embedding.
-    patch_overlap : int
-        Overlap size between patches.
+    head_dim : int, default=64
+        Dimension of each attention head. Total attention dim = heads × head_dim.
+    mlp_dim_ratio : float, default=2.66
+        Ratio to compute FFN hidden dimension: ``mlp_dim = embed_dim × mlp_dim_ratio``.
+    use_geglu : bool, default=True
+        Whether to use GEGLU activation (recommended) or standard GELU in FFN.
+    freqs : int, default=4
+        Number of frequencies for the 4D Fourier positional embedding.
+    patch_size : int, default=200
+        Size of each temporal patch in samples. At 200 Hz, 200 samples = 1 second.
+    patch_overlap : int, default=20
+        Overlap between consecutive patches in samples.
+    attention_pooling : bool, default=False
+        If True, use attention-based pooling with a learnable [CLS] token instead of
+        flattening. More parameter-efficient for variable sequence lengths.
 
     References
     ----------
-    .. [reve] Ouahidi, Y. E., Lys, J., Thölke, P., Farrugia, N., Pasdeloup, B., Gripon, V., Jerbi, K. & Lioi, G. (2025). 
-        REVE: A Foundation Model for EEG - Adapting to Any Setup with Large-Scale Pretraining on 25,000 Subjects. 
-        The Thirty-Ninth Annual Conference on Neural Information Processing Systems. 
-        Retrieved from https://openreview.net/forum?id=ZeFMtRBy4Z
+    .. [reve] El Ouahidi, Y., Lys, J., Thölke, P., Farrugia, N., Pasdeloup, B.,
+       Gripon, V., Jerbi, K. & Lioi, G. (2025). REVE: A Foundation Model for EEG -
+       Adapting to Any Setup with Large-Scale Pretraining on 25,000 Subjects.
+       The Thirty-Ninth Annual Conference on Neural Information Processing Systems.
+       https://openreview.net/forum?id=ZeFMtRBy4Z
+
     .. [brainmodule] Défossez, A., Caucheteux, C., Rapin, J., Kabeli, O., & King, J. R.
        (2023). Decoding speech perception from non-invasive brain recordings. Nature
        Machine Intelligence, 5(10), 1097-1107.
+
+    Notes
+    -----
+    The model downloads electrode positions from HuggingFace on first initialization.
+    This requires an internet connection. The position bank maps standard 10-20/10-10/10-05
+    electrode names to 3D coordinates.
+
+    The 4D positional encoding adds negligible computational overhead compared to the
+    Transformer backbone, scaling linearly with the number of tokens.
     """
 
     def __init__(
