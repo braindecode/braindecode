@@ -135,7 +135,7 @@ class REVE(EEGModuleMixin, nn.Module):
     but you must agree to the data usage terms before downloading:
 
     - ``brain-bzh/reve-base``: 72M parameters, 512 embedding dim, 22 layers (~260 A100 GPU hours)
-    - ``brain-bzh/reve-large``: Larger variant with 1250 embedding dim
+    - ``brain-bzh/reve-large``: ~400M parameters, 1250 embedding dim
 
     .. rubric:: Usage
 
