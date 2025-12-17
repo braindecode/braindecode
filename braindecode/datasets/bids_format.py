@@ -554,19 +554,23 @@ def save_bids_sidecar_files(
     if metadata is not None and len(metadata) > 0:
         events_df = create_events_tsv(metadata, sfreq)
         events_path = base_path.copy().update(suffix="events", extension=".tsv")
-        events_df.to_csv(events_path.fpath, sep="\t", index=False, na_rep="n/a")
+        events_df.to_csv(
+            events_path.fpath, sep="\t", index=False, na_rep="n/a", encoding="utf-8"
+        )
         saved_files["events"] = events_path.fpath
 
     # Save channels.tsv
     channels_df = create_channels_tsv(info)
     channels_path = base_path.copy().update(suffix="channels", extension=".tsv")
-    channels_df.to_csv(channels_path.fpath, sep="\t", index=False, na_rep="n/a")
+    channels_df.to_csv(
+        channels_path.fpath, sep="\t", index=False, na_rep="n/a", encoding="utf-8"
+    )
     saved_files["channels"] = channels_path.fpath
 
     # Save EEG sidecar JSON
     sidecar = create_eeg_json_sidecar(info, task_name=task_name)
     sidecar_path = base_path.copy().update(suffix="eeg", extension=".json")
-    with open(sidecar_path.fpath, "w") as f:
+    with open(sidecar_path.fpath, "w", encoding="utf-8") as f:
         json.dump(sidecar, f, indent=2)
     saved_files["sidecar"] = sidecar_path.fpath
 
@@ -704,5 +708,7 @@ class BIDSDerivativesLayout:
         """
         participants_df = create_participants_tsv(descriptions, extra_columns)
         participants_path = self.derivatives_dir / "participants.tsv"
-        participants_df.to_csv(participants_path, sep="\t", index=False, na_rep="n/a")
+        participants_df.to_csv(
+            participants_path, sep="\t", index=False, na_rep="n/a", encoding="utf-8"
+        )
         return participants_path

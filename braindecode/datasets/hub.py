@@ -196,7 +196,7 @@ class HubDatasetMixin:
 
             # Save format info
             format_info_path = tmp_path / "format_info.json"
-            with open(format_info_path, "w") as f:
+            with open(format_info_path, "w", encoding="utf-8") as f:
                 format_info = self._get_format_info_inline()
                 json.dump(
                     {
@@ -283,7 +283,7 @@ class HubDatasetMixin:
 
         # Save README
         readme_path = path / "README.md"
-        with open(readme_path, "w") as f:
+        with open(readme_path, "w", encoding="utf-8") as f:
             f.write(readme_content)
 
     def _save_bids_sidecar_files(
