@@ -284,8 +284,8 @@ class REVE(EEGModuleMixin, nn.Module):
                 nn.LayerNorm(final_dim),
                 nn.Linear(final_dim, self.n_outputs),
             )
-            
-        if self.use_attention_pooling: 
+
+        if self.use_attention_pooling:
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
 
         self._position_bank = RevePositionBank()
