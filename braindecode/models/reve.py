@@ -694,24 +694,24 @@ class FourierEmb4D(nn.Module):
         torch.Tensor
             Output tensor of shape (B, C * num_patches, 4), where each position is repeated with each time value.
         """
-        B, C, _ = pos.shape
+        batch, nchans, _ = pos.shape
         # Repeat each position for each time step
         pos_repeated = pos.unsqueeze(2).repeat(
             1, 1, num_patches, 1
-        )  # Shape: (B, C, num_patches, 3)
+        )  # Shape: (batch, nchans, num_patches, 3)
         # Generate time values with the specified increment
         time_values = torch.arange(
             0, num_patches, 1, device=pos.device
         ).float()  # Shape: (num_patches,)
         time_values = time_values.view(1, 1, num_patches, 1).expand(
-            B, C, num_patches, 1
-        )  # (B, C, num_patches, 1)
+            batch, nchans, num_patches, 1
+        )  # (batch, nchans, num_patches, 1)
         # Concatenate the repeated positions with the time values along the last dimension
         pos_with_time = torch.cat(
             (pos_repeated, time_values), dim=-1
-        )  # Shape: (B, C, num_patches, 4)
-        # Reshape to (B, C * num_patches, 4)
-        pos_with_time = pos_with_time.view(B, C * num_patches, 4)
+        )  # Shape: (batch, nchans, num_patches, 4)
+        # Reshape to (batch, nchans * num_patches, 4)
+        pos_with_time = pos_with_time.view(batch, nchans * num_patches, 4)
 
         return pos_with_time
 
