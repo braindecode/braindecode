@@ -916,6 +916,11 @@ def test_reve_model_outputs_match():
     except ImportError:
         pytest.skip("transformers not installed")
 
+    try:
+        import flash_attn  # noqa: F401
+    except ImportError:
+        pytest.skip("flash_attn not installed - outputs differ without it")
+
     cache_dir = _get_reve_cache_dir()
 
     # Load HuggingFace models
