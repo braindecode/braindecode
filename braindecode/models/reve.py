@@ -176,7 +176,13 @@ class REVE(EEGModuleMixin, nn.Module):
     patch_overlap : int, default=20
         Overlap between patches in samples.
     attention_pooling : bool, default=False
-        Use attention-based pooling instead of flattening.
+        Pooling strategy for aggregating transformer outputs before classification.
+        If ``False`` (default), all tokens are flattened into a single vector of size
+        ``(n_chans x n_patches x embed_dim)``, which is then passed through LayerNorm
+        and a linear classifier. If ``True``, uses attention-based pooling with a
+        learnable query token that attends to all encoder outputs, producing a single
+        embedding of size ``embed_dim``. Attention pooling is more parameter-efficient
+        for long sequences and variable-length inputs.
 
     References
     ----------
