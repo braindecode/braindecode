@@ -659,5 +659,5 @@ fig.tight_layout()
 # .. [4] Lundberg, Scott M., and Su-In Lee.
 #        "A unified approach to interpreting model predictions."
 #        Advances in neural information processing systems 30, 2017.
-#        URL: https://dl.acm.org/doi/10.5555/3295222.3295230
+#        URL: https://arxiv.org/abs/1705.07874
 # .. include:: /links.inc

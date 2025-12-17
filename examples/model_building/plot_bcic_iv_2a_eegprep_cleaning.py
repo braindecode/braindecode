@@ -419,7 +419,7 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 # .. [3] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
-#        Hum. Brain Mapping, 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
+#        Hum. Brain Mapping, 38: 5391-5420. https://onlinelibrary.wiley.com/doi/10.1002/hbm.23730.
 #
 # .. [4] Mullen, T.R., Kothe, C.A., Chi, Y.M., Ojeda, A., Kerth, T.,
 #        Makeig, S., Jung, T.P. and Cauwenberghs, G., 2015.

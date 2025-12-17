@@ -2,10 +2,6 @@
     :target: https://doi.org/10.5281/zenodo.8214376
     :alt: DOI
 
-.. image:: https://badges.gitter.im/braindecodechat/community.svg
-    :alt: Join the chat at https://gitter.im/braindecodechat/community
-    :target: https://gitter.im/braindecodechat/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
-
 .. image:: https://github.com/braindecode/braindecode/workflows/docs/badge.svg
     :target: https://github.com/braindecode/braindecode/actions
 
@@ -69,12 +65,6 @@ versions.
 Guidelines for contributing to the library can be found on the braindecode github:
 
 https://github.com/braindecode/braindecode/blob/master/CONTRIBUTING.md
-
-##################
- Braindecode chat
-##################
-
-https://gitter.im/braindecodechat/community
 
 ########
  Citing
