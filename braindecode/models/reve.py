@@ -56,7 +56,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
     REVE's 4D positional encoding jointly encodes spatial :math:`(x, y, z)` and temporal :math:`(t)` positions
     using Fourier embeddings, enabling true cross-configuration transfer without retraining. The fourier embedding
-    have inspirion on brainmodule [brainmodule]_, generalized to 4D for EEG with the channel spatial coordinates
+    have inspiration on brainmodule [brainmodule]_, generalized to 4D for EEG with the channel spatial coordinates
     and temporal patch index.
 
     .. rubric:: Linear Probing Performance
@@ -248,9 +248,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
         self.use_attention_pooling = attention_pooling
 
-        self.to_patch_embedding = nn.Sequential(
-            nn.Linear(in_features=self.embed_dim, out_features=self.patch_size)
-        )
+        self.to_patch_embedding = nn.Linear(in_features=self.patch_size, out_features=self.embed_dim)
 
         self.fourier4d = FourierEmb4D(self.embed_dim, freqs=self.freqs)
 
