@@ -288,7 +288,6 @@ sphinx_gallery_conf = {
     ),
     "within_subsection_order": FileNameSortKey,
     "binder": {
-        # Use doc_version to ensure correct path ("dev" for dev versions, version number otherwise)
         "org": "braindecode",
         "repo": "braindecode",
         "branch": "main",
