@@ -100,6 +100,7 @@ repos:
         name: docstrfmt (rst only; do not touch numpy docstrings)
         language_version: python3
         files: \.(rst|txt)$
+        exclude: ^docs/_templates/
 
   - repo: https://github.com/sphinx-contrib/sphinx-lint
     rev: v1.0.2
@@ -107,7 +108,6 @@ repos:
       - id: sphinx-lint
         name: sphinx-lint (rst)
         types: [rst]
-        # args: ["-i", "docs/_build"]
 
   # Optional: run the real Sphinx warning engine, but keep it off the default commit path.
   - repo: local
