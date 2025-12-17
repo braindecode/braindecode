@@ -34,14 +34,14 @@ class REVE(EEGModuleMixin, nn.Module):
     pretraining. While successful in language and vision, their adoption in EEG has lagged due to the
     heterogeneity of public datasets, collected under varying protocols, devices, and electrode configurations.
     Existing EEG foundation models struggle to generalize across these variations, often restricting pretraining
-    to a single setup and resulting in suboptimal performance—particularly under linear probing.
+    to a single setup and resulting in suboptimal performance, particularly under linear probing.
 
     REVE is a pretrained model explicitly designed to generalize across diverse EEG signals. It introduces
     a **4D positional encoding** scheme that enables processing signals of arbitrary length and electrode
     arrangement. Using a masked autoencoding objective, REVE was pretrained on over **60,000 hours** of EEG
-    data from **92 datasets** spanning **25,000 subjects**—the largest EEG pretraining effort to date.
+    data from **92 datasets** spanning **25,000 subjects**, the largest EEG pretraining effort to date.
 
-    .. rubric:: Core Innovation: Setup-Agnostic Processing
+    .. rubric:: Channels Invariant Positional Encoding
 
     Prior EEG foundation models (:class:`~braindecode.models.Labram`, :class:`~braindecode.models.BIOT`) rely on 
     fixed positional embeddings, making direct transfer to unseen electrode layouts infeasible. CBraMod uses 
@@ -151,7 +151,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
         Input data must be sampled at **200 Hz** to match pretraining. The model applies
         z-score normalization followed by clipping at 15 standard deviations internally
-        during pretraining—users should apply similar preprocessing.
+        during pretraining-users should apply similar preprocessing.
 
     Parameters
     ----------
