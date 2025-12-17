@@ -3,7 +3,7 @@ REVE (Representation for EEG with versatile embeddings) model.
 Authors: Jonathan Lys (jonathan.lys@imt-atlantique.org)
 License: BSD 3 clause
 """
-
+import os
 import json
 import math
 import logging
@@ -32,7 +32,7 @@ class REVE(EEGModuleMixin, nn.Module):
         :alt:  REVE Training pipeline overview
         :width: 1000px
 
-    Foundation models have transformed AI by reducing reliance on task-specific data through large-scale
+    Foundation models have transformed by reducing induced biases reliance on task-specific data through large-scale
     pretraining. While successful in language and vision, their adoption in EEG has lagged due to the
     heterogeneity of public datasets, collected under varying protocols, devices, and electrode configurations.
     Existing EEG foundation models struggle to generalize across these variations, often restricting pretraining
@@ -49,26 +49,26 @@ class REVE(EEGModuleMixin, nn.Module):
     fixed positional embeddings, making direct transfer to unseen electrode layouts infeasible. CBraMod uses
     convolution-based positional encoding that requires fine-tuning when adapting to new configurations.
     As noted in the CBraMod paper: *"fixing the pre-trained parameters during training on downstream
-    datasets will lead to a very large performance decline. CBraMod cannot currently serve as a fixed-parameter feature extractor"*.
+    datasets will lead to a very large performance decline. 
 
     REVE's 4D positional encoding jointly encodes spatial :math:`(x, y, z)` and temporal :math:`(t)` positions
     using Fourier embeddings, enabling true cross-configuration transfer without retraining. The fourier embedding
-    have inspirion on brainmodule [brainmodule]_.
+    have inspirion on brainmodule [brainmodule]_, generalized to 4D for EEG with the channel spatial coordinates
+    and temporal patch index. 
 
     .. rubric:: Linear Probing Performance
 
-    A key advantage of REVE is producing high-quality latent spaces without heavy fine-tuning. Under linear
-    probing (frozen encoder), REVE achieves an average balanced accuracy of **0.654** across 10 downstream
-    tasks, compared to **0.501** for CBraMod under matched evaluation. This enables practical deployment
-    in low-data scenarios where extensive fine-tuning is not feasible.
+    A key advantage of REVE is producing useful latent representation without heavy fine-tuning. Under linear
+    probing (frozen encoder), This enables practical deployment in low-data scenarios where extensive 
+    fine-tuning is not feasible.
 
     .. rubric:: Architecture
 
     The model adopts modern Transformer components validated through ablation studies:
 
-    - **Normalization**: RMSNorm outperforms LayerNorm (avg. 0.596 vs 0.579)
-    - **Activation**: GEGLU outperforms GELU (avg. 0.596 vs 0.558)
-    - **Attention**: Flash Attention via PyTorch's SDPA
+    - **Normalization**: RMSNorm outperforms LayerNorm;
+    - **Activation**: GEGLU outperforms GELU;
+    - **Attention**: Flash Attention via PyTorch's SDPA;
     - **Masking ratio**: 55% optimal for spatio-temporal block masking
 
     These choices align with best practices from large language models and were empirically validated
@@ -79,7 +79,7 @@ class REVE(EEGModuleMixin, nn.Module):
     A secondary reconstruction objective using attention pooling across layers prevents over-specialization
     in the final layer. This pooling acts as an information bottleneck, forcing the model to distill key
     information from the entire sequence. Ablations show this loss is crucial for linear probing quality:
-    removing it drops average performance from 0.665 to 0.558 under frozen evaluation.
+    removing it drops average performance in 10% under the frozen evaluation.
 
     .. rubric:: Macro Components
 
@@ -105,7 +105,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
     - ``REVE.transformer`` **Transformer Encoder**
 
-      Pre-LN Transformer with multi-head self-attention (:class:`~torch.nn.RMSNorm`), feed-forward networks (GEGLU
+      Pre-LayerNorm Transformer with multi-head self-attention (:class:`~torch.nn.RMSNorm`), feed-forward networks (GEGLU
       activation), and residual connections. Default configuration: 22 layers, 8 heads, 512 embedding
       dimension (~72M parameters).
 
@@ -122,9 +122,8 @@ class REVE(EEGModuleMixin, nn.Module):
       accuracy drops from 0.824 (64 channels) to 0.660 (1 channel). For tasks requiring broad
       spatial coverage (e.g., imagined speech), performance with <4 channels approaches chance level.
     - **Demographic bias**: The pretraining corpus aggregates publicly available datasets, most
-      originating from North America and Europe, resulting in limited demographic diversity.
-    - **Clinical validation**: While REVE achieves strong benchmark results, validation in
-      real-world clinical settings remains future work.
+      originating from North America and Europe, resulting in limited demographic diversity,
+      more details about the datasets used for pretraining can be found in the REVE paper [reve]_.
 
     .. rubric:: Pretrained Weights
 
@@ -139,7 +138,8 @@ class REVE(EEGModuleMixin, nn.Module):
     .. code-block:: python
 
         from braindecode.models import REVE
-import logging
+import os
+from pathlib import Path
 
         model = REVE(
             n_outputs=4,  # e.g., 4-class motor imagery
@@ -715,8 +715,8 @@ class FourierEmb4D(nn.Module):
 
 class RevePositionBank(torch.nn.Module):
     """ Position bank for REVE model that maps standard EEG channel names to 3D coordinates.
-    
-    The position bank is downloaded from a remote JSON file on HuggingFace.
+
+    The position bank is cached locally in the library root to avoid repeated downloads.
 
     The coordinates come from the 92 datasets used during REVE pretraining.
 
@@ -726,24 +726,51 @@ class RevePositionBank(torch.nn.Module):
         URL to download the position bank JSON file. Default is the HuggingFace URL.
     timeout : int, optional
         Timeout in seconds for the HTTP request. Default is 5 seconds.
+    cache_dir : str, optional
+        Directory to cache the position bank. Default is the models folder within the library.
     """
     def __init__(
         self,
         url: str = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json",
         timeout: int = 5,
+        cache_dir: str = None,
     ):
         super().__init__()
 
+
+        if cache_dir is None:
+            # Use the model root directory
+            cache_dir = str(Path(__file__).parent)
+        
+        cache_file = os.path.join(cache_dir, ".cache", "reve_positions.json")
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+
         config = None
 
-        try:
-            response = requests.get(url, timeout=timeout)
-            response.raise_for_status()
-            config = json.loads(response.text)
-        except (requests.RequestException, json.JSONDecodeError) as e:
-            raise RuntimeError(
-                f"Failed to download or parse the position bank from {url}: {e}"
-            ) from e
+        # Try to load from cache first
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r") as f:
+                    config = json.load(f)
+                logger.info(f"Loaded position bank from cache: {cache_file}")
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load cache, downloading: {e}")
+
+        # Download if cache miss or failed to load
+        if config is None:
+            try:
+                response = requests.get(url, timeout=timeout)
+                response.raise_for_status()
+                config = json.loads(response.text)
+                
+                # Save to cache
+                with open(cache_file, "w") as f:
+                    json.dump(config, f)
+                logger.info(f"Downloaded and cached position bank to: {cache_file}")
+            except (requests.RequestException, json.JSONDecodeError) as e:
+                raise RuntimeError(
+                    f"Failed to download or parse the position bank from {url}: {e}"
+                ) from e
 
         try:
             self.position_names = list(config.keys())
