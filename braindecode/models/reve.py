@@ -6,6 +6,7 @@ License: BSD 3 clause
 
 import json
 import math
+import logging
 from typing import Optional, Union
 
 import requests
@@ -18,6 +19,7 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from braindecode.models.base import EEGModuleMixin
 
+logger = logging.getLogger(__name__)
 
 class REVE(EEGModuleMixin, nn.Module):
     r"""
@@ -137,6 +139,7 @@ class REVE(EEGModuleMixin, nn.Module):
     .. code-block:: python
 
         from braindecode.models import REVE
+import logging
 
         model = REVE(
             n_outputs=4,  # e.g., 4-class motor imagery
@@ -244,10 +247,14 @@ class REVE(EEGModuleMixin, nn.Module):
 
         self.use_attention_pooling = attention_pooling
 
-        self.to_patch_embedding = patch_embedding(self.embed_dim, self.patch_size)
+        self.to_patch_embedding =  nn.Sequential(nn.Linear(in_features=self.embed_dim, out_features=self.patch_size))
 
         self.fourier4d = FourierEmb4D(self.embed_dim, freqs=self.freqs)
-        self.mlp4d = mlp_pos_embedding(self.embed_dim)
+
+        self.mlp4d = nn.Sequential(
+            nn.Linear(4, self.embed_dim, bias=False), nn.GELU(), nn.LayerNorm(self.embed_dim)
+        )
+
         self.ln = nn.LayerNorm(self.embed_dim)  # 4DPE module layernorm
 
         self.transformer = TransformerBackbone(
@@ -602,6 +609,18 @@ class FourierEmb4D(nn.Module):
     Fourier positional embedding for 4D positions (x, y, z, t).
     This version allows for a reduced number of frequencies (n_freqs),
     and ensures the output embedding has the specified dimension.
+
+    Parameters
+    ----------
+    dimension : int
+        The dimension of the output embedding. Must be an even number.
+    freqs : int
+        The number of frequencies to use for the Fourier embedding.
+    increment_time : float, optional
+        The time increment to scale the time dimension. Default is 0.1.
+    margin : float, optional
+        The margin to add to the position coordinates to avoid boundary issues. Default is 0.4.   
+
     """
 
     def __init__(
@@ -693,17 +712,6 @@ class FourierEmb4D(nn.Module):
         return pos_with_time
 
 
-def patch_embedding(embed_dim, patch_size):
-    to_patch_embedding = nn.Sequential(nn.Linear(patch_size, embed_dim))
-    return to_patch_embedding
-
-
-def mlp_pos_embedding(embed_dim):
-    mlp_pos_embedding = nn.Sequential(
-        nn.Linear(4, embed_dim, bias=False), nn.GELU(), nn.LayerNorm(embed_dim)
-    )
-    return mlp_pos_embedding
-
 
 class RevePositionBank(torch.nn.Module):
     def __init__(
@@ -750,7 +758,7 @@ class RevePositionBank(torch.nn.Module):
         indices = [self.mapping[q] for q in channel_names if q in self.mapping]
 
         if len(indices) < len(channel_names):
-            print(
+            logger.warning(
                 f"Found {len(indices)} positions out of {len(channel_names)} channels"
             )
 
