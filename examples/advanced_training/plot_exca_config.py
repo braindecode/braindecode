@@ -41,11 +41,11 @@ from typing import Annotated, Literal
 
 import exca
 import pydantic
+from moabb.datasets.utils import dataset_list
 
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.preprocessing import create_windows_from_events
-from moabb.datasets.utils import dataset_list
 
 warnings.simplefilter("ignore")
 

@@ -97,10 +97,9 @@ repos:
     rev: v2.0.0
     hooks:
       - id: docstrfmt
-        name: docstrfmt (rst + docstrings)
+        name: docstrfmt (rst only; do not touch numpy docstrings)
         language_version: python3
-        # include .rst docs + python docstrings
-        types_or: [python, rst]
+        files: \.(rst|txt)$
 
   - repo: https://github.com/sphinx-contrib/sphinx-lint
     rev: v1.0.2
@@ -108,7 +107,6 @@ repos:
       - id: sphinx-lint
         name: sphinx-lint (rst)
         types: [rst]
-        # Optional: ignore build dirs / vendored stuff if you have them
         # args: ["-i", "docs/_build"]
 
   # Optional: run the real Sphinx warning engine, but keep it off the default commit path.
@@ -119,6 +117,13 @@ repos:
         entry: sphinx-build -b html -n -W --keep-going docs docs/_build/html
         language: system
         pass_filenames: false
+        stages: [manual]
+
+      - id: numpydoc-validate
+        name: numpydoc validate (manual)
+        entry: python -m numpydoc validate
+        language: system
+        types: [python]
         stages: [manual]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
