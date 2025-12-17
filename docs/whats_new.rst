@@ -198,6 +198,8 @@ Bugs
 - Constraint the version of mne (:gh: 594 by `Bruno Aristimunha`_)
 - Fix type errors (:gh:`606` by `Pierre Guetschel`_)
 - Warn when applying preprocessing steps on a :class:`braindecode.datasets.base.EEGWindowsDataset` (:gh:`607` by `Pierre Guetschel`_)
+- Fix dead link & Sphinx URL formatting (:gh:`602` by `John Muradeli`_)
+- Fix `tmax` in `SleepPhysionet` (:gh:`612` by `John Muradeli`_)
 - Fix matplotlib colormaps deprecation (:gh:`608` by `Bruno Aristimunha`_)
 - Ensure mypy to work for every commit (:gh:`619` by `Bruno Aristimunha`_)
 - Deprecate moabb version 1.0.0 because of incorrect epoching (:gh:`627` by `Pierre Guetschel`_)
