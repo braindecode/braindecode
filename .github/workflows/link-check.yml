@@ -49,6 +49,8 @@ jobs:
             --exclude "gitter\\.im"
             --exclude "gitlab\\.com"
             --exclude "dx\\.doi\\.org"
+            --exclude "^https://doi\\.org/10\\.1002/hbm"
+            --exclude "^https://dl\\.acm\\.org/doi"
             "./**/*.md"
             "./**/*.rst"
           fail: true

@@ -536,10 +536,10 @@ Enhancements
   sleep staging example to show how to train on sequences of windows (:gh:`263` by
   `Hubert Banville`_)
 - Adding Thinker Invariance Network :class:`braindecode.models.TIDNet` (:gh:`170` by
-  `Ann-Kathrin Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+  Ann-Kathrin Kiessner, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Adding a confusion matrix plot generator
-  :func:`braindecode.visualization.plot_confusion_matrix` (:gh:`274` by `Ann-Kathrin
-  Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+  :func:`braindecode.visualization.plot_confusion_matrix` (:gh:`274` by Ann-Kathrin
+  Kiessner, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Adding data :ref:`augmentation_api` module (:gh:`254` by `Cedric Rommel`_, `Alex
   Gramfort`_ and `Thomas Moreau`_)
 - Adding Mixup augmentation :class:`braindecode.augmentation.Mixup` (:gh:`254` by `Simon
@@ -603,12 +603,12 @@ API changes
 ===========
 
 - Removing the default sampling frequency sfreq value in
-  :func:`braindecode.datasets.create_windows_from_events` (:gh:`256` by `Ann-Kathrin
-  Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+  :func:`braindecode.datasets.create_windows_from_events` (:gh:`256` by `Daniel
+  Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Made windowing arguments optional in
   :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` &
   :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`269` by
-  `Ann-Kathrin Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+  `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Deprecating preprocessing functions :func:`braindecode.preprocessing.zscore` and
   :func:`braindecode.preprocessing.scale` in favour of sklearn's implementation
   (:gh:`292` by `Hubert Banville`_)
@@ -701,8 +701,6 @@ Authors
 
 .. _aniela bulicz: github.com/AryaDro
 
-.. _ann-kathrin kiessner: https://github.com/Ann-KathrinKiessner
-
 .. _aphel: https://github.com/itsaphel
 
 .. _arnaud delorme: https://github.com/arnodelorme
@@ -759,7 +757,7 @@ Authors
 
 .. _matthieu terris: https://github.com/matthieutrs
 
-.. _mohammad javad d: https://github.com/MohammadJavadD
+.. _mohammad javad d: https://github.com/javadbayazi
 
 .. _mohammed fattouh: https://github.com/MFattouh
 
