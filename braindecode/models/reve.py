@@ -43,11 +43,11 @@ class REVE(EEGModuleMixin, nn.Module):
 
     .. rubric:: Core Innovation: Setup-Agnostic Processing
 
-    Prior EEG foundation models (LaBraM, BIOT) rely on fixed positional embeddings, making direct transfer
-    to unseen electrode layouts infeasible. CBraMod uses convolution-based positional encoding that requires
-    fine-tuning when adapting to new configurations. As noted in the CBraMod paper: *"fixing the pre-trained
-    parameters during training on downstream datasets will lead to a very large performance decline...
-    CBraMod cannot currently serve as a fixed-parameter feature extractor"*.
+    Prior EEG foundation models (:class:`~braindecode.models.Labram`, :class:`~braindecode.models.BIOT`) rely on 
+    fixed positional embeddings, making direct transfer to unseen electrode layouts infeasible. CBraMod uses 
+    convolution-based positional encoding that requires fine-tuning when adapting to new configurations. 
+    As noted in the CBraMod paper: *"fixing the pre-trained parameters during training on downstream 
+    datasets will lead to a very large performance decline. CBraMod cannot currently serve as a fixed-parameter feature extractor"*.
 
     REVE's 4D positional encoding jointly encodes spatial :math:`(x, y, z)` and temporal :math:`(t)` positions
     using Fourier embeddings, enabling true cross-configuration transfer without retraining. The fourier embedding
@@ -96,20 +96,20 @@ class REVE(EEGModuleMixin, nn.Module):
 
       1. **Fourier embedding**: Sinusoidal encoding across multiple frequencies for smooth interpolation
          to unseen positions
-      2. **MLP embedding**: ``Linear(4 → embed_dim) → GELU → LayerNorm`` for learnable refinement
+      2. **MLP embedding**: :class:`~torch.nn.Linear` (4 → embed_dim) → :class:`~torch.nn.GELU` → :class:`~torch.nn.LayerNorm` for learnable refinement
 
       Both components are summed and normalized. The 4DPE adds negligible computational overhead,
       scaling linearly with the number of tokens.
 
     - ``REVE.transformer`` **Transformer Encoder**
 
-      Pre-LN Transformer with multi-head self-attention (RMSNorm), feed-forward networks (GEGLU
+      Pre-LN Transformer with multi-head self-attention (:class:`~torch.nn.RMSNorm`), feed-forward networks (GEGLU
       activation), and residual connections. Default configuration: 22 layers, 8 heads, 512 embedding
       dimension (~72M parameters).
 
     - ``REVE.final_layer`` **Classification Head**
 
-      Two modes: (1) Flatten all tokens → LayerNorm → Linear, or (2) Attention pooling with a
+      Two modes: (1) Flatten all tokens → :class:`~torch.nn.LayerNorm` → :class:`~torch.nn.Linear`, or (2) Attention pooling with a
       learnable query token attending to all encoder outputs.
 
     .. rubric:: Known Limitations
@@ -124,7 +124,8 @@ class REVE(EEGModuleMixin, nn.Module):
 
     .. rubric:: Pretrained Weights
 
-    Weights are available on HuggingFace:
+    Weights are available on `HuggingFace <https://huggingface.co/collections/brain-bzh/reve>`_,
+    but you must agree to the data usage terms before downloading:
 
     - ``brain-bzh/reve-base``: 72M parameters, 512 embedding dim, 22 layers (~260 A100 GPU hours)
     - ``brain-bzh/reve-large``: Larger variant with 1250 embedding dim
@@ -140,7 +141,7 @@ class REVE(EEGModuleMixin, nn.Module):
             n_chans=22,
             n_times=1000,  # 5 seconds at 200 Hz
             sfreq=200,
-            chs_info=[{'ch_name': 'C3'}, {'ch_name': 'C4'}, ...]  # optional
+            chs_info=[{'ch_name': 'C3'}, {'ch_name': 'C4'}, ...]  
         )
 
         # Forward pass: (batch, n_chans, n_times) -> (batch, n_outputs)
@@ -357,13 +358,19 @@ class REVE(EEGModuleMixin, nn.Module):
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
         pos_embed = self.ln(self.fourier4d(pos) + self.mlp4d(pos))
 
+        # Patch embedding: (batch, channels, n_patches, patch_size) -> (batch, channels, n_patches, embed_dim)
+        patch_embeddings = self.to_patch_embedding(patches)
+
+        # Flatten spatial and temporal dimensions into a single sequence dimension
+        # (batch, channels, n_patches, embed_dim) -> (batch, channels * n_patches, embed_dim)
+        # This creates a sequence of tokens where each token represents one patch from one channel
         x = (
             rearrange(
-                self.to_patch_embedding(patches),
-                "b c h e -> b (c h) e",
-                c=channel,
-                h=n_patches,
-                e=self.embed_dim,
+                patch_embeddings,
+                "batch chan patch emb -> batch (chan patch) emb",
+                chan=channel,
+                patch=n_patches,
+                emb=self.embed_dim,
             )
             + pos_embed
         )
@@ -372,13 +379,16 @@ class REVE(EEGModuleMixin, nn.Module):
         if return_output:
             return x
 
+        # Reshape back from flattened sequence to separate channel and temporal dimensions
+        # (batch, channels * n_patches, embed_dim) -> (batch, channels, n_patches, embed_dim)
+        # This recovers the spatio-temporal structure for downstream processing
         x = rearrange(
             x,
-            "b (c h) e -> b c h e",
-            b=batch_size,
-            c=channel,
-            h=n_patches,
-            e=self.embed_dim,
+            "batch (chan patch) emb -> batch chan patch emb",
+            batch=batch_size,
+            chan=channel,
+            patch=n_patches,
+            emb=self.embed_dim,
         )
 
         if self.use_attention_pooling:
@@ -403,8 +413,16 @@ class REVE(EEGModuleMixin, nn.Module):
             Output tensor of shape (B, E) after attention pooling.
         """
 
-        batch_size, _channels, _seq_len, _embed_dim = x.shape
-        x = rearrange(x, "b c s e -> b (c s) e")  # (B, C*S, E)
+        batch_size, n_channels, seq_len, embed_dim = x.shape
+        # Flatten channel and sequence dimensions for attention pooling
+        # (batch, channels, seq_len, embed_dim) -> (batch, channels * seq_len, embed_dim)
+        x = rearrange(
+            x,
+            "batch chan seq emb -> batch (chan seq) emb",
+            chan=n_channels,
+            seq=seq_len,
+            emb=embed_dim,
+        )
         query_output = self.cls_query_token.expand(batch_size, -1, -1)  # (B, 1, E)
         attention_scores = torch.matmul(query_output, x.transpose(-1, -2)) / (
             self.embed_dim**0.5
@@ -469,9 +487,19 @@ class ClassicalAttention(nn.Module):
             )
 
     def forward(self, qkv: torch.Tensor) -> torch.Tensor:
+        # Split concatenated QKV into separate tensors
+        # qkv shape: (batch, seq_len, 3 * heads * head_dim)
         q, k, v = qkv.chunk(3, dim=-1)
+
+        # Reshape for multi-head attention: split last dim into (heads, head_dim)
+        # (batch, seq_len, heads * head_dim) -> (batch, heads, seq_len, head_dim)
         q, k, v = (
-            rearrange(t, "b n (h d) -> b h n d", h=self.heads) for t in (q, k, v)
+            rearrange(
+                t,
+                "batch seq (heads dim) -> batch heads seq dim",
+                heads=self.heads,
+            )
+            for t in (q, k, v)
         )
 
         if self.use_sdpa:  # SDPA Implementation
@@ -489,7 +517,8 @@ class ClassicalAttention(nn.Module):
             attn = nn.Softmax(dim=-1)(dots)
             out = torch.matmul(attn, v)
 
-        out = rearrange(out, "b h n d -> b n (h d)")
+        # Merge heads back: (batch, heads, seq_len, head_dim) -> (batch, seq_len, heads * head_dim)
+        out = rearrange(out, "batch heads seq dim -> batch seq (heads dim)")
         return out
 
 
