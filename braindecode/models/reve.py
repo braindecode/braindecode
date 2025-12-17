@@ -239,7 +239,7 @@ class REVE(EEGModuleMixin, nn.Module):
         self.embed_dim = embed_dim
         self.freqs = freqs
         self.patch_size = patch_size
-        self.overlap_size = patch_overlap
+        self.patch_overlap = patch_overlap
         self.depth = depth
         self.heads = heads
         self.head_dim = head_dim
@@ -284,8 +284,9 @@ class REVE(EEGModuleMixin, nn.Module):
                 nn.LayerNorm(final_dim),
                 nn.Linear(final_dim, self.n_outputs),
             )
-
-        self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
+            
+        if self.use_attention_pooling: 
+            self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
 
         self._position_bank = RevePositionBank()
 
@@ -298,6 +299,15 @@ class REVE(EEGModuleMixin, nn.Module):
 
         if self.use_attention_pooling:
             return self.embed_dim
+
+        n_patches = math.ceil(
+            (self.n_times - self.patch_size) / (self.patch_size - self.patch_overlap)
+        )
+
+        if (self.n_times - self.patch_size) % (
+            self.patch_size - self.patch_overlap
+        ) == 0:
+            n_patches += 1
 
         n_patches = ((self.n_times - self.patch_size) // (self.patch_size - self.overlap_size)) + 1
         flat_dim = self.n_chans * n_patches * self.embed_dim
@@ -357,7 +367,7 @@ class REVE(EEGModuleMixin, nn.Module):
         patches = eeg.unfold(
             dimension=2,
             size=self.patch_size,
-            step=self.patch_size - self.overlap_size,
+            step=self.patch_size - self.patch_overlap,
         )
         batch_size, channel, n_patches, _ = patches.shape
 
@@ -367,6 +377,7 @@ class REVE(EEGModuleMixin, nn.Module):
                     "No positions provided and no default positions available. Please provide channel positions."
                 )
             pos = self.default_pos.expand(batch_size, -1, -1).to(eeg.device)
+
         pos = FourierEmb4D.add_time_patch(pos, n_patches)
         pos_embed = self.ln(self.fourier4d(pos) + self.mlp4d(pos))
 
