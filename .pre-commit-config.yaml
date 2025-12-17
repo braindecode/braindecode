@@ -21,7 +21,6 @@ repos:
       - id: check-toml
       - id: check-docstring-first
       - id: check-added-large-files
-      # accepting until 2 mb
         args: ['--maxkb=2048']
       - id: end-of-file-fixer
       - id: trailing-whitespace
@@ -30,8 +29,9 @@ repos:
       - id: forbid-new-submodules
       - id: pretty-format-json
         args: [ "--autofix", "--no-sort-keys", "--indent=4" ]
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.12.9
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.9
     hooks:
       - id: ruff-format
         name: ruff format code
@@ -41,8 +41,8 @@ repos:
         args:
           [
             "--fix",
-            "--select=E,W,F,I,D",         # E=errors, W=warnings, F=pyflakes, I=import sorting, D=docstring rules
-            "--ignore=E402,E501,F401,D103,D400,D100,D101,D102,D105,D107,D415,D417,D205",  # combined ignores
+            "--select=E,W,F,I,D",
+            "--ignore=E402,E501,F401,D103,D400,D100,D101,D102,D105,D107,D415,D417,D205",
           ]
         files: ^(docs|examples)/
       - id: ruff
@@ -67,8 +67,8 @@ repos:
         args:
           [
             "--fix",
-            "--select=D",                 # docstring rules
-            "--ignore=D103,D400,E402,D100,D101,D102,D105,D107,D415,D417,D205",    # drop these specific checks
+            "--select=D",
+            "--ignore=D103,D400,E402,D100,D101,D102,D105,D107,D415,D417,D205",
           ]
         files: ^(docs|examples)/
 
@@ -84,13 +84,45 @@ repos:
         exclude: ^tests/|generated/^.github
 
   - repo: https://github.com/asottile/blacken-docs
-    rev: 1.19.1
+    rev: 1.20.0
     hooks:
       - id: blacken-docs
         exclude: ^.github|CONTRIBUTING.md
 
+  # -----------------------------
+  # NEW: Sphinx/RST formatting + lint
+  # -----------------------------
+
+  - repo: https://github.com/LilSpazJoekp/docstrfmt
+    rev: v2.0.0
+    hooks:
+      - id: docstrfmt
+        name: docstrfmt (rst + docstrings)
+        language_version: python3
+        # include .rst docs + python docstrings
+        types_or: [python, rst]
+
+  - repo: https://github.com/sphinx-contrib/sphinx-lint
+    rev: v1.0.2
+    hooks:
+      - id: sphinx-lint
+        name: sphinx-lint (rst)
+        types: [rst]
+        # Optional: ignore build dirs / vendored stuff if you have them
+        # args: ["-i", "docs/_build"]
+
+  # Optional: run the real Sphinx warning engine, but keep it off the default commit path.
+  - repo: local
+    hooks:
+      - id: sphinx-build-warnings
+        name: sphinx-build -n -W --keep-going (manual)
+        entry: sphinx-build -b html -n -W --keep-going docs docs/_build/html
+        language: system
+        pass_filenames: false
+        stages: [manual]
+
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.1
+    rev: v1.19.1
     hooks:
       - id: mypy
         files: braindecode/.*.py|test/.*.py|examples/.*.py
@@ -102,7 +134,7 @@ repos:
         verbose: true
 
   - repo: https://github.com/PyCQA/isort
-    rev: 6.0.1
+    rev: 7.0.0
     hooks:
       - id: isort
         exclude: ^\.gitignore
