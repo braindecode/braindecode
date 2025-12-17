@@ -3,9 +3,21 @@ Hugging Face Hub integration for EEG datasets.
 
 This module provides push_to_hub() and pull_from_hub() functionality
 for braindecode datasets, similar to the model Hub integration.
+
+The format follows a BIDS-like derivatives structure:
+- derivatives/braindecode/
+  - dataset_description.json
+  - participants.tsv
+  - dataset.zarr/ (main data for efficient training)
+  - sub-<label>/
+    - eeg/
+      - *_events.tsv
+      - *_channels.tsv
+      - *_eeg.json
 """
 
 # Authors: Kuntal Kokate
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -30,7 +42,8 @@ if TYPE_CHECKING:
 import braindecode
 
 # Import shared validation utilities
-from . import hub_validation
+# Import BIDS format utilities
+from . import bids_format, hub_validation
 
 # Import registry for dynamic class lookup (avoids circular imports)
 from .registry import get_dataset_class, get_dataset_type
@@ -76,13 +89,15 @@ class HubDatasetMixin:
         create_pr: bool = False,
         compression: str = "blosc",
         compression_level: int = 5,
+        pipeline_name: str = "braindecode",
     ) -> str:
         """
-        Upload the dataset to the Hugging Face Hub in Zarr format.
+        Upload the dataset to the Hugging Face Hub in BIDS-like Zarr format.
 
         The dataset is converted to Zarr format with blosc compression, which provides
-        optimal random access performance for PyTorch training (based on comprehensive
-        benchmarking).
+        optimal random access performance for PyTorch training. The data is stored
+        in a BIDS derivatives-like structure with events.tsv, channels.tsv,
+        and participants.tsv sidecar files.
 
         Parameters
         ----------
@@ -100,6 +115,8 @@ class HubDatasetMixin:
             Compression algorithm for Zarr. Options: "blosc", "zstd", "gzip", None.
         compression_level : int, default=5
             Compression level (0-9). Level 5 provides optimal balance.
+        pipeline_name : str, default="braindecode"
+            Name of the processing pipeline for BIDS derivatives.
 
         Returns
         -------
@@ -116,17 +133,10 @@ class HubDatasetMixin:
         Examples
         --------
         >>> dataset = NMT(path=path, preload=True)
-        >>> # Upload with default settings (zarr with blosc compression)
+        >>> # Upload with BIDS-like structure
         >>> url = dataset.push_to_hub(
         ...     repo_id="myusername/nmt-dataset",
         ...     commit_message="Upload NMT EEG dataset"
-        ... )
-        >>>
-        >>> # Or customize compression
-        >>> url = dataset.push_to_hub(
-        ...     repo_id="myusername/nmt-dataset",
-        ...     compression="blosc",
-        ...     compression_level=5
         ... )
         """
         if huggingface_hub is False or zarr is False:
@@ -154,25 +164,45 @@ class HubDatasetMixin:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
 
-            # Convert dataset to Zarr format
+            # Create BIDS-like derivatives structure
+            log.info("Creating BIDS-like derivatives structure...")
+            bids_layout = bids_format.BIDSDerivativesLayout(
+                tmp_path, pipeline_name=pipeline_name
+            )
+            derivatives_dir = bids_layout.create_structure()
+
+            # Save dataset_description.json
+            bids_layout.save_dataset_description()
+
+            # Save participants.tsv
+            descriptions = [ds.description for ds in self.datasets]
+            bids_layout.save_participants(descriptions)
+
+            # Save BIDS sidecar files for each recording
+            self._save_bids_sidecar_files(bids_layout)
+
+            # Convert dataset to Zarr format inside derivatives
             log.info("Converting dataset to Zarr format...")
-            dataset_path = tmp_path / "dataset.zarr"
+            dataset_path = derivatives_dir / "dataset.zarr"
+
             self._convert_to_zarr_inline(
                 dataset_path,
                 compression,
                 compression_level,
             )
 
-            # Save dataset metadata
+            # Save dataset metadata (README.md)
             self._save_dataset_card(tmp_path)
 
             # Save format info
             format_info_path = tmp_path / "format_info.json"
-            with open(format_info_path, "w") as f:
+            with open(format_info_path, "w", encoding="utf-8") as f:
                 format_info = self._get_format_info_inline()
                 json.dump(
                     {
                         "format": "zarr",
+                        "bids_compatible": True,
+                        "pipeline_name": pipeline_name,
                         "compression": compression,
                         "compression_level": compression_level,
                         "braindecode_version": braindecode.__version__,
@@ -185,8 +215,8 @@ class HubDatasetMixin:
             # Default commit message
             if commit_message is None:
                 commit_message = (
-                    f"Upload EEG dataset in Zarr format "
-                    f"({len(self.datasets)} recordings)"
+                    f"Upload EEG dataset in BIDS-like "
+                    f"Zarr format ({len(self.datasets)} recordings)"
                 )
 
             # Upload folder to Hub
@@ -206,7 +236,7 @@ class HubDatasetMixin:
             except Exception as e:
                 raise RuntimeError(f"Failed to upload dataset: {e}")
 
-    def _save_dataset_card(self, path: Path) -> None:
+    def _save_dataset_card(self, path: Path, bids_compatible: bool = True) -> None:
         """Generate and save a dataset card (README.md) with metadata.
 
         Parameters
@@ -248,12 +278,70 @@ class HubDatasetMixin:
             sfreq=sfreq,
             data_type=data_type,
             n_windows=n_windows,
+            bids_compatible=True,
         )
 
         # Save README
         readme_path = path / "README.md"
-        with open(readme_path, "w") as f:
+        with open(readme_path, "w", encoding="utf-8") as f:
             f.write(readme_content)
+
+    def _save_bids_sidecar_files(
+        self, bids_layout: "bids_format.BIDSDerivativesLayout"
+    ) -> None:
+        """Save BIDS-compliant sidecar files for each recording.
+
+        This creates events.tsv, channels.tsv, and EEG sidecar JSON files
+        for each recording in a BIDS-like directory structure.
+
+        Parameters
+        ----------
+        bids_layout : BIDSDerivativesLayout
+            BIDS layout object for path generation.
+        """
+        dataset_type = get_dataset_type(self.datasets[0])
+
+        for i_ds, ds in enumerate(self.datasets):
+            # Get BIDS entities from description
+            description = ds.description if ds.description is not None else pd.Series()
+
+            # Get BIDSPath for this recording using mne_bids
+            bids_path = bids_layout.get_bids_path(description)
+
+            # Create subject directory
+            bids_path.mkdir(exist_ok=True)
+
+            # Get metadata and info based on dataset type
+            if dataset_type == "WindowsDataset":
+                info = ds.windows.info
+                metadata = ds.windows.metadata
+                sfreq = info["sfreq"]
+            elif dataset_type == "EEGWindowsDataset":
+                info = ds.raw.info
+                metadata = ds.metadata
+                sfreq = info["sfreq"]
+            elif dataset_type == "RawDataset":
+                info = ds.raw.info
+                metadata = None
+                sfreq = info["sfreq"]
+            else:
+                continue
+
+            # Determine task name from description or BIDSPath
+            task_name = bids_path.task or "unknown"
+
+            # Save BIDS sidecar files using mne_bids BIDSPath
+            bids_format.save_bids_sidecar_files(
+                bids_path=bids_path,
+                info=info,
+                metadata=metadata,
+                sfreq=sfreq,
+                task_name=str(task_name),
+            )
+
+            log.debug(
+                f"Saved BIDS sidecar files for recording {i_ds} to {bids_path.directory}"
+            )
 
     @classmethod
     def pull_from_hub(
@@ -340,8 +428,22 @@ class HubDatasetMixin:
             else:
                 format_info = {}
 
-            # Load zarr dataset
-            zarr_path = Path(dataset_dir) / "dataset.zarr"
+            # Determine if BIDS-compatible structure
+            bids_compatible = format_info.get("bids_compatible", False)
+            pipeline_name = format_info.get("pipeline_name", "braindecode")
+
+            # Find zarr dataset path
+            if bids_compatible:
+                # Look in derivatives folder
+                zarr_path = (
+                    Path(dataset_dir) / "derivatives" / pipeline_name / "dataset.zarr"
+                )
+                if not zarr_path.exists():
+                    # Fall back to root level (backwards compatibility)
+                    zarr_path = Path(dataset_dir) / "dataset.zarr"
+            else:
+                zarr_path = Path(dataset_dir) / "dataset.zarr"
+
             if not zarr_path.exists():
                 raise FileNotFoundError(
                     f"Zarr dataset not found at {zarr_path}. "
@@ -350,11 +452,17 @@ class HubDatasetMixin:
 
             dataset = cls._load_from_zarr_inline(zarr_path, preload)
 
+            # Load BIDS metadata if available
+            if bids_compatible:
+                cls._load_bids_metadata(dataset, Path(dataset_dir), pipeline_name)
+
             log.info(f"Dataset loaded successfully from {repo_id}")
             log.info(f"Recordings: {len(dataset.datasets)}")
             log.info(
                 f"Total windows/samples: {format_info.get('total_samples', 'N/A')}"
             )
+            if bids_compatible:
+                log.info("BIDS sidecar files available in derivatives folder")
 
             return dataset
 
@@ -368,6 +476,71 @@ class HubDatasetMixin:
                 raise RuntimeError(f"Failed to download dataset: {e}")
         except Exception as e:
             raise RuntimeError(f"Failed to load dataset from Hub: {e}")
+
+    @classmethod
+    def _load_bids_metadata(
+        cls,
+        dataset,
+        dataset_dir: Path,
+        pipeline_name: str,
+    ) -> None:
+        """Load BIDS metadata from sidecar files and attach to dataset.
+
+        Parameters
+        ----------
+        dataset : BaseConcatDataset
+            The loaded dataset to attach metadata to.
+        dataset_dir : Path
+            Root directory of the downloaded dataset.
+        pipeline_name : str
+            Name of the processing pipeline.
+        """
+        derivatives_dir = dataset_dir / "derivatives" / pipeline_name
+
+        # Load participants.tsv if available
+        participants_path = derivatives_dir / "participants.tsv"
+        if participants_path.exists():
+            try:
+                participants_df = pd.read_csv(participants_path, sep="\t")
+                # Store as attribute on the concat dataset
+                dataset.participants = participants_df
+                log.debug(
+                    f"Loaded participants info for {len(participants_df)} subjects"
+                )
+            except Exception as e:
+                log.warning(f"Failed to load participants.tsv: {e}")
+
+        # Create layout for path generation
+        bids_layout = bids_format.BIDSDerivativesLayout(
+            dataset_dir, pipeline_name=pipeline_name
+        )
+
+        # Try to load events.tsv files and attach to individual datasets
+        for i_ds, ds in enumerate(dataset.datasets):
+            description = ds.description if ds.description is not None else pd.Series()
+
+            # Get BIDSPath for this recording
+            bids_path = bids_layout.get_bids_path(description)
+
+            # Load events.tsv if available
+            events_path = bids_path.copy().update(suffix="events", extension=".tsv")
+            if events_path.fpath.exists():
+                try:
+                    events_df = pd.read_csv(events_path.fpath, sep="\t")
+                    ds.bids_events = events_df
+                    log.debug(f"Loaded events for recording {i_ds}")
+                except Exception as e:
+                    log.warning(f"Failed to load events for recording {i_ds}: {e}")
+
+            # Load channels.tsv if available
+            channels_path = bids_path.copy().update(suffix="channels", extension=".tsv")
+            if channels_path.fpath.exists():
+                try:
+                    channels_df = pd.read_csv(channels_path.fpath, sep="\t")
+                    ds.bids_channels = channels_df
+                    log.debug(f"Loaded channels for recording {i_ds}")
+                except Exception as e:
+                    log.warning(f"Failed to load channels for recording {i_ds}: {e}")
 
     def _convert_to_zarr_inline(
         self,
@@ -863,6 +1036,7 @@ def _generate_readme_content(
     data_type: str,
     n_windows: int,
     format: str = "zarr",
+    bids_compatible: bool = True,
 ):
     """Generate README.md content for a dataset uploaded to the Hub."""
     # Use safe access for total size and format sfreq nicely
@@ -871,12 +1045,52 @@ def _generate_readme_content(
     )
     sfreq_str = f"{sfreq:g}" if sfreq is not None else "N/A"
 
+    bids_section = ""
+    if bids_compatible:
+        bids_section = """
+## BIDS-like Structure
+
+This dataset follows a BIDS derivatives-like structure for compatibility with
+neuroimaging tools while maintaining efficiency for deep learning:
+
+```
+derivatives/braindecode/
+├── dataset_description.json    # BIDS dataset description
+├── participants.tsv            # Subject-level metadata
+├── dataset.zarr/               # Main data (optimized for training)
+└── sub-<label>/
+    └── eeg/
+        ├── *_events.tsv        # Trial/window events
+        ├── *_channels.tsv      # Channel information
+        └── *_eeg.json          # Recording metadata
+```
+
+### Accessing BIDS Metadata
+
+After loading the dataset, BIDS metadata is available:
+
+```python
+# Access participants info
+if hasattr(dataset, "participants"):
+    print(dataset.participants)
+
+# Access events for a recording
+if hasattr(dataset.datasets[0], "bids_events"):
+    print(dataset.datasets[0].bids_events)
+
+# Access channel info
+if hasattr(dataset.datasets[0], "bids_channels"):
+    print(dataset.datasets[0].bids_channels)
+```
+"""
+
     return f"""---
 tags:
 - braindecode
 - eeg
 - neuroscience
 - brain-computer-interface
+- bids
 license: unknown
 ---
 
@@ -895,6 +1109,7 @@ This dataset was created using [braindecode](https://braindecode.org), a library
 | Number of windows / samples | {n_windows} |
 | Total size | {total_size_mb:.2f} MB |
 | Storage format | {format} |
+| BIDS compatible | {"Yes" if bids_compatible else "No"} |
 
 ## Usage
 
@@ -933,7 +1148,7 @@ To load this dataset::
         # y shape: [batch_size]
         # metainfo shape: [batch_size, 2] (start and end indices)
         # Process your batch...
-
+{bids_section}
 ## Dataset Format
 
 This dataset is stored in **Zarr** format, optimized for:

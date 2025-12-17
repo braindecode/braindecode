@@ -52,7 +52,7 @@ Enhancements
 - Including colab buttons to all tutorials (:gh:`861` by `Bruno Aristimunha`_ )
 - Adding example Pydantic and Exca (:gh:`858` by `Pierre Guetschel`_)
 - Renaming the model category "Foundation Models" from "Large Brain Models (LBM)" (:gh:`867` by `Bruno Aristimunha`_ )
-
+- Make the dataset at huggingface hub more bids compatible (:gh:`871` by `Bruno Aristimunha`_ )
 
 API changes
 ~~~~~~~~~~~
