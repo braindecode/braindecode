@@ -307,7 +307,6 @@ class REVE(EEGModuleMixin, nn.Module):
         ) == 0:
             n_patches += 1
 
-        n_patches = ((self.n_times - self.patch_size) // (self.patch_size - self.overlap_size)) + 1
         flat_dim = self.n_chans * n_patches * self.embed_dim
         return flat_dim
 
