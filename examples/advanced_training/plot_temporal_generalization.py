@@ -126,7 +126,7 @@ print(n_classes, classes, n_chans, n_times)
 
 ####################################################################################
 # Define your model(s)
-# ~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~
 # Unlike the original MNE tutorial, we will use a deep learning model here and
 # leverage the `EEGClassifier` class from Braindecode. The `EEGClassifier` class
 # is a wrapper around a PyTorch model that allows us to use the model like a

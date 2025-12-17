@@ -115,6 +115,7 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         **Role.** Learns representations and correlations within and across temporal scales while
         reducing complexity from :math:`O((\sum_i N_i)^2)` to
         :math:`O(\sum_i N_i^2 + n^2)` through the router mechanism.
+
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
     - **Temporal:** Multiple patch lengths in :attr:`patch_len_list` capture features at several

@@ -83,7 +83,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     - :class:`_TCNResidualBlock` **(causal dilated temporal CNN)**
 
-        - *Operations.*
+        *Operations:*
+
         - Two :class:`braindecode.modules.CausalConv1d` layers per block with dilation  ``1, 2, 4, …``
         - Across blocks of `torch.nn.ELU` + `torch.nn.BatchNorm1d` + `torch.nn.Dropout`) +
           a residual (identity or 1x1 mapping).
@@ -94,10 +95,12 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     - **Aggregation & Classifier**
 
-        - *Operations.*
+        *Operations:*
+
         - Either (a) map each window feature ``(B, F2)`` to logits via :class:`braindecode.modules.MaxNormLinear`
-        and **average** across windows (default, matching official code), or
+          and **average** across windows (default, matching official code), or
         - (b) **concatenate** all window features ``(B, n·F2)`` and apply a single :class:`MaxNormLinear`.
+
         The max-norm constraint regularizes the readout.
 
     .. rubric:: Convolutional Details
