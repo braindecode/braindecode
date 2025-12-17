@@ -47,15 +47,15 @@ requires-python = ">=3.11"
 dependencies = [
     "torch>=2.2",
     "torchaudio>=2.0",
-    'mne>=1.11.0',
-    'mne_bids>=0.16',
+    'mne>=1.11.0',  # we get matplotlib, numpy, pandas, scipy from here
+    'mne_bids>=0.16', # in theory we get the mne here, but we prefer to have it explicit
     'h5py',
     'skorch>=1.3.0',
     'joblib',
     'torchinfo',
-    'wfdb',
+    'wfdb', # we got the requests and pandas from here
     'linear_attention_transformer',
-    'docstring_inheritance',
+    'docstring_inheritance', # we get einops from here
     'rotary_embedding_torch',
 ]
 [project.urls]

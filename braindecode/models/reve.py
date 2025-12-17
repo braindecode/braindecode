@@ -15,7 +15,6 @@ import requests
 import torch
 import torch.nn.functional as F
 from einops import rearrange
-from packaging import version
 from torch import nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
@@ -505,10 +504,6 @@ class ClassicalAttention(nn.Module):
         super().__init__()
         self.use_sdpa = use_sdpa
         self.heads = heads
-        if self.use_sdpa:
-            assert version.parse(torch.__version__) >= version.parse("2.2.0"), (
-                "in order to use sdpa, you must be using pytorch 2.2 or above"
-            )
 
     def forward(self, qkv: torch.Tensor) -> torch.Tensor:
         # Split concatenated QKV into separate tensors
