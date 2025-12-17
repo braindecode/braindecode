@@ -2,7 +2,9 @@
 #
 # License: BSD-3
 
+import os
 from pathlib import Path
+from shutil import rmtree
 
 import mne
 import pytest
@@ -15,7 +17,8 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, Labram
+from braindecode.models import LUNA, REVE, Labram
+from braindecode.models.reve import RevePositionBank
 
 
 @pytest.fixture
@@ -853,3 +856,142 @@ def test_luna_base_pretrained_caching(luna_base_pretrained_model):
         # Check that model files were downloaded
         cache_files = list(cache_dir.rglob("*"))
         assert len(cache_files) > 0, "Cache directory should contain downloaded files"
+
+
+# ==============================================================================
+# Tests for REVE Model
+# ==============================================================================
+
+# Check if HF token for REVE is available
+HF_TOKEN_REVE_MISSING = os.getenv("HF_TOKEN_REVE") is None or os.getenv("HF_TOKEN_REVE") == ""
+
+
+@pytest.fixture
+def reve_batch_size():
+    return 2
+
+
+@pytest.fixture
+def reve_n_chans():
+    return 32
+
+
+@pytest.fixture
+def reve_n_times():
+    return 1000
+
+
+@pytest.fixture
+def reve_n_outputs():
+    return 10
+
+
+@pytest.fixture
+def reve_cache_dir():
+    return "./cache"
+
+
+@pytest.fixture
+def reve_model_id():
+    return "brain-bzh/reve-base"
+
+
+@pytest.fixture
+def reve_positions_id():
+    return "brain-bzh/reve-positions"
+
+
+@pytest.fixture
+def reve_position_bank():
+    return RevePositionBank()
+
+
+@pytest.fixture
+def reve_position_bank_hf(reve_positions_id, reve_cache_dir):
+    try:
+        from transformers import AutoModel
+        return AutoModel.from_pretrained(
+            reve_positions_id,
+            cache_dir=reve_cache_dir,
+            trust_remote_code=True,
+        )
+    except ImportError:
+        pytest.skip("transformers not installed")
+
+
+@pytest.fixture
+def reve_model_hf(reve_model_id, reve_cache_dir):
+    try:
+        from transformers import AutoModel
+        return AutoModel.from_pretrained(
+            reve_model_id,
+            cache_dir=reve_cache_dir,
+            trust_remote_code=True,
+            token=os.getenv("HF_TOKEN_REVE")
+        )
+    except ImportError:
+        pytest.skip("transformers not installed")
+
+
+@pytest.fixture
+def reve_model_bd(reve_model_id, reve_cache_dir, reve_n_times, reve_n_chans, reve_n_outputs):
+    return REVE.from_pretrained(
+        reve_model_id,
+        cache_dir=reve_cache_dir,
+        n_times=reve_n_times,
+        n_chans=reve_n_chans,
+        n_outputs=reve_n_outputs,
+        token=os.getenv("HF_TOKEN_REVE"),
+    )
+
+
+def test_reve_positions_match(reve_position_bank, reve_position_bank_hf, reve_cache_dir):
+    """Test that the positions from both implementations match."""
+    all_pos_hf = reve_position_bank_hf.get_all_positions()
+    all_pos_bd = reve_position_bank.get_all_positions()
+
+    assert all_pos_hf == all_pos_bd, "Position names mismatch"
+
+    for pos in all_pos_bd:
+        pos_hf = reve_position_bank_hf([pos])
+        pos_bd = reve_position_bank([pos])
+        assert torch.allclose(pos_hf, pos_bd)
+
+    # Cleanup
+    if os.path.exists(reve_cache_dir):
+        rmtree(reve_cache_dir)
+
+
+@pytest.mark.skipif(HF_TOKEN_REVE_MISSING, reason="HF token for REVE is missing")
+def test_reve_model_outputs_match(
+    reve_position_bank_hf,
+    reve_model_hf,
+    reve_model_bd,
+    reve_batch_size,
+    reve_n_chans,
+    reve_n_times,
+    reve_cache_dir,
+):
+    """Test that the outputs from both implementations match."""
+    ch_list = [f"E{i + 1}" for i in range(reve_n_chans)]
+
+    torch.manual_seed(42)
+    eeg_input = torch.randn(reve_batch_size, reve_n_chans, reve_n_times)
+
+    pos_hf = reve_position_bank_hf(ch_list)
+    pos_hf = pos_hf.unsqueeze(0).repeat(reve_batch_size, 1, 1)
+
+    pos_bd = reve_model_bd.get_positions(ch_list)
+    pos_bd = pos_bd.unsqueeze(0).repeat(reve_batch_size, 1, 1)
+
+    assert torch.allclose(pos_hf, pos_bd)
+
+    # return_output is True to bypass the last layer
+    output_bd = reve_model_bd(eeg_input, pos_bd, return_output=True)[-1]
+    output_hf = reve_model_hf(eeg_input, pos_hf, return_output=True)[-1]
+
+    assert torch.allclose(output_hf, output_bd)
+
+    # Cleanup
+    if os.path.exists(reve_cache_dir):
+        rmtree(reve_cache_dir)
