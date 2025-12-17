@@ -382,12 +382,12 @@ class REVE(EEGModuleMixin, nn.Module):
         )
 
         if self.use_attention_pooling:
-            x = self.attention_pooling(x)
+            x = self._attention_pooling(x)
 
         x = self.final_layer(x)
         return x
 
-    def attention_pooling(self, x: torch.Tensor) -> torch.Tensor:
+    def _attention_pooling(self, x: torch.Tensor) -> torch.Tensor:
         """Apply attention pooling on the sequence dimension of x.
 
         Parameters
