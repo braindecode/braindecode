@@ -13,7 +13,7 @@ from braindecode.models.base import EEGModuleMixin
 
 class USleep(EEGModuleMixin, nn.Module):
     """
-    Sleep staging architecture from Perslev et al. (2021) [1]_.
+    Sleep staging architecture from Perslev et al (2021) [1]_.
 
     :bdg-success:`Convolution`
 

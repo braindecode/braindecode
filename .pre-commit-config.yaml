@@ -120,10 +120,11 @@ repos:
         stages: [manual]
 
       - id: numpydoc-validate
-        name: numpydoc validate (manual)
-        entry: python -m numpydoc validate
+        name: numpydoc lint (manual)
+        entry: python -m numpydoc lint
         language: system
         types: [python]
+        files: ^braindecode/
         stages: [manual]
 
   - repo: https://github.com/pre-commit/mirrors-mypy

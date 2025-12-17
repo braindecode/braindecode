@@ -89,7 +89,8 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             return iterator
 
     def predict_proba(self, X):
-        """Return the output of the module's forward method as a numpy
+        """Return the output of the module's forward method as a numpy.
+
         array. In case of cropped decoding returns averaged values for
         each trial.
 
@@ -116,16 +117,15 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
           If this doesn't work with your data, you have to pass a
           ``Dataset`` that can deal with the data.
 
+        Returns
+        -------
+        y_proba : numpy ndarray
+
         Warnings
         --------
         Regressors predict regression targets, so output of this method
         can't be interpreted as probabilities. We advise you to use
         `predict` method instead of `predict_proba`.
-
-        Returns
-        -------
-        y_proba : numpy ndarray
-
         """
         y_pred = super().predict_proba(X)
         # Normally, we have to average the predictions across crops/timesteps
@@ -139,23 +139,24 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             return y_pred
 
     def predict_trials(self, X, return_targets=True):
-        """Create trialwise predictions and optionally also return trialwise
+        """Create trialwise predictions and optionally also return trialwise.
+
         labels from cropped dataset.
 
         Parameters
         ----------
-        X: braindecode.datasets.BaseConcatDataset
+        X : braindecode.datasets.BaseConcatDataset
             A braindecode dataset to be predicted.
-        return_targets: bool
+        return_targets : bool
             If True, additionally returns the trial targets.
 
         Returns
         -------
-        trial_predictions: np.ndarray
+        trial_predictions : np.ndarray
             3-dimensional array (n_trials x n_classes x n_predictions), where
             the number of predictions depend on the chosen window size and the
             receptive field of the network.
-        trial_labels: np.ndarray
+        trial_labels : np.ndarray
             2-dimensional array (n_trials x n_targets) where the number of
             targets depends on the decoding paradigm and can be either a single
             value, multiple values, or a sequence.

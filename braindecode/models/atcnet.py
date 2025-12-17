@@ -13,7 +13,7 @@ from braindecode.modules import CausalConv1d, Ensure4d, MaxNormLinear
 
 
 class ATCNet(EEGModuleMixin, nn.Module):
-    """ATCNet from Altaheri et al. (2022) [1]_.
+    """ATCNet from Altaheri et al   (2022) [1]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Attention/Transformer`
 
@@ -117,7 +117,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
         producing *per-temporal-filter* spatial projections (no cross-filter mixing at this step).
         This mirrors EEGNet's interpretability: each temporal filter has its own spatial pattern.
 
-
     .. rubric:: Attention / Sequential Modules
 
     - **Type.** Multi-head self-attention with ``H`` heads and per-head dim ``d_h`` implemented
@@ -150,19 +149,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
       kernels/pools/windows if inputs are too short.
     - **Aggregation choice.** ``concat=False`` (default, average of per-window logits) matches
       the official code; ``concat=True`` mirrors the paper's concatenation variant.
-
-
-    Notes
-    -----
-    - Inputs substantially shorter than the implied minimum length trigger **automatic
-      downscaling** of kernels, pools, windows, and TCN kernel size to maintain validity.
-    - The attention–TCN sequence operates **per window**; the last causal step is used as the
-      window feature, aligning the temporal semantics across windows.
-
-    .. versionadded:: 1.1
-
-        - More detailed documentation of the model.
-
 
     Parameters
     ----------
@@ -227,6 +213,17 @@ class ATCNet(EEGModuleMixin, nn.Module):
     max_norm_const : float
         Maximum L2-norm constraint imposed on weights of the last
         fully-connected layer. Defaults to 0.25.
+
+    Notes
+    -----
+    - Inputs substantially shorter than the implied minimum length trigger **automatic
+      downscaling** of kernels, pools, windows, and TCN kernel size to maintain validity.
+    - The attention–TCN sequence operates **per window**; the last causal step is used as the
+      window feature, aligning the temporal semantics across windows.
+
+    .. versionadded:: 1.1
+
+        - More detailed documentation of the model.
 
     References
     ----------
@@ -463,7 +460,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
 
 class _ConvBlock(nn.Module):
-    """Convolutional block proposed in ATCNet [1]_, inspired by the EEGNet
+    """Convolutional block proposed in ATCNet [1]_, inspired by the EEGNet.
+
     architecture [2]_.
 
     References
@@ -565,7 +563,8 @@ class _ConvBlock(nn.Module):
 
 
 class _AttentionBlock(nn.Module):
-    """Multi Head self Attention (MHA) block used in ATCNet [1]_, inspired from
+    """Multi Head self Attention (MHA) block used in ATCNet [1]_, inspired from.
+
     [2]_.
 
     References
@@ -639,7 +638,9 @@ class _AttentionBlock(nn.Module):
 
 
 class _TCNResidualBlock(nn.Module):
-    """Modified TCN Residual block as proposed in [1]_. Inspired from
+    """Modified TCN Residual block as proposed in [1]_.
+
+    Inspired from
     Temporal Convolutional Networks (TCN) [2]_.
 
     References
@@ -735,7 +736,7 @@ class _MHA(nn.Module):
         num_heads: int,
         dropout: float = 0.0,
     ):
-        """Multi-head Attention
+        """Multi-head Attention.
 
         The difference between this module and torch.nn.MultiheadAttention is
         that this module supports embedding dimensions different then input
@@ -778,20 +779,20 @@ class _MHA(nn.Module):
     def forward(
         self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor
     ) -> torch.Tensor:
-        """Compute MHA(Q, K, V)
+        """Compute MHA(Q, K, V).
 
         Parameters
         ----------
-        Q: torch.Tensor of size (batch_size, seq_len, input_dim)
+        Q : torch.Tensor of size (batch_size, seq_len, input_dim)
             Input query (Q) sequence.
-        K: torch.Tensor of size (batch_size, seq_len, input_dim)
+        K : torch.Tensor of size (batch_size, seq_len, input_dim)
             Input key (K) sequence.
-        V: torch.Tensor of size (batch_size, seq_len, input_dim)
+        V : torch.Tensor of size (batch_size, seq_len, input_dim)
             Input value (V) sequence.
 
         Returns
         -------
-        O: torch.Tensor of size (batch_size, seq_len, output_dim)
+        O : torch.Tensor of size (batch_size, seq_len, output_dim)
             Output MHA(Q, K, V)
         """
         assert Q.shape[-1] == K.shape[-1] == V.shape[-1] == self.input_dim

@@ -11,7 +11,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class SPARCNet(EEGModuleMixin, nn.Module):
-    """Seizures, Periodic and Rhythmic pattern Continuum Neural Network (SPaRCNet) from Jing et al. (2023) [jing2023]_.
+    """Seizures, Periodic and Rhythmic pattern Continuum Neural Network (SPaRCNet) from Jing et al (2023) [jing2023]_.
 
     :bdg-success:`Convolution`
 

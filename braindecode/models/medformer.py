@@ -18,7 +18,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class MEDFormer(EEGModuleMixin, nn.Module):
-    r"""Medformer from Wang et al. (2024) [Medformer2024]_.
+    r"""Medformer from Wang et al (2024) [Medformer2024]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
 

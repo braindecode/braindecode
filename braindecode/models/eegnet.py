@@ -20,7 +20,7 @@ from braindecode.modules import (
 
 
 class EEGNet(EEGModuleMixin, nn.Sequential):
-    """EEGNet model from Lawhern et al. (2018) [Lawhern2018]_.
+    """EEGNet model from Lawhern et al (2018) [Lawhern2018]_.
 
     :bdg-success:`Convolution`
 

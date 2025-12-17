@@ -13,7 +13,7 @@ from braindecode.modules import Chomp1d, MaxNormLinear
 
 
 class EEGTCNet(EEGModuleMixin, nn.Module):
-    """EEGTCNet model from Ingolfsson et al. (2020) [ingolfsson2020]_.
+    """EEGTCNet model from Ingolfsson et al (2020) [ingolfsson2020]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 

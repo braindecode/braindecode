@@ -23,28 +23,6 @@ class BIDSIterableDataset(IterableDataset):
     More information on BIDS (Brain Imaging Data Structure)
     can be found at https://bids.neuroimaging.io
 
-    Examples
-    --------
-    >>> from braindecode.datasets import RecordDataset, BaseConcatDataset
-    >>> from braindecode.datasets.bids import BIDSIterableDataset, _description_from_bids_path
-    >>> from braindecode.preprocessing import create_fixed_length_windows
-    >>>
-    >>> def my_reader_fn(path):
-    ...     raw = mne_bids.read_raw_bids(path)
-    ...     desc = _description_from_bids_path(path)
-    ...     ds = RawDataset(raw, description=desc)
-    ...     windows_ds = create_fixed_length_windows(
-    ...         BaseConcatDataset([ds]),
-    ...         window_size_samples=400,
-    ...         window_stride_samples=200,
-    ...     )
-    ...     return windows_ds
-    >>>
-    >>> dataset = BIDSIterableDataset(
-    ...     reader_fn=my_reader_fn,
-    ...     root="root/of/my/bids/dataset/",
-    ... )
-
     Parameters
     ----------
     reader_fn : Callable[[mne_bids.BIDSPath], Sequence]
@@ -62,7 +40,7 @@ class BIDSIterableDataset(IterableDataset):
         The acquisition session. Corresponds to "ses".
     tasks : str | array-like of str | None
         The experimental task. Corresponds to "task".
-    acquisitions: str | array-like of str | None
+    acquisitions : str | array-like of str | None
         The acquisition parameters. Corresponds to "acq".
     runs : str | array-like of str | None
         The run number. Corresponds to "run".
@@ -106,6 +84,28 @@ class BIDSIterableDataset(IterableDataset):
         If True, preload the data. Defaults to False.
     n_jobs : int
         Number of jobs to run in parallel. Defaults to 1.
+
+    Examples
+    --------
+    >>> from braindecode.datasets import RecordDataset, BaseConcatDataset
+    >>> from braindecode.datasets.bids import BIDSIterableDataset, _description_from_bids_path
+    >>> from braindecode.preprocessing import create_fixed_length_windows
+    >>>
+    >>> def my_reader_fn(path):
+    ...     raw = mne_bids.read_raw_bids(path)
+    ...     desc = _description_from_bids_path(path)
+    ...     ds = RawDataset(raw, description=desc)
+    ...     windows_ds = create_fixed_length_windows(
+    ...         BaseConcatDataset([ds]),
+    ...         window_size_samples=400,
+    ...         window_stride_samples=200,
+    ...     )
+    ...     return windows_ds
+    >>>
+    >>> dataset = BIDSIterableDataset(
+    ...     reader_fn=my_reader_fn,
+    ...     root="root/of/my/bids/dataset/",
+    ... )
     """
 
     def __init__(

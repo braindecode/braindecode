@@ -23,11 +23,11 @@ def set_random_seeds(seed, cuda, cudnn_benchmark=None):
 
     Parameters
     ----------
-    seed: int
+    seed : int
         Random seed.
-    cuda: bool
+    cuda : bool
         Whether to set cuda seed with torch.
-    cudnn_benchmark: bool (default=None)
+    cudnn_benchmark : bool (default=None)
         Whether pytorch will use cudnn benchmark. When set to `None` it will not modify
         torch.backends.cudnn.benchmark (displays warning in the case of possible lack of
         reproducibility). When set to True, results may not be reproducible (no warning displayed).
@@ -71,17 +71,17 @@ def np_to_th(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwar
 
     Parameters
     ----------
-    X: ndarray or list or number
+    X : ndarray or list or number
         Input arrays
-    requires_grad: bool
+    requires_grad : bool
         passed on to Variable constructor
-    dtype: numpy dtype, optional
+    dtype : numpy dtype, optional
     var_kwargs:
         passed on to Variable constructor
 
     Returns
     -------
-    var: `torch.Tensor`
+    var : `torch.Tensor`
     """
     if not hasattr(X, "__len__"):
         X = [X]
@@ -95,21 +95,23 @@ def np_to_th(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwar
 
 
 def th_to_np(var: Tensor):
-    """Convenience function to transform `torch.Tensor` to numpy
-    array.
+    """Convenience function to transform `torch.Tensor` to numpy.
 
-    Should work both for CPU and GPU."""
+    array.
+    Should work both for CPU and GPU.
+    """
     return var.cpu().data.numpy()
 
 
 def corr(a, b):
     """
-    Computes correlation only between terms of a and terms of b, not within
+    Computes correlation only between terms of a and terms of b, not within.
+
     a and b.
 
     Parameters
     ----------
-    a, b: 2darray, features x samples
+    a, b : 2darray, features x samples
 
     Returns
     -------
@@ -124,12 +126,13 @@ def corr(a, b):
 
 def cov(a, b):
     """
-    Computes covariance only between terms of a and terms of b, not within
+    Computes covariance only between terms of a and terms of b, not within.
+
     a and b.
 
     Parameters
     ----------
-    a, b: 2darray, features x samples
+    a, b : 2darray, features x samples
 
     Returns
     -------
@@ -156,23 +159,24 @@ def _cov_and_var_to_corr(this_cov, var_a, var_b):
 
 def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
     """
-    Reshape two nd-arrays into 2d-arrays, apply function and reshape
+    Reshape two nd-arrays into 2d-arrays, apply function and reshape.
+
     result back.
 
     Parameters
     ----------
-    stat_fn: function
+    stat_fn : function
         Function to apply to 2d-arrays
-    a: nd-array: nd-array
-    b: nd-array
-    axis_a: int or list of int
+    a : nd-array: nd-array
+    b : nd-array
+    axis_a : int or list of int
         sample axis
-    axis_b: int or list of int
+    axis_b : int or list of int
         sample axis
 
     Returns
     -------
-    result: nd-array
+    result : nd-array
         The result reshaped to remaining_dims_a + remaining_dims_b
     """
     if not hasattr(axis_a, "__len__"):
@@ -200,7 +204,8 @@ def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
 
 
 def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None):
-    """Create indices for batches balanced in size
+    """Create indices for batches balanced in size.
+
     (batches will have maximum size difference of 1).
     Supply either batch size or number of batches. Resulting batches
     will not have the given batch size but rather the next largest batch size
@@ -218,7 +223,7 @@ def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None
 
     Returns
     -------
-    batches: list of list of int
+    batches : list of list of int
         Indices for each batch.
     """
     assert batch_size is not None or n_batches is not None
@@ -386,19 +391,20 @@ def _update_moabb_docstring(base_class, docstring):
 
 
 def read_all_file_names(directory, extension):
-    """Read all files with specified extension from given path and sorts them
+    """Read all files with specified extension from given path and sorts them.
+
     based on a given sorting key.
 
     Parameters
     ----------
-    directory: str
+    directory : str
         Parent directory to be searched for files of the specified type.
-    extension: str
+    extension : str
         File extension, i.e. ".edf" or ".txt".
 
     Returns
     -------
-    file_paths: list(str)
+    file_paths : list(str)
         List of all files found in (sub)directories of path.
     """
     assert extension.startswith(".")

@@ -14,7 +14,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class PBT(EEGModuleMixin, nn.Module):
-    r"""Patched Brain Transformer (PBT) model from Klein et al. (2025) [pbt]_.
+    r"""Patched Brain Transformer (PBT) model from Klein et al (2025) [pbt]_.
 
     :bdg-danger:`Foundation Model`
 

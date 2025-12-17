@@ -24,7 +24,7 @@ from braindecode.modules.attention import (
 
 
 class AttentionBaseNet(EEGModuleMixin, nn.Module):
-    """AttentionBaseNet from Wimpff M et al. (2023) [Martin2023]_.
+    """AttentionBaseNet from Wimpff M et al (2023) [Martin2023]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
@@ -32,7 +32,6 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         :align: center
         :alt: AttentionBaseNet Architecture
         :width: 640px
-
 
     .. rubric:: Architectural Overview
 
@@ -49,7 +48,6 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     This design mirrors shallow CNN pipelines (EEGNet-style stem) but inserts a pluggable
     attention unit that *re-weights channels* (and optionally temporal positions) before
     classification.
-
 
     .. rubric:: Macro Components
 
@@ -92,7 +90,6 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     *Operations.* :class:`torch.nn.Flatten` → :class:`torch.nn.Linear` from
     ``(B, ch_dim·T₂)`` to classes.
 
-
     .. rubric:: Convolutional Details
 
     - **Temporal (where time-domain patterns are learned).**
@@ -111,7 +108,6 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         emerges from learned temporal kernels. When ``attention_mode="fca"``, a frequency
         channel attention (DCT-based) summarizes frequencies to drive channel weights.
 
-
     .. rubric:: Attention / Sequential Modules
 
     - **Type.** Channel attention chosen by ``attention_mode`` (SE, ECA, CBAM, CAT, GSoP,
@@ -123,7 +119,6 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     - **Role.** Re-weights channels (and optionally time) to highlight informative sources
         and suppress distractors, improving SNR ahead of the linear head.
-
 
     .. rubric:: Additional Mechanisms
 
@@ -162,17 +157,6 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         Start with moderate pooling (e.g., ``P₁=75,S₁=15``) and ELU activations; enable attention
         only after the stem learns stable filters. For small datasets, prefer simpler modes
         (``"se"``, ``"eca"``) before heavier ones (``"gsop"``, ``"encnet"``).
-
-    Notes
-    -----
-    - Sequence length after each stage is computed internally; the final classifier expects
-      a flattened ``ch_dim x T₂`` vector.
-    - Attention operates on *channel* dimension by design; temporal gating exists only in
-      specific variants (CBAM/CAT).
-    - The paper and original code with more details about the methodological
-      choices are available at the [Martin2023]_ and [MartinCode]_.
-
-    .. versionadded:: 0.9
 
     Parameters
     ----------
@@ -235,12 +219,23 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     kernel_size : int, default=9
         The kernel size used in certain types of attention mechanisms for convolution
         operations.
-    activation: type[nn.Module] = nn.ELU,
+    activation : type[nn.Module] = nn.ELU,
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     extra_params : bool, default=False
         Flag to indicate whether additional, custom parameters should be passed to
         the attention mechanism.
+
+    Notes
+    -----
+    - Sequence length after each stage is computed internally; the final classifier expects
+      a flattened ``ch_dim x T₂`` vector.
+    - Attention operates on *channel* dimension by design; temporal gating exists only in
+      specific variants (CBAM/CAT).
+    - The paper and original code with more details about the methodological
+      choices are available at the [Martin2023]_ and [MartinCode]_.
+
+    .. versionadded:: 0.9
 
     References
     ----------
@@ -397,7 +392,8 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         pool_length: int,
     ) -> int:
         """
-        Calculates the minimum n_times required for the model to work
+        Calculates the minimum n_times required for the model to work.
+
         with the given parameters.
 
         The calculation is based on reversing the pooling operations to
@@ -414,13 +410,13 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
 class _FeatureExtractor(nn.Module):
     """
-    A module for feature extraction of the data with temporal and spatial
+    A module for feature extraction of the data with temporal and spatial.
+
     transformations.
 
     This module sequentially processes the input through a series of layers:
     rearrangement, temporal convolution, batch normalization, spatial convolution,
     another batch normalization, an ELU non-linearity, average pooling, and dropout.
-
 
     Parameters
     ----------
@@ -439,7 +435,7 @@ class _FeatureExtractor(nn.Module):
         The stride of the average pooling operation. Default is 15.
     drop_prob : float, optional
         The dropout rate for regularization. Default is 0.5.
-    activation: nn.Module, default=nn.ELU
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     """
@@ -494,7 +490,8 @@ class _FeatureExtractor(nn.Module):
 
 class _ChannelAttentionBlock(nn.Module):
     """
-    A neural network module implementing channel-wise attention mechanisms to enhance
+    A neural network module implementing channel-wise attention mechanisms to enhance.
+
     feature representations by selectively emphasizing important channels and suppressing
     less useful ones. This block integrates convolutional layers, pooling, dropout, and
     an optional attention mechanism that can be customized based on the given mode.
@@ -548,7 +545,7 @@ class _ChannelAttentionBlock(nn.Module):
     extra_params : bool, default=False
         Flag to indicate whether additional, custom parameters should be passed to
         the attention mechanism.
-    activation: nn.Module, default=nn.ELU
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
@@ -564,7 +561,7 @@ class _ChannelAttentionBlock(nn.Module):
     attention_block : torch.nn.Module or None
         The attention mechanism applied to the output of the convolutional layers,
         if `attention_mode` is not None. Otherwise, it's set to None.
-    activation: nn.Module, default=nn.ELU
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
@@ -574,7 +571,6 @@ class _ChannelAttentionBlock(nn.Module):
     >>> x = torch.randn(1, 16, 64, 64)  # Example input tensor
     >>> output = channel_attention_block(x)
     The output tensor then can be further processed or used as input to another block.
-
     """
 
     def __init__(
@@ -652,31 +648,31 @@ def get_attention_block(
 
     Parameters
     ----------
-    attention_mode: str
+    attention_mode : str
         The type of attention mechanism to apply.
-    ch_dim: int
+    ch_dim : int
         The number of input channels to the block.
-    reduction_rate: int
+    reduction_rate : int
         The reduction rate used in the attention mechanism to reduce
         dimensionality and computational complexity.
         Used in all the methods, except for the
         encnet and eca.
-    use_mlp: bool
+    use_mlp : bool
         Flag to indicate whether an MLP (Multi-Layer Perceptron) should be used
         within the attention mechanism for further processing. Used in the ge
         and srm attention mechanism.
-    seq_len: int
+    seq_len : int
         The sequence length, used in certain types of attention mechanisms to
         process temporal dimensions. Used in the ge or fca attention mechanism.
-    freq_idx: int
+    freq_idx : int
         DCT index used in fca attention mechanism.
-    n_codewords: int
+    n_codewords : int
         The number of codewords (clusters) used in attention mechanisms
         that employ quantization or clustering strategies, encnet.
-    kernel_size: int
+    kernel_size : int
         The kernel size used in certain types of attention mechanisms for convolution
         operations, used in the cbam, eca, and cat attention mechanisms.
-    extra_params: bool
+    extra_params : bool
         Parameter to pass additional parameters to the GatherExcite mechanism.
 
     Returns

@@ -27,7 +27,7 @@ from braindecode.modules.layers import DropPath
 
 
 class LUNA(EEGModuleMixin, nn.Module):
-    """LUNA from Döner et al. [LUNA]_.
+    """LUNA from Döner et al [LUNA]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 

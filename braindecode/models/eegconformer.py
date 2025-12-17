@@ -12,7 +12,7 @@ from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
-    """EEG Conformer from Song et al. (2022) [song2022]_.
+    """EEG Conformer from Song et al (2022) [song2022]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 

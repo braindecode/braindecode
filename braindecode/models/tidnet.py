@@ -11,7 +11,7 @@ from braindecode.modules import Ensure4d
 
 
 class TIDNet(EEGModuleMixin, nn.Module):
-    """Thinker Invariance DenseNet model from Kostas et al. (2020) [TIDNet]_.
+    """Thinker Invariance DenseNet model from Kostas et al (2020) [TIDNet]_.
 
     :bdg-success:`Convolution`
 

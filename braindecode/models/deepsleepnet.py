@@ -8,7 +8,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
-    """DeepSleepNet from Supratak et al. (2017) [Supratak2017]_.
+    """DeepSleepNet from Supratak et al (2017) [Supratak2017]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 

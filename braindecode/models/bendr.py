@@ -8,7 +8,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class BENDR(EEGModuleMixin, nn.Module):
-    """BENDR (BErt-inspired Neural Data Representations) from Kostas et al. (2021) [bendr]_.
+    """BENDR (BErt-inspired Neural Data Representations) from Kostas et al (2021) [bendr]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
 
@@ -16,7 +16,6 @@ class BENDR(EEGModuleMixin, nn.Module):
         :align: center
         :alt: BENDR Architecture
         :width: 1000px
-
 
     The **BENDR** architecture adapts techniques used for language modeling (LM) toward the
     development of encephalography modeling (EM) [bendr]_. It utilizes a self-supervised
@@ -79,22 +78,6 @@ class BENDR(EEGModuleMixin, nn.Module):
       prepended to the BENDR sequence before input to the transformer, serving as the aggregate
       representation token [bendr]_.
 
-    Notes
-    -----
-    * The full BENDR architecture contains a large number of parameters; configuration (1)
-      involved training over **one billion parameters** [bendr]_.
-    * Randomly initialized full BENDR architecture was generally ineffective at solving
-      downstream tasks without prior self-supervised training [bendr]_.
-    * The pre-training task (contrastive predictive coding via masking) is generalizable,
-      exhibiting strong uniformity of performance across novel subjects, hardware, and
-      tasks [bendr]_.
-
-    .. warning::
-
-        **Important:** To utilize the full potential of BENDR, the model requires
-        **self-supervised pre-training** on large, unlabeled EEG datasets (like TUEG) followed
-        by subsequent fine-tuning on the specific downstream classification task [bendr]_.
-
     Parameters
     ----------
     encoder_h : int, default=512
@@ -138,6 +121,22 @@ class BENDR(EEGModuleMixin, nn.Module):
     final_layer : bool, default=True
         If True, includes a final linear classification layer that maps from encoder_h to
         n_outputs. If False, the model outputs the contextualized features directly.
+
+    Notes
+    -----
+    * The full BENDR architecture contains a large number of parameters; configuration (1)
+      involved training over **one billion parameters** [bendr]_.
+    * Randomly initialized full BENDR architecture was generally ineffective at solving
+      downstream tasks without prior self-supervised training [bendr]_.
+    * The pre-training task (contrastive predictive coding via masking) is generalizable,
+      exhibiting strong uniformity of performance across novel subjects, hardware, and
+      tasks [bendr]_.
+
+    .. warning::
+
+        **Important:** To utilize the full potential of BENDR, the model requires
+        **self-supervised pre-training** on large, unlabeled EEG datasets (like TUEG) followed
+        by subsequent fine-tuning on the specific downstream classification task [bendr]_.
 
     References
     ----------

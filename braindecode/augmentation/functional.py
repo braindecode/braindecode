@@ -144,7 +144,7 @@ def ft_surrogate(
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    phase_noise_magnitude: float
+    phase_noise_magnitude : float
         Float between 0 and 1 setting the range over which the phase
         perturbation is uniformly sampled:
         [0, `phase_noise_magnitude` * 2 * `pi`].
@@ -152,7 +152,7 @@ def ft_surrogate(
         Whether to sample phase perturbations independently for each channel or
         not. It is advised to set it to False when spatial information is
         important for the task, like in BCI.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Used to draw the phase perturbation. Defaults to None.
 
     Returns
@@ -289,10 +289,10 @@ def channels_shuffle(
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    p_shuffle: float | None
+    p_shuffle : float | None
         Float between 0 and 1 setting the probability of including the channel
         in the set of permutted channels.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to sample which channels to shuffle and to carry the shuffle.
         Defaults to None.
@@ -335,7 +335,7 @@ def gaussian_noise(
         EEG labels for the example or batch.
     std : float
         Standard deviation to use for the additive noise.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -468,7 +468,8 @@ def bandstop_filter(
     bandwidth: float,
     freqs_to_notch: npt.ArrayLike | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Apply a band-stop filter with desired bandwidth at the desired frequency
+    """Apply a band-stop filter with desired bandwidth at the desired frequency.
+
     position.
 
     Suggested e.g. in [1]_ and [2]_
@@ -620,6 +621,7 @@ def _torch_legval(
 ) -> torch.Tensor:
     """
     Evaluate a Legendre series at points x.
+
     If `c` is of length `n + 1`, this function returns the value:
     .. math:: p(x) = c_0 * L_0(x) + c_1 * L_1(x) + ... + c_n * L_n(x)
     The parameter `x` is converted to an array only if it is a tuple or a
@@ -805,12 +807,6 @@ def _torch_make_interpolation_matrix(
         The interpolation matrix that maps good signals to the location
         of bad signals.
 
-    References
-    ----------
-    [1] Perrin, F., Pernier, J., Bertrand, O. and Echallier, JF. (1989).
-        Spherical splines for scalp potential and current density mapping.
-        Electroencephalography Clinical Neurophysiology, Feb; 72(2):184-7.
-
     Notes
     -----
     Code copied and modified from MNE-Python:
@@ -841,6 +837,12 @@ def _torch_make_interpolation_matrix(
     LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
     OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
     DAMAGE.
+
+    References
+    ----------
+    [1] Perrin, F., Pernier, J., Bertrand, O. and Echallier, JF. (1989).
+        Spherical splines for scalp potential and current density mapping.
+        Electroencephalography Clinical Neurophysiology, Feb; 72(2):184-7.
     """
     pos_from = pos_from.clone()
     pos_to = pos_to.clone()
@@ -968,7 +970,8 @@ def sensors_rotation(
     angles: npt.ArrayLike,
     spherical_splines: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Interpolates EEG signals over sensors rotated around the desired axis
+    """Interpolates EEG signals over sensors rotated around the desired axis.
+
     with the desired angle.
 
     Suggested in [1]_
@@ -1027,7 +1030,7 @@ def mixup(
     lam : torch.Tensor
         Values between 0 and 1 setting the linear interpolation between
         examples.
-    idx_perm: torch.Tensor
+    idx_perm : torch.Tensor
         Permuted indices of example that are mixed into original examples.
 
     Returns
@@ -1080,18 +1083,20 @@ def segmentation_reconstruction(
         EEG labels for the example or batch.
     n_segments : int
         Number of segments to use in the batch.
-    data_classes: list[tuple[int, torch.Tensor]]
+    data_classes : list[tuple[int, torch.Tensor]]
         List of tuples. Each tuple contains the class index and the corresponding EEG data.
-    rand_indices: array-like
+    rand_indices : array-like
         Array of indices that indicates which trial to use in each segment.
-    idx_shuffle: array-like
+    idx_shuffle : array-like
         Array of indices to shuffle the new generated trials.
+
     Returns
     -------
     torch.Tensor
         Transformed inputs.
     torch.Tensor
         Transformed labels.
+
     References
     ----------
     .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
@@ -1145,7 +1150,7 @@ def mask_encoding(
     segment_length: int,
     n_segments: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Mark encoding from Ding et al. (2024) from [ding2024]_.
+    """Mark encoding from Ding et al (2024) from [ding2024]_.
 
     Replaces a contiguous part (or parts) of all channels by zeros
     (if more than one segment, it may overlap).
@@ -1212,7 +1217,7 @@ def channels_rereference(
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -1229,7 +1234,6 @@ def channels_rereference(
         Representation Learning for Electroencephalogram Classification. Proceedings
         of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
         Learning Research 136:238-253
-
     """
 
     rng = check_random_state(random_state)
@@ -1262,7 +1266,7 @@ def amplitude_scale(
         EEG labels for the example or batch.
     scale : tuple of floats
         Interval from which ypu sample the scaling value
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -1279,7 +1283,6 @@ def amplitude_scale(
         Representation Learning for Electroencephalogram Classification. Proceedings
         of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
         Learning Research 136:238-253
-
     """
 
     rng = torch.Generator()

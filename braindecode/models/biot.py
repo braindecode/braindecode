@@ -9,7 +9,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class BIOT(EEGModuleMixin, nn.Module):
-    """BIOT from Yang et al. (2023) [Yang2023]_
+    """BIOT from Yang et al (2023) [Yang2023]_
 
     :bdg-danger:`Foundation Model`
 
