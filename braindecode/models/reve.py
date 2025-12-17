@@ -43,10 +43,10 @@ class REVE(EEGModuleMixin, nn.Module):
 
     .. rubric:: Channels Invariant Positional Encoding
 
-    Prior EEG foundation models (:class:`~braindecode.models.Labram`, :class:`~braindecode.models.BIOT`) rely on 
-    fixed positional embeddings, making direct transfer to unseen electrode layouts infeasible. CBraMod uses 
-    convolution-based positional encoding that requires fine-tuning when adapting to new configurations. 
-    As noted in the CBraMod paper: *"fixing the pre-trained parameters during training on downstream 
+    Prior EEG foundation models (:class:`~braindecode.models.Labram`, :class:`~braindecode.models.BIOT`) rely on
+    fixed positional embeddings, making direct transfer to unseen electrode layouts infeasible. CBraMod uses
+    convolution-based positional encoding that requires fine-tuning when adapting to new configurations.
+    As noted in the CBraMod paper: *"fixing the pre-trained parameters during training on downstream
     datasets will lead to a very large performance decline. CBraMod cannot currently serve as a fixed-parameter feature extractor"*.
 
     REVE's 4D positional encoding jointly encodes spatial :math:`(x, y, z)` and temporal :math:`(t)` positions
@@ -143,7 +143,7 @@ class REVE(EEGModuleMixin, nn.Module):
             n_chans=22,
             n_times=1000,  # 5 seconds at 200 Hz
             sfreq=200,
-            chs_info=[{'ch_name': 'C3'}, {'ch_name': 'C4'}, ...]  
+            chs_info=[{"ch_name": "C3"}, {"ch_name": "C4"}, ...],
         )
 
         # Forward pass: (batch, n_chans, n_times) -> (batch, n_outputs)
@@ -216,7 +216,7 @@ class REVE(EEGModuleMixin, nn.Module):
         patch_size: int = 200,
         patch_overlap: int = 20,
         attention_pooling: bool = False,
-        ):
+    ):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
