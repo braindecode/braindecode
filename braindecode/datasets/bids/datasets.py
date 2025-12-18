@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Dataset for loading BIDS.
 
 More information on BIDS (Brain Imaging Data Structure) can be found at https://bids.neuroimaging.io

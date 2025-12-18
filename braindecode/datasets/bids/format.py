@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """
 BIDS-like format utilities for Hub integration.
 

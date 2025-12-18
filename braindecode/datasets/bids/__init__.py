@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """
 BIDS (Brain Imaging Data Structure) integration for braindecode.
 

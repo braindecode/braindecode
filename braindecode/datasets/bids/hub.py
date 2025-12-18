@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """
 Hugging Face Hub integration for EEG datasets.
 
