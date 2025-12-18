@@ -719,6 +719,11 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
             raise ValueError("dataset should have either raw or windows attribute")
+
+        # Create path if it doesn't exist
+        if not os.path.exists(path):
+            os.makedirs(path)
+
         path_contents = os.listdir(path)
         n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
         for i_ds, ds in enumerate(self.datasets):

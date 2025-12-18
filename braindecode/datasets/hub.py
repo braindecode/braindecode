@@ -21,7 +21,6 @@ The format follows a BIDS-like derivatives structure:
 #
 # License: BSD (3-clause)
 
-import io
 import json
 import logging
 import tempfile
@@ -55,6 +54,64 @@ huggingface_hub = _soft_import(
 )
 
 log = logging.getLogger(__name__)
+
+
+def _sanitize_for_json(obj):
+    """Replace NaN/Inf with None for valid JSON.
+
+    This is needed because MNE info dicts can contain NaN values
+    (e.g., in channel locations) which are not valid JSON.
+
+    Parameters
+    ----------
+    obj : any
+        Object to sanitize (dict, list, or primitive).
+
+    Returns
+    -------
+    any
+        Sanitized object with NaN/Inf replaced by None.
+    """
+    if isinstance(obj, float):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    elif isinstance(obj, np.ndarray):
+        return _sanitize_for_json(obj.tolist())
+    return obj
+
+
+def _restore_nan_from_json(obj):
+    """Restore NaN values from None in JSON-loaded data.
+
+    This reverses the sanitization done by _sanitize_for_json when
+    loading data back from Zarr. Only restores NaN in numeric arrays,
+    not for general None values which should stay None.
+
+    Parameters
+    ----------
+    obj : any
+        Object loaded from JSON (dict, list, or primitive).
+
+    Returns
+    -------
+    any
+        Object with None values in numeric arrays restored to NaN.
+    """
+    if isinstance(obj, dict):
+        return {k: _restore_nan_from_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        # Check if this looks like a numeric array (all elements are numbers or None)
+        # Only convert None to NaN in numeric arrays
+        if len(obj) > 0 and all(isinstance(x, (int, float, type(None))) for x in obj):
+            return [np.nan if x is None else x for x in obj]
+        return [_restore_nan_from_json(v) for v in obj]
+    # Don't convert standalone None values - they should stay None
+    return obj
 
 
 class HubDatasetMixin:
@@ -812,18 +869,16 @@ def _save_windows_to_zarr(
         compressors=compressors_list,
     )
 
-    # Save metadata
-    metadata_json = metadata.to_json(orient="split", date_format="iso")
-    grp.attrs["metadata"] = metadata_json
-    # Save dtypes to preserve them across platforms (int32 vs int64, etc.)
-    metadata_dtypes = metadata.dtypes.apply(str).to_json()
-    grp.attrs["metadata_dtypes"] = metadata_dtypes
+    # Save metadata as TSV file (scales better than JSON in attributes)
+    metadata_path = Path(grp.store.root) / grp.path / "metadata.tsv"
+    metadata.to_csv(metadata_path, sep="\t", index=True)
 
     # Save description as dict (not JSON string) for proper zarr.json formatting
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
 
     # Save MNE info as dict (not JSON string) for proper zarr.json formatting
-    grp.attrs["info"] = info
+    # Sanitize to convert NaN/Inf to null for valid JSON
+    grp.attrs["info"] = _sanitize_for_json(info)
 
     # Save target name if provided
     if target_name is not None:
@@ -852,18 +907,16 @@ def _save_eegwindows_to_zarr(
         compressors=compressors_list,
     )
 
-    # Save metadata
-    metadata_json = metadata.to_json(orient="split", date_format="iso")
-    grp.attrs["metadata"] = metadata_json
-    # Save dtypes to preserve them across platforms (int32 vs int64, etc.)
-    metadata_dtypes = metadata.dtypes.apply(str).to_json()
-    grp.attrs["metadata_dtypes"] = metadata_dtypes
+    # Save metadata as TSV file (scales better than JSON in attributes)
+    metadata_path = Path(grp.store.root) / grp.path / "metadata.tsv"
+    metadata.to_csv(metadata_path, sep="\t", index=True)
 
     # Save description as dict (not JSON string) for proper zarr.json formatting
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
 
     # Save MNE info as dict (not JSON string) for proper zarr.json formatting
-    grp.attrs["info"] = info
+    # Sanitize to convert NaN/Inf to null for valid JSON
+    grp.attrs["info"] = _sanitize_for_json(info)
 
     # Save EEGWindowsDataset-specific attributes
     grp.attrs["targets_from"] = targets_from
@@ -872,18 +925,16 @@ def _save_eegwindows_to_zarr(
 
 def _load_windows_from_zarr(grp, preload):
     """Load windowed data from Zarr group (low-level function)."""
-    # Load metadata
-    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
-    # Restore dtypes to preserve them across platforms (int32 vs int64, etc.)
-    dtypes_dict = pd.read_json(io.StringIO(grp.attrs["metadata_dtypes"]), typ="series")
-    for col, dtype_str in dtypes_dict.items():
-        metadata[col] = metadata[col].astype(dtype_str)
+    # Load metadata from TSV file
+    metadata_path = Path(grp.store.root) / grp.path / "metadata.tsv"
+    metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
 
     # Load description (stored as dict in zarr.json)
     description = pd.Series(grp.attrs["description"])
 
     # Load info (stored as dict in zarr.json)
-    info_dict = grp.attrs["info"]
+    # Restore NaN values that were converted to null for JSON compatibility
+    info_dict = _restore_nan_from_json(grp.attrs["info"])
 
     # Load data
     if preload:
@@ -905,18 +956,16 @@ def _load_windows_from_zarr(grp, preload):
 
 def _load_eegwindows_from_zarr(grp, preload):
     """Load EEG continuous raw data from Zarr group (low-level function)."""
-    # Load metadata
-    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
-    # Restore dtypes to preserve them across platforms (int32 vs int64, etc.)
-    dtypes_dict = pd.read_json(io.StringIO(grp.attrs["metadata_dtypes"]), typ="series")
-    for col, dtype_str in dtypes_dict.items():
-        metadata[col] = metadata[col].astype(dtype_str)
+    # Load metadata from TSV file
+    metadata_path = Path(grp.store.root) / grp.path / "metadata.tsv"
+    metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
 
     # Load description (stored as dict in zarr.json)
     description = pd.Series(grp.attrs["description"])
 
     # Load info (stored as dict in zarr.json)
-    info_dict = grp.attrs["info"]
+    # Restore NaN values that were converted to null for JSON compatibility
+    info_dict = _restore_nan_from_json(grp.attrs["info"])
 
     # Load data
     if preload:
@@ -960,7 +1009,8 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
 
     # Save MNE info as dict (not JSON string) for proper zarr.json formatting
-    grp.attrs["info"] = info
+    # Sanitize to convert NaN/Inf to null for valid JSON
+    grp.attrs["info"] = _sanitize_for_json(info)
 
     # Save target name if provided
     if target_name is not None:
@@ -973,7 +1023,8 @@ def _load_raw_from_zarr(grp, preload):
     description = pd.Series(grp.attrs["description"])
 
     # Load info (stored as dict in zarr.json)
-    info_dict = grp.attrs["info"]
+    # Restore NaN values that were converted to null for JSON compatibility
+    info_dict = _restore_nan_from_json(grp.attrs["info"])
 
     # Load data
     if preload:
