@@ -10,9 +10,10 @@ from .base import (
     WindowsDataset,
 )
 from .bcicomp import BCICompetitionIVDataset4
-from .bids import BIDSDataset, BIDSEpochsDataset
-from .bids_format import (
+from .bids import (
+    BIDSDataset,
     BIDSDerivativesLayout,
+    BIDSEpochsDataset,
     create_channels_tsv,
     create_eeg_json_sidecar,
     create_events_tsv,

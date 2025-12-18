@@ -28,7 +28,7 @@ from braindecode.datasets import (
     BaseConcatDataset,
     RawDataset,
 )
-from braindecode.datasets.hub import _create_compressor
+from braindecode.datasets.bids.hub import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
 from braindecode.preprocessing import create_windows_from_events
 
@@ -119,7 +119,7 @@ def test_no_lazy_imports_in_hub_module():
         'huggingface_hub': mock.MagicMock(),
     }):
         # Import hub module (should work even with mocked dependencies)
-        from braindecode.datasets import hub
+        from braindecode.datasets.bids import hub
 
         # Get all functions in the hub module
         functions = [
@@ -868,7 +868,7 @@ def test_push_to_hub_import_error(setup_concat_windows_dataset, tmp_path):
     dataset = setup_concat_windows_dataset
 
     # Mock the _soft_import to return False for huggingface_hub
-    with mock.patch('braindecode.datasets.hub.huggingface_hub', False):
+    with mock.patch('braindecode.datasets.bids.hub.huggingface_hub', False):
         with pytest.raises(ImportError, match="huggingface-hub or zarr is not installed"):
             dataset.push_to_hub(
                 repo_id="test/repo",
@@ -956,7 +956,7 @@ def test_push_to_hub_upload_failure(setup_concat_windows_dataset, tmp_path):
 def test_from_pull_from_hub_import_error(tmp_path):
     """Test that pull_from_hub raises ImportError when dependencies not available."""
     # Mock huggingface_hub as not available
-    with mock.patch('braindecode.datasets.hub.huggingface_hub', False):
+    with mock.patch('braindecode.datasets.bids.hub.huggingface_hub', False):
         with pytest.raises(ImportError, match="huggingface hub functionality is not installed"):
             BaseConcatDataset.pull_from_hub(
                 repo_id="test/repo",
@@ -988,7 +988,7 @@ def test_pull_from_hub_404_error(tmp_path):
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_create_compressor_zarr_not_available():
     """Test that _create_compressor raises ImportError when zarr not available."""
-    with mock.patch('braindecode.datasets.hub.zarr', False):
+    with mock.patch('braindecode.datasets.bids.hub.zarr', False):
         with pytest.raises(ImportError, match="Zarr is not installed"):
             _create_compressor("blosc", 5)
 

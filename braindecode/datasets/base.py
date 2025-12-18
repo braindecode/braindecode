@@ -28,7 +28,7 @@ from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset
 from typing_extensions import TypeVar
 
-from .hub import HubDatasetMixin
+from .bids.hub import HubDatasetMixin
 from .registry import register_dataset
 
 

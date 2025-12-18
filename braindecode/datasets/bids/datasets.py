@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseConcatDataset, RawDataset, WindowsDataset
+from ..base import BaseConcatDataset, RawDataset, WindowsDataset
 
 
 def _description_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:

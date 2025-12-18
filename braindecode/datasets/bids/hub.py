@@ -40,12 +40,13 @@ if TYPE_CHECKING:
 
 import braindecode
 
+# Import registry for dynamic class lookup (avoids circular imports)
+from ..registry import get_dataset_class, get_dataset_type
+
 # Import shared validation utilities
 # Import BIDS format utilities
-from . import bids_format, hub_validation
-
-# Import registry for dynamic class lookup (avoids circular imports)
-from .registry import get_dataset_class, get_dataset_type
+from . import format as bids_format
+from . import validation as hub_validation
 
 # Lazy import zarr and huggingface_hub
 zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
