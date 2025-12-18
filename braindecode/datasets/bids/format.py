@@ -376,8 +376,6 @@ def create_channels_tsv(
     pd.DataFrame
         BIDS-compliant channels DataFrame.
     """
-    import mne
-
     bad_channels = bad_channels or info.get("bads", [])
 
     channels_data: dict[str, list[Any]] = {
