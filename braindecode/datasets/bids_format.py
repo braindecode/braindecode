@@ -29,6 +29,7 @@ References:
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -390,20 +391,29 @@ def create_channels_tsv(
         "status_description": [],
     }
 
-    # MNE channel type to BIDS type mapping
-    type_mapping = {
-        "eeg": "EEG",
-        "ecg": "ECG",
-        "eog": "EOG",
-        "emg": "EMG",
-        "meg": "MEG",
-        "ref_meg": "MEGREF",
-        "grad": "MEGGRADAXIAL",
-        "mag": "MEGMAG",
-        "stim": "TRIG",
-        "misc": "MISC",
-        "bio": "BIO",
-    }
+    type_mapping: defaultdict[str, str] = defaultdict(lambda: "Other type of channel")
+    type_mapping.update(
+        meggradaxial="Axial Gradiometer",
+        megrefgradaxial="Axial Gradiometer Reference",
+        meggradplanar="Planar Gradiometer",
+        megmag="Magnetometer",
+        megrefmag="Magnetometer Reference",
+        stim="Trigger",
+        eeg="ElectroEncephaloGram",
+        ecog="Electrocorticography",
+        seeg="StereoEEG",
+        ecg="ElectroCardioGram",
+        eog="ElectroOculoGram",
+        emg="ElectroMyoGram",
+        misc="Miscellaneous",
+        bio="Biological",
+        ias="Internal Active Shielding",
+        dbs="Deep Brain Stimulation",
+        fnirs_cw_amplitude="Near Infrared Spectroscopy (continuous wave)",
+        resp="Respiration",
+        gsr="Galvanic skin response (electrodermal activity, EDA)",
+        temperature="Temperature",
+    )
 
     sfreq = info["sfreq"]
 

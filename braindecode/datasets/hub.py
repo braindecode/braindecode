@@ -819,12 +819,11 @@ def _save_windows_to_zarr(
     metadata_dtypes = metadata.dtypes.apply(str).to_json()
     grp.attrs["metadata_dtypes"] = metadata_dtypes
 
-    # Save description
-    description_json = description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
+    # Save description as dict (not JSON string) for proper zarr.json formatting
+    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
 
-    # Save MNE info
-    grp.attrs["info"] = json.dumps(info)
+    # Save MNE info as dict (not JSON string) for proper zarr.json formatting
+    grp.attrs["info"] = info
 
     # Save target name if provided
     if target_name is not None:
@@ -860,12 +859,11 @@ def _save_eegwindows_to_zarr(
     metadata_dtypes = metadata.dtypes.apply(str).to_json()
     grp.attrs["metadata_dtypes"] = metadata_dtypes
 
-    # Save description
-    description_json = description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
+    # Save description as dict (not JSON string) for proper zarr.json formatting
+    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
 
-    # Save MNE info
-    grp.attrs["info"] = json.dumps(info)
+    # Save MNE info as dict (not JSON string) for proper zarr.json formatting
+    grp.attrs["info"] = info
 
     # Save EEGWindowsDataset-specific attributes
     grp.attrs["targets_from"] = targets_from
@@ -881,11 +879,11 @@ def _load_windows_from_zarr(grp, preload):
     for col, dtype_str in dtypes_dict.items():
         metadata[col] = metadata[col].astype(dtype_str)
 
-    # Load description
-    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
+    # Load description (stored as dict in zarr.json)
+    description = pd.Series(grp.attrs["description"])
 
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
+    # Load info (stored as dict in zarr.json)
+    info_dict = grp.attrs["info"]
 
     # Load data
     if preload:
@@ -914,11 +912,11 @@ def _load_eegwindows_from_zarr(grp, preload):
     for col, dtype_str in dtypes_dict.items():
         metadata[col] = metadata[col].astype(dtype_str)
 
-    # Load description
-    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
+    # Load description (stored as dict in zarr.json)
+    description = pd.Series(grp.attrs["description"])
 
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
+    # Load info (stored as dict in zarr.json)
+    info_dict = grp.attrs["info"]
 
     # Load data
     if preload:
@@ -958,12 +956,11 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
         compressors=compressors_list,
     )
 
-    # Save description
-    description_json = description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
+    # Save description as dict (not JSON string) for proper zarr.json formatting
+    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
 
-    # Save MNE info
-    grp.attrs["info"] = json.dumps(info)
+    # Save MNE info as dict (not JSON string) for proper zarr.json formatting
+    grp.attrs["info"] = info
 
     # Save target name if provided
     if target_name is not None:
@@ -972,11 +969,11 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
 
 def _load_raw_from_zarr(grp, preload):
     """Load RawDataset continuous raw data from Zarr group (low-level function)."""
-    # Load description
-    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
+    # Load description (stored as dict in zarr.json)
+    description = pd.Series(grp.attrs["description"])
 
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
+    # Load info (stored as dict in zarr.json)
+    info_dict = grp.attrs["info"]
 
     # Load data
     if preload:
