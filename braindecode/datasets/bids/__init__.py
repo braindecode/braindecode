@@ -16,12 +16,27 @@ More information on BIDS can be found at https://bids.neuroimaging.io
 #
 # License: BSD (3-clause)
 
+from typing import TYPE_CHECKING
+
 # Only import hub at init level (needed by base.py)
 # Other imports are deferred to avoid circular imports
 from .hub import HubDatasetMixin
 
+# For static type checkers (mypy), provide explicit imports
+if TYPE_CHECKING:
+    from .datasets import BIDSDataset, BIDSEpochsDataset
+    from .format import (
+        BIDSDerivativesLayout,
+        create_channels_tsv,
+        create_eeg_json_sidecar,
+        create_events_tsv,
+        create_participants_tsv,
+        description_to_bids_path,
+        make_dataset_description,
+    )
 
-def __getattr__(name):
+
+def __getattr__(name: str):
     """Lazy imports to avoid circular dependencies."""
     if name in ("BIDSDataset", "BIDSEpochsDataset"):
         from .datasets import BIDSDataset, BIDSEpochsDataset
