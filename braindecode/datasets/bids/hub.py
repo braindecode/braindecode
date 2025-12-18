@@ -872,7 +872,9 @@ def _save_windows_to_zarr(
     )
 
     # Save metadata as TSV file (scales better than JSON in attributes)
-    metadata_path = Path(grp.store.root) / grp.path / "metadata.tsv"
+    # Use store.path for zarr v3 DirectoryStore/FSStore compatibility
+    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
+    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
     metadata.to_csv(metadata_path, sep="\t", index=True)
 
     # Save description as dict (not JSON string) for proper zarr.json formatting
@@ -910,7 +912,9 @@ def _save_eegwindows_to_zarr(
     )
 
     # Save metadata as TSV file (scales better than JSON in attributes)
-    metadata_path = Path(grp.store.root) / grp.path / "metadata.tsv"
+    # Use store.path for zarr v3 DirectoryStore/FSStore compatibility
+    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
+    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
     metadata.to_csv(metadata_path, sep="\t", index=True)
 
     # Save description as dict (not JSON string) for proper zarr.json formatting
@@ -928,7 +932,9 @@ def _save_eegwindows_to_zarr(
 def _load_windows_from_zarr(grp, preload):
     """Load windowed data from Zarr group (low-level function)."""
     # Load metadata from TSV file
-    metadata_path = Path(grp.store.root) / grp.path / "metadata.tsv"
+    # Use store.path for zarr v3 DirectoryStore/FSStore compatibility
+    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
+    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
     metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
 
     # Load description (stored as dict in zarr.json)
@@ -959,7 +965,9 @@ def _load_windows_from_zarr(grp, preload):
 def _load_eegwindows_from_zarr(grp, preload):
     """Load EEG continuous raw data from Zarr group (low-level function)."""
     # Load metadata from TSV file
-    metadata_path = Path(grp.store.root) / grp.path / "metadata.tsv"
+    # Use store.path for zarr v3 DirectoryStore/FSStore compatibility
+    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
+    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
     metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
 
     # Load description (stored as dict in zarr.json)
