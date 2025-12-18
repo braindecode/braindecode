@@ -284,15 +284,6 @@ sphinx_gallery_conf = {
         ]
     ),
     "within_subsection_order": FileNameSortKey,
-    "binder": {
-        "org": "braindecode",
-        "repo": "braindecode",
-        "branch": "main",
-        "binderhub_url": "https://mybinder.org",
-        "dependencies": "../requirements.txt",
-        "notebooks_dir": "auto_examples",
-        "use_jupyter_lab": True,
-    },
 }
 
 # -- Options for HTML output ----------------------------------------------
@@ -302,7 +293,9 @@ sphinx_gallery_conf = {
 #
 
 html_theme = "pydata_sphinx_theme"
-switcher_version_match = "dev" if release.endswith("dev0") else version
+# Determine if this is a dev build - use env var if set, otherwise check version
+is_dev_build = bool(int(os.environ.get("BUILD_DEV_HTML", "0"))) or release.endswith("dev0")
+switcher_version_match = "dev" if is_dev_build else version
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
