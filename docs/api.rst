@@ -2,9 +2,9 @@
 
 .. _api_reference:
 
-=======================
-Braindece API Reference
-=======================
+=========================
+Braindecode API Reference
+=========================
 
 .. automodule:: braindecode
    :no-members:

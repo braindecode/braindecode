@@ -106,7 +106,8 @@ class BENDR(EEGModuleMixin, nn.Module):
            from braindecode.models import BENDR
 
            # Load pre-trained model from Hugging Face Hub
-           model = BENDR.from_pretrained("braindecode/bendr-pretrained")
+           # you can specify `n_outputs` for your downstream task
+           model = BENDR.from_pretrained("braindecode/braindecode-bendr", n_outputs=2)
 
        To push your own trained model to the Hub:
 

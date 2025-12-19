@@ -293,11 +293,7 @@ sphinx_gallery_conf = {
 #
 
 html_theme = "pydata_sphinx_theme"
-switcher_version_match = (
-    "dev"
-    if (release.endswith("dev0") or os.environ.get("BUILD_DEV_HTML", "0") == "1")
-    else version
-)
+switcher_version_match = "dev" if (release.endswith("dev0")) else version
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
