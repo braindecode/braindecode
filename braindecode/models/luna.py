@@ -43,30 +43,29 @@ class LUNA(EEGModuleMixin, nn.Module):
     2. Channel-Unification Module (cross-attention with learned queries)
     3. Patch-wise Temporal Encoder (RoPE-based transformer)
     4. Decoder Heads (classification or reconstruction)
-    
+
     .. important::
        **Pre-trained Weights Available**
-       
+
        This model has pre-trained weights available on the Hugging Face Hub.
        You can load them using:
-       
+
        .. code-block:: python
-       
+
            from braindecode.models import LUNA
-           
+
            # Load pre-trained model from Hugging Face Hub
            model = LUNA.from_pretrained("braindecode/luna-pretrained")
-       
+
        To push your own trained model to the Hub:
-       
+
        .. code-block:: python
-       
+
            # After training your model
            model.push_to_hub(
-               repo_id="username/my-luna-model",
-               commit_message="Upload trained LUNA model"
+               repo_id="username/my-luna-model", commit_message="Upload trained LUNA model"
            )
-       
+
        Requires installing ``braindecode[hug]`` for Hub integration.
 
     Parameters

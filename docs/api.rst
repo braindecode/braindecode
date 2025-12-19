@@ -36,56 +36,55 @@ provides a common interface for all EEG models and derivate variables names if n
 
 .. important::
    **Hugging Face Hub Integration**
-   
+
    All models in braindecode naturally possess the capability to push and pull from the
    Hugging Face Hub through inheritance from :class:`PyTorchModelHubMixin`. This allows you to:
-   
+
    * **Load pre-trained models** from the Hub using ``Model.from_pretrained("repo_id")``
    * **Share your trained models** with the community using ``model.push_to_hub("repo_id")``
    * **Version control your models** with git-like versioning on the Hub
-   
+
    To enable this functionality, install braindecode with Hub support::
-   
+
        pip install braindecode[hug]
-   
+
    **Available pre-trained models:**
-   
+
    Some models have pre-trained weights available on the Hugging Face BrainDecode organization:
-   
+
    * :class:`BIOT` - Foundation model with pre-trained weights
    * :class:`Labram` - Large Brain Model with pre-trained weights
    * :class:`REVE` - EEG foundation model with pre-trained weights
    * :class:`LUNA` - Universal EEG embedding model with pre-trained weights
    * :class:`BENDR` - Foundation model with pre-trained weights
-   
+
    **Example - Loading a pre-trained model:**
-   
+
    .. code-block:: python
-   
+
        from braindecode.models import BIOT
-       
+
        # Load pre-trained BIOT model from Hugging Face Hub
        model = BIOT.from_pretrained("braindecode/biot-pretrained")
-       
+
        # Use for your EEG classification task
        # ... your code here ...
-   
+
    **Example - Pushing your trained model:**
-   
+
    .. code-block:: python
-   
+
        from braindecode.models import EEGNetv4
-       
+
        # Train your model
        model = EEGNetv4(n_chans=22, n_outputs=4, n_times=1000)
        # ... training code ...
-       
+
        # Push to the Hub (requires huggingface-cli login)
        model.push_to_hub(
-           repo_id="username/my-eegnet-model",
-           commit_message="Initial model upload"
+           repo_id="username/my-eegnet-model", commit_message="Initial model upload"
        )
-   
+
    For more details, see the :class:`EEGModuleMixin` documentation and the
    :ref:`hub-integration` tutorial.
 

@@ -136,30 +136,29 @@ class REVE(EEGModuleMixin, nn.Module):
 
     - ``brain-bzh/reve-base``: 72M parameters, 512 embedding dim, 22 layers (~260 A100 GPU hours)
     - ``brain-bzh/reve-large``: ~400M parameters, 1250 embedding dim
-    
+
     .. important::
        **Pre-trained Weights Available**
-       
+
        This model has pre-trained weights available on the Hugging Face Hub.
        You can load them using:
-       
+
        .. code-block:: python
-       
+
            from braindecode.models import REVE
-           
+
            # Load pre-trained model from Hugging Face Hub
            model = REVE.from_pretrained("brain-bzh/reve-base")
-       
+
        To push your own trained model to the Hub:
-       
+
        .. code-block:: python
-       
+
            # After training your model
            model.push_to_hub(
-               repo_id="username/my-reve-model",
-               commit_message="Upload trained REVE model"
+               repo_id="username/my-reve-model", commit_message="Upload trained REVE model"
            )
-       
+
        Requires installing ``braindecode[hug]`` for Hub integration.
 
     .. rubric:: Usage

@@ -94,30 +94,29 @@ class BENDR(EEGModuleMixin, nn.Module):
         **Important:** To utilize the full potential of BENDR, the model requires
         **self-supervised pre-training** on large, unlabeled EEG datasets (like TUEG) followed
         by subsequent fine-tuning on the specific downstream classification task [bendr]_.
-    
+
     .. important::
        **Pre-trained Weights Available**
-       
+
        This model has pre-trained weights available on the Hugging Face Hub.
        You can load them using:
-       
+
        .. code-block:: python
-       
+
            from braindecode.models import BENDR
-           
+
            # Load pre-trained model from Hugging Face Hub
            model = BENDR.from_pretrained("braindecode/bendr-pretrained")
-       
+
        To push your own trained model to the Hub:
-       
+
        .. code-block:: python
-       
+
            # After training your model
            model.push_to_hub(
-               repo_id="username/my-bendr-model",
-               commit_message="Upload trained BENDR model"
+               repo_id="username/my-bendr-model", commit_message="Upload trained BENDR model"
            )
-       
+
        Requires installing ``braindecode[hug]`` for Hub integration.
 
     Parameters
