@@ -270,6 +270,68 @@ def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg):
     world_size = 1
     mp.spawn(distributed_relative_positioning_sampler_init_process, args=(world_size, windows_ds, same_rec_neg), nprocs=world_size, join=True)
 
+
+def distributed_relative_positioning_sampler_n_examples_check(rank, world_size, windows_ds, n_examples_total):
+    """Test that n_examples calculation uses correct operator precedence."""
+    dist.init_process_group(
+        backend="gloo",
+        init_method="tcp://127.0.0.1:29500",
+        rank=rank,
+        world_size=world_size
+    )
+    
+    tau_pos, tau_neg = 2000, 3000
+    sampler = DistributedRelativePositioningSampler(
+        windows_ds.get_metadata(),
+        tau_pos=tau_pos,
+        tau_neg=tau_neg,
+        n_examples=n_examples_total,
+        tau_max=None,
+        same_rec_neg=True,
+        random_state=33,
+    )
+    
+    # Calculate expected n_examples for this rank
+    # Formula should be: n_examples_total * n_recordings_for_rank // total_recordings
+    total_recordings = sampler.info.shape[0]
+    recordings_per_rank = sampler.n_recordings
+    expected_n_examples = n_examples_total * recordings_per_rank // total_recordings
+    
+    print(f"Rank {rank}: total_recordings={total_recordings}, recordings_per_rank={recordings_per_rank}, "
+          f"expected_n_examples={expected_n_examples}, actual_n_examples={sampler.n_examples}")
+    
+    assert sampler.n_examples == expected_n_examples, (
+        f"Rank {rank}: Expected {expected_n_examples} examples but got {sampler.n_examples}. "
+        f"total_recordings={total_recordings}, recordings_per_rank={recordings_per_rank}, "
+        f"n_examples_total={n_examples_total}"
+    )
+    
+    # Cleanup
+    dist.destroy_process_group()
+
+
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="Not supported on Windows because of use_libuv compatibility")
+@pytest.mark.parametrize("n_examples_total,world_size", [
+    (100, 2),  # Test case where division might lose precision
+    (50, 2),   # Test case from bug report that could truncate to 0
+    (100, 4),  # Test case from bug report
+])
+def test_distributed_relative_positioning_sampler_n_examples_calculation(windows_ds, n_examples_total, world_size):
+    """Test that n_examples calculation distributes examples correctly across ranks.
+    
+    This test validates the fix for the operator precedence bug where:
+    - Buggy: n_examples // total_recordings * recordings_per_rank (double truncation)
+    - Fixed: n_examples * recordings_per_rank // total_recordings (single division)
+    """
+    mp.spawn(
+        distributed_relative_positioning_sampler_n_examples_check,
+        args=(world_size, windows_ds, n_examples_total),
+        nprocs=world_size,
+        join=True
+    )
+
+
 @pytest.mark.parametrize("n_windows,n_windows_stride", [[10, 5], [10, 100], [1, 1]])
 def test_sequence_sampler(windows_ds, n_windows, n_windows_stride):
     sampler = SequenceSampler(
