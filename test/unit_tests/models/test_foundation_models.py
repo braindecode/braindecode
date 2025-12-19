@@ -538,6 +538,11 @@ def luna_base_pretrained_model():
     for persistence across CI runs.
 
     Model located at: https://huggingface.co/thorir/LUNA
+
+    Available variants:
+    - LUNA_base.safetensors (embed_dim=64, num_queries=4, depth=8)
+    - LUNA_large.safetensors (embed_dim=96, num_queries=6, depth=10)
+    - LUNA_huge.safetensors (embed_dim=128, num_queries=8, depth=24)
     """
     if not HAS_SAFETENSORS:
         pytest.skip("safetensors and huggingface_hub are required")
@@ -557,7 +562,7 @@ def luna_base_pretrained_model():
             cache_dir=cache_dir,
         )
 
-        # Create model instance
+        # Create model instance for classification (fine-tuning)
         model = LUNA(
             n_outputs=2,
             n_chans=22,
@@ -567,9 +572,15 @@ def luna_base_pretrained_model():
             depth=8,
         )
 
-        # Load weights using safetensors
+        # Load weights using safetensors with key mapping
         state_dict = load_file(model_path)
-        model.load_state_dict(state_dict, strict=False)
+        # Apply key mapping for pretrained weights compatibility
+        mapping = model.mapping.copy()
+        mapping['cross_attn.temparature'] = 'cross_attn.temperature'
+        mapped_state_dict = {
+            mapping.get(k, k): v for k, v in state_dict.items()
+        }
+        model.load_state_dict(mapped_state_dict, strict=False)
 
         return model
     except Exception as e:
