@@ -579,8 +579,10 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
            from braindecode.models import SignalJEPA_PreLocal
 
-           # Load the original pre-trained model from Hugging Face Hub
-           model = SignalJEPA_PreLocal.from_pretrained("braindecode/SignalJEPA")
+           # Load pre-trained model from Hugging Face Hub
+           model = SignalJEPA_PreLocal.from_pretrained(
+               "braindecode/SignalJEPA-PreLocal-pretrained"
+           )
 
        To push your own trained model to the Hub:
 
@@ -588,10 +590,12 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
            # After training your model
            model.push_to_hub(
-               repo_id="username/my-biot-model", commit_message="Upload trained BIOT model"
+               repo_id="username/my-sjepa-model",
+               commit_message="Upload trained SignalJEPA model",
            )
 
        Requires installing ``braindecode[hug]`` for Hub integration.
+
     Parameters
     ----------
     n_spat_filters : int
