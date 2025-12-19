@@ -3,7 +3,9 @@
 # License: BSD-3
 import os
 import platform
+from unittest import mock
 
+import pandas as pd
 import pytest
 
 from braindecode.datasets.nmt import NMT_archive_name, _NMTMock
@@ -122,9 +124,6 @@ def test_nmt_recording_ids_with_unordered_csv():
     than the sorted file paths to verify that metadata matching works by record name
     rather than positional index.
     """
-    from unittest import mock
-    import pandas as pd
-    
     # Create a custom mock CSV with rows in reverse order
     def _fake_pd_read_csv_reverse(*args, **kwargs):
         # CSV rows in REVERSE order compared to sorted files
