@@ -88,8 +88,6 @@ def test_distributed_relative_positioning_sampler_n_examples_formula():
     fixed = n_examples * recordings_per_rank // total_recordings
     assert buggy == 15, "Buggy: 75 // 20 * 5 = 3 * 5 = 15"
     assert fixed == 18, "Fixed: 75 * 5 // 20 = 375 // 20 = 18"
-    
-    print("All formula validation tests passed!")
 
 
 @pytest.fixture(scope="module")
@@ -354,9 +352,6 @@ def distributed_relative_positioning_sampler_n_examples_check(rank, world_size, 
     total_recordings = sampler.info.shape[0]
     recordings_per_rank = sampler.n_recordings
     expected_n_examples = n_examples_total * recordings_per_rank // total_recordings
-    
-    print(f"Rank {rank}: total_recordings={total_recordings}, recordings_per_rank={recordings_per_rank}, "
-          f"expected_n_examples={expected_n_examples}, actual_n_examples={sampler.n_examples}")
     
     assert sampler.n_examples == expected_n_examples, (
         f"Rank {rank}: Expected {expected_n_examples} examples but got {sampler.n_examples}. "
