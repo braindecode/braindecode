@@ -569,6 +569,29 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     .. versionadded:: 0.9
 
+    .. important::
+       **Pre-trained Weights Available**
+
+       This model has pre-trained weights available on the Hugging Face Hub.
+       You can load them using:
+
+       .. code-block:: python
+
+           from braindecode.models import SignalJEPA_PreLocal
+
+           # Load the original pre-trained model from Hugging Face Hub
+           model = SignalJEPA_PreLocal.from_pretrained("braindecode/SignalJEPA")
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-biot-model", commit_message="Upload trained BIOT model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
     Parameters
     ----------
     n_spat_filters : int
