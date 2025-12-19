@@ -49,7 +49,6 @@ jobs:
           make html
         env:
           HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
-          BUILD_DEV_HTML: 1
 
       - name: Generate Notebooks from Examples
         run: |
