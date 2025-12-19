@@ -57,6 +57,7 @@ provides a common interface for all EEG models and derivate variables names if n
    * :class:`REVE` - EEG foundation model with pre-trained weights
    * :class:`LUNA` - Universal EEG embedding model with pre-trained weights
    * :class:`BENDR` - Foundation model with pre-trained weights
+   * :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
 
    **Example - Loading a pre-trained model:**
 
@@ -74,15 +75,15 @@ provides a common interface for all EEG models and derivate variables names if n
 
    .. code-block:: python
 
-       from braindecode.models import EEGNetv4
+       from braindecode.models import EEGNeX
 
        # Train your model
-       model = EEGNetv4(n_chans=22, n_outputs=4, n_times=1000)
+       model = EEGNeX(n_chans=22, n_outputs=4, n_times=1000)
        # ... training code ...
 
        # Push to the Hub (requires huggingface-cli login)
        model.push_to_hub(
-           repo_id="username/my-eegnet-model", commit_message="Initial model upload"
+           repo_id="username/my-eegnex-model", commit_message="Initial model upload"
        )
 
    For more details, see the :class:`EEGModuleMixin` documentation and the
