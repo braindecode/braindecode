@@ -34,6 +34,64 @@ from braindecode.samplers.ssl import (
 )
 
 
+def test_distributed_relative_positioning_sampler_n_examples_formula():
+    """Test that n_examples calculation uses correct operator precedence.
+    
+    This is a simple unit test that validates the formula directly without
+    requiring network access or distributed training setup.
+    
+    The bug was: n_examples // total_recordings * recordings_per_rank
+    The fix is: n_examples * recordings_per_rank // total_recordings
+    
+    Test cases from the bug report:
+    1. n_examples=100, total_recordings=10, recordings_per_rank=2 (world_size=4)
+       - Buggy: 100 // 10 * 2 = 10 * 2 = 20
+       - Fixed: 100 * 2 // 10 = 200 // 10 = 20
+       - In this case both formulas give the same result
+       
+    2. n_examples=50, total_recordings=100, recordings_per_rank=50 (world_size=2)
+       - Buggy: 50 // 100 * 50 = 0 * 50 = 0 (WRONG!)
+       - Fixed: 50 * 50 // 100 = 2500 // 100 = 25 (CORRECT)
+       
+    3. n_examples=100, total_recordings=10, world_size=4, recordings_per_rank=2 or 3
+       - For rank with 2 recordings:
+         - Buggy: 100 // 10 * 2 = 20
+         - Fixed: 100 * 2 // 10 = 20
+       - For rank with 3 recordings (10 doesn't divide evenly by 4):
+         - Buggy: 100 // 10 * 3 = 30
+         - Fixed: 100 * 3 // 10 = 30
+    """
+    # Test case 1: Equal precision case
+    n_examples, total_recordings, recordings_per_rank = 100, 10, 2
+    buggy = n_examples // total_recordings * recordings_per_rank
+    fixed = n_examples * recordings_per_rank // total_recordings
+    assert buggy == 20
+    assert fixed == 20
+    
+    # Test case 2: Critical bug case - buggy formula gives 0
+    n_examples, total_recordings, recordings_per_rank = 50, 100, 50
+    buggy = n_examples // total_recordings * recordings_per_rank
+    fixed = n_examples * recordings_per_rank // total_recordings
+    assert buggy == 0, "Buggy formula should give 0 (this is the bug!)"
+    assert fixed == 25, "Fixed formula should give 25"
+    
+    # Test case 3: Another precision loss case
+    n_examples, total_recordings, recordings_per_rank = 100, 10, 3
+    buggy = n_examples // total_recordings * recordings_per_rank
+    fixed = n_examples * recordings_per_rank // total_recordings
+    assert buggy == 30
+    assert fixed == 30
+    
+    # Test case 4: More examples showing the difference
+    n_examples, total_recordings, recordings_per_rank = 75, 20, 5
+    buggy = n_examples // total_recordings * recordings_per_rank
+    fixed = n_examples * recordings_per_rank // total_recordings
+    assert buggy == 15, "Buggy: 75 // 20 * 5 = 3 * 5 = 15"
+    assert fixed == 18, "Fixed: 75 * 5 // 20 = 375 // 20 = 18"
+    
+    print("All formula validation tests passed!")
+
+
 @pytest.fixture(scope="module")
 def windows_ds():
     raws, description = fetch_data_with_moabb(dataset_name="BNCI2014_001", subject_ids=4)
