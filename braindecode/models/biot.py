@@ -51,8 +51,13 @@ class BIOT(EEGModuleMixin, nn.Module):
 
            from braindecode.models import BIOT
 
-           # Load pre-trained model from Hugging Face Hub
-           model = BIOT.from_pretrained("braindecode/biot-pretrained")
+           # Load the original pre-trained model from Hugging Face Hub
+           # For 16-channel models:
+           model = BIOT.from_pretrained("braindecode/biot-pretrained-prest-16chs")
+
+           # For 18-channel models:
+           model = BIOT.from_pretrained("braindecode/biot-pretrained-shhs-prest-18chs")
+           model = BIOT.from_pretrained("braindecode/biot-pretrained-six-datasets-18chs")
 
        To push your own trained model to the Hub:
 
