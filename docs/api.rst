@@ -66,7 +66,7 @@ provides a common interface for all EEG models and derivate variables names if n
        from braindecode.models import BIOT
 
        # Load pre-trained BIOT model from Hugging Face Hub
-       model = BIOT.from_pretrained("braindecode/biot-pretrained")
+       model = BIOT.from_pretrained("braindecode/biot-pretrained-prest-16chs")
 
        # Use for your EEG classification task
        # ... your code here ...
