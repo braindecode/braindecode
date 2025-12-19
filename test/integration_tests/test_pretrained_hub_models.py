@@ -251,8 +251,8 @@ class TestLabramPretrained:
     def test_load_from_hub(self, model):
         """Test that Labram can be loaded from Hugging Face Hub."""
         assert model is not None
-        assert model.n_chans == 64
-        assert model.n_times == 1600
+        assert model.n_chans == 128
+        assert model.n_times == 3000
         assert model.n_outputs == 4
 
     def test_forward_pass(self, model):
@@ -276,7 +276,7 @@ class TestLabramPretrained:
         ("SignalJEPA_Contextual", "braindecode/SignalJEPA-Contextual-pretrained", 19),
         ("SignalJEPA_PostLocal", "braindecode/SignalJEPA-PostLocal-pretrained", 19),
         ("SignalJEPA_PreLocal", "braindecode/SignalJEPA-PreLocal-pretrained", 19),
-        ("Labram", "braindecode/labram-pretrained", 64),
+        ("Labram", "braindecode/labram-pretrained", 128),
     ],
 )
 def test_all_pretrained_models_load(model_cls, repo_id, expected_n_chans, hub_cache_dir):
