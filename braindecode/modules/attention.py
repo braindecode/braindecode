@@ -15,7 +15,6 @@ import math
 from typing import Optional
 
 import torch
-import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
@@ -724,37 +723,30 @@ class CATLite(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, emb_size, num_heads, dropout):
-        super().__init__()
-        self.emb_size = emb_size
-        self.num_heads = num_heads
-        self.keys = nn.Linear(emb_size, emb_size)
-        self.queries = nn.Linear(emb_size, emb_size)
-        self.values = nn.Linear(emb_size, emb_size)
-        self.att_drop = nn.Dropout(dropout)
-        self.projection = nn.Linear(emb_size, emb_size)
+    """
+    Multi-head attention mechanism, using PyTorch's built-in MultiheadAttention module.
 
-        self.rearrange_stack = Rearrange(
-            "b n (h d) -> b h n d",
-            h=num_heads,
-        )
-        self.rearrange_unstack = Rearrange(
-            "b h n d -> b n (h d)",
+    Parameters
+    ----------
+    emb_size : int
+        The size of the embedding.
+    num_heads : int
+        The number of attention heads.
+    dropout : float, optional
+        The dropout probability. Default: 0.0.
+    """
+
+    def __init__(self, emb_size, num_heads, dropout=0.0):
+        super().__init__()
+        self.mha = nn.MultiheadAttention(
+            embed_dim=emb_size,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True,
         )
 
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
-        queries = self.rearrange_stack(self.queries(x))
-        keys = self.rearrange_stack(self.keys(x))
-        values = self.rearrange_stack(self.values(x))
-        energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
-        if mask is not None:
-            fill_value = float("-inf")
-            energy = energy.masked_fill(~mask, fill_value)
-
-        scaling = self.emb_size ** (1 / 2)
-        att = F.softmax(energy / scaling, dim=-1)
-        att = self.att_drop(att)
-        out = torch.einsum("bhal, bhlv -> bhav ", att, values)
-        out = self.rearrange_unstack(out)
-        out = self.projection(out)
+        # nn.MultiheadAttention expects (query, key, value)
+        # For self-attention, all are x.
+        out, _ = self.mha(x, x, x, attn_mask=mask, need_weights=False)
         return out
