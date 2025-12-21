@@ -31,6 +31,7 @@ import json
 import logging
 import tempfile
 import warnings
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
@@ -320,18 +321,27 @@ class HubDatasetMixin:
 
         n_windows = format_info["total_samples"]
 
+        # Compute total duration across all recordings
+        total_duration = 0.0
         if dataset_type == "WindowsDataset":
             n_channels = len(first_ds.windows.ch_names)
             data_type = "Windowed (from Epochs object)"
             sfreq = first_ds.windows.info["sfreq"]
+            for ds in self.datasets:
+                epoch_length = ds.windows.tmax - ds.windows.tmin
+                total_duration += len(ds.windows) * epoch_length
         elif dataset_type == "EEGWindowsDataset":
             n_channels = len(first_ds.raw.ch_names)
             sfreq = first_ds.raw.info["sfreq"]
             data_type = "Windowed (from Raw object)"
+            for ds in self.datasets:
+                total_duration += ds.raw.n_times / ds.raw.info["sfreq"]
         elif dataset_type == "RawDataset":
             n_channels = len(first_ds.raw.ch_names)
             sfreq = first_ds.raw.info["sfreq"]
             data_type = "Continuous (Raw)"
+            for ds in self.datasets:
+                total_duration += ds.raw.n_times / ds.raw.info["sfreq"]
         else:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
@@ -343,6 +353,7 @@ class HubDatasetMixin:
             sfreq=sfreq,
             data_type=data_type,
             n_windows=n_windows,
+            total_duration=total_duration,
         )
 
         # Save README
@@ -1122,6 +1133,7 @@ def _generate_readme_content(
     sfreq,
     data_type: str,
     n_windows: int,
+    total_duration: float | None = None,
     format: str = "zarr",
 ):
     """Generate README.md content for a dataset uploaded to the Hub.
@@ -1140,6 +1152,8 @@ def _generate_readme_content(
         Type of dataset (e.g., "Windowed", "Continuous").
     n_windows : int
         Number of windows/samples in the dataset.
+    total_duration : float or None
+        Total duration in seconds across all recordings.
     format : str
         Storage format (default: "zarr").
 
@@ -1152,6 +1166,10 @@ def _generate_readme_content(
         format_info.get("total_size_mb", 0.0) if isinstance(format_info, dict) else 0.0
     )
     sfreq_str = f"{sfreq:g}" if sfreq is not None else "N/A"
+
+    duration_str = (
+        str(timedelta(seconds=int(total_duration))) if total_duration else "N/A"
+    )
 
     return f"""---
 tags:
@@ -1176,7 +1194,8 @@ learning library for EEG/MEG/ECoG signals.
 | Type | {data_type} |
 | Channels | {n_channels} |
 | Sampling frequency | {sfreq_str} Hz |
-| Windows/samples | {n_windows} |
+| Total duration | {duration_str} |
+| Windows/samples | {n_windows:,} |
 | Size | {total_size_mb:.2f} MB |
 | Format | {format} |
 
@@ -1250,13 +1269,6 @@ if hasattr(dataset.datasets[0], "bids_events"):
 if hasattr(dataset.datasets[0], "bids_channels"):
     print(dataset.datasets[0].bids_channels)
 ```
-
-## Why Zarr?
-
-Zarr format provides:
-- **Fast random access** - Critical for efficient DataLoader sampling
-- **Compression** - Reduced storage with minimal read overhead
-- **Cloud-native** - Works with remote storage (S3, GCS, etc.)
 
 ---
 
