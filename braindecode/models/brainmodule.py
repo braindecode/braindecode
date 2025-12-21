@@ -134,7 +134,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
         # Model related parameters
         # Architecture
         hidden_dim: int = 320,
-        depth: int = 4,
+        depth: int = 10,
         kernel_size: int = 3,
         growth: float = 1.0,
         dilation_growth: int = 2,
