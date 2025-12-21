@@ -471,6 +471,60 @@ def test_replace_inplace(base_concat_ds):
     assert all(len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets)
 
 
+def test_replace_inplace_updates_cumulative_sizes(base_concat_ds):
+    """Test that _replace_inplace correctly updates cumulative_sizes after dataset replacement.
+    
+    This test addresses the bug where cumulative_sizes was not recomputed after replacing
+    datasets that have different lengths than the originals (e.g., after cropping).
+    """
+    # Store original cumulative sizes and dataset lengths
+    original_cumulative_sizes = base_concat_ds.cumulative_sizes.copy()
+    original_lengths = [len(ds) for ds in base_concat_ds.datasets]
+    
+    # Create a copy and crop the datasets to much smaller sizes
+    base_concat_ds2 = copy.deepcopy(base_concat_ds)
+    for i in range(len(base_concat_ds2.datasets)):
+        # Crop to 2 seconds (at 250 Hz = 500 samples)
+        base_concat_ds2.datasets[i].raw.crop(0, 2, include_tmax=False)
+    
+    # Get the new expected lengths after cropping
+    new_lengths = [len(ds) for ds in base_concat_ds2.datasets]
+    
+    # Calculate expected cumulative sizes manually
+    expected_cumulative_sizes = []
+    cumsum = 0
+    for length in new_lengths:
+        cumsum += length
+        expected_cumulative_sizes.append(cumsum)
+    
+    # Replace datasets in place
+    _replace_inplace(base_concat_ds, base_concat_ds2)
+    
+    # Verify that cumulative_sizes has been updated correctly
+    assert base_concat_ds.cumulative_sizes == expected_cumulative_sizes, (
+        f"cumulative_sizes not updated correctly. "
+        f"Expected {expected_cumulative_sizes}, got {base_concat_ds.cumulative_sizes}"
+    )
+    
+    # Verify that the total length is correct
+    assert len(base_concat_ds) == sum(new_lengths), (
+        f"Total dataset length incorrect. Expected {sum(new_lengths)}, got {len(base_concat_ds)}"
+    )
+    
+    # Verify that cumulative_sizes changed from the original
+    assert base_concat_ds.cumulative_sizes != original_cumulative_sizes, (
+        "cumulative_sizes should have changed after replacing with cropped datasets"
+    )
+    
+    # Verify we can access all valid indices without IndexError
+    # This is the real-world bug - accessing indices that should be valid
+    for idx in range(len(base_concat_ds)):
+        try:
+            _ = base_concat_ds[idx]
+        except IndexError:
+            pytest.fail(f"IndexError when accessing valid index {idx} out of {len(base_concat_ds)}")
+
+
 def test_set_raw_preproc_kwargs(base_concat_ds):
     raw_preproc_kwargs = [
         {
