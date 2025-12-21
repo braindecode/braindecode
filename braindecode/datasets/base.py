@@ -725,7 +725,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             os.makedirs(path)
 
         path_contents = os.listdir(path)
-        n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
+        n_sub_dirs = len(
+            [e for e in path_contents if os.path.isdir(os.path.join(path, e))]
+        )
         for i_ds, ds in enumerate(self.datasets):
             # remove subdirectory from list of untouched files / subdirectories
             if str(i_ds + offset) in path_contents:
