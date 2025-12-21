@@ -288,7 +288,7 @@ def test_fractional_input_window_seconds_consistency(
     n_times, input_window_seconds, sfreq
 ):
     """Test that fractional input_window_seconds values are accepted when consistent.
-    
+
     This test validates the fix for the bug where int() truncation rejected
     valid configurations. With round(), these values should be accepted.
     """
@@ -318,7 +318,7 @@ def test_fractional_input_window_seconds_inference(
     n_times, input_window_seconds, sfreq
 ):
     """Test that fractional input_window_seconds can be inferred correctly.
-    
+
     This test validates that inference uses round() instead of int().
     """
     module = DummyModule(

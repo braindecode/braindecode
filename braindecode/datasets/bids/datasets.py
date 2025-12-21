@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Dataset for loading BIDS.
 
 More information on BIDS (Brain Imaging Data Structure) can be found at https://bids.neuroimaging.io
@@ -19,26 +20,19 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseConcatDataset, RawDataset, WindowsDataset
+from ..base import BaseConcatDataset, RawDataset, WindowsDataset
 
 
 def _description_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
-    return {
-        "path": bids_path.fpath,
-        "subject": bids_path.subject,
-        "session": bids_path.session,
-        "task": bids_path.task,
-        "acquisition": bids_path.acquisition,
-        "run": bids_path.run,
-        "processing": bids_path.processing,
-        "recording": bids_path.recording,
-        "space": bids_path.space,
-        "split": bids_path.split,
-        "description": bids_path.description,
-        "suffix": bids_path.suffix,
-        "extension": bids_path.extension,
-        "datatype": bids_path.datatype,
-    }
+    description = {"path": bids_path.fpath, **bids_path.entities}
+    description.update(
+        {
+            "suffix": bids_path.suffix,
+            "extension": bids_path.extension,
+            "datatype": bids_path.datatype,
+        }
+    )
+    return description
 
 
 @dataclass

@@ -1,23 +1,35 @@
+# mypy: ignore-errors
 """
-BIDS-like format utilities for Hub integration.
+BIDS-inspired format utilities for Hub integration.
 
-This module provides BIDS-compatible structures for storing preprocessed EEG
-data in the derivatives folder format while maintaining efficiency for training.
-It leverages mne_bids for BIDS path handling and metadata generation.
+This module provides BIDS-inspired structures for storing EEG data optimized
+for deep learning training. It leverages mne_bids for BIDS path handling and
+metadata generation.
 
-The format follows BIDS derivatives conventions:
-- derivatives/<pipeline-name>/
-  - dataset_description.json
-  - participants.tsv
+The data is stored in the ``sourcedata/`` directory, which according to BIDS:
+- Is NOT validated by BIDS validators (so .zarr files won't cause errors)
+- Has no naming restrictions ("BIDS does not prescribe a particular naming
+  scheme for source data")
+- Is intended for data before file format conversion
+
+This approach allows us to use efficient Zarr storage while maintaining
+BIDS-style organization for discoverability.
+
+Structure:
+- sourcedata/<pipeline-name>/
+  - dataset_description.json     (BIDS-style metadata)
+  - participants.tsv             (BIDS-style metadata)
   - sub-<label>/
     - [ses-<label>/]
       - eeg/
-        - sub-<label>_[ses-<label>_]task-<label>_events.tsv
-        - sub-<label>_[ses-<label>_]task-<label>_channels.tsv
-        - sub-<label>_[ses-<label>_]task-<label>_desc-preproc_eeg.zarr/
+        - *_events.tsv           (BIDS-style metadata)
+        - *_channels.tsv         (BIDS-style metadata)
+        - *_eeg.json             (BIDS-style metadata)
+        - *_eeg.zarr/            (Zarr data - efficient for training)
+  - dataset.zarr/                (Main data store for training)
 
 References:
-- BIDS Derivatives: https://bids-specification.readthedocs.io/en/stable/derivatives/
+- BIDS sourcedata: https://bids-specification.readthedocs.io/en/stable/common-principles.html#source-vs-raw-vs-derived-data
 - BIDS EEG: https://bids-specification.readthedocs.io/en/stable/modality-specific-files/electroencephalography.html
 """
 
@@ -30,16 +42,40 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Optional, Union
 
 import mne
 import mne_bids
+import numpy as np
 import pandas as pd
+from mne_bids.write import _channels_tsv, _sidecar_json
 
 import braindecode
 
 # Default pipeline name for braindecode derivatives
 DEFAULT_PIPELINE_NAME = "braindecode"
+
+
+def _raw_from_info(
+    info: "mne.Info",
+    bad_channels: Optional[list[str]] = None,
+) -> "mne.io.RawArray":
+    info = info.copy()
+    if bad_channels is not None:
+        info["bads"] = list(bad_channels)
+    data = np.zeros((len(info["ch_names"]), 1), dtype=float)
+    raw = mne.io.RawArray(data, info, verbose="error")
+    if not raw.filenames or raw.filenames[0] is None:
+        raw._filenames = [Path("dummy.fif")]
+    return raw
+
+
+def _read_tsv(writer, *args) -> pd.DataFrame:
+    with TemporaryDirectory() as tmpdir, mne.utils.use_log_level("WARNING"):
+        tsv_path = Path(tmpdir) / "sidecar.tsv"
+        writer(*args, tsv_path, overwrite=True)
+        return pd.read_csv(tsv_path, sep="\t")
 
 
 def description_to_bids_path(
@@ -363,6 +399,8 @@ def create_channels_tsv(
     """
     Create a BIDS-compliant channels.tsv from MNE Info.
 
+    Delegates channel formatting to mne_bids.write._channels_tsv.
+
     Parameters
     ----------
     info : mne.Info
@@ -375,72 +413,9 @@ def create_channels_tsv(
     pd.DataFrame
         BIDS-compliant channels DataFrame.
     """
-    import mne
-
     bad_channels = bad_channels or info.get("bads", [])
-
-    channels_data: dict[str, list[Any]] = {
-        "name": [],
-        "type": [],
-        "units": [],
-        "sampling_frequency": [],
-        "low_cutoff": [],
-        "high_cutoff": [],
-        "status": [],
-        "status_description": [],
-    }
-
-    # MNE channel type to BIDS type mapping
-    type_mapping = {
-        "eeg": "EEG",
-        "ecg": "ECG",
-        "eog": "EOG",
-        "emg": "EMG",
-        "meg": "MEG",
-        "ref_meg": "MEGREF",
-        "grad": "MEGGRADAXIAL",
-        "mag": "MEGMAG",
-        "stim": "TRIG",
-        "misc": "MISC",
-        "bio": "BIO",
-    }
-
-    sfreq = info["sfreq"]
-
-    # Get filter info if available
-    highpass = info.get("highpass", "n/a")
-    lowpass = info.get("lowpass", "n/a")
-
-    for i, ch_name in enumerate(info["ch_names"]):
-        # Get channel type
-        ch_type = mne.channel_type(info, i)
-        bids_type = type_mapping.get(ch_type.lower(), ch_type.upper())
-
-        # Get units (default to µV for EEG)
-        if bids_type == "EEG":
-            units = "µV"
-        elif bids_type in ("MEG", "MEGMAG", "MEGGRADAXIAL"):
-            units = "fT"
-        else:
-            units = "n/a"
-
-        # Check if bad channel
-        is_bad = ch_name in bad_channels
-        status = "bad" if is_bad else "good"
-        status_desc = "n/a"
-
-        channels_data["name"].append(ch_name)
-        channels_data["type"].append(bids_type)
-        channels_data["units"].append(units)
-        channels_data["sampling_frequency"].append(sfreq)
-        channels_data["low_cutoff"].append(highpass if highpass != 0 else "n/a")
-        channels_data["high_cutoff"].append(
-            lowpass if lowpass != float("inf") else "n/a"
-        )
-        channels_data["status"].append(status)
-        channels_data["status_description"].append(status_desc)
-
-    return pd.DataFrame(channels_data)
+    raw = _raw_from_info(info, bad_channels)
+    return _read_tsv(_channels_tsv, raw)
 
 
 def create_eeg_json_sidecar(
@@ -450,10 +425,15 @@ def create_eeg_json_sidecar(
     instructions: Optional[str] = None,
     institution_name: Optional[str] = None,
     manufacturer: Optional[str] = None,
+    recording_duration: Optional[float] = None,
+    recording_type: Optional[str] = None,
+    epoch_length: Optional[float] = None,
     extra_metadata: Optional[dict] = None,
 ) -> dict:
     """
     Create a BIDS-compliant EEG sidecar JSON.
+
+    Delegates base JSON creation to mne_bids.write._sidecar_json.
 
     Parameters
     ----------
@@ -469,6 +449,14 @@ def create_eeg_json_sidecar(
         Name of the institution.
     manufacturer : str | None
         Manufacturer of the EEG equipment.
+    recording_duration : float | None
+        Length of the recording in seconds (BIDS RECOMMENDED).
+    recording_type : str | None
+        Type of recording: "continuous", "epoched", or "discontinuous"
+        (BIDS RECOMMENDED).
+    epoch_length : float | None
+        Duration of individual epochs in seconds. RECOMMENDED if
+        recording_type is "epoched".
     extra_metadata : dict | None
         Additional metadata.
 
@@ -477,26 +465,19 @@ def create_eeg_json_sidecar(
     dict
         Sidecar JSON content.
     """
-    # Count channels by type
-    ch_types = [info["chs"][i]["kind"] for i in range(len(info["ch_names"]))]
-    eeg_count = sum(1 for k in ch_types if k == 2)  # EEG kind
-    eog_count = sum(1 for k in ch_types if k == 202)  # EOG kind
-    ecg_count = sum(1 for k in ch_types if k == 201)  # ECG kind
-    emg_count = sum(1 for k in ch_types if k == 302)  # EMG kind
-
-    sidecar = {
-        "TaskName": task_name,
-        "SamplingFrequency": info["sfreq"],
-        "EEGChannelCount": eeg_count,
-        "EOGChannelCount": eog_count,
-        "ECGChannelCount": ecg_count,
-        "EMGChannelCount": emg_count,
-        "PowerLineFrequency": info.get("line_freq", "n/a"),
-        "SoftwareFilters": {
-            "HighpassFilter": {"CutoffFrequency": info.get("highpass", "n/a")},
-            "LowpassFilter": {"CutoffFrequency": info.get("lowpass", "n/a")},
-        },
-    }
+    raw = _raw_from_info(info)
+    manufacturer = manufacturer or "n/a"
+    with TemporaryDirectory() as tmpdir, mne.utils.use_log_level("WARNING"):
+        sidecar_path = Path(tmpdir) / "eeg.json"
+        _sidecar_json(
+            raw,
+            task_name,
+            manufacturer,
+            sidecar_path,
+            "eeg",
+            overwrite=True,
+        )
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
 
     if task_description:
         sidecar["TaskDescription"] = task_description
@@ -504,8 +485,12 @@ def create_eeg_json_sidecar(
         sidecar["Instructions"] = instructions
     if institution_name:
         sidecar["InstitutionName"] = institution_name
-    if manufacturer:
-        sidecar["Manufacturer"] = manufacturer
+    if recording_duration is not None:
+        sidecar["RecordingDuration"] = recording_duration
+    if recording_type is not None:
+        sidecar["RecordingType"] = recording_type
+    if epoch_length is not None:
+        sidecar["EpochLength"] = epoch_length
 
     if extra_metadata:
         sidecar.update(extra_metadata)
@@ -519,6 +504,9 @@ def save_bids_sidecar_files(
     metadata: Optional[pd.DataFrame] = None,
     sfreq: Optional[float] = None,
     task_name: str = "unknown",
+    recording_duration: Optional[float] = None,
+    recording_type: Optional[str] = None,
+    epoch_length: Optional[float] = None,
 ) -> dict[str, Path]:
     """
     Save BIDS sidecar files for a recording using mne_bids BIDSPath.
@@ -535,6 +523,14 @@ def save_bids_sidecar_files(
         Sampling frequency (if not in info).
     task_name : str
         Task name for sidecar JSON.
+    recording_duration : float | None
+        Length of the recording in seconds (BIDS RECOMMENDED).
+    recording_type : str | None
+        Type of recording: "continuous", "epoched", or "discontinuous"
+        (BIDS RECOMMENDED).
+    epoch_length : float | None
+        Duration of individual epochs in seconds. RECOMMENDED if
+        recording_type is "epoched".
 
     Returns
     -------
@@ -568,7 +564,13 @@ def save_bids_sidecar_files(
     saved_files["channels"] = channels_path.fpath
 
     # Save EEG sidecar JSON
-    sidecar = create_eeg_json_sidecar(info, task_name=task_name)
+    sidecar = create_eeg_json_sidecar(
+        info,
+        task_name=task_name,
+        recording_duration=recording_duration,
+        recording_type=recording_type,
+        epoch_length=epoch_length,
+    )
     sidecar_path = base_path.copy().update(suffix="eeg", extension=".json")
     with open(sidecar_path.fpath, "w", encoding="utf-8") as f:
         json.dump(sidecar, f, indent=2)
@@ -577,15 +579,16 @@ def save_bids_sidecar_files(
     return saved_files
 
 
-class BIDSDerivativesLayout:
+class BIDSSourcedataLayout:
     """
-    Helper class for creating BIDS-like derivatives folder structure.
+    Helper class for creating BIDS sourcedata folder structure.
 
-    This creates a structure compatible with BIDS derivatives while
-    storing data in Zarr format for efficient training.
+    This creates a structure using the BIDS ``sourcedata/`` directory,
+    which is not validated by BIDS validators, allowing us to store
+    data in Zarr format for efficient training.
 
     Structure:
-    derivatives/<pipeline>/
+    sourcedata/<pipeline>/
     ├── dataset_description.json
     ├── participants.tsv
     ├── sub-<label>/
@@ -604,23 +607,23 @@ class BIDSDerivativesLayout:
         pipeline_name: str = DEFAULT_PIPELINE_NAME,
     ):
         """
-        Initialize BIDS derivatives layout.
+        Initialize BIDS sourcedata layout.
 
         Parameters
         ----------
         root : str | Path
-            Root directory for derivatives.
+            Root directory for sourcedata.
         pipeline_name : str
             Name of the processing pipeline.
         """
         self.root = Path(root)
         self.pipeline_name = pipeline_name
-        self.derivatives_dir = self.root / "derivatives" / pipeline_name
+        self.sourcedata_dir = self.root / "sourcedata" / pipeline_name
 
     def create_structure(self) -> Path:
-        """Create the basic derivatives directory structure."""
-        self.derivatives_dir.mkdir(parents=True, exist_ok=True)
-        return self.derivatives_dir
+        """Create the basic sourcedata directory structure."""
+        self.sourcedata_dir.mkdir(parents=True, exist_ok=True)
+        return self.sourcedata_dir
 
     def get_bids_path(
         self,
@@ -650,7 +653,7 @@ class BIDSDerivativesLayout:
         """
         return description_to_bids_path(
             description=description,
-            root=self.derivatives_dir,
+            root=self.sourcedata_dir,
             datatype="eeg",
             suffix=suffix,
             extension=extension,
@@ -664,7 +667,7 @@ class BIDSDerivativesLayout:
         source_datasets: Optional[list[dict]] = None,
     ) -> Path:
         """
-        Save dataset_description.json for derivatives.
+        Save dataset_description.json for sourcedata.
 
         Parameters
         ----------
@@ -679,7 +682,7 @@ class BIDSDerivativesLayout:
             Path to saved file.
         """
         return make_dataset_description(
-            path=self.derivatives_dir,
+            path=self.sourcedata_dir,
             name=name,
             pipeline_name=self.pipeline_name,
             source_datasets=source_datasets,
@@ -707,7 +710,7 @@ class BIDSDerivativesLayout:
             Path to saved file.
         """
         participants_df = create_participants_tsv(descriptions, extra_columns)
-        participants_path = self.derivatives_dir / "participants.tsv"
+        participants_path = self.sourcedata_dir / "participants.tsv"
         participants_df.to_csv(
             participants_path, sep="\t", index=False, na_rep="n/a", encoding="utf-8"
         )

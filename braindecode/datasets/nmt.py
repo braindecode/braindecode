@@ -213,7 +213,7 @@ def _fake_pd_read_csv(*args, **kwargs):
 
     # Create the DataFrame, specifying column names
     df = pd.DataFrame(data, columns=["recordname", "label", "age", "gender", "loc"])
-    
+
     # Set recordname as index to match the real pd.read_csv behavior with index_col="recordname"
     df.set_index("recordname", inplace=True)
 

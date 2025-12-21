@@ -420,6 +420,25 @@ Functions to create datasets from different data formats
     create_from_mne_epochs
 
 
+BIDS Integration
+''''''''''''''''
+
+:py:mod:`braindecode.datasets.bids`:
+
+The BIDS subpackage provides tools for working with BIDS-formatted EEG data,
+including dataset loading and Hugging Face Hub push/pull functionality.
+
+.. currentmodule:: braindecode.datasets.bids
+
+.. autosummary::
+   :toctree: generated/
+
+    BIDSDataset
+    BIDSEpochsDataset
+    BIDSIterableDataset
+    HubDatasetMixin
+
+
 Preprocessing
 =============
 
