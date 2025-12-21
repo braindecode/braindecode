@@ -35,6 +35,7 @@ if TYPE_CHECKING:
         description_to_bids_path,
         make_dataset_description,
     )
+    from .iterable import BIDSIterableDataset
 
 
 def __getattr__(name: str):
@@ -45,6 +46,10 @@ def __getattr__(name: str):
         return {"BIDSDataset": BIDSDataset, "BIDSEpochsDataset": BIDSEpochsDataset}[
             name
         ]
+    elif name == "BIDSIterableDataset":
+        from .iterable import BIDSIterableDataset
+
+        return BIDSIterableDataset
     elif name in (
         "BIDSDerivativesLayout",
         "create_channels_tsv",
@@ -64,6 +69,7 @@ __all__ = [
     # Dataset classes
     "BIDSDataset",
     "BIDSEpochsDataset",
+    "BIDSIterableDataset",
     # Format utilities
     "BIDSDerivativesLayout",
     "create_channels_tsv",
