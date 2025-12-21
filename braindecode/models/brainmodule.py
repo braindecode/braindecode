@@ -37,15 +37,15 @@ class BrainModule(EEGModuleMixin, nn.Module):
 
         Figure adapted Extended Data Fig. 4 from [brainmagick]_ to highlight only the model part.
         Architecture of the brain module. Architecture used to process the brain recordings.
-        For each layer, we note first the number of output channels, while the number of time steps
+        For each layer, the authors note first the number of output channels, while the number of time steps
         is constant throughout the layers. The model is composed of a spatial attention layer,
         then a 1x1 convolution without activation. A 'Subject Layer' is selected based on the subject index s,
         which consists in a 1x1 convolution learnt only for that subject with no activation. Then,
-        we apply five convolutional blocks made of three convolutions. The first
+        the authors apply five convolutional blocks made of three convolutions. The first
         two use residual skip connection and increasing dilation, followed by a BatchNorm layer and a
         GELU activation. The third convolution is not residual, and uses a GLU activation
         (which halves the number of channels) and no normalization.
-        Finally, we apply two 1x1 convolutions with a GELU in between.
+        Finally, the authors apply two 1x1 convolutions with a GELU in between.
 
 
     The **MedFormer** is a multi-granularity patching transformer tailored to medical
