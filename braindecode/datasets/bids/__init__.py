@@ -27,7 +27,7 @@ from .hub import HubDatasetMixin
 if TYPE_CHECKING:
     from .datasets import BIDSDataset, BIDSEpochsDataset
     from .format import (
-        BIDSDerivativesLayout,
+        BIDSSourcedataLayout,
         create_channels_tsv,
         create_eeg_json_sidecar,
         create_events_tsv,
@@ -51,7 +51,7 @@ def __getattr__(name: str):
 
         return BIDSIterableDataset
     elif name in (
-        "BIDSDerivativesLayout",
+        "BIDSSourcedataLayout",
         "create_channels_tsv",
         "create_eeg_json_sidecar",
         "create_events_tsv",
@@ -71,7 +71,7 @@ __all__ = [
     "BIDSEpochsDataset",
     "BIDSIterableDataset",
     # Format utilities
-    "BIDSDerivativesLayout",
+    "BIDSSourcedataLayout",
     "create_channels_tsv",
     "create_eeg_json_sidecar",
     "create_events_tsv",

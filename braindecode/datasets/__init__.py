@@ -12,8 +12,8 @@ from .base import (
 from .bcicomp import BCICompetitionIVDataset4
 from .bids import (
     BIDSDataset,
-    BIDSDerivativesLayout,
     BIDSEpochsDataset,
+    BIDSSourcedataLayout,
     create_channels_tsv,
     create_eeg_json_sidecar,
     create_events_tsv,
@@ -39,7 +39,7 @@ __all__ = [
     "BaseConcatDataset",
     "BIDSDataset",
     "BIDSEpochsDataset",
-    "BIDSDerivativesLayout",
+    "BIDSSourcedataLayout",
     "create_events_tsv",
     "create_participants_tsv",
     "create_channels_tsv",

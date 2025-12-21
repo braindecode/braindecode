@@ -1,24 +1,35 @@
 # mypy: ignore-errors
 """
-BIDS-like format utilities for Hub integration.
+BIDS-inspired format utilities for Hub integration.
 
-This module provides BIDS-compatible structures for storing preprocessed EEG
-data in the derivatives folder format while maintaining efficiency for training.
-It leverages mne_bids for BIDS path handling and metadata generation.
+This module provides BIDS-inspired structures for storing EEG data optimized
+for deep learning training. It leverages mne_bids for BIDS path handling and
+metadata generation.
 
-The format follows BIDS derivatives conventions:
-- derivatives/<pipeline-name>/
-  - dataset_description.json
-  - participants.tsv
+The data is stored in the ``sourcedata/`` directory, which according to BIDS:
+- Is NOT validated by BIDS validators (so .zarr files won't cause errors)
+- Has no naming restrictions ("BIDS does not prescribe a particular naming
+  scheme for source data")
+- Is intended for data before file format conversion
+
+This approach allows us to use efficient Zarr storage while maintaining
+BIDS-style organization for discoverability.
+
+Structure:
+- sourcedata/<pipeline-name>/
+  - dataset_description.json     (BIDS-style metadata)
+  - participants.tsv             (BIDS-style metadata)
   - sub-<label>/
     - [ses-<label>/]
       - eeg/
-        - sub-<label>_[ses-<label>_]task-<label>_events.tsv
-        - sub-<label>_[ses-<label>_]task-<label>_channels.tsv
-        - sub-<label>_[ses-<label>_]task-<label>_desc-preproc_eeg.zarr/
+        - *_events.tsv           (BIDS-style metadata)
+        - *_channels.tsv         (BIDS-style metadata)
+        - *_eeg.json             (BIDS-style metadata)
+        - *_eeg.zarr/            (Zarr data - efficient for training)
+  - dataset.zarr/                (Main data store for training)
 
 References:
-- BIDS Derivatives: https://bids-specification.readthedocs.io/en/stable/derivatives/
+- BIDS sourcedata: https://bids-specification.readthedocs.io/en/stable/common-principles.html#source-vs-raw-vs-derived-data
 - BIDS EEG: https://bids-specification.readthedocs.io/en/stable/modality-specific-files/electroencephalography.html
 """
 
@@ -30,18 +41,41 @@ References:
 from __future__ import annotations
 
 import json
-from collections import defaultdict
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Optional, Union
 
 import mne
 import mne_bids
+import numpy as np
 import pandas as pd
+from mne_bids.write import _channels_tsv, _sidecar_json
 
 import braindecode
 
 # Default pipeline name for braindecode derivatives
 DEFAULT_PIPELINE_NAME = "braindecode"
+
+
+def _raw_from_info(
+    info: "mne.Info",
+    bad_channels: Optional[list[str]] = None,
+) -> "mne.io.RawArray":
+    info = info.copy()
+    if bad_channels is not None:
+        info["bads"] = list(bad_channels)
+    data = np.zeros((len(info["ch_names"]), 1), dtype=float)
+    raw = mne.io.RawArray(data, info, verbose="error")
+    if not raw.filenames or raw.filenames[0] is None:
+        raw._filenames = [Path("dummy.fif")]
+    return raw
+
+
+def _read_tsv(writer, *args) -> pd.DataFrame:
+    with TemporaryDirectory() as tmpdir, mne.utils.use_log_level("WARNING"):
+        tsv_path = Path(tmpdir) / "sidecar.tsv"
+        writer(*args, tsv_path, overwrite=True)
+        return pd.read_csv(tsv_path, sep="\t")
 
 
 def description_to_bids_path(
@@ -365,6 +399,8 @@ def create_channels_tsv(
     """
     Create a BIDS-compliant channels.tsv from MNE Info.
 
+    Delegates channel formatting to mne_bids.write._channels_tsv.
+
     Parameters
     ----------
     info : mne.Info
@@ -378,78 +414,8 @@ def create_channels_tsv(
         BIDS-compliant channels DataFrame.
     """
     bad_channels = bad_channels or info.get("bads", [])
-
-    channels_data: dict[str, list[Any]] = {
-        "name": [],
-        "type": [],
-        "units": [],
-        "sampling_frequency": [],
-        "low_cutoff": [],
-        "high_cutoff": [],
-        "status": [],
-        "status_description": [],
-    }
-
-    type_mapping: defaultdict[str, str] = defaultdict(lambda: "Other type of channel")
-    type_mapping.update(
-        meggradaxial="Axial Gradiometer",
-        megrefgradaxial="Axial Gradiometer Reference",
-        meggradplanar="Planar Gradiometer",
-        megmag="Magnetometer",
-        megrefmag="Magnetometer Reference",
-        stim="Trigger",
-        eeg="ElectroEncephaloGram",
-        ecog="Electrocorticography",
-        seeg="StereoEEG",
-        ecg="ElectroCardioGram",
-        eog="ElectroOculoGram",
-        emg="ElectroMyoGram",
-        misc="Miscellaneous",
-        bio="Biological",
-        ias="Internal Active Shielding",
-        dbs="Deep Brain Stimulation",
-        fnirs_cw_amplitude="Near Infrared Spectroscopy (continuous wave)",
-        resp="Respiration",
-        gsr="Galvanic skin response (electrodermal activity, EDA)",
-        temperature="Temperature",
-    )
-
-    sfreq = info["sfreq"]
-
-    # Get filter info if available
-    highpass = info.get("highpass", "n/a")
-    lowpass = info.get("lowpass", "n/a")
-
-    for i, ch_name in enumerate(info["ch_names"]):
-        # Get channel type
-        ch_type = mne.channel_type(info, i)
-        bids_type = type_mapping.get(ch_type.lower(), ch_type.upper())
-
-        # Get units (default to µV for EEG)
-        if bids_type == "EEG":
-            units = "µV"
-        elif bids_type in ("MEG", "MEGMAG", "MEGGRADAXIAL"):
-            units = "fT"
-        else:
-            units = "n/a"
-
-        # Check if bad channel
-        is_bad = ch_name in bad_channels
-        status = "bad" if is_bad else "good"
-        status_desc = "n/a"
-
-        channels_data["name"].append(ch_name)
-        channels_data["type"].append(bids_type)
-        channels_data["units"].append(units)
-        channels_data["sampling_frequency"].append(sfreq)
-        channels_data["low_cutoff"].append(highpass if highpass != 0 else "n/a")
-        channels_data["high_cutoff"].append(
-            lowpass if lowpass != float("inf") else "n/a"
-        )
-        channels_data["status"].append(status)
-        channels_data["status_description"].append(status_desc)
-
-    return pd.DataFrame(channels_data)
+    raw = _raw_from_info(info, bad_channels)
+    return _read_tsv(_channels_tsv, raw)
 
 
 def create_eeg_json_sidecar(
@@ -463,6 +429,8 @@ def create_eeg_json_sidecar(
 ) -> dict:
     """
     Create a BIDS-compliant EEG sidecar JSON.
+
+    Delegates base JSON creation to mne_bids.write._sidecar_json.
 
     Parameters
     ----------
@@ -486,26 +454,19 @@ def create_eeg_json_sidecar(
     dict
         Sidecar JSON content.
     """
-    # Count channels by type
-    ch_types = [info["chs"][i]["kind"] for i in range(len(info["ch_names"]))]
-    eeg_count = sum(1 for k in ch_types if k == 2)  # EEG kind
-    eog_count = sum(1 for k in ch_types if k == 202)  # EOG kind
-    ecg_count = sum(1 for k in ch_types if k == 201)  # ECG kind
-    emg_count = sum(1 for k in ch_types if k == 302)  # EMG kind
-
-    sidecar = {
-        "TaskName": task_name,
-        "SamplingFrequency": info["sfreq"],
-        "EEGChannelCount": eeg_count,
-        "EOGChannelCount": eog_count,
-        "ECGChannelCount": ecg_count,
-        "EMGChannelCount": emg_count,
-        "PowerLineFrequency": info.get("line_freq", "n/a"),
-        "SoftwareFilters": {
-            "HighpassFilter": {"CutoffFrequency": info.get("highpass", "n/a")},
-            "LowpassFilter": {"CutoffFrequency": info.get("lowpass", "n/a")},
-        },
-    }
+    raw = _raw_from_info(info)
+    manufacturer = manufacturer or "n/a"
+    with TemporaryDirectory() as tmpdir, mne.utils.use_log_level("WARNING"):
+        sidecar_path = Path(tmpdir) / "eeg.json"
+        _sidecar_json(
+            raw,
+            task_name,
+            manufacturer,
+            sidecar_path,
+            "eeg",
+            overwrite=True,
+        )
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
 
     if task_description:
         sidecar["TaskDescription"] = task_description
@@ -513,8 +474,6 @@ def create_eeg_json_sidecar(
         sidecar["Instructions"] = instructions
     if institution_name:
         sidecar["InstitutionName"] = institution_name
-    if manufacturer:
-        sidecar["Manufacturer"] = manufacturer
 
     if extra_metadata:
         sidecar.update(extra_metadata)
@@ -586,15 +545,16 @@ def save_bids_sidecar_files(
     return saved_files
 
 
-class BIDSDerivativesLayout:
+class BIDSSourcedataLayout:
     """
-    Helper class for creating BIDS-like derivatives folder structure.
+    Helper class for creating BIDS sourcedata folder structure.
 
-    This creates a structure compatible with BIDS derivatives while
-    storing data in Zarr format for efficient training.
+    This creates a structure using the BIDS ``sourcedata/`` directory,
+    which is not validated by BIDS validators, allowing us to store
+    data in Zarr format for efficient training.
 
     Structure:
-    derivatives/<pipeline>/
+    sourcedata/<pipeline>/
     ├── dataset_description.json
     ├── participants.tsv
     ├── sub-<label>/
@@ -613,23 +573,23 @@ class BIDSDerivativesLayout:
         pipeline_name: str = DEFAULT_PIPELINE_NAME,
     ):
         """
-        Initialize BIDS derivatives layout.
+        Initialize BIDS sourcedata layout.
 
         Parameters
         ----------
         root : str | Path
-            Root directory for derivatives.
+            Root directory for sourcedata.
         pipeline_name : str
             Name of the processing pipeline.
         """
         self.root = Path(root)
         self.pipeline_name = pipeline_name
-        self.derivatives_dir = self.root / "derivatives" / pipeline_name
+        self.sourcedata_dir = self.root / "sourcedata" / pipeline_name
 
     def create_structure(self) -> Path:
-        """Create the basic derivatives directory structure."""
-        self.derivatives_dir.mkdir(parents=True, exist_ok=True)
-        return self.derivatives_dir
+        """Create the basic sourcedata directory structure."""
+        self.sourcedata_dir.mkdir(parents=True, exist_ok=True)
+        return self.sourcedata_dir
 
     def get_bids_path(
         self,
@@ -659,7 +619,7 @@ class BIDSDerivativesLayout:
         """
         return description_to_bids_path(
             description=description,
-            root=self.derivatives_dir,
+            root=self.sourcedata_dir,
             datatype="eeg",
             suffix=suffix,
             extension=extension,
@@ -673,7 +633,7 @@ class BIDSDerivativesLayout:
         source_datasets: Optional[list[dict]] = None,
     ) -> Path:
         """
-        Save dataset_description.json for derivatives.
+        Save dataset_description.json for sourcedata.
 
         Parameters
         ----------
@@ -688,7 +648,7 @@ class BIDSDerivativesLayout:
             Path to saved file.
         """
         return make_dataset_description(
-            path=self.derivatives_dir,
+            path=self.sourcedata_dir,
             name=name,
             pipeline_name=self.pipeline_name,
             source_datasets=source_datasets,
@@ -716,7 +676,7 @@ class BIDSDerivativesLayout:
             Path to saved file.
         """
         participants_df = create_participants_tsv(descriptions, extra_columns)
-        participants_path = self.derivatives_dir / "participants.tsv"
+        participants_path = self.sourcedata_dir / "participants.tsv"
         participants_df.to_csv(
             participants_path, sep="\t", index=False, na_rep="n/a", encoding="utf-8"
         )

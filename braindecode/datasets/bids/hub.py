@@ -5,16 +5,21 @@ Hugging Face Hub integration for EEG datasets.
 This module provides push_to_hub() and pull_from_hub() functionality
 for braindecode datasets, similar to the model Hub integration.
 
-The format follows a BIDS-like derivatives structure:
-- derivatives/braindecode/
-  - dataset_description.json
-  - participants.tsv
-  - dataset.zarr/ (main data for efficient training)
+.. warning::
+    The format is **BIDS-inspired**, not **BIDS-compliant**. The metadata
+    files are BIDS-compliant, but the data is stored in Zarr format for
+    efficient training, which is not a valid BIDS EEG format.
+
+The format follows a BIDS-inspired sourcedata structure:
+- sourcedata/braindecode/
+  - dataset_description.json  (BIDS-compliant)
+  - participants.tsv          (BIDS-compliant)
+  - dataset.zarr/             (NOT BIDS-compliant - efficient data store)
   - sub-<label>/
     - eeg/
-      - *_events.tsv
-      - *_channels.tsv
-      - *_eeg.json
+      - *_events.tsv          (BIDS-compliant)
+      - *_channels.tsv        (BIDS-compliant)
+      - *_eeg.json            (BIDS-compliant)
 """
 
 # Authors: Kuntal Kokate
@@ -155,7 +160,7 @@ class HubDatasetMixin:
 
         The dataset is converted to Zarr format with blosc compression, which provides
         optimal random access performance for PyTorch training. The data is stored
-        in a BIDS derivatives-like structure with events.tsv, channels.tsv,
+        in a BIDS sourcedata-like structure with events.tsv, channels.tsv,
         and participants.tsv sidecar files.
 
         Parameters
@@ -175,7 +180,7 @@ class HubDatasetMixin:
         compression_level : int, default=5
             Compression level (0-9). Level 5 provides optimal balance.
         pipeline_name : str, default="braindecode"
-            Name of the processing pipeline for BIDS derivatives.
+            Name of the processing pipeline for BIDS sourcedata.
 
         Returns
         -------
@@ -223,12 +228,12 @@ class HubDatasetMixin:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
 
-            # Create BIDS-like derivatives structure
-            log.info("Creating BIDS-like derivatives structure...")
-            bids_layout = bids_format.BIDSDerivativesLayout(
+            # Create BIDS-like sourcedata structure
+            log.info("Creating BIDS-like sourcedata structure...")
+            bids_layout = bids_format.BIDSSourcedataLayout(
                 tmp_path, pipeline_name=pipeline_name
             )
-            derivatives_dir = bids_layout.create_structure()
+            sourcedata_dir = bids_layout.create_structure()
 
             # Save dataset_description.json
             bids_layout.save_dataset_description()
@@ -240,9 +245,9 @@ class HubDatasetMixin:
             # Save BIDS sidecar files for each recording
             self._save_bids_sidecar_files(bids_layout)
 
-            # Convert dataset to Zarr format inside derivatives
+            # Convert dataset to Zarr format inside sourcedata
             log.info("Converting dataset to Zarr format...")
-            dataset_path = derivatives_dir / "dataset.zarr"
+            dataset_path = sourcedata_dir / "dataset.zarr"
 
             self._convert_to_zarr_inline(
                 dataset_path,
@@ -260,7 +265,6 @@ class HubDatasetMixin:
                 json.dump(
                     {
                         "format": "zarr",
-                        "bids_compatible": True,
                         "pipeline_name": pipeline_name,
                         "compression": compression,
                         "compression_level": compression_level,
@@ -295,13 +299,15 @@ class HubDatasetMixin:
             except Exception as e:
                 raise RuntimeError(f"Failed to upload dataset: {e}")
 
-    def _save_dataset_card(self, path: Path, bids_compatible: bool = True) -> None:
+    def _save_dataset_card(self, path: Path, bids_inspired: bool = True) -> None:
         """Generate and save a dataset card (README.md) with metadata.
 
         Parameters
         ----------
         path : Path
             Directory where README.md will be saved.
+        bids_inspired : bool
+            Whether to include BIDS-inspired format documentation.
         """
         # Get info, which also validates uniformity across all datasets
         format_info = self._get_format_info_inline()
@@ -337,7 +343,6 @@ class HubDatasetMixin:
             sfreq=sfreq,
             data_type=data_type,
             n_windows=n_windows,
-            bids_compatible=True,
         )
 
         # Save README
@@ -487,20 +492,17 @@ class HubDatasetMixin:
             else:
                 format_info = {}
 
-            # Determine if BIDS-compatible structure
-            bids_compatible = format_info.get("bids_compatible", False)
             pipeline_name = format_info.get("pipeline_name", "braindecode")
 
-            # Find zarr dataset path
-            if bids_compatible:
-                # Look in derivatives folder
+            # Find zarr dataset path (try sourcedata, derivatives, then root)
+            zarr_path = (
+                Path(dataset_dir) / "sourcedata" / pipeline_name / "dataset.zarr"
+            )
+            if not zarr_path.exists():
                 zarr_path = (
                     Path(dataset_dir) / "derivatives" / pipeline_name / "dataset.zarr"
                 )
-                if not zarr_path.exists():
-                    # Fall back to root level (backwards compatibility)
-                    zarr_path = Path(dataset_dir) / "dataset.zarr"
-            else:
+            if not zarr_path.exists():
                 zarr_path = Path(dataset_dir) / "dataset.zarr"
 
             if not zarr_path.exists():
@@ -512,16 +514,13 @@ class HubDatasetMixin:
             dataset = cls._load_from_zarr_inline(zarr_path, preload)
 
             # Load BIDS metadata if available
-            if bids_compatible:
-                cls._load_bids_metadata(dataset, Path(dataset_dir), pipeline_name)
+            cls._load_bids_metadata(dataset, Path(dataset_dir), pipeline_name)
 
             log.info(f"Dataset loaded successfully from {repo_id}")
             log.info(f"Recordings: {len(dataset.datasets)}")
             log.info(
                 f"Total windows/samples: {format_info.get('total_samples', 'N/A')}"
             )
-            if bids_compatible:
-                log.info("BIDS sidecar files available in derivatives folder")
 
             return dataset
 
@@ -554,10 +553,13 @@ class HubDatasetMixin:
         pipeline_name : str
             Name of the processing pipeline.
         """
-        derivatives_dir = dataset_dir / "derivatives" / pipeline_name
+        # Try sourcedata first, fall back to derivatives for backwards compatibility
+        sourcedata_dir = dataset_dir / "sourcedata" / pipeline_name
+        if not sourcedata_dir.exists():
+            sourcedata_dir = dataset_dir / "derivatives" / pipeline_name
 
         # Load participants.tsv if available
-        participants_path = derivatives_dir / "participants.tsv"
+        participants_path = sourcedata_dir / "participants.tsv"
         if participants_path.exists():
             try:
                 participants_df = pd.read_csv(participants_path, sep="\t")
@@ -570,7 +572,7 @@ class HubDatasetMixin:
                 log.warning(f"Failed to load participants.tsv: {e}")
 
         # Create layout for path generation
-        bids_layout = bids_format.BIDSDerivativesLayout(
+        bids_layout = bids_format.BIDSSourcedataLayout(
             dataset_dir, pipeline_name=pipeline_name
         )
 
@@ -1085,7 +1087,6 @@ def _create_compressor(compression, compression_level):
     return {"name": name, "configuration": {"level": compression_level}}
 
 
-# TODO: improve content
 def _generate_readme_content(
     format_info,
     n_recordings: int,
@@ -1094,53 +1095,35 @@ def _generate_readme_content(
     data_type: str,
     n_windows: int,
     format: str = "zarr",
-    bids_compatible: bool = True,
 ):
-    """Generate README.md content for a dataset uploaded to the Hub."""
-    # Use safe access for total size and format sfreq nicely
+    """Generate README.md content for a dataset uploaded to the Hub.
+
+    Parameters
+    ----------
+    format_info : dict
+        Dictionary containing format metadata (e.g., total_size_mb).
+    n_recordings : int
+        Number of recordings in the dataset.
+    n_channels : int
+        Number of EEG channels.
+    sfreq : float or None
+        Sampling frequency in Hz.
+    data_type : str
+        Type of dataset (e.g., "Windowed", "Continuous").
+    n_windows : int
+        Number of windows/samples in the dataset.
+    format : str
+        Storage format (default: "zarr").
+
+    Returns
+    -------
+    str
+        Markdown content for the README.md file.
+    """
     total_size_mb = (
         format_info.get("total_size_mb", 0.0) if isinstance(format_info, dict) else 0.0
     )
     sfreq_str = f"{sfreq:g}" if sfreq is not None else "N/A"
-
-    bids_section = ""
-    if bids_compatible:
-        bids_section = """
-## BIDS-like Structure
-
-This dataset follows a BIDS derivatives-like structure for compatibility with
-neuroimaging tools while maintaining efficiency for deep learning:
-
-```
-derivatives/braindecode/
-├── dataset_description.json    # BIDS dataset description
-├── participants.tsv            # Subject-level metadata
-├── dataset.zarr/               # Main data (optimized for training)
-└── sub-<label>/
-    └── eeg/
-        ├── *_events.tsv        # Trial/window events
-        ├── *_channels.tsv      # Channel information
-        └── *_eeg.json          # Recording metadata
-```
-
-### Accessing BIDS Metadata
-
-After loading the dataset, BIDS metadata is available:
-
-```python
-# Access participants info
-if hasattr(dataset, "participants"):
-    print(dataset.participants)
-
-# Access events for a recording
-if hasattr(dataset.datasets[0], "bids_events"):
-    print(dataset.datasets[0].bids_events)
-
-# Access channel info
-if hasattr(dataset.datasets[0], "bids_channels"):
-    print(dataset.datasets[0].bids_channels)
-```
-"""
 
     return f"""---
 tags:
@@ -1148,71 +1131,106 @@ tags:
 - eeg
 - neuroscience
 - brain-computer-interface
-- bids
+- deep-learning
 license: unknown
 ---
 
 # EEG Dataset
 
-This dataset was created using [braindecode](https://braindecode.org), a library for deep learning with EEG/MEG/ECoG signals.
+This dataset was created using [braindecode](https://braindecode.org), a deep
+learning library for EEG/MEG/ECoG signals.
 
 ## Dataset Information
 
 | Property | Value |
-|---|---:|
-| Number of recordings | {n_recordings} |
-| Dataset type | {data_type} |
-| Number of channels | {n_channels} |
+|----------|------:|
+| Recordings | {n_recordings} |
+| Type | {data_type} |
+| Channels | {n_channels} |
 | Sampling frequency | {sfreq_str} Hz |
-| Number of windows / samples | {n_windows} |
-| Total size | {total_size_mb:.2f} MB |
-| Storage format | {format} |
-| BIDS compatible | {"Yes" if bids_compatible else "No"} |
+| Windows/samples | {n_windows} |
+| Size | {total_size_mb:.2f} MB |
+| Format | {format} |
 
-## Usage
+## Quick Start
 
-To load this dataset::
+```python
+from braindecode.datasets import BaseConcatDataset
 
-    .. code-block:: python
+# Load from Hugging Face Hub
+dataset = BaseConcatDataset.pull_from_hub("username/dataset-name")
 
-        from braindecode.datasets import BaseConcatDataset
+# Access a sample
+X, y, metainfo = dataset[0]
+# X: EEG data [n_channels, n_times]
+# y: target label
+# metainfo: window indices
+```
 
-        # Load dataset from Hugging Face Hub
-        dataset = BaseConcatDataset.pull_from_hub("username/dataset-name")
+## Training with PyTorch
 
-        # Access data
-        X, y, metainfo = dataset[0]
-        # X: EEG data (n_channels, n_times)
-        # y: label/target
-        # metainfo: window indices
+```python
+from torch.utils.data import DataLoader
 
-## Using with PyTorch DataLoader
+loader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
 
-::
+for X, y, metainfo in loader:
+    # X: [batch_size, n_channels, n_times]
+    # y: [batch_size]
+    pass  # Your training code
+```
 
-    from torch.utils.data import DataLoader
+## BIDS-inspired Structure
 
-    # Create DataLoader for training
-    train_loader = DataLoader(
-        dataset,
-        batch_size=32,
-        shuffle=True,
-        num_workers=4
-    )
+This dataset uses a **BIDS-inspired** organization. Metadata files follow BIDS
+conventions, while data is stored in Zarr format for efficient deep learning.
 
-    # Training loop
-    for X, y, metainfo in train_loader:
-        # X shape: [batch_size, n_channels, n_times]
-        # y shape: [batch_size]
-        # metainfo shape: [batch_size, 2] (start and end indices)
-        # Process your batch...
-{bids_section}
-## Dataset Format
+**BIDS-style metadata:**
+- `dataset_description.json` - Dataset information
+- `participants.tsv` - Subject metadata
+- `*_events.tsv` - Trial/window events
+- `*_channels.tsv` - Channel information
+- `*_eeg.json` - Recording parameters
 
-This dataset is stored in **Zarr** format, optimized for:
-- Fast random access during training (critical for PyTorch DataLoader)
-- Efficient compression with blosc
-- Cloud-native storage compatibility
+**Data storage:**
+- `dataset.zarr/` - Zarr format (optimized for random access)
 
-For more information about braindecode, visit: https://braindecode.org
+```
+sourcedata/braindecode/
+├── dataset_description.json
+├── participants.tsv
+├── dataset.zarr/
+└── sub-<label>/
+    └── eeg/
+        ├── *_events.tsv
+        ├── *_channels.tsv
+        └── *_eeg.json
+```
+
+### Accessing Metadata
+
+```python
+# Participants info
+if hasattr(dataset, "participants"):
+    print(dataset.participants)
+
+# Events for a recording
+if hasattr(dataset.datasets[0], "bids_events"):
+    print(dataset.datasets[0].bids_events)
+
+# Channel info
+if hasattr(dataset.datasets[0], "bids_channels"):
+    print(dataset.datasets[0].bids_channels)
+```
+
+## Why Zarr?
+
+Zarr format provides:
+- **Fast random access** - Critical for efficient DataLoader sampling
+- **Compression** - Reduced storage with minimal read overhead
+- **Cloud-native** - Works with remote storage (S3, GCS, etc.)
+
+---
+
+*Created with [braindecode](https://braindecode.org)*
 """
