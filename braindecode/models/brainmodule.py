@@ -33,7 +33,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
     .. figure:: ../_static/model/simpleconv.png
         :align: center
         :alt: BrainModule Architecture
-        :width: 1000px
+        :width: 500px
 
         Figure adapted Extended Data Fig. 4 from [brainmagick]_ to highlight only the model part.
         Architecture of the brain module. Architecture used to process the brain recordings.
