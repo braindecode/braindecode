@@ -74,6 +74,7 @@ tests = [
     'pytest_cases',
     'mypy',
     "transformers>=4.57.0",
+    "bids_validator",
 ]
 typing = [
     'exca==0.4',

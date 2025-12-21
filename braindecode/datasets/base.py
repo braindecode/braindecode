@@ -28,7 +28,7 @@ from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset
 from typing_extensions import TypeVar
 
-from .hub import HubDatasetMixin
+from .bids.hub import HubDatasetMixin
 from .registry import register_dataset
 
 
@@ -719,8 +719,14 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
             raise ValueError("dataset should have either raw or windows attribute")
+
+        # Create path if it doesn't exist
+        os.makedirs(path, exist_ok=True)
+
         path_contents = os.listdir(path)
-        n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
+        n_sub_dirs = len(
+            [e for e in path_contents if os.path.isdir(os.path.join(path, e))]
+        )
         for i_ds, ds in enumerate(self.datasets):
             # remove subdirectory from list of untouched files / subdirectories
             if str(i_ds + offset) in path_contents:

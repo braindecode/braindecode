@@ -8,6 +8,7 @@ from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
 from .bendr import BENDR
 from .biot import BIOT
+from .brainmodule import BrainModule
 from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
@@ -72,6 +73,7 @@ __all__ = [
     "CTNet",
     "Deep4Net",
     "DeepSleepNet",
+    "BrainModule",
     "EEGConformer",
     "EEGInceptionERP",
     "EEGInceptionMI",

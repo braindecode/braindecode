@@ -24,6 +24,7 @@ from braindecode.models import (
     ATCNet,
     AttentionBaseNet,
     AttnSleep,
+    BrainModule,
     ContraWR,
     Deep4Net,
     DeepSleepNet,
@@ -1858,6 +1859,389 @@ def test_fc_length_eegconformer():
 
     assert model is not None
 
+
+# ============================================================================
+# BrainModule Tests
+# ============================================================================
+
+@pytest.fixture
+def brain_module_params():
+    """Fixture with common BrainModule parameters."""
+    return dict(
+        n_chans=22,
+        n_outputs=4,
+        n_times=1000,
+        sfreq=250,
+    )
+
+
+@pytest.mark.parametrize("n_times", [500, 1000, 2000])
+@pytest.mark.parametrize("sfreq", [100, 250, 500])
+@pytest.mark.parametrize("batch_size", [1, 4, 8])
+def test_brain_module_basic(brain_module_params, n_times, sfreq, batch_size):
+    """Test BrainModule with various input sizes and sample rates."""
+    set_random_seeds(0, False)
+    params = brain_module_params.copy()
+    params.update({"n_times": n_times, "sfreq": sfreq})
+
+    model = BrainModule(**params)
+    model.eval()
+
+    x = torch.randn(batch_size, params["n_chans"], n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+@pytest.mark.parametrize("subject_dim", [16, 32, 64])
+def test_brain_module_subject_embeddings(brain_module_params, subject_dim):
+    """Test subject embeddings with different dimensions and validation."""
+    set_random_seeds(0, False)
+    n_subjects = 30
+    params = brain_module_params.copy()
+    params.update({"n_subjects": n_subjects, "subject_dim": subject_dim})
+
+    model = BrainModule(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, n_subjects, (4,))
+
+    output = model(x, subject_index=subject_idx)
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Test missing subject_index raises error
+    with pytest.raises(ValueError, match="subject_index is required"):
+        model(x)
+
+
+@pytest.mark.parametrize("subject_dim", [16, 32, 64])
+@pytest.mark.parametrize("subject_layers_dim", ["input", "hidden"])
+def test_brain_module_subject_layers(brain_module_params, subject_dim, subject_layers_dim):
+    """Test subject-specific layer transformations with different dimensions."""
+    set_random_seeds(0, False)
+    n_subjects = 25
+    params = brain_module_params.copy()
+    params.update({
+        "n_subjects": n_subjects,
+        "subject_dim": subject_dim,
+        "subject_layers": True,
+        "subject_layers_dim": subject_layers_dim,
+    })
+
+    model = BrainModule(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, n_subjects, (4,))
+
+    output = model(x, subject_index=subject_idx)
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Test that different subjects produce different outputs
+    x_same = torch.ones(2, params["n_chans"], params["n_times"])
+    subject_idx_1 = torch.tensor([0, 0])
+    subject_idx_2 = torch.tensor([1, 1])
+
+    with torch.no_grad():
+        output_1 = model(x_same, subject_index=subject_idx_1)
+        output_2 = model(x_same, subject_index=subject_idx_2)
+
+    # Outputs should differ for different subjects (with high probability)
+    assert not torch.allclose(output_1, output_2, atol=1e-4)
+
+
+@pytest.mark.parametrize("n_fft,fft_complex", [(64, True), (256, False), (512, True)])
+def test_brain_module_stft(brain_module_params, n_fft, fft_complex):
+    """Test STFT with different FFT sizes and complex/power spectrograms."""
+    set_random_seeds(0, False)
+    params = brain_module_params.copy()
+    params.update({"n_fft": n_fft, "fft_complex": fft_complex})
+
+    model = BrainModule(**params)
+    model.eval()
+
+    for batch_size in [1, 4, 8]:
+        x = torch.randn(batch_size, params["n_chans"], params["n_times"])
+        output = model(x)
+        assert output.shape == (batch_size, params["n_outputs"])
+        assert not torch.isnan(output).any()
+
+
+def test_brain_module_parameter_validation():
+    """Test parameter validation for all features."""
+    # Invalid subject_layers
+    with pytest.raises(ValueError, match="subject_layers=True requires subject_dim > 0"):
+        BrainModule(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            subject_layers=True, subject_dim=0,
+        )
+
+    # Invalid depth
+    with pytest.raises(ValueError, match="depth must be >= 1"):
+        BrainModule(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250, depth=0,
+        )
+
+    # Invalid kernel_size
+    with pytest.raises(ValueError, match="kernel_size must be > 0"):
+        BrainModule(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250, kernel_size=0,
+        )
+
+    # kernel_size must be odd
+    with pytest.raises(ValueError, match="kernel_size must be odd"):
+        BrainModule(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250, kernel_size=4,
+        )
+
+    # channel_dropout_type requires channel_dropout_prob > 0
+    with pytest.raises(ValueError, match="channel_dropout_type requires channel_dropout_prob > 0"):
+        BrainModule(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            channel_dropout_prob=0.0, channel_dropout_type="eeg",
+        )
+
+    # glu_context requires glu > 0
+    with pytest.raises(ValueError, match="glu_context > 0 requires glu > 0"):
+        BrainModule(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            glu=0, glu_context=1,
+        )
+
+    # glu_context must be < kernel_size
+    with pytest.raises(ValueError, match="glu_context must be < kernel_size"):
+        BrainModule(
+            n_chans=22, n_outputs=4, n_times=1000, sfreq=250,
+            kernel_size=5, glu=1, glu_context=5,
+        )
+
+
+def test_brain_module_gradient_flow(brain_module_params):
+    """Test gradient flow through model with various features."""
+    for config in [
+        {"glu": 1, "depth": 2},
+        {"n_subjects": 20, "subject_dim": 32},
+        {"channel_dropout_prob": 0.2},
+        {"growth": 1.5, "depth": 3},
+    ]:
+        set_random_seeds(0, False)
+        params = brain_module_params.copy()
+        params.update(config)
+
+        model = BrainModule(**params)
+        model.train()
+
+        x = torch.randn(
+            4, params["n_chans"], params["n_times"],
+            requires_grad=True,
+        )
+        if "n_subjects" in config:
+            subject_idx = torch.randint(0, config["n_subjects"], (4,))
+            output = model(x, subject_index=subject_idx)
+        else:
+            output = model(x)
+
+        loss = output.sum()
+        loss.backward()
+
+        # Check gradients exist and are not NaN
+        assert x.grad is not None
+        assert not torch.isnan(x.grad).any()
+        for param in model.parameters():
+            if param.grad is not None:
+                assert not torch.isnan(param.grad).any()
+
+
+@pytest.mark.parametrize("growth", [1.0, 1.5, 2.0])
+def test_brain_module_growth(brain_module_params, growth):
+    """Test different growth factors for channel expansion."""
+    set_random_seeds(0, False)
+    params = brain_module_params.copy()
+    params.update({"growth": growth, "depth": 3, "hidden_dim": 64})
+
+    model = BrainModule(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+# ============================================================================
+# Channel Dropout Tests
+# ============================================================================
+
+@pytest.mark.parametrize("dropout_prob", [0.0, 0.1, 0.3, 0.5])
+def test_brain_module_channel_dropout(brain_module_params, dropout_prob):
+    """Test channel dropout with various probabilities."""
+    set_random_seeds(0, False)
+    params = brain_module_params.copy()
+    params.update({"channel_dropout_prob": dropout_prob})
+
+    model = BrainModule(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Verify dropout is None when prob=0
+    if dropout_prob == 0.0:
+        assert model.channel_dropout is None
+    else:
+        assert model.channel_dropout is not None
+
+
+def test_brain_module_channel_dropout_eval_mode(brain_module_params):
+    """Test channel dropout is disabled in eval mode (deterministic)."""
+    set_random_seeds(0, False)
+    params = brain_module_params.copy()
+    params.update({"channel_dropout_prob": 0.5})
+
+    model = BrainModule(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    with torch.no_grad():
+        output1 = model(x)
+        output2 = model(x)
+
+    torch.testing.assert_close(output1, output2)
+
+
+def test_brain_module_channel_dropout_with_ch_info():
+    """Test channel dropout with ch_info for selective channel dropout."""
+    set_random_seeds(0, False)
+
+    ch_info = [
+        {"ch_name": "Fp1", "ch_type": "eeg"},
+        {"ch_name": "Fp2", "ch_type": "eeg"},
+        {"ch_name": "F3", "ch_type": "eeg"},
+        {"ch_name": "F4", "ch_type": "eeg"},
+        {"ch_name": "A1", "ch_type": "ref"},
+        {"ch_name": "A2", "ch_type": "ref"},
+    ]
+
+    params = {
+        "n_chans": 6,
+        "n_outputs": 2,
+        "n_times": 1000,
+        "hidden_dim": 32,
+        "depth": 1,
+        "channel_dropout_prob": 0.5,
+        "channel_dropout_type": "eeg",
+        "chs_info": ch_info,
+    }
+
+    model = BrainModule(**params)
+    model.train()
+
+    x = torch.ones(4, 6, 1000)
+    for _ in range(3):
+        output = model(x)
+        assert output.shape == (4, 2)
+        assert not torch.isnan(output).any()
+
+
+# ============================================================================
+# GLU (Gated Linear Units) Tests
+# ============================================================================
+
+@pytest.mark.parametrize("glu,glu_context,depth", [
+    (0, 0, 2),
+    (1, 0, 2),
+    (1, 1, 2),
+    (2, 1, 3),
+])
+def test_brain_module_glu(brain_module_params, glu, glu_context, depth):
+    """Test GLU with various intervals and context windows."""
+    set_random_seeds(0, False)
+    params = brain_module_params.copy()
+    params.update({"glu": glu, "glu_context": glu_context, "depth": depth})
+
+    model = BrainModule(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Verify GLU modules only created when glu > 0
+    if glu > 0:
+        assert any(g is not None for g in model.encoder.glus)
+    else:
+        assert all(g is None for g in model.encoder.glus)
+
+
+@pytest.mark.parametrize("depth", [2, 4, 6])
+def test_brain_module_depth_variants(brain_module_params, depth):
+    """Test different depth configurations."""
+    set_random_seeds(0, False)
+    params = brain_module_params.copy()
+    params.update({"depth": depth})
+
+    model = BrainModule(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_brain_module_glu_eval_determinism(brain_module_params):
+    """Test GLU is deterministic in eval mode."""
+    set_random_seeds(0, False)
+    params = brain_module_params.copy()
+    params.update({"glu": 1, "depth": 2})
+
+    model = BrainModule(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    with torch.no_grad():
+        output1 = model(x)
+        output2 = model(x)
+
+    torch.testing.assert_close(output1, output2)
+
+
+def test_brain_module_glu_combined_features(brain_module_params):
+    """Test GLU combined with other features."""
+    set_random_seeds(0, False)
+    params = brain_module_params.copy()
+    params.update({
+        "glu": 1,
+        "glu_context": 1,
+        "channel_dropout_prob": 0.1,
+        "subject_dim": 32,
+        "n_subjects": 50,
+        "depth": 2,
+    })
+
+    model = BrainModule(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 50, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
 
 def test_bendr():
     """
