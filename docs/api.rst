@@ -381,6 +381,7 @@ Hugging Face Hub push/pull functionality.
    :toctree: generated/
 
     BIDSDerivativesLayout
+    BIDSIterableDataset
     create_channels_tsv
     create_eeg_json_sidecar
     create_events_tsv
