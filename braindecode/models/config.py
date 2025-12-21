@@ -151,12 +151,12 @@ def make_model_config(
             and sfreq is not None
             and input_window_seconds is not None
         ):
-            if n_times != int(input_window_seconds * sfreq):
+            if n_times != round(input_window_seconds * sfreq):
                 raise ValueError(
                     f"Provided {n_times=} does not match {input_window_seconds=} * {sfreq=}."
                 )
         elif n_times is None and sfreq is not None and input_window_seconds is not None:
-            data["n_times"] = int(input_window_seconds * sfreq)
+            data["n_times"] = round(input_window_seconds * sfreq)
         elif sfreq is None and n_times is not None and input_window_seconds is not None:
             data["sfreq"] = n_times / input_window_seconds
         elif input_window_seconds is None and n_times is not None and sfreq is not None:
