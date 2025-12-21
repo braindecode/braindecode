@@ -117,6 +117,7 @@ provides a common interface for all EEG models and derivate variables names if n
     BDTCN
     BENDR
     BIOT
+    BrainModule
     ContraWR
     CTNet
     Deep4Net
@@ -269,6 +270,7 @@ include layers for handling different input shapes and dimensions.
     Chomp1d
     DropPath
     Ensure4d
+    SubjectLayers
     TimeDistributed
 
 Linear
