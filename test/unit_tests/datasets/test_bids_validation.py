@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.bids.format import (
+from braindecode.datasets.bids.hub_format import (
     BIDSSourcedataLayout,
     create_channels_tsv,
     create_eeg_json_sidecar,

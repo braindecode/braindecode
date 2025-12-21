@@ -424,22 +424,17 @@ BIDS Integration
 :py:mod:`braindecode.datasets.bids`:
 
 The BIDS subpackage provides tools for working with BIDS-formatted EEG data,
-including dataset loading, format utilities for Hub integration, and
-Hugging Face Hub push/pull functionality.
+including dataset loading and Hugging Face Hub push/pull functionality.
 
 .. currentmodule:: braindecode.datasets.bids
 
 .. autosummary::
    :toctree: generated/
 
-    BIDSDerivativesLayout
+    BIDSDataset
+    BIDSEpochsDataset
     BIDSIterableDataset
-    create_channels_tsv
-    create_eeg_json_sidecar
-    create_events_tsv
-    create_participants_tsv
-    description_to_bids_path
-    make_dataset_description
+    HubDatasetMixin
 
 
 Preprocessing

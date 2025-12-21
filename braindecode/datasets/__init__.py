@@ -10,17 +10,7 @@ from .base import (
     WindowsDataset,
 )
 from .bcicomp import BCICompetitionIVDataset4
-from .bids import (
-    BIDSDataset,
-    BIDSEpochsDataset,
-    BIDSSourcedataLayout,
-    create_channels_tsv,
-    create_eeg_json_sidecar,
-    create_events_tsv,
-    create_participants_tsv,
-    description_to_bids_path,
-    make_dataset_description,
-)
+from .bids import BIDSDataset, BIDSEpochsDataset
 from .chb_mit import CHBMIT
 from .mne import create_from_mne_epochs, create_from_mne_raw
 from .moabb import BNCI2014_001, HGD, MOABBDataset
@@ -39,13 +29,6 @@ __all__ = [
     "BaseConcatDataset",
     "BIDSDataset",
     "BIDSEpochsDataset",
-    "BIDSSourcedataLayout",
-    "create_events_tsv",
-    "create_participants_tsv",
-    "create_channels_tsv",
-    "create_eeg_json_sidecar",
-    "make_dataset_description",
-    "description_to_bids_path",
     "MOABBDataset",
     "HGD",
     "BNCI2014_001",

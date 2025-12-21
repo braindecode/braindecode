@@ -26,15 +26,6 @@ from .hub import HubDatasetMixin
 # For static type checkers (mypy), provide explicit imports
 if TYPE_CHECKING:
     from .datasets import BIDSDataset, BIDSEpochsDataset
-    from .format import (
-        BIDSSourcedataLayout,
-        create_channels_tsv,
-        create_eeg_json_sidecar,
-        create_events_tsv,
-        create_participants_tsv,
-        description_to_bids_path,
-        make_dataset_description,
-    )
     from .iterable import BIDSIterableDataset
 
 
@@ -50,18 +41,6 @@ def __getattr__(name: str):
         from .iterable import BIDSIterableDataset
 
         return BIDSIterableDataset
-    elif name in (
-        "BIDSSourcedataLayout",
-        "create_channels_tsv",
-        "create_eeg_json_sidecar",
-        "create_events_tsv",
-        "create_participants_tsv",
-        "description_to_bids_path",
-        "make_dataset_description",
-    ):
-        from . import format
-
-        return getattr(format, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -70,14 +49,6 @@ __all__ = [
     "BIDSDataset",
     "BIDSEpochsDataset",
     "BIDSIterableDataset",
-    # Format utilities
-    "BIDSSourcedataLayout",
-    "create_channels_tsv",
-    "create_eeg_json_sidecar",
-    "create_events_tsv",
-    "create_participants_tsv",
-    "description_to_bids_path",
-    "make_dataset_description",
     # Hub integration
     "HubDatasetMixin",
 ]

@@ -30,7 +30,6 @@ The format follows a BIDS-inspired sourcedata structure:
 import json
 import logging
 import tempfile
-import warnings
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
@@ -50,10 +49,17 @@ import braindecode
 # Import registry for dynamic class lookup (avoids circular imports)
 from ..registry import get_dataset_class, get_dataset_type
 
-# Import shared validation utilities
-# Import BIDS format utilities
-from . import format as bids_format
-from . import validation as hub_validation
+# Hub format and validation utilities
+from . import hub_format, hub_validation
+from .hub_io import (
+    _create_compressor,
+    _load_eegwindows_from_zarr,
+    _load_raw_from_zarr,
+    _load_windows_from_zarr,
+    _save_eegwindows_to_zarr,
+    _save_raw_to_zarr,
+    _save_windows_to_zarr,
+)
 
 # Lazy import zarr and huggingface_hub
 zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
@@ -62,64 +68,6 @@ huggingface_hub = _soft_import(
 )
 
 log = logging.getLogger(__name__)
-
-
-def _sanitize_for_json(obj):
-    """Replace NaN/Inf with None for valid JSON.
-
-    This is needed because MNE info dicts can contain NaN values
-    (e.g., in channel locations) which are not valid JSON.
-
-    Parameters
-    ----------
-    obj : any
-        Object to sanitize (dict, list, or primitive).
-
-    Returns
-    -------
-    any
-        Sanitized object with NaN/Inf replaced by None.
-    """
-    if isinstance(obj, float):
-        if np.isnan(obj) or np.isinf(obj):
-            return None
-        return obj
-    elif isinstance(obj, dict):
-        return {k: _sanitize_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_sanitize_for_json(v) for v in obj]
-    elif isinstance(obj, np.ndarray):
-        return _sanitize_for_json(obj.tolist())
-    return obj
-
-
-def _restore_nan_from_json(obj):
-    """Restore NaN values from None in JSON-loaded data.
-
-    This reverses the sanitization done by _sanitize_for_json when
-    loading data back from Zarr. Only restores NaN in numeric arrays,
-    not for general None values which should stay None.
-
-    Parameters
-    ----------
-    obj : any
-        Object loaded from JSON (dict, list, or primitive).
-
-    Returns
-    -------
-    any
-        Object with None values in numeric arrays restored to NaN.
-    """
-    if isinstance(obj, dict):
-        return {k: _restore_nan_from_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        # Check if this looks like a numeric array (all elements are numbers or None)
-        # Only convert None to NaN in numeric arrays
-        if len(obj) > 0 and all(isinstance(x, (int, float, type(None))) for x in obj):
-            return [np.nan if x is None else x for x in obj]
-        return [_restore_nan_from_json(v) for v in obj]
-    # Don't convert standalone None values - they should stay None
-    return obj
 
 
 class HubDatasetMixin:
@@ -231,7 +179,7 @@ class HubDatasetMixin:
 
             # Create BIDS-like sourcedata structure
             log.info("Creating BIDS-like sourcedata structure...")
-            bids_layout = bids_format.BIDSSourcedataLayout(
+            bids_layout = hub_format.BIDSSourcedataLayout(
                 tmp_path, pipeline_name=pipeline_name
             )
             sourcedata_dir = bids_layout.create_structure()
@@ -362,7 +310,7 @@ class HubDatasetMixin:
             f.write(readme_content)
 
     def _save_bids_sidecar_files(
-        self, bids_layout: "bids_format.BIDSDerivativesLayout"
+        self, bids_layout: "hub_format.BIDSSourcedataLayout"
     ) -> None:
         """Save BIDS-compliant sidecar files for each recording.
 
@@ -371,7 +319,7 @@ class HubDatasetMixin:
 
         Parameters
         ----------
-        bids_layout : BIDSDerivativesLayout
+        bids_layout : BIDSSourcedataLayout
             BIDS layout object for path generation.
         """
         dataset_type = get_dataset_type(self.datasets[0])
@@ -431,7 +379,7 @@ class HubDatasetMixin:
             task_name = bids_path.task or "unknown"
 
             # Save BIDS sidecar files using mne_bids BIDSPath
-            bids_format.save_bids_sidecar_files(
+            hub_format.save_bids_sidecar_files(
                 bids_path=bids_path,
                 info=info,
                 metadata=metadata,
@@ -611,7 +559,7 @@ class HubDatasetMixin:
                 log.warning(f"Failed to load participants.tsv: {e}")
 
         # Create layout for path generation
-        bids_layout = bids_format.BIDSSourcedataLayout(
+        bids_layout = hub_format.BIDSSourcedataLayout(
             dataset_dir, pipeline_name=pipeline_name
         )
 
@@ -887,243 +835,6 @@ class HubDatasetMixin:
                     setattr(ds, kwarg_name, kwargs)
 
         return concat_ds
-
-
-# =============================================================================
-# Core Zarr I/O Utilities
-# =============================================================================
-
-
-def _save_windows_to_zarr(
-    grp, data, metadata, description, info, compressor, target_name
-):
-    """Save windowed data to Zarr group (low-level function)."""
-    # Save data with chunking for random access
-    # In Zarr v3, use create_array with compressors parameter
-    data_array = data.astype(np.float32)
-
-    # Zarr v3 expects compressors as a list
-    compressors_list = [compressor] if compressor is not None else None
-
-    grp.create_array(
-        "data",
-        data=data_array,
-        chunks=(1, data_array.shape[1], data_array.shape[2]),
-        compressors=compressors_list,
-    )
-
-    # Save metadata as TSV file (scales better than JSON in attributes)
-    # Use store.path for zarr v3 DirectoryStore/FSStore compatibility
-    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
-    metadata.to_csv(metadata_path, sep="\t", index=True)
-
-    # Save description as dict (not JSON string) for proper zarr.json formatting
-    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-
-    # Save MNE info as dict (not JSON string) for proper zarr.json formatting
-    # Sanitize to convert NaN/Inf to null for valid JSON
-    grp.attrs["info"] = _sanitize_for_json(info)
-
-    # Save target name if provided
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
-
-
-def _save_eegwindows_to_zarr(
-    grp, raw, metadata, description, info, targets_from, last_target_only, compressor
-):
-    """Save EEG continuous raw data to Zarr group (low-level function)."""
-    # Extract continuous data from Raw [n_channels, n_timepoints]
-    continuous_data = raw.get_data()
-
-    # Save continuous data with chunking optimized for window extraction
-    # Chunk size: all channels, 10000 timepoints for efficient random access
-    # In Zarr v3, use create_array with compressors parameter
-    continuous_float = continuous_data.astype(np.float32)
-
-    # Zarr v3 expects compressors as a list
-    compressors_list = [compressor] if compressor is not None else None
-
-    grp.create_array(
-        "data",
-        data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
-        compressors=compressors_list,
-    )
-
-    # Save metadata as TSV file (scales better than JSON in attributes)
-    # Use store.path for zarr v3 DirectoryStore/FSStore compatibility
-    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
-    metadata.to_csv(metadata_path, sep="\t", index=True)
-
-    # Save description as dict (not JSON string) for proper zarr.json formatting
-    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-
-    # Save MNE info as dict (not JSON string) for proper zarr.json formatting
-    # Sanitize to convert NaN/Inf to null for valid JSON
-    grp.attrs["info"] = _sanitize_for_json(info)
-
-    # Save EEGWindowsDataset-specific attributes
-    grp.attrs["targets_from"] = targets_from
-    grp.attrs["last_target_only"] = last_target_only
-
-
-def _load_windows_from_zarr(grp, preload):
-    """Load windowed data from Zarr group (low-level function)."""
-    # Load metadata from TSV file
-    # Use store.path for zarr v3 DirectoryStore/FSStore compatibility
-    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
-    metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
-
-    # Load description (stored as dict in zarr.json)
-    description = pd.Series(grp.attrs["description"])
-
-    # Load info (stored as dict in zarr.json)
-    # Restore NaN values that were converted to null for JSON compatibility
-    info_dict = _restore_nan_from_json(grp.attrs["info"])
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        # TODO: Implement lazy loading properly
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
-
-    # Load target name
-    target_name = grp.attrs.get("target_name", None)
-
-    return data, metadata, description, info_dict, target_name
-
-
-def _load_eegwindows_from_zarr(grp, preload):
-    """Load EEG continuous raw data from Zarr group (low-level function)."""
-    # Load metadata from TSV file
-    # Use store.path for zarr v3 DirectoryStore/FSStore compatibility
-    store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
-    metadata_path = Path(store_path) / grp.path / "metadata.tsv"
-    metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
-
-    # Load description (stored as dict in zarr.json)
-    description = pd.Series(grp.attrs["description"])
-
-    # Load info (stored as dict in zarr.json)
-    # Restore NaN values that were converted to null for JSON compatibility
-    info_dict = _restore_nan_from_json(grp.attrs["info"])
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
-
-    # Load EEGWindowsDataset-specific attributes
-    targets_from = grp.attrs.get("targets_from", "metadata")
-    last_target_only = grp.attrs.get("last_target_only", True)
-
-    return data, metadata, description, info_dict, targets_from, last_target_only
-
-
-def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
-    """Save RawDataset continuous raw data to Zarr group (low-level function)."""
-    # Extract continuous data from Raw [n_channels, n_timepoints]
-    continuous_data = raw.get_data()
-
-    # Save continuous data with chunking optimized for efficient access
-    # Chunk size: all channels, 10000 timepoints for efficient random access
-    # In Zarr v3, use create_array with compressors parameter
-    continuous_float = continuous_data.astype(np.float32)
-
-    # Zarr v3 expects compressors as a list
-    compressors_list = [compressor] if compressor is not None else None
-
-    grp.create_array(
-        "data",
-        data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
-        compressors=compressors_list,
-    )
-
-    # Save description as dict (not JSON string) for proper zarr.json formatting
-    grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-
-    # Save MNE info as dict (not JSON string) for proper zarr.json formatting
-    # Sanitize to convert NaN/Inf to null for valid JSON
-    grp.attrs["info"] = _sanitize_for_json(info)
-
-    # Save target name if provided
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
-
-
-def _load_raw_from_zarr(grp, preload):
-    """Load RawDataset continuous raw data from Zarr group (low-level function)."""
-    # Load description (stored as dict in zarr.json)
-    description = pd.Series(grp.attrs["description"])
-
-    # Load info (stored as dict in zarr.json)
-    # Restore NaN values that were converted to null for JSON compatibility
-    info_dict = _restore_nan_from_json(grp.attrs["info"])
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        # TODO: Implement lazy loading properly
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
-
-    # Load target name
-    target_name = grp.attrs.get("target_name", None)
-
-    return data, description, info_dict, target_name
-
-
-def _create_compressor(compression, compression_level):
-    """Create a Zarr v3 compressor codec.
-
-    Returns compressor dict compatible with Zarr v3 create_array API.
-
-    Parameters
-    ----------
-    compression : str or None
-        Compression algorithm: "blosc", "zstd", "gzip", or None.
-    compression_level : int
-        Compression level (0-9).
-
-    Returns
-    -------
-    dict or None
-        Compressor configuration dict or None if no compression.
-    """
-    if zarr is False:
-        raise ImportError(
-            "Zarr is not installed. Install with: pip install braindecode[hub]"
-        )
-
-    if compression is None or compression not in ("blosc", "zstd", "gzip"):
-        return None
-
-    # Map blosc to zstd (Zarr v3 uses zstd as the primary implementation)
-    name = "zstd" if compression == "blosc" else compression
-
-    return {"name": name, "configuration": {"level": compression_level}}
 
 
 def _generate_readme_content(

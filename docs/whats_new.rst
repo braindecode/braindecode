@@ -54,13 +54,13 @@ Enhancements
 - Adding example Pydantic and Exca (:gh:`858` by `Pierre Guetschel`_)
 - Renaming the model category "Foundation Models" from "Large Brain Models (LBM)" (:gh:`867` by `Bruno Aristimunha`_ )
 - Make the dataset at huggingface hub more bids compatible (:gh:`871` by `Bruno Aristimunha`_ )
-- Reorganized BIDS-related modules into :py:mod:`braindecode.datasets.bids` subpackage for better code organization. The subpackage includes: dataset loading (``datasets.py``), BIDS format utilities (``format.py``), Hub integration (``hub.py``), and validation utilities (``validation.py``) (:gh:`871` by `Bruno Aristimunha`_)
+- Reorganized BIDS-related modules into :py:mod:`braindecode.datasets.bids` subpackage for better code organization. The subpackage includes: dataset loading (``datasets.py``), Hub format utilities (``hub_format.py``), Hub integration (``hub.py``), and validation utilities (``hub_validation.py``) (:gh:`871` by `Bruno Aristimunha`_)
 - Changed metadata storage in Zarr format from JSON attributes to TSV files (``metadata.tsv``) for better scalability with large datasets (:gh:`871` by `Bruno Aristimunha`_)
 - Improved JSON serialization in zarr.json by storing ``description`` and ``info`` as proper JSON objects instead of stringified JSON, with NaN/Inf sanitization for valid JSON output (:gh:`871` by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
-- BIDS and Hub modules moved to :py:mod:`braindecode.datasets.bids` subpackage: ``braindecode.datasets.bids.hub``, ``braindecode.datasets.bids.format``, ``braindecode.datasets.bids.datasets``, ``braindecode.datasets.bids.validation`` (:gh:`871` by `Bruno Aristimunha`_)
+- BIDS and Hub modules moved to :py:mod:`braindecode.datasets.bids` subpackage: ``braindecode.datasets.bids.hub``, ``braindecode.datasets.bids.hub_format``, ``braindecode.datasets.bids.datasets``, ``braindecode.datasets.bids.hub_validation`` (:gh:`871` by `Bruno Aristimunha`_)
 - Deprecating the old naming of MOABB Dataset name (:gh:`826` by `Bruno Aristimunha`_)
 - Exposing the :func:`braindecode.datautil.infer_signal_properties` utility function (:gh:`856` by `Pierre Guetschel`_)
 - Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
