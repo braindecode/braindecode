@@ -68,7 +68,7 @@ def test_nmt():
 )
 def test_nmt_recording_ids_metadata_alignment():
     """Test that metadata is correctly aligned when using recording_ids.
-    
+
     This test ensures that when recording_ids is provided, metadata is matched
     by record name rather than positional index, preventing misalignment when
     the CSV order differs from the sorted file order.
@@ -81,32 +81,32 @@ def test_nmt_recording_ids_metadata_alignment():
         recording_ids=[0, 2, 4],
         n_jobs=1,
     )
-    
+
     # Should have exactly 3 datasets corresponding to recording_ids [0, 2, 4]
     assert len(nmt.datasets) == 3
-    
+
     # Verify the correct files are selected
     # Files should be 0000036.edf, 0000038.edf, 0000040.edf after sorting
     paths = nmt.description["path"].tolist()
     assert any("0000036.edf" in p for p in paths), f"Expected 0000036.edf in paths: {paths}"
     assert any("0000038.edf" in p for p in paths), f"Expected 0000038.edf in paths: {paths}"
     assert any("0000040.edf" in p for p in paths), f"Expected 0000040.edf in paths: {paths}"
-    
+
     # Verify metadata alignment by checking the age values
     # From _fake_pd_read_csv (now updated to match file IDs):
     # 0000036.edf has age 35
-    # 0000038.edf has age 62  
+    # 0000038.edf has age 62
     # 0000040.edf has age 19
     ages = nmt.description["age"].tolist()
     assert ages == [35, 62, 19], f"Expected [35, 62, 19] but got {ages}"
-    
+
     # Verify pathological labels
     # 0000036.edf is "normal" -> False
     # 0000038.edf is "normal" -> False
     # 0000040.edf is "normal" -> False
     pathological = nmt.description["pathological"].tolist()
     assert pathological == [False, False, False]
-    
+
     # Verify gender
     # All three in the mock data are "male" -> "M"
     genders = nmt.description["gender"].tolist()
@@ -119,7 +119,7 @@ def test_nmt_recording_ids_metadata_alignment():
 )
 def test_nmt_recording_ids_with_unordered_csv():
     """Test metadata alignment when CSV rows are in different order than sorted files.
-    
+
     This test creates a scenario where the CSV is deliberately in a different order
     than the sorted file paths to verify that metadata matching works by record name
     rather than positional index.
@@ -139,7 +139,7 @@ def test_nmt_recording_ids_with_unordered_csv():
         df = pd.DataFrame(data, columns=["recordname", "label", "age", "gender", "loc"])
         df.set_index("recordname", inplace=True)
         return df
-    
+
     # Patch the CSV mock with reversed order
     with mock.patch("braindecode.datasets.nmt._fake_pd_read_csv", new=_fake_pd_read_csv_reverse):
         nmt = _NMTMock(
@@ -147,7 +147,7 @@ def test_nmt_recording_ids_with_unordered_csv():
             recording_ids=[0, 2, 4],  # Select files 0000036, 0000038, 0000040
             n_jobs=1,
         )
-    
+
     # Even though CSV is in reverse order, metadata should still match correctly
     # File 0000036.edf should have age 35 (not 71 from positional index 0 in reversed CSV)
     # File 0000038.edf should have age 62 (not 19 from positional index 2 in reversed CSV)

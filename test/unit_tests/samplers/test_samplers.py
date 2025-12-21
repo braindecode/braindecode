@@ -36,23 +36,23 @@ from braindecode.samplers.ssl import (
 
 def test_distributed_relative_positioning_sampler_n_examples_formula():
     """Test that n_examples calculation uses correct operator precedence.
-    
+
     This is a simple unit test that validates the formula directly without
     requiring network access or distributed training setup.
-    
+
     The bug was: n_examples // total_recordings * recordings_per_rank
     The fix is: n_examples * recordings_per_rank // total_recordings
-    
+
     Test cases from the bug report:
     1. n_examples=100, total_recordings=10, recordings_per_rank=2 (world_size=4)
        - Buggy: 100 // 10 * 2 = 10 * 2 = 20
        - Fixed: 100 * 2 // 10 = 200 // 10 = 20
        - In this case both formulas give the same result
-       
+
     2. n_examples=50, total_recordings=100, recordings_per_rank=50 (world_size=2)
        - Buggy: 50 // 100 * 50 = 0 * 50 = 0 (WRONG!)
        - Fixed: 50 * 50 // 100 = 2500 // 100 = 25 (CORRECT)
-       
+
     3. n_examples=100, total_recordings=10, world_size=4, recordings_per_rank=2 or 3
        - For rank with 2 recordings:
          - Buggy: 100 // 10 * 2 = 20
@@ -67,21 +67,21 @@ def test_distributed_relative_positioning_sampler_n_examples_formula():
     fixed = n_examples * recordings_per_rank // total_recordings
     assert buggy == 20
     assert fixed == 20
-    
+
     # Test case 2: Critical bug case - buggy formula gives 0
     n_examples, total_recordings, recordings_per_rank = 50, 100, 50
     buggy = n_examples // total_recordings * recordings_per_rank
     fixed = n_examples * recordings_per_rank // total_recordings
     assert buggy == 0, "Buggy formula should give 0 (this is the bug!)"
     assert fixed == 25, "Fixed formula should give 25"
-    
+
     # Test case 3: Another precision loss case
     n_examples, total_recordings, recordings_per_rank = 100, 10, 3
     buggy = n_examples // total_recordings * recordings_per_rank
     fixed = n_examples * recordings_per_rank // total_recordings
     assert buggy == 30
     assert fixed == 30
-    
+
     # Test case 4: More examples showing the difference
     n_examples, total_recordings, recordings_per_rank = 75, 20, 5
     buggy = n_examples // total_recordings * recordings_per_rank
@@ -335,7 +335,7 @@ def distributed_relative_positioning_sampler_n_examples_check(rank, world_size, 
         rank=rank,
         world_size=world_size
     )
-    
+
     tau_pos, tau_neg = 2000, 3000
     sampler = DistributedRelativePositioningSampler(
         windows_ds.get_metadata(),
@@ -346,19 +346,19 @@ def distributed_relative_positioning_sampler_n_examples_check(rank, world_size, 
         same_rec_neg=True,
         random_state=33,
     )
-    
+
     # Calculate expected n_examples for this rank
     # Formula should be: n_examples_total * n_recordings_for_rank // total_recordings
     total_recordings = sampler.info.shape[0]
     recordings_per_rank = sampler.n_recordings
     expected_n_examples = n_examples_total * recordings_per_rank // total_recordings
-    
+
     assert sampler.n_examples == expected_n_examples, (
         f"Rank {rank}: Expected {expected_n_examples} examples but got {sampler.n_examples}. "
         f"total_recordings={total_recordings}, recordings_per_rank={recordings_per_rank}, "
         f"n_examples_total={n_examples_total}"
     )
-    
+
     # Cleanup
     dist.destroy_process_group()
 
@@ -372,7 +372,7 @@ def distributed_relative_positioning_sampler_n_examples_check(rank, world_size, 
 ])
 def test_distributed_relative_positioning_sampler_n_examples_calculation(windows_ds, n_examples_total, world_size):
     """Test that n_examples calculation distributes examples correctly across ranks.
-    
+
     This test validates the fix for the operator precedence bug where:
     - Buggy: n_examples // total_recordings * recordings_per_rank (double truncation)
     - Fixed: n_examples * recordings_per_rank // total_recordings (single division)
