@@ -1878,7 +1878,7 @@ def brain_module_params():
 @pytest.mark.parametrize("n_times", [500, 1000, 2000])
 @pytest.mark.parametrize("sfreq", [100, 250, 500])
 @pytest.mark.parametrize("batch_size", [1, 4, 8])
-def test_dilated_conv_decoder_basic(brain_module_params, n_times, sfreq, batch_size):
+def test_brain_module_basic(brain_module_params, n_times, sfreq, batch_size):
     """Test BrainModule with various input sizes and sample rates."""
     set_random_seeds(0, False)
     params = brain_module_params.copy()
@@ -1895,7 +1895,7 @@ def test_dilated_conv_decoder_basic(brain_module_params, n_times, sfreq, batch_s
 
 
 @pytest.mark.parametrize("subject_dim", [16, 32, 64])
-def test_dilated_conv_decoder_subject_embeddings(brain_module_params, subject_dim):
+def test_brain_module_subject_embeddings(brain_module_params, subject_dim):
     """Test subject embeddings with different dimensions and validation."""
     set_random_seeds(0, False)
     n_subjects = 30
@@ -1955,7 +1955,7 @@ def test_brain_module_subject_layers(brain_module_params, subject_dim, subject_l
 
 
 @pytest.mark.parametrize("n_fft,fft_complex", [(64, True), (256, False), (512, True)])
-def test_dilated_conv_decoder_stft(brain_module_params, n_fft, fft_complex):
+def test_brain_module_stft(brain_module_params, n_fft, fft_complex):
     """Test STFT with different FFT sizes and complex/power spectrograms."""
     set_random_seeds(0, False)
     params = brain_module_params.copy()
@@ -1971,7 +1971,7 @@ def test_dilated_conv_decoder_stft(brain_module_params, n_fft, fft_complex):
         assert not torch.isnan(output).any()
 
 
-def test_dilated_conv_decoder_parameter_validation():
+def test_brain_module_parameter_validation():
     """Test parameter validation for all features."""
     # Invalid subject_layers
     with pytest.raises(ValueError, match="subject_layers=True requires subject_dim > 0"):
@@ -2020,7 +2020,7 @@ def test_dilated_conv_decoder_parameter_validation():
         )
 
 
-def test_dilated_conv_decoder_gradient_flow(brain_module_params):
+def test_brain_module_gradient_flow(brain_module_params):
     """Test gradient flow through model with various features."""
     for config in [
         {"glu": 1, "depth": 2},
@@ -2057,7 +2057,7 @@ def test_dilated_conv_decoder_gradient_flow(brain_module_params):
 
 
 @pytest.mark.parametrize("growth", [1.0, 1.5, 2.0])
-def test_dilated_conv_decoder_growth(brain_module_params, growth):
+def test_brain_module_growth(brain_module_params, growth):
     """Test different growth factors for channel expansion."""
     set_random_seeds(0, False)
     params = brain_module_params.copy()
@@ -2078,7 +2078,7 @@ def test_dilated_conv_decoder_growth(brain_module_params, growth):
 # ============================================================================
 
 @pytest.mark.parametrize("dropout_prob", [0.0, 0.1, 0.3, 0.5])
-def test_dilated_conv_decoder_channel_dropout(brain_module_params, dropout_prob):
+def test_brain_module_channel_dropout(brain_module_params, dropout_prob):
     """Test channel dropout with various probabilities."""
     set_random_seeds(0, False)
     params = brain_module_params.copy()
@@ -2100,7 +2100,7 @@ def test_dilated_conv_decoder_channel_dropout(brain_module_params, dropout_prob)
         assert model.channel_dropout is not None
 
 
-def test_dilated_conv_decoder_channel_dropout_eval_mode(brain_module_params):
+def test_brain_module_channel_dropout_eval_mode(brain_module_params):
     """Test channel dropout is disabled in eval mode (deterministic)."""
     set_random_seeds(0, False)
     params = brain_module_params.copy()
@@ -2118,7 +2118,7 @@ def test_dilated_conv_decoder_channel_dropout_eval_mode(brain_module_params):
     torch.testing.assert_close(output1, output2)
 
 
-def test_dilated_conv_decoder_channel_dropout_with_ch_info():
+def test_brain_module_channel_dropout_with_ch_info():
     """Test channel dropout with ch_info for selective channel dropout."""
     set_random_seeds(0, False)
 
@@ -2162,7 +2162,7 @@ def test_dilated_conv_decoder_channel_dropout_with_ch_info():
     (1, 1, 2),
     (2, 1, 3),
 ])
-def test_dilated_conv_decoder_glu(brain_module_params, glu, glu_context, depth):
+def test_brain_module_glu(brain_module_params, glu, glu_context, depth):
     """Test GLU with various intervals and context windows."""
     set_random_seeds(0, False)
     params = brain_module_params.copy()
@@ -2185,7 +2185,7 @@ def test_dilated_conv_decoder_glu(brain_module_params, glu, glu_context, depth):
 
 
 @pytest.mark.parametrize("depth", [2, 4, 6])
-def test_dilated_conv_decoder_depth_variants(brain_module_params, depth):
+def test_brain_module_depth_variants(brain_module_params, depth):
     """Test different depth configurations."""
     set_random_seeds(0, False)
     params = brain_module_params.copy()
@@ -2201,7 +2201,7 @@ def test_dilated_conv_decoder_depth_variants(brain_module_params, depth):
     assert not torch.isnan(output).any()
 
 
-def test_dilated_conv_decoder_glu_eval_determinism(brain_module_params):
+def test_brain_module_glu_eval_determinism(brain_module_params):
     """Test GLU is deterministic in eval mode."""
     set_random_seeds(0, False)
     params = brain_module_params.copy()
@@ -2219,7 +2219,7 @@ def test_dilated_conv_decoder_glu_eval_determinism(brain_module_params):
     torch.testing.assert_close(output1, output2)
 
 
-def test_dilated_conv_decoder_glu_combined_features(brain_module_params):
+def test_brain_module_glu_combined_features(brain_module_params):
     """Test GLU combined with other features."""
     set_random_seeds(0, False)
     params = brain_module_params.copy()
@@ -2242,6 +2242,7 @@ def test_dilated_conv_decoder_glu_combined_features(brain_module_params):
 
     assert output.shape == (4, params["n_outputs"])
     assert not torch.isnan(output).any()
+
 def test_bendr():
     """
     Test BENDR model forward pass with 3D inputs.
