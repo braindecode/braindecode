@@ -1917,6 +1917,43 @@ def test_dilated_conv_decoder_subject_embeddings(brain_module_params, subject_di
         model(x)
 
 
+@pytest.mark.parametrize("subject_dim", [16, 32, 64])
+@pytest.mark.parametrize("subject_layers_dim", ["input", "hidden"])
+def test_brain_module_subject_layers(brain_module_params, subject_dim, subject_layers_dim):
+    """Test subject-specific layer transformations with different dimensions."""
+    set_random_seeds(0, False)
+    n_subjects = 25
+    params = brain_module_params.copy()
+    params.update({
+        "n_subjects": n_subjects,
+        "subject_dim": subject_dim,
+        "subject_layers": True,
+        "subject_layers_dim": subject_layers_dim,
+    })
+
+    model = BrainModule(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, n_subjects, (4,))
+
+    output = model(x, subject_index=subject_idx)
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Test that different subjects produce different outputs
+    x_same = torch.ones(2, params["n_chans"], params["n_times"])
+    subject_idx_1 = torch.tensor([0, 0])
+    subject_idx_2 = torch.tensor([1, 1])
+
+    with torch.no_grad():
+        output_1 = model(x_same, subject_index=subject_idx_1)
+        output_2 = model(x_same, subject_index=subject_idx_2)
+
+    # Outputs should differ for different subjects (with high probability)
+    assert not torch.allclose(output_1, output_2, atol=1e-4)
+
+
 @pytest.mark.parametrize("n_fft,fft_complex", [(64, True), (256, False), (512, True)])
 def test_dilated_conv_decoder_stft(brain_module_params, n_fft, fft_complex):
     """Test STFT with different FFT sizes and complex/power spectrograms."""
