@@ -28,7 +28,7 @@ from braindecode.datasets import (
     BaseConcatDataset,
     RawDataset,
 )
-from braindecode.datasets.bids.hub import _create_compressor
+from braindecode.datasets.bids.hub_io import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
 from braindecode.preprocessing import create_windows_from_events
 
@@ -988,7 +988,7 @@ def test_pull_from_hub_404_error(tmp_path):
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_create_compressor_zarr_not_available():
     """Test that _create_compressor raises ImportError when zarr not available."""
-    with mock.patch('braindecode.datasets.bids.hub.zarr', False):
+    with mock.patch('braindecode.datasets.bids.hub_io.zarr', False):
         with pytest.raises(ImportError, match="Zarr is not installed"):
             _create_compressor("blosc", 5)
 
