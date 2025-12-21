@@ -65,10 +65,10 @@ save and load models from the Hugging Face Hub, if the ``braindecode[hug]`` pack
     BDTCN
     BENDR
     BIOT
+    BrainModule
     ContraWR
     CTNet
     Deep4Net
-    SimpleConv
     DeepSleepNet
     EEGConformer
     EEGInceptionERP
@@ -154,7 +154,6 @@ multi'head attention and squeeze and excitation layers.
     GatherExcite
     GSoP
     MultiHeadAttention
-    LocalSelfAttention
     SqueezeAndExcitation
 
 Blocks
