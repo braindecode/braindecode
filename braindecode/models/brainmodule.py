@@ -47,104 +47,106 @@ class BrainModule(EEGModuleMixin, nn.Module):
         (which halves the number of channels) and no normalization.
         Finally, the authors apply two 1x1 convolutions with a GELU in between.
 
-
-    The **MedFormer** is a multi-granularity patching transformer tailored to medical
-    time-series (MedTS) classification, with an emphasis on EEG and ECG signals. It captures
-    local temporal dynamics, inter-channel correlations, and multi-scale temporal structure
-    through cross-channel patching, multi-granularity embeddings, and two-stage attention
-    [Medformer2024]_.
+    The BrainModule (also referred to as SimpleConv) is a deep dilated
+    convolutional encoder specifically designed to decode perceived speech from
+    non-invasive brain recordings like EEG and MEG. It is engineered to address
+    the high noise levels and inter-individual variability inherent in
+    non-invasive neuroimaging by using a single architecture trained across
+    large cohorts while accommodating participant-specific differences.
 
     .. rubric:: Architecture Overview
 
-    MedFormer integrates three mechanisms to enhance representation learning [Medformer2024]_:
+    The BrainModule integrates three primary mechanisms to align brain activity
+    with deep speech representations:
 
-    1. **Cross-channel patching.** Leverages inter-channel correlations by forming patches
-       across multiple channels and timestamps, capturing multi-timestamp and cross-channel
-       patterns.
-    2. **Multi-granularity embedding.** Extracts features at different temporal scales from
-       :attr:`patch_len_list`, emulating frequency-band behavior without hand-crafted filters.
-    3. **Two-stage multi-granularity self-attention.** Learns intra- and inter-granularity
-       correlations to fuse information across temporal scales.
+    1. **Spatial-temporal feature extraction.** The model uses a dedicated
+       spatial attention layer to remap sensor data based on physical
+       locations, followed by temporal processing through dilated convolutions.
+    2. **Subject-specific adaptation.** To leverage inter-subject variability,
+       the architecture includes a "Subject Layer" or participant-specific
+       1x1 convolution that allows the model to share core weights across a
+       cohort while learning individual-specific neural patterns.
+    3. **Dilated residual blocks with gating.** The core encoder employs a
+       stack of convolutional blocks featuring skip connections and increasing
+       dilation to expand the receptive field without losing temporal
+       resolution, supplemented by optional Gated Linear Units (GLU) for
+       increased expressivity.
 
     .. rubric:: Macro Components
 
-    ``MEDFormer.enc_embedding`` (Embedding Layer)
-        **Operations.** :class:`~braindecode.models.medformer._ListPatchEmbedding` implements
-        cross-channel multi-granularity patching. For each patch length :math:`L_i`, the input
-        :math:`\mathbf{x}_{\text{in}} \in \mathbb{R}^{T \times C}` is segmented into
-        :math:`N_i` cross-channel non-overlapping patches
-        :math:`\mathbf{x}_p^{(i)} \in \mathbb{R}^{N_i \times (L_i \cdot C)}`, where
-        :math:`N_i = \lceil T/L_i \rceil`. Each patch is linearly projected via
-        :class:`~braindecode.models.medformer._CrossChannelTokenEmbedding` to obtain
-        :math:`\mathbf{x}_e^{(i)} \in \mathbb{R}^{N_i \times D}`. Data augmentations
-        (masking, jittering) produce augmented embeddings :math:`\tilde{\mathbf{x}}_e^{(i)}`.
-        The final embedding combines augmented patches, fixed positional embeddings
-        (:class:`~braindecode.models.medformer._PositionalEmbedding`), and learnable
-        granularity embeddings :math:`\mathbf{W}_{\text{gr}}^{(i)}`:
+    ``BrainModule.input_projection`` (Initial Processing)
+        **Operations.** Raw M/EEG input
+        :math:`\mathbf{X} \in \mathbb{R}^{C \times T}` is first processed
+        through a spatial attention layer that projects sensor locations onto a
+        2D plane using Fourier-parameterized functions. This is followed by a
+        subject-specific 1x1 convolution
+        :math:`\mathbf{M}_s \in \mathbb{R}^{D_1 \times D_1}` if subject
+        features are enabled. The resulting features are projected to the
+        ``hidden_dim`` (default 320) to ensure compatibility with subsequent
+        residual connections.
 
-        .. math::
-            \mathbf{x}^{(i)} = \tilde{\mathbf{x}}_e^{(i)} + \mathbf{W}_{\text{pos}}[1:N_i] + \mathbf{W}_{\text{gr}}^{(i)}
+        **Role.** Converts high-dimensional, subject-dependent sensor data into
+        a standardized latent space while preserving spatial and temporal
+        relationships.
 
-        Additionally, a router token is initialized for each granularity:
+    ``BrainModule.encoder`` (Convolutional Sequence)
+        **Operations.** Implemented via
+        :class:`~braindecode.models.brainmodule._ConvSequence`, this component
+        consists of a stack of ``k`` convolutional blocks. Each block typically
+        contains: (a) **Residual dilated convolutions.** Two layers with kernel
+        size 3, residual skip connections, and dilation factors that grow
+        exponentially (e.g., powers of two with periodic resets) to capture
+        multi-scale temporal context. (b) **GLU gating.** Every ``N`` layers
+        (defined by ``glu``), a Gated Linear Unit is applied, which halves the
+        channel dimension and introduces non-linear gating to filter
+        intermediate representations.
 
-        .. math::
-            \mathbf{u}^{(i)} = \mathbf{W}_{\text{pos}}[N_i+1] + \mathbf{W}_{\text{gr}}^{(i)}
+        **Role.** Extracts deep hierarchical temporal features from the brain
+        signal, significantly expanding the model's receptive field to align
+        with the contextual windows of speech modules like wav2vec 2.0.
 
-        **Role.** Converts raw input into granularity-specific patch embeddings
-        :math:`\{\mathbf{x}^{(1)}, \ldots, \mathbf{x}^{(n)}\}` and router embeddings
-        :math:`\{\mathbf{u}^{(1)}, \ldots, \mathbf{u}^{(n)}\}` for multi-scale processing.
-
-    ``MEDFormer.encoder`` (Transformer Encoder Stack)
-        **Operations.** A stack of :class:`~braindecode.models.medformer._EncoderLayer` modules,
-        each containing a :class:`~braindecode.models.medformer._MedformerLayer` that implements
-        two-stage self-attention. The two-stage mechanism splits self-attention into:
-
-        **(a) Intra-Granularity Self-Attention.** For granularity :math:`i`, the patch embedding
-        :math:`\mathbf{x}^{(i)} \in \mathbb{R}^{N_i \times D}` and router embedding
-        :math:`\mathbf{u}^{(i)} \in \mathbb{R}^{1 \times D}` are concatenated:
-
-        .. math::
-            \mathbf{z}^{(i)} = [\mathbf{x}^{(i)} \| \mathbf{u}^{(i)}] \in \mathbb{R}^{(N_i+1) \times D}
-
-        Self-attention is applied to update both embeddings:
-
-        .. math::
-            \mathbf{x}^{(i)} &\leftarrow \text{Attn}_{\text{intra}}(\mathbf{x}^{(i)}, \mathbf{z}^{(i)}, \mathbf{z}^{(i)})\\
-            \mathbf{u}^{(i)} &\leftarrow \text{Attn}_{\text{intra}}(\mathbf{u}^{(i)}, \mathbf{z}^{(i)}, \mathbf{z}^{(i)})
-
-        This captures temporal features within each granularity independently.
-
-        **(b) Inter-Granularity Self-Attention.** All router embeddings are concatenated:
-
-        .. math::
-            \mathbf{U} = [\mathbf{u}^{(1)} \| \mathbf{u}^{(2)} \| \cdots \| \mathbf{u}^{(n)}] \in \mathbb{R}^{n \times D}
-
-        Self-attention among routers exchanges information across granularities:
-
-        .. math::
-            \mathbf{u}^{(i)} \leftarrow \text{Attn}_{\text{inter}}(\mathbf{u}^{(i)}, \mathbf{U}, \mathbf{U})
-
-        **Role.** Learns representations and correlations within and across temporal scales while
-        reducing complexity from :math:`O((\sum_i N_i)^2)` to
-        :math:`O(\sum_i N_i^2 + n^2)` through the router mechanism.
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - **Temporal:** Multiple patch lengths in :attr:`patch_len_list` capture features at several
-      temporal granularities, while intra-granularity attention supports long-range temporal
-      dependencies.
-    - **Spatial:** Cross-channel patching embeds inter-channel dependencies by applying kernels
-      that span every input channel.
-    - **Spectral:** Differing patch lengths simulate multiple sampling frequencies analogous to
-      clinically relevant bands (e.g., alpha, beta, gamma).
+    - **Temporal:** Increasing dilation factors across layers allow the model to
+      integrate information over large time windows without the computational
+      cost of standard large kernels, while a 150 ms input shift facilitates
+      alignment between stimulus and brain response.
+    - **Spatial:** The spatial attention layer learns a softmax weighting over
+      input sensors based on their 3D coordinates, allowing the model to focus
+      on regions typically activated during auditory stimulation (e.g., the
+      temporal cortex).
+    - **Spectral:** Through the optional ``n_fft`` parameter, the model can
+      apply an STFT transformation, converting time-domain signals into a
+      spectrogram representation before encoding.
 
     .. rubric:: Additional Mechanisms
 
-    - **Granularity router:** Each granularity :math:`i` receives a dedicated router token
-      :math:`\\mathbf{u}^{(i)}`. Intra-attention updates the token, and inter-attention exchanges
-      aggregated information across scales.
-    - **Complexity:** Router-mediated two-stage attention maintains :math:`O(T^2)` complexity for
-      suitable patch lengths (e.g., power series), preserving transformer-like efficiency while
-      modeling multiple granularities.
+    - **Clamping and scaling:** The model relies on clamping input values
+      (e.g., at 20 standard deviations) to prevent outliers and large
+      electromagnetic artifacts from destabilizing the BatchNorm estimates and
+      optimization process.
+    - **Scaled subject embeddings:** When ``subject_dim`` is used, the
+      :class:`~braindecode.models.brainmodule._ScaledEmbedding` layer scales up
+      the learning rate for subject-specific features to prevent slow
+      convergence in multi-participant training.
+
+
+    - **_ConvSequence and residual logic:** This class handles the actual
+      stacking of layers. It is designed to be flexible with the ``growth``
+      parameter; if the channel size changes between layers (``growth != 1.0``),
+      it automatically applies a 1x1 ``skip_projection`` convolution to the
+      residual path so dimensions match for addition.
+    - **_ChannelDropout:** Unlike standard dropout which zeroes individual
+      neurons, this zeroes entire channels. It includes a rescale feature that
+      multiplies the remaining channels by a factor
+      ``total_channels / active_channels`` to maintain the expected value of the
+      signal during training.
+    - **_ScaledEmbedding:** This is a clever optimization for multi-subject
+      learning. By dividing the initial weights by a scale and then multiplying
+      the output by the same scale, it effectively increases the gradient
+      magnitude for the embedding weights, allowing subject-specific features to
+      learn faster than the shared backbone.
+
 
     Parameters
     ----------
