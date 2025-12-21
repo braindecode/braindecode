@@ -1,17 +1,34 @@
-.. image:: https://zenodo.org/badge/232335424.svg
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.8214376.svg
     :target: https://doi.org/10.5281/zenodo.8214376
     :alt: DOI
 
 .. image:: https://github.com/braindecode/braindecode/workflows/docs/badge.svg
     :target: https://github.com/braindecode/braindecode/actions
+    :alt: Docs Build Status
 
-.. image:: https://circleci.com/gh/braindecode/braindecode.svg?style=svg
-    :target: https://circleci.com/gh/braindecode/braindecode
-    :alt: Doc build on CircleCI
+.. image:: https://github.com/braindecode/braindecode/workflows/tests/badge.svg
+    :target: https://github.com/braindecode/braindecode/actions?query=branch%3Amaster
+    :alt: Test Build Status
 
 .. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
     :target: https://codecov.io/gh/braindecode/braindecode
     :alt: Code Coverage
+
+.. image:: https://img.shields.io/pypi/v/braindecode?color=blue&style=flat-square
+    :target: https://pypi.org/project/braindecode/
+    :alt: PyPI
+
+.. image:: https://img.shields.io/pypi/v/braindecode?label=version&color=orange&style=flat-square
+    :target: https://pypi.org/project/braindecode/
+    :alt: Version
+
+.. image:: https://img.shields.io/pypi/pyversions/braindecode?style=flat-square
+    :target: https://pypi.org/project/braindecode/
+    :alt: Python versions
+
+.. image:: https://pepy.tech/badge/braindecode
+    :target: https://pepy.tech/project/braindecode
+    :alt: Downloads
 
 .. |Braindecode| image:: https://user-images.githubusercontent.com/42702466/177958779-b00628aa-9155-4c51-96d1-d8c345aff575.svg
 
