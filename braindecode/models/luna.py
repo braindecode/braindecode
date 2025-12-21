@@ -44,6 +44,61 @@ class LUNA(EEGModuleMixin, nn.Module):
     3. Patch-wise Temporal Encoder (RoPE-based transformer)
     4. Decoder Heads (classification or reconstruction)
 
+    .. important::
+       **Pre-trained Weights Available**
+
+       This model has pre-trained weights available on the Hugging Face Hub
+       at `thorir/LUNA <https://huggingface.co/thorir/LUNA>`_.
+
+       Available model variants:
+
+       - **LUNA_base.safetensors** - Base model (embed_dim=64, num_queries=4, depth=8)
+       - **LUNA_large.safetensors** - Large model (embed_dim=96, num_queries=6, depth=10)
+       - **LUNA_huge.safetensors** - Huge model (embed_dim=128, num_queries=8, depth=24)
+
+       Example loading for fine-tuning:
+
+       .. code-block:: python
+
+           from huggingface_hub import hf_hub_download
+           from safetensors.torch import load_file
+           from braindecode.models import LUNA
+
+           # Download pre-trained weights
+           model_path = hf_hub_download(
+               repo_id="thorir/LUNA",
+               filename="LUNA_base.safetensors",
+           )
+
+           # Create model for classification (fine-tuning)
+           model = LUNA(
+               n_outputs=2,  # Number of classes for your task
+               n_chans=22,
+               n_times=1000,
+               embed_dim=64,
+               num_queries=4,
+               depth=8,
+           )
+
+           # Load pre-trained encoder weights
+           state_dict = load_file(model_path)
+           # Apply key mapping for pretrained weights
+           mapping = model.mapping.copy()
+           mapping["cross_attn.temparature"] = "cross_attn.temperature"
+           mapped_state_dict = {mapping.get(k, k): v for k, v in state_dict.items()}
+           model.load_state_dict(mapped_state_dict, strict=False)
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-luna-model", commit_message="Upload trained LUNA model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
+
     Parameters
     ----------
     patch_size : int

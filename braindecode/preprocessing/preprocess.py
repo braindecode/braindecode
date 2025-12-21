@@ -324,6 +324,9 @@ def _replace_inplace(concat_ds, new_concat_ds):
             concat_ds, preproc_kwargs_attr, getattr(new_concat_ds, preproc_kwargs_attr)
         )
 
+    # Recompute cumulative_sizes after replacing datasets
+    concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
+
 
 def _preprocess(
     ds: RecordDataset,

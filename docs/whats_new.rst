@@ -22,6 +22,7 @@ Current 1.3 (dev)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding Hugging Face Hub integration documentation with comprehensive examples for loading pre-trained models (:class:`braindecode.models.BIOT`, :class:`braindecode.models.Labram`, :class:`braindecode.models.REVE`, :class:`braindecode.models.LUNA`, :class:`braindecode.models.BENDR`, :class:`braindecode.models.SignalJEPA`) and pushing models to the Hub (:gh:`879` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.REVE` with comprehensive documentation covering architecture details, 4D positional encoding, and pretraining scale (:gh:`866` by `Jonathan Lys`_ )
 - Adding augmentation :class:`braindecode.augmentation.AmplitudeScale` (:gh:`848` by `Bruna Lopes`_)
 - Adding augmentation :class:`braindecode.augmentation.ChannelsReref` (:gh:`848` by `Bruna Lopes`_)
@@ -53,7 +54,7 @@ Enhancements
 - Including colab buttons to all tutorials (:gh:`861` by `Bruno Aristimunha`_ )
 - Adding example Pydantic and Exca (:gh:`858` by `Pierre Guetschel`_)
 - Renaming the model category "Foundation Models" from "Large Brain Models (LBM)" (:gh:`867` by `Bruno Aristimunha`_ )
-
+- Make the dataset at huggingface hub more bids compatible (:gh:`871` by `Bruno Aristimunha`_ )
 
 API changes
 ~~~~~~~~~~~
