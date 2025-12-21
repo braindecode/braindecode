@@ -376,18 +376,43 @@ class HubDatasetMixin:
             bids_path.mkdir(exist_ok=True)
 
             # Get metadata and info based on dataset type
+            # Also compute recording_duration, recording_type, and epoch_length
+            recording_duration = None
+            recording_type = None
+            epoch_length = None
+
             if dataset_type == "WindowsDataset":
                 info = ds.windows.info
                 metadata = ds.windows.metadata
                 sfreq = info["sfreq"]
+                # WindowsDataset contains pre-cut epochs
+                recording_type = "epoched"
+                # Use MNE's tmax - tmin for epoch length
+                epoch_length = ds.windows.tmax - ds.windows.tmin
+                # Total duration = number of epochs * epoch length
+                n_epochs = len(ds.windows)
+                recording_duration = n_epochs * epoch_length
             elif dataset_type == "EEGWindowsDataset":
                 info = ds.raw.info
                 metadata = ds.metadata
                 sfreq = info["sfreq"]
+                # EEGWindowsDataset has continuous raw with window metadata
+                recording_type = "epoched"
+                # Use MNE Raw's duration property
+                recording_duration = ds.raw.duration
+                # Compute epoch_length from metadata if available
+                if metadata is not None and len(metadata) > 0:
+                    i_start = metadata["i_start_in_trial"].iloc[0]
+                    i_stop = metadata["i_stop_in_trial"].iloc[0]
+                    epoch_length = (i_stop - i_start) / sfreq
             elif dataset_type == "RawDataset":
                 info = ds.raw.info
                 metadata = None
                 sfreq = info["sfreq"]
+                # RawDataset is continuous
+                recording_type = "continuous"
+                # Use MNE Raw's duration property
+                recording_duration = ds.raw.duration
             else:
                 continue
 
@@ -401,6 +426,9 @@ class HubDatasetMixin:
                 metadata=metadata,
                 sfreq=sfreq,
                 task_name=str(task_name),
+                recording_duration=recording_duration,
+                recording_type=recording_type,
+                epoch_length=epoch_length,
             )
 
             log.debug(

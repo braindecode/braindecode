@@ -425,6 +425,9 @@ def create_eeg_json_sidecar(
     instructions: Optional[str] = None,
     institution_name: Optional[str] = None,
     manufacturer: Optional[str] = None,
+    recording_duration: Optional[float] = None,
+    recording_type: Optional[str] = None,
+    epoch_length: Optional[float] = None,
     extra_metadata: Optional[dict] = None,
 ) -> dict:
     """
@@ -446,6 +449,14 @@ def create_eeg_json_sidecar(
         Name of the institution.
     manufacturer : str | None
         Manufacturer of the EEG equipment.
+    recording_duration : float | None
+        Length of the recording in seconds (BIDS RECOMMENDED).
+    recording_type : str | None
+        Type of recording: "continuous", "epoched", or "discontinuous"
+        (BIDS RECOMMENDED).
+    epoch_length : float | None
+        Duration of individual epochs in seconds. RECOMMENDED if
+        recording_type is "epoched".
     extra_metadata : dict | None
         Additional metadata.
 
@@ -474,6 +485,12 @@ def create_eeg_json_sidecar(
         sidecar["Instructions"] = instructions
     if institution_name:
         sidecar["InstitutionName"] = institution_name
+    if recording_duration is not None:
+        sidecar["RecordingDuration"] = recording_duration
+    if recording_type is not None:
+        sidecar["RecordingType"] = recording_type
+    if epoch_length is not None:
+        sidecar["EpochLength"] = epoch_length
 
     if extra_metadata:
         sidecar.update(extra_metadata)
@@ -487,6 +504,9 @@ def save_bids_sidecar_files(
     metadata: Optional[pd.DataFrame] = None,
     sfreq: Optional[float] = None,
     task_name: str = "unknown",
+    recording_duration: Optional[float] = None,
+    recording_type: Optional[str] = None,
+    epoch_length: Optional[float] = None,
 ) -> dict[str, Path]:
     """
     Save BIDS sidecar files for a recording using mne_bids BIDSPath.
@@ -503,6 +523,14 @@ def save_bids_sidecar_files(
         Sampling frequency (if not in info).
     task_name : str
         Task name for sidecar JSON.
+    recording_duration : float | None
+        Length of the recording in seconds (BIDS RECOMMENDED).
+    recording_type : str | None
+        Type of recording: "continuous", "epoched", or "discontinuous"
+        (BIDS RECOMMENDED).
+    epoch_length : float | None
+        Duration of individual epochs in seconds. RECOMMENDED if
+        recording_type is "epoched".
 
     Returns
     -------
@@ -536,7 +564,13 @@ def save_bids_sidecar_files(
     saved_files["channels"] = channels_path.fpath
 
     # Save EEG sidecar JSON
-    sidecar = create_eeg_json_sidecar(info, task_name=task_name)
+    sidecar = create_eeg_json_sidecar(
+        info,
+        task_name=task_name,
+        recording_duration=recording_duration,
+        recording_type=recording_type,
+        epoch_length=epoch_length,
+    )
     sidecar_path = base_path.copy().update(suffix="eeg", extension=".json")
     with open(sidecar_path.fpath, "w", encoding="utf-8") as f:
         json.dump(sidecar, f, indent=2)
