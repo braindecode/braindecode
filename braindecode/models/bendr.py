@@ -78,6 +78,47 @@ class BENDR(EEGModuleMixin, nn.Module):
       prepended to the BENDR sequence before input to the transformer, serving as the aggregate
       representation token [bendr]_.
 
+    Notes
+    -----
+    * The full BENDR architecture contains a large number of parameters; configuration (1)
+      involved training over **one billion parameters** [bendr]_.
+    * Randomly initialized full BENDR architecture was generally ineffective at solving
+      downstream tasks without prior self-supervised training [bendr]_.
+    * The pre-training task (contrastive predictive coding via masking) is generalizable,
+      exhibiting strong uniformity of performance across novel subjects, hardware, and
+      tasks [bendr]_.
+
+    .. warning::
+
+        **Important:** To utilize the full potential of BENDR, the model requires
+        **self-supervised pre-training** on large, unlabeled EEG datasets (like TUEG) followed
+        by subsequent fine-tuning on the specific downstream classification task [bendr]_.
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       This model has pre-trained weights available on the Hugging Face Hub.
+       You can load them using:
+
+       .. code-block:: python
+
+           from braindecode.models import BENDR
+
+           # Load pre-trained model from Hugging Face Hub
+           # you can specify `n_outputs` for your downstream task
+           model = BENDR.from_pretrained("braindecode/braindecode-bendr", n_outputs=2)
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-bendr-model", commit_message="Upload trained BENDR model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
+
     Parameters
     ----------
     encoder_h : int, default=512

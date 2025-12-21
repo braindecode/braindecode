@@ -64,6 +64,30 @@ class Labram(EEGModuleMixin, nn.Module):
             - LayerNorm: Apply layer normalization to the data;
             - Linear: An head linear layer to transformer the data into classes.
 
+    .. important::
+       **Pre-trained Weights Available**
+
+       This model has pre-trained weights available on the Hugging Face Hub.
+       You can load them using:
+
+       .. code-block:: python
+
+           from braindecode.models import Labram
+
+           # Load pre-trained model from Hugging Face Hub
+           model = Labram.from_pretrained("braindecode/labram-pretrained")
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-labram-model", commit_message="Upload trained Labram model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
+
     .. versionadded:: 0.9
 
 

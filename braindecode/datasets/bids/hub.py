@@ -1,19 +1,36 @@
+# mypy: ignore-errors
 """
 Hugging Face Hub integration for EEG datasets.
 
 This module provides push_to_hub() and pull_from_hub() functionality
 for braindecode datasets, similar to the model Hub integration.
+
+.. warning::
+    The format is **BIDS-inspired**, not **BIDS-compliant**. The metadata
+    files are BIDS-compliant, but the data is stored in Zarr format for
+    efficient training, which is not a valid BIDS EEG format.
+
+The format follows a BIDS-inspired sourcedata structure:
+- sourcedata/braindecode/
+  - dataset_description.json  (BIDS-compliant)
+  - participants.tsv          (BIDS-compliant)
+  - dataset.zarr/             (NOT BIDS-compliant - efficient data store)
+  - sub-<label>/
+    - eeg/
+      - *_events.tsv          (BIDS-compliant)
+      - *_channels.tsv        (BIDS-compliant)
+      - *_eeg.json            (BIDS-compliant)
 """
 
 # Authors: Kuntal Kokate
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
-import io
 import json
 import logging
 import tempfile
-import warnings
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
@@ -29,11 +46,20 @@ if TYPE_CHECKING:
 
 import braindecode
 
-# Import shared validation utilities
-from . import hub_validation
-
 # Import registry for dynamic class lookup (avoids circular imports)
-from .registry import get_dataset_class, get_dataset_type
+from ..registry import get_dataset_class, get_dataset_type
+
+# Hub format and validation utilities
+from . import hub_format, hub_validation
+from .hub_io import (
+    _create_compressor,
+    _load_eegwindows_from_zarr,
+    _load_raw_from_zarr,
+    _load_windows_from_zarr,
+    _save_eegwindows_to_zarr,
+    _save_raw_to_zarr,
+    _save_windows_to_zarr,
+)
 
 # Lazy import zarr and huggingface_hub
 zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
@@ -76,13 +102,15 @@ class HubDatasetMixin:
         create_pr: bool = False,
         compression: str = "blosc",
         compression_level: int = 5,
+        pipeline_name: str = "braindecode",
     ) -> str:
         """
-        Upload the dataset to the Hugging Face Hub in Zarr format.
+        Upload the dataset to the Hugging Face Hub in BIDS-like Zarr format.
 
         The dataset is converted to Zarr format with blosc compression, which provides
-        optimal random access performance for PyTorch training (based on comprehensive
-        benchmarking).
+        optimal random access performance for PyTorch training. The data is stored
+        in a BIDS sourcedata-like structure with events.tsv, channels.tsv,
+        and participants.tsv sidecar files.
 
         Parameters
         ----------
@@ -100,6 +128,8 @@ class HubDatasetMixin:
             Compression algorithm for Zarr. Options: "blosc", "zstd", "gzip", None.
         compression_level : int, default=5
             Compression level (0-9). Level 5 provides optimal balance.
+        pipeline_name : str, default="braindecode"
+            Name of the processing pipeline for BIDS sourcedata.
 
         Returns
         -------
@@ -116,17 +146,10 @@ class HubDatasetMixin:
         Examples
         --------
         >>> dataset = NMT(path=path, preload=True)
-        >>> # Upload with default settings (zarr with blosc compression)
+        >>> # Upload with BIDS-like structure
         >>> url = dataset.push_to_hub(
         ...     repo_id="myusername/nmt-dataset",
         ...     commit_message="Upload NMT EEG dataset"
-        ... )
-        >>>
-        >>> # Or customize compression
-        >>> url = dataset.push_to_hub(
-        ...     repo_id="myusername/nmt-dataset",
-        ...     compression="blosc",
-        ...     compression_level=5
         ... )
         """
         if huggingface_hub is False or zarr is False:
@@ -154,25 +177,44 @@ class HubDatasetMixin:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
 
-            # Convert dataset to Zarr format
+            # Create BIDS-like sourcedata structure
+            log.info("Creating BIDS-like sourcedata structure...")
+            bids_layout = hub_format.BIDSSourcedataLayout(
+                tmp_path, pipeline_name=pipeline_name
+            )
+            sourcedata_dir = bids_layout.create_structure()
+
+            # Save dataset_description.json
+            bids_layout.save_dataset_description()
+
+            # Save participants.tsv
+            descriptions = [ds.description for ds in self.datasets]
+            bids_layout.save_participants(descriptions)
+
+            # Save BIDS sidecar files for each recording
+            self._save_bids_sidecar_files(bids_layout)
+
+            # Convert dataset to Zarr format inside sourcedata
             log.info("Converting dataset to Zarr format...")
-            dataset_path = tmp_path / "dataset.zarr"
+            dataset_path = sourcedata_dir / "dataset.zarr"
+
             self._convert_to_zarr_inline(
                 dataset_path,
                 compression,
                 compression_level,
             )
 
-            # Save dataset metadata
+            # Save dataset metadata (README.md)
             self._save_dataset_card(tmp_path)
 
             # Save format info
             format_info_path = tmp_path / "format_info.json"
-            with open(format_info_path, "w") as f:
+            with open(format_info_path, "w", encoding="utf-8") as f:
                 format_info = self._get_format_info_inline()
                 json.dump(
                     {
                         "format": "zarr",
+                        "pipeline_name": pipeline_name,
                         "compression": compression,
                         "compression_level": compression_level,
                         "braindecode_version": braindecode.__version__,
@@ -185,8 +227,8 @@ class HubDatasetMixin:
             # Default commit message
             if commit_message is None:
                 commit_message = (
-                    f"Upload EEG dataset in Zarr format "
-                    f"({len(self.datasets)} recordings)"
+                    f"Upload EEG dataset in BIDS-like "
+                    f"Zarr format ({len(self.datasets)} recordings)"
                 )
 
             # Upload folder to Hub
@@ -206,13 +248,15 @@ class HubDatasetMixin:
             except Exception as e:
                 raise RuntimeError(f"Failed to upload dataset: {e}")
 
-    def _save_dataset_card(self, path: Path) -> None:
+    def _save_dataset_card(self, path: Path, bids_inspired: bool = True) -> None:
         """Generate and save a dataset card (README.md) with metadata.
 
         Parameters
         ----------
         path : Path
             Directory where README.md will be saved.
+        bids_inspired : bool
+            Whether to include BIDS-inspired format documentation.
         """
         # Get info, which also validates uniformity across all datasets
         format_info = self._get_format_info_inline()
@@ -225,18 +269,27 @@ class HubDatasetMixin:
 
         n_windows = format_info["total_samples"]
 
+        # Compute total duration across all recordings
+        total_duration = 0.0
         if dataset_type == "WindowsDataset":
             n_channels = len(first_ds.windows.ch_names)
             data_type = "Windowed (from Epochs object)"
             sfreq = first_ds.windows.info["sfreq"]
+            for ds in self.datasets:
+                epoch_length = ds.windows.tmax - ds.windows.tmin
+                total_duration += len(ds.windows) * epoch_length
         elif dataset_type == "EEGWindowsDataset":
             n_channels = len(first_ds.raw.ch_names)
             sfreq = first_ds.raw.info["sfreq"]
             data_type = "Windowed (from Raw object)"
+            for ds in self.datasets:
+                total_duration += ds.raw.n_times / ds.raw.info["sfreq"]
         elif dataset_type == "RawDataset":
             n_channels = len(first_ds.raw.ch_names)
             sfreq = first_ds.raw.info["sfreq"]
             data_type = "Continuous (Raw)"
+            for ds in self.datasets:
+                total_duration += ds.raw.n_times / ds.raw.info["sfreq"]
         else:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
@@ -248,12 +301,98 @@ class HubDatasetMixin:
             sfreq=sfreq,
             data_type=data_type,
             n_windows=n_windows,
+            total_duration=total_duration,
         )
 
         # Save README
         readme_path = path / "README.md"
-        with open(readme_path, "w") as f:
+        with open(readme_path, "w", encoding="utf-8") as f:
             f.write(readme_content)
+
+    def _save_bids_sidecar_files(
+        self, bids_layout: "hub_format.BIDSSourcedataLayout"
+    ) -> None:
+        """Save BIDS-compliant sidecar files for each recording.
+
+        This creates events.tsv, channels.tsv, and EEG sidecar JSON files
+        for each recording in a BIDS-like directory structure.
+
+        Parameters
+        ----------
+        bids_layout : BIDSSourcedataLayout
+            BIDS layout object for path generation.
+        """
+        dataset_type = get_dataset_type(self.datasets[0])
+
+        for i_ds, ds in enumerate(self.datasets):
+            # Get BIDS entities from description
+            description = ds.description if ds.description is not None else pd.Series()
+
+            # Get BIDSPath for this recording using mne_bids
+            bids_path = bids_layout.get_bids_path(description)
+
+            # Create subject directory
+            bids_path.mkdir(exist_ok=True)
+
+            # Get metadata and info based on dataset type
+            # Also compute recording_duration, recording_type, and epoch_length
+            recording_duration = None
+            recording_type = None
+            epoch_length = None
+
+            if dataset_type == "WindowsDataset":
+                info = ds.windows.info
+                metadata = ds.windows.metadata
+                sfreq = info["sfreq"]
+                # WindowsDataset contains pre-cut epochs
+                recording_type = "epoched"
+                # Use MNE's tmax - tmin for epoch length
+                epoch_length = ds.windows.tmax - ds.windows.tmin
+                # Total duration = number of epochs * epoch length
+                n_epochs = len(ds.windows)
+                recording_duration = n_epochs * epoch_length
+            elif dataset_type == "EEGWindowsDataset":
+                info = ds.raw.info
+                metadata = ds.metadata
+                sfreq = info["sfreq"]
+                # EEGWindowsDataset has continuous raw with window metadata
+                recording_type = "epoched"
+                # Use MNE Raw's duration property
+                recording_duration = ds.raw.duration
+                # Compute epoch_length from metadata if available
+                if metadata is not None and len(metadata) > 0:
+                    i_start = metadata["i_start_in_trial"].iloc[0]
+                    i_stop = metadata["i_stop_in_trial"].iloc[0]
+                    epoch_length = (i_stop - i_start) / sfreq
+            elif dataset_type == "RawDataset":
+                info = ds.raw.info
+                metadata = None
+                sfreq = info["sfreq"]
+                # RawDataset is continuous
+                recording_type = "continuous"
+                # Use MNE Raw's duration property
+                recording_duration = ds.raw.duration
+            else:
+                continue
+
+            # Determine task name from description or BIDSPath
+            task_name = bids_path.task or "unknown"
+
+            # Save BIDS sidecar files using mne_bids BIDSPath
+            hub_format.save_bids_sidecar_files(
+                bids_path=bids_path,
+                info=info,
+                metadata=metadata,
+                sfreq=sfreq,
+                task_name=str(task_name),
+                recording_duration=recording_duration,
+                recording_type=recording_type,
+                epoch_length=epoch_length,
+            )
+
+            log.debug(
+                f"Saved BIDS sidecar files for recording {i_ds} to {bids_path.directory}"
+            )
 
     @classmethod
     def pull_from_hub(
@@ -340,8 +479,19 @@ class HubDatasetMixin:
             else:
                 format_info = {}
 
-            # Load zarr dataset
-            zarr_path = Path(dataset_dir) / "dataset.zarr"
+            pipeline_name = format_info.get("pipeline_name", "braindecode")
+
+            # Find zarr dataset path (try sourcedata, derivatives, then root)
+            zarr_path = (
+                Path(dataset_dir) / "sourcedata" / pipeline_name / "dataset.zarr"
+            )
+            if not zarr_path.exists():
+                zarr_path = (
+                    Path(dataset_dir) / "derivatives" / pipeline_name / "dataset.zarr"
+                )
+            if not zarr_path.exists():
+                zarr_path = Path(dataset_dir) / "dataset.zarr"
+
             if not zarr_path.exists():
                 raise FileNotFoundError(
                     f"Zarr dataset not found at {zarr_path}. "
@@ -349,6 +499,9 @@ class HubDatasetMixin:
                 )
 
             dataset = cls._load_from_zarr_inline(zarr_path, preload)
+
+            # Load BIDS metadata if available
+            cls._load_bids_metadata(dataset, Path(dataset_dir), pipeline_name)
 
             log.info(f"Dataset loaded successfully from {repo_id}")
             log.info(f"Recordings: {len(dataset.datasets)}")
@@ -368,6 +521,74 @@ class HubDatasetMixin:
                 raise RuntimeError(f"Failed to download dataset: {e}")
         except Exception as e:
             raise RuntimeError(f"Failed to load dataset from Hub: {e}")
+
+    @classmethod
+    def _load_bids_metadata(
+        cls,
+        dataset,
+        dataset_dir: Path,
+        pipeline_name: str,
+    ) -> None:
+        """Load BIDS metadata from sidecar files and attach to dataset.
+
+        Parameters
+        ----------
+        dataset : BaseConcatDataset
+            The loaded dataset to attach metadata to.
+        dataset_dir : Path
+            Root directory of the downloaded dataset.
+        pipeline_name : str
+            Name of the processing pipeline.
+        """
+        # Try sourcedata first, fall back to derivatives for backwards compatibility
+        sourcedata_dir = dataset_dir / "sourcedata" / pipeline_name
+        if not sourcedata_dir.exists():
+            sourcedata_dir = dataset_dir / "derivatives" / pipeline_name
+
+        # Load participants.tsv if available
+        participants_path = sourcedata_dir / "participants.tsv"
+        if participants_path.exists():
+            try:
+                participants_df = pd.read_csv(participants_path, sep="\t")
+                # Store as attribute on the concat dataset
+                dataset.participants = participants_df
+                log.debug(
+                    f"Loaded participants info for {len(participants_df)} subjects"
+                )
+            except Exception as e:
+                log.warning(f"Failed to load participants.tsv: {e}")
+
+        # Create layout for path generation
+        bids_layout = hub_format.BIDSSourcedataLayout(
+            dataset_dir, pipeline_name=pipeline_name
+        )
+
+        # Try to load events.tsv files and attach to individual datasets
+        for i_ds, ds in enumerate(dataset.datasets):
+            description = ds.description if ds.description is not None else pd.Series()
+
+            # Get BIDSPath for this recording
+            bids_path = bids_layout.get_bids_path(description)
+
+            # Load events.tsv if available
+            events_path = bids_path.copy().update(suffix="events", extension=".tsv")
+            if events_path.fpath.exists():
+                try:
+                    events_df = pd.read_csv(events_path.fpath, sep="\t")
+                    ds.bids_events = events_df
+                    log.debug(f"Loaded events for recording {i_ds}")
+                except Exception as e:
+                    log.warning(f"Failed to load events for recording {i_ds}: {e}")
+
+            # Load channels.tsv if available
+            channels_path = bids_path.copy().update(suffix="channels", extension=".tsv")
+            if channels_path.fpath.exists():
+                try:
+                    channels_df = pd.read_csv(channels_path.fpath, sep="\t")
+                    ds.bids_channels = channels_df
+                    log.debug(f"Loaded channels for recording {i_ds}")
+                except Exception as e:
+                    log.warning(f"Failed to load channels for recording {i_ds}: {e}")
 
     def _convert_to_zarr_inline(
         self,
@@ -616,245 +837,6 @@ class HubDatasetMixin:
         return concat_ds
 
 
-# =============================================================================
-# Core Zarr I/O Utilities
-# =============================================================================
-
-
-def _save_windows_to_zarr(
-    grp, data, metadata, description, info, compressor, target_name
-):
-    """Save windowed data to Zarr group (low-level function)."""
-    # Save data with chunking for random access
-    # In Zarr v3, use create_array with compressors parameter
-    data_array = data.astype(np.float32)
-
-    # Zarr v3 expects compressors as a list
-    compressors_list = [compressor] if compressor is not None else None
-
-    grp.create_array(
-        "data",
-        data=data_array,
-        chunks=(1, data_array.shape[1], data_array.shape[2]),
-        compressors=compressors_list,
-    )
-
-    # Save metadata
-    metadata_json = metadata.to_json(orient="split", date_format="iso")
-    grp.attrs["metadata"] = metadata_json
-    # Save dtypes to preserve them across platforms (int32 vs int64, etc.)
-    metadata_dtypes = metadata.dtypes.apply(str).to_json()
-    grp.attrs["metadata_dtypes"] = metadata_dtypes
-
-    # Save description
-    description_json = description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
-
-    # Save MNE info
-    grp.attrs["info"] = json.dumps(info)
-
-    # Save target name if provided
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
-
-
-def _save_eegwindows_to_zarr(
-    grp, raw, metadata, description, info, targets_from, last_target_only, compressor
-):
-    """Save EEG continuous raw data to Zarr group (low-level function)."""
-    # Extract continuous data from Raw [n_channels, n_timepoints]
-    continuous_data = raw.get_data()
-
-    # Save continuous data with chunking optimized for window extraction
-    # Chunk size: all channels, 10000 timepoints for efficient random access
-    # In Zarr v3, use create_array with compressors parameter
-    continuous_float = continuous_data.astype(np.float32)
-
-    # Zarr v3 expects compressors as a list
-    compressors_list = [compressor] if compressor is not None else None
-
-    grp.create_array(
-        "data",
-        data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
-        compressors=compressors_list,
-    )
-
-    # Save metadata
-    metadata_json = metadata.to_json(orient="split", date_format="iso")
-    grp.attrs["metadata"] = metadata_json
-    # Save dtypes to preserve them across platforms (int32 vs int64, etc.)
-    metadata_dtypes = metadata.dtypes.apply(str).to_json()
-    grp.attrs["metadata_dtypes"] = metadata_dtypes
-
-    # Save description
-    description_json = description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
-
-    # Save MNE info
-    grp.attrs["info"] = json.dumps(info)
-
-    # Save EEGWindowsDataset-specific attributes
-    grp.attrs["targets_from"] = targets_from
-    grp.attrs["last_target_only"] = last_target_only
-
-
-def _load_windows_from_zarr(grp, preload):
-    """Load windowed data from Zarr group (low-level function)."""
-    # Load metadata
-    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
-    # Restore dtypes to preserve them across platforms (int32 vs int64, etc.)
-    dtypes_dict = pd.read_json(io.StringIO(grp.attrs["metadata_dtypes"]), typ="series")
-    for col, dtype_str in dtypes_dict.items():
-        metadata[col] = metadata[col].astype(dtype_str)
-
-    # Load description
-    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
-
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        # TODO: Implement lazy loading properly
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
-
-    # Load target name
-    target_name = grp.attrs.get("target_name", None)
-
-    return data, metadata, description, info_dict, target_name
-
-
-def _load_eegwindows_from_zarr(grp, preload):
-    """Load EEG continuous raw data from Zarr group (low-level function)."""
-    # Load metadata
-    metadata = pd.read_json(io.StringIO(grp.attrs["metadata"]), orient="split")
-    # Restore dtypes to preserve them across platforms (int32 vs int64, etc.)
-    dtypes_dict = pd.read_json(io.StringIO(grp.attrs["metadata_dtypes"]), typ="series")
-    for col, dtype_str in dtypes_dict.items():
-        metadata[col] = metadata[col].astype(dtype_str)
-
-    # Load description
-    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
-
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
-
-    # Load EEGWindowsDataset-specific attributes
-    targets_from = grp.attrs.get("targets_from", "metadata")
-    last_target_only = grp.attrs.get("last_target_only", True)
-
-    return data, metadata, description, info_dict, targets_from, last_target_only
-
-
-def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
-    """Save RawDataset continuous raw data to Zarr group (low-level function)."""
-    # Extract continuous data from Raw [n_channels, n_timepoints]
-    continuous_data = raw.get_data()
-
-    # Save continuous data with chunking optimized for efficient access
-    # Chunk size: all channels, 10000 timepoints for efficient random access
-    # In Zarr v3, use create_array with compressors parameter
-    continuous_float = continuous_data.astype(np.float32)
-
-    # Zarr v3 expects compressors as a list
-    compressors_list = [compressor] if compressor is not None else None
-
-    grp.create_array(
-        "data",
-        data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
-        compressors=compressors_list,
-    )
-
-    # Save description
-    description_json = description.to_json(date_format="iso")
-    grp.attrs["description"] = description_json
-
-    # Save MNE info
-    grp.attrs["info"] = json.dumps(info)
-
-    # Save target name if provided
-    if target_name is not None:
-        grp.attrs["target_name"] = target_name
-
-
-def _load_raw_from_zarr(grp, preload):
-    """Load RawDataset continuous raw data from Zarr group (low-level function)."""
-    # Load description
-    description = pd.read_json(io.StringIO(grp.attrs["description"]), typ="series")
-
-    # Load info
-    info_dict = json.loads(grp.attrs["info"])
-
-    # Load data
-    if preload:
-        data = grp["data"][:]
-    else:
-        data = grp["data"][:]
-        # TODO: Implement lazy loading properly
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
-
-    # Load target name
-    target_name = grp.attrs.get("target_name", None)
-
-    return data, description, info_dict, target_name
-
-
-def _create_compressor(compression, compression_level):
-    """Create a Zarr v3 compressor codec.
-
-    Returns compressor dict compatible with Zarr v3 create_array API.
-
-    Parameters
-    ----------
-    compression : str or None
-        Compression algorithm: "blosc", "zstd", "gzip", or None.
-    compression_level : int
-        Compression level (0-9).
-
-    Returns
-    -------
-    dict or None
-        Compressor configuration dict or None if no compression.
-    """
-    if zarr is False:
-        raise ImportError(
-            "Zarr is not installed. Install with: pip install braindecode[hub]"
-        )
-
-    if compression is None or compression not in ("blosc", "zstd", "gzip"):
-        return None
-
-    # Map blosc to zstd (Zarr v3 uses zstd as the primary implementation)
-    name = "zstd" if compression == "blosc" else compression
-
-    return {"name": name, "configuration": {"level": compression_level}}
-
-
-# TODO: improve content
 def _generate_readme_content(
     format_info,
     n_recordings: int,
@@ -862,14 +844,43 @@ def _generate_readme_content(
     sfreq,
     data_type: str,
     n_windows: int,
+    total_duration: float | None = None,
     format: str = "zarr",
 ):
-    """Generate README.md content for a dataset uploaded to the Hub."""
-    # Use safe access for total size and format sfreq nicely
+    """Generate README.md content for a dataset uploaded to the Hub.
+
+    Parameters
+    ----------
+    format_info : dict
+        Dictionary containing format metadata (e.g., total_size_mb).
+    n_recordings : int
+        Number of recordings in the dataset.
+    n_channels : int
+        Number of EEG channels.
+    sfreq : float or None
+        Sampling frequency in Hz.
+    data_type : str
+        Type of dataset (e.g., "Windowed", "Continuous").
+    n_windows : int
+        Number of windows/samples in the dataset.
+    total_duration : float or None
+        Total duration in seconds across all recordings.
+    format : str
+        Storage format (default: "zarr").
+
+    Returns
+    -------
+    str
+        Markdown content for the README.md file.
+    """
     total_size_mb = (
         format_info.get("total_size_mb", 0.0) if isinstance(format_info, dict) else 0.0
     )
     sfreq_str = f"{sfreq:g}" if sfreq is not None else "N/A"
+
+    duration_str = (
+        str(timedelta(seconds=int(total_duration))) if total_duration else "N/A"
+    )
 
     return f"""---
 tags:
@@ -877,69 +888,100 @@ tags:
 - eeg
 - neuroscience
 - brain-computer-interface
+- deep-learning
 license: unknown
 ---
 
 # EEG Dataset
 
-This dataset was created using [braindecode](https://braindecode.org), a library for deep learning with EEG/MEG/ECoG signals.
+This dataset was created using [braindecode](https://braindecode.org), a deep
+learning library for EEG/MEG/ECoG signals.
 
 ## Dataset Information
 
 | Property | Value |
-|---|---:|
-| Number of recordings | {n_recordings} |
-| Dataset type | {data_type} |
-| Number of channels | {n_channels} |
+|----------|------:|
+| Recordings | {n_recordings} |
+| Type | {data_type} |
+| Channels | {n_channels} |
 | Sampling frequency | {sfreq_str} Hz |
-| Number of windows / samples | {n_windows} |
-| Total size | {total_size_mb:.2f} MB |
-| Storage format | {format} |
+| Total duration | {duration_str} |
+| Windows/samples | {n_windows:,} |
+| Size | {total_size_mb:.2f} MB |
+| Format | {format} |
 
-## Usage
+## Quick Start
 
-To load this dataset::
+```python
+from braindecode.datasets import BaseConcatDataset
 
-    .. code-block:: python
+# Load from Hugging Face Hub
+dataset = BaseConcatDataset.pull_from_hub("username/dataset-name")
 
-        from braindecode.datasets import BaseConcatDataset
+# Access a sample
+X, y, metainfo = dataset[0]
+# X: EEG data [n_channels, n_times]
+# y: target label
+# metainfo: window indices
+```
 
-        # Load dataset from Hugging Face Hub
-        dataset = BaseConcatDataset.pull_from_hub("username/dataset-name")
+## Training with PyTorch
 
-        # Access data
-        X, y, metainfo = dataset[0]
-        # X: EEG data (n_channels, n_times)
-        # y: label/target
-        # metainfo: window indices
+```python
+from torch.utils.data import DataLoader
 
-## Using with PyTorch DataLoader
+loader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
 
-::
+for X, y, metainfo in loader:
+    # X: [batch_size, n_channels, n_times]
+    # y: [batch_size]
+    pass  # Your training code
+```
 
-    from torch.utils.data import DataLoader
+## BIDS-inspired Structure
 
-    # Create DataLoader for training
-    train_loader = DataLoader(
-        dataset,
-        batch_size=32,
-        shuffle=True,
-        num_workers=4
-    )
+This dataset uses a **BIDS-inspired** organization. Metadata files follow BIDS
+conventions, while data is stored in Zarr format for efficient deep learning.
 
-    # Training loop
-    for X, y, metainfo in train_loader:
-        # X shape: [batch_size, n_channels, n_times]
-        # y shape: [batch_size]
-        # metainfo shape: [batch_size, 2] (start and end indices)
-        # Process your batch...
+**BIDS-style metadata:**
+- `dataset_description.json` - Dataset information
+- `participants.tsv` - Subject metadata
+- `*_events.tsv` - Trial/window events
+- `*_channels.tsv` - Channel information
+- `*_eeg.json` - Recording parameters
 
-## Dataset Format
+**Data storage:**
+- `dataset.zarr/` - Zarr format (optimized for random access)
 
-This dataset is stored in **Zarr** format, optimized for:
-- Fast random access during training (critical for PyTorch DataLoader)
-- Efficient compression with blosc
-- Cloud-native storage compatibility
+```
+sourcedata/braindecode/
+├── dataset_description.json
+├── participants.tsv
+├── dataset.zarr/
+└── sub-<label>/
+    └── eeg/
+        ├── *_events.tsv
+        ├── *_channels.tsv
+        └── *_eeg.json
+```
 
-For more information about braindecode, visit: https://braindecode.org
+### Accessing Metadata
+
+```python
+# Participants info
+if hasattr(dataset, "participants"):
+    print(dataset.participants)
+
+# Events for a recording
+if hasattr(dataset.datasets[0], "bids_events"):
+    print(dataset.datasets[0].bids_events)
+
+# Channel info
+if hasattr(dataset.datasets[0], "bids_channels"):
+    print(dataset.datasets[0].bids_channels)
+```
+
+---
+
+*Created with [braindecode](https://braindecode.org)*
 """

@@ -26,7 +26,58 @@
 *******************
 
 Enhancements
-- Adding :class:`braindecode.models.REVE` with comprehensive documentation covering architecture details, 4D positional encoding, and pretraining scale (:gh:`866` by `Jonathan Lys`_ )
+============
+
+- Adding Hugging Face Hub integration documentation with comprehensive examples for
+  loading pre-trained models (:class:`braindecode.models.BIOT`,
+  :class:`braindecode.models.Labram`, :class:`braindecode.models.REVE`,
+  :class:`braindecode.models.LUNA`, :class:`braindecode.models.BENDR`,
+  :class:`braindecode.models.SignalJEPA`) and pushing models to the Hub (:gh:`879` by
+  `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.REVE` with comprehensive documentation covering
+  architecture details, 4D positional encoding, and pretraining scale (:gh:`866` by
+  `Jonathan Lys`_ )
+- Adding augmentation :class:`braindecode.augmentation.AmplitudeScale` (:gh:`848` by
+  `Bruna Lopes`_)
+- Adding augmentation :class:`braindecode.augmentation.ChannelsReref` (:gh:`848` by
+  `Bruna Lopes`_)
+- Added Patched Brain Transformer from Klein T et al 2025 at
+  :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
+- Including typing in the augmentation module (:gh:`709` by Aphel_)
+- Adding :class:`braindecode.models.SSTDPN` (:gh:`790` by `Can Han`_ and `Bruno
+  Aristimunha`_ )
+- Adding :class:`braindecode.models.BrainModule` (:gh:`743` by `Bruno Aristimunha`_ )
+- Added :class:`braindecode.models.BENDR` (:gh:`802` by `Bruno Aristimunha`_ )
+- Adding a tutorial for fine-tuning a pre-trained foundation model (:gh:`794` by `Pierre
+  Guetschel`_)
+- Added 25 new MNE preprocessing functions, expanding from 6 to 31 total preprocessing
+  classes. New functions include: :class:`braindecode.preprocessing.NotchFilter`,
+  :class:`braindecode.preprocessing.SavgolFilter`,
+  :class:`braindecode.preprocessing.ApplyHilbert`,
+  :class:`braindecode.preprocessing.InterpolateBads`,
+  :class:`braindecode.preprocessing.InterpolateTo`,
+  :class:`braindecode.preprocessing.RenameChannels`,
+  :class:`braindecode.preprocessing.ReorderChannels`,
+  :class:`braindecode.preprocessing.EqualizeChannels`,
+  :class:`braindecode.preprocessing.AddChannels`,
+  :class:`braindecode.preprocessing.SetMontage`,
+  :class:`braindecode.preprocessing.AddReferenceChannels`,
+  :class:`braindecode.preprocessing.AddProj`,
+  :class:`braindecode.preprocessing.ApplyProj`,
+  :class:`braindecode.preprocessing.DelProj`,
+  :class:`braindecode.preprocessing.ComputeCurrentSourceDensity`,
+  :class:`braindecode.preprocessing.FixStimArtifact`,
+  :class:`braindecode.preprocessing.CropByAnnotations`,
+  :class:`braindecode.preprocessing.Anonymize`,
+  :class:`braindecode.preprocessing.SetAnnotations`,
+  :class:`braindecode.preprocessing.SetChannelTypes`,
+  :class:`braindecode.preprocessing.SetMeasDate`,
+  :class:`braindecode.preprocessing.FixMagCoilTypes`,
+  :class:`braindecode.preprocessing.ApplyGradientCompensation`,
+  :class:`braindecode.preprocessing.AddEvents`, and
+  :class:`braindecode.preprocessing.Rescale` (:gh:`801` by `Bruno Aristimunha`_)
+- Adding artifact removal preprocessing steps, incl.
+  :class:`braindecode.preprocessing.EEGPrep` (:gh:`796` by `Christian Kothe`_)
 - Including huggingface hub mixin to all models (:gh:`795` by `Kuntal Kokate`_ )
 - Better inheritance between the different dataset classes (:gh:`806` by `Pierre
   Guetschel`_ )
@@ -61,8 +112,37 @@ Enhancements
 - Adding example Pydantic and Exca (:gh:`858` by `Pierre Guetschel`_)
 - Renaming the model category "Foundation Models" from "Large Brain Models (LBM)"
   (:gh:`867` by `Bruno Aristimunha`_ )
+- Make the dataset at huggingface hub more bids compatible (:gh:`871` by `Bruno
+  Aristimunha`_ )
+- Reorganized BIDS-related modules into :py:mod:`braindecode.datasets.bids` subpackage
+  for better code organization. The subpackage includes: dataset loading
+  (``datasets.py``), Hub format utilities (``hub_format.py``), Hub integration
+  (``hub.py``), and validation utilities (``hub_validation.py``) (:gh:`871` by `Bruno
+  Aristimunha`_)
+- Changed metadata storage in Zarr format from JSON attributes to TSV files
+  (``metadata.tsv``) for better scalability with large datasets (:gh:`871` by `Bruno
+  Aristimunha`_)
+- Improved JSON serialization in zarr.json by storing ``description`` and ``info`` as
+  proper JSON objects instead of stringified JSON, with NaN/Inf sanitization for valid
+  JSON output (:gh:`871` by `Bruno Aristimunha`_)
 
 API changes
+-----------
+
+- BIDS and Hub modules moved to :py:mod:`braindecode.datasets.bids` subpackage:
+  ``braindecode.datasets.bids.hub``, ``braindecode.datasets.bids.hub_format``,
+  ``braindecode.datasets.bids.datasets``, ``braindecode.datasets.bids.hub_validation``
+  (:gh:`871` by `Bruno Aristimunha`_)
+- Deprecating the old naming of MOABB Dataset name (:gh:`826` by `Bruno Aristimunha`_)
+- Exposing the :func:`braindecode.datautil.infer_signal_properties` utility function
+  (:gh:`856` by `Pierre Guetschel`_)
+- Deprecating the old naming of MOABB Dataset name :gh:`826` by `Bruno Aristimunha`_
+- Drop support for Python 3.10 and increase support to Python 3.13 and python 3.14
+  (:gh:`840` by `Bruno Aristimunha`_)
+
+  - Model config helpers now soft-import ``pydantic``/``numpydantic``; if the optional
+    dependencies are missing the module skips config generation and warns to install
+    ``pip install braindecode[pydantic]``.
 
 Bugs
 ====
@@ -115,9 +195,6 @@ API changes
 - Deprecated the version name in :class:`braindecode.models.TSceptionV1` in favour of
   :class:`braindecode.models.TSception`.
 
-Bugs
-====
-
 ***************
  Version 1.1.1
 ***************
@@ -126,9 +203,6 @@ Enhancements
 ============
 
 - Massive refactor of the model webpage
-
-API changes
-===========
 
 Bugs
 ====
@@ -142,9 +216,6 @@ Bugs
 - Fix Labram model for small input (:gh:`757` by `Bruno Aristimunha`_)
 - Fix the CTNet parameters to make the embedding configuration easy (:gh:`760` by `Bruno
   Aristimunha`_)
-
-API changes
-===========
 
 *************
  Version 1.0
@@ -743,4 +814,3 @@ Authors
 .. _yonghao song: https://github.com/eeyhsong
 
 .. _young truong: https://github.com/dungscout96
-

@@ -180,3 +180,37 @@ class SqueezeFinalOutput(nn.Module):
         if x.shape[-1] == 1:
             x = x.squeeze(-1)
         return x
+
+
+class SubjectLayers(nn.Module):
+    """Per-subject linear transformation layer.
+
+    Applies subject-specific linear transformations to the input. Each subject
+    owns an independent weight matrix, enabling personalized feature
+    processing.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        n_subjects: int,
+        init_id: bool = False,
+    ):
+        super().__init__()
+        self.weights = nn.Parameter(torch.randn(n_subjects, in_channels, out_channels))
+        if init_id:
+            if in_channels != out_channels:
+                raise AssertionError("init_id requires in_channels == out_channels")
+            self.weights.data[:] = torch.eye(in_channels)[None]
+        self.weights.data *= 1 / (in_channels**0.5)
+
+    def forward(self, x: torch.Tensor, subjects: torch.Tensor) -> torch.Tensor:
+        """Apply the subject-specific linear transforms."""
+        _, C, D = self.weights.shape
+        weights = self.weights.gather(0, subjects.view(-1, 1, 1).expand(-1, C, D))
+        return torch.einsum("bct,bcd->bdt", x, weights)
+
+    def __repr__(self) -> str:
+        S, C, D = self.weights.shape
+        return f"SubjectLayers({C}, {D}, {S})"

@@ -2,9 +2,9 @@
 
 .. _api_reference:
 
-#########################
- Braindece API Reference
-#########################
+###########################
+ Braindecode API Reference
+###########################
 
 .. automodule:: braindecode
     :no-members:
@@ -37,9 +37,67 @@ All the models are implemented as subclasses of :py:class:`EEGModuleMixin`, whic
 base class for all EEG models in Braindecode. The :class:`EEGModuleMixin` class provides
 a common interface for all EEG models and derivate variables names if necessary.
 
-Also, all models inherit from :class:`PyTorchModelHubMixin`, which provides
-functionality to save and load models from the Hugging Face Hub, if the
-``braindecode[hug]`` package is installed.
+.. important::
+
+    **Hugging Face Hub Integration**
+
+    All models in braindecode naturally possess the capability to push and pull from the
+    Hugging Face Hub through inheritance from :class:`PyTorchModelHubMixin`. This allows
+    you to:
+
+    - **Load pre-trained models** from the Hub using
+      ``Model.from_pretrained("repo_id")``
+    - **Share your trained models** with the community using
+      ``model.push_to_hub("repo_id")``
+    - **Version control your models** with git-like versioning on the Hub
+
+    To enable this functionality, install braindecode with Hub support:
+
+    ::
+
+        pip install braindecode[hug]
+
+    **Available pre-trained models:**
+
+    Some models have pre-trained weights available on the Hugging Face BrainDecode
+    organization:
+
+    - :class:`BIOT` - Foundation model with pre-trained weights
+    - :class:`Labram` - Large Brain Model with pre-trained weights
+    - :class:`REVE` - EEG foundation model with pre-trained weights
+    - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`BENDR` - Foundation model with pre-trained weights
+    - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
+
+    **Example - Loading a pre-trained model:**
+
+    .. code-block:: python
+
+        from braindecode.models import BIOT
+
+        # Load pre-trained BIOT model from Hugging Face Hub
+        model = BIOT.from_pretrained("braindecode/biot-pretrained-prest-16chs")
+
+        # Use for your EEG classification task
+        # ... your code here ...
+
+    **Example - Pushing your trained model:**
+
+    .. code-block:: python
+
+        from braindecode.models import EEGNeX
+
+        # Train your model
+        model = EEGNeX(n_chans=22, n_outputs=4, n_times=1000)
+        # ... training code ...
+
+        # Push to the Hub (requires huggingface-cli login)
+        model.push_to_hub(
+            repo_id="username/my-eegnex-model", commit_message="Initial model upload"
+        )
+
+    For more details, see the :class:`EEGModuleMixin` documentation and the
+    :ref:`hub-integration` tutorial.
 
 :note: Auto-generated Pydantic configs are available when the optional
     ``braindecode[pydantic]`` extra (which installs ``pydantic`` and ``numpydantic``) is
@@ -60,55 +118,55 @@ functionality to save and load models from the Hugging Face Hub, if the
 .. currentmodule:: braindecode.models
 
 .. autosummary::
-   :toctree: generated/
-   :recursive:
+    :toctree: generated/
+    :recursive:
 
-    ATCNet
-    AttentionBaseNet
-    AttnSleep
-    BDTCN
-    BENDR
-    BIOT
-    ContraWR
-    CTNet
-    Deep4Net
-    DeepSleepNet
-    EEGConformer
-    EEGInceptionERP
-    EEGInceptionMI
-    EEGITNet
-    EEGMiner
-    EEGNet
-    EEGNeX
-    EEGSimpleConv
-    EEGSym
-    EEGTCNet
-    FBCNet
-    FBLightConvNet
-    FBMSNet
-    IFNet
-    Labram
-    LUNA
-    MEDFormer
-    MSVTNet
-    PBT
-    REVE
-    SCCNet
-    ShallowFBCSPNet
-    SignalJEPA
-    SignalJEPA_Contextual
-    SignalJEPA_PostLocal
-    SignalJEPA_PreLocal
-    SincShallowNet
-    SleepStagerBlanco2020
-    SleepStagerChambon2018
-    SPARCNet
-    SSTDPN
-    SyncNet
-    TIDNet
-    TSception
-    USleep
-
+     ATCNet
+     AttentionBaseNet
+     AttnSleep
+     BDTCN
+     BENDR
+     BIOT
+     BrainModule
+     ContraWR
+     CTNet
+     Deep4Net
+     DeepSleepNet
+     EEGConformer
+     EEGInceptionERP
+     EEGInceptionMI
+     EEGITNet
+     EEGMiner
+     EEGNet
+     EEGNeX
+     EEGSimpleConv
+     EEGSym
+     EEGTCNet
+     FBCNet
+     FBLightConvNet
+     FBMSNet
+     IFNet
+     Labram
+     LUNA
+     MEDFormer
+     MSVTNet
+     PBT
+     REVE
+     SCCNet
+     ShallowFBCSPNet
+     SignalJEPA
+     SignalJEPA_Contextual
+     SignalJEPA_PostLocal
+     SignalJEPA_PreLocal
+     SincShallowNet
+     SleepStagerBlanco2020
+     SleepStagerChambon2018
+     SPARCNet
+     SSTDPN
+     SyncNet
+     TIDNet
+     TSception
+     USleep
 
 Modules
 
@@ -231,6 +289,7 @@ input shapes and dimensions.
     Chomp1d
     DropPath
     Ensure4d
+    SubjectLayers
     TimeDistributed
 
 Linear
@@ -388,9 +447,26 @@ Functions to create datasets from different data formats
      create_from_mne_raw
      create_from_mne_epochs
 
-***************
- Preprocessing
-***************
+BIDS Integration
+----------------
+
+:py:mod:`braindecode.datasets.bids`:
+
+The BIDS subpackage provides tools for working with BIDS-formatted EEG data, including
+dataset loading and Hugging Face Hub push/pull functionality.
+
+.. currentmodule:: braindecode.datasets.bids
+
+.. autosummary::
+    :toctree: generated/
+
+     BIDSDataset
+     BIDSEpochsDataset
+     BIDSIterableDataset
+     HubDatasetMixin
+
+Preprocessing
+=============
 
 :py:mod:`braindecode.preprocessing`:
 

@@ -192,7 +192,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             n_times is not None
             and input_window_seconds is not None
             and sfreq is not None
-            and n_times != int(input_window_seconds * sfreq)
+            and n_times != round(input_window_seconds * sfreq)
         ):
             raise ValueError(
                 f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
@@ -236,7 +236,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             and self._input_window_seconds is not None
             and self._sfreq is not None
         ):
-            return int(self._input_window_seconds * self._sfreq)
+            return round(self._input_window_seconds * self._sfreq)
         elif self._n_times is None:
             raise ValueError(
                 "n_times could not be inferred. "

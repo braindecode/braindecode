@@ -41,6 +41,35 @@ class BIOT(EEGModuleMixin, nn.Module):
     linear layer that takes the output of the `BIOTEncoder` and outputs
     the classification probabilities.
 
+    .. important::
+       **Pre-trained Weights Available**
+
+       This model has pre-trained weights available on the Hugging Face Hub.
+       You can load them using:
+
+       .. code-block:: python
+
+           from braindecode.models import BIOT
+
+           # Load the original pre-trained model from Hugging Face Hub
+           # For 16-channel models:
+           model = BIOT.from_pretrained("braindecode/biot-pretrained-prest-16chs")
+
+           # For 18-channel models:
+           model = BIOT.from_pretrained("braindecode/biot-pretrained-shhs-prest-18chs")
+           model = BIOT.from_pretrained("braindecode/biot-pretrained-six-datasets-18chs")
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-biot-model", commit_message="Upload trained BIOT model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
+
     .. versionadded:: 0.9
 
     Parameters

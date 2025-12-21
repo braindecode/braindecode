@@ -23,10 +23,32 @@ class BIDSIterableDataset(IterableDataset):
     More information on BIDS (Brain Imaging Data Structure)
     can be found at https://bids.neuroimaging.io
 
+    Examples
+    --------
+    >>> from braindecode.datasets import BaseConcatDataset, RawDataset, RecordDataset
+    >>> from braindecode.datasets.bids import BIDSIterableDataset
+    >>> from braindecode.preprocessing import create_fixed_length_windows
+    >>>
+    >>> def my_reader_fn(path):
+    ...     raw = mne_bids.read_raw_bids(path)
+    ...     ds: RecordDataset = RawDataset(raw, description={"path": path.fpath})
+    ...     windows_ds = create_fixed_length_windows(
+    ...         BaseConcatDataset([ds]),
+    ...         window_size_samples=400,
+    ...         window_stride_samples=200,
+    ...     )
+    ...     return windows_ds
+    >>>
+    >>> dataset = BIDSIterableDataset(
+    ...     reader_fn=my_reader_fn,
+    ...     root="root/of/my/bids/dataset/",
+    ... )
+
     Parameters
     ----------
     reader_fn : Callable[[mne_bids.BIDSPath], Sequence]
-        A function that takes a BIDSPath and returns a dataset.
+        A function that takes a BIDSPath and returns a dataset (e.g., a
+        RecordDataset or BaseConcatDataset of RecordDataset).
     pool_size : int
         The number of recordings to read and sample from.
     bids_paths : list[mne_bids.BIDSPath] | None

@@ -273,3 +273,63 @@ def test_raised_runtimeerror_output_size_get_output_shape(dummy_module: DummyMod
     )
     with pytest.raises(ValueError, match=err_msg):
         dummy_module.get_output_shape()
+
+
+@pytest.mark.parametrize(
+    "n_times, input_window_seconds, sfreq",
+    [
+        (1001, 4.004, 250.0),  # Issue example: 4.004 * 250.0 = 1001.0
+        (751, 3.004, 250.0),   # 3.004 * 250.0 = 751.0
+        (501, 2.004, 250.0),   # 2.004 * 250.0 = 501.0
+        (101, 0.404, 250.0),   # 0.404 * 250.0 = 101.0
+    ],
+)
+def test_fractional_input_window_seconds_consistency(
+    n_times, input_window_seconds, sfreq
+):
+    """Test that fractional input_window_seconds values are accepted when consistent.
+
+    This test validates the fix for the bug where int() truncation rejected
+    valid configurations. With round(), these values should be accepted.
+    """
+    # Should not raise ValueError
+    module = DummyModule(
+        n_outputs=1,
+        n_chans=1,
+        n_times=n_times,
+        input_window_seconds=input_window_seconds,
+        sfreq=sfreq,
+    )
+    assert module.n_times == n_times
+    assert module.input_window_seconds == input_window_seconds
+    assert module.sfreq == sfreq
+
+
+@pytest.mark.parametrize(
+    "n_times, input_window_seconds, sfreq",
+    [
+        (1001, None, 250.0),   # Infer input_window_seconds
+        (751, None, 250.0),    # Infer input_window_seconds
+        (None, 4.004, 250.0),  # Infer n_times
+        (None, 3.004, 250.0),  # Infer n_times
+    ],
+)
+def test_fractional_input_window_seconds_inference(
+    n_times, input_window_seconds, sfreq
+):
+    """Test that fractional input_window_seconds can be inferred correctly.
+
+    This test validates that inference uses round() instead of int().
+    """
+    module = DummyModule(
+        n_outputs=1,
+        n_chans=1,
+        n_times=n_times,
+        input_window_seconds=input_window_seconds,
+        sfreq=sfreq,
+    )
+    # Verify the inferred values are correct
+    if n_times is None:
+        assert module.n_times == round(input_window_seconds * sfreq)
+    if input_window_seconds is None:
+        assert module.input_window_seconds == n_times / sfreq
