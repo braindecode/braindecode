@@ -4,7 +4,7 @@
 #
 # License: Attribution-NonCommercial 4.0 International
 
-"""BrainModule: Dilated Convolutional Encoder for EEG classification."""
+"""BrainModule: Dilated Convolutional Encoder for EEG decoding."""
 
 from __future__ import annotations
 
@@ -23,9 +23,9 @@ __all__ = ["BrainModule"]
 
 
 class BrainModule(EEGModuleMixin, nn.Module):
-    r"""BrainModule from Brain Module [brainmagik]_, also known as SimpleConv.
+    r"""BrainModule from [brainmagick]_, also known as SimpleConv.
 
-    A dilated convolutional encoder for EEG classification, using residual
+    A dilated convolutional encoder for EEG decoding, using residual
     connections and optional GLU gating for improved expressivity.
 
     :bdg-success:`Convolution`
@@ -101,7 +101,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [brainmagik] Défossez, A., Caucheteux, C., Rapin, J., Kabeli, O., & King, J. R.
+    .. [brainmagick] Défossez, A., Caucheteux, C., Rapin, J., Kabeli, O., & King, J. R.
        (2023). Decoding speech perception from non-invasive brain recordings. Nature
        Machine Intelligence, 5(10), 1097-1107.
 
