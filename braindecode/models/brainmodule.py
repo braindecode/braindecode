@@ -35,12 +35,123 @@ class BrainModule(EEGModuleMixin, nn.Module):
         :alt: BrainModule Architecture
         :width: 1000px
 
+        Figure adapted Extended Data Fig. 4 from [brainmagick]_ to highlight only the model part.
+        Architecture of the brain module. Architecture used to process the brain recordings.
+        For each layer, we note first the number of output channels, while the number of time steps
+        is constant throughout the layers. The model is composed of a spatial attention layer,
+        then a 1x1 convolution without activation. A 'Subject Layer' is selected based on the subject index s,
+        which consists in a 1x1 convolution learnt only for that subject with no activation. Then,
+        we apply five convolutional blocks made of three convolutions. The first
+        two use residual skip connection and increasing dilation, followed by a BatchNorm layer and a
+        GELU activation. The third convolution is not residual, and uses a GLU activation
+        (which halves the number of channels) and no normalization.
+        Finally, we apply two 1x1 convolutions with a GELU in between.
+
+
+    The **MedFormer** is a multi-granularity patching transformer tailored to medical
+    time-series (MedTS) classification, with an emphasis on EEG and ECG signals. It captures
+    local temporal dynamics, inter-channel correlations, and multi-scale temporal structure
+    through cross-channel patching, multi-granularity embeddings, and two-stage attention
+    [Medformer2024]_.
+
+    .. rubric:: Architecture Overview
+
+    MedFormer integrates three mechanisms to enhance representation learning [Medformer2024]_:
+
+    1. **Cross-channel patching.** Leverages inter-channel correlations by forming patches
+       across multiple channels and timestamps, capturing multi-timestamp and cross-channel
+       patterns.
+    2. **Multi-granularity embedding.** Extracts features at different temporal scales from
+       :attr:`patch_len_list`, emulating frequency-band behavior without hand-crafted filters.
+    3. **Two-stage multi-granularity self-attention.** Learns intra- and inter-granularity
+       correlations to fuse information across temporal scales.
+
+    .. rubric:: Macro Components
+
+    ``MEDFormer.enc_embedding`` (Embedding Layer)
+        **Operations.** :class:`~braindecode.models.medformer._ListPatchEmbedding` implements
+        cross-channel multi-granularity patching. For each patch length :math:`L_i`, the input
+        :math:`\mathbf{x}_{\text{in}} \in \mathbb{R}^{T \times C}` is segmented into
+        :math:`N_i` cross-channel non-overlapping patches
+        :math:`\mathbf{x}_p^{(i)} \in \mathbb{R}^{N_i \times (L_i \cdot C)}`, where
+        :math:`N_i = \lceil T/L_i \rceil`. Each patch is linearly projected via
+        :class:`~braindecode.models.medformer._CrossChannelTokenEmbedding` to obtain
+        :math:`\mathbf{x}_e^{(i)} \in \mathbb{R}^{N_i \times D}`. Data augmentations
+        (masking, jittering) produce augmented embeddings :math:`\tilde{\mathbf{x}}_e^{(i)}`.
+        The final embedding combines augmented patches, fixed positional embeddings
+        (:class:`~braindecode.models.medformer._PositionalEmbedding`), and learnable
+        granularity embeddings :math:`\mathbf{W}_{\text{gr}}^{(i)}`:
+
+        .. math::
+            \mathbf{x}^{(i)} = \tilde{\mathbf{x}}_e^{(i)} + \mathbf{W}_{\text{pos}}[1:N_i] + \mathbf{W}_{\text{gr}}^{(i)}
+
+        Additionally, a router token is initialized for each granularity:
+
+        .. math::
+            \mathbf{u}^{(i)} = \mathbf{W}_{\text{pos}}[N_i+1] + \mathbf{W}_{\text{gr}}^{(i)}
+
+        **Role.** Converts raw input into granularity-specific patch embeddings
+        :math:`\{\mathbf{x}^{(1)}, \ldots, \mathbf{x}^{(n)}\}` and router embeddings
+        :math:`\{\mathbf{u}^{(1)}, \ldots, \mathbf{u}^{(n)}\}` for multi-scale processing.
+
+    ``MEDFormer.encoder`` (Transformer Encoder Stack)
+        **Operations.** A stack of :class:`~braindecode.models.medformer._EncoderLayer` modules,
+        each containing a :class:`~braindecode.models.medformer._MedformerLayer` that implements
+        two-stage self-attention. The two-stage mechanism splits self-attention into:
+
+        **(a) Intra-Granularity Self-Attention.** For granularity :math:`i`, the patch embedding
+        :math:`\mathbf{x}^{(i)} \in \mathbb{R}^{N_i \times D}` and router embedding
+        :math:`\mathbf{u}^{(i)} \in \mathbb{R}^{1 \times D}` are concatenated:
+
+        .. math::
+            \mathbf{z}^{(i)} = [\mathbf{x}^{(i)} \| \mathbf{u}^{(i)}] \in \mathbb{R}^{(N_i+1) \times D}
+
+        Self-attention is applied to update both embeddings:
+
+        .. math::
+            \mathbf{x}^{(i)} &\leftarrow \text{Attn}_{\text{intra}}(\mathbf{x}^{(i)}, \mathbf{z}^{(i)}, \mathbf{z}^{(i)})\\
+            \mathbf{u}^{(i)} &\leftarrow \text{Attn}_{\text{intra}}(\mathbf{u}^{(i)}, \mathbf{z}^{(i)}, \mathbf{z}^{(i)})
+
+        This captures temporal features within each granularity independently.
+
+        **(b) Inter-Granularity Self-Attention.** All router embeddings are concatenated:
+
+        .. math::
+            \mathbf{U} = [\mathbf{u}^{(1)} \| \mathbf{u}^{(2)} \| \cdots \| \mathbf{u}^{(n)}] \in \mathbb{R}^{n \times D}
+
+        Self-attention among routers exchanges information across granularities:
+
+        .. math::
+            \mathbf{u}^{(i)} \leftarrow \text{Attn}_{\text{inter}}(\mathbf{u}^{(i)}, \mathbf{U}, \mathbf{U})
+
+        **Role.** Learns representations and correlations within and across temporal scales while
+        reducing complexity from :math:`O((\sum_i N_i)^2)` to
+        :math:`O(\sum_i N_i^2 + n^2)` through the router mechanism.
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** Multiple patch lengths in :attr:`patch_len_list` capture features at several
+      temporal granularities, while intra-granularity attention supports long-range temporal
+      dependencies.
+    - **Spatial:** Cross-channel patching embeds inter-channel dependencies by applying kernels
+      that span every input channel.
+    - **Spectral:** Differing patch lengths simulate multiple sampling frequencies analogous to
+      clinically relevant bands (e.g., alpha, beta, gamma).
+
+    .. rubric:: Additional Mechanisms
+
+    - **Granularity router:** Each granularity :math:`i` receives a dedicated router token
+      :math:`\\mathbf{u}^{(i)}`. Intra-attention updates the token, and inter-attention exchanges
+      aggregated information across scales.
+    - **Complexity:** Router-mediated two-stage attention maintains :math:`O(T^2)` complexity for
+      suitable patch lengths (e.g., power series), preserving transformer-like efficiency while
+      modeling multiple granularities.
+
     Parameters
     ----------
     hidden_dim : int, default=320
         Hidden dimension for convolutional layers. Input is projected to this
         dimension before the convolutional blocks.
-    depth : int, default=4
+    depth : int, default=10
         Number of convolutional blocks. Each block contains a dilated convolution
         with batch normalization and activation, followed by a residual connection.
     kernel_size : int, default=3
