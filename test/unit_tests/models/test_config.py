@@ -132,35 +132,35 @@ def test_make_model_config_json_serialization_with_serialize_as_any(
     model_name, required, signal_params
 ):
     """Test serialization with serialize_as_any=True for the activation field.
-    
+
     This test validates that configs can be serialized with serialize_as_any=True,
     which is required by frameworks like Exca. This validates the fix for the
     Pydantic v2 serialization failure bug with type fields (like activation).
-    
+
     Note: This test only validates models without chs_info, as chs_info contains
     numpy arrays which have a separate serialization issue beyond the scope of
     the activation field fix.
-    
+
     See: https://github.com/braindecode/braindecode/issues/XXX
     """
     # Skip tests with chs_info as numpy arrays have separate serialization issues
     sp = _get_signal_params(signal_params)
     if sp.get('chs_info') is not None:
         pytest.skip("Skipping test with chs_info due to numpy array serialization issues")
-    
+
     model_class = models_dict[model_name]
     ModelConfig = make_model_config(model_class, required)
 
     model_kwargs_list = _get_possible_signal_params(sp, required)
     for model_kwargs in model_kwargs_list:
         cfg = ModelConfig(**model_kwargs)
-        
+
         # This should not raise PydanticSerializationError for type fields
         serialized = cfg.model_dump(mode="json", serialize_as_any=True)
-        
+
         # Verify we can reconstruct from the serialized data
         cfg_from_serialized = ModelConfig.model_validate(serialized)
-        
+
         # Verify the reconstructed config has the same values
         np.testing.assert_equal(
             cfg_from_serialized.model_dump(mode="python"), cfg.model_dump(mode="python")
@@ -169,34 +169,35 @@ def test_make_model_config_json_serialization_with_serialize_as_any(
 
 def test_activation_field_serialization_with_serialize_as_any():
     """Test that activation fields serialize correctly with serialize_as_any=True.
-    
+
     This is a focused test for the main bug fix: activation fields (type objects)
     should serialize to strings even when serialize_as_any=True is used.
     This was the core issue preventing Exca integration.
     """
-    from braindecode.models import EEGNet
     import torch.nn as nn
-    
+
+    from braindecode.models import EEGNet
+
     ModelConfig = make_model_config(EEGNet, ["n_chans", "n_outputs", "n_times"])
-    
+
     # Test 1: Create config with type object (default)
     cfg = ModelConfig(n_chans=22, n_outputs=4, n_times=1000)
-    
+
     # Test 2: Verify serialization with serialize_as_any=True works
     serialized = cfg.model_dump(mode="json", serialize_as_any=True)
     assert 'activation' in serialized
     assert serialized['activation'] == 'torch.nn.modules.activation.ELU'
     assert isinstance(serialized['activation'], str)
-    
+
     # Test 3: Verify reconstruction from serialized data
     cfg_reconstructed = ModelConfig.model_validate(serialized)
     assert cfg_reconstructed.activation == cfg.activation
-    
+
     # Test 4: Verify create_instance works with string representation
     model = cfg.create_instance()
     assert isinstance(model.activation, type)
     assert model.activation == nn.ELU
-    
+
     # Test 5: Test with explicit string input
     cfg2 = ModelConfig(
         n_chans=22,

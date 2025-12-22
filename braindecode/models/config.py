@@ -38,7 +38,7 @@ def _serialize_type_to_string(value: Any) -> str:
     """Serialize a type or callable to its fully qualified string representation."""
     if isinstance(value, type):
         return f"{value.__module__}.{value.__name__}"
-    if callable(value) and hasattr(value, '__module__') and hasattr(value, '__name__'):
+    if callable(value) and hasattr(value, "__module__") and hasattr(value, "__name__"):
         return f"{value.__module__}.{value.__name__}"
     return value
 
@@ -47,11 +47,11 @@ def _resolve_import_string(import_str: str) -> Any:
     """Resolve an import string to the actual Python object."""
     if not isinstance(import_str, str):
         return import_str
-    
-    module_path, _, class_name = import_str.rpartition('.')
+
+    module_path, _, class_name = import_str.rpartition(".")
     if not module_path:
         raise ValueError(f"Invalid import string: {import_str}")
-    
+
     try:
         module = __import__(module_path, fromlist=[class_name])
         return getattr(module, class_name)
@@ -61,7 +61,7 @@ def _resolve_import_string(import_str: str) -> Any:
 
 def _replace_type_hints(type_hint: Any) -> tuple[Any, bool]:
     """Replace type hints and return whether this field needs special handling.
-    
+
     Returns:
         tuple: (modified_type_hint, needs_string_serialization)
     """
@@ -105,17 +105,17 @@ class BaseBraindecodeModelConfig(pydantic.BaseModel):  # type: ignore
             and kwargs.get("sfreq") is not None
         ):
             kwargs.pop("n_times")
-        
+
         # Convert string representations back to actual types/callables
         for key, value in kwargs.items():
-            if isinstance(value, str) and '.' in value:
+            if isinstance(value, str) and "." in value:
                 # Try to resolve import strings
                 try:
                     kwargs[key] = _resolve_import_string(value)
                 except (ValueError, ImportError, AttributeError):
                     # If it fails, keep the string value
                     pass
-        
+
         return model_cls(**kwargs)
 
 
@@ -219,7 +219,7 @@ def make_model_config(
     extra = "allow" if has_kwargs else "forbid"
     fields = {}
     fields_needing_validators = {}  # Track fields that need string conversion validators
-    
+
     for name, p in signature_params.items():
         if name == "self" or p.kind == p.VAR_KEYWORD:
             continue
@@ -242,16 +242,20 @@ def make_model_config(
     # Create field validators to convert type objects to strings
     field_validators = {}
     for field_name, original_type in fields_needing_validators.items():
+
         def make_validator_for_field(fname):
-            @pydantic.field_validator(fname, mode='before')
+            @pydantic.field_validator(fname, mode="before")
             @classmethod
             def convert_to_string(cls, value):
                 if value is None:
                     return value
                 return _serialize_type_to_string(value)
+
             return convert_to_string
-        
-        field_validators[f'_convert_{field_name}_to_string'] = make_validator_for_field(field_name)
+
+        field_validators[f"_convert_{field_name}_to_string"] = make_validator_for_field(
+            field_name
+        )
 
     name = model_class.__name__
     model_config = pydantic.create_model(
@@ -263,7 +267,10 @@ def make_model_config(
         __doc__=f"Pydantic config of model {model_class.__name__}\n\n{model_class.__doc__}",
         __base__=BaseBraindecodeModelConfig,
         __module__="braindecode.models.config",
-        __validators__={"validate_signal_params": validate_signal_params, **field_validators},
+        __validators__={
+            "validate_signal_params": validate_signal_params,
+            **field_validators,
+        },
         **fields,
     )
     return model_config
