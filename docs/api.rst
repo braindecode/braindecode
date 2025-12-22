@@ -412,8 +412,6 @@ Base classes
      RecordDataset
      RawDataset
      WindowsDataset
-     BIDSDataset
-     BIDSEpochsDataset
 
 Common Datasets
 ===============

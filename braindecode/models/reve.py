@@ -51,7 +51,7 @@ class REVE(EEGModuleMixin, nn.Module):
     fixed positional embeddings, making direct transfer to unseen electrode layouts infeasible. CBraMod uses
     convolution-based positional encoding that requires fine-tuning when adapting to new configurations.
     As noted in the CBraMod paper: *"fixing the pre-trained parameters during training on downstream
-    datasets will lead to a very large performance decline.
+    datasets will lead to a very large performance decline."*
 
     REVE's 4D positional encoding jointly encodes spatial :math:`(x, y, z)` and temporal :math:`(t)` positions
     using Fourier embeddings, enabling true cross-configuration transfer without retraining. The fourier embedding
