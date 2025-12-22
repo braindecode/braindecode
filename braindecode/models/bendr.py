@@ -78,22 +78,6 @@ class BENDR(EEGModuleMixin, nn.Module):
       prepended to the BENDR sequence before input to the transformer, serving as the aggregate
       representation token [bendr]_.
 
-    Notes
-    -----
-    * The full BENDR architecture contains a large number of parameters; configuration (1)
-      involved training over **one billion parameters** [bendr]_.
-    * Randomly initialized full BENDR architecture was generally ineffective at solving
-      downstream tasks without prior self-supervised training [bendr]_.
-    * The pre-training task (contrastive predictive coding via masking) is generalizable,
-      exhibiting strong uniformity of performance across novel subjects, hardware, and
-      tasks [bendr]_.
-
-    .. warning::
-
-        **Important:** To utilize the full potential of BENDR, the model requires
-        **self-supervised pre-training** on large, unlabeled EEG datasets (like TUEG) followed
-        by subsequent fine-tuning on the specific downstream classification task [bendr]_.
-
     .. important::
        **Pre-trained Weights Available**
 
