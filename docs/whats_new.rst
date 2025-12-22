@@ -159,6 +159,8 @@ Bugs
   Aristimunha`_)
 - Fix test compatibility with scikit-learn 1.8+ by adding ``__sklearn_tags__`` support
   to test mocks (:gh:`868` by `Bruno Aristimunha`_)
+- Fix serialization of the activation functions in the models (:gh:`903` by `Bruno
+  Aristimunha`_)
 
 **********************
  Current 1.2 (stable)
