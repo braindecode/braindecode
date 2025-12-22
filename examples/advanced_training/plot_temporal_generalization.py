@@ -126,7 +126,7 @@ print(n_classes, classes, n_chans, n_times)
 
 ####################################################################################
 # Define your model(s)
-# ~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~
 # Unlike the original MNE tutorial, we will use a deep learning model here and
 # leverage the `EEGClassifier` class from Braindecode. The `EEGClassifier` class
 # is a wrapper around a PyTorch model that allows us to use the model like a
@@ -659,5 +659,5 @@ fig.tight_layout()
 # .. [4] Lundberg, Scott M., and Su-In Lee.
 #        "A unified approach to interpreting model predictions."
 #        Advances in neural information processing systems 30, 2017.
-#        URL: https://dl.acm.org/doi/10.5555/3295222.3295230
+#        URL: https://arxiv.org/abs/1705.07874
 # .. include:: /links.inc

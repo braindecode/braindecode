@@ -11,7 +11,7 @@ from braindecode.modules import Ensure4d
 
 
 class EEGInceptionMI(EEGModuleMixin, nn.Module):
-    """EEG Inception for Motor Imagery, as proposed in Zhang et al. (2021) [1]_
+    r"""EEG Inception for Motor Imagery, as proposed in Zhang et al. (2021) [1]_
 
     :bdg-success:`Convolution`
 
@@ -208,7 +208,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
 
 class _InceptionModuleMI(nn.Module):
-    """
+    r"""
     Inception module.
 
     This module implements a inception-like architecture that processes input
@@ -323,7 +323,7 @@ class _InceptionModuleMI(nn.Module):
 
 
 class _ResidualModuleMI(nn.Module):
-    """
+    r"""
     Residual module.
 
     This module performs a 1x1 convolution followed by batch normalization and an activation function.

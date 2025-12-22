@@ -20,7 +20,7 @@ from braindecode.modules import (
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
-    """Shallow ConvNet model from Schirrmeister et al (2017) [Schirrmeister2017]_.
+    r"""Shallow ConvNet model from Schirrmeister et al (2017) [Schirrmeister2017]_.
 
     :bdg-success:`Convolution`
 

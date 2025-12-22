@@ -25,35 +25,35 @@ def create_from_mne_raw(
     drop_bad_windows: bool = True,
     accepted_bads_ratio: float = 0.0,
 ) -> BaseConcatDataset:
-    """Create WindowsDatasets from mne.RawArrays
+    """Create WindowsDatasets from mne.RawArrays.
 
     Parameters
     ----------
-    raws: array-like
+    raws : array-like
         list of mne.RawArrays
-    trial_start_offset_samples: int
+    trial_start_offset_samples : int
         start offset from original trial onsets in samples
-    trial_stop_offset_samples: int
+    trial_stop_offset_samples : int
         stop offset from original trial stop in samples
-    window_size_samples: int
+    window_size_samples : int
         window size
-    window_stride_samples: int
+    window_stride_samples : int
         stride between windows
-    drop_last_window: bool
+    drop_last_window : bool
         whether or not have a last overlapping window, when
         windows do not equally divide the continuous signal
-    descriptions: array-like
+    descriptions : array-like
         list of dicts or pandas.Series with additional information about the raws
-    mapping: dict(str: int)
+    mapping : dict(str: int)
         mapping from event description to target value
-    preload: bool
+    preload : bool
         if True, preload the data of the Epochs objects.
-    drop_bad_windows: bool
+    drop_bad_windows : bool
         If True, call `.drop_bad()` on the resulting mne.Epochs object. This
         step allows identifying e.g., windows that fall outside of the
         continuous recording. It is suggested to run this step here as otherwise
         the BaseConcatDataset has to be updated as well.
-    accepted_bads_ratio: float, optional
+    accepted_bads_ratio : float, optional
         Acceptable proportion of trials withinconsistent length in a raw. If
         the number of trials whose length is exceeded by the window size is
         smaller than this, then only the corresponding trials are dropped, but
@@ -62,7 +62,7 @@ def create_from_mne_raw(
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset
+    windows_datasets : BaseConcatDataset
         X and y transformed to a dataset format that is compatible with skorch
         and braindecode
     """
@@ -101,23 +101,23 @@ def create_from_mne_epochs(
     window_stride_samples: int,
     drop_last_window: bool,
 ) -> BaseConcatDataset:
-    """Create WindowsDatasets from mne.Epochs
+    """Create WindowsDatasets from mne.Epochs.
 
     Parameters
     ----------
-    list_of_epochs: array-like
+    list_of_epochs : array-like
         list of mne.Epochs
-    window_size_samples: int
+    window_size_samples : int
         window size
-    window_stride_samples: int
+    window_stride_samples : int
         stride between windows
-    drop_last_window: bool
+    drop_last_window : bool
         whether or not have a last overlapping window, when
         windows do not equally divide the continuous signal
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset
+    windows_datasets : BaseConcatDataset
         X and y transformed to a dataset format that is compatible with skorch
         and braindecode
     """

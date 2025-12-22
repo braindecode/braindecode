@@ -53,7 +53,6 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
 
         If the module is already initialized and no parameter was changed, it
         will be left as is.
-
         """
         kwargs = self.get_params_for("module")
         module = _get_model(self.module)
@@ -230,7 +229,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         self.set_params(**module_kwargs)
 
     def get_dataset(self, X, y=None):
-        """Get a dataset that contains the input data and is passed to
+        """Get a dataset that contains the input data and is passed to.
+
         the iterator.
 
         Override this if you want to initialize your dataset
@@ -262,7 +262,6 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         -------
         dataset
           The initialized dataset.
-
         """
         if isinstance(X, mne.BaseEpochs):
             X = X.get_data(units="uV")
@@ -315,7 +314,6 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         **fit_params : dict
           Additional parameters passed to the ``forward`` method of
           the module and to the ``self.train_split`` call.
-
         """
         # this needs to be executed before the net is initialized:
         if not self.signal_args_set_:

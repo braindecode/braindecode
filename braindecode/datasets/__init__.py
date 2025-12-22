@@ -1,6 +1,4 @@
-"""
-Loader code for some datasets.
-"""
+"""Loader code for some datasets."""
 
 from .base import (
     BaseConcatDataset,

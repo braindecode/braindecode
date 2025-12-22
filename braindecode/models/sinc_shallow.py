@@ -9,7 +9,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class SincShallowNet(EEGModuleMixin, nn.Module):
-    """Sinc-ShallowNet from Borra, D et al (2020) [borra2020]_.
+    r"""Sinc-ShallowNet from Borra, D et al (2020) [borra2020]_.
 
     :bdg-success:`Convolution` :bdg-warning:`Interpretability`
 
@@ -210,7 +210,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
 
 class _SincFilter(nn.Module):
-    """Sinc-Based Convolutional Layer for Band-Pass Filtering from Ravanelli and Bengio (2018) [ravanelli]_.
+    r"""Sinc-Based Convolutional Layer for Band-Pass Filtering from Ravanelli and Bengio (2018) [ravanelli]_.
 
     The `SincFilter` layer implements a convolutional layer where each kernel is
     defined using a parametrized sinc function.

@@ -15,7 +15,7 @@ from braindecode.modules import LogActivation
 
 
 class SCCNet(EEGModuleMixin, nn.Module):
-    """SCCNet from Wei, C S (2019) [sccnet]_.
+    r"""SCCNet from Wei, C S (2019) [sccnet]_.
 
     :bdg-success:`Convolution`
 

@@ -1,6 +1,4 @@
-"""
-Convenience functions for storing and loading of windows datasets.
-"""
+"""Convenience functions for storing and loading of windows datasets."""
 
 # Authors: Lukas Gemein <l.gemein@gmail.com>
 #
@@ -35,24 +33,25 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
 
 
 def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
-    """Load a stored BaseConcatDataset from
+    """Load a stored BaseConcatDataset from.
+
     files.
 
     Parameters
     ----------
-    path: pathlib.Path
+    path : pathlib.Path
         Path to the directory of the .fif / -epo.fif and .json files.
-    preload: bool
+    preload : bool
         Whether to preload the data.
-    ids_to_load: None | list(int)
+    ids_to_load : None | list(int)
         Ids of specific files to load.
-    target_name: None or str
+    target_name : None or str
         Load specific description column as target. If not given, take saved
         target name.
 
     Returns
     -------
-    concat_dataset: BaseConcatDataset
+    concat_dataset : BaseConcatDataset
     """
     # assume we have a single concat dataset to load
     is_raw = (path / "0-raw.fif").is_file()
@@ -175,26 +174,27 @@ def _load_signals(fif_file, preload, is_raw):
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_jobs=1):
-    """Load a stored BaseConcatDataset from
+    """Load a stored BaseConcatDataset from.
+
     files.
 
     Parameters
     ----------
-    path: str | pathlib.Path
+    path : str | pathlib.Path
         Path to the directory of the .fif / -epo.fif and .json files.
-    preload: bool
+    preload : bool
         Whether to preload the data.
-    ids_to_load: list of int | None
+    ids_to_load : list of int | None
         Ids of specific files to load.
-    target_name: str | list | None
+    target_name : str | list | None
         Load specific description column as target. If not given, take saved
         target name.
-    n_jobs: int
+    n_jobs : int
         Number of jobs to be used to read files in parallel.
 
     Returns
     -------
-    concat_dataset: BaseConcatDataset
+    concat_dataset : BaseConcatDataset
     """
     # Make sure we always work with a pathlib.Path
     path = Path(path)
@@ -306,9 +306,11 @@ def _load_kwargs_json(kwargs_name, sub_dir):
 
 
 def _is_outdated_saved(path):
-    """Data was saved in the old way if there are 'description.json', '-raw.fif'
+    """Data was saved in the old way if there are 'description.json', '-raw.fif'.
+
     or '-epo.fif' in path (no subdirectories) OR if there are more 'fif' files
-    than 'description.json' files."""
+    than 'description.json' files.
+    """
     description_files = glob(os.path.join(path, "**/description.json"))
     fif_files = glob(os.path.join(path, "**/*-raw.fif")) + glob(
         os.path.join(path, "**/*-epo.fif")
@@ -342,7 +344,7 @@ def _check_save_dir_empty(save_dir):
         Directory under which a `BaseConcatDataset` will be saved.
 
     Raises
-    -------
+    ------
     FileExistsError
         If ``save_dir`` is not a valid directory for saving.
     """

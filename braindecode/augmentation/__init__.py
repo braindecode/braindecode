@@ -1,6 +1,4 @@
-"""
-Utilities for data augmentation.
-"""
+"""Utilities for data augmentation."""
 
 from . import functional
 from .base import AugmentedDataLoader, Compose, IdentityTransform, Transform

@@ -14,7 +14,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class EEGSym(EEGModuleMixin, nn.Module):
-    """EEGSym from Pérez-Velasco et al (2022) [eegsym2022]_.
+    r"""EEGSym from Pérez-Velasco et al (2022) [eegsym2022]_.
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel`
 
@@ -430,7 +430,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
 
 
 class _InceptionBlock(nn.Module):
-    """Inception module used in EEGSym architecture.
+    r"""Inception module used in EEGSym architecture.
 
     Parameters
     ----------
@@ -543,7 +543,7 @@ class _InceptionBlock(nn.Module):
 
 
 class _ResidualBlock(nn.Module):
-    """Residual block used in EEGSym architecture.
+    r"""Residual block used in EEGSym architecture.
 
     Parameters
     ----------
@@ -652,7 +652,7 @@ class _ResidualBlock(nn.Module):
 
 
 class _TemporalBlock(nn.Module):
-    """Temporal reduction block used in EEGSym architecture.
+    r"""Temporal reduction block used in EEGSym architecture.
 
     Parameters
     ----------
@@ -706,7 +706,7 @@ class _TemporalBlock(nn.Module):
 
 
 class _ChannelMergingBlock(nn.Module):
-    """Channel merging block used in EEGSym architecture.
+    r"""Channel merging block used in EEGSym architecture.
 
     This block performs hemisphere merging through:
     1. Two residual convolution iterations (with full spatial kernel)
@@ -791,7 +791,7 @@ class _ChannelMergingBlock(nn.Module):
 
 
 class _TemporalMergingBlock(nn.Module):
-    """Temporal merging block used in EEGSym architecture.
+    r"""Temporal merging block used in EEGSym architecture.
 
     This block performs temporal dimension collapse through:
     1. One residual convolution (temporal collapse with residual connection)
@@ -869,7 +869,7 @@ class _TemporalMergingBlock(nn.Module):
 
 
 class _OutputBlock(nn.Module):
-    """Output block used in EEGSym architecture.
+    r"""Output block used in EEGSym architecture.
 
     Parameters
     ----------
