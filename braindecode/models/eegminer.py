@@ -19,7 +19,7 @@ _eeg_miner_methods = ["mag", "corr", "plv"]
 
 
 class EEGMiner(EEGModuleMixin, nn.Module):
-    """EEGMiner from Ludwig et al (2024) [eegminer]_.
+    r"""EEGMiner from Ludwig et al (2024) [eegminer]_.
 
     :bdg-success:`Convolution` :bdg-warning:`Interpretability`
 

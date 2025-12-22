@@ -62,7 +62,7 @@ class BIDSIterableDataset(IterableDataset):
         The acquisition session. Corresponds to "ses".
     tasks : str | array-like of str | None
         The experimental task. Corresponds to "task".
-    acquisitions: str | array-like of str | None
+    acquisitions : str | array-like of str | None
         The acquisition parameters. Corresponds to "acq".
     runs : str | array-like of str | None
         The run number. Corresponds to "run".
@@ -106,6 +106,8 @@ class BIDSIterableDataset(IterableDataset):
         If True, preload the data. Defaults to False.
     n_jobs : int
         Number of jobs to run in parallel. Defaults to 1.
+
+
     """
 
     def __init__(

@@ -11,7 +11,7 @@ from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 
 
 class HybridNet(nn.Module):
-    """Hybrid ConvNet model from Schirrmeister, R T et al (2017)  [Schirrmeister2017]_.
+    r"""Hybrid ConvNet model from Schirrmeister, R T et al (2017)  [Schirrmeister2017]_.
 
     See [Schirrmeister2017]_ for details.
 

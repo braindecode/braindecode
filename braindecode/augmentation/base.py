@@ -31,7 +31,8 @@ Operation = Callable[
 
 
 class Transform(torch.nn.Module):
-    """Basic transform class used for implementing data augmentation
+    """Basic transform class used for implementing data augmentation.
+
     operations.
 
     Parameters
@@ -42,7 +43,7 @@ class Transform(torch.nn.Module):
     probability : float, optional
         Float between 0 and 1 defining the uniform probability of applying the
         operation. Set to 1.0 by default (e.g always apply the operation).
-    random_state: int, optional
+    random_state : int, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
@@ -125,7 +126,7 @@ class Transform(torch.nn.Module):
             return out_X
 
     def _get_mask(self, batch_size, device) -> torch.Tensor:
-        """Samples whether to apply operation or not over the whole batch"""
+        """Samples whether to apply operation or not over the whole batch."""
         return torch.as_tensor(self.probability > self.rng.uniform(size=batch_size)).to(
             device
         )
@@ -153,7 +154,7 @@ class Compose(Transform):
 
     Parameters
     ----------
-    transforms: list
+    transforms : list
         Sequence of Transforms to be composed.
     """
 
@@ -169,7 +170,9 @@ class Compose(Transform):
 
 def _make_collateable(transform, device=None):
     """Wraps a transform to make it collateable.
-    with device control."""
+
+    with device control.
+    """
 
     def _collate_fn(batch):
         collated_batch = default_collate(batch)

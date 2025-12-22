@@ -27,11 +27,11 @@ class BBCIDataset(object):
 
     Parameters
     ----------
-    filename: str
-    load_sensor_names: list of str, optional
+    filename : str
+    load_sensor_names : list of str, optional
         Also speeds up loading if you only load some sensors.
         None means load all sensors.
-    check_class_names: bool, optional
+    check_class_names : bool, optional
         check if the class names are part of some known class names at
         Translational NeuroTechnology Lab, AG Ball, Freiburg, Germany.
     """
@@ -134,13 +134,13 @@ class BBCIDataset(object):
 
         Parameters
         ----------
-        filename: str
-        pattern: str, optional
+        filename : str
+        pattern : str, optional
             Only return those sensor names that match the given pattern.
 
         Returns
         -------
-        sensor_names: list of str
+        sensor_names : list of str
             Sensor names that match the pattern or all sensor names in the file.
         """
         with h5py.File(filename, "r") as h5file:
@@ -237,17 +237,17 @@ class BBCIDataset(object):
 
 def _check_class_names(all_class_names, event_times_in_ms, event_classes):
     """
-    Checks if the class names are part of some known class names used in
+    Checks if the class names are part of some known class names used in.
+
     translational neurotechnology lab, AG Ball, Freiburg.
 
     Logs warning in case class names are not known.
 
     Parameters
     ----------
-    all_class_names: list of str
-    event_times_in_ms: list of number
-    event_classes: list of number
-
+    all_class_names : list of str
+    event_times_in_ms : list of number
+    event_classes : list of number
     """
     if all_class_names == ["Right Hand", "Left Hand", "Rest", "Feet"]:
         pass
@@ -665,16 +665,15 @@ def load_bbci_sets_from_folder(
 
     Parameters
     ----------
-    folder: str
+    folder : str
         Folder with .BBCI.mat files inside
-    runs: list of int
+    runs : list of int
         If you only want to load specific runs.
         Assumes filenames with such kind of part: S001R02 for Run 2.
         Tries to match this regex: ``'S[0-9]{3,3}R[0-9]{2,2}_'``.
 
     Returns
     -------
-
     """
     bbci_mat_files = sorted(glob(os.path.join(folder, "*.BBCI.mat")))
     if runs != "all":

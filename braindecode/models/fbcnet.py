@@ -29,7 +29,7 @@ _valid_layers = {
 
 
 class FBCNet(EEGModuleMixin, nn.Module):
-    """FBCNet from Mane, R et al (2021) [fbcnet2021]_.
+    r"""FBCNet from Mane, R et al (2021) [fbcnet2021]_.
 
     :bdg-success:`Convolution` :bdg-primary:`Filterbank`
 

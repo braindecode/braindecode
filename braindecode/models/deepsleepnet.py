@@ -8,7 +8,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
-    """DeepSleepNet from Supratak et al. (2017) [Supratak2017]_.
+    r"""DeepSleepNet from Supratak et al (2017) [Supratak2017]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
@@ -240,7 +240,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
 
 class _SmallCNN(nn.Module):
-    """
+    r"""
     Smaller filter sizes to learn temporal information.
 
     Parameters
@@ -317,7 +317,7 @@ class _SmallCNN(nn.Module):
 
 
 class _LargeCNN(nn.Module):
-    """
+    r"""
     Larger filter sizes to learn frequency information.
 
     Parameters

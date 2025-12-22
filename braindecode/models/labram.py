@@ -21,7 +21,7 @@ from braindecode.modules import MLP, DropPath
 
 
 class Labram(EEGModuleMixin, nn.Module):
-    """Labram from Jiang, W B et al (2024) [Jiang2024]_.
+    r"""Labram from Jiang, W B et al (2024) [Jiang2024]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
 
@@ -661,7 +661,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
 
 class _SegmentPatch(nn.Module):
-    """Segment and Patch for EEG data.
+    r"""Segment and Patch for EEG data.
 
     Adapted Patch Embedding inspired in the Visual Transform approach
     to extract the learned segmentor, we expect get the input shape as:
@@ -767,7 +767,7 @@ class _SegmentPatch(nn.Module):
 
 
 class _PatchEmbed(nn.Module):
-    """EEG to Patch Embedding for Neural Decoder mode.
+    r"""EEG to Patch Embedding for Neural Decoder mode.
 
     This code is used when we want to apply the patch embedding
     after the codebook layer (Neural Decoder mode).
@@ -873,7 +873,7 @@ class _PatchEmbed(nn.Module):
 
 
 class _Attention(nn.Module):
-    """
+    r"""
     Attention with the options of Window-based multi-head self attention (W-MSA).
 
     This code is strong inspired by:
@@ -1071,7 +1071,7 @@ class _Attention(nn.Module):
 
 
 class _WindowsAttentionBlock(nn.Module):
-    """Blocks of Windows Attention with Layer norm and MLP.
+    r"""Blocks of Windows Attention with Layer norm and MLP.
 
     Notes: This code is strong inspired by:
     BeiTv2 from Microsoft.
@@ -1206,7 +1206,7 @@ class _WindowsAttentionBlock(nn.Module):
 
 
 class _TemporalConv(nn.Module):
-    """
+    r"""
     Temporal Convolutional Module inspired by Visual Transformer.
 
     In this module we apply the follow steps three times repeatedly

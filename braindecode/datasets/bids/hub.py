@@ -42,7 +42,7 @@ from mne._fiff.meas_info import Info
 from mne.utils import _soft_import
 
 if TYPE_CHECKING:
-    from .base import BaseDataset
+    from ..base import BaseDataset
 
 import braindecode
 

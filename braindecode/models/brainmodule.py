@@ -327,12 +327,15 @@ class BrainModule(EEGModuleMixin, nn.Module):
 
         if subject_layers:
             assert subject_dim > 0, "subject_layers requires subject_dim > 0"
-            meg_dim = input_channels
+            # Use n_chans for input dim since subject_layers is applied before
+            # subject embeddings are concatenated in forward()
+            meg_dim = self.n_chans
             dim = hidden_dim if subject_layers_dim == "hidden" else meg_dim
             self.subject_layers_module = SubjectLayers(
                 meg_dim, dim, n_subjects, subject_layers_id
             )
-            input_channels = dim
+            # After subject_layers, we have 'dim' channels, then add subject_dim
+            input_channels = dim + subject_dim
 
         # Initialize STFT module (optional)
         self.stft = None

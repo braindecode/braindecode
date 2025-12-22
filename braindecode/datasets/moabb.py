@@ -90,14 +90,14 @@ def fetch_data_with_moabb(
 
     Parameters
     ----------
-    dataset_name: str | moabb.datasets.base.BaseDataset
+    dataset_name : str | moabb.datasets.base.BaseDataset
         the name of a dataset included in moabb
-    subject_ids: list(int) | int
+    subject_ids : list(int) | int
         (list of) int of subject(s) to be fetched
-    dataset_kwargs: dict, optional
+    dataset_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset when instantiating it.
-    data_load_kwargs: dict, optional
+    data_load_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset's load_data method.
         Allows using the moabb cache_config=None and
@@ -105,8 +105,8 @@ def fetch_data_with_moabb(
 
     Returns
     -------
-    raws: mne.Raw
-    info: pandas.DataFrame
+    raws : mne.Raw
+    info : pandas.DataFrame
     """
     if isinstance(dataset_name, str):
         dataset = _find_dataset_in_moabb(dataset_name, dataset_kwargs)
@@ -127,15 +127,15 @@ class MOABBDataset(BaseConcatDataset):
 
     Parameters
     ----------
-    dataset_name: str
+    dataset_name : str
         name of dataset included in moabb to be fetched
-    subject_ids: list(int) | int | None
+    subject_ids : list(int) | int | None
         (list of) int of subject(s) to be fetched. If None, data of all
         subjects is fetched.
-    dataset_kwargs: dict, optional
+    dataset_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset when instantiating it.
-    dataset_load_kwargs: dict, optional
+    dataset_load_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset's load_data method.
         Allows using the moabb cache_config=None and

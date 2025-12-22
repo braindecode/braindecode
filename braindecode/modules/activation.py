@@ -8,13 +8,23 @@ class SafeLog(nn.Module):
     r"""
     Safe logarithm activation function module.
 
-    :math:\text{SafeLog}(x) = \log\left(\max(x, \epsilon)\right)
+    :math:`\text{SafeLog}(x) = \log\left(\max(x, \epsilon)\right)`
 
     Parameters
     ----------
-    eps : float, optional
+    epsilon : float, optional
         A small value to clamp the input tensor to prevent computing log(0) or log of negative numbers.
         Default is 1e-6.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import SafeLog
+    >>> module = SafeLog(epsilon=1e-6)
+    >>> inputs = torch.rand(2, 3)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 3])
 
     """
 
@@ -44,7 +54,23 @@ class SafeLog(nn.Module):
 
 
 class LogActivation(nn.Module):
-    """Logarithm activation function."""
+    """Logarithm activation function.
+
+    Parameters
+    ----------
+    epsilon : float, default=1e-6
+        Small float to adjust the activation.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import LogActivation
+    >>> module = LogActivation(epsilon=1e-6)
+    >>> inputs = torch.rand(2, 3)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 3])
+    """
 
     def __init__(self, epsilon: float = 1e-6, *args, **kwargs):
         """

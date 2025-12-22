@@ -25,18 +25,18 @@ class SleepPhysionet(BaseConcatDataset):
 
     Parameters
     ----------
-    subject_ids: list(int) | int | None
+    subject_ids : list(int) | int | None
         (list of) int of subject(s) to be loaded. If None, load all available
         subjects.
-    recording_ids: list(int) | None
+    recording_ids : list(int) | None
         Recordings to load per subject (each subject except 13 has two
         recordings). Can be [1], [2] or [1, 2] (same as None).
-    preload: bool
+    preload : bool
         If True, preload the data of the Raw objects.
-    load_eeg_only: bool
+    load_eeg_only : bool
         If True, only load the EEG channels and discard the others (EOG, EMG,
         temperature, respiration) to avoid resampling the other signals.
-    crop_wake_mins: float
+    crop_wake_mins : float
         Number of minutes of wake time to keep before the first sleep event
         and after the last sleep event. Used to reduce the imbalance in this
         dataset. Default of 30 mins.

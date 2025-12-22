@@ -1,6 +1,4 @@
-"""
-PhysioNet Challenge 2018 dataset.
-"""
+"""PhysioNet Challenge 2018 dataset."""
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
@@ -253,7 +251,7 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
 
     Parameters
     ----------
-    subject_ids: list(int) | str | None
+    subject_ids : list(int) | str | None
         (list of) int of subject(s) to be loaded.
         - If `None`, loads all subjects (both training and test sets [no label associated]).
         - If `"training"`, loads only the training set subjects.
@@ -265,7 +263,7 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
         is used. If it doesn't exist, the "~/mne_data" directory is used. If
         the dataset is not found under the given path, the data will be
         automatically downloaded to the specified folder.
-    load_eeg_only: bool
+    load_eeg_only : bool
         If True, only load the EEG channels and discard the others (EOG, EMG,
         temperature, respiration) to avoid resampling the other signals.
     preproc : list(Preprocessor) | None
