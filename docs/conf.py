@@ -92,11 +92,18 @@ extensions = [
     "sphinx_autodoc_typehints",
     "sphinx_gallery.gen_gallery",
     "sphinx.ext.linkcode",
-    "sphinx_sitemap",
     "sphinx_design",
     "numpydoc",
     "gh_substitutions",
 ]
+
+build_sitemap = os.environ.get("BUILD_SITEMAP", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+)
+if build_sitemap:
+    extensions.append("sphinx_sitemap")
 
 
 def linkcode_resolve(domain, info):
@@ -268,13 +275,21 @@ intersphinx_mapping = {
     "torch": ("https://pytorch.org/docs/stable/", None),
 }
 
+disable_gallery_links = os.environ.get(
+    "SPHINX_GALLERY_DISABLE_DOC_LINKS", "0"
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 sphinx_gallery_conf = {
     "examples_dirs": ["../examples"],
     "gallery_dirs": ["auto_examples"],
     "doc_module": ("braindecode", "mne"),
     "backreferences_dir": "generated",
     "show_memory": True,
-    "reference_url": dict(braindecode=None),
+    "reference_url": {} if disable_gallery_links else dict(braindecode=None),
     "subsection_order": ExplicitOrder(
         [
             "../examples/model_building",
@@ -420,6 +435,79 @@ html_context = {
     "github_repo": "braindecode",
     "github_version": "main",
     "doc_path": "docs",
+    "carousel": [
+        dict(
+            title="Model zoo",
+            text=(
+                "Train or fine-tune 15+ EEG-ready architectures, from"
+                " lightweight convolutional backbones to foundation-style"
+                " models."
+            ),
+            url="models/models.html",
+            img="model/eegtcnet.jpg",
+            alt="Diagram of an EEG convolutional network",
+            static=True,
+        ),
+        dict(
+            title="Preprocessing",
+            text=(
+                "Use MNE pipelines and EEGPrep-inspired defaults to clean,"
+                " resample, and epoch neurophysiology data reproducibly."
+            ),
+            url="auto_examples/model_building/plot_bcic_iv_2a_eegprep_cleaning.html",
+            img="preprocess/downsample.png",
+            alt="Example EEG downsampling plot",
+            static=True,
+        ),
+        dict(
+            title="Visualization",
+            text=(
+                "Inspect trial-wise predictions, confusion matrices, and"
+                " gradient-based attributions with ready-to-use plotting"
+                " utilities."
+            ),
+            url="auto_examples/model_building/plot_bcic_iv_2a_moabb_cropped.html",
+            img="trialwise_explanation.png",
+            alt="Visualization of EEG trial predictions",
+            static=True,
+        ),
+        dict(
+            title="Advanced training",
+            text=(
+                "Accelerate research with self-supervised objectives,"
+                " transfer learning, and data augmentation recipes tuned for"
+                " EEG."
+            ),
+            url="auto_examples/advanced_training/index.html",
+            img="model/sjepa_contextual.jpg",
+            alt="Self-supervised EEG training illustration",
+            static=True,
+        ),
+        dict(
+            title="Datasets & ecosystem",
+            text=(
+                "Fetch benchmark-ready datasets via MOABB, explore EEGDASH,"
+                " and plug Braindecode models into your analysis stack."
+            ),
+            url="auto_examples/datasets_io/plot_moabb_dataset_example.html",
+            img="braindecode_long.png",
+            alt="Braindecode wordmark over EEG traces",
+            static=True,
+        ),
+    ],
+}
+
+html_meta = {
+    "description": (
+        "Braindecode is an open-source Python toolbox for deep learning on EEG,"
+        " ECoG, and MEG data with built-in models, preprocessing,"
+        " visualization, and dataset fetchers."
+    ),
+    "keywords": (
+        "EEG deep learning, brain-computer interface, MOABB, EEGDASH,"
+        " EEG visualization, self-supervised EEG, EEGPrep, MNE,"
+        " foundation models for EEG"
+    ),
 }
 
 html_sidebars = {

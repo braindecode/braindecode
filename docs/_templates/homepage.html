@@ -5,9 +5,15 @@
       <div class="col-12 col-sm-6 col-lg-4 my-2">
         <div class="card frontpage-gallery">
           <a href="{{ item.url }}">
-            <img class="card-img institution" src="{{ item.img if item.img.startswith('http') else pathto('_images/' + item.img, 1) }}" alt="{{ item.alt }}">
-            <div class="card-img-overlay px-3 py-1">
-              <p class="lead mb-1 fadeout">{{ item.title }}</p>
+            {% if item.img.startswith('http') %}
+              <img class="card-img institution" src="{{ item.img }}" alt="{{ item.alt }}" loading="lazy" decoding="async">
+            {% elif item.static %}
+              <img class="card-img institution" src="{{ pathto('_static/' + item.img, 1) }}" alt="{{ item.alt }}" loading="lazy" decoding="async">
+            {% else %}
+              <img class="card-img institution" src="{{ pathto('_images/' + item.img, 1) }}" alt="{{ item.alt }}" loading="lazy" decoding="async">
+            {% endif %}
+            <div class="card-img-overlay px-3 py-2">
+              <p class="lead mb-1 fadeout font-weight-bold">{{ item.title }}</p>
               <p class="card-text fadeout">{{ item.text }}</p>
             </div>
           </a>

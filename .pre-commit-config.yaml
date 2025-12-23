@@ -93,15 +93,6 @@ repos:
   # NEW: Sphinx/RST formatting + lint
   # -----------------------------
 
-  - repo: https://github.com/LilSpazJoekp/docstrfmt
-    rev: v2.0.0
-    hooks:
-      - id: docstrfmt
-        name: docstrfmt (rst only; do not touch numpy docstrings)
-        language_version: python3
-        files: \.(rst|txt)$
-        exclude: ^docs/_templates/|^docs/whats_new\.rst$
-
   - repo: https://github.com/sphinx-contrib/sphinx-lint
     rev: v1.0.2
     hooks:

@@ -121,6 +121,280 @@ img.logo {
     width: 100%;
 }
 
+/* ********************************************* homepage feature grid */
+.bd-feature-grid .sd-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--pst-color-border);
+    border-radius: 16px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(
+        165deg,
+        var(--pst-color-primary-rgba) 0%,
+        rgba(255, 255, 255, 0) 65%
+    );
+    transition: transform 220ms ease-out, box-shadow 220ms ease-out;
+}
+
+.bd-feature-grid .sd-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(
+        90deg,
+        var(--pst-color-link) 0%,
+        var(--pst-color-secondary) 100%
+    );
+}
+
+.bd-feature-grid .sd-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 1.35rem 1.4rem 1.25rem;
+}
+
+.bd-feature-grid .sd-card-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.05rem;
+    letter-spacing: 0.01em;
+}
+
+.bd-feature-grid .sd-card-title i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.55rem;
+    height: 1.55rem;
+    border-radius: 999px;
+    color: var(--pst-color-link);
+    background: var(--pst-color-primary-rgba);
+    font-size: 0.85rem;
+}
+
+.bd-feature-kicker {
+    margin-top: 0.25rem;
+    font-weight: 600;
+    color: var(--pst-color-text-muted);
+}
+
+.bd-feature-tags {
+    margin: 0;
+    font-size: 0.84rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--pst-color-text-muted);
+}
+
+.bd-feature-grid ul.simple {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.bd-feature-grid ul.simple li {
+    position: relative;
+    padding-left: 1.1rem;
+    margin-top: 0.45rem;
+}
+
+.bd-feature-grid ul.simple li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.5rem;
+    width: 0.35rem;
+    height: 0.35rem;
+    border-radius: 999px;
+    background: var(--pst-color-link);
+}
+
+html[data-theme="dark"] .bd-feature-grid .sd-card {
+    background: linear-gradient(
+        165deg,
+        rgba(69, 157, 185, 0.2) 0%,
+        rgba(0, 0, 0, 0) 65%
+    );
+}
+
+.bd-feature-grid .sd-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.12);
+}
+
+/* ******************************************************* homepage carousel */
+div.frontpage-gallery {
+    overflow: hidden;
+    height: 250px;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+    transition: box-shadow 300ms ease-out, transform 300ms ease-out;
+}
+
+div.frontpage-gallery:hover {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+    transform: translateY(-2px);
+}
+
+div.frontpage-gallery a {
+    text-decoration: none;
+    color: inherit;
+}
+
+div.frontpage-gallery img.card-img {
+    height: 100%;
+    object-fit: cover;
+    transform: scale(1.03);
+    opacity: 0.96;
+    transition: transform 300ms ease-out, opacity 300ms ease-out;
+}
+
+div.frontpage-gallery:hover img.card-img {
+    transform: scale(1.07);
+    opacity: 1.0;
+}
+
+div.frontpage-gallery .card-img-overlay {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    background: linear-gradient(
+        180deg,
+        rgba(0, 0, 0, 0.0) 0%,
+        rgba(0, 0, 0, 0.25) 45%,
+        rgba(0, 0, 0, 0.65) 100%
+    );
+}
+
+div.frontpage-gallery .lead,
+div.frontpage-gallery .card-text {
+    color: #ffffff;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+div.frontpage-gallery .card-text {
+    font-size: 0.98rem;
+    line-height: 1.4;
+}
+
+html[data-theme="dark"] div.frontpage-gallery {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+/* keep CTA cards tidy on the homepage */
+.bd-cta-grid .sd-card {
+    border: 1px solid var(--pst-color-border);
+    border-radius: 16px;
+    background: linear-gradient(
+        180deg,
+        var(--pst-color-background-rgba) 0%,
+        rgba(255, 255, 255, 0) 85%
+    );
+    transition: transform 220ms ease-out, box-shadow 220ms ease-out;
+}
+
+.bd-cta-grid .sd-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 1.4rem 1.6rem;
+}
+
+.bd-cta-card {
+    text-align: left;
+}
+
+.bd-cta-title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.bd-cta-copy {
+    margin: 0.6rem 0 0;
+    color: var(--pst-color-text-muted);
+}
+
+.bd-cta-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.bd-cta-list li {
+    position: relative;
+    padding-left: 1.1rem;
+    margin-top: 0.55rem;
+}
+
+.bd-cta-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.55rem;
+    width: 0.35rem;
+    height: 0.35rem;
+    border-radius: 999px;
+    background: var(--pst-color-link);
+}
+
+.bd-cta-grid .highlight {
+    text-align: left;
+    font-size: 0.88rem;
+    margin: 0.15rem 0 0;
+}
+
+.bd-cta-grid .highlight pre {
+    border: 1px solid var(--pst-color-border);
+    border-radius: 8px;
+    background: var(--pst-color-background-rgba);
+    border-left: 3px solid var(--pst-color-link);
+}
+
+.bd-cta-grid .sd-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .braindecode-hero {
+        animation: bd-fade-up 520ms ease-out both;
+    }
+
+    .bd-feature-grid .sd-card,
+    .bd-cta-grid .sd-card {
+        animation: bd-fade-up 520ms ease-out both;
+    }
+
+    .bd-feature-grid .sd-col:nth-child(1) .sd-card { animation-delay: 80ms; }
+    .bd-feature-grid .sd-col:nth-child(2) .sd-card { animation-delay: 140ms; }
+    .bd-feature-grid .sd-col:nth-child(3) .sd-card { animation-delay: 200ms; }
+    .bd-feature-grid .sd-col:nth-child(4) .sd-card { animation-delay: 260ms; }
+    .bd-feature-grid .sd-col:nth-child(5) .sd-card { animation-delay: 320ms; }
+
+    .bd-cta-grid .sd-col:nth-child(1) .sd-card { animation-delay: 220ms; }
+    .bd-cta-grid .sd-col:nth-child(2) .sd-card { animation-delay: 280ms; }
+}
+
+@keyframes bd-fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* ************************************* homepage quick links & funders list */
 ul.quicklinks {
     font-weight: 600;
@@ -301,11 +575,26 @@ figure.unavailable::after {
 /* ********************************************************** Homepage Hero */
 
 .braindecode-hero {
+    position: relative;
     text-align: center;
-    margin: 0 0 1.25rem;
+    padding: 2.2rem 1.5rem 2rem;
+    margin: 0 0 1.75rem;
+    border-radius: 18px;
+    border: 1px solid var(--pst-color-border);
+    background:
+        radial-gradient(
+            circle at top,
+            var(--pst-color-primary-rgba) 0%,
+            rgba(255, 255, 255, 0) 55%
+        ),
+        linear-gradient(
+            180deg,
+            var(--pst-color-background-rgba) 0%,
+            rgba(255, 255, 255, 0) 70%
+        );
 }
 
-.braindecode-hero__title {
+.braindecode-hero-title {
     display: block;
     text-align: center;
     font-family: "Montserrat", var(--pst-font-family-base, system-ui), sans-serif;
@@ -317,11 +606,11 @@ figure.unavailable::after {
     letter-spacing: .01em;
 }
 
-html[data-theme="light"] .braindecode-hero__title {
+html[data-theme="light"] .braindecode-hero-title {
     color: #3a6790ff;
 }
 
-html[data-theme="dark"] .braindecode-hero__title {
+html[data-theme="dark"] .braindecode-hero-title {
     color: #3a6790ff;
     text-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
 }
@@ -331,6 +620,29 @@ html[data-theme="dark"] .braindecode-hero__title {
     margin: 0 auto;
     max-width: 500px;
     width: 100%;
+}
+
+.bd-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 1.2rem;
+}
+
+.bd-hero-actions p {
+    margin: 0;
+}
+
+.bd-hero-actions .sd-btn {
+    min-width: 150px;
+    font-weight: 600;
+}
+
+@media (max-width: 576px) {
+    .braindecode-hero {
+        padding: 1.6rem 1.1rem 1.5rem;
+    }
 }
 
 /* ********************************************************** Announcement banner */

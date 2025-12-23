@@ -39,12 +39,43 @@
 #############
 
 Braindecode is an open-source Python toolbox for decoding raw electrophysiological brain
-data with deep learning models. It includes dataset fetchers, data preprocessing and
-visualization tools, as well as implementations of several deep learning architectures
-and data augmentations for analysis of EEG, ECoG and MEG.
+data with deep learning models. It includes dataset fetchers, MNE-compatible
+preprocessing, visualization utilities, and a growing collection of deep learning
+architectures and data augmentations for EEG, ECoG, and MEG.
 
 For neuroscientists who want to work with deep learning and deep learning researchers
 who want to work with neurophysiological data.
+
+--------------------
+Why Braindecode?
+--------------------
+
+- **Model zoo for EEG** – 15+ architectures from compact convolutional networks to
+  foundation-style models ready for transfer learning.
+- **MNE-powered preprocessing** – EEGPrep-inspired defaults, filtering, referencing, and
+  resampling pipelines that stay reproducible.
+- **Visualization and interpretability** – trial-wise predictions, confusion matrices,
+  and gradient-based attributions to understand model decisions.
+- **Advanced training recipes** – self-supervised objectives, data augmentation
+  operators, and fine-tuning workflows tailored to neurophysiology.
+- **Datasets and ecosystem** – MOABB-integrated dataset fetchers (`MOABB
+  <https://moabb.neurotechx.com>`_), pointers to EEGDASH, and smooth interop with
+  PyTorch and scikit-learn friendly data structures.
+
+-----------
+Quick start
+-----------
+
+.. code-block:: bash
+
+    pip install braindecode moabb
+    python - <<'PY'
+    import braindecode
+    print(braindecode.__version__)
+    PY
+
+Explore models in the `Braindecode model gallery <https://braindecode.org/models/models.html>`_
+or follow a step-by-step tutorial in the `example gallery <https://braindecode.org/auto_examples/index.html>`_.
 
 ##########################
  Installation Braindecode
