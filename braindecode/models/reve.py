@@ -37,8 +37,10 @@ class REVE(EEGModuleMixin, nn.Module):
     Foundation models have transformed machine learning by reducing reliance on
     task-specific data and induced biases through large-scale pretraining. While
     successful in language and vision, their adoption in EEG has lagged due to the
-    Existing EEG foundation models struggle to generalize across these variations, often restricting pretraining
-    to a single setup and resulting in suboptimal performance, particularly under linear probing.
+    heterogeneity of public datasets, which are collected under varying protocols,
+    devices, and electrode configurations. Existing EEG foundation models struggle
+    to generalize across these variations, often restricting pretraining to a single
+    setup and resulting in suboptimal performance, particularly under linear probing.
 
     REVE is a pretrained model explicitly designed to generalize across diverse EEG signals. It introduces
     a **4D positional encoding** scheme that enables processing signals of arbitrary length and electrode
@@ -61,8 +63,8 @@ class REVE(EEGModuleMixin, nn.Module):
     .. rubric:: Linear Probing Performance
 
     A key advantage of REVE is producing useful latent representation without heavy fine-tuning. Under linear
-    probing (frozen encoder), This enables practical deployment in low-data scenarios where extensive
-    fine-tuning is not feasible.
+    probing (frozen encoder), REVE achieves state-of-the-art results on downstream EEG tasks.
+    This enables practical deployment in low-data scenarios where extensive fine-tuning is not feasible.
 
     .. rubric:: Architecture
 
@@ -138,9 +140,13 @@ class REVE(EEGModuleMixin, nn.Module):
     - ``brain-bzh/reve-large``: ~400M parameters, 1250 embedding dim
 
     .. important::
-       **Pre-trained Weights Available**
+       **Pre-trained Weights Available (Registration Required)**
 
        This model has pre-trained weights available on the Hugging Face Hub.
+       **You must first register and agree to the data usage terms on the authors'
+       HuggingFace repository before you can access the weights.**
+       `Link here <https://huggingface.co/collections/brain-bzh/reve>`_.
+
        You can load them using:
 
        .. code-block:: python
