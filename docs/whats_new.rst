@@ -23,31 +23,31 @@
 
 
 Version 1.4  (Source - GitHub)
--------------------------------
+===============================
 
 Enhancements
-~~~~~~~~~~~~
+============
 - None yet.
 
 API changes
-~~~~~~~~~~~
+============
 - None yet.
 
 Requirements
-~~~~~~~~~~~~
+============
 - None yet.
 
 Bugs
-~~~~
+=====
 - None yet.
 
 Code health
-~~~~~~~~~~~
+============
 - None yet.
 
 
 Current 1.3 (stable)
-----------------------
+====================
 
 Enhancements
 ============
@@ -184,9 +184,8 @@ Bugs
 - Fix test compatibility with scikit-learn 1.8+ by adding ``__sklearn_tags__`` support
   to test mocks (:gh:`868` by `Bruno Aristimunha`_)
 
-**********************
- Current 1.2 
-**********************
+Current 1.2
+====================
 
 Enhancements
 ============
@@ -219,9 +218,8 @@ API changes
 - Deprecated the version name in :class:`braindecode.models.TSceptionV1` in favour of
   :class:`braindecode.models.TSception`.
 
-***************
- Version 1.1.1
-***************
+Version 1.1.1
+====================
 
 Enhancements
 ============
@@ -241,9 +239,8 @@ Bugs
 - Fix the CTNet parameters to make the embedding configuration easy (:gh:`760` by `Bruno
   Aristimunha`_)
 
-*************
- Version 1.0
-*************
+Version 1.0
+====================
 
 Enhancements
 ============
@@ -389,9 +386,8 @@ API changes
 
 .. _changes_0_8_0:
 
-***********************
  Version 0.8 (11-2022)
-***********************
+=======================
 
 Enhancements
 ============
@@ -512,9 +508,8 @@ API changes
 
 .. _changes_0_7_0:
 
-***********************
- Version 0.7 (10-2022)
-***********************
+Version 0.7 (10-2022)
+=====================
 
 Enhancements
 ============
@@ -568,9 +563,8 @@ API changes
 
 .. _changes_0_6_0:
 
-**************************
- Version 0.6 (2021-12-06)
-**************************
+Version 0.6 (2021-12-06)
+========================
 
 Enhancements
 ============
@@ -662,9 +656,8 @@ API changes
 
 .. _changes_0_5_1:
 
-****************************
- Version 0.5.1 (2021-07-14)
-****************************
+Version 0.5.1 (2021-07-14)
+==========================
 
 Enhancements
 ============
@@ -737,6 +730,7 @@ API changes
 - Parameter `stop_offset_samples` of
   :func:`braindecode.datautil.create_fixed_length_windows` must now be set to `None`
   instead of 0 to indicate the end of the recording (:gh:`152` by `Hubert Banville`_)
+
 
 Authors
 ~~~~~~~
