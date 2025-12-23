@@ -1,7 +1,7 @@
 # YAML 1.2
 ---
 # Metadata for citation of this software according to the CFF format (https://citation-file-format.github.io/)
-cff-version: 1.2.0
+cff-version: 1.3.0
 title: "Braindecode: toolbox for decoding raw electrophysiological brain data with deep learning models"
 abstract: "Braindecode is an open-source Python toolbox for decoding raw electrophysiological brain data with deep learning models. It includes dataset fetchers, data preprocessing and visualization tools, as well as implementations of several deep learning architectures and data augmentations for analysis of EEG, ECoG and MEG."
 authors:
@@ -49,6 +49,7 @@ authors:
     orcid: "https://orcid.org/0000-0003-4703-9343"
   - given-names: Sara
     family-names: Sedlar
+    orcid: "https://orcid.org/0000-0002-1492-0014"
   - given-names: Thomas
     family-names: Moreau
     affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"

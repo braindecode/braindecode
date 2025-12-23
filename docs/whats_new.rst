@@ -21,9 +21,33 @@
 
 .. _current:
 
-*******************
- Current 1.3 (dev)
-*******************
+
+Version 1.4  (Source - GitHub)
+===============================
+
+Enhancements
+============
+- None yet.
+
+API changes
+============
+- None yet.
+
+Requirements
+============
+- None yet.
+
+Bugs
+=====
+- None yet.
+
+Code health
+============
+- None yet.
+
+
+Current 1.3 (stable)
+====================
 
 Enhancements
 ============
@@ -160,9 +184,8 @@ Bugs
 - Fix test compatibility with scikit-learn 1.8+ by adding ``__sklearn_tags__`` support
   to test mocks (:gh:`868` by `Bruno Aristimunha`_)
 
-**********************
- Current 1.2 (stable)
-**********************
+Current 1.2
+====================
 
 Enhancements
 ============
@@ -195,9 +218,8 @@ API changes
 - Deprecated the version name in :class:`braindecode.models.TSceptionV1` in favour of
   :class:`braindecode.models.TSception`.
 
-***************
- Version 1.1.1
-***************
+Version 1.1.1
+====================
 
 Enhancements
 ============
@@ -217,9 +239,8 @@ Bugs
 - Fix the CTNet parameters to make the embedding configuration easy (:gh:`760` by `Bruno
   Aristimunha`_)
 
-*************
- Version 1.0
-*************
+Version 1.0
+====================
 
 Enhancements
 ============
@@ -365,9 +386,8 @@ API changes
 
 .. _changes_0_8_0:
 
-***********************
  Version 0.8 (11-2022)
-***********************
+=======================
 
 Enhancements
 ============
@@ -488,9 +508,8 @@ API changes
 
 .. _changes_0_7_0:
 
-***********************
- Version 0.7 (10-2022)
-***********************
+Version 0.7 (10-2022)
+=====================
 
 Enhancements
 ============
@@ -544,9 +563,8 @@ API changes
 
 .. _changes_0_6_0:
 
-**************************
- Version 0.6 (2021-12-06)
-**************************
+Version 0.6 (2021-12-06)
+========================
 
 Enhancements
 ============
@@ -638,9 +656,8 @@ API changes
 
 .. _changes_0_5_1:
 
-****************************
- Version 0.5.1 (2021-07-14)
-****************************
+Version 0.5.1 (2021-07-14)
+==========================
 
 Enhancements
 ============
@@ -714,103 +731,57 @@ API changes
   :func:`braindecode.datautil.create_fixed_length_windows` must now be set to `None`
   instead of 0 to indicate the end of the recording (:gh:`152` by `Hubert Banville`_)
 
+
 Authors
-=======
+~~~~~~~
 
-.. _alex gramfort: http://alexandre.gramfort.net
-
-.. _aniela bulicz: github.com/AryaDro
-
-.. _aphel: https://github.com/itsaphel
-
-.. _arnaud delorme: https://github.com/arnodelorme
-
-.. _bruna lopes: https://github.com/brunaafl
-
-.. _bruno aristimunha: https://github.com/bruAristimunha
-
-.. _can han: https://github.com/hancan16
-
-.. _cedric rommel: https://cedricrommel.github.io
-
-.. _christian kothe: https://github.com/chkothe
-
-.. _daniel wilson: https://github.com/dcwil
-
-.. _denis a. engemann: https://github.com/dengemann
-
-.. _divyesh narayanan: https://github.com/Div12345
-
-.. _ganasekhar kalla: https://github.com/Ganasekhar-gif
-
-.. _ghaith bouallegue: https://github.com/GhBlg
-
-.. _gustavo rodrigues: https://github.com/gustavohenriquesr
-
-.. _hamdi altaheri: https://github.com/Altaheri
-
-.. _henrik bonsmann: https://github.com/HenrikBons
-
-.. _hubert banville: https://github.com/hubertjb
-
-.. _john muradeli: https://github.com/OverLordGoldDragon/
-
-.. _jonathan dan: https://github.com/danjjl
-
-.. _jonathan lys: https://github.com/jonathanlys01
-
-.. _josé mauricio: https://github.com/josemaurici
-
-.. _kuntal kokate: https://github.com/Kkuntal990
-
-.. _lucas heck: https://github.com/lucas-heck
-
-.. _lukas gemein: https://github.com/gemeinl
-
-.. _maciej śliwowski: https://github.com/sliwy
-
-.. _marco zamboni: https://github.com/ZamboniMarco99
-
-.. _martin wimpff: https://github.com/martinwimpff
-
-.. _mattew chew: https://github.com/MatthewChen37
-
-.. _matthew chen: https://github.com/MatthewChen37
-
-.. _matthieu terris: https://github.com/matthieutrs
-
-.. _mohammad javad d: https://github.com/javadbayazi
-
-.. _mohammed fattouh: https://github.com/MFattouh
-
-.. _omar chehab: https://github.com/l-omar-chehab
-
-.. _oskar størmer: https://github.com/ostormer
-
-.. _pierre guetschel: https://github.com/PierreGtch
-
-.. _remi delbouys: https://github.com/remidbs
-
-.. _robin tibor schirrmeister: https://github.com/robintibor
-
-.. _sara sedlar: https://github.com/Sara04
-
-.. _simon brandt: https://github.com/sbbrandt
-
-.. _sylvain chevallier: https://github.com/sylvchev
-
-.. _thomas moreau: https://tommoral.github.io
-
-.. _thorir mar ingolfsson: https://github.com/Thoriri
-
-.. _théo gnassounou: https://github.com/Tgnassou
-
-.. _valentin iovene: https://github.com/tgy
-
-.. _vytautas jankauskas: https://github.com/vytjan
-
-.. _yassine el ouahidi: https://github.com/elouayas
-
-.. _yonghao song: https://github.com/eeyhsong
-
-.. _young truong: https://github.com/dungscout96
+.. _Arnaud Delorme: https://github.com/arnodelorme
+.. _Hubert Banville: https://github.com/hubertjb
+.. _Robin Tibor Schirrmeister: https://github.com/robintibor
+.. _Lukas Gemein: https://github.com/gemeinl
+.. _Maciej Śliwowski: https://github.com/sliwy
+.. _Ann-Kathrin Kiessner: https://github.com/Ann-KathrinKiessner
+.. _Daniel Wilson: https://github.com/dcwil
+.. _Henrik Bonsmann: https://github.com/HenrikBons
+.. _Vytautas Jankauskas: https://github.com/vytjan
+.. _Théo Gnassounou: https://github.com/Tgnassou
+.. _Omar Chehab: https://github.com/l-omar-chehab
+.. _Divyesh Narayanan: https://github.com/Div12345
+.. _Alex Gramfort: http://alexandre.gramfort.net
+.. _Cedric Rommel: https://cedricrommel.github.io
+.. _Simon Brandt: https://github.com/sbbrandt
+.. _Thomas Moreau: https://tommoral.github.io
+.. _Mohammed Fattouh: https://github.com/MFattouh
+.. _Pierre Guetschel: https://github.com/PierreGtch
+.. _Mohammad Javad D: https://github.com/MohammadJavadD
+.. _Bruno Aristimunha: https://github.com/bruAristimunha
+.. _Martin Wimpff: https://github.com/martinwimpff
+.. _Ghaith Bouallegue: https://github.com/GhBlg
+.. _Denis A. Engemann: https://github.com/dengemann
+.. _Oskar Størmer: https://github.com/ostormer
+.. _Matthieu Terris: https://github.com/matthieutrs
+.. _Yonghao Song: https://github.com/eeyhsong
+.. _Marco Zamboni: https://github.com/ZamboniMarco99
+.. _Sara Sedlar: https://github.com/Sara04
+.. _Bruna Lopes: https://github.com/brunaafl
+.. _Sylvain Chevallier: https://github.com/sylvchev
+.. _Remi Delbouys: https://github.com/remidbs
+.. _Valentin Iovene: https://github.com/tgy
+.. _Yassine El Ouahidi: https://github.com/elouayas
+.. _John Muradeli: https://github.com/OverLordGoldDragon/
+.. _Gustavo Rodrigues: https://github.com/gustavohenriquesr
+.. _Aphel: https://github.com/itsaphel
+.. _Young Truong: https://github.com/dungscout96
+.. _Lucas Heck: https://github.com/lucas-heck
+.. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif
+.. _Hamdi Altaheri: https://github.com/Altaheri
+.. _José Mauricio: https://github.com/josemaurici
+.. _Can Han: https://github.com/hancan16
+.. _Christian Kothe: https://github.com/chkothe
+.. _Kuntal Kokate: https://github.com/Kkuntal990
+.. _Matthew Chen: https://github.com/MatthewChen37
+.. _Jonathan Dan: https://github.com/danjjl
+.. _Jonathan Lys: https://github.com/jonathanlys01
+.. _Thorir Mar Ingolfsson: https://github.com/Thoriri
+.. _Aniela Bulicz: https://github.com/AryaDro
+.. _Mattew Chew: https://github.com/MatthewChen37
