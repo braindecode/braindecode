@@ -27,7 +27,7 @@ from braindecode.modules.layers import DropPath
 
 
 class LUNA(EEGModuleMixin, nn.Module):
-    """LUNA from Döner et al. [LUNA]_.
+    r"""LUNA from Döner et al [LUNA]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 
@@ -457,7 +457,7 @@ def nerf_positional_encoding(coords: torch.Tensor, embed_size: int) -> torch.Ten
 
 
 class _ChannelEmbeddings(nn.Module):
-    """
+    r"""
     This class creates embeddings for each EEG channel based on a predefined
     mapping of channel names to indices.
 
@@ -485,7 +485,7 @@ class _ChannelEmbeddings(nn.Module):
 
 
 class _FrequencyFeatureEmbedder(nn.Module):
-    """
+    r"""
     This class takes data that is of the form (B, C, T) and patches it
     along the time dimension (T) into patches of size P (patch_size).
     The output is of the form (B, C, S, P) where S = T // P.
@@ -861,7 +861,7 @@ class _PatchEmbedNetwork(nn.Module):
 
 
 class _Mlp(nn.Module):
-    """MLP as used in Vision Transformer, MLP-Mixer and related networks.
+    r"""MLP as used in Vision Transformer, MLP-Mixer and related networks.
 
     Code copied from timm.models.mlp.Mlp
     """

@@ -300,7 +300,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         self._reset_parameters()
 
     def _reset_parameters(self) -> None:
-        """Initialize prototype parameters."""
+        r"""Initialize prototype parameters."""
         nn.init.kaiming_normal_(self.proto_sep)
         nn.init.normal_(self.proto_cpt, mean=0.0, std=self.proto_cpt_std)
 
@@ -382,7 +382,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
 
 class _SSTEncoder(nn.Module):
-    """Internal encoder combining Adaptive Spatial-Spectral Fusion and Multi-scale Variance Pooling.
+    r"""Internal encoder combining Adaptive Spatial-Spectral Fusion and Multi-scale Variance Pooling.
 
     This class should not be instantiated directly. It is an internal component
     of :class:`SSTDPN`.
@@ -491,7 +491,7 @@ class _SSTEncoder(nn.Module):
 
 
 class _DepthwiseTemporalConv1d(nn.Module):
-    """Internal depthwise temporal convolution for spectral filtering.
+    r"""Internal depthwise temporal convolution for spectral filtering.
 
     Applies separate temporal convolution filters to each channel independently
     to extract spectral information across multiple bands. This is used to generate
@@ -598,7 +598,7 @@ class _DepthwiseTemporalConv1d(nn.Module):
 
 
 class _GlobalContextVarPool1D(nn.Module):
-    """Internal global context variance pooling module.
+    r"""Internal global context variance pooling module.
 
     Computes variance-based global context embeddings using specified kernel size.
     Used in the Spatial-Spectral Attention module.
@@ -656,7 +656,7 @@ class _GlobalContextVarPool1D(nn.Module):
 
 
 class _VariancePool1D(nn.Module):
-    """Internal variance pooling module for temporal feature extraction.
+    r"""Internal variance pooling module for temporal feature extraction.
 
     Applies variance pooling at a specified kernel size to capture temporal dynamics.
     Used in the Multi-scale Variance Pooling (MVP) module.
@@ -711,7 +711,7 @@ class _VariancePool1D(nn.Module):
 
 
 class _SpatSpectralAttn(nn.Module):
-    """Internal Spatial-Spectral Attention module with global context gating.
+    r"""Internal Spatial-Spectral Attention module with global context gating.
 
     This attention mechanism computes channel-wise gates based on global context
     embedding and applies adaptive reweighting to highlight task-relevant
@@ -803,7 +803,7 @@ class _SpatSpectralAttn(nn.Module):
 
 
 class _MultiScaleVarPooler(nn.Module):
-    """Internal Multi-scale Variance Pooling (MVP) module for temporal feature extraction.
+    r"""Internal Multi-scale Variance Pooling (MVP) module for temporal feature extraction.
 
     Applies variance pooling at multiple temporal scales in parallel, then concatenates
     the results to capture long-range temporal dependencies. Each scale processes a subset

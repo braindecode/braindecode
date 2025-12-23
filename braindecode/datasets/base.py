@@ -1,6 +1,4 @@
-"""
-Dataset classes.
-"""
+"""Dataset classes."""
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
@@ -65,9 +63,9 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
 
         Parameters
         ----------
-        description: dict | pd.Series
+        description : dict | pd.Series
             Description in the form key: value.
-        overwrite: bool
+        overwrite : bool
             Has to be True if a key in description already exists in the
             dataset description.
         """
@@ -401,7 +399,6 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         list of RecordDataset
     target_transform : callable | None
         Optional function to call on targets before returning them.
-
     """
 
     datasets: list[T]
@@ -436,8 +433,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
     def __getitem__(self, idx: int | list):
         """
-        Parameters
-        ----------
+        ---
+
         idx : int | list
             Index of window and target to return. If provided as a list of
             ints, multiple windows and targets will be extracted and
@@ -572,7 +569,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         self._target_transform = fn
 
     def _outdated_save(self, path, overwrite=False):
-        """This is a copy of the old saving function, that had inconsistent
+        """This is a copy of the old saving function, that had inconsistent.
+
         functionality for BaseDataset and WindowsDataset. It only exists to
         assure backwards compatibility by still being able to run the old tests.
 
@@ -668,10 +666,10 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
         Parameters
         ----------
-        description: dict | pd.DataFrame
+        description : dict | pd.DataFrame
             Description in the form key: value where the length of the value
             has to match the number of datasets.
-        overwrite: bool
+        overwrite : bool
             Has to be True if a key in description already exists in the
             dataset description.
         """

@@ -12,7 +12,7 @@ from braindecode.modules import Chomp1d, Ensure4d, SqueezeFinalOutput
 
 
 class BDTCN(EEGModuleMixin, nn.Module):
-    """Braindecode TCN from Gemein, L et al (2020) [gemein2020]_.
+    r"""Braindecode TCN from Gemein, L et al (2020) [gemein2020]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
@@ -90,7 +90,7 @@ class BDTCN(EEGModuleMixin, nn.Module):
 
 
 class TCN(nn.Module):
-    """Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
+    r"""Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
 
     See [Bai2018]_ for details.
 

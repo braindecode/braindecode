@@ -8,7 +8,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class BENDR(EEGModuleMixin, nn.Module):
-    """BENDR (BErt-inspired Neural Data Representations) from Kostas et al. (2021) [bendr]_.
+    r"""BENDR (BErt-inspired Neural Data Representations) from Kostas et al (2021) [bendr]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
 
@@ -16,7 +16,6 @@ class BENDR(EEGModuleMixin, nn.Module):
         :align: center
         :alt: BENDR Architecture
         :width: 1000px
-
 
     The **BENDR** architecture adapts techniques used for language modeling (LM) toward the
     development of encephalography modeling (EM) [bendr]_. It utilizes a self-supervised
@@ -79,22 +78,6 @@ class BENDR(EEGModuleMixin, nn.Module):
       prepended to the BENDR sequence before input to the transformer, serving as the aggregate
       representation token [bendr]_.
 
-    Notes
-    -----
-    * The full BENDR architecture contains a large number of parameters; configuration (1)
-      involved training over **one billion parameters** [bendr]_.
-    * Randomly initialized full BENDR architecture was generally ineffective at solving
-      downstream tasks without prior self-supervised training [bendr]_.
-    * The pre-training task (contrastive predictive coding via masking) is generalizable,
-      exhibiting strong uniformity of performance across novel subjects, hardware, and
-      tasks [bendr]_.
-
-    .. warning::
-
-        **Important:** To utilize the full potential of BENDR, the model requires
-        **self-supervised pre-training** on large, unlabeled EEG datasets (like TUEG) followed
-        by subsequent fine-tuning on the specific downstream classification task [bendr]_.
-
     .. important::
        **Pre-trained Weights Available**
 
@@ -119,6 +102,43 @@ class BENDR(EEGModuleMixin, nn.Module):
            )
 
        Requires installing ``braindecode[hug]`` for Hub integration.
+
+    Notes
+    -----
+    * The full BENDR architecture contains a large number of parameters; configuration (1)
+      involved training over **one billion parameters** [bendr]_.
+    * Randomly initialized full BENDR architecture was generally ineffective at solving
+      downstream tasks without prior self-supervised training [bendr]_.
+    * The pre-training task (contrastive predictive coding via masking) is generalizable,
+      exhibiting strong uniformity of performance across novel subjects, hardware, and
+      tasks [bendr]_.
+
+    .. warning::
+
+        **Important:** To utilize the full potential of BENDR, the model requires
+        **self-supervised pre-training** on large, unlabeled EEG datasets (like TUEG) followed
+        by subsequent fine-tuning on the specific downstream classification task [bendr]_.
+
+    References
+    ----------
+    .. [bendr] Kostas, D., Aroca-Ouellette, S., & Rudzicz, F. (2021).
+       BENDR: Using transformers and a contrastive self-supervised learning task to learn from
+       massive amounts of EEG data.
+       Frontiers in Human Neuroscience, 15, 653659.
+       https://doi.org/10.3389/fnhum.2021.653659
+    .. [wav2vec2] Baevski, A., Zhou, Y., Mohamed, A., & Auli, M. (2020).
+       wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations.
+       In H. Larochelle, M. Ranzato, R. Hadsell, M. F. Balcan, & H. Lin (Eds),
+       Advances in Neural Information Processing Systems (Vol. 33, pp. 12449-12460).
+       https://dl.acm.org/doi/10.5555/3495724.3496768
+    .. [tfixup] Huang, T. K., Liang, S., Jha, A., & Salakhutdinov, R. (2020).
+       Improving Transformer Optimization Through Better Initialization.
+       In International Conference on Machine Learning (pp. 4475-4483). PMLR.
+       https://dl.acm.org/doi/10.5555/3524938.3525354
+    .. [layerdrop] Fan, A., Grave, E., & Joulin, A. (2020).
+       Reducing Transformer Depth on Demand with Structured Dropout.
+       International Conference on Learning Representations.
+       Retrieved from https://openreview.net/forum?id=SylO2yStDr
 
     Parameters
     ----------
@@ -163,27 +183,6 @@ class BENDR(EEGModuleMixin, nn.Module):
     final_layer : bool, default=True
         If True, includes a final linear classification layer that maps from encoder_h to
         n_outputs. If False, the model outputs the contextualized features directly.
-
-    References
-    ----------
-    .. [bendr] Kostas, D., Aroca-Ouellette, S., & Rudzicz, F. (2021).
-       BENDR: Using transformers and a contrastive self-supervised learning task to learn from
-       massive amounts of EEG data.
-       Frontiers in Human Neuroscience, 15, 653659.
-       https://doi.org/10.3389/fnhum.2021.653659
-    .. [wav2vec2] Baevski, A., Zhou, Y., Mohamed, A., & Auli, M. (2020).
-       wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations.
-       In H. Larochelle, M. Ranzato, R. Hadsell, M. F. Balcan, & H. Lin (Eds),
-       Advances in Neural Information Processing Systems (Vol. 33, pp. 12449-12460).
-       https://dl.acm.org/doi/10.5555/3495724.3496768
-    .. [tfixup] Huang, T. K., Liang, S., Jha, A., & Salakhutdinov, R. (2020).
-       Improving Transformer Optimization Through Better Initialization.
-       In International Conference on Machine Learning (pp. 4475-4483). PMLR.
-       https://dl.acm.org/doi/10.5555/3524938.3525354
-    .. [layerdrop] Fan, A., Grave, E., & Joulin, A. (2020).
-       Reducing Transformer Depth on Demand with Structured Dropout.
-       International Conference on Learning Representations.
-       Retrieved from https://openreview.net/forum?id=SylO2yStDr
     """
 
     def __init__(
@@ -350,7 +349,7 @@ class _ConvEncoderBENDR(nn.Module):
 
 
 class _BENDRContextualizer(nn.Module):
-    """Transformer-based contextualizer for BENDR."""
+    r"""Transformer-based contextualizer for BENDR."""
 
     def __init__(
         self,

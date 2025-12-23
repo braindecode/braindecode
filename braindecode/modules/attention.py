@@ -35,6 +35,16 @@ class SqueezeAndExcitation(nn.Module):
     bias: bool, default=False
         if True, adds a learnable bias will be used in the convolution.
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import SqueezeAndExcitation
+    >>> module = SqueezeAndExcitation(in_channels=16, reduction_rate=4)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Hu2018] Hu, J., Albanie, S., Sun, G., Wu, E., 2018.
@@ -89,6 +99,16 @@ class GSoP(nn.Module):
         reduction ratio of the fully-connected layers
     bias: bool, default=False
         if True, adds a learnable bias will be used in the convolution.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import GSoP
+    >>> module = GSoP(in_channels=16, reduction_rate=4)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -145,6 +165,16 @@ class FCA(nn.Module):
         Sequence length along temporal dimension, default=62
     reduction_rate : int, default=4
         Reduction ratio of the fully-connected layers.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import FCA
+    >>> module = FCA(in_channels=16, seq_len=64, reduction_rate=4, freq_idx=0)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -230,6 +260,16 @@ class EncNet(nn.Module):
     n_codewords : int
         number of codewords
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import EncNet
+    >>> module = EncNet(in_channels=16, n_codewords=8)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Zhang2018] Zhang, H. et al. 2018.
@@ -287,6 +327,16 @@ class ECA(nn.Module):
         kernel size of convolutional layer, determines degree of channel
         interaction, must be odd.
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import ECA
+    >>> module = ECA(in_channels=16, kernel_size=3)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Wang2021] Wang, Q. et al., 2021. ECA-Net: Efficient Channel Attention
@@ -337,6 +387,16 @@ class GatherExcite(nn.Module):
         whether to use an excite block with fully-connected layers
     reduction_rate : int, default=4
         reduction ratio of the excite block (if used)
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import GatherExcite
+    >>> module = GatherExcite(in_channels=16, seq_len=64, extra_params=False, use_mlp=True)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -407,6 +467,16 @@ class GCT(nn.Module):
     in_channels : int
         number of input feature channels
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import GCT
+    >>> module = GCT(in_channels=16)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Yang2020] Yang, Z. Linchao, Z., Wu, Y., Yang, Y., 2020.
@@ -451,6 +521,16 @@ class SRM(nn.Module):
         whether to use fully-connected layers instead of a convolutional layer,
     reduction_rate : int, default=4
         reduction ratio of the fully-connected layers (if used),
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import SRM
+    >>> module = SRM(in_channels=16, use_mlp=False)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -517,6 +597,16 @@ class CBAM(nn.Module):
     kernel_size : int
         kernel size of the convolutional layer
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import CBAM
+    >>> module = CBAM(in_channels=16, reduction_rate=4, kernel_size=3)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Woo2018] Woo, S., Park, J., Lee, J., Kweon, I., 2018.
@@ -574,6 +664,16 @@ class CAT(nn.Module):
         kernel size of the convolutional layer
     bias : bool, default=False
         if True, adds a learnable bias will be used in the convolution,
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import CAT
+    >>> module = CAT(in_channels=16, reduction_rate=4, kernel_size=3)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -671,6 +771,16 @@ class CATLite(nn.Module):
     bias : bool, default=True
         if True, adds a learnable bias will be used in the convolution,
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import CATLite
+    >>> module = CATLite(in_channels=16, reduction_rate=4)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Wu2023] Wu, Z. et al., 2023 CAT: Learning to Collaborate Channel and
@@ -724,6 +834,19 @@ class CATLite(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
+    """Multi-head self-attention block.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import MultiHeadAttention
+    >>> module = MultiHeadAttention(emb_size=32, num_heads=4, dropout=0.1)
+    >>> inputs = torch.randn(2, 10, 32)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 10, 32])
+    """
+
     def __init__(self, emb_size, num_heads, dropout):
         super().__init__()
         self.emb_size = emb_size

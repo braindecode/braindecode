@@ -24,14 +24,13 @@ def drop_path(
 ):
     """Drop paths (Stochastic Depth) per sample.
 
-
     Notes: This implementation is taken from timm library.
 
     All credit goes to Ross Wightman.
 
     Parameters
     ----------
-    x: torch.Tensor
+    x : torch.Tensor
         input tensor
     drop_prob : float, optional
         survival rate (i.e. probability of being kept), by default 0.0
@@ -51,11 +50,10 @@ def drop_path(
     etc. networks, however,
     the original name is misleading as 'Drop Connect' is a different form
     of dropout in a separate paper...
-    See discussion: https://github.com/tensorflow/tpu/issues/494#issuecomment-532968956
+    See discussion : https://github.com/tensorflow/tpu/issues/494#issuecomment-532968956
     ... I've opted for changing the layer and argument names to 'drop path'
     rather than mix DropConnect as a layer name and use
     'survival rate' as the argument.
-
     """
     if drop_prob == 0.0 or not training:
         return x
@@ -71,7 +69,8 @@ def drop_path(
 
 def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     """
-    Generates a 1-dimensional Gaussian kernel based on the specified kernel
+    Generates a 1-dimensional Gaussian kernel based on the specified kernel.
+
     size and standard deviation (sigma).
     This kernel is useful for Gaussian smoothing or filtering operations in
     image processing. The function calculates a range limit to ensure the kernel
@@ -80,15 +79,14 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     Gaussian curve, normalized using a softmax function
     to ensure all weights sum to 1.
 
-
     Parameters
     ----------
-    kernel_size: int
-    sigma: float
+    kernel_size : int
+    sigma : float
 
     Returns
     -------
-    kernel1d: torch.Tensor
+    kernel1d : torch.Tensor
 
     Notes
     -----
@@ -97,7 +95,6 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     All rights reserved.
 
     LICENSE in https://github.com/pytorch/vision/blob/main/LICENSE
-
     """
     ksize_half = (kernel_size - 1) * 0.5
     x = torch.linspace(-ksize_half, ksize_half, steps=kernel_size)

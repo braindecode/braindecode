@@ -1,6 +1,4 @@
-"""
-Some predefined network architectures for EEG decoding.
-"""
+"""Some predefined network architectures for EEG decoding."""
 
 from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet

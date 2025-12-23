@@ -4,16 +4,16 @@
 
 .. _models_gnn:
 
-|gnn-icon| Graph Neural Networks
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##################################
+ |gnn-icon| Graph Neural Networks
+##################################
 
 .. |gnn-icon| image:: ../../_static/model_cat/gnn.png
-   :height: 56px
-   :alt: Graph Neural Networks icon
-   :class: heading-icon no-scaled-link
+    :alt: Graph Neural Networks icon
+    :height: 56px
+    :class: heading-icon no-scaled-link
 
 :bdg-light:`Graph Neural Network`
-
 
 I doesn't know much about GNNs for EEG yet. No LitMap available.
 
@@ -21,7 +21,7 @@ I doesn't know much about GNNs for EEG yet. No LitMap available.
 
 .. raw:: html
 
-  <style>
-    /* nudge the icon so it sits nicely on the baseline */
-    img.heading-icon { vertical-align: -0.2em; margin-right: .45rem; }
-  </style>
+    <style>
+      /* nudge the icon so it sits nicely on the baseline */
+      img.heading-icon { vertical-align: -0.2em; margin-right: .45rem; }
+    </style>

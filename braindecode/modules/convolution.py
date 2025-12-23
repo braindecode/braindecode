@@ -25,6 +25,16 @@ class AvgPool2dWithConv(nn.Module):
         Dilation applied to the pooling filter.
     padding: int or (int,int)
         Padding applied before the pooling operation.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import AvgPool2dWithConv
+    >>> module = AvgPool2dWithConv(kernel_size=(1, 4), stride=(1, 4))
+    >>> inputs = torch.randn(2, 4, 1, 16)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 4, 1, 4])
     """
 
     def __init__(self, kernel_size, stride, dilation=1, padding=0):
@@ -73,6 +83,19 @@ class AvgPool2dWithConv(nn.Module):
 
 
 class Conv2dWithConstraint(nn.Conv2d):
+    """2D convolution with max-norm constraint on the weights.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import Conv2dWithConstraint
+    >>> module = Conv2dWithConstraint(4, 8, kernel_size=(1, 3), padding=(0, 1), bias=False)
+    >>> inputs = torch.randn(2, 4, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 8, 1, 64])
+    """
+
     def __init__(self, *args, max_norm=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_norm = max_norm
@@ -100,6 +123,16 @@ class CombinedConv(nn.Module):
         Whether to use bias in the temporal conv
     bias_spat: bool
         Whether to use bias in the spatial conv
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import CombinedConv
+    >>> module = CombinedConv(in_chans=8, n_filters_time=4, n_filters_spat=4, filter_time_length=5)
+    >>> inputs = torch.randn(2, 1, 100, 8)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 4, 96, 1])
 
     """
 
@@ -182,6 +215,16 @@ class CausalConv1d(nn.Conv1d):
     ----------
     .. [1] https://discuss.pytorch.org/t/causal-convolution/3456/4
     .. [2] https://gist.github.com/paultsw/7a9d6e3ce7b70e9e2c61bc9287addefc
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import CausalConv1d
+    >>> module = CausalConv1d(in_channels=4, out_channels=8, kernel_size=5, dilation=2)
+    >>> inputs = torch.randn(2, 4, 128)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 8, 128])
     """
 
     def __init__(
@@ -250,6 +293,16 @@ class DepthwiseConv2d(torch.nn.Conv2d):
         Padding mode to use. Options are 'zeros', 'reflect', 'replicate', or
         'circular'.
         Default is 'zeros'.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import DepthwiseConv2d
+    >>> module = DepthwiseConv2d(in_channels=4, depth_multiplier=2, kernel_size=3, padding=1)
+    >>> inputs = torch.randn(2, 4, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 8, 1, 64])
     """
 
     def __init__(

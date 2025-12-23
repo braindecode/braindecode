@@ -14,6 +14,22 @@ class InceptionBlock(nn.Module):
     ----------
     branches : list of nn.Module
         List of convolutional branches to apply to the input.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from torch import nn
+    >>> from braindecode.modules import InceptionBlock
+    >>> block = InceptionBlock(
+    ...     [
+    ...         nn.Conv1d(3, 4, kernel_size=1),
+    ...         nn.Conv1d(3, 4, kernel_size=3, padding=1),
+    ...     ]
+    ... )
+    >>> inputs = torch.randn(2, 3, 100)
+    >>> outputs = block(inputs)
+    >>> outputs.shape
+    torch.Size([2, 8, 100])
     """
 
     def __init__(self, branches):
@@ -55,6 +71,16 @@ class MLP(nn.Sequential):
         Dropout rate.
     normalize: bool (default=False)
         Whether to apply layer normalization.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import MLP
+    >>> module = MLP(in_features=32, hidden_features=(64,), out_features=16)
+    >>> inputs = torch.randn(2, 10, 32)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 10, 16])
     """
 
     def __init__(
@@ -99,6 +125,30 @@ class MLP(nn.Sequential):
 
 
 class FeedForwardBlock(nn.Sequential):
+    """Feedforward network block.
+
+    Parameters
+    ----------
+    emb_size : int
+        Embedding dimension.
+    expansion : int
+        Expansion factor for the hidden layer size.
+    drop_p : float
+        Dropout probability.
+    activation : type[nn.Module], default=nn.GELU
+        Activation function constructor.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import FeedForwardBlock
+    >>> module = FeedForwardBlock(emb_size=32, expansion=2, drop_p=0.1)
+    >>> inputs = torch.randn(2, 10, 32)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 10, 32])
+    """
+
     def __init__(
         self, emb_size, expansion, drop_p, activation: type[nn.Module] = nn.GELU
     ):

@@ -9,7 +9,7 @@ from braindecode.modules import DepthwiseConv2d, Ensure4d, InceptionBlock
 
 
 class EEGITNet(EEGModuleMixin, nn.Sequential):
-    """EEG-ITNet from Salami, et al (2022) [Salami2022]_
+    r"""EEG-ITNet from Salami, et al (2022) [Salami2022]_
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
@@ -229,7 +229,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
 
 
 class _TCBlock(nn.Module):
-    """
+    r"""
     Temporal Convolutional (TC) block.
 
     This module applies two depthwise separable convolutions with dilation and residual

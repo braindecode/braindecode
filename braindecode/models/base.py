@@ -284,7 +284,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
         Returns
         -------
-        output_shape: tuple[int, ...]
+        output_shape : tuple[int, ...]
             shape of the network output for `batch_size==1` (1, ...)
         """
         with torch.inference_mode():
@@ -330,13 +330,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """
-        Transform a sequential model with strides to a model that outputs
+        Transform a sequential model with strides to a model that outputs.
+
         dense predictions by removing the strides and instead inserting dilations.
         Modifies model in-place.
 
         Parameters
         ----------
-        axis: int or (int,int)
+        axis : int or (int,int)
             Axis to transform (in terms of intermediate output axes)
             can either be 2, 3, or (2,3).
 
@@ -345,7 +346,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         Does not yet work correctly for average pooling.
         Prior to version 0.1.7, there had been a bug that could move strides
         backwards one layer.
-
         """
         if not hasattr(axis, "__iter__"):
             axis = (axis,)

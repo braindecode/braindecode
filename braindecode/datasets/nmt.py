@@ -9,7 +9,6 @@ Note:
     - The signal unit may not be uV and further examination is required.
     - The spectrum shows that the signal may have been band-pass filtered from about 2 - 33Hz,
     which needs to be further determined.
-
 """
 
 # Authors: Mohammad Bayazi <mj.darvishi92@gmail.com>
@@ -67,17 +66,17 @@ class NMT(BaseConcatDataset):
 
     Parameters
     ----------
-    path: str
+    path : str
         Parent directory of the dataset.
-    recording_ids: list(int) | int
+    recording_ids : list(int) | int
         A (list of) int of recording id(s) to be read (order matters and will
         overwrite default chronological order, e.g. if recording_ids=[1,0],
         then the first recording returned by this class will be chronologically
         later than the second recording. Provide recording_ids in ascending
         order to preserve chronological order.).
-    target_name: str
+    target_name : str
         Can be "pathological", "gender", or "age".
-    preload: bool
+    preload : bool
         If True, preload the data of the Raw objects.
 
     References

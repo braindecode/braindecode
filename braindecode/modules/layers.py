@@ -11,6 +11,21 @@ from braindecode.functional import drop_path
 
 
 class Ensure4d(nn.Module):
+    """Ensure the input tensor has 4 dimensions.
+
+    This is a small utility layer that repeatedly adds a singleton dimension at
+    the end until the input has shape ``(batch, channels, time, 1)``.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import Ensure4d
+    >>> module = Ensure4d()
+    >>> outputs = module(torch.randn(2, 3, 10))
+    >>> outputs.shape
+    torch.Size([2, 3, 10, 1])
+    """
+
     def forward(self, x):
         while len(x.shape) < 4:
             x = x.unsqueeze(-1)
@@ -18,6 +33,19 @@ class Ensure4d(nn.Module):
 
 
 class Chomp1d(nn.Module):
+    """Remove samples from the end of a sequence.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import Chomp1d
+    >>> module = Chomp1d(chomp_size=5)
+    >>> inputs = torch.randn(2, 3, 20)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 3, 15])
+    """
+
     def __init__(self, chomp_size):
         super().__init__()
         self.chomp_size = chomp_size
@@ -43,6 +71,17 @@ class TimeDistributed(nn.Module):
     module : nn.Module
         Module to be applied to the input windows. Must accept an input of
         shape (batch_size, n_channels, n_times).
+
+    Examples
+    --------
+    >>> import torch
+    >>> from torch import nn
+    >>> from braindecode.modules import TimeDistributed
+    >>> module = TimeDistributed(nn.Conv1d(3, 4, kernel_size=3, padding=1))
+    >>> inputs = torch.randn(2, 5, 3, 20)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 5, 4])
     """
 
     def __init__(self, module):
@@ -91,6 +130,17 @@ class DropPath(nn.Module):
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import DropPath
+    >>> module = DropPath(drop_prob=0.2)
+    >>> module.train()
+    >>> inputs = torch.randn(2, 3, 10)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 3, 10])
     """
 
     def __init__(self, drop_prob=None):

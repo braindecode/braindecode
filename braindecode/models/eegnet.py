@@ -20,7 +20,7 @@ from braindecode.modules import (
 
 
 class EEGNet(EEGModuleMixin, nn.Sequential):
-    """EEGNet model from Lawhern et al. (2018) [Lawhern2018]_.
+    r"""EEGNet model from Lawhern et al (2018) [Lawhern2018]_.
 
     :bdg-success:`Convolution`
 
@@ -354,6 +354,6 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
     "`EEGNetv4` was renamed to `EEGNet` in v1.12; this alias will be removed in v1.14."
 )
 class EEGNetv4(EEGNet):
-    """Deprecated alias for EEGNet."""
+    r"""Deprecated alias for EEGNet."""
 
     pass

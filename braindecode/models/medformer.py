@@ -18,7 +18,8 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class MEDFormer(EEGModuleMixin, nn.Module):
-    r"""Medformer from Wang et al. (2024) [Medformer2024]_.
+    r"""
+    Medformer from Wang et al (2024) [Medformer2024]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
 
@@ -26,12 +27,12 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         :align: center
         :alt: MEDFormer Architecture.
 
-        a) Workflow. b) For the input sample :math:`{x}_{\\textrm{in}}`, the authors apply :math:`n`
+        a) Workflow. b) For the input sample :math:`{x}_{\text{in}}`, the authors apply :math:`n`
         different patch lengths in parallel to create patched features :math:`{x}_p^{(i)}`, where :math:`i`
         ranges from 1 to :math:`n`. Each patch length represents a different granularity. These patched
-        features are linearly transformed into :math:`{x}_e^{(i)}` and augmented into :math:`\\widetilde{x}_e^{(i)}`.
-        c) The final patch embedding :math:`{x}^{(i)}` fuses augmented :math:`\\widetilde{{x}}_e^{(i)}` with the
-        positional embedding :math:`{W}_{\\text{pos}}` and the granularity embedding :math:`{W}_{\\text{gr}}^{(i)}`.
+        features are linearly transformed into :math:`{x}_e^{(i)}` and augmented into :math:`\widetilde{x}_e^{(i)}`.
+        c) The final patch embedding :math:`{x}^{(i)}` fuses augmented :math:`\widetilde{x}_e^{(i)}` with the
+        positional embedding :math:`{W}_{\text{pos}}` and the granularity embedding :math:`{W}_{\text{gr}}^{(i)}`.
         Each granularity employs a router :math:`{u}^{(i)}` to capture aggregated information.
         Intra-granularity attention focuses within individual granularities, and inter-granularity attention
         leverages the routers to integrate information across granularities.
@@ -115,6 +116,7 @@ class MEDFormer(EEGModuleMixin, nn.Module):
         **Role.** Learns representations and correlations within and across temporal scales while
         reducing complexity from :math:`O((\sum_i N_i)^2)` to
         :math:`O(\sum_i N_i^2 + n^2)` through the router mechanism.
+
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
     - **Temporal:** Multiple patch lengths in :attr:`patch_len_list` capture features at several
@@ -128,7 +130,7 @@ class MEDFormer(EEGModuleMixin, nn.Module):
     .. rubric:: Additional Mechanisms
 
     - **Granularity router:** Each granularity :math:`i` receives a dedicated router token
-      :math:`\\mathbf{u}^{(i)}`. Intra-attention updates the token, and inter-attention exchanges
+      :math:`\mathbf{u}^{(i)}`. Intra-attention updates the token, and inter-attention exchanges
       aggregated information across scales.
     - **Complexity:** Router-mediated two-stage attention maintains :math:`O(T^2)` complexity for
       suitable patch lengths (e.g., power series), preserving transformer-like efficiency while

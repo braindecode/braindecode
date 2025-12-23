@@ -13,7 +13,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class TSception(EEGModuleMixin, nn.Module):
-    """TSception model from Ding et al. (2020) from [ding2020]_.
+    r"""TSception model from Ding et al. (2020) from [ding2020]_.
 
     :bdg-success:`Convolution`
 
@@ -290,6 +290,6 @@ class TSception(EEGModuleMixin, nn.Module):
     "this alias will be removed in v1.14."
 )
 class TSceptionV1(TSception):
-    """Deprecated alias for TSception."""
+    r"""Deprecated alias for TSception."""
 
     pass

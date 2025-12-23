@@ -1,5 +1,6 @@
 """
-Dataset classes for the Temple University Hospital (TUH) EEG Corpus and the
+Dataset classes for the Temple University Hospital (TUH) EEG Corpus and the.
+
 TUH Abnormal EEG Corpus.
 """
 
@@ -26,31 +27,32 @@ from .base import BaseConcatDataset, RawDataset
 
 
 class TUH(BaseConcatDataset):
-    """Temple University Hospital (TUH) EEG Corpus
+    """Temple University Hospital (TUH) EEG Corpus.
+
     (www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tueg).
 
     Parameters
     ----------
-    path: str
+    path : str
         Parent directory of the dataset.
-    recording_ids: list(int) | int
+    recording_ids : list(int) | int
         A (list of) int of recording id(s) to be read (order matters and will
         overwrite default chronological order, e.g. if recording_ids=[1,0],
         then the first recording returned by this class will be chronologically
         later then the second recording. Provide recording_ids in ascending
         order to preserve chronological order.).
-    target_name: str
+    target_name : str
         Can be 'gender', or 'age'.
-    preload: bool
+    preload : bool
         If True, preload the data of the Raw objects.
-    add_physician_reports: bool
+    add_physician_reports : bool
         If True, the physician reports will be read from disk and added to the
         description.
-    rename_channels: bool
+    rename_channels : bool
         If True, rename the EEG channels to the standard 10-05 system.
-    set_montage: bool
+    set_montage : bool
         If True, set the montage to the standard 10-05 system.
-    n_jobs: int
+    n_jobs : int
         Number of jobs to be used to read files in parallel.
     """
 
@@ -379,30 +381,31 @@ def _parse_age_and_gender_from_edf_header(file_path):
 
 class TUHAbnormal(TUH):
     """Temple University Hospital (TUH) Abnormal EEG Corpus.
+
     see www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tuab
 
     Parameters
     ----------
-    path: str
+    path : str
         Parent directory of the dataset.
-    recording_ids: list(int) | int
+    recording_ids : list(int) | int
         A (list of) int of recording id(s) to be read (order matters and will
         overwrite default chronological order, e.g. if recording_ids=[1,0],
         then the first recording returned by this class will be chronologically
         later then the second recording. Provide recording_ids in ascending
         order to preserve chronological order.).
-    target_name: str
+    target_name : str
         Can be 'pathological', 'gender', or 'age'.
-    preload: bool
+    preload : bool
         If True, preload the data of the Raw objects.
-    add_physician_reports: bool
+    add_physician_reports : bool
         If True, the physician reports will be read from disk and added to the
         description.
-    rename_channels: bool
+    rename_channels : bool
         If True, rename the EEG channels to the standard 10-05 system.
-    set_montage: bool
+    set_montage : bool
         If True, set the montage to the standard 10-05 system.
-    n_jobs: int
+    n_jobs : int
         Number of jobs to be used to read files in parallel.
     """
 

@@ -8,7 +8,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class ContraWR(EEGModuleMixin, nn.Module):
-    """Contrast with the World Representation ContraWR from Yang et al (2021) [Yang2021]_.
+    r"""Contrast with the World Representation ContraWR from Yang et al (2021) [Yang2021]_.
 
     :bdg-success:`Convolution`
 
@@ -148,7 +148,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
 
 class _ResBlock(nn.Module):
-    """Convolutional Residual Block 2D.
+    r"""Convolutional Residual Block 2D.
 
     This block stacks two convolutional layers with batch normalization,
     max pooling, dropout, and residual connection.
@@ -259,7 +259,7 @@ class _ResBlock(nn.Module):
 
 
 class _STFTModule(nn.Module):
-    """
+    r"""
     A PyTorch module that computes the Short-Time Fourier Transform (STFT)
     of an EEG batch tensor.
 

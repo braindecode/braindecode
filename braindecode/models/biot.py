@@ -9,7 +9,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class BIOT(EEGModuleMixin, nn.Module):
-    """BIOT from Yang et al. (2023) [Yang2023]_
+    r"""BIOT from Yang et al (2023) [Yang2023]_
 
     :bdg-danger:`Foundation Model`
 
@@ -216,7 +216,7 @@ class BIOT(EEGModuleMixin, nn.Module):
 
 
 class _PatchFrequencyEmbedding(nn.Module):
-    """
+    r"""
     Patch Frequency Embedding.
 
     A simple linear layer is used to learn some representation over the
@@ -258,7 +258,7 @@ class _PatchFrequencyEmbedding(nn.Module):
 
 
 class _ClassificationHead(nn.Sequential):
-    """
+    r"""
     Classification head for the BIOT model.
 
     Simple linear layer with ELU activation function.
@@ -293,7 +293,7 @@ class _ClassificationHead(nn.Sequential):
 
 
 class _PositionalEncoding(nn.Module):
-    """
+    r"""
     Positional Encoding.
 
     We first create a `pe` zero matrix of shape (max_len, d_model) where max_len is the
@@ -354,7 +354,7 @@ class _PositionalEncoding(nn.Module):
 
 
 class _BIOTEncoder(nn.Module):
-    """
+    r"""
     BIOT Encoder.
 
     The BIOT encoder is a transformer that takes the time series input data and

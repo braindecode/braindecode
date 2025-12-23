@@ -24,7 +24,7 @@ _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.18
 
 
 class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
-    """Base class for the SignalJEPA models
+    r"""Base class for the SignalJEPA models
 
     Parameters
     ----------
@@ -144,7 +144,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
 
 
 class SignalJEPA(_BaseSignalJEPA):
-    """Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [1]_
+    r"""Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [1]_
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
@@ -232,7 +232,7 @@ class SignalJEPA(_BaseSignalJEPA):
 
 
 class SignalJEPA_Contextual(_BaseSignalJEPA):
-    """Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
+    r"""Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
@@ -405,7 +405,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
 
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
-    """Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
+    r"""Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
@@ -556,7 +556,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
 
 class SignalJEPA_PreLocal(_BaseSignalJEPA):
-    """Pre-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
+    r"""Pre-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel` :bdg-danger:`Foundation Model`
 
@@ -745,7 +745,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
 
 class _ConvFeatureEncoder(nn.Sequential):
-    """Convolutional feature encoder for EEG data.
+    r"""Convolutional feature encoder for EEG data.
 
     Computes successive 1D convolutions (with activations) over the time
     dimension of the input EEG signal.
@@ -865,7 +865,7 @@ class _ConvFeatureEncoder(nn.Sequential):
 
 
 class _ChannelEmbedding(nn.Embedding):
-    """Embedding layer for EEG channels.
+    r"""Embedding layer for EEG channels.
 
     The difference with a regular :class:`nn.Embedding` is that the embedding
     vectors are initialized with a positional encodding of the channel locations.
@@ -926,7 +926,7 @@ class _ChannelEmbedding(nn.Embedding):
 
 
 class _PosEncoder(nn.Module):
-    """Positional encoder for EEG data.
+    r"""Positional encoder for EEG data.
 
     Parameters
     ----------

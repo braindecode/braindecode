@@ -28,12 +28,12 @@ trains and evaluates different models on a motor-imagery dataset using Exca.
 
 #####################################################################
 # Creating the experiment configurations
-# -------------------------------------
+# ---------------------------------------
 #
 # We will start by defining the configurations needed for our experiment using Pydantic and Exca.
 #
 # Dataset configs
-# ~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~
 #
 # Our first configuration class is related to the data. It will allow us to load and prepare the dataset.
 import warnings
@@ -118,7 +118,7 @@ DatasetConfig = Annotated[
 
 #####################################################################
 # Training config
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~
 #
 # Now that out data configs are ready, we can define our training config. It will require both the dataset and model configurations.
 # It will simply load the data, instantiate the model, and train the model on the data.
@@ -174,7 +174,7 @@ class TrainingConfig(pydantic.BaseModel):
 #
 #
 # Evaluation config
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~
 #
 # Finally, we define an evaluation config that will load the validation data,
 # load the trained model from the training config, and evaluate it on the validation data.
@@ -214,10 +214,10 @@ class EvaluationConfig(pydantic.BaseModel):
 #     in the Exca documentation: https://facebookresearch.github.io/exca/infra/introduction.html.
 #
 # Instantiating the configurations
-# ------------------------------
+# ---------------------------------
 #
 # Instantiation option 1: from class constructors
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # Now that our configuration classes are defined, we can instantiate them.
 #
@@ -282,7 +282,7 @@ eval_cfg = EvaluationConfig(trainer=train_cfg, test_dataset=test_dataset_cfg)
 
 #################################################################
 # Instantiation option 2: from nested dictionaries or JSON files
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # Alternatively, we can also instantiate the configurations from nested dictionaries or JSON files.
 # This can be useful when loading configurations from external sources.
@@ -323,7 +323,7 @@ assert eval_cfg_from_dict == eval_cfg
 
 #################################################################
 # Serializing the experiment configuration
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # To serialize the experiment's configuration, we can take advantage of Exca's ``config()`` method, which is similar to Pydantic's ``model_dump()`` method but will ensure that an experiment has a unique identifier (UID).
 # In particular, it will also include the ``"model_name_"`` field, which will allow us to distinguish between different model configurations later on.
@@ -332,10 +332,10 @@ print(eval_cfg.infra.config(uid=True, exclude_defaults=True))
 
 #####################################################
 # Running the experiment
-# ------------------------------
+# ----------------------
 #
 # Intermediate results are cached thanks to Exca
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # We can now run the training using the configurations we defined.
 # For this, we simply have to call the ``train()`` method of the configuration.
@@ -378,7 +378,7 @@ print(f"Evaluation took {t1 - t0:0.2f} seconds")
 
 #####################################################################
 # Scaling up: comparing multiple model configurations
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # Now that we have seen how to define and run an experiment using Pydantic and Exca,
 # we can easily scale up to compare multiple model configurations.
@@ -436,10 +436,10 @@ for model_cfg in model_cfg_list:
         results.append(row)
 #####################################################################
 # Gathering and displaying the results
-# ------------------------------
+# -------------------------------------
 #
 # Loading results from cache
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # If experiments were done on a cluster, a likely scenario would be
 # to first run all experiments, and then later load and analyze the results.
@@ -475,7 +475,7 @@ t1 = time.time()
 print(f"Loading all results from cache took {t1 - t0:0.2f} seconds")
 ##############################################################
 # Displaying the results
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~
 #
 # Finally, we can concatenate and display the results using pandas:
 import pandas as pd
