@@ -3,11 +3,11 @@
     :alt: DOI
 
 .. image:: https://github.com/braindecode/braindecode/workflows/docs/badge.svg
-    :target: https://github.com/braindecode/braindecode/actions
+    :target: https://github.com/braindecode/braindecode/actions/workflows/docs.yml
     :alt: Docs Build Status
 
 .. image:: https://github.com/braindecode/braindecode/workflows/tests/badge.svg
-    :target: https://github.com/braindecode/braindecode/actions?query=branch%3Amaster
+    :target: https://github.com/braindecode/braindecode/actions/workflows/tests.yml
     :alt: Test Build Status
 
 .. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
