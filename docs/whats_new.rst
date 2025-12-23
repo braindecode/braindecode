@@ -740,7 +740,6 @@ Authors
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl
 .. _Maciej Śliwowski: https://github.com/sliwy
-.. _Ann-Kathrin Kiessner: https://github.com/Ann-KathrinKiessner
 .. _Daniel Wilson: https://github.com/dcwil
 .. _Henrik Bonsmann: https://github.com/HenrikBons
 .. _Vytautas Jankauskas: https://github.com/vytjan
@@ -753,7 +752,7 @@ Authors
 .. _Thomas Moreau: https://tommoral.github.io
 .. _Mohammed Fattouh: https://github.com/MFattouh
 .. _Pierre Guetschel: https://github.com/PierreGtch
-.. _Mohammad Javad D: https://github.com/MohammadJavadD
+.. _Mohammad Javad D: https://github.com/javadbayazi
 .. _Bruno Aristimunha: https://github.com/bruAristimunha
 .. _Martin Wimpff: https://github.com/martinwimpff
 .. _Ghaith Bouallegue: https://github.com/GhBlg
