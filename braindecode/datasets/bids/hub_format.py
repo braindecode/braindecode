@@ -71,10 +71,10 @@ def _raw_from_info(
     return raw
 
 
-def _read_tsv(writer, *args) -> pd.DataFrame:
+def _read_tsv(writer, *args, convert_fmt=None) -> pd.DataFrame:
     with TemporaryDirectory() as tmpdir, mne.utils.use_log_level("WARNING"):
         tsv_path = Path(tmpdir) / "sidecar.tsv"
-        writer(*args, tsv_path, overwrite=True)
+        writer(*args, fname=tsv_path, convert_fmt=convert_fmt, overwrite=True)
         return pd.read_csv(tsv_path, sep="\t")
 
 
