@@ -56,6 +56,83 @@ import braindecode
 # Default pipeline name for braindecode derivatives
 DEFAULT_PIPELINE_NAME = "braindecode"
 
+# Mapping from file extensions to MNE-BIDS convert format
+_EXT_TO_CONVERT_FMT = {
+    ".vhdr": "BrainVision",
+    ".eeg": "BrainVision",
+    ".edf": "EDF",
+    ".bdf": "EDF",
+    ".set": "EEGLAB",
+    ".fif": "FIF",
+    ".fif.gz": "FIF",
+}
+
+
+def _get_file_extension(filename: Union[str, Path]) -> str:
+    """Get file extension, handling compound extensions like .fif.gz."""
+    filename = str(filename).lower()
+    if filename.endswith(".fif.gz"):
+        return ".fif.gz"
+    return Path(filename).suffix.lower()
+
+
+def _infer_convert_fmt(raw: "mne.io.BaseRaw") -> Optional[str]:
+    """
+    Infer the convert format from a Raw object's filename.
+
+    Parameters
+    ----------
+    raw : mne.io.BaseRaw
+        The raw object to infer format from.
+
+    Returns
+    -------
+    str | None
+        The convert format string ("BrainVision", "EDF", "EEGLAB", "FIF")
+        or None if format cannot be inferred.
+    """
+    if not raw.filenames or raw.filenames[0] is None:
+        return None
+    ext = _get_file_extension(raw.filenames[0])
+    return _EXT_TO_CONVERT_FMT.get(ext)
+
+
+def _validate_consistent_format(raws: list) -> str:
+    """
+    Validate that all Raw objects have the same file format.
+
+    Parameters
+    ----------
+    raws : list of mne.io.BaseRaw
+        List of raw objects to validate.
+
+    Returns
+    -------
+    str | None
+        The common convert format, or None if no format could be inferred.
+
+    Raises
+    ------
+    ValueError
+        If raw objects have inconsistent file formats.
+    """
+    if not raws:
+        return None
+
+    formats = set()
+    for raw in raws:
+        fmt = _infer_convert_fmt(raw)
+        if fmt is not None:
+            formats.add(fmt)
+
+    if len(formats) > 1:
+        raise ValueError(
+            f"Inconsistent file formats detected in dataset: {formats}. "
+            "All recordings should have the same file format."
+        )
+
+    return formats.pop() if formats else None
+
 
 def _raw_from_info(
     info: "mne.Info",
@@ -71,10 +148,10 @@ def _raw_from_info(
     return raw
 
 
-def _read_tsv(writer, *args) -> pd.DataFrame:
+def _read_tsv(writer, *args, convert_fmt=None) -> pd.DataFrame:
     with TemporaryDirectory() as tmpdir, mne.utils.use_log_level("WARNING"):
         tsv_path = Path(tmpdir) / "sidecar.tsv"
-        writer(*args, tsv_path, overwrite=True)
+        writer(*args, fname=tsv_path, convert_fmt=convert_fmt, overwrite=True)
         return pd.read_csv(tsv_path, sep="\t")
 
 
@@ -395,6 +472,7 @@ def create_participants_tsv(
 def create_channels_tsv(
     info: "mne.Info",
     bad_channels: Optional[list[str]] = None,
+    raws: Optional[list] = None,
 ) -> pd.DataFrame:
     """
     Create a BIDS-compliant channels.tsv from MNE Info.
@@ -407,15 +485,30 @@ def create_channels_tsv(
         MNE Info object containing channel information.
     bad_channels : list of str | None
         List of bad channel names.
+    raws : list of mne.io.BaseRaw | None
+        List of raw objects to infer the file format from. If provided,
+        validates that all raws have consistent formats and uses the
+        appropriate unit conversion. If None, assumes SI units (Volts).
 
     Returns
     -------
     pd.DataFrame
         BIDS-compliant channels DataFrame.
+
+    Raises
+    ------
+    ValueError
+        If raws have inconsistent file formats.
     """
     bad_channels = bad_channels or info.get("bads", [])
     raw = _raw_from_info(info, bad_channels)
-    return _read_tsv(_channels_tsv, raw)
+
+    # Infer convert format from raws if provided
+    convert_fmt = None
+    if raws:
+        convert_fmt = _validate_consistent_format(raws)
+
+    return _read_tsv(_channels_tsv, raw, convert_fmt=convert_fmt)
 
 
 def create_eeg_json_sidecar(

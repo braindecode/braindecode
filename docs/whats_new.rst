@@ -46,7 +46,7 @@ Code health
 - None yet.
 
 
-Current 1.3 (stable)
+Current 1.3.1 (stable)
 ====================
 
 Enhancements
@@ -183,6 +183,8 @@ Bugs
   Aristimunha`_)
 - Fix test compatibility with scikit-learn 1.8+ by adding ``__sklearn_tags__`` support
   to test mocks (:gh:`868` by `Bruno Aristimunha`_)
+- Increase the mne-bids version and fixing API changes (:gh:`907` by `Bruno
+  Aristimunha`_)
 
 Current 1.2
 ====================
