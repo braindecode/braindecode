@@ -13,6 +13,8 @@ import pytest
 
 from braindecode.datasets.bids.hub_format import (
     BIDSSourcedataLayout,
+    _infer_convert_fmt,
+    _validate_consistent_format,
     create_channels_tsv,
     create_eeg_json_sidecar,
     create_events_tsv,
@@ -202,3 +204,44 @@ def test_recording_duration_computed_from_metadata_multiple_recordings():
             f"Subject {rec['subject']}: expected duration "
             f"{rec['expected_duration']}, got {recording_duration}"
         )
+
+
+@pytest.mark.parametrize("ext,expected", [
+    (".edf", "EDF"),
+    (".vhdr", "BrainVision"),
+    (".set", "EEGLAB"),
+    (".fif", "FIF"),
+    (".fif.gz", "FIF"),
+])
+def test_infer_convert_fmt(ext, expected):
+    """Test format inference from raw filename."""
+    info = mne.create_info(["EEG1"], sfreq=256.0, ch_types="eeg")
+    raw = mne.io.RawArray(np.zeros((1, 256)), info, verbose="error")
+    raw._filenames = [f"/path/to/data{ext}"]
+    assert _infer_convert_fmt(raw) == expected
+
+
+def test_validate_consistent_format_raises_on_mixed():
+    """Test validation raises error for mixed formats."""
+    info = mne.create_info(["EEG1"], sfreq=256.0, ch_types="eeg")
+    raws = []
+    for ext in [".edf", ".vhdr"]:
+        raw = mne.io.RawArray(np.zeros((1, 256)), info, verbose="error")
+        raw._filenames = [f"/path/to/data{ext}"]
+        raws.append(raw)
+
+    with pytest.raises(ValueError, match="Inconsistent file formats"):
+        _validate_consistent_format(raws)
+
+
+def test_create_channels_tsv_with_raws_uses_correct_units():
+    """Test create_channels_tsv uses µV for EDF format."""
+    info = mne.create_info(["EEG1", "EEG2"], sfreq=256.0, ch_types="eeg")
+    raws = []
+    for i in range(2):
+        raw = mne.io.RawArray(np.zeros((2, 256)), info, verbose="error")
+        raw._filenames = [f"/path/to/data{i}.edf"]
+        raws.append(raw)
+
+    df = create_channels_tsv(info, raws=raws)
+    assert all(u == "µV" for u in df["units"])
