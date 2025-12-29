@@ -66,8 +66,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Number of attention heads.
     mlp_ratio : float, default=4.0
         Ratio of the MLP hidden dimension to the embedding dimension.
-    drop_rate : float, default=0.0
-        Dropout rate.
+    drop_prob : float, default=0.0
+        Dropout probability.
     attn_drop_rate : float, default=0.0
         Attention dropout rate.
     drop_path_rate : float, default=0.0
@@ -106,7 +106,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         depth=8,
         num_heads=8,
         mlp_ratio=4.0,
-        drop_rate=0.0,  # adjust for full finetuning
+        drop_prob=0.0,  # adjust for full finetuning
         attn_drop_rate=0.0,  # adjust for full finetuning
         drop_path_rate=0.0,  # adjust for full finetuning
         init_std=0.02,
@@ -132,7 +132,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             depth=depth,
             num_heads=num_heads,
             mlp_ratio=mlp_ratio,
-            drop_rate=drop_rate,
+            drop_rate=drop_prob,
             attn_drop_rate=attn_drop_rate,
             drop_path_rate=drop_path_rate,
             init_std=init_std,
