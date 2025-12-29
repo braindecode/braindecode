@@ -29,6 +29,7 @@ from braindecode.models import (
     Deep4Net,
     DeepSleepNet,
     EEGConformer,
+    EEGPT,
     EEGInceptionERP,
     EEGInceptionMI,
     EEGITNet,
@@ -230,6 +231,17 @@ def test_tcn(input_sizes):
     )
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
+def test_eegpt(input_sizes):
+    channels_names = ['F3', 'F4', 'C3', 'C4', 'P3','P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ' ]
+    input_sizes_copy = input_sizes.copy()
+    input_sizes_copy["n_channels"] = len(channels_names)
+    model = EEGPT(
+        n_outputs=input_sizes_copy["n_classes"],
+        n_chans=input_sizes_copy["n_channels"],
+        n_times=input_sizes_copy["n_in_times"],
+        channel_names=channels_names,
+    )
+    check_forward_pass_3d(model, input_sizes_copy)
 
 def test_eegitnet(input_sizes):
     model = EEGITNet(

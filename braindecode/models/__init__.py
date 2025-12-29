@@ -12,6 +12,7 @@ from .ctnet import CTNet
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .eegconformer import EEGConformer
+from .eegpt import EEGPT
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
 from .eegitnet import EEGITNet
@@ -73,6 +74,7 @@ __all__ = [
     "DeepSleepNet",
     "BrainModule",
     "EEGConformer",
+    "EEGPT",
     "EEGInceptionERP",
     "EEGInceptionMI",
     "EEGITNet",
