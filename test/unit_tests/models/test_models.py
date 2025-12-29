@@ -20,6 +20,7 @@ from torch import nn
 from braindecode.models import (
     BENDR,
     BIOT,
+    EEGPT,
     TCN,
     ATCNet,
     AttentionBaseNet,
@@ -29,7 +30,6 @@ from braindecode.models import (
     Deep4Net,
     DeepSleepNet,
     EEGConformer,
-    EEGPT,
     EEGInceptionERP,
     EEGInceptionMI,
     EEGITNet,

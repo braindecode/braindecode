@@ -12,13 +12,13 @@ from .ctnet import CTNet
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .eegconformer import EEGConformer
-from .eegpt import EEGPT
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
 from .eegitnet import EEGITNet
 from .eegminer import EEGMiner
 from .eegnet import EEGNet, EEGNetv4
 from .eegnex import EEGNeX
+from .eegpt import EEGPT
 from .eegsimpleconv import EEGSimpleConv
 from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
