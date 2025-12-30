@@ -83,6 +83,10 @@ used with :func:`~braindecode.preprocessing.preprocess`.
 - :class:`~braindecode.preprocessing.FixMagCoilTypes` : Fix Elekta magnetometer coil types
 - :class:`~braindecode.preprocessing.ApplyGradientCompensation` : Apply CTF gradient compensation
 
+**Independent Component Analysis (ICA)**
+
+- :class:`~braindecode.preprocessing.ICA` : Remove ocular and other artifacts using ICA
+
 Usage Examples
 --------------
 Using the new preprocessing classes::
@@ -126,10 +130,11 @@ from .eegprep_preprocess import (
     RemoveBursts,
     RemoveCommonAverageReference,
     RemoveDCOffset,
-    RemoveDrifts,
     RemoveFlatChannels,
+    RemoveDrifts,
     Resampling,
 )
+from .ica import ICA
 from .mne_preprocess import (  # type: ignore[attr-defined]
     AddChannels,
     AddEvents,
@@ -232,6 +237,7 @@ __all__ = [
     "FindBadChannelsLof",
     "FixMagCoilTypes",
     "FixStimArtifact",
+    "ICA",
     "InterpolateBads",
     "InterpolateBridgedElectrodes",
     "InterpolateTo",
