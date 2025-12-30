@@ -111,7 +111,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         drop_path_rate=0.0,  # adjust for full finetuning
         init_std=0.02,
         qkv_bias=True,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6),
+        norm_layer=None,
         **kwargs,
     ):
         super().__init__(
@@ -137,7 +137,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             drop_path_rate=drop_path_rate,
             init_std=init_std,
             qkv_bias=qkv_bias,
-            norm_layer=norm_layer,
+            norm_layer=norm_layer or partial(nn.LayerNorm, eps=1e-6),
         )
 
         self.target_encoder = target_encoder
