@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import bisect
 import json
 import os
 import shutil
@@ -23,7 +24,7 @@ import mne.io
 import numpy as np
 import pandas as pd
 from mne.utils.docs import deprecated
-from torch.utils.data import ConcatDataset, Dataset
+from torch.utils.data import ConcatDataset, Dataset, IterableDataset
 from typing_extensions import TypeVar
 
 from .bids.hub import HubDatasetMixin
@@ -399,6 +400,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         list of RecordDataset
     target_transform : callable | None
         Optional function to call on targets before returning them.
+    lazy : bool, default False
+        If True, defer computing cumulative sizes until length or item access.
     """
 
     datasets: list[T]
@@ -407,7 +410,12 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         self,
         list_of_ds: list[T | BaseConcatDataset[T]],
         target_transform: Callable | None = None,
+        *,
+        lazy: bool = False,
     ):
+        # Adapted from torch.utils.data.ConcatDataset:
+        # added lazy init to defer cumulative size computation until access,
+        # plus _ensure_cumulative_sizes/_get_single_item helpers and __len__ changes.
         # if we get a list of BaseConcatDataset, get all the individual datasets
         flattened_list_of_ds: list[T] = []
         for ds in list_of_ds:
@@ -415,14 +423,32 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 flattened_list_of_ds.extend(ds.datasets)
             else:
                 flattened_list_of_ds.append(ds)
-        super().__init__(flattened_list_of_ds)
+        if lazy:
+            assert len(flattened_list_of_ds) > 0, (
+                "datasets should not be an empty iterable"
+            )
+            for ds in flattened_list_of_ds:
+                assert not isinstance(ds, IterableDataset), (
+                    "ConcatDataset does not support IterableDataset"
+                )
+            Dataset.__init__(self)
+            self.datasets = flattened_list_of_ds
+            self.cumulative_sizes = None
+        else:
+            super().__init__(flattened_list_of_ds)
 
         self.target_transform = target_transform
+        self._lazy = lazy
+
+    def _ensure_cumulative_sizes(self) -> list[int]:
+        if getattr(self, "cumulative_sizes", None) is None:
+            self.cumulative_sizes = ConcatDataset.cumsum(self.datasets)
+        return self.cumulative_sizes
 
     def _get_sequence(self, indices):
         X, y = list(), list()
         for ind in indices:
-            out_i = super().__getitem__(ind)
+            out_i = self._get_single_item(ind)
             X.append(out_i[0])
             y.append(out_i[1])
 
@@ -430,6 +456,25 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         y = np.array(y)
 
         return X, y
+
+    def __len__(self):
+        return self._ensure_cumulative_sizes()[-1]
+
+    def _get_single_item(self, idx: int):
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError(
+                    "absolute value of index should not exceed dataset length"
+                )
+            idx = len(self) + idx
+
+        cumulative_sizes = self._ensure_cumulative_sizes()
+        dataset_idx = bisect.bisect_right(cumulative_sizes, idx)
+        if dataset_idx == 0:
+            sample_idx = idx
+        else:
+            sample_idx = idx - cumulative_sizes[dataset_idx - 1]
+        return self.datasets[dataset_idx][sample_idx]
 
     def __getitem__(self, idx: int | list):
         """
@@ -444,7 +489,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         if isinstance(idx, Iterable):  # Sample multiple windows
             item = self._get_sequence(idx)
         else:
-            item = super().__getitem__(idx)
+            item = self._get_single_item(idx)
         if self.target_transform is not None:
             item = item[:1] + (self.target_transform(item[1]),) + item[2:]
         return item
