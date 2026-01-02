@@ -423,28 +423,44 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 flattened_list_of_ds.extend(ds.datasets)
             else:
                 flattened_list_of_ds.append(ds)
+
+        # Validate inputs (same validation for both lazy and non-lazy)
+        if len(flattened_list_of_ds) == 0:
+            raise ValueError("datasets should not be an empty iterable")
+        for ds in flattened_list_of_ds:
+            if isinstance(ds, IterableDataset):
+                raise TypeError("ConcatDataset does not support IterableDataset")
+
         if lazy:
-            assert len(flattened_list_of_ds) > 0, (
-                "datasets should not be an empty iterable"
-            )
-            for ds in flattened_list_of_ds:
-                assert not isinstance(ds, IterableDataset), (
-                    "ConcatDataset does not support IterableDataset"
-                )
             Dataset.__init__(self)
             self.datasets = flattened_list_of_ds
-            self.cumulative_sizes = None
+            # Defer cumulative size computation until first access.
+            self._cumulative_sizes: list[int] | None = None
         else:
             super().__init__(flattened_list_of_ds)
 
         self.target_transform = target_transform
         self._lazy = lazy
 
+    @property
+    def cumulative_sizes(self) -> list[int]:
+        """Cumulative sizes of the underlying datasets.
+
+        When the dataset is created with ``lazy=True``, the cumulative sizes
+        are computed on first access and then cached.
+        """
+        return self._ensure_cumulative_sizes()
+
+    @cumulative_sizes.setter
+    def cumulative_sizes(self, value: list[int] | None) -> None:
+        # Keep compatibility with torch.utils.data.ConcatDataset, which assigns
+        # to ``self.cumulative_sizes`` in its __init__.
+        self._cumulative_sizes = value
+
     def _ensure_cumulative_sizes(self) -> list[int]:
-        if getattr(self, "cumulative_sizes", None) is None:
-            self.cumulative_sizes = ConcatDataset.cumsum(self.datasets)
-        assert self.cumulative_sizes is not None
-        return self.cumulative_sizes
+        if self._cumulative_sizes is None:
+            self._cumulative_sizes = ConcatDataset.cumsum(self.datasets)
+        return self._cumulative_sizes
 
     def _get_sequence(self, indices):
         X, y = list(), list()
