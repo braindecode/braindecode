@@ -443,6 +443,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     def _ensure_cumulative_sizes(self) -> list[int]:
         if getattr(self, "cumulative_sizes", None) is None:
             self.cumulative_sizes = ConcatDataset.cumsum(self.datasets)
+        assert self.cumulative_sizes is not None
         return self.cumulative_sizes
 
     def _get_sequence(self, indices):
