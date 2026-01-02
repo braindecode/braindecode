@@ -187,7 +187,7 @@ def test_split_dataset_failure(concat_ds_targets):
     with pytest.raises(IndexError):
         concat_ds.split([])
 
-    with pytest.raises(AssertionError, match="datasets should not be an empty iterable"):
+    with pytest.raises(ValueError, match="datasets should not be an empty iterable"):
         concat_ds.split([[]])
 
     with pytest.raises(TypeError):
@@ -464,3 +464,137 @@ def test_windows_dataset_from_target_channels_raise_valuerror(set_up):
     _, _, epochs, _, _, _ = set_up
     with pytest.raises(ValueError):
         WindowsDataset(epochs, None, targets_from="non-existing")
+
+
+# ==================== Tests for lazy initialization ====================
+
+
+def test_lazy_cumulative_sizes_not_computed_on_init(concat_ds_targets):
+    """Test that cumulative sizes are not computed during init with lazy=True."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    assert lazy_ds._cumulative_sizes is None
+    assert lazy_ds._lazy is True
+
+
+def test_lazy_len_triggers_computation(concat_ds_targets):
+    """Test that len() correctly triggers cumulative size computation."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    assert lazy_ds._cumulative_sizes is None
+    length = len(lazy_ds)
+    assert lazy_ds._cumulative_sizes is not None
+    assert length == len(concat_ds)
+
+
+@pytest.mark.parametrize("idx", [0, 1, 2, 3, 4])
+def test_lazy_getitem_positive_index(concat_ds_targets, idx):
+    """Test __getitem__ with positive indices in lazy mode."""
+    concat_ds, _ = concat_ds_targets
+    if idx >= len(concat_ds):
+        pytest.skip(f"Index {idx} out of range for dataset of length {len(concat_ds)}")
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    lazy_item = lazy_ds[idx]
+    eager_item = concat_ds[idx]
+    np.testing.assert_array_equal(lazy_item[0], eager_item[0])
+    assert lazy_item[1] == eager_item[1]
+
+
+@pytest.mark.parametrize("idx", [-1, -2, -3])
+def test_lazy_getitem_negative_index(concat_ds_targets, idx):
+    """Test __getitem__ with negative indices in lazy mode."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    lazy_item = lazy_ds[idx]
+    eager_item = concat_ds[idx]
+    np.testing.assert_array_equal(lazy_item[0], eager_item[0])
+    assert lazy_item[1] == eager_item[1]
+
+
+def test_lazy_getitem_negative_index_out_of_range(concat_ds_targets):
+    """Test __getitem__ with negative index that exceeds dataset length."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    with pytest.raises(ValueError, match="absolute value of index should not exceed"):
+        lazy_ds[-len(lazy_ds) - 1]
+
+
+@pytest.mark.parametrize("lazy", [True, False], ids=["lazy", "eager"])
+def test_identical_results_across_modes(concat_ds_targets, lazy):
+    """Test that lazy and eager initialization produce identical results."""
+    concat_ds, _ = concat_ds_targets
+    ds = BaseConcatDataset(concat_ds.datasets, lazy=lazy)
+    reference_ds = BaseConcatDataset(concat_ds.datasets, lazy=False)
+
+    assert len(ds) == len(reference_ds)
+    np.testing.assert_array_equal(ds.cumulative_sizes, reference_ds.cumulative_sizes)
+
+    for i in range(min(5, len(reference_ds))):
+        item = ds[i]
+        ref_item = reference_ds[i]
+        np.testing.assert_array_equal(item[0], ref_item[0])
+        assert item[1] == ref_item[1]
+
+
+def test_lazy_flattened_baseconcatdataset(concat_ds_targets):
+    """Test that flattening BaseConcatDatasets works correctly with lazy=True."""
+    concat_ds, _ = concat_ds_targets
+    ds_list = concat_ds.datasets
+
+    concat_ds1 = BaseConcatDataset(ds_list[:2], lazy=True)
+    concat_ds2 = BaseConcatDataset(ds_list[2:], lazy=True)
+    flattened_ds = BaseConcatDataset([concat_ds1, concat_ds2], lazy=True)
+
+    assert len(flattened_ds.datasets) == len(ds_list)
+    assert len(flattened_ds) == len(concat_ds)
+
+    for i in range(min(5, len(concat_ds))):
+        flat_item = flattened_ds[i]
+        orig_item = concat_ds[i]
+        np.testing.assert_array_equal(flat_item[0], orig_item[0])
+        assert flat_item[1] == orig_item[1]
+
+
+def test_lazy_cumulative_sizes_property(concat_ds_targets):
+    """Test that cumulative_sizes property works correctly."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+
+    cumsizes = lazy_ds.cumulative_sizes
+    assert cumsizes is not None
+    assert len(cumsizes) == len(concat_ds.datasets)
+    np.testing.assert_array_equal(cumsizes, concat_ds.cumulative_sizes)
+
+
+def test_lazy_get_sequence(concat_ds_targets):
+    """Test _get_sequence works correctly with lazy initialization."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    eager_ds = BaseConcatDataset(concat_ds.datasets, lazy=False)
+
+    indices = list(range(min(5, len(eager_ds))))
+    lazy_X, lazy_y = lazy_ds[indices]
+    eager_X, eager_y = eager_ds[indices]
+
+    np.testing.assert_array_equal(lazy_X, eager_X)
+    np.testing.assert_array_equal(lazy_y, eager_y)
+
+
+@pytest.mark.parametrize("lazy", [True, False], ids=["lazy", "eager"])
+def test_empty_dataset_raises_valueerror(lazy):
+    """Test that empty dataset raises ValueError in both modes."""
+    with pytest.raises(ValueError, match="datasets should not be an empty iterable"):
+        BaseConcatDataset([], lazy=lazy)
+
+
+@pytest.mark.parametrize("lazy", [True, False], ids=["lazy", "eager"])
+def test_iterable_dataset_raises_typeerror(lazy):
+    """Test that providing an IterableDataset raises TypeError in both modes."""
+    from torch.utils.data import IterableDataset
+
+    class DummyIterableDataset(IterableDataset):
+        def __iter__(self):
+            yield 1
+
+    with pytest.raises(TypeError, match="ConcatDataset does not support IterableDataset"):
+        BaseConcatDataset([DummyIterableDataset()], lazy=lazy)
