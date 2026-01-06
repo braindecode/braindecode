@@ -1,11 +1,18 @@
+# Authors: Young Truong <dt.young112@gmail.com>
+#          Kuntal Kokate <kukokate@ucsd.edu>
+#
+# License: BSD-3
+
+import json
 import math
 from functools import partial
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Union
 
 import torch
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 
 
 class EEGPT(EEGModuleMixin, nn.Module):
@@ -186,6 +193,162 @@ class EEGPT(EEGModuleMixin, nn.Module):
         h = self.final_layer(h)
 
         return h
+
+    def _save_pretrained(self, save_directory):
+        """
+        Save EEGPT model configuration and weights to the Hub.
+
+        This method extends the base EEGModuleMixin._save_pretrained() to also
+        save EEGPT-specific hyperparameters to config.json.
+
+        Parameters
+        ----------
+        save_directory : str or Path
+            Directory where the configuration and weights should be saved.
+        """
+        if not HAS_HF_HUB:
+            return
+
+        # Call parent to save EEG config and weights
+        super()._save_pretrained(save_directory)
+
+        save_directory = Path(save_directory)
+        config_path = save_directory / "config.json"
+
+        # Load existing config saved by parent
+        with open(config_path, "r") as f:
+            config = json.load(f)
+
+        # Sanitize base config values to ensure JSON compatibility
+        def sanitize_value(v):
+            """Convert numpy/torch types to Python native types and handle NaN/Infinity."""
+            if v is None:
+                return None
+            if isinstance(v, (list, tuple)):
+                return [sanitize_value(item) for item in v]
+            if isinstance(v, dict):
+                return {k: sanitize_value(val) for k, val in v.items()}
+            if hasattr(v, "item"):  # numpy/torch scalar
+                v = v.item()
+
+            # Handle NaN and Infinity (not valid JSON per spec)
+            if isinstance(v, float):
+                if math.isnan(v):
+                    return None  # Convert NaN to null
+                if math.isinf(v):
+                    return None  # Convert Infinity to null
+
+            if isinstance(v, (int, float, str, bool)):
+                return v
+            return str(v)  # Fallback for other types
+
+        # Sanitize existing config
+        config = {k: sanitize_value(v) for k, v in config.items()}
+
+        # Add EEGPT-specific parameters (convert to Python native types for JSON)
+        config.update(
+            {
+                "patch_size": int(self.target_encoder.patch_embed.patch_size),
+                "patch_stride": int(self.target_encoder.patch_embed.patch_stride),
+                "embed_num": int(self.target_encoder.embed_num),
+                "embed_dim": int(self.target_encoder.embed_dim),
+                "depth": int(len(self.target_encoder.blocks)),
+                "num_heads": int(self.target_encoder.num_heads),
+                "mlp_ratio": float(4.0),
+                "qkv_bias": bool(True),
+                "drop_prob": float(0.0),
+                "attn_drop_rate": float(0.0),
+                "drop_path_rate": float(0.0),
+                "init_std": float(self.target_encoder.init_std),
+            }
+        )
+
+        # Save updated config (strict JSON - no NaN/Infinity)
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2, allow_nan=False)
+
+    if HAS_HF_HUB:
+
+        @classmethod
+        def _from_pretrained(
+            cls,
+            *,
+            model_id: str,
+            revision: Optional[str],
+            cache_dir: Optional[Union[str, Path]],
+            force_download: bool,
+            local_files_only: bool,
+            token: Union[str, bool, None],
+            map_location: str = "cpu",
+            strict: bool = False,
+            **model_kwargs,
+        ):
+            """
+            Load EEGPT model from HuggingFace Hub.
+
+            This method extracts EEGPT-specific parameters from config.json
+            before instantiating the model.
+
+            Parameters
+            ----------
+            model_id : str
+                HuggingFace Hub model ID (e.g., "braindecode/eegpt-pretrained")
+            revision : str, optional
+                Git revision (branch, tag, or commit hash)
+            cache_dir : str or Path, optional
+                Directory to cache downloaded files
+            force_download : bool
+                Force re-download even if cached
+            local_files_only : bool
+                Only use local files, don't download
+            token : str, bool, or None
+                HuggingFace API token for private repos
+            map_location : str, default="cpu"
+                Device to load weights onto
+            strict : bool, default=False
+                Whether to strictly enforce state_dict key matching
+            **model_kwargs : dict
+                Additional model parameters (can override config.json values)
+
+            Returns
+            -------
+            model : EEGPT
+                Loaded EEGPT model instance
+            """
+            # Extract EEGPT-specific parameters from model_kwargs
+            eegpt_params = {
+                "patch_size": model_kwargs.pop("patch_size", None),
+                "patch_stride": model_kwargs.pop("patch_stride", None),
+                "embed_num": model_kwargs.pop("embed_num", None),
+                "embed_dim": model_kwargs.pop("embed_dim", None),
+                "depth": model_kwargs.pop("depth", None),
+                "num_heads": model_kwargs.pop("num_heads", None),
+                "mlp_ratio": model_kwargs.pop("mlp_ratio", None),
+                "qkv_bias": model_kwargs.pop("qkv_bias", None),
+                "drop_prob": model_kwargs.pop("drop_prob", None),
+                "attn_drop_rate": model_kwargs.pop("attn_drop_rate", None),
+                "drop_path_rate": model_kwargs.pop("drop_path_rate", None),
+                "init_std": model_kwargs.pop("init_std", None),
+            }
+
+            # Filter out None values (use defaults from config.json)
+            eegpt_params = {k: v for k, v in eegpt_params.items() if v is not None}
+
+            # Merge with remaining model_kwargs
+            model_kwargs.update(eegpt_params)
+
+            # Call parent's _from_pretrained
+            return super()._from_pretrained(
+                model_id=model_id,
+                revision=revision,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                local_files_only=local_files_only,
+                token=token,
+                map_location=map_location,
+                strict=strict,
+                **model_kwargs,
+            )
 
 
 CHANNEL_DICT = {

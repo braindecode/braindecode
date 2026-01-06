@@ -316,3 +316,101 @@ def test_init_subclass_without_hf_hub():
         assert TestModel is not None
     finally:
         base.HAS_HF_HUB = original_has_hf_hub
+
+
+def test_eegpt_save_load_pretrained(tmp_path):
+    """Test EEGPT save/load roundtrip with EEGPT-specific parameters."""
+    import mne
+
+    from braindecode.models import EEGPT
+
+    # Create channel info with valid channel names
+    ch_names = ["Fz", "FC3", "FC1", "FCz", "FC2", "FC4", "C5", "C3", "C1", "Cz",
+                "C2", "C4", "C6", "CP3", "CP1", "CPz", "CP2", "CP4", "P1", "Pz", "P2", "POz"]
+    info = mne.create_info(ch_names=ch_names, sfreq=250., ch_types=["eeg"] * 22)
+
+    # Create model with non-default EEGPT parameters
+    model = EEGPT(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1024,
+        chs_info=info["chs"],
+        sfreq=250.0,
+        patch_size=64,
+        embed_dim=512,
+        embed_num=4,
+        depth=8,
+        num_heads=8,
+    )
+    model.eval()
+
+    # Save
+    model._save_pretrained(tmp_path)
+
+    # Verify config.json has EEGPT-specific params
+    config_path = tmp_path / "config.json"
+    assert config_path.exists()
+
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    # Check EEGPT-specific parameters are saved
+    assert config["embed_dim"] == 512
+    assert config["embed_num"] == 4
+    assert config["depth"] == 8
+    assert config["num_heads"] == 8
+    assert config["patch_size"] == 64
+    assert config["mlp_ratio"] == 4.0
+
+    # Load from saved config
+    restored = EEGPT.from_pretrained(tmp_path)
+    restored.eval()
+
+    # Verify forward pass matches
+    torch.manual_seed(42)
+    x = torch.randn(2, 22, 1024)
+
+    with torch.no_grad():
+        out_original = model(x)
+        out_restored = restored(x)
+
+    torch.testing.assert_close(out_restored, out_original)
+
+
+def test_eegpt_config_parameters_preserved(tmp_path):
+    """Test that all EEGPT hyperparameters are preserved in config.json."""
+    import mne
+
+    from braindecode.models import EEGPT
+
+    ch_names = ["Fz", "Cz", "Pz"]
+    info = mne.create_info(ch_names=ch_names, sfreq=100., ch_types=["eeg"] * 3)
+
+    # Create model with specific parameters
+    model = EEGPT(
+        n_outputs=2,
+        n_chans=3,
+        n_times=512,
+        chs_info=info["chs"],
+        sfreq=100.0,
+        patch_size=32,  # Non-default
+        patch_stride=16,  # Non-default
+        embed_dim=256,  # Non-default
+        embed_num=2,  # Non-default
+        depth=4,  # Non-default
+        num_heads=4,  # Non-default
+    )
+
+    model._save_pretrained(tmp_path)
+
+    config_path = tmp_path / "config.json"
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    # Verify all EEGPT params are in config
+    assert config["patch_size"] == 32
+    assert config["patch_stride"] == 16
+    assert config["embed_dim"] == 256
+    assert config["embed_num"] == 2
+    assert config["depth"] == 4
+    assert config["num_heads"] == 4
