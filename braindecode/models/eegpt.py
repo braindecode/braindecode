@@ -3,16 +3,13 @@
 #
 # License: BSD-3
 
-import json
-import math
 from functools import partial
-from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import torch
 from torch import nn
 
-from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin
 
 
 class EEGPT(EEGModuleMixin, nn.Module):
@@ -40,23 +37,21 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_outputs : int, optional
+    n_outputs : int
         Number of outputs of the model. This is the number of classes in the
         case of classification.
-    n_chans : int, optional
+    n_chans : int
         Number of EEG channels.
-    chs_info : list of dict, optional
+    chs_info : list of dict
         Information about the channels, as returned by `mne.Info`.
-    n_times : int, optional
+    n_times : int
         Number of time samples.
-    input_window_seconds : float, optional
+    input_window_seconds : float
         Length of the input window in seconds.
-    sfreq : float, optional
+    sfreq : float
         Sampling frequency of the EEG signals.
     return_encoder_output : bool, default=False
         Whether to return the encoder output or the classifier output.
-    checkpoint : str, optional
-        Path to the pretrained model checkpoint.
     channel_names : list of str, optional
         List of channel names. If None, it will be extracted from `chs_info`.
     patch_size : int, default=64
@@ -88,38 +83,35 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [eegpt] Tang, X., et al. (2024).
-       EEGPT: Pretrained Transformer for Universal and Reliable Representation of EEG Signals.
-       In Advances in Neural Information Processing Systems (NeurIPS).
+    .. [eegpt] Wang, G., Liu, W., He, Y., Xu, C., Ma, L., & Li, H. (2024).
+       EEGGPT: Pretrained transformer for universal and reliable representation of eeg signals.
+       Advances in Neural Information Processing Systems, 37, 39249-39280.
        Online: https://proceedings.neurips.cc/paper_files/paper/2024/file/4540d267eeec4e5dbd9dae9448f0b739-Paper-Conference.pdf
     """
 
     def __init__(
         self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        return_encoder_output=False,
-        # EEGPT specific parameters
-        checkpoint=None,
+        n_outputs: Optional[int] = None,
+        n_chans: Optional[int] = None,
+        chs_info: Optional[List] = None,
+        n_times: Optional[int] = None,
+        input_window_seconds: Optional[float] = None,
+        sfreq: Optional[float] = None,
+        return_encoder_output: bool = False,
         channel_names: Optional[List[str]] = None,
-        patch_size=64,  # should depending on dataset
-        patch_stride=32,  # should depending on dataset
-        embed_num=4,
-        embed_dim=512,
-        depth=8,
-        num_heads=8,
-        mlp_ratio=4.0,
-        drop_prob=0.0,  # adjust for full finetuning
-        attn_drop_rate=0.0,  # adjust for full finetuning
-        drop_path_rate=0.0,  # adjust for full finetuning
-        init_std=0.02,
-        qkv_bias=True,
-        norm_layer=None,
-        **kwargs,
+        patch_size: int = 64,
+        patch_stride: int = 32,
+        embed_num: int = 4,
+        embed_dim: int = 512,
+        depth: int = 8,
+        num_heads: int = 8,
+        mlp_ratio: float = 4.0,
+        drop_prob: float = 0.0,
+        attn_drop_rate: float = 0.0,
+        drop_path_rate: float = 0.0,
+        init_std: float = 0.02,
+        qkv_bias: bool = True,
+        norm_layer: Optional[nn.Module] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -129,25 +121,38 @@ class EEGPT(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        self.return_encoder_output = return_encoder_output
-        target_encoder = EEGTransformer(
-            img_size=[self.n_chans, self.n_times],
-            patch_size=patch_size,
-            patch_stride=patch_stride,
-            embed_num=embed_num,
-            embed_dim=embed_dim,
-            depth=depth,
-            num_heads=num_heads,
-            mlp_ratio=mlp_ratio,
-            drop_rate=drop_prob,
-            attn_drop_rate=attn_drop_rate,
-            drop_path_rate=drop_path_rate,
-            init_std=init_std,
-            qkv_bias=qkv_bias,
-            norm_layer=norm_layer or partial(nn.LayerNorm, eps=1e-6),
-        )
 
-        self.target_encoder = target_encoder
+        self.return_encoder_output = return_encoder_output
+        self.patch_size = patch_size
+        self.patch_stride = patch_stride
+        self.embed_num = embed_num
+        self.embed_dim = embed_dim
+        self.depth = depth
+        self.num_heads = num_heads
+        self.mlp_ratio = mlp_ratio
+        self.drop_prob = drop_prob
+        self.attn_drop_rate = attn_drop_rate
+        self.drop_path_rate = drop_path_rate
+        self.init_std = init_std
+        self.qkv_bias = qkv_bias
+        self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
+
+        self.target_encoder = EEGTransformer(
+            img_size=[self.n_chans, self.n_times],
+            patch_size=self.patch_size,
+            patch_stride=self.patch_stride,
+            embed_num=self.embed_num,
+            embed_dim=self.embed_dim,
+            depth=self.depth,
+            num_heads=self.num_heads,
+            mlp_ratio=self.mlp_ratio,
+            drop_rate=self.drop_prob,
+            attn_drop_rate=self.attn_drop_rate,
+            drop_path_rate=self.drop_path_rate,
+            init_std=self.init_std,
+            qkv_bias=self.qkv_bias,
+            norm_layer=self.norm_layer,
+        )
 
         if channel_names is None:
             if chs_info is not None:
@@ -157,30 +162,33 @@ class EEGPT(EEGModuleMixin, nn.Module):
                     "No channel names provided and no channel information available. Please provide channel names."
                 )
 
-        self.chans_id = target_encoder.prepare_chan_ids(channel_names)
-
-        # -- load checkpoint
-        if checkpoint:
-            pretrain_ckpt = torch.load(checkpoint, weights_only=False)
-
-            target_encoder_stat = {}
-            for k, v in pretrain_ckpt["state_dict"].items():
-                if k.startswith("target_encoder."):
-                    target_encoder_stat[k[15:]] = v
-
-            self.target_encoder.load_state_dict(target_encoder_stat)
+        self.channel_names = channel_names
+        self.chans_id = self.target_encoder.prepare_chan_ids(channel_names)
 
         self.flattened_encoder_output_dim = (
-            target_encoder.num_patches[1] * embed_num * embed_dim
-        )
-        self.final_layer = (
-            nn.Linear(self.flattened_encoder_output_dim, n_outputs)
-            if not return_encoder_output
-            else None
+            self.target_encoder.num_patches[1] * self.embed_num * self.embed_dim
         )
 
+        if not return_encoder_output:
+            self.final_layer = nn.Linear(
+                self.flattened_encoder_output_dim, self.n_outputs
+            )
+        else:
+            self.final_layer = nn.Identity()
+
     def forward(self, x):
-        z = self.target_encoder(x, self.chans_id.to(x))  # B, N, embed_num, D
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            EEG data of shape (batch_size, n_chans, n_times)
+        """
+
+        # B, N, embed_num, D
+        z = self.target_encoder(x, self.chans_id.to(x.device))
+
         if self.return_encoder_output:
             return z
 
@@ -193,162 +201,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         h = self.final_layer(h)
 
         return h
-
-    def _save_pretrained(self, save_directory):
-        """
-        Save EEGPT model configuration and weights to the Hub.
-
-        This method extends the base EEGModuleMixin._save_pretrained() to also
-        save EEGPT-specific hyperparameters to config.json.
-
-        Parameters
-        ----------
-        save_directory : str or Path
-            Directory where the configuration and weights should be saved.
-        """
-        if not HAS_HF_HUB:
-            return
-
-        # Call parent to save EEG config and weights
-        super()._save_pretrained(save_directory)
-
-        save_directory = Path(save_directory)
-        config_path = save_directory / "config.json"
-
-        # Load existing config saved by parent
-        with open(config_path, "r") as f:
-            config = json.load(f)
-
-        # Sanitize base config values to ensure JSON compatibility
-        def sanitize_value(v):
-            """Convert numpy/torch types to Python native types and handle NaN/Infinity."""
-            if v is None:
-                return None
-            if isinstance(v, (list, tuple)):
-                return [sanitize_value(item) for item in v]
-            if isinstance(v, dict):
-                return {k: sanitize_value(val) for k, val in v.items()}
-            if hasattr(v, "item"):  # numpy/torch scalar
-                v = v.item()
-
-            # Handle NaN and Infinity (not valid JSON per spec)
-            if isinstance(v, float):
-                if math.isnan(v):
-                    return None  # Convert NaN to null
-                if math.isinf(v):
-                    return None  # Convert Infinity to null
-
-            if isinstance(v, (int, float, str, bool)):
-                return v
-            return str(v)  # Fallback for other types
-
-        # Sanitize existing config
-        config = {k: sanitize_value(v) for k, v in config.items()}
-
-        # Add EEGPT-specific parameters (convert to Python native types for JSON)
-        config.update(
-            {
-                "patch_size": int(self.target_encoder.patch_embed.patch_size),
-                "patch_stride": int(self.target_encoder.patch_embed.patch_stride),
-                "embed_num": int(self.target_encoder.embed_num),
-                "embed_dim": int(self.target_encoder.embed_dim),
-                "depth": int(len(self.target_encoder.blocks)),
-                "num_heads": int(self.target_encoder.num_heads),
-                "mlp_ratio": float(4.0),
-                "qkv_bias": bool(True),
-                "drop_prob": float(0.0),
-                "attn_drop_rate": float(0.0),
-                "drop_path_rate": float(0.0),
-                "init_std": float(self.target_encoder.init_std),
-            }
-        )
-
-        # Save updated config (strict JSON - no NaN/Infinity)
-        with open(config_path, "w") as f:
-            json.dump(config, f, indent=2, allow_nan=False)
-
-    if HAS_HF_HUB:
-
-        @classmethod
-        def _from_pretrained(
-            cls,
-            *,
-            model_id: str,
-            revision: Optional[str],
-            cache_dir: Optional[Union[str, Path]],
-            force_download: bool,
-            local_files_only: bool,
-            token: Union[str, bool, None],
-            map_location: str = "cpu",
-            strict: bool = False,
-            **model_kwargs,
-        ):
-            """
-            Load EEGPT model from HuggingFace Hub.
-
-            This method extracts EEGPT-specific parameters from config.json
-            before instantiating the model.
-
-            Parameters
-            ----------
-            model_id : str
-                HuggingFace Hub model ID (e.g., "braindecode/eegpt-pretrained")
-            revision : str, optional
-                Git revision (branch, tag, or commit hash)
-            cache_dir : str or Path, optional
-                Directory to cache downloaded files
-            force_download : bool
-                Force re-download even if cached
-            local_files_only : bool
-                Only use local files, don't download
-            token : str, bool, or None
-                HuggingFace API token for private repos
-            map_location : str, default="cpu"
-                Device to load weights onto
-            strict : bool, default=False
-                Whether to strictly enforce state_dict key matching
-            **model_kwargs : dict
-                Additional model parameters (can override config.json values)
-
-            Returns
-            -------
-            model : EEGPT
-                Loaded EEGPT model instance
-            """
-            # Extract EEGPT-specific parameters from model_kwargs
-            eegpt_params = {
-                "patch_size": model_kwargs.pop("patch_size", None),
-                "patch_stride": model_kwargs.pop("patch_stride", None),
-                "embed_num": model_kwargs.pop("embed_num", None),
-                "embed_dim": model_kwargs.pop("embed_dim", None),
-                "depth": model_kwargs.pop("depth", None),
-                "num_heads": model_kwargs.pop("num_heads", None),
-                "mlp_ratio": model_kwargs.pop("mlp_ratio", None),
-                "qkv_bias": model_kwargs.pop("qkv_bias", None),
-                "drop_prob": model_kwargs.pop("drop_prob", None),
-                "attn_drop_rate": model_kwargs.pop("attn_drop_rate", None),
-                "drop_path_rate": model_kwargs.pop("drop_path_rate", None),
-                "init_std": model_kwargs.pop("init_std", None),
-            }
-
-            # Filter out None values (use defaults from config.json)
-            eegpt_params = {k: v for k, v in eegpt_params.items() if v is not None}
-
-            # Merge with remaining model_kwargs
-            model_kwargs.update(eegpt_params)
-
-            # Call parent's _from_pretrained
-            return super()._from_pretrained(
-                model_id=model_id,
-                revision=revision,
-                cache_dir=cache_dir,
-                force_download=force_download,
-                local_files_only=local_files_only,
-                token=token,
-                map_location=map_location,
-                strict=strict,
-                **model_kwargs,
-            )
 
 
 CHANNEL_DICT = {
@@ -422,141 +274,25 @@ CHANNEL_DICT = {
 }
 
 
-################################# Utils ######################################
-def _no_grad_trunc_normal_(tensor, mean, std, a, b):
-    # Cut & paste from PyTorch official master until it's in a few official releases - RW
-    # Method based on https://people.sc.fsu.edu/~jburkardt/presentations/truncated_normal.pdf
-    def norm_cdf(x):
-        # Computes standard normal cumulative distribution function
-        return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
-
-    with torch.no_grad():
-        # Values are generated by using a truncated uniform distribution and
-        # then using the inverse CDF for the normal distribution.
-        # Get upper and lower cdf values
-        l = norm_cdf((a - mean) / std)
-        u = norm_cdf((b - mean) / std)
-
-        # Uniformly fill tensor with values from [l, u], then translate to
-        # [2l-1, 2u-1].
-        tensor.uniform_(2 * l - 1, 2 * u - 1)
-
-        # Use inverse cdf transform for normal distribution to get truncated
-        # standard normal
-        tensor.erfinv_()
-
-        # Transform to proper mean, std
-        tensor.mul_(std * math.sqrt(2.0))
-        tensor.add_(mean)
-
-        # Clamp to ensure it's in the proper range
-        tensor.clamp_(min=a, max=b)
-        return tensor
-
-
-def trunc_normal_(tensor, mean=0.0, std=1.0, a=-2.0, b=2.0):
-    return _no_grad_trunc_normal_(tensor, mean, std, a, b)
-
-
-def apply_mask(mask, x):
-    """
-    :param x: tensor of shape [B (batch-size), N (num-patches), C, D (feature-dim)]
-    :param mask: tensor [mN, mC] containing indices of patches in [N, C] to keep
-    """
-    B, N, C, D = x.shape
-    if len(mask.shape) == 2:
-        mN, mC = mask.shape
-
-        mask_keep = mask.reshape((1, mN * mC, 1)).repeat((B, 1, D))
-        masked_x = torch.gather(x.reshape((B, N * C, D)), dim=-2, index=mask_keep)
-        masked_x = masked_x.contiguous().view((B, mN, mC, D))
-    else:
-        mN = mask.shape[0]
-
-        mask_keep = mask.reshape((1, mN, 1)).repeat((B, 1, D))
-        masked_x = torch.gather(x.reshape((B, N * C, D)), dim=-2, index=mask_keep)
-    return masked_x
-
-
-def apply_mask_t(mask_t, x):
-    """
-    :param x: tensor of shape [B (batch-size), N (num-patches), C, D (feature-dim)]
-    :param mask: tensor [mN, mC] containing indices of patches in [N, C] to keep
-    """
-    B, N, D = x.shape
-    mN = mask_t.shape[0]
-
-    mask_keep = mask_t.reshape((1, mN, 1)).repeat((B, 1, D))
-    masked_x = torch.gather(x, dim=1, index=mask_keep)
-    return masked_x
-
-
-def repeat_interleave_batch(x, B, repeat):
-    N = len(x) // B
-    x = torch.cat(
-        [
-            torch.cat([x[i * B : (i + 1) * B] for _ in range(repeat)], dim=0)
-            for i in range(N)
-        ],
-        dim=0,
-    )
-    return x
-
-
-# helper functions
-def exists(val):
-    return val is not None
-
-
-# rotary embedding helper functions
-
-
-def rotate_half(x):
-    # x = rearrange(x, '... (d r) -> ... d r', r = 2)
-    x = x.reshape((*x.shape[:-1], x.shape[-1] // 2, 2))
-    x1, x2 = x.unbind(dim=-1)
-    x = torch.stack((-x2, x1), dim=-1)
-    # return rearrange(x, '... d r -> ... (d r)')
-    return x.flatten(-2)
-
-
-def apply_rotary_emb(freqs, t, start_index=0, scale=1.0):
-    freqs = freqs.to(t)
-    rot_dim = freqs.shape[-1]
-    end_index = start_index + rot_dim
-    assert rot_dim <= t.shape[-1], (
-        f"feature dimension {t.shape[-1]} is not of sufficient size to rotate in all the positions {rot_dim}"
-    )
-    t_left, t, t_right = (
-        t[..., :start_index],
-        t[..., start_index:end_index],
-        t[..., end_index:],
-    )
-    t = (t * freqs.cos() * scale) + (rotate_half(t) * freqs.sin() * scale)
-    return torch.cat((t_left, t, t_right), dim=-1)
-
-
 class DropPath(nn.Module):
-    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks)."""
+    """Drop paths (Stochastic Depth) per sample."""
 
     def __init__(self, drop_prob=None):
         super(DropPath, self).__init__()
         self.drop_prob = drop_prob
 
-    def drop_path(self, x, drop_prob: float = 0.0, training: bool = False):
-        if drop_prob == 0.0 or not training:
+    def extra_repr(self) -> str:
+        return f"p={self.drop_prob}"
+
+    def forward(self, x):
+        if self.drop_prob == 0.0 or not self.training:
             return x
-        keep_prob = 1 - drop_prob
-        shape = (x.shape[0],) + (1,) * (
-            x.ndim - 1
-        )  # work with diff dim tensors, not just 2D ConvNets
+        keep_prob = 1 - self.drop_prob
+        shape = (x.shape[0],) + (1,) * (x.ndim - 1)
         random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
         random_tensor.floor_()  # binarize
         output = x.div(keep_prob) * random_tensor
         return output
-
-    def forward(self, x):
-        return self.drop_path(x, self.drop_prob, self.training)
 
 
 class MLP(nn.Module):
@@ -593,66 +329,32 @@ class Attention(nn.Module):
         qkv_bias=False,
         attn_drop=0.0,
         proj_drop=0.0,
-        is_causal=False,
-        use_rope=False,
-        return_attention=False,
     ):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
-
-        self.use_rope = use_rope
+        self.scale = self.head_dim**-0.5
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-
-        self.attn_drop = attn_drop
+        self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
-        self.is_causal = is_causal
-        self.return_attention = return_attention
 
-    def forward(self, x, freqs=None):
+    def forward(self, x):
         B, T, C = x.shape
         qkv = (
             self.qkv(x)
             .reshape(B, T, 3, self.num_heads, C // self.num_heads)
             .permute(2, 0, 3, 1, 4)
-        )  # 3,B,nh,t,d
-        q, k, v = qkv[0], qkv[1], qkv[2]  # B,nh,t,d
+        )  # 3, B, nh, T, d
+        q, k, v = qkv[0], qkv[1], qkv[2]  # B, nh, T, d
 
-        if self.use_rope:  # RoPE
-            q = apply_rotary_emb(freqs, q)
-            k = apply_rotary_emb(freqs, k)
-        if self.return_attention:
-            if self.is_causal:
-                attn_mask = torch.ones(q.size(-2), q.size(-2), dtype=torch.bool).tril(
-                    diagonal=0
-                )
-                attn_maak = torch.zeros(q.size(-2), q.size(-2))
-                attn_mask = attn_maak.masked_fill(
-                    torch.logical_not(attn_mask), -float("inf")
-                )
-                attn_weight = torch.softmax(
-                    (q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))) + attn_mask,
-                    dim=-1,
-                )
-            else:
-                attn_weight = torch.softmax(
-                    (q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))), dim=-1
-                )
-            return attn_weight
-        # efficient attention using Flash Attention CUDA kernels
-        y = torch.nn.functional.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=None,
-            dropout_p=self.attn_drop if self.training else 0,
-            is_causal=self.is_causal,
-        )
-        x = (
-            y.transpose(1, 2).contiguous().view(B, T, C)
-        )  # (B, nh, T, hs) -> (B, T, hs*nh)
+        # Standard attention
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+        x = (attn @ v).transpose(1, 2).reshape(B, T, C)
+
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
@@ -670,13 +372,8 @@ class Block(nn.Module):
         drop_path=0.0,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
-        is_causal=False,
-        use_rope=False,
-        return_attention=False,
     ):
         super().__init__()
-
-        self.return_attention = return_attention
         self.norm1 = norm_layer(dim)
         self.attn = Attention(
             dim,
@@ -684,9 +381,6 @@ class Block(nn.Module):
             qkv_bias=qkv_bias,
             attn_drop=attn_drop,
             proj_drop=drop,
-            is_causal=is_causal,
-            use_rope=use_rope,
-            return_attention=return_attention,
         )
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
@@ -698,11 +392,8 @@ class Block(nn.Module):
             drop=drop,
         )
 
-    def forward(self, x, freqs=None):
-        y = self.attn(self.norm1(x), freqs)
-        if self.return_attention:
-            return y
-        x = x + self.drop_path(y)
+    def forward(self, x):
+        x = x + self.drop_path(self.attn(self.norm1(x)))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
@@ -733,61 +424,9 @@ class PatchEmbed(nn.Module):
         )
 
     def forward(self, x):
-        # x: B,C,T
+        # x: B, C, T
         x = x.unsqueeze(1)  # B, 1, C, T
         x = self.proj(x).transpose(1, 3)  # B, T, C, D
-        return x
-
-
-class PatchNormEmbed(nn.Module):
-    """Image to Patch Embedding"""
-
-    def __init__(
-        self, img_size=(64, 1000), patch_size=16, patch_stride=None, embed_dim=768
-    ):
-        super().__init__()
-
-        assert img_size[1] % patch_size == 0
-
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.patch_stride = patch_stride
-
-        if patch_stride is None:
-            self.num_patches = ((img_size[0]), (img_size[1] // patch_size))
-        else:
-            self.num_patches = (
-                (img_size[0]),
-                ((img_size[1] - patch_size) // patch_stride + 1),
-            )
-
-        self.unfold = torch.nn.Unfold(
-            kernel_size=(1, patch_size),
-            stride=(1, patch_stride if patch_stride is not None else patch_size),
-        )
-
-        self.proj = nn.Linear(patch_size, embed_dim)  # +2
-
-    def forward(self, x):
-        # x: B,C,T
-        B, C, T = x.shape
-        x = x.unsqueeze(1)  # B 1 C T
-
-        x = self.unfold(x)
-
-        x = x.transpose(-1, -2)
-
-        x = x.view(B, C, -1, self.patch_size).contiguous()
-        x = x.transpose(1, 2)
-
-        # m = torch.mean(x, dim=-1).unsqueeze(-1)
-        # v = torch.std( x, dim=-1).unsqueeze(-1)
-        x = torch.layer_norm(x, (self.patch_size,))
-        # x = torch.cat([x,m,v], dim=-1) # B, T, C, P
-        # print(x)
-
-        x = self.proj(x)  # B, T, C, D
-
         return x
 
 
@@ -801,9 +440,7 @@ class EEGTransformer(nn.Module):
         patch_stride=None,
         embed_dim=768,
         embed_num=1,
-        predictor_embed_dim=384,
         depth=12,
-        predictor_depth=12,
         num_heads=12,
         mlp_ratio=4.0,
         qkv_bias=True,
@@ -811,19 +448,15 @@ class EEGTransformer(nn.Module):
         attn_drop_rate=0.0,
         drop_path_rate=0.0,
         norm_layer=nn.LayerNorm,
-        patch_module=PatchEmbed,  # PatchNormEmbed
+        patch_module=PatchEmbed,
         init_std=0.02,
-        interpolate_factor=2.0,
-        return_attention_layer=-1,
         **kwargs,
     ):
         super().__init__()
-        self.num_features = self.embed_dim = embed_dim
+        self.embed_dim = embed_dim
         self.embed_num = embed_num
-
         self.num_heads = num_heads
 
-        # --
         self.patch_embed = patch_module(
             img_size=img_size,
             patch_size=patch_size,
@@ -831,13 +464,13 @@ class EEGTransformer(nn.Module):
             embed_dim=embed_dim,
         )
         self.num_patches = self.patch_embed.num_patches
-        # --
 
         self.chan_embed = nn.Embedding(len(CHANNEL_DICT), embed_dim)
-        # --
+
         dpr = [
             x.item() for x in torch.linspace(0, drop_path_rate, depth)
         ]  # stochastic depth decay rule
+
         self.blocks = nn.ModuleList(
             [
                 Block(
@@ -849,33 +482,42 @@ class EEGTransformer(nn.Module):
                     attn_drop=attn_drop_rate,
                     drop_path=dpr[i],
                     norm_layer=norm_layer,
-                    is_causal=False,
-                    use_rope=False,
-                    return_attention=(i + 1) == return_attention_layer,
                 )
                 for i in range(depth)
             ]
         )
         self.norm = norm_layer(embed_dim)
-        # ------
         self.init_std = init_std
         self.summary_token = nn.Parameter(torch.zeros(1, embed_num, embed_dim))
 
-        trunc_normal_(self.summary_token, std=self.init_std)
+        nn.init.trunc_normal_(self.summary_token, std=self.init_std)
         self.apply(self._init_weights)
         self.fix_init_weight()
 
     def prepare_chan_ids(self, channels):
         chan_ids = []
         for ch in channels:
-            ch = ch.upper().strip(".")
-            assert ch in CHANNEL_DICT
-            chan_ids.append(CHANNEL_DICT[ch])
+            ch_normalised = ch.upper().strip(".").replace("Z", "z")
+            # Revert Z to z only if it's the last character?
+            # The dictionary uses UPPERCASE.
+            # Original code: ch.upper().strip(".")
+            # Dictionary keys are UPPERCASE.
+            # Wait, original code CHANNEL_DICT had keys like 'FP1', 'FPZ' (upper Z).
+            # But standard 10-20 often uses 'Fp1', 'Fpz'.
+            # MNE uses Fpz.
+            # ch.upper() 'FPZ' -> matches 'FPZ' in dict.
+
+            ch_upper = ch.upper().strip(".")
+            assert ch_upper in CHANNEL_DICT, (
+                f"Channel {ch} not found in EEGPT channel list."
+            )
+            chan_ids.append(CHANNEL_DICT[ch_upper])
+
         return torch.tensor(chan_ids).unsqueeze_(0).long()
 
     def fix_init_weight(self):
         def rescale(param, layer_id):
-            param.div_(math.sqrt(2.0 * layer_id))
+            param.div_(torch.sqrt(torch.tensor(2.0 * layer_id)))
 
         for layer_id, layer in enumerate(self.blocks):
             rescale(layer.attn.proj.weight.data, layer_id + 1)
@@ -883,26 +525,24 @@ class EEGTransformer(nn.Module):
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=self.init_std)
+            nn.init.trunc_normal_(m.weight, std=self.init_std)
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
         elif isinstance(m, nn.Conv2d):
-            trunc_normal_(m.weight, std=self.init_std)
+            nn.init.trunc_normal_(m.weight, std=self.init_std)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.Embedding):
             torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
 
-    def forward(self, x, chan_ids=None, mask_x=None, mask_t=None):
+    def forward(self, x, chan_ids=None):
         # x.shape B, C, T
-        # mask_x.shape mN, mC
-        # mask_t.shape mN
 
         # -- patchify x
-        x = self.patch_embed(x)  #
+        x = self.patch_embed(x)
         B, N, C, D = x.shape
 
         assert N == self.num_patches[1] and C == self.num_patches[0], (
@@ -911,15 +551,10 @@ class EEGTransformer(nn.Module):
 
         if chan_ids is None:
             chan_ids = torch.arange(0, C)
-        chan_ids = chan_ids.to(x)
+        chan_ids = chan_ids.to(x.device)
 
         # -- add channels positional embedding to x
-        x = x + self.chan_embed(chan_ids.long()).unsqueeze(0)  # (1,C) -> (1,1,C,D)
-
-        if mask_x is not None:
-            mask_x = mask_x.to(x.device)
-            x = apply_mask(mask_x, x)  # B, mN, mC, D
-            B, N, C, D = x.shape
+        x = x + self.chan_embed(chan_ids.long()).unsqueeze(0)  # (1, C) -> (1, 1, C, D)
 
         x = x.flatten(0, 1)  # BmN, mC, D
 
@@ -928,10 +563,8 @@ class EEGTransformer(nn.Module):
         x = torch.cat([x, summary_token], dim=1)  # BmN, mC+embed_num, D
 
         # -- fwd prop
-        for i, blk in enumerate(self.blocks):
-            x = blk(x)  # B*N, mC+1, D
-            if blk.return_attention == True:
-                return x
+        for blk in self.blocks:
+            x = blk(x)
 
         x = x[:, -summary_token.shape[1] :, :]
 
@@ -940,11 +573,6 @@ class EEGTransformer(nn.Module):
 
         x = x.flatten(-2)
         x = x.reshape((B, N, -1))
-        # -- reshape back
-
-        if mask_t is not None:
-            mask_t = mask_t.to(x.device)
-            x = apply_mask_t(mask_t, x)  # B, mN, D
 
         x = x.reshape((B, N, self.embed_num, -1))
 
