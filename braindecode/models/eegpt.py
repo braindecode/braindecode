@@ -122,6 +122,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
         # model parameters
         self.return_encoder_output = return_encoder_output
         self.patch_size = patch_size
@@ -155,7 +157,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
             norm_layer=self.norm_layer,
         )
 
-        self.channel_names = [ch["ch_name"] for ch in chs_info]
+        if self.chs_info is not None:
+            self.channel_names = [ch["ch_name"] for ch in self.chs_info]  # type: ignore
 
         self.chans_id = self.target_encoder.prepare_chan_ids(self.channel_names)
 
