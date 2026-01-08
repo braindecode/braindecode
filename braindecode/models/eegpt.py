@@ -125,6 +125,15 @@ class EEGPT(EEGModuleMixin, nn.Module):
        EEGPT: Pretrained transformer for universal and reliable representation of eeg signals.
        Advances in Neural Information Processing Systems, 37, 39249-39280.
        Online: https://proceedings.neurips.cc/paper_files/paper/2024/file/4540d267eeec4e5dbd9dae9448f0b739-Paper-Conference.pdf
+
+    Notes
+    -----
+    When loading pretrained weights from the original EEGPT checkpoint (e.g., for
+    fine-tuning), you may encounter "unexpected keys" related to the `predictor`
+    and `reconstructor` modules (e.g., `predictor.mask_token`, `reconstructor.time_embed`).
+    These components are used only during the self-supervised pre-training phase
+    (Masked Auto-Encoder) and are not part of this encoder-only model used for
+    downstream tasks. It is safe to ignore them.
     """
 
     def __init__(
@@ -196,7 +205,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             norm_layer=self.norm_layer,
         )
 
-        if self.chs_info is not None:
+        if self._chs_info is not None:
             self.channel_names = [ch["ch_name"] for ch in self.chs_info]  # type: ignore
         else:
             self.channel_names = None  # type: ignore
