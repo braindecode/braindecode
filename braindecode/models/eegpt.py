@@ -329,8 +329,13 @@ class Attention(nn.Module):
         qkv_bias=False,
         attn_drop=0.0,
         proj_drop=0.0,
+        is_causal=False,
+        use_rope=False,
+        return_attention=False,
     ):
         super().__init__()
+        self.use_rope = use_rope
+
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
         self.scale = self.head_dim**-0.5
@@ -339,6 +344,9 @@ class Attention(nn.Module):
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
+
+        self.is_causal = is_causal
+        self.return_attention = return_attention
 
     def forward(self, x):
         B, T, C = x.shape
@@ -349,11 +357,39 @@ class Attention(nn.Module):
         )  # 3, B, nh, T, d
         q, k, v = qkv[0], qkv[1], qkv[2]  # B, nh, T, d
 
-        # Standard attention
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-        x = (attn @ v).transpose(1, 2).reshape(B, T, C)
+        if self.use_rope:  # RoPE
+            q = apply_rotary_emb(freqs, q)
+            k = apply_rotary_emb(freqs, k)
+        if self.return_attention:
+            if self.is_causal:
+                attn_mask = torch.ones(q.size(-2), q.size(-2), dtype=torch.bool).tril(
+                    diagonal=0
+                )
+                attn_maak = torch.zeros(q.size(-2), q.size(-2))
+                attn_mask = attn_maak.masked_fill(
+                    torch.logical_not(attn_mask), -float("inf")
+                )
+                attn_weight = torch.softmax(
+                    (q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))) + attn_mask,
+                    dim=-1,
+                )
+            else:
+                attn_weight = torch.softmax(
+                    (q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))), dim=-1
+                )
+            return attn_weight
+        # efficient attention using Flash Attention CUDA kernels
+        y = torch.nn.functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=None,
+            dropout_p=self.attn_drop if self.training else 0,
+            is_causal=self.is_causal,
+        )
+        x = (
+            y.transpose(1, 2).contiguous().view(B, T, C)
+        )  # (B, nh, T, hs) -> (B, T, hs*nh)
 
         x = self.proj(x)
         x = self.proj_drop(x)
@@ -372,6 +408,9 @@ class Block(nn.Module):
         drop_path=0.0,
         act_layer=nn.GELU,
         norm_layer=nn.LayerNorm,
+        is_causal=False,
+        use_rope=False,
+        return_attention=False,
     ):
         super().__init__()
         self.norm1 = norm_layer(dim)
@@ -381,6 +420,9 @@ class Block(nn.Module):
             qkv_bias=qkv_bias,
             attn_drop=attn_drop,
             proj_drop=drop,
+            is_causal=is_causal,
+            use_rope=use_rope,
+            return_attention=return_attention,
         )
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
@@ -392,8 +434,11 @@ class Block(nn.Module):
             drop=drop,
         )
 
-    def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
+    def forward(self, x, freqs=None):
+        y = self.attn(self.norm1(x), freqs)
+        if self.return_attention:
+            return y
+        x = x + self.drop_path(y)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
@@ -430,6 +475,58 @@ class PatchEmbed(nn.Module):
         return x
 
 
+class PatchNormEmbed(nn.Module):
+    """Image to Patch Embedding"""
+
+    def __init__(
+        self, img_size=(64, 1000), patch_size=16, patch_stride=None, embed_dim=768
+    ):
+        super().__init__()
+
+        assert img_size[1] % patch_size == 0
+
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.patch_stride = patch_stride
+
+        if patch_stride is None:
+            self.num_patches = ((img_size[0]), (img_size[1] // patch_size))
+        else:
+            self.num_patches = (
+                (img_size[0]),
+                ((img_size[1] - patch_size) // patch_stride + 1),
+            )
+
+        self.unfold = torch.nn.Unfold(
+            kernel_size=(1, patch_size),
+            stride=(1, patch_stride if patch_stride is not None else patch_size),
+        )
+
+        self.proj = nn.Linear(patch_size, embed_dim)  # +2
+
+    def forward(self, x):
+        # x: B,C,T
+        B, C, T = x.shape
+        x = x.unsqueeze(1)  # B 1 C T
+
+        x = self.unfold(x)
+
+        x = x.transpose(-1, -2)
+
+        x = x.view(B, C, -1, self.patch_size).contiguous()
+        x = x.transpose(1, 2)
+
+        # m = torch.mean(x, dim=-1).unsqueeze(-1)
+        # v = torch.std( x, dim=-1).unsqueeze(-1)
+        x = torch.layer_norm(x, (self.patch_size,))
+        # x = torch.cat([x,m,v], dim=-1) # B, T, C, P
+        # print(x)
+
+        x = self.proj(x)  # B, T, C, D
+
+        return x
+
+
 class EEGTransformer(nn.Module):
     """EEG Transformer"""
 
@@ -440,7 +537,9 @@ class EEGTransformer(nn.Module):
         patch_stride=None,
         embed_dim=768,
         embed_num=1,
+        predictor_embed_dim=384,
         depth=12,
+        predictor_depth=12,
         num_heads=12,
         mlp_ratio=4.0,
         qkv_bias=True,
@@ -448,8 +547,10 @@ class EEGTransformer(nn.Module):
         attn_drop_rate=0.0,
         drop_path_rate=0.0,
         norm_layer=nn.LayerNorm,
-        patch_module=PatchEmbed,
+        patch_module=PatchEmbed,  # PatchNormEmbed
         init_std=0.02,
+        interpolate_factor=2.0,
+        return_attention_layer=-1,
         **kwargs,
     ):
         super().__init__()
@@ -482,6 +583,9 @@ class EEGTransformer(nn.Module):
                     attn_drop=attn_drop_rate,
                     drop_path=dpr[i],
                     norm_layer=norm_layer,
+                    is_causal=False,
+                    use_rope=False,
+                    return_attention=(i + 1) == return_attention_layer,
                 )
                 for i in range(depth)
             ]
@@ -538,7 +642,7 @@ class EEGTransformer(nn.Module):
         elif isinstance(m, nn.Embedding):
             torch.nn.init.normal_(m.weight, mean=0.0, std=0.02)
 
-    def forward(self, x, chan_ids=None):
+    def forward(self, x, chan_ids=None, mask_x=None, mask_t=None):
         # x.shape B, C, T
 
         # -- patchify x
@@ -554,7 +658,13 @@ class EEGTransformer(nn.Module):
         chan_ids = chan_ids.to(x.device)
 
         # -- add channels positional embedding to x
-        x = x + self.chan_embed(chan_ids.long()).unsqueeze(0)  # (1, C) -> (1, 1, C, D)
+        # -- add channels positional embedding to x
+        x = x + self.chan_embed(chan_ids.long()).unsqueeze(0)  # (1,C) -> (1,1,C,D)
+
+        if mask_x is not None:
+            mask_x = mask_x.to(x.device)
+            x = apply_mask(mask_x, x)  # B, mN, mC, D
+            B, N, C, D = x.shape
 
         x = x.flatten(0, 1)  # BmN, mC, D
 
@@ -563,8 +673,10 @@ class EEGTransformer(nn.Module):
         x = torch.cat([x, summary_token], dim=1)  # BmN, mC+embed_num, D
 
         # -- fwd prop
-        for blk in self.blocks:
-            x = blk(x)
+        for i, blk in enumerate(self.blocks):
+            x = blk(x)  # B*N, mC+1, D
+            if blk.return_attention == True:
+                return x
 
         x = x[:, -summary_token.shape[1] :, :]
 
@@ -573,6 +685,11 @@ class EEGTransformer(nn.Module):
 
         x = x.flatten(-2)
         x = x.reshape((B, N, -1))
+        # -- reshape back
+
+        if mask_t is not None:
+            mask_t = mask_t.to(x.device)
+            x = apply_mask_t(mask_t, x)  # B, mN, D
 
         x = x.reshape((B, N, self.embed_num, -1))
 
