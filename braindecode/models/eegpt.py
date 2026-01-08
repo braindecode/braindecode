@@ -4,7 +4,7 @@
 # License: BSD-3
 
 from functools import partial
-from typing import List, Optional
+from typing import Optional
 
 import torch
 from torch import nn
@@ -91,14 +91,14 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        n_outputs: Optional[int] = None,
-        n_chans: Optional[int] = None,
-        chs_info: Optional[List] = None,
-        n_times: Optional[int] = None,
-        input_window_seconds: Optional[float] = None,
-        sfreq: Optional[float] = None,
-        return_encoder_output: bool = False,
-        channel_names: Optional[List[str]] = None,
+        # braindecode parameters
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        # model parameters
         patch_size: int = 64,
         patch_stride: int = 32,
         embed_num: int = 4,
@@ -112,6 +112,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         init_std: float = 0.02,
         qkv_bias: bool = True,
         norm_layer: Optional[nn.Module] = None,
+        return_encoder_output: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -121,7 +122,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-
+        # model parameters
         self.return_encoder_output = return_encoder_output
         self.patch_size = patch_size
         self.patch_stride = patch_stride
@@ -154,16 +155,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
             norm_layer=self.norm_layer,
         )
 
-        if channel_names is None:
-            if chs_info is not None:
-                channel_names = [ch["ch_name"] for ch in chs_info]
-            else:
-                raise ValueError(
-                    "No channel names provided and no channel information available. Please provide channel names."
-                )
+        self.channel_names = [ch["ch_name"] for ch in chs_info]
 
-        self.channel_names = channel_names
-        self.chans_id = self.target_encoder.prepare_chan_ids(channel_names)
+        self.chans_id = self.target_encoder.prepare_chan_ids(self.channel_names)
 
         self.flattened_encoder_output_dim = (
             self.target_encoder.num_patches[1] * self.embed_num * self.embed_dim
@@ -516,11 +510,7 @@ class PatchNormEmbed(nn.Module):
         x = x.view(B, C, -1, self.patch_size).contiguous()
         x = x.transpose(1, 2)
 
-        # m = torch.mean(x, dim=-1).unsqueeze(-1)
-        # v = torch.std( x, dim=-1).unsqueeze(-1)
         x = torch.layer_norm(x, (self.patch_size,))
-        # x = torch.cat([x,m,v], dim=-1) # B, T, C, P
-        # print(x)
 
         x = self.proj(x)  # B, T, C, D
 
