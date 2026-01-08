@@ -239,7 +239,6 @@ def test_eegpt(input_sizes):
         n_outputs=input_sizes_copy["n_classes"],
         n_chans=input_sizes_copy["n_channels"],
         n_times=input_sizes_copy["n_in_times"],
-        channel_names=channels_names,
     )
     check_forward_pass_3d(model, input_sizes_copy)
 

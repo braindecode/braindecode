@@ -198,6 +198,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
         if self.chs_info is not None:
             self.channel_names = [ch["ch_name"] for ch in self.chs_info]  # type: ignore
+        else:
+            self.channel_names = None  # type: ignore
 
         self.chans_id = self.target_encoder.prepare_chan_ids(self.channel_names)
 
@@ -479,7 +481,7 @@ class _Attention(nn.Module):
             k,
             v,
             attn_mask=None,
-            dropout_p=self.attn_drop if self.training else 0,
+            dropout_p=self.attn_drop.p if self.training else 0,
             is_causal=self.is_causal,
         )
 
@@ -550,6 +552,7 @@ class _Block(nn.Module):
         return_attention=False,
     ):
         super().__init__()
+        self.return_attention = return_attention
         self.norm1 = norm_layer(dim)
         self.attn = _Attention(
             dim,
@@ -835,7 +838,7 @@ class _EEGTransformer(nn.Module):
 
         self.blocks = nn.ModuleList(
             [
-                Block(
+                _Block(
                     dim=embed_dim,
                     num_heads=num_heads,
                     mlp_ratio=mlp_ratio,
@@ -860,6 +863,10 @@ class _EEGTransformer(nn.Module):
         self.fix_init_weight()
 
     def prepare_chan_ids(self, channels):
+        if channels is None:
+            # If no channel names are provided, use sequential IDs
+            return torch.arange(self.patch_embed.n_chans)
+
         chan_ids = []
         for ch in channels:
             ch_normalised = ch.upper().strip(".").replace("Z", "z")
