@@ -29,12 +29,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
     constructing a self-supervised task on EEG representations with high SNR and rich semantic information instead
     of raw signals, thus avoiding poor feature quality extracted from low SNR signals.
 
-    .. rubric:: Pretrained Weights
-
-    You can download pretrained models here:
-    `EEG_large <https://figshare.com/s/e37df4f8a907a866df4b`_ (in the ``Files/EEGPT/checkpoint/eegpt_mcae_58chs_4s_large4E.ckpt``)
-    trained on mixed dataset (58-channels, 256Hz, 4s time length EEG) using patch size 64.
-
     Parameters
     ----------
     n_outputs : int
@@ -140,7 +134,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         self.qkv_bias = qkv_bias
         self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
 
-        self.target_encoder = EEGTransformer(
+        self.target_encoder = _EEGTransformer(
             img_size=[self.n_chans, self.n_times],
             patch_size=self.patch_size,
             patch_stride=self.patch_stride,
@@ -292,7 +286,7 @@ class DropPath(nn.Module):
         return output
 
 
-class MLP(nn.Module):
+class _MLP(nn.Module):
     def __init__(
         self,
         in_features,
@@ -318,7 +312,7 @@ class MLP(nn.Module):
         return x
 
 
-class Attention(nn.Module):
+class _Attention(nn.Module):
     def __init__(
         self,
         dim,
@@ -393,7 +387,7 @@ class Attention(nn.Module):
         return x
 
 
-class Block(nn.Module):
+class _Block(nn.Module):
     def __init__(
         self,
         dim,
@@ -411,7 +405,7 @@ class Block(nn.Module):
     ):
         super().__init__()
         self.norm1 = norm_layer(dim)
-        self.attn = Attention(
+        self.attn = _Attention(
             dim,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
@@ -421,10 +415,10 @@ class Block(nn.Module):
             use_rope=use_rope,
             return_attention=return_attention,
         )
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.drop_path = _DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = MLP(
+        self.mlp = _MLP(
             in_features=dim,
             hidden_features=mlp_hidden_dim,
             act_layer=act_layer,
@@ -472,7 +466,7 @@ class PatchEmbed(nn.Module):
         return x
 
 
-class PatchNormEmbed(nn.Module):
+class _PatchNormEmbed(nn.Module):
     """Image to Patch Embedding"""
 
     def __init__(
@@ -520,7 +514,7 @@ class PatchNormEmbed(nn.Module):
         return x
 
 
-class EEGTransformer(nn.Module):
+class _EEGTransformer(nn.Module):
     """EEG Transformer"""
 
     def __init__(
