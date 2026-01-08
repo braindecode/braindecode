@@ -30,6 +30,9 @@ Enhancements
 - Add an optional ``lazy`` init path to :class:`braindecode.datasets.base.BaseConcatDataset`
   to defer cumulative size computation (and any downstream dataset length access) until
   first access, supporting truly lazy raw loading workflows.
+- Adding :class:`braindecode.models.EEGPT` with HuggingFace Hub integration and
+  pretrained weights available at `braindecode/eegpt-pretrained <https://huggingface.co/braindecode/eegpt-pretrained>`_
+  (:gh:`908` by `Young Truong`_ and `Kuntal Kokate`_)
 
 API changes
 ============
@@ -54,9 +57,7 @@ Current 1.3.1 (stable)
 Enhancements
 ============
 
-- Adding :class:`braindecode.models.EEGPT` with HuggingFace Hub integration and
-  pretrained weights available at `braindecode/eegpt-pretrained <https://huggingface.co/braindecode/eegpt-pretrained>`_
-  (:gh:`908` by `Young Truong`_ and `Kkuntal990`_)
+
 - Adding Hugging Face Hub integration documentation with comprehensive examples for
   loading pre-trained models (:class:`braindecode.models.BIOT`,
   :class:`braindecode.models.Labram`, :class:`braindecode.models.REVE`,
@@ -784,7 +785,7 @@ Authors
 .. _José Mauricio: https://github.com/josemaurici
 .. _Can Han: https://github.com/hancan16
 .. _Christian Kothe: https://github.com/chkothe
-.. _Kkuntal990: https://github.com/Kkuntal990
+.. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _Matthew Chen: https://github.com/MatthewChen37
 .. _Jonathan Dan: https://github.com/danjjl
 .. _Jonathan Lys: https://github.com/jonathanlys01
