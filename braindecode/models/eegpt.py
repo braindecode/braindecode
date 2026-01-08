@@ -7,6 +7,7 @@ from functools import partial
 from typing import Optional
 
 import torch
+from einops import rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -428,12 +429,16 @@ class _Attention(nn.Module):
         freqs : torch.Tensor, optional
             Frequencies for Rotary Positional Embeddings (RoPE).
         """
-        batch, seq_len, embed_dim = x.shape
-        qkv = (
-            self.qkv(x)
-            .reshape(batch, seq_len, 3, self.num_heads, embed_dim // self.num_heads)
-            .permute(2, 0, 3, 1, 4)
-        )  # 3, batch, num_heads, seq_len, head_dim
+        # qkv: (batch, seq_len, 3 * num_heads * head_dim)
+        qkv = self.qkv(x)
+
+        # Reshape to (3, batch, num_heads, seq_len, head_dim)
+        qkv = rearrange(
+            qkv,
+            "batch seq_len (three num_heads head_dim) -> three batch num_heads seq_len head_dim",
+            three=3,
+            num_heads=self.num_heads,
+        )
         q, k, v = qkv[0], qkv[1], qkv[2]  # batch, num_heads, seq_len, head_dim
 
         # 1. Rotary Positional Embeddings (RoPE)
@@ -477,9 +482,12 @@ class _Attention(nn.Module):
             dropout_p=self.attn_drop if self.training else 0,
             is_causal=self.is_causal,
         )
-        x = (
-            y.transpose(1, 2).contiguous().view(batch, seq_len, embed_dim)
-        )  # (batch, num_heads, seq_len, head_dim) -> (batch, seq_len, num_heads * head_dim)
+
+        # Reshape back: (batch, num_heads, seq_len, head_dim) -> (batch, seq_len, embed_dim)
+        x = rearrange(
+            y,
+            "batch num_heads seq_len head_dim -> batch seq_len (num_heads head_dim)",
+        )
 
         x = self.proj(x)
         x = self.proj_drop(x)
@@ -637,10 +645,14 @@ class PatchEmbed(nn.Module):
             Patch embeddings of shape (batch, n_patches, n_chans, embed_dim).
         """
         # x: batch, n_chans, n_times
-        x = x.unsqueeze(1)  # batch, 1, n_chans, n_times
-        # Convolve and transpose:
+        x = rearrange(x, "batch n_chans n_times -> batch 1 n_chans n_times")
+        # Convolve and rearrange:
         # (batch, embed_dim, n_chans, n_patches) -> (batch, n_patches, n_chans, embed_dim)
-        x = self.proj(x).transpose(1, 3)
+        x = self.proj(x)
+        x = rearrange(
+            x,
+            "batch embed_dim n_chans n_patches -> batch n_patches n_chans embed_dim",
+        )
         return x
 
 
@@ -713,20 +725,19 @@ class _PatchNormEmbed(nn.Module):
             Patch embeddings of shape (batch, n_patches, n_chans, embed_dim).
         """
         # x: batch, n_chans, n_times
-        batch, n_chans, n_times = x.shape
-        x = x.unsqueeze(1)  # batch, 1, n_chans, n_times
+        x = rearrange(x, "batch n_chans n_times -> batch 1 n_chans n_times")
 
         x = self.unfold(x)
-        # (batch, embed_dim, n_patches * n_chans)
+        # (batch, patch_size, n_patches * n_chans)
 
-        x = x.transpose(-1, -2)
-        # (batch, n_patches * n_chans, embed_dim)
-
-        x = x.view(batch, n_chans, -1, self.patch_size).contiguous()
-        # (batch, n_chans, n_patches, patch_size)
-
-        x = x.transpose(1, 2)
-        # (batch, n_patches, n_chans, patch_size)
+        # Rearrange using Einops:
+        # 1. Split dim 2 into (n_chans, n_patches) - Unfold iterates time then channel
+        # 2. Transpose to (batch, n_patches, n_chans, patch_size)
+        x = rearrange(
+            x,
+            "batch patch_size (n_chans n_patches) -> batch n_patches n_chans patch_size",
+            n_chans=self.n_chans,
+        )
 
         x = torch.layer_norm(x, (self.patch_size,))
 
@@ -939,7 +950,10 @@ class _EEGTransformer(nn.Module):
 
         # Flatten batch and patches dimensions for Transformer processing
         # (batch, n_patches, n_chans, embed_dim) -> (batch * n_patches, n_chans, embed_dim)
-        x = x.flatten(0, 1)
+        x = rearrange(
+            x,
+            "batch n_patches n_chans embed_dim -> (batch n_patches) n_chans embed_dim",
+        )
 
         # -- concat summary token
         # summary_token shape: (batch * n_patches, embed_num, embed_dim)
@@ -961,19 +975,28 @@ class _EEGTransformer(nn.Module):
             x = self.norm(x)
 
         # Flatten summary tokens
-        x = x.flatten(-2)
+        # x = x.flatten(-2)
         # x shape: (batch * n_patches, embed_num * embed_dim)
-
         # -- reshape back to separate batch and patches
-        x = x.reshape((batch, n_patches, -1))
+        # x = x.reshape((batch, n_patches, -1))
         # x shape: (batch, n_patches, embed_num * embed_dim)
+
+        # Instead of flatten+reshape, let's just rearrange back to separate batch/patches explicitly
+        x = rearrange(
+            x,
+            "(batch n_patches) embed_num embed_dim -> batch n_patches (embed_num embed_dim)",
+            batch=batch,
+        )
 
         if mask_t is not None:
             mask_t = mask_t.to(x.device)
             x = apply_mask_t(mask_t, x)
 
-        # Reshape to final output format
-        x = x.reshape((batch, n_patches, self.embed_num, -1))
-        # x shape: (batch, n_patches, embed_num, embed_dim)
+        # Reshape to final output format: (batch, n_patches, embed_num, embed_dim)
+        x = rearrange(
+            x,
+            "batch n_patches (embed_num embed_dim) -> batch n_patches embed_num embed_dim",
+            embed_num=self.embed_num,
+        )
 
         return x
