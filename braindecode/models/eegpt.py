@@ -178,7 +178,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
         self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
 
         self.target_encoder = _EEGTransformer(
-            img_size=[self.n_chans, self.n_times],
+            n_chans=self.n_chans,
+            n_times=self.n_times,
             patch_size=self.patch_size,
             patch_stride=self.patch_stride,
             embed_num=self.embed_num,
@@ -581,8 +582,10 @@ class PatchEmbed(nn.Module):
 
     Parameters
     ----------
-    img_size : tuple[int, int], default=(64, 1000)
-        Input size (channels, time).
+    n_chans : int, default=64
+        Number of input channels.
+    n_times : int, default=1000
+        Number of time samples.
     patch_size : int, default=16
         Size of each patch along the time dimension.
     patch_stride : int, optional
@@ -592,18 +595,24 @@ class PatchEmbed(nn.Module):
     """
 
     def __init__(
-        self, img_size=(64, 1000), patch_size=16, patch_stride=None, embed_dim=768
+        self,
+        n_chans=64,
+        n_times=1000,
+        patch_size=16,
+        patch_stride=None,
+        embed_dim=768,
     ):
         super().__init__()
-        self.img_size = img_size
+        self.n_chans = n_chans
+        self.n_times = n_times
         self.patch_size = patch_size
         self.patch_stride = patch_stride
         if patch_stride is None:
-            self.num_patches = ((img_size[0]), (img_size[1] // patch_size))
+            self.num_patches = (n_chans, n_times // patch_size)
         else:
             self.num_patches = (
-                (img_size[0]),
-                ((img_size[1] - patch_size) // patch_stride + 1),
+                n_chans,
+                (n_times - patch_size) // patch_stride + 1,
             )
 
         self.proj = nn.Conv2d(
@@ -645,8 +654,10 @@ class _PatchNormEmbed(nn.Module):
 
     Parameters
     ----------
-    img_size : tuple[int, int], default=(64, 1000)
-        Input size (channels, time).
+    n_chans : int, default=64
+        Number of input channels.
+    n_times : int, default=1000
+        Number of time samples.
     patch_size : int, default=16
         Size of each patch along the time dimension.
     patch_stride : int, optional
@@ -656,22 +667,28 @@ class _PatchNormEmbed(nn.Module):
     """
 
     def __init__(
-        self, img_size=(64, 1000), patch_size=16, patch_stride=None, embed_dim=768
+        self,
+        n_chans=64,
+        n_times=1000,
+        patch_size=16,
+        patch_stride=None,
+        embed_dim=768,
     ):
         super().__init__()
 
-        assert img_size[1] % patch_size == 0
+        assert n_times % patch_size == 0
 
-        self.img_size = img_size
+        self.n_chans = n_chans
+        self.n_times = n_times
         self.patch_size = patch_size
         self.patch_stride = patch_stride
 
         if patch_stride is None:
-            self.num_patches = ((img_size[0]), (img_size[1] // patch_size))
+            self.num_patches = (n_chans, n_times // patch_size)
         else:
             self.num_patches = (
-                (img_size[0]),
-                ((img_size[1] - patch_size) // patch_stride + 1),
+                n_chans,
+                (n_times - patch_size) // patch_stride + 1,
             )
 
         self.unfold = torch.nn.Unfold(
@@ -727,8 +744,10 @@ class _EEGTransformer(nn.Module):
 
     Parameters
     ----------
-    img_size : tuple[int, int]
-        Input size (channels, time).
+    n_chans : int
+        Number of input channels.
+    n_times : int
+        Number of time samples.
     patch_size : int
         Size of each patch.
     patch_stride : int
@@ -761,7 +780,8 @@ class _EEGTransformer(nn.Module):
 
     def __init__(
         self,
-        img_size=(64, 1000),
+        n_chans=64,
+        n_times=1000,
         patch_size=64,
         patch_stride=None,
         embed_dim=768,
@@ -788,7 +808,8 @@ class _EEGTransformer(nn.Module):
         self.num_heads = num_heads
 
         self.patch_embed = patch_module(
-            img_size=img_size,
+            n_chans=n_chans,
+            n_times=n_times,
             patch_size=patch_size,
             patch_stride=patch_stride,
             embed_dim=embed_dim,
