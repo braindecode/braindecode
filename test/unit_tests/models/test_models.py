@@ -231,8 +231,11 @@ def test_tcn(input_sizes):
     )
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
+
 def test_eegpt(input_sizes):
-    channels_names = ['F3', 'F4', 'C3', 'C4', 'P3','P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ' ]
+    channels_names = [
+        'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ'
+    ]
     input_sizes_copy = input_sizes.copy()
     input_sizes_copy["n_channels"] = len(channels_names)
     model = EEGPT(
@@ -241,6 +244,130 @@ def test_eegpt(input_sizes):
         n_times=input_sizes_copy["n_in_times"],
     )
     check_forward_pass_3d(model, input_sizes_copy)
+
+
+@pytest.mark.parametrize(
+    "patch_size, patch_stride, embed_num, embed_dim, depth, num_heads, "
+    "mlp_ratio, drop_prob, attn_drop_rate, drop_path_rate, return_encoder_output, "
+    "use_chs_info, n_chans, n_times, n_outputs",
+    [
+        # Test 1: Default configuration with basic channels
+        (64, 32, 4, 512, 8, 8, 4.0, 0.0, 0.0, 0.0, False, False, 13, 600, 4),
+        # Test 2: Different patch sizes
+        (32, 16, 4, 256, 4, 4, 4.0, 0.0, 0.0, 0.0, False, False, 10, 500, 2),
+        # Test 3: Larger embed_dim and more heads
+        (64, 32, 2, 768, 6, 12, 4.0, 0.0, 0.0, 0.0, False, False, 8, 600, 3),
+        # Test 4: Return encoder output (feature extraction mode)
+        (64, 32, 4, 512, 8, 8, 4.0, 0.0, 0.0, 0.0, True, False, 13, 600, 4),
+        # Test 5: With dropout enabled
+        (64, 32, 4, 512, 4, 8, 4.0, 0.1, 0.1, 0.1, False, False, 10, 600, 2),
+        # Test 6: With chs_info provided (proper channel names)
+        (64, 32, 4, 512, 4, 8, 4.0, 0.0, 0.0, 0.0, False, True, 13, 600, 4),
+        # Test 7: Smaller model (depth=2, fewer heads)
+        (64, 32, 2, 256, 2, 4, 4.0, 0.0, 0.0, 0.0, False, False, 8, 600, 2),
+        # Test 8: Different MLP ratio
+        (64, 32, 4, 512, 4, 8, 2.0, 0.0, 0.0, 0.0, False, False, 10, 600, 3),
+        # Test 9: Large number of outputs (many classes)
+        (64, 32, 4, 512, 4, 8, 4.0, 0.0, 0.0, 0.0, False, False, 10, 600, 10),
+        # Test 10: Minimal configuration
+        (64, 32, 1, 128, 2, 2, 4.0, 0.0, 0.0, 0.0, False, False, 4, 600, 2),
+    ],
+    ids=[
+        "default_config",
+        "small_patch_size",
+        "larger_embed_dim",
+        "encoder_output_mode",
+        "with_dropout",
+        "with_chs_info",
+        "small_model",
+        "different_mlp_ratio",
+        "many_classes",
+        "minimal_config",
+    ],
+)
+def test_eegpt_parametrized(
+    patch_size,
+    patch_stride,
+    embed_num,
+    embed_dim,
+    depth,
+    num_heads,
+    mlp_ratio,
+    drop_prob,
+    attn_drop_rate,
+    drop_path_rate,
+    return_encoder_output,
+    use_chs_info,
+    n_chans,
+    n_times,
+    n_outputs,
+):
+    """Comprehensive test for EEGPT model covering various configurations."""
+    # Define channel names from the EEGPT channel list
+    available_channels = [
+        'FP1', 'FPZ', 'FP2', 'AF7', 'AF3', 'AF4', 'AF8',
+        'F7', 'F5', 'F3', 'F1', 'FZ', 'F2', 'F4', 'F6', 'F8',
+        'FT7', 'FC5', 'FC3', 'FC1', 'FCZ', 'FC2', 'FC4', 'FC6', 'FT8',
+        'T7', 'C5', 'C3', 'C1', 'CZ', 'C2', 'C4', 'C6', 'T8',
+        'TP7', 'CP5', 'CP3', 'CP1', 'CPZ', 'CP2', 'CP4', 'CP6', 'TP8',
+        'P7', 'P5', 'P3', 'P1', 'PZ', 'P2', 'P4', 'P6', 'P8',
+        'PO7', 'PO5', 'PO3', 'POZ', 'PO4', 'PO6', 'PO8',
+        'O1', 'OZ', 'O2',
+    ]
+    channel_names = available_channels[:n_chans]
+
+    # Prepare chs_info if requested
+    chs_info = None
+    if use_chs_info:
+        chs_info = [
+            {"ch_name": ch, "kind": "eeg"} for ch in channel_names
+        ]
+
+    # Create model
+    model = EEGPT(
+        n_outputs=n_outputs,
+        n_chans=n_chans,
+        n_times=n_times,
+        chs_info=chs_info,
+        patch_size=patch_size,
+        patch_stride=patch_stride,
+        embed_num=embed_num,
+        embed_dim=embed_dim,
+        depth=depth,
+        num_heads=num_heads,
+        mlp_ratio=mlp_ratio,
+        drop_prob=drop_prob,
+        attn_drop_rate=attn_drop_rate,
+        drop_path_rate=drop_path_rate,
+        return_encoder_output=return_encoder_output,
+    )
+    model.eval()
+
+    # Create random input
+    batch_size = 2
+    rng = np.random.RandomState(42)
+    X = rng.randn(batch_size, n_chans, n_times)
+    X = torch.Tensor(X.astype(np.float32))
+
+    # Forward pass
+    with torch.no_grad():
+        output = model(X)
+
+    # Verify output shape
+    if return_encoder_output:
+        # Encoder output has shape (batch, n_patches, embed_num, embed_dim)
+        n_patches = (n_times - patch_size) // patch_stride + 1
+        expected_shape = (batch_size, n_patches, embed_num, embed_dim)
+        assert output.shape == expected_shape, (
+            f"Expected shape {expected_shape}, got {output.shape}"
+        )
+    else:
+        # Classification output has shape (batch, n_outputs)
+        expected_shape = (batch_size, n_outputs)
+        assert output.shape == expected_shape, (
+            f"Expected shape {expected_shape}, got {output.shape}"
+        )
+
 
 def test_eegitnet(input_sizes):
     model = EEGITNet(

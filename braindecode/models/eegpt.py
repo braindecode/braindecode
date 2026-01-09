@@ -3,6 +3,7 @@
 #
 # License: BSD-3
 
+import math
 from functools import partial
 from typing import Optional
 
@@ -90,8 +91,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Sampling frequency of the EEG signals.
     return_encoder_output : bool, default=False
         Whether to return the encoder output or the classifier output.
-    channel_names : list of str, optional
-        List of channel names. If None, it will be extracted from `chs_info`.
     patch_size : int, default=64
         Size of the patches for the transformer.
     patch_stride : int, default=32
@@ -327,6 +326,110 @@ EEGPT_CHANNELS = [
 ]
 
 CHANNEL_DICT = {ch: i for i, ch in enumerate(EEGPT_CHANNELS)}
+
+
+def rotate_half(x):
+    """Rotate half of the dimensions for RoPE.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input tensor of shape (..., d).
+
+    Returns
+    -------
+    torch.Tensor
+        Rotated tensor of the same shape.
+    """
+    x = x.reshape((*x.shape[:-1], x.shape[-1] // 2, 2))
+    x1, x2 = x.unbind(dim=-1)
+    x = torch.stack((-x2, x1), dim=-1)
+    return x.flatten(-2)
+
+
+def apply_rotary_emb(freqs, t, start_index=0, scale=1.0):
+    """Apply rotary positional embeddings (RoPE) to input tensor.
+
+    Parameters
+    ----------
+    freqs : torch.Tensor
+        Frequency tensor for rotation.
+    t : torch.Tensor
+        Input tensor to rotate.
+    start_index : int, default=0
+        Starting index for rotation.
+    scale : float, default=1.0
+        Scaling factor.
+
+    Returns
+    -------
+    torch.Tensor
+        Tensor with rotary embeddings applied.
+    """
+    freqs = freqs.to(t)
+    rot_dim = freqs.shape[-1]
+    end_index = start_index + rot_dim
+    assert rot_dim <= t.shape[-1], (
+        f"feature dimension {t.shape[-1]} is not of sufficient size "
+        f"to rotate in all the positions {rot_dim}"
+    )
+    t_left, t_mid, t_right = (
+        t[..., :start_index],
+        t[..., start_index:end_index],
+        t[..., end_index:],
+    )
+    t_mid = (t_mid * freqs.cos() * scale) + (rotate_half(t_mid) * freqs.sin() * scale)
+    return torch.cat((t_left, t_mid, t_right), dim=-1)
+
+
+def apply_mask(mask, x):
+    """Apply mask to select specific patches from input tensor.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input tensor of shape (batch, n_patches, n_chans, embed_dim).
+    mask : torch.Tensor
+        Mask tensor containing indices of patches to keep.
+
+    Returns
+    -------
+    torch.Tensor
+        Masked tensor with selected patches.
+    """
+    B, N, C, D = x.shape
+    if len(mask.shape) == 2:
+        mN, mC = mask.shape
+        mask_keep = mask.reshape((1, mN * mC, 1)).repeat((B, 1, D))
+        masked_x = torch.gather(x.reshape((B, N * C, D)), dim=-2, index=mask_keep)
+        masked_x = masked_x.contiguous().view((B, mN, mC, D))
+    else:
+        mN = mask.shape[0]
+        mask_keep = mask.reshape((1, mN, 1)).repeat((B, 1, D))
+        masked_x = torch.gather(x.reshape((B, N * C, D)), dim=-2, index=mask_keep)
+    return masked_x
+
+
+def apply_mask_t(mask_t, x):
+    """Apply temporal mask to select specific patches.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input tensor of shape (batch, n_patches, embed_dim).
+    mask_t : torch.Tensor
+        Mask tensor containing temporal indices to keep.
+
+    Returns
+    -------
+    torch.Tensor
+        Masked tensor with selected temporal patches.
+    """
+    B, N, D = x.shape
+    mN = mask_t.shape[0]
+    mask_keep = mask_t.reshape((1, mN, 1)).repeat((B, 1, D))
+    masked_x = torch.gather(x, dim=1, index=mask_keep)
+    return masked_x
 
 
 class _MLP(nn.Module):
@@ -878,16 +981,6 @@ class _EEGTransformer(nn.Module):
 
         chan_ids = []
         for ch in channels:
-            ch_normalised = ch.upper().strip(".").replace("Z", "z")
-            # Revert Z to z only if it's the last character?
-            # The dictionary uses UPPERCASE.
-            # Original code: ch.upper().strip(".")
-            # Dictionary keys are UPPERCASE.
-            # Wait, original code CHANNEL_DICT had keys like 'FP1', 'FPZ' (upper Z).
-            # But standard 10-20 often uses 'Fp1', 'Fpz'.
-            # MNE uses Fpz.
-            # ch.upper() 'FPZ' -> matches 'FPZ' in dict.
-
             ch_upper = ch.upper().strip(".")
             assert ch_upper in CHANNEL_DICT, (
                 f"Channel {ch} not found in EEGPT channel list."
