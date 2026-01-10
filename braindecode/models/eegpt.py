@@ -14,6 +14,8 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
 
+LAYER_NORM_EPS = 1e-6
+
 
 class EEGPT(EEGModuleMixin, nn.Module):
     r"""
@@ -184,7 +186,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
         self.drop_path_rate = drop_path_rate
         self.init_std = init_std
         self.qkv_bias = qkv_bias
-        self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
+        self.qkv_bias = qkv_bias
+        self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=LAYER_NORM_EPS)
 
         self.target_encoder = _EEGTransformer(
             n_chans=self.n_chans,
@@ -209,7 +212,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
         else:
             self.channel_names = None  # type: ignore
 
-        self.chans_id = self.target_encoder.prepare_chan_ids(self.channel_names)
+        self.register_buffer(
+            "chans_id", self.target_encoder.prepare_chan_ids(self.channel_names)
+        )
 
         self.flattened_encoder_output_dim = (
             self.target_encoder.num_patches[1] * self.embed_num * self.embed_dim
@@ -238,7 +243,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         """
 
         # z shape: (batch, n_patches, embed_num, embed_dim)
-        z = self.target_encoder(x, self.chans_id.to(x.device))
+        z = self.target_encoder(x, self.chans_id)
 
         if self.return_encoder_output:
             return z
@@ -369,10 +374,11 @@ def apply_rotary_emb(freqs, t, start_index=0, scale=1.0):
     freqs = freqs.to(t)
     rot_dim = freqs.shape[-1]
     end_index = start_index + rot_dim
-    assert rot_dim <= t.shape[-1], (
-        f"feature dimension {t.shape[-1]} is not of sufficient size "
-        f"to rotate in all the positions {rot_dim}"
-    )
+    if rot_dim > t.shape[-1]:
+        raise ValueError(
+            f"feature dimension {t.shape[-1]} is not of sufficient size "
+            f"to rotate in all the positions {rot_dim}"
+        )
     t_left, t_mid, t_right = (
         t[..., :start_index],
         t[..., start_index:end_index],
@@ -803,7 +809,10 @@ class _PatchNormEmbed(nn.Module):
     ):
         super().__init__()
 
-        assert n_times % patch_size == 0
+        if n_times % patch_size != 0:
+            raise ValueError(
+                f"n_times {n_times} must be divisible by patch_size {patch_size}"
+            )
 
         self.n_chans = n_chans
         self.n_times = n_times
@@ -912,9 +921,7 @@ class _EEGTransformer(nn.Module):
         patch_stride=None,
         embed_dim=768,
         embed_num=1,
-        predictor_embed_dim=384,
         depth=12,
-        predictor_depth=12,
         num_heads=12,
         mlp_ratio=4.0,
         qkv_bias=True,
@@ -924,9 +931,7 @@ class _EEGTransformer(nn.Module):
         norm_layer=nn.LayerNorm,
         patch_module=PatchEmbed,  # PatchNormEmbed
         init_std=0.02,
-        interpolate_factor=2.0,
         return_attention_layer=-1,
-        **kwargs,
     ):
         super().__init__()
         self.embed_dim = embed_dim
@@ -982,9 +987,8 @@ class _EEGTransformer(nn.Module):
         chan_ids = []
         for ch in channels:
             ch_upper = ch.upper().strip(".")
-            assert ch_upper in CHANNEL_DICT, (
-                f"Channel {ch} not found in EEGPT channel list."
-            )
+            if ch_upper not in CHANNEL_DICT:
+                raise ValueError(f"Channel {ch} not found in EEGPT channel list.")
             chan_ids.append(CHANNEL_DICT[ch_upper])
 
         return torch.tensor(chan_ids).unsqueeze_(0).long()
