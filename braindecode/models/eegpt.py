@@ -7,14 +7,13 @@ import math
 from functools import partial
 from typing import Optional
 
+import mne
 import torch
 from einops import rearrange, repeat
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
-
-LAYER_NORM_EPS = 1e-6
 
 
 class EEGPT(EEGModuleMixin, nn.Module):
@@ -151,8 +150,10 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Standard deviation for weight initialization.
     qkv_bias : bool, default=True
         Whether to use bias in the QKV projection.
-    norm_layer : torch.nn.Module, default=partial(nn.LayerNorm, eps=1e-6)
-        Normalization layer.
+    norm_layer : torch.nn.Module, default=None
+        Normalization layer. If None, defaults to ``nn.LayerNorm`` with epsilon ``layer_norm_eps``.
+    layer_norm_eps : float, default=1e-6
+        Epsilon value for the normalization layer.
 
     References
     ----------
@@ -194,6 +195,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         init_std: float = 0.02,
         qkv_bias: bool = True,
         norm_layer: Optional[nn.Module] = None,
+        layer_norm_eps: float = 1e-6,
         return_encoder_output: bool = False,
     ):
         super().__init__(
@@ -220,7 +222,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
         self.drop_path_rate = drop_path_rate
         self.init_std = init_std
         self.qkv_bias = qkv_bias
-        self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=LAYER_NORM_EPS)
+        self.layer_norm_eps = layer_norm_eps
+        self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=layer_norm_eps)
 
         self.target_encoder = _EEGTransformer(
             n_chans=self.n_chans,
@@ -298,7 +301,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
 # These channels correspond to a subset of the standard 10-20 system.
 # The order matches the pre-trained weights and corresponds to
 # mne.channels.make_standard_montage("standard_1020") (filtered).
-EEGPT_CHANNELS = [
+_ALLOWED_CHANNELS = {
     "FP1",
     "FPZ",
     "FP2",
@@ -361,7 +364,15 @@ EEGPT_CHANNELS = [
     "O1",
     "OZ",
     "O2",
-]
+}
+
+
+def _get_eegpt_channels():
+    montage = mne.channels.make_standard_montage("standard_1020")
+    return [ch.upper() for ch in montage.ch_names if ch.upper() in _ALLOWED_CHANNELS]
+
+
+EEGPT_CHANNELS = _get_eegpt_channels()
 
 CHANNEL_DICT = {ch: i for i, ch in enumerate(EEGPT_CHANNELS)}
 
