@@ -175,7 +175,7 @@ categories can be found in the respective sections below.
 - In contrast, several methods employ **attention/transformer** modules
   (:bdg-info:`Attention/Transformer`) to capture longer-range dependencies efficiently,
   e.g., :class:`EEGConformer`, :class:`CTNet`, :class:`ATCNet`,
-  :class:`AttentionBaseNet`
+  :class:`AttentionBaseNet`, and :class:`EEGPT`
   (:cite:label:`song2022eeg,zhao2024ctnet,altaheri2022atcnet`).
 - **Filterbank-style models** (:bdg-primary:`Filterbank`) explicitly decompose signals
   into multiple bands before (or while) learning, echoing the classic FBCSP pipeline;
@@ -193,8 +193,8 @@ categories can be found in the respective sections below.
 - **Foundation Model / Transformer** (:bdg-danger:`Foundation Model`) approaches
   pretrain attention-based encoders on diverse biosignals and fine-tune for EEG tasks;
   e.g., :class:`BIOT` (:cite:label:`yang2023biot`), :class:`Labram`
-  (:cite:label:`jiang2024large`). These typically need a heavily self-supervised
-  pre-training before decoding.
+  (:cite:label:`jiang2024large`), and :class:`EEGPT` (:cite:label:`eegpt`). These
+  typically need a heavily self-supervised pre-training before decoding.
 - **Graph neural networks** (:bdg-light:`Graph Neural Network`) treat channels/regions
   as nodes with learned (static or dynamic) edges to model functional connectivity
   explicitly; representative EEG-GNN, more common in the epileptic decoding
