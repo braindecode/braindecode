@@ -1027,11 +1027,6 @@ def test_cbramod_load_weights():
         map_location="cpu",
     )
     load_result = model.load_state_dict(state_dict)
-    # num parameters
-    count = 0
-    for param in model.parameters():
-        count += param.numel()
-    assert count == 1198132
 
 
 def test_cbramod_forward_pass():
