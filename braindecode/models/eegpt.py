@@ -8,7 +8,7 @@ from functools import partial
 from typing import Optional
 
 import torch
-from einops import rearrange
+from einops import rearrange, repeat
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -19,7 +19,7 @@ LAYER_NORM_EPS = 1e-6
 
 class EEGPT(EEGModuleMixin, nn.Module):
     r"""
-    EEGPT: Pretrained Transformer for Universal and Reliable Representation of EEG Signals from Tang et al. (2024) [eegpt]_.
+    EEGPT: Pretrained Transformer for Universal and Reliable Representation of EEG Signals from Wang et al. (2024) [eegpt]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
@@ -28,35 +28,82 @@ class EEGPT(EEGModuleMixin, nn.Module):
         :alt: EEGPT Architecture
         :width: 1000px
 
-    EEGPT is a novel 10-million-parameter pretrained transformer model designed for universal EEG feature extraction.
-    In EEGPT, a mask-based dual self-supervised learning method for efficient feature extraction is designed.
-    Compared to other mask-based self-supervised learning methods, it adds spatio-temporal representation alignment,
-    constructing a self-supervised task on EEG representations with high SNR and rich semantic information instead
-    of raw signals, thus avoiding poor feature quality extracted from low SNR signals.
+        a) The EEGPT structure involves patching the input EEG signal as :math:`p_{i,j}` through masking
+        (50% time and 80% channel patches), creating masked part :math:`\mathcal{M}` and unmasked part :math:`\bar{\mathcal{M}}`.
+        b) Local spatio-temporal embedding maps patches to tokens.
+        c) Use of dual self-supervised learning with Spatio-Temporal Representation Alignment and Mask-based Reconstruction.
+
+    **EEGPT** is a 10-million-parameter pretrained transformer model designed for universal EEG
+    feature extraction. It addresses challenges like low SNR and inter-subject variability by employing
+    a dual self-supervised learning method that combines **Spatio-Temporal Representation Alignment**
+    and **Mask-based Reconstruction** [eegpt]_.
 
     .. rubric:: Dual Self-Supervised Learning
 
-    Unlike standard masked autoencoders that operate directly on raw signals (which often contain low SNR),
-    EEGPT is pretrained with two objectives:
+    EEGPT moves beyond simple masked reconstruction by introducing a representation alignment objective.
+    The pretraining loss :math:`\mathcal{L}` is the sum of alignment loss :math:`\mathcal{L}_A` and reconstruction loss :math:`\mathcal{L}_R`:
 
-    1.  **Masked Signal Modeling**: Reconstructing masked patches of the raw EEG signal.
-    2.  **Spatio-Temporal Representation Alignment**: Aligning the representations of masked signals with
-        features from unmasked signals, focusing on high-level semantic information.
+    .. math::
+        \mathcal{L} = \mathcal{L}_A + \mathcal{L}_R
 
-    This dual approach ensures the model captures both low-level temporal dynamics and high-level
-    spatio-temporal semantics, making it robust to noise and varying electrode montages.
+    1.  **Spatio-Temporal Representation Alignment (:math:`\mathcal{L}_A`):**
+        Aligns the predicted features of masked regions with global features extracted by a Momentum Encoder.
+        This forces the model to learn semantic, high-level representations rather than just signal waveform details.
 
-    .. rubric:: Architecture Components
+        .. math::
+            \mathcal{L}_A = - \frac{1}{N} \sum_{j=1}^{N} ||pred_j, LN(menc_j)||_2^2
 
-    The model consists of:
+        where :math:`pred_j` is the predictor output and :math:`menc_j` is the momentum encoder output.
 
-    -   **Patch Embedding**: Splits the EEG signal into overlapping patches.
-    -   **Channel Embedding**: Learnable embeddings added to distinguish different electrodes.
-    -   **Transformer Encoder**: A stack of standard Transformer blocks with multi-head self-attention.
-    -   **Channel-Invariance**: The model is designed to handle variable numbers of channels through its
-        patch-based approach and channel embeddings.
+    2.  **Mask-based Reconstruction (:math:`\mathcal{L}_R`):**
+        Standard masked autoencoder objective to reconstruct the raw EEG patches, ensuring local temporal fidelity.
+
+        .. math::
+            \mathcal{L}_R = - \frac{1}{|\mathcal{M}|} \sum_{(i,j) \in \mathcal{M}} ||rec_{i,j}, LN(p_{i,j})||_2^2
+
+        where :math:`rec_{i,j}` is the reconstructed patch and :math:`p_{i,j}` is the original patch.
+
+    .. rubric:: Macro Components
+
+    - `EEGPT.target_encoder` **(Universal Encoder)**
+        - *Operations.* A hierarchical backbone that consists of **Local Spatio-Temporal Embedding** followed
+          by a standard Transformer encoder [eegpt]_.
+        - *Role.* Maps raw spatio-temporal EEG patches into a sequence of latent tokens :math:`z`.
+    - `EEGPT.chans_id` **(Channel Identification)**
+        - *Operations.* A buffer containing channel indices mapped from the standard channel names provided
+          in ``chs_info`` [eegpt]_.
+        - *Role.* Provides the spatial identity for each input channel, allowing the model to look up
+          the correct channel embedding vector :math:`\varsigma_i`.
+    - **Local Spatio-Temporal Embedding** (Input Processing)
+        - *Operations.* The input signal :math:`X` is chunked into patches :math:`p_{i,j}`. Each patch
+          is linearly projected and summed with a specific channel embedding:
+          :math:`token_{i,j} = \text{Embed}(p_{i,j}) + \varsigma_i` [eegpt]_.
+        - *Role.* Converts the 2D EEG grid (Channels :math:`\times` Time) into a unified sequence of tokens
+          that preserves both channel identity and temporal order.
+
+    .. rubric:: How the information is encoded temporally, spatially, and spectrally
+
+    * **Temporal.**
+      The model segments continuous EEG signals into small, non-overlapping patches (e.g., 250ms windows
+      with ``patch_size=64``) [eegpt]_. This **Patching** mechanism captures short-term local temporal
+      structure, while the subsequent Transformer encoder captures long-range temporal dependencies across
+      the entire window.
+    * **Spatial.**
+      Unlike convolutional models that may rely on fixed spatial order, EEGPT uses **Channel Embeddings**
+      :math:`\varsigma_i` [eegpt]_. Each channel's data is treated as a distinct sequence of tokens tagged
+      with its spatial identity. This allows the model to flexibly handle different montages and
+      missing channels by simply mapping channel names to their corresponding learnable embeddings.
+    * **Spectral.**
+      Spectral information is implicitly learned through the **Mask-based Reconstruction** objective
+      (:math:`\mathcal{L}_R`) [eegpt]_. By forcing the model to reconstruct raw waveforms (including phase
+      and amplitude) from masked inputs, the model learns to encode frequency-specific patterns necessary
+      for signal fidelity. The **Representation Alignment** objective (:math:`\mathcal{L}_A`) further
+      refines this by encouraging these spectral features to align with robust, high-level semantic representations.
 
     .. rubric:: Usage
+
+    The model can be initialized for specific downstream tasks (e.g., classification) by specifying
+    `n_outputs`, `chs_info`, `n_times`.
 
     .. code-block:: python
 
@@ -65,7 +112,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         model = EEGPT(
             n_chans=22,
             n_times=1000,
-            sfreq=200,
+            chs_info=chs_info,
             n_outputs=4,  # For classification tasks
             patch_size=64,
             depth=8,
@@ -78,19 +125,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_outputs : int
-        Number of outputs of the model. This is the number of classes in the
-        case of classification.
-    n_chans : int
-        Number of EEG channels.
-    chs_info : list of dict
-        Information about the channels, as returned by `mne.Info`.
-    n_times : int
-        Number of time samples.
-    input_window_seconds : float
-        Length of the input window in seconds.
-    sfreq : float
-        Sampling frequency of the EEG signals.
     return_encoder_output : bool, default=False
         Whether to return the encoder output or the classifier output.
     patch_size : int, default=64
@@ -122,7 +156,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [eegpt] Tang, G., Liu, W., He, Y., Xu, C., Ma, L., & Li, H. (2024).
+    .. [eegpt] Wang, G., Liu, W., He, Y., Xu, C., Ma, L., & Li, H. (2024).
        EEGPT: Pretrained transformer for universal and reliable representation of eeg signals.
        Advances in Neural Information Processing Systems, 37, 39249-39280.
        Online: https://proceedings.neurips.cc/paper_files/paper/2024/file/4540d267eeec4e5dbd9dae9448f0b739-Paper-Conference.pdf
@@ -388,51 +422,116 @@ def apply_rotary_emb(freqs, t, start_index=0, scale=1.0):
 
 
 def apply_mask(mask, x):
-    """Apply mask to select specific patches from input tensor.
+    r"""Apply mask to select specific patches from input tensor.
+
+    The operation flattens the patch and channel dimensions, gathers the selected
+    indices specified by the mask, and then optionally reshapes back if the mask
+    is 2D.
+
+    .. math::
+       x_{flat} = \text{Flatten}(x, \text{dims}=(1, 2))
+       x_{masked} = \text{Gather}(x_{flat}, \text{index}=mask)
 
     Parameters
     ----------
-    x : torch.Tensor
-        Input tensor of shape (batch, n_patches, n_chans, embed_dim).
     mask : torch.Tensor
         Mask tensor containing indices of patches to keep.
+        Can be 1D ``(n_masked_items,)`` or 2D ``(n_masked_patches, n_masked_chans)``.
+    x : torch.Tensor
+        Input tensor.
+        Shape: ``(batch_size, n_patches, n_chans, embed_dim)``
 
     Returns
     -------
     torch.Tensor
         Masked tensor with selected patches.
+        If mask is 2D, output shape is ``(batch_size, n_masked_patches, n_masked_chans, embed_dim)``.
+        If mask is 1D, output shape is ``(batch_size, n_masked_items, embed_dim)``.
     """
-    B, N, C, D = x.shape
+    batch_size, n_patches, n_chans, embed_dim = x.shape
+
+    # Flatten patches and channels: (b, n, c, d) -> (b, n*c, d)
+    x_flat = rearrange(x, "b n c d -> b (n c) d")
+
     if len(mask.shape) == 2:
-        mN, mC = mask.shape
-        mask_keep = mask.reshape((1, mN * mC, 1)).repeat((B, 1, D))
-        masked_x = torch.gather(x.reshape((B, N * C, D)), dim=-2, index=mask_keep)
-        masked_x = masked_x.contiguous().view((B, mN, mC, D))
+        n_masked_patches, n_masked_chans = mask.shape
+
+        # Flatten mask: (mn, mc) -> (mn*mc)
+        mask_flat = rearrange(mask, "mn mc -> (mn mc)")
+
+        # Prepare indices for gathering: (1, mn*mc, 1) -> (b, mn*mc, d)
+        mask_keep = repeat(
+            mask_flat,
+            "m -> b m d",
+            b=batch_size,
+            d=embed_dim,
+        )
+
+        # Gather selected patch-channel pairs
+        masked_x_flat = torch.gather(x_flat, dim=1, index=mask_keep)
+
+        # Reshape back to 2D structure: (b, mn*mc, d) -> (b, mn, mc, d)
+        masked_x = rearrange(
+            masked_x_flat,
+            "b (mn mc) d -> b mn mc d",
+            mn=n_masked_patches,
+            mc=n_masked_chans,
+        )
     else:
-        mN = mask.shape[0]
-        mask_keep = mask.reshape((1, mN, 1)).repeat((B, 1, D))
-        masked_x = torch.gather(x.reshape((B, N * C, D)), dim=-2, index=mask_keep)
+        # Mask is 1D: (n_masked_items,)
+
+        # Prepare indices for gathering: (m, ) -> (b, m, d)
+        mask_keep = repeat(
+            mask,
+            "m -> b m d",
+            b=batch_size,
+            d=embed_dim,
+        )
+
+        # Gather
+        masked_x = torch.gather(x_flat, dim=1, index=mask_keep)
+
     return masked_x
 
 
 def apply_mask_t(mask_t, x):
-    """Apply temporal mask to select specific patches.
+    r"""Apply temporal mask to select specific patches.
+
+    This function selects the temporal patches specified by the boolean mask.
+    It operates on the sequence length dimension.
+
+    The operation performed is effectively:
+
+    .. math::
+       x_{masked}[b, i, d] = x[b, \text{index}[b, i], d]
+
+    where :math:`\text{index}` corresponds to the indices where `mask_t` is True.
 
     Parameters
     ----------
-    x : torch.Tensor
-        Input tensor of shape (batch, n_patches, embed_dim).
     mask_t : torch.Tensor
         Mask tensor containing temporal indices to keep.
+        Shape: ``(n_masked_patches, )``
+    x : torch.Tensor
+        Input tensor.
+        Shape: ``(batch_size, n_patches, embed_dim)``
 
     Returns
     -------
     torch.Tensor
         Masked tensor with selected temporal patches.
+        Shape: ``(batch_size, n_masked_patches, embed_dim)``
     """
-    B, N, D = x.shape
-    mN = mask_t.shape[0]
-    mask_keep = mask_t.reshape((1, mN, 1)).repeat((B, 1, D))
+    batch_size, n_patches, embed_dim = x.shape
+    n_masked_patches = mask_t.shape[0]
+
+    mask_keep = repeat(
+        mask_t,
+        "n -> b n d",
+        b=batch_size,
+        d=embed_dim,
+    )
+
     masked_x = torch.gather(x, dim=1, index=mask_keep)
     return masked_x
 
