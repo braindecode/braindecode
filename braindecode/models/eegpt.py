@@ -186,7 +186,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         self.drop_path_rate = drop_path_rate
         self.init_std = init_std
         self.qkv_bias = qkv_bias
-        self.qkv_bias = qkv_bias
         self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=LAYER_NORM_EPS)
 
         self.target_encoder = _EEGTransformer(
@@ -1043,9 +1042,11 @@ class _EEGTransformer(nn.Module):
         # x shape: (batch, n_patches, n_chans, embed_dim)
         batch, n_patches, n_chans, embed_dim = x.shape
 
-        assert n_patches == self.num_patches[1] and n_chans == self.num_patches[0], (
-            f"{n_patches}=={self.num_patches[1]} and {n_chans}=={self.num_patches[0]}"
-        )
+        if n_patches != self.num_patches[1] or n_chans != self.num_patches[0]:
+            raise ValueError(
+                f"Patch shape mismatch: got ({n_patches}, {n_chans}), "
+                f"expected ({self.num_patches[1]}, {self.num_patches[0]})"
+            )
 
         if chan_ids is None:
             chan_ids = torch.arange(0, n_chans)

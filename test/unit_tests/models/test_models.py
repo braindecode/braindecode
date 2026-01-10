@@ -369,6 +369,142 @@ def test_eegpt_parametrized(
         )
 
 
+def test_eegpt_invalid_channel():
+    """Test that EEGPT raises ValueError for invalid channel names."""
+    from braindecode.models.eegpt import EEGPT
+
+    invalid_chs_info = [
+        {"ch_name": "INVALID_CH", "kind": "eeg"},
+        {"ch_name": "F3", "kind": "eeg"},
+    ]
+
+    with pytest.raises(ValueError, match="not found in EEGPT channel list"):
+        EEGPT(
+            n_outputs=4,
+            n_chans=2,
+            n_times=600,
+            chs_info=invalid_chs_info,
+        )
+
+
+def test_eegpt_patch_norm_embed():
+    """Test the _PatchNormEmbed alternative patch embedding module."""
+    from braindecode.models.eegpt import _PatchNormEmbed
+
+    n_chans = 8
+    n_times = 640  # Must be divisible by patch_size
+    patch_size = 64
+    embed_dim = 128
+
+    patch_embed = _PatchNormEmbed(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+    )
+
+    # Test forward pass
+    batch_size = 2
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = patch_embed(x)
+
+    # Expected: (batch, n_patches, n_chans, embed_dim)
+    n_patches = n_times // patch_size
+    expected_shape = (batch_size, n_patches, n_chans, embed_dim)
+    assert output.shape == expected_shape, (
+        f"Expected shape {expected_shape}, got {output.shape}"
+    )
+
+
+def test_eegpt_patch_norm_embed_with_stride():
+    """Test _PatchNormEmbed with custom stride."""
+    from braindecode.models.eegpt import _PatchNormEmbed
+
+    n_chans = 8
+    n_times = 640
+    patch_size = 64
+    patch_stride = 32
+    embed_dim = 128
+
+    patch_embed = _PatchNormEmbed(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        patch_stride=patch_stride,
+        embed_dim=embed_dim,
+    )
+
+    batch_size = 2
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = patch_embed(x)
+
+    n_patches = (n_times - patch_size) // patch_stride + 1
+    expected_shape = (batch_size, n_patches, n_chans, embed_dim)
+    assert output.shape == expected_shape
+
+
+def test_eegpt_patch_norm_embed_invalid_size():
+    """Test that _PatchNormEmbed raises error for invalid n_times."""
+    from braindecode.models.eegpt import _PatchNormEmbed
+
+    with pytest.raises(ValueError, match="must be divisible by patch_size"):
+        _PatchNormEmbed(
+            n_chans=8,
+            n_times=100,  # Not divisible by 64
+            patch_size=64,
+            embed_dim=128,
+        )
+
+
+def test_eegpt_patch_embed_no_stride():
+    """Test PatchEmbed with default (non-overlapping) patches."""
+    from braindecode.models.eegpt import PatchEmbed
+
+    n_chans = 8
+    n_times = 640
+    patch_size = 64
+    embed_dim = 128
+
+    # patch_stride=None means non-overlapping patches
+    patch_embed = PatchEmbed(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        patch_stride=None,
+        embed_dim=embed_dim,
+    )
+
+    batch_size = 2
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = patch_embed(x)
+
+    n_patches = n_times // patch_size
+    expected_shape = (batch_size, n_patches, n_chans, embed_dim)
+    assert output.shape == expected_shape
+
+
+def test_eegpt_droppath():
+    """Test EEGPT with drop_path_rate > 0 to cover DropPath branch."""
+    from braindecode.models.eegpt import EEGPT
+
+    model = EEGPT(
+        n_outputs=4,
+        n_chans=8,
+        n_times=600,
+        depth=2,
+        embed_dim=128,
+        num_heads=4,
+        drop_path_rate=0.2,  # Non-zero to trigger DropPath
+    )
+    model.train()  # DropPath only active during training
+
+    batch_size = 2
+    x = torch.randn(batch_size, 8, 600)
+    output = model(x)
+
+    assert output.shape == (batch_size, 4)
+
+
 def test_eegitnet(input_sizes):
     model = EEGITNet(
         n_outputs=input_sizes["n_classes"],
