@@ -62,6 +62,8 @@ a common interface for all EEG models and derivate variables names if necessary.
     Some models have pre-trained weights available on the Hugging Face BrainDecode
     organization:
 
+    .. currentmodule:: braindecode.models
+
     - :class:`BIOT` - Foundation model with pre-trained weights
     - :class:`CBraMod` - Criss'Cross Transformer model with pre-trained weights
     - :class:`Labram` - Large Brain Model with pre-trained weights
