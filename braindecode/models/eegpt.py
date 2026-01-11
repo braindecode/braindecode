@@ -111,8 +111,37 @@ class EEGPT(EEGModuleMixin, nn.Module):
       Spectral information is implicitly learned through the **Mask-based Reconstruction** objective
       (:math:`\mathcal{L}_R`) [eegpt]_. By forcing the model to reconstruct raw waveforms (including phase
       and amplitude) from masked inputs, the model learns to encode frequency-specific patterns necessary
-      for signal fidelity. The **Representation Alignment** objective (:math:`\mathcal{L}_A`) further
       refines this by encouraging these spectral features to align with robust, high-level semantic representations.
+
+    .. rubric:: Pretrained Weights
+
+    Weights are available on `HuggingFace <https://huggingface.co/braindecode/eegpt-pretrained>`_.
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       This model has pre-trained weights available on the Hugging Face Hub.
+       `Link here <https://huggingface.co/braindecode/eegpt-pretrained>`_.
+
+       You can load them using:
+
+       .. code-block:: python
+
+           from braindecode.models import EEGPT
+
+           # Load pre-trained model from Hugging Face Hub
+           model = EEGPT.from_pretrained("braindecode/eegpt-pretrained")
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-eegpt-model", commit_message="Upload trained EEGPT model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
 
     .. rubric:: Usage
 
