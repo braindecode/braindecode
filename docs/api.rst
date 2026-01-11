@@ -131,6 +131,7 @@ a common interface for all EEG models and derivate variables names if necessary.
      BENDR
      BIOT
      BrainModule
+     CBraMod
      ContraWR
      CTNet
      Deep4Net
