@@ -131,6 +131,7 @@ models_mandatory_parameters: list[
             "chs_info": [{"ch_name": f"E{i + 1}", "kind": "eeg"} for i in range(19)],
         },
     ),
+    ("CBraMod", [], None),
 ]
 
 ################################################################
@@ -141,6 +142,7 @@ models_mandatory_parameters: list[
 ################################################################
 non_classification_models = [
     "SignalJEPA",
+    "CBraMod",
 ]
 
 ################################################################
