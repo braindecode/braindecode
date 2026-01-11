@@ -129,7 +129,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         Number of attention heads.
     activation : type[nn.Module], default=nn.GELU
         Activation function used in Transformer feedforward layers.
-    out_dim : int, default=200
+    emb_dim : int, default=200
         Output embedding dimension.
 
     References
@@ -162,7 +162,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         n_layer: int = 12,
         nhead: int = 8,
         activation: type[nn.Module] = nn.GELU,
-        out_dim: int = 200,
+        emb_dim: int = 200,
         drop_prob: float = 0.1,
     ):
         super().__init__(
@@ -188,7 +188,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self.encoder = TransformerEncoder(
             encoder_layer, num_layers=n_layer, enable_nested_tensor=False
         )
-        self.proj_out = nn.Sequential(nn.Linear(d_model, out_dim))
+        self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
         self.apply(_weights_init)
 
