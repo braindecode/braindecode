@@ -57,7 +57,6 @@ Current 1.3.1 (stable)
 Enhancements
 ============
 
-
 - Adding Hugging Face Hub integration documentation with comprehensive examples for
   loading pre-trained models (:class:`braindecode.models.BIOT`,
   :class:`braindecode.models.Labram`, :class:`braindecode.models.REVE`,
