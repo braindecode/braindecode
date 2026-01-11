@@ -65,7 +65,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         This forces the model to learn semantic, high-level representations rather than just signal waveform details.
 
         .. math::
-            \mathcal{L}_A = - \frac{1}{N} \sum_{j=1}^{N} ||pred_j, LN(menc_j)||_2^2
+            \mathcal{L}_A = - \frac{1}{N} \sum_{j=1}^{N} ||pred_j - LN(menc_j)||_2^2
 
         where :math:`pred_j` is the predictor output and :math:`menc_j` is the momentum encoder output.
 
@@ -73,7 +73,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         Standard masked autoencoder objective to reconstruct the raw EEG patches, ensuring local temporal fidelity.
 
         .. math::
-            \mathcal{L}_R = - \frac{1}{|\mathcal{M}|} \sum_{(i,j) \in \mathcal{M}} ||rec_{i,j}, LN(p_{i,j})||_2^2
+            \mathcal{L}_R = - \frac{1}{|\mathcal{M}|} \sum_{(i,j) \in \mathcal{M}} ||rec_{i,j} - LN(p_{i,j})||_2^2
 
         where :math:`rec_{i,j}` is the reconstructed patch and :math:`p_{i,j}` is the original patch.
 
@@ -273,10 +273,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
         if patch_module is None:
             patch_module = _PatchEmbed
         # check if patch module is _PatchEmbed or _PatchNormEmbed
-        if not issubclass(patch_module, (_PatchEmbed, _PatchNormEmbed)):
-            raise ValueError(
-                "patch_module must be either _PatchEmbed or _PatchNormEmbed"
-            )
+        if not issubclass(patch_module, _PatchEmbed):
+            raise ValueError("patch_module must be a subclass of _PatchEmbed")
         else:
             self.patch_module = patch_module
 
@@ -590,7 +588,6 @@ def _apply_mask_t(mask_t, x):
         Shape: ``(batch_size, n_masked_patches, embed_dim)``
     """
     batch_size, n_patches, embed_dim = x.shape
-    n_masked_patches = mask_t.shape[0]
 
     mask_keep = repeat(
         mask_t,
@@ -897,26 +894,30 @@ class _PatchEmbed(nn.Module):
         patch_size=16,
         patch_stride=None,
         embed_dim=768,
+        apply_norm=False,
     ):
         super().__init__()
         self.n_chans = n_chans
         self.n_times = n_times
         self.patch_size = patch_size
         self.patch_stride = patch_stride
-        if patch_stride is None:
-            self.num_patches = (n_chans, n_times // patch_size)
-        else:
-            self.num_patches = (
-                n_chans,
-                (n_times - patch_size) // patch_stride + 1,
-            )
+        self.apply_norm = apply_norm
 
-        self.proj = nn.Conv2d(
-            1,
-            embed_dim,
-            kernel_size=(1, patch_size),
-            stride=(1, patch_size if patch_stride is None else patch_stride),
-        )
+        self._configure_padding()
+
+        if apply_norm:
+            self.unfold = torch.nn.Unfold(
+                kernel_size=(1, patch_size),
+                stride=(1, patch_stride if patch_stride is not None else patch_size),
+            )
+            self.proj = nn.Linear(patch_size, embed_dim)
+        else:
+            self.proj = nn.Conv2d(
+                1,
+                embed_dim,
+                kernel_size=(1, patch_size),
+                stride=(1, patch_size if patch_stride is None else patch_stride),
+            )
 
     def forward(self, x):
         """
@@ -933,108 +934,68 @@ class _PatchEmbed(nn.Module):
             Patch embeddings of shape (batch, n_patches, n_chans, embed_dim).
         """
         # x: batch, n_chans, n_times
+        x = self.padding_layer(x)
         x = rearrange(x, "batch n_chans n_times -> batch 1 n_chans n_times")
-        # Convolve and rearrange:
-        # (batch, embed_dim, n_chans, n_patches) -> (batch, n_patches, n_chans, embed_dim)
-        x = self.proj(x)
-        x = rearrange(
-            x,
-            "batch embed_dim n_chans n_patches -> batch n_patches n_chans embed_dim",
-        )
-        return x
 
+        if self.apply_norm:
+            x = self.unfold(x)
+            # (batch, patch_size, n_patches * n_chans)
 
-class _PatchNormEmbed(nn.Module):
-    """
-    Alternative Patch Embedding with Unfold and LayerNorm.
+            # Rearrange using Einops to (batch, n_patches, n_chans, patch_size)
+            x = rearrange(
+                x,
+                "batch patch_size (n_chans n_patches) -> batch n_patches n_chans patch_size",
+                n_chans=self.n_chans,
+            )
 
-    This layer splits the signal into patches using `torch.nn.Unfold`, applies
-    layer normalization to each patch, and then projects it to the embedding dimension.
-    This is an alternative to the Convolution-based `_PatchEmbed`.
+            x = torch.layer_norm(x, (self.patch_size,))
+            x = self.proj(x)  # (batch, n_patches, n_chans, embed_dim)
+            return x
+        else:
+            # Convolve and rearrange:
+            # (batch, embed_dim, n_chans, n_patches) -> (batch, n_patches, n_chans, embed_dim)
+            x = self.proj(x)
+            x = rearrange(
+                x,
+                "batch embed_dim n_chans n_patches -> batch n_patches n_chans embed_dim",
+            )
+            return x
 
-    Parameters
-    ----------
-    n_chans : int, default=64
-        Number of input channels.
-    n_times : int, default=1000
-        Number of time samples.
-    patch_size : int, default=16
-        Size of each patch along the time dimension.
-    patch_stride : int, optional
-        Stride between patches. If None, defaults to `patch_size`.
-    embed_dim : int, default=768
-        Dimension of the output embeddings.
-    """
-
-    def __init__(
-        self,
-        n_chans=64,
-        n_times=1000,
-        patch_size=16,
-        patch_stride=None,
-        embed_dim=768,
-    ):
-        super().__init__()
-
-        if n_times % patch_size != 0:
+    def _configure_padding(self):
+        """
+        Validates input size, calculates padding to ensure valid patching,
+        and initializes the padding layer.
+        """
+        # Validation checks
+        if self.n_times < self.patch_size:
             raise ValueError(
-                f"n_times {n_times} must be divisible by patch_size {patch_size}"
+                f"n_times {self.n_times} must be >= patch_size {self.patch_size}"
             )
 
-        self.n_chans = n_chans
-        self.n_times = n_times
-        self.patch_size = patch_size
-        self.patch_stride = patch_stride
-
-        if patch_stride is None:
-            self.num_patches = (n_chans, n_times // patch_size)
+        # Padding calculation
+        if self.patch_stride is None:
+            # Non-overlapping: Just ensure divisibility
+            remainder = self.n_times % self.patch_size
+            self.padding_size = self.patch_size - remainder if remainder != 0 else 0
         else:
-            self.num_patches = (
-                n_chans,
-                (n_times - patch_size) // patch_stride + 1,
-            )
+            # Overlapping: Ensure last patch fits perfectly
+            remainder = (self.n_times - self.patch_size) % self.patch_stride
+            self.padding_size = self.patch_stride - remainder if remainder != 0 else 0
 
-        self.unfold = torch.nn.Unfold(
-            kernel_size=(1, patch_size),
-            stride=(1, patch_stride if patch_stride is not None else patch_size),
+        self.n_times_padded = self.n_times + self.padding_size
+
+        # Layer creation
+        if self.padding_size > 0:
+            self.padding_layer = nn.ConstantPad1d((0, self.padding_size), 0.0)
+        else:
+            self.padding_layer = nn.Identity()
+
+        # Num patches calculation
+        eff_stride = (
+            self.patch_stride if self.patch_stride is not None else self.patch_size
         )
-
-        self.proj = nn.Linear(patch_size, embed_dim)  # +2
-
-    def forward(self, x):
-        """
-        Forward pass.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input EEG signal of shape (batch, n_chans, n_times).
-
-        Returns
-        -------
-        torch.Tensor
-            Patch embeddings of shape (batch, n_patches, n_chans, embed_dim).
-        """
-        # x: batch, n_chans, n_times
-        x = rearrange(x, "batch n_chans n_times -> batch 1 n_chans n_times")
-
-        x = self.unfold(x)
-        # (batch, patch_size, n_patches * n_chans)
-
-        # Rearrange using Einops:
-        # 1. Split dim 2 into (n_chans, n_patches) - Unfold iterates time then channel
-        # 2. Transpose to (batch, n_patches, n_chans, patch_size)
-        x = rearrange(
-            x,
-            "batch patch_size (n_chans n_patches) -> batch n_patches n_chans patch_size",
-            n_chans=self.n_chans,
-        )
-
-        x = torch.layer_norm(x, (self.patch_size,))
-
-        x = self.proj(x)  # (batch, n_patches, n_chans, embed_dim)
-
-        return x
+        n_patches = (self.n_times_padded - self.patch_size) // eff_stride + 1
+        self.num_patches = (self.n_chans, n_patches)
 
 
 class _EEGTransformer(nn.Module):
@@ -1096,7 +1057,7 @@ class _EEGTransformer(nn.Module):
         attn_drop_rate=0.0,
         drop_path_rate=0.0,
         norm_layer=nn.LayerNorm,
-        patch_module=_PatchEmbed,  # PatchNormEmbed
+        patch_module=_PatchEmbed,
         init_std=0.02,
         return_attention_layer=-1,
     ):
@@ -1156,21 +1117,22 @@ class _EEGTransformer(nn.Module):
 
         chan_ids = []
         unknown = []
-        for ch in channels:
+        for i, ch in enumerate(channels):
             ch_upper = ch.upper().strip(".")
-            if ch_upper not in CHANNEL_DICT:
+            if ch_upper in CHANNEL_DICT:
+                chan_ids.append(CHANNEL_DICT[ch_upper])
+            else:
                 unknown.append(ch)
-                continue
-            chan_ids.append(CHANNEL_DICT[ch_upper])
+                chan_ids.append(i)
 
         if unknown:
             mne.utils.warn(
                 "Unknown channel name(s) in chs_info: "
-                f"{unknown}. Falling back to sequential channel IDs for all "
-                "channels. Map your channel names to EEGPT_CHANNELS to preserve "
+                f"{unknown}. Falling back to sequential channel IDs for these unknown "
+                "channels, while preserving pretrained embeddings for known channels."
+                "Map your channel names to EEGPT_CHANNELS to preserve "
                 "pretrained channel embeddings.",
             )
-            return torch.arange(self.patch_embed.n_chans)
 
         return torch.tensor(chan_ids).unsqueeze_(0).long()
 
