@@ -30,6 +30,7 @@ Enhancements
 - Add an optional ``lazy`` init path to :class:`braindecode.datasets.base.BaseConcatDataset`
   to defer cumulative size computation (and any downstream dataset length access) until
   first access, supporting truly lazy raw loading workflows.
+- Add :class:`braindecode.models.CBraMod` model (:gh:`914` by `Pierre Guetschel`_)
 
 API changes
 ============
