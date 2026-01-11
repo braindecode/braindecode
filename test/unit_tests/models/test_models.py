@@ -467,7 +467,7 @@ def test_eegpt_patch_norm_embed_invalid_size():
 
 def test_eegpt_patch_embed_no_stride():
     """Test PatchEmbed with default (non-overlapping) patches."""
-    from braindecode.models.eegpt import PatchEmbed
+    from braindecode.models.eegpt import _PatchEmbed
 
     n_chans = 8
     n_times = 640
@@ -475,7 +475,7 @@ def test_eegpt_patch_embed_no_stride():
     embed_dim = 128
 
     # patch_stride=None means non-overlapping patches
-    patch_embed = PatchEmbed(
+    patch_embed = _PatchEmbed(
         n_chans=n_chans,
         n_times=n_times,
         patch_size=patch_size,
