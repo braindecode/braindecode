@@ -53,6 +53,13 @@ from braindecode.models import (
     TSception,
     USleep,
 )
+from braindecode.models.eegpt import (
+    _apply_rotary_emb,
+    _Attention,
+    _EEGTransformer,
+    _PatchNormEmbed,
+    _rotate_half,
+)
 from braindecode.util import set_random_seeds
 
 
@@ -503,6 +510,114 @@ def test_eegpt_droppath():
     output = model(x)
 
     assert output.shape == (batch_size, 4)
+
+
+def test_eegpt_transformer_patch_norm_embed():
+    n_times = 100
+    patch_size = 20
+    n_chans = 2
+    embed_dim = 16
+
+    model = _EEGTransformer(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        num_heads=4,
+        patch_module=_PatchNormEmbed,
+    )
+
+    x = torch.randn(1, n_chans, n_times)
+    chan_ids = torch.arange(n_chans).unsqueeze(0)
+    out = model(x, chan_ids)
+    assert out.shape == (1, n_times // patch_size, 1, embed_dim)
+
+
+def test_eegpt_transformer_masking():
+    n_chans = 2
+    n_times = 100
+    patch_size = 20
+    embed_dim = 16
+
+    model = _EEGTransformer(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        num_heads=4,
+    )
+
+    x = torch.randn(1, n_chans, n_times)
+    chan_ids = torch.arange(n_chans).unsqueeze(0)
+
+    n_patches = n_times // patch_size
+    total_tokens = n_patches * n_chans
+    mask_x = torch.arange(total_tokens).reshape(n_patches, n_chans)
+
+    out = model(x, chan_ids=chan_ids, mask_x=mask_x)
+    assert out.shape == (1, n_patches, 1, embed_dim)
+
+    mask_t = torch.arange(n_patches // 2)
+    out_t = model(x, chan_ids=chan_ids, mask_t=mask_t)
+    assert out_t.shape[1] == n_patches // 2
+
+
+def test_eegpt_rope_helpers():
+    x = torch.randn(1, 4, 10)
+    rotated = _rotate_half(x)
+    assert rotated.shape == x.shape
+
+    t = torch.randn(1, 4, 10)
+    freqs = torch.randn(1, 4, 10)
+    out = _apply_rotary_emb(freqs, t)
+    assert out.shape == t.shape
+
+
+def test_eegpt_apply_rotary_emb_invalid_dim():
+    t = torch.randn(1, 10, 16)
+    freqs = torch.randn(1, 10, 32)
+    with pytest.raises(ValueError, match="feature dimension"):
+        _apply_rotary_emb(freqs, t)
+
+
+def test_eegpt_attention_with_rope():
+    dim = 16
+    num_heads = 4
+    attn = _Attention(dim, num_heads=num_heads, use_rope=True)
+
+    x = torch.randn(2, 5, dim)
+    freqs = torch.randn(2, num_heads, 5, dim // num_heads)
+    out = attn(x, freqs=freqs)
+    assert out.shape == x.shape
+
+
+def test_eegpt_return_attention_layer():
+    model = _EEGTransformer(
+        n_chans=2,
+        n_times=100,
+        return_attention_layer=1,
+    )
+    x = torch.randn(1, 2, 100)
+    out = model(x)
+
+    expected_seq_len = model.patch_embed.n_chans + model.embed_num
+    assert out.shape[1] == model.num_heads
+    assert out.shape[-1] == expected_seq_len
+    assert out.shape[-2] == expected_seq_len
+
+
+def test_eegpt_buffer_device():
+    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
+        pytest.skip("No CUDA or MPS device available.")
+
+    device = "cuda" if torch.cuda.is_available() else "mps"
+    model = EEGPT(n_outputs=2, n_chans=3, n_times=100).to(device)
+
+    assert model.chans_id.device.type == device
+
+    x = torch.randn(1, 3, 100, device=device)
+    with torch.no_grad():
+        model(x)
 
 
 def test_eegitnet(input_sizes):

@@ -377,7 +377,7 @@ EEGPT_CHANNELS = _get_eegpt_channels()
 CHANNEL_DICT = {ch: i for i, ch in enumerate(EEGPT_CHANNELS)}
 
 
-def rotate_half(x):
+def _rotate_half(x):
     """Rotate half of the dimensions for RoPE.
 
     Parameters
@@ -396,7 +396,7 @@ def rotate_half(x):
     return x.flatten(-2)
 
 
-def apply_rotary_emb(freqs, t, start_index=0, scale=1.0):
+def _apply_rotary_emb(freqs, t, start_index=0, scale=1.0):
     """Apply rotary positional embeddings (RoPE) to input tensor.
 
     Parameters
@@ -428,11 +428,11 @@ def apply_rotary_emb(freqs, t, start_index=0, scale=1.0):
         t[..., start_index:end_index],
         t[..., end_index:],
     )
-    t_mid = (t_mid * freqs.cos() * scale) + (rotate_half(t_mid) * freqs.sin() * scale)
+    t_mid = (t_mid * freqs.cos() * scale) + (_rotate_half(t_mid) * freqs.sin() * scale)
     return torch.cat((t_left, t_mid, t_right), dim=-1)
 
 
-def apply_mask(mask, x):
+def _apply_mask(mask, x):
     r"""Apply mask to select specific patches from input tensor.
 
     The operation flattens the patch and channel dimensions, gathers the selected
@@ -505,7 +505,7 @@ def apply_mask(mask, x):
     return masked_x
 
 
-def apply_mask_t(mask_t, x):
+def _apply_mask_t(mask_t, x):
     r"""Apply temporal mask to select specific patches.
 
     This function selects the temporal patches specified by the boolean mask.
@@ -674,18 +674,20 @@ class _Attention(nn.Module):
         # Unlike standard absolute positional encodings, RoPE rotates the
         # query and key vectors to encode relative positions.
         if self.use_rope:
-            q = apply_rotary_emb(freqs, q)
-            k = apply_rotary_emb(freqs, k)
+            q = _apply_rotary_emb(freqs, q)
+            k = _apply_rotary_emb(freqs, k)
 
         # 2. Return Attention Weights
         # If return_attention is True, we manually compute attention scores
         # because F.scaled_dot_product_attention doesn't return weights.
         if self.return_attention:
             if self.is_causal:
-                attn_mask = torch.ones(q.size(-2), q.size(-2), dtype=torch.bool).tril(
-                    diagonal=0
+                attn_mask = torch.ones(
+                    q.size(-2), q.size(-2), device=q.device, dtype=torch.bool
+                ).tril(diagonal=0)
+                attn_zeros = torch.zeros(
+                    q.size(-2), q.size(-2), device=q.device, dtype=q.dtype
                 )
-                attn_zeros = torch.zeros(q.size(-2), q.size(-2))
                 attn_mask = attn_zeros.masked_fill(
                     torch.logical_not(attn_mask), -float("inf")
                 )
@@ -1168,7 +1170,7 @@ class _EEGTransformer(nn.Module):
 
         if mask_x is not None:
             mask_x = mask_x.to(x.device)
-            x = apply_mask(mask_x, x)
+            x = _apply_mask(mask_x, x)
             # x shape might change here if masking removes tokens
             batch, n_patches, n_chans, embed_dim = x.shape
 
@@ -1214,7 +1216,7 @@ class _EEGTransformer(nn.Module):
 
         if mask_t is not None:
             mask_t = mask_t.to(x.device)
-            x = apply_mask_t(mask_t, x)
+            x = _apply_mask_t(mask_t, x)
 
         # Reshape to final output format: (batch, n_patches, embed_num, embed_dim)
         x = rearrange(
