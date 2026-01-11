@@ -4,6 +4,7 @@
 # License: BSD-3
 
 import math
+import warnings
 from functools import partial
 from typing import Optional
 
@@ -209,7 +210,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         drop_path_rate: float = 0.0,
         init_std: float = 0.02,
         qkv_bias: bool = True,
-        patch_module: nn.Module = _PatchEmbed,
+        patch_module: Optional[nn.Module] = None,
         norm_layer: Optional[nn.Module] = None,
         layer_norm_eps: float = 1e-6,
         return_encoder_output: bool = False,
@@ -240,6 +241,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
         self.qkv_bias = qkv_bias
         self.layer_norm_eps = layer_norm_eps
         self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=layer_norm_eps)
+        # set default patch module if not provided
+        if patch_module is None:
+            patch_module = _PatchEmbed
         # check if patch module is _PatchEmbed or _PatchNormEmbed
         if not issubclass(patch_module, (_PatchEmbed, _PatchNormEmbed)):
             raise ValueError(
@@ -1120,11 +1124,24 @@ class _EEGTransformer(nn.Module):
             return torch.arange(self.patch_embed.n_chans)
 
         chan_ids = []
+        unknown = []
         for ch in channels:
             ch_upper = ch.upper().strip(".")
             if ch_upper not in CHANNEL_DICT:
-                raise ValueError(f"Channel {ch} not found in EEGPT channel list.")
+                unknown.append(ch)
+                continue
             chan_ids.append(CHANNEL_DICT[ch_upper])
+
+        if unknown:
+            warnings.warn(
+                "Unknown channel name(s) in chs_info: "
+                f"{unknown}. Falling back to sequential channel IDs for all "
+                "channels. Map your channel names to EEGPT_CHANNELS to preserve "
+                "pretrained channel embeddings.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return torch.arange(self.patch_embed.n_chans)
 
         return torch.tensor(chan_ids).unsqueeze_(0).long()
 
@@ -1223,13 +1240,6 @@ class _EEGTransformer(nn.Module):
 
         if self.norm is not None:
             x = self.norm(x)
-
-        # Flatten summary tokens
-        # x = x.flatten(-2)
-        # x shape: (batch * n_patches, embed_num * embed_dim)
-        # -- reshape back to separate batch and patches
-        # x = x.reshape((batch, n_patches, -1))
-        # x shape: (batch, n_patches, embed_num * embed_dim)
 
         # Instead of flatten+reshape, let's just rearrange back to separate batch/patches explicitly
         x = rearrange(

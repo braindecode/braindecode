@@ -377,7 +377,7 @@ def test_eegpt_parametrized(
 
 
 def test_eegpt_invalid_channel():
-    """Test that EEGPT raises ValueError for invalid channel names."""
+    """Test EEGPT fallback when chs_info contains invalid channel names."""
     from braindecode.models.eegpt import EEGPT
 
     invalid_chs_info = [
@@ -385,13 +385,15 @@ def test_eegpt_invalid_channel():
         {"ch_name": "F3", "kind": "eeg"},
     ]
 
-    with pytest.raises(ValueError, match="not found in EEGPT channel list"):
-        EEGPT(
+    with pytest.warns(RuntimeWarning, match="Unknown channel name"):
+        model = EEGPT(
             n_outputs=4,
             n_chans=2,
             n_times=600,
             chs_info=invalid_chs_info,
         )
+
+    assert torch.equal(model.chans_id.view(-1), torch.arange(model.n_chans))
 
 
 def test_eegpt_patch_norm_embed():
