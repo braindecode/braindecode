@@ -24,7 +24,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
-    .. figure:: https://github.com/wjq-learning/CBraMod/blob/main/figure/model.png
+    .. figure:: https://raw.githubusercontent.com/wjq-learning/CBraMod/refs/heads/main/figure/model.png
         :align: center
         :alt:  CBraMod pre-training overview
         :width: 1000px
