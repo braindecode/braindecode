@@ -62,12 +62,16 @@ a common interface for all EEG models and derivate variables names if necessary.
     Some models have pre-trained weights available on the Hugging Face BrainDecode
     organization:
 
-    - :class:`BIOT` - Foundation model with pre-trained weights
-    - :class:`Labram` - Large Brain Model with pre-trained weights
-    - :class:`REVE` - EEG foundation model with pre-trained weights
-    - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
-    - :class:`BENDR` - Foundation model with pre-trained weights
-    - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
+    - :class:`~braindecode.models.BIOT` - Foundation model with pre-trained weights
+    - :class:`~braindecode.models.Labram` - Large Brain Model with pre-trained weights
+    - :class:`~braindecode.models.REVE` - EEG foundation model with pre-trained weights
+    - :class:`~braindecode.models.LUNA` - Universal EEG embedding model with pre-trained
+      weights
+    - :class:`~braindecode.models.BENDR` - Foundation model with pre-trained weights
+    - :class:`~braindecode.models.SignalJEPA` - Self-supervised learning model with
+      pre-trained weights
+    - :class:`~braindecode.models.EEGPT` - Pretrained transformer for universal EEG
+      representation
 
     **Example - Loading a pre-trained model:**
 
@@ -138,6 +142,7 @@ a common interface for all EEG models and derivate variables names if necessary.
      EEGITNet
      EEGMiner
      EEGNet
+     EEGPT
      EEGNeX
      EEGSimpleConv
      EEGSym

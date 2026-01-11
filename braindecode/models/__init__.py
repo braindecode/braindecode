@@ -18,6 +18,7 @@ from .eegitnet import EEGITNet
 from .eegminer import EEGMiner
 from .eegnet import EEGNet, EEGNetv4
 from .eegnex import EEGNeX
+from .eegpt import EEGPT
 from .eegsimpleconv import EEGSimpleConv
 from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
@@ -73,6 +74,7 @@ __all__ = [
     "DeepSleepNet",
     "BrainModule",
     "EEGConformer",
+    "EEGPT",
     "EEGInceptionERP",
     "EEGInceptionMI",
     "EEGITNet",
