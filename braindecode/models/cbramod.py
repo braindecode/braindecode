@@ -128,7 +128,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         Dimension of the embedding space.
     dim_feedforward : int, default=800
         Dimension of the feedforward network in Transformer layers.
-    n_layer : int, default=22
+    n_layer : int, default=12
         Number of Transformer layers.
     nhead : int, default=8
         Number of attention heads.
@@ -257,7 +257,7 @@ class PatchEmbedding(nn.Module):
 
     def forward(self, x, mask=None):
         bz, ch_num, patch_num, patch_size = x.shape
-        if mask == None:
+        if mask is None:
             mask_x = x
         else:
             mask_x = x.clone()
@@ -275,8 +275,7 @@ class PatchEmbedding(nn.Module):
         spectral = torch.fft.rfft(mask_x, dim=-1, norm="forward")
         spectral = torch.abs(spectral).contiguous().view(bz, ch_num, patch_num, 101)
         spectral_emb = self.spectral_proj(spectral)
-        # print(patch_emb[5, 5, 5, :])
-        # print(spectral_emb[5, 5, 5, :])
+
         patch_emb = patch_emb + spectral_emb
 
         positional_embedding = self.positional_encoding(patch_emb.permute(0, 3, 1, 2))
@@ -290,7 +289,7 @@ class PatchEmbedding(nn.Module):
 def _weights_init(m):
     if isinstance(m, nn.Linear):
         nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-    if isinstance(m, nn.Conv1d):
+    elif isinstance(m, nn.Conv1d):
         nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
     elif isinstance(m, nn.BatchNorm1d):
         nn.init.constant_(m.weight, 1)
