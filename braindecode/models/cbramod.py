@@ -24,6 +24,11 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
+    .. figure:: https://github.com/wjq-learning/CBraMod/blob/main/figure/model.png
+        :align: center
+        :alt:  CBraMod pre-training overview
+        :width: 1000px
+
     CBraMod is a foundation model for EEG decoding that leverages a novel criss-cross transformer
     architecture to effectively model the unique spatial and temporal characteristics of EEG signals.
     Pre-trained on the Temple University Hospital EEG Corpus (TUEG)—the largest public EEG corpus—
