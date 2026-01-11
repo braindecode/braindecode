@@ -32,8 +32,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
         b) Local spatio-temporal embedding maps patches to tokens.
         c) Use of dual self-supervised learning with Spatio-Temporal Representation Alignment and Mask-based Reconstruction.
 
-    **EEGPT** is a 10-million-parameter pretrained transformer model designed for universal EEG
-    feature extraction. It addresses challenges like low SNR and inter-subject variability by employing
+    **EEGPT** is a pretrained transformer model designed for universal EEG feature extraction.
+    It addresses challenges like low SNR and inter-subject variability by employing
     a dual self-supervised learning method that combines **Spatio-Temporal Representation Alignment**
     and **Mask-based Reconstruction** [eegpt]_.
 
