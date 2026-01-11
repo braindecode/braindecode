@@ -1114,7 +1114,10 @@ class _EEGTransformer(nn.Module):
         )
         self.num_patches = self.patch_embed.num_patches
 
-        self.chan_embed = nn.Embedding(len(CHANNEL_DICT), embed_dim)
+        # Ensure that the embedding layer is large enough to handle the input channels
+        # especially when fallback to sequential IDs (0 to n_chans-1) happens.
+        num_embeddings = max(len(CHANNEL_DICT), n_chans)
+        self.chan_embed = nn.Embedding(num_embeddings, embed_dim)
 
         dpr = [
             x.item() for x in torch.linspace(0, drop_path_rate, depth)
