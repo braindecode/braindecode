@@ -163,6 +163,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         nhead: int = 8,
         activation: type[nn.Module] = nn.GELU,
         out_dim: int = 200,
+        drop_prob: float = 0.1,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -174,7 +175,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         self.rearrange = Rearrange("b c (n p) -> b c n p", p=patch_size)
-        self.patch_embedding = PatchEmbedding(patch_size, d_model)
+        self.patch_embedding = PatchEmbedding(patch_size, d_model, drop_prob=drop_prob)
         encoder_layer = CrissCrossTransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -182,6 +183,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             batch_first=True,
             norm_first=True,
             activation=activation,
+            dropout=drop_prob,
         )
         self.encoder = TransformerEncoder(
             encoder_layer, num_layers=n_layer, enable_nested_tensor=False
@@ -199,7 +201,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
 
 class PatchEmbedding(nn.Module):
-    def __init__(self, patch_size, d_model):
+    def __init__(self, patch_size, d_model, drop_prob=0.1):
         super().__init__()
         self.d_model = d_model
         self.positional_encoding = nn.Sequential(
@@ -245,7 +247,7 @@ class PatchEmbedding(nn.Module):
         )
         self.spectral_proj = nn.Sequential(
             nn.Linear(101, d_model),
-            nn.Dropout(0.1),
+            nn.Dropout(drop_prob),
         )
 
     def forward(self, x, mask=None):
