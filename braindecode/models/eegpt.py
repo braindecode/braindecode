@@ -45,7 +45,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
     .. math::
         \mathcal{L} = \mathcal{L}_A + \mathcal{L}_R
 
-    1.  **Spatio-Temporal Representation Alignment (:math:`\mathcal{L}_A`):**
+    1.  **Spatio-Temporal Representation Alignment:** (:math:`\mathcal{L}_A`)
         Aligns the predicted features of masked regions with global features extracted by a Momentum Encoder.
         This forces the model to learn semantic, high-level representations rather than just signal waveform details.
 
@@ -54,7 +54,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
         where :math:`pred_j` is the predictor output and :math:`menc_j` is the momentum encoder output.
 
-    2.  **Mask-based Reconstruction (:math:`\mathcal{L}_R`):**
+    2.  **Mask-based Reconstruction:** (:math:`\mathcal{L}_R`)
         Standard masked autoencoder objective to reconstruct the raw EEG patches, ensuring local temporal fidelity.
 
         .. math::
