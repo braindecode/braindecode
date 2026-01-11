@@ -1027,6 +1027,8 @@ def test_cbramod_load_weights():
         map_location="cpu",
     )
     load_result = model.load_state_dict(state_dict)
+    assert not load_result.missing_keys
+    assert not load_result.unexpected_keys
 
 
 def test_cbramod_forward_pass():

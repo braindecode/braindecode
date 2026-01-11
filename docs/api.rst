@@ -65,7 +65,7 @@ a common interface for all EEG models and derivate variables names if necessary.
     .. currentmodule:: braindecode.models
 
     - :class:`BIOT` - Foundation model with pre-trained weights
-    - :class:`CBraMod` - Criss'Cross Transformer model with pre-trained weights
+    - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
