@@ -71,6 +71,7 @@ a common interface for all EEG models and derivate variables names if necessary.
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
     - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
+    - :class:`EEGPT` - Pretrained transformer for universal EEG
 
     **Example - Loading a pre-trained model:**
 
@@ -142,6 +143,7 @@ a common interface for all EEG models and derivate variables names if necessary.
      EEGITNet
      EEGMiner
      EEGNet
+     EEGPT
      EEGNeX
      EEGSimpleConv
      EEGSym
