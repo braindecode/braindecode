@@ -4,7 +4,6 @@
 # License: BSD-3
 
 import math
-import warnings
 from functools import partial
 from typing import Optional
 
@@ -1133,13 +1132,11 @@ class _EEGTransformer(nn.Module):
             chan_ids.append(CHANNEL_DICT[ch_upper])
 
         if unknown:
-            warnings.warn(
+            mne.utils.warn(
                 "Unknown channel name(s) in chs_info: "
                 f"{unknown}. Falling back to sequential channel IDs for all "
                 "channels. Map your channel names to EEGPT_CHANNELS to preserve "
                 "pretrained channel embeddings.",
-                RuntimeWarning,
-                stacklevel=2,
             )
             return torch.arange(self.patch_embed.n_chans)
 
