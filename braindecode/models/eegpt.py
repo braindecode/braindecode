@@ -37,6 +37,21 @@ class EEGPT(EEGModuleMixin, nn.Module):
     a dual self-supervised learning method that combines **Spatio-Temporal Representation Alignment**
     and **Mask-based Reconstruction** [eegpt]_.
 
+    .. rubric:: Model Overview (Layer-by-layer)
+
+    1. **Patch embedding** (``_PatchEmbed`` or ``_PatchNormEmbed``): split each channel into
+       ``patch_size`` time patches and project to ``embed_dim``, yielding tokens with shape
+       ``(batch, n_patches, n_chans, embed_dim)``.
+    2. **Channel embedding** (``chan_embed``): add a learned embedding for each channel to preserve
+       spatial identity before attention.
+    3. **Transformer encoder blocks** (``_EEGTransformer.blocks``): for each patch group, append
+       ``embed_num`` learned summary tokens and process the sequence with multi-head self-attention
+       and MLP layers.
+    4. **Summary extraction**: keep only the summary tokens, apply ``norm`` if set, and reshape back
+       to ``(batch, n_patches, embed_num, embed_dim)``.
+    5. **Task head** (``final_layer``): flatten summary tokens across patches and map to
+       ``n_outputs``; if ``return_encoder_output=True``, return the encoder features instead.
+
     .. rubric:: Dual Self-Supervised Learning
 
     EEGPT moves beyond simple masked reconstruction by introducing a representation alignment objective.
@@ -194,6 +209,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         drop_path_rate: float = 0.0,
         init_std: float = 0.02,
         qkv_bias: bool = True,
+        patch_module: nn.Module = _PatchEmbed,
         norm_layer: Optional[nn.Module] = None,
         layer_norm_eps: float = 1e-6,
         return_encoder_output: bool = False,
@@ -224,6 +240,13 @@ class EEGPT(EEGModuleMixin, nn.Module):
         self.qkv_bias = qkv_bias
         self.layer_norm_eps = layer_norm_eps
         self.norm_layer = norm_layer or partial(nn.LayerNorm, eps=layer_norm_eps)
+        # check if patch module is _PatchEmbed or _PatchNormEmbed
+        if not issubclass(patch_module, (_PatchEmbed, _PatchNormEmbed)):
+            raise ValueError(
+                "patch_module must be either _PatchEmbed or _PatchNormEmbed"
+            )
+        else:
+            self.patch_module = patch_module
 
         self.target_encoder = _EEGTransformer(
             n_chans=self.n_chans,
@@ -241,6 +264,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             init_std=self.init_std,
             qkv_bias=self.qkv_bias,
             norm_layer=self.norm_layer,
+            patch_module=self.patch_module,
         )
 
         if self._chs_info is not None:
@@ -812,7 +836,7 @@ class _Block(nn.Module):
         return x
 
 
-class PatchEmbed(nn.Module):
+class _PatchEmbed(nn.Module):
     """
     Splits the EEG signal into patches and embeds them.
 
@@ -894,7 +918,7 @@ class _PatchNormEmbed(nn.Module):
 
     This layer splits the signal into patches using `torch.nn.Unfold`, applies
     layer normalization to each patch, and then projects it to the embedding dimension.
-    This is an alternative to the Convolution-based `PatchEmbed`.
+    This is an alternative to the Convolution-based `_PatchEmbed`.
 
     Parameters
     ----------
@@ -1019,7 +1043,7 @@ class _EEGTransformer(nn.Module):
     norm_layer : nn.Module
         Normalization layer.
     patch_module : nn.Module
-        Module used for patch embedding (e.g., `PatchEmbed`).
+        Module used for patch embedding (e.g., `_PatchEmbed`).
     init_std : float
         Standard deviation for weight initialization.
     """
@@ -1040,7 +1064,7 @@ class _EEGTransformer(nn.Module):
         attn_drop_rate=0.0,
         drop_path_rate=0.0,
         norm_layer=nn.LayerNorm,
-        patch_module=PatchEmbed,  # PatchNormEmbed
+        patch_module=_PatchEmbed,  # PatchNormEmbed
         init_std=0.02,
         return_attention_layer=-1,
     ):
