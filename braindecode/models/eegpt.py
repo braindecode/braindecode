@@ -999,7 +999,7 @@ class _PatchNormEmbed(nn.Module):
             stride=(1, patch_stride if patch_stride is not None else patch_size),
         )
 
-        self.proj = nn.Linear(patch_size, embed_dim)  # +2
+        self.proj = nn.Linear(patch_size, embed_dim)
 
     def forward(self, x):
         """
