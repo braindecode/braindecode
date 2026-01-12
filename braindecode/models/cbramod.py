@@ -181,9 +181,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             activation=activation,
             dropout=drop_prob,
         )
-        self.encoder = TransformerEncoder(
-            encoder_layer, num_layers=n_layer, enable_nested_tensor=False
-        )
+        self.encoder = TransformerEncoder(encoder_layer, num_layers=n_layer)
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
         self._weights_init()
@@ -299,11 +297,8 @@ class TransformerEncoder(nn.Module):
         encoder_layer,
         num_layers,
         norm=None,
-        enable_nested_tensor=True,
-        mask_check=True,
     ):
         super().__init__()
-        torch._C._log_api_usage_once(f"torch.nn.modules.{self.__class__.__name__}")
         self.layers = nn.ModuleList(
             [copy.deepcopy(encoder_layer) for i in range(num_layers)]
         )
