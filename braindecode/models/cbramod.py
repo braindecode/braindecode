@@ -7,7 +7,7 @@
 
 import copy
 import logging
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 from einops import rearrange
@@ -152,12 +152,18 @@ class CBraMod(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         patch_size: int = 200,
-        d_model: int = 200,
         dim_feedforward: int = 800,
         n_layer: int = 12,
         nhead: int = 8,
         activation: type[nn.Module] = nn.GELU,
         emb_dim: int = 200,
+        channels_kernel_stride_padding_norm: Sequence[
+            tuple[int, int, int, int, tuple[int, int]]
+        ] = (
+            (25, 49, 25, 24, (5, 25)),
+            (25, 3, 1, 1, (5, 25)),
+            (25, 3, 1, 1, (5, 25)),
+        ),
         drop_prob: float = 0.1,
         return_encoder_output: bool = False,
     ):
@@ -171,7 +177,12 @@ class CBraMod(EEGModuleMixin, nn.Module):
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         self.rearrange = Rearrange("b c (n p) -> b c n p", p=patch_size)
-        self.patch_embedding = _PatchEmbedding(patch_size, d_model, drop_prob=drop_prob)
+        self.patch_embedding = _PatchEmbedding(
+            patch_size,
+            channels_kernel_stride_padding_norm,
+            drop_prob=drop_prob,
+        )
+        d_model = self.patch_embedding.d_model
         encoder_layer = CrissCrossTransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -211,54 +222,63 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
 
 class _PatchEmbedding(nn.Module):
-    def __init__(self, patch_size, d_model, drop_prob=0.1):
+    def __init__(
+        self,
+        patch_size,
+        channels_kernel_stride_padding_norm,
+        drop_prob=0.1,
+    ):
         super().__init__()
-        self.d_model = d_model
+        self.patch_size = patch_size
+        self.channels_kernel_stride_padding_norm = channels_kernel_stride_padding_norm
         self.positional_encoding = nn.Sequential(
             nn.Conv2d(
-                in_channels=d_model,
-                out_channels=d_model,
+                in_channels=self.d_model,
+                out_channels=self.d_model,
                 kernel_size=(19, 7),
                 stride=(1, 1),
                 padding=(9, 3),
-                groups=d_model,
+                groups=self.d_model,
             ),
         )
         self.mask_encoding = nn.Parameter(torch.zeros(patch_size), requires_grad=False)
 
-        self.proj_in = nn.Sequential(
-            nn.Conv2d(
-                in_channels=1,
-                out_channels=25,
-                kernel_size=(1, 49),
-                stride=(1, 25),
-                padding=(0, 24),
-            ),
-            nn.GroupNorm(5, 25),
-            nn.GELU(),
-            nn.Conv2d(
-                in_channels=25,
-                out_channels=25,
-                kernel_size=(1, 3),
-                stride=(1, 1),
-                padding=(0, 1),
-            ),
-            nn.GroupNorm(5, 25),
-            nn.GELU(),
-            nn.Conv2d(
-                in_channels=25,
-                out_channels=25,
-                kernel_size=(1, 3),
-                stride=(1, 1),
-                padding=(0, 1),
-            ),
-            nn.GroupNorm(5, 25),
-            nn.GELU(),
-        )
+        last_channels = 1
+        proj_in_layers = []
+        for (
+            channels,
+            kernel,
+            stride,
+            padding,
+            norm,
+        ) in channels_kernel_stride_padding_norm:
+            proj_in_layers.extend(
+                [
+                    nn.Conv2d(
+                        in_channels=last_channels,
+                        out_channels=channels,
+                        kernel_size=(1, kernel),
+                        stride=(1, stride),
+                        padding=(0, padding),
+                    ),
+                    nn.GroupNorm(*norm),
+                    nn.GELU(),
+                ]
+            )
+            last_channels = channels
+        self.proj_in = nn.Sequential(*proj_in_layers)
         self.spectral_proj = nn.Sequential(
-            nn.Linear(101, d_model),
+            nn.Linear(patch_size // 2 + 1, self.d_model),
             nn.Dropout(drop_prob),
         )
+
+    @property
+    def d_model(self):
+        last_channels = self.channels_kernel_stride_padding_norm[-1][0]
+        patch_size = self.patch_size
+        for _, kernel, stride, padding, _ in self.channels_kernel_stride_padding_norm:
+            patch_size = int((patch_size + 2 * padding - kernel) / stride + 1)
+        return last_channels * patch_size
 
     def forward(self, x, mask=None):
         bz, ch_num, patch_num, patch_size = x.shape
