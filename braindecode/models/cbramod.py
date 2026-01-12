@@ -185,13 +185,23 @@ class CBraMod(EEGModuleMixin, nn.Module):
         )
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
-        self.apply(_weights_init)
+        self._weights_init()
 
         self.final_layer = (
             nn.Identity()
             if return_encoder_output
             else nn.Sequential(nn.Flatten(), nn.LazyLinear(self.n_outputs))
         )
+
+    def _weights_init(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            elif isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            elif isinstance(m, nn.BatchNorm1d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x, mask=None):
         x = self.rearrange(x)
@@ -280,16 +290,6 @@ class _PatchEmbedding(nn.Module):
         patch_emb = patch_emb + positional_embedding
 
         return patch_emb
-
-
-def _weights_init(m):
-    if isinstance(m, nn.Linear):
-        nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-    elif isinstance(m, nn.Conv1d):
-        nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-    elif isinstance(m, nn.BatchNorm1d):
-        nn.init.constant_(m.weight, 1)
-        nn.init.constant_(m.bias, 0)
 
 
 class TransformerEncoder(nn.Module):
