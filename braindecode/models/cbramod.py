@@ -95,29 +95,36 @@ class CBraMod(EEGModuleMixin, nn.Module):
     - **Limited Scaling Exploration**: Future work should explore scaling laws at billion-parameter levels
       and integration with large pre-trained vision/language models
 
-    .. rubric:: Usage Example
+    .. important::
+       **Pre-trained Weights Available**
 
-    .. code-block:: python
+       This model has pre-trained weights available on the Hugging Face Hub.
+       You can load them using:
 
-        from braindecode.models import CBraMod
+       .. code-block:: python
 
-        # Create model
-        model = CBraMod(
-            n_outputs=4,  # e.g., 4-class motor imagery
-            n_chans=22,  # e.g., 22 channels
-            n_times=1000,  # e.g., 5 seconds at 200 Hz
-        )
+           from braindecode.models import CBraMod
 
-        # Forward pass: (batch, n_chans, n_times) -> (batch, n_outputs)
-        x = torch.randn(batch_size, 22, 1000)
-        output = model(x)
+           # Load pre-trained model from Hugging Face Hub
+           model = CBraMod.from_pretrained(
+               "braindecode/cbramod-pretrained", return_encoder_output=True
+           )
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-cbramod-model", commit_message="Upload trained CBraMod model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
 
     Parameters
     ----------
     patch_size : int, default=200
         Temporal patch size in samples (200 samples = 1 second at 200 Hz).
-    d_model : int, default=200
-        Dimension of the embedding space.
     dim_feedforward : int, default=800
         Dimension of the feedforward network in Transformer layers.
     n_layer : int, default=12
