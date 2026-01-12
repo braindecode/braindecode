@@ -1023,7 +1023,7 @@ def test_reve_model_outputs_match():
 def test_cbramod_load_weights():
     model = CBraMod(return_encoder_output=True)
     state_dict = torch.hub.load_state_dict_from_url(
-        "https://huggingface.co/weighting666/CBraMod/resolve/main/pretrained_weights.pth",
+        "https://huggingface.co/braindecode/cbramod-pretrained/resolve/main/pytorch_model.bin",
         map_location="cpu",
     )
     load_result = model.load_state_dict(state_dict)
