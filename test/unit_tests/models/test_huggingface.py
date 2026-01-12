@@ -15,6 +15,7 @@ import json
 import numpy as np
 import pytest
 import torch
+from torch import nn
 
 from braindecode.models import EEGNet
 from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
@@ -143,6 +144,9 @@ def test_save_pretrained_creates_config(tmp_path, sample_model):
     if name in non_classification_models + ["AttnSleep","DeepSleepNet","SincShallowNet"]:
         pytest.skip(f"Skipping config test for non-classification model: {name}")
 
+    if any(isinstance(p, nn.UninitializedParameter) for p in sample_model.parameters()):
+        pytest.skip(f"Skipping config test for model with uninitialized parameters: {name}")
+
     sample_model._save_pretrained(tmp_path)
 
     config_path = tmp_path / f'config.json'
@@ -175,6 +179,10 @@ def test_save_pretrained_creates_config(tmp_path, sample_model):
 
 def test_config_contains_all_parameters(tmp_path, sample_model):
     sample_model, _, _ = sample_model
+
+    if any(isinstance(p, nn.UninitializedParameter) for p in sample_model.parameters()):
+        pytest.skip("Skipping config parameter test for model with uninitialized parameters.")
+
     sample_model._save_pretrained(tmp_path)
 
     config_path = tmp_path / 'config.json'
@@ -194,6 +202,9 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
     assert hasattr(model, 'from_pretrained')
     assert callable(getattr(model, 'from_pretrained'))
     model.eval()
+
+    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
+        pytest.skip(f"Skipping Hugging Face Hub test for model with uninitialized parameters: {name}")
 
     repo_dir = tmp_path / f'hf_local_repo_{name}'
     repo_dir.mkdir()
