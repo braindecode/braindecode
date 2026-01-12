@@ -181,7 +181,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
             activation=activation,
             dropout=drop_prob,
         )
-        self.encoder = TransformerEncoder(encoder_layer, num_layers=n_layer)
+        self.encoder = _TransformerEncoder(encoder_layer, num_layers=n_layer)
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
         self._weights_init()
@@ -291,7 +291,7 @@ class _PatchEmbedding(nn.Module):
         return patch_emb
 
 
-class TransformerEncoder(nn.Module):
+class _TransformerEncoder(nn.Module):
     def __init__(
         self,
         encoder_layer,
