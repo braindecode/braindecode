@@ -323,6 +323,43 @@ class TransformerEncoder(nn.Module):
 
 
 class CrissCrossTransformerEncoderLayer(nn.Module):
+    """
+    **Criss-Cross Transformer Encoder Layer** implementing the criss-cross attention mechanism
+    proposed in Wang et al. (2025) [cbramod]_.
+
+    This layer models spatial and temporal dependencies in EEG signals through parallel
+    **Spatial Attention** (S-Attention) and **Temporal Attention** (T-Attention). Unlike
+    standard Transformer layers that model all spatial-temporal dependencies together,
+    this layer separates these heterogeneous dependencies:
+
+    - **S-Attention**: Captures dependencies between EEG channels within a fixed time interval.
+      For each temporal stripe across all channels, it applies self-attention independently,
+      learning channel interactions while keeping time steps separate.
+
+    - **T-Attention**: Captures dependencies between temporal patches within a fixed channel.
+      For each channel across all time intervals, it applies self-attention independently,
+      learning temporal dynamics while keeping channels separate.
+
+    The attention heads are split equally between S-Attention and T-Attention, and their
+    outputs are concatenated. This criss-cross design effectively captures EEG's unique
+    structural characteristics—EEG signals exhibit heterogeneous spatial and temporal
+    dependencies that differ from images (which have only spatial dependencies).
+
+    Input shape: ``(batch, channels, n_patches, patch_size)``
+    Output shape: ``(batch, channels, n_patches, patch_size)``
+
+    .. figure:: https://braindecode.org/dev/_static/model/criss-cross-attention.png
+       :align: center
+       :alt: Criss-Cross Attention Mechanism
+
+    References
+    ----------
+    .. [cbramod] Wang, J., Zhao, S., Luo, Z., Zhou, Y., Jiang, H., Li, S., Li, T., & Pan, G. (2025).
+       CBraMod: A Criss-Cross Brain Foundation Model for EEG Decoding.
+       In The Thirteenth International Conference on Learning Representations (ICLR 2025).
+       https://arxiv.org/abs/2412.07236
+    """
+
     __constants__ = ["norm_first"]
 
     def __init__(
