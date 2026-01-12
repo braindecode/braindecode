@@ -183,7 +183,10 @@ class CBraMod(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
-        self.rearrange = Rearrange("b c (n p) -> b c n p", p=patch_size)
+        self.rearrange = Rearrange(
+            "batch n_chans (n_patch patch_size) -> batch n_chans n_patch patch_size",
+            patch_size=patch_size,
+        )
         self.patch_embedding = _PatchEmbedding(
             patch_size,
             channels_kernel_stride_padding_norm,
