@@ -7,6 +7,7 @@ from .base import EEGModuleMixin
 from .bendr import BENDR
 from .biot import BIOT
 from .brainmodule import BrainModule
+from .cbramod import CBraMod
 from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
@@ -68,6 +69,7 @@ __all__ = [
     "EEGModuleMixin",
     "BIOT",
     "BENDR",
+    "CBraMod",
     "ContraWR",
     "CTNet",
     "Deep4Net",
