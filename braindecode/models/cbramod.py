@@ -60,7 +60,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
     - Generalize to arbitrary downstream EEG formats without retraining
     - Support various reference schemes (earlobe, average, REST, bipolar)
 
-    .. rubric:: Pretraining & Generalization
+    .. rubric:: Pretraining Highlights
 
     - **Pretraining Dataset**: Temple University Hospital EEG Corpus (TUEG), the largest public EEG corpus
     - **Pretraining Task**: Self-supervised masked EEG patch reconstruction from both time-domain
@@ -68,18 +68,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
     - **Model Parameters**: ~4.0M parameters (very compact compared to other foundation models)
     - **Fast Convergence**: Achieves decent results in first epoch on downstream tasks,
       full convergence within ~10 epochs (vs. ~30 for supervised models like EEGConformer)
-
-    CBraMod has been comprehensively evaluated on **10 downstream BCI tasks across 12 public datasets**
-    sourced from institutions different from the pretraining dataset, demonstrating strong
-    generalization capabilities:
-
-    - Motor imagery (MI) classification
-    - Emotion recognition
-    - Seizure detection
-    - Sleep staging
-    - And others
-
-    Consistently outperforms strong baselines including EEGNet, EEGConformer, BIOT, and LaBraM.
 
     .. rubric:: Macro Components
 
@@ -151,14 +139,6 @@ class CBraMod(EEGModuleMixin, nn.Module):
        CBraMod: A Criss-Cross Brain Foundation Model for EEG Decoding.
        In The Thirteenth International Conference on Learning Representations (ICLR 2025).
        https://arxiv.org/abs/2412.07236
-
-    Notes
-    -----
-    - Pretraining uses masked EEG patch reconstruction on TUEG corpus
-    - Model supports arbitrary EEG channel counts through flexible positional encoding
-    - Compatible with various EEG reference schemes
-    - The criss-cross attention mechanism provides interpretability through visualizable
-      attention weights showing spatial and temporal patterns learned by the model
     """
 
     def __init__(
