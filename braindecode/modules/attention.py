@@ -934,10 +934,7 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
         batch_first: bool = False,
         norm_first: bool = False,
         bias: bool = True,
-        device=None,
-        dtype=None,
     ) -> None:
-        factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
         self.self_attn_s = nn.MultiheadAttention(
             d_model // 2,
@@ -945,7 +942,6 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
             dropout=dropout,
             bias=bias,
             batch_first=batch_first,
-            **factory_kwargs,
         )
         self.self_attn_t = nn.MultiheadAttention(
             d_model // 2,
@@ -953,17 +949,16 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
             dropout=dropout,
             bias=bias,
             batch_first=batch_first,
-            **factory_kwargs,
         )
 
         # Implementation of Feedforward model
-        self.linear1 = nn.Linear(d_model, dim_feedforward, bias=bias, **factory_kwargs)
+        self.linear1 = nn.Linear(d_model, dim_feedforward, bias=bias)
         self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model, bias=bias, **factory_kwargs)
+        self.linear2 = nn.Linear(dim_feedforward, d_model, bias=bias)
 
         self.norm_first = norm_first
-        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
-        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
         self.activation = activation()
