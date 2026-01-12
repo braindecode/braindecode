@@ -404,7 +404,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         try:
             n_times = self.n_times
         except ValueError:
-            n_times = 1000
+            n_times = 200
 
         return summary(
             self,
