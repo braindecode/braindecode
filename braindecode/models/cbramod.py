@@ -304,7 +304,9 @@ class TransformerEncoder(nn.Module):
     ):
         super().__init__()
         torch._C._log_api_usage_once(f"torch.nn.modules.{self.__class__.__name__}")
-        self.layers = _get_clones(encoder_layer, num_layers)
+        self.layers = nn.ModuleList(
+            [copy.deepcopy(encoder_layer) for i in range(num_layers)]
+        )
         self.num_layers = num_layers
         self.norm = norm
 
@@ -321,8 +323,3 @@ class TransformerEncoder(nn.Module):
         if self.norm is not None:
             output = self.norm(output)
         return output
-
-
-def _get_clones(module, N):
-    # FIXME: copy.deepcopy() is not defined on nn.module
-    return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
