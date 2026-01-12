@@ -89,6 +89,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
     - **Criss-Cross Transformer Blocks** (12 layers): Alternates spatial and temporal attention
       to learn EEG representations
     - **Reconstruction Head**: Reconstructs masked EEG patches during pretraining
+    - **Task head** (``final_layer``): flatten summary tokens across patches and map to
+       ``n_outputs``; if ``return_encoder_output=True``, return the encoder features instead.
 
     The model is highly efficient, requiring only ~318.9M FLOPs on a typical 16-channel, 10-second
     EEG recording (significantly lower than full attention baselines).
@@ -136,6 +138,12 @@ class CBraMod(EEGModuleMixin, nn.Module):
         Activation function used in Transformer feedforward layers.
     emb_dim : int, default=200
         Output embedding dimension.
+    drop_prob : float, default=0.1
+        Dropout probability.
+    return_encoder_output : bool, default=False
+        If false (default), the features are flattened and passed through a final linear layer
+        to produce class logits of size ``n_outputs``.
+        If True, the model returns the encoder output features.
 
     References
     ----------
@@ -169,6 +177,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         activation: type[nn.Module] = nn.GELU,
         emb_dim: int = 200,
         drop_prob: float = 0.1,
+        return_encoder_output: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -197,12 +206,18 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
         self.apply(_weights_init)
 
+        self.final_layer = (
+            nn.Identity()
+            if return_encoder_output
+            else nn.Sequential(nn.Flatten(), nn.LazyLinear(self.n_outputs))
+        )
+
     def forward(self, x, mask=None):
         x = self.rearrange(x)
         patch_emb = self.patch_embedding(x, mask)
         feats = self.encoder(patch_emb)
         out = self.proj_out(feats)
-        return out
+        return self.final_layer(out)
 
 
 class PatchEmbedding(nn.Module):

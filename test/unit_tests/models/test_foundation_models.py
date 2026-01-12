@@ -1021,7 +1021,7 @@ def test_reve_model_outputs_match():
 
 
 def test_cbramod_load_weights():
-    model = CBraMod()
+    model = CBraMod(return_encoder_output=True)
     state_dict = torch.hub.load_state_dict_from_url(
         "https://huggingface.co/weighting666/CBraMod/resolve/main/pretrained_weights.pth",
         map_location="cpu",
@@ -1032,7 +1032,7 @@ def test_cbramod_load_weights():
 
 
 def test_cbramod_forward_pass():
-    model = CBraMod()
+    model = CBraMod(return_encoder_output=True)
     x = torch.randn(2, 22, 1000)
     output = model(x)
     assert output.shape == (2, 22, 5, 200)
