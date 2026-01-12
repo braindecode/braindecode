@@ -10,6 +10,7 @@ import logging
 from typing import Optional
 
 import torch
+from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
@@ -258,23 +259,23 @@ class _PatchEmbedding(nn.Module):
             mask_x = x.clone()
             mask_x[mask == 1] = self.mask_encoding
 
-        mask_x = mask_x.contiguous().view(bz, 1, ch_num * patch_num, patch_size)
+        mask_x = rearrange(mask_x, "b c n p -> b 1 (c n) p")
         patch_emb = self.proj_in(mask_x)
-        patch_emb = (
-            patch_emb.permute(0, 2, 1, 3)
-            .contiguous()
-            .view(bz, ch_num, patch_num, self.d_model)
-        )
+        patch_emb = rearrange(patch_emb, "b d (c n) p2 -> b c n (d p2)", c=ch_num)
 
-        mask_x = mask_x.contiguous().view(bz * ch_num * patch_num, patch_size)
+        mask_x = rearrange(mask_x, "b 1 (c n) p -> (b c n) p", c=ch_num)
         spectral = torch.fft.rfft(mask_x, dim=-1, norm="forward")
-        spectral = torch.abs(spectral).contiguous().view(bz, ch_num, patch_num, 101)
+        spectral = rearrange(
+            torch.abs(spectral), "(b c n) p -> b c n p", b=bz, c=ch_num, p=101
+        )
         spectral_emb = self.spectral_proj(spectral)
 
         patch_emb = patch_emb + spectral_emb
 
-        positional_embedding = self.positional_encoding(patch_emb.permute(0, 3, 1, 2))
-        positional_embedding = positional_embedding.permute(0, 2, 3, 1)
+        positional_embedding = self.positional_encoding(
+            rearrange(patch_emb, "b c n p -> b p c n", p=self.d_model)
+        )  # d for sanity check
+        positional_embedding = rearrange(positional_embedding, "b p c n -> b c n p")
 
         patch_emb = patch_emb + positional_embedding
 
@@ -394,12 +395,8 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
         bz, ch_num, patch_num, patch_size = x.shape
         xs = x[:, :, :, : patch_size // 2]
         xt = x[:, :, :, patch_size // 2 :]
-        xs = (
-            xs.transpose(1, 2)
-            .contiguous()
-            .view(bz * patch_num, ch_num, patch_size // 2)
-        )
-        xt = xt.contiguous().view(bz * ch_num, patch_num, patch_size // 2)
+        xs = rearrange(xs, "b c n p2 -> (b n) c p2")
+        xt = rearrange(xt, "b c n p2 -> (b c) n p2")
         xs = self.self_attn_s(
             xs,
             xs,
@@ -408,9 +405,7 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
             key_padding_mask=key_padding_mask,
             need_weights=False,
         )[0]
-        xs = (
-            xs.contiguous().view(bz, patch_num, ch_num, patch_size // 2).transpose(1, 2)
-        )
+        xs = rearrange(xs, "(b n) c p2 -> b c n p2", b=bz, n=patch_num)
         xt = self.self_attn_t(
             xt,
             xt,
@@ -419,7 +414,7 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
             key_padding_mask=key_padding_mask,
             need_weights=False,
         )[0]
-        xt = xt.contiguous().view(bz, ch_num, patch_num, patch_size // 2)
+        xt = rearrange(xt, "(b c) n p2 -> b c n p2", b=bz, c=ch_num)
         x = torch.concat((xs, xt), dim=3)
         return self.dropout1(x)
 
