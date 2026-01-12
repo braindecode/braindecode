@@ -169,7 +169,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         )
         del n_chans, chs_info, n_times, input_window_seconds, sfreq, n_outputs
         self.rearrange = Rearrange("b c (n p) -> b c n p", p=patch_size)
-        self.patch_embedding = PatchEmbedding(patch_size, d_model, drop_prob=drop_prob)
+        self.patch_embedding = _PatchEmbedding(patch_size, d_model, drop_prob=drop_prob)
         encoder_layer = CrissCrossTransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -200,7 +200,7 @@ class CBraMod(EEGModuleMixin, nn.Module):
         return self.final_layer(out)
 
 
-class PatchEmbedding(nn.Module):
+class _PatchEmbedding(nn.Module):
     def __init__(self, patch_size, d_model, drop_prob=0.1):
         super().__init__()
         self.d_model = d_model
