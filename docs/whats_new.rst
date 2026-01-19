@@ -27,7 +27,13 @@ Version 1.4  (Source - GitHub)
 
 Enhancements
 ============
--
+- Add an optional ``lazy`` init path to :class:`braindecode.datasets.base.BaseConcatDataset`
+  to defer cumulative size computation (and any downstream dataset length access) until
+  first access, supporting truly lazy raw loading workflows.
+- Adding :class:`braindecode.models.EEGPT` with HuggingFace Hub integration and
+  pretrained weights available at `braindecode/eegpt-pretrained <https://huggingface.co/braindecode/eegpt-pretrained>`_
+  (:gh:`908` by `Young Truong`_ and `Kuntal Kokate`_)
+- Add :class:`braindecode.models.CBraMod` model (:gh:`914` by `Pierre Guetschel`_)
 
 API changes
 ============

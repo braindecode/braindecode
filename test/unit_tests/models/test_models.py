@@ -20,6 +20,7 @@ from torch import nn
 from braindecode.models import (
     BENDR,
     BIOT,
+    EEGPT,
     TCN,
     ATCNet,
     AttentionBaseNet,
@@ -51,6 +52,13 @@ from braindecode.models import (
     TIDNet,
     TSception,
     USleep,
+)
+from braindecode.models.eegpt import (
+    _apply_rotary_emb,
+    _Attention,
+    _EEGTransformer,
+    _PatchEmbed,
+    _rotate_half,
 )
 from braindecode.util import set_random_seeds
 
@@ -229,6 +237,424 @@ def test_tcn(input_sizes):
         drop_prob=0.5,
     )
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
+
+
+def test_eegpt(input_sizes):
+    channels_names = [
+        'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'FPZ', 'FZ', 'CZ', 'CPZ', 'PZ', 'POZ', 'OZ'
+    ]
+    input_sizes_copy = input_sizes.copy()
+    input_sizes_copy["n_channels"] = len(channels_names)
+    model = EEGPT(
+        n_outputs=input_sizes_copy["n_classes"],
+        n_chans=input_sizes_copy["n_channels"],
+        n_times=input_sizes_copy["n_in_times"],
+    )
+    check_forward_pass_3d(model, input_sizes_copy)
+
+
+@pytest.mark.parametrize(
+    "patch_size, patch_stride, embed_num, embed_dim, depth, num_heads, "
+    "mlp_ratio, drop_prob, attn_drop_rate, drop_path_rate, return_encoder_output, "
+    "use_chs_info, n_chans, n_times, n_outputs",
+    [
+        # Test 1: Default configuration with basic channels
+        (64, 32, 4, 512, 8, 8, 4.0, 0.0, 0.0, 0.0, False, False, 13, 600, 4),
+        # Test 2: Different patch sizes
+        (32, 16, 4, 256, 4, 4, 4.0, 0.0, 0.0, 0.0, False, False, 10, 500, 2),
+        # Test 3: Larger embed_dim and more heads
+        (64, 32, 2, 768, 6, 12, 4.0, 0.0, 0.0, 0.0, False, False, 8, 600, 3),
+        # Test 4: Return encoder output (feature extraction mode)
+        (64, 32, 4, 512, 8, 8, 4.0, 0.0, 0.0, 0.0, True, False, 13, 600, 4),
+        # Test 5: With dropout enabled
+        (64, 32, 4, 512, 4, 8, 4.0, 0.1, 0.1, 0.1, False, False, 10, 600, 2),
+        # Test 6: With chs_info provided (proper channel names)
+        (64, 32, 4, 512, 4, 8, 4.0, 0.0, 0.0, 0.0, False, True, 13, 600, 4),
+        # Test 7: Smaller model (depth=2, fewer heads)
+        (64, 32, 2, 256, 2, 4, 4.0, 0.0, 0.0, 0.0, False, False, 8, 600, 2),
+        # Test 8: Different MLP ratio
+        (64, 32, 4, 512, 4, 8, 2.0, 0.0, 0.0, 0.0, False, False, 10, 600, 3),
+        # Test 9: Large number of outputs (many classes)
+        (64, 32, 4, 512, 4, 8, 4.0, 0.0, 0.0, 0.0, False, False, 10, 600, 10),
+        # Test 10: Minimal configuration
+        (64, 32, 1, 128, 2, 2, 4.0, 0.0, 0.0, 0.0, False, False, 4, 600, 2),
+    ],
+    ids=[
+        "default_config",
+        "small_patch_size",
+        "larger_embed_dim",
+        "encoder_output_mode",
+        "with_dropout",
+        "with_chs_info",
+        "small_model",
+        "different_mlp_ratio",
+        "many_classes",
+        "minimal_config",
+    ],
+)
+def test_eegpt_parametrized(
+    patch_size,
+    patch_stride,
+    embed_num,
+    embed_dim,
+    depth,
+    num_heads,
+    mlp_ratio,
+    drop_prob,
+    attn_drop_rate,
+    drop_path_rate,
+    return_encoder_output,
+    use_chs_info,
+    n_chans,
+    n_times,
+    n_outputs,
+):
+    """Comprehensive test for EEGPT model covering various configurations."""
+    # Define channel names from the EEGPT channel list
+    available_channels = [
+        'FP1', 'FPZ', 'FP2', 'AF7', 'AF3', 'AF4', 'AF8',
+        'F7', 'F5', 'F3', 'F1', 'FZ', 'F2', 'F4', 'F6', 'F8',
+        'FT7', 'FC5', 'FC3', 'FC1', 'FCZ', 'FC2', 'FC4', 'FC6', 'FT8',
+        'T7', 'C5', 'C3', 'C1', 'CZ', 'C2', 'C4', 'C6', 'T8',
+        'TP7', 'CP5', 'CP3', 'CP1', 'CPZ', 'CP2', 'CP4', 'CP6', 'TP8',
+        'P7', 'P5', 'P3', 'P1', 'PZ', 'P2', 'P4', 'P6', 'P8',
+        'PO7', 'PO5', 'PO3', 'POZ', 'PO4', 'PO6', 'PO8',
+        'O1', 'OZ', 'O2',
+    ]
+    channel_names = available_channels[:n_chans]
+
+    # Prepare chs_info if requested
+    chs_info = None
+    if use_chs_info:
+        chs_info = [
+            {"ch_name": ch, "kind": "eeg"} for ch in channel_names
+        ]
+
+    # Create model
+    model = EEGPT(
+        n_outputs=n_outputs,
+        n_chans=n_chans,
+        n_times=n_times,
+        chs_info=chs_info,
+        patch_size=patch_size,
+        patch_stride=patch_stride,
+        embed_num=embed_num,
+        embed_dim=embed_dim,
+        depth=depth,
+        num_heads=num_heads,
+        mlp_ratio=mlp_ratio,
+        drop_prob=drop_prob,
+        attn_drop_rate=attn_drop_rate,
+        drop_path_rate=drop_path_rate,
+        return_encoder_output=return_encoder_output,
+    )
+    model.eval()
+
+    # Create random input
+    batch_size = 2
+    rng = np.random.RandomState(42)
+    X = rng.randn(batch_size, n_chans, n_times)
+    X = torch.Tensor(X.astype(np.float32))
+
+    # Forward pass
+    with torch.no_grad():
+        output = model(X)
+
+    # Verify output shape
+    if return_encoder_output:
+        # Encoder output has shape (batch, n_patches, embed_num, embed_dim)
+        # Recalculate n_patches considering padding
+        eff_stride = patch_size if patch_stride is None else patch_stride
+        if patch_stride is None:
+             rem = n_times % patch_size
+             pad = patch_size - rem if rem != 0 else 0
+             n_patches = (n_times + pad) // patch_size
+        else:
+             rem = (n_times - patch_size) % patch_stride
+             pad = patch_stride - rem if rem != 0 else 0
+             n_patches = (n_times + pad - patch_size) // patch_stride + 1
+        expected_shape = (batch_size, n_patches, embed_num, embed_dim)
+        assert output.shape == expected_shape, (
+            f"Expected shape {expected_shape}, got {output.shape}"
+        )
+    else:
+        # Classification output has shape (batch, n_outputs)
+        expected_shape = (batch_size, n_outputs)
+        assert output.shape == expected_shape, (
+            f"Expected shape {expected_shape}, got {output.shape}"
+        )
+
+
+def test_eegpt_invalid_channel():
+    """Test EEGPT fallback when chs_info contains invalid channel names."""
+    from braindecode.models.eegpt import EEGPT
+
+    invalid_chs_info = [
+        {"ch_name": "INVALID_CH", "kind": "eeg"},
+        {"ch_name": "F3", "kind": "eeg"},
+    ]
+
+    with pytest.warns(RuntimeWarning, match="Unknown channel name"):
+        model = EEGPT(
+            n_outputs=4,
+            n_chans=2,
+            n_times=600,
+            chs_info=invalid_chs_info,
+        )
+
+    # Mixed fallback strategy:
+    # INVALID_CH (index 0) -> 0
+    # F3 (index 1) -> CHANNEL_DICT['F3']
+    from braindecode.models.eegpt import CHANNEL_DICT
+    expected_ids = torch.tensor([0, CHANNEL_DICT['F3']])
+    assert torch.equal(model.chans_id.view(-1), expected_ids)
+
+
+def test_eegpt_patch_norm_embed():
+    """Test the _PatchNormEmbed alternative patch embedding module."""
+    from braindecode.models.eegpt import _PatchEmbed
+
+    n_chans = 8
+    n_times = 640  # Must be divisible by patch_size
+    patch_size = 64
+    embed_dim = 128
+
+    patch_embed = _PatchEmbed(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        apply_norm=True,
+    )
+
+    # Test forward pass
+    batch_size = 2
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = patch_embed(x)
+
+    # Expected: (batch, n_patches, n_chans, embed_dim)
+    n_patches = n_times // patch_size
+    expected_shape = (batch_size, n_patches, n_chans, embed_dim)
+    assert output.shape == expected_shape, (
+        f"Expected shape {expected_shape}, got {output.shape}"
+    )
+
+
+def test_eegpt_patch_norm_embed_with_stride():
+    """Test _PatchNormEmbed with custom stride."""
+    from braindecode.models.eegpt import _PatchEmbed
+
+    n_chans = 8
+    n_times = 640
+    patch_size = 64
+    patch_stride = 32
+    embed_dim = 128
+
+    patch_embed = _PatchEmbed(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        patch_stride=patch_stride,
+        embed_dim=embed_dim,
+        apply_norm=True,
+    )
+
+    batch_size = 2
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = patch_embed(x)
+
+    n_patches = (n_times - patch_size) // patch_stride + 1
+    expected_shape = (batch_size, n_patches, n_chans, embed_dim)
+    assert output.shape == expected_shape
+
+
+def test_eegpt_patch_embed_padding():
+    """Test that _PatchEmbed automatically pads input if n_times is not divisible."""
+    from braindecode.models.eegpt import _PatchEmbed
+
+    # Case 1: n_times=100, patch_size=64.
+    # Remainder 36. Padding should be 64-36 = 28.
+    # New size 128 (2 patches).
+    n_chans = 8
+    n_times = 100
+    patch_size = 64
+    embed_dim = 128
+
+    patch_embed = _PatchEmbed(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        apply_norm=True,
+    )
+
+    assert patch_embed.padding_size == 28
+    assert patch_embed.n_times_padded == 128
+
+    batch_size = 2
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = patch_embed(x)
+
+    # Expected: (batch, n_patches=2, n_chans, embed_dim)
+    expected_shape = (batch_size, 2, n_chans, embed_dim)
+    assert output.shape == expected_shape
+
+
+def test_eegpt_patch_embed_no_stride():
+    """Test PatchEmbed with default (non-overlapping) patches."""
+    from braindecode.models.eegpt import _PatchEmbed
+
+    n_chans = 8
+    n_times = 640
+    patch_size = 64
+    embed_dim = 128
+
+    # patch_stride=None means non-overlapping patches
+    patch_embed = _PatchEmbed(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        patch_stride=None,
+        embed_dim=embed_dim,
+    )
+
+    batch_size = 2
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = patch_embed(x)
+
+    n_patches = n_times // patch_size
+    expected_shape = (batch_size, n_patches, n_chans, embed_dim)
+    assert output.shape == expected_shape
+
+
+def test_eegpt_droppath():
+    """Test EEGPT with drop_path_rate > 0 to cover DropPath branch."""
+    from braindecode.models.eegpt import EEGPT
+
+    model = EEGPT(
+        n_outputs=4,
+        n_chans=8,
+        n_times=600,
+        depth=2,
+        embed_dim=128,
+        num_heads=4,
+        drop_path_rate=0.2,  # Non-zero to trigger DropPath
+    )
+    model.train()  # DropPath only active during training
+
+    batch_size = 2
+    x = torch.randn(batch_size, 8, 600)
+    output = model(x)
+
+    assert output.shape == (batch_size, 4)
+
+
+def test_eegpt_transformer_patch_norm_embed():
+    n_times = 100
+    patch_size = 20
+    n_chans = 2
+    embed_dim = 16
+
+    model = _EEGTransformer(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        num_heads=4,
+        patch_module=partial(_PatchEmbed, apply_norm=True),
+    )
+
+    x = torch.randn(1, n_chans, n_times)
+    chan_ids = torch.arange(n_chans).unsqueeze(0)
+    out = model(x, chan_ids)
+    assert out.shape == (1, n_times // patch_size, 1, embed_dim)
+
+
+def test_eegpt_transformer_masking():
+    n_chans = 2
+    n_times = 100
+    patch_size = 20
+    embed_dim = 16
+
+    model = _EEGTransformer(
+        n_chans=n_chans,
+        n_times=n_times,
+        patch_size=patch_size,
+        embed_dim=embed_dim,
+        num_heads=4,
+    )
+
+    x = torch.randn(1, n_chans, n_times)
+    chan_ids = torch.arange(n_chans).unsqueeze(0)
+
+    n_patches = n_times // patch_size
+    total_tokens = n_patches * n_chans
+    mask_x = torch.arange(total_tokens).reshape(n_patches, n_chans)
+
+    out = model(x, chan_ids=chan_ids, mask_x=mask_x)
+    assert out.shape == (1, n_patches, 1, embed_dim)
+
+    mask_t = torch.arange(n_patches // 2)
+    out_t = model(x, chan_ids=chan_ids, mask_t=mask_t)
+    assert out_t.shape[1] == n_patches // 2
+
+
+def test_eegpt_rope_helpers():
+    x = torch.randn(1, 4, 10)
+    rotated = _rotate_half(x)
+    assert rotated.shape == x.shape
+
+    t = torch.randn(1, 4, 10)
+    freqs = torch.randn(1, 4, 10)
+    out = _apply_rotary_emb(freqs, t)
+    assert out.shape == t.shape
+
+
+def test_eegpt_apply_rotary_emb_invalid_dim():
+    t = torch.randn(1, 10, 16)
+    freqs = torch.randn(1, 10, 32)
+    with pytest.raises(ValueError, match="feature dimension"):
+        _apply_rotary_emb(freqs, t)
+
+
+def test_eegpt_attention_with_rope():
+    dim = 16
+    num_heads = 4
+    attn = _Attention(dim, num_heads=num_heads, use_rope=True)
+
+    x = torch.randn(2, 5, dim)
+    freqs = torch.randn(2, num_heads, 5, dim // num_heads)
+    out = attn(x, freqs=freqs)
+    assert out.shape == x.shape
+
+
+def test_eegpt_return_attention_layer():
+    model = _EEGTransformer(
+        n_chans=2,
+        n_times=100,
+        return_attention_layer=1,
+    )
+    x = torch.randn(1, 2, 100)
+    out = model(x)
+
+    expected_seq_len = model.patch_embed.n_chans + model.embed_num
+    assert out.shape[1] == model.num_heads
+    assert out.shape[-1] == expected_seq_len
+    assert out.shape[-2] == expected_seq_len
+
+
+def test_eegpt_buffer_device():
+    if not torch.cuda.is_available() and not torch.backends.mps.is_available():
+        pytest.skip("No CUDA or MPS device available.")
+
+    device = "cuda" if torch.cuda.is_available() else "mps"
+    model = EEGPT(n_outputs=2, n_chans=3, n_times=100).to(device)
+
+    assert model.chans_id.device.type == device
+
+    x = torch.randn(1, 3, 100, device=device)
+    with torch.no_grad():
+        model(x)
 
 
 def test_eegitnet(input_sizes):

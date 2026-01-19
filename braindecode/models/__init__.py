@@ -7,6 +7,7 @@ from .base import EEGModuleMixin
 from .bendr import BENDR
 from .biot import BIOT
 from .brainmodule import BrainModule
+from .cbramod import CBraMod
 from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
@@ -18,6 +19,7 @@ from .eegitnet import EEGITNet
 from .eegminer import EEGMiner
 from .eegnet import EEGNet, EEGNetv4
 from .eegnex import EEGNeX
+from .eegpt import EEGPT
 from .eegsimpleconv import EEGSimpleConv
 from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
@@ -67,12 +69,14 @@ __all__ = [
     "EEGModuleMixin",
     "BIOT",
     "BENDR",
+    "CBraMod",
     "ContraWR",
     "CTNet",
     "Deep4Net",
     "DeepSleepNet",
     "BrainModule",
     "EEGConformer",
+    "EEGPT",
     "EEGInceptionERP",
     "EEGInceptionMI",
     "EEGITNet",

@@ -20,6 +20,7 @@ from torch.export import ExportedProgram, export
 
 from braindecode import EEGClassifier
 from braindecode.models import (
+    EEGPT,
     REVE,
     SSTDPN,
     EEGInceptionMI,
@@ -280,7 +281,7 @@ def test_model_has_activation_parameter(model_class):
     Test that checks if the model class's __init__ method has a parameter
     named 'activation' or any parameter that starts with 'activation'.
     """
-    if model_class in [EEGMiner, REVE]:
+    if model_class in [EEGMiner, REVE, EEGPT]:
         pytest.skip(f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
     init_method = model_class.__init__
@@ -366,6 +367,7 @@ def test_model_has_drop_prob_parameter(model_class):
         f" Found parameters: {param_names}"
     )
 
+
 # skip if windows or python 3.14
 @pytest.mark.skipif(
     sys.platform.startswith("win") or sys.version_info >= (3, 14),
@@ -415,7 +417,7 @@ def test_model_exported(model):
     if sys.version_info >= (3, 14):
         not_exportable_models_py314 = [
             "LUNA",  # Has _channel_location_cache dict that breaks pytree on Python 3.14+
-        ] # TODO: fix LUNA export issues on Python 3.14+ one day
+        ]  # TODO: fix LUNA export issues on Python 3.14+ one day
         if model_name in not_exportable_models_py314:
             pytest.skip(f"{model_name} export is not compatible on Python 3.14+")
 
@@ -430,11 +432,16 @@ def test_model_exported(model):
         n_times = default_signal_params["n_times"]
     example_input = torch.randn(1, n_chans, n_times)
 
+    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
+        with torch.no_grad():
+            _ = model(example_input)
+
     # this will raise if the model isn't fully traceable
     exported_prog: ExportedProgram = export(model, args=(example_input,), strict=False)
 
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
+
 
 # skip if windows or python 3.14
 @pytest.mark.skipif(
@@ -451,10 +458,12 @@ def test_model_torch_script(model):
         "BIOT",
         "Labram",
         "EEGMiner",
+        "EEGPT",
         "SSTDPN",
         "BENDR",
         "LUNA",
         "REVE",
+        "CBraMod",
     ]
 
     if model.__class__.__name__ in not_working_models:
@@ -518,9 +527,15 @@ def test_if_models_with_embedding_parameter(model):
     # check if there is any mention to emb_size or embedding_dim or emb
     # or return_features or feature
 
-    parameters_related_with_emb = ["emb_size", "embedding_dim", "emb",
-                                   "return_features", "feature", "embed_dim",
-                                   'emb_dim']
+    parameters_related_with_emb = [
+        "emb_size",
+        "embedding_dim",
+        "emb",
+        "return_features",
+        "feature",
+        "embed_dim",
+        "emb_dim",
+    ]
 
     # check if any of the parameters related to embedding are present in the model
     if not any(param in params for param in parameters_related_with_emb):

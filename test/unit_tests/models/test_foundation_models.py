@@ -12,11 +12,12 @@ import torch
 try:
     from huggingface_hub import hf_hub_download
     from safetensors.torch import load_file
+
     HAS_SAFETENSORS = True
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, Labram
+from braindecode.models import LUNA, REVE, CBraMod, Labram
 from braindecode.models.reve import RevePositionBank
 
 
@@ -61,7 +62,9 @@ def batch_size():
 
 
 @pytest.fixture
-def model_config_tokenizer(n_times, n_chans, n_outputs, patch_size, emb_size, n_layers, num_heads):
+def model_config_tokenizer(
+    n_times, n_chans, n_outputs, patch_size, emb_size, n_layers, num_heads
+):
     return {
         "n_times": n_times,
         "n_chans": n_chans,
@@ -75,7 +78,9 @@ def model_config_tokenizer(n_times, n_chans, n_outputs, patch_size, emb_size, n_
 
 
 @pytest.fixture
-def model_config_decoder(n_times, n_chans, n_outputs, patch_size, emb_size, n_layers, num_heads):
+def model_config_decoder(
+    n_times, n_chans, n_outputs, patch_size, emb_size, n_layers, num_heads
+):
     return {
         "n_times": n_times,
         "n_chans": n_chans,
@@ -114,21 +119,27 @@ def test_labram_neural_tokenizer_initialization(model_tokenizer):
     assert model_tokenizer.n_outputs == 4
 
 
-def test_labram_neural_tokenizer_forward_pass_basic(model_tokenizer, batch_size, n_chans, n_times, n_outputs):
+def test_labram_neural_tokenizer_forward_pass_basic(
+    model_tokenizer, batch_size, n_chans, n_times, n_outputs
+):
     """Test basic forward pass in tokenizer mode."""
     x = torch.randn(batch_size, n_chans, n_times)
     output = model_tokenizer(x)
     assert output.shape == (batch_size, n_outputs)
 
 
-def test_labram_neural_tokenizer_forward_pass_single_sample(model_tokenizer, n_chans, n_times, n_outputs):
+def test_labram_neural_tokenizer_forward_pass_single_sample(
+    model_tokenizer, n_chans, n_times, n_outputs
+):
     """Test forward pass with single sample in tokenizer mode."""
     x = torch.randn(1, n_chans, n_times)
     output = model_tokenizer(x)
     assert output.shape == (1, n_outputs)
 
 
-def test_labram_neural_tokenizer_forward_features_all_tokens(model_tokenizer, n_chans, n_times, emb_size):
+def test_labram_neural_tokenizer_forward_features_all_tokens(
+    model_tokenizer, n_chans, n_times, emb_size
+):
     """Test forward_features with return_all_tokens=True in tokenizer mode."""
     batch_size = 2
     x = torch.randn(batch_size, n_chans, n_times)
@@ -141,7 +152,9 @@ def test_labram_neural_tokenizer_forward_features_all_tokens(model_tokenizer, n_
     assert output.shape[2] == emb_size
 
 
-def test_labram_neural_tokenizer_forward_features_patch_tokens(model_tokenizer, n_chans, n_times, emb_size):
+def test_labram_neural_tokenizer_forward_features_patch_tokens(
+    model_tokenizer, n_chans, n_times, emb_size
+):
     """Test forward_features with return_patch_tokens=True in tokenizer mode."""
     batch_size = 2
     x = torch.randn(batch_size, n_chans, n_times)
@@ -152,7 +165,9 @@ def test_labram_neural_tokenizer_forward_features_patch_tokens(model_tokenizer, 
     assert output.shape == (batch_size, 320, emb_size)
 
 
-def test_labram_neural_tokenizer_forward_features_default(model_tokenizer, n_chans, n_times, emb_size):
+def test_labram_neural_tokenizer_forward_features_default(
+    model_tokenizer, n_chans, n_times, emb_size
+):
     """Test forward_features with default settings in tokenizer mode."""
     batch_size = 2
     x = torch.randn(batch_size, n_chans, n_times)
@@ -162,7 +177,9 @@ def test_labram_neural_tokenizer_forward_features_default(model_tokenizer, n_cha
     assert output.shape == (batch_size, emb_size)
 
 
-def test_labram_neural_tokenizer_different_batch_sizes(model_tokenizer, n_chans, n_times, n_outputs):
+def test_labram_neural_tokenizer_different_batch_sizes(
+    model_tokenizer, n_chans, n_times, n_outputs
+):
     """Test with different batch sizes in tokenizer mode."""
     for batch_size in [1, 2, 4, 8]:
         x = torch.randn(batch_size, n_chans, n_times)
@@ -196,14 +213,18 @@ def test_labram_neural_decoder_initialization(model_decoder):
     assert model_decoder.n_outputs == 4
 
 
-def test_labram_neural_decoder_forward_pass_basic(model_decoder, batch_size, n_chans, n_times, n_outputs):
+def test_labram_neural_decoder_forward_pass_basic(
+    model_decoder, batch_size, n_chans, n_times, n_outputs
+):
     """Test basic forward pass in decoder mode."""
     x = torch.randn(batch_size, n_chans, n_times)
     output = model_decoder(x)
     assert output.shape == (batch_size, n_outputs)
 
 
-def test_labram_neural_decoder_forward_pass_single_sample(model_decoder, n_chans, n_times, n_outputs):
+def test_labram_neural_decoder_forward_pass_single_sample(
+    model_decoder, n_chans, n_times, n_outputs
+):
     """Test forward pass with single sample in decoder mode."""
     x = torch.randn(1, n_chans, n_times)
     output = model_decoder(x)
@@ -227,7 +248,9 @@ def test_labram_can_load_pretrained_weights():
     assert not load_result.unexpected_keys
 
 
-def test_labram_neural_decoder_forward_features_all_tokens(model_decoder, n_chans, n_times, emb_size):
+def test_labram_neural_decoder_forward_features_all_tokens(
+    model_decoder, n_chans, n_times, emb_size
+):
     """Test forward_features with return_all_tokens=True in decoder mode."""
     batch_size = 2
     x = torch.randn(batch_size, n_chans, n_times)
@@ -239,7 +262,9 @@ def test_labram_neural_decoder_forward_features_all_tokens(model_decoder, n_chan
     assert output.shape[2] == emb_size
 
 
-def test_labram_neural_decoder_forward_features_patch_tokens(model_decoder, n_chans, n_times, emb_size):
+def test_labram_neural_decoder_forward_features_patch_tokens(
+    model_decoder, n_chans, n_times, emb_size
+):
     """Test forward_features with return_patch_tokens=True in decoder mode."""
     batch_size = 2
     x = torch.randn(batch_size, n_chans, n_times)
@@ -252,7 +277,9 @@ def test_labram_neural_decoder_forward_features_patch_tokens(model_decoder, n_ch
     assert output.shape[2] == emb_size
 
 
-def test_labram_neural_decoder_forward_features_default(model_decoder, n_chans, n_times, emb_size):
+def test_labram_neural_decoder_forward_features_default(
+    model_decoder, n_chans, n_times, emb_size
+):
     """Test forward_features with default settings in decoder mode."""
     batch_size = 2
     x = torch.randn(batch_size, n_chans, n_times)
@@ -262,7 +289,9 @@ def test_labram_neural_decoder_forward_features_default(model_decoder, n_chans, 
     assert output.shape == (batch_size, emb_size)
 
 
-def test_labram_neural_decoder_different_batch_sizes(model_decoder, n_chans, n_times, n_outputs):
+def test_labram_neural_decoder_different_batch_sizes(
+    model_decoder, n_chans, n_times, n_outputs
+):
     """Test with different batch sizes in decoder mode."""
     for batch_size in [1, 2, 4, 8]:
         x = torch.randn(batch_size, n_chans, n_times)
@@ -548,10 +577,10 @@ def luna_base_pretrained_model():
         pytest.skip("safetensors and huggingface_hub are required")
 
     # Set cache directory to mne_data for CI persistence
-    mne_data_dir = mne.get_config('MNE_DATA')
+    mne_data_dir = mne.get_config("MNE_DATA")
     if mne_data_dir is None:
-        mne_data_dir = str(Path.home() / 'mne_data')
-    cache_dir = str(Path(mne_data_dir) / 'luna_pretrained')
+        mne_data_dir = str(Path.home() / "mne_data")
+    cache_dir = str(Path(mne_data_dir) / "luna_pretrained")
 
     # Load from HuggingFace Hub with mne_data cache
     try:
@@ -576,16 +605,16 @@ def luna_base_pretrained_model():
         state_dict = load_file(model_path)
         # Apply key mapping for pretrained weights compatibility
         mapping = model.mapping.copy()
-        mapping['cross_attn.temparature'] = 'cross_attn.temperature'
-        mapped_state_dict = {
-            mapping.get(k, k): v for k, v in state_dict.items()
-        }
+        mapping["cross_attn.temparature"] = "cross_attn.temperature"
+        mapped_state_dict = {mapping.get(k, k): v for k, v in state_dict.items()}
         model.load_state_dict(mapped_state_dict, strict=False)
 
         return model
     except Exception as e:
         # Skip tests if model not available
-        pytest.skip(f"Pretrained model not available: {type(e).__name__}: {str(e)[:100]}")
+        pytest.skip(
+            f"Pretrained model not available: {type(e).__name__}: {str(e)[:100]}"
+        )
 
 
 # ==============================================================================
@@ -746,7 +775,9 @@ def test_luna_huge_gradient_flow(luna_huge_model):
 # ==============================================================================
 
 
-def test_luna_variants_parameter_count_hierarchy(luna_base_model, luna_large_model, luna_huge_model):
+def test_luna_variants_parameter_count_hierarchy(
+    luna_base_model, luna_large_model, luna_huge_model
+):
     """Test that parameter counts follow the hierarchy Base < Large < Huge."""
     base_params = sum(p.numel() for p in luna_base_model.parameters())
     large_params = sum(p.numel() for p in luna_large_model.parameters())
@@ -756,7 +787,9 @@ def test_luna_variants_parameter_count_hierarchy(luna_base_model, luna_large_mod
     assert large_params < huge_params
 
 
-def test_luna_variants_device_compatibility(luna_base_model, luna_large_model, luna_huge_model):
+def test_luna_variants_device_compatibility(
+    luna_base_model, luna_large_model, luna_huge_model
+):
     """Test LUNA variants work correctly on CPU."""
     x = torch.randn(2, 22, 1000)
 
@@ -780,7 +813,9 @@ def test_luna_variants_device_compatibility(luna_base_model, luna_large_model, l
             assert output_cuda.device.type == "cuda"
 
 
-def test_luna_variants_different_channel_counts(luna_base_config, luna_large_config, luna_huge_config):
+def test_luna_variants_different_channel_counts(
+    luna_base_config, luna_large_config, luna_huge_config
+):
     """Test LUNA variants handle different channel counts."""
     configs = [luna_base_config, luna_large_config, luna_huge_config]
 
@@ -796,7 +831,9 @@ def test_luna_variants_different_channel_counts(luna_base_config, luna_large_con
             assert output.shape == (2, 2)
 
 
-def test_luna_variants_output_consistency(luna_base_config, luna_large_config, luna_huge_config):
+def test_luna_variants_output_consistency(
+    luna_base_config, luna_large_config, luna_huge_config
+):
     """Test that all LUNA variants produce consistent output shapes."""
     configs = [luna_base_config, luna_large_config, luna_huge_config]
     test_input = torch.randn(2, 22, 1000)
@@ -857,10 +894,10 @@ def test_luna_base_pretrained_caching(luna_base_pretrained_model):
     """Test that pretrained model weights are cached in mne_data."""
 
     # Check that cache directory exists and has files
-    mne_data_dir = mne.get_config('MNE_DATA')
+    mne_data_dir = mne.get_config("MNE_DATA")
     if mne_data_dir is None:
-        mne_data_dir = str(Path.home() / 'mne_data')
-    cache_dir = Path(mne_data_dir) / 'luna_pretrained'
+        mne_data_dir = str(Path.home() / "mne_data")
+    cache_dir = Path(mne_data_dir) / "luna_pretrained"
 
     if cache_dir.exists():
         # Check that model files were downloaded
@@ -873,7 +910,9 @@ def test_luna_base_pretrained_caching(luna_base_pretrained_model):
 # ==============================================================================
 
 # Check if HF token for REVE is available
-HF_TOKEN_REVE_MISSING = os.getenv("HF_TOKEN_REVE") is None or os.getenv("HF_TOKEN_REVE") == ""
+HF_TOKEN_REVE_MISSING = (
+    os.getenv("HF_TOKEN_REVE") is None or os.getenv("HF_TOKEN_REVE") == ""
+)
 
 # REVE test constants
 REVE_BATCH_SIZE = 2
@@ -886,10 +925,10 @@ REVE_POSITIONS_ID = "brain-bzh/reve-positions"
 
 def _get_reve_cache_dir():
     """Get cache directory for REVE pretrained models."""
-    mne_data_dir = mne.get_config('MNE_DATA')
+    mne_data_dir = mne.get_config("MNE_DATA")
     if mne_data_dir is None:
-        mne_data_dir = str(Path.home() / 'mne_data')
-    return str(Path(mne_data_dir) / 'reve_pretrained')
+        mne_data_dir = str(Path.home() / "mne_data")
+    return str(Path(mne_data_dir) / "reve_pretrained")
 
 
 def test_reve_positions_match():
@@ -974,3 +1013,26 @@ def test_reve_model_outputs_match():
     output_hf = model_hf(eeg_input, pos_hf, return_output=True)[-1]
 
     assert torch.allclose(output_hf, output_bd)
+
+
+# ==============================================================================
+# Tests for CBraMod Model
+# ==============================================================================
+
+
+def test_cbramod_load_weights():
+    model = CBraMod(return_encoder_output=True)
+    state_dict = torch.hub.load_state_dict_from_url(
+        "https://huggingface.co/braindecode/cbramod-pretrained/resolve/main/pytorch_model.bin",
+        map_location="cpu",
+    )
+    load_result = model.load_state_dict(state_dict)
+    assert not load_result.missing_keys
+    assert not load_result.unexpected_keys
+
+
+def test_cbramod_forward_pass():
+    model = CBraMod(return_encoder_output=True)
+    x = torch.randn(2, 22, 1000)
+    output = model(x)
+    assert output.shape == (2, 22, 5, 200)

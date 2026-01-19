@@ -73,6 +73,7 @@ models_mandatory_parameters: list[
     ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGPT", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
     ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "SleepStagerBlanco2020",
@@ -131,6 +132,7 @@ models_mandatory_parameters: list[
             "chs_info": [{"ch_name": f"E{i + 1}", "kind": "eeg"} for i in range(19)],
         },
     ),
+    ("CBraMod", ["n_outputs"], None),
 ]
 
 ################################################################
