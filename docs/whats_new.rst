@@ -52,11 +52,15 @@ Code health
 - None yet.
 
 
-Current 1.3.1 (stable)
+Current 1.3.2 (stable)
 ====================
 
 Enhancements
 ============
+
+- Add an optional ``lazy`` init path to :class:`braindecode.datasets.base.BaseConcatDataset`
+  to defer cumulative size computation (and any downstream dataset length access) until
+  first access, supporting truly lazy raw loading workflows.
 
 - Adding Hugging Face Hub integration documentation with comprehensive examples for
   loading pre-trained models (:class:`braindecode.models.BIOT`,
