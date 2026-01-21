@@ -48,6 +48,7 @@ dependencies = [
     "torch>=2.2",
     "torchaudio>=2.0",
     'mne>=1.11.0',  # we get matplotlib, numpy, pandas, scipy from here
+    'pandas<3.0.0',  # to avoid issues with wfdb
     'mne_bids>=0.18', # in theory we get the mne here, but we prefer to have it explicit
     'h5py',
     'skorch>=1.3.0',
