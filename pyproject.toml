@@ -77,7 +77,7 @@ tests = [
     "bids_validator",
 ]
 typing = [
-    'exca==0.4',
+    'exca @ git+https://github.com/facebookresearch/exca.git@main',
     'numpydantic>=1.7',
 ]
 
