@@ -515,8 +515,10 @@ class GeneralizedGaussianFilter(nn.Module):
             requires_grad=affine_group_delay,
         )
 
-        # Construct filters from parameters
-        self.filters = self.construct_filters()
+        # Construct filters from parameters and register as a buffer so
+        # torch.export / tracing treats it as a proper module buffer
+        # (it will be recomputed in forward anyway).
+        self.register_buffer("filters", self.construct_filters(), persistent=False)
 
     @staticmethod
     def exponential_power(x, mean, fwhm, shape):
