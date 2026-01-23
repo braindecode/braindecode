@@ -45,7 +45,7 @@ Requirements
 
 Bugs
 =====
-- None yet.
+- Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb`` (:gh:`919` by `Pierre Guetschel`_)
 
 Code health
 ============

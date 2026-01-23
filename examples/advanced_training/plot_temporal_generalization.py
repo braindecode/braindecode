@@ -145,7 +145,7 @@ class BasicMLP(nn.Module):
         self.n_classes = n_outputs
         self.n_times = n_times
 
-        self.norm = nn.BatchNorm1d(self.n_chans, affine=False, eps=0.0)
+        self.norm = nn.BatchNorm1d(self.n_chans, affine=False, eps=1e-5)
 
         self.model = nn.Sequential(
             nn.Linear(self.n_chans, self.n_chans),
@@ -164,7 +164,8 @@ class BasicMLP(nn.Module):
 # Note that the original MNE tutorial used an sklearn pipeline and prepended a
 # ``StandardScaler`` to the model. Instead, we will use a ``nn.BatchNorm1d``
 # layer to normalize the input data, which is equivalent to the ``StandardScaler``
-# in sklearn if we set the parameters ``affine=False`` and ``eps=0.0``. If the
+# in sklearn if we set the parameters ``affine=False`` and ``eps=0.0``. However,
+# pytorch does not allow ``eps=0.0``, so we set it to a small value instead. If the
 # batch size is the size of the whole dataset, then the ``nn.BatchNorm1d`` layer
 # will normalize each feature to have zero mean and unit variance just like the
 # ``StandardScaler``. However, if the batch size is smaller than the size of the
@@ -487,7 +488,7 @@ class WrappedEEGSimpleConvNorm(nn.Module):
             n_convs=n_convs,
         )
         self.dim_wrapper = DimWrapper(self.eeg_simple_conv)
-        self.norm = nn.BatchNorm1d(n_chans, affine=False, eps=0.0)
+        self.norm = nn.BatchNorm1d(n_chans, affine=False, eps=1e-5)
 
     def forward(self, x):
         x_norm = self.norm(x)
