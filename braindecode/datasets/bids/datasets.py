@@ -137,6 +137,10 @@ class BIDSDataset(BaseConcatDataset):
     )
     datatypes: str | list[str] | None = None
     check: bool = False
+    # Loading arguments for mne_bids.read_raw_bids:
+    extra_params: dict | None = None
+    on_ch_mismatch: str = "raise"
+    # Other arguments:
     preload: bool = False
     n_jobs: int = 1
 
@@ -182,7 +186,12 @@ class BIDSDataset(BaseConcatDataset):
 
     def _get_dataset(self, bids_path: mne_bids.BIDSPath) -> RawDataset:
         description = _description_from_bids_path(bids_path)
-        raw = mne_bids.read_raw_bids(bids_path, verbose=False)
+        raw = mne_bids.read_raw_bids(
+            bids_path,
+            verbose=False,
+            on_ch_mismatch=self.on_ch_mismatch,
+            extra_params=self.extra_params,
+        )
         if self.preload:
             raw.load_data()
         return RawDataset(raw, description)

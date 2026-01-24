@@ -34,6 +34,9 @@ Enhancements
   pretrained weights available at `braindecode/eegpt-pretrained <https://huggingface.co/braindecode/eegpt-pretrained>`_
   (:gh:`908` by `Young Truong`_ and `Kuntal Kokate`_)
 - Add :class:`braindecode.models.CBraMod` model (:gh:`914` by `Pierre Guetschel`_)
+- Expose additional arguments of :func:`mne_bids.read_raw_bids` in :class:`braindecode.datasets.BIDSDataset` (:gh:`918` by `Pierre Guetschel`_)
+- Populate epochs metadata with the :class:`mne.Annotations`'s ``extras`` entries (:gh:`918` by `Pierre Guetschel`_)
+
 
 API changes
 ============

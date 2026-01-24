@@ -517,10 +517,17 @@ def _create_windows_from_events(
 
     events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
     onsets = events[:, 0]
+    ann = ds.raw.annotations
     # Onsets are relative to the beginning of the recording
     filtered_durations = np.array(
-        [a["duration"] for a in ds.raw.annotations if a["description"] in events_id]
+        [a["duration"] for a in ann if a["description"] in events_id]
     )
+
+    extras = None
+    if hasattr(ann, "extras"):
+        extras = [a["extras"] for a in ann if a["description"] in events_id]
+        if not any(extras):
+            extras = None
 
     stops = onsets + (filtered_durations * ds.raw.info["sfreq"]).astype(int)
     # XXX This could probably be simplified by using chunk_duration in
@@ -559,11 +566,11 @@ def _create_windows_from_events(
             warnings.warn(
                 f"Dropping trials with different windows size {trials_drops}",
             )
-            bads_size_trials = checker_trials_size
             events = events[checker_trials_size]
             onsets = onsets[checker_trials_size]
             stops = stops[checker_trials_size]
-
+            if extras is not None:
+                extras = [e for i, e in enumerate(extras) if checker_trials_size[i]]
     description = events[:, -1]
 
     if not use_mne_epochs:
@@ -591,6 +598,9 @@ def _create_windows_from_events(
 
     description = events[:, -1]
 
+    if extras is not None:
+        extras = [extras[i_trials[i_start]] for i_start in range(len(starts))]
+
     metadata = pd.DataFrame(
         {
             "i_window_in_trial": i_window_in_trials,
@@ -599,6 +609,15 @@ def _create_windows_from_events(
             "target": description,
         }
     )
+    if extras is not None:
+        extras_df = pd.DataFrame(extras)
+        if forbidden_cols := set(metadata.columns).intersection(extras_df.columns):
+            warnings.warn(
+                f"Dropping extra columns that conflict with windowing metadata: {forbidden_cols}"
+            )
+            extras_df = extras_df.drop(columns=forbidden_cols)
+        metadata = pd.concat([metadata, extras_df.reset_index(drop=True)], axis=1)
+
     if use_mne_epochs:
         # window size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(
