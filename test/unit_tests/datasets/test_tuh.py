@@ -123,8 +123,8 @@ def test_sort_chronologically():
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010839/s001_2013_11_22/"
         "00010839_s001_t000.edf",
     ]
-    for p1, p2 in zip(expected, description.T.path):
-        assert p1 == p2
+    assert expected== description.T.path.to_list()
+
 
 
 # Skip if OS is Windows
@@ -232,13 +232,13 @@ def test_tuh_events(version):
     description = tuh_ev.description
     assert files_count is not None
     assert len(tuh_ev.datasets) == files_count
-    assert description.shape == (files_count, 13)
+    assert set(description.columns) == {"path", "subject", "version", "session", "split", "event_prefix", "run", "age", "gender", "year", "month", "day"}
     assert len(tuh_ev) == 3600 * files_count
-    assert description.subject.to_list() == ["000", "001", "aaaaaaar"]
+    assert description.subject.to_list() == ["000",  "aaaaaaar","001"]
     assert description.version.to_list() == [version] * files_count
     assert description.session.to_list() == [1, 1, 1]
-    assert description.split.to_list() == ["eval", "eval", "train"]
-    assert description.event_prefix.to_list() == ["bckg", "pled", None]
-    assert description.run.to_list() == [0, 2, 0]
-    assert description.age.to_list() == [36, 68, 19]
+    assert description.split.to_list() == ["eval", "train", "eval"]
+    assert description.event_prefix.to_list() == ["bckg", None, "pled"]
+    assert description.run.to_list() == [0, 0, 2]
+    assert description.age.to_list() == [36, 19, 68]
     assert description.gender.to_list() == ["F", "F", "F"]
