@@ -36,6 +36,7 @@ Enhancements
 - Add :class:`braindecode.models.CBraMod` model (:gh:`914` by `Pierre Guetschel`_)
 - Expose additional arguments of :func:`mne_bids.read_raw_bids` in :class:`braindecode.datasets.BIDSDataset` (:gh:`918` by `Pierre Guetschel`_)
 - Populate epochs metadata with the :class:`mne.Annotations`'s ``extras`` entries (:gh:`918` by `Pierre Guetschel`_)
+- Add :class:`braindecode.datasets.TUHEvents` dataset and improve other TUH datasets (:gh:`920` by `Pierre Guetschel`_)
 
 
 API changes
