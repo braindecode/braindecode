@@ -52,6 +52,9 @@ class TUH(BaseConcatDataset):
         If True, rename the EEG channels to the standard 10-05 system.
     set_montage : bool
         If True, set the montage to the standard 10-05 system.
+    on_missing_files : Literal['warn', 'raise']
+        Behavior when the number of files found in the dataset directory
+        does not match the expected number of files.
     n_jobs : int
         Number of jobs to be used to read files in parallel.
     """
@@ -434,6 +437,9 @@ class TUHAbnormal(TUH):
         If True, rename the EEG channels to the standard 10-05 system.
     set_montage : bool
         If True, set the montage to the standard 10-05 system.
+    on_missing_files : Literal["warn", "raise"]
+        Behavior when the number of files found in the dataset directory
+        does not match the expected number of files.
     n_jobs : int
         Number of jobs to be used to read files in parallel.
     """
@@ -447,6 +453,7 @@ class TUHAbnormal(TUH):
         add_physician_reports: bool = False,
         rename_channels: bool = False,
         set_montage: bool = False,
+        on_missing_files: Literal["warn", "raise"] = "raise",
         n_jobs: int = 1,
     ):
         super().__init__(
@@ -457,6 +464,7 @@ class TUHAbnormal(TUH):
             add_physician_reports=add_physician_reports,
             rename_channels=rename_channels,
             set_montage=set_montage,
+            on_missing_files=on_missing_files,
             n_jobs=n_jobs,
         )
         additional_descriptions = []
