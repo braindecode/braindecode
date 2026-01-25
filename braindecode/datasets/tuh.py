@@ -515,7 +515,7 @@ class TUHAbnormal(TUH):
         rename_channels: bool = False,
         set_montage: bool = False,
         on_missing_files: Literal["warn", "raise"] = "raise",
-        version: Literal["v2.0.0"] = "v2.0.0",
+        version: Literal["v2.0.0", "v3.0.0"] = "v3.0.0",
         n_jobs: int = 1,
     ):
         super().__init__(
@@ -558,7 +558,9 @@ class TUHAbnormal(TUH):
         }
 
     @property
-    def _expected_files_count(self) -> int | None:
+    def _expected_files_count(self):
+        if self.version == "v3.0.0":
+            return 1521  # 150 (eval) + 1321 (train)
         return None
 
     @property
@@ -676,7 +678,7 @@ class TUHEvents(TUH):
             )
 
     @property
-    def _expected_files_count(self) -> int | None:
+    def _expected_files_count(self):
         if self.version == "v2.0.1":
             return 518  # 159 (eval) + 359 (train)
         return None
@@ -892,7 +894,7 @@ class _TUHMock(TUH):
             )
 
     @property
-    def _expected_files_count(self) -> int | None:
+    def _expected_files_count(self):
         if self.version == "v1.1.0":
             return 4
         if self.version == "v1.2.0":
@@ -939,7 +941,7 @@ class _TUHAbnormalMock(TUHAbnormal):
             )
 
     @property
-    def _expected_files_count(self) -> int | None:
+    def _expected_files_count(self):
         if self.version == "v2.0.0":
             return 5
         return None
@@ -980,7 +982,7 @@ class _TUHEventsMock(TUHEvents):
             )
 
     @property
-    def _expected_files_count(self) -> int | None:
+    def _expected_files_count(self):
         if self.version == "v2.0.1":
             return 3
         return None
