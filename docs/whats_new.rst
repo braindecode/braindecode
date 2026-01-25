@@ -52,7 +52,7 @@ Bugs
 
 Code health
 ============
-- None yet.
+- Making wfdb optional (:gh:`920` by `Bruno Aristimunha`_)
 
 
 Current 1.3.2 (stable)
