@@ -414,7 +414,7 @@ def _parse_age_and_gender_from_edf_header(file_path):
 class TUHAbnormal(TUH):
     """Temple University Hospital (TUH) Abnormal EEG Corpus.
 
-    see www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tuab
+    see https://isip.piconepress.com/projects/nedc/html/tuh_eeg/index.shtml#c_tuab
 
     Parameters
     ----------
