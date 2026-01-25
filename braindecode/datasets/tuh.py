@@ -15,7 +15,7 @@ import os
 import re
 import warnings
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Iterable, Literal
 from unittest import mock
 
 import mne
@@ -65,8 +65,14 @@ class TUH(BaseConcatDataset):
         add_physician_reports: bool = False,
         rename_channels: bool = False,
         set_montage: bool = False,
+        on_missing_files: Literal["warn", "raise"] = "raise",
         n_jobs: int = 1,
     ):
+        if on_missing_files not in ["warn", "raise"]:
+            raise ValueError(
+                "on_missing_files must be either 'warn' or 'raise', "
+                f"got {on_missing_files}."
+            )
         if set_montage:
             assert rename_channels, (
                 "If set_montage is True, rename_channels must be True."
@@ -74,6 +80,25 @@ class TUH(BaseConcatDataset):
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, "**/*.edf"), recursive=True)
+
+        # check files count
+        if self._expected_files_count is None:
+            warnings.warn(
+                f"Could not verify that the number of files in {self.__class__.__name__} "
+                "dataset is correct. Implement _expected_files_count for this."
+            )
+        elif (files_count := len(file_paths)) != self._expected_files_count:
+            msg = (
+                f"Expected {self._expected_files_count} files but found "
+                f"{files_count} files in {path} for "
+                f"{self.__class__.__name__} dataset. The dataset might be "
+                "incomplete."
+            )
+            if on_missing_files == "raise":
+                raise RuntimeError(msg)
+            else:
+                warnings.warn(msg)
+
         descriptions = _create_description(file_paths)
         # sort the descriptions chronologicaly
         descriptions = _sort_chronologically(descriptions)
@@ -122,6 +147,10 @@ class TUH(BaseConcatDataset):
                 for i in descriptions.columns
             )
         super().__init__(base_datasets)
+
+    @property
+    def _expected_files_count(self) -> int | None:
+        return None
 
     @staticmethod
     def _rename_channels(raw):
