@@ -240,3 +240,5 @@ def test_tuh_events(version):
     assert description.split.to_list() == ["eval", "eval", "train"]
     assert description.event_prefix.to_list() == ["bckg", "pled", None]
     assert description.run.to_list() == [0, 2, 0]
+    assert description.age.to_list() == [36, 68, 19]
+    assert description.gender.to_list() == ["F", "F", "F"]
