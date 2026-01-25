@@ -97,7 +97,7 @@ def test_sort_chronologically():
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010816/s001_2013_10_03/"
         "00010816_s001_t001.edf",
     ]
-    description = _create_description(file_paths)
+    description = _create_description(file_paths, version="v2.0.0", ds_name="abnormal")
     description = _sort_chronologically(description)
     expected = [
         "v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000068/s008_2010_09_28/"

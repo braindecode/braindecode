@@ -272,14 +272,10 @@ def _create_description(file_paths, version, ds_name):
 
 
 def _sort_chronologically(descriptions):
-    sort_cols = ["year", "month", "day", "subject", "session", "segment"]
-    if all(col in descriptions.columns for col in sort_cols):
-        descriptions.sort_values(sort_cols, axis=1, inplace=True)
-    else:
-        warnings.warn(
-            "Descriptions do not contain all sorting columns. Sorting by path instead."
-        )
-        descriptions.sort_values("path", axis=1, inplace=True)
+    # last resort, we use path to sort (always available):
+    sort_cols = ["year", "month", "day", "subject", "session", "segment", "path"]
+    available_cols = [col for col in sort_cols if col in descriptions.index]
+    descriptions.sort_values(available_cols, axis=1, inplace=True)
     return descriptions
 
 
