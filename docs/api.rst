@@ -436,6 +436,7 @@ Common Datasets
      SleepPhysionetChallenge2018
      TUH
      TUHAbnormal
+     TUHEvents
 
 Dataset Builders Functions
 ==========================
