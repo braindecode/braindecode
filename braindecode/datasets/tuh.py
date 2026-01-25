@@ -15,6 +15,7 @@ import os
 import re
 import warnings
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterable, Literal
 from unittest import mock
 
@@ -23,7 +24,7 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseConcatDataset, RawDataset
+from braindecode.datasets.base import BaseConcatDataset, RawDataset
 
 
 class TUH(BaseConcatDataset):
@@ -565,6 +566,17 @@ class TUHAbnormal(TUH):
         return "abnormal"
 
 
+# mapping for numeric rec labels
+EVENTS_MAP = {
+    "1": "spsw",
+    "2": "gped",
+    "3": "pled",
+    "4": "eyem",
+    "5": "artf",
+    "6": "bckg",
+}
+
+
 class TUHEvents(TUH):
     """Temple University Hospital (TUH) EEG Event Corpus.
 
@@ -576,6 +588,15 @@ class TUHEvents(TUH):
     folders) as documented in the corpus README.
 
     see https://isip.piconepress.com/projects/nedc/html/tuh_eeg/index.shtml#c_tuev
+
+    The event names are mapped as follows:
+
+    - '1' -> 'spsw' (spike and slow wave)
+    - '2' -> 'gped' (generalized periodic epileptiform discharge)
+    - '3' -> 'pled' (periodic lateralized epileptiform discharge)
+    - '4' -> 'eyem' (eye movement)
+    - '5' -> 'artf' (artifact)
+    - '6' -> 'bckg' (background)
 
     Parameters
     ----------
@@ -598,6 +619,12 @@ class TUHEvents(TUH):
         If True, rename the EEG channels to the standard 10-05 system.
     set_montage : bool
         If True, set the montage to the standard 10-05 system.
+    channel_events : bool
+        If True, add channel-specific event annotations to the Raw objects.
+        If False, only global events will be added.
+    merge_events : bool
+        If True, merge consecutive identical events into a single event with
+        duration covering the entire span.
     on_missing_files : Literal["warn", "raise"]
         Behavior when the number of files found in the dataset directory
         does not match the expected number of files.
@@ -616,10 +643,16 @@ class TUHEvents(TUH):
         add_physician_reports: bool = False,
         rename_channels: bool = False,
         set_montage: bool = False,
+        channel_events: bool = False,
+        merge_events: bool = True,
         on_missing_files: Literal["warn", "raise"] = "raise",
         version: Literal["v2.0.1"] = "v2.0.1",
         n_jobs: int = 1,
     ):
+        if merge_events and channel_events:
+            raise NotImplementedError(
+                "Merging events is not implemented for channel-specific events."
+            )
         super().__init__(
             path=path,
             recording_ids=recording_ids,
@@ -633,16 +666,14 @@ class TUHEvents(TUH):
             n_jobs=n_jobs,
         )
 
-        # Collect additional description information per file: available
-        # event labels (from .rec/.lab) or fallback to prefix in filename.
-        additional_descriptions = []
-        for file_path in self.description.path:
-            additional_descriptions.append(
-                self._parse_additional_description_from_file_path(file_path)
+        for ds in self.datasets:
+            file_path = ds.description.loc["path"]
+            self._set_annotations(
+                file_path,
+                ds.raw,
+                channel_events=channel_events,
+                merge_events=merge_events,
             )
-        additional_descriptions = pd.DataFrame(additional_descriptions)
-        # Merge into dataset description
-        self.set_description(additional_descriptions, overwrite=True)
 
     @property
     def _expected_files_count(self) -> int | None:
@@ -655,72 +686,80 @@ class TUHEvents(TUH):
         return "events"
 
     @staticmethod
-    def _parse_additional_description_from_file_path(file_path: str) -> dict:
+    def _set_annotations(
+        file_path: str | Path, raw: mne.io.Raw, channel_events: bool, merge_events: bool
+    ):
         """Parse event annotations for a single EDF file.
+        Then set the annotations in the provided raw object."""
+        file_path = Path(file_path)
+        rec_path = file_path.parent / (file_path.stem + ".rec")
+        ch_names = raw.ch_names
 
-        Looks for a same-named ``.rec`` file (preferred) or ``*__ch*.lab`` files
-        in the same directory. If none are found, falls back to the filename
-        prefix (e.g., ``bckg`` in ``bckg_032_a_.edf``).
-        """
-        file_path = os.path.normpath(file_path)
-        directory = os.path.dirname(file_path)
-        base = os.path.basename(file_path)
-        name_no_ext = os.path.splitext(base)[0]
-
-        # mapping for numeric rec labels
-        rec_map = {
-            "1": "spsw",
-            "2": "gped",
-            "3": "pled",
-            "4": "eyem",
-            "5": "artf",
-            "6": "bckg",
-        }
-
-        events = set()
-
-        # Try .rec file first
-        rec_path = os.path.join(directory, name_no_ext + ".rec")
-        if os.path.exists(rec_path):
-            try:
-                with open(rec_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        parts = line.strip().split(",")
-                        if len(parts) >= 4:
-                            lbl = parts[-1].strip()
-                            events.add(rec_map.get(lbl, lbl))
-            except Exception:
-                pass
-
-        # If no rec file or no labels found, try channel-wise .lab files
-        if not events:
-            # pattern: name_no_ext + "*__ch*.lab" or similar
-            try:
-                lab_glob = glob.glob(
-                    os.path.join(directory, name_no_ext + "*__ch*.lab")
+        if not rec_path.exists():
+            warnings.warn(
+                f"File '{rec_path}' does not exist. No event annotations will be added."
+            )
+            return None
+        onsets = []
+        durations = []
+        descriptions = []
+        ch_name_list: list[list[str]] = []
+        lines = rec_path.read_text().splitlines()
+        for line in lines:
+            parts = line.strip().split(",")
+            if len(parts) != 4:
+                warnings.warn(
+                    f"Unexpected format in '{rec_path}': '{line}'. No event annotations will be added."
                 )
-                # also attempt any .lab starting with the basename
-                if not lab_glob:
-                    lab_glob = glob.glob(os.path.join(directory, name_no_ext + "*.lab"))
-                for lab in lab_glob:
-                    try:
-                        with open(lab, "r", encoding="utf-8") as f:
-                            for line in f:
-                                parts = line.strip().split()
-                                if len(parts) >= 3:
-                                    events.add(parts[2])
-                    except Exception:
+                return None
+            channel_idx, start, stop, event_code = parts
+            if event_code not in EVENTS_MAP:
+                warnings.warn(
+                    f"Unknown event code '{event_code}' in '{rec_path}'. No event annotations will be added."
+                )
+                return None
+            onsets.append(float(start))
+            durations.append(float(stop) - float(start))
+            descriptions.append(EVENTS_MAP[event_code])
+            ch_name_list.append([ch_names[int(channel_idx)]])
+
+        # remove duplicates
+        if not channel_events:
+            unique_events = set(zip(onsets, durations, descriptions))
+            onsets, durations, descriptions = zip(*unique_events)  # type: ignore[assignment]
+        # merge consecutive events
+        if merge_events:
+            assert not channel_events
+            merged_onsets: list[float] = []
+            merged_durations: list[float] = []
+            merged_descriptions: list[str] = []
+            sorted_events = sorted(zip(onsets, durations, descriptions))
+            unique_descriptions = set(descriptions)
+            for description in unique_descriptions:
+                new = True
+                for onset, duration, this_description in sorted_events:
+                    if this_description != description:
                         continue
-            except Exception:
-                pass
+                    if new or (onset > merged_onsets[-1] + merged_durations[-1]):
+                        # initialize new event
+                        merged_onsets.append(onset)
+                        merged_durations.append(duration)
+                        merged_descriptions.append(this_description)
+                    else:
+                        # update last event duration
+                        merged_durations[-1] = (onset + duration) - merged_onsets[-1]
+                    new = False
+            onsets = merged_onsets
+            durations = merged_durations
+            descriptions = merged_descriptions
 
-        # Fallback: use filename prefix (e.g., bckg_...)
-        if not events:
-            prefix = name_no_ext.split("_")[0]
-            if prefix:
-                events.add(prefix)
-
-        return {"events": sorted(list(events))}
+        annotations = mne.Annotations(
+            onset=onsets,
+            duration=durations,
+            description=descriptions,
+            ch_names=ch_name_list if channel_events else None,
+        )
+        raw.set_annotations(annotations)
 
 
 def _fake_raw(*args, **kwargs):
