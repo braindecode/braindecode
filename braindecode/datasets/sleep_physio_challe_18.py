@@ -13,7 +13,6 @@ import urllib
 import mne
 import numpy as np
 import pandas as pd
-import wfdb
 from joblib import Parallel, delayed
 from mne.datasets.sleep_physionet._utils import _fetch_one
 from mne.datasets.utils import _get_path
@@ -212,6 +211,14 @@ def _convert_wfdb_anns_to_mne_annotations(annots):
     mne.Annotations :
         MNE Annotations object.
     """
+    try:
+        import wfdb  # noqa
+    except ImportError:
+        raise ImportError(
+            "wfdb is required to use SleepPhysionetChallenge2018. "
+            "Please install it with `pip install wfdb` or "
+            "`pip install braindecode[wfdb]`."
+        )
     ann_chs = set(annots.chan)
     onsets = annots.sample / annots.fs
     new_onset, new_duration, new_description = list(), list(), list()
@@ -359,6 +366,14 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
             channels = None
 
         # Load raw signals and header
+        try:
+            import wfdb
+        except ImportError:
+            raise ImportError(
+                "wfdb is required to use SleepPhysionetChallenge2018. "
+                "Please install it with `pip install wfdb` or "
+                "`pip install braindecode[wfdb]`."
+            )
         record = wfdb.io.rdrecord(op.splitext(raw_fname[0])[0], channels=channels)
 
         # Convert to right units for MNE (EEG should be in V)
