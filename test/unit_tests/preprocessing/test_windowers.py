@@ -10,6 +10,7 @@ import copy
 import logging
 import platform
 import warnings
+from contextlib import nullcontext
 
 import mne
 import numpy as np
@@ -60,7 +61,7 @@ def concat_ds_targets():
 def concat_ds_targets_overlap():
     rng = np.random.RandomState(42)
     data = rng.randn(2, 2000).astype(np.float32)
-    onsets = np.arange(0, 20, 2)
+    onsets = [1.0, 3.1, 5.2]
     durations = [2.5] * len(onsets)  # overlapping events
     targets = rng.randint(0, 2, size=len(onsets))
     targets_desc = {0: "T0", 1: "T1"}
@@ -320,20 +321,50 @@ def test_single_sample_size_windows(concat_ds_targets):
 
 
 @pytest.mark.parametrize("use_mne_epochs", [True, False])
-def test_overlapping_trial_offsets(concat_ds_targets_overlap, use_mne_epochs):
+@pytest.mark.parametrize("on_overlapping_events", ["raise", "warn", "ignore", "foo"])
+def test_overlapping_trial_offsets_warn(
+    concat_ds_targets_overlap, use_mne_epochs, on_overlapping_events
+):
+    concat_ds, _ = concat_ds_targets_overlap
+    msg = "Overlapping trials detected"
     concat_ds, targets = concat_ds_targets_overlap
     events, _ = mne.events_from_annotations(concat_ds.datasets[0].raw)
-    windows = create_windows_from_events(concat_ds, use_mne_epochs=use_mne_epochs)
-    data = concat_ds.datasets[0].raw.get_data()
-    for i, (X, y, crop_inds) in enumerate(windows):
-        # test crop ids correctness
-        i_window_in_trial, i_start_in_trial, i_stop_in_trial = crop_inds
-        assert events[i, 0] == i_start_in_trial
-        assert i_stop_in_trial - i_start_in_trial == 250
-        assert i_window_in_trial == 0
-        # test data correctness
-        np.testing.assert_array_equal(X, data[:, i_start_in_trial:i_stop_in_trial])
-        assert y == targets[i]
+    with (
+        pytest.warns(UserWarning, match=msg)
+        if on_overlapping_events == "warn"
+        else (
+            pytest.raises(ValueError, match=msg)
+            if on_overlapping_events == "raise"
+            else (
+                nullcontext()
+                if on_overlapping_events == "ignore"
+                else pytest.raises(
+                    ValueError,
+                    match=f"Invalid value {on_overlapping_events} for on_overlapping_events.",
+                )
+            )
+        )
+    ):
+        windows = create_windows_from_events(
+            concat_ds,
+            use_mne_epochs=use_mne_epochs,
+            on_overlapping_events=on_overlapping_events,
+            trial_start_offset_samples=-100,
+            window_size_samples=50,
+            window_stride_samples=50,
+            accepted_bads_ratio=1.0,
+        )
+    if on_overlapping_events in ["ignore", "warn"]:
+        data = concat_ds.datasets[0].raw.get_data()
+        # assert len(windows) == len(targets) * 7 - 1
+        for i, (X, y, crop_inds) in enumerate(windows):
+            # test crop ids correctness
+            i_window_in_trial, i_start_in_trial, i_stop_in_trial = crop_inds
+            # assert events[i, 0] == i_start_in_trial + 100 * i_window_in_trial
+            # assert i_stop_in_trial - i_start_in_trial == 100
+            # test data correctness
+            np.testing.assert_array_equal(X, data[:, i_start_in_trial:i_stop_in_trial])
+            assert y == targets[i // 7]
 
 
 @pytest.mark.parametrize("preload", [(True, False)])
