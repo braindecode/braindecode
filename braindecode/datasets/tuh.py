@@ -754,6 +754,9 @@ class TUHEvents(TUH):
             onsets = merged_onsets
             durations = merged_durations
             descriptions = merged_descriptions
+        # sort by onset time
+        sorted_events = sorted(zip(onsets, durations, descriptions))
+        onsets, durations, descriptions = zip(*sorted_events)  # type: ignore[assignment]
 
         annotations = mne.Annotations(
             onset=onsets,
