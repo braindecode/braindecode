@@ -841,6 +841,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                     "flat": flat,
                     "on_missing": on_missing,
                     "accepted_bads_ratio": 0.0,
+                    'on_overlapping_events': 'raise',
                     "verbose": "error",
                     "use_mne_epochs": True,
                 },
