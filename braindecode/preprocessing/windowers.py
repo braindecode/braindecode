@@ -587,8 +587,8 @@ def _create_windows_from_events(
         accepted_bads_ratio,
     )
 
-    if any(np.diff(starts) <= 0):
-        raise NotImplementedError("Trial overlap not implemented.")
+    # if any(np.diff(starts) <= 0):
+    #     raise NotImplementedError("Trial overlap not implemented.")
 
     events = [
         [start, window_size_samples, description[i_trials[i_start]]]
