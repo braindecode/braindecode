@@ -14,6 +14,8 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
+from braindecode.modules.convolution import Conv1dWithConstraint
+from braindecode.modules.linear import LinearWithConstraint
 
 
 class EEGPT(EEGModuleMixin, nn.Module):
@@ -349,8 +351,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
             else:
                 self.final_layer = final_layer
         else:
-            # Default: LinearConstraintProbe (original EEGPT probe)
-            self.final_layer = LinearConstraintProbe(
+            # Default: _LinearConstraintProbe (original EEGPT probe)
+            self.final_layer = _LinearConstraintProbe(
                 n_patches=self.target_encoder.num_patches[1],
                 embed_num=self.embed_num,
                 embed_dim=self.embed_dim,
@@ -372,7 +374,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         return self.target_encoder.num_patches[1]
 
     def get_probe_params(self) -> dict:
-        """Get parameters needed to create a LinearConstraintProbe.
+        """Get parameters needed to create a _LinearConstraintProbe.
 
         Returns
         -------
@@ -413,9 +415,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
             return z
 
         # Pass to final_layer
-        # LinearConstraintProbe expects z in 4D (batch, n_patches, embed_num, embed_dim)
+        # _LinearConstraintProbe expects z in 4D (batch, n_patches, embed_num, embed_dim)
         # Default linear layer expects flattened input
-        if isinstance(self.final_layer, (LinearConstraintProbe,)):
+        if isinstance(self.final_layer, (_LinearConstraintProbe,)):
             # Probe handles its own flattening
             return self.final_layer(z)
         else:
@@ -510,35 +512,7 @@ EEGPT_19_CHANNELS = [
 ]
 
 
-class LinearWithConstraint(nn.Linear):
-    """Linear layer with max-norm constraint on weights (from original EEGPT)."""
-
-    def __init__(self, in_features: int, out_features: int, max_norm: float = 1.0, bias: bool = True):
-        super().__init__(in_features, out_features, bias=bias)
-        self.max_norm = max_norm
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        weight_norm = self.weight.norm(2, dim=1, keepdim=True).clamp(min=1e-8)
-        constrained_weight = self.weight * (self.max_norm / weight_norm.clamp(min=self.max_norm))
-        return nn.functional.linear(x, constrained_weight, self.bias)
-
-
-class Conv1dWithConstraint(nn.Conv1d):
-    """1D convolution with max-norm constraint on weights (from original EEGPT)."""
-
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int, max_norm: float = 1.0, **kwargs):
-        super().__init__(in_channels, out_channels, kernel_size, **kwargs)
-        self.max_norm = max_norm
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        weight_flat = self.weight.view(self.weight.size(0), -1)
-        weight_norm = weight_flat.norm(2, dim=1, keepdim=True).clamp(min=1e-8)
-        scale = self.max_norm / weight_norm.clamp(min=self.max_norm)
-        constrained_weight = self.weight * scale.view(-1, 1, 1)
-        return nn.functional.conv1d(x, constrained_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-
-
-class LinearConstraintProbe(nn.Module):
+class _LinearConstraintProbe(nn.Module):
     """
     Original EEGPT two-stage probe with LinearWithConstraint layers.
 
