@@ -10,6 +10,7 @@ import copy
 import logging
 import platform
 import warnings
+from contextlib import nullcontext
 
 import mne
 import numpy as np
@@ -52,6 +53,25 @@ def concat_ds_targets():
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
     ds = RawDataset(raws[0], description.iloc[0])
+    concat_ds = BaseConcatDataset([ds])
+    return concat_ds, targets
+
+
+@pytest.fixture(scope="module")
+def concat_ds_targets_overlap():
+    rng = np.random.RandomState(42)
+    data = rng.randn(2, 2000).astype(np.float32)
+    onsets = [1.0, 3.1, 5.2]
+    durations = [2.5] * len(onsets)  # overlapping events
+    targets = rng.randint(0, 2, size=len(onsets))
+    targets_desc = {0: "T0", 1: "T1"}
+    descriptions = [targets_desc[t] for t in targets]
+    annotations = mne.Annotations(
+        onset=onsets, duration=durations, description=descriptions
+    )
+    raw = mne.io.RawArray(data, mne.create_info(ch_names=["ch0", "ch1"], sfreq=100))
+    raw.set_annotations(annotations)
+    ds = RawDataset(raw)
     concat_ds = BaseConcatDataset([ds])
     return concat_ds, targets
 
@@ -300,17 +320,51 @@ def test_single_sample_size_windows(concat_ds_targets):
     np.testing.assert_array_equal(ys[999::1000], targets)
 
 
-def test_overlapping_trial_offsets(concat_ds_targets):
-    concat_ds, _ = concat_ds_targets
-    with pytest.raises(NotImplementedError, match="Trial overlap not implemented."):
-        create_windows_from_events(
-            concat_ds=concat_ds,
-            trial_start_offset_samples=-2000,
-            trial_stop_offset_samples=0,
-            window_size_samples=1000,
-            window_stride_samples=1000,
-            drop_last_window=False,
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+@pytest.mark.parametrize("on_overlapping_events", ["raise", "warn", "ignore", "foo"])
+def test_overlapping_trial_offsets_warn(
+    concat_ds_targets_overlap, use_mne_epochs, on_overlapping_events
+):
+    concat_ds, _ = concat_ds_targets_overlap
+    msg = "Overlapping trials detected"
+    concat_ds, targets = concat_ds_targets_overlap
+    events, _ = mne.events_from_annotations(concat_ds.datasets[0].raw)
+    with (
+        pytest.warns(UserWarning, match=msg)
+        if on_overlapping_events == "warn"
+        else (
+            pytest.raises(ValueError, match=msg)
+            if on_overlapping_events == "raise"
+            else (
+                nullcontext()
+                if on_overlapping_events == "ignore"
+                else pytest.raises(
+                    ValueError,
+                    match=f"Invalid value {on_overlapping_events} for on_overlapping_events.",
+                )
+            )
         )
+    ):
+        windows = create_windows_from_events(
+            concat_ds,
+            use_mne_epochs=use_mne_epochs,
+            on_overlapping_events=on_overlapping_events,
+            trial_start_offset_samples=-100,
+            window_size_samples=50,
+            window_stride_samples=50,
+            accepted_bads_ratio=1.0,
+        )
+    if on_overlapping_events in ["ignore", "warn"]:
+        data = concat_ds.datasets[0].raw.get_data()
+        # assert len(windows) == len(targets) * 7 - 1
+        for i, (X, y, crop_inds) in enumerate(windows):
+            # test crop ids correctness
+            i_window_in_trial, i_start_in_trial, i_stop_in_trial = crop_inds
+            # assert events[i, 0] == i_start_in_trial + 100 * i_window_in_trial
+            # assert i_stop_in_trial - i_start_in_trial == 100
+            # test data correctness
+            np.testing.assert_array_equal(X, data[:, i_start_in_trial:i_stop_in_trial])
+            assert y == targets[i // 7]
 
 
 @pytest.mark.parametrize("preload", [(True, False)])
@@ -787,6 +841,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                     "flat": flat,
                     "on_missing": on_missing,
                     "accepted_bads_ratio": 0.0,
+                    'on_overlapping_events': 'raise',
                     "verbose": "error",
                     "use_mne_epochs": True,
                 },
