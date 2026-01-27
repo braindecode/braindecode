@@ -515,7 +515,7 @@ class TUHAbnormal(TUH):
         rename_channels: bool = False,
         set_montage: bool = False,
         on_missing_files: Literal["warn", "raise"] = "raise",
-        version: Literal["v2.0.0", "v3.0.0"] = "v3.0.0",
+        version: Literal["v2.0.0", "v3.0.1"] = "v3.0.1",
         n_jobs: int = 1,
     ):
         super().__init__(
@@ -559,8 +559,14 @@ class TUHAbnormal(TUH):
 
     @property
     def _expected_files_count(self):
-        if self.version == "v3.0.0":
-            return 1521  # 150 (eval) + 1321 (train)
+        if self.version == "v3.0.1":
+            # dataset.description.groupby(["train", "pathological"]).path.count()
+            # train  pathological
+            # False  False            150
+            #        True             126
+            # True   False           1371
+            #        True            1346
+            return 2993
         return None
 
     @property
@@ -754,6 +760,9 @@ class TUHEvents(TUH):
             onsets = merged_onsets
             durations = merged_durations
             descriptions = merged_descriptions
+        # sort by onset time
+        sorted_events = sorted(zip(onsets, durations, descriptions))
+        onsets, durations, descriptions = zip(*sorted_events)  # type: ignore[assignment]
 
         annotations = mne.Annotations(
             onset=onsets,

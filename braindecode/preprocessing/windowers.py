@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import mne
 import numpy as np
@@ -210,6 +210,7 @@ def create_windows_from_events(
     on_missing: str = "error",
     accepted_bads_ratio: float = 0.0,
     use_mne_epochs: bool | None = None,
+    on_overlapping_events: Literal["raise", "warn", "ignore"] = "raise",
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
 ) -> BaseConcatDataset[WindowsDataset | EEGWindowsDataset]:
@@ -285,6 +286,11 @@ def create_windows_from_events(
         If False, return EEGWindowsDataset objects.
         If True, return mne.Epochs objects encapsulated in WindowsDataset objects,
         which is substantially slower that EEGWindowsDataset.
+    on_overlapping_events: Literal['raise', 'warn', 'ignore']
+        Behavior when overlapping events are detected. Valid keys are
+        'raise' | 'warn' | 'ignore'. 'raise' (default) raises
+        NotImplementedError; 'warn' issues a warning and drops non-increasing
+        window starts; 'ignore' keeps overlapping starts.
     n_jobs: int
         Number of jobs to use to parallelize the windowing.
     verbose: bool | str | int | None
@@ -301,7 +307,10 @@ def create_windows_from_events(
         window_size_samples,
         window_stride_samples,
     )
-
+    if on_overlapping_events not in ["raise", "warn", "ignore"]:
+        raise ValueError(
+            f"Invalid value {on_overlapping_events} for on_overlapping_events."
+        )
     # If user did not specify mapping, we extract all events from all datasets
     # and map them to increasing integers starting from 0
     infer_mapping = mapping is None
@@ -340,6 +349,7 @@ def create_windows_from_events(
             accepted_bads_ratio,
             verbose,
             use_mne_epochs,
+            on_overlapping_events,
         )
         for ds in concat_ds.datasets
     )
@@ -478,6 +488,7 @@ def _create_windows_from_events(
     accepted_bads_ratio=0.0,
     verbose="error",
     use_mne_epochs=False,
+    on_overlapping_events: Literal["raise", "warn", "ignore"] = "raise",
 ):
     """Create WindowsDataset from RawDataset based on events.
 
@@ -587,8 +598,12 @@ def _create_windows_from_events(
         accepted_bads_ratio,
     )
 
-    if any(np.diff(starts) <= 0):
-        raise NotImplementedError("Trial overlap not implemented.")
+    if (on_overlapping_events != "ignore") and any(np.diff(starts) <= 0):
+        msg = "Overlapping trials detected. You can ignore, warn, or raise an error, using the on_overlapping_events argument."
+        if on_overlapping_events == "raise":
+            raise ValueError(msg)
+        if on_overlapping_events == "warn":
+            warnings.warn(msg)
 
     events = [
         [start, window_size_samples, description[i_trials[i_start]]]
