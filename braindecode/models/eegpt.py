@@ -347,7 +347,17 @@ class EEGPT(EEGModuleMixin, nn.Module):
             # Use provided final_layer (can be nn.Module or callable factory)
             if callable(final_layer) and not isinstance(final_layer, nn.Module):
                 # It's a factory function - call it to create the module
-                self.final_layer = final_layer()
+                layer = final_layer()
+                # Check if layer already includes Flatten
+                has_flatten = isinstance(layer, nn.Flatten) or (
+                    isinstance(layer, nn.Sequential)
+                    and len(layer) > 0
+                    and isinstance(layer[0], nn.Flatten)
+                )
+                if has_flatten:
+                    self.final_layer = layer
+                else:
+                    self.final_layer = nn.Sequential(nn.Flatten(1), layer)
             else:
                 self.final_layer = nn.Sequential(nn.Flatten(1), final_layer)
         else:
