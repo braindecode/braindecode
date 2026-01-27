@@ -349,7 +349,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
                 # It's a factory function - call it to create the module
                 self.final_layer = final_layer()
             else:
-                self.final_layer = final_layer
+                self.final_layer = nn.Sequential(nn.Flatten(1), final_layer)
         else:
             # Default: _LinearConstraintProbe (original EEGPT probe)
             self.final_layer = _LinearConstraintProbe(
@@ -421,9 +421,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             # Probe handles its own flattening
             return self.final_layer(z)
         else:
-            # Flatten encoder output for standard classification layers
-            h = z.flatten(1)
-            return self.final_layer(h)
+            return self.final_layer(z)
 
 
 # These channels correspond to a subset of the standard 10-20 system.
