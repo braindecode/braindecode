@@ -34,6 +34,11 @@ Enhancements
   pretrained weights available at `braindecode/eegpt-pretrained <https://huggingface.co/braindecode/eegpt-pretrained>`_
   (:gh:`908` by `Young Truong`_ and `Kuntal Kokate`_)
 - Add :class:`braindecode.models.CBraMod` model (:gh:`914` by `Pierre Guetschel`_)
+- Expose additional arguments of :func:`mne_bids.read_raw_bids` in :class:`braindecode.datasets.BIDSDataset` (:gh:`918` by `Pierre Guetschel`_)
+- Populate epochs metadata with the :class:`mne.Annotations`'s ``extras`` entries (:gh:`918` by `Pierre Guetschel`_)
+- Add :class:`braindecode.datasets.TUHEvents` dataset and improve other TUH datasets (:gh:`920` and :gh:`923` by `Pierre Guetschel`_)
+- Allow overlapping events in :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`923` by `Pierre Guetschel`_)
+
 
 API changes
 ============
@@ -45,7 +50,7 @@ Requirements
 
 Bugs
 =====
-- None yet.
+- Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb`` (:gh:`919` by `Pierre Guetschel`_)
 
 Code health
 ============

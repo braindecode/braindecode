@@ -407,12 +407,17 @@ def test_model_exported(model):
     # Models known to have export issues on Windows and Python 3.14+ (non-pytree-compatible attributes)
     model_name = model.__class__.__name__
 
+    not_exportable_models = [
+        "SyncNet",  # We found a fake tensor in the exported program constant's list.
+        "EEGMiner",  # We found a fake tensor in the exported program constant's list.
+        "SSTDPN",  # We found a fake tensor in the exported program constant's list.
+    ]
     if sys.platform.startswith("win"):
-        not_exportable_models_win = [
+        not_exportable_models += [
             "LUNA",  # Has _channel_location_cache dict that breaks pytree on Windows
         ]
-        if model_name in not_exportable_models_win:
-            pytest.skip(f"{model_name} export is not compatible on Windows")
+    if model_name in not_exportable_models:
+        pytest.skip(f"{model_name} export is not possible on this platform.")
 
     if sys.version_info >= (3, 14):
         not_exportable_models_py314 = [

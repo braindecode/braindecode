@@ -10,6 +10,7 @@ import copy
 import logging
 import platform
 import warnings
+from contextlib import nullcontext
 
 import mne
 import numpy as np
@@ -47,10 +48,30 @@ def _get_raw(tmpdir_factory, description=None):
 @pytest.fixture(scope="module")
 def concat_ds_targets():
     raws, description = fetch_data_with_moabb(
-        dataset_name="BNCI2014_001", subject_ids=4)
+        dataset_name="BNCI2014_001", subject_ids=4
+    )
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
     ds = RawDataset(raws[0], description.iloc[0])
+    concat_ds = BaseConcatDataset([ds])
+    return concat_ds, targets
+
+
+@pytest.fixture(scope="module")
+def concat_ds_targets_overlap():
+    rng = np.random.RandomState(42)
+    data = rng.randn(2, 2000).astype(np.float32)
+    onsets = [1.0, 3.1, 5.2]
+    durations = [2.5] * len(onsets)  # overlapping events
+    targets = rng.randint(0, 2, size=len(onsets))
+    targets_desc = {0: "T0", 1: "T1"}
+    descriptions = [targets_desc[t] for t in targets]
+    annotations = mne.Annotations(
+        onset=onsets, duration=durations, description=descriptions
+    )
+    raw = mne.io.RawArray(data, mne.create_info(ch_names=["ch0", "ch1"], sfreq=100))
+    raw.set_annotations(annotations)
+    ds = RawDataset(raw)
     concat_ds = BaseConcatDataset([ds])
     return concat_ds, targets
 
@@ -299,17 +320,51 @@ def test_single_sample_size_windows(concat_ds_targets):
     np.testing.assert_array_equal(ys[999::1000], targets)
 
 
-def test_overlapping_trial_offsets(concat_ds_targets):
-    concat_ds, _ = concat_ds_targets
-    with pytest.raises(NotImplementedError, match="Trial overlap not implemented."):
-        create_windows_from_events(
-            concat_ds=concat_ds,
-            trial_start_offset_samples=-2000,
-            trial_stop_offset_samples=0,
-            window_size_samples=1000,
-            window_stride_samples=1000,
-            drop_last_window=False,
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+@pytest.mark.parametrize("on_overlapping_events", ["raise", "warn", "ignore", "foo"])
+def test_overlapping_trial_offsets_warn(
+    concat_ds_targets_overlap, use_mne_epochs, on_overlapping_events
+):
+    concat_ds, _ = concat_ds_targets_overlap
+    msg = "Overlapping trials detected"
+    concat_ds, targets = concat_ds_targets_overlap
+    events, _ = mne.events_from_annotations(concat_ds.datasets[0].raw)
+    with (
+        pytest.warns(UserWarning, match=msg)
+        if on_overlapping_events == "warn"
+        else (
+            pytest.raises(ValueError, match=msg)
+            if on_overlapping_events == "raise"
+            else (
+                nullcontext()
+                if on_overlapping_events == "ignore"
+                else pytest.raises(
+                    ValueError,
+                    match=f"Invalid value {on_overlapping_events} for on_overlapping_events.",
+                )
+            )
         )
+    ):
+        windows = create_windows_from_events(
+            concat_ds,
+            use_mne_epochs=use_mne_epochs,
+            on_overlapping_events=on_overlapping_events,
+            trial_start_offset_samples=-100,
+            window_size_samples=50,
+            window_stride_samples=50,
+            accepted_bads_ratio=1.0,
+        )
+    if on_overlapping_events in ["ignore", "warn"]:
+        data = concat_ds.datasets[0].raw.get_data()
+        # assert len(windows) == len(targets) * 7 - 1
+        for i, (X, y, crop_inds) in enumerate(windows):
+            # test crop ids correctness
+            i_window_in_trial, i_start_in_trial, i_stop_in_trial = crop_inds
+            # assert events[i, 0] == i_start_in_trial + 100 * i_window_in_trial
+            # assert i_stop_in_trial - i_start_in_trial == 100
+            # test data correctness
+            np.testing.assert_array_equal(X, data[:, i_start_in_trial:i_stop_in_trial])
+            assert y == targets[i // 7]
 
 
 @pytest.mark.parametrize("preload", [(True, False)])
@@ -359,11 +414,11 @@ def test_windows_from_events_(lazy_loadable_dataset):
     ],
 )
 def test_fixed_length_windower(
-        start_offset_samples,
-        window_size_samples,
-        window_stride_samples,
-        drop_last_window,
-        mapping,
+    start_offset_samples,
+    window_size_samples,
+    window_stride_samples,
+    drop_last_window,
+    mapping,
 ):
     rng = np.random.RandomState(42)
     info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
@@ -401,14 +456,13 @@ def test_fixed_length_windower(
     if not drop_last_window and idxs[-1] != stop_offset_samples - window_size_samples:
         idxs = np.append(idxs, stop_offset_samples - window_size_samples)
 
-    assert len(
-        idxs) == epochs_data.shape[0], "Number of epochs different than expected"
+    assert len(idxs) == epochs_data.shape[0], "Number of epochs different than expected"
     assert (
         window_size_samples == epochs_data.shape[2]
     ), "Window size different than expected"
     for j, idx in enumerate(idxs):
         np.testing.assert_allclose(
-            base_ds.raw.get_data()[:, idx: idx + window_size_samples],
+            base_ds.raw.get_data()[:, idx : idx + window_size_samples],
             epochs_data[j, :],
             err_msg=f"Epochs different for epoch {j}",
         )
@@ -425,11 +479,11 @@ def test_fixed_length_windower(
     ],
 )
 def test_fixed_length_windower_lazy(
-        start_offset_samples,
-        window_size_samples,
-        window_stride_samples,
-        drop_last_window,
-        mapping,
+    start_offset_samples,
+    window_size_samples,
+    window_stride_samples,
+    drop_last_window,
+    mapping,
 ):
     rng = np.random.RandomState(42)
     info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
@@ -482,51 +536,87 @@ def test_fixed_length_windower_lazy(
         assert n == len(d_lazy.metadata)
         assert len(crop_inds) == len(crop_inds_lazy)
         assert len(y) == len(y_lazy)
-        assert all(crop_inds[i].tolist() ==
-                   crop_inds_lazy[i].tolist() for i in range(n))
+        assert all(
+            crop_inds[i].tolist() == crop_inds_lazy[i].tolist() for i in range(n)
+        )
         assert all(y[i] == y_lazy[i] for i in range(n))
 
 
 def test_lazy_dataframe():
     with pytest.raises(ValueError, match="Length must be a positive integer."):
-        _ = _LazyDataFrame(
-            length=-1, functions=dict(a=lambda i: 2 * i), columns=["a"])
-    with pytest.raises(ValueError, match="All columns must have a corresponding function."):
-        _ = _LazyDataFrame(length=10, columns=['a'], functions=dict())
+        _ = _LazyDataFrame(length=-1, functions=dict(a=lambda i: 2 * i), columns=["a"])
+    with pytest.raises(
+        ValueError, match="All columns must have a corresponding function."
+    ):
+        _ = _LazyDataFrame(length=10, columns=["a"], functions=dict())
     with pytest.raises(ValueError, match="Series must have exactly one column."):
-        _ = _LazyDataFrame(length=10, columns=['a', 'b'],
-                           functions=dict(a=lambda i: 2 * i, b=lambda i: 2 + i), series=True)
-    df = _LazyDataFrame(length=10, functions=dict(
-        a=lambda i: 2 * i), columns=["a"])
+        _ = _LazyDataFrame(
+            length=10,
+            columns=["a", "b"],
+            functions=dict(a=lambda i: 2 * i, b=lambda i: 2 + i),
+            series=True,
+        )
+    df = _LazyDataFrame(length=10, functions=dict(a=lambda i: 2 * i), columns=["a"])
     assert len(df) == 10
     assert all(df[i, "a"] == 2 * i for i in range(10))
     assert all((df[i] == pd.Series(dict(a=2 * i))).all() for i in range(10))
     assert all((df[i, :] == pd.Series(dict(a=2 * i))).all() for i in range(10))
     with pytest.raises(IndexError, match="index must be either \\[row\\] or"):
         _ = df[0, 0, 0]
-    with pytest.raises(IndexError, match="All columns must be present in the dataframe"):
+    with pytest.raises(
+        IndexError, match="All columns must be present in the dataframe"
+    ):
         _ = df[0, "b"]
-    with pytest.raises(NotImplementedError, match="Row indexing only supports either a single"):
+    with pytest.raises(
+        NotImplementedError, match="Row indexing only supports either a single"
+    ):
         _ = df[0:2]
     with pytest.raises(IndexError, match="out of bounds"):
         _ = df[10]
+
+
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_metadata_extras(lazy_loadable_dataset, use_mne_epochs):
+    dataset = copy.deepcopy(lazy_loadable_dataset)
+
+    # set extras
+    for ds in dataset.datasets:
+        ann = ds.raw.annotations
+        ann.extras = [{"extra_col": 0} for _ in range(len(ann))]
+
+    windows = create_windows_from_events(
+        concat_ds=dataset,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=False,
+        use_mne_epochs=use_mne_epochs,
+    )
+
+    for ds in windows.datasets:
+        metadata = windows.get_metadata()
+        assert "extra_col" in metadata.columns
+        np.testing.assert_array_equal(
+            metadata["extra_col"].to_numpy(), np.zeros(len(windows))
+        )
 
 
 @pytest.mark.parametrize(
     "drop_bad_windows,picks,flat,reject",
     [
         (True, None, None, None),
-        (False, ['ch0'], None, None),
+        (False, ["ch0"], None, None),
         (False, None, {}, None),
         (False, None, None, {}),
-    ]
+    ],
 )
 def test_not_use_mne_epochs_fail(
-        drop_bad_windows,
-        picks,
-        flat,
-        reject,
-        lazy_loadable_dataset,
+    drop_bad_windows,
+    picks,
+    flat,
+    reject,
+    lazy_loadable_dataset,
 ):
     with pytest.raises(ValueError, match="Cannot set use_mne_epochs=False"):
         _ = create_windows_from_events(
@@ -543,20 +633,17 @@ def test_not_use_mne_epochs_fail(
     "drop_bad_windows,picks,flat,reject",
     [
         (True, None, None, None),
-        (False, ['ch0'], None, None),
+        (False, ["ch0"], None, None),
         (False, None, {}, None),
         (False, None, None, {}),
-    ]
+    ],
 )
 def test_auto_use_mne_epochs(
-        drop_bad_windows,
-        picks,
-        flat,
-        reject,
-        lazy_loadable_dataset
+    drop_bad_windows, picks, flat, reject, lazy_loadable_dataset
 ):
-    with pytest.warns(UserWarning,
-                      match='mne Epochs are created, which will be substantially slower'):
+    with pytest.warns(
+        UserWarning, match="mne Epochs are created, which will be substantially slower"
+    ):
         windows = create_windows_from_events(
             lazy_loadable_dataset,
             drop_bad_windows=drop_bad_windows,
@@ -568,7 +655,7 @@ def test_auto_use_mne_epochs(
     assert all(isinstance(w.windows, mne.Epochs) for w in windows.datasets)
 
 
-@pytest.mark.parametrize('use_mne_epochs', [False, None])
+@pytest.mark.parametrize("use_mne_epochs", [False, None])
 def test_not_use_mne_epochs(use_mne_epochs, lazy_loadable_dataset):
     message = (
         "Using reject or picks or flat or dropping bad windows means "
@@ -576,7 +663,7 @@ def test_not_use_mne_epochs(use_mne_epochs, lazy_loadable_dataset):
         "which will be substantially slower and may be deprecated in the future."
     )
     with warnings.catch_warnings():
-        warnings.filterwarnings('error', message=message)
+        warnings.filterwarnings("error", message=message)
         windows = create_windows_from_events(
             lazy_loadable_dataset,
             drop_bad_windows=False,
@@ -754,6 +841,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                     "flat": flat,
                     "on_missing": on_missing,
                     "accepted_bads_ratio": 0.0,
+                    'on_overlapping_events': 'raise',
                     "verbose": "error",
                     "use_mne_epochs": True,
                 },
@@ -858,7 +946,9 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
         verbose=True,
     )
     options = ["np.str_('left_hand'), np.str_('tongue')", "'left_hand', 'tongue'"]
-    assert any(f"Used Annotations descriptions: [{opt}]" in caplog.text for opt in options)
+    assert any(
+        f"Used Annotations descriptions: [{opt}]" in caplog.text for opt in options
+    )
     caplog.clear()
 
     # verbose is False, so we expect to see the used annotations descriptions
@@ -894,7 +984,7 @@ def test_window_sizes_too_large(concat_ds_targets):
     # Window size larger than all trials
     window_size = len(concat_ds.datasets[0]) + 1
     with pytest.raises(
-            ValueError, match=f"Window size {window_size} exceeds trial durat"
+        ValueError, match=f"Window size {window_size} exceeds trial durat"
     ):
         create_windows_from_events(
             concat_ds=concat_ds,
@@ -906,7 +996,7 @@ def test_window_sizes_too_large(concat_ds_targets):
         )
 
     with pytest.raises(
-            ValueError, match=f"Window size {window_size} exceeds trial durat"
+        ValueError, match=f"Window size {window_size} exceeds trial durat"
     ):
         create_fixed_length_windows(
             concat_ds=concat_ds,
@@ -919,8 +1009,7 @@ def test_window_sizes_too_large(concat_ds_targets):
     annots = concat_ds.datasets[0].raw.annotations
     annot_0 = annots[0]
     # Window equal original trials size
-    window_size = int(annot_0["duration"] *
-                      concat_ds.datasets[0].raw.info["sfreq"])
+    window_size = int(annot_0["duration"] * concat_ds.datasets[0].raw.info["sfreq"])
 
     # Make first trial 1 second shorter
     annot_0["duration"] -= 1
@@ -958,8 +1047,7 @@ def dataset_target_time_series():
     targets = np.full((2, 1000), np.nan)
     targets_sfreq = 10
     targets_stride = int(signal_sfreq / targets_sfreq)
-    targets[:, ::targets_stride] = rng.randn(
-        2, int(targets.shape[1] / targets_stride))
+    targets[:, ::targets_stride] = rng.randn(2, int(targets.shape[1] / targets_stride))
 
     raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
@@ -980,7 +1068,7 @@ def test_windower_from_target_channels(dataset_target_time_series):
         target_idx = i * 5 + 100
         np.testing.assert_array_almost_equal(targets[:, target_idx], y)
         np.testing.assert_array_almost_equal(
-            signal[:, target_idx - 99: target_idx + 1], epoch
+            signal[:, target_idx - 99 : target_idx + 1], epoch
         )
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds
@@ -997,10 +1085,10 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         epoch, y, window_inds = windows_dataset[i]
         target_idx = i * 5 + 100
         np.testing.assert_array_almost_equal(
-            targets[:, target_idx - 99: target_idx + 1], y
+            targets[:, target_idx - 99 : target_idx + 1], y
         )
         np.testing.assert_array_almost_equal(
-            signal[:, target_idx - 99: target_idx + 1], epoch
+            signal[:, target_idx - 99 : target_idx + 1], epoch
         )
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds

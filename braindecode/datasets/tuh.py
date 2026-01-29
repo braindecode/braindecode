@@ -15,7 +15,8 @@ import os
 import re
 import warnings
 from datetime import datetime, timezone
-from typing import Iterable
+from pathlib import Path
+from typing import Iterable, Literal
 from unittest import mock
 
 import mne
@@ -23,7 +24,7 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseConcatDataset, RawDataset
+from braindecode.datasets.base import BaseConcatDataset, RawDataset
 
 
 class TUH(BaseConcatDataset):
@@ -52,6 +53,11 @@ class TUH(BaseConcatDataset):
         If True, rename the EEG channels to the standard 10-05 system.
     set_montage : bool
         If True, set the montage to the standard 10-05 system.
+    on_missing_files : Literal['warn', 'raise']
+        Behavior when the number of files found in the dataset directory
+        does not match the expected number of files.
+    version: Literal['v1.1.0', 'v1.2.0']
+        Version of the TUH EEG Corpus to use. Currently only v1.1.0 and v1.2.0 are supported.
     n_jobs : int
         Number of jobs to be used to read files in parallel.
     """
@@ -65,16 +71,46 @@ class TUH(BaseConcatDataset):
         add_physician_reports: bool = False,
         rename_channels: bool = False,
         set_montage: bool = False,
+        on_missing_files: Literal["warn", "raise"] = "raise",
+        version: Literal["v1.1.0", "v1.2.0", "v2.0.1"] = "v2.0.1",
         n_jobs: int = 1,
     ):
+        self.version = version
+        if on_missing_files not in ["warn", "raise"]:
+            raise ValueError(
+                "on_missing_files must be either 'warn' or 'raise', "
+                f"got {on_missing_files}."
+            )
         if set_montage:
             assert rename_channels, (
                 "If set_montage is True, rename_channels must be True."
             )
         # create an index of all files and gather easily accessible info
         # without actually touching the files
-        file_paths = glob.glob(os.path.join(path, "**/*.edf"), recursive=True)
-        descriptions = _create_description(file_paths)
+        file_paths = glob.glob(
+            os.path.join(path, f"{version}/**/*.edf"), recursive=True
+        )
+
+        # check files count
+        if self._expected_files_count is None:
+            warnings.warn(
+                f"Could not verify that the number of files in {self.__class__.__name__} "
+                "dataset is correct. If you have the dataset completely downloaded, "
+                "please open an issue to add the expected number of files for this version."
+            )
+        elif (files_count := len(file_paths)) != self._expected_files_count:
+            msg = (
+                f"Expected {self._expected_files_count} files but found "
+                f"{files_count} files in {path} for "
+                f"{self.__class__.__name__} dataset. The dataset might be "
+                "incomplete."
+            )
+            if on_missing_files == "raise":
+                raise RuntimeError(msg)
+            else:
+                warnings.warn(msg)
+
+        descriptions = _create_description(file_paths, self.version, self._ds_name)
         # sort the descriptions chronologicaly
         descriptions = _sort_chronologically(descriptions)
         # limit to specified recording ids before doing slow stuff
@@ -122,6 +158,14 @@ class TUH(BaseConcatDataset):
                 for i in descriptions.columns
             )
         super().__init__(base_datasets)
+
+    @property
+    def _expected_files_count(self) -> int | None:
+        return None
+
+    @property
+    def _ds_name(self) -> str:
+        return "tuh"
 
     @staticmethod
     def _rename_channels(raw):
@@ -220,16 +264,19 @@ class TUH(BaseConcatDataset):
         return base_dataset
 
 
-def _create_description(file_paths):
-    descriptions = [_parse_description_from_file_path(f) for f in file_paths]
+def _create_description(file_paths, version, ds_name):
+    descriptions = [
+        _parse_description_from_file_path(f, version, ds_name) for f in file_paths
+    ]
     descriptions = pd.DataFrame(descriptions)
     return descriptions.T
 
 
 def _sort_chronologically(descriptions):
-    descriptions.sort_values(
-        ["year", "month", "day", "subject", "session", "segment"], axis=1, inplace=True
-    )
+    # last resort, we use path to sort (always available):
+    sort_cols = ["year", "month", "day", "subject", "session", "segment", "path"]
+    available_cols = [col for col in sort_cols if col in descriptions.index]
+    descriptions.sort_values(available_cols, axis=1, inplace=True)
     return descriptions
 
 
@@ -241,11 +288,17 @@ def _read_date(file_path):
     # otherwise read edf file, extract date and store to file
     else:
         raw = mne.io.read_raw_edf(file_path, preload=False, verbose="error")
-        description = {
-            "year": raw.info["meas_date"].year,
-            "month": raw.info["meas_date"].month,
-            "day": raw.info["meas_date"].day,
-        }
+        meas_date = raw.info["meas_date"]
+
+        description = (
+            {
+                "year": meas_date.year,
+                "month": meas_date.month,
+                "day": meas_date.day,
+            }
+            if meas_date is not None
+            else {}  # saving and returning an empty date to avoid re-reading every time
+        )
         # if the txt file storing the recording date does not exist, create it
         try:
             pd.Series(description).to_json(date_path)
@@ -257,27 +310,28 @@ def _read_date(file_path):
     return description
 
 
-def _parse_description_from_file_path(file_path):
+def _parse_description_from_file_path(
+    file_path, version, ds_name: Literal["tuh", "abnormal", "events"]
+):
     # stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python  # noqa
+    msg = f"Unexpected filename format '{file_path}'; return minimal description"
     file_path = os.path.normpath(file_path)
     tokens = file_path.split(os.sep)
-    # Extract version number and tuh_eeg_abnormal/tuh_eeg from file path
-    if ("train" in tokens) or ("eval" in tokens):  # tuh_eeg_abnormal
-        abnormal = True
-        # Tokens[-2] is channel configuration (always 01_tcp_ar in abnormal)
-        # on new versions, or
-        #               session (e.g. s004_2013_08_15) on old versions
-        if tokens[-2].split("_")[0][0] == "s":  # s denoting session number
-            version = tokens[-9]  # Before dec 2022 updata
-        else:
-            version = tokens[-6]  # After the dec 2022 update
+    # If an absolute path on POSIX the first token is empty string; drop it
+    if tokens and tokens[0] == "":
+        tokens = tokens[1:]
 
-    else:  # tuh_eeg
-        abnormal = False
-        version = tokens[-7]
-    v_number = int(version[1])
+    # Extract version number
+    v_match = re.match(r"v(\d+)\.\d+\.\d+", version)
+    if v_match is None:
+        raise ValueError(
+            f"Could not parse version number from version string {version}."
+        )
+    v_number = int(v_match.group(1))
 
-    if (abnormal and v_number >= 3) or ((not abnormal) and v_number >= 2):
+    if (ds_name == "abnormal" and v_number >= 3) or (
+        (ds_name == "tuh") and v_number >= 2
+    ):
         # New file path structure for versions after december 2022,
         # expect file paths as
         # tuh_eeg/v2.0.0/edf/000/aaaaaaaa/
@@ -298,11 +352,48 @@ def _parse_description_from_file_path(file_path):
                 "segment": int(segment[1:]),
             }
         )
-        if not abnormal:
+        if ds_name != "abnormal":
             year, month, day = tokens[-3].split("_")[1:]
             description["year"] = int(year)
             description["month"] = int(month)
             description["day"] = int(day)
+        return description
+    elif ds_name == "events" and v_number >= 2:
+        # Train path example: tuh_eeg_events/v2.0.1/edf/train/aaaaaaar/aaaaaaar_00000001.edf"
+        # Eval path example: tuh_eeg_events/v2.0.1/edf/eval/000/bckg_000_a_.edf
+        split_name = tokens[-3]
+        if split_name not in {"train", "eval"}:
+            warnings.warn(msg)
+            return {"path": file_path, "version": version}
+        base_name = tokens[-1]
+        regex = (
+            r"(?P<subject_id>[a-z]+)_(?P<session>\d+).edf"
+            if split_name == "train"
+            else r"(?P<event_prefix>[a-z]+)_(?P<subject_id>\d+?)_a_(?P<run>\d*).edf"
+        )
+        match = re.match(regex, base_name)
+        if match is None:
+            warnings.warn(msg)
+            return {"path": file_path, "version": version}
+        description = _read_date(file_path)
+        session = int(match.group("session")) if "session" in match.groupdict() else 1
+        event_prefix = (
+            match.group("event_prefix") if "event_prefix" in match.groupdict() else None
+        )
+        run = match.group("run") if "run" in match.groupdict() else 0
+        if run is not None:
+            run = 0 if run == "" else int(run)
+        description.update(
+            {
+                "path": file_path,
+                "version": version,
+                "subject": match.group("subject_id"),
+                "session": session,
+                "split": split_name,
+                "event_prefix": event_prefix,
+                "run": run,
+            }
+        )
         return description
     else:  # Old file path structure
         # expect file paths as tuh_eeg/version/file_type/reference/data_split/
@@ -382,7 +473,7 @@ def _parse_age_and_gender_from_edf_header(file_path):
 class TUHAbnormal(TUH):
     """Temple University Hospital (TUH) Abnormal EEG Corpus.
 
-    see www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tuab
+    see https://isip.piconepress.com/projects/nedc/html/tuh_eeg/index.shtml#c_tuab
 
     Parameters
     ----------
@@ -405,6 +496,11 @@ class TUHAbnormal(TUH):
         If True, rename the EEG channels to the standard 10-05 system.
     set_montage : bool
         If True, set the montage to the standard 10-05 system.
+    on_missing_files : Literal["warn", "raise"]
+        Behavior when the number of files found in the dataset directory
+        does not match the expected number of files.
+    version: Literal['v2.0.0']
+        Version of the TUH Abnormal EEG Corpus to use. Currently only 'v2.0.0' is supported.
     n_jobs : int
         Number of jobs to be used to read files in parallel.
     """
@@ -418,6 +514,8 @@ class TUHAbnormal(TUH):
         add_physician_reports: bool = False,
         rename_channels: bool = False,
         set_montage: bool = False,
+        on_missing_files: Literal["warn", "raise"] = "raise",
+        version: Literal["v2.0.0", "v3.0.1"] = "v3.0.1",
         n_jobs: int = 1,
     ):
         super().__init__(
@@ -428,6 +526,8 @@ class TUHAbnormal(TUH):
             add_physician_reports=add_physician_reports,
             rename_channels=rename_channels,
             set_montage=set_montage,
+            on_missing_files=on_missing_files,
+            version=version,  # type: ignore[arg-type]
             n_jobs=n_jobs,
         )
         additional_descriptions = []
@@ -456,6 +556,221 @@ class TUHAbnormal(TUH):
             "train": "train" in tokens,
             "pathological": "abnormal" in tokens,
         }
+
+    @property
+    def _expected_files_count(self):
+        if self.version == "v3.0.1":
+            # dataset.description.groupby(["train", "pathological"]).path.count()
+            # train  pathological
+            # False  False            150
+            #        True             126
+            # True   False           1371
+            #        True            1346
+            return 2993
+        return None
+
+    @property
+    def _ds_name(self):
+        return "abnormal"
+
+
+# mapping for numeric rec labels
+EVENTS_MAP = {
+    "1": "spsw",
+    "2": "gped",
+    "3": "pled",
+    "4": "eyem",
+    "5": "artf",
+    "6": "bckg",
+}
+
+
+class TUHEvents(TUH):
+    """Temple University Hospital (TUH) EEG Event Corpus.
+
+    This is a thin wrapper around :class:`TUH` that extracts event annotations
+    (from accompanying ``.rec`` or ``.lab`` files when available) and stores
+    them in the dataset description under the ``events`` key.
+
+    The dataset layout follows the TUH EEG Event Corpus structure (train/eval
+    folders) as documented in the corpus README.
+
+    see https://isip.piconepress.com/projects/nedc/html/tuh_eeg/index.shtml#c_tuev
+
+    The event names are mapped as follows:
+
+    - '1' -> 'spsw' (spike and slow wave)
+    - '2' -> 'gped' (generalized periodic epileptiform discharge)
+    - '3' -> 'pled' (periodic lateralized epileptiform discharge)
+    - '4' -> 'eyem' (eye movement)
+    - '5' -> 'artf' (artifact)
+    - '6' -> 'bckg' (background)
+
+    Parameters
+    ----------
+    path : str
+        Parent directory of the dataset.
+    recording_ids : list(int) | int
+        A (list of) int of recording id(s) to be read (order matters and will
+        overwrite default chronological order, e.g. if recording_ids=[1,0],
+        then the first recording returned by this class will be chronologically
+        later then the second recording. Provide recording_ids in ascending
+        order to preserve chronological order.).
+    target_name : str | None
+        Can be 'gender', 'age', or None. Use None when using events labels as target.
+    preload : bool
+        If True, preload the data of the Raw objects.
+    add_physician_reports : bool
+        If True, the physician reports will be read from disk and added to the
+        description.
+    rename_channels : bool
+        If True, rename the EEG channels to the standard 10-05 system.
+    set_montage : bool
+        If True, set the montage to the standard 10-05 system.
+    channel_events : bool
+        If True, add channel-specific event annotations to the Raw objects.
+        If False, only global events will be added.
+    merge_events : bool
+        If True, merge consecutive identical events into a single event with
+        duration covering the entire span.
+    on_missing_files : Literal["warn", "raise"]
+        Behavior when the number of files found in the dataset directory
+        does not match the expected number of files.
+    version: Literal['v2.0.1']
+        Version of the TUH Events EEG Corpus to use. Currently only 'v2.0.1' is supported.
+    n_jobs : int
+        Number of jobs to be used to read files in parallel.
+    """
+
+    def __init__(
+        self,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | tuple[str, ...] | None = None,
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        rename_channels: bool = False,
+        set_montage: bool = False,
+        channel_events: bool = False,
+        merge_events: bool = True,
+        on_missing_files: Literal["warn", "raise"] = "raise",
+        version: Literal["v2.0.1"] = "v2.0.1",
+        n_jobs: int = 1,
+    ):
+        if merge_events and channel_events:
+            raise NotImplementedError(
+                "Merging events is not implemented for channel-specific events."
+            )
+        super().__init__(
+            path=path,
+            recording_ids=recording_ids,
+            preload=preload,
+            target_name=target_name,
+            add_physician_reports=add_physician_reports,
+            rename_channels=rename_channels,
+            set_montage=set_montage,
+            on_missing_files=on_missing_files,
+            version=version,  # type: ignore[arg-type]
+            n_jobs=n_jobs,
+        )
+
+        for ds in self.datasets:
+            file_path = ds.description.loc["path"]
+            self._set_annotations(
+                file_path,
+                ds.raw,
+                channel_events=channel_events,
+                merge_events=merge_events,
+            )
+
+    @property
+    def _expected_files_count(self):
+        if self.version == "v2.0.1":
+            return 518  # 159 (eval) + 359 (train)
+        return None
+
+    @property
+    def _ds_name(self):
+        return "events"
+
+    @staticmethod
+    def _set_annotations(
+        file_path: str | Path, raw: mne.io.Raw, channel_events: bool, merge_events: bool
+    ):
+        """Parse event annotations for a single EDF file.
+        Then set the annotations in the provided raw object."""
+        file_path = Path(file_path)
+        rec_path = file_path.parent / (file_path.stem + ".rec")
+        ch_names = raw.ch_names
+
+        if not rec_path.exists():
+            warnings.warn(
+                f"File '{rec_path}' does not exist. No event annotations will be added."
+            )
+            return None
+        onsets = []
+        durations = []
+        descriptions = []
+        ch_name_list: list[list[str]] = []
+        lines = rec_path.read_text().splitlines()
+        for line in lines:
+            parts = line.strip().split(",")
+            if len(parts) != 4:
+                warnings.warn(
+                    f"Unexpected format in '{rec_path}': '{line}'. No event annotations will be added."
+                )
+                return None
+            channel_idx, start, stop, event_code = parts
+            if event_code not in EVENTS_MAP:
+                warnings.warn(
+                    f"Unknown event code '{event_code}' in '{rec_path}'. No event annotations will be added."
+                )
+                return None
+            onsets.append(float(start))
+            durations.append(float(stop) - float(start))
+            descriptions.append(EVENTS_MAP[event_code])
+            ch_name_list.append([ch_names[int(channel_idx)]])
+
+        # remove duplicates
+        if not channel_events:
+            unique_events = set(zip(onsets, durations, descriptions))
+            onsets, durations, descriptions = zip(*unique_events)  # type: ignore[assignment]
+        # merge consecutive events
+        if merge_events:
+            assert not channel_events
+            merged_onsets: list[float] = []
+            merged_durations: list[float] = []
+            merged_descriptions: list[str] = []
+            sorted_events = sorted(zip(onsets, durations, descriptions))
+            unique_descriptions = set(descriptions)
+            for description in unique_descriptions:
+                new = True
+                for onset, duration, this_description in sorted_events:
+                    if this_description != description:
+                        continue
+                    if new or (onset > merged_onsets[-1] + merged_durations[-1]):
+                        # initialize new event
+                        merged_onsets.append(onset)
+                        merged_durations.append(duration)
+                        merged_descriptions.append(this_description)
+                    else:
+                        # update last event duration
+                        merged_durations[-1] = (onset + duration) - merged_onsets[-1]
+                    new = False
+            onsets = merged_onsets
+            durations = merged_durations
+            descriptions = merged_descriptions
+        # sort by onset time
+        sorted_events = sorted(zip(onsets, durations, descriptions))
+        onsets, durations, descriptions = zip(*sorted_events)  # type: ignore[assignment]
+
+        annotations = mne.Annotations(
+            onset=onsets,
+            duration=durations,
+            description=descriptions,
+            ch_names=ch_name_list if channel_events else None,
+        )
+        raw.set_annotations(annotations)
 
 
 def _fake_raw(*args, **kwargs):
@@ -491,47 +806,76 @@ def _fake_raw(*args, **kwargs):
 
 
 def _get_header(*args, **kwargs):
-    all_paths = {**_TUH_EEG_PATHS, **_TUH_EEG_ABNORMAL_PATHS}
+    all_paths = {}
+    for paths_dict in [_TUH_EEG_PATHS, _TUH_EEG_ABNORMAL_PATHS, _TUH_EEG_EVENTS_PATHS]:
+        for version_dict in paths_dict.values():
+            all_paths.update(version_dict)
     return all_paths[args[0]]
 
 
 _TUH_EEG_PATHS = {
-    # These are actual file paths and edf headers from the TUH EEG Corpus (v1.1.0 and v1.2.0)
-    "tuh_eeg/v1.1.0/edf/01_tcp_ar/000/00000000/s001_2015_12_30/00000000_s001_t000.edf": b"0       00000000 M 01-JAN-1978 00000000 Age:37                                          ",
-    # noqa E501
-    "tuh_eeg/v1.1.0/edf/01_tcp_ar/099/00009932/s004_2014_09_30/00009932_s004_t013.edf": b"0       00009932 F 01-JAN-1961 00009932 Age:53                                          ",
-    # noqa E501
-    "tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000058/s001_2003_02_05/00000058_s001_t000.edf": b"0       00000058 M 01-JAN-2003 00000058 Age:0.0109                                      ",
-    # noqa E501
-    "tuh_eeg/v1.1.0/edf/03_tcp_ar_a/123/00012331/s003_2014_12_14/00012331_s003_t002.edf": b"0       00012331 M 01-JAN-1975 00012331 Age:39                                          ",
-    # noqa E501
-    "tuh_eeg/v1.2.0/edf/03_tcp_ar_a/149/00014928/s004_2016_01_15/00014928_s004_t007.edf": b"0       00014928 F 01-JAN-1933 00014928 Age:83                                          ",
-    # noqa E501
+    "v1.1.0": {
+        "tuh_eeg/v1.1.0/edf/01_tcp_ar/099/00009932/s004_2014_09_30/00009932_s004_t013.edf": b"0       00009932 F 01-JAN-1961 00009932 Age:53                                          ",
+        # noqa E501
+        # These are actual file paths and edf headers from the TUH EEG Corpus (v1.1.0 and v1.2.0)
+        "tuh_eeg/v1.1.0/edf/01_tcp_ar/000/00000000/s001_2015_12_30/00000000_s001_t000.edf": b"0       00000000 M 01-JAN-1978 00000000 Age:37                                          ",
+        # noqa E501
+        "tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000058/s001_2003_02_05/00000058_s001_t000.edf": b"0       00000058 M 01-JAN-2003 00000058 Age:0.0109                                      ",
+        # noqa E501
+        "tuh_eeg/v1.1.0/edf/03_tcp_ar_a/123/00012331/s003_2014_12_14/00012331_s003_t002.edf": b"0       00012331 M 01-JAN-1975 00012331 Age:39                                          ",
+        # noqa E501
+    },
+    "v1.2.0": {
+        "tuh_eeg/v1.2.0/edf/03_tcp_ar_a/149/00014928/s004_2016_01_15/00014928_s004_t007.edf": b"0       00014928 F 01-JAN-1933 00014928 Age:83                                          ",
+        # noqa E501
+    },
 }
 _TUH_EEG_ABNORMAL_PATHS = {
-    # these are actual file paths and edf headers from TUH Abnormal EEG Corpus (v2.0.0)
-    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/078/00007871/s001_2011_07_05/00007871_s001_t001.edf": b"0       00007871 F 01-JAN-1988 00007871 Age:23                                          ",
-    # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/097/00009777/s001_2012_09_17/00009777_s001_t000.edf": b"0       00009777 M 01-JAN-1986 00009777 Age:26                                          ",
-    # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf": b"0       00008393 M 01-JAN-1960 00008393 Age:52                                          ",
-    # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/012/00001200/s003_2010_12_06/00001200_s003_t000.edf": b"0       00001200 M 01-JAN-1963 00001200 Age:47                                          ",
-    # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf": b"0       00005932 M 01-JAN-1963 00005932 Age:50                                          ",
-    # noqa E501
+    "v2.0.0": {
+        # these are actual file paths and edf headers from TUH Abnormal EEG Corpus (v2.0.0)
+        "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/078/00007871/s001_2011_07_05/00007871_s001_t001.edf": b"0       00007871 F 01-JAN-1988 00007871 Age:23                                          ",
+        # noqa E501
+        "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/097/00009777/s001_2012_09_17/00009777_s001_t000.edf": b"0       00009777 M 01-JAN-1986 00009777 Age:26                                          ",
+        # noqa E501
+        "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf": b"0       00008393 M 01-JAN-1960 00008393 Age:52                                          ",
+        # noqa E501
+        "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/012/00001200/s003_2010_12_06/00001200_s003_t000.edf": b"0       00001200 M 01-JAN-1963 00001200 Age:47                                          ",
+        # noqa E501
+        "tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf": b"0       00005932 M 01-JAN-1963 00005932 Age:50                                          ",
+        # noqa E501
+    }
 }
+_TUH_EEG_EVENTS_PATHS = {
+    "v2.0.1": {
+        "tuh_eeg_events/v2.0.1/edf/eval/000/bckg_000_a_.edf": b"0       000 F 01-JAN-0000 000 Age:36                                                    ",  # noaq E501
+        "tuh_eeg_events/v2.0.1/edf/train/aaaaaaar/aaaaaaar_00000001.edf": b"0       /aa F 01-JAN-0000 /aa Age:19                                                    ",  # noqa E501
+        "tuh_eeg_events/v2.0.1/edf/eval/001/pled_001_a_2.edf": b"0       001 F 01-JAN-0000 001 Age:68                                                    ",  # noqa E501
+    }
+}
+
+
+class _MockGlob:
+    def __init__(self, paths):
+        self.paths = paths
+
+    def __call__(self, pattern, *args, **kwargs):
+        # Find the version
+        for version in self.paths.keys():
+            if version in pattern:
+                return list(self.paths[version].keys())
+        raise ValueError(
+            f"CCould not find a known version in pattern: {pattern=}, known versions: {list(self.paths.keys())}"
+        )
 
 
 class _TUHMock(TUH):
     """Mocked class for testing and examples."""
 
-    @mock.patch("glob.glob", return_value=_TUH_EEG_PATHS.keys())
+    @mock.patch("glob.glob", new=_MockGlob(_TUH_EEG_PATHS))
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
     def __init__(
         self,
-        mock_glob,
         path: str,
         recording_ids: list[int] | None = None,
         target_name: str | tuple[str, ...] | None = None,
@@ -539,6 +883,8 @@ class _TUHMock(TUH):
         add_physician_reports: bool = False,
         rename_channels: bool = False,
         set_montage: bool = False,
+        on_missing_files: Literal["warn", "raise"] = "raise",
+        version: Literal["v1.1.0", "v1.2.0"] = "v1.2.0",
         n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
@@ -551,14 +897,24 @@ class _TUHMock(TUH):
                 add_physician_reports=add_physician_reports,
                 rename_channels=rename_channels,
                 set_montage=set_montage,
+                on_missing_files=on_missing_files,
+                version=version,
                 n_jobs=n_jobs,
             )
+
+    @property
+    def _expected_files_count(self):
+        if self.version == "v1.1.0":
+            return 4
+        if self.version == "v1.2.0":
+            return 1
+        return None
 
 
 class _TUHAbnormalMock(TUHAbnormal):
     """Mocked class for testing and examples."""
 
-    @mock.patch("glob.glob", return_value=_TUH_EEG_ABNORMAL_PATHS.keys())
+    @mock.patch("glob.glob", new=_MockGlob(_TUH_EEG_ABNORMAL_PATHS))
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
     @mock.patch(
@@ -566,7 +922,6 @@ class _TUHAbnormalMock(TUHAbnormal):
     )
     def __init__(
         self,
-        mock_glob,
         mock_report,
         path: str,
         recording_ids: list[int] | None = None,
@@ -575,6 +930,8 @@ class _TUHAbnormalMock(TUHAbnormal):
         add_physician_reports: bool = False,
         rename_channels: bool = False,
         set_montage: bool = False,
+        on_missing_files: Literal["warn", "raise"] = "raise",
+        version: Literal["v2.0.0"] = "v2.0.0",
         n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
@@ -587,5 +944,54 @@ class _TUHAbnormalMock(TUHAbnormal):
                 add_physician_reports=add_physician_reports,
                 rename_channels=rename_channels,
                 set_montage=set_montage,
+                on_missing_files=on_missing_files,
+                version=version,
                 n_jobs=n_jobs,
             )
+
+    @property
+    def _expected_files_count(self):
+        if self.version == "v2.0.0":
+            return 5
+        return None
+
+
+class _TUHEventsMock(TUHEvents):
+    """Mocked class for testing and examples."""
+
+    @mock.patch("glob.glob", new=_MockGlob(_TUH_EEG_EVENTS_PATHS))
+    @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
+    @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
+    def __init__(
+        self,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | tuple[str, ...] | None = "pathological",
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        rename_channels: bool = False,
+        set_montage: bool = False,
+        on_missing_files: Literal["warn", "raise"] = "raise",
+        version: Literal["v2.0.1"] = "v2.0.1",
+        n_jobs: int = 1,
+    ):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Cannot save date file")
+            super().__init__(
+                path=path,
+                recording_ids=recording_ids,
+                target_name=target_name,
+                preload=preload,
+                add_physician_reports=add_physician_reports,
+                rename_channels=rename_channels,
+                set_montage=set_montage,
+                on_missing_files=on_missing_files,
+                version=version,
+                n_jobs=n_jobs,
+            )
+
+    @property
+    def _expected_files_count(self):
+        if self.version == "v2.0.1":
+            return 3
+        return None
