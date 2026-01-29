@@ -553,7 +553,24 @@ def filterbank(
         ch_types = filtered.info.get_channel_types()
         sampling_freq = filtered.info["sfreq"]
 
+        # Preserve info fields to avoid merge conflicts when adding channels
+        # These fields need to match across all raw objects being merged
+        fields_to_preserve = [
+            "description",
+            "line_freq",
+            "device_info",
+            "helium_info",
+            "experimenter",
+            "proj_name",
+        ]
+
         info = create_info(ch_names=ch_names, ch_types=ch_types, sfreq=sampling_freq)
+
+        # Copy fields from original info if they exist
+        for field in fields_to_preserve:
+            value = filtered.info.get(field)
+            if value is not None:
+                info[field] = value
 
         filtered.info = info
 

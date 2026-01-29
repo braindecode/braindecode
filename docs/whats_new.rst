@@ -50,6 +50,9 @@ Requirements
 
 Bugs
 =====
+- Fix :func:`braindecode.preprocessing.preprocess.filterbank` to preserve info fields
+  (``description``, ``line_freq``, ``device_info``, etc.) when creating filtered copies,
+  avoiding merge conflicts in MNE when adding channels (:gh:`928` by `Bruno Aristimunha`_)
 - Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb`` (:gh:`919` by `Pierre Guetschel`_)
 
 Code health
