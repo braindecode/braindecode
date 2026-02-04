@@ -22,7 +22,37 @@
 .. _current:
 
 
-Current 1.4.0 (stable)
+Current 1.5.0 (Github)
+===============================
+
+Detailed list of changes
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+🚀 Enhancements
+^^^^^^^^^^^^^^^
+
+🧐 API and behavior changes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- None yet
+
+🛠 Requirements
+^^^^^^^^^^^^^^^
+
+- None yet
+
+🪲 Bug fixes
+^^^^^^^^^^^^
+
+- None yet
+
+⚕️ Code health
+^^^^^^^^^^^^^^
+
+- None yet
+
+
+Current 1.4 (stable)
 ===============================
 
 Enhancements
@@ -41,7 +71,14 @@ Enhancements
 
 Bugs
 =====
-- Remove ``pandas<3.0`` restriction by requiring ``wfdb>=4.3.1`` which resolves the pandas 3.x incompatibility (:gh:`919` by `Pierre Guetschel`_)
+- Remove ``pandas<3.0`` restriction by requiring ``wfdb>=4.3.1`` which resolves the pandas 3.x incompatibility (:gh:`919` by `Bruno Aristimunha`_)
+- Fix :func:`braindecode.preprocessing.preprocess.filterbank` to preserve info fields
+  (``description``, ``line_freq``, ``device_info``, etc.) when creating filtered copies,
+  avoiding merge conflicts in MNE when adding channels (:gh:`928` by `Bruno Aristimunha`_)
+- Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb`` (:gh:`919` by `Pierre Guetschel`_)
+
+Code health
+- None yet.
 
 
 Current 1.3.2 (stable)
