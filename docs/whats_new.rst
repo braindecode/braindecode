@@ -22,7 +22,7 @@
 .. _current:
 
 
-Version 1.4  (Source - GitHub)
+Current 1.4.0 (stable)
 ===============================
 
 Enhancements
@@ -39,22 +39,9 @@ Enhancements
 - Add :class:`braindecode.datasets.TUHEvents` dataset and improve other TUH datasets (:gh:`920` and :gh:`923` by `Pierre Guetschel`_)
 - Allow overlapping events in :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`923` by `Pierre Guetschel`_)
 
-
-API changes
-============
-- None yet.
-
-Requirements
-============
-- None yet.
-
 Bugs
 =====
-- Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb`` (:gh:`919` by `Pierre Guetschel`_)
-
-Code health
-============
-- None yet.
+- Remove ``pandas<3.0`` restriction by requiring ``wfdb>=4.3.1`` which resolves the pandas 3.x incompatibility (:gh:`919` by `Pierre Guetschel`_)
 
 
 Current 1.3.2 (stable)
