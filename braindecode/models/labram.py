@@ -560,7 +560,7 @@ class Labram(EEGModuleMixin, nn.Module):
           embedding selection
         """
         # Get channel names from ch_names or chs_info
-        input_ch_names = self._get_channel_names()
+        input_ch_names = self.ch_name
 
         if input_ch_names is None:
             # No channel names provided - no reordering possible
@@ -623,22 +623,6 @@ class Labram(EEGModuleMixin, nn.Module):
             "_labram_ch_indices",
             torch.tensor(labram_indices, dtype=torch.long),
         )
-
-    def _get_channel_names(self):
-        """
-        Get channel names from ch_names parameter or chs_info.
-
-        Returns
-        -------
-        list of str or None
-            List of channel names, or None if not available.
-        """
-        try:
-            chs_info = self.chs_info
-        except ValueError:
-            return None
-
-        return [ch.get("ch_name", "") for ch in chs_info]
 
     def _reorder_channels(self, x):
         """
