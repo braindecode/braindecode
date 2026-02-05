@@ -19,6 +19,7 @@ from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
     CombinedConv,
+    Conv1dWithConstraint,
     Conv2dWithConstraint,
     DepthwiseConv2d,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "AvgPool2dWithConv",
     "CausalConv1d",
     "CombinedConv",
+    "Conv1dWithConstraint",
     "Conv2dWithConstraint",
     "DepthwiseConv2d",
     "FilterBankLayer",
