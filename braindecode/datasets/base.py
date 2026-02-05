@@ -533,8 +533,12 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             If a dict then each key will be used in the returned
             splits dict and each value should be a list of int.
         property : str
+            :bdg-warning:`Deprecated`
+
             Some property which is listed in the info DataFrame.
         split_ids : list | dict
+            :bdg-warning:`Deprecated`
+
             List of indices to be combined in a subset.
             It can be a list of int or a list of list of int.
 

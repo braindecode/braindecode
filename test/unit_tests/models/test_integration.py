@@ -275,6 +275,22 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
     assert len([name for name, _ in last_layers_name if name == "final_layer"]) > 0
 
 
+@pytest.mark.parametrize(
+    "model_name, required_params, signal_params", models_mandatory_parameters
+)
+def test_model_integration_has_final_layer(model_name, required_params, signal_params):
+    """Only tests that th model has a layer named 'final_layer'.
+
+    This test should also cover models that are not meant for classification.
+    """
+    sp = get_sp(signal_params)
+
+    model = models_dict[model_name](**sp)
+
+    last_layers_name = [name for name, _ in model.named_children()][-2:]
+    assert "final_layer" in last_layers_name
+
+
 @pytest.mark.parametrize("model_class", models_dict.values())
 def test_model_has_activation_parameter(model_class):
     """
