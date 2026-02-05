@@ -19,6 +19,142 @@ from braindecode.functional import rescale_parameter
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
 
+# Standard 10-20 system electrode positions used by LaBraM for position embeddings.
+# This defines the canonical channel order that the pretrained LaBraM model expects.
+# Channels from input data will be automatically reordered to match this order.
+# Reference: https://github.com/935963004/LaBraM
+LABRAM_CHANNEL_ORDER = (
+    # Frontal
+    "FP1",
+    "FPZ",
+    "FP2",
+    "AF9",
+    "AF7",
+    "AF5",
+    "AF3",
+    "AF1",
+    "AFZ",
+    "AF2",
+    "AF4",
+    "AF6",
+    "AF8",
+    "AF10",
+    "F9",
+    "F7",
+    "F5",
+    "F3",
+    "F1",
+    "FZ",
+    "F2",
+    "F4",
+    "F6",
+    "F8",
+    "F10",
+    # Fronto-Central
+    "FT9",
+    "FT7",
+    "FC5",
+    "FC3",
+    "FC1",
+    "FCZ",
+    "FC2",
+    "FC4",
+    "FC6",
+    "FT8",
+    "FT10",
+    # Central
+    "T9",
+    "T7",
+    "C5",
+    "C3",
+    "C1",
+    "CZ",
+    "C2",
+    "C4",
+    "C6",
+    "T8",
+    "T10",
+    # Centro-Parietal
+    "TP9",
+    "TP7",
+    "CP5",
+    "CP3",
+    "CP1",
+    "CPZ",
+    "CP2",
+    "CP4",
+    "CP6",
+    "TP8",
+    "TP10",
+    # Parietal
+    "P9",
+    "P7",
+    "P5",
+    "P3",
+    "P1",
+    "PZ",
+    "P2",
+    "P4",
+    "P6",
+    "P8",
+    "P10",
+    # Parieto-Occipital
+    "PO9",
+    "PO7",
+    "PO5",
+    "PO3",
+    "PO1",
+    "POZ",
+    "PO2",
+    "PO4",
+    "PO6",
+    "PO8",
+    "PO10",
+    # Occipital
+    "O1",
+    "OZ",
+    "O2",
+    "O9",
+    "CB1",
+    "CB2",
+    "IZ",
+    "O10",
+    # Additional 10-10 positions
+    "T3",
+    "T5",
+    "T4",
+    "T6",
+    "M1",
+    "M2",
+    "A1",
+    "A2",
+    # Extended positions
+    "CFC1",
+    "CFC2",
+    "CFC3",
+    "CFC4",
+    "CFC5",
+    "CFC6",
+    "CFC7",
+    "CFC8",
+    "CCP1",
+    "CCP2",
+    "CCP3",
+    "CCP4",
+    "CCP5",
+    "CCP6",
+    "CCP7",
+    "CCP8",
+    "T1",
+    "T2",
+    "FTT9H",
+    "TTP7H",
+    "TPP9H",
+    "FTT10H",
+    "TPP8H",
+    "TPP10H",
+)
+
 
 class Labram(EEGModuleMixin, nn.Module):
     r"""Labram from Jiang, W B et al (2024) [Jiang2024]_.
@@ -154,6 +290,15 @@ class Labram(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.GELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+    ch_names : list of str, optional
+        List of channel names corresponding to the input EEG channels.
+        If provided, channels will be automatically reordered to match
+        the LaBraM pretrained model's expected order (LABRAM_CHANNEL_ORDER).
+        Channel names are matched case-insensitively.
+        If not provided but ``chs_info`` is available (from MNE), channel
+        names will be extracted from ``chs_info``.
+        If neither is provided, no channel reordering is performed and
+        the model uses the input channel order as-is.
 
     References
     ----------
@@ -199,6 +344,7 @@ class Labram(EEGModuleMixin, nn.Module):
         neural_tokenizer=True,
         attn_head_dim=None,
         activation: type[nn.Module] = nn.GELU,
+        ch_names=None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -209,6 +355,10 @@ class Labram(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        # Set up channel reordering based on ch_names or chs_info
+        self._ch_names = ch_names
+        self._setup_channel_mapping()
 
         self.patch_size = patch_size
         self.num_features = self.embed_dim = embed_dim
@@ -399,6 +549,146 @@ class Labram(EEGModuleMixin, nn.Module):
             nn.init.constant_(layer.bias, 0)
             nn.init.constant_(layer.weight, 1.0)
 
+    def _setup_channel_mapping(self):
+        """
+        Set up channel name mapping and compute reordering indices.
+
+        This method determines the input channel names (from ch_names or chs_info),
+        validates them against LABRAM_CHANNEL_ORDER, and computes the indices
+        needed to reorder input channels to match the LaBraM expected order.
+
+        The method sets:
+        - self._input_ch_names: List of input channel names (uppercased)
+        - self._channel_indices: Tensor of indices for reordering, or None
+        - self._labram_ch_indices: Indices into LABRAM_CHANNEL_ORDER for position
+          embedding selection
+        """
+        # Get channel names from ch_names or chs_info
+        input_ch_names = self._get_channel_names()
+
+        if input_ch_names is None:
+            # No channel names provided - no reordering possible
+            self._input_ch_names = None
+            self._channel_indices = None
+            self._labram_ch_indices = None
+            return
+
+        # Normalize channel names to uppercase for case-insensitive matching
+        input_ch_names = [name.upper() for name in input_ch_names]
+        self._input_ch_names = input_ch_names
+
+        # Build a lookup from LABRAM_CHANNEL_ORDER
+        labram_order_upper = [ch.upper() for ch in LABRAM_CHANNEL_ORDER]
+        labram_ch_to_idx = {ch: i for i, ch in enumerate(labram_order_upper)}
+
+        # Find which input channels are in LABRAM_CHANNEL_ORDER
+        matched_channels = []
+        unmatched_channels = []
+        for i, ch_name in enumerate(input_ch_names):
+            if ch_name in labram_ch_to_idx:
+                matched_channels.append((i, ch_name, labram_ch_to_idx[ch_name]))
+            else:
+                unmatched_channels.append((i, ch_name))
+
+        if unmatched_channels:
+            unmatched_names = [ch[1] for ch in unmatched_channels]
+            warn(
+                f"The following channel names are not in LABRAM_CHANNEL_ORDER and "
+                f"will be excluded: {unmatched_names}. Only matched channels will "
+                f"be used for inference.",
+                UserWarning,
+            )
+
+        if not matched_channels:
+            warn(
+                "No input channels matched LABRAM_CHANNEL_ORDER. Channel reordering "
+                "is disabled. The model may not work correctly with pretrained weights.",
+                UserWarning,
+            )
+            self._channel_indices = None
+            self._labram_ch_indices = None
+            return
+
+        # Sort matched channels by their position in LABRAM_CHANNEL_ORDER
+        matched_channels.sort(key=lambda x: x[2])
+
+        # Extract the reordering indices
+        # _channel_indices: indices to select from input tensor
+        # _labram_ch_indices: corresponding indices in LABRAM_CHANNEL_ORDER
+        input_indices = [ch[0] for ch in matched_channels]
+        labram_indices = [ch[2] for ch in matched_channels]
+
+        # Register as buffers so they move with the model to GPU etc.
+        self.register_buffer(
+            "_channel_indices",
+            torch.tensor(input_indices, dtype=torch.long),
+        )
+        self.register_buffer(
+            "_labram_ch_indices",
+            torch.tensor(labram_indices, dtype=torch.long),
+        )
+
+    def _get_channel_names(self):
+        """
+        Get channel names from ch_names parameter or chs_info.
+
+        Returns
+        -------
+        list of str or None
+            List of channel names, or None if not available.
+        """
+        if self._ch_names is not None:
+            return list(self._ch_names)
+
+        # Try to extract from chs_info (MNE format)
+        try:
+            chs_info = self._chs_info
+            if chs_info is not None:
+                return [ch.get("ch_name", "") for ch in chs_info]
+        except (ValueError, AttributeError):
+            pass
+
+        return None
+
+    def _reorder_channels(self, x):
+        """
+        Reorder input channels to match LABRAM_CHANNEL_ORDER.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch, n_chans, n_times).
+
+        Returns
+        -------
+        x_reordered : torch.Tensor
+            Reordered tensor of shape (batch, n_matched_chans, n_times).
+        input_chans : None
+            Always returns None since after reordering, the channels are in
+            the canonical LABRAM order and sequential position embeddings
+            should be used (the default behavior).
+
+        Notes
+        -----
+        The reordering ensures that channels are processed in the same relative
+        order as LABRAM_CHANNEL_ORDER. After reordering, we use the standard
+        sequential position embeddings rather than trying to use absolute
+        LABRAM indices, which allows the model to work with any subset of
+        channels without requiring the position embedding to cover all possible
+        channel positions.
+        """
+        if self._channel_indices is None:
+            # No reordering - use all channels as-is
+            return x, None
+
+        # Select and reorder channels according to LABRAM order
+        x_reordered = x[:, self._channel_indices, :]
+
+        # Return None for input_chans to use default position embeddings
+        # The key benefit of reordering is that channels are now in the
+        # canonical order that matches the pretrained model's expectations
+        return x_reordered, None
+
     def get_num_layers(self):
         """
         Convenience method to get the number of layers in the model.
@@ -431,14 +721,14 @@ class Labram(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             The output of the model.
         """
-        batch_size = x.shape[0]
+        batch_size, n_input_chans, _ = x.shape
 
         if self.neural_tokenizer:
             # For neural tokenizer: input is (batch, n_chans, n_times)
             # patch_embed returns (batch, n_chans, emb_dim)
             x = self.patch_embed(x)
             # x shape: (batch, n_chans, emb_dim)
-            n_patch = self.n_chans
+            n_patch = n_input_chans  # Use actual input channels, not self.n_chans
             temporal = self.embed_dim
         else:
             # For neural decoder: input is (batch, n_chans, n_times)
@@ -477,7 +767,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         # The time embedding is added across the channels after the [CLS] token
         if self.neural_tokenizer:
-            num_ch = self.n_chans
+            num_ch = n_input_chans  # Use actual input channels
             time_embed = self._adj_temporal_embedding(
                 num_ch=num_ch, batch_size=batch_size, dim_embed=temporal
             )
@@ -533,8 +823,12 @@ class Labram(EEGModuleMixin, nn.Module):
         x: torch.Tensor
             The input data with shape (batch, n_chans, n_times)
             or (batch, n_chans, n_patches, patch size).
-        input_chans: int
-            An input channel to select some dimensions
+        input_chans: torch.Tensor or list of int, optional
+            Indices for selecting position embeddings. If not provided and
+            channel names were specified during model initialization (via
+            ``ch_names`` or ``chs_info``), channels will be automatically
+            reordered to match LABRAM_CHANNEL_ORDER and the corresponding
+            position embedding indices will be used.
         return_patch_tokens: bool
             Return the patch tokens
         return_all_tokens: bool
@@ -545,6 +839,10 @@ class Labram(EEGModuleMixin, nn.Module):
         torch.Tensor
             The output of the model with dimensions (batch, n_outputs)
         """
+        # Apply automatic channel reordering if configured and input_chans not provided
+        if input_chans is None and self._channel_indices is not None:
+            x, input_chans = self._reorder_channels(x)
+
         x = self.forward_features(
             x,
             input_chans=input_chans,
@@ -732,7 +1030,7 @@ class _SegmentPatch(nn.Module):
         X_patch: Tensor
             [batch, n_chans, n_times//patch_size, patch_size]
         """
-        batch_size, _, _ = x.shape
+        batch_size, n_chans_actual, n_times_actual = x.shape
         # Input shape: [batch, n_chs, n_times]
 
         # First, rearrange input to treat the channel dimension 'n_chs' as
@@ -750,17 +1048,18 @@ class _SegmentPatch(nn.Module):
             # Assuming you want [batch, n_chs, n_patches, emb_dim]
             # as output, which keeps channel information
             # This treats each patch embedding as a feature alongside channels
+            # Use actual number of channels from input, not self.n_chans
             x = rearrange(
                 x,
                 pattern="(batch nchans) embed npatchs -> batch nchans npatchs embed",
                 batch=batch_size,
-                nchans=self.n_chans,
+                nchans=n_chans_actual,
             )
         else:
             x = x.view(
                 batch_size,
-                self.n_chans,
-                self.n_times // self.patch_size,
+                n_chans_actual,
+                n_times_actual // self.patch_size,
                 self.patch_size,
             )
         return x

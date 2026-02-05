@@ -17,7 +17,7 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, Labram
+from braindecode.models import LABRAM_CHANNEL_ORDER, LUNA, REVE, CBraMod, Labram
 from braindecode.models.reve import RevePositionBank
 
 
@@ -492,6 +492,287 @@ def test_labram_wrong_channel_count(model_tokenizer, n_times):
     except RuntimeError:
         # Expected behavior
         pass
+
+
+# ==============================================================================
+# Tests for Labram Channel Reordering
+# ==============================================================================
+
+
+def test_labram_channel_order_constant_exported():
+    """Test that LABRAM_CHANNEL_ORDER is exported and has expected format."""
+    assert LABRAM_CHANNEL_ORDER is not None
+    assert isinstance(LABRAM_CHANNEL_ORDER, tuple)
+    assert len(LABRAM_CHANNEL_ORDER) > 100  # Should have 100+ channels
+    assert "FP1" in LABRAM_CHANNEL_ORDER
+    assert "CZ" in LABRAM_CHANNEL_ORDER
+    assert "O2" in LABRAM_CHANNEL_ORDER
+
+
+def test_labram_with_ch_names_initialization():
+    """Test Labram initialization with ch_names parameter."""
+    ch_names = ["FP1", "FP2", "CZ", "O1", "O2"]
+    model = Labram(
+        n_times=1000,
+        n_chans=5,
+        n_outputs=4,
+        ch_names=ch_names,
+        neural_tokenizer=True,
+    )
+
+    assert model._ch_names == ch_names
+    assert model._channel_indices is not None
+    assert model._labram_ch_indices is not None
+
+
+def test_labram_with_ch_names_forward_pass():
+    """Test forward pass with ch_names parameter."""
+    ch_names = ["FP1", "FP2", "CZ", "O1", "O2"]
+    model = Labram(
+        n_times=1000,
+        n_chans=5,
+        n_outputs=4,
+        ch_names=ch_names,
+        neural_tokenizer=True,
+        num_layers=2,
+    )
+
+    x = torch.randn(2, 5, 1000)
+    output = model(x)
+    assert output.shape == (2, 4)
+
+
+def test_labram_channel_reordering_order():
+    """Test that channels are reordered according to LABRAM_CHANNEL_ORDER."""
+    # Input channels in non-standard order
+    ch_names = ["O2", "CZ", "FP1"]  # Wrong order
+    model = Labram(
+        n_times=1000,
+        n_chans=3,
+        n_outputs=4,
+        ch_names=ch_names,
+        neural_tokenizer=True,
+        num_layers=2,
+    )
+
+    # Channel indices should reorder to match LABRAM_CHANNEL_ORDER
+    # FP1 comes before CZ, and CZ comes before O2
+    fp1_idx = LABRAM_CHANNEL_ORDER.index("FP1")
+    cz_idx = LABRAM_CHANNEL_ORDER.index("CZ")
+    o2_idx = LABRAM_CHANNEL_ORDER.index("O2")
+
+    # Verify the ordering in _labram_ch_indices
+    labram_indices = model._labram_ch_indices.tolist()
+    assert labram_indices == sorted(labram_indices), "Channels should be in LABRAM order"
+
+    # Verify input indices map correctly
+    channel_indices = model._channel_indices.tolist()
+    # Original order: ["O2", "CZ", "FP1"] at indices [0, 1, 2]
+    # FP1 (input idx 2) should come first, then CZ (input idx 1), then O2 (input idx 0)
+    assert channel_indices == [2, 1, 0], "Input channels should be reordered"
+
+
+def test_labram_channel_reordering_selects_correct_data():
+    """Test that channel reordering selects correct data from input."""
+    ch_names = ["O2", "CZ", "FP1"]
+    model = Labram(
+        n_times=200,
+        n_chans=3,
+        n_outputs=4,
+        ch_names=ch_names,
+        neural_tokenizer=True,
+        num_layers=2,
+        patch_size=200,
+    )
+
+    # Create distinguishable input for each channel
+    x = torch.zeros(1, 3, 200)
+    x[0, 0, :] = 1.0  # O2 channel
+    x[0, 1, :] = 2.0  # CZ channel
+    x[0, 2, :] = 3.0  # FP1 channel
+
+    # Apply reordering
+    x_reordered, input_chans = model._reorder_channels(x)
+
+    # After reordering: FP1 (3.0), CZ (2.0), O2 (1.0)
+    assert x_reordered.shape == (1, 3, 200)
+    assert torch.allclose(x_reordered[0, 0, :], torch.tensor(3.0))  # FP1
+    assert torch.allclose(x_reordered[0, 1, :], torch.tensor(2.0))  # CZ
+    assert torch.allclose(x_reordered[0, 2, :], torch.tensor(1.0))  # O2
+
+
+def test_labram_case_insensitive_channel_matching():
+    """Test that channel names are matched case-insensitively."""
+    ch_names = ["fp1", "Fp2", "CZ", "o1", "O2"]  # Mixed case
+    model = Labram(
+        n_times=1000,
+        n_chans=5,
+        n_outputs=4,
+        ch_names=ch_names,
+        neural_tokenizer=True,
+        num_layers=2,
+    )
+
+    assert model._channel_indices is not None
+    assert len(model._channel_indices) == 5
+
+
+def test_labram_unmatched_channels_warning():
+    """Test that unmatched channel names produce a warning."""
+    ch_names = ["FP1", "UNKNOWN_CHANNEL", "CZ"]
+    with pytest.warns(UserWarning, match="not in LABRAM_CHANNEL_ORDER"):
+        model = Labram(
+            n_times=1000,
+            n_chans=3,
+            n_outputs=4,
+            ch_names=ch_names,
+            neural_tokenizer=True,
+            num_layers=2,
+        )
+
+    # Should only have 2 matched channels
+    assert len(model._channel_indices) == 2
+
+
+def test_labram_no_matched_channels_warning():
+    """Test warning when no channels match LABRAM_CHANNEL_ORDER."""
+    ch_names = ["UNKNOWN1", "UNKNOWN2", "UNKNOWN3"]
+    with pytest.warns(UserWarning):
+        model = Labram(
+            n_times=1000,
+            n_chans=3,
+            n_outputs=4,
+            ch_names=ch_names,
+            neural_tokenizer=True,
+            num_layers=2,
+        )
+
+    # Should have no channel reordering
+    assert model._channel_indices is None
+
+
+def test_labram_without_ch_names_no_reordering():
+    """Test that without ch_names, no reordering is performed."""
+    model = Labram(
+        n_times=1000,
+        n_chans=5,
+        n_outputs=4,
+        neural_tokenizer=True,
+        num_layers=2,
+    )
+
+    assert model._channel_indices is None
+    assert model._labram_ch_indices is None
+
+
+def test_labram_with_chs_info():
+    """Test channel name extraction from chs_info (MNE format)."""
+    chs_info = [
+        {"ch_name": "FP1"},
+        {"ch_name": "FP2"},
+        {"ch_name": "CZ"},
+        {"ch_name": "O1"},
+        {"ch_name": "O2"},
+    ]
+    model = Labram(
+        n_times=1000,
+        n_outputs=4,
+        chs_info=chs_info,
+        neural_tokenizer=True,
+        num_layers=2,
+    )
+
+    assert model._channel_indices is not None
+    assert len(model._channel_indices) == 5
+
+
+def test_labram_ch_names_takes_precedence_over_chs_info():
+    """Test that ch_names parameter takes precedence over chs_info."""
+    chs_info = [
+        {"ch_name": "FP1"},
+        {"ch_name": "FP2"},
+        {"ch_name": "CZ"},
+    ]
+    ch_names = ["O1", "O2", "PZ"]  # Different from chs_info
+
+    model = Labram(
+        n_times=1000,
+        n_chans=3,
+        n_outputs=4,
+        chs_info=chs_info,
+        ch_names=ch_names,
+        neural_tokenizer=True,
+        num_layers=2,
+    )
+
+    # Verify ch_names was used (O1, O2, PZ), not chs_info (FP1, FP2, CZ)
+    assert model._ch_names == ch_names
+    input_ch_names = model._input_ch_names
+    assert "O1" in input_ch_names
+    assert "O2" in input_ch_names
+    assert "PZ" in input_ch_names
+
+
+def test_labram_channel_reordering_gradient_flow():
+    """Test that gradients flow correctly through channel reordering."""
+    ch_names = ["O2", "CZ", "FP1", "FP2", "O1"]
+    model = Labram(
+        n_times=1000,
+        n_chans=5,
+        n_outputs=4,
+        ch_names=ch_names,
+        neural_tokenizer=True,
+        num_layers=2,
+    )
+
+    x = torch.randn(2, 5, 1000, requires_grad=True)
+    output = model(x)
+    loss = output.sum()
+    loss.backward()
+
+    assert x.grad is not None
+    assert model.cls_token.grad is not None
+
+
+def test_labram_channel_reordering_device_compatibility():
+    """Test channel reordering works on GPU if available."""
+    ch_names = ["FP1", "CZ", "O2"]
+    model = Labram(
+        n_times=1000,
+        n_chans=3,
+        n_outputs=4,
+        ch_names=ch_names,
+        neural_tokenizer=True,
+        num_layers=2,
+    )
+
+    if torch.cuda.is_available():
+        model = model.cuda()
+        x = torch.randn(2, 3, 1000).cuda()
+        output = model(x)
+        assert output.device.type == "cuda"
+        assert output.shape == (2, 4)
+
+
+def test_labram_manual_input_chans_bypasses_reordering():
+    """Test that providing input_chans manually bypasses automatic reordering."""
+    ch_names = ["O2", "CZ", "FP1"]
+    model = Labram(
+        n_times=1000,
+        n_chans=3,
+        n_outputs=4,
+        ch_names=ch_names,
+        neural_tokenizer=True,
+        num_layers=2,
+    )
+
+    x = torch.randn(2, 3, 1000)
+
+    # Provide manual input_chans - should bypass automatic reordering
+    manual_input_chans = torch.tensor([0, 1, 2, 3])  # CLS + 3 channels
+    output = model(x, input_chans=manual_input_chans)
+
+    assert output.shape == (2, 4)
 
 
 # ==============================================================================
