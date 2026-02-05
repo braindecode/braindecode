@@ -352,13 +352,14 @@ class Labram(EEGModuleMixin, nn.Module):
 
         # Initialize channel mapping attributes for all paths
         self._input_ch_names = None
-        self._channel_indices = None
-        self._labram_ch_indices = None
         self._use_labram_pos_emb = False
 
         if self._ch_names is not None:
             self._setup_channel_mapping()
         else:
+            # Register as None buffers when no channel info provided
+            self.register_buffer("_channel_indices", None)
+            self.register_buffer("_labram_ch_indices", None)
             warn(
                 "The model is initialized without channel information (chs_info). "
                 "Channel reordering to match LABRAM_CHANNEL_ORDER is disabled. "
