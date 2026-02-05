@@ -394,14 +394,12 @@ def test_eegpt_invalid_channel():
         {"ch_name": "F3", "kind": "eeg"},
     ]
 
-    # Use chan_proj_type="none" to test chs_info path (default uses channel projection)
     with pytest.warns(RuntimeWarning, match="Unknown channel name"):
         model = EEGPT(
             n_outputs=4,
             n_chans=2,
             n_times=600,
             chs_info=invalid_chs_info,
-            chan_proj_type="none",
         )
 
     # Mixed fallback strategy:

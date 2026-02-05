@@ -104,26 +104,6 @@ class Conv2dWithConstraint(nn.Conv2d):
         register_parametrization(self, "weight", MaxNormParametrize(self.max_norm))
 
 
-class Conv1dWithConstraint(nn.Conv1d):
-    """1D convolution with max-norm constraint on the weights.
-
-    Examples
-    --------
-    >>> import torch
-    >>> from braindecode.modules import Conv1dWithConstraint
-    >>> module = Conv1dWithConstraint(4, 8, kernel_size=3, padding=1, bias=False)
-    >>> inputs = torch.randn(2, 4, 64)
-    >>> outputs = module(inputs)
-    >>> outputs.shape
-    torch.Size([2, 8, 64])
-    """
-
-    def __init__(self, *args, max_norm=1, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.max_norm = max_norm
-        register_parametrization(self, "weight", MaxNormParametrize(self.max_norm))
-
-
 class CombinedConv(nn.Module):
     """Merged convolutional layer for temporal and spatial convs in Deep4/ShallowFBCSP
 

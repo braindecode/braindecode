@@ -5,7 +5,7 @@
 
 import math
 from functools import partial
-from typing import Callable, Literal, Optional, Union
+from typing import Optional
 
 import mne
 import torch
@@ -14,8 +14,6 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
-from braindecode.modules.convolution import Conv1dWithConstraint
-from braindecode.modules.linear import LinearWithConstraint
 
 
 class EEGPT(EEGModuleMixin, nn.Module):
@@ -244,12 +242,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         norm_layer: Optional[nn.Module] = None,
         layer_norm_eps: float = 1e-6,
         return_encoder_output: bool = False,
-        # downstream finetuning parameters
-        chan_proj_type: Literal["conv1d_constraint", "linear", "none"] = "conv1d_constraint",
-        n_chans_target: int = 19,
-        chan_conv_max_norm: float = 1.0,
-        final_layer: Optional[Union[nn.Module, Callable[..., nn.Module]]] = None,
-        freeze_encoder: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -286,26 +278,8 @@ class EEGPT(EEGModuleMixin, nn.Module):
         else:
             self.patch_module = patch_module
 
-        # Downstream finetuning config
-        self.chan_proj_type = chan_proj_type
-        self.n_chans_target = n_chans_target
-        self.freeze_encoder = freeze_encoder
-
-        # Build channel projection (before encoder)
-        if chan_proj_type != "none":
-            self.chan_proj = _ChannelProjection(
-                in_channels=self.n_chans,
-                out_channels=n_chans_target,
-                proj_type=chan_proj_type,
-                max_norm=chan_conv_max_norm,
-            )
-            encoder_n_chans = n_chans_target
-        else:
-            self.chan_proj = nn.Identity()
-            encoder_n_chans = self.n_chans
-
         self.target_encoder = _EEGTransformer(
-            n_chans=encoder_n_chans,
+            n_chans=self.n_chans,
             n_times=self.n_times,
             patch_size=self.patch_size,
             patch_stride=self.patch_stride,
@@ -323,11 +297,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             patch_module=self.patch_module,
         )
 
-        # Prepare channel IDs
-        if chan_proj_type != "none":
-            # Use standard 19 channels when projecting
-            self.channel_names = EEGPT_19_CHANNELS
-        elif self._chs_info is not None:
+        if self._chs_info is not None:
             self.channel_names = [ch["ch_name"] for ch in self.chs_info]  # type: ignore
         else:
             self.channel_names = None  # type: ignore
@@ -340,62 +310,12 @@ class EEGPT(EEGModuleMixin, nn.Module):
             self.target_encoder.num_patches[1] * self.embed_num * self.embed_dim
         )
 
-        # Build final layer (classification head)
-        if return_encoder_output:
-            self.final_layer = nn.Identity()
-        elif final_layer is not None:
-            # Use provided final_layer (can be nn.Module or callable factory)
-            if callable(final_layer) and not isinstance(final_layer, nn.Module):
-                # It's a factory function - call it to create the module
-                layer = final_layer()
-                # Check if layer already includes Flatten
-                has_flatten = isinstance(layer, nn.Flatten) or (
-                    isinstance(layer, nn.Sequential)
-                    and len(layer) > 0
-                    and isinstance(layer[0], nn.Flatten)
-                )
-                if has_flatten:
-                    self.final_layer = layer
-                else:
-                    self.final_layer = nn.Sequential(nn.Flatten(1), layer)
-            else:
-                self.final_layer = nn.Sequential(nn.Flatten(1), final_layer)
-        else:
-            # Default: _LinearConstraintProbe (original EEGPT probe)
-            self.final_layer = _LinearConstraintProbe(
-                n_patches=self.target_encoder.num_patches[1],
-                embed_num=self.embed_num,
-                embed_dim=self.embed_dim,
-                n_outputs=self.n_outputs,
+        if not return_encoder_output:
+            self.final_layer = nn.Linear(
+                self.flattened_encoder_output_dim, self.n_outputs
             )
-
-        # Freeze encoder if requested
-        if freeze_encoder:
-            self._freeze_encoder()
-
-    def _freeze_encoder(self):
-        """Freeze all encoder parameters."""
-        for param in self.target_encoder.parameters():
-            param.requires_grad = False
-
-    @property
-    def n_patches(self) -> int:
-        """Number of temporal patches from encoder."""
-        return self.target_encoder.num_patches[1]
-
-    def get_probe_params(self) -> dict:
-        """Get parameters needed to create a _LinearConstraintProbe.
-
-        Returns
-        -------
-        dict
-            Parameters dict with n_patches, embed_num, embed_dim.
-        """
-        return {
-            "n_patches": self.n_patches,
-            "embed_num": self.embed_num,
-            "embed_dim": self.embed_dim,
-        }
+        else:
+            self.final_layer = nn.Identity()
 
     def forward(self, x):
         """
@@ -411,12 +331,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         torch.Tensor
             Model output. Shape depends on `n_outputs` and `return_encoder_output`.
         """
-        # Channel projection (if configured)
-        x = self.chan_proj(x)
-
-        # Keep encoder in eval mode if frozen during training
-        if self.freeze_encoder and self.training:
-            self.target_encoder.eval()
 
         # z shape: (batch, n_patches, embed_num, embed_dim)
         z = self.target_encoder(x, self.chans_id)
@@ -424,14 +338,18 @@ class EEGPT(EEGModuleMixin, nn.Module):
         if self.return_encoder_output:
             return z
 
-        # Pass to final_layer
-        # _LinearConstraintProbe expects z in 4D (batch, n_patches, embed_num, embed_dim)
-        # Default linear layer expects flattened input
-        if isinstance(self.final_layer, (_LinearConstraintProbe,)):
-            # Probe handles its own flattening
-            return self.final_layer(z)
-        else:
-            return self.final_layer(z)
+        # Flatten encoder output for classification
+        h = z.flatten(1)
+        # h shape: (batch, n_patches * embed_num * embed_dim)
+
+        if self.flattened_encoder_output_dim != h.shape[1]:
+            raise ValueError(
+                f"Expected output dim {self.flattened_encoder_output_dim}, got {h.shape[1]}"
+            )
+
+        h = self.final_layer(h)
+
+        return h
 
 
 # These channels correspond to a subset of the standard 10-20 system.
@@ -511,94 +429,6 @@ def _get_eegpt_channels():
 EEGPT_CHANNELS = _get_eegpt_channels()
 
 CHANNEL_DICT = {ch: i for i, ch in enumerate(EEGPT_CHANNELS)}
-
-# Standard 19 channels used in original EEGPT linear probe
-EEGPT_19_CHANNELS = [
-    "FP1", "FP2", "F7", "F3", "FZ", "F4", "F8",
-    "T7", "C3", "CZ", "C4", "T8",
-    "P7", "P3", "PZ", "P4", "P8", "O1", "O2",
-]
-
-
-class _LinearConstraintProbe(nn.Module):
-    """
-    Original EEGPT two-stage probe with LinearWithConstraint layers.
-
-    This replicates the exact probe architecture from the original EEGPT paper.
-
-    Parameters
-    ----------
-    n_patches : int
-        Number of temporal patches from encoder.
-    embed_num : int
-        Number of summary tokens (default 4 for EEGPT).
-    embed_dim : int
-        Embedding dimension (default 512 for EEGPT).
-    n_outputs : int
-        Number of output classes.
-    probe_hidden_dim : int
-        Hidden dimension between probe layers (default 16).
-    dropout_p : float
-        Dropout probability (default 0.5).
-    probe1_max_norm : float
-        Max norm for first LinearWithConstraint (default 1.0).
-    probe2_max_norm : float
-        Max norm for second LinearWithConstraint (default 0.25).
-    """
-
-    def __init__(
-        self,
-        n_patches: int,
-        embed_num: int,
-        embed_dim: int,
-        n_outputs: int,
-        probe_hidden_dim: int = 16,
-        dropout_p: float = 0.5,
-        probe1_max_norm: float = 1.0,
-        probe2_max_norm: float = 0.25,
-    ):
-        super().__init__()
-        self.probe1 = LinearWithConstraint(embed_num * embed_dim, probe_hidden_dim, max_norm=probe1_max_norm)
-        self.dropout = nn.Dropout(p=dropout_p)
-        self.probe2 = LinearWithConstraint(n_patches * probe_hidden_dim, n_outputs, max_norm=probe2_max_norm)
-
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
-        # z: (batch, n_patches, embed_num, embed_dim)
-        h = z.flatten(2)  # (batch, n_patches, embed_num * embed_dim)
-        h = self.probe1(self.dropout(h))  # (batch, n_patches, probe_hidden_dim)
-        h = h.flatten(1)  # (batch, n_patches * probe_hidden_dim)
-        return self.probe2(h)
-
-
-class _ChannelProjection(nn.Module):
-    """Channel projection layer to adapt input channels to target channels."""
-
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        proj_type: Literal["conv1d_constraint", "linear", "none"] = "none",
-        max_norm: float = 1.0,
-    ):
-        super().__init__()
-        self.proj_type = proj_type
-
-        if proj_type == "none":
-            if in_channels != out_channels:
-                raise ValueError(f"proj_type='none' requires in_channels ({in_channels}) == out_channels ({out_channels})")
-            self.proj = nn.Identity()
-        elif proj_type == "conv1d_constraint":
-            self.proj = Conv1dWithConstraint(in_channels, out_channels, kernel_size=1, max_norm=max_norm)
-        elif proj_type == "linear":
-            self.proj = nn.Linear(in_channels, out_channels)
-        else:
-            raise ValueError(f"Unknown proj_type: {proj_type}")
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.proj_type == "linear":
-            # x: (batch, channels, time) -> (batch, time, channels) -> linear -> transpose back
-            return self.proj(x.transpose(1, 2)).transpose(1, 2)
-        return self.proj(x)
 
 
 def _rotate_half(x):
