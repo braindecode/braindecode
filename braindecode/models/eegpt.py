@@ -5,7 +5,7 @@
 
 import math
 from functools import partial
-from typing import Callable, Literal, Optional, Union
+from typing import Literal, Optional
 
 import mne
 import torch
@@ -245,7 +245,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
         layer_norm_eps: float = 1e-6,
         return_encoder_output: bool = False,
         # downstream finetuning parameters
-        chan_proj_type: Literal["conv1d_constraint", "linear", "none"] = "conv1d_constraint",
+        chan_proj_type: Literal[
+            "conv1d_constraint", "linear", "none"
+        ] = "conv1d_constraint",
         n_chans_target: int = 19,
         chan_conv_max_norm: float = 1.0,
         final_layer: type[nn.Module] | None = None,
@@ -286,7 +288,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
             self.patch_module = patch_module
 
         if final_layer is not None and return_encoder_output:
-            raise ValueError("return_encoder_output is not compatible with providing a final_layer which will be nn.Identity")
+            raise ValueError(
+                "return_encoder_output is not compatible with providing a final_layer which will be nn.Identity"
+            )
 
         # Downstream finetuning config
         self.chan_proj_type = chan_proj_type
@@ -358,6 +362,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
                 embed_dim=self.embed_dim,
                 n_outputs=self.n_outputs,
             )
+
     @property
     def n_patches(self) -> int:
         """Number of temporal patches from encoder."""
@@ -486,9 +491,25 @@ CHANNEL_DICT = {ch: i for i, ch in enumerate(EEGPT_CHANNELS)}
 
 # Standard 19 channels used in original EEGPT linear probe
 EEGPT_19_CHANNELS = [
-    "FP1", "FP2", "F7", "F3", "FZ", "F4", "F8",
-    "T7", "C3", "CZ", "C4", "T8",
-    "P7", "P3", "PZ", "P4", "P8", "O1", "O2",
+    "FP1",
+    "FP2",
+    "F7",
+    "F3",
+    "FZ",
+    "F4",
+    "F8",
+    "T7",
+    "C3",
+    "CZ",
+    "C4",
+    "T8",
+    "P7",
+    "P3",
+    "PZ",
+    "P4",
+    "P8",
+    "O1",
+    "O2",
 ]
 
 
@@ -530,9 +551,13 @@ class _LinearConstraintProbe(nn.Module):
         probe2_max_norm: float = 0.25,
     ):
         super().__init__()
-        self.probe1 = LinearWithConstraint(embed_num * embed_dim, probe_hidden_dim, max_norm=probe1_max_norm)
+        self.probe1 = LinearWithConstraint(
+            embed_num * embed_dim, probe_hidden_dim, max_norm=probe1_max_norm
+        )
         self.dropout = nn.Dropout(p=dropout_p)
-        self.probe2 = LinearWithConstraint(n_patches * probe_hidden_dim, n_outputs, max_norm=probe2_max_norm)
+        self.probe2 = LinearWithConstraint(
+            n_patches * probe_hidden_dim, n_outputs, max_norm=probe2_max_norm
+        )
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         # z: (batch, n_patches, embed_num, embed_dim)
@@ -557,10 +582,14 @@ class _ChannelProjection(nn.Module):
 
         if proj_type == "none":
             if in_channels != out_channels:
-                raise ValueError(f"proj_type='none' requires in_channels ({in_channels}) == out_channels ({out_channels})")
+                raise ValueError(
+                    f"proj_type='none' requires in_channels ({in_channels}) == out_channels ({out_channels})"
+                )
             self.proj = nn.Identity()
         elif proj_type == "conv1d_constraint":
-            self.proj = Conv1dWithConstraint(in_channels, out_channels, kernel_size=1, max_norm=max_norm)
+            self.proj = Conv1dWithConstraint(
+                in_channels, out_channels, kernel_size=1, max_norm=max_norm
+            )
         elif proj_type == "linear":
             self.proj = nn.Linear(in_channels, out_channels)
         else:
