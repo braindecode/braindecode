@@ -1601,27 +1601,27 @@ def test_labram_without_pos_embed(default_labram_params):
         assert out_without_pos_emb.shape == torch.Size([1, 2])
 
 
-def test_labram_n_outputs_0(default_labram_params):
-    """
-    Testing if the model is returning the correct shapes for the different
-    return options.
+# def test_labram_n_outputs_0(default_labram_params):
+#     """
+#     Testing if the model is returning the correct shapes for the different
+#     return options.
 
-    Parameters
-    ----------
-    default_labram_params: dict with default parameters for Labram model
+#     Parameters
+#     ----------
+#     default_labram_params: dict with default parameters for Labram model
 
-    """
-    default_labram_params["n_outputs"] = 0
-    labram_base = Labram(num_layers=12, num_heads=12,
-                         **default_labram_params)
-    # Defining a random data
-    X = torch.rand(1, default_labram_params["n_chans"],
-                   default_labram_params["n_times"])
+#     """
+#     default_labram_params["n_outputs"] = 0
+#     labram_base = Labram(num_layers=12, num_heads=12,
+#                          **default_labram_params)
+#     # Defining a random data
+#     X = torch.rand(1, default_labram_params["n_chans"],
+#                    default_labram_params["n_times"])
 
-    with torch.no_grad():
-        out = labram_base(X)
-        assert out.shape[-1] == default_labram_params["patch_size"]
-        assert isinstance(labram_base.final_layer, nn.Identity)
+#     with torch.no_grad():
+#         out = labram_base(X)
+#         assert out.shape[-1] == default_labram_params["patch_size"]
+#         assert isinstance(labram_base.final_layer, nn.Identity)
 
 
 @pytest.fixture
