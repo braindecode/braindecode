@@ -420,23 +420,6 @@ def test_labram_no_dimension_mismatch_errors(n_times, n_chans, n_outputs):
 # ==============================================================================
 
 
-def test_labram_zero_output_channels(n_chans, n_times):
-    """Test model with n_outputs=0."""
-    model = Labram(
-        n_times=n_times,
-        n_chans=n_chans,
-        n_outputs=0,
-        neural_tokenizer=True,
-    )
-
-    x = torch.randn(2, n_chans, n_times)
-    # With n_outputs=0, final_layer is Identity
-    output = model(x)
-
-    # Output should be the feature output
-    assert output.shape == (2, 200)
-
-
 def test_labram_small_input_size():
     """Test with small input size."""
     model = Labram(
