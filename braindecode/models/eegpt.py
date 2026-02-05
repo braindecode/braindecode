@@ -248,8 +248,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         chan_proj_type: Literal["conv1d_constraint", "linear", "none"] = "conv1d_constraint",
         n_chans_target: int = 19,
         chan_conv_max_norm: float = 1.0,
-        final_layer: Optional[Union[nn.Module, Callable[..., nn.Module]]] = None,
-        freeze_encoder: bool = False,
+        final_layer: type[nn.Module] | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -286,10 +285,12 @@ class EEGPT(EEGModuleMixin, nn.Module):
         else:
             self.patch_module = patch_module
 
+        if final_layer is not None and return_encoder_output:
+            raise ValueError("return_encoder_output is not compatible with providing a final_layer which will be nn.Identity")
+
         # Downstream finetuning config
         self.chan_proj_type = chan_proj_type
         self.n_chans_target = n_chans_target
-        self.freeze_encoder = freeze_encoder
 
         # Build channel projection (before encoder)
         if chan_proj_type != "none":
@@ -344,22 +345,11 @@ class EEGPT(EEGModuleMixin, nn.Module):
         if return_encoder_output:
             self.final_layer = nn.Identity()
         elif final_layer is not None:
-            # Use provided final_layer (can be nn.Module or callable factory)
-            if callable(final_layer) and not isinstance(final_layer, nn.Module):
-                # It's a factory function - call it to create the module
-                layer = final_layer()
-                # Check if layer already includes Flatten
-                has_flatten = isinstance(layer, nn.Flatten) or (
-                    isinstance(layer, nn.Sequential)
-                    and len(layer) > 0
-                    and isinstance(layer[0], nn.Flatten)
-                )
-                if has_flatten:
-                    self.final_layer = layer
-                else:
-                    self.final_layer = nn.Sequential(nn.Flatten(1), layer)
-            else:
-                self.final_layer = nn.Sequential(nn.Flatten(1), final_layer)
+            # Use provided final_layer
+            self.final_layer = nn.Sequential(
+                nn.Flatten(1),
+                final_layer(),
+            )
         else:
             # Default: _LinearConstraintProbe (original EEGPT probe)
             self.final_layer = _LinearConstraintProbe(
@@ -368,16 +358,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
                 embed_dim=self.embed_dim,
                 n_outputs=self.n_outputs,
             )
-
-        # Freeze encoder if requested
-        if freeze_encoder:
-            self._freeze_encoder()
-
-    def _freeze_encoder(self):
-        """Freeze all encoder parameters."""
-        for param in self.target_encoder.parameters():
-            param.requires_grad = False
-
     @property
     def n_patches(self) -> int:
         """Number of temporal patches from encoder."""
@@ -414,10 +394,6 @@ class EEGPT(EEGModuleMixin, nn.Module):
         # Channel projection (if configured)
         x = self.chan_proj(x)
 
-        # Keep encoder in eval mode if frozen during training
-        if self.freeze_encoder and self.training:
-            self.target_encoder.eval()
-
         # z shape: (batch, n_patches, embed_num, embed_dim)
         z = self.target_encoder(x, self.chans_id)
 
@@ -427,11 +403,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
         # Pass to final_layer
         # _LinearConstraintProbe expects z in 4D (batch, n_patches, embed_num, embed_dim)
         # Default linear layer expects flattened input
-        if isinstance(self.final_layer, (_LinearConstraintProbe,)):
-            # Probe handles its own flattening
-            return self.final_layer(z)
-        else:
-            return self.final_layer(z)
+        return self.final_layer(z)
 
 
 # These channels correspond to a subset of the standard 10-20 system.
