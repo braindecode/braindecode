@@ -290,15 +290,6 @@ class Labram(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.GELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
-    ch_names : list of str, optional
-        List of channel names corresponding to the input EEG channels.
-        If provided, channels will be automatically reordered to match
-        the LaBraM pretrained model's expected order (LABRAM_CHANNEL_ORDER).
-        Channel names are matched case-insensitively.
-        If not provided but ``chs_info`` is available (from MNE), channel
-        names will be extracted from ``chs_info``.
-        If neither is provided, no channel reordering is performed and
-        the model uses the input channel order as-is.
 
     References
     ----------
@@ -637,18 +628,12 @@ class Labram(EEGModuleMixin, nn.Module):
         list of str or None
             List of channel names, or None if not available.
         """
-        if self._ch_names is not None:
-            return list(self._ch_names)
-
-        # Try to extract from chs_info (MNE format)
         try:
-            chs_info = self._chs_info
-            if chs_info is not None:
-                return [ch.get("ch_name", "") for ch in chs_info]
-        except (ValueError, AttributeError):
-            pass
+            chs_info = self.chs_info
+        except ValueError:
+            return None
 
-        return None
+        return [ch.get("ch_name", "") for ch in chs_info]
 
     def _reorder_channels(self, x):
         """
