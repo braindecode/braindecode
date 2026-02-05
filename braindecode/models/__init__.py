@@ -28,7 +28,7 @@ from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
 from .hybrid import HybridNet
 from .ifnet import IFNet
-from .labram import LABRAM_CHANNEL_ORDER, Labram
+from .labram import Labram
 from .luna import LUNA
 from .medformer import MEDFormer
 from .msvtnet import MSVTNet
@@ -92,7 +92,6 @@ __all__ = [
     "FBMSNet",
     "HybridNet",
     "IFNet",
-    "LABRAM_CHANNEL_ORDER",
     "Labram",
     "LUNA",
     "extract_channel_locations_from_chs_info",

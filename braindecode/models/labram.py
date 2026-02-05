@@ -335,7 +335,6 @@ class Labram(EEGModuleMixin, nn.Module):
         neural_tokenizer=True,
         attn_head_dim=None,
         activation: type[nn.Module] = nn.GELU,
-        ch_names=None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -347,9 +346,15 @@ class Labram(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        # Set up channel reordering based on ch_names or chs_info
-        self._ch_names = ch_names
-        self._setup_channel_mapping()
+        if chs_info is not None:
+            self.ch_name = [ch["ch_name"] for ch in chs_info]
+            self._setup_channel_mapping()
+        else:
+            warn(
+                "The model is initialized without channel information (chs_info). "
+                "Channel reordering to match LABRAM_CHANNEL_ORDER is disabled. "
+                "The model may not work correctly with pretrained weights.",
+            )
 
         self.patch_size = patch_size
         self.num_features = self.embed_dim = embed_dim

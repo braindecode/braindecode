@@ -17,7 +17,8 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LABRAM_CHANNEL_ORDER, LUNA, REVE, CBraMod, Labram
+from braindecode.models import LUNA, REVE, CBraMod, Labram
+from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.reve import RevePositionBank
 
 
