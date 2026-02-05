@@ -499,10 +499,7 @@ class Labram(EEGModuleMixin, nn.Module):
         self.norm = nn.Identity() if use_mean_pooling else norm_layer(self.embed_dim)
         self.fc_norm = norm_layer(self.embed_dim) if use_mean_pooling else None
 
-        if self.n_outputs > 0:
-            self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
-        else:
-            self.final_layer = nn.Identity()
+        self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
 
         self.apply(self._init_weights)
         self.fix_init_weight_and_init_embedding()
