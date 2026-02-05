@@ -241,10 +241,6 @@ class Labram(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    chs_info : list of dict | None
-        Channel information (e.g., ``info["chs"]`` from MNE). When provided,
-        channels are reordered to ``LABRAM_CHANNEL_ORDER`` and positional
-        embeddings are aligned to those positions.
     patch_size : int
         The size of the patch to be used in the patch embedding.
     embed_dim : int
