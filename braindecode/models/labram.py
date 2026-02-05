@@ -241,6 +241,10 @@ class Labram(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
+    chs_info : list of dict | None
+        Channel information (e.g., ``info["chs"]`` from MNE). When provided,
+        channels are reordered to ``LABRAM_CHANNEL_ORDER`` and positional
+        embeddings are aligned to those positions.
     patch_size : int
         The size of the patch to be used in the patch embedding.
     embed_dim : int
@@ -344,10 +348,19 @@ class Labram(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, n_times, input_window_seconds, sfreq
 
+        self._ch_names: list[str] | None = None
         if chs_info is not None:
-            self.ch_name = [ch["ch_name"] for ch in chs_info]
+            self._ch_names = [ch["ch_name"] for ch in chs_info]
+
+        # Initialize channel mapping attributes for all paths
+        self._input_ch_names = None
+        self._channel_indices = None
+        self._labram_ch_indices = None
+        self._use_labram_pos_emb = False
+
+        if self._ch_names is not None:
             self._setup_channel_mapping()
         else:
             warn(
@@ -442,8 +455,11 @@ class Labram(EEGModuleMixin, nn.Module):
         # patches, and the position embedding is used to encode the channels'
         # information.
         if use_abs_pos_emb:
+            pos_embed_chans = (
+                len(LABRAM_CHANNEL_ORDER) if self._use_labram_pos_emb else self.n_chans
+            )
             self.position_embedding = nn.Parameter(
-                torch.zeros(1, self.n_chans + 1, self.embed_dim),
+                torch.zeros(1, pos_embed_chans + 1, self.embed_dim),
                 requires_grad=True,
             )
         else:
@@ -549,7 +565,7 @@ class Labram(EEGModuleMixin, nn.Module):
         """
         Set up channel name mapping and compute reordering indices.
 
-        This method determines the input channel names (from ch_names or chs_info),
+        This method determines the input channel names (from chs_info),
         validates them against LABRAM_CHANNEL_ORDER, and computes the indices
         needed to reorder input channels to match the LaBraM expected order.
 
@@ -559,14 +575,15 @@ class Labram(EEGModuleMixin, nn.Module):
         - self._labram_ch_indices: Indices into LABRAM_CHANNEL_ORDER for position
           embedding selection
         """
-        # Get channel names from ch_names or chs_info
-        input_ch_names = self.ch_name
+        # Get channel names from chs_info
+        input_ch_names = self._ch_names
 
         if input_ch_names is None:
             # No channel names provided - no reordering possible
             self._input_ch_names = None
             self._channel_indices = None
             self._labram_ch_indices = None
+            self._use_labram_pos_emb = False
             return
 
         # Normalize channel names to uppercase for case-insensitive matching
@@ -603,6 +620,7 @@ class Labram(EEGModuleMixin, nn.Module):
             )
             self._channel_indices = None
             self._labram_ch_indices = None
+            self._use_labram_pos_emb = False
             return
 
         # Sort matched channels by their position in LABRAM_CHANNEL_ORDER
@@ -623,6 +641,7 @@ class Labram(EEGModuleMixin, nn.Module):
             "_labram_ch_indices",
             torch.tensor(labram_indices, dtype=torch.long),
         )
+        self._use_labram_pos_emb = True
 
     def _reorder_channels(self, x):
         """
@@ -637,19 +656,16 @@ class Labram(EEGModuleMixin, nn.Module):
         -------
         x_reordered : torch.Tensor
             Reordered tensor of shape (batch, n_matched_chans, n_times).
-        input_chans : None
-            Always returns None since after reordering, the channels are in
-            the canonical LABRAM order and sequential position embeddings
-            should be used (the default behavior).
+        input_chans : torch.Tensor or None
+            Indices for selecting position embeddings, including the [CLS] token
+            at index 0. Returns None if reordering is not enabled.
 
         Notes
         -----
         The reordering ensures that channels are processed in the same relative
-        order as LABRAM_CHANNEL_ORDER. After reordering, we use the standard
-        sequential position embeddings rather than trying to use absolute
-        LABRAM indices, which allows the model to work with any subset of
-        channels without requiring the position embedding to cover all possible
-        channel positions.
+        order as LABRAM_CHANNEL_ORDER. When absolute position embeddings are
+        enabled, we also return indices that select the corresponding LABRAM
+        positions, which preserves alignment for any subset of channels.
         """
         if self._channel_indices is None:
             # No reordering - use all channels as-is
@@ -658,10 +674,17 @@ class Labram(EEGModuleMixin, nn.Module):
         # Select and reorder channels according to LABRAM order
         x_reordered = x[:, self._channel_indices, :]
 
-        # Return None for input_chans to use default position embeddings
-        # The key benefit of reordering is that channels are now in the
-        # canonical order that matches the pretrained model's expectations
-        return x_reordered, None
+        # Build position embedding indices: [CLS] token + LABRAM channel indices
+        if self._labram_ch_indices is None:
+            return x_reordered, None
+
+        cls_index = torch.tensor(
+            [0],
+            device=self._labram_ch_indices.device,
+            dtype=self._labram_ch_indices.dtype,
+        )
+        input_chans = torch.cat([cls_index, self._labram_ch_indices + 1])
+        return x_reordered, input_chans
 
     def get_num_layers(self):
         """
@@ -683,8 +706,8 @@ class Labram(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             The input data with shape (batch, n_chans, n_times).
-        input_chans : int
-            The number of input channels.
+        input_chans : torch.Tensor or list of int, optional
+            Indices for selecting position embeddings (including the [CLS] token).
         return_patch_tokens : bool
             Whether to return the patch tokens.
         return_all_tokens : bool
@@ -799,10 +822,10 @@ class Labram(EEGModuleMixin, nn.Module):
             or (batch, n_chans, n_patches, patch size).
         input_chans: torch.Tensor or list of int, optional
             Indices for selecting position embeddings. If not provided and
-            channel names were specified during model initialization (via
-            ``ch_names`` or ``chs_info``), channels will be automatically
-            reordered to match LABRAM_CHANNEL_ORDER and the corresponding
-            position embedding indices will be used.
+            channel information was specified during model initialization
+            (via ``chs_info``), channels will be automatically reordered to
+            match LABRAM_CHANNEL_ORDER and the corresponding position
+            embedding indices will be used.
         return_patch_tokens: bool
             Return the patch tokens
         return_all_tokens: bool
