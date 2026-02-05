@@ -7,6 +7,7 @@ License: BSD 3 clause
 """
 
 from collections import OrderedDict
+from typing import Literal
 from warnings import warn
 
 import torch
@@ -290,6 +291,13 @@ class Labram(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.GELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+    on_unknown_chs: Literal["ignore", "warn", "raise"], default="warn"
+        Determines behavior when channels that are not in LABRAM_CHANNEL_ORDER
+        are passed to the forward method. Options:
+        - "ignore": Silently ignore and drop unmatched channels, then proceed with matched ones.
+        - "warn": Issue a warning listing unmatched channels, and drop them.
+        - "raise": Raise an error and halt execution if any unmatched channels are found.
+        An error is always raised when unknown channels are passed during model initialization (via ``chs_info``).
 
     References
     ----------
@@ -335,6 +343,7 @@ class Labram(EEGModuleMixin, nn.Module):
         neural_tokenizer=True,
         attn_head_dim=None,
         activation: type[nn.Module] = nn.GELU,
+        on_unknown_chs: Literal["ignore", "warn", "raise"] = "warn",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -346,25 +355,8 @@ class Labram(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq
 
-        self._ch_names: list[str] | None = None
-        if chs_info is not None:
-            self._ch_names = [ch["ch_name"] for ch in chs_info]
-
-        # Initialize channel mapping attributes for all paths
-        self._input_ch_names = None
-        self._use_labram_pos_emb = False
-
-        if self._ch_names is not None:
-            self._setup_channel_mapping()
-        else:
-            # Register as None buffers when no channel info provided
-            self.register_buffer("_channel_indices", None)
-            self.register_buffer("_labram_ch_indices", None)
-            warn(
-                "The model is initialized without channel information (chs_info). "
-                "Channel reordering to match LABRAM_CHANNEL_ORDER is disabled. "
-                "The model may not work correctly with pretrained weights.",
-            )
+        self.on_unknown_chs = on_unknown_chs
+        self._setup_channel_mapping()
 
         self.patch_size = patch_size
         self.num_features = self.embed_dim = embed_dim
@@ -452,11 +444,8 @@ class Labram(EEGModuleMixin, nn.Module):
         # patches, and the position embedding is used to encode the channels'
         # information.
         if use_abs_pos_emb:
-            pos_embed_chans = (
-                len(LABRAM_CHANNEL_ORDER) if self._use_labram_pos_emb else self.n_chans
-            )
             self.position_embedding = nn.Parameter(
-                torch.zeros(1, pos_embed_chans + 1, self.embed_dim),
+                torch.zeros(1, len(LABRAM_CHANNEL_ORDER) + 1, self.embed_dim),
                 requires_grad=True,
             )
         else:
@@ -556,66 +545,60 @@ class Labram(EEGModuleMixin, nn.Module):
             nn.init.constant_(layer.weight, 1.0)
 
     def _setup_channel_mapping(self):
-        """
-        Set up channel name mapping and compute reordering indices.
-
-        This method determines the input channel names (from chs_info),
-        validates them against LABRAM_CHANNEL_ORDER, and computes the indices
-        needed to reorder input channels to match the LaBraM expected order.
-
-        The method sets:
-        - self._input_ch_names: List of input channel names (uppercased)
-        - self._channel_indices: Tensor of indices for reordering, or None
-        - self._labram_ch_indices: Indices into LABRAM_CHANNEL_ORDER for position
-          embedding selection
-        """
-        # Get channel names from chs_info
-        input_ch_names = self._ch_names
-
-        if input_ch_names is None:
-            # No channel names provided - no reordering possible
-            self._input_ch_names = None
-            self._channel_indices = None
-            self._labram_ch_indices = None
-            self._use_labram_pos_emb = False
-            return
-
         # Normalize channel names to uppercase for case-insensitive matching
-        input_ch_names = [name.upper() for name in input_ch_names]
-        self._input_ch_names = input_ch_names
-
-        # Build a lookup from LABRAM_CHANNEL_ORDER
         labram_order_upper = [ch.upper() for ch in LABRAM_CHANNEL_ORDER]
-        labram_ch_to_idx = {ch: i for i, ch in enumerate(labram_order_upper)}
+        # Build a lookup from LABRAM_CHANNEL_ORDER
+        self._labram_ch_to_idx = {ch: i for i, ch in enumerate(labram_order_upper)}
+
+        self._channel_indices: torch.Tensor | None = None
+        self._labram_ch_indices: torch.Tensor | None = None
+        try:
+            chs_info = self.chs_info
+        except ValueError:
+            return
+        # Get ch_names from chs_info
+        ch_names = [ch["ch_name"] for ch in chs_info]
+        self._channel_indices, self._labram_ch_indices = self._get_channel_indices(
+            ch_names
+        )
+        if len(self._channel_indices) < len(ch_names):
+            unmatched_channels = set(ch_names) - set(LABRAM_CHANNEL_ORDER)
+            raise ValueError(
+                f"{len(unmatched_channels)} channels in `chs_info` are not in "
+                f"LABRAM_CHANNEL_ORDER. Channel reordering is enabled, but only matched channels will be used for inference. "
+                f"Unmatched channels: {unmatched_channels}."
+            )
+
+    def _get_channel_indices(
+        self, ch_names: list[str]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Normalize to uppercase for matching
+        ch_names_upper = [ch.upper() for ch in ch_names]
 
         # Find which input channels are in LABRAM_CHANNEL_ORDER
         matched_channels = []
         unmatched_channels = []
-        for i, ch_name in enumerate(input_ch_names):
-            if ch_name in labram_ch_to_idx:
-                matched_channels.append((i, ch_name, labram_ch_to_idx[ch_name]))
+        for i, ch_name in enumerate(ch_names_upper):
+            if ch_name in self._labram_ch_to_idx:
+                matched_channels.append((i, ch_name, self._labram_ch_to_idx[ch_name]))
             else:
-                unmatched_channels.append((i, ch_name))
-
-        if unmatched_channels:
-            unmatched_names = [ch[1] for ch in unmatched_channels]
-            warn(
-                f"The following channel names are not in LABRAM_CHANNEL_ORDER and "
-                f"will be excluded: {unmatched_names}. Only matched channels will "
-                f"be used for inference.",
-                UserWarning,
-            )
+                unmatched_channels.append(ch_name)
 
         if not matched_channels:
-            warn(
+            raise ValueError(
                 "No input channels matched LABRAM_CHANNEL_ORDER. Channel reordering "
-                "is disabled. The model may not work correctly with pretrained weights.",
-                UserWarning,
+                "is disabled. The model may not work correctly with pretrained weights."
             )
-            self._channel_indices = None
-            self._labram_ch_indices = None
-            self._use_labram_pos_emb = False
-            return
+
+        if unmatched_channels and self.on_unknown_chs != "ignore":
+            msg = (
+                f"The following channel names are not in LABRAM_CHANNEL_ORDER and "
+                f"will be excluded: {unmatched_channels}. Only matched channels will "
+                f"be used for inference."
+            )
+            if self.on_unknown_chs == "raise":
+                raise ValueError(msg)
+            warn(msg, UserWarning)
 
         # Sort matched channels by their position in LABRAM_CHANNEL_ORDER
         matched_channels.sort(key=lambda x: x[2])
@@ -623,21 +606,15 @@ class Labram(EEGModuleMixin, nn.Module):
         # Extract the reordering indices
         # _channel_indices: indices to select from input tensor
         # _labram_ch_indices: corresponding indices in LABRAM_CHANNEL_ORDER
-        input_indices = [ch[0] for ch in matched_channels]
-        labram_indices = [ch[2] for ch in matched_channels]
-
-        # Register as buffers so they move with the model to GPU etc.
-        self.register_buffer(
-            "_channel_indices",
-            torch.tensor(input_indices, dtype=torch.long),
+        input_indices = torch.tensor(
+            [ch[0] for ch in matched_channels], dtype=torch.long
         )
-        self.register_buffer(
-            "_labram_ch_indices",
-            torch.tensor(labram_indices, dtype=torch.long),
+        labram_indices = torch.tensor(
+            [ch[2] for ch in matched_channels], dtype=torch.long
         )
-        self._use_labram_pos_emb = True
+        return input_indices, labram_indices
 
-    def _reorder_channels(self, x):
+    def _reorder_channels(self, x, ch_names):
         """
         Reorder input channels to match LABRAM_CHANNEL_ORDER.
 
@@ -661,23 +638,31 @@ class Labram(EEGModuleMixin, nn.Module):
         enabled, we also return indices that select the corresponding LABRAM
         positions, which preserves alignment for any subset of channels.
         """
-        if self._channel_indices is None:
-            # No reordering - use all channels as-is
-            return x, None
+        if ch_names is not None:
+            assert len(ch_names) == x.shape[1], (
+                "Length of ch_names must match number of channels in input tensor."
+            )
+            channel_indices, labram_ch_indices = self._get_channel_indices(ch_names)
+        else:
+            channel_indices = self._channel_indices
+            labram_ch_indices = self._labram_ch_indices
+
+        if channel_indices is None or labram_ch_indices is None:
+            raise ValueError(
+                "Channel information is not available. Please either provide "
+                "the `ch_names` argument to the forward method, or ensure that channel information is provided "
+                "during model initialization (via `chs_info`)."
+            )
 
         # Select and reorder channels according to LABRAM order
-        x_reordered = x[:, self._channel_indices, :]
-
-        # Build position embedding indices: [CLS] token + LABRAM channel indices
-        if self._labram_ch_indices is None:
-            return x_reordered, None
+        x_reordered = x[:, channel_indices, :]
 
         cls_index = torch.tensor(
             [0],
-            device=self._labram_ch_indices.device,
-            dtype=self._labram_ch_indices.dtype,
+            device=labram_ch_indices.device,
+            dtype=labram_ch_indices.dtype,
         )
-        input_chans = torch.cat([cls_index, self._labram_ch_indices + 1])
+        input_chans = torch.cat([cls_index, labram_ch_indices + 1])
         return x_reordered, input_chans
 
     def get_num_layers(self):
@@ -689,7 +674,7 @@ class Labram(EEGModuleMixin, nn.Module):
     def forward_features(
         self,
         x,
-        input_chans=None,
+        input_chans,
         return_patch_tokens=False,
         return_all_tokens=False,
     ):
@@ -700,7 +685,7 @@ class Labram(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             The input data with shape (batch, n_chans, n_times).
-        input_chans : torch.Tensor or list of int, optional
+        input_chans : torch.Tensor
             Indices for selecting position embeddings (including the [CLS] token).
         return_patch_tokens : bool
             Whether to return the patch tokens.
@@ -738,10 +723,7 @@ class Labram(EEGModuleMixin, nn.Module):
         if self.position_embedding is not None:
             if self.neural_tokenizer:
                 # In tokenizer mode, use channel-based position embedding
-                if input_chans is not None:
-                    pos_embed_used = self.position_embedding[:, input_chans]
-                else:
-                    pos_embed_used = self.position_embedding
+                pos_embed_used = self.position_embedding[:, input_chans]
 
                 pos_embed = self._adj_position_embedding(
                     pos_embed_used=pos_embed_used, batch_size=batch_size
@@ -802,7 +784,7 @@ class Labram(EEGModuleMixin, nn.Module):
     def forward(
         self,
         x,
-        input_chans=None,
+        ch_names: list[str] | None = None,
         return_patch_tokens=False,
         return_all_tokens=False,
     ):
@@ -814,12 +796,12 @@ class Labram(EEGModuleMixin, nn.Module):
         x: torch.Tensor
             The input data with shape (batch, n_chans, n_times)
             or (batch, n_chans, n_patches, patch size).
-        input_chans: torch.Tensor or list of int, optional
-            Indices for selecting position embeddings. If not provided and
-            channel information was specified during model initialization
-            (via ``chs_info``), channels will be automatically reordered to
-            match LABRAM_CHANNEL_ORDER and the corresponding position
-            embedding indices will be used.
+        ch_names: list of str or None
+            Optional list of channel names corresponding to the input data.
+            This list is used to reorder channels to match LABRAM_CHANNEL_ORDER.
+            If not provided, the channels provided during model initialization
+            (via ``chs_info``), channels will be used instead
+            If neither is provided, an error will be raised.
         return_patch_tokens: bool
             Return the patch tokens
         return_all_tokens: bool
@@ -831,8 +813,7 @@ class Labram(EEGModuleMixin, nn.Module):
             The output of the model with dimensions (batch, n_outputs)
         """
         # Apply automatic channel reordering if configured and input_chans not provided
-        if input_chans is None and self._channel_indices is not None:
-            x, input_chans = self._reorder_channels(x)
+        x, input_chans = self._reorder_channels(x, ch_names=ch_names)
 
         x = self.forward_features(
             x,
