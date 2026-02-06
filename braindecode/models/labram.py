@@ -902,38 +902,17 @@ class Labram(EEGModuleMixin, nn.Module):
         return temporal_embedding
 
     def _adj_position_embedding(self, pos_embed_used, batch_size):
-        """
-        Adjust the dimensions of position embedding to match the
-        number of patches.
-
-        Parameters
-        ----------
-        pos_embed_used : torch.Tensor
-            The position embedding to be adjusted.
-        batch_size : int
-            The number of batches.
-
-        Returns
-        -------
-        pos_embed : torch.Tensor
-            The adjusted position embedding
-        """
-        # [CLS] token has no position embedding
-        pos_embed = pos_embed_used[:, 1:, :]
-        # Adding a new dimension to the position embedding
-        pos_embed = pos_embed.unsqueeze(2)
-        # Need to expand the position embedding to match the number of
-        # n_patches
-        pos_embed = pos_embed.expand(batch_size, -1, self.patch_embed[0].n_patchs, -1)
-        # Flatten the intermediate dimensions,
-        # such as the number of patches and the "channels" dim
-        pos_embed = pos_embed.flatten(1, 2)
-        # Get the base position embedding
-        # This is the position embedding for the [CLS] token
-        base_pos = pos_embed[:, 0:1, :].expand(batch_size, -1, -1)
-        # Concatenate the base position embedding with the
-        # position embedding
-        pos_embed = torch.cat((base_pos, pos_embed), dim=1)
+        """Copy/pasted from https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/modeling_finetune.py#L358-L362"""
+        input_time_window = self.patch_embed[0].n_patchs
+        pos_embed = (
+            pos_embed_used[:, 1:, :]
+            .unsqueeze(2)
+            .expand(batch_size, -1, input_time_window, -1)
+            .flatten(1, 2)
+        )
+        pos_embed = torch.cat(
+            (pos_embed_used[:, 0:1, :].expand(batch_size, -1, -1), pos_embed), dim=1
+        )
         return pos_embed
 
 
