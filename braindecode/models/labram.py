@@ -341,7 +341,7 @@ class Labram(EEGModuleMixin, nn.Module):
         norm_layer: type[nn.Module] = nn.LayerNorm,
         init_values=0.1,
         use_abs_pos_emb=True,
-        use_mean_pooling=True,
+        use_mean_pooling=False,
         init_scale=0.001,
         neural_tokenizer=True,
         attn_head_dim=None,
