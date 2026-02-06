@@ -558,7 +558,7 @@ class Labram(EEGModuleMixin, nn.Module):
         # Build a lookup from LABRAM_CHANNEL_ORDER
         self._labram_ch_to_idx = {ch: i for i, ch in enumerate(labram_order_upper)}
 
-        self._channel_indices: torch.Tensor | None = None
+        self._input_channels_mask: torch.Tensor | None = None
         self._labram_ch_indices: torch.Tensor | None = None
         try:
             chs_info = self.chs_info
@@ -566,7 +566,9 @@ class Labram(EEGModuleMixin, nn.Module):
             return
         # Get ch_names from chs_info
         ch_names = [ch["ch_name"] for ch in chs_info]
-        self._channel_indices, self._labram_ch_indices = self._get_channel_indices(
+        # input_channels_mask: use to drop unknown channels form the input tensor
+        # labram_ch_indices: used to select the corresponding position embeddings, which preserves alignment for any subset of channels.
+        self._input_channels_mask, self._labram_ch_indices = self._get_channel_indices(
             ch_names
         )
         if len(self._channel_indices) < len(ch_names):
@@ -586,16 +588,19 @@ class Labram(EEGModuleMixin, nn.Module):
         # Find which input channels are in LABRAM_CHANNEL_ORDER
         matched_channels = []
         unmatched_channels = []
+        input_channels_mask = []
         for i, ch_name in enumerate(ch_names_upper):
             if ch_name in self._labram_ch_to_idx:
                 matched_channels.append((i, ch_name, self._labram_ch_to_idx[ch_name]))
+                input_channels_mask.append(True)
             else:
                 unmatched_channels.append(ch_name)
+                input_channels_mask.append(False)
 
         if not matched_channels:
             raise ValueError(
                 "No input channels matched LABRAM_CHANNEL_ORDER. Channel reordering "
-                "is disabled. The model may not work correctly with pretrained weights."
+                "can not be applied."
             )
 
         if unmatched_channels and self.on_unknown_chs != "ignore":
@@ -608,19 +613,11 @@ class Labram(EEGModuleMixin, nn.Module):
                 raise ValueError(msg)
             warn(msg, UserWarning)
 
-        # Sort matched channels by their position in LABRAM_CHANNEL_ORDER
-        matched_channels.sort(key=lambda x: x[2])
-
-        # Extract the reordering indices
-        # _channel_indices: indices to select from input tensor
-        # _labram_ch_indices: corresponding indices in LABRAM_CHANNEL_ORDER
-        input_indices = torch.tensor(
-            [ch[0] for ch in matched_channels], dtype=torch.long
-        )
+        input_channels_mask_tensor = torch.tensor(input_channels_mask, dtype=torch.bool)
         labram_indices = torch.tensor(
             [ch[2] for ch in matched_channels], dtype=torch.long
         )
-        return input_indices, labram_indices
+        return input_channels_mask_tensor, labram_indices
 
     def _select_channels(self, x, ch_names):
         """
@@ -650,20 +647,25 @@ class Labram(EEGModuleMixin, nn.Module):
             assert len(ch_names) == x.shape[1], (
                 "Length of ch_names must match number of channels in input tensor."
             )
-            channel_indices, labram_ch_indices = self._get_channel_indices(ch_names)
+            input_channels_mask, labram_ch_indices = self._get_channel_indices(ch_names)
         else:
-            channel_indices = self._channel_indices
+            input_channels_mask = self._input_channels_mask
             labram_ch_indices = self._labram_ch_indices
 
-        if channel_indices is None or labram_ch_indices is None:
+        if input_channels_mask is None or labram_ch_indices is None:
             raise ValueError(
                 "Channel information is not available. Please either provide "
                 "the `ch_names` argument to the forward method, or ensure that channel information is provided "
                 "during model initialization (via `chs_info`)."
             )
+        if len(input_channels_mask) != x.shape[1]:
+            raise ValueError(
+                "Length of input_channels_mask does not match number of channels in input tensor. "
+                "Please provide channel information via the `ch_names` argument to the forward method, or ensure that channel information is provided during model initialization (via `chs_info`)."
+            )
 
-        # Select and reorder channels according to LABRAM order
-        x_reordered = x[:, channel_indices, :]
+        # Select the channels that are available in LABRAM_CHANNEL_ORDER
+        x_available = x[:, input_channels_mask, :]
 
         cls_index = torch.tensor(
             [0],
@@ -671,7 +673,7 @@ class Labram(EEGModuleMixin, nn.Module):
             dtype=labram_ch_indices.dtype,
         )
         input_chans = torch.cat([cls_index, labram_ch_indices + 1])
-        return x_reordered, input_chans
+        return x_available, input_chans
 
     def get_num_layers(self):
         """
