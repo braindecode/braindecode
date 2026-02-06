@@ -244,6 +244,8 @@ class Labram(EEGModuleMixin, nn.Module):
     ----------
     patch_size : int
         The size of the patch to be used in the patch embedding.
+    learned_patcher : bool
+        Whether to use a learned patch embedding (via a convolutional layer) or a fixed patch embedding (via rearrangement).
     embed_dim : int
         The dimension of the embedding.
     conv_in_channels : int
@@ -323,6 +325,7 @@ class Labram(EEGModuleMixin, nn.Module):
         sfreq=None,
         input_window_seconds=None,
         patch_size=200,
+        learned_patcher=False,
         embed_dim=200,
         conv_in_channels=1,
         conv_out_channels=8,
@@ -398,6 +401,7 @@ class Labram(EEGModuleMixin, nn.Module):
                                 patch_size=self.patch_size,
                                 n_chans=self.n_chans,
                                 emb_dim=self.patch_size,
+                                learned_patcher=learned_patcher,
                             ),
                         ),
                         (
@@ -977,16 +981,16 @@ class _SegmentPatch(nn.Module):
         self.n_chans = n_chans
         self.learned_patcher = learned_patcher
 
-        self.patcher = nn.Conv1d(
-            in_channels=1,
-            out_channels=self.emb_dim,
-            kernel_size=self.patch_size,
-            stride=self.patch_size,
-        )
-
-        self.adding_extra_dim = Rearrange(
-            pattern="batch nchans temporal -> (batch nchans) 1 temporal"
-        )
+        if learned_patcher:
+            self.patcher = nn.Conv1d(
+                in_channels=1,
+                out_channels=self.emb_dim,
+                kernel_size=self.patch_size,
+                stride=self.patch_size,
+            )
+            self.adding_extra_dim = Rearrange(
+                pattern="batch nchans temporal -> (batch nchans) 1 temporal"
+            )
 
     def forward(self, x):
         """
