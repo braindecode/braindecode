@@ -38,7 +38,7 @@ Enhancements
 - Populate epochs metadata with the :class:`mne.Annotations`'s ``extras`` entries (:gh:`918` by `Pierre Guetschel`_)
 - Add :class:`braindecode.datasets.TUHEvents` dataset and improve other TUH datasets (:gh:`920` and :gh:`923` by `Pierre Guetschel`_)
 - Allow overlapping events in :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`923` by `Pierre Guetschel`_)
-
+- Better alignment of channels configuration with the pretrained LABRAM model, including a warning when initializing without channel information and improved documentation (:gh:`931` by `Young Truong`_ )
 
 API changes
 ============
@@ -53,7 +53,8 @@ Bugs
 - Fix :func:`braindecode.preprocessing.preprocess.filterbank` to preserve info fields
   (``description``, ``line_freq``, ``device_info``, etc.) when creating filtered copies,
   avoiding merge conflicts in MNE when adding channels (:gh:`928` by `Bruno Aristimunha`_)
-- Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb`` (:gh:`919` by `Pierre Guetschel`_)
+- [Outdated:] *Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb``* (:gh:`919` by `Pierre Guetschel`_)
+- Fix multiple bugs in Labram positional encoding. Now the braindecode implementation is aligned with the original one (:gh:`931` by `Pierre Guetschel`_ )
 
 Code health
 ============

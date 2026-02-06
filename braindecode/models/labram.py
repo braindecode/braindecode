@@ -7,6 +7,7 @@ License: BSD 3 clause
 """
 
 from collections import OrderedDict
+from typing import Literal
 from warnings import warn
 
 import torch
@@ -18,6 +19,142 @@ from torch.nn.init import trunc_normal_
 from braindecode.functional import rescale_parameter
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
+
+# Standard 10-20 system electrode positions used by LaBraM for position embeddings.
+# This defines the canonical channel order that the pretrained LaBraM model expects.
+# Channels from input data will be automatically reordered to match this order.
+# Reference: https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/utils.py#L42-L57
+# We just commented the last 8 channels to match the 128 in the pretrained weights here
+LABRAM_CHANNEL_ORDER = (
+    "FP1",
+    "FPZ",
+    "FP2",
+    "AF9",
+    "AF7",
+    "AF5",
+    "AF3",
+    "AF1",
+    "AFZ",
+    "AF2",
+    "AF4",
+    "AF6",
+    "AF8",
+    "AF10",
+    "F9",
+    "F7",
+    "F5",
+    "F3",
+    "F1",
+    "FZ",
+    "F2",
+    "F4",
+    "F6",
+    "F8",
+    "F10",
+    "FT9",
+    "FT7",
+    "FC5",
+    "FC3",
+    "FC1",
+    "FCZ",
+    "FC2",
+    "FC4",
+    "FC6",
+    "FT8",
+    "FT10",
+    "T9",
+    "T7",
+    "C5",
+    "C3",
+    "C1",
+    "CZ",
+    "C2",
+    "C4",
+    "C6",
+    "T8",
+    "T10",
+    "TP9",
+    "TP7",
+    "CP5",
+    "CP3",
+    "CP1",
+    "CPZ",
+    "CP2",
+    "CP4",
+    "CP6",
+    "TP8",
+    "TP10",
+    "P9",
+    "P7",
+    "P5",
+    "P3",
+    "P1",
+    "PZ",
+    "P2",
+    "P4",
+    "P6",
+    "P8",
+    "P10",
+    "PO9",
+    "PO7",
+    "PO5",
+    "PO3",
+    "PO1",
+    "POZ",
+    "PO2",
+    "PO4",
+    "PO6",
+    "PO8",
+    "PO10",
+    "O1",
+    "OZ",
+    "O2",
+    "O9",
+    "CB1",
+    "CB2",
+    "IZ",
+    "O10",
+    "T3",
+    "T5",
+    "T4",
+    "T6",
+    "M1",
+    "M2",
+    "A1",
+    "A2",
+    "CFC1",
+    "CFC2",
+    "CFC3",
+    "CFC4",
+    "CFC5",
+    "CFC6",
+    "CFC7",
+    "CFC8",
+    "CCP1",
+    "CCP2",
+    "CCP3",
+    "CCP4",
+    "CCP5",
+    "CCP6",
+    "CCP7",
+    "CCP8",
+    "T1",
+    "T2",
+    "FTT9h",
+    "TTP7h",
+    "TPP9h",
+    "FTT10h",
+    "TPP8h",
+    "TPP10h",
+    "FP1-F7",
+    "F7-T7",
+    "T7-P7",
+    "P7-O1",
+    "FP2-F8",
+    "F8-T8",
+    "T8-P8",
+    "P8-O2",  # "FP1-F3", "F3-C3", "C3-P3", "P3-O1", "FP2-F4", "F4-C4", "C4-P4", "P4-O2"
+)
 
 
 class Labram(EEGModuleMixin, nn.Module):
@@ -107,6 +244,8 @@ class Labram(EEGModuleMixin, nn.Module):
     ----------
     patch_size : int
         The size of the patch to be used in the patch embedding.
+    learned_patcher : bool
+        Whether to use a learned patch embedding (via a convolutional layer) or a fixed patch embedding (via rearrangement).
     embed_dim : int
         The dimension of the embedding.
     conv_in_channels : int
@@ -154,6 +293,13 @@ class Labram(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.GELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+    on_unknown_chs: Literal["ignore", "warn", "raise"], default="warn"
+        Determines behavior when channels that are not in LABRAM_CHANNEL_ORDER
+        are passed to the forward method. Options:
+        - "ignore": Silently ignore and drop unmatched channels, then proceed with matched ones.
+        - "warn": Issue a warning listing unmatched channels, and drop them.
+        - "raise": Raise an error and halt execution if any unmatched channels are found.
+        An error is always raised when unknown channels are passed during model initialization (via ``chs_info``).
 
     References
     ----------
@@ -179,6 +325,7 @@ class Labram(EEGModuleMixin, nn.Module):
         sfreq=None,
         input_window_seconds=None,
         patch_size=200,
+        learned_patcher=False,
         embed_dim=200,
         conv_in_channels=1,
         conv_out_channels=8,
@@ -194,11 +341,12 @@ class Labram(EEGModuleMixin, nn.Module):
         norm_layer: type[nn.Module] = nn.LayerNorm,
         init_values=0.1,
         use_abs_pos_emb=True,
-        use_mean_pooling=True,
+        use_mean_pooling=False,
         init_scale=0.001,
         neural_tokenizer=True,
         attn_head_dim=None,
         activation: type[nn.Module] = nn.GELU,
+        on_unknown_chs: Literal["ignore", "warn", "raise"] = "warn",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -208,7 +356,10 @@ class Labram(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, n_times, input_window_seconds, sfreq
+
+        self.on_unknown_chs = on_unknown_chs
+        self._setup_channel_mapping()
 
         self.patch_size = patch_size
         self.num_features = self.embed_dim = embed_dim
@@ -250,6 +401,7 @@ class Labram(EEGModuleMixin, nn.Module):
                                 patch_size=self.patch_size,
                                 n_chans=self.n_chans,
                                 emb_dim=self.patch_size,
+                                learned_patcher=learned_patcher,
                             ),
                         ),
                         (
@@ -297,7 +449,7 @@ class Labram(EEGModuleMixin, nn.Module):
         # information.
         if use_abs_pos_emb:
             self.position_embedding = nn.Parameter(
-                torch.zeros(1, self.n_chans + 1, self.embed_dim),
+                torch.zeros(1, len(LABRAM_CHANNEL_ORDER) + 1, self.embed_dim),
                 requires_grad=True,
             )
         else:
@@ -337,13 +489,14 @@ class Labram(EEGModuleMixin, nn.Module):
                 for i in range(num_layers)
             ]
         )
-        self.norm = nn.Identity() if use_mean_pooling else norm_layer(self.embed_dim)
-        self.fc_norm = norm_layer(self.embed_dim) if use_mean_pooling else None
+        self.norm = (
+            nn.Identity() if use_mean_pooling else norm_layer(self.embed_dim, eps=1e-6)
+        )
+        self.fc_norm = (
+            norm_layer(self.embed_dim, eps=1e-6) if use_mean_pooling else None
+        )
 
-        if self.n_outputs > 0:
-            self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
-        else:
-            self.final_layer = nn.Identity()
+        self.reset_classifier(self.n_outputs)
 
         self.apply(self._init_weights)
         self.fix_init_weight_and_init_embedding()
@@ -399,6 +552,122 @@ class Labram(EEGModuleMixin, nn.Module):
             nn.init.constant_(layer.bias, 0)
             nn.init.constant_(layer.weight, 1.0)
 
+    def _setup_channel_mapping(self):
+        # Normalize channel names to uppercase for case-insensitive matching
+        labram_order_upper = [ch.upper() for ch in LABRAM_CHANNEL_ORDER]
+        # Build a lookup from LABRAM_CHANNEL_ORDER
+        self._labram_ch_to_idx = {ch: i for i, ch in enumerate(labram_order_upper)}
+
+        self._input_channels_mask: torch.Tensor | None = None
+        self._labram_ch_indices: torch.Tensor | None = None
+        try:
+            chs_info = self.chs_info
+        except ValueError:
+            return
+        # Get ch_names from chs_info
+        ch_names = [ch["ch_name"] for ch in chs_info]
+        # input_channels_mask: use to drop unknown channels form the input tensor
+        # labram_ch_indices: used to select the corresponding position embeddings, which preserves alignment for any subset of channels.
+        self._input_channels_mask, self._labram_ch_indices = self._get_channel_indices(
+            ch_names
+        )
+
+    def _get_channel_indices(
+        self, ch_names: list[str]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Normalize to uppercase for matching
+        ch_names_upper = [ch.upper() for ch in ch_names]
+
+        # Find which input channels are in LABRAM_CHANNEL_ORDER
+        matched_channels = []
+        unmatched_channels = []
+        input_channels_mask = []
+        for i, ch_name in enumerate(ch_names_upper):
+            if ch_name in self._labram_ch_to_idx:
+                matched_channels.append((i, ch_name, self._labram_ch_to_idx[ch_name]))
+                input_channels_mask.append(True)
+            else:
+                unmatched_channels.append(ch_name)
+                input_channels_mask.append(False)
+
+        if not matched_channels:
+            raise ValueError(
+                "No input channels matched LABRAM_CHANNEL_ORDER. Channel reordering "
+                "can not be applied."
+            )
+
+        if unmatched_channels and self.on_unknown_chs != "ignore":
+            msg = (
+                f"The following channel names are not in LABRAM_CHANNEL_ORDER and "
+                f"will be excluded: {unmatched_channels}. Only matched channels will "
+                f"be used for inference."
+            )
+            if self.on_unknown_chs == "raise":
+                raise ValueError(msg)
+            warn(msg, UserWarning)
+
+        input_channels_mask_tensor = torch.tensor(input_channels_mask, dtype=torch.bool)
+        labram_indices = torch.tensor(
+            [ch[2] for ch in matched_channels], dtype=torch.long
+        )
+        return input_channels_mask_tensor, labram_indices
+
+    def _select_channels(self, x, ch_names):
+        """
+        Select input channels to match LABRAM_CHANNEL_ORDER.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch, n_chans, n_times).
+
+        Returns
+        -------
+        x_selected : torch.Tensor
+            Selected tensor of shape (batch, n_matched_chans, n_times).
+        input_chans : torch.Tensor or None
+            Indices for selecting position embeddings, including the [CLS] token
+            at index 0. Returns None if reordering is not enabled.
+
+        Notes
+        -----
+        The selection ensures that channels are processed in the same relative
+        order as LABRAM_CHANNEL_ORDER. When absolute position embeddings are
+        enabled, we also return indices that select the corresponding LABRAM
+        positions, which preserves alignment for any subset of channels.
+        """
+        if ch_names is not None:
+            assert len(ch_names) == x.shape[1], (
+                "Length of ch_names must match number of channels in input tensor."
+            )
+            input_channels_mask, labram_ch_indices = self._get_channel_indices(ch_names)
+        else:
+            input_channels_mask = self._input_channels_mask
+            labram_ch_indices = self._labram_ch_indices
+
+        if input_channels_mask is None or labram_ch_indices is None:
+            raise ValueError(
+                "Channel information is not available. Please either provide "
+                "the `ch_names` argument to the forward method, or ensure that channel information is provided "
+                "during model initialization (via `chs_info`)."
+            )
+        if len(input_channels_mask) != x.shape[1]:
+            raise ValueError(
+                "Length of input_channels_mask does not match number of channels in input tensor. "
+                "Please provide channel information via the `ch_names` argument to the forward method, or ensure that channel information is provided during model initialization (via `chs_info`)."
+            )
+
+        # Select the channels that are available in LABRAM_CHANNEL_ORDER
+        x_available = x[:, input_channels_mask, :]
+
+        cls_index = torch.tensor(
+            [0],
+            device=labram_ch_indices.device,
+            dtype=labram_ch_indices.dtype,
+        )
+        input_chans = torch.cat([cls_index, labram_ch_indices + 1])
+        return x_available, input_chans
+
     def get_num_layers(self):
         """
         Convenience method to get the number of layers in the model.
@@ -408,7 +677,7 @@ class Labram(EEGModuleMixin, nn.Module):
     def forward_features(
         self,
         x,
-        input_chans=None,
+        input_chans,
         return_patch_tokens=False,
         return_all_tokens=False,
     ):
@@ -419,8 +688,8 @@ class Labram(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             The input data with shape (batch, n_chans, n_times).
-        input_chans : int
-            The number of input channels.
+        input_chans : torch.Tensor
+            Indices for selecting position embeddings (including the [CLS] token).
         return_patch_tokens : bool
             Whether to return the patch tokens.
         return_all_tokens : bool
@@ -431,14 +700,14 @@ class Labram(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             The output of the model.
         """
-        batch_size = x.shape[0]
+        batch_size, n_input_chans, _ = x.shape
 
         if self.neural_tokenizer:
             # For neural tokenizer: input is (batch, n_chans, n_times)
             # patch_embed returns (batch, n_chans, emb_dim)
             x = self.patch_embed(x)
             # x shape: (batch, n_chans, emb_dim)
-            n_patch = self.n_chans
+            n_patch = n_input_chans  # Use actual input channels, not self.n_chans
             temporal = self.embed_dim
         else:
             # For neural decoder: input is (batch, n_chans, n_times)
@@ -457,10 +726,7 @@ class Labram(EEGModuleMixin, nn.Module):
         if self.position_embedding is not None:
             if self.neural_tokenizer:
                 # In tokenizer mode, use channel-based position embedding
-                if input_chans is not None:
-                    pos_embed_used = self.position_embedding[:, input_chans]
-                else:
-                    pos_embed_used = self.position_embedding
+                pos_embed_used = self.position_embedding[:, input_chans]
 
                 pos_embed = self._adj_position_embedding(
                     pos_embed_used=pos_embed_used, batch_size=batch_size
@@ -477,7 +743,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         # The time embedding is added across the channels after the [CLS] token
         if self.neural_tokenizer:
-            num_ch = self.n_chans
+            num_ch = n_input_chans  # Use actual input channels
             time_embed = self._adj_temporal_embedding(
                 num_ch=num_ch, batch_size=batch_size, dim_embed=temporal
             )
@@ -521,7 +787,7 @@ class Labram(EEGModuleMixin, nn.Module):
     def forward(
         self,
         x,
-        input_chans=None,
+        ch_names: list[str] | None = None,
         return_patch_tokens=False,
         return_all_tokens=False,
     ):
@@ -533,8 +799,12 @@ class Labram(EEGModuleMixin, nn.Module):
         x: torch.Tensor
             The input data with shape (batch, n_chans, n_times)
             or (batch, n_chans, n_patches, patch size).
-        input_chans: int
-            An input channel to select some dimensions
+        ch_names: list of str or None
+            Optional list of channel names corresponding to the input data.
+            This list is used to reorder channels to match LABRAM_CHANNEL_ORDER.
+            If not provided, the channels provided during model initialization
+            (via ``chs_info``), channels will be used instead
+            If neither is provided, an error will be raised.
         return_patch_tokens: bool
             Return the patch tokens
         return_all_tokens: bool
@@ -545,6 +815,9 @@ class Labram(EEGModuleMixin, nn.Module):
         torch.Tensor
             The output of the model with dimensions (batch, n_outputs)
         """
+        # Apply automatic channel reordering if configured and input_chans not provided
+        x, input_chans = self._select_channels(x, ch_names=ch_names)
+
         x = self.forward_features(
             x,
             input_chans=input_chans,
@@ -574,11 +847,8 @@ class Labram(EEGModuleMixin, nn.Module):
         n_outputs : int
             The new number of classes.
         """
-        self.n_outputs = n_outputs
         self.final_layer = (
-            nn.Linear(self.emb_dim, self.n_outputs)
-            if self.n_outputs > 0
-            else nn.Identity()
+            nn.Linear(self.embed_dim, n_outputs) if n_outputs > 0 else nn.Identity()
         )
 
     def _adj_temporal_embedding(self, num_ch, batch_size, dim_embed=None):
@@ -608,7 +878,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         # Get the temporal embedding: (1, temporal_embedding_dim, emb_size)
         # Slice to cut_dimension: (1, cut_dimension, emb_size)
-        temporal_embedding = self.temporal_embedding[:, 1 : cut_dimension + 1, :]
+        temporal_embedding = self.temporal_embedding[:, 0:cut_dimension, :]
 
         # Add a new dimension to the time embedding
         # e.g. (1, 5, 200) -> (1, 1, 5, 200)
@@ -625,38 +895,17 @@ class Labram(EEGModuleMixin, nn.Module):
         return temporal_embedding
 
     def _adj_position_embedding(self, pos_embed_used, batch_size):
-        """
-        Adjust the dimensions of position embedding to match the
-        number of patches.
-
-        Parameters
-        ----------
-        pos_embed_used : torch.Tensor
-            The position embedding to be adjusted.
-        batch_size : int
-            The number of batches.
-
-        Returns
-        -------
-        pos_embed : torch.Tensor
-            The adjusted position embedding
-        """
-        # [CLS] token has no position embedding
-        pos_embed = pos_embed_used[:, 1:, :]
-        # Adding a new dimension to the position embedding
-        pos_embed = pos_embed.unsqueeze(2)
-        # Need to expand the position embedding to match the number of
-        # n_patches
-        pos_embed = pos_embed.expand(batch_size, -1, self.patch_embed[0].n_patchs, -1)
-        # Flatten the intermediate dimensions,
-        # such as the number of patches and the "channels" dim
-        pos_embed = pos_embed.flatten(1, 2)
-        # Get the base position embedding
-        # This is the position embedding for the [CLS] token
-        base_pos = pos_embed[:, 0:1, :].expand(batch_size, -1, -1)
-        # Concatenate the base position embedding with the
-        # position embedding
-        pos_embed = torch.cat((base_pos, pos_embed), dim=1)
+        """Copy/pasted from https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/modeling_finetune.py#L358-L362"""
+        input_time_window = self.patch_embed[0].n_patchs
+        pos_embed = (
+            pos_embed_used[:, 1:, :]
+            .unsqueeze(2)
+            .expand(batch_size, -1, input_time_window, -1)
+            .flatten(1, 2)
+        )
+        pos_embed = torch.cat(
+            (pos_embed_used[:, 0:1, :].expand(batch_size, -1, -1), pos_embed), dim=1
+        )
         return pos_embed
 
 
@@ -707,16 +956,16 @@ class _SegmentPatch(nn.Module):
         self.n_chans = n_chans
         self.learned_patcher = learned_patcher
 
-        self.patcher = nn.Conv1d(
-            in_channels=1,
-            out_channels=self.emb_dim,
-            kernel_size=self.patch_size,
-            stride=self.patch_size,
-        )
-
-        self.adding_extra_dim = Rearrange(
-            pattern="batch nchans temporal -> (batch nchans) 1 temporal"
-        )
+        if learned_patcher:
+            self.patcher = nn.Conv1d(
+                in_channels=1,
+                out_channels=self.emb_dim,
+                kernel_size=self.patch_size,
+                stride=self.patch_size,
+            )
+            self.adding_extra_dim = Rearrange(
+                pattern="batch nchans temporal -> (batch nchans) 1 temporal"
+            )
 
     def forward(self, x):
         """
@@ -732,7 +981,7 @@ class _SegmentPatch(nn.Module):
         X_patch: Tensor
             [batch, n_chans, n_times//patch_size, patch_size]
         """
-        batch_size, _, _ = x.shape
+        batch_size, n_chans_actual, n_times_actual = x.shape
         # Input shape: [batch, n_chs, n_times]
 
         # First, rearrange input to treat the channel dimension 'n_chs' as
@@ -750,17 +999,18 @@ class _SegmentPatch(nn.Module):
             # Assuming you want [batch, n_chs, n_patches, emb_dim]
             # as output, which keeps channel information
             # This treats each patch embedding as a feature alongside channels
+            # Use actual number of channels from input, not self.n_chans
             x = rearrange(
                 x,
                 pattern="(batch nchans) embed npatchs -> batch nchans npatchs embed",
                 batch=batch_size,
-                nchans=self.n_chans,
+                nchans=n_chans_actual,
             )
         else:
             x = x.view(
                 batch_size,
-                self.n_chans,
-                self.n_times // self.patch_size,
+                n_chans_actual,
+                n_times_actual // self.patch_size,
                 self.patch_size,
             )
         return x
@@ -940,8 +1190,8 @@ class _Attention(nn.Module):
             self.v_bias = None
 
         if qk_norm is not None:
-            self.q_norm = qk_norm(head_dim)
-            self.k_norm = qk_norm(head_dim)
+            self.q_norm = qk_norm(head_dim, eps=1e-6)
+            self.k_norm = qk_norm(head_dim, eps=1e-6)
         else:
             self.q_norm = None
             self.k_norm = None
@@ -1136,7 +1386,7 @@ class _WindowsAttentionBlock(nn.Module):
         attn_head_dim=None,
     ):
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim, eps=1e-6)
         self.attn = _Attention(
             dim,
             num_heads=num_heads,
@@ -1150,7 +1400,7 @@ class _WindowsAttentionBlock(nn.Module):
         )
 
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.norm2 = norm_layer(dim)
+        self.norm2 = norm_layer(dim, eps=1e-6)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MLP(
             in_features=dim,
