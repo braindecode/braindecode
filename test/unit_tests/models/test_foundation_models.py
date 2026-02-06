@@ -253,36 +253,26 @@ def test_labram_neural_decoder_forward_pass_single_sample(
 
 
 def test_labram_can_load_pretrained_weights():
-    """Ensure that Labram can load pre-trained weights via torch.hub convenience."""
-    chs_info = [{"ch_name": ch_name} for ch_name in LABRAM_CHANNEL_ORDER]
-    model = Labram(n_times=1600, chs_info=chs_info, n_outputs=4)
-    url = "https://huggingface.co/braindecode/Labram-Braindecode/resolve/main/braindecode_labram_base.pt"
+    """Ensure that Labram can load pre-trained weights from HuggingFace Hub."""
+    mne_data_dir = mne.get_config("MNE_DATA")
+    if mne_data_dir is None:
+        mne_data_dir = str(Path.home() / "mne_data")
+    cache_dir = Path(mne_data_dir) / "labram_pretrained"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = str(cache_dir)
 
     try:
-        state_dict = torch.hub.load_state_dict_from_url(
-            url,
-            progress=True,
-            map_location="cpu",
-            file_name="braindecode_labram_base_resolved.pt",
+        model = Labram.from_pretrained(
+            "braindecode/labram-pretrained",
+            cache_dir=cache_dir,
         )
     except (URLError, OSError) as err:
         pytest.skip(f"Could not download pretrained Labram checkpoint: {err}")
-    # Align a few known naming/shape differences between hub checkpoint and
-    # current implementation, while still validating that weights can load.
-    if "fc_norm.weight" in state_dict and "norm.weight" not in state_dict:
-        state_dict["norm.weight"] = state_dict.pop("fc_norm.weight")
-    if "fc_norm.bias" in state_dict and "norm.bias" not in state_dict:
-        state_dict["norm.bias"] = state_dict.pop("fc_norm.bias")
 
-    state_dict.pop("patch_embed.segment_patch.patcher.weight", None)
-    state_dict.pop("patch_embed.segment_patch.patcher.bias", None)
-
-    if state_dict["position_embedding"].shape != model.position_embedding.shape:
-        state_dict.pop("position_embedding")
-
-    load_result = model.load_state_dict(state_dict, strict=False)
-    assert "position_embedding" in load_result.missing_keys
-    assert not load_result.unexpected_keys
+    # Verify model was loaded and can run a forward pass
+    x = torch.randn(1, model.n_chans, model.n_times)
+    output = model(x)
+    assert output.shape[0] == 1
 
 
 def test_labram_neural_decoder_forward_features_all_tokens(
