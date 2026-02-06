@@ -489,8 +489,12 @@ class Labram(EEGModuleMixin, nn.Module):
                 for i in range(num_layers)
             ]
         )
-        self.norm = nn.Identity() if use_mean_pooling else norm_layer(self.embed_dim)
-        self.fc_norm = norm_layer(self.embed_dim) if use_mean_pooling else None
+        self.norm = (
+            nn.Identity() if use_mean_pooling else norm_layer(self.embed_dim, eps=1e-6)
+        )
+        self.fc_norm = (
+            norm_layer(self.embed_dim, eps=1e-6) if use_mean_pooling else None
+        )
 
         self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
 
@@ -1215,8 +1219,8 @@ class _Attention(nn.Module):
             self.v_bias = None
 
         if qk_norm is not None:
-            self.q_norm = qk_norm(head_dim)
-            self.k_norm = qk_norm(head_dim)
+            self.q_norm = qk_norm(head_dim, eps=1e-6)
+            self.k_norm = qk_norm(head_dim, eps=1e-6)
         else:
             self.q_norm = None
             self.k_norm = None
@@ -1411,7 +1415,7 @@ class _WindowsAttentionBlock(nn.Module):
         attn_head_dim=None,
     ):
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim, eps=1e-6)
         self.attn = _Attention(
             dim,
             num_heads=num_heads,
@@ -1425,7 +1429,7 @@ class _WindowsAttentionBlock(nn.Module):
         )
 
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.norm2 = norm_layer(dim)
+        self.norm2 = norm_layer(dim, eps=1e-6)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MLP(
             in_features=dim,
