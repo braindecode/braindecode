@@ -848,9 +848,7 @@ class Labram(EEGModuleMixin, nn.Module):
             The new number of classes.
         """
         self.final_layer = (
-            nn.Linear(self.emb_dim, self.n_outputs)
-            if self.n_outputs > 0
-            else nn.Identity()
+            nn.Linear(self.embed_dim, n_outputs) if n_outputs > 0 else nn.Identity()
         )
 
     def _adj_temporal_embedding(self, num_ch, batch_size, dim_embed=None):
