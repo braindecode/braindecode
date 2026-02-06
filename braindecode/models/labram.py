@@ -571,13 +571,6 @@ class Labram(EEGModuleMixin, nn.Module):
         self._input_channels_mask, self._labram_ch_indices = self._get_channel_indices(
             ch_names
         )
-        if len(self._channel_indices) < len(ch_names):
-            unmatched_channels = set(ch_names) - set(LABRAM_CHANNEL_ORDER)
-            raise ValueError(
-                f"{len(unmatched_channels)} channels in `chs_info` are not in "
-                f"LABRAM_CHANNEL_ORDER. Channel reordering is enabled, but only matched channels will be used for inference. "
-                f"Unmatched channels: {unmatched_channels}."
-            )
 
     def _get_channel_indices(
         self, ch_names: list[str]
