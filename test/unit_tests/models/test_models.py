@@ -60,6 +60,7 @@ from braindecode.models.eegpt import (
     _PatchEmbed,
     _rotate_half,
 )
+from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.util import set_random_seeds
 
 
@@ -1488,6 +1489,7 @@ def default_labram_params():
     return {
         "n_times": 1000,
         "n_chans": 64,
+        "chs_info": [{"ch_name": ch_name} for ch_name in LABRAM_CHANNEL_ORDER[:64]],
         "patch_size": 200,
         "sfreq": 200,
         "qk_norm": partial(nn.LayerNorm, eps=1e-6),
@@ -1514,8 +1516,8 @@ def test_model_trainable_parameters_labram(default_labram_params):
 
     # We added some parameters layers in the segmentation step to match the
     # braindecode convention.
-    assert np.round(labram_base_parameters / 1e6, 1) == 5.8
-    # ~ 5.8 M matching the paper
+    assert np.round(labram_base_parameters / 1e6, 1) == 5.7
+    # ~ 5.7 M with current braindecode adaptation
 
     labram_large = Labram(
         num_layers=24,
