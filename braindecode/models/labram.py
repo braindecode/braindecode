@@ -23,9 +23,9 @@ from braindecode.modules import MLP, DropPath
 # Standard 10-20 system electrode positions used by LaBraM for position embeddings.
 # This defines the canonical channel order that the pretrained LaBraM model expects.
 # Channels from input data will be automatically reordered to match this order.
-# Reference: https://github.com/935963004/LaBraM
+# Reference: https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/utils.py#L42-L57
+# We just commented the last 8 channels to match the 128 in the pretrained weights here
 LABRAM_CHANNEL_ORDER = (
-    # Frontal
     "FP1",
     "FPZ",
     "FP2",
@@ -51,7 +51,6 @@ LABRAM_CHANNEL_ORDER = (
     "F6",
     "F8",
     "F10",
-    # Fronto-Central
     "FT9",
     "FT7",
     "FC5",
@@ -63,7 +62,6 @@ LABRAM_CHANNEL_ORDER = (
     "FC6",
     "FT8",
     "FT10",
-    # Central
     "T9",
     "T7",
     "C5",
@@ -75,7 +73,6 @@ LABRAM_CHANNEL_ORDER = (
     "C6",
     "T8",
     "T10",
-    # Centro-Parietal
     "TP9",
     "TP7",
     "CP5",
@@ -87,7 +84,6 @@ LABRAM_CHANNEL_ORDER = (
     "CP6",
     "TP8",
     "TP10",
-    # Parietal
     "P9",
     "P7",
     "P5",
@@ -99,7 +95,6 @@ LABRAM_CHANNEL_ORDER = (
     "P6",
     "P8",
     "P10",
-    # Parieto-Occipital
     "PO9",
     "PO7",
     "PO5",
@@ -111,7 +106,6 @@ LABRAM_CHANNEL_ORDER = (
     "PO6",
     "PO8",
     "PO10",
-    # Occipital
     "O1",
     "OZ",
     "O2",
@@ -120,7 +114,6 @@ LABRAM_CHANNEL_ORDER = (
     "CB2",
     "IZ",
     "O10",
-    # Additional 10-10 positions
     "T3",
     "T5",
     "T4",
@@ -129,7 +122,6 @@ LABRAM_CHANNEL_ORDER = (
     "M2",
     "A1",
     "A2",
-    # Extended positions
     "CFC1",
     "CFC2",
     "CFC3",
@@ -148,12 +140,20 @@ LABRAM_CHANNEL_ORDER = (
     "CCP8",
     "T1",
     "T2",
-    "FTT9H",
-    "TTP7H",
-    "TPP9H",
-    "FTT10H",
-    "TPP8H",
-    "TPP10H",
+    "FTT9h",
+    "TTP7h",
+    "TPP9h",
+    "FTT10h",
+    "TPP8h",
+    "TPP10h",
+    "FP1-F7",
+    "F7-T7",
+    "T7-P7",
+    "P7-O1",
+    "FP2-F8",
+    "F8-T8",
+    "T8-P8",
+    "P8-O2",  # "FP1-F3", "F3-C3", "C3-P3", "P3-O1", "FP2-F4", "F4-C4", "C4-P4", "P4-O2"
 )
 
 
