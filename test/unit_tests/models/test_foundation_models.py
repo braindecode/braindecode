@@ -156,7 +156,7 @@ def test_labram_neural_tokenizer_forward_features_all_tokens(
     """Test forward_features with return_all_tokens=True in tokenizer mode."""
     batch_size = 2
     x = torch.randn(batch_size, n_chans, n_times)
-    x_reorder, input_chans = model_tokenizer._reorder_channels(x, ch_names)
+    x_reorder, input_chans = model_tokenizer._select_channels(x, ch_names)
     output = model_tokenizer.forward_features(
         x_reorder, input_chans=input_chans, return_all_tokens=True
     )
@@ -174,7 +174,7 @@ def test_labram_neural_tokenizer_forward_features_patch_tokens(
     """Test forward_features with return_patch_tokens=True in tokenizer mode."""
     batch_size = 2
     x = torch.randn(batch_size, n_chans, n_times)
-    x_reorder, input_chans = model_tokenizer._reorder_channels(x, ch_names)
+    x_reorder, input_chans = model_tokenizer._select_channels(x, ch_names)
     output = model_tokenizer.forward_features(
         x_reorder, input_chans=input_chans, return_patch_tokens=True
     )
@@ -190,7 +190,7 @@ def test_labram_neural_tokenizer_forward_features_default(
     """Test forward_features with default settings in tokenizer mode."""
     batch_size = 2
     x = torch.randn(batch_size, n_chans, n_times)
-    x_reorder, input_chans = model_tokenizer._reorder_channels(x, ch_names)
+    x_reorder, input_chans = model_tokenizer._select_channels(x, ch_names)
     output = model_tokenizer.forward_features(x_reorder, input_chans=input_chans)
 
     # Default should return mean pooled output: (batch, emb_dim)
@@ -413,7 +413,7 @@ def test_labram_no_dimension_mismatch_errors(n_times, chs_info, ch_names, n_outp
     x = torch.randn(batch_size, len(chs_info), n_times)
 
     try:
-        x_reorder, input_chans = model._reorder_channels(x, ch_names)
+        x_reorder, input_chans = model._select_channels(x, ch_names)
         output = model.forward_features(
             x_reorder, input_chans=input_chans, return_all_tokens=True
         )
@@ -431,7 +431,7 @@ def test_labram_no_dimension_mismatch_errors(n_times, chs_info, ch_names, n_outp
     )
 
     try:
-        x_reorder, input_chans = model._reorder_channels(x, ch_names)
+        x_reorder, input_chans = model._select_channels(x, ch_names)
         output = model.forward_features(
             x_reorder, input_chans=input_chans, return_all_tokens=True
         )
@@ -600,7 +600,7 @@ def test_labram_channel_reordering_order():
 
     # Verify positional embedding indices include CLS and LABRAM positions
     x = torch.randn(1, 3, 1000)
-    _, input_chans = model._reorder_channels(x, ch_names=ch_names)
+    _, input_chans = model._select_channels(x, ch_names=ch_names)
     assert input_chans.tolist() == [0, fp1_idx + 1, cz_idx + 1, o2_idx + 1]
 
 
@@ -631,7 +631,7 @@ def test_labram_channel_reordering_selects_correct_data(forward_mode):
         order = [1, 2, 0]
 
     # Apply reordering
-    x_reordered, input_chans = model._reorder_channels(x, ch_names=ch_names)
+    x_reordered, input_chans = model._select_channels(x, ch_names=ch_names)
 
     # After reordering: FP1 (3.0), CZ (2.0), O2 (1.0)
     assert x_reordered.shape == (1, 3, 200)

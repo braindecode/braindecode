@@ -622,9 +622,9 @@ class Labram(EEGModuleMixin, nn.Module):
         )
         return input_indices, labram_indices
 
-    def _reorder_channels(self, x, ch_names):
+    def _select_channels(self, x, ch_names):
         """
-        Reorder input channels to match LABRAM_CHANNEL_ORDER.
+        Select input channels to match LABRAM_CHANNEL_ORDER.
 
         Parameters
         ----------
@@ -633,15 +633,15 @@ class Labram(EEGModuleMixin, nn.Module):
 
         Returns
         -------
-        x_reordered : torch.Tensor
-            Reordered tensor of shape (batch, n_matched_chans, n_times).
+        x_selected : torch.Tensor
+            Selected tensor of shape (batch, n_matched_chans, n_times).
         input_chans : torch.Tensor or None
             Indices for selecting position embeddings, including the [CLS] token
             at index 0. Returns None if reordering is not enabled.
 
         Notes
         -----
-        The reordering ensures that channels are processed in the same relative
+        The selection ensures that channels are processed in the same relative
         order as LABRAM_CHANNEL_ORDER. When absolute position embeddings are
         enabled, we also return indices that select the corresponding LABRAM
         positions, which preserves alignment for any subset of channels.
@@ -821,7 +821,7 @@ class Labram(EEGModuleMixin, nn.Module):
             The output of the model with dimensions (batch, n_outputs)
         """
         # Apply automatic channel reordering if configured and input_chans not provided
-        x, input_chans = self._reorder_channels(x, ch_names=ch_names)
+        x, input_chans = self._select_channels(x, ch_names=ch_names)
 
         x = self.forward_features(
             x,
