@@ -885,7 +885,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         # Get the temporal embedding: (1, temporal_embedding_dim, emb_size)
         # Slice to cut_dimension: (1, cut_dimension, emb_size)
-        temporal_embedding = self.temporal_embedding[:, 1 : cut_dimension + 1, :]
+        temporal_embedding = self.temporal_embedding[:, 0:cut_dimension, :]
 
         # Add a new dimension to the time embedding
         # e.g. (1, 5, 200) -> (1, 1, 5, 200)
