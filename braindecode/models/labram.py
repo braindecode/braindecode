@@ -496,7 +496,7 @@ class Labram(EEGModuleMixin, nn.Module):
             norm_layer(self.embed_dim, eps=1e-6) if use_mean_pooling else None
         )
 
-        self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
+        self.reset_classifier(self.n_outputs)
 
         self.apply(self._init_weights)
         self.fix_init_weight_and_init_embedding()
@@ -852,7 +852,6 @@ class Labram(EEGModuleMixin, nn.Module):
         n_outputs : int
             The new number of classes.
         """
-        self.n_outputs = n_outputs
         self.final_layer = (
             nn.Linear(self.emb_dim, self.n_outputs)
             if self.n_outputs > 0
