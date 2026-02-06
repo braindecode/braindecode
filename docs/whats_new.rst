@@ -22,7 +22,37 @@
 .. _current:
 
 
-Version 1.4  (Source - GitHub)
+Current 1.5.0 (Github)
+===============================
+
+Detailed list of changes
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+🚀 Enhancements
+^^^^^^^^^^^^^^^
+
+🧐 API and behavior changes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- None yet
+
+🛠 Requirements
+^^^^^^^^^^^^^^^
+
+- None yet
+
+🪲 Bug fixes
+^^^^^^^^^^^^
+
+- None yet
+
+⚕️ Code health
+^^^^^^^^^^^^^^
+
+- None yet
+
+
+Current 1.4 (stable)
 ===============================
 
 Enhancements
@@ -39,24 +69,15 @@ Enhancements
 - Add :class:`braindecode.datasets.TUHEvents` dataset and improve other TUH datasets (:gh:`920` and :gh:`923` by `Pierre Guetschel`_)
 - Allow overlapping events in :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`923` by `Pierre Guetschel`_)
 
-
-API changes
-============
-- None yet.
-
-Requirements
-============
-- None yet.
-
 Bugs
 =====
+- Remove ``pandas<3.0`` restriction by requiring ``wfdb>=4.3.1`` which resolves the pandas 3.x incompatibility (:gh:`919` by `Bruno Aristimunha`_)
 - Fix :func:`braindecode.preprocessing.preprocess.filterbank` to preserve info fields
   (``description``, ``line_freq``, ``device_info``, etc.) when creating filtered copies,
   avoiding merge conflicts in MNE when adding channels (:gh:`928` by `Bruno Aristimunha`_)
 - Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb`` (:gh:`919` by `Pierre Guetschel`_)
 
 Code health
-============
 - None yet.
 
 
