@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import bisect
+import html as _html
 import json
 import os
 import shutil
@@ -45,6 +46,8 @@ def _create_description(description) -> pd.Series:
 
 def _html_row(label, value):
     """Generate a single HTML table row."""
+    label = _html.escape(str(label))
+    value = _html.escape(str(value))
     return f"<tr><td><b>{label}</b></td><td>{value}</td></tr>"
 
 
@@ -94,8 +97,9 @@ def _metadata_summary(metadata):
     window_info = None
     if "i_start_in_trial" in metadata.columns and "i_stop_in_trial" in metadata.columns:
         sizes = metadata["i_stop_in_trial"] - metadata["i_start_in_trial"]
-        min_s, max_s = int(sizes.min()), int(sizes.max())
-        if min_s == max_s:
+        if len(sizes) == 0:
+            pass
+        elif (min_s := int(sizes.min())) == (max_s := int(sizes.max())):
             window_info = {"min": min_s, "max": max_s, "uniform": True}
         else:
             window_info = {"min": min_s, "max": max_s, "uniform": False}
@@ -106,6 +110,68 @@ def _metadata_summary(metadata):
         "extra_columns": extra_columns,
         "window_info": window_info,
         "is_lazy": False,
+    }
+
+
+def _concat_metadata_summary(datasets):
+    """Aggregate metadata summary across datasets without full concatenation.
+
+    Returns a dict with keys: window_info, target_info, extra_columns.
+    """
+    overall_min = None
+    overall_max = None
+    target_counts = Counter()
+    extra_cols = set()
+
+    for ds in datasets:
+        if hasattr(ds, "windows"):
+            md = ds.windows.metadata
+        elif hasattr(ds, "metadata"):
+            md = ds.metadata
+        else:
+            continue
+        if md is None or len(md) == 0:
+            continue
+
+        extra_cols.update(
+            str(c) for c in md.columns if c not in _METADATA_INTERNAL_COLS
+        )
+
+        if "i_start_in_trial" in md.columns and "i_stop_in_trial" in md.columns:
+            sizes = md["i_stop_in_trial"] - md["i_start_in_trial"]
+            if len(sizes) > 0:
+                ds_min, ds_max = int(sizes.min()), int(sizes.max())
+                overall_min = (
+                    ds_min if overall_min is None else min(overall_min, ds_min)
+                )
+                overall_max = (
+                    ds_max if overall_max is None else max(overall_max, ds_max)
+                )
+
+        if "target" in md.columns:
+            target_counts.update(md["target"].value_counts().to_dict())
+
+    window_info = None
+    if overall_min is not None:
+        window_info = {
+            "min": overall_min,
+            "max": overall_max,
+            "uniform": overall_min == overall_max,
+        }
+
+    target_info = None
+    if target_counts:
+        n_unique = len(target_counts)
+        if n_unique <= 10:
+            sorted_counts = dict(sorted(target_counts.items()))
+            target_info = f"{n_unique} unique ({sorted_counts})"
+        else:
+            target_info = f"{n_unique} unique targets"
+
+    return {
+        "window_info": window_info,
+        "target_info": target_info,
+        "extra_columns": sorted(extra_cols),
     }
 
 
@@ -184,11 +250,14 @@ class _ReprBuilder:
                 html_label = label[0].upper() + label[1:]
                 rows.append(_html_row(html_label, value))
             else:
-                rows.append(f"<tr><td colspan='2'><i>{label}</i></td></tr>")
+                rows.append(
+                    f"<tr><td colspan='2'><i>{_html.escape(str(label))}</i></td></tr>"
+                )
         table_rows = "\n".join(rows)
+        esc_name = _html.escape(str(self._cls_name))
         return (
             f"<table border='1' class='dataframe'>\n"
-            f"  <thead><tr><th colspan='2'>{self._cls_name}</th></tr></thead>\n"
+            f"  <thead><tr><th colspan='2'>{esc_name}</th></tr></thead>\n"
             f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
         )
 
@@ -1131,15 +1200,17 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
     def _build_repr(self):
         n_ds = len(self.datasets)
+        b = _ReprBuilder("BaseConcatDataset")
+        if n_ds == 0:
+            b.add_header("0 datasets", "Recordings", 0)
+            return b
+
         n_total = len(self)
         ds_type = type(self.datasets[0]).__name__
         first_ds = self.datasets[0]
         mne_obj, is_windowed = self._signal_summary(first_ds)
 
-        b = _ReprBuilder(
-            "BaseConcatDataset",
-            type_display=f"BaseConcatDataset of {ds_type}",
-        )
+        b._type_display = f"BaseConcatDataset of {ds_type}"
         b.add_header(f"{n_ds} {ds_type}(s)", "Recordings", n_ds)
         b.add_header(f"{n_total} total samples", "Total samples", n_total)
 
@@ -1178,8 +1249,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
         if is_windowed:
             try:
-                metadata = self.get_metadata()
-                summary = _metadata_summary(metadata)
+                summary = _concat_metadata_summary(self.datasets)
                 if summary["window_info"] is not None and mne_obj is not None:
                     wi = summary["window_info"]
                     if wi["uniform"]:
