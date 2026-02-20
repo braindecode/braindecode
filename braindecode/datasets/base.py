@@ -126,8 +126,10 @@ def _channel_info(mne_obj):
 def _window_info(crop_inds, sfreq):
     """Extract window size from crop indices.
 
-    Returns (win_samples, win_secs).
+    Returns (win_samples, win_secs) or None if crop_inds is empty.
     """
+    if len(crop_inds) == 0:
+        return None
     first = crop_inds[0]
     win_samples = int(first[2] - first[1])
     win_secs = win_samples / sfreq
@@ -421,11 +423,20 @@ class EEGWindowsDataset(RecordDataset):
     def __repr__(self):
         n_ch, type_str, sfreq = _channel_info(self.raw)
         n_windows = len(self)
-        win_samples, win_secs = _window_info(self.crop_inds, sfreq)
-        lines = [
-            f"<{type(self).__name__} | {n_windows} windows | {n_ch} ch ({type_str}) | "
-            f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
-        ]
+        wi = _window_info(self.crop_inds, sfreq)
+        if wi is not None:
+            win_samples, win_secs = wi
+            header = (
+                f"<{type(self).__name__} | {n_windows} windows | "
+                f"{n_ch} ch ({type_str}) | "
+                f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
+            )
+        else:
+            header = (
+                f"<{type(self).__name__} | {n_windows} windows | "
+                f"{n_ch} ch ({type_str}) | {sfreq:.1f} Hz>"
+            )
+        lines = [header]
         if self.description is not None:
             desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             lines.append(f"  description: {desc_items}")
@@ -442,15 +453,20 @@ class EEGWindowsDataset(RecordDataset):
     def _repr_html_(self):
         n_ch, type_str, sfreq = _channel_info(self.raw)
         n_windows = len(self)
-        win_samples, win_secs = _window_info(self.crop_inds, sfreq)
 
         rows = [
             _html_row("Type", type(self).__name__),
             _html_row("Windows", n_windows),
             _html_row("Channels", f"{n_ch} ({type_str})"),
-            _html_row("Window size", f"{win_samples} samples ({win_secs:.3f} s)"),
-            _html_row("Sfreq", f"{sfreq:.1f} Hz"),
         ]
+        wi = _window_info(self.crop_inds, sfreq)
+        if wi is not None:
+            win_samples, win_secs = wi
+            rows.append(
+                _html_row("Window size", f"{win_samples} samples ({win_secs:.3f} s)")
+            )
+        rows.append(_html_row("Sfreq", f"{sfreq:.1f} Hz"))
+
         if self.description is not None:
             desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             rows.append(_html_row("Description", desc_items))
@@ -568,11 +584,20 @@ class WindowsDataset(RecordDataset):
     def __repr__(self):
         n_ch, type_str, sfreq = _channel_info(self.windows)
         n_windows = len(self)
-        win_samples, win_secs = _window_info(self.crop_inds, sfreq)
-        lines = [
-            f"<{type(self).__name__} | {n_windows} windows | {n_ch} ch ({type_str}) | "
-            f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
-        ]
+        wi = _window_info(self.crop_inds, sfreq)
+        if wi is not None:
+            win_samples, win_secs = wi
+            header = (
+                f"<{type(self).__name__} | {n_windows} windows | "
+                f"{n_ch} ch ({type_str}) | "
+                f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
+            )
+        else:
+            header = (
+                f"<{type(self).__name__} | {n_windows} windows | "
+                f"{n_ch} ch ({type_str}) | {sfreq:.1f} Hz>"
+            )
+        lines = [header]
         if self.description is not None:
             desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             lines.append(f"  description: {desc_items}")
@@ -588,15 +613,19 @@ class WindowsDataset(RecordDataset):
     def _repr_html_(self):
         n_ch, type_str, sfreq = _channel_info(self.windows)
         n_windows = len(self)
-        win_samples, win_secs = _window_info(self.crop_inds, sfreq)
 
         rows = [
             _html_row("Type", type(self).__name__),
             _html_row("Windows", n_windows),
             _html_row("Channels", f"{n_ch} ({type_str})"),
-            _html_row("Window size", f"{win_samples} samples ({win_secs:.3f} s)"),
-            _html_row("Sfreq", f"{sfreq:.1f} Hz"),
         ]
+        wi = _window_info(self.crop_inds, sfreq)
+        if wi is not None:
+            win_samples, win_secs = wi
+            rows.append(
+                _html_row("Window size", f"{win_samples} samples ({win_secs:.3f} s)")
+            )
+        rows.append(_html_row("Sfreq", f"{sfreq:.1f} Hz"))
         if self.description is not None:
             desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             rows.append(_html_row("Description", desc_items))
