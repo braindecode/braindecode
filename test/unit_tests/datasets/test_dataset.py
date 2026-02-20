@@ -598,3 +598,76 @@ def test_iterable_dataset_raises_typeerror(lazy):
 
     with pytest.raises(TypeError, match="ConcatDataset does not support IterableDataset"):
         BaseConcatDataset([DummyIterableDataset()], lazy=lazy)
+
+
+# ==================== Tests for __repr__ and _repr_html_ ====================
+
+
+def test_raw_dataset_repr(set_up):
+    """Test __repr__ of RawDataset."""
+    _, base_dataset, _, _, _, _ = set_up
+    r = repr(base_dataset)
+    assert "RawDataset" in r
+    assert "ch" in r
+    assert "Hz" in r
+    assert "samples" in r
+    assert "description" in r
+
+
+def test_windows_dataset_repr(set_up):
+    """Test __repr__ of WindowsDataset."""
+    _, _, _, windows_dataset, _, _ = set_up
+    r = repr(windows_dataset)
+    assert "WindowsDataset" in r
+    assert "windows" in r
+    assert "ch" in r
+    assert "Hz" in r
+    assert "description" in r
+
+
+def test_base_concat_dataset_repr(concat_ds_targets):
+    """Test __repr__ of BaseConcatDataset of RawDatasets."""
+    concat_ds = concat_ds_targets[0]
+    r = repr(concat_ds)
+    assert "BaseConcatDataset" in r
+    assert "RawDataset" in r
+    assert "recordings" in r
+    assert "Sfreq" in r
+    assert "Channels" in r
+    assert "Duration" in r
+    assert "* from first recording" in r
+    assert "Description" in r
+
+
+def test_base_concat_windows_dataset_repr(concat_windows_dataset):
+    """Test __repr__ of BaseConcatDataset of windowed datasets."""
+    r = repr(concat_windows_dataset)
+    assert "BaseConcatDataset" in r
+    assert "Sfreq" in r
+    assert "Channels" in r
+    assert "Window" in r
+    assert "* from first recording" in r
+
+
+def test_base_concat_dataset_repr_html(concat_ds_targets):
+    """Test _repr_html_ of BaseConcatDataset."""
+    concat_ds = concat_ds_targets[0]
+    html = concat_ds._repr_html_()
+    assert "<table" in html
+    assert "BaseConcatDataset" in html
+    assert "Recordings" in html
+    assert "Total samples" in html
+    assert "Sfreq" in html
+    assert "Channels" in html
+    assert "* from first recording" in html
+
+
+def test_eeg_windows_dataset_repr(concat_windows_dataset):
+    """Test __repr__ of EEGWindowsDataset."""
+    ds = concat_windows_dataset.datasets[0]
+    r = repr(ds)
+    assert "EEGWindowsDataset" in r
+    assert "windows" in r
+    assert "ch" in r
+    assert "Hz" in r
+    assert "samples/win" in r

@@ -16,6 +16,7 @@ import os
 import shutil
 import warnings
 from abc import abstractmethod
+from collections import Counter
 from collections.abc import Callable
 from glob import glob
 from typing import Any, Generic, Iterable, no_type_check
@@ -147,6 +148,27 @@ class RawDataset(RecordDataset):
 
     def __len__(self):
         return len(self.raw)
+
+    def __repr__(self):
+        n_ch = self.raw.info["nchan"]
+        ch_types = self.raw.get_channel_types()
+        type_counts = Counter(ch_types)
+        type_str = ", ".join(
+            f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
+        )
+        sfreq = self.raw.info["sfreq"]
+        n_times = len(self.raw.times)
+        duration = n_times / sfreq
+        lines = [
+            f"<{type(self).__name__} | {n_ch} ch ({type_str}) | "
+            f"{sfreq:.1f} Hz | {n_times} samples ({duration:.1f} s)>"
+        ]
+        if self.description is not None:
+            desc_items = ", ".join(
+                f"{k}={v}" for k, v in self.description.items()
+            )
+            lines.append(f"  description: {desc_items}")
+        return "\n".join(lines)
 
     def _target_name(self, target_name):
         if target_name is not None and not isinstance(target_name, (str, tuple, list)):
@@ -291,6 +313,29 @@ class EEGWindowsDataset(RecordDataset):
     def __len__(self):
         return len(self.crop_inds)
 
+    def __repr__(self):
+        n_ch = self.raw.info["nchan"]
+        ch_types = self.raw.get_channel_types()
+        type_counts = Counter(ch_types)
+        type_str = ", ".join(
+            f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
+        )
+        sfreq = self.raw.info["sfreq"]
+        n_windows = len(self)
+        first = self.crop_inds[0]
+        win_samples = int(first[2] - first[1])
+        win_secs = win_samples / sfreq
+        lines = [
+            f"<{type(self).__name__} | {n_windows} windows | {n_ch} ch ({type_str}) | "
+            f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
+        ]
+        if self.description is not None:
+            desc_items = ", ".join(
+                f"{k}={v}" for k, v in self.description.items()
+            )
+            lines.append(f"  description: {desc_items}")
+        return "\n".join(lines)
+
 
 @register_dataset
 class WindowsDataset(RecordDataset):
@@ -382,6 +427,29 @@ class WindowsDataset(RecordDataset):
 
     def __len__(self) -> int:
         return len(self.windows.events)
+
+    def __repr__(self):
+        n_ch = self.windows.info["nchan"]
+        ch_types = self.windows.get_channel_types()
+        type_counts = Counter(ch_types)
+        type_str = ", ".join(
+            f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
+        )
+        sfreq = self.windows.info["sfreq"]
+        n_windows = len(self)
+        first = self.crop_inds[0]
+        win_samples = int(first[2] - first[1])
+        win_secs = win_samples / sfreq
+        lines = [
+            f"<{type(self).__name__} | {n_windows} windows | {n_ch} ch ({type_str}) | "
+            f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
+        ]
+        if self.description is not None:
+            desc_items = ", ".join(
+                f"{k}={v}" for k, v in self.description.items()
+            )
+            lines.append(f"  description: {desc_items}")
+        return "\n".join(lines)
 
 
 @register_dataset
@@ -887,3 +955,161 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             target_file_path = os.path.join(sub_dir, "target_name.json")
             with open(target_file_path, "w") as f:
                 json.dump({"target_name": ds.target_name}, f)
+
+    @staticmethod
+    def _signal_summary(ds):
+        """Return (mne_obj, is_windowed, win_samples_or_None) from a dataset."""
+        if hasattr(ds, "windows"):
+            mne_obj = ds.windows
+        elif hasattr(ds, "raw"):
+            mne_obj = ds.raw
+        else:
+            return None, False, None
+        is_windowed = hasattr(ds, "crop_inds")
+        win_samples = None
+        if is_windowed:
+            first = ds.crop_inds[0]
+            win_samples = int(first[2] - first[1])
+        return mne_obj, is_windowed, win_samples
+
+    def __repr__(self):
+        n_ds = len(self.datasets)
+        n_total = len(self)
+        ds_type = type(self.datasets[0]).__name__
+        first_ds = self.datasets[0]
+
+        mne_obj, is_windowed, win_samples = self._signal_summary(first_ds)
+
+        lines = [
+            f"<BaseConcatDataset | {n_ds} {ds_type}(s) | {n_total} total samples>"
+        ]
+
+        if mne_obj is not None:
+            info = mne_obj.info
+            n_ch = info["nchan"]
+            sfreq = info["sfreq"]
+            ch_types = mne_obj.get_channel_types()
+            type_counts = Counter(ch_types)
+            type_str = ", ".join(
+                f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
+            )
+            lines.append(f"  Sfreq*     : {sfreq:.1f} Hz")
+            lines.append(f"  Channels*  : {n_ch} ({type_str})")
+
+            # Channel names (compact, up to 10 shown)
+            ch_names = info["ch_names"]
+            if len(ch_names) <= 10:
+                ch_str = ", ".join(ch_names)
+            else:
+                ch_str = ", ".join(ch_names[:10]) + f", ... (+{len(ch_names) - 10} more)"
+            lines.append(f"  Ch. names* : {ch_str}")
+
+            # Montage info
+            montage = mne_obj.get_montage()
+            if montage is not None:
+                lines.append(f"  Montage*   : {montage.get_positions()['coord_frame']}")
+
+            # Duration or window size
+            if is_windowed and win_samples is not None:
+                win_secs = win_samples / sfreq
+                lines.append(
+                    f"  Window*    : {win_samples} samples ({win_secs:.3f} s)"
+                )
+            else:
+                n_times = len(mne_obj.times)
+                duration = n_times / sfreq
+                lines.append(f"  Duration*  : {duration:.1f} s")
+
+            lines.append("  (* from first recording)")
+
+        # Description summary
+        desc = self.description
+        if desc is not None and not desc.empty:
+            col_str = ", ".join(str(c) for c in desc.columns)
+            lines.append(
+                f"  Description: {desc.shape[0]} recordings × {desc.shape[1]} columns"
+                f" [{col_str}]"
+            )
+
+        return "\n".join(lines)
+
+    def _repr_html_(self):
+        n_ds = len(self.datasets)
+        n_total = len(self)
+        ds_type = type(self.datasets[0]).__name__
+        first_ds = self.datasets[0]
+
+        mne_obj, is_windowed, win_samples = self._signal_summary(first_ds)
+
+        rows = [
+            f"<tr><td><b>Type</b></td><td>BaseConcatDataset of {ds_type}</td></tr>",
+            f"<tr><td><b>Recordings</b></td><td>{n_ds}</td></tr>",
+            f"<tr><td><b>Total samples</b></td><td>{n_total}</td></tr>",
+        ]
+
+        if mne_obj is not None:
+            info = mne_obj.info
+            n_ch = info["nchan"]
+            sfreq = info["sfreq"]
+            ch_types = mne_obj.get_channel_types()
+            type_counts = Counter(ch_types)
+            type_str = ", ".join(
+                f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
+            )
+            rows.append(
+                f"<tr><td><b>Sfreq*</b></td><td>{sfreq:.1f} Hz</td></tr>"
+            )
+            rows.append(
+                f"<tr><td><b>Channels*</b></td>"
+                f"<td>{n_ch} ({type_str})</td></tr>"
+            )
+
+            ch_names = info["ch_names"]
+            if len(ch_names) <= 10:
+                ch_str = ", ".join(ch_names)
+            else:
+                ch_str = (
+                    ", ".join(ch_names[:10]) + f" (+{len(ch_names) - 10} more)"
+                )
+            rows.append(
+                f"<tr><td><b>Ch. names*</b></td><td>{ch_str}</td></tr>"
+            )
+
+            montage = mne_obj.get_montage()
+            if montage is not None:
+                rows.append(
+                    f"<tr><td><b>Montage*</b></td>"
+                    f"<td>{montage.get_positions()['coord_frame']}</td></tr>"
+                )
+
+            if is_windowed and win_samples is not None:
+                win_secs = win_samples / sfreq
+                rows.append(
+                    f"<tr><td><b>Window*</b></td>"
+                    f"<td>{win_samples} samples ({win_secs:.3f} s)</td></tr>"
+                )
+            else:
+                n_times = len(mne_obj.times)
+                duration = n_times / sfreq
+                rows.append(
+                    f"<tr><td><b>Duration*</b></td><td>{duration:.1f} s</td></tr>"
+                )
+
+            rows.append(
+                "<tr><td colspan='2'><i>* from first recording</i></td></tr>"
+            )
+
+        desc = self.description
+        if desc is not None and not desc.empty:
+            rows.append(
+                f"<tr><td><b>Description</b></td>"
+                f"<td>{desc.shape[0]} recordings × {desc.shape[1]} columns"
+                f" [{', '.join(str(c) for c in desc.columns)}]</td></tr>"
+            )
+
+        table_rows = "\n".join(rows)
+        return (
+            f"<table border='1' class='dataframe'>\n"
+            f"  <thead><tr><th colspan='2'>BaseConcatDataset</th></tr></thead>\n"
+            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
+        )
