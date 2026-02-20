@@ -43,6 +43,97 @@ def _create_description(description) -> pd.Series:
     return description
 
 
+def _html_row(label, value):
+    """Generate a single HTML table row."""
+    return f"<tr><td><b>{label}</b></td><td>{value}</td></tr>"
+
+
+_METADATA_INTERNAL_COLS = {
+    "i_window_in_trial",
+    "i_start_in_trial",
+    "i_stop_in_trial",
+    "target",
+}
+
+
+def _metadata_summary(metadata):
+    """Summarize window metadata into a dict.
+
+    Returns a dict with keys: n_windows, target_info, extra_columns,
+    window_info, is_lazy.
+    """
+    is_lazy = not isinstance(metadata, pd.DataFrame)
+
+    if is_lazy:
+        n_windows = len(metadata)
+        columns = list(metadata.columns) if hasattr(metadata, "columns") else []
+        extra_columns = [str(c) for c in columns if c not in _METADATA_INTERNAL_COLS]
+        return {
+            "n_windows": n_windows,
+            "target_info": None,
+            "extra_columns": extra_columns,
+            "window_info": None,
+            "is_lazy": True,
+        }
+
+    n_windows = len(metadata)
+    extra_columns = [
+        str(c) for c in metadata.columns if c not in _METADATA_INTERNAL_COLS
+    ]
+
+    target_info = None
+    if "target" in metadata.columns:
+        targets = metadata["target"]
+        n_unique = targets.nunique()
+        if n_unique <= 10:
+            counts = targets.value_counts().sort_index().to_dict()
+            target_info = f"{n_unique} unique ({counts})"
+        else:
+            target_info = f"{n_unique} unique targets"
+
+    window_info = None
+    if "i_start_in_trial" in metadata.columns and "i_stop_in_trial" in metadata.columns:
+        sizes = metadata["i_stop_in_trial"] - metadata["i_start_in_trial"]
+        min_s, max_s = int(sizes.min()), int(sizes.max())
+        if min_s == max_s:
+            window_info = {"min": min_s, "max": max_s, "uniform": True}
+        else:
+            window_info = {"min": min_s, "max": max_s, "uniform": False}
+
+    return {
+        "n_windows": n_windows,
+        "target_info": target_info,
+        "extra_columns": extra_columns,
+        "window_info": window_info,
+        "is_lazy": False,
+    }
+
+
+def _channel_info(mne_obj):
+    """Extract channel summary from an mne object.
+
+    Returns (n_ch, type_str, sfreq).
+    """
+    info = mne_obj.info
+    n_ch = info["nchan"]
+    sfreq = info["sfreq"]
+    ch_types = mne_obj.get_channel_types()
+    type_counts = Counter(ch_types)
+    type_str = ", ".join(f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items()))
+    return n_ch, type_str, sfreq
+
+
+def _window_info(crop_inds, sfreq):
+    """Extract window size from crop indices.
+
+    Returns (win_samples, win_secs).
+    """
+    first = crop_inds[0]
+    win_samples = int(first[2] - first[1])
+    win_secs = win_samples / sfreq
+    return win_samples, win_secs
+
+
 class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]]):
     def __init__(
         self,
@@ -150,13 +241,7 @@ class RawDataset(RecordDataset):
         return len(self.raw)
 
     def __repr__(self):
-        n_ch = self.raw.info["nchan"]
-        ch_types = self.raw.get_channel_types()
-        type_counts = Counter(ch_types)
-        type_str = ", ".join(
-            f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
-        )
-        sfreq = self.raw.info["sfreq"]
+        n_ch, type_str, sfreq = _channel_info(self.raw)
         n_times = len(self.raw.times)
         duration = n_times / sfreq
         lines = [
@@ -167,6 +252,28 @@ class RawDataset(RecordDataset):
             desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             lines.append(f"  description: {desc_items}")
         return "\n".join(lines)
+
+    def _repr_html_(self):
+        n_ch, type_str, sfreq = _channel_info(self.raw)
+        n_times = len(self.raw.times)
+        duration = n_times / sfreq
+
+        rows = [
+            _html_row("Type", type(self).__name__),
+            _html_row("Channels", f"{n_ch} ({type_str})"),
+            _html_row("Sfreq", f"{sfreq:.1f} Hz"),
+            _html_row("Samples", f"{n_times} ({duration:.1f} s)"),
+        ]
+        if self.description is not None:
+            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
+            rows.append(_html_row("Description", desc_items))
+
+        table_rows = "\n".join(rows)
+        return (
+            f"<table border='1' class='dataframe'>\n"
+            f"  <thead><tr><th colspan='2'>{type(self).__name__}</th></tr></thead>\n"
+            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
+        )
 
     def _target_name(self, target_name):
         if target_name is not None and not isinstance(target_name, (str, tuple, list)):
@@ -312,17 +419,9 @@ class EEGWindowsDataset(RecordDataset):
         return len(self.crop_inds)
 
     def __repr__(self):
-        n_ch = self.raw.info["nchan"]
-        ch_types = self.raw.get_channel_types()
-        type_counts = Counter(ch_types)
-        type_str = ", ".join(
-            f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
-        )
-        sfreq = self.raw.info["sfreq"]
+        n_ch, type_str, sfreq = _channel_info(self.raw)
         n_windows = len(self)
-        first = self.crop_inds[0]
-        win_samples = int(first[2] - first[1])
-        win_secs = win_samples / sfreq
+        win_samples, win_secs = _window_info(self.crop_inds, sfreq)
         lines = [
             f"<{type(self).__name__} | {n_windows} windows | {n_ch} ch ({type_str}) | "
             f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
@@ -330,7 +429,49 @@ class EEGWindowsDataset(RecordDataset):
         if self.description is not None:
             desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             lines.append(f"  description: {desc_items}")
+        summary = _metadata_summary(self.metadata)
+        if summary["is_lazy"]:
+            lines.append(f"  metadata: lazy ({summary['n_windows']} windows)")
+        else:
+            if summary["target_info"]:
+                lines.append(f"  targets: {summary['target_info']}")
+            if summary["extra_columns"]:
+                lines.append(f"  extra metadata: {', '.join(summary['extra_columns'])}")
         return "\n".join(lines)
+
+    def _repr_html_(self):
+        n_ch, type_str, sfreq = _channel_info(self.raw)
+        n_windows = len(self)
+        win_samples, win_secs = _window_info(self.crop_inds, sfreq)
+
+        rows = [
+            _html_row("Type", type(self).__name__),
+            _html_row("Windows", n_windows),
+            _html_row("Channels", f"{n_ch} ({type_str})"),
+            _html_row("Window size", f"{win_samples} samples ({win_secs:.3f} s)"),
+            _html_row("Sfreq", f"{sfreq:.1f} Hz"),
+        ]
+        if self.description is not None:
+            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
+            rows.append(_html_row("Description", desc_items))
+
+        summary = _metadata_summary(self.metadata)
+        if summary["is_lazy"]:
+            rows.append(_html_row("Metadata", f"lazy ({summary['n_windows']} windows)"))
+        else:
+            if summary["target_info"]:
+                rows.append(_html_row("Targets", summary["target_info"]))
+            if summary["extra_columns"]:
+                rows.append(
+                    _html_row("Extra metadata", ", ".join(summary["extra_columns"]))
+                )
+
+        table_rows = "\n".join(rows)
+        return (
+            f"<table border='1' class='dataframe'>\n"
+            f"  <thead><tr><th colspan='2'>{type(self).__name__}</th></tr></thead>\n"
+            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
+        )
 
 
 @register_dataset
@@ -425,17 +566,9 @@ class WindowsDataset(RecordDataset):
         return len(self.windows.events)
 
     def __repr__(self):
-        n_ch = self.windows.info["nchan"]
-        ch_types = self.windows.get_channel_types()
-        type_counts = Counter(ch_types)
-        type_str = ", ".join(
-            f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
-        )
-        sfreq = self.windows.info["sfreq"]
+        n_ch, type_str, sfreq = _channel_info(self.windows)
         n_windows = len(self)
-        first = self.crop_inds[0]
-        win_samples = int(first[2] - first[1])
-        win_secs = win_samples / sfreq
+        win_samples, win_secs = _window_info(self.crop_inds, sfreq)
         lines = [
             f"<{type(self).__name__} | {n_windows} windows | {n_ch} ch ({type_str}) | "
             f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
@@ -443,7 +576,47 @@ class WindowsDataset(RecordDataset):
         if self.description is not None:
             desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             lines.append(f"  description: {desc_items}")
+        metadata = self.windows.metadata
+        if metadata is not None:
+            summary = _metadata_summary(metadata)
+            if summary["target_info"]:
+                lines.append(f"  targets: {summary['target_info']}")
+            if summary["extra_columns"]:
+                lines.append(f"  extra metadata: {', '.join(summary['extra_columns'])}")
         return "\n".join(lines)
+
+    def _repr_html_(self):
+        n_ch, type_str, sfreq = _channel_info(self.windows)
+        n_windows = len(self)
+        win_samples, win_secs = _window_info(self.crop_inds, sfreq)
+
+        rows = [
+            _html_row("Type", type(self).__name__),
+            _html_row("Windows", n_windows),
+            _html_row("Channels", f"{n_ch} ({type_str})"),
+            _html_row("Window size", f"{win_samples} samples ({win_secs:.3f} s)"),
+            _html_row("Sfreq", f"{sfreq:.1f} Hz"),
+        ]
+        if self.description is not None:
+            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
+            rows.append(_html_row("Description", desc_items))
+
+        metadata = self.windows.metadata
+        if metadata is not None:
+            summary = _metadata_summary(metadata)
+            if summary["target_info"]:
+                rows.append(_html_row("Targets", summary["target_info"]))
+            if summary["extra_columns"]:
+                rows.append(
+                    _html_row("Extra metadata", ", ".join(summary["extra_columns"]))
+                )
+
+        table_rows = "\n".join(rows)
+        return (
+            f"<table border='1' class='dataframe'>\n"
+            f"  <thead><tr><th colspan='2'>{type(self).__name__}</th></tr></thead>\n"
+            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
+        )
 
 
 @register_dataset
@@ -952,19 +1125,15 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
     @staticmethod
     def _signal_summary(ds):
-        """Return (mne_obj, is_windowed, win_samples_or_None) from a dataset."""
+        """Return (mne_obj, is_windowed) from a dataset."""
         if hasattr(ds, "windows"):
             mne_obj = ds.windows
         elif hasattr(ds, "raw"):
             mne_obj = ds.raw
         else:
-            return None, False, None
+            return None, False
         is_windowed = hasattr(ds, "crop_inds")
-        win_samples = None
-        if is_windowed:
-            first = ds.crop_inds[0]
-            win_samples = int(first[2] - first[1])
-        return mne_obj, is_windowed, win_samples
+        return mne_obj, is_windowed
 
     def __repr__(self):
         n_ds = len(self.datasets)
@@ -972,24 +1141,17 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         ds_type = type(self.datasets[0]).__name__
         first_ds = self.datasets[0]
 
-        mne_obj, is_windowed, win_samples = self._signal_summary(first_ds)
+        mne_obj, is_windowed = self._signal_summary(first_ds)
 
         lines = [f"<BaseConcatDataset | {n_ds} {ds_type}(s) | {n_total} total samples>"]
 
         if mne_obj is not None:
-            info = mne_obj.info
-            n_ch = info["nchan"]
-            sfreq = info["sfreq"]
-            ch_types = mne_obj.get_channel_types()
-            type_counts = Counter(ch_types)
-            type_str = ", ".join(
-                f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
-            )
+            n_ch, type_str, sfreq = _channel_info(mne_obj)
             lines.append(f"  Sfreq*     : {sfreq:.1f} Hz")
             lines.append(f"  Channels*  : {n_ch} ({type_str})")
 
             # Channel names (compact, up to 10 shown)
-            ch_names = info["ch_names"]
+            ch_names = mne_obj.info["ch_names"]
             if len(ch_names) <= 10:
                 ch_str = ", ".join(ch_names)
             else:
@@ -1003,11 +1165,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             if montage is not None:
                 lines.append(f"  Montage*   : {montage.get_positions()['coord_frame']}")
 
-            # Duration or window size
-            if is_windowed and win_samples is not None:
-                win_secs = win_samples / sfreq
-                lines.append(f"  Window*    : {win_samples} samples ({win_secs:.3f} s)")
-            else:
+            # Duration (only for non-windowed; window info comes from metadata)
+            if not is_windowed:
                 n_times = len(mne_obj.times)
                 duration = n_times / sfreq
                 lines.append(f"  Duration*  : {duration:.1f} s")
@@ -1023,6 +1182,34 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 f" [{col_str}]"
             )
 
+        # Metadata summary (windowed datasets only)
+        if is_windowed:
+            try:
+                metadata = self.get_metadata()
+                summary = _metadata_summary(metadata)
+                if summary["window_info"] is not None and mne_obj is not None:
+                    wi = summary["window_info"]
+                    if wi["uniform"]:
+                        win_secs = wi["min"] / sfreq
+                        lines.append(
+                            f"  Window     : {wi['min']} samples ({win_secs:.3f} s)"
+                        )
+                    else:
+                        min_secs = wi["min"] / sfreq
+                        max_secs = wi["max"] / sfreq
+                        lines.append(
+                            f"  Window     : {wi['min']}-{wi['max']} samples"
+                            f" ({min_secs:.3f}-{max_secs:.3f} s)"
+                        )
+                if summary["target_info"]:
+                    lines.append(f"  Targets    : {summary['target_info']}")
+                if summary["extra_columns"]:
+                    lines.append(
+                        f"  Extra meta : {', '.join(summary['extra_columns'])}"
+                    )
+            except (TypeError, AttributeError):
+                pass
+
         return "\n".join(lines)
 
     def _repr_html_(self):
@@ -1031,64 +1218,86 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         ds_type = type(self.datasets[0]).__name__
         first_ds = self.datasets[0]
 
-        mne_obj, is_windowed, win_samples = self._signal_summary(first_ds)
+        mne_obj, is_windowed = self._signal_summary(first_ds)
 
         rows = [
-            f"<tr><td><b>Type</b></td><td>BaseConcatDataset of {ds_type}</td></tr>",
-            f"<tr><td><b>Recordings</b></td><td>{n_ds}</td></tr>",
-            f"<tr><td><b>Total samples</b></td><td>{n_total}</td></tr>",
+            _html_row("Type", f"BaseConcatDataset of {ds_type}"),
+            _html_row("Recordings", n_ds),
+            _html_row("Total samples", n_total),
         ]
 
         if mne_obj is not None:
-            info = mne_obj.info
-            n_ch = info["nchan"]
-            sfreq = info["sfreq"]
-            ch_types = mne_obj.get_channel_types()
-            type_counts = Counter(ch_types)
-            type_str = ", ".join(
-                f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
-            )
-            rows.append(f"<tr><td><b>Sfreq*</b></td><td>{sfreq:.1f} Hz</td></tr>")
-            rows.append(
-                f"<tr><td><b>Channels*</b></td><td>{n_ch} ({type_str})</td></tr>"
-            )
+            n_ch, type_str, sfreq = _channel_info(mne_obj)
+            rows.append(_html_row("Sfreq*", f"{sfreq:.1f} Hz"))
+            rows.append(_html_row("Channels*", f"{n_ch} ({type_str})"))
 
-            ch_names = info["ch_names"]
+            ch_names = mne_obj.info["ch_names"]
             if len(ch_names) <= 10:
                 ch_str = ", ".join(ch_names)
             else:
                 ch_str = ", ".join(ch_names[:10]) + f" (+{len(ch_names) - 10} more)"
-            rows.append(f"<tr><td><b>Ch. names*</b></td><td>{ch_str}</td></tr>")
+            rows.append(_html_row("Ch. names*", ch_str))
 
             montage = mne_obj.get_montage()
             if montage is not None:
                 rows.append(
-                    f"<tr><td><b>Montage*</b></td>"
-                    f"<td>{montage.get_positions()['coord_frame']}</td></tr>"
+                    _html_row("Montage*", montage.get_positions()["coord_frame"])
                 )
 
-            if is_windowed and win_samples is not None:
-                win_secs = win_samples / sfreq
-                rows.append(
-                    f"<tr><td><b>Window*</b></td>"
-                    f"<td>{win_samples} samples ({win_secs:.3f} s)</td></tr>"
-                )
-            else:
+            # Duration (only for non-windowed; window info comes from metadata)
+            if not is_windowed:
                 n_times = len(mne_obj.times)
                 duration = n_times / sfreq
-                rows.append(
-                    f"<tr><td><b>Duration*</b></td><td>{duration:.1f} s</td></tr>"
-                )
+                rows.append(_html_row("Duration*", f"{duration:.1f} s"))
 
             rows.append("<tr><td colspan='2'><i>* from first recording</i></td></tr>")
 
         desc = self.description
         if desc is not None and not desc.empty:
             rows.append(
-                f"<tr><td><b>Description</b></td>"
-                f"<td>{desc.shape[0]} recordings × {desc.shape[1]} columns"
-                f" [{', '.join(str(c) for c in desc.columns)}]</td></tr>"
+                _html_row(
+                    "Description",
+                    f"{desc.shape[0]} recordings × {desc.shape[1]} columns"
+                    f" [{', '.join(str(c) for c in desc.columns)}]",
+                )
             )
+
+        # Metadata summary (windowed datasets only)
+        if is_windowed:
+            try:
+                metadata = self.get_metadata()
+                summary = _metadata_summary(metadata)
+                if summary["window_info"] is not None and mne_obj is not None:
+                    wi = summary["window_info"]
+                    if wi["uniform"]:
+                        win_secs = wi["min"] / sfreq
+                        rows.append(
+                            _html_row(
+                                "Window",
+                                f"{wi['min']} samples ({win_secs:.3f} s)",
+                            )
+                        )
+                    else:
+                        min_secs = wi["min"] / sfreq
+                        max_secs = wi["max"] / sfreq
+                        rows.append(
+                            _html_row(
+                                "Window",
+                                f"{wi['min']}-{wi['max']} samples"
+                                f" ({min_secs:.3f}-{max_secs:.3f} s)",
+                            )
+                        )
+                if summary["target_info"]:
+                    rows.append(_html_row("Targets", summary["target_info"]))
+                if summary["extra_columns"]:
+                    rows.append(
+                        _html_row(
+                            "Extra metadata",
+                            ", ".join(summary["extra_columns"]),
+                        )
+                    )
+            except (TypeError, AttributeError):
+                pass
 
         table_rows = "\n".join(rows)
         return (

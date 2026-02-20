@@ -662,6 +662,63 @@ def test_base_concat_dataset_repr_html(concat_ds_targets):
     assert "* from first recording" in html
 
 
+def test_raw_dataset_repr_html(set_up):
+    """Test _repr_html_ of RawDataset."""
+    _, base_dataset, _, _, _, _ = set_up
+    html = base_dataset._repr_html_()
+    assert "<table" in html
+    assert "RawDataset" in html
+    assert "Channels" in html
+    assert "Sfreq" in html
+    assert "Samples" in html
+
+
+def test_windows_dataset_repr_html(set_up):
+    """Test _repr_html_ of WindowsDataset."""
+    _, _, _, windows_dataset, _, _ = set_up
+    html = windows_dataset._repr_html_()
+    assert "<table" in html
+    assert "WindowsDataset" in html
+    assert "Channels" in html
+    assert "Targets" in html
+
+
+def test_windows_dataset_repr_metadata(set_up):
+    """Test __repr__ of WindowsDataset includes target info."""
+    _, _, _, windows_dataset, _, _ = set_up
+    r = repr(windows_dataset)
+    assert "targets:" in r
+
+
+def test_eeg_windows_dataset_repr_html(concat_windows_dataset):
+    """Test _repr_html_ of EEGWindowsDataset."""
+    ds = concat_windows_dataset.datasets[0]
+    html = ds._repr_html_()
+    assert "<table" in html
+    assert "EEGWindowsDataset" in html
+    assert "Channels" in html
+    assert "Targets" in html
+
+
+def test_eeg_windows_dataset_repr_metadata(concat_windows_dataset):
+    """Test __repr__ of EEGWindowsDataset includes target info."""
+    ds = concat_windows_dataset.datasets[0]
+    r = repr(ds)
+    assert "targets:" in r
+
+
+def test_base_concat_windows_dataset_repr_metadata(concat_windows_dataset):
+    """Test __repr__ of BaseConcatDataset of windowed datasets includes target info."""
+    r = repr(concat_windows_dataset)
+    assert "Targets" in r
+
+
+def test_base_concat_windows_dataset_repr_html_metadata(concat_windows_dataset):
+    """Test _repr_html_ of BaseConcatDataset of windowed datasets includes target info."""
+    html = concat_windows_dataset._repr_html_()
+    assert "Targets" in html
+
+
 def test_eeg_windows_dataset_repr(concat_windows_dataset):
     """Test __repr__ of EEGWindowsDataset."""
     ds = concat_windows_dataset.datasets[0]

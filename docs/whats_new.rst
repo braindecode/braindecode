@@ -39,13 +39,15 @@ Enhancements
 - Add :class:`braindecode.datasets.TUHEvents` dataset and improve other TUH datasets (:gh:`920` and :gh:`923` by `Pierre Guetschel`_)
 - Allow overlapping events in :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`923` by `Pierre Guetschel`_)
 - Better alignment of channels configuration with the pretrained LABRAM model, including a warning when initializing without channel information and improved documentation (:gh:`931` by `Young Truong`_ )
-- Add informative ``__repr__`` to :class:`braindecode.datasets.RawDataset`,
-  :class:`braindecode.datasets.base.EEGWindowsDataset`, and
-  :class:`braindecode.datasets.base.WindowsDataset`, and add both ``__repr__``
-  and ``_repr_html_`` to :class:`braindecode.datasets.BaseConcatDataset` so
-  that printing or displaying a dataset in a notebook shows channel count/types,
-  sampling frequency, duration/window size, channel names, and description
-  summary (signal-level details marked ``*`` are taken from the first recording).
+- Add informative ``__repr__`` and ``_repr_html_`` to
+  :class:`braindecode.datasets.RawDataset`,
+  :class:`braindecode.datasets.base.EEGWindowsDataset`,
+  :class:`braindecode.datasets.base.WindowsDataset`, and
+  :class:`braindecode.datasets.BaseConcatDataset` so that printing or
+  displaying a dataset in a notebook shows channel count/types, sampling
+  frequency, duration/window size, channel names, description summary, and
+  epoch-level metadata including target distribution and extra metadata columns
+  (signal-level details marked ``*`` are taken from the first recording).
 
 API changes
 ============
