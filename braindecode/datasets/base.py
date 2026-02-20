@@ -136,6 +136,95 @@ def _window_info(crop_inds, sfreq):
     return win_samples, win_secs
 
 
+class _ReprBuilder:
+    """Lightweight builder that renders both text and HTML from the same data."""
+
+    def __init__(self, cls_name, type_display=None):
+        self._cls_name = cls_name
+        self._type_display = type_display or cls_name
+        self._header_parts = []
+        self._header_rows = []
+        self._items = []
+
+    def add_header(self, header_text, label, value):
+        """Add to both the compact ``<ClassName | ...>`` line and an HTML row."""
+        self._header_parts.append(header_text)
+        self._header_rows.append((label, value))
+        return self
+
+    def add_row(self, label, value):
+        """Add a detail row (text: ``  label: value``, HTML: ``<tr>``)."""
+        self._items.append(("row", label, value))
+        return self
+
+    def add_footnote(self, text):
+        """Add a footnote (text: ``  (text)``, HTML: italic ``<td colspan=2>``)."""
+        self._items.append(("footnote", text, None))
+        return self
+
+    def to_repr(self):
+        if self._header_parts:
+            parts = " | ".join(self._header_parts)
+            lines = [f"<{self._cls_name} | {parts}>"]
+        else:
+            lines = [f"<{self._cls_name}>"]
+        for kind, label, value in self._items:
+            if kind == "row":
+                lines.append(f"  {label}: {value}")
+            else:
+                lines.append(f"  ({label})")
+        return "\n".join(lines)
+
+    def to_html(self):
+        rows = [_html_row("Type", self._type_display)]
+        for label, value in self._header_rows:
+            rows.append(_html_row(label, value))
+        for kind, label, value in self._items:
+            if kind == "row":
+                html_label = label[0].upper() + label[1:]
+                rows.append(_html_row(html_label, value))
+            else:
+                rows.append(f"<tr><td colspan='2'><i>{label}</i></td></tr>")
+        table_rows = "\n".join(rows)
+        return (
+            f"<table border='1' class='dataframe'>\n"
+            f"  <thead><tr><th colspan='2'>{self._cls_name}</th></tr></thead>\n"
+            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
+        )
+
+
+def _build_windowed_repr(
+    cls_name, n_windows, mne_obj, crop_inds, description, metadata
+):
+    """Build repr for EEGWindowsDataset and WindowsDataset."""
+    b = _ReprBuilder(cls_name)
+    n_ch, type_str, sfreq = _channel_info(mne_obj)
+    b.add_header(f"{n_windows} windows", "Windows", n_windows)
+    b.add_header(f"{n_ch} ch ({type_str})", "Channels", f"{n_ch} ({type_str})")
+    wi = _window_info(crop_inds, sfreq)
+    if wi is not None:
+        win_samples, win_secs = wi
+        b.add_header(
+            f"{win_samples} samples/win ({win_secs:.3f} s)",
+            "Window size",
+            f"{win_samples} samples ({win_secs:.3f} s)",
+        )
+    b.add_header(f"{sfreq:.1f} Hz", "Sfreq", f"{sfreq:.1f} Hz")
+    if description is not None:
+        desc_items = ", ".join(f"{k}={v}" for k, v in description.items())
+        b.add_row("description", desc_items)
+    if metadata is not None:
+        summary = _metadata_summary(metadata)
+        if summary["is_lazy"]:
+            b.add_row("metadata", f"lazy ({summary['n_windows']} windows)")
+        else:
+            if summary["target_info"]:
+                b.add_row("targets", summary["target_info"])
+            if summary["extra_columns"]:
+                b.add_row("extra metadata", ", ".join(summary["extra_columns"]))
+    return b
+
+
 class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]]):
     def __init__(
         self,
@@ -187,6 +276,15 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
         if value is not None and not callable(value):
             raise ValueError("Transform needs to be a callable.")
         self._transform = value
+
+    def _build_repr(self):
+        return _ReprBuilder(type(self).__name__)
+
+    def __repr__(self):
+        return self._build_repr().to_repr()
+
+    def _repr_html_(self):
+        return self._build_repr().to_html()
 
 
 # Type of the datasets contained in BaseConcatDataset
@@ -242,40 +340,22 @@ class RawDataset(RecordDataset):
     def __len__(self):
         return len(self.raw)
 
-    def __repr__(self):
+    def _build_repr(self):
+        b = _ReprBuilder(type(self).__name__)
         n_ch, type_str, sfreq = _channel_info(self.raw)
         n_times = len(self.raw.times)
         duration = n_times / sfreq
-        lines = [
-            f"<{type(self).__name__} | {n_ch} ch ({type_str}) | "
-            f"{sfreq:.1f} Hz | {n_times} samples ({duration:.1f} s)>"
-        ]
-        if self.description is not None:
-            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
-            lines.append(f"  description: {desc_items}")
-        return "\n".join(lines)
-
-    def _repr_html_(self):
-        n_ch, type_str, sfreq = _channel_info(self.raw)
-        n_times = len(self.raw.times)
-        duration = n_times / sfreq
-
-        rows = [
-            _html_row("Type", type(self).__name__),
-            _html_row("Channels", f"{n_ch} ({type_str})"),
-            _html_row("Sfreq", f"{sfreq:.1f} Hz"),
-            _html_row("Samples", f"{n_times} ({duration:.1f} s)"),
-        ]
-        if self.description is not None:
-            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
-            rows.append(_html_row("Description", desc_items))
-
-        table_rows = "\n".join(rows)
-        return (
-            f"<table border='1' class='dataframe'>\n"
-            f"  <thead><tr><th colspan='2'>{type(self).__name__}</th></tr></thead>\n"
-            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
+        b.add_header(f"{n_ch} ch ({type_str})", "Channels", f"{n_ch} ({type_str})")
+        b.add_header(f"{sfreq:.1f} Hz", "Sfreq", f"{sfreq:.1f} Hz")
+        b.add_header(
+            f"{n_times} samples ({duration:.1f} s)",
+            "Samples",
+            f"{n_times} ({duration:.1f} s)",
         )
+        if self.description is not None:
+            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
+            b.add_row("description", desc_items)
+        return b
 
     def _target_name(self, target_name):
         if target_name is not None and not isinstance(target_name, (str, tuple, list)):
@@ -420,73 +500,14 @@ class EEGWindowsDataset(RecordDataset):
     def __len__(self):
         return len(self.crop_inds)
 
-    def __repr__(self):
-        n_ch, type_str, sfreq = _channel_info(self.raw)
-        n_windows = len(self)
-        wi = _window_info(self.crop_inds, sfreq)
-        if wi is not None:
-            win_samples, win_secs = wi
-            header = (
-                f"<{type(self).__name__} | {n_windows} windows | "
-                f"{n_ch} ch ({type_str}) | "
-                f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
-            )
-        else:
-            header = (
-                f"<{type(self).__name__} | {n_windows} windows | "
-                f"{n_ch} ch ({type_str}) | {sfreq:.1f} Hz>"
-            )
-        lines = [header]
-        if self.description is not None:
-            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
-            lines.append(f"  description: {desc_items}")
-        summary = _metadata_summary(self.metadata)
-        if summary["is_lazy"]:
-            lines.append(f"  metadata: lazy ({summary['n_windows']} windows)")
-        else:
-            if summary["target_info"]:
-                lines.append(f"  targets: {summary['target_info']}")
-            if summary["extra_columns"]:
-                lines.append(f"  extra metadata: {', '.join(summary['extra_columns'])}")
-        return "\n".join(lines)
-
-    def _repr_html_(self):
-        n_ch, type_str, sfreq = _channel_info(self.raw)
-        n_windows = len(self)
-
-        rows = [
-            _html_row("Type", type(self).__name__),
-            _html_row("Windows", n_windows),
-            _html_row("Channels", f"{n_ch} ({type_str})"),
-        ]
-        wi = _window_info(self.crop_inds, sfreq)
-        if wi is not None:
-            win_samples, win_secs = wi
-            rows.append(
-                _html_row("Window size", f"{win_samples} samples ({win_secs:.3f} s)")
-            )
-        rows.append(_html_row("Sfreq", f"{sfreq:.1f} Hz"))
-
-        if self.description is not None:
-            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
-            rows.append(_html_row("Description", desc_items))
-
-        summary = _metadata_summary(self.metadata)
-        if summary["is_lazy"]:
-            rows.append(_html_row("Metadata", f"lazy ({summary['n_windows']} windows)"))
-        else:
-            if summary["target_info"]:
-                rows.append(_html_row("Targets", summary["target_info"]))
-            if summary["extra_columns"]:
-                rows.append(
-                    _html_row("Extra metadata", ", ".join(summary["extra_columns"]))
-                )
-
-        table_rows = "\n".join(rows)
-        return (
-            f"<table border='1' class='dataframe'>\n"
-            f"  <thead><tr><th colspan='2'>{type(self).__name__}</th></tr></thead>\n"
-            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
+    def _build_repr(self):
+        return _build_windowed_repr(
+            type(self).__name__,
+            len(self),
+            self.raw,
+            self.crop_inds,
+            self.description,
+            self.metadata,
         )
 
 
@@ -581,70 +602,14 @@ class WindowsDataset(RecordDataset):
     def __len__(self) -> int:
         return len(self.windows.events)
 
-    def __repr__(self):
-        n_ch, type_str, sfreq = _channel_info(self.windows)
-        n_windows = len(self)
-        wi = _window_info(self.crop_inds, sfreq)
-        if wi is not None:
-            win_samples, win_secs = wi
-            header = (
-                f"<{type(self).__name__} | {n_windows} windows | "
-                f"{n_ch} ch ({type_str}) | "
-                f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
-            )
-        else:
-            header = (
-                f"<{type(self).__name__} | {n_windows} windows | "
-                f"{n_ch} ch ({type_str}) | {sfreq:.1f} Hz>"
-            )
-        lines = [header]
-        if self.description is not None:
-            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
-            lines.append(f"  description: {desc_items}")
-        metadata = self.windows.metadata
-        if metadata is not None:
-            summary = _metadata_summary(metadata)
-            if summary["target_info"]:
-                lines.append(f"  targets: {summary['target_info']}")
-            if summary["extra_columns"]:
-                lines.append(f"  extra metadata: {', '.join(summary['extra_columns'])}")
-        return "\n".join(lines)
-
-    def _repr_html_(self):
-        n_ch, type_str, sfreq = _channel_info(self.windows)
-        n_windows = len(self)
-
-        rows = [
-            _html_row("Type", type(self).__name__),
-            _html_row("Windows", n_windows),
-            _html_row("Channels", f"{n_ch} ({type_str})"),
-        ]
-        wi = _window_info(self.crop_inds, sfreq)
-        if wi is not None:
-            win_samples, win_secs = wi
-            rows.append(
-                _html_row("Window size", f"{win_samples} samples ({win_secs:.3f} s)")
-            )
-        rows.append(_html_row("Sfreq", f"{sfreq:.1f} Hz"))
-        if self.description is not None:
-            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
-            rows.append(_html_row("Description", desc_items))
-
-        metadata = self.windows.metadata
-        if metadata is not None:
-            summary = _metadata_summary(metadata)
-            if summary["target_info"]:
-                rows.append(_html_row("Targets", summary["target_info"]))
-            if summary["extra_columns"]:
-                rows.append(
-                    _html_row("Extra metadata", ", ".join(summary["extra_columns"]))
-                )
-
-        table_rows = "\n".join(rows)
-        return (
-            f"<table border='1' class='dataframe'>\n"
-            f"  <thead><tr><th colspan='2'>{type(self).__name__}</th></tr></thead>\n"
-            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
+    def _build_repr(self):
+        return _build_windowed_repr(
+            type(self).__name__,
+            len(self),
+            self.windows,
+            self.crop_inds,
+            self.description,
+            self.windows.metadata,
         )
 
 
@@ -1164,22 +1129,25 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         is_windowed = hasattr(ds, "crop_inds")
         return mne_obj, is_windowed
 
-    def __repr__(self):
+    def _build_repr(self):
         n_ds = len(self.datasets)
         n_total = len(self)
         ds_type = type(self.datasets[0]).__name__
         first_ds = self.datasets[0]
-
         mne_obj, is_windowed = self._signal_summary(first_ds)
 
-        lines = [f"<BaseConcatDataset | {n_ds} {ds_type}(s) | {n_total} total samples>"]
+        b = _ReprBuilder(
+            "BaseConcatDataset",
+            type_display=f"BaseConcatDataset of {ds_type}",
+        )
+        b.add_header(f"{n_ds} {ds_type}(s)", "Recordings", n_ds)
+        b.add_header(f"{n_total} total samples", "Total samples", n_total)
 
         if mne_obj is not None:
             n_ch, type_str, sfreq = _channel_info(mne_obj)
-            lines.append(f"  Sfreq*     : {sfreq:.1f} Hz")
-            lines.append(f"  Channels*  : {n_ch} ({type_str})")
+            b.add_row("Sfreq*", f"{sfreq:.1f} Hz")
+            b.add_row("Channels*", f"{n_ch} ({type_str})")
 
-            # Channel names (compact, up to 10 shown)
             ch_names = mne_obj.info["ch_names"]
             if len(ch_names) <= 10:
                 ch_str = ", ".join(ch_names)
@@ -1187,31 +1155,27 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 ch_str = (
                     ", ".join(ch_names[:10]) + f", ... (+{len(ch_names) - 10} more)"
                 )
-            lines.append(f"  Ch. names* : {ch_str}")
+            b.add_row("Ch. names*", ch_str)
 
-            # Montage info
             montage = mne_obj.get_montage()
             if montage is not None:
-                lines.append(f"  Montage*   : {montage.get_positions()['coord_frame']}")
+                b.add_row("Montage*", montage.get_positions()["coord_frame"])
 
-            # Duration (only for non-windowed; window info comes from metadata)
             if not is_windowed:
                 n_times = len(mne_obj.times)
                 duration = n_times / sfreq
-                lines.append(f"  Duration*  : {duration:.1f} s")
+                b.add_row("Duration*", f"{duration:.1f} s")
 
-            lines.append("  (* from first recording)")
+            b.add_footnote("* from first recording")
 
-        # Description summary
         desc = self.description
         if desc is not None and not desc.empty:
             col_str = ", ".join(str(c) for c in desc.columns)
-            lines.append(
-                f"  Description: {desc.shape[0]} recordings × {desc.shape[1]} columns"
-                f" [{col_str}]"
+            b.add_row(
+                "Description",
+                f"{desc.shape[0]} recordings × {desc.shape[1]} columns [{col_str}]",
             )
 
-        # Metadata summary (windowed datasets only)
         if is_windowed:
             try:
                 metadata = self.get_metadata()
@@ -1220,117 +1184,32 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                     wi = summary["window_info"]
                     if wi["uniform"]:
                         win_secs = wi["min"] / sfreq
-                        lines.append(
-                            f"  Window     : {wi['min']} samples ({win_secs:.3f} s)"
+                        b.add_row(
+                            "Window",
+                            f"{wi['min']} samples ({win_secs:.3f} s)",
                         )
                     else:
                         min_secs = wi["min"] / sfreq
                         max_secs = wi["max"] / sfreq
-                        lines.append(
-                            f"  Window     : {wi['min']}-{wi['max']} samples"
-                            f" ({min_secs:.3f}-{max_secs:.3f} s)"
+                        b.add_row(
+                            "Window",
+                            f"{wi['min']}-{wi['max']} samples"
+                            f" ({min_secs:.3f}-{max_secs:.3f} s)",
                         )
                 if summary["target_info"]:
-                    lines.append(f"  Targets    : {summary['target_info']}")
+                    b.add_row("Targets", summary["target_info"])
                 if summary["extra_columns"]:
-                    lines.append(
-                        f"  Extra meta : {', '.join(summary['extra_columns'])}"
+                    b.add_row(
+                        "Extra meta",
+                        ", ".join(summary["extra_columns"]),
                     )
             except (TypeError, AttributeError):
                 pass
 
-        return "\n".join(lines)
+        return b
+
+    def __repr__(self):
+        return self._build_repr().to_repr()
 
     def _repr_html_(self):
-        n_ds = len(self.datasets)
-        n_total = len(self)
-        ds_type = type(self.datasets[0]).__name__
-        first_ds = self.datasets[0]
-
-        mne_obj, is_windowed = self._signal_summary(first_ds)
-
-        rows = [
-            _html_row("Type", f"BaseConcatDataset of {ds_type}"),
-            _html_row("Recordings", n_ds),
-            _html_row("Total samples", n_total),
-        ]
-
-        if mne_obj is not None:
-            n_ch, type_str, sfreq = _channel_info(mne_obj)
-            rows.append(_html_row("Sfreq*", f"{sfreq:.1f} Hz"))
-            rows.append(_html_row("Channels*", f"{n_ch} ({type_str})"))
-
-            ch_names = mne_obj.info["ch_names"]
-            if len(ch_names) <= 10:
-                ch_str = ", ".join(ch_names)
-            else:
-                ch_str = ", ".join(ch_names[:10]) + f" (+{len(ch_names) - 10} more)"
-            rows.append(_html_row("Ch. names*", ch_str))
-
-            montage = mne_obj.get_montage()
-            if montage is not None:
-                rows.append(
-                    _html_row("Montage*", montage.get_positions()["coord_frame"])
-                )
-
-            # Duration (only for non-windowed; window info comes from metadata)
-            if not is_windowed:
-                n_times = len(mne_obj.times)
-                duration = n_times / sfreq
-                rows.append(_html_row("Duration*", f"{duration:.1f} s"))
-
-            rows.append("<tr><td colspan='2'><i>* from first recording</i></td></tr>")
-
-        desc = self.description
-        if desc is not None and not desc.empty:
-            rows.append(
-                _html_row(
-                    "Description",
-                    f"{desc.shape[0]} recordings × {desc.shape[1]} columns"
-                    f" [{', '.join(str(c) for c in desc.columns)}]",
-                )
-            )
-
-        # Metadata summary (windowed datasets only)
-        if is_windowed:
-            try:
-                metadata = self.get_metadata()
-                summary = _metadata_summary(metadata)
-                if summary["window_info"] is not None and mne_obj is not None:
-                    wi = summary["window_info"]
-                    if wi["uniform"]:
-                        win_secs = wi["min"] / sfreq
-                        rows.append(
-                            _html_row(
-                                "Window",
-                                f"{wi['min']} samples ({win_secs:.3f} s)",
-                            )
-                        )
-                    else:
-                        min_secs = wi["min"] / sfreq
-                        max_secs = wi["max"] / sfreq
-                        rows.append(
-                            _html_row(
-                                "Window",
-                                f"{wi['min']}-{wi['max']} samples"
-                                f" ({min_secs:.3f}-{max_secs:.3f} s)",
-                            )
-                        )
-                if summary["target_info"]:
-                    rows.append(_html_row("Targets", summary["target_info"]))
-                if summary["extra_columns"]:
-                    rows.append(
-                        _html_row(
-                            "Extra metadata",
-                            ", ".join(summary["extra_columns"]),
-                        )
-                    )
-            except (TypeError, AttributeError):
-                pass
-
-        table_rows = "\n".join(rows)
-        return (
-            f"<table border='1' class='dataframe'>\n"
-            f"  <thead><tr><th colspan='2'>BaseConcatDataset</th></tr></thead>\n"
-            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
-        )
+        return self._build_repr().to_html()
