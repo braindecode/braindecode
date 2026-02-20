@@ -164,9 +164,7 @@ class RawDataset(RecordDataset):
             f"{sfreq:.1f} Hz | {n_times} samples ({duration:.1f} s)>"
         ]
         if self.description is not None:
-            desc_items = ", ".join(
-                f"{k}={v}" for k, v in self.description.items()
-            )
+            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             lines.append(f"  description: {desc_items}")
         return "\n".join(lines)
 
@@ -330,9 +328,7 @@ class EEGWindowsDataset(RecordDataset):
             f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
         ]
         if self.description is not None:
-            desc_items = ", ".join(
-                f"{k}={v}" for k, v in self.description.items()
-            )
+            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             lines.append(f"  description: {desc_items}")
         return "\n".join(lines)
 
@@ -445,9 +441,7 @@ class WindowsDataset(RecordDataset):
             f"{win_samples} samples/win ({win_secs:.3f} s) | {sfreq:.1f} Hz>"
         ]
         if self.description is not None:
-            desc_items = ", ".join(
-                f"{k}={v}" for k, v in self.description.items()
-            )
+            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             lines.append(f"  description: {desc_items}")
         return "\n".join(lines)
 
@@ -980,9 +974,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
         mne_obj, is_windowed, win_samples = self._signal_summary(first_ds)
 
-        lines = [
-            f"<BaseConcatDataset | {n_ds} {ds_type}(s) | {n_total} total samples>"
-        ]
+        lines = [f"<BaseConcatDataset | {n_ds} {ds_type}(s) | {n_total} total samples>"]
 
         if mne_obj is not None:
             info = mne_obj.info
@@ -1001,7 +993,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             if len(ch_names) <= 10:
                 ch_str = ", ".join(ch_names)
             else:
-                ch_str = ", ".join(ch_names[:10]) + f", ... (+{len(ch_names) - 10} more)"
+                ch_str = (
+                    ", ".join(ch_names[:10]) + f", ... (+{len(ch_names) - 10} more)"
+                )
             lines.append(f"  Ch. names* : {ch_str}")
 
             # Montage info
@@ -1012,9 +1006,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             # Duration or window size
             if is_windowed and win_samples is not None:
                 win_secs = win_samples / sfreq
-                lines.append(
-                    f"  Window*    : {win_samples} samples ({win_secs:.3f} s)"
-                )
+                lines.append(f"  Window*    : {win_samples} samples ({win_secs:.3f} s)")
             else:
                 n_times = len(mne_obj.times)
                 duration = n_times / sfreq
@@ -1056,24 +1048,17 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             type_str = ", ".join(
                 f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items())
             )
+            rows.append(f"<tr><td><b>Sfreq*</b></td><td>{sfreq:.1f} Hz</td></tr>")
             rows.append(
-                f"<tr><td><b>Sfreq*</b></td><td>{sfreq:.1f} Hz</td></tr>"
-            )
-            rows.append(
-                f"<tr><td><b>Channels*</b></td>"
-                f"<td>{n_ch} ({type_str})</td></tr>"
+                f"<tr><td><b>Channels*</b></td><td>{n_ch} ({type_str})</td></tr>"
             )
 
             ch_names = info["ch_names"]
             if len(ch_names) <= 10:
                 ch_str = ", ".join(ch_names)
             else:
-                ch_str = (
-                    ", ".join(ch_names[:10]) + f" (+{len(ch_names) - 10} more)"
-                )
-            rows.append(
-                f"<tr><td><b>Ch. names*</b></td><td>{ch_str}</td></tr>"
-            )
+                ch_str = ", ".join(ch_names[:10]) + f" (+{len(ch_names) - 10} more)"
+            rows.append(f"<tr><td><b>Ch. names*</b></td><td>{ch_str}</td></tr>")
 
             montage = mne_obj.get_montage()
             if montage is not None:
@@ -1095,9 +1080,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                     f"<tr><td><b>Duration*</b></td><td>{duration:.1f} s</td></tr>"
                 )
 
-            rows.append(
-                "<tr><td colspan='2'><i>* from first recording</i></td></tr>"
-            )
+            rows.append("<tr><td colspan='2'><i>* from first recording</i></td></tr>")
 
         desc = self.description
         if desc is not None and not desc.empty:
