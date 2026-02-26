@@ -341,7 +341,7 @@ html_theme_options = {
         "<strong>Using Braindecode in academic work?</strong> "
         "<a class='braindecode-announcement-cta' href='cite.html'>Cite Braindecode</a> "
         "<span class='braindecode-announcement-secondary'>"
-        "DOI: <a href='https://doi.org/10.5281/zenodo.16279624'>10.5281/zenodo.16279624</a>"
+        "DOI: <a href='https://doi.org/10.5281/zenodo.17699192'>10.5281/zenodo.17699192</a>"
         "</span>"
     ),
 }

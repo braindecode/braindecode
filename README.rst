@@ -1,5 +1,5 @@
-.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.8214376.svg
-    :target: https://doi.org/10.5281/zenodo.8214376
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.17699192.svg
+    :target: https://doi.org/10.5281/zenodo.17699192
     :alt: DOI
 
 .. image:: https://github.com/braindecode/braindecode/workflows/docs/badge.svg
@@ -87,12 +87,42 @@ https://github.com/braindecode/braindecode/blob/master/CONTRIBUTING.md
  Citing
 ########
 
-If you use Braindecode in scientific work, please cite the software using the Zenodo DOI
-shown in the badge below:
+If you use Braindecode in scientific work, please cite the software using the global
+Zenodo DOI shown in the badge below:
 
-.. image:: https://zenodo.org/badge/232335424.svg
-    :target: https://doi.org/10.5281/zenodo.8214376
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.17699192.svg
+    :target: https://doi.org/10.5281/zenodo.17699192
     :alt: DOI
+
+You can use the following BibTeX entry:
+
+.. code-block:: bibtex
+
+    @software{braindecode,
+      author = {Aristimunha, Bruno and
+                Guetschel, Pierre and
+                Wimpff, Martin and
+                Gemein, Lukas and
+                Rommel, Cedric and
+                Banville, Hubert and
+                Sliwowski, Maciej and
+                Wilson, Daniel and
+                Brandt, Simon and
+                Gnassounou, Théo and
+                Paillard, Joseph and
+                {Junqueira Lopes}, Bruna and
+                Sedlar, Sara and
+                Moreau, Thomas and
+                Chevallier, Sylvain and
+                Gramfort, Alexandre and
+                Schirrmeister, Robin Tibor},
+      title = {Braindecode: toolbox for decoding raw electrophysiological brain data
+               with deep learning models},
+      url = {https://github.com/braindecode/braindecode},
+      doi = {10.5281/zenodo.17699192},
+      publisher = {Zenodo},
+      license = {BSD-3-Clause},
+    }
 
 Additionally, we highly encourage you to cite the article that originally introduced the
 Braindecode library and has served as a foundational reference for many works on deep
