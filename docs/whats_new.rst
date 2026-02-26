@@ -64,6 +64,9 @@ Bugs
   avoiding merge conflicts in MNE when adding channels (:gh:`928` by `Bruno Aristimunha`_)
 - [Outdated:] *Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb``* (:gh:`919` by `Pierre Guetschel`_)
 - Fix multiple bugs in Labram positional encoding. Now the braindecode implementation is aligned with the original one (:gh:`931` by `Pierre Guetschel`_ )
+- Fix Zenodo citation: update to global concept DOI and add BibTeX/APA citation formats
+  in ``docs/cite.rst``, ``README.rst``, ``CITATION.cff``, and ``docs/conf.py``
+  (:gh:`937` by `Bruno Aristimunha`_)
 
 Code health
 ============
