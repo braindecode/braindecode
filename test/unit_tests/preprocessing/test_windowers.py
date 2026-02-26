@@ -945,7 +945,10 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
         drop_last_window=False,
         verbose=True,
     )
-    options = ["np.str_('left_hand'), np.str_('tongue')", "'left_hand', 'tongue'"]
+    options = [
+        "np.str_('feet'), np.str_('left_hand'), np.str_('right_hand'), np.str_('tongue')",
+        "'feet', 'left_hand', 'right_hand', 'tongue'",
+    ]
     assert any(
         f"Used Annotations descriptions: [{opt}]" in caplog.text for opt in options
     )
@@ -961,7 +964,7 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
         verbose=False,
     )
 
-    assert "Used Annotations descriptions: ['left_hand', 'tongue']" not in caplog.text
+    assert "Used Annotations descriptions: ['feet', 'left_hand', 'right_hand', 'tongue']" not in caplog.text
     caplog.clear()
 
     # verbose is not specified, so it defaults to verbose="error"
@@ -973,7 +976,7 @@ def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
         drop_last_window=False,
     )
 
-    assert "Used Annotations descriptions: ['left_hand', 'tongue']" not in caplog.text
+    assert "Used Annotations descriptions: ['feet', 'left_hand', 'right_hand', 'tongue']" not in caplog.text
     caplog.clear()
 
     logger.propagate = False  # Reset to default
