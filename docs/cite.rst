@@ -49,11 +49,11 @@ You can use the following BibTeX entry:
 
 Or the following APA reference:
 
-  Aristimunha, B., Guetschel, P., Wimpff, M., Gemein, L., Rommel, C., Banville, H.,
-  Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Junqueira Lopes,
-  B., Sedlar, S., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R. T.
-  *Braindecode: toolbox for decoding raw electrophysiological brain data with deep
-  learning models* [Software]. Zenodo. https://doi.org/10.5281/zenodo.17699192
+    Aristimunha, B., Guetschel, P., Wimpff, M., Gemein, L., Rommel, C., Banville, H.,
+    Sliwowski, M., Wilson, D., Brandt, S., Gnassounou, T., Paillard, J., Junqueira
+    Lopes, B., Sedlar, S., Moreau, T., Chevallier, S., Gramfort, A., & Schirrmeister, R.
+    T. *Braindecode: toolbox for decoding raw electrophysiological brain data with deep
+    learning models* [Software]. Zenodo. https://doi.org/10.5281/zenodo.17699192
 
 Additionally, we highly encourage you to cite the article that originally introduced the
 Braindecode library and has served as a foundational reference for many works on deep
