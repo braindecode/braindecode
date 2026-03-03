@@ -456,7 +456,7 @@ class Labram(EEGModuleMixin, nn.Module):
             self.position_embedding = None
 
         self.temporal_embedding = nn.Parameter(
-            torch.zeros(1, self.patch_embed[0].n_patchs + 1, self.embed_dim),
+            torch.zeros(1, 16, self.embed_dim),
             requires_grad=True,
         )
         self.pos_drop = nn.Dropout(p=drop_prob)
@@ -704,11 +704,11 @@ class Labram(EEGModuleMixin, nn.Module):
 
         if self.neural_tokenizer:
             # For neural tokenizer: input is (batch, n_chans, n_times)
-            # patch_embed returns (batch, n_chans, emb_dim)
+            # patch_embed returns (batch, n_chans * n_patches, emb_dim)
             x = self.patch_embed(x)
-            # x shape: (batch, n_chans, emb_dim)
+            # x shape: (batch, n_chans * n_patches, emb_dim)
             n_patch = n_input_chans  # Use actual input channels, not self.n_chans
-            temporal = self.embed_dim
+            temporal = self.patch_embed[0].n_patchs
         else:
             # For neural decoder: input is (batch, n_chans, n_times)
             # patch_embed returns (batch, n_patchs, emb_dim)
