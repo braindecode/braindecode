@@ -100,6 +100,9 @@ def create_from_mne_epochs(
     window_size_samples: int,
     window_stride_samples: int,
     drop_last_window: bool,
+    mapping: dict[str, int] | None = None,
+    preload: bool = False,
+    picks=None,
 ) -> BaseConcatDataset:
     """Create WindowsDatasets from mne.Epochs.
 
@@ -114,6 +117,13 @@ def create_from_mne_epochs(
     drop_last_window : bool
         whether or not have a last overlapping window, when
         windows do not equally divide the continuous signal
+    mapping : dict(str: int) | None
+        mapping from event description to target value. If None,
+        targets are set to the raw integer event codes.
+    preload : bool
+        if True, preload the data of the Epochs objects.
+    picks : str | list | slice | None
+        channels to include. If None, all available channels are used.
 
     Returns
     -------
@@ -142,6 +152,13 @@ def create_from_mne_epochs(
         fake_events = [[start, window_size_samples, -1] for start in starts]
 
         for trial_i, trial in enumerate(epochs):
+            # resolve target using mapping if provided
+            event_code = event_descriptions[trial_i]
+            if mapping is not None:
+                target = mapping.get(event_code, mapping.get(str(event_code), event_code))
+            else:
+                target = event_code
+
             metadata = pd.DataFrame(
                 {
                     "i_window_in_trial": np.arange(len(fake_events)),
@@ -149,7 +166,7 @@ def create_from_mne_epochs(
                     "i_stop_in_trial": starts
                     + original_trial_starts[trial_i]
                     + window_size_samples,
-                    "target": len(fake_events) * [event_descriptions[trial_i]],
+                    "target": len(fake_events) * [target],
                 }
             )
             # window size - 1, since tmax is inclusive
@@ -160,6 +177,8 @@ def create_from_mne_epochs(
                 tmin=0,
                 tmax=(window_size_samples - 1) / epochs.info["sfreq"],
                 metadata=metadata,
+                preload=preload,
+                picks=picks,
             )
 
             mne_epochs.drop_bad(reject=None, flat=None)

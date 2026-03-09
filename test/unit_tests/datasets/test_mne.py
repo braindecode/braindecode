@@ -154,3 +154,95 @@ def test_create_from_mne_epochs():
             i_t = (i_w - n_anns * 9) // 4
             assert i_start == inds[i_t] + i_w_in_t * 2 - (i_w_in_t == 3)
             assert i_stop == inds[i_t] + i_w_in_t * 2 - (i_w_in_t == 3) + 5
+
+
+def test_create_from_mne_epochs_no_mapping():
+    """without mapping, targets should be raw integer event codes."""
+    sfreq = 100
+    n_channels = 2
+    n_times = 100
+    info = mne.create_info(
+        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
+    )
+    data = np.random.randn(2, n_channels, n_times)
+    events = np.array([[0, 0, 1], [100, 0, 2]])
+    epochs = mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
+
+    windows_ds = create_from_mne_epochs(
+        [epochs],
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+    )
+    targets = [ds.windows.metadata["target"].iloc[0] for ds in windows_ds.datasets]
+    assert 1 in targets
+    assert 2 in targets
+
+
+def test_create_from_mne_epochs_with_mapping():
+    """mapping should correctly remap integer event codes to target values."""
+    sfreq = 100
+    n_channels = 2
+    n_times = 100
+    info = mne.create_info(
+        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
+    )
+    data = np.random.randn(2, n_channels, n_times)
+    events = np.array([[0, 0, 1], [100, 0, 2]])
+    epochs = mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
+
+    mapping = {1: 0, 2: 1}
+    windows_ds = create_from_mne_epochs(
+        [epochs],
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+    )
+    targets = [ds.windows.metadata["target"].iloc[0] for ds in windows_ds.datasets]
+    assert 0 in targets
+    assert 1 in targets
+
+
+def test_create_from_mne_epochs_with_picks():
+    """picks should correctly subset channels."""
+    sfreq = 100
+    n_channels = 4
+    n_times = 100
+    info = mne.create_info(
+        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
+    )
+    data = np.random.randn(2, n_channels, n_times)
+    events = np.array([[0, 0, 1], [100, 0, 2]])
+    epochs = mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
+
+    windows_ds = create_from_mne_epochs(
+        [epochs],
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        picks=[0, 1],
+    )
+    assert windows_ds.datasets[0].windows.get_data().shape[1] == 2
+
+
+def test_create_from_mne_epochs_with_preload():
+    """preload=True should preload epoch data."""
+    sfreq = 100
+    n_channels = 2
+    n_times = 100
+    info = mne.create_info(
+        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
+    )
+    data = np.random.randn(2, n_channels, n_times)
+    events = np.array([[0, 0, 1], [100, 0, 2]])
+    epochs = mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
+
+    windows_ds = create_from_mne_epochs(
+        [epochs],
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        preload=True,
+    )
+    assert windows_ds.datasets[0].windows.preload is True
