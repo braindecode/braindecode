@@ -1114,42 +1114,47 @@ def concat_ds_two_event_types():
     return BaseConcatDataset([ds])
 
 
-def test_dict_params_require_mapping(concat_ds_two_event_types):
-    """Dict params without mapping should raise ValueError."""
-    with pytest.raises(ValueError, match="mapping must be provided"):
-        create_windows_from_events(
-            concat_ds=concat_ds_two_event_types,
-            trial_start_offset_samples={"T0": 0, "T1": -10},
-            trial_stop_offset_samples=0,
-            window_size_samples=50,
-            window_stride_samples=50,
-            drop_last_window=True,
-        )
-
-
-def test_dict_params_require_window_size(concat_ds_two_event_types):
-    """Dict params with window_size_samples=None should raise ValueError."""
-    with pytest.raises(ValueError, match="window_size_samples must be provided"):
-        create_windows_from_events(
-            concat_ds=concat_ds_two_event_types,
-            trial_start_offset_samples={"T0": 0, "T1": -10},
-            trial_stop_offset_samples=0,
-            mapping={"T0": 0, "T1": 1},
-        )
-
-
-def test_dict_params_keys_must_match_mapping(concat_ds_two_event_types):
-    """Dict param keys must match mapping keys exactly."""
-    with pytest.raises(ValueError, match="Keys of trial_start_offset_samples"):
-        create_windows_from_events(
-            concat_ds=concat_ds_two_event_types,
-            trial_start_offset_samples={"T0": 0, "T2": -10},
-            trial_stop_offset_samples=0,
-            window_size_samples=50,
-            window_stride_samples=50,
-            drop_last_window=True,
-            mapping={"T0": 0, "T1": 1},
-        )
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        pytest.param(
+            dict(
+                trial_start_offset_samples={"T0": 0, "T1": -10},
+                trial_stop_offset_samples=0,
+                window_size_samples=50,
+                window_stride_samples=50,
+                drop_last_window=True,
+            ),
+            "mapping must be provided",
+            id="require_mapping",
+        ),
+        pytest.param(
+            dict(
+                trial_start_offset_samples={"T0": 0, "T1": -10},
+                trial_stop_offset_samples=0,
+                mapping={"T0": 0, "T1": 1},
+            ),
+            "window_size_samples must be provided",
+            id="require_window_size",
+        ),
+        pytest.param(
+            dict(
+                trial_start_offset_samples={"T0": 0, "T2": -10},
+                trial_stop_offset_samples=0,
+                window_size_samples=50,
+                window_stride_samples=50,
+                drop_last_window=True,
+                mapping={"T0": 0, "T1": 1},
+            ),
+            "Keys of trial_start_offset_samples",
+            id="keys_must_match_mapping",
+        ),
+    ],
+)
+def test_dict_params_validation(concat_ds_two_event_types, kwargs, match):
+    """Dict params validation raises ValueError with informative messages."""
+    with pytest.raises(ValueError, match=match):
+        create_windows_from_events(concat_ds=concat_ds_two_event_types, **kwargs)
 
 
 def test_dict_params_uniform_values_match_int(concat_ds_two_event_types):
