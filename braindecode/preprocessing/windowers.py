@@ -481,8 +481,10 @@ def create_fixed_length_windows(
         If True, return mne.Epochs objects encapsulated in WindowsDataset
         objects, which is substantially slower than EEGWindowsDataset.
         If None, it will be inferred from the other parameters: True if any
-        of ``reject``, ``picks``, ``flat``, or ``drop_bad_windows`` is set,
-        False otherwise.
+        of ``reject``, ``picks``, or ``flat`` is set, or if
+        ``drop_bad_windows`` is True; False otherwise. If ``use_mne_epochs``
+        is inferred as True and ``drop_bad_windows`` is None, it is treated
+        as True.
     n_jobs: int
         Number of jobs to use to parallelize the windowing.
     verbose: bool | str | int | None
@@ -491,7 +493,9 @@ def create_fixed_length_windows(
     Returns
     -------
     windows_datasets: BaseConcatDataset[WindowsDataset | EEGWindowsDataset]
-        Concatenated datasets of WindowsDataset containing the extracted windows.
+        Concatenated dataset containing either WindowsDataset or
+        EEGWindowsDataset objects with the extracted windows, depending on
+        the value of ``use_mne_epochs``.
     """
     stop_offset_samples, drop_last_window = (
         _check_and_set_fixed_length_window_arguments(
