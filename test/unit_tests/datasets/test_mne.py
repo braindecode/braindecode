@@ -5,6 +5,7 @@
 
 import mne
 import numpy as np
+import pytest
 
 from braindecode.datasets.mne import create_from_mne_epochs, create_from_mne_raw
 
@@ -156,8 +157,15 @@ def test_create_from_mne_epochs():
             assert i_stop == inds[i_t] + i_w_in_t * 2 - (i_w_in_t == 3) + 5
 
 
-def test_create_from_mne_epochs_no_mapping():
-    """without mapping, targets should be raw integer event codes."""
+@pytest.mark.parametrize(
+    "mapping, expected_targets",
+    [
+        (None, [1, 2]),
+        ({1: 0, 2: 1}, [0, 1]),
+    ],
+)
+def test_create_from_mne_epochs_mapping(mapping, expected_targets):
+    """Test that mapping correctly remaps event codes, or preserves them if None."""
     sfreq = 100
     n_channels = 2
     n_times = 100
@@ -168,30 +176,6 @@ def test_create_from_mne_epochs_no_mapping():
     events = np.array([[0, 0, 1], [100, 0, 2]])
     epochs = mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
 
-    windows_ds = create_from_mne_epochs(
-        [epochs],
-        window_size_samples=50,
-        window_stride_samples=50,
-        drop_last_window=True,
-    )
-    targets = [ds.windows.metadata["target"].iloc[0] for ds in windows_ds.datasets]
-    assert 1 in targets
-    assert 2 in targets
-
-
-def test_create_from_mne_epochs_with_mapping():
-    """mapping should correctly remap integer event codes to target values."""
-    sfreq = 100
-    n_channels = 2
-    n_times = 100
-    info = mne.create_info(
-        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
-    )
-    data = np.random.randn(2, n_channels, n_times)
-    events = np.array([[0, 0, 1], [100, 0, 2]])
-    epochs = mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
-
-    mapping = {1: 0, 2: 1}
     windows_ds = create_from_mne_epochs(
         [epochs],
         window_size_samples=50,
@@ -200,12 +184,13 @@ def test_create_from_mne_epochs_with_mapping():
         mapping=mapping,
     )
     targets = [ds.windows.metadata["target"].iloc[0] for ds in windows_ds.datasets]
-    assert 0 in targets
-    assert 1 in targets
+    for t in expected_targets:
+        assert t in targets
 
 
-def test_create_from_mne_epochs_with_picks():
-    """picks should correctly subset channels."""
+@pytest.mark.parametrize("picks", [None, [0, 1]])
+def test_create_from_mne_epochs_picks(picks):
+    """Test that picks correctly subsets channels."""
     sfreq = 100
     n_channels = 4
     n_times = 100
@@ -221,13 +206,15 @@ def test_create_from_mne_epochs_with_picks():
         window_size_samples=50,
         window_stride_samples=50,
         drop_last_window=True,
-        picks=[0, 1],
+        picks=picks,
     )
-    assert windows_ds.datasets[0].windows.get_data().shape[1] == 2
+    expected_ch = len(picks) if picks is not None else n_channels
+    assert windows_ds.datasets[0].windows.get_data().shape[1] == expected_ch
 
 
-def test_create_from_mne_epochs_with_preload():
-    """preload=True should preload epoch data."""
+@pytest.mark.parametrize("preload", [True, False])
+def test_create_from_mne_epochs_preload(preload):
+    """Test that preload correctly sets epoch preload state."""
     sfreq = 100
     n_channels = 2
     n_times = 100
@@ -243,6 +230,74 @@ def test_create_from_mne_epochs_with_preload():
         window_size_samples=50,
         window_stride_samples=50,
         drop_last_window=True,
-        preload=True,
+        preload=preload,
     )
-    assert windows_ds.datasets[0].windows.preload is True
+    assert windows_ds.datasets[0].windows.preload is preload
+
+
+@pytest.mark.parametrize("drop_bad_windows", [True, False])
+def test_create_from_mne_epochs_drop_bad_windows(drop_bad_windows):
+    """Test that drop_bad_windows controls whether drop_bad is called."""
+    sfreq = 100
+    n_channels = 2
+    n_times = 100
+    info = mne.create_info(
+        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
+    )
+    data = np.random.randn(2, n_channels, n_times)
+    events = np.array([[0, 0, 1], [100, 0, 2]])
+    epochs = mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
+
+    windows_ds = create_from_mne_epochs(
+        [epochs],
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        drop_bad_windows=drop_bad_windows,
+    )
+    assert len(windows_ds.datasets) == 2
+
+
+def test_create_from_mne_epochs_with_descriptions():
+    """Test that descriptions are correctly attached to WindowsDatasets."""
+    sfreq = 100
+    n_channels = 2
+    n_times = 100
+    info = mne.create_info(
+        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
+    )
+    data = np.random.randn(2, n_channels, n_times)
+    events = np.array([[0, 0, 1], [100, 0, 2]])
+    epochs = mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
+
+    descriptions = [{"subject": 1}]
+    windows_ds = create_from_mne_epochs(
+        [epochs],
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        descriptions=descriptions,
+    )
+    assert windows_ds.datasets[0].description["subject"] == 1
+
+
+def test_create_from_mne_epochs_descriptions_length_mismatch():
+    """Test that mismatched descriptions length raises ValueError."""
+    sfreq = 100
+    n_channels = 2
+    n_times = 100
+    info = mne.create_info(
+        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
+    )
+    data = np.random.randn(2, n_channels, n_times)
+    events = np.array([[0, 0, 1], [100, 0, 2]])
+    epochs = mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
+
+    with pytest.raises(ValueError, match="has to match"):
+        create_from_mne_epochs(
+            [epochs],
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+            descriptions=[{"subject": 1}, {"subject": 2}],
+        )

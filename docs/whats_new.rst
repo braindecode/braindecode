@@ -48,8 +48,8 @@ Enhancements
   frequency, duration/window size, channel names, description summary, and
   epoch-level metadata including target distribution and extra metadata columns
   (signal-level details marked ``*`` are taken from the first recording).
-- Add ``mapping``, ``preload``, and ``picks`` parameters to
-  :func:`braindecode.datasets.mne.create_from_mne_epochs` to bring it to
+- Add ``mapping``, ``preload``, ``picks``, ``drop_bad_windows``, and ``descriptions``
+  parameters to :func:`braindecode.datasets.mne.create_from_mne_epochs` to bring it to
   parity with :func:`braindecode.datasets.mne.create_from_mne_raw`
   (:gh:`941` by `Aman Srivastava`_)
 

@@ -100,9 +100,11 @@ def create_from_mne_epochs(
     window_size_samples: int,
     window_stride_samples: int,
     drop_last_window: bool,
+    descriptions: list[dict | pd.Series] | None = None,
     mapping: dict[str, int] | None = None,
     preload: bool = False,
     picks=None,
+    drop_bad_windows: bool = True,
 ) -> BaseConcatDataset:
     """Create WindowsDatasets from mne.Epochs.
 
@@ -117,6 +119,10 @@ def create_from_mne_epochs(
     drop_last_window : bool
         whether or not have a last overlapping window, when
         windows do not equally divide the continuous signal
+    descriptions : array-like | None
+        list of dicts or pandas.Series with additional information about
+        the epochs. If None, no description is added. Length must match
+        ``list_of_epochs``.
     mapping : dict(str: int) | None
         mapping from event description to target value. If None,
         targets are set to the raw integer event codes.
@@ -124,6 +130,10 @@ def create_from_mne_epochs(
         if True, preload the data of the Epochs objects.
     picks : str | list | slice | None
         channels to include. If None, all available channels are used.
+    drop_bad_windows : bool
+        If True, call `.drop_bad()` on the resulting mne.Epochs object.
+        This allows identifying windows that fall outside of the valid
+        signal range. Defaults to True.
 
     Returns
     -------
@@ -136,8 +146,15 @@ def create_from_mne_epochs(
 
     _check_windowing_arguments(0, 0, window_size_samples, window_stride_samples)
 
+    if descriptions is not None:
+        if len(descriptions) != len(list_of_epochs):
+            raise ValueError(
+                f"length of 'list_of_epochs' ({len(list_of_epochs)}) and "
+                f"'descriptions' ({len(descriptions)}) has to match"
+            )
+
     list_of_windows_ds = []
-    for epochs in list_of_epochs:
+    for i, epochs in enumerate(list_of_epochs):
         event_descriptions = epochs.events[:, 2]
         original_trial_starts = epochs.events[:, 0]
         stop = len(epochs.times) - window_size_samples
@@ -183,9 +200,11 @@ def create_from_mne_epochs(
                 picks=picks,
             )
 
-            mne_epochs.drop_bad(reject=None, flat=None)
+            if drop_bad_windows:
+                mne_epochs.drop_bad(reject=None, flat=None)
 
-            windows_ds = WindowsDataset(mne_epochs)
+            desc = descriptions[i] if descriptions is not None else None
+            windows_ds = WindowsDataset(mne_epochs, description=desc)
             list_of_windows_ds.append(windows_ds)
 
     return BaseConcatDataset(list_of_windows_ds)

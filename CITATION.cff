@@ -44,6 +44,10 @@ authors:
     family-names: Paillard
     affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
     orcid: "https://orcid.org/0009-0007-3267-7824"
+  - given-names: Aman
+    family-names: Srivastava
+    orcid: "https://orcid.org/0009-0008-6446-1216"
+    github: "https://github.com/aman-coder03"
   - given-names: Bruna
     family-names: Junqueira Lopes
     orcid: "https://orcid.org/0000-0003-4703-9343"
@@ -65,9 +69,6 @@ authors:
   - given-names: Robin Tibor
     family-names: Schirrmeister
     orcid: https://orcid.org/0000-0002-5518-7445
-  - given-names: Aman
-    family-names: Srivastava
-    github: "https://github.com/aman-coder03"
 type: software
 repository-code: "https://github.com/braindecode/braindecode"
 license: BSD-3-Clause
