@@ -642,6 +642,15 @@ def _create_windows_from_events(
             stop_off = trial_stop_offset_samples[event_name]
             stride = window_stride_samples[event_name]
 
+            # _compute_window_inds drops trials whose effective duration is
+            # smaller than window_size_samples (subject to accepted_bads_ratio).
+            # Its returned i_trials index into the *post-filter* array, so we
+            # must apply the same mask to orig_indices before mapping.
+            eff_starts = type_onsets + start_off
+            eff_stops = type_stops + stop_off
+            good_mask = ~(window_size_samples > (eff_stops - eff_starts))
+            orig_indices_good = orig_indices[good_mask]
+
             type_i_trials, type_i_win, type_starts, type_stops = _compute_window_inds(
                 type_onsets.copy(),
                 type_stops.copy(),
@@ -652,8 +661,9 @@ def _create_windows_from_events(
                 drop_last_window,
                 accepted_bads_ratio,
             )
-            # Map local trial indices back to global event indices
-            mapped_i_trials = [orig_indices[i] for i in type_i_trials]
+            # Map local trial indices back to global event indices.
+            # type_i_trials index into orig_indices_good (bad trials removed).
+            mapped_i_trials = [orig_indices_good[i] for i in type_i_trials]
             all_i_trials.extend(mapped_i_trials)
             all_i_window_in_trials.extend(type_i_win)
             all_starts.extend(

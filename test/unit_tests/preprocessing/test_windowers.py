@@ -1256,3 +1256,58 @@ def test_dict_params_per_event_type(
     if not use_mne_epochs:
         starts = metadata["i_start_in_trial"].values
         assert np.all(np.diff(starts) >= 0)
+
+
+def test_dict_params_bad_trial_dropped_extras_not_misassigned():
+    """Extras must come from the surviving trial, not from the dropped one.
+
+    When one T0 event is too short for the window size and is dropped via
+    accepted_bads_ratio, the returned i_trials from _compute_window_inds index
+    into the post-filter array.  Before the fix, those indices were mapped back
+    through orig_indices (sized for the pre-filter array), so the surviving
+    T0 window got the extras of the *dropped* trial instead of its own.
+    """
+    sfreq = 100
+    # T0 event 0: onset 1 s, duration 0.4 s  → 40 samples  (too short for window=60)
+    # T0 event 1: onset 5 s, duration 1.0 s  → 100 samples (fits)
+    # T1 events: both 1 s long (needed for mapping only)
+    onsets = [1.0, 3.0, 5.0, 7.0]
+    durations = [0.4, 1.0, 1.0, 1.0]
+    descriptions = ["T0", "T1", "T0", "T1"]
+    # unique per-trial extra so we can tell which trial a window came from
+    trial_ids = [10, 20, 30, 40]
+
+    annotations = mne.Annotations(
+        onset=onsets, duration=durations, description=descriptions
+    )
+    annotations.extras = [{"trial_id": tid} for tid in trial_ids]
+
+    rng = np.random.RandomState(0)
+    data = rng.randn(2, 10000).astype(np.float32)
+    info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=sfreq)
+    raw = mne.io.RawArray(data, info)
+    raw.set_annotations(annotations)
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+
+    mapping = {"T0": 0, "T1": 1}
+    with pytest.warns(UserWarning, match="are being dropped"):
+        windows = create_windows_from_events(
+            concat_ds=concat_ds,
+            trial_start_offset_samples={"T0": 0, "T1": 0},
+            trial_stop_offset_samples={"T0": 0, "T1": 0},
+            window_size_samples=60,
+            window_stride_samples=60,
+            drop_last_window=True,
+            mapping=mapping,
+            accepted_bads_ratio=0.6,
+        )
+
+    metadata = windows.datasets[0].metadata
+    t0_meta = metadata[metadata["target"] == 0]
+
+    # The surviving T0 event is event index 2 (onset 5 s = sample 500).
+    # Its extra has trial_id == 30.  Before the fix, trial_id == 10 was returned
+    # because i_trials[0]=0 was mapped to orig_indices[0] (the dropped event).
+    assert (t0_meta["trial_id"] == 30).all(), (
+        f"Expected trial_id=30 for surviving T0 windows, got {t0_meta['trial_id'].tolist()}"
+    )
