@@ -51,7 +51,7 @@ Enhancements
 - Add ``mapping``, ``preload``, and ``picks`` parameters to
   :func:`braindecode.datasets.mne.create_from_mne_epochs` to bring it to
   parity with :func:`braindecode.datasets.mne.create_from_mne_raw`
-  (:gh:`941` by `Aman Srivastava`_) 
+  (:gh:`941` by `Aman Srivastava`_)
 
 API changes
 ============
