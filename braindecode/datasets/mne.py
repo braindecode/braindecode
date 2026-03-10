@@ -155,7 +155,9 @@ def create_from_mne_epochs(
             # resolve target using mapping if provided
             event_code = event_descriptions[trial_i]
             if mapping is not None:
-                target = mapping.get(event_code, mapping.get(str(event_code), event_code))
+                target = mapping.get(
+                    event_code, mapping.get(str(event_code), event_code)
+                )
             else:
                 target = event_code
 
