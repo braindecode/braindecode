@@ -1090,3 +1090,224 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds
         )
+
+
+# ---------- Tests for per-event-type dict parameters ----------
+
+
+@pytest.fixture(scope="module")
+def concat_ds_two_event_types():
+    """Dataset with two event types (T0, T1) interleaved, known layout."""
+    rng = np.random.RandomState(42)
+    data = rng.randn(2, 10000).astype(np.float32)
+    # 4 events, alternating T0/T1 with enough spacing
+    onsets = [1.0, 3.0, 5.0, 7.0]
+    durations = [1.0] * len(onsets)
+    descriptions = ["T0", "T1", "T0", "T1"]
+    annotations = mne.Annotations(
+        onset=onsets, duration=durations, description=descriptions
+    )
+    info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=100)
+    raw = mne.io.RawArray(data, info)
+    raw.set_annotations(annotations)
+    ds = RawDataset(raw)
+    return BaseConcatDataset([ds])
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        pytest.param(
+            dict(
+                trial_start_offset_samples={"T0": 0, "T1": -10},
+                trial_stop_offset_samples=0,
+                window_size_samples=50,
+                window_stride_samples=50,
+                drop_last_window=True,
+            ),
+            "mapping must be provided",
+            id="require_mapping",
+        ),
+        pytest.param(
+            dict(
+                trial_start_offset_samples={"T0": 0, "T1": -10},
+                trial_stop_offset_samples=0,
+                mapping={"T0": 0, "T1": 1},
+            ),
+            "window_size_samples must be provided",
+            id="require_window_size",
+        ),
+        pytest.param(
+            dict(
+                trial_start_offset_samples={"T0": 0, "T2": -10},
+                trial_stop_offset_samples=0,
+                window_size_samples=50,
+                window_stride_samples=50,
+                drop_last_window=True,
+                mapping={"T0": 0, "T1": 1},
+            ),
+            "Keys of trial_start_offset_samples",
+            id="keys_must_match_mapping",
+        ),
+    ],
+)
+def test_dict_params_validation(concat_ds_two_event_types, kwargs, match):
+    """Dict params validation raises ValueError with informative messages."""
+    with pytest.raises(ValueError, match=match):
+        create_windows_from_events(concat_ds=concat_ds_two_event_types, **kwargs)
+
+
+def test_dict_params_uniform_values_match_int(concat_ds_two_event_types):
+    """Dict params with identical values should produce the same result as int params."""
+    mapping = {"T0": 0, "T1": 1}
+    kwargs = dict(
+        concat_ds=concat_ds_two_event_types,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+    )
+    windows_int = create_windows_from_events(**kwargs)
+
+    kwargs_dict = dict(
+        concat_ds=concat_ds_two_event_types,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+        trial_start_offset_samples={"T0": 0, "T1": 0},
+        trial_stop_offset_samples={"T0": 0, "T1": 0},
+    )
+    windows_dict = create_windows_from_events(**kwargs_dict)
+
+    for ds_int, ds_dict in zip(windows_int.datasets, windows_dict.datasets):
+        pd.testing.assert_frame_equal(
+            ds_int.metadata.reset_index(drop=True),
+            ds_dict.metadata.reset_index(drop=True),
+        )
+
+
+@pytest.mark.parametrize(
+    "trial_start_offset_samples, trial_stop_offset_samples, "
+    "window_stride_samples, use_mne_epochs, expected_t0, expected_t1",
+    [
+        pytest.param(
+            {"T0": 0, "T1": -20}, 0, 50, False, 4, 4,
+            id="start_offset_per_type",
+        ),
+        pytest.param(
+            0, 0, {"T0": 50, "T1": 25}, False, 4, 6,
+            id="stride_per_type",
+        ),
+        pytest.param(
+            0, {"T0": 0, "T1": 50}, 50, False, 4, 6,
+            id="stop_offset_per_type",
+        ),
+        pytest.param(
+            {"T0": 0, "T1": -10}, 0, 50, False, 4, 4,
+            id="chronological_ordering",
+        ),
+        pytest.param(
+            0, 0, {"T0": 50, "T1": 25}, False, 4, 6,
+            id="mixed_int_and_dict",
+        ),
+        pytest.param(
+            {"T0": 0, "T1": -10}, 0, 50, True, None, None,
+            id="use_mne_epochs",
+        ),
+    ],
+)
+def test_dict_params_per_event_type(
+    concat_ds_two_event_types,
+    trial_start_offset_samples,
+    trial_stop_offset_samples,
+    window_stride_samples,
+    use_mne_epochs,
+    expected_t0,
+    expected_t1,
+):
+    """Per-event-type dict parameters produce correct window counts and ordering."""
+    mapping = {"T0": 0, "T1": 1}
+    windows = create_windows_from_events(
+        concat_ds=concat_ds_two_event_types,
+        trial_start_offset_samples=trial_start_offset_samples,
+        trial_stop_offset_samples=trial_stop_offset_samples,
+        window_size_samples=50,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=True,
+        mapping=mapping,
+        use_mne_epochs=use_mne_epochs,
+    )
+    if use_mne_epochs:
+        metadata = windows.datasets[0].windows.metadata
+    else:
+        metadata = windows.datasets[0].metadata
+
+    assert len(metadata) > 0
+
+    if expected_t0 is not None:
+        t0_meta = metadata[metadata["target"] == 0]
+        t1_meta = metadata[metadata["target"] == 1]
+        assert len(t0_meta) == expected_t0
+        assert len(t1_meta) == expected_t1
+
+    if not use_mne_epochs:
+        starts = metadata["i_start_in_trial"].values
+        assert np.all(np.diff(starts) >= 0)
+
+
+def test_dict_params_bad_trial_dropped_extras_not_misassigned():
+    """Extras must come from the surviving trial, not from the dropped one.
+
+    When one T0 event is too short for the window size and is dropped via
+    accepted_bads_ratio, the returned i_trials from _compute_window_inds index
+    into the post-filter array.  Before the fix, those indices were mapped back
+    through orig_indices (sized for the pre-filter array), so the surviving
+    T0 window got the extras of the *dropped* trial instead of its own.
+    """
+    sfreq = 100
+    # T0 event 0: onset 1 s, duration 0.4 s  → 40 samples  (too short for window=60)
+    # T0 event 1: onset 5 s, duration 1.0 s  → 100 samples (fits)
+    # T1 events: both 1 s long (needed for mapping only)
+    onsets = [1.0, 3.0, 5.0, 7.0]
+    durations = [0.4, 1.0, 1.0, 1.0]
+    descriptions = ["T0", "T1", "T0", "T1"]
+    # unique per-trial extra so we can tell which trial a window came from
+    trial_ids = [10, 20, 30, 40]
+
+    annotations = mne.Annotations(
+        onset=onsets, duration=durations, description=descriptions
+    )
+    annotations.extras = [{"trial_id": tid} for tid in trial_ids]
+
+    rng = np.random.RandomState(0)
+    data = rng.randn(2, 10000).astype(np.float32)
+    info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=sfreq)
+    raw = mne.io.RawArray(data, info)
+    raw.set_annotations(annotations)
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+
+    mapping = {"T0": 0, "T1": 1}
+    with pytest.warns(UserWarning, match="are being dropped"):
+        windows = create_windows_from_events(
+            concat_ds=concat_ds,
+            trial_start_offset_samples={"T0": 0, "T1": 0},
+            trial_stop_offset_samples={"T0": 0, "T1": 0},
+            window_size_samples=60,
+            window_stride_samples=60,
+            drop_last_window=True,
+            mapping=mapping,
+            accepted_bads_ratio=0.6,
+        )
+
+    metadata = windows.datasets[0].metadata
+    t0_meta = metadata[metadata["target"] == 0]
+
+    # The surviving T0 event is event index 2 (onset 5 s = sample 500).
+    # Its extra has trial_id == 30.  Before the fix, trial_id == 10 was returned
+    # because i_trials[0]=0 was mapped to orig_indices[0] (the dropped event).
+    assert (t0_meta["trial_id"] == 30).all(), (
+        f"Expected trial_id=30 for surviving T0 windows, got {t0_meta['trial_id'].tolist()}"
+    )
