@@ -361,7 +361,6 @@ def create_windows_from_events(
         if not isinstance(trial_stop_offset_samples, dict):
             trial_stop_offset_samples = {k: trial_stop_offset_samples for k in mapping}
         if not isinstance(window_stride_samples, dict):
-            assert isinstance(window_size_samples, int)  # typing
             window_stride_samples = {k: window_stride_samples for k in mapping}  # type: ignore
 
     # If user did not specify mapping, we extract all events from all datasets
