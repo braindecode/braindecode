@@ -417,6 +417,7 @@ def create_fixed_length_windows(
     drop_last_window: bool | None = None,
     mapping: dict[str, int] | None = None,
     preload: bool = False,
+    drop_bad_windows: bool | None = None,
     picks: str | ArrayLike | slice | None = None,
     reject: dict[str, float] | None = None,
     flat: dict[str, float] | None = None,
@@ -424,9 +425,10 @@ def create_fixed_length_windows(
     last_target_only: bool = True,
     lazy_metadata: bool = False,
     on_missing: str = "error",
+    use_mne_epochs: bool | None = None,
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
-) -> BaseConcatDataset[EEGWindowsDataset]:
+) -> BaseConcatDataset[WindowsDataset | EEGWindowsDataset]:
     """Windower that creates sliding windows.
 
     Parameters
@@ -452,6 +454,12 @@ def create_fixed_length_windows(
         Mapping from event description to target value.
     preload: bool
         If True, preload the data of the Epochs objects.
+    drop_bad_windows: bool | None
+        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
+        step allows identifying e.g., windows that fall outside of the
+        continuous recording. It is suggested to run this step here as otherwise
+        the BaseConcatDataset has to be updated as well. Only has an effect if
+        mne Epochs are created (i.e. ``use_mne_epochs=True``).
     picks: str | list | slice | None
         Channels to include. If None, all available channels are used. See
         mne.Epochs.
@@ -463,10 +471,18 @@ def create_fixed_length_windows(
         rejection based on flatness is done. See mne.Epochs.
     lazy_metadata: bool
         If True, metadata is not computed immediately, but only when accessed
-        by using the _LazyDataFrame (experimental).
+        by using the _LazyDataFrame (experimental). Cannot be used together
+        with ``use_mne_epochs=True``.
     on_missing: str
         What to do if one or several event ids are not found in the recording.
         Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
+    use_mne_epochs: bool | None
+        If False, return EEGWindowsDataset objects.
+        If True, return mne.Epochs objects encapsulated in WindowsDataset
+        objects, which is substantially slower than EEGWindowsDataset.
+        If None, it will be inferred from the other parameters: True if any
+        of ``reject``, ``picks``, ``flat``, or ``drop_bad_windows`` is set,
+        False otherwise.
     n_jobs: int
         Number of jobs to use to parallelize the windowing.
     verbose: bool | str | int | None
@@ -474,7 +490,7 @@ def create_fixed_length_windows(
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset[EEGWindowsDataset]
+    windows_datasets: BaseConcatDataset[WindowsDataset | EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
     """
     stop_offset_samples, drop_last_window = (
@@ -487,6 +503,20 @@ def create_fixed_length_windows(
             lazy_metadata,
         )
     )
+
+    if drop_bad_windows is not None:
+        warnings.warn(
+            "Drop bad windows only has an effect if mne epochs are created, "
+            "and this argument may be removed in the future."
+        )
+
+    use_mne_epochs = _get_use_mne_epochs(
+        use_mne_epochs, reject, picks, flat, drop_bad_windows
+    )
+    if use_mne_epochs and drop_bad_windows is None:
+        drop_bad_windows = True
+    if use_mne_epochs and lazy_metadata:
+        raise ValueError("Cannot use lazy_metadata=True with use_mne_epochs=True.")
 
     # check if recordings are of different lengths
     lengths = np.array([ds.raw.n_times for ds in concat_ds.datasets])
@@ -507,6 +537,7 @@ def create_fixed_length_windows(
             drop_last_window,
             mapping,
             preload,
+            drop_bad_windows,
             picks,
             reject,
             flat,
@@ -514,6 +545,7 @@ def create_fixed_length_windows(
             last_target_only,
             lazy_metadata,
             on_missing,
+            use_mne_epochs,
             verbose,
         )
         for ds in concat_ds.datasets
@@ -805,6 +837,7 @@ def _create_fixed_length_windows(
     drop_last_window,
     mapping=None,
     preload=False,
+    drop_bad_windows=True,
     picks=None,
     reject=None,
     flat=None,
@@ -812,6 +845,7 @@ def _create_fixed_length_windows(
     last_target_only=True,
     lazy_metadata=False,
     on_missing="error",
+    use_mne_epochs=False,
     verbose="error",
 ):
     """Create WindowsDataset from RawDataset with sliding windows.
@@ -894,19 +928,52 @@ def _create_fixed_length_windows(
             }
         )
 
-    window_kwargs.append(
-        (
-            EEGWindowsDataset.__name__,
-            {"targets_from": targets_from, "last_target_only": last_target_only},
+    if use_mne_epochs:
+        # Construct synthetic events for mne.Epochs
+        events = np.column_stack(
+            [
+                starts + ds.raw.first_samp,
+                np.zeros(len(starts), dtype=int),
+                np.ones(len(starts), dtype=int),
+            ]
         )
-    )
-    windows_ds = EEGWindowsDataset(
-        ds.raw,
-        metadata=metadata,
-        description=ds.description,
-        targets_from=targets_from,
-        last_target_only=last_target_only,
-    )
+        events_id = {"window": 1}
+        # window size - 1, since tmax is inclusive
+        mne_epochs = mne.Epochs(
+            ds.raw,
+            events,
+            events_id,
+            baseline=None,
+            tmin=0,
+            tmax=(window_size_samples - 1) / ds.raw.info["sfreq"],
+            metadata=metadata,
+            preload=preload,
+            picks=picks,
+            reject=reject,
+            flat=flat,
+            on_missing=on_missing,
+            verbose=verbose,
+        )
+        if drop_bad_windows:
+            mne_epochs.drop_bad()
+        windows_ds = WindowsDataset(
+            mne_epochs,
+            ds.description,
+        )
+    else:
+        window_kwargs.append(
+            (
+                EEGWindowsDataset.__name__,
+                {"targets_from": targets_from, "last_target_only": last_target_only},
+            )
+        )
+        windows_ds = EEGWindowsDataset(
+            ds.raw,
+            metadata=metadata,
+            description=ds.description,
+            targets_from=targets_from,
+            last_target_only=last_target_only,
+        )
     # add window_kwargs and raw_preproc_kwargs to windows dataset
     setattr(windows_ds, "window_kwargs", window_kwargs)
     kwargs_name = "raw_preproc_kwargs"
