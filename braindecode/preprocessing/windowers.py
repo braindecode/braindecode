@@ -626,9 +626,6 @@ def _create_windows_from_events(
             onsets = onsets - ds.raw.first_samp
             stops = stops - ds.raw.first_samp
 
-        # Reverse mapping: integer event code -> event name
-        id_to_name = {v: k for k, v in events_id.items()}
-
         all_i_trials = []
         all_i_window_in_trials = []
         all_starts: list[int] = []
