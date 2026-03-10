@@ -196,10 +196,10 @@ def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
 # XXX it's called concat_ds...
 def create_windows_from_events(
     concat_ds: BaseConcatDataset[RawDataset],
-    trial_start_offset_samples: int = 0,
-    trial_stop_offset_samples: int = 0,
+    trial_start_offset_samples: int | dict[str, int] = 0,
+    trial_stop_offset_samples: int | dict[str, int] = 0,
     window_size_samples: int | None = None,
-    window_stride_samples: int | None = None,
+    window_stride_samples: int | dict[str, int] | None = None,
     drop_last_window: bool = False,
     mapping: dict[str, int] | None = None,
     preload: bool = False,
@@ -237,24 +237,32 @@ def create_windows_from_events(
     ----------
     concat_ds: BaseConcatDataset[RawDataset]
         A concat of base datasets each holding raw and description.
-    trial_start_offset_samples: int
+    trial_start_offset_samples: int | dict[str, int]
         Start offset from original trial onsets, in samples. Defaults to zero.
-    trial_stop_offset_samples: int
+        If a dict, keys must match the keys of ``mapping`` and different
+        offsets are applied per event type.
+    trial_stop_offset_samples: int | dict[str, int]
         Stop offset from original trial stop, in samples. Defaults to zero.
+        If a dict, keys must match the keys of ``mapping`` and different
+        offsets are applied per event type.
     window_size_samples: int | None
         Window size. If None, the window size is inferred from the original
         trial size of the first trial and trial_start_offset_samples and
         trial_stop_offset_samples.
-    window_stride_samples: int | None
+    window_stride_samples: int | dict[str, int] | None
         Stride between windows, in samples. If None, the window stride is
         inferred from the original trial size of the first trial and
         trial_start_offset_samples and trial_stop_offset_samples.
+        If a dict, keys must match the keys of ``mapping`` and different
+        strides are applied per event type.
     drop_last_window: bool
         If False, an additional overlapping window that ends at
         trial_stop_offset_samples will be extracted around each event when the
         last window does not end exactly at trial_stop_offset_samples.
     mapping: dict(str: int)
-        Mapping from event description to numerical target value.
+        Mapping from event description to numerical target value. Must be
+        provided when any of ``trial_start_offset_samples``,
+        ``trial_stop_offset_samples``, or ``window_stride_samples`` is a dict.
     preload: bool
         If True, preload the data of the Epochs objects. This is useful to
         reduce disk reading overhead when returning windows in a training
@@ -311,6 +319,51 @@ def create_windows_from_events(
         raise ValueError(
             f"Invalid value {on_overlapping_events} for on_overlapping_events."
         )
+
+    # Validate per-event-type dict parameters
+    has_dict_params = any(
+        isinstance(p, dict)
+        for p in [
+            trial_start_offset_samples,
+            trial_stop_offset_samples,
+            window_stride_samples,
+        ]
+    )
+    if has_dict_params:
+        if mapping is None:
+            raise ValueError(
+                "mapping must be provided when any of "
+                "trial_start_offset_samples, trial_stop_offset_samples, "
+                "or window_stride_samples is a dict."
+            )
+        if window_size_samples is None:
+            raise ValueError(
+                "window_size_samples must be provided (not None) when any of "
+                "trial_start_offset_samples, trial_stop_offset_samples, "
+                "or window_stride_samples is a dict."
+            )
+        mapping_keys = set(mapping.keys())
+        for param_name, param_val in [
+            ("trial_start_offset_samples", trial_start_offset_samples),
+            ("trial_stop_offset_samples", trial_stop_offset_samples),
+            ("window_stride_samples", window_stride_samples),
+        ]:
+            if isinstance(param_val, dict) and set(param_val.keys()) != mapping_keys:
+                raise ValueError(
+                    f"Keys of {param_name} ({set(param_val.keys())}) must "
+                    f"match keys of mapping ({mapping_keys})."
+                )
+        # Normalize int params to dicts so downstream always gets dicts
+        if not isinstance(trial_start_offset_samples, dict):
+            trial_start_offset_samples = {
+                k: trial_start_offset_samples for k in mapping
+            }
+        if not isinstance(trial_stop_offset_samples, dict):
+            trial_stop_offset_samples = {k: trial_stop_offset_samples for k in mapping}
+        if not isinstance(window_stride_samples, dict):
+            assert isinstance(window_size_samples, int)  # typing
+            window_stride_samples = {k: window_stride_samples for k in mapping}  # type: ignore
+
     # If user did not specify mapping, we extract all events from all datasets
     # and map them to increasing integers starting from 0
     infer_mapping = mapping is None
@@ -546,57 +599,124 @@ def _create_windows_from_events(
 
     last_samp = ds.raw.first_samp + ds.raw.n_times - 1
     # `stops` is used exclusively (i.e. `start:stop`), so add back 1
-    if stops[-1] + trial_stop_offset_samples > last_samp + 1:
-        raise ValueError(
-            '"trial_stop_offset_samples" too large. Stop of last trial '
-            f'({stops[-1]}) + "trial_stop_offset_samples" '
-            f"({trial_stop_offset_samples}) must be smaller than length of"
-            f" recording ({len(ds)})."
-        )
-
-    if infer_window_size_stride:
-        # window size is trial size
-        if window_size_samples is None:
-            window_size_samples = (
-                stops[0]
-                + trial_stop_offset_samples
-                - (onsets[0] + trial_start_offset_samples)
+    if isinstance(trial_stop_offset_samples, dict):
+        # Check the max offset across all event types
+        max_stop_offset = max(trial_stop_offset_samples.values())
+        if stops[-1] + max_stop_offset > last_samp + 1:
+            raise ValueError(
+                '"trial_stop_offset_samples" too large. Stop of last trial '
+                f'({stops[-1]}) + max "trial_stop_offset_samples" '
+                f"({max_stop_offset}) must be smaller than length of"
+                f" recording ({len(ds)})."
             )
-            window_stride_samples = window_size_samples
-        this_trial_sizes = (stops + trial_stop_offset_samples) - (
-            onsets + trial_start_offset_samples
-        )
-        # Maybe actually this is not necessary?
-        # We could also just say we just assume window size=trial size
-        # in case not given, without this condition...
-        # but then would have to change functions overall
-        checker_trials_size = this_trial_sizes == window_size_samples
-
-        if not np.all(checker_trials_size):
-            trials_drops = int(len(this_trial_sizes) - sum(checker_trials_size))
-            warnings.warn(
-                f"Dropping trials with different windows size {trials_drops}",
+    else:
+        if stops[-1] + trial_stop_offset_samples > last_samp + 1:
+            raise ValueError(
+                '"trial_stop_offset_samples" too large. Stop of last trial '
+                f'({stops[-1]}) + "trial_stop_offset_samples" '
+                f"({trial_stop_offset_samples}) must be smaller than length of"
+                f" recording ({len(ds)})."
             )
-            events = events[checker_trials_size]
-            onsets = onsets[checker_trials_size]
-            stops = stops[checker_trials_size]
-            if extras is not None:
-                extras = [e for i, e in enumerate(extras) if checker_trials_size[i]]
-    description = events[:, -1]
 
-    if not use_mne_epochs:
-        onsets = onsets - ds.raw.first_samp
-        stops = stops - ds.raw.first_samp
-    i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
-        onsets,
-        stops,
-        trial_start_offset_samples,
-        trial_stop_offset_samples,
-        window_size_samples,
-        window_stride_samples,
-        drop_last_window,
-        accepted_bads_ratio,
-    )
+    if isinstance(trial_start_offset_samples, dict):
+        # Per-event-type windowing: skip inference, group by event type
+        description = events[:, -1]
+
+        if not use_mne_epochs:
+            onsets = onsets - ds.raw.first_samp
+            stops = stops - ds.raw.first_samp
+
+        # Reverse mapping: integer event code -> event name
+        id_to_name = {v: k for k, v in events_id.items()}
+
+        all_i_trials = []
+        all_i_window_in_trials = []
+        all_starts: list[int] = []
+        all_stops: list[int] = []
+
+        for event_name, event_code in events_id.items():
+            mask = description == event_code
+            if not np.any(mask):
+                continue
+            type_onsets = onsets[mask]
+            type_stops = stops[mask]
+            orig_indices = np.where(mask)[0]
+
+            start_off = trial_start_offset_samples[event_name]
+            stop_off = trial_stop_offset_samples[event_name]
+            stride = window_stride_samples[event_name]
+
+            type_i_trials, type_i_win, type_starts, type_stops = _compute_window_inds(
+                type_onsets.copy(),
+                type_stops.copy(),
+                start_off,
+                stop_off,
+                window_size_samples,
+                stride,
+                drop_last_window,
+                accepted_bads_ratio,
+            )
+            # Map local trial indices back to global event indices
+            mapped_i_trials = [orig_indices[i] for i in type_i_trials]
+            all_i_trials.extend(mapped_i_trials)
+            all_i_window_in_trials.extend(type_i_win)
+            all_starts.extend(
+                type_starts if isinstance(type_starts, list) else type_starts.tolist()
+            )
+            all_stops.extend(
+                type_stops if isinstance(type_stops, list) else type_stops.tolist()
+            )
+
+        # Sort chronologically by start sample
+        sort_order = np.argsort(all_starts)
+        i_trials = [all_i_trials[i] for i in sort_order]
+        i_window_in_trials = [all_i_window_in_trials[i] for i in sort_order]
+        starts = [all_starts[i] for i in sort_order]
+        stops = np.array([all_stops[i] for i in sort_order])
+    else:
+        if infer_window_size_stride:
+            # window size is trial size
+            if window_size_samples is None:
+                window_size_samples = (
+                    stops[0]
+                    + trial_stop_offset_samples
+                    - (onsets[0] + trial_start_offset_samples)
+                )
+                window_stride_samples = window_size_samples
+            this_trial_sizes = (stops + trial_stop_offset_samples) - (
+                onsets + trial_start_offset_samples
+            )
+            # Maybe actually this is not necessary?
+            # We could also just say we just assume window size=trial size
+            # in case not given, without this condition...
+            # but then would have to change functions overall
+            checker_trials_size = this_trial_sizes == window_size_samples
+
+            if not np.all(checker_trials_size):
+                trials_drops = int(len(this_trial_sizes) - sum(checker_trials_size))
+                warnings.warn(
+                    f"Dropping trials with different windows size {trials_drops}",
+                )
+                events = events[checker_trials_size]
+                onsets = onsets[checker_trials_size]
+                stops = stops[checker_trials_size]
+                if extras is not None:
+                    extras = [e for i, e in enumerate(extras) if checker_trials_size[i]]
+        description = events[:, -1]
+
+        if not use_mne_epochs:
+            onsets = onsets - ds.raw.first_samp
+            stops = stops - ds.raw.first_samp
+        i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
+            onsets,
+            stops,
+            trial_start_offset_samples,
+            trial_stop_offset_samples,
+            window_size_samples,
+            window_stride_samples,
+            drop_last_window,
+            accepted_bads_ratio,
+        )
 
     if (on_overlapping_events != "ignore") and any(np.diff(starts) <= 0):
         msg = "Overlapping trials detected. You can ignore, warn, or raise an error, using the on_overlapping_events argument."
@@ -990,16 +1110,48 @@ def _check_windowing_arguments(
     window_size_samples,
     window_stride_samples,
 ):
-    assert isinstance(trial_start_offset_samples, (int, np.integer))
-    assert isinstance(trial_stop_offset_samples, (int, np.integer)) or (
-        trial_stop_offset_samples is None
+    def _is_int_or_none(v, allow_none=False):
+        if allow_none and v is None:
+            return True
+        return isinstance(v, (int, np.integer))
+
+    def _is_int_or_dict(v, allow_none=False):
+        if isinstance(v, dict):
+            if not all(_is_int_or_none(val) for val in v.values()):
+                raise ValueError(f"All values in dict must be integers, got {v}.")
+            return True
+        return _is_int_or_none(v, allow_none=allow_none)
+
+    assert _is_int_or_dict(trial_start_offset_samples), (
+        "trial_start_offset_samples must be an int or a dict[str, int]"
+    )
+    assert _is_int_or_dict(trial_stop_offset_samples, allow_none=True), (
+        "trial_stop_offset_samples must be an int, None, or a dict[str, int]"
     )
     assert isinstance(window_size_samples, (int, np.integer, type(None)))
-    assert isinstance(window_stride_samples, (int, np.integer, type(None)))
-    assert (window_size_samples is None) == (window_stride_samples is None)
+
+    assert _is_int_or_dict(window_stride_samples, allow_none=True), (
+        "window_stride_samples must be an int, None, or a dict[str, int]"
+    )
+
+    # When stride is a dict, window_size_samples must be provided
+    stride_is_none = (
+        window_stride_samples is None
+        if not isinstance(window_stride_samples, dict)
+        else False
+    )
+    assert (window_size_samples is None) == stride_is_none, (
+        "window_size_samples and window_stride_samples must both be None or both be set"
+    )
+
     if window_size_samples is not None:
         assert window_size_samples > 0, "window size has to be larger than 0"
-        assert window_stride_samples > 0, "window stride has to be larger than 0"
+        if isinstance(window_stride_samples, dict):
+            assert all(v > 0 for v in window_stride_samples.values()), (
+                "all window stride values have to be larger than 0"
+            )
+        else:
+            assert window_stride_samples > 0, "window stride has to be larger than 0"
 
 
 def _check_and_set_fixed_length_window_arguments(

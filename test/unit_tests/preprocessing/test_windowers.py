@@ -1090,3 +1090,231 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds
         )
+
+
+# ---------- Tests for per-event-type dict parameters ----------
+
+
+@pytest.fixture(scope="module")
+def concat_ds_two_event_types():
+    """Dataset with two event types (T0, T1) interleaved, known layout."""
+    rng = np.random.RandomState(42)
+    data = rng.randn(2, 10000).astype(np.float32)
+    # 4 events, alternating T0/T1 with enough spacing
+    onsets = [1.0, 3.0, 5.0, 7.0]
+    durations = [1.0] * len(onsets)
+    descriptions = ["T0", "T1", "T0", "T1"]
+    annotations = mne.Annotations(
+        onset=onsets, duration=durations, description=descriptions
+    )
+    info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=100)
+    raw = mne.io.RawArray(data, info)
+    raw.set_annotations(annotations)
+    ds = RawDataset(raw)
+    return BaseConcatDataset([ds])
+
+
+def test_dict_params_require_mapping(concat_ds_two_event_types):
+    """Dict params without mapping should raise ValueError."""
+    with pytest.raises(ValueError, match="mapping must be provided"):
+        create_windows_from_events(
+            concat_ds=concat_ds_two_event_types,
+            trial_start_offset_samples={"T0": 0, "T1": -10},
+            trial_stop_offset_samples=0,
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+        )
+
+
+def test_dict_params_require_window_size(concat_ds_two_event_types):
+    """Dict params with window_size_samples=None should raise ValueError."""
+    with pytest.raises(ValueError, match="window_size_samples must be provided"):
+        create_windows_from_events(
+            concat_ds=concat_ds_two_event_types,
+            trial_start_offset_samples={"T0": 0, "T1": -10},
+            trial_stop_offset_samples=0,
+            mapping={"T0": 0, "T1": 1},
+        )
+
+
+def test_dict_params_keys_must_match_mapping(concat_ds_two_event_types):
+    """Dict param keys must match mapping keys exactly."""
+    with pytest.raises(ValueError, match="Keys of trial_start_offset_samples"):
+        create_windows_from_events(
+            concat_ds=concat_ds_two_event_types,
+            trial_start_offset_samples={"T0": 0, "T2": -10},
+            trial_stop_offset_samples=0,
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+            mapping={"T0": 0, "T1": 1},
+        )
+
+
+def test_dict_params_uniform_values_match_int(concat_ds_two_event_types):
+    """Dict params with identical values should produce the same result as int params."""
+    mapping = {"T0": 0, "T1": 1}
+    kwargs = dict(
+        concat_ds=concat_ds_two_event_types,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+    )
+    windows_int = create_windows_from_events(**kwargs)
+
+    kwargs_dict = dict(
+        concat_ds=concat_ds_two_event_types,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+        trial_start_offset_samples={"T0": 0, "T1": 0},
+        trial_stop_offset_samples={"T0": 0, "T1": 0},
+    )
+    windows_dict = create_windows_from_events(**kwargs_dict)
+
+    for ds_int, ds_dict in zip(windows_int.datasets, windows_dict.datasets):
+        pd.testing.assert_frame_equal(
+            ds_int.metadata.reset_index(drop=True),
+            ds_dict.metadata.reset_index(drop=True),
+        )
+
+
+def test_dict_start_offset_per_event_type(concat_ds_two_event_types):
+    """Different trial_start_offset_samples per event type should shift windows."""
+    mapping = {"T0": 0, "T1": 1}
+    windows = create_windows_from_events(
+        concat_ds=concat_ds_two_event_types,
+        trial_start_offset_samples={"T0": 0, "T1": -20},
+        trial_stop_offset_samples=0,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+    )
+    metadata = windows.datasets[0].metadata
+
+    # T0 events: onset at sample 100, 500; duration 100 samples.
+    # With start_offset=0: windows start at onset.
+    # T1 events: onset at sample 300, 700; duration 100 samples.
+    # With start_offset=-20: windows start at onset - 20.
+    t0_meta = metadata[metadata["target"] == 0]
+    t1_meta = metadata[metadata["target"] == 1]
+
+    # T0: trial size with offset = 100, window = 50, stride = 50, drop_last=True -> 2 windows per trial
+    assert len(t0_meta) == 4  # 2 trials * 2 windows
+    # T1: trial size with offset (-20 to 0) = 120, window = 50, stride = 50, drop_last=True -> 2 windows per trial
+    assert len(t1_meta) == 4  # 2 trials * 2 windows
+
+    # Check T1 starts are shifted 20 samples earlier than their onset
+    t1_starts = t1_meta["i_start_in_trial"].values
+    assert t1_starts[0] == 300 - 20  # first T1 event onset(300) - offset(20)
+
+
+def test_dict_stride_per_event_type(concat_ds_two_event_types):
+    """Different window_stride_samples per event type."""
+    mapping = {"T0": 0, "T1": 1}
+    windows = create_windows_from_events(
+        concat_ds=concat_ds_two_event_types,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=50,
+        window_stride_samples={"T0": 50, "T1": 25},
+        drop_last_window=True,
+        mapping=mapping,
+    )
+    metadata = windows.datasets[0].metadata
+
+    t0_meta = metadata[metadata["target"] == 0]
+    t1_meta = metadata[metadata["target"] == 1]
+
+    # T0: trial 100 samples, window 50, stride 50 -> 2 windows per trial -> 4 total
+    assert len(t0_meta) == 4
+    # T1: trial 100 samples, window 50, stride 25 -> 3 windows per trial -> 6
+    assert len(t1_meta) == 6
+
+
+def test_dict_stop_offset_per_event_type(concat_ds_two_event_types):
+    """Different trial_stop_offset_samples per event type."""
+    mapping = {"T0": 0, "T1": 1}
+    windows = create_windows_from_events(
+        concat_ds=concat_ds_two_event_types,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples={"T0": 0, "T1": 50},
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+    )
+    metadata = windows.datasets[0].metadata
+
+    t0_meta = metadata[metadata["target"] == 0]
+    t1_meta = metadata[metadata["target"] == 1]
+
+    # T0: trial 100 samples + stop_offset 0 = 100 effective, window 50, stride 50 -> 2 windows per trial -> 4
+    assert len(t0_meta) == 4
+    # T1: trial 100 samples + stop_offset 50 = 150 effective, window 50, stride 50 -> 3 windows per trial -> 6
+    assert len(t1_meta) == 6
+
+
+def test_dict_params_chronological_ordering(concat_ds_two_event_types):
+    """Output windows should be sorted chronologically by start sample."""
+    mapping = {"T0": 0, "T1": 1}
+    windows = create_windows_from_events(
+        concat_ds=concat_ds_two_event_types,
+        trial_start_offset_samples={"T0": 0, "T1": -10},
+        trial_stop_offset_samples=0,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+    )
+    metadata = windows.datasets[0].metadata
+    starts = metadata["i_start_in_trial"].values
+    # Windows must be in non-decreasing order of start samples
+    assert np.all(np.diff(starts) >= 0)
+
+
+def test_dict_params_mixed_int_and_dict(concat_ds_two_event_types):
+    """Mix of int and dict params should work (int params get normalized)."""
+    mapping = {"T0": 0, "T1": 1}
+    # Only stride is a dict, offsets are int
+    windows = create_windows_from_events(
+        concat_ds=concat_ds_two_event_types,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=50,
+        window_stride_samples={"T0": 50, "T1": 25},
+        drop_last_window=True,
+        mapping=mapping,
+    )
+    metadata = windows.datasets[0].metadata
+    assert len(metadata) > 0
+
+    t0_meta = metadata[metadata["target"] == 0]
+    t1_meta = metadata[metadata["target"] == 1]
+    # T0: stride 50 -> 2 per trial -> 4
+    assert len(t0_meta) == 4
+    # T1: stride 25 -> 3 per trial -> 6
+    assert len(t1_meta) == 6
+
+
+def test_dict_params_with_use_mne_epochs(concat_ds_two_event_types):
+    """Dict params should work with use_mne_epochs=True."""
+    mapping = {"T0": 0, "T1": 1}
+    windows = create_windows_from_events(
+        concat_ds=concat_ds_two_event_types,
+        trial_start_offset_samples={"T0": 0, "T1": -10},
+        trial_stop_offset_samples=0,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+        use_mne_epochs=True,
+    )
+    metadata = windows.datasets[0].windows.metadata
+    assert len(metadata) > 0
