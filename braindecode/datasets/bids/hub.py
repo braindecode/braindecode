@@ -168,7 +168,6 @@ class HubDatasetMixin:
         try:
             huggingface_hub.create_repo(
                 repo_id=repo_id,
-                token=token,
                 private=private,
                 repo_type="dataset",
                 exist_ok=True,
