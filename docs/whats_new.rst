@@ -50,7 +50,7 @@ Enhancements
   (signal-level details marked ``*`` are taken from the first recording).
 - Per-event-type windowing parameters in :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`942` by `Pierre Guetschel`_)
 - Add ``use_mne_epochs`` support to :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`943` by `Pierre Guetschel`_)
-- Faster loading from epochs on disk with :class:`braindecode.datasets.base.WindowsDataset` (:gh:`944` by `Pierre Guetschel`_ )
+- Faster loading from epochs on disk with :class:`braindecode.datasets.base.WindowsDataset` (:gh:`944` by `Pierre Guetschel`_)
 
 API changes
 ============
