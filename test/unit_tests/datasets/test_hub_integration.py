@@ -18,6 +18,7 @@ import scipy
 # Optional imports for Hub functionality
 try:
     import zarr
+
     ZARR_AVAILABLE = True
 except ImportError:
     ZARR_AVAILABLE = False
@@ -114,16 +115,20 @@ def test_no_lazy_imports_in_hub_module():
     even when optional dependencies are not available.
     """
     # Mock zarr and huggingface_hub to simulate missing dependencies
-    with mock.patch.dict('sys.modules', {
-        'zarr': mock.MagicMock(),
-        'huggingface_hub': mock.MagicMock(),
-    }):
+    with mock.patch.dict(
+        "sys.modules",
+        {
+            "zarr": mock.MagicMock(),
+            "huggingface_hub": mock.MagicMock(),
+        },
+    ):
         # Import hub module (should work even with mocked dependencies)
         from braindecode.datasets.bids import hub
 
         # Get all functions in the hub module
         functions = [
-            obj for name, obj in inspect.getmembers(hub)
+            obj
+            for name, obj in inspect.getmembers(hub)
             if inspect.isfunction(obj) and obj.__module__ == hub.__name__
         ]
 
@@ -131,8 +136,12 @@ def test_no_lazy_imports_in_hub_module():
         for func in functions:
             source = inspect.getsource(func)
             # No function should have 'from .base import' or 'from ..datasets.base import'
-            assert "from .base import" not in source, f"{func.__name__} has circular import"
-            assert "from ..datasets.base import" not in source, f"{func.__name__} has circular import"
+            assert (
+                "from .base import" not in source
+            ), f"{func.__name__} has circular import"
+            assert (
+                "from ..datasets.base import" not in source
+            ), f"{func.__name__} has circular import"
 
 
 def test_registry_pattern_works():
@@ -178,7 +187,6 @@ def test_eegwindows_lossless_round_trip(tmp_path):
     original_raw_data = windowed.datasets[0].raw.get_data()
     original_metadata = windowed.datasets[0].metadata.copy()
 
-
     # Save to Zarr
     zarr_path = tmp_path / "dataset.zarr"
     windowed._convert_to_zarr_inline(
@@ -195,15 +203,16 @@ def test_eegwindows_lossless_round_trip(tmp_path):
 
     # Verify continuous raw data is preserved (allowing for float32 precision)
     loaded_raw_data = loaded.datasets[0].raw.get_data()
-    assert loaded_raw_data.shape == original_raw_data.shape, \
-        f"Shape mismatch: {loaded_raw_data.shape} vs {original_raw_data.shape}"
+    assert (
+        loaded_raw_data.shape == original_raw_data.shape
+    ), f"Shape mismatch: {loaded_raw_data.shape} vs {original_raw_data.shape}"
     # Use allclose since we save as float32 (some precision loss expected)
     np.testing.assert_allclose(
         original_raw_data,
         loaded_raw_data,
         rtol=1e-6,  # Relative tolerance
         atol=1e-7,  # Absolute tolerance
-        err_msg="Continuous raw data not preserved within float32 precision!"
+        err_msg="Continuous raw data not preserved within float32 precision!",
     )
 
     # Verify metadata is preserved
@@ -214,7 +223,9 @@ def test_eegwindows_lossless_round_trip(tmp_path):
         orig_X, orig_y, orig_inds = windowed.datasets[0][i]
         load_X, load_y, load_inds = loaded.datasets[0][i]
 
-        np.testing.assert_array_equal(orig_X, load_X, err_msg=f"Window {i} data mismatch")
+        np.testing.assert_array_equal(
+            orig_X, load_X, err_msg=f"Window {i} data mismatch"
+        )
         assert orig_y == load_y, f"Window {i} target mismatch"
         assert orig_inds == load_inds, f"Window {i} crop indices mismatch"
 
@@ -265,7 +276,7 @@ def test_rawdataset_basic_save_load(tmp_path):
         loaded_data,
         rtol=1e-6,
         atol=1e-7,
-        err_msg="RawDataset data not preserved within float32 precision!"
+        err_msg="RawDataset data not preserved within float32 precision!",
     )
 
     # Verify description
@@ -314,15 +325,16 @@ def test_rawdataset_lossless_round_trip(tmp_path):
 
     # Verify continuous raw data is preserved (allowing for float32 precision)
     loaded_raw_data = loaded.datasets[0].raw.get_data()
-    assert loaded_raw_data.shape == original_raw_data.shape, \
-        f"Shape mismatch: {loaded_raw_data.shape} vs {original_raw_data.shape}"
+    assert (
+        loaded_raw_data.shape == original_raw_data.shape
+    ), f"Shape mismatch: {loaded_raw_data.shape} vs {original_raw_data.shape}"
 
     np.testing.assert_allclose(
         original_raw_data,
         loaded_raw_data,
         rtol=1e-6,
         atol=1e-7,
-        err_msg="Continuous raw data not preserved within float32 precision!"
+        err_msg="Continuous raw data not preserved within float32 precision!",
     )
 
     # Verify description is preserved (ignore series name attribute)
@@ -604,15 +616,19 @@ def test_lazy_loading_support(tmp_path):
     )
 
     zarr_path = tmp_path / "lazy_test.zarr"
-    windowed._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+    windowed._convert_to_zarr_inline(
+        zarr_path, compression="blosc", compression_level=5
+    )
 
     # Load with preload=False (should warn and load anyway)
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         loaded_lazy = windowed._load_from_zarr_inline(zarr_path, preload=False)
         # Check that warning about lazy loading was issued
-        assert any("Lazy loading from Zarr not fully implemented" in str(warning.message)
-                   for warning in w)
+        assert any(
+            "Lazy loading from Zarr not fully implemented" in str(warning.message)
+            for warning in w
+        )
 
     # Currently always loads into memory
     assert loaded_lazy.datasets[0].windows.preload
@@ -647,7 +663,9 @@ def test_preprocessing_kwargs_preserved(tmp_path):
 
     # Save to Zarr
     zarr_path = tmp_path / "with_kwargs.zarr"
-    windowed._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+    windowed._convert_to_zarr_inline(
+        zarr_path, compression="blosc", compression_level=5
+    )
 
     # Load back
     loaded = windowed._load_from_zarr_inline(zarr_path, preload=True)
@@ -656,7 +674,10 @@ def test_preprocessing_kwargs_preserved(tmp_path):
     assert hasattr(loaded.datasets[0], "window_kwargs")
     assert loaded.datasets[0].window_kwargs == windowed.datasets[0].window_kwargs
     assert hasattr(loaded.datasets[0], "window_preproc_kwargs")
-    assert loaded.datasets[0].window_preproc_kwargs == windowed.datasets[0].window_preproc_kwargs
+    assert (
+        loaded.datasets[0].window_preproc_kwargs
+        == windowed.datasets[0].window_preproc_kwargs
+    )
 
 
 @pytest.mark.parametrize("use_mne_epochs", [True, False])
@@ -678,7 +699,9 @@ def test_zarr_round_trip_parametrized(tmp_path, use_mne_epochs):
 
     # Save to Zarr
     zarr_path = tmp_path / f"{expected_type.lower()}_parametrized.zarr"
-    windowed._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+    windowed._convert_to_zarr_inline(
+        zarr_path, compression="blosc", compression_level=5
+    )
 
     # Load back
     loaded = windowed._load_from_zarr_inline(zarr_path, preload=True)
@@ -691,20 +714,26 @@ def test_zarr_round_trip_parametrized(tmp_path, use_mne_epochs):
 
     # Verify windows/raw preserved
     if use_mne_epochs:
-        assert loaded.datasets[0].windows.info["sfreq"] == windowed.datasets[0].windows.info["sfreq"]
+        assert (
+            loaded.datasets[0].windows.info["sfreq"]
+            == windowed.datasets[0].windows.info["sfreq"]
+        )
         # Check a few windows
         for i in range(min(3, len(loaded.datasets[0]))):
             orig_X, _, _ = windowed.datasets[0][i]
             load_X, _, _ = loaded.datasets[0][i]
             np.testing.assert_allclose(orig_X, load_X, rtol=1e-6, atol=1e-7)
     else:
-        assert loaded.datasets[0].raw.info["sfreq"] == windowed.datasets[0].raw.info["sfreq"]
+        assert (
+            loaded.datasets[0].raw.info["sfreq"]
+            == windowed.datasets[0].raw.info["sfreq"]
+        )
         # Verify continuous raw data preserved
         np.testing.assert_allclose(
             windowed.datasets[0].raw.get_data(),
             loaded.datasets[0].raw.get_data(),
             rtol=1e-6,
-            atol=1e-7
+            atol=1e-7,
         )
 
 
@@ -782,7 +811,9 @@ def test_dependency_version_metadata(tmp_path):
 
     # Save to Zarr
     zarr_path = tmp_path / "test_versions.zarr"
-    concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression="blosc", compression_level=5
+    )
 
     # Open Zarr and verify version metadata
     root = zarr.open(str(zarr_path), mode="r")
@@ -827,11 +858,15 @@ def test_overwrite_existing_file_error(tmp_path):
 
     # Save once
     zarr_path = tmp_path / "test_overwrite.zarr"
-    concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression="blosc", compression_level=5
+    )
 
     # Try to save again without overwrite - should fail
     with pytest.raises(FileExistsError, match="already exists"):
-        concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression="blosc", compression_level=5
+        )
 
 
 def test_create_compressor_function():
@@ -861,15 +896,16 @@ def test_create_compressor_function():
     assert compressor is None
 
 
-
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_push_to_hub_import_error(setup_concat_windows_dataset, tmp_path):
     """Test that push_to_hub raises ImportError when huggingface_hub not available."""
     dataset = setup_concat_windows_dataset
 
     # Mock the _soft_import to return False for huggingface_hub
-    with mock.patch('braindecode.datasets.bids.hub.huggingface_hub', False):
-        with pytest.raises(ImportError, match="huggingface-hub or zarr is not installed"):
+    with mock.patch("braindecode.datasets.bids.hub.huggingface_hub", False):
+        with pytest.raises(
+            ImportError, match="huggingface-hub or zarr is not installed"
+        ):
             dataset.push_to_hub(
                 repo_id="test/repo",
                 compression="blosc",
@@ -892,11 +928,15 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
     mock_create_repo = mock.MagicMock(return_value=None)
     mock_upload_folder = mock.MagicMock(return_value=expected_url)
 
-    with mock.patch.object(hf_hub, 'HfApi', return_value=mock_hf_api):
-        with mock.patch.object(hf_hub, 'create_repo', mock_create_repo):
-            with mock.patch.object(hf_hub, 'upload_folder', mock_upload_folder):
-                with mock.patch.object(dataset, '_convert_to_zarr_inline') as mock_convert:
-                    with mock.patch.object(dataset, '_save_dataset_card') as mock_save_card:
+    with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
+        with mock.patch.object(hf_hub, "create_repo", mock_create_repo):
+            with mock.patch.object(hf_hub, "upload_folder", mock_upload_folder):
+                with mock.patch.object(
+                    dataset, "_convert_to_zarr_inline"
+                ) as mock_convert:
+                    with mock.patch.object(
+                        dataset, "_save_dataset_card"
+                    ) as mock_save_card:
                         # Call push_to_hub
                         result_url = dataset.push_to_hub(
                             repo_id=repo_id,
@@ -904,8 +944,6 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
                             compression_level=5,
                             private=False,
                             token=None,
-                            commit_message="Test commit",
-                            create_pr=False,
                         )
 
     # Verify the URL was returned
@@ -939,12 +977,16 @@ def test_push_to_hub_upload_failure(setup_concat_windows_dataset, tmp_path):
     mock_hf_api = mock.MagicMock()
     mock_create_repo = mock.MagicMock(return_value=None)
 
-    with mock.patch.object(hf_hub, 'HfApi', return_value=mock_hf_api):
-        with mock.patch.object(hf_hub, 'create_repo', mock_create_repo):
-            with mock.patch.object(hf_hub, 'upload_folder', side_effect=Exception("Upload failed")):
-                with mock.patch.object(dataset, '_convert_to_zarr_inline'):
-                    with mock.patch.object(dataset, '_save_dataset_card'):
-                        with pytest.raises(RuntimeError, match="Failed to upload dataset"):
+    with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
+        with mock.patch.object(hf_hub, "create_repo", mock_create_repo):
+            with mock.patch.object(
+                hf_hub, "upload_folder", side_effect=Exception("Upload failed")
+            ):
+                with mock.patch.object(dataset, "_convert_to_zarr_inline"):
+                    with mock.patch.object(dataset, "_save_dataset_card"):
+                        with pytest.raises(
+                            RuntimeError, match="Failed to upload dataset"
+                        ):
                             dataset.push_to_hub(
                                 repo_id=repo_id,
                                 compression="blosc",
@@ -956,8 +998,10 @@ def test_push_to_hub_upload_failure(setup_concat_windows_dataset, tmp_path):
 def test_from_pull_from_hub_import_error(tmp_path):
     """Test that pull_from_hub raises ImportError when dependencies not available."""
     # Mock huggingface_hub as not available
-    with mock.patch('braindecode.datasets.bids.hub.huggingface_hub', False):
-        with pytest.raises(ImportError, match="huggingface hub functionality is not installed"):
+    with mock.patch("braindecode.datasets.bids.hub.huggingface_hub", False):
+        with pytest.raises(
+            ImportError, match="huggingface hub functionality is not installed"
+        ):
             BaseConcatDataset.pull_from_hub(
                 repo_id="test/repo",
                 cache_dir=tmp_path,
@@ -977,8 +1021,10 @@ def test_pull_from_hub_404_error(tmp_path):
     mock_response.status_code = 404
     http_error = HfHubHTTPError("Not found", response=mock_response)
 
-    with mock.patch.object(hf_hub, 'snapshot_download', side_effect=http_error):
-        with pytest.raises(FileNotFoundError, match="Dataset .* not found on Hugging Face Hub"):
+    with mock.patch.object(hf_hub, "snapshot_download", side_effect=http_error):
+        with pytest.raises(
+            FileNotFoundError, match="Dataset .* not found on Hugging Face Hub"
+        ):
             BaseConcatDataset.pull_from_hub(
                 repo_id=repo_id,
                 cache_dir=tmp_path,
@@ -988,7 +1034,7 @@ def test_pull_from_hub_404_error(tmp_path):
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_create_compressor_zarr_not_available():
     """Test that _create_compressor raises ImportError when zarr not available."""
-    with mock.patch('braindecode.datasets.bids.hub_io.zarr', False):
+    with mock.patch("braindecode.datasets.bids.hub_io.zarr", False):
         with pytest.raises(ImportError, match="Zarr is not installed"):
             _create_compressor("blosc", 5)
 
@@ -1039,41 +1085,3 @@ def test_save_dataset_card_all_dataset_types(tmp_path):
     raw_dataset._save_dataset_card(raw_path)
     raw_readme = (raw_path / "README.md").read_text()
     assert "Continuous (Raw)" in raw_readme or "raw" in raw_readme.lower()
-
-
-@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
-def test_push_to_hub_default_commit_message(setup_concat_windows_dataset, tmp_path):
-    """Test that push_to_hub generates default commit message when not provided."""
-    hf_hub = pytest.importorskip("huggingface_hub")
-
-    dataset = setup_concat_windows_dataset
-    repo_id = "test-user/test-dataset"
-
-    expected_url = f"https://huggingface.co/datasets/{repo_id}"
-
-    # Track the commit message used
-    captured_commit_message = None
-
-    def capture_upload_folder(*args, **kwargs):
-        nonlocal captured_commit_message
-        captured_commit_message = kwargs.get("commit_message")
-        return expected_url
-
-    mock_hf_api = mock.MagicMock()
-    mock_create_repo = mock.MagicMock(return_value=None)
-
-    with mock.patch.object(hf_hub, 'HfApi', return_value=mock_hf_api):
-        with mock.patch.object(hf_hub, 'create_repo', mock_create_repo):
-            with mock.patch.object(hf_hub, 'upload_folder', side_effect=capture_upload_folder):
-                with mock.patch.object(dataset, '_convert_to_zarr_inline'):
-                    with mock.patch.object(dataset, '_save_dataset_card'):
-                        # Call push_to_hub WITHOUT commit_message
-                        dataset.push_to_hub(
-                            repo_id=repo_id,
-                            compression="blosc",
-                            compression_level=5,
-                        )
-
-    # Verify a default commit message was generated
-    assert captured_commit_message is not None
-    assert "Upload" in captured_commit_message or "EEG dataset" in captured_commit_message
