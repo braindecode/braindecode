@@ -103,6 +103,7 @@ class HubDatasetMixin:
         compression: str = "blosc",
         compression_level: int = 5,
         pipeline_name: str = "braindecode",
+        **kwargs,
     ) -> str:
         """
         Upload the dataset to the Hugging Face Hub in BIDS-like Zarr format.
@@ -130,6 +131,8 @@ class HubDatasetMixin:
             Compression level (0-9). Level 5 provides optimal balance.
         pipeline_name : str, default="braindecode"
             Name of the processing pipeline for BIDS sourcedata.
+        **kwargs
+            Additional arguments passed to huggingface_hub.upload_large_folder().
 
         Returns
         -------
@@ -236,12 +239,12 @@ class HubDatasetMixin:
             try:
                 url = huggingface_hub.upload_large_folder(
                     repo_id=repo_id,
-                    local_dir=str(tmp_path),
-                    # folder_path=str(tmp_path),
+                    folder_path=str(tmp_path),
                     repo_type="dataset",
                     # commit_message=commit_message,
                     token=token,
                     create_pr=create_pr,
+                    **kwargs,
                 )
                 log.info(f"Dataset uploaded successfully to {repo_id}")
                 log.info(f"URL: https://huggingface.co/datasets/{repo_id}")
