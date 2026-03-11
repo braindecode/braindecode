@@ -53,6 +53,7 @@ Enhancements
   parity with :func:`braindecode.datasets.mne.create_from_mne_raw`
   (:gh:`941` by `Aman Srivastava`_).
 - Per-event-type windowing parameters in :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`942` by `Pierre Guetschel`_)
+- Add ``use_mne_epochs`` support to :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`943` by `Pierre Guetschel`_)
 
 API changes
 ============

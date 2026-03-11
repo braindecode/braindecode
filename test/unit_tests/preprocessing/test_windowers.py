@@ -17,7 +17,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.base import BaseConcatDataset, EEGWindowsDataset, RawDataset
+from braindecode.datasets.base import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    RawDataset,
+    WindowsDataset,
+)
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing import (
     create_fixed_length_windows,
@@ -796,6 +801,139 @@ def test_windows_fixed_length_cropped(lazy_loadable_dataset):
         drop_last_window=True,
     )
     assert (windows1[0][0] == windows2[0][0]).all()
+
+
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_fixed_length_windows_use_mne_epochs(lazy_loadable_dataset, use_mne_epochs):
+    """Test that use_mne_epochs=True/False produce equivalent window data."""
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        start_offset_samples=0,
+        stop_offset_samples=100,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        use_mne_epochs=use_mne_epochs,
+    )
+    if use_mne_epochs:
+        assert all(isinstance(w, WindowsDataset) for w in windows.datasets)
+    else:
+        assert all(isinstance(w, EEGWindowsDataset) for w in windows.datasets)
+    # Check we get actual data
+    X, y, crop_inds = windows[0]
+    assert X.shape == (2, 50)
+
+
+def test_fixed_length_windows_use_mne_epochs_data_equivalent(lazy_loadable_dataset):
+    """Test that both paths return the same window data."""
+    kwargs = dict(
+        concat_ds=lazy_loadable_dataset,
+        start_offset_samples=0,
+        stop_offset_samples=100,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+    )
+    windows_eeg = create_fixed_length_windows(**kwargs, use_mne_epochs=False)
+    windows_mne = create_fixed_length_windows(**kwargs, use_mne_epochs=True)
+    assert len(windows_eeg) == len(windows_mne)
+    for (x1, y1, i1), (x2, y2, i2) in zip(windows_eeg, windows_mne):
+        np.testing.assert_allclose(x1, x2)
+        assert y1 == y2
+        assert i1 == i2
+
+
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ["ch0"], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ],
+)
+def test_fixed_length_not_use_mne_epochs_fail(
+    drop_bad_windows, picks, flat, reject, lazy_loadable_dataset
+):
+    with pytest.raises(ValueError, match="Cannot set use_mne_epochs=False"):
+        _ = create_fixed_length_windows(
+            lazy_loadable_dataset,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ["ch0"], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ],
+)
+def test_fixed_length_auto_use_mne_epochs(
+    drop_bad_windows, picks, flat, reject, lazy_loadable_dataset
+):
+    with pytest.warns(
+        UserWarning, match="mne Epochs are created, which will be substantially slower"
+    ):
+        windows = create_fixed_length_windows(
+            lazy_loadable_dataset,
+            start_offset_samples=0,
+            stop_offset_samples=100,
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=None,
+        )
+    assert all(isinstance(w, WindowsDataset) for w in windows.datasets)
+
+
+def test_fixed_length_lazy_metadata_use_mne_epochs_error(lazy_loadable_dataset):
+    with pytest.raises(
+        ValueError, match="Cannot use lazy_metadata=True with use_mne_epochs=True"
+    ):
+        _ = create_fixed_length_windows(
+            lazy_loadable_dataset,
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+            lazy_metadata=True,
+            use_mne_epochs=True,
+        )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, None])
+def test_fixed_length_not_use_mne_epochs(use_mne_epochs, lazy_loadable_dataset):
+    message = (
+        "Using reject or picks or flat or dropping bad windows means "
+        "mne Epochs are created, "
+        "which will be substantially slower and may be deprecated in the future."
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=message)
+        windows = create_fixed_length_windows(
+            lazy_loadable_dataset,
+            start_offset_samples=0,
+            stop_offset_samples=100,
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+            drop_bad_windows=False,
+            picks=None,
+            flat=None,
+            reject=None,
+            use_mne_epochs=use_mne_epochs,
+        )
+    assert all(isinstance(w, EEGWindowsDataset) for w in windows.datasets)
 
 
 def test_epochs_kwargs(lazy_loadable_dataset):
