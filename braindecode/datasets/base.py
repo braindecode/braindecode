@@ -623,7 +623,7 @@ class WindowsDataset(RecordDataset):
                 "The provided mne.Epochs object does not meet the requirements for "
                 "fast epoch access. This may lead to slow data loading from disk. "
                 "Consider preloading the epochs or checking the conditions in "
-                "EEGWindowsDataset._can_use_fast_get_epoch_from_raw.",
+                "WindowsDataset._can_use_fast_get_epoch_from_raw.",
                 UserWarning,
             )
         self.windows = windows
