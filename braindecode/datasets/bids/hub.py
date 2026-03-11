@@ -84,7 +84,6 @@ class HubDatasetMixin:
     >>> dataset = NMT(path=path, preload=True)
     >>> dataset.push_to_hub(
     ...     repo_id="username/nmt-dataset",
-    ...     commit_message="Add NMT dataset"
     ... )
     >>>
     >>> # Load dataset from Hub
@@ -96,10 +95,8 @@ class HubDatasetMixin:
     def push_to_hub(
         self,
         repo_id: str,
-        commit_message: Optional[str] = None,
         private: bool = False,
         token: Optional[str] = None,
-        create_pr: bool = False,
         compression: str = "blosc",
         compression_level: int = 5,
         pipeline_name: str = "braindecode",
@@ -117,14 +114,10 @@ class HubDatasetMixin:
         ----------
         repo_id : str
             Repository ID on the Hugging Face Hub (e.g., "username/dataset-name").
-        commit_message : str | None
-            Commit message. If None, a default message is generated.
         private : bool, default=False
             Whether to create a private repository.
         token : str | None
             Hugging Face API token. If None, uses cached token.
-        create_pr : bool, default=False
-            Whether to create a Pull Request instead of directly committing.
         compression : str, default="blosc"
             Compression algorithm for Zarr. Options: "blosc", "zstd", "gzip", None.
         compression_level : int, default=5
@@ -152,7 +145,6 @@ class HubDatasetMixin:
         >>> # Upload with BIDS-like structure
         >>> url = dataset.push_to_hub(
         ...     repo_id="myusername/nmt-dataset",
-        ...     commit_message="Upload NMT EEG dataset"
         ... )
         """
         if huggingface_hub is False or zarr is False:
@@ -224,13 +216,6 @@ class HubDatasetMixin:
                     },
                     f,
                     indent=2,
-                )
-
-            # Default commit message
-            if commit_message is None:
-                commit_message = (
-                    f"Upload EEG dataset in BIDS-like "
-                    f"Zarr format ({len(self.datasets)} recordings)"
                 )
 
             # Upload folder to Hub
