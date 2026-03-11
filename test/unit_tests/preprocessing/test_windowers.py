@@ -1231,7 +1231,9 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
 
 
 def test_windower_from_target_channels_partial_targets():
-    # when target channels have values @ diff timpoints, windows should be created at union of all non nan positions across channels & not first only
+    # when target channels have values @ diff timepoints, windows should be
+    # created at the union of all non nan positions across channels, not just the first
+    rng = np.random.RandomState(99)
     signal_sfreq = 50
     n_samples = 500
 

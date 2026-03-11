@@ -1,5 +1,5 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
-#          Sarthak Tayal <tayal-sarthak@github>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -36,8 +36,10 @@ def compute_amplitude_gradients_for_X(model, X):
     amps_th = to_tensor(amps.astype(np.float32), device=device).requires_grad_(True)
     phases_th = to_tensor(phases.astype(np.float32), device=device).requires_grad_(True)
 
-    # rebuild fft coefficients from amplitude and phase as real valued pairs & conv to complex and invert back to time domain.
-    # torch.irfft was removed after being deprecated since pytorch 1.7, so we use torch.fft.irfft which expects complex input directly.
+    # rebuild fft coefficients from amplitude and phase as real valued pairs,
+    # convert to complex, and invert back to the time domain.
+    # torch.irfft was removed after being deprecated since pytorch 1.7,
+    # so we use torch.fft.irfft which expects complex input directly.
     fft_coefs = amps_th.unsqueeze(-1) * torch.stack(
         (torch.cos(phases_th), torch.sin(phases_th)), dim=-1
     )

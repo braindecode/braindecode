@@ -12,7 +12,7 @@
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Matthew Chen <matt.chen42601@gmail.com>
-#          Sarthak Tayal <tayal-sarthak@github>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -1050,10 +1050,7 @@ def _create_windows_from_target_channels(
     # check all misc channels for valid targets, not just the first one.
     # when multiple target channels exist, some may have values at timepoints
     # where others are nan. using any() across channels catches all of them.
-    has_target = np.any(
-        ~np.isnan(target),
-        axis=0
-    )
+    has_target = np.any(~np.isnan(target), axis=0)
     stops = np.nonzero(has_target)[0] + 1
     stops = stops[(stops < stop) & (stops >= window_size_samples)]
     stops = stops.astype(int)
