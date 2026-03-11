@@ -241,6 +241,7 @@ class HubDatasetMixin:
                     commit_message=commit_message,
                     token=token,
                     create_pr=create_pr,
+                    multi_commits=True,
                 )
                 log.info(f"Dataset uploaded successfully to {repo_id}")
                 log.info(f"URL: https://huggingface.co/datasets/{repo_id}")
