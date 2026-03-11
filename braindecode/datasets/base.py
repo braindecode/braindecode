@@ -707,38 +707,6 @@ class WindowsDataset(RecordDataset):
             self.windows.metadata,
         )
 
-    @classmethod
-    def from_eeg_windows_dataset(cls, ds: EEGWindowsDataset) -> WindowsDataset:
-        """Create a WindowsDataset from an EEGWindowsDataset."""
-        if not isinstance(ds, EEGWindowsDataset):
-            raise TypeError("Expected an EEGWindowsDataset.")
-        if ds.targets_from != "metadata":
-            raise ValueError(
-                "Can only create WindowsDataset from EEGWindowsDataset if "
-                "targets are obtained from metadata."
-            )
-        data = np.stack([ds[i][0] for i in range(len(ds))], axis=0)
-        events = np.stack(
-            [
-                ds.crop_inds[:, 1],
-                np.zeros(len(ds.crop_inds), dtype=int),
-                np.array(ds.y),
-            ],
-            axis=1,
-        )
-        epochs = mne.EpochsArray(
-            data=data, info=ds.raw.info, events=events, metadata=ds.metadata
-        )
-        new_ds = cls(
-            windows=epochs,
-            description=ds.description,
-            transform=ds.transform,
-            targets_from="metadata",
-            last_target_only=ds.last_target_only,
-        )
-        new_ds.raw_preproc_kwargs = ds.raw_preproc_kwargs.copy()
-        return new_ds
-
 
 @register_dataset
 class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
