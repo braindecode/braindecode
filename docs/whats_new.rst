@@ -48,6 +48,10 @@ Enhancements
   frequency, duration/window size, channel names, description summary, and
   epoch-level metadata including target distribution and extra metadata columns
   (signal-level details marked ``*`` are taken from the first recording).
+- Add ``mapping``, ``preload``, ``picks``, ``drop_bad_windows``, and ``descriptions``
+  parameters to :func:`braindecode.datasets.mne.create_from_mne_epochs` to bring it to
+  parity with :func:`braindecode.datasets.mne.create_from_mne_raw`
+  (:gh:`941` by `Aman Srivastava`_).
 - Per-event-type windowing parameters in :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`942` by `Pierre Guetschel`_)
 - Add ``use_mne_epochs`` support to :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`943` by `Pierre Guetschel`_)
 
@@ -819,3 +823,4 @@ Authors
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: https://github.com/AryaDro
 .. _Mattew Chew: https://github.com/MatthewChen37
+.. _Aman Srivastava: https://github.com/aman-coder03
