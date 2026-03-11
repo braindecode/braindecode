@@ -12,6 +12,7 @@
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Matthew Chen <matt.chen42601@gmail.com>
+#          Sarthak Tayal <tayal-sarthak@github>
 #
 # License: BSD (3-clause)
 

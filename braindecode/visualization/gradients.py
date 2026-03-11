@@ -1,4 +1,5 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
+#          Sarthak Tayal <tayal-sarthak@github>
 #
 # License: BSD (3-clause)
 

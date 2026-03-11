@@ -65,6 +65,9 @@ Requirements
 
 Bugs
 =====
+- Fix multi-target channel windowing in :func:`braindecode.preprocessing.windowers.create_windows_from_target_channels`
+  to use the union of valid target positions across all misc channels instead of only the first channel
+  (by `Sarthak Tayal`_)
 - Fix :func:`braindecode.preprocessing.preprocess.filterbank` to preserve info fields
   (``description``, ``line_freq``, ``device_info``, etc.) when creating filtered copies,
   avoiding merge conflicts in MNE when adding channels (:gh:`928` by `Bruno Aristimunha`_)
@@ -76,7 +79,9 @@ Bugs
 
 Code health
 ============
-- None yet.
+- Remove deprecated ``torch.irfft`` fallback in :func:`braindecode.visualization.gradients.compute_amplitude_gradients_for_X`,
+  now uses ``torch.fft.irfft`` directly since braindecode requires ``torch>=2.2``
+  (by `Sarthak Tayal`_)
 
 
 Current 1.3.2 (stable)
@@ -824,3 +829,4 @@ Authors
 .. _Aniela Bulicz: https://github.com/AryaDro
 .. _Mattew Chew: https://github.com/MatthewChen37
 .. _Aman Srivastava: https://github.com/aman-coder03
+.. _Sarthak Tayal: https://github.com/tayal-sarthak
