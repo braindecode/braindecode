@@ -51,7 +51,7 @@ Enhancements
 - Add ``mapping``, ``preload``, ``picks``, ``drop_bad_windows``, and ``descriptions``
   parameters to :func:`braindecode.datasets.mne.create_from_mne_epochs` to bring it to
   parity with :func:`braindecode.datasets.mne.create_from_mne_raw`
-  (:gh:`941` by `Aman Srivastava`_)
+  (:gh:`941` by `Aman Srivastava`_).
 - Per-event-type windowing parameters in :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`942` by `Pierre Guetschel`_)
 
 API changes

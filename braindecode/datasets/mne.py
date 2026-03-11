@@ -101,9 +101,9 @@ def create_from_mne_epochs(
     window_stride_samples: int,
     drop_last_window: bool,
     descriptions: list[dict | pd.Series] | None = None,
-    mapping: dict[str, int] | None = None,
+    mapping: dict[str | int, int] | None = None,
     preload: bool = False,
-    picks=None,
+    picks: str | list | slice | None = None,
     drop_bad_windows: bool = True,
 ) -> BaseConcatDataset:
     """Create WindowsDatasets from mne.Epochs.
@@ -122,10 +122,14 @@ def create_from_mne_epochs(
     descriptions : array-like | None
         list of dicts or pandas.Series with additional information about
         the epochs. If None, no description is added. Length must match
-        ``list_of_epochs``.
-    mapping : dict(str: int) | None
-        mapping from event description to target value. If None,
-        targets are set to the raw integer event codes.
+        ``list_of_epochs``. Each description is applied to all windows
+        generated from the corresponding Epochs object.
+    mapping : dict(str | int: int) | None
+        Mapping from event description to target value. Keys can be
+        integers (matching ``epochs.events[:, 2]``) or their string
+        representations. If None, targets are set to the raw integer
+        event codes. If a mapping is provided and an event code is not
+        found in the mapping, the original event code is kept as-is.
     preload : bool
         if True, preload the data of the Epochs objects.
     picks : str | list | slice | None
