@@ -27,6 +27,7 @@ The format follows a BIDS-inspired sourcedata structure:
 #
 # License: BSD (3-clause)
 
+import contextlib
 import json
 import logging
 import tempfile
@@ -69,6 +70,8 @@ huggingface_hub = _soft_import(
 
 log = logging.getLogger(__name__)
 
+_LOCK_FILE = ".cache_complete.lock"
+
 
 class HubDatasetMixin:
     """
@@ -100,6 +103,7 @@ class HubDatasetMixin:
         compression: str = "blosc",
         compression_level: int = 5,
         pipeline_name: str = "braindecode",
+        local_cache_dir: str | Path | None = None,
         **kwargs,
     ) -> str:
         """
@@ -124,6 +128,18 @@ class HubDatasetMixin:
             Compression level (0-9). Level 5 provides optimal balance.
         pipeline_name : str, default="braindecode"
             Name of the processing pipeline for BIDS sourcedata.
+        local_cache_dir : str | Path | None
+            Local directory to use for temporary files during upload. If None, uses
+            the system temp directory and cleans it up after upload. If provided,
+            the directory is used as a persistent cache:
+
+            - If the directory is empty (or does not exist), the cache is built
+              there and a lock file (``.cache_complete.lock``) is written once
+              the cache is complete, before the upload starts.
+            - If the lock file is present, cache creation is skipped and the
+              upload resumes directly (useful for retrying interrupted uploads).
+            - If the directory is non-empty but the lock file is absent, a
+              ``ValueError`` is raised listing the files found.
         **kwargs
             Additional arguments passed to huggingface_hub.upload_large_folder().
 
@@ -167,56 +183,86 @@ class HubDatasetMixin:
         except Exception as e:
             raise RuntimeError(f"Failed to create repository: {e}")
 
-        # Create a temporary directory for upload
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_path = Path(tmpdir)
+        # Determine upload directory and whether to build the cache
+        with contextlib.ExitStack() as stack:
+            if local_cache_dir is None:
+                tmpdir = stack.enter_context(tempfile.TemporaryDirectory())
+                tmp_path = Path(tmpdir)
+                build_cache = True
+            else:
+                tmp_path = Path(local_cache_dir)
+                lock_path = tmp_path / _LOCK_FILE
+                if lock_path.exists():
+                    log.info(
+                        f"Lock file found at '{lock_path}', skipping cache "
+                        "creation and resuming upload."
+                    )
+                    build_cache = False
+                else:
+                    if tmp_path.exists():
+                        existing = list(tmp_path.iterdir())
+                        if existing:
+                            entries = ", ".join(p.name for p in existing)
+                            raise ValueError(
+                                f"local_cache_dir '{tmp_path}' is not empty and "
+                                f"has no lock file. Found: {entries}. Provide an "
+                                "empty directory or one previously prepared by "
+                                "push_to_hub()."
+                            )
+                    else:
+                        tmp_path.mkdir(parents=True)
+                    build_cache = True
 
-            # Create BIDS-like sourcedata structure
-            log.info("Creating BIDS-like sourcedata structure...")
-            bids_layout = hub_format.BIDSSourcedataLayout(
-                tmp_path, pipeline_name=pipeline_name
-            )
-            sourcedata_dir = bids_layout.create_structure()
-
-            # Save dataset_description.json
-            bids_layout.save_dataset_description()
-
-            # Save participants.tsv
-            descriptions = [ds.description for ds in self.datasets]
-            bids_layout.save_participants(descriptions)
-
-            # Save BIDS sidecar files for each recording
-            self._save_bids_sidecar_files(bids_layout)
-
-            # Convert dataset to Zarr format inside sourcedata
-            log.info("Converting dataset to Zarr format...")
-            dataset_path = sourcedata_dir / "dataset.zarr"
-
-            self._convert_to_zarr_inline(
-                dataset_path,
-                compression,
-                compression_level,
-            )
-
-            # Save dataset metadata (README.md)
-            self._save_dataset_card(tmp_path)
-
-            # Save format info
-            format_info_path = tmp_path / "format_info.json"
-            with open(format_info_path, "w", encoding="utf-8") as f:
-                format_info = self._get_format_info_inline()
-                json.dump(
-                    {
-                        "format": "zarr",
-                        "pipeline_name": pipeline_name,
-                        "compression": compression,
-                        "compression_level": compression_level,
-                        "braindecode_version": braindecode.__version__,
-                        **format_info,
-                    },
-                    f,
-                    indent=2,
+            if build_cache:
+                # Create BIDS-like sourcedata structure
+                log.info("Creating BIDS-like sourcedata structure...")
+                bids_layout = hub_format.BIDSSourcedataLayout(
+                    tmp_path, pipeline_name=pipeline_name
                 )
+                sourcedata_dir = bids_layout.create_structure()
+
+                # Save dataset_description.json
+                bids_layout.save_dataset_description()
+
+                # Save participants.tsv
+                descriptions = [ds.description for ds in self.datasets]
+                bids_layout.save_participants(descriptions)
+
+                # Save BIDS sidecar files for each recording
+                self._save_bids_sidecar_files(bids_layout)
+
+                # Convert dataset to Zarr format inside sourcedata
+                log.info("Converting dataset to Zarr format...")
+                dataset_path = sourcedata_dir / "dataset.zarr"
+
+                self._convert_to_zarr_inline(
+                    dataset_path,
+                    compression,
+                    compression_level,
+                )
+
+                # Save dataset metadata (README.md)
+                self._save_dataset_card(tmp_path)
+
+                # Save format info
+                format_info_path = tmp_path / "format_info.json"
+                with open(format_info_path, "w", encoding="utf-8") as f:
+                    format_info = self._get_format_info_inline()
+                    json.dump(
+                        {
+                            "format": "zarr",
+                            "pipeline_name": pipeline_name,
+                            "compression": compression,
+                            "compression_level": compression_level,
+                            "braindecode_version": braindecode.__version__,
+                            **format_info,
+                        },
+                        f,
+                        indent=2,
+                    )
+
+                # Mark cache as complete
+                (tmp_path / _LOCK_FILE).touch()
 
             # Upload folder to Hub
             log.info(f"Uploading to Hugging Face Hub ({repo_id})...")
