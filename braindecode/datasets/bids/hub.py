@@ -154,11 +154,11 @@ class HubDatasetMixin:
             )
 
         # Create API instance
-        _ = huggingface_hub.HfApi(token=token)
+        hf_api = huggingface_hub.HfApi(token=token)
 
         # Create repository if it doesn't exist
         try:
-            huggingface_hub.create_repo(
+            hf_api.create_repo(
                 repo_id=repo_id,
                 private=private,
                 repo_type="dataset",
@@ -221,7 +221,7 @@ class HubDatasetMixin:
             # Upload folder to Hub
             log.info(f"Uploading to Hugging Face Hub ({repo_id})...")
             try:
-                url = huggingface_hub.upload_large_folder(
+                url = hf_api.upload_large_folder(
                     repo_id=repo_id,
                     folder_path=str(tmp_path),
                     repo_type="dataset",
