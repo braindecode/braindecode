@@ -1230,6 +1230,62 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         )
 
 
+def test_windower_from_target_channels_partial_targets():
+    # when target channels have values @ diff timpoints, windows should be created at union of all non nan positions across channels & not first only
+    signal_sfreq = 50
+    n_samples = 500
+
+    info = mne.create_info(
+        ch_names=["eeg0", "eeg1", "target_0", "target_1"],
+        sfreq=signal_sfreq,
+        ch_types=["eeg", "eeg", "misc", "misc"],
+    )
+
+    signal = rng.randn(2, n_samples)
+
+    # target_0 has values at samples 100, 200, 300, 400
+    # target_1 has values at samples 150, 250, 350, 450
+    # so the union should give us windows at all 8 positions
+    targets = np.full((2, n_samples), np.nan)
+    ch0_positions = [100, 200, 300, 400]
+    ch1_positions = [150, 250, 350, 450]
+
+    for pos in ch0_positions:
+        targets[0, pos] = rng.randn()
+
+    for pos in ch1_positions:
+        targets[1, pos] = rng.randn()
+
+    raw = mne.io.RawArray(
+        np.concatenate([signal, targets]),
+        info=info,
+    )
+    desc = pd.Series({"pathological": False, "gender": "F", "age": 30})
+    base_dataset = RawDataset(raw, desc, target_name=None)
+    concat_ds = BaseConcatDataset([base_dataset])
+
+    window_size = 50
+    windows_dataset = create_windows_from_target_channels(
+        concat_ds,
+        window_size_samples=window_size,
+    )
+
+    # all 8 positions should produce valid windows
+    # (all are >= window_size and < n_samples + first_samp)
+    all_positions = sorted(ch0_positions + ch1_positions)
+    expected_stops = [
+        p + 1
+        for p in all_positions
+        if (p + 1) >= window_size
+    ]
+    assert len(windows_dataset) == len(expected_stops)
+
+    # verify each window lands at the right spot
+    for i, expected_stop in enumerate(expected_stops):
+        epoch, y, window_inds = windows_dataset[i]
+        assert window_inds[2] == expected_stop
+
+
 # ---------- Tests for per-event-type dict parameters ----------
 
 
