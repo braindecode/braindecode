@@ -234,14 +234,14 @@ class HubDatasetMixin:
             # Upload folder to Hub
             log.info(f"Uploading to Hugging Face Hub ({repo_id})...")
             try:
-                url = huggingface_hub.upload_folder(
+                url = huggingface_hub.upload_large_folder(
                     repo_id=repo_id,
-                    folder_path=str(tmp_path),
+                    local_dir=str(tmp_path),
+                    # folder_path=str(tmp_path),
                     repo_type="dataset",
-                    commit_message=commit_message,
+                    # commit_message=commit_message,
                     token=token,
                     create_pr=create_pr,
-                    multi_commits=True,
                 )
                 log.info(f"Dataset uploaded successfully to {repo_id}")
                 log.info(f"URL: https://huggingface.co/datasets/{repo_id}")
