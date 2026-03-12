@@ -807,6 +807,7 @@ def test_can_use_fast_get_epoch_from_raw_true(fast_load_epochs):
 def test_can_use_fast_get_epoch_from_raw_false(fast_load_epochs, attribute, bad_value):
     """Each condition violated in isolation → _can_use_fast_get_epoch_from_raw returns False."""
     _, _, _, epochs = fast_load_epochs
+    epochs = epochs.copy()  # avoid modifying fixture state for other tests
     setattr(epochs, attribute, bad_value)
     assert not WindowsDataset._can_use_fast_get_epoch_from_raw(epochs)
 
