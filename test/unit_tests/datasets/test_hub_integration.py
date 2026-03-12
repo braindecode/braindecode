@@ -925,37 +925,33 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
 
     # Create mocks for the huggingface_hub module functions
     mock_hf_api = mock.MagicMock()
-    mock_create_repo = mock.MagicMock(return_value=None)
-    mock_upload_folder = mock.MagicMock(return_value=expected_url)
+    mock_hf_api.upload_large_folder.return_value = expected_url
 
     with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
-        with mock.patch.object(hf_hub, "create_repo", mock_create_repo):
-            with mock.patch.object(hf_hub, "upload_folder", mock_upload_folder):
-                with mock.patch.object(
-                    dataset, "_convert_to_zarr_inline"
-                ) as mock_convert:
-                    with mock.patch.object(
-                        dataset, "_save_dataset_card"
-                    ) as mock_save_card:
-                        # Call push_to_hub
-                        result_url = dataset.push_to_hub(
-                            repo_id=repo_id,
-                            compression="blosc",
-                            compression_level=5,
-                            private=False,
-                            token=None,
-                        )
+        with mock.patch.object(
+            dataset, "_convert_to_zarr_inline"
+        ) as mock_convert:
+            with mock.patch.object(
+                dataset, "_save_dataset_card"
+            ) as mock_save_card:
+                # Call push_to_hub
+                result_url = dataset.push_to_hub(
+                    repo_id=repo_id,
+                    compression="blosc",
+                    compression_level=5,
+                    private=False,
+                    token=None,
+                )
 
     # Verify the URL was returned
     assert result_url == expected_url
 
     # Verify create_repo was called with correct parameters
-    mock_create_repo.assert_called_once_with(
+    mock_hf_api.create_repo.assert_called_once_with(
         repo_id=repo_id,
         repo_type="dataset",
         exist_ok=True,
         private=False,
-        token=None,
     )
 
     # Verify _convert_to_zarr_inline was called
@@ -975,23 +971,19 @@ def test_push_to_hub_upload_failure(setup_concat_windows_dataset, tmp_path):
 
     # Create mocks
     mock_hf_api = mock.MagicMock()
-    mock_create_repo = mock.MagicMock(return_value=None)
+    mock_hf_api.upload_large_folder.side_effect = Exception("Upload failed")
 
     with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
-        with mock.patch.object(hf_hub, "create_repo", mock_create_repo):
-            with mock.patch.object(
-                hf_hub, "upload_folder", side_effect=Exception("Upload failed")
-            ):
-                with mock.patch.object(dataset, "_convert_to_zarr_inline"):
-                    with mock.patch.object(dataset, "_save_dataset_card"):
-                        with pytest.raises(
-                            RuntimeError, match="Failed to upload dataset"
-                        ):
-                            dataset.push_to_hub(
-                                repo_id=repo_id,
-                                compression="blosc",
-                                compression_level=5,
-                            )
+        with mock.patch.object(dataset, "_convert_to_zarr_inline"):
+            with mock.patch.object(dataset, "_save_dataset_card"):
+                with pytest.raises(
+                    RuntimeError, match="Failed to upload dataset"
+                ):
+                    dataset.push_to_hub(
+                        repo_id=repo_id,
+                        compression="blosc",
+                        compression_level=5,
+                    )
 
 
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
