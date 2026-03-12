@@ -669,7 +669,7 @@ class HubDatasetMixin:
         output_path: Path,
         compression: str,
         compression_level: int,
-        chunk_size: int,
+        chunk_size: int = 10000,
     ) -> None:
         """Convert dataset to Zarr format (inline implementation)."""
 
