@@ -214,55 +214,9 @@ class HubDatasetMixin:
                     build_cache = True
 
             if build_cache:
-                # Create BIDS-like sourcedata structure
-                log.info("Creating BIDS-like sourcedata structure...")
-                bids_layout = hub_format.BIDSSourcedataLayout(
-                    tmp_path, pipeline_name=pipeline_name
+                self._build_local_cache(
+                    tmp_path, compression, compression_level, pipeline_name
                 )
-                sourcedata_dir = bids_layout.create_structure()
-
-                # Save dataset_description.json
-                bids_layout.save_dataset_description()
-
-                # Save participants.tsv
-                descriptions = [ds.description for ds in self.datasets]
-                bids_layout.save_participants(descriptions)
-
-                # Save BIDS sidecar files for each recording
-                self._save_bids_sidecar_files(bids_layout)
-
-                # Convert dataset to Zarr format inside sourcedata
-                log.info("Converting dataset to Zarr format...")
-                dataset_path = sourcedata_dir / "dataset.zarr"
-
-                self._convert_to_zarr_inline(
-                    dataset_path,
-                    compression,
-                    compression_level,
-                )
-
-                # Save dataset metadata (README.md)
-                self._save_dataset_card(tmp_path)
-
-                # Save format info
-                format_info_path = tmp_path / "format_info.json"
-                with open(format_info_path, "w", encoding="utf-8") as f:
-                    format_info = self._get_format_info_inline()
-                    json.dump(
-                        {
-                            "format": "zarr",
-                            "pipeline_name": pipeline_name,
-                            "compression": compression,
-                            "compression_level": compression_level,
-                            "braindecode_version": braindecode.__version__,
-                            **format_info,
-                        },
-                        f,
-                        indent=2,
-                    )
-
-                # Mark cache as complete
-                (tmp_path / _LOCK_FILE).touch()
 
             # Upload folder to Hub
             log.info(f"Uploading to Hugging Face Hub ({repo_id})...")
@@ -278,6 +232,61 @@ class HubDatasetMixin:
                 return url
             except Exception as e:
                 raise RuntimeError(f"Failed to upload dataset: {e}")
+
+    def _build_local_cache(
+        self, tmp_path, compression, compression_level, pipeline_name
+    ):
+        """Build the local cache directory with the dataset in Zarr format and BIDS-like structure.
+        This folder will be uploaded to the Hub"""
+        # Create BIDS-like sourcedata structure
+        log.info("Creating BIDS-like sourcedata structure...")
+        bids_layout = hub_format.BIDSSourcedataLayout(
+            tmp_path, pipeline_name=pipeline_name
+        )
+        sourcedata_dir = bids_layout.create_structure()
+
+        # Save dataset_description.json
+        bids_layout.save_dataset_description()
+
+        # Save participants.tsv
+        descriptions = [ds.description for ds in self.datasets]
+        bids_layout.save_participants(descriptions)
+
+        # Save BIDS sidecar files for each recording
+        self._save_bids_sidecar_files(bids_layout)
+
+        # Convert dataset to Zarr format inside sourcedata
+        log.info("Converting dataset to Zarr format...")
+        dataset_path = sourcedata_dir / "dataset.zarr"
+
+        self._convert_to_zarr_inline(
+            dataset_path,
+            compression,
+            compression_level,
+        )
+
+        # Save dataset metadata (README.md)
+        self._save_dataset_card(tmp_path)
+
+        # Save format info
+        format_info_path = tmp_path / "format_info.json"
+        with open(format_info_path, "w", encoding="utf-8") as f:
+            format_info = self._get_format_info_inline()
+            json.dump(
+                {
+                    "format": "zarr",
+                    "pipeline_name": pipeline_name,
+                    "compression": compression,
+                    "compression_level": compression_level,
+                    "braindecode_version": braindecode.__version__,
+                    **format_info,
+                },
+                f,
+                indent=2,
+            )
+
+        # Mark cache as complete
+        (tmp_path / _LOCK_FILE).touch()
 
     def _save_dataset_card(self, path: Path, bids_inspired: bool = True) -> None:
         """Generate and save a dataset card (README.md) with metadata.
