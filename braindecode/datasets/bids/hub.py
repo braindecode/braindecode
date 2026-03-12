@@ -132,7 +132,7 @@ class HubDatasetMixin:
         chunk_size : int, default=10000
             Number of samples per chunk in Zarr. Larger chunk size will create fewer
             but larger files. Only used for RawDataset and EEGWindowsDataset (continuous data).
-            With WindowsDataset (pre-cut epochs), each windows are saved as separate chunks.
+            With WindowsDataset (pre-cut epochs), each window is saved as a separate chunk.
         local_cache_dir : str | Path | None
             Local directory to use for temporary files during upload. If None, uses
             the system temp directory and cleans it up after upload. If provided,
