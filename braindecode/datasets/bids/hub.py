@@ -103,6 +103,7 @@ class HubDatasetMixin:
         compression: str = "blosc",
         compression_level: int = 5,
         pipeline_name: str = "braindecode",
+        chunk_size: int = 10000,
         local_cache_dir: str | Path | None = None,
         **kwargs,
     ) -> str:
@@ -128,6 +129,10 @@ class HubDatasetMixin:
             Compression level (0-9). Level 5 provides optimal balance.
         pipeline_name : str, default="braindecode"
             Name of the processing pipeline for BIDS sourcedata.
+        chunk_size : int, default=10000
+            Number of samples per chunk in Zarr. Larger chunk size will create fewer
+            but larger files. Only used for RawDataset and EEGWindowsDataset (continuous data).
+            With WindowsDataset (pre-cut epochs), each windows are saved as separate chunks.
         local_cache_dir : str | Path | None
             Local directory to use for temporary files during upload. If None, uses
             the system temp directory and cleans it up after upload. If provided,
@@ -215,7 +220,7 @@ class HubDatasetMixin:
 
             if build_cache:
                 self._build_local_cache(
-                    tmp_path, compression, compression_level, pipeline_name
+                    tmp_path, compression, compression_level, pipeline_name, chunk_size
                 )
 
             # Upload folder to Hub
@@ -234,7 +239,12 @@ class HubDatasetMixin:
                 raise RuntimeError(f"Failed to upload dataset: {e}")
 
     def _build_local_cache(
-        self, tmp_path, compression, compression_level, pipeline_name
+        self,
+        tmp_path,
+        compression,
+        compression_level,
+        pipeline_name,
+        chunk_size,
     ):
         """Build the local cache directory with the dataset in Zarr format and BIDS-like structure.
         This folder will be uploaded to the Hub"""
@@ -263,6 +273,7 @@ class HubDatasetMixin:
             dataset_path,
             compression,
             compression_level,
+            chunk_size,
         )
 
         # Save dataset metadata (README.md)
@@ -635,6 +646,7 @@ class HubDatasetMixin:
         output_path: Path,
         compression: str,
         compression_level: int,
+        chunk_size: int,
     ) -> None:
         """Convert dataset to Zarr format (inline implementation)."""
 
@@ -722,6 +734,7 @@ class HubDatasetMixin:
                     targets_from,
                     last_target_only,
                     compressor,
+                    chunk_size,
                 )
 
             elif dataset_type == "RawDataset":
@@ -733,7 +746,13 @@ class HubDatasetMixin:
 
                 # Save using inlined function
                 _save_raw_to_zarr(
-                    grp, raw, description, info_dict, target_name, compressor
+                    grp,
+                    raw,
+                    description,
+                    info_dict,
+                    target_name,
+                    compressor,
+                    chunk_size,
                 )
 
     def _get_format_info_inline(self):

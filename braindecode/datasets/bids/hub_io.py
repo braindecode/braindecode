@@ -70,7 +70,15 @@ def _save_windows_to_zarr(
 
 
 def _save_eegwindows_to_zarr(
-    grp, raw, metadata, description, info, targets_from, last_target_only, compressor
+    grp,
+    raw,
+    metadata,
+    description,
+    info,
+    targets_from,
+    last_target_only,
+    compressor,
+    chunk_size,
 ):
     """Save EEG continuous raw data to Zarr group (low-level function)."""
     continuous_data = raw.get_data()
@@ -80,7 +88,7 @@ def _save_eegwindows_to_zarr(
     grp.create_array(
         "data",
         data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
+        chunks=(continuous_float.shape[0], min(chunk_size, continuous_float.shape[1])),
         compressors=compressors_list,
     )
 
@@ -143,7 +151,7 @@ def _load_eegwindows_from_zarr(grp, preload):
     return data, metadata, description, info_dict, targets_from, last_target_only
 
 
-def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
+def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chunk_size):
     """Save RawDataset continuous raw data to Zarr group (low-level function)."""
     continuous_data = raw.get_data()
     continuous_float = continuous_data.astype(np.float32)
@@ -152,7 +160,7 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
     grp.create_array(
         "data",
         data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
+        chunks=(continuous_float.shape[0], min(chunk_size, continuous_float.shape[1])),
         compressors=compressors_list,
     )
 
