@@ -70,7 +70,7 @@ huggingface_hub = _soft_import(
 
 log = logging.getLogger(__name__)
 
-_LOCK_FILE = ".cache_complete.lock"
+_LOCK_FILE = ".cache_complete.json"
 
 
 class HubDatasetMixin:
@@ -139,10 +139,14 @@ class HubDatasetMixin:
             the directory is used as a persistent cache:
 
             - If the directory is empty (or does not exist), the cache is built
-              there and a lock file (``.cache_complete.lock``) is written once
-              the cache is complete, before the upload starts.
-            - If the lock file is present, cache creation is skipped and the
-              upload resumes directly (useful for retrying interrupted uploads).
+              there and a lock file (``.cache_complete.json``) is written once
+              the cache is complete, before the upload starts. The file
+              contains the zarr conversion parameters as JSON.
+            - If the lock file is present and its JSON parameters match the
+              current call, cache creation is skipped and the upload resumes
+              directly (useful for retrying interrupted uploads).
+            - If the lock file is present but its JSON parameters differ from
+              the current call, a ``ValueError`` is raised.
             - If the directory is non-empty but the lock file is absent, a
               ``ValueError`` is raised listing the files found.
         **kwargs
@@ -188,6 +192,13 @@ class HubDatasetMixin:
         except Exception as e:
             raise RuntimeError(f"Failed to create repository: {e}")
 
+        cache_params = {
+            "compression": compression,
+            "compression_level": compression_level,
+            "pipeline_name": pipeline_name,
+            "chunk_size": chunk_size,
+        }
+
         # Determine upload directory and whether to build the cache
         with contextlib.ExitStack() as stack:
             if local_cache_dir is None:
@@ -198,6 +209,16 @@ class HubDatasetMixin:
                 tmp_path = Path(local_cache_dir)
                 lock_path = tmp_path / _LOCK_FILE
                 if lock_path.exists():
+                    with open(lock_path, "r", encoding="utf-8") as _f:
+                        _lock_params = json.load(_f)
+                    if _lock_params != cache_params:
+                        raise ValueError(
+                            f"Lock file found at '{lock_path}' but its "
+                            f"parameters {_lock_params} differ from the "
+                            f"current call parameters {cache_params}. "
+                            "Provide an empty directory or match the "
+                            "original parameters."
+                        )
                     log.info(
                         f"Lock file found at '{lock_path}', skipping cache "
                         "creation and resuming upload."
@@ -219,9 +240,7 @@ class HubDatasetMixin:
                     build_cache = True
 
             if build_cache:
-                self._build_local_cache(
-                    tmp_path, compression, compression_level, pipeline_name, chunk_size
-                )
+                self._build_local_cache(tmp_path, cache_params)
 
             # Upload folder to Hub
             log.info(f"Uploading to Hugging Face Hub ({repo_id})...")
@@ -241,13 +260,15 @@ class HubDatasetMixin:
     def _build_local_cache(
         self,
         tmp_path,
-        compression,
-        compression_level,
-        pipeline_name,
-        chunk_size,
+        cache_params,
     ):
         """Build the local cache directory with the dataset in Zarr format and BIDS-like structure.
         This folder will be uploaded to the Hub"""
+        compression = cache_params["compression"]
+        compression_level = cache_params["compression_level"]
+        pipeline_name = cache_params["pipeline_name"]
+        chunk_size = cache_params["chunk_size"]
+
         # Create BIDS-like sourcedata structure
         log.info("Creating BIDS-like sourcedata structure...")
         bids_layout = hub_format.BIDSSourcedataLayout(
@@ -297,7 +318,9 @@ class HubDatasetMixin:
             )
 
         # Mark cache as complete
-        (tmp_path / _LOCK_FILE).touch()
+
+        with open(tmp_path / _LOCK_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache_params, f, indent=2)
 
     def _save_dataset_card(self, path: Path, bids_inspired: bool = True) -> None:
         """Generate and save a dataset card (README.md) with metadata.
