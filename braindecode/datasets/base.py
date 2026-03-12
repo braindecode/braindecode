@@ -647,13 +647,13 @@ class WindowsDataset(RecordDataset):
         """Check if we can use the fast _get_epoch_from_raw method,
         or if we need to use the slow get_data method."""
         return (
-            epochs._bad_dropped
+            not epochs.preload
+            and epochs._bad_dropped
             and epochs.detrend is None
             and not epochs._do_baseline  # baseline is None
             and (epochs._decim == 1)
             and epochs._offset is None
             and epochs._projector is None
-            and not epochs.preload
         )
 
     def __getitem__(self, index: int):
