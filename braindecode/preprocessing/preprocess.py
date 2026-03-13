@@ -19,8 +19,6 @@ from importlib import import_module
 from inspect import signature
 from warnings import warn
 
-from scipy.signal import lfilter
-
 if sys.version_info < (3, 9):
     from typing import Callable
 else:
@@ -31,6 +29,7 @@ from joblib import Parallel, delayed
 from mne import BaseEpochs, create_info
 from mne.io import BaseRaw
 from numpy.typing import NDArray
+from scipy.signal import lfilter
 
 from braindecode.datasets.base import (
     BaseConcatDataset,
@@ -427,13 +426,16 @@ def exponential_moving_standardize(
     r"""Perform exponential moving standardization.
 
     Compute the exponental moving mean :math:`m_t` at time `t` as
-    :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
+    a weighted average:
+    :math:`m_t = \frac{\sum_{i=0}^t (1-\alpha)^i x_{t-i}}{\sum_{i=0}^t (1-\alpha)^i}`
+    where :math:`\alpha` is ``factor_new``.
 
     Then, compute exponential moving variance :math:`v_t` at time `t` as
-    :math:`v_t=\mathrm{factornew} \cdot (m_t - x_t)^2 + (1 - \mathrm{factornew}) \cdot v_{t-1}`.
+    a weighted average of the squared demeaned signal:
+    :math:`v_t = \frac{\sum_{i=0}^t (1-\alpha)^i (x_{t-i} - m_{t-i})^2}{\sum_{i=0}^t (1-\alpha)^i}`.
 
     Finally, standardize the data point :math:`x_t` at time `t` as:
-    :math:`x'_t=(x_t - m_t) / max(\sqrt{->v_t}, eps)`.
+    :math:`x'_t=(x_t - m_t) / max(\sqrt{v_t}, eps)`.
 
 
     Parameters
@@ -450,6 +452,9 @@ def exponential_moving_standardize(
     standardized: np.ndarray (n_channels, n_times)
         Standardized data.
     """
+    if not (0 < factor_new <= 1):
+        raise ValueError(f"factor_new must be between 0 and 1, got {factor_new}")
+
     # We use a ratio of two linear filters:
     # y_t = N_t / D_t
     # N_t = x_t + (1-alpha) * N_{t-1}, N_0 = x_0
@@ -488,7 +493,9 @@ def exponential_moving_demean(
     r"""Perform exponential moving demeanining.
 
     Compute the exponental moving mean :math:`m_t` at time `t` as
-    :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
+    a weighted average:
+    :math:`m_t = \frac{\sum_{i=0}^t (1-\alpha)^i x_{t-i}}{\sum_{i=0}^t (1-\alpha)^i}`
+    where :math:`\alpha` is ``factor_new``.
 
     Deman the data point :math:`x_t` at time `t` as:
     :math:`x'_t=(x_t - m_t)`.
@@ -505,6 +512,9 @@ def exponential_moving_demean(
     demeaned: np.ndarray (n_channels, n_times)
         Demeaned data.
     """
+    if not (0 < factor_new <= 1):
+        raise ValueError(f"factor_new must be between 0 and 1, got {factor_new}")
+
     alpha = factor_new
     n_channels, n_times = data.shape
     inv_alpha = 1.0 - alpha
