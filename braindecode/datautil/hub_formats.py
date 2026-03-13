@@ -62,7 +62,7 @@ def convert_to_zarr(
     chunk_size : int, default=10000
         Number of samples per chunk in Zarr. Larger chunk size will create fewer
         but larger files. Only used for RawDataset and EEGWindowsDataset (continuous data).
-        With WindowsDataset (pre-cut epochs), each windows are saved as separate chunks.
+        With WindowsDataset (pre-cut epochs), each window is saved as a separate chunk.
     overwrite : bool, default=False
         Whether to overwrite existing directory.
 
