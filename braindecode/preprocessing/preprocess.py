@@ -5,6 +5,7 @@
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Léo Burgund <leo.burgund@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -18,13 +19,14 @@ from importlib import import_module
 from inspect import signature
 from warnings import warn
 
+from scipy.signal import lfilter
+
 if sys.version_info < (3, 9):
     from typing import Callable
 else:
     from collections.abc import Callable
 
 import numpy as np
-import pandas as pd
 from joblib import Parallel, delayed
 from mne import BaseEpochs, create_info
 from mne.io import BaseRaw
@@ -448,23 +450,36 @@ def exponential_moving_standardize(
     standardized: np.ndarray (n_channels, n_times)
         Standardized data.
     """
-    data = data.T
-    df = pd.DataFrame(data)
-    meaned = df.ewm(alpha=factor_new).mean()
-    demeaned = df - meaned
+    # We use a ratio of two linear filters:
+    # y_t = N_t / D_t
+    # N_t = x_t + (1-alpha) * N_{t-1}, N_0 = x_0
+    # D_t = 1 + (1-alpha) * D_{t-1}, D_0 = 1
+    alpha = factor_new
+    n_channels, n_times = data.shape
+    inv_alpha = 1.0 - alpha
+
+    # Filter a sequence of ones: [1, 1+(1-a), 1+(1-a)+(1-a)^2, ...]
+    d = lfilter([1.0], [1.0, -inv_alpha], np.ones(n_times))
+
+    n = lfilter([1.0], [1.0, -inv_alpha], data, axis=1)
+    meaned = n / d
+    demeaned = data - meaned
+
     squared = demeaned * demeaned
-    square_ewmed = squared.ewm(alpha=factor_new).mean()
-    standardized = demeaned / np.maximum(eps, np.sqrt(np.array(square_ewmed)))
-    standardized = np.array(standardized)
+    n_sq = lfilter([1.0], [1.0, -inv_alpha], squared, axis=1)
+    square_ewmed = n_sq / d
+
+    standardized = demeaned / np.maximum(eps, np.sqrt(square_ewmed))
+
     if init_block_size is not None:
-        i_time_axis = 0
-        init_mean = np.mean(data[0:init_block_size], axis=i_time_axis, keepdims=True)
-        init_std = np.std(data[0:init_block_size], axis=i_time_axis, keepdims=True)
-        init_block_standardized = (data[0:init_block_size] - init_mean) / np.maximum(
+        init_mean = np.mean(data[:, :init_block_size], axis=1, keepdims=True)
+        init_std = np.std(data[:, :init_block_size], axis=1, keepdims=True)
+        init_block_standardized = (data[:, :init_block_size] - init_mean) / np.maximum(
             eps, init_std
         )
-        standardized[0:init_block_size] = init_block_standardized
-    return standardized.T
+        standardized[:, :init_block_size] = init_block_standardized
+
+    return standardized
 
 
 def exponential_moving_demean(
@@ -490,16 +505,21 @@ def exponential_moving_demean(
     demeaned: np.ndarray (n_channels, n_times)
         Demeaned data.
     """
-    data = data.T
-    df = pd.DataFrame(data)
-    meaned = df.ewm(alpha=factor_new).mean()
-    demeaned = df - meaned
-    demeaned = np.array(demeaned)
+    alpha = factor_new
+    n_channels, n_times = data.shape
+    inv_alpha = 1.0 - alpha
+
+    d = lfilter([1.0], [1.0, -inv_alpha], np.ones(n_times))
+
+    n = lfilter([1.0], [1.0, -inv_alpha], data, axis=1)
+    meaned = n / d
+    demeaned = data - meaned
+
     if init_block_size is not None:
-        i_time_axis = 0
-        init_mean = np.mean(data[0:init_block_size], axis=i_time_axis, keepdims=True)
-        demeaned[0:init_block_size] = data[0:init_block_size] - init_mean
-    return demeaned.T
+        init_mean = np.mean(data[:, :init_block_size], axis=1, keepdims=True)
+        demeaned[:, :init_block_size] = data[:, :init_block_size] - init_mean
+
+    return demeaned
 
 
 def filterbank(

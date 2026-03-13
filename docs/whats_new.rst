@@ -27,6 +27,10 @@ Version 1.4  (Source - GitHub)
 
 Enhancements
 ============
+- Optimize :func:`braindecode.preprocessing.exponential_moving_standardize` and
+  :func:`braindecode.preprocessing.exponential_moving_demean` by replacing
+  Pandas-based implementation with a more efficient SciPy ``lfilter`` version,
+  achieving a ~1.5x speedup (:gh:`000` by `Léo Burgund`_)
 - Add an optional ``lazy`` init path to :class:`braindecode.datasets.base.BaseConcatDataset`
   to defer cumulative size computation (and any downstream dataset length access) until
   first access, supporting truly lazy raw loading workflows.
@@ -831,3 +835,4 @@ Authors
 .. _Mattew Chew: https://github.com/MatthewChen37
 .. _Aman Srivastava: https://github.com/aman-coder03
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
+.. _Léo Burgund: https://github.com/leob000
