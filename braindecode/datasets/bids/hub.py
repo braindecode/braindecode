@@ -70,7 +70,7 @@ huggingface_hub = _soft_import(
 
 log = logging.getLogger(__name__)
 
-_LOCK_FILE = ".cache_complete.json"
+_LOCK_FILE = "format_info.json"
 
 
 class HubDatasetMixin:
@@ -139,7 +139,7 @@ class HubDatasetMixin:
             the directory is used as a persistent cache:
 
             - If the directory is empty (or does not exist), the cache is built
-              there and a lock file (``.cache_complete.json``) is written once
+              there and a lock file (``format_info.json``) is written once
               the cache is complete, before the upload starts. The file
               contains the zarr conversion parameters as JSON.
             - If the lock file is present and its JSON parameters match the
@@ -192,11 +192,14 @@ class HubDatasetMixin:
         except Exception as e:
             raise RuntimeError(f"Failed to create repository: {e}")
 
-        cache_params = {
+        format_info = self._get_format_info_inline()
+        format_info_lock = {
+            "format": "zarr",
+            "pipeline_name": pipeline_name,
             "compression": compression,
             "compression_level": compression_level,
-            "pipeline_name": pipeline_name,
-            "chunk_size": chunk_size,
+            "braindecode_version": braindecode.__version__,
+            **format_info,
         }
 
         # Determine upload directory and whether to build the cache
@@ -211,11 +214,11 @@ class HubDatasetMixin:
                 if lock_path.exists():
                     with open(lock_path, "r", encoding="utf-8") as _f:
                         _lock_params = json.load(_f)
-                    if _lock_params != cache_params:
+                    if _lock_params != format_info_lock:
                         raise ValueError(
                             f"Lock file found at '{lock_path}' but its "
                             f"parameters {_lock_params} differ from the "
-                            f"current call parameters {cache_params}. "
+                            f"current call parameters {format_info_lock}. "
                             "Provide an empty directory or match the "
                             "original parameters."
                         )
@@ -240,7 +243,7 @@ class HubDatasetMixin:
                     build_cache = True
 
             if build_cache:
-                self._build_local_cache(tmp_path, cache_params)
+                self._build_local_cache(tmp_path, format_info_lock)
 
             # Upload folder to Hub
             log.info(f"Uploading to Hugging Face Hub ({repo_id})...")
@@ -260,14 +263,14 @@ class HubDatasetMixin:
     def _build_local_cache(
         self,
         tmp_path,
-        cache_params,
+        format_info_lock,
     ):
         """Build the local cache directory with the dataset in Zarr format and BIDS-like structure.
         This folder will be uploaded to the Hub"""
-        compression = cache_params["compression"]
-        compression_level = cache_params["compression_level"]
-        pipeline_name = cache_params["pipeline_name"]
-        chunk_size = cache_params["chunk_size"]
+        compression = format_info_lock["compression"]
+        compression_level = format_info_lock["compression_level"]
+        pipeline_name = format_info_lock["pipeline_name"]
+        chunk_size = format_info_lock["chunk_size"]
 
         # Create BIDS-like sourcedata structure
         log.info("Creating BIDS-like sourcedata structure...")
@@ -301,26 +304,10 @@ class HubDatasetMixin:
         self._save_dataset_card(tmp_path)
 
         # Save format info
-        format_info_path = tmp_path / "format_info.json"
+        # This marks the cache as complete
+        format_info_path = tmp_path / _LOCK_FILE
         with open(format_info_path, "w", encoding="utf-8") as f:
-            format_info = self._get_format_info_inline()
-            json.dump(
-                {
-                    "format": "zarr",
-                    "pipeline_name": pipeline_name,
-                    "compression": compression,
-                    "compression_level": compression_level,
-                    "braindecode_version": braindecode.__version__,
-                    **format_info,
-                },
-                f,
-                indent=2,
-            )
-
-        # Mark cache as complete
-
-        with open(tmp_path / _LOCK_FILE, "w", encoding="utf-8") as f:
-            json.dump(cache_params, f, indent=2)
+            json.dump(format_info_lock, f, indent=2)
 
     def _save_dataset_card(self, path: Path, bids_inspired: bool = True) -> None:
         """Generate and save a dataset card (README.md) with metadata.
@@ -539,7 +526,7 @@ class HubDatasetMixin:
             )
 
             # Load format info
-            format_info_path = Path(dataset_dir) / "format_info.json"
+            format_info_path = Path(dataset_dir) / _LOCK_FILE
             if format_info_path.exists():
                 with open(format_info_path, "r") as f:
                     format_info = json.load(f)
