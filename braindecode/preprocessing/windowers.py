@@ -12,6 +12,7 @@
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Matthew Chen <matt.chen42601@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -1045,8 +1046,12 @@ def _create_windows_from_target_channels(
     stop = ds.raw.n_times + ds.raw.first_samp
 
     target = ds.raw.get_data(picks="misc")
-    # TODO: handle multi targets present only for some events
-    stops = np.nonzero((~np.isnan(target[0, :])))[0] + 1
+
+    # check all misc channels for valid targets, not just the first one.
+    # when multiple target channels exist, some may have values at timepoints
+    # where others are nan. using any() across channels catches all of them.
+    has_target = np.any(~np.isnan(target), axis=0)
+    stops = np.nonzero(has_target)[0] + 1
     stops = stops[(stops < stop) & (stops >= window_size_samples)]
     stops = stops.astype(int)
     metadata = pd.DataFrame(

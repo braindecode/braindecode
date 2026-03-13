@@ -1,4 +1,5 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -35,18 +36,17 @@ def compute_amplitude_gradients_for_X(model, X):
     amps_th = to_tensor(amps.astype(np.float32), device=device).requires_grad_(True)
     phases_th = to_tensor(phases.astype(np.float32), device=device).requires_grad_(True)
 
+    # rebuild fft coefficients from amplitude and phase as real valued pairs,
+    # convert to complex, and invert back to the time domain.
+    # torch.irfft was removed after being deprecated since pytorch 1.7,
+    # so we use torch.fft.irfft which expects complex input directly.
     fft_coefs = amps_th.unsqueeze(-1) * torch.stack(
         (torch.cos(phases_th), torch.sin(phases_th)), dim=-1
     )
     fft_coefs = fft_coefs.squeeze(3)
 
-    try:
-        complex_fft_coefs = torch.view_as_complex(fft_coefs)
-        iffted = torch.fft.irfft(complex_fft_coefs, n=X.shape[2], dim=2)
-    except AttributeError:
-        iffted = torch.irfft(  # Deprecated since 1.7
-            fft_coefs, signal_ndim=1, signal_sizes=(X.shape[2],)
-        )
+    complex_fft_coefs = torch.view_as_complex(fft_coefs)
+    iffted = torch.fft.irfft(complex_fft_coefs, n=X.shape[2], dim=2)
 
     outs = model(iffted)
 
