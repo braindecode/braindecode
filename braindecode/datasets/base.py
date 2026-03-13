@@ -617,6 +617,15 @@ class WindowsDataset(RecordDataset):
         last_target_only: bool = True,
     ):
         super().__init__(description, transform)
+        self._fast_disk = self._can_use_fast_get_epoch_from_raw(windows)
+        if not (self._fast_disk or windows.preload):
+            warnings.warn(
+                "The provided mne.Epochs object does not meet the requirements for "
+                "fast epoch access. This may lead to slow data loading from disk. "
+                "Consider preloading the epochs or checking the conditions in "
+                "WindowsDataset._can_use_fast_get_epoch_from_raw.",
+                UserWarning,
+            )
         self.windows = windows
         self.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
@@ -632,6 +641,20 @@ class WindowsDataset(RecordDataset):
             self.y = metadata.loc[:, "target"].to_list()
         self.raw_preproc_kwargs: list[dict[str, Any]] = []
         self.window_preproc_kwargs: list[dict[str, Any]] = []
+
+    @staticmethod
+    def _can_use_fast_get_epoch_from_raw(epochs: mne.BaseEpochs) -> bool:
+        """Check if we can use the fast _get_epoch_from_raw method,
+        or if we need to use the slow get_data method."""
+        return (
+            not epochs.preload
+            and epochs._bad_dropped
+            and epochs.detrend is None
+            and not epochs._do_baseline  # baseline is None
+            and (epochs._decim == 1)
+            and epochs._offset is None
+            and epochs._projector is None
+        )
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -650,7 +673,10 @@ class WindowsDataset(RecordDataset):
         np.ndarray
             Crop indices.
         """
-        X = self.windows.get_data(item=index)[0].astype("float32")
+        if self._fast_disk:
+            X = self.windows._get_epoch_from_raw(index).astype("float32")
+        else:
+            X = self.windows.get_data(item=index)[0].astype("float32")
         if self.transform is not None:
             X = self.transform(X)
         if self.targets_from == "metadata":

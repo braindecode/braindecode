@@ -728,3 +728,145 @@ def test_eeg_windows_dataset_repr(concat_windows_dataset):
     assert "ch" in r
     assert "Hz" in r
     assert "samples/win" in r
+
+
+# ==================== Tests for fast disk loading ====================
+
+
+def _make_fast_load_epochs(raw, events, metadata, tmp_path):
+    """Create in-memory Epochs, save to FIF, reload with preload=False.
+
+    Reloading from a FIF file ensures ``_bad_dropped=True`` and
+    ``_do_baseline=False``, satisfying all conditions checked by
+    ``_can_use_fast_get_epoch_from_raw``.
+    """
+    epochs = mne.Epochs(
+        raw=raw, events=events, metadata=metadata, baseline=None, preload=False
+    )
+    epochs.drop_bad()
+    fname = str(tmp_path / "fast-epo.fif")
+    epochs.save(fname, overwrite=True)
+    return mne.read_epochs(fname, preload=False)
+
+
+@pytest.fixture
+def basic_raw_and_metadata():
+    """Small in-memory raw and metadata for fast-loading tests."""
+    rng = np.random.RandomState(42)
+    info = mne.create_info(ch_names=["eeg0", "eeg1"], sfreq=50, ch_types="eeg")
+    raw = mne.io.RawArray(data=rng.randn(2, 1000), info=info)
+    events = np.array([[100, 0, 1], [200, 0, 2], [300, 0, 1], [400, 0, 3]])
+    metadata = pd.DataFrame(
+        {
+            "sample": events[:, 0],
+            "x": events[:, 1],
+            "target": events[:, 2],
+            "i_window_in_trial": [0, 0, 0, 0],
+            "i_start_in_trial": [0, 0, 0, 0],
+            "i_stop_in_trial": [50, 50, 50, 50],
+        }
+    )
+    return raw, events, metadata
+
+
+@pytest.fixture
+def fast_load_epochs(basic_raw_and_metadata, tmp_path):
+    """FIF-reloaded Epochs satisfying all _can_use_fast_get_epoch_from_raw conditions."""
+    raw, events, metadata = basic_raw_and_metadata
+    epochs = _make_fast_load_epochs(raw, events, metadata, tmp_path)
+    return raw, events, metadata, epochs
+
+
+@pytest.fixture
+def fast_load_windows_dataset(fast_load_epochs):
+    """WindowsDataset backed by fast-disk-eligible epochs."""
+    _, _, _, epochs = fast_load_epochs
+    desc = pd.Series({"subject": 1})
+    return WindowsDataset(epochs, desc)
+
+
+def test_can_use_fast_get_epoch_from_raw_true(fast_load_epochs):
+    """All conditions satisfied → _can_use_fast_get_epoch_from_raw returns True."""
+    _, _, _, epochs = fast_load_epochs
+    assert WindowsDataset._can_use_fast_get_epoch_from_raw(epochs)
+
+
+@pytest.mark.parametrize(
+    "attribute,bad_value",
+    [
+        ("_bad_dropped", False),
+        ("_do_baseline", True),
+        ("detrend", 1),
+        ("_decim", 2),
+        ("_offset", 0.0),
+        ("_projector", np.eye(2)),
+        ("preload", True),
+    ],
+    ids=["bad_dropped", "do_baseline", "detrend", "decim", "offset", "projector", "preload"],
+)
+def test_can_use_fast_get_epoch_from_raw_false(fast_load_epochs, attribute, bad_value):
+    """Each condition violated in isolation → _can_use_fast_get_epoch_from_raw returns False."""
+    _, _, _, epochs = fast_load_epochs
+    epochs = epochs.copy()  # avoid modifying fixture state for other tests
+    setattr(epochs, attribute, bad_value)
+    assert not WindowsDataset._can_use_fast_get_epoch_from_raw(epochs)
+
+
+def test_windows_dataset_fast_disk_enabled(fast_load_windows_dataset):
+    """WindowsDataset._fast_disk is True when all conditions are met."""
+    assert fast_load_windows_dataset._fast_disk is True
+
+
+@pytest.mark.parametrize(
+    "attribute,bad_value,expects_warning",
+    [
+        ("preload", True, False),      # preloaded → _fast_disk=False but no warning
+        ("_do_baseline", True, True),  # fast-loading blocked, not preloaded → warn
+        ("detrend", 1, True),
+        ("_decim", 2, True),
+    ],
+    ids=["preload", "do_baseline", "detrend", "decim"],
+)
+def test_windows_dataset_fast_disk_disabled(
+    fast_load_epochs, attribute, bad_value, expects_warning
+):
+    """WindowsDataset._fast_disk is False; UserWarning when epoch is neither fast-loadable
+    nor preloaded."""
+    import contextlib
+
+    _, _, _, epochs = fast_load_epochs
+    setattr(epochs, attribute, bad_value)
+    desc = pd.Series({"subject": 1})
+    ctx = (
+        pytest.warns(UserWarning, match="fast epoch access")
+        if expects_warning
+        else contextlib.nullcontext()
+    )
+    with ctx:
+        ds = WindowsDataset(epochs, desc)
+    assert ds._fast_disk is False
+
+
+def test_windows_dataset_fast_vs_preload_consistency(basic_raw_and_metadata, tmp_path):
+    """Fast disk loading and preloaded epochs return identical data for every index."""
+    raw, events, metadata = basic_raw_and_metadata
+    desc = pd.Series({"subject": 1})
+
+    # Fast path: FIF-reloaded with preload=False (_bad_dropped=True, _do_baseline=False)
+    epochs_fast = _make_fast_load_epochs(raw, events, metadata, tmp_path)
+    ds_fast = WindowsDataset(epochs_fast, desc)
+    assert ds_fast._fast_disk is True
+
+    # Reference: reload the same FIF file with preload=True (uses get_data slow path)
+    fname = str(tmp_path / "fast-epo.fif")
+    epochs_preloaded = mne.read_epochs(fname, preload=True)
+    ds_preloaded = WindowsDataset(epochs_preloaded, desc)
+    assert ds_preloaded._fast_disk is False
+
+    assert len(ds_fast) == len(ds_preloaded)
+    for i in range(len(ds_fast)):
+        X_fast, y_fast, crop_fast = ds_fast[i]
+        X_preloaded, y_preloaded, crop_preloaded = ds_preloaded[i]
+        np.testing.assert_array_equal(X_fast, X_preloaded)
+        assert y_fast == y_preloaded
+        assert crop_fast == crop_preloaded
