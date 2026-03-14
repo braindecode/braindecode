@@ -645,13 +645,16 @@ class EEGWindowsDataset(RecordDataset):
             last_target_only=self.last_target_only,
         )
 
-        if hasattr(self, "window_kwargs"):
-            setattr(windows, "window_kwargs", getattr(self, "window_kwargs"))
+        window_kwargs = list(getattr(self, "window_kwargs", []))
+        window_kwargs.append((self.to_epochs_dataset.__name__, {}))
+        setattr(windows, "window_kwargs", window_kwargs)
         if hasattr(self, "raw_preproc_kwargs"):
             setattr(windows, "raw_preproc_kwargs", getattr(self, "raw_preproc_kwargs"))
-        window_preproc_kwargs = list(getattr(self, "window_preproc_kwargs", []))
-        window_preproc_kwargs.append((self.to_epochs_dataset.__name__, {}))
-        setattr(windows, "window_preproc_kwargs", window_preproc_kwargs)
+        if hasattr(self, "window_preproc_kwargs"):
+            setattr(
+                windows, "window_preproc_kwargs", getattr(self, "window_preproc_kwargs")
+            )
+
         return windows
 
 
