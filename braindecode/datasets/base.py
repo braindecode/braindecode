@@ -624,10 +624,11 @@ class EEGWindowsDataset(RecordDataset):
         # Create events and epochs:
         events = np.zeros((len(self), 3), dtype=int)
         events[:, 0] = i_start_in_trial
+        events[:, 2] = 1
         epochs = mne.Epochs(
             raw=self.raw,
             events=events,
-            event_id={"window": 0},
+            event_id={"window": 1},
             tmin=0,
             tmax=input_window_seconds,
             metadata=self.metadata.copy(),
