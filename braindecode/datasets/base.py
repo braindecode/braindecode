@@ -597,6 +597,7 @@ class EEGWindowsDataset(RecordDataset):
             If the dataset is not compatible with conversion. This includes:
             - If targets are not obtained from metadata
             - If windows have inconsistent sizes or there are no windows to convert
+            - If raw.first_samp!=0 (not supported for simplicity)
         """
         # Check the targets:
         if self.targets_from != "metadata":
@@ -614,9 +615,15 @@ class EEGWindowsDataset(RecordDataset):
             raise ValueError("No windows to convert.")
         input_window_seconds = (sizes[0] - 1) / self.raw.info["sfreq"]
 
+        # Check raw.first_samp:
+        if self.raw.first_samp != 0:
+            raise ValueError(
+                f"to_epochs_dataset only works if raw.first_samp is 0, found {self.raw.first_samp=}"
+            )
+
         # Create events and epochs:
-        events = np.zeros((3, len(self)), dtype=int)
-        events[:, 0] = i_start_in_trial + self.raw.first_samp
+        events = np.zeros((len(self), 3), dtype=int)
+        events[:, 0] = i_start_in_trial
         epochs = mne.Epochs(
             raw=self.raw,
             events=events,
