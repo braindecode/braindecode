@@ -15,15 +15,14 @@
 
 :bdg-success:`Graph Neural Network`
 
-This category contains graph-based models that treat EEG electrodes as
-graph nodes and learn inter-channel relationships dynamically.
+This category contains graph-based models that treat EEG electrodes as graph nodes and
+learn inter-channel relationships dynamically.
 
 .. rubric:: Available Models
 
-- :class:`DGCNN` — Dynamic Graph Convolutional Neural Network. Treats
-  electrodes as nodes, builds a k-NN graph in feature space at each layer,
-  and uses EdgeConv blocks to learn multi-scale spatial relationships.
-  Based on Song et al. (2018).
+- :class:`DGCNN` — Dynamic Graph Convolutional Neural Network. Treats electrodes as
+  nodes, builds a k-NN graph in feature space at each layer, and uses EdgeConv blocks to
+  learn multi-scale spatial relationships. Based on Song et al. (2018).
 
 .. include:: ../../links.inc
 
