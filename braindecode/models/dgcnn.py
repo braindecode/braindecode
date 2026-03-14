@@ -8,38 +8,34 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from braindecode.models.base import EEGModuleMixin
-
+import einops
 
 def knn(x, k):
     # x: (B, n_times, n_chans)
-    inner = -2 * torch.matmul(x.transpose(2, 1), x)  # (B, n_chans, n_chans)
+    inner = -2 * torch.matmul(einops.rearrange(x, 'b t c -> b c t'), x)  # (B, n_chans, n_chans)
     xx = torch.sum(x ** 2, dim=1, keepdim=True)       # (B, 1, n_chans)
-    pairwise_distance = -xx - inner - xx.transpose(2, 1)  # (B, n_chans, n_chans)
+    pairwise_distance = -xx - inner - einops.rearrange(xx, 'b one c -> b c one')  # (B, n_chans, n_chans)
     idx = pairwise_distance.topk(k=k, dim=-1)[1]      # (B, n_chans, k)
     return idx
 
-def get_graph_feature(x, k=20, idx=None):
-    batch_size = x.size(0) # B
-    n_chans = x.size(2) # n_chans
-    x = x.view(batch_size, -1, n_chans) 
+def get_graph_feature(x, n_neighbors=20, idx=None):
+    # x: (B, n_times, n_chans)
+    batch_size, n_times, n_chans = x.shape
     if idx is None:
-        idx = knn(x, k=k)   # (batch_size, n_chans, k)
+        idx = knn(x, k=n_neighbors)   # (B, n_chans, n_neighbors)
     device = x.device
 
-    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*n_chans
+    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1) * n_chans
+    idx = (idx + idx_base).view(-1)
 
-    idx = idx + idx_base
+    x = einops.rearrange(x, "b t c -> b c t").contiguous()    # (B, n_chans, n_times)
+    feature = einops.rearrange(x, "b c t -> (b c) t")[idx, :] # gather neighbors
+    feature = einops.rearrange(feature, "(b c k) t -> b c k t", b=batch_size, c=n_chans, k=n_neighbors)
+    x = einops.repeat(x, "b c t -> b c k t", k=n_neighbors)
 
-    idx = idx.view(-1)
- 
-    _, num_dims, _ = x.size()
-
-    x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
-    feature = x.view(batch_size*n_chans, -1)[idx, :]
-    feature = feature.view(batch_size, n_chans, k, num_dims) 
-    x = x.view(batch_size, n_chans, 1, num_dims).repeat(1, 1, k, 1)
-    
-    feature = torch.cat((feature-x, x), dim=3).permute(0, 3, 1, 2).contiguous()
+    feature = einops.rearrange(
+        torch.cat((feature - x, x), dim=3), "b c k t -> b t c k"
+    ).contiguous()
   
     return feature
 
@@ -47,6 +43,11 @@ class DGCNN(EEGModuleMixin, nn.Module):
     """DGCNN for EEG classification from Song et al. (2018) [dgcnn]_.
 
     :bdg-success:`Graph Neural Network`
+
+    .. figure:: https://ar5iv.labs.arxiv.org/html/1801.07829/assets/sections/figure/model_architecture.jpg
+        :align: center
+        :alt: DGCNN Architecture
+        :width: 600px
 
     Dynamic Graph Convolutional Neural Network (DGCNN) treats EEG electrodes
     as nodes in a graph and dynamically learns inter-channel relationships
@@ -80,12 +81,18 @@ class DGCNN(EEGModuleMixin, nn.Module):
         Length of input window in seconds.
     sfreq : float
         Sampling frequency of the EEG recording.
-    k : int
-        Number of nearest neighbors for graph construction. Default is 20.
-    emb_dims : int
-        Embedding dimensions after multi-scale concatenation. Default is 1024.
-    dropout : float
-        Dropout probability in the classification head. Default is 0.5.
+    block_dims : tuple[int, ...], default=(64, 64, 128, 256)
+        Output dimensionality of each EdgeConv block.
+    emb_dims : int, default=1024
+        Embedding dimensions after multi-scale concatenation.
+    mlp_dims : tuple[int, ...], default=(512, 256)
+        Hidden layer sizes of the classification MLP.
+    n_neighbors : int, default=20
+        Number of nearest neighbors for KNN graph construction.
+    drop_prob : float, default=0.5
+        Dropout probability in the classification head.
+    activation : type[nn.Module], default=nn.LeakyReLU
+        Activation function class to use throughout the network.
 
     References
     ----------
@@ -96,15 +103,18 @@ class DGCNN(EEGModuleMixin, nn.Module):
     """
 
     def __init__(self,
-            n_outputs=40,
+            n_outputs=None,
             n_chans=None,
             chs_info=None,
             n_times=None,
             input_window_seconds=None,
             sfreq=None,
             emb_dims=1024,
-            k=20,
-            dropout=0.5):
+            block_dims=(64, 64, 128, 256),
+            mlp_dims=(512, 256),
+            n_neighbors=20,
+            drop_prob=0.5,
+            activation: type[nn.Module] = nn.LeakyReLU,):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -115,70 +125,50 @@ class DGCNN(EEGModuleMixin, nn.Module):
         )
 
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.k = k
-        self.emb_dims = emb_dims
-        self.dropout = dropout
+        self.n_neighbors = n_neighbors
+        self.drop_prob = drop_prob
+        edge_in_dims = [self.n_times * 2] + [d * 2 for d in block_dims[:-1]]
+        self.edge_convs = nn.ModuleList([
+            nn.Sequential(nn.Conv2d(in_d, out_d, kernel_size=1, bias=False),
+                          nn.BatchNorm2d(out_d),
+                          activation())
+            for in_d, out_d in zip(edge_in_dims, block_dims)
+        ])
 
-        self.bn1 = nn.BatchNorm2d(64)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.bn3 = nn.BatchNorm2d(128)
-        self.bn4 = nn.BatchNorm2d(256)
-        self.bn5=nn.BatchNorm1d(self.emb_dims)
+        self.global_proj = nn.Sequential(
+            nn.Conv1d(sum(block_dims), emb_dims, kernel_size=1, bias=False),
+            nn.BatchNorm1d(emb_dims),
+            activation(),
+        )
 
-        self.conv1 = nn.Sequential(nn.Conv2d(self.n_times * 2, 64, kernel_size=1, bias=False),
-                                   self.bn1,
-                                   nn.LeakyReLU(negative_slope=0.2))
-        self.conv2 = nn.Sequential(nn.Conv2d(64*2, 64, kernel_size=1, bias=False),
-                                   self.bn2,
-                                   nn.LeakyReLU(negative_slope=0.2))
-        self.conv3 = nn.Sequential(nn.Conv2d(64*2, 128, kernel_size=1, bias=False),
-                                   self.bn3,
-                                   nn.LeakyReLU(negative_slope=0.2))
-        self.conv4 = nn.Sequential(nn.Conv2d(128*2, 256, kernel_size=1, bias=False),
-                                   self.bn4,
-                                   nn.LeakyReLU(negative_slope=0.2))
-        self.conv5 = nn.Sequential(nn.Conv1d(512, self.emb_dims, kernel_size=1, bias=False),
-                                   self.bn5,
-                                   nn.LeakyReLU(negative_slope=0.2))
-        self.linear1 = nn.Linear(self.emb_dims*2, 512, bias=False)
-        self.bn6 = nn.BatchNorm1d(512)
-        self.dp1 = nn.Dropout(p=self.dropout)
-        self.linear2 = nn.Linear(512, 256)
-        self.bn7 = nn.BatchNorm1d(256)
-        self.dp2 = nn.Dropout(p=self.dropout)
-        self.final_layer = nn.Linear(256, self.n_outputs)
+        mlp_in_dims = [emb_dims * 2] + list(mlp_dims)
+        mlp_layers = []
+        for in_d, out_d in zip(mlp_in_dims[:-1], mlp_dims):
+            mlp_layers += [
+                nn.Linear(in_d, out_d, bias=False),
+                nn.BatchNorm1d(out_d),
+                nn.Dropout(p=drop_prob),
+                activation(),
+            ]
+        self.final_layer = nn.Linear(mlp_dims[-1], self.n_outputs)
+        mlp_layers.append(self.final_layer)
+        self.classifier = nn.Sequential(*mlp_layers)
 
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size=x.size(0)
-        x = x.transpose(1, 2)  # (B, n_chans, n_times) → (B, n_times, n_chans)
+        x = einops.rearrange(x, "b c t -> b t c")
+        block_outputs=[]
 
-        x = get_graph_feature(x, k=self.k)
-        x = self.conv1(x)
-        x1 = x.max(dim=-1, keepdim=False)[0]
+        for edge_conv in self.edge_convs:
+            x=get_graph_feature(x,  n_neighbors=self.n_neighbors)
+            x=edge_conv(x)
+            x=x.max(dim=-1, keepdim=False)[0]
+            block_outputs.append(x)
 
-        x = get_graph_feature(x1, k=self.k)
-        x = self.conv2(x)
-        x2 = x.max(dim=-1, keepdim=False)[0]
+        x = self.global_proj(torch.cat(block_outputs, dim=1))
 
-        x = get_graph_feature(x2, k=self.k)
-        x = self.conv3(x)
-        x3 = x.max(dim=-1, keepdim=False)[0]
+        x_max = einops.rearrange(F.adaptive_max_pool1d(x, 1), "b c 1 -> b c")
+        x_avg = einops.rearrange(F.adaptive_avg_pool1d(x, 1), "b c 1 -> b c")
+        x = torch.cat((x_max, x_avg), dim=1)
 
-        x = get_graph_feature(x3, k=self.k)
-        x = self.conv4(x)
-        x4 = x.max(dim=-1, keepdim=False)[0]
-
-        x = torch.cat((x1, x2, x3, x4), dim=1)
-
-        x = self.conv5(x)
-        x1 = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)
-        x2 = F.adaptive_avg_pool1d(x, 1).view(batch_size, -1)
-        x = torch.cat((x1, x2), 1)
-
-        x = F.leaky_relu(self.bn6(self.linear1(x)), negative_slope=0.2)
-        x = self.dp1(x)
-        x = F.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
-        x = self.dp2(x)
-        x = self.final_layer(x)
-        return x
+        return self.classifier(x)

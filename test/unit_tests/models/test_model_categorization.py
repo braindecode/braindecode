@@ -21,6 +21,7 @@ CATEGORIZATION_BADGES = {
     "Interpretability": ":bdg-warning:`Interpretability`",
     "Foundation Model": ":bdg-danger:`Foundation Model`",
     "Channel": ":bdg-dark-line:`Channel`",
+    "Graph Neural Network": ":bdg-success:`Graph Neural Network`",
 }
 
 
