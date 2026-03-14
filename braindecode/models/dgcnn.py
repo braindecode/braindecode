@@ -4,40 +4,50 @@
 #
 # License: BSD (3-clause)
 
+import einops
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from braindecode.models.base import EEGModuleMixin
-import einops
+
 
 def knn(x, k):
     # x: (B, n_times, n_chans)
-    inner = -2 * torch.matmul(einops.rearrange(x, 'b t c -> b c t'), x)  # (B, n_chans, n_chans)
-    xx = torch.sum(x ** 2, dim=1, keepdim=True)       # (B, 1, n_chans)
-    pairwise_distance = -xx - inner - einops.rearrange(xx, 'b one c -> b c one')  # (B, n_chans, n_chans)
-    idx = pairwise_distance.topk(k=k, dim=-1)[1]      # (B, n_chans, k)
+    inner = -2 * torch.matmul(
+        einops.rearrange(x, "b t c -> b c t"), x
+    )  # (B, n_chans, n_chans)
+    xx = torch.sum(x**2, dim=1, keepdim=True)  # (B, 1, n_chans)
+    pairwise_distance = (
+        -xx - inner - einops.rearrange(xx, "b one c -> b c one")
+    )  # (B, n_chans, n_chans)
+    idx = pairwise_distance.topk(k=k, dim=-1)[1]  # (B, n_chans, k)
     return idx
+
 
 def get_graph_feature(x, n_neighbors=20, idx=None):
     # x: (B, n_times, n_chans)
     batch_size, n_times, n_chans = x.shape
     if idx is None:
-        idx = knn(x, k=n_neighbors)   # (B, n_chans, n_neighbors)
+        idx = knn(x, k=n_neighbors)  # (B, n_chans, n_neighbors)
     device = x.device
 
     idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1) * n_chans
     idx = (idx + idx_base).view(-1)
 
-    x = einops.rearrange(x, "b t c -> b c t").contiguous()    # (B, n_chans, n_times)
-    feature = einops.rearrange(x, "b c t -> (b c) t")[idx, :] # gather neighbors
-    feature = einops.rearrange(feature, "(b c k) t -> b c k t", b=batch_size, c=n_chans, k=n_neighbors)
+    x = einops.rearrange(x, "b t c -> b c t").contiguous()  # (B, n_chans, n_times)
+    feature = einops.rearrange(x, "b c t -> (b c) t")[idx, :]  # gather neighbors
+    feature = einops.rearrange(
+        feature, "(b c k) t -> b c k t", b=batch_size, c=n_chans, k=n_neighbors
+    )
     x = einops.repeat(x, "b c t -> b c k t", k=n_neighbors)
 
     feature = einops.rearrange(
         torch.cat((feature - x, x), dim=3), "b c k t -> b t c k"
     ).contiguous()
-  
+
     return feature
+
 
 class DGCNN(EEGModuleMixin, nn.Module):
     """DGCNN for EEG classification from Song et al. (2018) [dgcnn]_.
@@ -102,38 +112,44 @@ class DGCNN(EEGModuleMixin, nn.Module):
         https://doi.org/10.1109/TAFFC.2018.2817622
     """
 
-    def __init__(self,
-            n_outputs=None,
-            n_chans=None,
-            chs_info=None,
-            n_times=None,
-            input_window_seconds=None,
-            sfreq=None,
-            emb_dims=1024,
-            block_dims=(64, 64, 128, 256),
-            mlp_dims=(512, 256),
-            n_neighbors=20,
-            drop_prob=0.5,
-            activation: type[nn.Module] = nn.LeakyReLU,):
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        emb_dims=1024,
+        block_dims=(64, 64, 128, 256),
+        mlp_dims=(512, 256),
+        n_neighbors=20,
+        drop_prob=0.5,
+        activation: type[nn.Module] = nn.LeakyReLU,
+    ):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
             chs_info=chs_info,
             n_times=n_times,
             sfreq=sfreq,
-            input_window_seconds=input_window_seconds
+            input_window_seconds=input_window_seconds,
         )
 
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.n_neighbors = n_neighbors
         self.drop_prob = drop_prob
         edge_in_dims = [self.n_times * 2] + [d * 2 for d in block_dims[:-1]]
-        self.edge_convs = nn.ModuleList([
-            nn.Sequential(nn.Conv2d(in_d, out_d, kernel_size=1, bias=False),
-                          nn.BatchNorm2d(out_d),
-                          activation())
-            for in_d, out_d in zip(edge_in_dims, block_dims)
-        ])
+        self.edge_convs = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(in_d, out_d, kernel_size=1, bias=False),
+                    nn.BatchNorm2d(out_d),
+                    activation(),
+                )
+                for in_d, out_d in zip(edge_in_dims, block_dims)
+            ]
+        )
 
         self.global_proj = nn.Sequential(
             nn.Conv1d(sum(block_dims), emb_dims, kernel_size=1, bias=False),
@@ -154,15 +170,14 @@ class DGCNN(EEGModuleMixin, nn.Module):
         mlp_layers.append(self.final_layer)
         self.classifier = nn.Sequential(*mlp_layers)
 
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = einops.rearrange(x, "b c t -> b t c")
-        block_outputs=[]
+        block_outputs = []
 
         for edge_conv in self.edge_convs:
-            x=get_graph_feature(x,  n_neighbors=self.n_neighbors)
-            x=edge_conv(x)
-            x=x.max(dim=-1, keepdim=False)[0]
+            x = get_graph_feature(x, n_neighbors=self.n_neighbors)
+            x = edge_conv(x)
+            x = x.max(dim=-1, keepdim=False)[0]
             block_outputs.append(x)
 
         x = self.global_proj(torch.cat(block_outputs, dim=1))

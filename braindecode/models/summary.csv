@@ -47,4 +47,4 @@ BENDR,General,"Classification,Embedding",250,"n_chans, n_times, n_outputs",15714
 LUNA,General,"Classification,Embedding",128,"n_chans, n_times, sfreq, chs_info",7100731,"LUNA(n_chans=22, n_times=512, sfreq=128)","Convolution,Channel,Foundation Model"
 MEDFormer,General,Classification,250,"n_chans, n_outputs, n_times",5313924,"MEDFormer(n_chans=22, n_outputs=4, n_times=1000)","Foundation Model,Convolution"
 REVE,General,Classification,200,"n_outputs, n_times, n_chans",69481476,"REVE(n_times=1000, n_outputs=4, n_chans=19)","Foundation Model,Attention/Transformer"
-DGCNN,Emotion Recognition,Classification,128,"n_chans, n_outputs, n_times",,"DGCNN(n_chans=62, n_outputs=4, n_times=128)","Graph Neural Network"
+DGCNN,Emotion Recognition,Classification,128,"n_chans, n_outputs, n_times",1816068,"DGCNN(n_chans=62, n_outputs=4, n_times=128)","Graph Neural Network"
