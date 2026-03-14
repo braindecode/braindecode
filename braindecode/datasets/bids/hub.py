@@ -723,7 +723,14 @@ class HubDatasetMixin:
 
                 # Save using inlined function
                 _save_windows_to_zarr(
-                    grp, data, metadata, description, info_dict, compressor, target_name
+                    grp,
+                    data,
+                    metadata,
+                    description,
+                    info_dict,
+                    compressor,
+                    target_name,
+                    chunk_size,
                 )
 
             elif dataset_type == "EEGWindowsDataset":

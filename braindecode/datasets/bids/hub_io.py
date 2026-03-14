@@ -45,16 +45,25 @@ def _restore_nan_from_json(obj):
 
 
 def _save_windows_to_zarr(
-    grp, data, metadata, description, info, compressor, target_name
+    grp, data, metadata, description, info, compressor, target_name, chunk_size
 ):
     """Save windowed data to Zarr group (low-level function)."""
     data_array = data.astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
 
+    max_windows_per_chunk = max(
+        1, int(chunk_size / data_array.shape[2] / data_array.shape[1])
+    )
+    n_windows_per_chunk = min(data_array.shape[0], max_windows_per_chunk)
+
     grp.create_array(
         "data",
         data=data_array,
-        chunks=(1, data_array.shape[1], data_array.shape[2]),
+        chunks=(
+            n_windows_per_chunk,
+            data_array.shape[1],
+            data_array.shape[2],
+        ),
         compressors=compressors_list,
     )
 
