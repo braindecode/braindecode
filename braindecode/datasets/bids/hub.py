@@ -198,6 +198,7 @@ class HubDatasetMixin:
             "pipeline_name": pipeline_name,
             "compression": compression,
             "compression_level": compression_level,
+            "chunk_size": chunk_size,
             "braindecode_version": braindecode.__version__,
             **format_info,
         }
