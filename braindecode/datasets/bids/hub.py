@@ -130,9 +130,12 @@ class HubDatasetMixin:
         pipeline_name : str, default="braindecode"
             Name of the processing pipeline for BIDS sourcedata.
         chunk_size : int, default=5_000_000
-            Number of samples per chunk in Zarr. Larger chunk size will create fewer
-            but larger files. Only used for RawDataset and EEGWindowsDataset (continuous data).
-            With WindowsDataset (pre-cut epochs), each window is saved as a separate chunk.
+            Number of samples per chunk in Zarr along the time/window dimension.
+            Larger chunk sizes create fewer but larger chunks/files. This parameter
+            is used for both continuous data (e.g., RawDataset, EEGWindowsDataset)
+            and pre-cut windows (WindowsDataset). For WindowsDataset, multiple
+            windows may be stored in a single chunk depending on their duration
+            and the chosen ``chunk_size``.
         local_cache_dir : str | Path | None
             Local directory to use for temporary files during upload. If None, uses
             the system temp directory and cleans it up after upload. If provided,

@@ -52,7 +52,7 @@ def _save_windows_to_zarr(
     compressors_list = [compressor] if compressor is not None else None
 
     max_windows_per_chunk = max(
-        1, int(chunk_size / data_array.shape[2] / data_array.shape[1])
+        1, chunk_size // (data_array.shape[1] * data_array.shape[2])
     )
     n_windows_per_chunk = min(data_array.shape[0], max_windows_per_chunk)
 
