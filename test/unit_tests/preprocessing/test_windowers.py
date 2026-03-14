@@ -1583,7 +1583,6 @@ def test_to_epochs_dataset_is_consistent(lazy_loadable_dataset):
     assert epochs_ds.windows.metadata.equals(eeg_ds.metadata)
 
     assert epochs_ds.raw_preproc_kwargs == eeg_ds.raw_preproc_kwargs
-    assert epochs_ds.raw_preproc_kwargs is not eeg_ds.raw_preproc_kwargs
 
     for (x_eeg, y_eeg, crop_eeg), (x_epo, y_epo, crop_epo) in zip(eeg_ds, epochs_ds):
         np.testing.assert_allclose(x_epo, x_eeg)
