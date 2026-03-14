@@ -624,6 +624,7 @@ class EEGWindowsDataset(RecordDataset):
             tmin=0,
             tmax=input_window_seconds,
             metadata=self.metadata.copy(),
+            baseline=None,
         )
 
         # Populate new WindowsDataset:
