@@ -614,7 +614,7 @@ class EEGWindowsDataset(RecordDataset):
             raise ValueError("Windows have inconsistent sizes.")
         if len(sizes) != 1:
             raise ValueError("No windows to convert.")
-        input_window_seconds = sizes[0] / self.raw.info["sfreq"]
+        input_window_seconds = (sizes[0] - 1) / self.raw.info["sfreq"]
 
         # Create events and epochs:
         events = np.stack([i_start_in_trial, np.zeros(len(self), dtype=int), y], axis=1)
