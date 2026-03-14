@@ -626,6 +626,8 @@ class EEGWindowsDataset(RecordDataset):
             metadata=self.metadata.copy(),
             baseline=None,
         )
+        # we skip dropping bads to be consistent with EEGWindowsDataset:
+        epochs._bad_dropped = True
 
         # Populate new WindowsDataset:
         windows = WindowsDataset(
