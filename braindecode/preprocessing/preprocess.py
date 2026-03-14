@@ -387,7 +387,7 @@ def _preprocess(
     _set_preproc_kwargs(ds, preprocessors)
 
     if save_dir is not None:
-        concat_ds = BaseConcatDataset([ds])
+        concat_ds: BaseConcatDataset[RecordDataset] = BaseConcatDataset([ds])
         concat_ds.save(save_dir, overwrite=overwrite, offset=ds_index)
     else:
         return ds
