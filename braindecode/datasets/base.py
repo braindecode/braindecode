@@ -598,13 +598,11 @@ class EEGWindowsDataset(RecordDataset):
             - If targets are not obtained from metadata
             - If windows have inconsistent sizes or there are no windows to convert
         """
-        # Check and get targets:
+        # Check the targets:
         if self.targets_from != "metadata":
             raise ValueError(
                 "to_epochs_dataset only works if targets are obtained from metadata."
             )
-        y = self.y
-        assert y is not None
 
         # Check and get window sizes:
         i_start_in_trial = self.crop_inds[:, 1]
@@ -617,11 +615,12 @@ class EEGWindowsDataset(RecordDataset):
         input_window_seconds = (sizes[0] - 1) / self.raw.info["sfreq"]
 
         # Create events and epochs:
-        events = np.stack([i_start_in_trial, np.zeros(len(self), dtype=int), y], axis=1)
-        events[:, 0] += self.raw.first_samp  # adjust for raw's first sample
+        events = np.zeros((3, len(self)), dtype=int)
+        events[:, 0] = i_start_in_trial + self.raw.first_samp
         epochs = mne.Epochs(
             raw=self.raw,
             events=events,
+            event_id={"window": 0},
             tmin=0,
             tmax=input_window_seconds,
             metadata=self.metadata.copy(),
