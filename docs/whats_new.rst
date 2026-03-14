@@ -78,7 +78,7 @@ Bugs
 - Fix Zenodo citation: update to global concept DOI and add BibTeX/APA citation formats
   in ``docs/cite.rst``, ``README.rst``, ``CITATION.cff``, and ``docs/conf.py``
   (:gh:`937` by `Bruno Aristimunha`_)
-- Push large datasets to HuggingFace Hub using :func:`huggingface_hub.upload_large_folder` to avoid limitations, and allow resuming downloads (:gh:`945` by `Pierre Guetschel`_)
+- Push large datasets to HuggingFace Hub using :func:`huggingface_hub.upload_large_folder` to avoid limitations, and allow resuming downloads (:gh:`945` and :gh:`953` by `Pierre Guetschel`_)
 
 Code health
 ============
