@@ -94,10 +94,13 @@ def _save_eegwindows_to_zarr(
     continuous_float = continuous_data.astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
 
+    max_samples_per_chunk = max(1, chunk_size // continuous_float.shape[0])
+    n_samples_per_chunk = min(continuous_float.shape[1], max_samples_per_chunk)
+
     grp.create_array(
         "data",
         data=continuous_float,
-        chunks=(continuous_float.shape[0], min(chunk_size, continuous_float.shape[1])),
+        chunks=(continuous_float.shape[0], n_samples_per_chunk),
         compressors=compressors_list,
     )
 
@@ -166,10 +169,13 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chun
     continuous_float = continuous_data.astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
 
+    max_samples_per_chunk = max(1, chunk_size // continuous_float.shape[0])
+    n_samples_per_chunk = min(continuous_float.shape[1], max_samples_per_chunk)
+
     grp.create_array(
         "data",
         data=continuous_float,
-        chunks=(continuous_float.shape[0], min(chunk_size, continuous_float.shape[1])),
+        chunks=(continuous_float.shape[0], n_samples_per_chunk),
         compressors=compressors_list,
     )
 
