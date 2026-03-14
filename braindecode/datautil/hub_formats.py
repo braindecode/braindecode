@@ -36,7 +36,7 @@ def convert_to_zarr(
     output_path: Union[str, Path],
     compression: str = "blosc",
     compression_level: int = 5,
-    chunk_size: int = 10000,
+    chunk_size: int = 5_000_000,
     overwrite: bool = False,
 ) -> Path:
     """Convert BaseConcatDataset to Zarr format.
@@ -59,7 +59,7 @@ def convert_to_zarr(
         blosc uses zstd codec by default, providing best balance of speed and compression.
     compression_level : int, default=5
         Compression level (0-9). Level 5 provides optimal balance based on benchmarks.
-    chunk_size : int, default=10000
+    chunk_size : int, default=5_000_000
         Number of samples per chunk in Zarr. Larger chunk size will create fewer
         but larger files. Only used for RawDataset and EEGWindowsDataset (continuous data).
         With WindowsDataset (pre-cut epochs), each window is saved as a separate chunk.

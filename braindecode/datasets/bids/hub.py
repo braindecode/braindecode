@@ -103,7 +103,7 @@ class HubDatasetMixin:
         compression: str = "blosc",
         compression_level: int = 5,
         pipeline_name: str = "braindecode",
-        chunk_size: int = 10000,
+        chunk_size: int = 5_000_000,
         local_cache_dir: str | Path | None = None,
         **kwargs,
     ) -> str:
@@ -129,7 +129,7 @@ class HubDatasetMixin:
             Compression level (0-9). Level 5 provides optimal balance.
         pipeline_name : str, default="braindecode"
             Name of the processing pipeline for BIDS sourcedata.
-        chunk_size : int, default=10000
+        chunk_size : int, default=5_000_000
             Number of samples per chunk in Zarr. Larger chunk size will create fewer
             but larger files. Only used for RawDataset and EEGWindowsDataset (continuous data).
             With WindowsDataset (pre-cut epochs), each window is saved as a separate chunk.
@@ -657,7 +657,7 @@ class HubDatasetMixin:
         output_path: Path,
         compression: str,
         compression_level: int,
-        chunk_size: int = 10000,
+        chunk_size: int = 5_000_000,
     ) -> None:
         """Convert dataset to Zarr format (inline implementation)."""
 
