@@ -644,7 +644,13 @@ class EEGWindowsDataset(RecordDataset):
             targets_from=self.targets_from,
             last_target_only=self.last_target_only,
         )
-        windows.raw_preproc_kwargs = self.raw_preproc_kwargs.copy()
+        window_kwargs: list[tuple[str, dict[str, Any]]] = [
+            (self.to_epochs_dataset.__name__, {}),
+        ]
+        setattr(windows, "window_kwargs", window_kwargs)
+        kwargs_name = "raw_preproc_kwargs"
+        if hasattr(self, kwargs_name):
+            setattr(windows, kwargs_name, getattr(self, kwargs_name))
         return windows
 
 
