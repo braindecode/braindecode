@@ -618,6 +618,7 @@ class EEGWindowsDataset(RecordDataset):
 
         # Create events and epochs:
         events = np.stack([i_start_in_trial, np.zeros(len(self), dtype=int), y], axis=1)
+        events[:, 0] += self.raw.first_samp  # adjust for raw's first sample
         epochs = mne.Epochs(
             raw=self.raw,
             events=events,
