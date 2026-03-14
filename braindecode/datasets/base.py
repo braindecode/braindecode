@@ -650,10 +650,14 @@ class EEGWindowsDataset(RecordDataset):
         window_kwargs.append((self.to_epochs_dataset.__name__, {}))
         setattr(windows, "window_kwargs", window_kwargs)
         if hasattr(self, "raw_preproc_kwargs"):
-            setattr(windows, "raw_preproc_kwargs", getattr(self, "raw_preproc_kwargs"))
+            setattr(
+                windows, "raw_preproc_kwargs", list(getattr(self, "raw_preproc_kwargs"))
+            )
         if hasattr(self, "window_preproc_kwargs"):
             setattr(
-                windows, "window_preproc_kwargs", getattr(self, "window_preproc_kwargs")
+                windows,
+                "window_preproc_kwargs",
+                list(getattr(self, "window_preproc_kwargs")),
             )
 
         return windows
