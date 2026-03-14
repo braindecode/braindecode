@@ -29,6 +29,7 @@ from braindecode.models import (
     ContraWR,
     Deep4Net,
     DeepSleepNet,
+    DGCNN,
     EEGConformer,
     EEGInceptionERP,
     EEGInceptionMI,
@@ -1314,6 +1315,29 @@ def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
         n_samples=batch_size,
     )
     model = ContraWR(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (128, 62, 256.0, 4),
+        (256, 32, 512.0, 2),
+    ],
+)
+def test_dgcnn_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 8
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = DGCNN(
         n_chans=n_chans,
         n_outputs=n_outputs,
         n_times=n_times,

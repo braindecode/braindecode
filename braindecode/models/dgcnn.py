@@ -44,6 +44,57 @@ def get_graph_feature(x, k=20, idx=None):
     return feature
 
 class DGCNN(EEGModuleMixin, nn.Module):
+    """DGCNN for EEG classification from Song et al. (2018) [dgcnn]_.
+
+    :bdg-success:`Graph Neural Network`
+
+    Dynamic Graph Convolutional Neural Network (DGCNN) treats EEG electrodes
+    as nodes in a graph and dynamically learns inter-channel relationships
+    using k-nearest neighbors in feature space. Unlike fixed graph methods,
+    the graph is recomputed at each layer based on learned features.
+
+    .. rubric:: Architectural Overview
+
+    1. **Graph Construction (KNN)**: For each electrode, find k nearest
+       neighbors based on feature similarity (not physical position).
+    2. **EdgeConv Blocks**: Four stacked blocks, each computing edge features
+       between neighbors, applying a shared Conv2d, and max-pooling over
+       neighbors to get per-electrode features.
+    3. **Multi-scale Concatenation**: Outputs of all four EdgeConv blocks are
+       concatenated to preserve low-level and high-level features.
+    4. **Global Pooling**: Max and average pooling collapse all electrode
+       features into a single vector.
+    5. **Classification MLP**: Three linear layers produce the final output.
+
+    Parameters
+    ----------
+    n_outputs : int
+        Number of outputs (classes).
+    n_chans : int
+        Number of EEG channels (electrodes = graph nodes).
+    chs_info : list of dict
+        Information about each channel. See :class:`mne.Info`.
+    n_times : int
+        Number of time samples per window. Used as node feature dimension.
+    input_window_seconds : float
+        Length of input window in seconds.
+    sfreq : float
+        Sampling frequency of the EEG recording.
+    k : int
+        Number of nearest neighbors for graph construction. Default is 20.
+    emb_dims : int
+        Embedding dimensions after multi-scale concatenation. Default is 1024.
+    dropout : float
+        Dropout probability in the classification head. Default is 0.5.
+
+    References
+    ----------
+    .. [dgcnn] Song, T., Zheng, W., Song, P., & Cui, Z. (2018). EEG emotion
+        recognition using dynamical graph convolutional neural networks.
+        IEEE Transactions on Affective Computing, 11(3), 532-541.
+        https://doi.org/10.1109/TAFFC.2018.2817622
+    """
+
     def __init__(self,
             n_outputs=40,
             n_chans=None,
