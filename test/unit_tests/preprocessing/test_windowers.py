@@ -1507,3 +1507,85 @@ def test_dict_params_bad_trial_dropped_extras_not_misassigned():
     assert (t0_meta["trial_id"] == 30).all(), (
         f"Expected trial_id=30 for surviving T0 windows, got {t0_meta['trial_id'].tolist()}"
     )
+
+
+def _make_small_eeg_windows_dataset(lazy_loadable_dataset):
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        start_offset_samples=0,
+        stop_offset_samples=200,
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=True,
+        use_mne_epochs=False,
+    )
+    return windows.datasets[0]
+
+
+def test_to_epochs_dataset_raises_when_targets_not_from_metadata(lazy_loadable_dataset):
+    eeg_ds = _make_small_eeg_windows_dataset(lazy_loadable_dataset)
+    eeg_ds.targets_from = "channels"
+
+    with pytest.raises(
+        ValueError,
+        match="to_epochs_dataset only works if targets are obtained from metadata.",
+    ):
+        eeg_ds.to_epochs_dataset()
+
+
+def test_to_epochs_dataset_raises_on_inconsistent_window_sizes(lazy_loadable_dataset):
+    eeg_ds = _make_small_eeg_windows_dataset(lazy_loadable_dataset)
+    bad_metadata = eeg_ds.metadata.copy()
+    bad_metadata.loc[bad_metadata.index[0], "i_stop_in_trial"] += 1
+    bad_eeg_ds = EEGWindowsDataset(
+        raw=eeg_ds.raw,
+        metadata=bad_metadata,
+        description=eeg_ds.description,
+        transform=eeg_ds.transform,
+        targets_from=eeg_ds.targets_from,
+        last_target_only=eeg_ds.last_target_only,
+    )
+
+    with pytest.raises(ValueError, match="Windows have inconsistent sizes."):
+        bad_eeg_ds.to_epochs_dataset()
+
+
+def test_to_epochs_dataset_raises_on_empty_windows(lazy_loadable_dataset):
+    eeg_ds = _make_small_eeg_windows_dataset(lazy_loadable_dataset)
+    empty_metadata = eeg_ds.metadata.iloc[0:0].copy()
+    empty_eeg_ds = EEGWindowsDataset(
+        raw=eeg_ds.raw,
+        metadata=empty_metadata,
+        description=eeg_ds.description,
+        transform=eeg_ds.transform,
+        targets_from=eeg_ds.targets_from,
+        last_target_only=eeg_ds.last_target_only,
+    )
+
+    with pytest.raises(ValueError, match="No windows to convert."):
+        empty_eeg_ds.to_epochs_dataset()
+
+
+def test_to_epochs_dataset_is_consistent(lazy_loadable_dataset):
+    eeg_ds = _make_small_eeg_windows_dataset(lazy_loadable_dataset)
+    eeg_ds.raw_preproc_kwargs = [{"name": "dummy", "kwargs": {"a": 1}}]
+
+    epochs_ds = eeg_ds.to_epochs_dataset()
+
+    assert isinstance(epochs_ds, WindowsDataset)
+    assert isinstance(epochs_ds.windows, mne.Epochs)
+    assert len(epochs_ds) == len(eeg_ds)
+    assert epochs_ds.targets_from == eeg_ds.targets_from
+    assert epochs_ds.last_target_only == eeg_ds.last_target_only
+    assert epochs_ds.transform is eeg_ds.transform
+    assert epochs_ds.description.equals(eeg_ds.description)
+    assert epochs_ds.windows.metadata is not None
+    assert epochs_ds.windows.metadata.equals(eeg_ds.metadata)
+
+    assert epochs_ds.raw_preproc_kwargs == eeg_ds.raw_preproc_kwargs
+    assert epochs_ds.raw_preproc_kwargs is not eeg_ds.raw_preproc_kwargs
+
+    for (x_eeg, y_eeg, crop_eeg), (x_epo, y_epo, crop_epo) in zip(eeg_ds, epochs_ds):
+        np.testing.assert_allclose(x_epo, x_eeg)
+        assert y_epo == y_eeg
+        assert crop_epo == crop_eeg
