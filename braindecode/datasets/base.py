@@ -579,6 +579,89 @@ class EEGWindowsDataset(RecordDataset):
             self.metadata,
         )
 
+    def to_epochs_dataset(self) -> WindowsDataset:
+        """Converts this :class:`EEGWindowsDataset` to :class:`WindowsDataset` with ``mne.Epochs``.
+
+        In Braindecode, the data can either be stored as ``mne.io.Raw`` (in :class:`EEGWindowsDataset`)
+        or as ``mne.Epochs`` (in :class:`WindowsDataset`). This function converts from the first type to the second,
+        which can be useful for reducing disk space when you want to save a dataset.
+
+        Returns
+        -------
+        WindowsDataset
+            A new :class:`WindowsDataset` with ``mne.Epochs``.
+
+        Raises
+        ------
+        ValueError
+            If the dataset is not compatible with conversion. This includes:
+            - If targets are not obtained from metadata
+            - If windows have inconsistent sizes or there are no windows to convert
+            - If raw.first_samp!=0 (not supported for simplicity)
+        """
+        # Check the targets:
+        if self.targets_from != "metadata":
+            raise ValueError(
+                "to_epochs_dataset only works if targets are obtained from metadata."
+            )
+
+        # Check and get window sizes:
+        i_start_in_trial = self.crop_inds[:, 1]
+        i_stop_in_trial = self.crop_inds[:, 2]
+        sizes = np.unique(i_stop_in_trial - i_start_in_trial)
+        if len(sizes) > 1:
+            raise ValueError("Windows have inconsistent sizes.")
+        if len(sizes) != 1:
+            raise ValueError("No windows to convert.")
+        input_window_seconds = (sizes[0] - 1) / self.raw.info["sfreq"]
+
+        # Check raw.first_samp:
+        if self.raw.first_samp != 0:
+            raise ValueError(
+                f"to_epochs_dataset only works if raw.first_samp is 0, found {self.raw.first_samp=}"
+            )
+
+        # Create events and epochs:
+        events = np.zeros((len(self), 3), dtype=int)
+        events[:, 0] = i_start_in_trial
+        events[:, 2] = 1
+        epochs = mne.Epochs(
+            raw=self.raw,
+            events=events,
+            event_id={"window": 1},
+            tmin=0,
+            tmax=input_window_seconds,
+            metadata=self.metadata.copy(),
+            baseline=None,
+        )
+        # we skip dropping bads to be consistent with EEGWindowsDataset:
+        epochs._bad_dropped = True
+
+        # Populate new WindowsDataset:
+        windows = WindowsDataset(
+            epochs,
+            description=self.description,
+            transform=self.transform,
+            targets_from=self.targets_from,
+            last_target_only=self.last_target_only,
+        )
+
+        window_kwargs = list(getattr(self, "window_kwargs", []))
+        window_kwargs.append((self.to_epochs_dataset.__name__, {}))
+        setattr(windows, "window_kwargs", window_kwargs)
+        if hasattr(self, "raw_preproc_kwargs"):
+            setattr(
+                windows, "raw_preproc_kwargs", list(getattr(self, "raw_preproc_kwargs"))
+            )
+        if hasattr(self, "window_preproc_kwargs"):
+            setattr(
+                windows,
+                "window_preproc_kwargs",
+                list(getattr(self, "window_preproc_kwargs")),
+            )
+
+        return windows
+
 
 @register_dataset
 class WindowsDataset(RecordDataset):
@@ -732,7 +815,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
     def __init__(
         self,
-        list_of_ds: list[T | BaseConcatDataset[T]],
+        list_of_ds: (
+            list[T] | list[BaseConcatDataset[T]] | list[T | BaseConcatDataset[T]]
+        ),
         target_transform: Callable | None = None,
         *,
         lazy: bool = False,
@@ -1309,3 +1394,40 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
     def _repr_html_(self):
         return self._build_repr().to_html()
+
+    def to_epochs_dataset(self) -> BaseConcatDataset[WindowsDataset]:
+        """Converts this :class:`BaseConcatDataset` such that all datasets are :class:`WindowsDataset` with ``mne.Epochs``.
+
+        In Braindecode, the data can either be stored as ``mne.io.Raw`` (in :class:`EEGWindowsDataset`)
+        or as ``mne.Epochs`` (in :class:`WindowsDataset`). This function converts all the underlying datasets to
+        :class:`WindowsDataset` with ``mne.Epochs``.
+        This can be useful for reducing disk space when you want to save a dataset.
+
+        Returns
+        -------
+        BaseConcatDataset[WindowsDataset]
+            A new :class:`BaseConcatDataset` where all datasets are :class:`WindowsDataset` with ``mne.Epochs``.
+
+        Raises
+        ------
+        ValueError
+            If any of the underlying datasets is a :class:`RawDataset` or any other type that is not
+            :class:`EEGWindowsDataset` or :class:`WindowsDataset`, as they cannot be converted to epochs.
+        """
+        datasets = self.datasets
+        if not all(
+            isinstance(ds, (EEGWindowsDataset, WindowsDataset)) for ds in datasets
+        ):
+            raise ValueError(
+                "All datasets must be EEGWindowsDataset or WindowsDataset to convert to WindowsDataset."
+            )
+        new_datasets: list[WindowsDataset] = []
+        for ds in datasets:
+            if isinstance(ds, EEGWindowsDataset):
+                new_ds = ds.to_epochs_dataset()
+                new_datasets.append(new_ds)
+            elif isinstance(ds, WindowsDataset):
+                new_datasets.append(ds)
+        return BaseConcatDataset(
+            new_datasets, target_transform=self.target_transform, lazy=self._lazy
+        )

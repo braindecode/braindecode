@@ -45,16 +45,25 @@ def _restore_nan_from_json(obj):
 
 
 def _save_windows_to_zarr(
-    grp, data, metadata, description, info, compressor, target_name
+    grp, data, metadata, description, info, compressor, target_name, chunk_size
 ):
     """Save windowed data to Zarr group (low-level function)."""
     data_array = data.astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
 
+    max_windows_per_chunk = max(
+        1, chunk_size // (data_array.shape[1] * data_array.shape[2])
+    )
+    n_windows_per_chunk = min(data_array.shape[0], max_windows_per_chunk)
+
     grp.create_array(
         "data",
         data=data_array,
-        chunks=(1, data_array.shape[1], data_array.shape[2]),
+        chunks=(
+            n_windows_per_chunk,
+            data_array.shape[1],
+            data_array.shape[2],
+        ),
         compressors=compressors_list,
     )
 
@@ -70,17 +79,28 @@ def _save_windows_to_zarr(
 
 
 def _save_eegwindows_to_zarr(
-    grp, raw, metadata, description, info, targets_from, last_target_only, compressor
+    grp,
+    raw,
+    metadata,
+    description,
+    info,
+    targets_from,
+    last_target_only,
+    compressor,
+    chunk_size,
 ):
     """Save EEG continuous raw data to Zarr group (low-level function)."""
     continuous_data = raw.get_data()
     continuous_float = continuous_data.astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
 
+    max_samples_per_chunk = max(1, chunk_size // continuous_float.shape[0])
+    n_samples_per_chunk = min(continuous_float.shape[1], max_samples_per_chunk)
+
     grp.create_array(
         "data",
         data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
+        chunks=(continuous_float.shape[0], n_samples_per_chunk),
         compressors=compressors_list,
     )
 
@@ -143,16 +163,19 @@ def _load_eegwindows_from_zarr(grp, preload):
     return data, metadata, description, info_dict, targets_from, last_target_only
 
 
-def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor):
+def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chunk_size):
     """Save RawDataset continuous raw data to Zarr group (low-level function)."""
     continuous_data = raw.get_data()
     continuous_float = continuous_data.astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
 
+    max_samples_per_chunk = max(1, chunk_size // continuous_float.shape[0])
+    n_samples_per_chunk = min(continuous_float.shape[1], max_samples_per_chunk)
+
     grp.create_array(
         "data",
         data=continuous_float,
-        chunks=(continuous_float.shape[0], min(10000, continuous_float.shape[1])),
+        chunks=(continuous_float.shape[0], n_samples_per_chunk),
         compressors=compressors_list,
     )
 

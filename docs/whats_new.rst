@@ -59,6 +59,7 @@ Enhancements
 - Per-event-type windowing parameters in :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`942` by `Pierre Guetschel`_)
 - Add ``use_mne_epochs`` support to :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`943` by `Pierre Guetschel`_)
 - Faster loading from epochs on disk with :class:`braindecode.datasets.base.WindowsDataset` (:gh:`944` by `Pierre Guetschel`_)
+- Add possibility to convert :class:`braindecode.datasets.base.EEGWindowsDataset` to :class:`braindecode.datasets.base.WindowsDataset` for efficient storage (:gh:`952` by `Pierre Guetschel`_)
 
 API changes
 ============
@@ -81,6 +82,7 @@ Bugs
 - Fix Zenodo citation: update to global concept DOI and add BibTeX/APA citation formats
   in ``docs/cite.rst``, ``README.rst``, ``CITATION.cff``, and ``docs/conf.py``
   (:gh:`937` by `Bruno Aristimunha`_)
+- Push large datasets to HuggingFace Hub using :func:`huggingface_hub.upload_large_folder` to avoid limitations, and allow resuming downloads (:gh:`945` and :gh:`953` by `Pierre Guetschel`_)
 
 Code health
 ============
