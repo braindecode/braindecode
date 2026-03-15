@@ -2874,60 +2874,69 @@ def test_bendr_dropout_configurations(drop_prob):
         )
 
 
-def test_bendr_encoder_only():
-    """Test BENDR encoder-only mode forward pass with 3D inputs."""
+@pytest.mark.parametrize(
+    "n_chans,n_outputs,encoder_only,n_chans_pretrained,final_layer,expected",
+    [
+        (20, 4, True, None, True, (2, 4)),       # encoder-only basic
+        (20, 2, True, None, True, (2, 2)),        # encoder-only binary
+        (20, 10, True, None, True, (2, 10)),      # encoder-only multi-class
+        (20, 4, True, None, False, (2, 2048)),    # encoder-only no final layer
+        (64, 4, False, 20, True, (2, 4)),         # channel projection only
+        (64, 4, True, 20, True, (2, 4)),          # channel projection + encoder-only
+    ],
+)
+def test_bendr_encoder_only_and_channel_projection(
+    n_chans, n_outputs, encoder_only, n_chans_pretrained, final_layer, expected,
+):
+    """Test output shapes for encoder-only and channel projection configs."""
     set_random_seeds(0, False)
 
     model = BENDR(
-        n_chans=20,
-        n_outputs=4,
-        n_times=None,
-        sfreq=256,
-        input_window_seconds=20.0,
-        encoder_only=True,
+        n_chans=n_chans, n_outputs=n_outputs, n_times=5120, sfreq=256,
+        encoder_only=encoder_only, n_chans_pretrained=n_chans_pretrained,
+        final_layer=final_layer,
     )
-
-    input_sizes = dict(n_channels=20, n_in_times=5120, n_classes=4, n_samples=2)
-    check_forward_pass_3d(model, input_sizes)
-
-
-def test_bendr_encoder_only_output_shapes():
-    """Test encoder-only output shapes; raw feature dim is encoder_h*4 = 2048."""
-    set_random_seeds(0, False)
-
-    model_binary = BENDR(
-        n_chans=20, n_outputs=2, n_times=5120, sfreq=256, encoder_only=True,
-    )
-    x = torch.randn(4, 20, 5120)
-    y = model_binary(x)
-    assert y.shape == (4, 2), f"Expected (4, 2), got {y.shape}"
-
-    model_multi = BENDR(
-        n_chans=20, n_outputs=10, n_times=5120, sfreq=256, encoder_only=True,
-    )
-    y = model_multi(x)
-    assert y.shape == (4, 10), f"Expected (4, 10), got {y.shape}"
-
-    model_no_final = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256,
-        encoder_only=True, final_layer=False,
-    )
-    y = model_no_final(x)
-    assert y.shape == (4, 2048), f"Expected (4, 2048), got {y.shape}"
-
-
-def test_bendr_encoder_only_gradient_flow():
-    """Encoder has gradients, contextualizer does NOT in encoder-only mode."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
-    )
-    x = torch.randn(2, 20, 5120, requires_grad=True)
-
+    x = torch.randn(2, n_chans, 5120)
     y = model(x)
-    loss = y.sum()
-    loss.backward()
+    assert y.shape == expected, f"Expected {expected}, got {y.shape}"
+
+    if n_chans_pretrained and n_chans != n_chans_pretrained:
+        assert model.channel_projection is not None
+
+
+@pytest.mark.parametrize("n_times", [2560, 5120, 10240])
+def test_bendr_encoder_only_variable_length(n_times):
+    """Test encoder-only mode with variable input lengths."""
+    set_random_seeds(0, False)
+
+    model = BENDR(
+        n_chans=20, n_outputs=4, n_times=None, sfreq=256, encoder_only=True,
+    )
+    x = torch.randn(2, 20, n_times)
+    y = model(x)
+    assert y.shape == (2, 4), f"Failed for length {n_times}: got {y.shape}"
+
+
+@pytest.mark.parametrize(
+    "encoder_only,n_chans,n_chans_pretrained",
+    [
+        (True, 20, None),   # encoder-only: encoder grads, no contextualizer grads
+        (False, 64, 20),    # channel projection: projection has grads
+        (True, 64, 20),     # both combined
+    ],
+)
+def test_bendr_new_features_gradient_flow(
+    encoder_only, n_chans, n_chans_pretrained,
+):
+    """Test gradient flow for encoder-only and channel projection modes."""
+    set_random_seeds(0, False)
+
+    model = BENDR(
+        n_chans=n_chans, n_outputs=4, n_times=5120, sfreq=256,
+        encoder_only=encoder_only, n_chans_pretrained=n_chans_pretrained,
+    )
+    x = torch.randn(2, n_chans, 5120, requires_grad=True)
+    model(x).sum().backward()
 
     encoder_has_grad = any(
         p.grad is not None and p.grad.abs().sum() > 0
@@ -2935,12 +2944,19 @@ def test_bendr_encoder_only_gradient_flow():
     )
     assert encoder_has_grad, "No gradients in encoder"
 
-    contextualizer_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.contextualizer.parameters()
-    )
-    assert not contextualizer_has_grad, \
-        "Contextualizer should have no gradients in encoder-only mode"
+    if encoder_only:
+        ctx_has_grad = any(
+            p.grad is not None and p.grad.abs().sum() > 0
+            for p in model.contextualizer.parameters()
+        )
+        assert not ctx_has_grad, "Contextualizer should have no grads"
+
+    if model.channel_projection is not None:
+        proj_has_grad = any(
+            p.grad is not None and p.grad.abs().sum() > 0
+            for p in model.channel_projection.parameters()
+        )
+        assert proj_has_grad, "No gradients in channel projection"
 
 
 def test_bendr_encoder_only_parameter_counts():
@@ -2954,78 +2970,34 @@ def test_bendr_encoder_only_parameter_counts():
         n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
     )
 
-    enc_full = sum(p.numel() for p in model_full.encoder.parameters())
-    enc_only = sum(p.numel() for p in model_enc.encoder.parameters())
-    assert enc_full == enc_only, \
-        f"Encoder params differ: full={enc_full}, encoder_only={enc_only}"
-
-    ctx_full = sum(p.numel() for p in model_full.contextualizer.parameters())
-    ctx_only = sum(p.numel() for p in model_enc.contextualizer.parameters())
-    assert ctx_full == ctx_only, \
-        f"Contextualizer params differ: full={ctx_full}, encoder_only={ctx_only}"
+    for name in ("encoder", "contextualizer"):
+        p_full = sum(p.numel() for p in getattr(model_full, name).parameters())
+        p_enc = sum(p.numel() for p in getattr(model_enc, name).parameters())
+        assert p_full == p_enc, f"{name} params differ: {p_full} vs {p_enc}"
 
     fl_full = sum(p.numel() for p in model_full.final_layer.parameters())
     fl_enc = sum(p.numel() for p in model_enc.final_layer.parameters())
-    assert fl_enc > fl_full, \
-        f"Encoder-only final layer should be larger: full={fl_full}, enc={fl_enc}"
-
-
-def test_bendr_encoder_only_variable_length():
-    """Test encoder-only mode with variable input lengths."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=None, sfreq=256, encoder_only=True,
-    )
-
-    for n_times in [2560, 5120, 10240]:
-        x = torch.randn(2, 20, n_times)
-        y = model(x)
-        assert y.shape == (2, 4), \
-            f"Failed for length {n_times}: got shape {y.shape}"
+    assert fl_enc > fl_full
 
 
 def test_bendr_backward_compatibility():
     """encoder_only=False (default) produces identical output to original."""
     set_random_seeds(0, False)
 
-    model_default = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256,
-    )
+    model_default = BENDR(n_chans=20, n_outputs=4, n_times=5120, sfreq=256)
     model_explicit = BENDR(
         n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=False,
     )
-
     model_explicit.load_state_dict(model_default.state_dict())
     model_default.eval()
     model_explicit.eval()
 
     x = torch.randn(2, 20, 5120)
-    y_default = model_default(x)
-    y_explicit = model_explicit(x)
-
     np.testing.assert_allclose(
-        y_default.detach().numpy(),
-        y_explicit.detach().numpy(),
-        rtol=1e-5,
-        atol=1e-7,
-        err_msg="encoder_only=False should produce identical output to default",
+        model_default(x).detach().numpy(),
+        model_explicit(x).detach().numpy(),
+        rtol=1e-5, atol=1e-7,
     )
-
-
-def test_bendr_channel_projection():
-    """n_chans_pretrained inserts a channel projection layer."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=64, n_outputs=4, n_times=5120, sfreq=256,
-        n_chans_pretrained=20,
-    )
-
-    assert model.channel_projection is not None
-    x = torch.randn(2, 64, 5120)
-    y = model(x)
-    assert y.shape == (2, 4), f"Expected (2, 4), got {y.shape}"
 
 
 def test_bendr_channel_projection_not_created_when_matching():
@@ -3033,57 +3005,18 @@ def test_bendr_channel_projection_not_created_when_matching():
     set_random_seeds(0, False)
 
     model = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256,
-        n_chans_pretrained=20,
+        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, n_chans_pretrained=20,
     )
-
     assert model.channel_projection is None
-
-
-def test_bendr_channel_projection_gradient_flow():
-    """Gradients flow through the channel projection."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=64, n_outputs=4, n_times=5120, sfreq=256,
-        n_chans_pretrained=20,
-    )
-    x = torch.randn(2, 64, 5120, requires_grad=True)
-
-    y = model(x)
-    y.sum().backward()
-
-    proj_has_grad = any(
-        p.grad is not None and p.grad.abs().sum() > 0
-        for p in model.channel_projection.parameters()
-    )
-    assert proj_has_grad, "No gradients in channel projection"
-
-
-def test_bendr_channel_projection_with_encoder_only():
-    """Channel projection combined with encoder-only mode."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=64, n_outputs=4, n_times=5120, sfreq=256,
-        n_chans_pretrained=20, encoder_only=True,
-    )
-
-    x = torch.randn(2, 64, 5120)
-    y = model(x)
-    assert y.shape == (2, 4), f"Expected (2, 4), got {y.shape}"
 
 
 def test_bendr_encoder_only_short_input_raises():
     """RuntimeError when input is too short for 4-chunk pooling."""
-    set_random_seeds(0, False)
-
     model = BENDR(
         n_chans=20, n_outputs=4, n_times=None, sfreq=256, encoder_only=True,
     )
-    x = torch.randn(2, 20, 96)
     with pytest.raises(RuntimeError, match="too few"):
-        model(x)
+        model(torch.randn(2, 20, 96))
 
 
 def test_bendr_channel_projection_max_norm():
@@ -3095,12 +3028,10 @@ def test_bendr_channel_projection_max_norm():
         n_chans=64, n_outputs=4, n_times=5120, sfreq=256,
         n_chans_pretrained=20, chan_proj_max_norm=max_norm,
     )
-
-    # renorm(dim=0) constrains per-output-filter norms; weight is [out, in, 1]
     weight = model.channel_projection.weight
     per_filter_norms = weight.reshape(weight.shape[0], -1).norm(p=2, dim=1)
     assert (per_filter_norms <= max_norm + 1e-6).all(), \
-        f"Max-norm constraint violated: max filter norm = {per_filter_norms.max().item()}"
+        f"Max-norm violated: max={per_filter_norms.max().item()}"
 
 
 @pytest.mark.parametrize(
