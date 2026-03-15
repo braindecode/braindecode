@@ -3074,6 +3074,18 @@ def test_bendr_channel_projection_with_encoder_only():
     assert y.shape == (2, 4), f"Expected (2, 4), got {y.shape}"
 
 
+def test_bendr_encoder_only_short_input_raises():
+    """RuntimeError when input is too short for 4-chunk pooling."""
+    set_random_seeds(0, False)
+
+    model = BENDR(
+        n_chans=20, n_outputs=4, n_times=None, sfreq=256, encoder_only=True,
+    )
+    x = torch.randn(2, 20, 96)
+    with pytest.raises(RuntimeError, match="too few"):
+        model(x)
+
+
 def test_bendr_channel_projection_max_norm():
     """Max-norm constraint is applied to channel projection weights."""
     set_random_seeds(0, False)

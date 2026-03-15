@@ -200,7 +200,8 @@ class BENDR(EEGModuleMixin, nn.Module):
         checkpoint). When set and ``n_chans != n_chans_pretrained``, a 1x1 Conv1d with
         max-norm constraint projects from ``n_chans`` to ``n_chans_pretrained`` before the
         encoder. This allows fine-tuning pretrained BENDR on datasets with arbitrary channel
-        counts.
+        counts. When using ``from_pretrained``, pass ``strict=False`` since the checkpoint
+        will not contain ``channel_projection`` weights.
     chan_proj_max_norm : float, default=1.0
         Max-norm constraint value for the channel projection weights.
     """
@@ -292,7 +293,7 @@ class BENDR(EEGModuleMixin, nn.Module):
 
         self.final_layer = None
         if self.include_final_layer:
-            # Input to Linear will be [batch_size, encoder_h] after taking last timestep
+            # in_features: encoder_h*4 (encoder_only) or encoder_h (full model)
             linear = nn.Linear(in_features=in_features, out_features=self.n_outputs)
             self.final_layer = nn.utils.parametrizations.weight_norm(
                 linear, name="weight", dim=1
