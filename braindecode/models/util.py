@@ -133,6 +133,7 @@ models_mandatory_parameters: list[
         },
     ),
     ("CBraMod", ["n_outputs"], None),
+    ("DGCNN", ["n_chans", "n_outputs", "n_times"], None),
 ]
 
 ################################################################

@@ -1,6 +1,7 @@
-# Authors: Yue Wang <yuewangx@mit.edu>
+# Authors: Vandit Shah <shahvanditt@gmail.com>
 #
 # Code adapted from https://github.com/WangYueFt/dgcnn
+# Original authors: Yue Wang <yuewangx@mit.edu>
 #
 # License: BSD (3-clause)
 
