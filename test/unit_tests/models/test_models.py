@@ -3096,10 +3096,11 @@ def test_bendr_channel_projection_max_norm():
         n_chans_pretrained=20, chan_proj_max_norm=max_norm,
     )
 
+    # renorm(dim=0) constrains per-output-filter norms; weight is [out, in, 1]
     weight = model.channel_projection.weight
-    row_norms = weight.norm(p=2, dim=0)
-    assert (row_norms <= max_norm + 1e-6).all(), \
-        f"Max-norm constraint violated: max row norm = {row_norms.max().item()}"
+    per_filter_norms = weight.reshape(weight.shape[0], -1).norm(p=2, dim=1)
+    assert (per_filter_norms <= max_norm + 1e-6).all(), \
+        f"Max-norm constraint violated: max filter norm = {per_filter_norms.max().item()}"
 
 
 @pytest.mark.parametrize(

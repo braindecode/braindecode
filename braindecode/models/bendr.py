@@ -308,17 +308,14 @@ class BENDR(EEGModuleMixin, nn.Module):
         if self.encoder_only:
             # 4-chunk temporal pooling (Kostas et al. 2021, Section 2.4)
             n_time = encoded.shape[2]
-            chunk_size = n_time // 4
-            if chunk_size == 0:
+            if n_time < 4:
                 raise RuntimeError(
                     f"Encoder output has {n_time} time steps, which is too few "
                     f"for 4-chunk pooling (need at least 4). Increase input length."
                 )
-            remainder = n_time % 4
-            if remainder > 0:
-                encoded = encoded[:, :, : 4 * chunk_size]
-            chunks = encoded.reshape(encoded.shape[0], encoded.shape[1], 4, chunk_size)
-            feature = chunks.mean(dim=3).reshape(encoded.shape[0], -1)
+            # Use tensor_split for uneven chunks so no frames are dropped
+            chunks = torch.tensor_split(encoded, 4, dim=2)
+            feature = torch.cat([c.mean(dim=2) for c in chunks], dim=1)
             # feature: [batch_size, encoder_h * 4]
         else:
             context = self.contextualizer(encoded)
