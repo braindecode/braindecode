@@ -174,7 +174,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = einops.rearrange(x, "b c t -> b t c")
         block_outputs = []
-        n_neighbors = min(self.n_neighbors, x.shape[1] - 1)
+        n_neighbors = min(self.n_neighbors, x.shape[2] - 1)
 
         for edge_conv in self.edge_convs:
             x = get_graph_feature(x, n_neighbors=n_neighbors)
