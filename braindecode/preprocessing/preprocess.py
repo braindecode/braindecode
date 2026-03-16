@@ -425,7 +425,7 @@ def exponential_moving_standardize(
 ):
     r"""Perform exponential moving standardization.
 
-    Compute the exponental moving mean :math:`m_t` at time `t` as
+    Compute the exponential moving mean :math:`m_t` at time `t` as
     a weighted average:
     :math:`m_t = \frac{\sum_{i=0}^t (1-\alpha)^i x_{t-i}}{\sum_{i=0}^t (1-\alpha)^i}`
     where :math:`\alpha` is ``factor_new``.
@@ -460,7 +460,7 @@ def exponential_moving_standardize(
     # N_t = x_t + (1-alpha) * N_{t-1}, N_0 = x_0
     # D_t = 1 + (1-alpha) * D_{t-1}, D_0 = 1
     alpha = factor_new
-    n_channels, n_times = data.shape
+    _, n_times = data.shape
     inv_alpha = 1.0 - alpha
 
     # Filter a sequence of ones: [1, 1+(1-a), 1+(1-a)+(1-a)^2, ...]
@@ -490,14 +490,14 @@ def exponential_moving_standardize(
 def exponential_moving_demean(
     data: NDArray, factor_new: float = 0.001, init_block_size: int | None = None
 ):
-    r"""Perform exponential moving demeanining.
+    r"""Perform exponential moving demeaning.
 
-    Compute the exponental moving mean :math:`m_t` at time `t` as
+    Compute the exponential moving mean :math:`m_t` at time `t` as
     a weighted average:
     :math:`m_t = \frac{\sum_{i=0}^t (1-\alpha)^i x_{t-i}}{\sum_{i=0}^t (1-\alpha)^i}`
     where :math:`\alpha` is ``factor_new``.
 
-    Deman the data point :math:`x_t` at time `t` as:
+    Demean the data point :math:`x_t` at time `t` as:
     :math:`x'_t=(x_t - m_t)`.
 
     Parameters
@@ -516,7 +516,7 @@ def exponential_moving_demean(
         raise ValueError(f"factor_new must be between 0 and 1, got {factor_new}")
 
     alpha = factor_new
-    n_channels, n_times = data.shape
+    _, n_times = data.shape
     inv_alpha = 1.0 - alpha
 
     d = lfilter([1.0], [1.0, -inv_alpha], np.ones(n_times))
