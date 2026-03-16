@@ -177,7 +177,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
         n_neighbors = min(self.n_neighbors, x.shape[1] - 1)
 
         for edge_conv in self.edge_convs:
-            x = get_graph_feature(x, n_neighbors=n_neighbors)            
+            x = get_graph_feature(x, n_neighbors=n_neighbors)
             x = edge_conv(x)
             x = x.max(dim=-1, keepdim=False)[0]
             block_outputs.append(x)
