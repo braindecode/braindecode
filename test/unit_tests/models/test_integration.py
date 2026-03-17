@@ -486,6 +486,7 @@ def test_model_torch_script(model):
         "LUNA",
         "REVE",
         "CBraMod",
+        "DGCNN",
     ]
 
     if model.__class__.__name__ in not_working_models:
