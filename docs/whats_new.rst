@@ -86,6 +86,10 @@ Bugs
   runtime shape mismatches when the reduced channel count differs from the reduction rate
   (:gh:`889` by `Sarthak Tayal`_)
 - Push large datasets to HuggingFace Hub using :func:`huggingface_hub.upload_large_folder` to avoid limitations, and allow resuming downloads (:gh:`945` and :gh:`953` by `Pierre Guetschel`_)
+- Fix :class:`braindecode.models.LUNA` channel location embeddings repeated along
+  batch dimension instead of patch dimension in ``prepare_tokens``, and include
+  pretrained weight typo mapping in ``self.mapping``
+  (:gh:`887` by `Sarthak Tayal`_)
 
 Code health
 ============
