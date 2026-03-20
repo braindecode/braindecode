@@ -83,6 +83,9 @@ Bugs
 - Fix Zenodo citation: update to global concept DOI and add BibTeX/APA citation formats
   in ``docs/cite.rst``, ``README.rst``, ``CITATION.cff``, and ``docs/conf.py``
   (:gh:`937` by `Bruno Aristimunha`_)
+- Fix channel reduction in :class:`braindecode.modules.SqueezeAndExcitation` to avoid
+  runtime shape mismatches when the reduced channel count differs from the reduction rate
+  (:gh:`889` by `Sarthak Tayal`_)
 - Push large datasets to HuggingFace Hub using :func:`huggingface_hub.upload_large_folder` to avoid limitations, and allow resuming downloads (:gh:`945` and :gh:`953` by `Pierre Guetschel`_)
 
 Code health

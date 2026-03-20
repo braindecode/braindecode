@@ -8,6 +8,7 @@ AttentionBaseNet class.
 
 # Authors: Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -60,7 +61,7 @@ class SqueezeAndExcitation(nn.Module):
         )
         self.nonlinearity = nn.ReLU()
         self.fc2 = nn.Conv2d(
-            in_channels=reduction_rate,
+            in_channels=sq_channels,
             out_channels=in_channels,
             kernel_size=1,
             bias=bias,
