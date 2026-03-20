@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import mne
 import numpy as np
 import torch
 import torch.nn as nn
@@ -129,21 +130,30 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
     np.ndarray, shape (n_chans, n_chans)
         Symmetric adjacency matrix :math:`\mathbf{W}`.
 
-    Raises
-    ------
-    ValueError
-        If valid 3-D electrode positions cannot be extracted from
-        ``chs_info``.
+    Notes
+    -----
+    If valid 3-D positions cannot be extracted from ``chs_info``,
+    channel names are looked up in the ``standard_1005`` MNE montage.
+    If that also fails (or ``chs_info`` is ``None``)
     """
     locs = extract_channel_locations_from_chs_info(chs_info, num_channels=n_chans)
 
-    if locs is None:
-        raise ValueError(
-            "DGCNN requires 3-D electrode positions to build the initial "
-            "graph adjacency matrix.  Provide ``chs_info`` with valid "
-            "``'loc'`` entries (e.g. from ``mne.Info['chs']`` with a "
-            "montage set).  See the docstring for details."
-        )
+    if locs is None and chs_info is not None:
+        # Try to infer positions from channel names via a standard montage
+        try:
+            ch_names = [ch["ch_name"] for ch in chs_info[:n_chans]]
+            montage = mne.channels.make_standard_montage("standard_1005")
+            info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
+            info.set_montage(montage, on_missing="raise")
+            locs = extract_channel_locations_from_chs_info(
+                info["chs"], num_channels=n_chans
+            )
+        except Exception:
+            raise ValueError(
+                "Could not extract valid 3-D channel locations from chs_info. "
+                "Please ensure that each entry in chs_info contains a 'loc' key "
+                "with 3-D positions or that channel names match a standard montage."
+            )
 
     k = min(n_neighbors, n_chans - 1)
 
@@ -237,7 +247,7 @@ class _LearnableAdjacency(nn.Module):
 class DGCNN(EEGModuleMixin, nn.Module):
     r"""DGCNN for EEG classification from Song et al. (2018) [dgcnn]_.
 
-    :bdg-light:`Graph Neural Network`
+    :bdg-light:`Graph Neural Network` :bdg-dark-line:`Channel`
 
     .. figure:: ../docs/_static/model/DGCNN.gif
         :align: center
@@ -276,24 +286,14 @@ class DGCNN(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_outputs : int
-        Number of outputs of the model (number of classes :math:`C`).
-    n_chans : int
-        Number of EEG channels (graph nodes :math:`N`).
-    chs_info : list of dict
-        **Required.**  Information about each channel, typically obtained
-        from ``mne.Info['chs']``.  Each entry must contain a ``'loc'``
+    chs_info : list of dict, optional
+        Information about each channel, typically obtained from
+        ``mne.Info['chs']``.  Each entry must contain a ``'loc'``
         key with 3-D electrode positions so the initial adjacency
         matrix can be built from spatial proximity (Eq. 1).  A montage
         must be set on the ``mne.Info`` object (see
-        :meth:`mne.Info.set_montage`).
-    n_times : int
-        Number of time samples per window.  Used as the input feature
-        dimension per node.
-    input_window_seconds : float
-        Length of input window in seconds.
-    sfreq : float
-        Sampling frequency of the EEG recording.
+        :meth:`mne.Info.set_montage`).  If ``None`` or positions
+        cannot be extracted, raised ValueError (see Notes).
     n_filters : int, default=64
         Number of spectral graph-convolutional filters.  This is the
         output feature dimension per node produced by the Chebyshev
@@ -308,6 +308,9 @@ class DGCNN(EEGModuleMixin, nn.Module):
         initial adjacency matrix (Eq. 1).
     mlp_dims : tuple[int, ...], default=(256,)
         Hidden-layer sizes of the fully connected classification head.
+    activation : type[nn.Module], default=nn.ReLU
+        Activation function class used after the graph convolution and
+        in the classification head.
     drop_prob : float, default=0.5
         Dropout probability in the classification head.
 
@@ -321,17 +324,18 @@ class DGCNN(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        n_filters=64,
-        cheb_order=2,
-        n_neighbors=5,
-        mlp_dims=(256,),
-        drop_prob=0.5,
+        n_outputs: int | None = None,
+        n_chans: int | None = None,
+        chs_info: list[dict] | None = None,
+        n_times: int | None = None,
+        input_window_seconds: float | None = None,
+        sfreq: float | None = None,
+        n_filters: int = 64,
+        cheb_order: int = 2,
+        n_neighbors: int = 5,
+        mlp_dims: tuple[int, ...] = (256,),
+        activation: type[nn.Module] = nn.ReLU,
+        drop_prob: float = 0.5,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -344,12 +348,15 @@ class DGCNN(EEGModuleMixin, nn.Module):
 
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq
 
+        self.activation = activation()
         self.drop_prob = drop_prob
 
         # Learnable adjacency W* (Section 3.1, Algorithm 1)
+        # Use self.chs_info (populated by EEGModuleMixin with defaults
+        # when chs_info=None) so that the adjacency can always be built.
         self.learned_adj = _LearnableAdjacency(
             n_chans=self.n_chans,
-            chs_info=chs_info,
+            chs_info=self.chs_info,
             n_neighbors=n_neighbors,
         )
 
@@ -368,13 +375,12 @@ class DGCNN(EEGModuleMixin, nn.Module):
         layers = []
         for mlp_out in mlp_dims:
             layers.append(nn.Linear(fc_in, mlp_out))
-            layers.append(nn.ReLU())
+            layers.append(activation())
             layers.append(nn.Dropout(p=drop_prob))
             fc_in = mlp_out
 
-        self.final_layer = nn.Linear(fc_in, self.n_outputs)
-        layers.append(self.final_layer)
         self.classifier = nn.Sequential(*layers)
+        self.final_layer = nn.Linear(fc_in, self.n_outputs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         r"""Forward pass through the DGCNN pipeline (Fig. 2).
@@ -397,6 +403,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
             Class logits.
         """
         laplacian = self.learned_adj()
-        x = F.relu(self.graph_conv(x, laplacian) + self.graph_bias)
+        x = self.activation(self.graph_conv(x, laplacian) + self.graph_bias)
         x = x.reshape(x.size(0), -1)
-        return self.classifier(x)
+        x = self.classifier(x)
+        return self.final_layer(x)

@@ -144,7 +144,6 @@ categories can be found in the respective sections below.
       :width: 90%
       :align: center
       :alt: Diagram of GNN models
-      :figclass: unavailable
       :class: no-scaled-link
 
      Treats channels/regions as nodes with learned/static edges to model connectivity.
