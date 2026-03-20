@@ -13,7 +13,7 @@
     :height: 56px
     :class: heading-icon no-scaled-link
 
-:bdg-success:`Graph Neural Network`
+:bdg-light:`Graph Neural Network`
 
 This category contains graph-based models that treat EEG electrodes as graph nodes and
 learn inter-channel relationships dynamically.
