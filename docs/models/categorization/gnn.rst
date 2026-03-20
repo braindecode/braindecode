@@ -21,8 +21,9 @@ learn inter-channel relationships dynamically.
 .. rubric:: Available Models
 
 - :class:`DGCNN` — Dynamic Graph Convolutional Neural Network. Treats electrodes as
-  nodes, builds a k-NN graph in feature space at each layer, and uses EdgeConv blocks to
-  learn multi-scale spatial relationships. Based on Song et al. (2018).
+  graph nodes and learns the adjacency matrix jointly with all other parameters via
+  back-propagation. Uses Chebyshev spectral graph convolution to extract spatial
+  features from the learned graph Laplacian. Based on Song et al. (2018).
 
 .. include:: ../../links.inc
 
