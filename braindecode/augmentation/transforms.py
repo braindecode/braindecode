@@ -2,6 +2,7 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #          Bruna Lopes <brunajaflopes@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -600,8 +601,8 @@ class BandstopFilter(Transform):
 
         # Prevents transitions from going below 0 and above max_freq
         notched_freqs = self.rng.uniform(
-            low=1 + 2 * self.bandwidth,
-            high=self.max_freq - 1 - 2 * self.bandwidth,
+            low=1 + self.bandwidth / 2,  # was 2*bw, should be bw/2 per docstring
+            high=self.max_freq - 1 - self.bandwidth / 2,  # same fix here
             size=X.shape[0],
         )
         return {

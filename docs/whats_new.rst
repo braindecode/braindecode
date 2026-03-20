@@ -86,6 +86,9 @@ Bugs
   runtime shape mismatches when the reduced channel count differs from the reduction rate
   (:gh:`889` by `Sarthak Tayal`_)
 - Push large datasets to HuggingFace Hub using :func:`huggingface_hub.upload_large_folder` to avoid limitations, and allow resuming downloads (:gh:`945` and :gh:`953` by `Pierre Guetschel`_)
+- Fix :class:`braindecode.augmentation.BandstopFilter` notch center frequency range
+  using ``bandwidth/2`` instead of ``2*bandwidth`` to match docstring
+  (:gh:`548` by `Sarthak Tayal`_)
 
 Code health
 ============
