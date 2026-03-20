@@ -237,7 +237,7 @@ class _LearnableAdjacency(nn.Module):
 class DGCNN(EEGModuleMixin, nn.Module):
     r"""DGCNN for EEG classification from Song et al. (2018) [dgcnn]_.
 
-    :bdg-success:`Graph Neural Network`
+    :bdg-light:`Graph Neural Network`
 
     .. figure:: ../docs/_static/model/DGCNN.gif
         :align: center
