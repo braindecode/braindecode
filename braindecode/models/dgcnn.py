@@ -2,8 +2,8 @@
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # Architecture based on Song et al. (2018):
-#   Official TensorFlow code: http://aip.seu.edu.cn/songtengfei
-#   (archived at EEG-TAC-official/lib/models.py)
+#   Official TensorFlow code archived at:
+#   http://web.archive.org/web/20221122064435/http://aip.seu.edu.cn/wp-content/uploads/2021/08/EEG-TAC.zip
 #
 # License: BSD (3-clause)
 
@@ -13,21 +13,48 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.metrics import pairwise_distances
+from sklearn.neighbors import kneighbors_graph
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import extract_channel_locations_from_chs_info
 
 
 class _GraphConvolution(nn.Module):
-    """Chebyshev spectral graph convolution layer.
+    r"""Chebyshev spectral graph convolution with :math:`1 \times 1` mixing.
+
+    Implements Equations 11-13 of Song et al. (2018).  The spectral
+    filter :math:`g(\boldsymbol{\Lambda}^*)` is approximated by a
+    :math:`K`-order Chebyshev polynomial expansion:
+
+    .. math::
+
+        \mathbf{y}
+        = \sum_{k=0}^{K-1} \theta_k\, T_k(\tilde{\mathbf{L}}^*)\,\mathbf{x},
+
+    where :math:`T_k` are Chebyshev polynomials of the first kind
+    computed recursively (Eq. 12):
+
+    .. math::
+
+        T_0(x) = 1,\quad T_1(x) = x,\quad
+        T_k(x) = 2x\,T_{k-1}(x) - T_{k-2}(x),\quad k \ge 2,
+
+    and :math:`\tilde{\mathbf{L}}^*` is the rescaled normalized Laplacian.
+    The learnable coefficients :math:`\theta_k` are absorbed into a single
+    linear projection of the concatenated Chebyshev components, which
+    simultaneously acts as a :math:`1 \times 1` convolution that mixes
+    features across frequency bands (see Fig. 2 in the paper).
 
     Parameters
     ----------
     in_features : int
-        Number of input features per node.
+        Number of input features per node (e.g. number of time samples
+        or frequency bands).
     out_features : int
-        Number of output features per node.
+        Number of output features per node (number of spectral filters).
     cheb_order : int
-        Order of Chebyshev polynomial approximation.
+        Order :math:`K` of the Chebyshev polynomial approximation.
     """
 
     def __init__(self, in_features, out_features, cheb_order):
@@ -36,15 +63,24 @@ class _GraphConvolution(nn.Module):
         self.weight = nn.Linear(in_features * cheb_order, out_features, bias=False)
 
     def forward(self, x, laplacian):
-        """
+        r"""Apply Chebyshev graph convolution.
+
+        Computes :math:`[T_0(\mathbf{L})\mathbf{x},\;\ldots,\;
+        T_{K-1}(\mathbf{L})\mathbf{x}]` and projects the concatenation
+        through a learned weight matrix.
+
         Parameters
         ----------
-        x : Tensor, shape (B, n_chans, in_features)
-        laplacian : Tensor, shape (n_chans, n_chans)
+        x : Tensor, shape (B, N, F_in)
+            Input node features, where *N* is the number of graph nodes
+            (EEG channels) and *F_in* the input feature dimension.
+        laplacian : Tensor, shape (N, N)
+            Normalized graph Laplacian.
 
         Returns
         -------
-        Tensor, shape (B, n_chans, out_features)
+        Tensor, shape (B, N, F_out)
+            Filtered node features.
         """
         cheb = [x]  # T_0(L) x = x
 
@@ -57,49 +93,25 @@ class _GraphConvolution(nn.Module):
         return self.weight(torch.cat(cheb, dim=-1))
 
 
-def _extract_positions(chs_info, n_chans):
-    """Extract 3D electrode positions from MNE channel info.
-
-    MNE stores the electrode position at indices ``0:3`` of the ``loc``
-    array.  The utility :func:`extract_channel_locations_from_chs_info`
-    reads indices ``3:6`` (the reference/normal vector), which are often
-    all-zero.  This helper reads the correct indices and validates that
-    the positions are non-degenerate.
-
-    Returns
-    -------
-    np.ndarray of shape (n_chans, 3) or None
-    """
-    if chs_info is None:
-        return None
-
-    positions = []
-    for ch in chs_info[:n_chans]:
-        if not isinstance(ch, dict):
-            return None
-        loc = ch.get("loc")
-        if loc is None:
-            return None
-        loc = np.asarray(loc, dtype=np.float32)
-        if loc.size < 3:
-            return None
-        positions.append(loc[:3])
-
-    positions = np.stack(positions)
-
-    # Check positions are not all zero / degenerate
-    if np.allclose(positions, 0):
-        return None
-
-    return positions
-
-
 def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
-    """Build an initial adjacency matrix from channel spatial positions.
+    r"""Build an initial adjacency matrix from electrode spatial positions.
 
-    Connects each channel to its ``n_neighbors`` nearest spatial
-    neighbors using a Gaussian kernel weight derived from the 3-D
-    electrode coordinates stored in ``chs_info``.
+    Implements the Gaussian kernel graph construction from Eq. 1 of
+    Song et al. (2018):
+
+    .. math::
+
+        w_{ij} = \begin{cases}
+            \exp\!\Big(-\dfrac{\mathrm{dist}(i,j)^{2}}{2\rho^{2}}\Big),
+            & \text{if } \mathrm{dist}(i,j) \le \tau \\
+            0, & \text{otherwise}
+        \end{cases}
+
+    where :math:`\rho` is estimated as the median of :math:`k`-nearest
+    neighbor distances and the threshold :math:`\tau` is enforced by
+    keeping only the ``n_neighbors`` nearest neighbors per node.
+    The resulting matrix is symmetrized so that
+    :math:`A = \max(A, A^\top)`.
 
     Parameters
     ----------
@@ -107,13 +119,15 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
         MNE-style channel information with ``'loc'`` entries containing
         3-D electrode positions.
     n_chans : int
-        Number of channels.
+        Number of channels (graph nodes :math:`N`).
     n_neighbors : int
-        How many spatial neighbors to connect per node.
+        How many spatial neighbors to connect per node (:math:`\tau`
+        is implicitly defined by this value).
 
     Returns
     -------
     np.ndarray, shape (n_chans, n_chans)
+        Symmetric adjacency matrix :math:`\mathbf{W}`.
 
     Raises
     ------
@@ -121,7 +135,7 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
         If valid 3-D electrode positions cannot be extracted from
         ``chs_info``.
     """
-    locs = _extract_positions(chs_info, n_chans)
+    locs = extract_channel_locations_from_chs_info(chs_info, num_channels=n_chans)
 
     if locs is None:
         raise ValueError(
@@ -131,23 +145,20 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
             "montage set).  See the docstring for details."
         )
 
+    k = min(n_neighbors, n_chans - 1)
+
     # Pairwise Euclidean distances
-    diff = locs[:, None, :] - locs[None, :, :]  # (C, C, 3)
-    dist = np.sqrt((diff**2).sum(axis=-1))  # (C, C)
+    dist = pairwise_distances(locs, metric="euclidean")
 
     # Gaussian kernel: w_ij = exp(-d_ij^2 / (2 * sigma^2))
     # sigma = median of kNN distances (robust scale estimate)
-    k = min(n_neighbors, n_chans - 1)
-    knn_dists = np.sort(dist, axis=1)[:, 1 : k + 1]  # exclude self
+    knn_dists = np.sort(dist, axis=1)[:, 1 : k + 1]
     sigma = np.median(knn_dists) + 1e-8
-
     W = np.exp(-(dist**2) / (2 * sigma**2))
 
     # Sparsify: keep only k nearest neighbors (symmetric)
-    A = np.zeros_like(W)
-    for i in range(n_chans):
-        neighbors = np.argsort(dist[i])[1 : k + 1]
-        A[i, neighbors] = W[i, neighbors]
+    knn = kneighbors_graph(locs, n_neighbors=k, mode="connectivity")
+    A = np.array(knn.toarray()) * W
 
     # Symmetrize
     A = np.maximum(A, A.T).astype(np.float32)
@@ -155,22 +166,39 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
 
 
 class _LearnableAdjacency(nn.Module):
-    """Learnable adjacency matrix with ReLU non-negativity.
+    r"""Learnable adjacency matrix with ReLU non-negativity.
 
-    The adjacency is initialized from electrode spatial positions
-    provided via ``chs_info``.  During training the matrix is updated
-    via backpropagation.  The normalized graph Laplacian
-    ``L = I - D^{-1/2} A D^{-1/2}`` is recomputed on every forward
-    call.
+    Implements the dynamical adjacency learning described in Section 3
+    and Algorithm 1 of Song et al. (2018).  The adjacency matrix
+    :math:`\mathbf{W}^*` is initialized from electrode spatial
+    positions (Eq. 1) and then optimized jointly with all other model
+    parameters via back-propagation (Eqs. 15-16):
+
+    .. math::
+
+        \mathbf{W}^* \leftarrow (1 - \rho)\,\mathbf{W}^*
+        + \rho\,\frac{\partial Loss}{\partial \mathbf{W}^*}.
+
+    Following Algorithm 1 (step 3), a ReLU operation is applied after
+    every update to keep all entries non-negative.  The normalized
+    graph Laplacian is then derived as (Eq. 2, normalized form):
+
+    .. math::
+
+        \mathbf{L} = \mathbf{I}
+        - \mathbf{D}^{-1/2}\,\mathbf{W}^*\,\mathbf{D}^{-1/2},
+
+    where :math:`D_{ii} = \sum_j w^*_{ij}`.
 
     Parameters
     ----------
     n_chans : int
-        Number of graph nodes (EEG channels).
+        Number of graph nodes :math:`N` (EEG channels).
     chs_info : list of dict
-        MNE-style channel information with 3-D positions.
+        MNE-style channel information with 3-D positions used to
+        build the initial adjacency via :func:`_build_initial_adjacency`.
     n_neighbors : int
-        Neighbors per node used to build the spatial kNN graph.
+        Neighbors per node for the initial spatial kNN graph.
     """
 
     def __init__(self, n_chans, chs_info, n_neighbors=5):
@@ -184,11 +212,17 @@ class _LearnableAdjacency(nn.Module):
         self.bias = nn.Parameter(torch.tensor(0.0))
 
     def forward(self):
-        """Compute the normalized Laplacian from the current adjacency.
+        r"""Compute the normalized Laplacian from the current adjacency.
+
+        Applies ReLU to enforce non-negativity (Algorithm 1, step 3)
+        and returns
+        :math:`\mathbf{L} = \mathbf{I}
+        - \mathbf{D}^{-1/2}\,\mathbf{A}\,\mathbf{D}^{-1/2}`.
 
         Returns
         -------
-        Tensor, shape (n_chans, n_chans)
+        Tensor, shape (N, N)
+            Normalized graph Laplacian.
         """
         A = F.relu(self.adjacency + self.bias)
 
@@ -201,62 +235,79 @@ class _LearnableAdjacency(nn.Module):
 
 
 class DGCNN(EEGModuleMixin, nn.Module):
-    """DGCNN for EEG classification from Song et al. (2018) [dgcnn]_.
+    r"""DGCNN for EEG classification from Song et al. (2018) [dgcnn]_.
 
     :bdg-success:`Graph Neural Network`
 
-    .. figure:: https://ar5iv.labs.arxiv.org/html/1801.07829/assets/sections/figure/model_architecture.jpg
+    .. figure:: ../docs/_static/model/DGCNN.gif
         :align: center
         :alt: DGCNN Architecture
         :width: 600px
 
-    Dynamic Graph Convolutional Neural Network (DGCNN) treats EEG electrodes
-    as nodes in a graph and **learns the adjacency matrix** via
-    backpropagation. The graph convolution uses Chebyshev polynomial
-    approximation of spectral filters on the learned graph Laplacian.
+    Dynamic Graph Convolutional Neural Network (DGCNN) treats EEG
+    electrodes as nodes in a graph and **learns the adjacency matrix**
+    :math:`\mathbf{W}^*` jointly with all other parameters via
+    back-propagation (Algorithm 1).  The graph convolution uses a
+    :math:`K`-order Chebyshev polynomial approximation of spectral
+    filters on the learned graph Laplacian (Eq. 13):
 
-    .. rubric:: Architectural Overview
+    .. math::
 
-    1. **Learnable Adjacency Matrix**: A trainable ``(n_chans, n_chans)``
-       matrix with ReLU non-negativity, initialized from electrode spatial
-       positions when ``chs_info`` is provided.  The normalized Laplacian
-       is derived as ``L = I − D^{−1/2} A D^{−1/2}``.
-    2. **Chebyshev Graph Convolution**: K-order polynomial filtering on
-       the learned Laplacian maps each node's features to ``graph_dim``
-       output features.
-    3. **Activation**: ReLU after graph convolution with a per-feature
-       bias.
-    4. **Fully Connected Head**: Flatten all node features and classify
-       via FC layers with dropout.
+        \mathbf{y}
+        = \sum_{k=0}^{K-1} \theta_k\, T_k(\tilde{\mathbf{L}}^*)\,
+          \mathbf{x}.
+
+    .. rubric:: Architectural Overview (Fig. 2)
+
+    1. **Learnable Adjacency Matrix** — A trainable
+       :math:`(N \times N)` matrix with ReLU non-negativity
+       (Algorithm 1, step 3), initialized from electrode spatial
+       positions via the Gaussian kernel of Eq. 1.  The normalized
+       Laplacian is derived as
+       :math:`\mathbf{L} = \mathbf{I}
+       - \mathbf{D}^{-1/2}\,\mathbf{W}^*\,\mathbf{D}^{-1/2}`.
+    2. **Chebyshev Graph Convolution** — :math:`K`-order polynomial
+       spectral filtering (Eq. 13) combined with a :math:`1 \times 1`
+       convolution that maps each node's features to
+       ``n_filters`` output features.
+    3. **Activation** — ReLU with a learnable per-feature bias.
+    4. **Fully Connected Head** — Flatten all node features and
+       classify via FC layers with dropout and softmax.
 
     Parameters
     ----------
     n_outputs : int
-        Number of outputs (classes).
+        Number of outputs of the model (number of classes :math:`C`).
     n_chans : int
-        Number of EEG channels (electrodes = graph nodes).
+        Number of EEG channels (graph nodes :math:`N`).
     chs_info : list of dict
         **Required.**  Information about each channel, typically obtained
         from ``mne.Info['chs']``.  Each entry must contain a ``'loc'``
         key with 3-D electrode positions so the initial adjacency
-        matrix can be built from spatial proximity.  A montage must be
-        set on the ``mne.Info`` object (see
+        matrix can be built from spatial proximity (Eq. 1).  A montage
+        must be set on the ``mne.Info`` object (see
         :meth:`mne.Info.set_montage`).
     n_times : int
-        Number of time samples per window. Used as node feature dimension.
+        Number of time samples per window.  Used as the input feature
+        dimension per node.
     input_window_seconds : float
         Length of input window in seconds.
     sfreq : float
         Sampling frequency of the EEG recording.
-    graph_dim : int, default=64
-        Output features of the graph convolution layer (``F`` in the paper).
+    n_filters : int, default=64
+        Number of spectral graph-convolutional filters.  This is the
+        output feature dimension per node produced by the Chebyshev
+        graph convolution followed by the :math:`1 \times 1`
+        convolution (see Fig. 2 in the paper).  The original code
+        uses 64.
     cheb_order : int, default=2
-        Order of Chebyshev polynomial approximation (``K`` in the paper).
+        Order :math:`K` of the Chebyshev polynomial approximation
+        (Eq. 11).
     n_neighbors : int, default=5
-        Number of spatial neighbors for adjacency initialization.
-        Only used when ``chs_info`` carries electrode positions.
+        Number of spatial nearest neighbors per node used to build the
+        initial adjacency matrix (Eq. 1).
     mlp_dims : tuple[int, ...], default=(256,)
-        Hidden layer sizes of the classification MLP (``M`` in the paper).
+        Hidden-layer sizes of the fully connected classification head.
     drop_prob : float, default=0.5
         Dropout probability in the classification head.
 
@@ -276,7 +327,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        graph_dim=64,
+        n_filters=64,
         cheb_order=2,
         n_neighbors=5,
         mlp_dims=(256,),
@@ -295,25 +346,25 @@ class DGCNN(EEGModuleMixin, nn.Module):
 
         self.drop_prob = drop_prob
 
-        # Learnable adjacency, spatially-informed when chs_info is provided
+        # Learnable adjacency W* (Section 3.1, Algorithm 1)
         self.learned_adj = _LearnableAdjacency(
             n_chans=self.n_chans,
             chs_info=chs_info,
             n_neighbors=n_neighbors,
         )
 
-        # Chebyshev graph convolution
+        # Chebyshev graph convolution + 1x1 conv (Eq. 13 + Fig. 2)
         self.graph_conv = _GraphConvolution(
             in_features=self.n_times,
-            out_features=graph_dim,
+            out_features=n_filters,
             cheb_order=cheb_order,
         )
 
-        # Bias + ReLU after graph conv (official code: b1relu)
-        self.graph_bias = nn.Parameter(torch.zeros(1, 1, graph_dim))
+        # Per-feature bias before ReLU (b1relu in official code)
+        self.graph_bias = nn.Parameter(torch.zeros(1, 1, n_filters))
 
-        # FC classification head
-        fc_in = self.n_chans * graph_dim
+        # FC classification head (Fig. 2: "Full connection" + softmax)
+        fc_in = self.n_chans * n_filters
         layers = []
         for mlp_out in mlp_dims:
             layers.append(nn.Linear(fc_in, mlp_out))
@@ -326,15 +377,24 @@ class DGCNN(EEGModuleMixin, nn.Module):
         self.classifier = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass.
+        r"""Forward pass through the DGCNN pipeline (Fig. 2).
+
+        1. Compute normalized Laplacian from the learned adjacency.
+        2. Apply Chebyshev graph convolution (Eq. 13).
+        3. Add per-feature bias and apply ReLU.
+        4. Flatten and classify through the FC head.
 
         Parameters
         ----------
-        x : Tensor, shape (B, n_chans, n_times)
+        x : Tensor, shape (batch, n_chans, n_times)
+            Input EEG tensor where each channel corresponds to a
+            graph node and the time samples are the input features
+            per node.
 
         Returns
         -------
-        Tensor, shape (B, n_outputs)
+        Tensor, shape (batch, n_outputs)
+            Class logits.
         """
         laplacian = self.learned_adj()
         x = F.relu(self.graph_conv(x, laplacian) + self.graph_bias)

@@ -302,7 +302,7 @@ def extract_channel_locations_from_chs_info(
     ----------
     chs_info : list of dict or None
         Channel information, typically from ``mne.Info.chs``. Each dict should
-        contain a 'loc' key with a 12-element array (MNE format) where indices 3:6
+        contain a 'loc' key with a 12-element array (MNE format) where indices 0:3
         represent the 3D cartesian coordinates.
     num_channels : int or None
         If specified, only extract the first ``num_channels`` channel locations.
@@ -316,7 +316,7 @@ def extract_channel_locations_from_chs_info(
 
     Notes
     -----
-    - This function handles both 12-element MNE location format (using indices 3:6)
+    - This function handles both 12-element MNE location format (using indices 0:3)
       and 3-element location format (using directly).
     - Invalid or missing locations cause extraction to stop at that point.
     - Returns None if no valid locations can be extracted.
@@ -348,14 +348,9 @@ def extract_channel_locations_from_chs_info(
         try:
             loc_array = np.asarray(loc, dtype=np.float32)
 
-            # MNE format: 12-element array with coordinates at indices 3:6
-            if loc_array.ndim == 1 and loc_array.size >= 6:
-                if loc_array.size == 12:
-                    # Standard MNE format
-                    coordinates = loc_array[3:6]
-                else:
-                    # Assume first 3 elements are coordinates
-                    coordinates = loc_array[:3]
+            # MNE format: 12-element array with electrode position at indices 0:3
+            if loc_array.ndim == 1 and loc_array.size >= 3:
+                coordinates = loc_array[:3]
             else:
                 break
 
@@ -366,7 +361,13 @@ def extract_channel_locations_from_chs_info(
     if len(locations) == 0:
         return None
 
-    return np.stack(locations, axis=0)
+    result = np.stack(locations, axis=0)
+
+    # Check positions are not all zero / degenerate
+    if np.allclose(result, 0):
+        return None
+
+    return result
 
 
 _summary_table = get_summary_table()
