@@ -60,6 +60,7 @@ Enhancements
 - Add ``use_mne_epochs`` support to :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`943` by `Pierre Guetschel`_)
 - Faster loading from epochs on disk with :class:`braindecode.datasets.base.WindowsDataset` (:gh:`944` by `Pierre Guetschel`_)
 - Add possibility to convert :class:`braindecode.datasets.base.EEGWindowsDataset` to :class:`braindecode.datasets.base.WindowsDataset` for efficient storage (:gh:`952` by `Pierre Guetschel`_)
+- Add :class:`braindecode.models.DGCNN` model for EEG emotion recognition using dynamic graph convolutional neural networks (:gh:`947` by `Vandit Shah`_)
 - Add ``encoder_only`` mode to :class:`braindecode.models.BENDR` for 4-chunk temporal
   pooling (Kostas et al. 2021, Section 2.4), and ``n_chans_pretrained`` parameter with
   max-norm constrained channel projection for fine-tuning pretrained BENDR on datasets
@@ -844,4 +845,5 @@ Authors
 .. _Mattew Chew: https://github.com/MatthewChen37
 .. _Aman Srivastava: https://github.com/aman-coder03
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
+.. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
