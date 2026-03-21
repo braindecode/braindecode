@@ -61,7 +61,7 @@ class _GraphConvolution(nn.Module):
     def __init__(self, in_features, out_features, cheb_order):
         super().__init__()
         self.cheb_order = cheb_order
-        self.weight = nn.Linear(in_features * cheb_order, out_features, bias=False)
+        self.projection = nn.Linear(in_features * cheb_order, out_features, bias=False)
 
     def forward(self, x, laplacian):
         r"""Apply Chebyshev graph convolution.
@@ -83,15 +83,17 @@ class _GraphConvolution(nn.Module):
         Tensor, shape (B, N, F_out)
             Filtered node features.
         """
-        cheb = [x]  # T_0(L) x = x
+        cheb_components = [x]  # T_0(L) x = x
 
         if self.cheb_order > 1:
-            cheb.append(torch.matmul(laplacian, x))  # T_1(L) x = L x
+            cheb_components.append(torch.matmul(laplacian, x))  # T_1(L) x = L x
 
         for _ in range(2, self.cheb_order):
-            cheb.append(2 * torch.matmul(laplacian, cheb[-1]) - cheb[-2])
+            cheb_components.append(
+                2 * torch.matmul(laplacian, cheb_components[-1]) - cheb_components[-2]
+            )
 
-        return self.weight(torch.cat(cheb, dim=-1))
+        return self.projection(torch.cat(cheb_components, dim=-1))
 
 
 def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
@@ -136,16 +138,18 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
     channel names are looked up in the ``standard_1005`` MNE montage.
     If that also fails (or ``chs_info`` is ``None``)
     """
-    locs = extract_channel_locations_from_chs_info(chs_info, num_channels=n_chans)
+    electrode_positions = extract_channel_locations_from_chs_info(
+        chs_info, num_channels=n_chans
+    )
 
-    if locs is None and chs_info is not None:
+    if electrode_positions is None and chs_info is not None:
         # Try to infer positions from channel names via a standard montage
         try:
             ch_names = [ch["ch_name"] for ch in chs_info[:n_chans]]
             montage = mne.channels.make_standard_montage("standard_1005")
             info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
             info.set_montage(montage, on_missing="raise")
-            locs = extract_channel_locations_from_chs_info(
+            electrode_positions = extract_channel_locations_from_chs_info(
                 info["chs"], num_channels=n_chans
             )
         except Exception:
@@ -155,24 +159,26 @@ def _build_initial_adjacency(chs_info, n_chans, n_neighbors=5):
                 "with 3-D positions or that channel names match a standard montage."
             )
 
-    k = min(n_neighbors, n_chans - 1)
+    n_neighbors_capped = min(n_neighbors, n_chans - 1)
 
     # Pairwise Euclidean distances
-    dist = pairwise_distances(locs, metric="euclidean")
+    distance_matrix = pairwise_distances(electrode_positions, metric="euclidean")
 
     # Gaussian kernel: w_ij = exp(-d_ij^2 / (2 * sigma^2))
     # sigma = median of kNN distances (robust scale estimate)
-    knn_dists = np.sort(dist, axis=1)[:, 1 : k + 1]
-    sigma = np.median(knn_dists) + 1e-8
-    W = np.exp(-(dist**2) / (2 * sigma**2))
+    knn_distances = np.sort(distance_matrix, axis=1)[:, 1 : n_neighbors_capped + 1]
+    sigma = np.median(knn_distances) + 1e-8
+    gaussian_weights = np.exp(-(distance_matrix**2) / (2 * sigma**2))
 
     # Sparsify: keep only k nearest neighbors (symmetric)
-    knn = kneighbors_graph(locs, n_neighbors=k, mode="connectivity")
-    A = np.array(knn.toarray()) * W
+    knn_connectivity = kneighbors_graph(
+        electrode_positions, n_neighbors=n_neighbors_capped, mode="connectivity"
+    )
+    adjacency = np.array(knn_connectivity.toarray()) * gaussian_weights
 
     # Symmetrize
-    A = np.maximum(A, A.T).astype(np.float32)
-    return A
+    adjacency = np.maximum(adjacency, adjacency.T).astype(np.float32)
+    return adjacency
 
 
 class _LearnableAdjacency(nn.Module):
@@ -234,14 +240,14 @@ class _LearnableAdjacency(nn.Module):
         Tensor, shape (N, N)
             Normalized graph Laplacian.
         """
-        A = F.relu(self.adjacency + self.bias)
+        adjacency = F.relu(self.adjacency + self.bias)
 
-        d = A.sum(dim=1)
-        d_inv_sqrt = 1.0 / (torch.sqrt(d) + 1e-5)
-        D_inv_sqrt = torch.diag(d_inv_sqrt)
+        degree = adjacency.sum(dim=1)
+        degree_inv_sqrt = 1.0 / (torch.sqrt(degree) + 1e-5)
+        degree_inv_sqrt_diag = torch.diag(degree_inv_sqrt)
 
-        I = torch.eye(self.n_chans, device=A.device)
-        return I - D_inv_sqrt @ A @ D_inv_sqrt
+        identity = torch.eye(self.n_chans, device=adjacency.device)
+        return identity - degree_inv_sqrt_diag @ adjacency @ degree_inv_sqrt_diag
 
 
 class DGCNN(EEGModuleMixin, nn.Module):
@@ -282,7 +288,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
        ``n_filters`` output features.
     3. **Activation** — ReLU with a learnable per-feature bias.
     4. **Fully Connected Head** — Flatten all node features and
-       classify via FC layers with dropout and softmax.
+       classify via fully connected layers with dropout and softmax.
 
     Parameters
     ----------
@@ -354,7 +360,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
         # Learnable adjacency W* (Section 3.1, Algorithm 1)
         # Use self.chs_info (populated by EEGModuleMixin with defaults
         # when chs_info=None) so that the adjacency can always be built.
-        self.learned_adj = _LearnableAdjacency(
+        self.learnable_adjacency = _LearnableAdjacency(
             n_chans=self.n_chans,
             chs_info=self.chs_info,
             n_neighbors=n_neighbors,
@@ -368,27 +374,32 @@ class DGCNN(EEGModuleMixin, nn.Module):
         )
 
         # Per-feature bias before ReLU (b1relu in official code)
-        self.graph_bias = nn.Parameter(torch.zeros(1, 1, n_filters))
+        self.graph_conv_bias = nn.Parameter(torch.zeros(1, 1, n_filters))
 
-        # FC classification head (Fig. 2: "Full connection" + softmax)
-        fc_in = self.n_chans * n_filters
+        # Fully connected classification head (Fig. 2: "Full connection" + softmax)
+        classifier_input_dim = self.n_chans * n_filters
         layers = []
-        for mlp_out in mlp_dims:
-            layers.append(nn.Linear(fc_in, mlp_out))
+        for hidden_dim in mlp_dims:
+            layers.append(nn.Linear(classifier_input_dim, hidden_dim))
             layers.append(activation())
             layers.append(nn.Dropout(p=drop_prob))
-            fc_in = mlp_out
+            classifier_input_dim = hidden_dim
 
         self.classifier = nn.Sequential(*layers)
-        self.final_layer = nn.Linear(fc_in, self.n_outputs)
+        self.final_layer = nn.Linear(classifier_input_dim, self.n_outputs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         r"""Forward pass through the DGCNN pipeline (Fig. 2).
 
+        .. figure:: ../_static/model/DGCNN.gif
+            :align: center
+            :alt: DGCNN Architecture
+            :width: 600px
+
         1. Compute normalized Laplacian from the learned adjacency.
         2. Apply Chebyshev graph convolution (Eq. 13).
         3. Add per-feature bias and apply ReLU.
-        4. Flatten and classify through the FC head.
+        4. Flatten and classify through the fully connected head.
 
         Parameters
         ----------
@@ -402,8 +413,8 @@ class DGCNN(EEGModuleMixin, nn.Module):
         Tensor, shape (batch, n_outputs)
             Class logits.
         """
-        laplacian = self.learned_adj()
-        x = self.activation(self.graph_conv(x, laplacian) + self.graph_bias)
+        laplacian = self.learnable_adjacency()
+        x = self.activation(self.graph_conv(x, laplacian) + self.graph_conv_bias)
         x = x.reshape(x.size(0), -1)
         x = self.classifier(x)
         return self.final_layer(x)
