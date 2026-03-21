@@ -36,7 +36,7 @@ n_chans, n_times, n_epochs)``, in case of cropped model.
 All the models are implemented as subclasses of
 :py:class:`~braindecode.models.EEGModuleMixin`, which is a base class for all EEG models
 in Braindecode. The :class:`~braindecode.models.EEGModuleMixin` class provides a common
-interface for all EEG models and derivate variables names if necessary.
+interface for all EEG models and can derive variable names when needed.
 
 .. important::
 
