@@ -143,7 +143,6 @@ categories can be found in the respective sections below.
       :width: 90%
       :align: center
       :alt: Diagram of GNN models
-      :figclass: unavailable
       :class: no-scaled-link
 
      Treats channels/regions as nodes with learned/static edges to model connectivity.
@@ -197,8 +196,8 @@ categories can be found in the respective sections below.
   typically need a heavily self-supervised pre-training before decoding.
 - **Graph neural networks** (:bdg-light:`Graph Neural Network`) treat channels/regions
   as nodes with learned (static or dynamic) edges to model functional connectivity
-  explicitly; representative EEG-GNN, more common in the epileptic decoding
-  (:cite:label:`klepl2024graph`).
+  explicitly; e.g., :class:`DGCNN` (:cite:label:`dgcnn`), more common in the emotion and
+  epileptic decoding (:cite:label:`klepl2024graph`).
 - **Channel-domain robustness** (:bdg-dark-line:`Channel`) techniques target variability
   in electrode layouts by learning montage-agnostic or channel-selective layers (e.g.,
   dynamic spatial filtering, differentiable channel re-ordering); these strategies

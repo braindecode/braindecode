@@ -11,6 +11,7 @@
 from collections import OrderedDict
 from functools import partial
 
+import mne
 import numpy as np
 import pytest
 import torch
@@ -20,6 +21,7 @@ from torch import nn
 from braindecode.models import (
     BENDR,
     BIOT,
+    DGCNN,
     EEGPT,
     TCN,
     ATCNet,
@@ -1318,6 +1320,41 @@ def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
         n_outputs=n_outputs,
         n_times=n_times,
         sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+def _make_chs_info(n_chans):
+    """Create synthetic chs_info with 3-D positions for testing."""
+    # Use a standard montage and pick the first n_chans channels
+    montage = mne.channels.make_standard_montage("standard_1005")
+    ch_names = montage.ch_names[:n_chans]
+    info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
+    info.set_montage(montage)
+    return info["chs"]
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (128, 62, 256.0, 4),
+        (256, 32, 512.0, 2),
+    ],
+)
+def test_dgcnn_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 8
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    chs_info = _make_chs_info(n_chans)
+    model = DGCNN(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+        chs_info=chs_info,
     )
     check_forward_pass_3d(model, input_sizes)
 

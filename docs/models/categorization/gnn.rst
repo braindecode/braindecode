@@ -15,7 +15,15 @@
 
 :bdg-light:`Graph Neural Network`
 
-I doesn't know much about GNNs for EEG yet. No LitMap available.
+This category contains graph-based models that treat EEG electrodes as graph nodes and
+learn inter-channel relationships dynamically.
+
+.. rubric:: Available Models
+
+- :class:`DGCNN` — Dynamic Graph Convolutional Neural Network. Treats electrodes as
+  graph nodes and learns the adjacency matrix jointly with all other parameters via
+  back-propagation. Uses Chebyshev spectral graph convolution to extract spatial
+  features from the learned graph Laplacian. Based on Song et al. (2018).
 
 .. include:: ../../links.inc
 
