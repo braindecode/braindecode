@@ -249,7 +249,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
 
     :bdg-light:`Graph Neural Network` :bdg-dark-line:`Channel`
 
-    .. figure:: ../docs/_static/model/DGCNN.gif
+    .. figure:: ../_static/model/DGCNN.gif
         :align: center
         :alt: DGCNN Architecture
         :width: 600px

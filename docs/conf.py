@@ -19,8 +19,14 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
-import inspect
 import os
+
+# Enable docstring inheritance before any braindecode imports so that
+# NumpyDocstringInheritanceInitMeta merges parent parameters into child
+# class docstrings (e.g. EEGModuleMixin params into every model).
+os.environ["DOCSTRING_INHERITANCE_ENABLE"] = "1"
+
+import inspect
 import os.path as op
 import sys
 import warnings
