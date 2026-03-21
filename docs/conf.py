@@ -280,48 +280,6 @@ intersphinx_mapping = {
     "spd_learn": ("https://spdlearn.org/", None),
 }
 
-nitpick_ignore = [
-    # Historical references in whats_new.rst to removed/renamed symbols
-    # Old datautil module (moved to braindecode.preprocessing)
-    ("py:class", "braindecode.datautil.MNEPreproc"),
-    ("py:class", "braindecode.datautil.NumpyPreproc"),
-    ("py:class", "braindecode.datautil.Preprocessor"),
-    ("py:func", "braindecode.datautil.Preprocessor"),
-    ("py:func", "braindecode.datautil.create_windows_from_events"),
-    ("py:func", "braindecode.datautil.create_fixed_length_windows"),
-    ("py:func", "braindecode.datautil.filterbank"),
-    ("py:func", "braindecode.datautil.serialization.load_concat_dataset"),
-    ("py:func", "braindecode.datautil.infer_signal_properties"),
-    # Typo in old changelog: .dataset instead of .datasets
-    ("py:class", "braindecode.dataset.BaseConcatDataset"),
-    # Removed or renamed models
-    ("py:class", "braindecode.models.EEGInception"),
-    ("py:class", "braindecode.models.EEGResNet"),
-    ("py:class", "braindecode.models.TimeDistributed"),
-    # Model aliases not exported from braindecode.models
-    ("py:class", "braindecode.models.SleepStagerEldele2021"),
-    ("py:class", "braindecode.models.TSceptionV1"),
-    ("py:class", "braindecode.models.EEGNetv"),
-    # Old model utility module (removed)
-    ("py:func", "braindecode.models.util.get_output_shape"),
-    ("py:func", "braindecode.models.util.to_dense_prediction_model"),
-    ("py:func", "braindecode.models.util.aggregate_probas"),
-    ("py:mod", "braindecode.models.util"),
-    # Removed preprocessing functions
-    ("py:func", "braindecode.preprocessing.zscore"),
-    ("py:func", "braindecode.preprocessing.scale"),
-    # Removed visualization functions
-    ("py:func", "braindecode.visualization.compute_amplitude_gradients"),
-    (
-        "py:func",
-        "braindecode.visualization.gradients.compute_amplitude_gradients_for_X",
-    ),
-    # Case mismatch in old changelog (actual class is AugmentedDataLoader)
-    ("py:class", "AugmentedDataloader"),
-    # braindecode is a package, not a class
-    ("py:class", "braindecode"),
-]
-
 sphinx_gallery_conf = {
     "examples_dirs": ["../examples"],
     "gallery_dirs": ["auto_examples"],

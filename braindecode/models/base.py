@@ -98,7 +98,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
     automatically gain the ability to be pushed to and loaded from the
     Hugging Face Hub. Install with::
 
-        pip install braindecode[hug]
+        pip install braindecode[hub]
 
     **Pushing a model to the Hub:**
 

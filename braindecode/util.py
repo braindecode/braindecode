@@ -398,11 +398,12 @@ def _clean_docstring_sections(doc, remove_sections=("References",)):
         return doc or ""
 
     for section in remove_sections:
-        # Match the section header + underline + all indented/blank lines
-        # that follow, stopping at the next numpydoc section or end-of-string.
+        # Match the section header + underline + body lines that follow.
+        # The body stops at the next numpydoc section (an optionally-indented
+        # word line followed by a dashes-only underline) or at end-of-string.
         doc = re.sub(
             rf"(\n[ \t]*){re.escape(section)}\n[ \t]*-+\n"
-            r"(?:[ \t]+[^\n]*\n|[ \t]*\n)*",
+            r"(?:(?![ \t]*\w[^\n]*\n[ \t]*-+)(?:[ \t]+[^\n]*\n|[ \t]*\n))*",
             r"\1",
             doc,
         )
