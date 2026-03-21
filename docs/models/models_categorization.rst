@@ -111,7 +111,7 @@ categories can be found in the respective sections below.
     .. grid-item-card:: |circle-nodes| Symmetric Positive-Definite
      :shadow: sm
 
-     :bdg-dark:`SPD`
+     :bdg-dark:`SPD` :bdg-danger-line:`spd_learn`
 
      .. figure:: ../_static/model_cat/spd.png
       :width: 90%
