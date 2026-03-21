@@ -275,7 +275,7 @@ The Hub integration is fully compatible with PyTorch's training pipeline.
 
 ###############################################################################
 # Advanced: Privacy, versioning, and collaboration
-# --------------------------------------------
+# -------------------------------------------------
 # The Hub provides powerful features for dataset management and collaboration.
 # Every dataset repository on the Hub is backed by git-style versioning, so
 # you can track changes, create branches/tags for specific dataset states,

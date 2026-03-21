@@ -384,12 +384,41 @@ def update_estimator_docstring(base_class, docstring):
     return out_docstring
 
 
+def _clean_docstring_sections(doc, remove_sections=("References",)):
+    """Remove numpydoc-style sections that cause Sphinx build errors.
+
+    Numpydoc renders section headers as ``.. rubric::`` directives.
+    When the section body contains indented RST directives (e.g.
+    ``.. footbibliography::`` or ``.. [citation]``), Sphinx errors
+    because rubric does not accept body content.  Stripping these
+    sections from the *raw* docstring prevents numpydoc from
+    generating the problematic output.
+    """
+    if not doc:
+        return doc or ""
+
+    for section in remove_sections:
+        # Match the section header + underline + all indented/blank lines
+        # that follow, stopping at the next numpydoc section or end-of-string.
+        doc = re.sub(
+            rf"(\n[ \t]*){re.escape(section)}\n[ \t]*-+\n"
+            r"(?:[ \t]+[^\n]*\n|[ \t]*\n)*",
+            r"\1",
+            doc,
+        )
+    return doc
+
+
 def _update_moabb_docstring(base_class, docstring):
     base_doc = base_class.__doc__
-    # Clean up malformed rubrics from moabb docstrings
-    # Remove lines that have ".. rubric::" followed by content on same line or improper formatting
-
-    base_doc = re.sub(r"\.\. rubric:: (.+?)\n\s+\.\. note::", r".. note::", base_doc)
+    if base_doc is None:
+        return docstring
+    base_doc = _clean_docstring_sections(
+        base_doc, remove_sections=("References", "Notes")
+    )
+    # Strip dangling citation references (e.g. ``[1]_``) whose definitions
+    # were in the removed References section.
+    base_doc = re.sub(r"\s*\[\d+\]_", "", base_doc)
     out_docstring = base_doc + f"\n\n{docstring}"
     return out_docstring
 

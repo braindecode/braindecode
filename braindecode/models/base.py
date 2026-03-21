@@ -86,7 +86,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
     -----
     If some input signal-related parameters are not specified,
     there will be an attempt to infer them from the other parameters.
+    """
 
+    #: Template for model-specific Hub integration notes appended by
+    #: ``__init_subclass__``.  ``{name}`` is replaced with the concrete
+    #: model class name.
+    _HUB_NOTES_TEMPLATE = """
     .. rubric:: Hugging Face Hub integration
 
     When the optional ``huggingface_hub`` package is installed, all models
@@ -97,27 +102,28 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
     **Pushing a model to the Hub:**
 
-    .. code-block:: python
+    .. code-block::
 
-        from braindecode.models import EEGNetv4
+        from braindecode.models import {name}
 
         # Train your model
-        model = EEGNetv4(n_chans=22, n_outputs=4, n_times=1000)
+        model = {name}(n_chans=22, n_outputs=4, n_times=1000)
         # ... training code ...
 
         # Push to the Hub
         model.push_to_hub(
-            repo_id="username/my-eegnet-model", commit_message="Initial model upload"
+            repo_id="username/my-{name_lower}-model",
+            commit_message="Initial model upload",
         )
 
     **Loading a model from the Hub:**
 
-    .. code-block:: python
+    .. code-block::
 
-        from braindecode.models import EEGNetv4
+        from braindecode.models import {name}
 
         # Load pretrained model
-        model = EEGNetv4.from_pretrained("username/my-eegnet-model")
+        model = {name}.from_pretrained("username/my-{name_lower}-model")
 
     The integration automatically handles EEG-specific parameters (n_chans,
     n_times, sfreq, chs_info, etc.) by saving them in a config file alongside
@@ -126,19 +132,24 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
     .. important::
         Currently, only EEG-specific parameters (n_outputs, n_chans, n_times,
-        input_window_seconds, sfreq, chs_info) are saved to the Hub. Model-specific
-        parameters (e.g., dropout rates, activation functions, number of filters)
-        are not preserved and will use their default values when loading from the Hub.
-
-        To use non-default model parameters, specify them explicitly when calling
-        :func:`from_pretrained()`::
-
-            model = EEGNet.from_pretrained("user/model", dropout=0.3, activation='relu')
-
+        input_window_seconds, sfreq, chs_info) are saved to the Hub.
+        Model-specific parameters (e.g., dropout rates, activation functions,
+        number of filters) are not preserved and will use their default values
+        when loading from the Hub.
         Full parameter serialization will be addressed in a future update.
     """
 
     def __init_subclass__(cls, **kwargs):
+        # Append model-specific Hub integration notes to the docstring.
+        # This runs after the metaclass, so we concatenate rather than
+        # override any existing Notes section in the subclass.
+        if cls.__doc__ is not None:
+            hub_notes = cls._HUB_NOTES_TEMPLATE.format(
+                name=cls.__name__,
+                name_lower=cls.__name__.lower(),
+            )
+            cls.__doc__ = cls.__doc__.rstrip() + "\n" + hub_notes
+
         if not HAS_HF_HUB:
             super().__init_subclass__(**kwargs)
             return

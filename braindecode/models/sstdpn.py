@@ -133,7 +133,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         learning data, according to [Han2025]_.
 
     Notes
-    ----------
+    -----
     * The implementation of the DPL loss functions (:math:`\mathcal{L}_S`, :math:`\mathcal{L}_C`, :math:`\mathcal{L}_{EF}`)
       and the optimization of ICPs are typically handled outside the primary ``forward`` method, within the training strategy
       (see Ref. 52 in [Han2025]_).

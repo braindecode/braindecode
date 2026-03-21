@@ -25,6 +25,11 @@ import os.path as op
 import sys
 import warnings
 
+# Enable docstring inheritance before any braindecode imports so that
+# NumpyDocstringInheritanceInitMeta merges parent parameters into child
+# class docstrings (e.g. EEGModuleMixin params into every model).
+os.environ["DOCSTRING_INHERITANCE_ENABLE"] = "1"
+
 import matplotlib
 
 matplotlib.use("agg")
@@ -67,7 +72,8 @@ except Exception as e:
 needs_sphinx = "2.0"
 
 curdir = os.path.dirname(__file__)
-sys.path.append(os.path.abspath(os.path.join(curdir, "..", "braindecode")))
+# Ensure the local braindecode package is found before any editable install
+sys.path.insert(0, os.path.abspath(os.path.join(curdir, "..")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
 import sphinx_design
@@ -259,14 +265,62 @@ todo_include_todos = True
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
     "python": ("https://docs.python.org/{.major}".format(sys.version_info), None),
-    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
-    "scipy": ("https://docs.scipy.org/doc/scipy/reference", None),
-    "matplotlib": ("https://matplotlib.org/", None),
-    "sklearn": ("http://scikit-learn.org/stable", None),
-    "mne": ("http://mne.tools/stable", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "matplotlib": ("https://matplotlib.org/stable/", None),
+    "sklearn": ("https://scikit-learn.org/stable/", None),
+    "mne": ("https://mne.tools/stable/", None),
     "skorch": ("https://skorch.readthedocs.io/en/stable/", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
+    "huggingface_hub": (
+        "https://huggingface.co/docs/huggingface_hub/main/en/",
+        None,
+    ),
+    "mne_bids": ("https://mne.tools/mne-bids/stable/", None),
+    "spd_learn": ("https://spdlearn.org/", None),
 }
+
+nitpick_ignore = [
+    # Historical references in whats_new.rst to removed/renamed symbols
+    # Old datautil module (moved to braindecode.preprocessing)
+    ("py:class", "braindecode.datautil.MNEPreproc"),
+    ("py:class", "braindecode.datautil.NumpyPreproc"),
+    ("py:class", "braindecode.datautil.Preprocessor"),
+    ("py:func", "braindecode.datautil.Preprocessor"),
+    ("py:func", "braindecode.datautil.create_windows_from_events"),
+    ("py:func", "braindecode.datautil.create_fixed_length_windows"),
+    ("py:func", "braindecode.datautil.filterbank"),
+    ("py:func", "braindecode.datautil.serialization.load_concat_dataset"),
+    ("py:func", "braindecode.datautil.infer_signal_properties"),
+    # Typo in old changelog: .dataset instead of .datasets
+    ("py:class", "braindecode.dataset.BaseConcatDataset"),
+    # Removed or renamed models
+    ("py:class", "braindecode.models.EEGInception"),
+    ("py:class", "braindecode.models.EEGResNet"),
+    ("py:class", "braindecode.models.TimeDistributed"),
+    # Model aliases not exported from braindecode.models
+    ("py:class", "braindecode.models.SleepStagerEldele2021"),
+    ("py:class", "braindecode.models.TSceptionV1"),
+    ("py:class", "braindecode.models.EEGNetv"),
+    # Old model utility module (removed)
+    ("py:func", "braindecode.models.util.get_output_shape"),
+    ("py:func", "braindecode.models.util.to_dense_prediction_model"),
+    ("py:func", "braindecode.models.util.aggregate_probas"),
+    ("py:mod", "braindecode.models.util"),
+    # Removed preprocessing functions
+    ("py:func", "braindecode.preprocessing.zscore"),
+    ("py:func", "braindecode.preprocessing.scale"),
+    # Removed visualization functions
+    ("py:func", "braindecode.visualization.compute_amplitude_gradients"),
+    (
+        "py:func",
+        "braindecode.visualization.gradients.compute_amplitude_gradients_for_X",
+    ),
+    # Case mismatch in old changelog (actual class is AugmentedDataLoader)
+    ("py:class", "AugmentedDataloader"),
+    # braindecode is a package, not a class
+    ("py:class", "braindecode"),
+]
 
 sphinx_gallery_conf = {
     "examples_dirs": ["../examples"],
