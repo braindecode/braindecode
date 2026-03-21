@@ -260,35 +260,115 @@ class DGCNN(EEGModuleMixin, nn.Module):
         :alt: DGCNN Architecture
         :width: 600px
 
-    Dynamic Graph Convolutional Neural Network (DGCNN) treats EEG
-    electrodes as nodes in a graph and **learns the adjacency matrix**
+    .. rubric:: Architectural Overview
+
+    DGCNN is a *graph-based* architecture that models EEG channels as nodes
+    in a graph and **dynamically learns the adjacency matrix**
     :math:`\mathbf{W}^*` jointly with all other parameters via
-    back-propagation (Algorithm 1).  The graph convolution uses a
-    :math:`K`-order Chebyshev polynomial approximation of spectral
-    filters on the learned graph Laplacian (Eq. 13):
+    back-propagation (Algorithm 1 in [dgcnn]_). The end-to-end flow is:
 
-    .. math::
+    - (i) learn inter-channel relationships by dynamically updating a
+      trainable adjacency matrix,
+    - (ii) apply spectral graph convolution via Chebyshev polynomial
+      approximation to extract graph-structured features, and
+    - (iii) classify with a fully connected head.
 
-        \mathbf{y}
-        = \sum_{k=0}^{K-1} \theta_k\, T_k(\tilde{\mathbf{L}}^*)\,
-          \mathbf{x}.
+    Different from traditional GCNN methods that predetermine the connections
+    of the graph nodes according to their spatial positions, "the proposed
+    DGCNN method learns the adjacency matrix in a dynamic way, i.e., the
+    entries of the adjacency matrix are adaptively updated with the changes
+    of graph model parameters during the model training" [dgcnn]_.
 
-    .. rubric:: Architectural Overview (Fig. 2)
+    .. rubric:: Macro Components
 
-    1. **Learnable Adjacency Matrix** — A trainable
-       :math:`(N \times N)` matrix with ReLU non-negativity
-       (Algorithm 1, step 3), initialized from electrode spatial
-       positions via the Gaussian kernel of Eq. 1.  The normalized
-       Laplacian is derived as
-       :math:`\mathbf{L} = \mathbf{I}
-       - \mathbf{D}^{-1/2}\,\mathbf{W}^*\,\mathbf{D}^{-1/2}`.
-    2. **Chebyshev Graph Convolution** — :math:`K`-order polynomial
-       spectral filtering (Eq. 13) combined with a :math:`1 \times 1`
-       convolution that maps each node's features to
-       ``n_filters`` output features.
-    3. **Activation** — ReLU with a learnable per-feature bias.
-    4. **Fully Connected Head** — Flatten all node features and
-       classify via fully connected layers with dropout and softmax.
+    - :class:`_LearnableAdjacency` **(Dynamical adjacency → graph Laplacian)**
+
+        - *Operations.*
+        - A trainable :math:`(N \times N)` matrix :math:`\mathbf{W}^*`
+          initialized from electrode spatial positions via a Gaussian kernel
+          (Eq. 1): :math:`w_{ij} = \exp(-\mathrm{dist}(i,j)^2 / 2\rho^2)`
+          for the :math:`k`-nearest neighbors, zero otherwise.
+        - **ReLU** applied after every gradient update to keep all entries
+          non-negative (Algorithm 1, step 3).
+        - The normalized graph Laplacian is derived as (Eq. 2):
+          :math:`\mathbf{L} = \mathbf{I}
+          - \mathbf{D}^{-1/2}\,\mathbf{W}^*\,\mathbf{D}^{-1/2}`.
+
+        The adjacency matrix captures intrinsic functional relationships
+        between EEG channels that pure spatial proximity may not reflect.
+
+    - :class:`_GraphConvolution` **(Chebyshev spectral graph convolution +
+      1x1 mixing)**
+
+        - *Operations.*
+        - :math:`K`-order Chebyshev polynomial expansion of spectral graph
+          filters on the learned Laplacian (Eqs. 11-13):
+
+          .. math::
+
+              \mathbf{y}
+              = \sum_{k=0}^{K-1} \theta_k\, T_k(\tilde{\mathbf{L}}^*)\,
+                \mathbf{x},
+
+          where :math:`T_k` are Chebyshev polynomials computed recursively
+          (Eq. 12) and :math:`\theta_k` are learnable coefficients.
+        - A :math:`1 \times 1` convolution (linear projection) that mixes
+          the concatenated Chebyshev components, mapping each node's input
+          features to ``n_filters`` output features.
+
+        "Following the graph filtering operation is a :math:`1 \times 1`
+        convolution layer, which aims to learn the discriminative features
+        among the various frequency domains" [dgcnn]_.
+
+    - **Activation layer.** ReLU with a learnable per-feature bias ensures
+      non-negative outputs of the graph filtering layer [dgcnn]_.
+
+    - **Classifier Head.**
+      Flatten all node features and classify via a multi-layer fully
+      connected network with dropout and softmax.
+
+    .. rubric:: Graph Convolution Details
+
+    - **Spatial (graph structure).** The adjacency matrix encodes pairwise
+      relationships between EEG channels. It is initialized from 3-D
+      electrode positions using a Gaussian kernel with kNN sparsification
+      (Eq. 1), then *jointly optimized* with all other parameters. This
+      allows the model to discover functional connectivity patterns that
+      differ from the initial spatial layout. The spectral graph
+      convolution then propagates information across neighboring nodes
+      according to this learned graph topology.
+
+    - **Spectral (graph spectral domain).** The Chebyshev polynomial
+      approximation (Eq. 11) operates in the *graph spectral domain*
+      defined by the eigenvalues of the graph Laplacian. The :math:`K`-order
+      approximation acts as a localized graph filter: each node aggregates
+      information from its :math:`K`-hop neighborhood. This is analogous
+      to a band-pass filter in the graph frequency domain.
+
+    - **Temporal / Frequency.** No explicit temporal convolution or
+      frequency decomposition is performed within the network. In the
+      original paper, the input features per node are pre-extracted
+      frequency-band features (e.g., differential entropy from
+      :math:`\delta`, :math:`\theta`, :math:`\alpha`, :math:`\beta`,
+      :math:`\gamma` bands). When used with raw time series, the time
+      samples serve directly as node features.
+
+    .. rubric:: Additional Comments
+
+    - **Dynamic vs. static graph.** Traditional GCNN methods fix the
+      adjacency matrix before training based on spatial positions.
+      DGCNN learns it end-to-end, allowing the graph to capture
+      task-relevant functional connectivity rather than mere spatial
+      proximity.
+    - **Chebyshev order.** The order :math:`K` controls the receptive
+      field on the graph: :math:`K=1` uses only direct neighbors,
+      :math:`K=2` (default) reaches 2-hop neighborhoods. Higher orders
+      increase expressivity but also parameter count.
+    - **Regularization.** Dropout in the classification head and the
+      ReLU constraint on the adjacency matrix provide implicit
+      regularization. The loss function in the original paper also
+      includes an explicit :math:`\ell_2` penalty on all parameters
+      (Eq. 14).
 
     Parameters
     ----------
