@@ -111,13 +111,12 @@ categories can be found in the respective sections below.
     .. grid-item-card:: |circle-nodes| Symmetric Positive-Definite
      :shadow: sm
 
-     :bdg-dark:`SPD` :bdg-danger-line:`To be released soon!`
+     :bdg-dark:`SPD` :bdg-danger-line:`spd_learn`
 
      .. figure:: ../_static/model_cat/spd.png
       :width: 90%
       :align: center
       :alt: Diagram of SPD learning
-      :figclass: unavailable
       :class: no-scaled-link
 
      Learns on covariance/connectivity as SPD matrices using BiMap/ReEig/LogEig layers.
@@ -188,11 +187,12 @@ categories can be found in the respective sections below.
 - **SPD / Riemannian** (:bdg-dark:`SPD`) methods operate on covariance (or connectivity)
   matrices as points on the SPD manifold, combining layers such as BiMap, ReEig, and
   LogEig; deep SPD networks and Riemannian classifiers motivate this family
-  (:cite:label:`huang2017riemannian`). *(Coming soon in a dedicate repository.)*
+  (:cite:label:`huang2017riemannian`). Available via the spd_learn_ library
+  (:cite:label:`aristimunha2026spd`).
 - **Foundation Model / Transformer** (:bdg-danger:`Foundation Model`) approaches
   pretrain attention-based encoders on diverse biosignals and fine-tune for EEG tasks;
   e.g., :class:`BIOT` (:cite:label:`yang2023biot`), :class:`Labram`
-  (:cite:label:`jiang2024large`), and :class:`EEGPT` (:cite:label:`eegpt`). These
+  (:cite:label:`jiang2024large`), and :class:`EEGPT` (:cite:label:`eegpt2024`). These
   typically need a heavily self-supervised pre-training before decoding.
 - **Graph neural networks** (:bdg-light:`Graph Neural Network`) treat channels/regions
   as nodes with learned (static or dynamic) edges to model functional connectivity

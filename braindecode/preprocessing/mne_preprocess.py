@@ -11,6 +11,7 @@ import mne.io
 import mne.preprocessing
 
 from braindecode.preprocessing.preprocess import Preprocessor
+from braindecode.util import _clean_docstring_sections
 
 
 def _is_standalone_function(func):
@@ -149,7 +150,7 @@ def _generate_mne_pre_processor(function):
     force_copy_false = is_standalone and has_copy_param
     class_attrs = {
         "__init__": _generate_init_method(function, force_copy_false),
-        "__doc__": wrapper_note + (function.__doc__ or ""),
+        "__doc__": wrapper_note + _clean_docstring_sections(function.__doc__ or ""),
         "__repr__": _generate_repr_method(class_name),
         "fn": function if is_standalone else function.__name__,
         "_is_standalone": is_standalone,
