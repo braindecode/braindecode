@@ -101,6 +101,9 @@ Bugs
 
 Code health
 ============
+- Reorder model categories in documentation to follow the progression: Convolution,
+  Filterbank, Interpretability, Recurrent, Attention/Transformer, SPD, Graph Neural
+  Network, Channel, and Foundation Model (:gh:`962` by `Bruno Aristimunha`_)
 - Fix documentation build warnings and errors: correct numpydoc section underlines
   in :class:`braindecode.models.EEGSym` and :class:`braindecode.models.SSTDPN`,
   strip upstream ``.. rubric::`` directives from MNE and MOABB docstrings that
