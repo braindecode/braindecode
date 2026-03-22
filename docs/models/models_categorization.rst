@@ -28,8 +28,7 @@ multiple families to leverage their combined strengths. Beginning directly, the
 categories are nine: :bdg-success:`Convolution`, :bdg-primary:`Filterbank`,
 :bdg-warning:`Interpretability`, :bdg-secondary:`Recurrent`,
 :bdg-info:`Attention/Transformer`, :bdg-dark:`Symmetric Positive-Definite`,
-:bdg-light:`Graph Neural Network`, :bdg-dark-line:`Channel` and :bdg-danger:`Foundation
-Model`.
+:bdg-light:`Graph Neural Network`, :bdg-dark-line:`Channel` and :bdg-danger:`Foundation Model`.
 
 At the moment, not all the categories are implemented, validated, and tested, but there
 are some that are noteworthy for introducing or popularizing concepts or layer designs
@@ -178,8 +177,8 @@ categories can be found in the respective sections below.
   (:cite:label:`borra2020interpretable,ludwig2024eegminer`).
 - In the **recurrent** family (:bdg-secondary:`Recurrent`), many modern EEG models
   actually rely on *temporal convolutional networks* (TCNs) with dilations to grow the
-  receptive field, rather than explicit recurrence (:cite:label:`bai2018tcn`),
-  :class:`BDTCN`,
+  receptive field, rather than explicit recurrence (:cite:label:`bai2018tcn`), such as
+  :class:`BDTCN`.
 - In contrast, several methods employ **attention/transformer** modules
   (:bdg-info:`Attention/Transformer`) to capture longer-range dependencies efficiently,
   e.g., :class:`EEGConformer`, :class:`CTNet`, :class:`ATCNet`,
