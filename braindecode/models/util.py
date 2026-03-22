@@ -133,6 +133,11 @@ models_mandatory_parameters: list[
         },
     ),
     ("CBraMod", ["n_outputs"], None),
+    (
+        "CodeBrain",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 57, "n_times": 570},
+    ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
 ]
 
