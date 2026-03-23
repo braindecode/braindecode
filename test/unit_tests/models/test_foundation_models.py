@@ -1371,7 +1371,7 @@ def test_cbramod_forward_pass():
 
 
 def test_codebrain_load_weights():
-    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000, s4_layernorm=False)
+    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
     state_dict = torch.hub.load_state_dict_from_url(
         "https://huggingface.co/YjMajy/CodeBrain/resolve/main/CodeBrain.pth",
         map_location="cpu",

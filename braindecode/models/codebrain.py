@@ -319,8 +319,9 @@ class Residual_group(nn.Module):
 class PatchEmbedding(nn.Module):
     def __init__(self, conv_out_chans, patch_size, conv_groups):
         super().__init__()
-        # Compute actual conv output dim from the first Conv2d:
-        # kernel=49, stride=conv_out_chans, padding=24
+        # Compute actual conv output dim from the first Conv2d in proj_in:
+        # kernel=49, stride=conv_out_chans, padding=24 (all hardcoded in the
+        # original architecture — changing conv_out_chans or padding will break this)
         _t = (patch_size + 2 * 24 - 49) // conv_out_chans + 1
         self.emb_dim = conv_out_chans * _t
         self.d_model = self.emb_dim
@@ -437,8 +438,9 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         Dropout rate used inside the ``_GConv`` SSM and attention layers.
     s4_bidirectional : bool, default=True
         Whether the ``_GConv`` SSM processes the sequence bidirectionally.
-    s4_layernorm : bool, default=True
+    s4_layernorm : bool, default=False
         Whether to apply layer normalisation inside the ``_GConv`` SSM.
+        Set to ``False`` to match the released pretrained checkpoint.
     s4_lmax : int, default=570
         Maximum sequence length for the ``_GConv`` SSM kernel. Also determines
         the patch embedding dimension as ``s4_lmax // n_chans``.
@@ -482,7 +484,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         num_res_layers:int=8,
         drop_prob:float = 0.1,
         s4_bidirectional:bool=True,
-        s4_layernorm:bool=True,
+        s4_layernorm:bool=False,
         s4_lmax: int = 570,
         s4_d_state: int = 64,
         conv_out_chans: int = 25,
