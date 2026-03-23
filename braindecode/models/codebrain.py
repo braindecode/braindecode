@@ -528,6 +528,12 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(self.n_outputs))
 
 
+    def load_state_dict(self, state_dict, strict=True):
+        # Strip DataParallel 'module.' prefix if present (checkpoint from YjMajy/CodeBrain)
+        if all(k.startswith("module.") for k in state_dict.keys()):
+            state_dict = {k[len("module."):]: v for k, v in state_dict.items()}
+        return super().load_state_dict(state_dict, strict=strict)
+
     def forward(self, inputs, mask=None):
         bz, ch_num, n_times = inputs.shape
         patch_size = self.patch_size

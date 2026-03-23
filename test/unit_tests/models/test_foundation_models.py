@@ -18,7 +18,7 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, Labram
+from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.reve import RevePositionBank
 
@@ -1363,3 +1363,32 @@ def test_cbramod_forward_pass():
     x = torch.randn(2, 22, 1000)
     output = model(x)
     assert output.shape == (2, 22, 5, 200)
+
+
+# ==============================================================================
+# Tests for CodeBrain Model
+# ==============================================================================
+
+
+def test_codebrain_load_weights():
+    model = CodeBrain(n_chans=57, n_outputs=2, n_times=570, s4_layernorm=False)
+    state_dict = torch.hub.load_state_dict_from_url(
+        "https://huggingface.co/YjMajy/CodeBrain/resolve/main/CodeBrain.pth",
+        map_location="cpu",
+    )
+    # Extract nested state dict if checkpoint contains 'model' or 'state_dict' key
+    if isinstance(state_dict, dict) and "model" in state_dict:
+        state_dict = state_dict["model"]
+    elif isinstance(state_dict, dict) and "state_dict" in state_dict:
+        state_dict = state_dict["state_dict"]
+    load_result = model.load_state_dict(state_dict, strict=False)
+    # Only final_layer weights should be missing (not in pretrained checkpoint)
+    assert all("final_layer" in k for k in load_result.missing_keys)
+    assert not load_result.unexpected_keys
+
+
+def test_codebrain_forward_pass():
+    model = CodeBrain(n_chans=57, n_outputs=2, n_times=570)
+    x = torch.randn(2, 57, 570)
+    output = model(x)
+    assert output.shape == (2, 2)
