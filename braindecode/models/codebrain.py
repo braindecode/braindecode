@@ -525,7 +525,17 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             self.lm_head_f = nn.Linear(out_channels, codebook_size_f, bias=False)
             self.if_codebook = if_codebook
             self.norm = nn.LayerNorm(out_channels)
-            self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(self.n_outputs))
+            # 3-layer MLP classifier as described in the paper (Section 3.3)
+            self.final_layer = nn.Sequential(
+                nn.Flatten(),
+                nn.LazyLinear(4 * out_channels),
+                nn.ELU(),
+                nn.Dropout(drop_prob),
+                nn.LazyLinear(out_channels),
+                nn.ELU(),
+                nn.Dropout(drop_prob),
+                nn.LazyLinear(self.n_outputs),
+            )
 
 
     def load_state_dict(self, state_dict, strict=True):
