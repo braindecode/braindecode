@@ -317,16 +317,19 @@ class Residual_group(nn.Module):
         return skip * math.sqrt(1.0 / self.num_res_layers)
 
 class PatchEmbedding(nn.Module):
-    def __init__(self, p_seq_len, conv_out_chans, patch_size,conv_groups):
+    def __init__(self, conv_out_chans, patch_size, conv_groups):
         super().__init__()
-        self.d_model = p_seq_len
-        self.p_seq_len = p_seq_len
+        # Compute actual conv output dim from the first Conv2d:
+        # kernel=49, stride=conv_out_chans, padding=24
+        _t = (patch_size + 2 * 24 - 49) // conv_out_chans + 1
+        self.emb_dim = conv_out_chans * _t
+        self.d_model = self.emb_dim
         self.positional_encoding = nn.Sequential(
-            nn.Conv2d(in_channels=self.d_model, out_channels=self.d_model, kernel_size=(19, 7), stride=(1, 1),
+            nn.Conv2d(in_channels=self.emb_dim, out_channels=self.emb_dim, kernel_size=(19, 7), stride=(1, 1),
                       padding=(9, 3),
-                      groups=self.d_model),
+                      groups=self.emb_dim),
         )
-        self.mask_encoding = nn.Parameter(torch.zeros(p_seq_len), requires_grad=False)
+        self.mask_encoding = nn.Parameter(torch.zeros(self.emb_dim), requires_grad=False)
 
         self.proj_in = nn.Sequential(
             nn.Conv2d(in_channels=1, out_channels=conv_out_chans, kernel_size=(1, 49), stride=(1, conv_out_chans), padding=(0, 24)),
@@ -342,7 +345,7 @@ class PatchEmbedding(nn.Module):
             nn.GELU(),
         )
         self.spectral_proj = nn.Sequential(
-            nn.Linear(patch_size//2+1, self.d_model),
+            nn.Linear(patch_size // 2 + 1, self.emb_dim),
             nn.Dropout(0.1),
         )
 
@@ -498,15 +501,14 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             )
             self.patch_size = patch_size
             self.activation = activation
-            p_seq_len = patch_size
             self.patch_embedding = PatchEmbedding(
-                p_seq_len=p_seq_len,
                 patch_size=patch_size,
                 conv_out_chans=conv_out_chans,
                 conv_groups=conv_groups,
             )
+            emb_dim = self.patch_embedding.emb_dim
 
-            self.init_conv = nn.Sequential(Conv(p_seq_len, res_channels, kernel_size=1), self.activation())
+            self.init_conv = nn.Sequential(Conv(emb_dim, res_channels, kernel_size=1), self.activation())
 
             self.residual_layer = Residual_group(res_channels=res_channels,
                                                 skip_channels=skip_channels,
@@ -523,8 +525,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             self.lm_head_f = nn.Linear(out_channels, codebook_size_f, bias=False)
             self.if_codebook = if_codebook
             self.norm = nn.LayerNorm(out_channels)
-            emb_dim = self.n_chans * (self.n_times // patch_size) * out_channels
-            self.final_layer = nn.Sequential(nn.Flatten(), nn.Linear(emb_dim, self.n_outputs))
+            self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(self.n_outputs))
 
 
     def forward(self, inputs, mask=None):
