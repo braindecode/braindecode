@@ -845,11 +845,16 @@ class HubDatasetMixin:
 
                 # Convert to MNE objects and create dataset
                 info = Info.from_json_dict(info_dict)
+                targets = metadata["target"].values
+                if np.issubdtype(targets.dtype, np.integer):
+                    event_ids = targets
+                else:
+                    event_ids = np.ones(len(metadata), dtype=int)
                 events = np.column_stack(
                     [
-                        metadata["i_start_in_trial"].values,
+                        metadata["i_start_in_trial"].values.astype(int),
                         np.zeros(len(metadata), dtype=int),
-                        metadata["target"].values,
+                        event_ids,
                     ]
                 )
                 epochs = mne.EpochsArray(data, info, events=events, metadata=metadata)
