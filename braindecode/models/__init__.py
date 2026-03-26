@@ -12,6 +12,7 @@ from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
+from .dgcnn import DGCNN
 from .eegconformer import EEGConformer
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
@@ -87,6 +88,7 @@ __all__ = [
     "EEGSym",
     "EEGSimpleConv",
     "EEGTCNet",
+    "DGCNN",
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",

@@ -27,6 +27,17 @@ Version 1.4  (Source - GitHub)
 
 Enhancements
 ============
+- Unlock the :bdg-dark:`SPD` model category in the documentation and link to the
+  `spd_learn <https://github.com/spdlearn/spd_learn/>`__ library with intersphinx
+  cross-references to its seven models (SPDNet, EEGSPDNet, TSMNet, TensorCSPNet,
+  PhaseSPDNet, Green, MAtt) (by `Bruno Aristimunha`_)
+- Hub integration docstring is now model-specific: each model's documentation
+  shows examples with its own class name instead of a generic ``EEGNetv4``
+  reference, and existing model notes are preserved (by `Bruno Aristimunha`_)
+- Optimize :func:`braindecode.preprocessing.exponential_moving_standardize` and
+  :func:`braindecode.preprocessing.exponential_moving_demean` by replacing
+  Pandas-based implementation with a more efficient SciPy ``lfilter`` version,
+  achieving a ~1.5x speedup (:gh:`950` by `Léo Burgund`_)
 - Add an optional ``lazy`` init path to :class:`braindecode.datasets.base.BaseConcatDataset`
   to defer cumulative size computation (and any downstream dataset length access) until
   first access, supporting truly lazy raw loading workflows.
@@ -56,6 +67,7 @@ Enhancements
 - Add ``use_mne_epochs`` support to :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`943` by `Pierre Guetschel`_)
 - Faster loading from epochs on disk with :class:`braindecode.datasets.base.WindowsDataset` (:gh:`944` by `Pierre Guetschel`_)
 - Add possibility to convert :class:`braindecode.datasets.base.EEGWindowsDataset` to :class:`braindecode.datasets.base.WindowsDataset` for efficient storage (:gh:`952` by `Pierre Guetschel`_)
+- Add :class:`braindecode.models.DGCNN` model for EEG emotion recognition using dynamic graph convolutional neural networks (:gh:`947` by `Vandit Shah`_)
 - Add ``encoder_only`` mode to :class:`braindecode.models.BENDR` for 4-chunk temporal
   pooling (Kostas et al. 2021, Section 2.4), and ``n_chans_pretrained`` parameter with
   max-norm constrained channel projection for fine-tuning pretrained BENDR on datasets
@@ -93,13 +105,22 @@ Bugs
 
 Code health
 ============
+- Reorder model categories in documentation to follow the progression: Convolution,
+  Filterbank, Interpretability, Recurrent, Attention/Transformer, SPD, Graph Neural
+  Network, Channel, and Foundation Model (:gh:`962` by `Bruno Aristimunha`_)
+- Fix documentation build warnings and errors: correct numpydoc section underlines
+  in :class:`braindecode.models.EEGSym` and :class:`braindecode.models.SSTDPN`,
+  strip upstream ``.. rubric::`` directives from MNE and MOABB docstrings that
+  caused Sphinx errors, fix RST title levels in ``whats_new.rst``, correct bibtex
+  key for EEGPT, and ensure ``conf.py`` prioritises the local package on
+  ``sys.path`` (by `Bruno Aristimunha`_)
 - Remove deprecated ``torch.irfft`` fallback in :func:`braindecode.visualization.gradients.compute_amplitude_gradients_for_X`,
   now uses ``torch.fft.irfft`` directly since braindecode requires ``torch>=2.2``
   (by `Sarthak Tayal`_)
 
 
 Current 1.3.2 (stable)
-====================
+======================
 
 Enhancements
 ============
@@ -444,8 +465,8 @@ API changes
 
 .. _changes_0_8_0:
 
- Version 0.8 (11-2022)
-=======================
+Version 0.8 (11-2022)
+=====================
 
 Enhancements
 ============
@@ -791,7 +812,7 @@ API changes
 
 
 Authors
-~~~~~~~
+=======
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Hubert Banville: https://github.com/hubertjb
@@ -844,3 +865,5 @@ Authors
 .. _Mattew Chew: https://github.com/MatthewChen37
 .. _Aman Srivastava: https://github.com/aman-coder03
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
+.. _Vandit Shah: https://github.com/ShahVandit
+.. _Léo Burgund: https://github.com/leob000

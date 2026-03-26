@@ -62,4 +62,8 @@
 .. _sphinx-gallery: https://sphinx-gallery.github.io
 .. _NumPy docstring style guidelines: https://numpydoc.readthedocs.io/en/latest/format.html#docstring-standard
 
+.. spd_learn
+
+.. _spd_learn: https://github.com/spdlearn/spd_learn/
+
 .. vim: ft=rst

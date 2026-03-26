@@ -112,7 +112,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         corresponding to different frequency characteristics.
 
     Notes
-    ----------
+    -----
     * EEGSym achieved competitive accuracies across five large MI datasets [eegsym2022]_.
     * The model maintained high accuracy using a reduced set of electrodes (8 or 16 channels)
       [eegsym2022]_.
