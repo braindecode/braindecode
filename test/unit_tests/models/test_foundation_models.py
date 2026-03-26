@@ -925,11 +925,10 @@ def luna_base_pretrained_model():
             depth=8,
         )
 
-        # Load weights using safetensors with key mapping
+        # Load weights using safetensors
         state_dict = load_file(model_path)
-        # temparature typo mapping now included in model.mapping
-        mapped_state_dict = {model.mapping.get(k, k): v for k, v in state_dict.items()}
-        model.load_state_dict(mapped_state_dict, strict=False)
+        # load_state_dict applies model.mapping automatically
+        model.load_state_dict(state_dict, strict=False)
 
         return model
     except Exception as e:
@@ -1098,7 +1097,7 @@ def test_luna_huge_gradient_flow(luna_huge_model):
 
 
 def test_luna_channel_embed_batch_ordering(luna_base_config):
-    # channel embedings should be consistent within each batch element
+    # channel embeddings should be consistent within each batch element
     luna_base_config["n_chans"] = 3
     luna_base_config["n_times"] = 80
     luna_base_config["patch_size"] = 20
@@ -1115,7 +1114,7 @@ def test_luna_channel_embed_batch_ordering(luna_base_config):
     with torch.no_grad():
         x_tok, ch_emb = model.prepare_tokens(x_signal, channel_locations, mask=None)
 
-    # each batch's patches should have identical channel embedings
+    # each batch's patches should have identical channel embeddings
     b0 = ch_emb[:num_patches, 1, :]
     b1 = ch_emb[num_patches:, 1, :]
     for i in range(1, num_patches):
@@ -1123,8 +1122,12 @@ def test_luna_channel_embed_batch_ordering(luna_base_config):
     for i in range(1, num_patches):
         assert torch.allclose(b1[0], b1[i], atol=1e-5)
 
+    # embeddings for different batches (with different channel_locations)
+    # should not be identical
+    assert not torch.allclose(b0[0], b1[0], atol=1e-5)
 
-def test_luna_mapping_includes_temparature():
+
+def test_luna_mapping_includes_temperature_typo():
     # pretrained weights have typo key, mapping should handle it
     model = LUNA(n_outputs=2, n_chans=22, n_times=1000, embed_dim=64,
                  num_queries=4, depth=8)

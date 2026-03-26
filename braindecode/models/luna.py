@@ -83,9 +83,8 @@ class LUNA(EEGModuleMixin, nn.Module):
 
            # Load pre-trained encoder weights
            state_dict = load_file(model_path)
-           # Apply key mapping for pretrained weights
-           mapped_state_dict = {model.mapping.get(k, k): v for k, v in state_dict.items()}
-           model.load_state_dict(mapped_state_dict, strict=False)
+           # load_state_dict applies model.mapping automatically
+           model.load_state_dict(state_dict, strict=False)
 
        To push your own trained model to the Hub:
 
