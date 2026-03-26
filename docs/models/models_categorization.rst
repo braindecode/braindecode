@@ -28,7 +28,8 @@ multiple families to leverage their combined strengths. Beginning directly, the
 categories are nine: :bdg-success:`Convolution`, :bdg-primary:`Filterbank`,
 :bdg-warning:`Interpretability`, :bdg-secondary:`Recurrent`,
 :bdg-info:`Attention/Transformer`, :bdg-dark:`Symmetric Positive-Definite`,
-:bdg-light:`Graph Neural Network`, :bdg-dark-line:`Channel` and :bdg-danger:`Foundation Model`.
+:bdg-light:`Graph Neural Network`, :bdg-dark-line:`Channel` and :bdg-danger:`Foundation
+Model`.
 
 At the moment, not all the categories are implemented, validated, and tested, but there
 are some that are noteworthy for introducing or popularizing concepts or layer designs
