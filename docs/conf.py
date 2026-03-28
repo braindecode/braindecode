@@ -349,13 +349,6 @@ html_theme_options = {
     "footer_start": ["copyright"],
     # 'pygment_light_style': 'default',
     "analytics": dict(google_analytics_id="G-7Q43R82K6D"),
-    "announcement": (
-        "<strong>Using Braindecode in academic work?</strong> "
-        "<a class='braindecode-announcement-cta' href='cite.html'>Cite Braindecode</a> "
-        "<span class='braindecode-announcement-secondary'>"
-        "DOI: <a href='https://doi.org/10.5281/zenodo.17699192'>10.5281/zenodo.17699192</a>"
-        "</span>"
-    ),
 }
 
 # The name of an image file (relative to this directory) to place at the top
@@ -572,3 +565,30 @@ texinfo_documents = [
         "Miscellaneous",
     ),
 ]
+
+
+def _braindecode_announcement_html(cite_href: str) -> str:
+    """HTML for the pydata theme top banner (``html_theme_options['announcement']``).
+
+    The href must be computed per page (via ``pathto('cite')``). A static ``cite.html``
+    link is resolved relative to the *current URL path*, so nested pages such as
+    ``install/install.html`` incorrectly target ``install/cite.html``.
+    """
+    return (
+        "<strong>Using Braindecode in academic work?</strong> "
+        f"<a class='braindecode-announcement-cta' href='{cite_href}'>Cite Braindecode</a> "
+        "<span class='braindecode-announcement-secondary'>"
+        "DOI: <a href='https://doi.org/10.5281/zenodo.17699192'>10.5281/zenodo.17699192</a>"
+        "</span>"
+    )
+
+
+def _html_page_context(app, pagename, templatename, context, doctree):
+    if app.builder.format != "html":
+        return
+    cite_href = context["pathto"]("cite")
+    context["theme_announcement"] = _braindecode_announcement_html(cite_href)
+
+
+def setup(app):
+    app.connect("html-page-context", _html_page_context)
