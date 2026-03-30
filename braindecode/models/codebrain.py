@@ -249,7 +249,7 @@ class Conv(nn.Module):
 
 
 class ZeroConv1d(nn.Module):
-    # initializeing the conv layers
+    # initializing the conv layers
     def __init__(self, in_channel, out_channel):
         super(ZeroConv1d, self).__init__()
         self.conv = nn.Conv1d(in_channel, out_channel, kernel_size=1, padding=0)
@@ -321,7 +321,7 @@ class ResidualBlock(nn.Module):
         nn.init.kaiming_normal_(self.skip_conv.weight)
 
     def generate_local_window_mask(self, seq_len, window_size):
-        assert window_size % 2 == 1, "window_size shoule be odd number, like 7, 9, 11"
+        assert window_size % 2 == 1, "window_size should be odd number, like 7, 9, 11"
 
         half_window = window_size // 2
 
