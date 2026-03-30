@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
+from torch.nn.utils.parametrizations import weight_norm
 
 contract = torch.einsum
 
@@ -240,8 +241,8 @@ class Conv(nn.Module):
             dilation=dilation,
             padding=self.padding,
         )
-        self.conv = nn.utils.weight_norm(self.conv)
-        nn.init.kaiming_normal_(self.conv.weight)
+        self.conv = weight_norm(self.conv)
+        nn.init.kaiming_normal_(self.conv.parametrizations.weight.original1)
 
     def forward(self, x):
         out = self.conv(x)
@@ -313,12 +314,12 @@ class ResidualBlock(nn.Module):
         self.gelu = nn.GELU()  # used between conv and SSM layers
 
         self.res_conv = nn.Conv1d(res_channels, res_channels, kernel_size=1)
-        self.res_conv = nn.utils.weight_norm(self.res_conv)
-        nn.init.kaiming_normal_(self.res_conv.weight)
+        self.res_conv = weight_norm(self.res_conv)
+        nn.init.kaiming_normal_(self.res_conv.parametrizations.weight.original1)
 
         self.skip_conv = nn.Conv1d(res_channels, skip_channels, kernel_size=1)
-        self.skip_conv = nn.utils.weight_norm(self.skip_conv)
-        nn.init.kaiming_normal_(self.skip_conv.weight)
+        self.skip_conv = weight_norm(self.skip_conv)
+        nn.init.kaiming_normal_(self.skip_conv.parametrizations.weight.original1)
 
     def generate_local_window_mask(self, seq_len, window_size):
         assert window_size % 2 == 1, "window_size should be odd number, like 7, 9, 11"
