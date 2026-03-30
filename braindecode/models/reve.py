@@ -16,7 +16,16 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
-from torch.nn.attention import SDPBackend, sdpa_kernel
+
+# Safe import for older PyTorch versions (Support for Intel-based Macs)
+try:
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+
+    HAS_SDPA = True
+except ImportError:
+    HAS_SDPA = False
+    SDPBackend = None
+    sdpa_kernel = None
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -530,10 +539,21 @@ class FeedForward(nn.Module):
 
 
 class ClassicalAttention(nn.Module):
-    def __init__(self, heads: int, use_sdpa: bool = True):
+    def __init__(self, heads: int, use_sdpa: bool | None = None):
         super().__init__()
-        self.use_sdpa = use_sdpa
         self.heads = heads
+
+        if use_sdpa is None:
+            self.use_sdpa = HAS_SDPA
+        elif use_sdpa is True and not HAS_SDPA:
+            logger.warning(
+                "SDPA (Scaled Dot Product Attention) was requested, but it is not "
+                "available in your current PyTorch version. Falling back to naive "
+                "implementation. Please upgrade to PyTorch >= 2.2 for SDPA support."
+            )
+            self.use_sdpa = False
+        else:
+            self.use_sdpa = use_sdpa
 
     def forward(self, qkv: torch.Tensor) -> torch.Tensor:
         # Split concatenated QKV into separate tensors
