@@ -20,7 +20,7 @@ from torch import nn
 # Safe import for older PyTorch versions (Support for Intel-based Macs)
 try:
     from torch.nn.attention import SDPBackend, sdpa_kernel
-    
+
     HAS_SDPA = True
 except ImportError:
     HAS_SDPA = False
