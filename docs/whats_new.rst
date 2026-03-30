@@ -72,6 +72,7 @@ Enhancements
   pooling (Kostas et al. 2021, Section 2.4), and ``n_chans_pretrained`` parameter with
   max-norm constrained channel projection for fine-tuning pretrained BENDR on datasets
   with arbitrary channel counts (by `Kuntal Kokate`_)
+- Add dynamic SDPA fallback in :class:`braindecode.models.reve.ClassicalAttention` to support PyTorch versions without SDPA (by `GalAshkenazi1`_)
 
 API changes
 ============
@@ -79,7 +80,7 @@ API changes
 
 Requirements
 ============
-- None yet.
+- Relaxed PyTorch requirement to >=2.0 to support Intel-based Macs (by `GalAshkenazi1`_)
 
 Bugs
 =====
