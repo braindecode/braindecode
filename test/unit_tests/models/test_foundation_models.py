@@ -925,13 +925,10 @@ def luna_base_pretrained_model():
             depth=8,
         )
 
-        # Load weights using safetensors with key mapping
+        # Load weights using safetensors
         state_dict = load_file(model_path)
-        # Apply key mapping for pretrained weights compatibility
-        mapping = model.mapping.copy()
-        mapping["cross_attn.temparature"] = "cross_attn.temperature"
-        mapped_state_dict = {mapping.get(k, k): v for k, v in state_dict.items()}
-        model.load_state_dict(mapped_state_dict, strict=False)
+        # load_state_dict applies model.mapping automatically
+        model.load_state_dict(state_dict, strict=False)
 
         return model
     except Exception as e:
@@ -1097,6 +1094,44 @@ def test_luna_huge_gradient_flow(luna_huge_model):
 # ==============================================================================
 # Tests for LUNA Variant Comparisons
 # ==============================================================================
+
+
+def test_luna_channel_embed_batch_ordering(luna_base_config):
+    # channel embeddings should be consistent within each batch element
+    luna_base_config["n_chans"] = 3
+    luna_base_config["n_times"] = 80
+    luna_base_config["patch_size"] = 20
+    model = LUNA(**luna_base_config)
+    model.eval()
+
+    B, C, num_patches = 2, 3, 4
+    channel_locations = torch.zeros(B, C, 3)
+    for c in range(C):
+        channel_locations[0, c, 0] = c / (C - 1)
+        channel_locations[1, c, 1] = c / (C - 1)
+
+    x_signal = torch.randn(B, C, 80)
+    with torch.no_grad():
+        x_tok, ch_emb = model.prepare_tokens(x_signal, channel_locations, mask=None)
+
+    # each batch's patches should have identical channel embeddings
+    b0 = ch_emb[:num_patches, 1, :]
+    b1 = ch_emb[num_patches:, 1, :]
+    for i in range(1, num_patches):
+        assert torch.allclose(b0[0], b0[i], atol=1e-5)
+    for i in range(1, num_patches):
+        assert torch.allclose(b1[0], b1[i], atol=1e-5)
+
+    # embeddings for different batches (with different channel_locations)
+    # should not be identical
+    assert not torch.allclose(b0[0], b1[0], atol=1e-5)
+
+
+def test_luna_mapping_includes_temperature_typo():
+    # pretrained weights have typo key, mapping should handle it
+    model = LUNA(n_outputs=2, n_chans=22, n_times=1000, embed_dim=64,
+                 num_queries=4, depth=8)
+    assert "cross_attn.temparature" in model.mapping
 
 
 def test_luna_variants_parameter_count_hierarchy(

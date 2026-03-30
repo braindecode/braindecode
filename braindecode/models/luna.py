@@ -7,6 +7,7 @@ Retrieved from https://openreview.net/forum?id=uazfjnFL0G
 
 Original Authors: Berkay Döner, Thorir Mar Ingolfsson
 Braindecode Adaptation: Bruno Aristimunha
+Contributions: Sarthak Tayal <sarthaktayal2@gmail.com>
 
 the LICENSE Of this file is APACHE-2.0.
 """
@@ -82,11 +83,8 @@ class LUNA(EEGModuleMixin, nn.Module):
 
            # Load pre-trained encoder weights
            state_dict = load_file(model_path)
-           # Apply key mapping for pretrained weights
-           mapping = model.mapping.copy()
-           mapping["cross_attn.temparature"] = "cross_attn.temperature"
-           mapped_state_dict = {mapping.get(k, k): v for k, v in state_dict.items()}
-           model.load_state_dict(mapped_state_dict, strict=False)
+           # load_state_dict applies model.mapping automatically
+           model.load_state_dict(state_dict, strict=False)
 
        To push your own trained model to the Hub:
 
@@ -170,6 +168,7 @@ class LUNA(EEGModuleMixin, nn.Module):
             "channel_location_embedder.0.fc2.bias": "channel_location_embedder.fc2.bias",
             "channel_location_embedder.0.norm.weight": "channel_location_embedder.norm.weight",
             "channel_location_embedder.0.norm.bias": "channel_location_embedder.norm.bias",
+            "cross_attn.temparature": "cross_attn.temperature",  # typo in pretrained weights
         }
 
         # Model parameters
@@ -315,8 +314,10 @@ class LUNA(EEGModuleMixin, nn.Module):
         channel_locations_emb = self.channel_location_embedder(channel_locations)
 
         x_tokenized = rearrange(x_masked, "B (C t) D -> (B t) C D", C=num_channels)
-        channel_locations_emb = channel_locations_emb.repeat(
-            num_patches_per_channel, 1, 1
+        channel_locations_emb = (
+            channel_locations_emb.repeat_interleave(  # was repeat(), wrong dim ordering
+                num_patches_per_channel, dim=0
+            )
         )
         x_tokenized = x_tokenized + channel_locations_emb
 
