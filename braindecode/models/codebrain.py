@@ -5,13 +5,13 @@
 # License: BSD (3-clause)
 
 import math
-from functools import partial
 from typing import Optional
 
 import torch
 import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
+
 contract = torch.einsum
 
 from braindecode.models.base import EEGModuleMixin
@@ -126,7 +126,9 @@ class _GConv(nn.Module):
         if not self.linear:
             self.activation = nn.GELU() if activation == "gelu" else nn.ReLU()
             self.dropout = nn.Dropout2d(dropout) if dropout > 0.0 else nn.Identity()
-            self.norm = nn.LayerNorm(self.h * self.channels) if layer_norm else nn.Identity()
+            self.norm = (
+                nn.LayerNorm(self.h * self.channels) if layer_norm else nn.Identity()
+            )
 
         if not self.linear:
             self.output_linear = nn.Linear(self.h * self.channels, self.h)
@@ -231,14 +233,21 @@ class Conv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, dilation=1):
         super(Conv, self).__init__()
         self.padding = dilation * (kernel_size - 1) // 2
-        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, dilation=dilation, padding=self.padding)
+        self.conv = nn.Conv1d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            dilation=dilation,
+            padding=self.padding,
+        )
         self.conv = nn.utils.weight_norm(self.conv)
         nn.init.kaiming_normal_(self.conv.weight)
 
     def forward(self, x):
         out = self.conv(x)
         return out
-    
+
+
 class ZeroConv1d(nn.Module):
     # initializeing the conv layers
     def __init__(self, in_channel, out_channel):
@@ -264,31 +273,42 @@ class RMSNorm(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, res_channels, skip_channels,
-                 s4_lmax,
-                 s4_d_state,
-                 s4_dropout,
-                 s4_bidirectional,
-                 s4_layernorm,
-                 swa_window_size: int = 1):
+    def __init__(
+        self,
+        res_channels,
+        skip_channels,
+        s4_lmax,
+        s4_d_state,
+        s4_dropout,
+        s4_bidirectional,
+        s4_layernorm,
+        swa_window_size: int = 1,
+    ):
         super(ResidualBlock, self).__init__()
         self.res_channels = res_channels
         self.swa_window_size = swa_window_size
 
         self.sn = RMSNorm(res_channels)
 
-        self.s41 = _GConv(d_model=2 * self.res_channels,
-                         channels=4,
-                         l_max=s4_lmax,
-                         d_state=s4_d_state,
-                         dropout=s4_dropout,
-                         bidirectional=s4_bidirectional,
-                         layer_norm=s4_layernorm)
+        self.s41 = _GConv(
+            d_model=2 * self.res_channels,
+            channels=4,
+            l_max=s4_lmax,
+            d_state=s4_d_state,
+            dropout=s4_dropout,
+            bidirectional=s4_bidirectional,
+            layer_norm=s4_layernorm,
+        )
 
         self.conv_layer = Conv(self.res_channels, 2 * self.res_channels, kernel_size=3)
 
-        self.attention = nn.MultiheadAttention(embed_dim=2 * self.res_channels, num_heads=4, dropout=s4_dropout,
-                                               bias=True, batch_first=True)
+        self.attention = nn.MultiheadAttention(
+            embed_dim=2 * self.res_channels,
+            num_heads=4,
+            dropout=s4_dropout,
+            bias=True,
+            batch_first=True,
+        )
 
         self.gelu = nn.GELU()  # used between conv and SSM layers
 
@@ -296,18 +316,16 @@ class ResidualBlock(nn.Module):
         self.res_conv = nn.utils.weight_norm(self.res_conv)
         nn.init.kaiming_normal_(self.res_conv.weight)
 
-
         self.skip_conv = nn.Conv1d(res_channels, skip_channels, kernel_size=1)
         self.skip_conv = nn.utils.weight_norm(self.skip_conv)
         nn.init.kaiming_normal_(self.skip_conv.weight)
-
 
     def generate_local_window_mask(self, seq_len, window_size):
         assert window_size % 2 == 1, "window_size shoule be odd number, like 7, 9, 11"
 
         half_window = window_size // 2
 
-        mask = torch.full((seq_len, seq_len), float('-inf'))
+        mask = torch.full((seq_len, seq_len), float("-inf"))
 
         for i in range(seq_len):
             start = max(0, i - half_window)
@@ -319,11 +337,11 @@ class ResidualBlock(nn.Module):
     def forward(self, input_data):
         x, original = input_data
         h = x
-        B, C, L = x.shape
+        _, C, L = x.shape
         x = self.sn(x)
         assert C == self.res_channels
 
-        part_t = rearrange(original, 'b c l -> b c l')
+        part_t = rearrange(original, "b c l -> b c l")
         h = h + part_t
 
         h = self.conv_layer(h)
@@ -338,7 +356,9 @@ class ResidualBlock(nn.Module):
 
         h = h_t + h_s
 
-        out = torch.tanh(h[:, :self.res_channels, :]) * torch.sigmoid(h[:, self.res_channels:, :])
+        out = torch.tanh(h[:, : self.res_channels, :]) * torch.sigmoid(
+            h[:, self.res_channels :, :]
+        )
 
         res = self.res_conv(out)
         assert x.shape == res.shape
@@ -382,25 +402,35 @@ class ResidualGroup(nn.Module):
         Window size for sliding-window attention in each block.
     """
 
-    def __init__(self, res_channels, skip_channels, num_res_layers,
-                 s4_lmax,
-                 s4_d_state,
-                 s4_dropout,
-                 s4_bidirectional,
-                 s4_layernorm,
-                 swa_window_size: int = 1):
+    def __init__(
+        self,
+        res_channels,
+        skip_channels,
+        num_res_layers,
+        s4_lmax,
+        s4_d_state,
+        s4_dropout,
+        s4_bidirectional,
+        s4_layernorm,
+        swa_window_size: int = 1,
+    ):
         super(ResidualGroup, self).__init__()
         self.num_res_layers = num_res_layers
 
         self.residual_blocks = nn.ModuleList()
-        for n in range(self.num_res_layers):
-            self.residual_blocks.append(ResidualBlock(res_channels, skip_channels,
-                                                       s4_lmax=s4_lmax,
-                                                       s4_d_state=s4_d_state,
-                                                       s4_dropout=s4_dropout,
-                                                       s4_bidirectional=s4_bidirectional,
-                                                       s4_layernorm=s4_layernorm,
-                                                       swa_window_size=swa_window_size))
+        for _ in range(self.num_res_layers):
+            self.residual_blocks.append(
+                ResidualBlock(
+                    res_channels,
+                    skip_channels,
+                    s4_lmax=s4_lmax,
+                    s4_d_state=s4_d_state,
+                    s4_dropout=s4_dropout,
+                    s4_bidirectional=s4_bidirectional,
+                    s4_layernorm=s4_layernorm,
+                    swa_window_size=swa_window_size,
+                )
+            )
 
     def forward(self, input_data):
         noise = input_data
@@ -411,6 +441,7 @@ class ResidualGroup(nn.Module):
             skip = skip_n + skip
 
         return skip * math.sqrt(1.0 / self.num_res_layers)
+
 
 class PatchEmbedding(nn.Module):
     """Dual temporal-spectral patch embedding for EEG signals.
@@ -490,29 +521,44 @@ class PatchEmbedding(nn.Module):
         self.d_model = self.emb_dim
         self.positional_encoding = nn.Sequential(
             nn.Conv2d(
-                in_channels=self.emb_dim, out_channels=self.emb_dim,
-                kernel_size=pos_kernel, stride=(1, 1),
-                padding=pos_padding, groups=self.emb_dim,
+                in_channels=self.emb_dim,
+                out_channels=self.emb_dim,
+                kernel_size=pos_kernel,
+                stride=(1, 1),
+                padding=pos_padding,
+                groups=self.emb_dim,
             ),
         )
-        self.mask_encoding = nn.Parameter(torch.zeros(self.emb_dim), requires_grad=False)
+        self.mask_encoding = nn.Parameter(
+            torch.zeros(self.emb_dim), requires_grad=False
+        )
 
         self.proj_in = nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=conv_out_chans,
-                      kernel_size=(1, proj_kernel_size), stride=(1, conv_out_chans),
-                      padding=(0, proj_padding)),
+            nn.Conv2d(
+                in_channels=1,
+                out_channels=conv_out_chans,
+                kernel_size=(1, proj_kernel_size),
+                stride=(1, conv_out_chans),
+                padding=(0, proj_padding),
+            ),
             nn.GroupNorm(conv_groups, conv_out_chans),
             nn.GELU(),
-
-            nn.Conv2d(in_channels=conv_out_chans, out_channels=conv_out_chans,
-                      kernel_size=(1, proj_refine_kernel), stride=(1, 1),
-                      padding=(0, proj_refine_padding)),
+            nn.Conv2d(
+                in_channels=conv_out_chans,
+                out_channels=conv_out_chans,
+                kernel_size=(1, proj_refine_kernel),
+                stride=(1, 1),
+                padding=(0, proj_refine_padding),
+            ),
             nn.GroupNorm(conv_groups, conv_out_chans),
             nn.GELU(),
-
-            nn.Conv2d(in_channels=conv_out_chans, out_channels=conv_out_chans,
-                      kernel_size=(1, proj_refine_kernel), stride=(1, 1),
-                      padding=(0, proj_refine_padding)),
+            nn.Conv2d(
+                in_channels=conv_out_chans,
+                out_channels=conv_out_chans,
+                kernel_size=(1, proj_refine_kernel),
+                stride=(1, 1),
+                padding=(0, proj_refine_padding),
+            ),
             nn.GroupNorm(conv_groups, conv_out_chans),
             nn.GELU(),
         )
@@ -540,21 +586,28 @@ class PatchEmbedding(nn.Module):
         # (batch, n_chans, seq_len, conv_ch * emb) = (batch, n_chans, seq_len, emb_dim)
         patch_emb = rearrange(
             patch_emb,
-            'batch conv_ch (n_chans seq_len) emb -> batch n_chans seq_len (conv_ch emb)',
-            n_chans=n_chans, seq_len=seq_len,
+            "batch conv_ch (n_chans seq_len) emb -> batch n_chans seq_len (conv_ch emb)",
+            n_chans=n_chans,
+            seq_len=seq_len,
         )
 
         # Flatten patches for FFT: (batch * n_chans * seq_len, patch_size)
-        patches_flat = rearrange(x, 'batch n_chans seq_len patch_size -> (batch n_chans seq_len) patch_size')
+        patches_flat = rearrange(
+            x, "batch n_chans seq_len patch_size -> (batch n_chans seq_len) patch_size"
+        )
 
         # Spectral projection: rfft gives (batch * n_chans * seq_len, patch_size // 2 + 1)
-        spectral = torch.abs(torch.fft.rfft(patches_flat, dim=-1, norm='forward'))
+        spectral = torch.abs(
+            torch.fft.rfft(patches_flat.float(), dim=-1, norm="forward")
+        )
 
         # Restore batch/channel/patch dims: (batch, n_chans, seq_len, freq_bins)
         spectral = rearrange(
             spectral,
-            '(batch n_chans seq_len) freq -> batch n_chans seq_len freq',
-            batch=batch, n_chans=n_chans, seq_len=seq_len,
+            "(batch n_chans seq_len) freq -> batch n_chans seq_len freq",
+            batch=batch,
+            n_chans=n_chans,
+            seq_len=seq_len,
         )
 
         # Project frequency features to emb_dim and add to temporal embedding
@@ -564,9 +617,12 @@ class PatchEmbedding(nn.Module):
         # Positional encoding expects (batch, emb_dim, n_chans, seq_len)
         patch_emb = patch_emb + rearrange(
             self.positional_encoding(
-                rearrange(patch_emb, 'batch n_chans seq_len emb_dim -> batch emb_dim n_chans seq_len')
+                rearrange(
+                    patch_emb,
+                    "batch n_chans seq_len emb_dim -> batch emb_dim n_chans seq_len",
+                )
             ),
-            'batch emb_dim n_chans seq_len -> batch n_chans seq_len emb_dim',
+            "batch emb_dim n_chans seq_len -> batch n_chans seq_len emb_dim",
         )
 
         return patch_emb
@@ -589,12 +645,16 @@ class CodeBrain(EEGModuleMixin, nn.Module):
     through stacked residual blocks that combine a multi-scale convolutional
     structured state-space model (``_GConv``) with sliding-window self-attention.
 
-    .. rubric:: Key Innovation: Code-Based Pre-Training
+    .. rubric:: Stage 2: EEGSSM Backbone (this implementation)
 
-    Rather than reconstructing raw EEG values, CodeBrain first discretises EEG
-    patches into temporal and spectral codebook tokens via VQ-VAE, then trains
-    the backbone to predict these codes from masked input. This avoids the
-    low signal-to-noise issues of direct waveform reconstruction.
+    This class implements Stage 2 of CodeBrain — the EEGSSM backbone described
+    in Section 3.3 of [codebrain]_. Following :class:`Labram`, CodeBrain
+    discretises EEG patches into codebook tokens via VQ-VAE (Stage 1, not
+    implemented here), then trains the backbone to predict masked token indices
+    via cross-entropy. CodeBrain extends this with a *dual* tokenizer that
+    decouples temporal and frequency representations, as stated in the paper:
+    *"the TFDual-Tokenizer, which decouples heterogeneous temporal and frequency
+    EEG signals into discrete tokens to enhance discriminative power."*
 
     .. rubric:: Macro Components
 
@@ -670,13 +730,13 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         sfreq=None,
         # Model specific arguments
         patch_size: int = 200,
-        res_channels:int = 200,
-        skip_channels:int = 200,
-        out_channels:int = 200,
-        num_res_layers:int=8,
-        drop_prob:float = 0.1,
-        s4_bidirectional:bool=True,
-        s4_layernorm:bool=False,
+        res_channels: int = 200,
+        skip_channels: int = 200,
+        out_channels: int = 200,
+        num_res_layers: int = 8,
+        drop_prob: float = 0.1,
+        s4_bidirectional: bool = True,
+        s4_layernorm: bool = False,
         s4_lmax: int = 570,
         s4_d_state: int = 64,
         conv_out_chans: int = 25,
@@ -692,73 +752,87 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         codebook_size_f: int = 4096,
         pretrain_mode: bool = False,
         activation: type[nn.Module] = nn.ReLU,
-        ):
-            super().__init__(n_outputs=n_outputs,
-                n_chans=n_chans,
-                chs_info=chs_info,
-                n_times=n_times,
-                input_window_seconds=input_window_seconds,
-                sfreq=sfreq,
-            )
-            self.patch_size = patch_size
-            self.out_channels = out_channels
-            self.activation = activation
-            self.patch_embedding = PatchEmbedding(
-                patch_size=patch_size,
-                conv_out_chans=conv_out_chans,
-                conv_groups=conv_groups,
-                proj_kernel_size=proj_kernel_size,
-                proj_padding=proj_padding,
-                proj_refine_kernel=proj_refine_kernel,
-                pos_kernel=pos_kernel,
-                spectral_dropout=spectral_dropout,
-            )
-            emb_dim = self.patch_embedding.emb_dim
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self.patch_size = patch_size
+        self.out_channels = out_channels
+        self.activation = activation
+        self.patch_embedding = PatchEmbedding(
+            patch_size=patch_size,
+            conv_out_chans=conv_out_chans,
+            conv_groups=conv_groups,
+            proj_kernel_size=proj_kernel_size,
+            proj_padding=proj_padding,
+            proj_refine_kernel=proj_refine_kernel,
+            pos_kernel=pos_kernel,
+            spectral_dropout=spectral_dropout,
+        )
+        emb_dim = self.patch_embedding.emb_dim
 
-            self.init_conv = nn.Sequential(Conv(emb_dim, res_channels, kernel_size=1), self.activation())
+        self.init_conv = nn.Sequential(
+            Conv(emb_dim, res_channels, kernel_size=1), self.activation()
+        )
 
-            self.residual_layer = ResidualGroup(res_channels=res_channels,
-                                                skip_channels=skip_channels,
-                                                num_res_layers=num_res_layers,
-                                                s4_lmax=s4_lmax,
-                                                s4_d_state=s4_d_state,
-                                                s4_dropout=drop_prob,
-                                                s4_bidirectional=s4_bidirectional,
-                                                s4_layernorm=s4_layernorm,
-                                                swa_window_size=swa_window_size)
-            self.final_conv = nn.Sequential(Conv(skip_channels, skip_channels, kernel_size=1),
-                                        self.activation(),
-                                        ZeroConv1d(skip_channels, out_channels))
-            self.lm_head_t = nn.Linear(out_channels, codebook_size_t, bias=False)
-            self.lm_head_f = nn.Linear(out_channels, codebook_size_f, bias=False)
-            self.pretrain_mode = pretrain_mode
-            self.norm = nn.LayerNorm(out_channels)
-            # 3-layer MLP classifier as described in the paper (Section 3.3)
-            _flat = self.n_chans * (self.n_times // self.patch_size) * self.out_channels
-            self.final_layer = nn.Sequential(
-                nn.Flatten(),
-                nn.Linear(_flat, mlp_hidden_multiplier * out_channels),
-                nn.ELU(),
-                nn.Dropout(drop_prob),
-                nn.Linear(mlp_hidden_multiplier * out_channels, out_channels),
-                nn.ELU(),
-                nn.Dropout(drop_prob),
-                nn.Linear(out_channels, self.n_outputs),
-            )
-
+        self.residual_layer = ResidualGroup(
+            res_channels=res_channels,
+            skip_channels=skip_channels,
+            num_res_layers=num_res_layers,
+            s4_lmax=s4_lmax,
+            s4_d_state=s4_d_state,
+            s4_dropout=drop_prob,
+            s4_bidirectional=s4_bidirectional,
+            s4_layernorm=s4_layernorm,
+            swa_window_size=swa_window_size,
+        )
+        self.final_conv = nn.Sequential(
+            Conv(skip_channels, skip_channels, kernel_size=1),
+            self.activation(),
+            ZeroConv1d(skip_channels, out_channels),
+        )
+        self.lm_head_t = nn.Linear(out_channels, codebook_size_t, bias=False)
+        self.lm_head_f = nn.Linear(out_channels, codebook_size_f, bias=False)
+        self.pretrain_mode = pretrain_mode
+        self.norm = nn.LayerNorm(out_channels)
+        # 3-layer MLP classifier as described in the paper (Section 3.3)
+        _flat = self.n_chans * (self.n_times // self.patch_size) * self.out_channels
+        self.final_layer = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(_flat, mlp_hidden_multiplier * out_channels),
+            nn.ELU(),
+            nn.Dropout(drop_prob),
+            nn.Linear(mlp_hidden_multiplier * out_channels, out_channels),
+            nn.ELU(),
+            nn.Dropout(drop_prob),
+            nn.Linear(out_channels, self.n_outputs),
+        )
 
     def forward(self, inputs, mask=None):
         batch, n_chans, n_times = inputs.shape
         patch_size = self.patch_size
         seq_len = n_times // patch_size
-        inputs = inputs[:, :, :seq_len * patch_size].reshape(batch, n_chans, seq_len, patch_size)
+        inputs = inputs[:, :, : seq_len * patch_size].reshape(
+            batch, n_chans, seq_len, patch_size
+        )
         inputs = self.patch_embedding(inputs, mask=mask)
-        x = rearrange(inputs, 'batch n_chans seq_len emb_dim -> batch emb_dim (n_chans seq_len)')
+        x = rearrange(
+            inputs, "batch n_chans seq_len emb_dim -> batch emb_dim (n_chans seq_len)"
+        )
         x = self.init_conv(x)
         x = self.residual_layer(x)
         x = self.final_conv(x)
-        x = rearrange(x, 'batch out_channels (n_chans seq_len) -> batch n_chans seq_len out_channels',
-                      n_chans=n_chans, seq_len=seq_len)
+        x = rearrange(
+            x,
+            "batch out_channels (n_chans seq_len) -> batch n_chans seq_len out_channels",
+            n_chans=n_chans,
+            seq_len=seq_len,
+        )
         x = self.norm(x)
         if self.pretrain_mode:
             if mask is not None:
@@ -768,4 +842,3 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             return (x_t, x_f)
         else:
             return self.final_layer(x)
-
