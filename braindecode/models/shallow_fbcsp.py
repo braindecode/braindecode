@@ -2,19 +2,19 @@
 #
 # License: BSD (3-clause)
 
-from typing import Callable
+from __future__ import annotations
 
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 
-from braindecode.functional import square
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (
     CombinedConv,
     Ensure4d,
     Expression,
     SafeLog,
+    Square,
     SqueezeFinalOutput,
 )
 
@@ -83,7 +83,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         pool_time_length=75,
         pool_time_stride=15,
         final_conv_length="auto",
-        conv_nonlin: Callable = square,
+        conv_nonlin: type[nn.Module] = Square,
         pool_mode="mean",
         activation_pool_nonlin: type[nn.Module] = SafeLog,
         split_first_layer=True,
@@ -163,7 +163,11 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
                     n_filters_conv, momentum=self.batch_norm_alpha, affine=True
                 ),
             )
-        self.add_module("conv_nonlin_exp", Expression(self.conv_nonlin))
+        if isinstance(self.conv_nonlin, type):
+            self.add_module("conv_nonlin_exp", self.conv_nonlin())
+        else:
+            # Backward compat: accept a callable (e.g. square function)
+            self.add_module("conv_nonlin_exp", Expression(self.conv_nonlin))
         self.add_module(
             "pool",
             pool_class(

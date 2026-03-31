@@ -9,10 +9,48 @@ from typing import Any, Dict, Literal, Optional, Sequence
 
 import numpy as np
 import pandas as pd
+from mne.utils import _soft_import
 
 import braindecode.models as models
 
 models_dict = {}
+
+pydantic = _soft_import("pydantic", "type serialization in configs", strict=False)
+
+_IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString) if pydantic else None
+
+
+def resolve_type_kwargs(cls, kwargs):
+    """Resolve type-encoded strings in *kwargs* back to Python types.
+
+    When a model config is saved to JSON, ``type[nn.Module]`` parameters
+    (e.g. ``activation=nn.ELU``) are stored as dotted import paths like
+    ``"torch.nn.modules.activation.ELU"``.  This function resolves them
+    back to actual types using :class:`pydantic.ImportString`.
+
+    Parameters
+    ----------
+    cls : type
+        The model class whose ``__init__`` signature is inspected.
+    kwargs : dict
+        Keyword arguments to resolve in-place.
+
+    Returns
+    -------
+    dict
+        The same *kwargs* dict, with type strings resolved.
+    """
+    if not _IMPORT_ADAPTER:
+        return kwargs
+    for name, param in inspect.signature(cls.__init__).parameters.items():
+        val = kwargs.get(name)
+        if isinstance(val, str) and "." in val and isinstance(param.default, type):
+            try:
+                kwargs[name] = _IMPORT_ADAPTER.validate_python(val)
+            except Exception:
+                pass
+    return kwargs
+
 
 # For the models inside the init model, go through all the models
 # check those have the EEGMixin class inherited. If they are, add them to the

@@ -17,6 +17,7 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
+from braindecode.models.util import _IMPORT_ADAPTER, resolve_type_kwargs
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -130,13 +131,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
     the model weights. This ensures that loaded models are correctly configured
     for their original data specifications.
 
-    .. important::
-        Currently, only EEG-specific parameters (n_outputs, n_chans, n_times,
-        input_window_seconds, sfreq, chs_info) are saved to the Hub.
-        Model-specific parameters (e.g., dropout rates, activation functions,
-        number of filters) are not preserved and will use their default values
-        when loading from the Hub.
-        Full parameter serialization will be addressed in a future update.
+    All model parameters (both EEG-specific and model-specific such as
+    dropout rates, activation functions, number of filters) are automatically
+    saved to the Hub and restored when loading.
     """
 
     def __init_subclass__(cls, **kwargs):
@@ -168,6 +165,20 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         repo_url = kwargs.pop("repo_url", "https://braindecode.org")
         library_name = kwargs.pop("library_name", "braindecode")
         license = kwargs.pop("license", "bsd-3-clause")
+
+        # Register a coder so that type[nn.Module] parameters
+        # (e.g. activation=nn.ELU) are serialized as importable
+        # strings in config.json and decoded back on load.
+        coders = kwargs.pop("coders", None) or {}
+        if _IMPORT_ADAPTER is not None:
+            coders.setdefault(
+                type,
+                (
+                    lambda t: f"{t.__module__}.{t.__qualname__}",
+                    lambda data: _IMPORT_ADAPTER.validate_python(data),
+                ),
+            )
+
         # TODO: model_card_template can be added in the future for custom model cards
         super().__init_subclass__(
             tags=tags,
@@ -175,6 +186,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             repo_url=repo_url,
             library_name=library_name,
             license=license,
+            coders=coders,
             **kwargs,
         )
 
@@ -215,6 +227,28 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         self._n_chans = n_chans  # type: ignore[assignment]
         self._n_times = n_times  # type: ignore[assignment]
         self._sfreq = sfreq  # type: ignore[assignment]
+
+        # Ensure all init parameters are accessible as instance
+        # attributes so that get_config() can reconstruct the model.
+        # The parent's __new__ already captured them in
+        # _hub_mixin_config; back-fill any that the subclass didn't
+        # store on self.  Skip EEG params (already on self._*) and
+        # anything that exists as a property on the class.
+        _eeg_keys = {
+            "n_outputs",
+            "n_chans",
+            "chs_info",
+            "n_times",
+            "input_window_seconds",
+            "sfreq",
+        }
+        for key, val in getattr(self, "_hub_mixin_config", {}).items():
+            if key in _eeg_keys:
+                continue
+            if hasattr(getattr(type(self), key, None), "__get__"):
+                continue
+            if not hasattr(self, key):
+                setattr(self, key, val)
 
         super().__init__()
 
@@ -326,6 +360,79 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
                     raise ValueError(msg) from exc
                 raise exc
 
+    def get_config(self) -> dict:
+        """Return a JSON-serializable dict of all ``__init__`` parameters.
+
+        The returned dictionary can be saved to a JSON file and later
+        used with :meth:`from_config` to reconstruct the model (without
+        weights).  It is also used internally by :meth:`push_to_hub` to
+        persist the full model configuration.
+
+        Returns
+        -------
+        dict
+            All ``__init__`` parameters, JSON-serializable.
+            ``type[nn.Module]`` parameters (e.g. ``activation``) are
+            encoded as importable dotted-path strings when pydantic
+            is installed.
+
+        Examples
+        --------
+        >>> import json
+        >>> from braindecode.models import EEGNet
+        >>> model = EEGNet(n_chans=22, n_times=1000, n_outputs=4, F1=16)
+        >>> config = model.get_config()
+        >>> config["F1"]
+        16
+        >>> # Save to disk
+        >>> with open("config.json", "w") as f:
+        ...     json.dump(config, f)
+
+        .. versionadded:: 1.5
+        """
+        config = dict(getattr(self, "_hub_mixin_config", None) or {})
+        config["chs_info"] = self._serialize_chs_info(self._chs_info)
+        return config
+
+    @classmethod
+    def from_config(cls, config: dict) -> "EEGModuleMixin":
+        """Create a model instance from a configuration dict.
+
+        This is the inverse of :meth:`get_config`.  Weights are **not**
+        loaded -- use :meth:`from_pretrained` for that.
+
+        Parameters
+        ----------
+        config : dict
+            Configuration dict as returned by :meth:`get_config`.
+
+        Returns
+        -------
+        EEGModuleMixin
+            A new model instance.
+
+        Examples
+        --------
+        >>> import json
+        >>> from braindecode.models import EEGNet
+        >>> model = EEGNet(n_chans=22, n_times=1000, n_outputs=4, F1=16)
+        >>> config = model.get_config()
+        >>> # Reconstruct (without weights)
+        >>> model2 = EEGNet.from_config(config)
+        >>> model2.F1
+        16
+        >>> # Or from a JSON file
+        >>> with open("config.json") as f:
+        ...     config = json.load(f)
+        >>> model3 = EEGNet.from_config(config)
+
+        .. versionadded:: 1.5
+        """
+        config = dict(config)  # shallow copy
+        config.pop("braindecode_version", None)
+        resolve_type_kwargs(cls, config)
+        return cls(**config)
+
     mapping: Optional[Dict[str, str]] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
@@ -430,54 +537,22 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
     @staticmethod
     def _serialize_chs_info(chs_info):
-        """
-        Serialize MNE channel info to JSON-compatible format.
-
-        Parameters
-        ----------
-        chs_info : list of dict or None
-            Channel information from MNE Info object.
-
-        Returns
-        -------
-        list of dict or None
-            Serialized channel information that can be saved to JSON.
-        """
+        """Serialize MNE channel info (``info["chs"]``) to JSON-compatible dicts."""
         if chs_info is None:
             return None
-
+        _INT_FIELDS = ("kind", "coil_type", "unit")
+        _FLOAT_FIELDS = ("cal", "range")
         serialized = []
         for ch in chs_info:
-            # Extract serializable fields from MNE channel info
-            ch_dict = {
-                "ch_name": ch.get("ch_name", ""),
-            }
-
-            # Handle kind field - can be either string or integer
-            kind_val = ch.get("kind")
-            if kind_val is not None:
-                ch_dict["kind"] = (
-                    kind_val if isinstance(kind_val, str) else int(kind_val)
-                )
-
-            # Add numeric fields with safe conversion
-            coil_type = ch.get("coil_type")
-            if coil_type is not None:
-                ch_dict["coil_type"] = int(coil_type)
-
-            unit = ch.get("unit")
-            if unit is not None:
-                ch_dict["unit"] = int(unit)
-
-            cal = ch.get("cal")
-            if cal is not None:
-                ch_dict["cal"] = float(cal)
-
-            range_val = ch.get("range")
-            if range_val is not None:
-                ch_dict["range"] = float(range_val)
-
-            # Serialize location array if present
+            ch_dict = {"ch_name": ch.get("ch_name", "")}
+            for key in _INT_FIELDS:
+                val = ch.get(key)
+                if val is not None:
+                    ch_dict[key] = val if isinstance(val, str) else int(val)
+            for key in _FLOAT_FIELDS:
+                val = ch.get(key)
+                if val is not None:
+                    ch_dict[key] = float(val)
             if "loc" in ch and ch["loc"] is not None:
                 ch_dict["loc"] = (
                     ch["loc"].tolist()
@@ -485,35 +560,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
                     else list(ch["loc"])
                 )
             serialized.append(ch_dict)
-
         return serialized
 
     @staticmethod
     def _deserialize_chs_info(chs_info_dict):
-        """
-        Deserialize channel info from JSON-compatible format to MNE-like structure.
-
-        Parameters
-        ----------
-        chs_info_dict : list of dict or None
-            Serialized channel information.
-
-        Returns
-        -------
-        list of dict or None
-            Deserialized channel information compatible with MNE.
-        """
+        """Deserialize JSON channel dicts back to MNE-compatible format."""
         if chs_info_dict is None:
             return None
-
         deserialized = []
         for ch_dict in chs_info_dict:
             ch = ch_dict.copy()
-            # Convert location back to numpy array if present
             if "loc" in ch and ch["loc"] is not None:
                 ch["loc"] = np.array(ch["loc"])
             deserialized.append(ch)
-
         return deserialized
 
     def _save_pretrained(self, save_directory):
@@ -533,16 +592,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
         save_directory = Path(save_directory)
 
-        # Collect EEG-specific configuration
-        config = {
-            "n_outputs": self._n_outputs,
-            "n_chans": self._n_chans,
-            "n_times": self._n_times,
-            "input_window_seconds": self._input_window_seconds,
-            "sfreq": self._sfreq,
-            "chs_info": self._serialize_chs_info(self._chs_info),
-            "braindecode_version": __version__,
-        }
+        # Start from the parent's auto-captured config which includes ALL
+        # init parameters (model-specific + EEG-specific), then override
+        # chs_info with our serialized version that handles numpy arrays.
+        config = dict(getattr(self, "_hub_mixin_config", None) or {})
+        config["chs_info"] = self._serialize_chs_info(self._chs_info)
+        config["braindecode_version"] = __version__
 
         # Save to config.json
         config_path = save_directory / "config.json"
@@ -581,6 +636,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             **model_kwargs,
         ):
             model_kwargs.pop("braindecode_version", None)
+            resolve_type_kwargs(cls, model_kwargs)
             return super()._from_pretrained(  # type: ignore
                 model_id=model_id,
                 revision=revision,

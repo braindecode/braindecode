@@ -207,11 +207,18 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
         self._weights_init()
 
-        self.final_layer = (
-            nn.Identity()
-            if return_encoder_output
-            else nn.Sequential(nn.Flatten(), nn.LazyLinear(self.n_outputs))
-        )
+        if return_encoder_output:
+            self.final_layer = nn.Identity()
+        elif self._n_times is not None and self._n_chans is not None:
+            n_patch = self._n_times // patch_size
+            flat_dim = self._n_chans * n_patch * emb_dim
+            self.final_layer = nn.Sequential(
+                nn.Flatten(), nn.Linear(flat_dim, self.n_outputs)
+            )
+        else:
+            self.final_layer = nn.Sequential(
+                nn.Flatten(), nn.LazyLinear(self.n_outputs)
+            )
 
     def _weights_init(self):
         for m in self.modules():
