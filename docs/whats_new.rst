@@ -76,7 +76,20 @@ Enhancements
 
 API changes
 ============
-- None yet.
+- Add :meth:`braindecode.models.base.EEGModuleMixin.get_config` and
+  :meth:`braindecode.models.base.EEGModuleMixin.from_config` to all models,
+  enabling full JSON round-trip serialization and reconstruction of any model
+  including all ``__init__`` parameters (by `Bruno Aristimunha`_)
+- :meth:`~braindecode.models.base.EEGModuleMixin.push_to_hub` now saves **all**
+  model parameters to ``config.json`` (previously only 6 EEG-specific parameters
+  were saved; model-specific parameters like ``F1``, ``D``, ``drop_prob`` were
+  lost on reload) (by `Bruno Aristimunha`_)
+- Add :class:`braindecode.modules.Square` activation module and update
+  :class:`braindecode.models.ShallowFBCSPNet` to use ``type[nn.Module]`` for
+  ``conv_nonlin`` (backward-compatible with callable) (by `Bruno Aristimunha`_)
+- Replace ``LazyLinear`` with ``Linear`` in :class:`braindecode.models.CBraMod`
+  when input dimensions are known, improving Hub round-trip compatibility
+  (by `Bruno Aristimunha`_)
 
 Requirements
 ============
