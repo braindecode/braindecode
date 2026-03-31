@@ -169,7 +169,6 @@ class _GConv(nn.Module):
             "kernel_norm_initialized", torch.tensor(0, dtype=torch.bool)
         )
 
-    @torch.compiler.disable
     def forward(self, u, return_kernel=False):
         if not self.transposed:
             u = u.transpose(-1, -2)
@@ -326,15 +325,11 @@ class ResidualBlock(nn.Module):
         assert window_size % 2 == 1, "window_size should be odd number, like 7, 9, 11"
 
         half_window = window_size // 2
-
-        mask = torch.full((seq_len, seq_len), float("-inf"))
-
-        for i in range(seq_len):
-            start = max(0, i - half_window)
-            end = min(seq_len, i + half_window + 1)
-            mask[i, start:end] = 0
-
-        return mask
+        idx = torch.arange(seq_len)
+        dist = (idx.unsqueeze(0) - idx.unsqueeze(1)).abs()
+        return torch.where(
+            dist <= half_window, torch.zeros(1), torch.full((1,), float("-inf"))
+        )
 
     def forward(self, input_data):
         x, original = input_data
@@ -569,7 +564,6 @@ class PatchEmbedding(nn.Module):
             nn.Dropout(spectral_dropout),
         )
 
-    @torch.compiler.disable
     def forward(self, x, mask=None):
         batch, n_chans, seq_len, patch_size = x.shape
         if mask is None:
