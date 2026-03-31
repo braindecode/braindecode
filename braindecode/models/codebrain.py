@@ -169,6 +169,7 @@ class _GConv(nn.Module):
             "kernel_norm_initialized", torch.tensor(0, dtype=torch.bool)
         )
 
+    @torch.compiler.disable
     def forward(self, u, return_kernel=False):
         if not self.transposed:
             u = u.transpose(-1, -2)
@@ -568,6 +569,7 @@ class PatchEmbedding(nn.Module):
             nn.Dropout(spectral_dropout),
         )
 
+    @torch.compiler.disable
     def forward(self, x, mask=None):
         batch, n_chans, seq_len, patch_size = x.shape
         if mask is None:
