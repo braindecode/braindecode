@@ -9,15 +9,70 @@ from typing import Any, Dict, Literal, Optional, Sequence
 
 import numpy as np
 import pandas as pd
-from mne.utils import _soft_import
-
-import braindecode.models as models
+import pydantic
 
 models_dict = {}
 
-pydantic = _soft_import("pydantic", "type serialization in configs", strict=False)
+_IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
 
-_IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString) if pydantic else None
+
+_EEG_PARAMS = frozenset(
+    {"n_outputs", "n_chans", "chs_info", "n_times", "input_window_seconds", "sfreq"}
+)
+
+_JSON_SAFE = (int, float, str, bool, type(None))
+
+
+def _is_jsonable(val):
+    """Return True if *val* is directly JSON-serializable."""
+    if isinstance(val, _JSON_SAFE):
+        return True
+    if isinstance(val, (list, tuple)):
+        return all(_is_jsonable(v) for v in val)
+    if isinstance(val, dict):
+        return all(isinstance(k, str) and _is_jsonable(v) for k, v in val.items())
+    return False
+
+
+def build_model_config(model) -> dict:
+    """Build a JSON-serializable config dict from a model instance.
+
+    Prefers ``_hub_mixin_config`` when available (it uses Hub coders to
+    encode custom types like ``functools.partial``).  Otherwise inspects
+    the ``__init__`` signature and reads instance attributes directly.
+
+    Parameters
+    ----------
+    model : EEGModuleMixin
+        The model instance.
+
+    Returns
+    -------
+    dict
+        All ``__init__`` parameters, JSON-serializable.
+    """
+    hub_config = getattr(model, "_hub_mixin_config", None)
+    if hub_config is not None:
+        config = dict(hub_config)
+    else:
+        config = {}
+        for name, p in inspect.signature(type(model).__init__).parameters.items():
+            if name == "self" or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+                continue
+            val = (
+                getattr(model, f"_{name}", None)
+                if name in _EEG_PARAMS
+                else getattr(model, name, p.default)
+            )
+            if isinstance(val, type):
+                val = f"{val.__module__}.{val.__qualname__}"
+            elif not _is_jsonable(val):
+                continue
+            config[name] = val
+    chs_info = getattr(model, "_chs_info", None)
+    if chs_info is not None:
+        config["chs_info"] = model._serialize_chs_info(chs_info)
+    return config
 
 
 def resolve_type_kwargs(cls, kwargs):
@@ -40,8 +95,6 @@ def resolve_type_kwargs(cls, kwargs):
     dict
         The same *kwargs* dict, with type strings resolved.
     """
-    if not _IMPORT_ADAPTER:
-        return kwargs
     for name, param in inspect.signature(cls.__init__).parameters.items():
         val = kwargs.get(name)
         if isinstance(val, str) and "." in val and isinstance(param.default, type):
@@ -58,6 +111,8 @@ def resolve_type_kwargs(cls, kwargs):
 
 
 def _init_models_dict():
+    import braindecode.models as models
+
     for m in inspect.getmembers(models, inspect.isclass):
         if (
             issubclass(m[1], models.base.EEGModuleMixin)
@@ -68,6 +123,7 @@ def _init_models_dict():
             models_dict[m[0]] = m[1]
 
 
+# Keep in sync with _EEG_PARAMS above.
 SigArgName = Literal[
     "n_outputs",
     "n_chans",

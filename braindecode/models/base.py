@@ -17,7 +17,12 @@ from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
 
-from braindecode.models.util import _IMPORT_ADAPTER, resolve_type_kwargs
+from braindecode.models.util import (
+    _EEG_PARAMS,
+    _IMPORT_ADAPTER,
+    build_model_config,
+    resolve_type_kwargs,
+)
 from braindecode.version import __version__
 
 huggingface_hub = _soft_import(
@@ -170,14 +175,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         # (e.g. activation=nn.ELU) are serialized as importable
         # strings in config.json and decoded back on load.
         coders = kwargs.pop("coders", None) or {}
-        if _IMPORT_ADAPTER is not None:
-            coders.setdefault(
-                type,
-                (
-                    lambda t: f"{t.__module__}.{t.__qualname__}",
-                    lambda data: _IMPORT_ADAPTER.validate_python(data),
-                ),
-            )
+        coders.setdefault(
+            type,
+            (
+                lambda t: f"{t.__module__}.{t.__qualname__}",
+                lambda data: _IMPORT_ADAPTER.validate_python(data),
+            ),
+        )
 
         # TODO: model_card_template can be added in the future for custom model cards
         super().__init_subclass__(
@@ -228,22 +232,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         self._n_times = n_times  # type: ignore[assignment]
         self._sfreq = sfreq  # type: ignore[assignment]
 
-        # Ensure all init parameters are accessible as instance
-        # attributes so that get_config() can reconstruct the model.
-        # The parent's __new__ already captured them in
-        # _hub_mixin_config; back-fill any that the subclass didn't
-        # store on self.  Skip EEG params (already on self._*) and
-        # anything that exists as a property on the class.
-        _eeg_keys = {
-            "n_outputs",
-            "n_chans",
-            "chs_info",
-            "n_times",
-            "input_window_seconds",
-            "sfreq",
-        }
+        # Back-fill instance attributes from _hub_mixin_config for any
+        # params the subclass didn't store on self.  Skip EEG params
+        # (stored as self._*) and descriptors (properties).
         for key, val in getattr(self, "_hub_mixin_config", {}).items():
-            if key in _eeg_keys:
+            if key in _EEG_PARAMS:
                 continue
             if hasattr(getattr(type(self), key, None), "__get__"):
                 continue
@@ -373,8 +366,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         dict
             All ``__init__`` parameters, JSON-serializable.
             ``type[nn.Module]`` parameters (e.g. ``activation``) are
-            encoded as importable dotted-path strings when pydantic
-            is installed.
+            encoded as importable dotted-path strings.
 
         Examples
         --------
@@ -390,9 +382,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
         .. versionadded:: 1.5
         """
-        config = dict(getattr(self, "_hub_mixin_config", None) or {})
-        config["chs_info"] = self._serialize_chs_info(self._chs_info)
-        return config
+        return build_model_config(self)
 
     @classmethod
     def from_config(cls, config: dict) -> "EEGModuleMixin":
@@ -592,11 +582,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
         save_directory = Path(save_directory)
 
-        # Start from the parent's auto-captured config which includes ALL
-        # init parameters (model-specific + EEG-specific), then override
-        # chs_info with our serialized version that handles numpy arrays.
-        config = dict(getattr(self, "_hub_mixin_config", None) or {})
-        config["chs_info"] = self._serialize_chs_info(self._chs_info)
+        config = build_model_config(self)
         config["braindecode_version"] = __version__
 
         # Save to config.json

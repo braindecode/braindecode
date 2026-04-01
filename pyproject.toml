@@ -58,6 +58,7 @@ dependencies = [
     'linear_attention_transformer',
     'docstring_inheritance',        # we get einops from here
     'rotary_embedding_torch',
+    'pydantic>=2.0',
     'pandas<3.0.0',                 # to avoid incompatibility with wfdb https://github.com/MIT-LCP/wfdb-python/issues/560
 ]
 
