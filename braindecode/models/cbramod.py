@@ -237,11 +237,13 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x, mask=None):
+    def forward(self, x, mask=None, return_features=False):
         x = self.rearrange(x)
         patch_emb = self.patch_embedding(x, mask)
         feats = self.encoder(patch_emb)
         out = self.proj_out(feats)
+        if return_features:
+            return {"features": out, "cls_token": None}
         return self.final_layer(out)
 
 

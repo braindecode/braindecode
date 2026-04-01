@@ -189,7 +189,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             activation=activation,
         )
 
-    def forward(self, x):
+    def forward(self, x, return_features=False):
         """
         Pass the input through the BIOT encoder, and then through the
         classification head.
@@ -198,6 +198,9 @@ class BIOT(EEGModuleMixin, nn.Module):
         ----------
         x: Tensor
             (batch_size, n_channels, n_times)
+        return_features : bool
+            If True, return a dict with ``"features"`` and ``"cls_token"``
+            instead of the classification output.
 
         Returns
         -------
@@ -207,6 +210,10 @@ class BIOT(EEGModuleMixin, nn.Module):
             (batch_size, n_outputs), (batch_size, emb_size)
         """
         emb = self.encoder(x)
+
+        if return_features:
+            return {"features": emb, "cls_token": None}
+
         x = self.final_layer(emb)
 
         if self.return_feature:

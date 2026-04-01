@@ -788,6 +788,7 @@ class Labram(EEGModuleMixin, nn.Module):
         self,
         x,
         ch_names: list[str] | None = None,
+        return_features=False,
         return_patch_tokens=False,
         return_all_tokens=False,
     ):
@@ -805,6 +806,9 @@ class Labram(EEGModuleMixin, nn.Module):
             If not provided, the channels provided during model initialization
             (via ``chs_info``), channels will be used instead
             If neither is provided, an error will be raised.
+        return_features : bool
+            If True, return a dict with ``"features"`` (patch tokens) and
+            ``"cls_token"`` instead of the classification output.
         return_patch_tokens: bool
             Return the patch tokens
         return_all_tokens: bool
@@ -812,11 +816,17 @@ class Labram(EEGModuleMixin, nn.Module):
 
         Returns
         -------
-        torch.Tensor
+        torch.Tensor or dict
             The output of the model with dimensions (batch, n_outputs)
         """
         # Apply automatic channel reordering if configured and input_chans not provided
         x, input_chans = self._select_channels(x, ch_names=ch_names)
+
+        if return_features:
+            x = self.forward_features(
+                x, input_chans=input_chans, return_all_tokens=True
+            )
+            return {"features": x[:, 1:, :], "cls_token": x[:, 0, :]}
 
         x = self.forward_features(
             x,

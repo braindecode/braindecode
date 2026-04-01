@@ -142,6 +142,16 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
                 batch_first=True,
             )
 
+    def forward(self, X, ch_idxs: torch.Tensor | None = None, return_features=False):  # type: ignore
+        local_features = self.feature_encoder(X)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        local_features += pos_encoding  # type: ignore
+        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        if return_features:
+            return {"features": contextual_features, "cls_token": None}
+        y = self.final_layer(contextual_features)  # type: ignore
+        return y  # type: ignore
+
 
 class SignalJEPA(_BaseSignalJEPA):
     r"""Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [1]_
@@ -221,14 +231,6 @@ class SignalJEPA(_BaseSignalJEPA):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
-
-    def forward(self, X, ch_idxs: torch.Tensor | None = None):  # type: ignore
-        local_features = self.feature_encoder(X)  # type: ignore
-        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
-        local_features += pos_encoding  # type: ignore
-        contextual_features = self.transformer.encoder(local_features)  # type: ignore
-        y = self.final_layer(contextual_features)  # type: ignore
-        return y  # type: ignore
 
 
 class SignalJEPA_Contextual(_BaseSignalJEPA):
@@ -395,14 +397,6 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
         return new_model
 
-    def forward(self, X, ch_idxs: torch.Tensor | None = None):  # type: ignore
-        local_features = self.feature_encoder(X)  # type: ignore
-        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
-        local_features += pos_encoding  # type: ignore
-        contextual_features = self.transformer.encoder(local_features)  # type: ignore
-        y = self.final_layer(contextual_features)  # type: ignore
-        return y  # type: ignore
-
 
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
     r"""Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
@@ -549,8 +543,10 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         new_model.feature_encoder = deepcopy(feature_encoder)
         return new_model
 
-    def forward(self, X):
+    def forward(self, X, return_features=False):
         local_features = self.feature_encoder(X)
+        if return_features:
+            return {"features": local_features, "cls_token": None}
         y = self.final_layer(local_features)
         return y
 
@@ -737,9 +733,11 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         new_model.feature_encoder = deepcopy(feature_encoder)
         return new_model
 
-    def forward(self, X):
+    def forward(self, X, return_features=False):
         X = self.spatial_conv(X)
         local_features = self.feature_encoder(X)
+        if return_features:
+            return {"features": local_features, "cls_token": None}
         y = self.final_layer(local_features)
         return y
 

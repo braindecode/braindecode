@@ -299,7 +299,7 @@ class BENDR(EEGModuleMixin, nn.Module):
                 linear, name="weight", dim=1
             )
 
-    def forward(self, x):
+    def forward(self, x, return_features=False):
         if self.channel_projection is not None:
             x = self.channel_projection(x)
         encoded = self.encoder(x)
@@ -327,6 +327,9 @@ class BENDR(EEGModuleMixin, nn.Module):
             # downstream tasks." This follows BERT's [CLS] token convention.
             feature = context[:, :, 0]
             # feature: [batch_size, encoder_h]
+
+        if return_features:
+            return {"features": feature, "cls_token": None}
 
         if self.final_layer is not None:
             feature = self.final_layer(feature)

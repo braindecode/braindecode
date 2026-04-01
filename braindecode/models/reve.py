@@ -373,7 +373,8 @@ class REVE(EEGModuleMixin, nn.Module):
         eeg: torch.Tensor,
         pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
-    ) -> Union[torch.Tensor, list[torch.Tensor]]:
+        return_features: bool = False,
+    ) -> Union[torch.Tensor, list[torch.Tensor], dict]:
         """
         Forward pass of the model.
 
@@ -452,6 +453,9 @@ class REVE(EEGModuleMixin, nn.Module):
             patch=n_patches,
             emb=self.embed_dim,
         )
+
+        if return_features:
+            return {"features": x, "cls_token": None}
 
         if self.use_attention_pooling:
             x = self._attention_pooling(x)

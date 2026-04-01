@@ -382,7 +382,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             "embed_dim": self.embed_dim,
         }
 
-    def forward(self, x):
+    def forward(self, x, return_features=False):
         """
         Forward pass.
 
@@ -390,10 +390,13 @@ class EEGPT(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             EEG data of shape (batch, n_chans, n_times).
+        return_features : bool
+            If True, return a dict with ``"features"`` and ``"cls_token"``
+            instead of the classification output.
 
         Returns
         -------
-        torch.Tensor
+        torch.Tensor or dict
             Model output. Shape depends on `n_outputs` and `return_encoder_output`.
         """
         # Channel projection (if configured)
@@ -401,6 +404,9 @@ class EEGPT(EEGModuleMixin, nn.Module):
 
         # z shape: (batch, n_patches, embed_num, embed_dim)
         z = self.target_encoder(x, self.chans_id)
+
+        if return_features:
+            return {"features": z.flatten(2), "cls_token": None}
 
         if self.return_encoder_output:
             return z
