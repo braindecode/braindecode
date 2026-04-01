@@ -22,6 +22,7 @@ from braindecode.models.util import (
     _IMPORT_ADAPTER,
     build_model_config,
     resolve_type_kwargs,
+    track_model_init_kwargs,
 )
 from braindecode.version import __version__
 
@@ -154,6 +155,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
         if not HAS_HF_HUB:
             super().__init_subclass__(**kwargs)
+            track_model_init_kwargs(cls)
             return
 
         base_tags = ["braindecode", cls.__name__]
@@ -193,6 +195,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             coders=coders,
             **kwargs,
         )
+        track_model_init_kwargs(cls)
 
     def __init__(
         self,
@@ -380,7 +383,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         >>> with open("config.json", "w") as f:
         ...     json.dump(config, f)
 
-        .. versionadded:: 1.5
+        .. versionadded:: 1.4
         """
         return build_model_config(self)
 
@@ -416,7 +419,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         ...     config = json.load(f)
         >>> model3 = EEGNet.from_config(config)
 
-        .. versionadded:: 1.5
+        .. versionadded:: 1.4
         """
         config = dict(config)  # shallow copy
         config.pop("braindecode_version", None)

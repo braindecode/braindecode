@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
@@ -45,12 +47,14 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
     final_conv_length: int | str
         Length of the final convolution layer.
         If set to "auto", length of the input signal must be specified.
-    conv_nonlin: callable
-        Non-linear function to be used after convolution layers.
+    conv_nonlin: type[nn.Module] | Callable
+        Non-linear module class to be used after convolution layers.
+        For backward compatibility, callables are also accepted and wrapped
+        with :class:`~braindecode.modules.Expression`.
     pool_mode: str
         Method to use on pooling layers. "max" or "mean".
-    activation_pool_nonlin: callable
-        Non-linear function to be used after pooling layers.
+    activation_pool_nonlin: type[nn.Module]
+        Non-linear module class to be used after pooling layers.
     split_first_layer: bool
         Split first layer into temporal and spatial layers (True) or just use temporal (False).
         There would be no non-linearity between the split layers.
@@ -83,7 +87,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         pool_time_length=75,
         pool_time_stride=15,
         final_conv_length="auto",
-        conv_nonlin: type[nn.Module] = Square,
+        conv_nonlin: type[nn.Module] | Callable = Square,
         pool_mode="mean",
         activation_pool_nonlin: type[nn.Module] = SafeLog,
         split_first_layer=True,

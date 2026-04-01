@@ -5,6 +5,7 @@
 import inspect
 import warnings
 from copy import deepcopy
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Sequence
 
@@ -35,12 +36,41 @@ def _is_jsonable(val):
     return False
 
 
+def track_model_init_kwargs(cls) -> None:
+    """Instrument a model class so constructor kwargs are tracked."""
+    init = cls.__init__
+    if getattr(init, "_braindecode_tracks_init_kwargs", False):
+        return
+
+    init_signature = inspect.signature(init)
+
+    @wraps(init)
+    def wrapped(self, *args, **kwargs):
+        bound = init_signature.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+
+        captured_kwargs = {}
+        for name, param in init_signature.parameters.items():
+            if name == "self" or name not in bound.arguments:
+                continue
+            value = bound.arguments[name]
+            if param.kind == param.VAR_KEYWORD:
+                captured_kwargs.update(value)
+            elif param.kind != param.VAR_POSITIONAL:
+                captured_kwargs[name] = value
+        self._braindecode_init_kwargs = captured_kwargs
+        return init(self, *args, **kwargs)
+
+    setattr(wrapped, "_braindecode_tracks_init_kwargs", True)
+    cls.__init__ = wrapped
+
+
 def build_model_config(model) -> dict:
     """Build a JSON-serializable config dict from a model instance.
 
     Prefers ``_hub_mixin_config`` when available (it uses Hub coders to
-    encode custom types like ``functools.partial``).  Otherwise inspects
-    the ``__init__`` signature and reads instance attributes directly.
+    encode custom types like ``functools.partial``). Otherwise reuses the
+    ``__init__`` keyword arguments captured at construction time.
 
     Parameters
     ----------
@@ -56,15 +86,17 @@ def build_model_config(model) -> dict:
     if hub_config is not None:
         config = dict(hub_config)
     else:
-        config = {}
-        for name, p in inspect.signature(type(model).__init__).parameters.items():
-            if name == "self" or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
-                continue
-            val = (
-                getattr(model, f"_{name}", None)
-                if name in _EEG_PARAMS
-                else getattr(model, name, p.default)
+        init_kwargs = getattr(model, "_braindecode_init_kwargs", None)
+        if init_kwargs is None:
+            raise RuntimeError(
+                f"{type(model).__name__} was instantiated without captured init kwargs; "
+                "cannot build a reliable config."
             )
+
+        config = {}
+        for name, val in deepcopy(init_kwargs).items():
+            if name == "chs_info":
+                continue
             if isinstance(val, type):
                 val = f"{val.__module__}.{val.__qualname__}"
             elif not _is_jsonable(val):
