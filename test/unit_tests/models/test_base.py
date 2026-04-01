@@ -3,6 +3,8 @@
 # License: BSD-3
 
 
+import json
+from operator import attrgetter
 from unittest.mock import patch
 
 import pytest
@@ -25,6 +27,34 @@ class DummyModuleNTime(EEGModuleMixin, nn.Sequential):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.add_module("dummy", nn.Linear(self.n_times, 1))
+
+
+class DummyModuleConfigRoundTrip(EEGModuleMixin, nn.Sequential):
+    """Dummy module exercising config round-trips."""
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        drop_prob=0.5,
+        activation: type[nn.Module] = nn.ReLU,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self.activation = activation
+        self.add_module("drop", nn.Dropout(drop_prob))
+        self.add_module("activation_module", activation())
+        self.add_module("linear", nn.Linear(self.n_times, self.n_outputs))
 
 
 @pytest.fixture(scope="function")
@@ -257,6 +287,56 @@ def test_raised_runtimeerror_kernel_size_get_output_shape(dummy_module: DummyMod
     )
     with pytest.raises(ValueError, match=err_msg):
         dummy_module.get_output_shape()
+
+
+@pytest.fixture(scope="function")
+def config_roundtrip_without_hub_config():
+    model = DummyModuleConfigRoundTrip(
+        n_outputs=2,
+        n_chans=3,
+        chs_info=[{"ch_name": f"ch{i}"} for i in range(3)],
+        n_times=32,
+        input_window_seconds=0.32,
+        sfreq=100.0,
+        drop_prob=0.25,
+        activation=nn.ELU,
+    )
+    model._hub_mixin_config = None
+
+    config = model.get_config()
+
+    restored = DummyModuleConfigRoundTrip.from_config(json.loads(json.dumps(config)))
+    return model, config, restored
+
+
+@pytest.mark.parametrize(
+    "config_key, value_getter, use_identity",
+    [
+        pytest.param("drop_prob", attrgetter("drop.p"), False, id="drop-prob"),
+        pytest.param("activation", attrgetter("activation"), True, id="activation"),
+        pytest.param("n_outputs", attrgetter("n_outputs"), False, id="n-outputs"),
+        pytest.param("n_chans", attrgetter("n_chans"), False, id="n-chans"),
+        pytest.param("n_times", attrgetter("n_times"), False, id="n-times"),
+    ],
+)
+def test_get_config_roundtrip_without_hub_config(
+    config_roundtrip_without_hub_config, config_key, value_getter, use_identity
+):
+    model, config, restored = config_roundtrip_without_hub_config
+    expected = value_getter(model)
+    expected_config = (
+        f"{expected.__module__}.{expected.__qualname__}"
+        if isinstance(expected, type)
+        else expected
+    )
+
+    assert config[config_key] == expected_config
+
+    restored_value = value_getter(restored)
+    if use_identity:
+        assert restored_value is expected
+    else:
+        assert restored_value == expected
 
 
 def test_raised_runtimeerror_output_size_get_output_shape(dummy_module: DummyModule):

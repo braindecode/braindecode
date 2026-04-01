@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from typing import Optional, Tuple
 
 import torch
@@ -496,9 +497,10 @@ class _TransformerEncoderLayer(nn.Module):
 
         if dim_feedforward is None:
             dim_feedforward = 4 * embed_dim
-            # note: preserve the original behaviour (print) from the provided code
-            print(
-                "dim_feedforward is set to 4*embed_dim, the default in Vaswani et al. (Attention is all you need)"
+            warnings.warn(
+                "dim_feedforward is set to 4*embed_dim, the default in "
+                "Vaswani et al. (Attention is all you need)",
+                stacklevel=2,
             )
 
         self.layer_norm_att = _LayerNorm(embed_dim, bias=bias)

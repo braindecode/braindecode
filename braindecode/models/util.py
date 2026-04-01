@@ -3,16 +3,144 @@
 #
 # License: BSD (3-clause)
 import inspect
+import warnings
 from copy import deepcopy
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Sequence
 
 import numpy as np
 import pandas as pd
-
-import braindecode.models as models
+import pydantic
 
 models_dict = {}
+
+_IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
+
+
+_EEG_PARAMS = frozenset(
+    {"n_outputs", "n_chans", "chs_info", "n_times", "input_window_seconds", "sfreq"}
+)
+
+_JSON_SAFE = (int, float, str, bool, type(None))
+
+
+def _is_jsonable(val):
+    """Return True if *val* is directly JSON-serializable."""
+    if isinstance(val, _JSON_SAFE):
+        return True
+    if isinstance(val, (list, tuple)):
+        return all(_is_jsonable(v) for v in val)
+    if isinstance(val, dict):
+        return all(isinstance(k, str) and _is_jsonable(v) for k, v in val.items())
+    return False
+
+
+def track_model_init_kwargs(cls) -> None:
+    """Instrument a model class so constructor kwargs are tracked."""
+    init = cls.__init__
+    if getattr(init, "_braindecode_tracks_init_kwargs", False):
+        return
+
+    init_signature = inspect.signature(init)
+
+    @wraps(init)
+    def wrapped(self, *args, **kwargs):
+        bound = init_signature.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+
+        captured_kwargs = {}
+        for name, param in init_signature.parameters.items():
+            if name == "self" or name not in bound.arguments:
+                continue
+            value = bound.arguments[name]
+            if param.kind == param.VAR_KEYWORD:
+                captured_kwargs.update(value)
+            elif param.kind != param.VAR_POSITIONAL:
+                captured_kwargs[name] = value
+        self._braindecode_init_kwargs = captured_kwargs
+        return init(self, *args, **kwargs)
+
+    setattr(wrapped, "_braindecode_tracks_init_kwargs", True)
+    cls.__init__ = wrapped
+
+
+def build_model_config(model) -> dict:
+    """Build a JSON-serializable config dict from a model instance.
+
+    Prefers ``_hub_mixin_config`` when available (it uses Hub coders to
+    encode custom types like ``functools.partial``). Otherwise reuses the
+    ``__init__`` keyword arguments captured at construction time.
+
+    Parameters
+    ----------
+    model : EEGModuleMixin
+        The model instance.
+
+    Returns
+    -------
+    dict
+        All ``__init__`` parameters, JSON-serializable.
+    """
+    hub_config = getattr(model, "_hub_mixin_config", None)
+    if hub_config is not None:
+        config = dict(hub_config)
+    else:
+        init_kwargs = getattr(model, "_braindecode_init_kwargs", None)
+        if init_kwargs is None:
+            raise RuntimeError(
+                f"{type(model).__name__} was instantiated without captured init kwargs; "
+                "cannot build a reliable config."
+            )
+
+        config = {}
+        for name, val in deepcopy(init_kwargs).items():
+            if name == "chs_info":
+                continue
+            if isinstance(val, type):
+                val = f"{val.__module__}.{val.__qualname__}"
+            elif not _is_jsonable(val):
+                continue
+            config[name] = val
+    chs_info = getattr(model, "_chs_info", None)
+    if chs_info is not None:
+        config["chs_info"] = model._serialize_chs_info(chs_info)
+    return config
+
+
+def resolve_type_kwargs(cls, kwargs):
+    """Resolve type-encoded strings in *kwargs* back to Python types.
+
+    When a model config is saved to JSON, ``type[nn.Module]`` parameters
+    (e.g. ``activation=nn.ELU``) are stored as dotted import paths like
+    ``"torch.nn.modules.activation.ELU"``.  This function resolves them
+    back to actual types using :class:`pydantic.ImportString`.
+
+    Parameters
+    ----------
+    cls : type
+        The model class whose ``__init__`` signature is inspected.
+    kwargs : dict
+        Keyword arguments to resolve in-place.
+
+    Returns
+    -------
+    dict
+        The same *kwargs* dict, with type strings resolved.
+    """
+    for name, param in inspect.signature(cls.__init__).parameters.items():
+        val = kwargs.get(name)
+        if isinstance(val, str) and "." in val and isinstance(param.default, type):
+            try:
+                kwargs[name] = _IMPORT_ADAPTER.validate_python(val)
+            except pydantic.ValidationError:
+                warnings.warn(
+                    f"Could not resolve type string {val!r} for parameter "
+                    f"{name!r} in {cls.__name__}",
+                    stacklevel=2,
+                )
+    return kwargs
+
 
 # For the models inside the init model, go through all the models
 # check those have the EEGMixin class inherited. If they are, add them to the
@@ -20,6 +148,8 @@ models_dict = {}
 
 
 def _init_models_dict():
+    import braindecode.models as models
+
     for m in inspect.getmembers(models, inspect.isclass):
         if (
             issubclass(m[1], models.base.EEGModuleMixin)
@@ -30,6 +160,7 @@ def _init_models_dict():
             models_dict[m[0]] = m[1]
 
 
+# Keep in sync with _EEG_PARAMS above.
 SigArgName = Literal[
     "n_outputs",
     "n_chans",
