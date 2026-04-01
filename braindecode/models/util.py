@@ -3,6 +3,7 @@
 #
 # License: BSD (3-clause)
 import inspect
+import warnings
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Sequence
@@ -100,8 +101,12 @@ def resolve_type_kwargs(cls, kwargs):
         if isinstance(val, str) and "." in val and isinstance(param.default, type):
             try:
                 kwargs[name] = _IMPORT_ADAPTER.validate_python(val)
-            except Exception:
-                pass
+            except pydantic.ValidationError:
+                warnings.warn(
+                    f"Could not resolve type string {val!r} for parameter "
+                    f"{name!r} in {cls.__name__}",
+                    stacklevel=2,
+                )
     return kwargs
 
 
