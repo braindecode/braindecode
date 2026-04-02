@@ -80,8 +80,13 @@ Enhancements
   :class:`~braindecode.models.SignalJEPA` variants). When ``True``, returns a
   consistent ``{"features": Tensor, "cls_token": Tensor | None}`` dict across
   all models. Legacy parameters (``return_encoder_output``, ``return_feature``,
-  ``return_all_tokens``, etc.) continue to work unchanged.
-  (by `Bruno Aristimunha`_)
+  ``return_all_tokens``, etc.) continue to work unchanged
+  (by `Bruno Aristimunha`_).
+- Add :meth:`~braindecode.models.base.EEGModuleMixin.reset_head` to all 7
+  foundation models for replacing the classification head with a new number of
+  outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
+  automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
+  differs from the saved config (by `Bruno Aristimunha`_).
 
 API changes
 ============

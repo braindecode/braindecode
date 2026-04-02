@@ -149,8 +149,8 @@ def test_legacy_params(cls, init_kw, fwd_kw, check):
 
 # -- reset_head --
 
-# Exclude SignalJEPA (SSL model, Identity head) and REVE (needs special chs)
-_RESET_MODELS = [p for p in _MODELS if p.id not in ("SignalJEPA", "REVE")]
+# Exclude SignalJEPA (SSL model, Identity head)
+_RESET_MODELS = [p for p in _MODELS if p.id != "SignalJEPA"]
 
 
 @pytest.mark.parametrize("cls, nc, kw, has_cls", _RESET_MODELS)
