@@ -413,6 +413,11 @@ class REVE(EEGModuleMixin, nn.Module):
             If ``return_features=True``: ``dict`` with ``"features"`` and ``"cls_token"`` keys.
         """
 
+        if return_output and return_features:
+            raise ValueError(
+                "return_output and return_features are mutually exclusive."
+            )
+
         patches = eeg.unfold(
             dimension=2,
             size=self.patch_size,

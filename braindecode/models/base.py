@@ -704,6 +704,14 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
                 and requested_n_outputs is not None
                 and requested_n_outputs != saved_n_outputs
             ):
-                model.reset_head(requested_n_outputs)
+                try:
+                    model.reset_head(requested_n_outputs)
+                except NotImplementedError:
+                    raise ValueError(
+                        f"{type(model).__name__} does not support changing "
+                        f"n_outputs after loading. Saved model has "
+                        f"n_outputs={saved_n_outputs}, but "
+                        f"n_outputs={requested_n_outputs} was requested."
+                    ) from None
 
             return model
