@@ -373,7 +373,6 @@ class REVE(EEGModuleMixin, nn.Module):
         eeg: torch.Tensor,
         pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
-        *,
         return_features: bool = False,
     ) -> Union[torch.Tensor, list[torch.Tensor], dict]:
         """

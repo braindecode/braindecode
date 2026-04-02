@@ -299,7 +299,7 @@ class BENDR(EEGModuleMixin, nn.Module):
                 linear, name="weight", dim=1
             )
 
-    def forward(self, x, *, return_features=False):
+    def forward(self, x, return_features=False):
         if self.channel_projection is not None:
             x = self.channel_projection(x)
         encoded = self.encoder(x)
