@@ -446,7 +446,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         >>> model.n_outputs
         10
 
-        .. versionadded:: 1.5
+        .. versionadded:: 1.4
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement reset_head(). "
