@@ -209,18 +209,11 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self._patch_size = patch_size
         self._weights_init()
 
-        try:
-            n_times = self.n_times
-            n_chans = self.n_chans
-        except ValueError:
-            n_times = None
-            n_chans = None
-
         if return_encoder_output:
             self.final_layer = nn.Identity()
-        elif n_times is not None and n_chans is not None:
-            n_patch = n_times // patch_size
-            flat_dim = n_chans * n_patch * emb_dim
+        elif self._n_times is not None and self._n_chans is not None:
+            n_patch = self._n_times // patch_size
+            flat_dim = self._n_chans * n_patch * emb_dim
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, self.n_outputs)
             )
@@ -231,9 +224,14 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
-        n_patch = self._n_times // self._patch_size
-        flat_dim = self._n_chans * n_patch * self._emb_dim
-        self.final_layer = nn.Sequential(nn.Flatten(), nn.Linear(flat_dim, n_outputs))
+        if self._n_times is not None and self._n_chans is not None:
+            n_patch = self._n_times // self._patch_size
+            flat_dim = self._n_chans * n_patch * self._emb_dim
+            self.final_layer = nn.Sequential(
+                nn.Flatten(), nn.Linear(flat_dim, n_outputs)
+            )
+        else:
+            self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(n_outputs))
 
     def _weights_init(self):
         for m in self.modules():

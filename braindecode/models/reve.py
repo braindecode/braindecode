@@ -311,8 +311,6 @@ class REVE(EEGModuleMixin, nn.Module):
             geglu=self.use_geglu,
         )
 
-        final_dim = self._get_flattened_output_dim()
-
         self._build_head(self.n_outputs)
 
         if self.use_attention_pooling:
