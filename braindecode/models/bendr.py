@@ -304,6 +304,7 @@ class BENDR(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self.include_final_layer = True
         self._build_head(n_outputs)
 
     def forward(self, x, return_features=False):
