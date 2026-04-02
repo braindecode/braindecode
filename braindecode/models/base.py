@@ -722,16 +722,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
             requested_n_outputs = model_kwargs.get("n_outputs")
 
-            # If neither the config nor the caller provides n_outputs,
-            # raise a clear error instead of failing inside __init__.
-            if saved_n_outputs is None and requested_n_outputs is None:
-                raise ValueError(
-                    f"n_outputs is required for {cls.__name__}.from_pretrained() "
-                    f"but was not found in the config.json of '{model_id}'. "
-                    f"Please pass n_outputs explicitly, e.g. "
-                    f'{cls.__name__}.from_pretrained("{model_id}", n_outputs=2).'
-                )
-
             # If the user requests different n_outputs, load with the
             # saved value first (so weights match), then swap the head.
             if (

@@ -120,7 +120,11 @@ print(metadata.head(10))
 model = SignalJEPA_PreLocal.from_pretrained(
     "braindecode/SignalJEPA-PreLocal-pretrained",
     n_outputs=len(classes),
+    n_chans=len(chs_info),
     chs_info=chs_info,
+    sfreq=sfreq,
+    input_window_seconds=window_size_seconds,
+    n_times=int(sfreq * window_size_seconds),
 )
 print(model)
 
