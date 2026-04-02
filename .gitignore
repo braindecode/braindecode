@@ -42,6 +42,8 @@ doc/coverages
 doc/samples
 cover
 *.html
+!docs/_templates/*.html
+!docs/_templates/**/*.html
 
 *.orig
 
