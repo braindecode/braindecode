@@ -313,17 +313,7 @@ class REVE(EEGModuleMixin, nn.Module):
 
         final_dim = self._get_flattened_output_dim()
 
-        if self.use_attention_pooling:
-            self.final_layer = nn.Sequential(
-                nn.LayerNorm(self.embed_dim),
-                nn.Linear(self.embed_dim, self.n_outputs),
-            )
-        else:
-            self.final_layer = nn.Sequential(
-                nn.Flatten(),
-                nn.LayerNorm(final_dim),
-                nn.Linear(final_dim, self.n_outputs),
-            )
+        self._build_head(self.n_outputs)
 
         if self.use_attention_pooling:
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
@@ -351,6 +341,24 @@ class REVE(EEGModuleMixin, nn.Module):
 
         flat_dim = self.n_chans * n_patches * self.embed_dim
         return flat_dim
+
+    def _build_head(self, n_outputs):
+        if self.use_attention_pooling:
+            self.final_layer = nn.Sequential(
+                nn.LayerNorm(self.embed_dim),
+                nn.Linear(self.embed_dim, n_outputs),
+            )
+        else:
+            final_dim = self._get_flattened_output_dim()
+            self.final_layer = nn.Sequential(
+                nn.Flatten(),
+                nn.LayerNorm(final_dim),
+                nn.Linear(final_dim, n_outputs),
+            )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self._build_head(n_outputs)
 
     def get_positions(self, channel_names: list[str]) -> torch.Tensor:
         """Fetch channel positions from the position bank. The position bank is downloaded when the model is instantiated.

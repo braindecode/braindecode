@@ -205,6 +205,8 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self.encoder = _TransformerEncoder(encoder_layer, num_layers=n_layer)
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
+        self._emb_dim = emb_dim
+        self._patch_size = patch_size
         self._weights_init()
 
         try:
@@ -226,6 +228,12 @@ class CBraMod(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.LazyLinear(self.n_outputs)
             )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        n_patch = self._n_times // self._patch_size
+        flat_dim = self._n_chans * n_patch * self._emb_dim
+        self.final_layer = nn.Sequential(nn.Flatten(), nn.Linear(flat_dim, n_outputs))
 
     def _weights_init(self):
         for m in self.modules():

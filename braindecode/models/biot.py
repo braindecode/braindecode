@@ -183,10 +183,19 @@ class BIOT(EEGModuleMixin, nn.Module):
             attn_layer_dropout=att_layer_drop_prob,
         )
 
+        self._head_activation = activation
         self.final_layer = _ClassificationHead(
             emb_size=self.embed_dim,
             n_outputs=self.n_outputs,
             activation=activation,
+        )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.final_layer = _ClassificationHead(
+            emb_size=self.embed_dim,
+            n_outputs=n_outputs,
+            activation=self._head_activation,
         )
 
     def forward(self, x, return_features=False):

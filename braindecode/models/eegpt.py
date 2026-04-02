@@ -368,6 +368,13 @@ class EEGPT(EEGModuleMixin, nn.Module):
         """Number of temporal patches from encoder."""
         return self.target_encoder.num_patches[1]
 
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.final_layer = _LinearConstraintProbe(
+            **self.get_probe_params(),
+            n_outputs=n_outputs,
+        )
+
     def get_probe_params(self) -> dict:
         """Get parameters needed to create a _LinearConstraintProbe.
 

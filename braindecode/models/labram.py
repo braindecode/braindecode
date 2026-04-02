@@ -861,6 +861,10 @@ class Labram(EEGModuleMixin, nn.Module):
             nn.Linear(self.embed_dim, n_outputs) if n_outputs > 0 else nn.Identity()
         )
 
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.reset_classifier(n_outputs)
+
     def _adj_temporal_embedding(self, num_ch, batch_size, dim_embed=None):
         """
         Adjust the dimensions of the time embedding to match the

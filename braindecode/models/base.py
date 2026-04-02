@@ -426,6 +426,34 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         resolve_type_kwargs(cls, config)
         return cls(**config)
 
+    def reset_head(self, n_outputs):
+        """Replace the classification head for a new number of outputs.
+
+        This is called automatically by :meth:`from_pretrained` when the
+        user passes an ``n_outputs`` that differs from the saved config.
+        Override in subclasses that need a model-specific head structure.
+
+        Parameters
+        ----------
+        n_outputs : int
+            New number of output classes.
+
+        Examples
+        --------
+        >>> from braindecode.models import BENDR
+        >>> model = BENDR(n_chans=22, n_times=1000, n_outputs=4)
+        >>> model.reset_head(10)
+        >>> model.n_outputs
+        10
+
+        .. versionadded:: 1.5
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement reset_head(). "
+            "Override this method to support changing n_outputs after "
+            "loading pretrained weights."
+        )
+
     mapping: Optional[Dict[str, str]] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
@@ -626,7 +654,40 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         ):
             model_kwargs.pop("braindecode_version", None)
             resolve_type_kwargs(cls, model_kwargs)
-            return super()._from_pretrained(  # type: ignore
+
+            # Read saved n_outputs from config.json to detect when the
+            # user wants a different number of outputs.  Works for both
+            # local directories and Hub repo IDs.
+            saved_n_outputs = None
+            try:
+                if Path(model_id).is_dir():
+                    config_file = Path(model_id) / "config.json"
+                else:
+                    config_file = huggingface_hub.hf_hub_download(
+                        repo_id=model_id,
+                        filename="config.json",
+                        revision=revision,
+                        cache_dir=cache_dir,
+                        token=token,
+                        local_files_only=local_files_only,
+                    )
+                with open(config_file, "r") as f:
+                    saved_n_outputs = json.load(f).get("n_outputs")
+            except Exception:
+                pass
+
+            requested_n_outputs = model_kwargs.get("n_outputs")
+
+            # If the user requests different n_outputs, load with the
+            # saved value first (so weights match), then swap the head.
+            if (
+                saved_n_outputs is not None
+                and requested_n_outputs is not None
+                and requested_n_outputs != saved_n_outputs
+            ):
+                model_kwargs["n_outputs"] = saved_n_outputs
+
+            model = super()._from_pretrained(  # type: ignore
                 model_id=model_id,
                 revision=revision,
                 cache_dir=cache_dir,
@@ -637,3 +698,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
                 strict=strict,
                 **model_kwargs,
             )
+
+            if (
+                saved_n_outputs is not None
+                and requested_n_outputs is not None
+                and requested_n_outputs != saved_n_outputs
+            ):
+                model.reset_head(requested_n_outputs)
+
+            return model
