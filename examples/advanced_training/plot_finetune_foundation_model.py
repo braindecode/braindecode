@@ -105,61 +105,23 @@ print(metadata.head(10))
 # Loading a pre-trained foundation model
 # --------------------------------------
 #
-# Download and Load Pre-trained Weights
+# Load Pre-trained Weights from the Hub
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We download the pre-trained weights for the SignalJEPA model from the Hugging Face Hub.
-# These weights will serve as the starting point for finetuning.
+# We load the pre-trained SignalJEPA model from the Hugging Face Hub using
+# ``from_pretrained``.  SignalJEPA uses a two-step pattern: first load the
+# SSL backbone, then transfer it to a downstream architecture.
+#
+# For a simpler example with models like BENDR, BIOT, or Labram that load
+# directly from the Hub in a single call, see :ref:`load-pretrained-models`.
 #
 
-model_state_dict = torch.hub.load_state_dict_from_url(
-    url="https://huggingface.co/braindecode/SignalJEPA/resolve/main/signal-jepa_16s-60_adeuwv4s.pth"
-)
-# print(model_state_dict.keys())
-
-##################################################################
-# Instantiate the Foundation Model
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# We create an instance of the SignalJEPA model using the pre-local downstream
-# architecture. The model is initialized with the dataset's sampling frequency,
-# window size, and channel information.
-#
-
-
-model = SignalJEPA_PreLocal(
-    sfreq=sfreq,
-    input_window_seconds=window_size_seconds,
-    chs_info=chs_info,
+model = SignalJEPA_PreLocal.from_pretrained(
+    "braindecode/SignalJEPA-PreLocal-pretrained",
     n_outputs=len(classes),
+    chs_info=chs_info,
 )
 print(model)
-
-##################################################################
-# Load the Pre-trained Weights into the Model
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# We load the pre-trained weights into the model. The transformer layers are excluded
-# as this module is not used in the pre-local downstream architecture (see [1]_).
-#
-
-# Define layers to exclude from the pre-trained weights
-new_layers = {
-    "spatial_conv.1.weight",
-    "spatial_conv.1.bias",
-    "final_layer.1.weight",
-    "final_layer.1.bias",
-}
-
-# Filter out transformer weights and load the state dictionary
-model_state_dict = {
-    k: v for k, v in model_state_dict.items() if not k.startswith("transformer.")
-}
-missing_keys, unexpected_keys = model.load_state_dict(model_state_dict, strict=False)
-
-# Ensure no unexpected keys and validate missing keys
-assert unexpected_keys == [], f"{unexpected_keys=}"
-assert set(missing_keys) == new_layers, f"{missing_keys=}"
 
 ##################################################################
 #
@@ -190,6 +152,14 @@ assert set(missing_keys) == new_layers, f"{missing_keys=}"
 # we will focus on the first option here.
 # We will freeze all layers except the newly added ones.
 #
+
+# The classification head layers (spatial_conv and final_layer) were
+# newly initialized by from_pretrained.  Freeze everything else.
+new_layers = {
+    name
+    for name, _ in model.named_parameters()
+    if name.startswith(("spatial_conv.", "final_layer."))
+}
 
 for name, param in model.named_parameters():
     if name not in new_layers:

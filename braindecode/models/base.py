@@ -150,14 +150,36 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         # Load pretrained model
         model = {name}.from_pretrained("username/my-{name_lower}-model")
 
-    The integration automatically handles EEG-specific parameters (n_chans,
-    n_times, sfreq, chs_info, etc.) by saving them in a config file alongside
-    the model weights. This ensures that loaded models are correctly configured
-    for their original data specifications.
+        # Load with a different number of outputs (head is rebuilt automatically)
+        model = {name}.from_pretrained("username/my-{name_lower}-model", n_outputs=4)
+
+    **Extracting features and replacing the head:**
+
+    .. code-block::
+
+        # Extract encoder features (consistent dict across all models)
+        out = model(x, return_features=True)
+        features = out["features"]
+
+        # Replace the classification head
+        model.reset_head(n_outputs=10)
+
+    **Saving and restoring full configuration:**
+
+    .. code-block::
+
+        import json
+
+        config = model.get_config()            # all __init__ params
+        json.dump(config, open("config.json", "w"))
+
+        model2 = {name}.from_config(config)    # reconstruct (no weights)
 
     All model parameters (both EEG-specific and model-specific such as
     dropout rates, activation functions, number of filters) are automatically
     saved to the Hub and restored when loading.
+
+    See :ref:`load-pretrained-models` for a complete tutorial.
     """
 
     def __init_subclass__(cls, **kwargs):
