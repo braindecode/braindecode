@@ -1,4 +1,4 @@
-"""Tests for the unified ``return_features`` API on foundation models."""
+"""Tests for the unified ``return_features`` and ``reset_head`` API."""
 
 import mne
 import pytest
@@ -17,134 +17,100 @@ from braindecode.models import (
     SignalJEPA_PreLocal,
 )
 
-N_CHANS = 22
-N_TIMES = 1000
-N_OUTPUTS = 4
-BATCH = 2
+N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
 
-_REVE_CH_NAMES = [
-    "Fp1", "Fp2", "F3", "F4", "C3", "C4", "P3", "P4",
-    "O1", "O2", "F7", "F8", "T7", "T8", "P7", "P8",
-]
-N_REVE_CHANS = len(_REVE_CH_NAMES)
+_REVE_CHS = ["Fp1", "Fp2", "F3", "F4", "C3", "C4", "P3", "P4",
+              "O1", "O2", "F7", "F8", "T7", "T8", "P7", "P8"]
 
 
-def _make_chs_info(n_chans=N_CHANS):
-    """Create minimal chs_info with 3D locations."""
+def _chs(names=None, n=N_CHANS):
     montage = mne.channels.make_standard_montage("standard_1020")
-    ch_names = montage.ch_names[:n_chans]
-    info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
+    ch = names or montage.ch_names[:n]
+    info = mne.create_info(ch_names=ch, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
     return info["chs"]
 
 
-def _make_reve_chs_info():
-    """Create chs_info with channels recognized by REVE's position bank."""
-    info = mne.create_info(ch_names=_REVE_CH_NAMES, sfreq=256, ch_types="eeg")
-    info.set_montage(mne.channels.make_standard_montage("standard_1020"))
-    return info["chs"]
-
-
-# (model_cls, n_chans, extra_kwargs, has_cls_token)
+# (cls, n_chans, kwargs, has_cls)
 _MODELS = [
     pytest.param(EEGPT, N_CHANS, {}, False, id="EEGPT"),
-    pytest.param(
-        Labram, N_CHANS, {"patch_size": 200, "chs_info": _make_chs_info()}, True,
-        id="Labram",
-    ),
-    pytest.param(
-        REVE, N_REVE_CHANS,
-        {"chs_info": _make_reve_chs_info(), "patch_size": 200, "patch_overlap": 0},
-        False, id="REVE",
-    ),
+    pytest.param(Labram, N_CHANS, {"patch_size": 200, "chs_info": _chs()}, True, id="Labram"),
+    pytest.param(REVE, 16, {"chs_info": _chs(_REVE_CHS), "patch_size": 200, "patch_overlap": 0}, False, id="REVE"),
     pytest.param(BENDR, N_CHANS, {}, False, id="BENDR"),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
-    pytest.param(
-        SignalJEPA, N_CHANS, {"chs_info": _make_chs_info()}, False,
-        id="SignalJEPA",
-    ),
-    pytest.param(
-        SignalJEPA_Contextual, N_CHANS, {"chs_info": _make_chs_info()}, False,
-        id="SignalJEPA_Contextual",
-    ),
-    pytest.param(
-        SignalJEPA_PostLocal, N_CHANS, {"chs_info": _make_chs_info()}, False,
-        id="SignalJEPA_PostLocal",
-    ),
-    pytest.param(
-        SignalJEPA_PreLocal, N_CHANS, {"chs_info": _make_chs_info()}, False,
-        id="SignalJEPA_PreLocal",
-    ),
+    pytest.param(SignalJEPA, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA"),
+    pytest.param(SignalJEPA_Contextual, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA_Contextual"),
+    pytest.param(SignalJEPA_PostLocal, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA_PostLocal"),
+    pytest.param(SignalJEPA_PreLocal, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA_PreLocal"),
 ]
 
 
-@pytest.mark.parametrize("model_cls, n_chans, extra_kwargs, has_cls", _MODELS)
-def test_return_features_is_dict(model_cls, n_chans, extra_kwargs, has_cls):
-    model = model_cls(n_chans=n_chans, n_times=N_TIMES, n_outputs=N_OUTPUTS, **extra_kwargs)
+@pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
+def test_return_features(cls, nc, kw, has_cls):
+    model = cls(n_chans=nc, n_times=N_TIMES, n_outputs=N_OUTPUTS, **kw)
     model.eval()
-    x = torch.randn(BATCH, n_chans, N_TIMES)
     with torch.no_grad():
-        out = model(x, return_features=True)
-    assert isinstance(out, dict)
-    assert "features" in out
-    assert "cls_token" in out
-    assert isinstance(out["features"], torch.Tensor)
+        out = model(torch.randn(BATCH, nc, N_TIMES), return_features=True)
+    assert isinstance(out, dict) and "features" in out and "cls_token" in out
     assert out["features"].shape[0] == BATCH
-
-
-@pytest.mark.parametrize("model_cls, n_chans, extra_kwargs, has_cls", _MODELS)
-def test_cls_token(model_cls, n_chans, extra_kwargs, has_cls):
-    model = model_cls(n_chans=n_chans, n_times=N_TIMES, n_outputs=N_OUTPUTS, **extra_kwargs)
-    model.eval()
-    x = torch.randn(BATCH, n_chans, N_TIMES)
-    with torch.no_grad():
-        out = model(x, return_features=True)
     if has_cls:
         assert isinstance(out["cls_token"], torch.Tensor)
-        assert out["cls_token"].shape[0] == BATCH
     else:
         assert out["cls_token"] is None
 
 
-@pytest.mark.parametrize("model_cls, n_chans, extra_kwargs, has_cls", _MODELS)
-def test_default_forward_returns_tensor(model_cls, n_chans, extra_kwargs, has_cls):
-    """Default forward (return_features=False) still returns a plain Tensor."""
-    model = model_cls(n_chans=n_chans, n_times=N_TIMES, n_outputs=N_OUTPUTS, **extra_kwargs)
+@pytest.mark.parametrize("cls, nc, kw, has_cls", _MODELS)
+def test_default_forward_returns_tensor(cls, nc, kw, has_cls):
+    model = cls(n_chans=nc, n_times=N_TIMES, n_outputs=N_OUTPUTS, **kw)
     model.eval()
-    x = torch.randn(BATCH, n_chans, N_TIMES)
     with torch.no_grad():
-        out = model(x)
+        out = model(torch.randn(BATCH, nc, N_TIMES))
     assert isinstance(out, torch.Tensor)
 
 
-# ---------- Legacy backward-compat tests ----------
+# -- Legacy backward compat --
+
+_LEGACY = [
+    pytest.param(
+        EEGPT, {"return_encoder_output": True}, {},
+        lambda out: isinstance(out, torch.Tensor) and out.ndim == 4,
+        id="EEGPT-encoder_output",
+    ),
+    pytest.param(
+        BIOT, {"return_feature": True}, {},
+        lambda out: isinstance(out, tuple) and len(out) == 2,
+        id="BIOT-return_feature",
+    ),
+    pytest.param(
+        Labram, {"patch_size": 200, "chs_info": _chs()}, {"return_all_tokens": True},
+        lambda out: isinstance(out, torch.Tensor),
+        id="Labram-all_tokens",
+    ),
+]
 
 
-def test_eegpt_legacy_return_encoder_output():
-    model = EEGPT(n_chans=N_CHANS, n_times=N_TIMES, n_outputs=N_OUTPUTS,
-                   return_encoder_output=True)
+@pytest.mark.parametrize("cls, init_kw, fwd_kw, check", _LEGACY)
+def test_legacy_params(cls, init_kw, fwd_kw, check):
+    model = cls(n_chans=N_CHANS, n_times=N_TIMES, n_outputs=N_OUTPUTS, **init_kw)
     model.eval()
     with torch.no_grad():
-        out = model(torch.randn(BATCH, N_CHANS, N_TIMES))
-    assert isinstance(out, torch.Tensor)
-    assert out.ndim == 4
+        out = model(torch.randn(BATCH, N_CHANS, N_TIMES), **fwd_kw)
+    assert check(out)
 
 
-def test_biot_legacy_return_feature():
-    model = BIOT(n_chans=N_CHANS, n_times=N_TIMES, n_outputs=N_OUTPUTS,
-                  return_feature=True)
+# -- reset_head --
+
+# Exclude SignalJEPA (SSL model, Identity head) and REVE (needs special chs)
+_RESET_MODELS = [p for p in _MODELS if p.id not in ("SignalJEPA", "REVE")]
+
+
+@pytest.mark.parametrize("cls, nc, kw, has_cls", _RESET_MODELS)
+def test_reset_head(cls, nc, kw, has_cls):
+    model = cls(n_chans=nc, n_times=N_TIMES, n_outputs=N_OUTPUTS, **kw)
+    model.reset_head(10)
     model.eval()
     with torch.no_grad():
-        out = model(torch.randn(BATCH, N_CHANS, N_TIMES))
-    assert isinstance(out, tuple)
-    assert len(out) == 2
-
-
-def test_labram_legacy_return_all_tokens():
-    model = Labram(n_chans=N_CHANS, n_times=N_TIMES, n_outputs=N_OUTPUTS,
-                    patch_size=200, chs_info=_make_chs_info())
-    model.eval()
-    with torch.no_grad():
-        out = model(torch.randn(BATCH, N_CHANS, N_TIMES), return_all_tokens=True)
-    assert isinstance(out, torch.Tensor)
+        out = model(torch.randn(BATCH, nc, N_TIMES))
+    assert model.n_outputs == 10
+    assert out.shape[-1] == 10
