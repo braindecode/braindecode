@@ -80,7 +80,7 @@ Enhancements
   :class:`~braindecode.models.SignalJEPA` variants). When ``True``, returns a
   consistent ``{"features": Tensor, "cls_token": Tensor | None}`` dict across
   all models. Legacy parameters (``return_encoder_output``, ``return_feature``,
-  ``return_all_tokens``, etc.) continue to work unchanged
+  ``return_all_tokens``, etc.) continue to work unchanged.
   (by `Bruno Aristimunha`_)
 
 API changes
