@@ -213,10 +213,12 @@ class BIOT(EEGModuleMixin, nn.Module):
 
         Returns
         -------
-        out: Tensor
-            (batch_size, n_outputs)
-        (out, emb): tuple Tensor
-            (batch_size, n_outputs), (batch_size, emb_size)
+        torch.Tensor or tuple or dict
+            Default: ``torch.Tensor`` of shape ``(batch_size, n_outputs)``.
+            If ``return_features=True``: ``dict`` with ``"features"``
+            ``(batch_size, emb_size)`` and ``"cls_token"`` (``None``).
+            If legacy ``return_feature=True`` (init param):
+            ``(out, emb)`` tuple (ignored when ``return_features=True``).
         """
         emb = self.encoder(x)
 
