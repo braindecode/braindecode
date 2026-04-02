@@ -449,14 +449,7 @@ class _DummyModelWithParams(EEGModuleMixin, nn.Sequential):
         self.drop_prob = drop_prob
 
 
-@pytest.mark.parametrize(
-    "env_enabled",
-    [
-        pytest.param(True, id="docstring-inheritance-enabled"),
-        pytest.param(False, id="docstring-inheritance-disabled"),
-    ],
-)
-def test_docstring_inheritance_preserves_child_description(env_enabled):
+def test_docstring_inheritance_preserves_child_description():
     """Regression test: child class description must not be replaced by parent's.
 
     When NumpyDocstringInheritanceInitMeta is active the child class
@@ -470,46 +463,49 @@ def test_docstring_inheritance_preserves_child_description(env_enabled):
     """
     import os
 
-    is_enabled = os.environ.get("DOCSTRING_INHERITANCE_ENABLE") == "1"
-
-    if env_enabled and not is_enabled:
-        pytest.skip("DOCSTRING_INHERITANCE_ENABLE not set")
-    if not env_enabled and is_enabled:
-        pytest.skip("DOCSTRING_INHERITANCE_ENABLE is set")
-
     doc = _DummyModelWithParams.__doc__
     assert doc is not None, "Class docstring should not be None"
 
-    if is_enabled:
-        # With inheritance enabled, the child description must be preserved
-        assert "A model with its own documented parameters" in doc, (
-            f"Child description was replaced by parent's. Got:\n{doc[:200]}"
-        )
-        assert "Mixin class for all EEG models" not in doc.split("Parameters")[0], (
-            "Parent description leaked into the child's description section"
-        )
-        # Inherited params should appear
-        assert "n_chans" in doc
-        assert "n_outputs" in doc
-        # Child-specific params must NOT show "The description is missing"
-        params_section = doc[doc.index("Parameters") :]
-        hidden_idx = params_section.index("hidden_size")
-        # Grab text between hidden_size and the next param
-        next_param_candidates = ["drop_prob", "n_chans", "n_outputs"]
-        end_idx = len(params_section)
-        for candidate in next_param_candidates:
-            try:
-                idx = params_section.index(candidate, hidden_idx + 1)
-                end_idx = min(end_idx, idx)
-            except ValueError:
-                pass
-        hidden_desc = params_section[hidden_idx:end_idx]
-        assert "description is missing" not in hidden_desc, (
-            f"Child parameter 'hidden_size' lost its description:\n{hidden_desc}"
-        )
-    else:
-        # Without inheritance, the raw docstring should be intact
-        assert "A model with its own documented parameters" in doc
+    # Child description must always be present, regardless of env var
+    assert "A model with its own documented parameters" in doc, (
+        f"Child description was replaced by parent's. Got:\n{doc[:200]}"
+    )
+
+    is_enabled = os.environ.get("DOCSTRING_INHERITANCE_ENABLE") == "1"
+    if not is_enabled:
+        return
+
+    # --- Checks below only apply when docstring inheritance is active ---
+
+    # Parent description must not leak into the description section
+    assert "Mixin class for all EEG models" not in doc.split("Parameters")[0], (
+        "Parent description leaked into the child's description section"
+    )
+
+    # Inherited params should appear in the Parameters section (not just
+    # in Hub notes which also mention these names in prose)
+    params_section = doc[doc.index("Parameters") :]
+    assert "\nn_chans" in params_section or "n_chans :" in params_section, (
+        "Inherited parameter 'n_chans' missing from Parameters section"
+    )
+    assert "\nn_outputs" in params_section or "n_outputs :" in params_section, (
+        "Inherited parameter 'n_outputs' missing from Parameters section"
+    )
+
+    # Child-specific params must NOT show "The description is missing"
+    hidden_idx = params_section.index("hidden_size")
+    next_param_candidates = ["drop_prob", "n_chans", "n_outputs"]
+    end_idx = len(params_section)
+    for candidate in next_param_candidates:
+        try:
+            idx = params_section.index(candidate, hidden_idx + 1)
+            end_idx = min(end_idx, idx)
+        except ValueError:
+            pass
+    hidden_desc = params_section[hidden_idx:end_idx]
+    assert "description is missing" not in hidden_desc, (
+        f"Child parameter 'hidden_size' lost its description:\n{hidden_desc}"
+    )
 
 
 def test_init_kwargs_tracked_for_subclass():
