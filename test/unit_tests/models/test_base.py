@@ -413,3 +413,113 @@ def test_fractional_input_window_seconds_inference(
         assert module.n_times == round(input_window_seconds * sfreq)
     if input_window_seconds is None:
         assert module.input_window_seconds == n_times / sfreq
+
+
+class _DummyModelWithParams(EEGModuleMixin, nn.Sequential):
+    """A model with its own documented parameters.
+
+    Parameters
+    ----------
+    hidden_size : int
+        Size of hidden layer.
+    drop_prob : float
+        Dropout probability.
+    """
+
+    def __init__(
+        self,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        hidden_size=64,
+        drop_prob=0.5,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self.hidden_size = hidden_size
+        self.drop_prob = drop_prob
+
+
+@pytest.mark.parametrize(
+    "env_enabled",
+    [
+        pytest.param(True, id="docstring-inheritance-enabled"),
+        pytest.param(False, id="docstring-inheritance-disabled"),
+    ],
+)
+def test_docstring_inheritance_preserves_child_description(env_enabled):
+    """Regression test: child class description must not be replaced by parent's.
+
+    When NumpyDocstringInheritanceInitMeta is active the child class
+    docstring should keep its own description and Parameters section
+    while inheriting missing sections (Raises, Notes) from the parent.
+
+    A previous bug caused ``@wraps`` in ``track_model_init_kwargs`` to
+    run before the metaclass, making ``inspect.unwrap()`` bypass the
+    wrapper and read ``__doc__ = None`` from the original function.
+    This caused the parent description to overwrite the child's.
+    """
+    import os
+
+    is_enabled = os.environ.get("DOCSTRING_INHERITANCE_ENABLE") == "1"
+
+    if env_enabled and not is_enabled:
+        pytest.skip("DOCSTRING_INHERITANCE_ENABLE not set")
+    if not env_enabled and is_enabled:
+        pytest.skip("DOCSTRING_INHERITANCE_ENABLE is set")
+
+    doc = _DummyModelWithParams.__doc__
+    assert doc is not None, "Class docstring should not be None"
+
+    if is_enabled:
+        # With inheritance enabled, the child description must be preserved
+        assert "A model with its own documented parameters" in doc, (
+            f"Child description was replaced by parent's. Got:\n{doc[:200]}"
+        )
+        assert "Mixin class for all EEG models" not in doc.split("Parameters")[0], (
+            "Parent description leaked into the child's description section"
+        )
+        # Inherited params should appear
+        assert "n_chans" in doc
+        assert "n_outputs" in doc
+        # Child-specific params must NOT show "The description is missing"
+        params_section = doc[doc.index("Parameters") :]
+        hidden_idx = params_section.index("hidden_size")
+        # Grab text between hidden_size and the next param
+        next_param_candidates = ["drop_prob", "n_chans", "n_outputs"]
+        end_idx = len(params_section)
+        for candidate in next_param_candidates:
+            try:
+                idx = params_section.index(candidate, hidden_idx + 1)
+                end_idx = min(end_idx, idx)
+            except ValueError:
+                pass
+        hidden_desc = params_section[hidden_idx:end_idx]
+        assert "description is missing" not in hidden_desc, (
+            f"Child parameter 'hidden_size' lost its description:\n{hidden_desc}"
+        )
+    else:
+        # Without inheritance, the raw docstring should be intact
+        assert "A model with its own documented parameters" in doc
+
+
+def test_init_kwargs_tracked_for_subclass():
+    """Verify that track_model_init_kwargs captures all constructor args."""
+    model = _DummyModelWithParams(
+        n_chans=8, n_outputs=2, n_times=100, hidden_size=32, drop_prob=0.3
+    )
+    kwargs = model._braindecode_init_kwargs
+    assert kwargs["hidden_size"] == 32
+    assert kwargs["drop_prob"] == 0.3
+    assert kwargs["n_chans"] == 8
+    assert kwargs["n_outputs"] == 2
+    assert kwargs["n_times"] == 100
