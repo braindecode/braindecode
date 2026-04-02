@@ -134,6 +134,14 @@ Bugs
   batch dimension instead of patch dimension in ``prepare_tokens``, and include
   pretrained weight typo mapping in ``self.mapping``
   (:gh:`887` by `Sarthak Tayal`_)
+- Fix model docstring inheritance: ``track_model_init_kwargs`` wrapped
+  ``__init__`` with ``@wraps`` before the
+  ``NumpyDocstringInheritanceInitMeta`` metaclass ran, causing
+  ``inspect.unwrap()`` to bypass the wrapper and read ``__doc__=None``.
+  This replaced every model's description with the parent mixin's and
+  marked all model-specific parameters as "The description is missing"
+  when ``DOCSTRING_INHERITANCE_ENABLE=1`` was set during documentation
+  builds (:gh:`971` by `Bruno Aristimunha`_)
 
 Code health
 ============

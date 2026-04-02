@@ -59,7 +59,25 @@ def deprecated_args(obj, *old_new_args):
     return out_args
 
 
-class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta):
+class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
+    """Defer ``__init__`` wrapping until after docstring inheritance.
+
+    ``NumpyDocstringInheritanceInitMeta`` uses ``inspect.unwrap()``
+    internally, which bypasses ``@wraps`` wrappers.  By wrapping
+    ``__init__`` *after* docstring processing, the metaclass sees the
+    unwrapped function and correctly inherits ``cls.__doc__``.
+    """
+
+    def __init__(cls, class_name, class_bases, class_dict):
+        super().__init__(class_name, class_bases, class_dict)
+        # Only wrap subclass __init__s, not EEGModuleMixin itself.
+        # Wrapping the mixin would cause super().__init__() calls to
+        # overwrite _braindecode_init_kwargs captured by the subclass.
+        if any(isinstance(b, _BraindecodeDocstringMeta) for b in class_bases):
+            track_model_init_kwargs(cls)
+
+
+class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     """
     Mixin class for all EEG models in braindecode.
 
@@ -144,8 +162,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
     def __init_subclass__(cls, **kwargs):
         # Append model-specific Hub integration notes to the docstring.
-        # This runs after the metaclass, so we concatenate rather than
-        # override any existing Notes section in the subclass.
+        # This runs before the metaclass __init__, so the Hub notes will
+        # be included in the docstring that the metaclass processes.
         if cls.__doc__ is not None:
             hub_notes = cls._HUB_NOTES_TEMPLATE.format(
                 name=cls.__name__,
@@ -155,7 +173,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
         if not HAS_HF_HUB:
             super().__init_subclass__(**kwargs)
-            track_model_init_kwargs(cls)
             return
 
         base_tags = ["braindecode", cls.__name__]
@@ -195,7 +212,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             coders=coders,
             **kwargs,
         )
-        track_model_init_kwargs(cls)
 
     def __init__(
         self,
