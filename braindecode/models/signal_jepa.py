@@ -222,11 +222,13 @@ class SignalJEPA(_BaseSignalJEPA):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
 
-    def forward(self, X, ch_idxs: torch.Tensor | None = None):  # type: ignore
+    def forward(self, X, ch_idxs: torch.Tensor | None = None, return_features=False):  # type: ignore
         local_features = self.feature_encoder(X)  # type: ignore
         pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
         local_features += pos_encoding  # type: ignore
         contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        if return_features:
+            return {"features": contextual_features, "cls_token": None}
         y = self.final_layer(contextual_features)  # type: ignore
         return y  # type: ignore
 
@@ -313,6 +315,8 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             _init_transformer=_init_transformer,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        self._clf_conv_layers_spec = feature_encoder__conv_layers_spec
+        self._clf_n_spat_filters = n_spat_filters
         self.final_layer = _get_separable_clf_layer(
             conv_layers_spec=feature_encoder__conv_layers_spec,
             n_chans=self.n_chans,
@@ -320,6 +324,26 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             n_classes=self.n_outputs,
             n_spat_filters=n_spat_filters,
         )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.final_layer = _get_separable_clf_layer(
+            conv_layers_spec=self._clf_conv_layers_spec,
+            n_chans=self.n_chans,
+            n_times=self.n_times,
+            n_classes=n_outputs,
+            n_spat_filters=self._clf_n_spat_filters,
+        )
+
+    def forward(self, X, ch_idxs: torch.Tensor | None = None, return_features=False):  # type: ignore
+        local_features = self.feature_encoder(X)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        local_features += pos_encoding  # type: ignore
+        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        if return_features:
+            return {"features": contextual_features, "cls_token": None}
+        y = self.final_layer(contextual_features)  # type: ignore
+        return y  # type: ignore
 
     @classmethod
     def from_pretrained(
@@ -394,14 +418,6 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             new_model.pos_encoder.set_fixed_ch_names(ch_names)
 
         return new_model
-
-    def forward(self, X, ch_idxs: torch.Tensor | None = None):  # type: ignore
-        local_features = self.feature_encoder(X)  # type: ignore
-        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
-        local_features += pos_encoding  # type: ignore
-        contextual_features = self.transformer.encoder(local_features)  # type: ignore
-        y = self.final_layer(contextual_features)  # type: ignore
-        return y  # type: ignore
 
 
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
@@ -485,12 +501,24 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
             _init_transformer=False,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        self._clf_conv_layers_spec = feature_encoder__conv_layers_spec
+        self._clf_n_spat_filters = n_spat_filters
         self.final_layer = _get_separable_clf_layer(
             conv_layers_spec=feature_encoder__conv_layers_spec,
             n_chans=self.n_chans,
             n_times=self.n_times,
             n_classes=self.n_outputs,
             n_spat_filters=n_spat_filters,
+        )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.final_layer = _get_separable_clf_layer(
+            conv_layers_spec=self._clf_conv_layers_spec,
+            n_chans=self.n_chans,
+            n_times=self.n_times,
+            n_classes=n_outputs,
+            n_spat_filters=self._clf_n_spat_filters,
         )
 
     @classmethod
@@ -549,8 +577,10 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         new_model.feature_encoder = deepcopy(feature_encoder)
         return new_model
 
-    def forward(self, X):
+    def forward(self, X, return_features=False):
         local_features = self.feature_encoder(X)
+        if return_features:
+            return {"features": local_features, "cls_token": None}
         y = self.final_layer(local_features)
         return y
 
@@ -671,14 +701,21 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
             nn.Conv2d(1, n_spat_filters, (self.n_chans, 1)),
             Rearrange("b spat_filters 1 time -> b spat_filters time"),
         )
-        out_emb_dim = _get_out_emb_dim(
+        self._out_emb_dim = _get_out_emb_dim(
             conv_layers_spec=feature_encoder__conv_layers_spec,
             n_times=self.n_times,
             n_spat_filters=n_spat_filters,
         )
         self.final_layer = nn.Sequential(
             nn.Flatten(start_dim=1),
-            nn.Linear(out_emb_dim, self.n_outputs),
+            nn.Linear(self._out_emb_dim, self.n_outputs),
+        )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.final_layer = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Linear(self._out_emb_dim, n_outputs),
         )
 
     @classmethod
@@ -737,9 +774,11 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         new_model.feature_encoder = deepcopy(feature_encoder)
         return new_model
 
-    def forward(self, X):
+    def forward(self, X, return_features=False):
         X = self.spatial_conv(X)
         local_features = self.feature_encoder(X)
+        if return_features:
+            return {"features": local_features, "cls_token": None}
         y = self.final_layer(local_features)
         return y
 

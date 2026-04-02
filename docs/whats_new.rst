@@ -73,6 +73,20 @@ Enhancements
   max-norm constrained channel projection for fine-tuning pretrained BENDR on datasets
   with arbitrary channel counts (by `Kuntal Kokate`_)
 - Add dynamic SDPA fallback in :class:`braindecode.models.reve.ClassicalAttention` to support PyTorch versions without SDPA (by `GalAshkenazi1`_)
+- Add unified ``return_features`` parameter to ``forward()`` of all 7 foundation
+  models (:class:`~braindecode.models.EEGPT`, :class:`~braindecode.models.Labram`,
+  :class:`~braindecode.models.REVE`, :class:`~braindecode.models.BENDR`,
+  :class:`~braindecode.models.BIOT`, :class:`~braindecode.models.CBraMod`,
+  :class:`~braindecode.models.SignalJEPA` variants). When ``True``, returns a
+  consistent ``{"features": Tensor, "cls_token": Tensor | None}`` dict across
+  all models. Legacy parameters (``return_encoder_output``, ``return_feature``,
+  ``return_all_tokens``, etc.) continue to work unchanged
+  (by `Bruno Aristimunha`_).
+- Add :meth:`~braindecode.models.base.EEGModuleMixin.reset_head` to all 7
+  foundation models for replacing the classification head with a new number of
+  outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
+  automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
+  differs from the saved config (by `Bruno Aristimunha`_).
 
 API changes
 ============
