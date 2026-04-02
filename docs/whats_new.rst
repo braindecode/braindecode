@@ -97,6 +97,10 @@ Requirements
 
 Bugs
 =====
+- Fix the documentation header "Cite Braindecode" announcement link: it used a bare
+  ``cite.html`` URL, which browsers resolve relative to the current page path and led
+  to 404s (for example from ``install/install.html``). The link is now built with
+  Sphinx's ``pathto()`` for each page so it always targets the cite page correctly.
 - Fix multi-target channel windowing in :func:`braindecode.preprocessing.windowers.create_windows_from_target_channels`
   to use the union of valid target positions across all misc channels instead of only the first channel
   (by `Sarthak Tayal`_)
