@@ -19,8 +19,24 @@ from braindecode.models import (
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
 
-_REVE_CHS = ["Fp1", "Fp2", "F3", "F4", "C3", "C4", "P3", "P4",
-              "O1", "O2", "F7", "F8", "T7", "T8", "P7", "P8"]
+_REVE_CHS = [
+    "Fp1",
+    "Fp2",
+    "F3",
+    "F4",
+    "C3",
+    "C4",
+    "P3",
+    "P4",
+    "O1",
+    "O2",
+    "F7",
+    "F8",
+    "T7",
+    "T8",
+    "P7",
+    "P8",
+]
 
 
 def _chs(names=None, n=N_CHANS):
@@ -34,15 +50,41 @@ def _chs(names=None, n=N_CHANS):
 # (cls, n_chans, kwargs, has_cls)
 _MODELS = [
     pytest.param(EEGPT, N_CHANS, {}, False, id="EEGPT"),
-    pytest.param(Labram, N_CHANS, {"patch_size": 200, "chs_info": _chs()}, True, id="Labram"),
-    pytest.param(REVE, 16, {"chs_info": _chs(_REVE_CHS), "patch_size": 200, "patch_overlap": 0}, False, id="REVE"),
+    pytest.param(
+        Labram, N_CHANS, {"patch_size": 200, "chs_info": _chs()}, True, id="Labram"
+    ),
+    pytest.param(
+        REVE,
+        16,
+        {"chs_info": _chs(_REVE_CHS), "patch_size": 200, "patch_overlap": 0},
+        False,
+        id="REVE",
+    ),
     pytest.param(BENDR, N_CHANS, {}, False, id="BENDR"),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
     pytest.param(SignalJEPA, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA"),
-    pytest.param(SignalJEPA_Contextual, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA_Contextual"),
-    pytest.param(SignalJEPA_PostLocal, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA_PostLocal"),
-    pytest.param(SignalJEPA_PreLocal, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA_PreLocal"),
+    pytest.param(
+        SignalJEPA_Contextual,
+        N_CHANS,
+        {"chs_info": _chs()},
+        False,
+        id="SignalJEPA_Contextual",
+    ),
+    pytest.param(
+        SignalJEPA_PostLocal,
+        N_CHANS,
+        {"chs_info": _chs()},
+        False,
+        id="SignalJEPA_PostLocal",
+    ),
+    pytest.param(
+        SignalJEPA_PreLocal,
+        N_CHANS,
+        {"chs_info": _chs()},
+        False,
+        id="SignalJEPA_PreLocal",
+    ),
 ]
 
 
@@ -73,17 +115,23 @@ def test_default_forward_returns_tensor(cls, nc, kw, has_cls):
 
 _LEGACY = [
     pytest.param(
-        EEGPT, {"return_encoder_output": True}, {},
+        EEGPT,
+        {"return_encoder_output": True},
+        {},
         lambda out: isinstance(out, torch.Tensor) and out.ndim == 4,
         id="EEGPT-encoder_output",
     ),
     pytest.param(
-        BIOT, {"return_feature": True}, {},
+        BIOT,
+        {"return_feature": True},
+        {},
         lambda out: isinstance(out, tuple) and len(out) == 2,
         id="BIOT-return_feature",
     ),
     pytest.param(
-        Labram, {"patch_size": 200, "chs_info": _chs()}, {"return_all_tokens": True},
+        Labram,
+        {"patch_size": 200, "chs_info": _chs()},
+        {"return_all_tokens": True},
         lambda out: isinstance(out, torch.Tensor),
         id="Labram-all_tokens",
     ),
