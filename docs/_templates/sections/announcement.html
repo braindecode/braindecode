@@ -1,0 +1,21 @@
+{# Keep the theme's async banner container so version warnings still work. #}
+<div class="pst-async-banner-revealer d-none">
+  <aside
+    id="bd-header-version-warning"
+    class="d-none d-print-none"
+    aria-label="{{ _('Version warning') }}"
+  ></aside>
+</div>
+{% set cite_href = 'cite.html' if pagename == 'cite' else pathto('cite') %}
+<aside class="bd-header-announcement" aria-label="{{ _('Announcement') }}">
+  <div class="bd-header-announcement__content">
+    <strong>Using Braindecode in academic work?</strong>
+    <a class="braindecode-announcement-cta" href="{{ cite_href }}">
+      Cite Braindecode
+    </a>
+    <span class="braindecode-announcement-secondary">
+      DOI:
+      <a href="https://doi.org/10.5281/zenodo.17699192">10.5281/zenodo.17699192</a>
+    </span>
+  </div>
+</aside>
