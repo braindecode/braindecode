@@ -73,17 +73,49 @@ Enhancements
   pooling (Kostas et al. 2021, Section 2.4), and ``n_chans_pretrained`` parameter with
   max-norm constrained channel projection for fine-tuning pretrained BENDR on datasets
   with arbitrary channel counts (by `Kuntal Kokate`_)
+- Add dynamic SDPA fallback in :class:`braindecode.models.reve.ClassicalAttention` to support PyTorch versions without SDPA (by `GalAshkenazi1`_)
+- Add unified ``return_features`` parameter to ``forward()`` of all 7 foundation
+  models (:class:`~braindecode.models.EEGPT`, :class:`~braindecode.models.Labram`,
+  :class:`~braindecode.models.REVE`, :class:`~braindecode.models.BENDR`,
+  :class:`~braindecode.models.BIOT`, :class:`~braindecode.models.CBraMod`,
+  :class:`~braindecode.models.SignalJEPA` variants). When ``True``, returns a
+  consistent ``{"features": Tensor, "cls_token": Tensor | None}`` dict across
+  all models. Legacy parameters (``return_encoder_output``, ``return_feature``,
+  ``return_all_tokens``, etc.) continue to work unchanged
+  (by `Bruno Aristimunha`_).
+- Add :meth:`~braindecode.models.base.EEGModuleMixin.reset_head` to all 7
+  foundation models for replacing the classification head with a new number of
+  outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
+  automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
+  differs from the saved config (by `Bruno Aristimunha`_).
 
 API changes
 ============
-- None yet.
+- Add :meth:`braindecode.models.base.EEGModuleMixin.get_config` and
+  :meth:`braindecode.models.base.EEGModuleMixin.from_config` to all models,
+  enabling full JSON round-trip serialization and reconstruction of any model
+  including all ``__init__`` parameters (by `Bruno Aristimunha`_)
+- :meth:`~braindecode.models.base.EEGModuleMixin.push_to_hub` now saves **all**
+  model parameters to ``config.json`` (previously only 6 EEG-specific parameters
+  were saved; model-specific parameters like ``F1``, ``D``, ``drop_prob`` were
+  lost on reload) (by `Bruno Aristimunha`_)
+- Add :class:`braindecode.modules.Square` activation module and update
+  :class:`braindecode.models.ShallowFBCSPNet` to use ``type[nn.Module]`` for
+  ``conv_nonlin`` (backward-compatible with callable) (by `Bruno Aristimunha`_)
+- Replace ``LazyLinear`` with ``Linear`` in :class:`braindecode.models.CBraMod`
+  when input dimensions are known, improving Hub round-trip compatibility
+  (by `Bruno Aristimunha`_)
 
 Requirements
 ============
-- None yet.
+- Relaxed PyTorch requirement to >=2.0 to support Intel-based Macs (by `GalAshkenazi1`_)
 
 Bugs
 =====
+- Fix the documentation header "Cite Braindecode" announcement link: it used a bare
+  ``cite.html`` URL, which browsers resolve relative to the current page path and led
+  to 404s (for example from ``install/install.html``). The link is now built with
+  Sphinx's ``pathto()`` for each page so it always targets the cite page correctly.
 - Fix multi-target channel windowing in :func:`braindecode.preprocessing.windowers.create_windows_from_target_channels`
   to use the union of valid target positions across all misc channels instead of only the first channel
   (by `Sarthak Tayal`_)
@@ -103,6 +135,14 @@ Bugs
   batch dimension instead of patch dimension in ``prepare_tokens``, and include
   pretrained weight typo mapping in ``self.mapping``
   (:gh:`887` by `Sarthak Tayal`_)
+- Fix model docstring inheritance: ``track_model_init_kwargs`` wrapped
+  ``__init__`` with ``@wraps`` before the
+  ``NumpyDocstringInheritanceInitMeta`` metaclass ran, causing
+  ``inspect.unwrap()`` to bypass the wrapper and read ``__doc__=None``.
+  This replaced every model's description with the parent mixin's and
+  marked all model-specific parameters as "The description is missing"
+  when ``DOCSTRING_INHERITANCE_ENABLE=1`` was set during documentation
+  builds (:gh:`971` by `Bruno Aristimunha`_)
 
 Code health
 ============

@@ -1,4 +1,4 @@
-from .activation import LogActivation, SafeLog
+from .activation import LogActivation, SafeLog, Square
 from .attention import (
     CAT,
     CBAM,
@@ -49,6 +49,7 @@ from .wrapper import Expression, IntermediateOutputWrapper
 __all__ = [
     "LogActivation",
     "SafeLog",
+    "Square",
     "CAT",
     "CBAM",
     "ECA",

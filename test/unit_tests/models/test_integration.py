@@ -488,6 +488,10 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        "SignalJEPA",
+        "SignalJEPA_Contextual",
+        "SignalJEPA_PostLocal",
+        "SignalJEPA_PreLocal",
     ]
 
     if model.__class__.__name__ in not_working_models:

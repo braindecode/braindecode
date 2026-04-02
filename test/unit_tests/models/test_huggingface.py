@@ -195,8 +195,13 @@ def test_config_contains_all_parameters(tmp_path, sample_model):
     with open(config_path, 'r') as config_file:
         config = json.load(config_file)
 
-    expected_keys = {'n_outputs', 'n_chans', 'n_times', 'input_window_seconds', 'sfreq', 'chs_info', 'braindecode_version'}
-    assert expected_keys == config.keys()
+    # The config must contain at least the EEG-specific keys plus
+    # braindecode_version.  Since all init parameters are now saved,
+    # model-specific keys will also be present.
+    required_keys = {'n_outputs', 'n_chans', 'n_times', 'input_window_seconds', 'sfreq', 'chs_info', 'braindecode_version'}
+    assert required_keys.issubset(config.keys()), (
+        f"Missing required keys: {required_keys - config.keys()}"
+    )
 
 
 def test_local_push_and_pull_roundtrip(tmp_path, sample_model):

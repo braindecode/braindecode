@@ -45,7 +45,7 @@ classifiers = [
 readme = "README.rst"
 requires-python = ">=3.11"
 dependencies = [
-    "torch>=2.2",
+    "torch>=2.0",
     "torchaudio>=2.0",
     'mne>=1.11.0',  # we get matplotlib, numpy, pandas, scipy from here
     'pandas<3.0.0',  # to avoid issues with wfdb
@@ -58,8 +58,17 @@ dependencies = [
     'linear_attention_transformer',
     'docstring_inheritance',        # we get einops from here
     'rotary_embedding_torch',
-    'pandas<3.0.0',                 # to avoid incompatibility with wfdb https://github.com/MIT-LCP/wfdb-python/issues/560
+    'pydantic>=2.0',
 ]
+
+[tool.uv]
+required-environments = [
+  "sys_platform == 'darwin' and platform_machine == 'x86_64'",  # Intel Mac
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",   # Apple Silicon Mac (M1/M2/M3)
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",   # Linux 64-bit
+  "sys_platform == 'win32' and platform_machine == 'AMD64'"     # Windows 64-bit
+]
+
 [project.urls]
 homepage = "https://braindecode.org"
 repository = "https://github.com/braindecode/braindecode"

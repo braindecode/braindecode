@@ -56,6 +56,7 @@ from .tsinception import TSception
 from .usleep import USleep
 from .util import (
     _init_models_dict,
+    build_model_config,
     extract_channel_locations_from_chs_info,
     models_mandatory_parameters,
 )
@@ -120,6 +121,7 @@ __all__ = [
     "TIDNet",
     "TSception",
     "USleep",
+    "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",
 ]

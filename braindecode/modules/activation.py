@@ -4,6 +4,26 @@ from torch import Tensor, nn
 import braindecode.functional as F
 
 
+class Square(nn.Module):
+    r"""Element-wise square activation.
+
+    :math:`\text{Square}(x) = x^2`
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import Square
+    >>> module = Square()
+    >>> inputs = torch.rand(2, 3)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 3])
+    """
+
+    def forward(self, x) -> Tensor:
+        return x * x
+
+
 class SafeLog(nn.Module):
     r"""
     Safe logarithm activation function module.
