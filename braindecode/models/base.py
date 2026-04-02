@@ -157,6 +157,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     .. code-block::
 
+        import torch
+
+        x = torch.randn(1, model.n_chans, model.n_times)
         # Extract encoder features (consistent dict across all models)
         out = model(x, return_features=True)
         features = out["features"]
@@ -171,7 +174,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         import json
 
         config = model.get_config()            # all __init__ params
-        json.dump(config, open("config.json", "w"))
+        with open("config.json", "w") as f:
+            json.dump(config, f)
 
         model2 = {name}.from_config(config)    # reconstruct (no weights)
 
@@ -691,6 +695,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             **model_kwargs,
         ):
             model_kwargs.pop("braindecode_version", None)
+            filename = model_kwargs.pop("filename", None)
             resolve_type_kwargs(cls, model_kwargs)
 
             # Read saved n_outputs from config.json to detect when the
@@ -717,6 +722,16 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
             requested_n_outputs = model_kwargs.get("n_outputs")
 
+            # If neither the config nor the caller provides n_outputs,
+            # raise a clear error instead of failing inside __init__.
+            if saved_n_outputs is None and requested_n_outputs is None:
+                raise ValueError(
+                    f"n_outputs is required for {cls.__name__}.from_pretrained() "
+                    f"but was not found in the config.json of '{model_id}'. "
+                    f"Please pass n_outputs explicitly, e.g. "
+                    f'{cls.__name__}.from_pretrained("{model_id}", n_outputs=2).'
+                )
+
             # If the user requests different n_outputs, load with the
             # saved value first (so weights match), then swap the head.
             if (
@@ -726,17 +741,28 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             ):
                 model_kwargs["n_outputs"] = saved_n_outputs
 
-            model = super()._from_pretrained(  # type: ignore
-                model_id=model_id,
-                revision=revision,
-                cache_dir=cache_dir,
-                force_download=force_download,
-                local_files_only=local_files_only,
-                token=token,
-                map_location=map_location,
-                strict=strict,
-                **model_kwargs,
-            )
+            # If a custom filename is provided, temporarily override the
+            # HuggingFace constant so the parent class downloads the
+            # correct file (e.g. "LUNA_base.safetensors" instead of
+            # "model.safetensors").
+            hf_constants = huggingface_hub.constants
+            _orig_safetensors = hf_constants.SAFETENSORS_SINGLE_FILE
+            if filename is not None:
+                hf_constants.SAFETENSORS_SINGLE_FILE = filename
+            try:
+                model = super()._from_pretrained(  # type: ignore
+                    model_id=model_id,
+                    revision=revision,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    local_files_only=local_files_only,
+                    token=token,
+                    map_location=map_location,
+                    strict=strict,
+                    **model_kwargs,
+                )
+            finally:
+                hf_constants.SAFETENSORS_SINGLE_FILE = _orig_safetensors
 
             if (
                 saved_n_outputs is not None

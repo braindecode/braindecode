@@ -49,7 +49,7 @@ class LUNA(EEGModuleMixin, nn.Module):
        **Pre-trained Weights Available**
 
        This model has pre-trained weights available on the Hugging Face Hub
-       at `thorir/LUNA <https://huggingface.co/thorir/LUNA>`_.
+       at `PulpBio/LUNA <https://huggingface.co/PulpBio/LUNA>`_.
 
        Available model variants:
 
@@ -61,30 +61,19 @@ class LUNA(EEGModuleMixin, nn.Module):
 
        .. code-block:: python
 
-           from huggingface_hub import hf_hub_download
-           from safetensors.torch import load_file
            from braindecode.models import LUNA
 
-           # Download pre-trained weights
-           model_path = hf_hub_download(
-               repo_id="thorir/LUNA",
+           # Load pre-trained base model from Hugging Face Hub
+           model = LUNA.from_pretrained(
+               "PulpBio/LUNA",
                filename="LUNA_base.safetensors",
-           )
-
-           # Create model for classification (fine-tuning)
-           model = LUNA(
-               n_outputs=2,  # Number of classes for your task
+               n_outputs=2,
                n_chans=22,
                n_times=1000,
                embed_dim=64,
                num_queries=4,
                depth=8,
            )
-
-           # Load pre-trained encoder weights
-           state_dict = load_file(model_path)
-           # load_state_dict applies model.mapping automatically
-           model.load_state_dict(state_dict, strict=False)
 
        To push your own trained model to the Hub:
 

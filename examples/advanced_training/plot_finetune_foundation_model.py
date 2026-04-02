@@ -108,12 +108,13 @@ print(metadata.head(10))
 # Load Pre-trained Weights from the Hub
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We load the pre-trained SignalJEPA model from the Hugging Face Hub using
-# ``from_pretrained``.  SignalJEPA uses a two-step pattern: first load the
-# SSL backbone, then transfer it to a downstream architecture.
+# We load the pre-trained SignalJEPA downstream model from the Hugging Face
+# Hub using ``from_pretrained``.  The ``SignalJEPA_PreLocal`` checkpoint
+# already bundles the SSL backbone together with the downstream
+# classification layers, so a single call is all that is needed.
 #
-# For a simpler example with models like BENDR, BIOT, or Labram that load
-# directly from the Hub in a single call, see :ref:`load-pretrained-models`.
+# For other foundation models (BENDR, BIOT, Labram, etc.) the same
+# one-line pattern applies — see :ref:`load-pretrained-models`.
 #
 
 model = SignalJEPA_PreLocal.from_pretrained(
@@ -153,8 +154,8 @@ print(model)
 # We will freeze all layers except the newly added ones.
 #
 
-# The classification head layers (spatial_conv and final_layer) were
-# newly initialized by from_pretrained.  Freeze everything else.
+# Keep the task-specific head layers (spatial_conv and final_layer)
+# trainable and freeze the pretrained backbone.
 new_layers = {
     name
     for name, _ in model.named_parameters()
