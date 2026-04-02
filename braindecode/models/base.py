@@ -673,8 +673,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
                     )
                 with open(config_file, "r") as f:
                     saved_n_outputs = json.load(f).get("n_outputs")
-            except Exception:
-                pass
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass  # config unavailable; skip reset_head logic
 
             requested_n_outputs = model_kwargs.get("n_outputs")
 
