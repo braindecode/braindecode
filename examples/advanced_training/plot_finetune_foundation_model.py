@@ -56,30 +56,31 @@ for ds in dataset.datasets:
     ds.raw.set_montage(montage)
 
 ##################################################################
+# Preprocessing to match the pretrained model
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# The pretrained SignalJEPA checkpoint expects 19 EEG channels at 128 Hz
+# with 2-second windows.  We adapt the dataset accordingly: keep only
+# EEG channels, pick the first 19, and resample.
+#
+
+for ds in dataset.datasets:
+    ds.raw.pick_types(eeg=True)  # drop EOG / stim channels
+    ds.raw.pick(ds.raw.ch_names[:19])  # match pretrained channel count
+    ds.raw.resample(128)  # match pretrained sampling frequency
+
+##################################################################
 # Define Dataset parameters
 # ~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We extract the sampling frequency and ensure that it is consistent across
-# all recordings. We also extract the window size from the annotations and
-# information about the EEG channels (names, positions, etc.).
+# We extract the sampling frequency and channel information after
+# preprocessing so they match the pretrained model.
 #
 
-# Extract sampling frequency
 sfreq = dataset.datasets[0].raw.info["sfreq"]
-assert all([ds.raw.info["sfreq"] == sfreq for ds in dataset.datasets])
+chs_info = dataset.datasets[0].raw.info["chs"]
 
-# Extract and validate window size from annotations
-window_size_seconds = dataset.datasets[0].raw.annotations.duration[0]
-assert all(
-    d == window_size_seconds
-    for ds in dataset.datasets
-    for d in ds.raw.annotations.duration
-)
-
-# Extract channel information
-chs_info = dataset.datasets[0].raw.info["chs"]  # Channel information
-
-print(f"{sfreq=}, {window_size_seconds=}, {len(chs_info)=}")
+print(f"{sfreq=}, {len(chs_info)=}")
 
 ##################################################################
 # Create Windows from Events
@@ -96,6 +97,8 @@ windows_dataset = create_windows_from_events(
     dataset,
     preload=True,  # Preload the data into memory for faster processing
     mapping=classes_mapping,
+    window_size_samples=256,  # 2 s at 128 Hz — matches pretrained model
+    window_stride_samples=256,
 )
 metadata = windows_dataset.get_metadata()
 print(metadata.head(10))
@@ -120,11 +123,6 @@ print(metadata.head(10))
 model = SignalJEPA_PreLocal.from_pretrained(
     "braindecode/SignalJEPA-PreLocal-pretrained",
     n_outputs=len(classes),
-    n_chans=len(chs_info),
-    chs_info=chs_info,
-    sfreq=sfreq,
-    input_window_seconds=window_size_seconds,
-    n_times=int(sfreq * window_size_seconds),
 )
 print(model)
 
