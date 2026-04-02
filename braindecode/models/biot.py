@@ -189,7 +189,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             activation=activation,
         )
 
-    def forward(self, x, return_features=False):
+    def forward(self, x, *, return_features=False):
         """
         Pass the input through the BIOT encoder, and then through the
         classification head.

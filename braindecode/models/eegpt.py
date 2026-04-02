@@ -382,7 +382,7 @@ class EEGPT(EEGModuleMixin, nn.Module):
             "embed_dim": self.embed_dim,
         }
 
-    def forward(self, x, return_features=False):
+    def forward(self, x, *, return_features=False):
         """
         Forward pass.
 

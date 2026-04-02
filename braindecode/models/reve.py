@@ -373,6 +373,7 @@ class REVE(EEGModuleMixin, nn.Module):
         eeg: torch.Tensor,
         pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
+        *,
         return_features: bool = False,
     ) -> Union[torch.Tensor, list[torch.Tensor], dict]:
         """
@@ -393,15 +394,16 @@ class REVE(EEGModuleMixin, nn.Module):
         return_output : bool, optional
             If True, returns the output from the transformer directly.
             If False, applies the final layer and returns the processed output. Default is False.
+        return_features : bool, optional
+            If True, returns a dict ``{"features": Tensor, "cls_token": None}``
+            with encoder features before the final layer. Default is False.
 
         Returns
         -------
-        Union[torch.Tensor, list[torch.Tensor]]
-            - If `return_output` is False: Returns a single `torch.Tensor` (output after final layer).
-            - If `return_output` is True: Returns a `list[torch.Tensor]` (outputs from transformer layers).
-
-            The output tensor(s) from the model. If `return_output` is True,
-            returns the transformer output; otherwise, returns the output after the final layer.
+        torch.Tensor or list[torch.Tensor] or dict
+            Default: ``torch.Tensor`` after the final layer.
+            If ``return_output=True``: ``list[torch.Tensor]`` from transformer layers.
+            If ``return_features=True``: ``dict`` with ``"features"`` and ``"cls_token"`` keys.
         """
 
         patches = eeg.unfold(

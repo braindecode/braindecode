@@ -788,9 +788,10 @@ class Labram(EEGModuleMixin, nn.Module):
         self,
         x,
         ch_names: list[str] | None = None,
-        return_features=False,
         return_patch_tokens=False,
         return_all_tokens=False,
+        *,
+        return_features=False,
     ):
         """
         Forward the input EEG data through the model.
