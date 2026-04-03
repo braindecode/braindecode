@@ -105,51 +105,54 @@ class _GConv(nn.Module):
         decay_max: float = 2.0,
     ):
         super().__init__()
+
+        # ========== Parameters ==========
         self.d_model = d_model
-        self.bidirectional = bidirectional
         self.channels = channels
+        self.bidirectional = bidirectional
         self.transposed = transposed
         self.linear = linear
         self.mode = mode
         self.l_max = l_max
-
-        self.skip_weight = nn.Parameter(torch.randn(channels, self.d_model))
-
-        if self.bidirectional:
-            channels *= 2
-
-        if not self.linear:
-            self.activation = activation()
-            self.dropout = nn.Dropout2d(dropout) if dropout > 0.0 else nn.Identity()
-            self.norm = (
-                nn.LayerNorm(self.d_model * self.channels)
-                if layer_norm
-                else nn.Identity()
-            )
-
-        if not self.linear:
-            self.output_linear = nn.Linear(
-                self.d_model * self.channels, self.d_model
-            )
-
         self.init_scale = init_scale
         self.kernel_dim = kernel_dim
+
+        # ========== Derived attributes ==========
+        n_conv_channels = channels * 2 if self.bidirectional else channels
         self.num_scales = (
             n_scales
             if n_scales is not None
             else 1 + math.ceil(math.log2(l_max / self.kernel_dim)) - self.init_scale
         )
 
+        # ========== Buffers ==========
+        self.register_buffer(
+            "multiplier",
+            torch.linspace(decay_min, decay_max, self.d_model).view(1, -1, 1),
+        )
+        self.register_buffer(
+            "kernel_norm",
+            torch.ones(n_conv_channels, self.d_model, 1),
+        )
+        self.register_buffer(
+            "kernel_norm_initialized", torch.tensor(0, dtype=torch.bool)
+        )
+
+        # ========== Learnable parameters ==========
+        self.skip_weight = nn.Parameter(torch.randn(channels, self.d_model))
+
         self.kernel_list = nn.ParameterList()
         for _ in range(self.num_scales):
             if "randn" in mode:
-                kernel = torch.randn(channels, self.d_model, self.kernel_dim)
+                kernel = torch.randn(
+                    n_conv_channels, self.d_model, self.kernel_dim
+                )
             elif "cos" in mode:
                 kernel = torch.cat(
                     [
                         torch.cos(
                             torch.linspace(0, 2 * i * math.pi, self.kernel_dim)
-                        ).expand(channels, 1, self.kernel_dim)
+                        ).expand(n_conv_channels, 1, self.kernel_dim)
                         for i in range(self.d_model)
                     ],
                     dim=1,
@@ -158,14 +161,20 @@ class _GConv(nn.Module):
                 raise ValueError(f"Unknown mode {mode}")
             self.kernel_list.append(nn.Parameter(kernel))
 
-        self.register_buffer(
-            "multiplier",
-            torch.linspace(decay_min, decay_max, self.d_model).view(1, -1, 1),
-        )
-        self.register_buffer("kernel_norm", torch.ones(channels, self.d_model, 1))
-        self.register_buffer(
-            "kernel_norm_initialized", torch.tensor(0, dtype=torch.bool)
-        )
+        # ========== Layers ==========
+        if not self.linear:
+            self.activation = activation()
+            self.dropout = (
+                nn.Dropout2d(dropout) if dropout > 0.0 else nn.Identity()
+            )
+            self.norm = (
+                nn.LayerNorm(self.d_model * self.channels)
+                if layer_norm
+                else nn.Identity()
+            )
+            self.output_linear = nn.Linear(
+                self.d_model * self.channels, self.d_model
+            )
 
     def forward(self, x, return_kernel=False):
         # x: (batch, d_model, seq_len) if transposed, else (batch, seq_len, d_model)
@@ -254,15 +263,18 @@ class _GConv(nn.Module):
 class Conv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, dilation=1):
         super().__init__()
-        self.padding = dilation * (kernel_size - 1) // 2
-        self.conv = nn.Conv1d(
-            in_channels,
-            out_channels,
-            kernel_size,
-            dilation=dilation,
-            padding=self.padding,
+
+        # ========== Layers ==========
+        padding = dilation * (kernel_size - 1) // 2
+        self.conv = weight_norm(
+            nn.Conv1d(
+                in_channels,
+                out_channels,
+                kernel_size,
+                dilation=dilation,
+                padding=padding,
+            )
         )
-        self.conv = weight_norm(self.conv)
         nn.init.kaiming_normal_(self.conv.parametrizations.weight.original1)
 
     def forward(self, x):
@@ -271,9 +283,10 @@ class Conv(nn.Module):
 
 
 class ZeroConv1d(nn.Module):
-    # initializing the conv layers
     def __init__(self, in_channel, out_channel):
         super().__init__()
+
+        # ========== Layers ==========
         self.conv = nn.Conv1d(in_channel, out_channel, kernel_size=1, padding=0)
 
     def forward(self, x):
@@ -284,7 +297,11 @@ class ZeroConv1d(nn.Module):
 class RMSNorm(nn.Module):
     def __init__(self, dim, eps=1e-8):
         super().__init__()
+
+        # ========== Parameters ==========
         self.eps = eps
+
+        # ========== Learnable parameters ==========
         self.scale = nn.Parameter(torch.ones(1, dim, 1))
 
     def forward(self, x):
@@ -307,13 +324,18 @@ class ResidualBlock(nn.Module):
         swa_window_size: int = 1,
     ):
         super().__init__()
+
+        # ========== Parameters ==========
         self.res_channels = res_channels
         self.swa_window_size = swa_window_size
 
+        # ========== Layers ==========
         self.rms_norm = RMSNorm(res_channels)
+        self.conv_layer = Conv(res_channels, 2 * res_channels, kernel_size=3)
+        self.gelu = nn.GELU()
 
         self.sgconv = _GConv(
-            d_model=2 * self.res_channels,
+            d_model=2 * res_channels,
             channels=4,
             l_max=s4_lmax,
             d_state=s4_d_state,
@@ -321,25 +343,22 @@ class ResidualBlock(nn.Module):
             bidirectional=s4_bidirectional,
             layer_norm=s4_layernorm,
         )
-
-        self.conv_layer = Conv(self.res_channels, 2 * self.res_channels, kernel_size=3)
-
         self.attention = nn.MultiheadAttention(
-            embed_dim=2 * self.res_channels,
+            embed_dim=2 * res_channels,
             num_heads=4,
             dropout=s4_dropout,
             bias=True,
             batch_first=True,
         )
 
-        self.gelu = nn.GELU()  # used between conv and SSM layers
-
-        self.res_conv = nn.Conv1d(res_channels, res_channels, kernel_size=1)
-        self.res_conv = weight_norm(self.res_conv)
+        self.res_conv = weight_norm(
+            nn.Conv1d(res_channels, res_channels, kernel_size=1)
+        )
         nn.init.kaiming_normal_(self.res_conv.parametrizations.weight.original1)
 
-        self.skip_conv = nn.Conv1d(res_channels, skip_channels, kernel_size=1)
-        self.skip_conv = weight_norm(self.skip_conv)
+        self.skip_conv = weight_norm(
+            nn.Conv1d(res_channels, skip_channels, kernel_size=1)
+        )
         nn.init.kaiming_normal_(self.skip_conv.parametrizations.weight.original1)
 
     def generate_local_window_mask(self, seq_len, window_size):
@@ -450,8 +469,11 @@ class ResidualGroup(nn.Module):
         swa_window_size: int = 1,
     ):
         super().__init__()
+
+        # ========== Parameters ==========
         self.num_res_layers = num_res_layers
 
+        # ========== Layers ==========
         self.residual_blocks = nn.ModuleList()
         for _ in range(self.num_res_layers):
             self.residual_blocks.append(
@@ -547,27 +569,24 @@ class PatchEmbedding(nn.Module):
         spectral_dropout: float = 0.1,
     ):
         super().__init__()
+
+        # ========== Derived attributes ==========
         proj_refine_padding = proj_refine_kernel // 2
         pos_padding = (pos_kernel[0] // 2, pos_kernel[1] // 2)
-        # emb_dim derived from first Conv2d output: any change to proj_kernel_size,
-        # proj_padding, or conv_out_chans (used as stride) must update this formula
-        _t = (patch_size + 2 * proj_padding - proj_kernel_size) // conv_out_chans + 1
-        self.emb_dim = conv_out_chans * _t
-        self.d_model = self.emb_dim
-        self.positional_encoding = nn.Sequential(
-            nn.Conv2d(
-                in_channels=self.emb_dim,
-                out_channels=self.emb_dim,
-                kernel_size=pos_kernel,
-                stride=(1, 1),
-                padding=pos_padding,
-                groups=self.emb_dim,
-            ),
+        # emb_dim = conv_out_chans * temporal_output_len of first strided conv
+        temporal_out_len = (
+            (patch_size + 2 * proj_padding - proj_kernel_size) // conv_out_chans + 1
         )
+        self.emb_dim = conv_out_chans * temporal_out_len
+        self.d_model = self.emb_dim
+
+        # ========== Learnable parameters ==========
         self.mask_encoding = nn.Parameter(
             torch.zeros(self.emb_dim), requires_grad=False
         )
 
+        # ========== Layers ==========
+        # Temporal projection: 3-layer Conv2d stack
         self.proj_in = nn.Sequential(
             nn.Conv2d(
                 in_channels=1,
@@ -597,9 +616,23 @@ class PatchEmbedding(nn.Module):
             nn.GroupNorm(conv_groups, conv_out_chans),
             nn.GELU(),
         )
+
+        # Spectral projection: FFT magnitude -> emb_dim
         self.spectral_proj = nn.Sequential(
             nn.Linear(patch_size // 2 + 1, self.emb_dim),
             nn.Dropout(spectral_dropout),
+        )
+
+        # Depth-wise positional encoding
+        self.positional_encoding = nn.Sequential(
+            nn.Conv2d(
+                in_channels=self.emb_dim,
+                out_channels=self.emb_dim,
+                kernel_size=pos_kernel,
+                stride=(1, 1),
+                padding=pos_padding,
+                groups=self.emb_dim,
+            ),
         )
 
     def forward(self, x, mask=None):
@@ -802,9 +835,15 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+
+        # ========== Parameters ==========
         self.patch_size = patch_size
         self.out_channels = out_channels
         self.activation = activation
+        self.pretrain_mode = pretrain_mode
+
+        # ========== Layers ==========
+        # Dual temporal-spectral patch embedding
         self.patch_embedding = PatchEmbedding(
             patch_size=patch_size,
             conv_out_chans=conv_out_chans,
@@ -817,10 +856,12 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         )
         emb_dim = self.patch_embedding.emb_dim
 
+        # Input projection
         self.init_conv = nn.Sequential(
             Conv(emb_dim, res_channels, kernel_size=1), self.activation()
         )
 
+        # EEGSSM residual backbone
         self.residual_layer = ResidualGroup(
             res_channels=res_channels,
             skip_channels=skip_channels,
@@ -832,20 +873,24 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             s4_layernorm=s4_layernorm,
             swa_window_size=swa_window_size,
         )
+
+        # Output projection
         self.final_conv = nn.Sequential(
             Conv(skip_channels, skip_channels, kernel_size=1),
             self.activation(),
             ZeroConv1d(skip_channels, out_channels),
         )
+        self.norm = nn.LayerNorm(out_channels)
+
+        # Pre-training heads (codebook prediction)
         self.lm_head_t = nn.Linear(out_channels, codebook_size_t, bias=False)
         self.lm_head_f = nn.Linear(out_channels, codebook_size_f, bias=False)
-        self.pretrain_mode = pretrain_mode
-        self.norm = nn.LayerNorm(out_channels)
-        # 3-layer MLP classifier as described in the paper (Section 3.3)
-        _flat = self.n_chans * (self.n_times // self.patch_size) * self.out_channels
+
+        # Classification head (3-layer MLP, Section 3.3)
+        flat_dim = self.n_chans * (self.n_times // self.patch_size) * self.out_channels
         self.final_layer = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(_flat, mlp_hidden_multiplier * out_channels),
+            nn.Linear(flat_dim, mlp_hidden_multiplier * out_channels),
             nn.ELU(),
             nn.Dropout(drop_prob),
             nn.Linear(mlp_hidden_multiplier * out_channels, out_channels),
