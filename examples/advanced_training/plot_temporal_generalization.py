@@ -111,7 +111,10 @@ epochs = mne.Epochs(
 epochs.pick(picks="meg", exclude="bads")  # remove stim and EOG
 del raw
 
-X = epochs.get_data(copy=False)  # MEG signals: n_epochs, n_meg_channels, n_times
+# MEG signals: n_epochs, n_meg_channels, n_times
+# Use fT/cm units instead of SI (T/m) so that BatchNorm1d's eps (~1e-5)
+# does not dominate the tiny SI-unit variance (~1e-23).
+X = epochs.get_data(units="fT/cm")
 y = epochs.events[:, 2]  # target: auditory left vs visual left
 y_encod = LabelEncoder().fit_transform(y)
 print("X shape: ", X.shape, "Y shape: ", y.shape, "Y encode shape: ", y_encod.shape)
@@ -164,8 +167,10 @@ class BasicMLP(nn.Module):
 # Note that the original MNE tutorial used an sklearn pipeline and prepended a
 # ``StandardScaler`` to the model. Instead, we will use a ``nn.BatchNorm1d``
 # layer to normalize the input data, which is equivalent to the ``StandardScaler``
-# in sklearn if we set the parameters ``affine=False`` and ``eps=0.0``. However,
-# pytorch does not allow ``eps=0.0``, so we set it to a small value instead. If the
+# in sklearn if we set the parameters ``affine=False`` and ``eps`` close to zero.
+# Note that MEG data must be converted from SI units (T/m, variance ~1e-23) to
+# display units (fT/cm) so that the ``eps`` parameter does not dominate the
+# normalization denominator. If the
 # batch size is the size of the whole dataset, then the ``nn.BatchNorm1d`` layer
 # will normalize each feature to have zero mean and unit variance just like the
 # ``StandardScaler``. However, if the batch size is smaller than the size of the
