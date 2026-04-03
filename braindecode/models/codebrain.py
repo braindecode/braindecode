@@ -114,7 +114,7 @@ class _GConv(nn.Module):
         self.mode = mode
         self.l_max = l_max
 
-        self.D = nn.Parameter(torch.randn(channels, self.d_model))
+        self.skip_weight = nn.Parameter(torch.randn(channels, self.d_model))
 
         if self.bidirectional:
             channels *= 2
@@ -230,7 +230,7 @@ class _GConv(nn.Module):
 
         # Skip connection via learnable D matrix
         # (batch, channels, d_model, seq_len)
-        out = out + torch.einsum("bhl,ch->bchl", x, self.D)
+        out = out + torch.einsum("bhl,ch->bchl", x, self.skip_weight)
         # Merge channels and d_model: (batch, channels * d_model, seq_len)
         out = rearrange(out, "... c h l -> ... (c h) l")
 
@@ -311,9 +311,9 @@ class ResidualBlock(nn.Module):
         self.res_channels = res_channels
         self.swa_window_size = swa_window_size
 
-        self.sn = RMSNorm(res_channels)
+        self.rms_norm = RMSNorm(res_channels)
 
-        self.s41 = _GConv(
+        self.sgconv = _GConv(
             d_model=2 * self.res_channels,
             channels=4,
             l_max=s4_lmax,
@@ -361,7 +361,7 @@ class ResidualBlock(nn.Module):
         # x, original: (batch, res_channels, seq_len)
         hidden = x
         _, n_channels, seq_len = x.shape
-        x = self.sn(x)
+        x = self.rms_norm(x)
         assert n_channels == self.res_channels
 
         # Add original input as residual shortcut
@@ -373,7 +373,7 @@ class ResidualBlock(nn.Module):
         # SGConv SSM branch
         hidden = self.gelu(hidden)
         # h_ssm: (batch, 2*res_channels, seq_len)
-        h_ssm, _ = self.s41(hidden)
+        h_ssm, _ = self.sgconv(hidden)
 
         # Sliding-window attention branch
         # (batch, 2*res_channels, seq_len) -> (batch, seq_len, 2*res_channels)
