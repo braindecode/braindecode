@@ -56,30 +56,31 @@ for ds in dataset.datasets:
     ds.raw.set_montage(montage)
 
 ##################################################################
+# Preprocessing to match the pretrained model
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# The pretrained SignalJEPA checkpoint expects 19 EEG channels at 128 Hz
+# with 2-second windows.  We adapt the dataset accordingly: keep only
+# EEG channels, pick the first 19, and resample.
+#
+
+for ds in dataset.datasets:
+    ds.raw.pick_types(eeg=True)  # drop EOG / stim channels
+    ds.raw.pick(ds.raw.ch_names[:19])  # match pretrained channel count
+    ds.raw.resample(128)  # match pretrained sampling frequency
+
+##################################################################
 # Define Dataset parameters
 # ~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We extract the sampling frequency and ensure that it is consistent across
-# all recordings. We also extract the window size from the annotations and
-# information about the EEG channels (names, positions, etc.).
+# We extract the sampling frequency and channel information after
+# preprocessing so they match the pretrained model.
 #
 
-# Extract sampling frequency
 sfreq = dataset.datasets[0].raw.info["sfreq"]
-assert all([ds.raw.info["sfreq"] == sfreq for ds in dataset.datasets])
+chs_info = dataset.datasets[0].raw.info["chs"]
 
-# Extract and validate window size from annotations
-window_size_seconds = dataset.datasets[0].raw.annotations.duration[0]
-assert all(
-    d == window_size_seconds
-    for ds in dataset.datasets
-    for d in ds.raw.annotations.duration
-)
-
-# Extract channel information
-chs_info = dataset.datasets[0].raw.info["chs"]  # Channel information
-
-print(f"{sfreq=}, {window_size_seconds=}, {len(chs_info)=}")
+print(f"{sfreq=}, {len(chs_info)=}")
 
 ##################################################################
 # Create Windows from Events
@@ -96,6 +97,8 @@ windows_dataset = create_windows_from_events(
     dataset,
     preload=True,  # Preload the data into memory for faster processing
     mapping=classes_mapping,
+    window_size_samples=256,  # 2 s at 128 Hz — matches pretrained model
+    window_stride_samples=256,
 )
 metadata = windows_dataset.get_metadata()
 print(metadata.head(10))
@@ -105,61 +108,23 @@ print(metadata.head(10))
 # Loading a pre-trained foundation model
 # --------------------------------------
 #
-# Download and Load Pre-trained Weights
+# Load Pre-trained Weights from the Hub
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We download the pre-trained weights for the SignalJEPA model from the Hugging Face Hub.
-# These weights will serve as the starting point for finetuning.
+# We load the pre-trained SignalJEPA downstream model from the Hugging Face
+# Hub using ``from_pretrained``.  The ``SignalJEPA_PreLocal`` checkpoint
+# already bundles the SSL backbone together with the downstream
+# classification layers, so a single call is all that is needed.
+#
+# For other foundation models (BENDR, BIOT, Labram, etc.) the same
+# one-line pattern applies — see :ref:`load-pretrained-models`.
 #
 
-model_state_dict = torch.hub.load_state_dict_from_url(
-    url="https://huggingface.co/braindecode/SignalJEPA/resolve/main/signal-jepa_16s-60_adeuwv4s.pth"
-)
-# print(model_state_dict.keys())
-
-##################################################################
-# Instantiate the Foundation Model
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# We create an instance of the SignalJEPA model using the pre-local downstream
-# architecture. The model is initialized with the dataset's sampling frequency,
-# window size, and channel information.
-#
-
-
-model = SignalJEPA_PreLocal(
-    sfreq=sfreq,
-    input_window_seconds=window_size_seconds,
-    chs_info=chs_info,
+model = SignalJEPA_PreLocal.from_pretrained(
+    "braindecode/SignalJEPA-PreLocal-pretrained",
     n_outputs=len(classes),
 )
 print(model)
-
-##################################################################
-# Load the Pre-trained Weights into the Model
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# We load the pre-trained weights into the model. The transformer layers are excluded
-# as this module is not used in the pre-local downstream architecture (see [1]_).
-#
-
-# Define layers to exclude from the pre-trained weights
-new_layers = {
-    "spatial_conv.1.weight",
-    "spatial_conv.1.bias",
-    "final_layer.1.weight",
-    "final_layer.1.bias",
-}
-
-# Filter out transformer weights and load the state dictionary
-model_state_dict = {
-    k: v for k, v in model_state_dict.items() if not k.startswith("transformer.")
-}
-missing_keys, unexpected_keys = model.load_state_dict(model_state_dict, strict=False)
-
-# Ensure no unexpected keys and validate missing keys
-assert unexpected_keys == [], f"{unexpected_keys=}"
-assert set(missing_keys) == new_layers, f"{missing_keys=}"
 
 ##################################################################
 #
@@ -190,6 +155,14 @@ assert set(missing_keys) == new_layers, f"{missing_keys=}"
 # we will focus on the first option here.
 # We will freeze all layers except the newly added ones.
 #
+
+# Keep the task-specific head layers (spatial_conv and final_layer)
+# trainable and freeze the pretrained backbone.
+new_layers = {
+    name
+    for name, _ in model.named_parameters()
+    if name.startswith(("spatial_conv.", "final_layer."))
+}
 
 for name, param in model.named_parameters():
     if name not in new_layers:

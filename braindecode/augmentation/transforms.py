@@ -2,6 +2,7 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #          Bruna Lopes <brunajaflopes@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -557,8 +558,9 @@ class BandstopFilter(Transform):
                 f" Nyquist frequency ({nyq} Hz)."
                 f" Falling back to max_freq = {nyq}."
             )
-        assert bandwidth < max_freq, (
-            f"`bandwidth` needs to be smaller than max_freq={max_freq}"
+        assert bandwidth < max_freq - 2, (
+            f"`bandwidth` needs to be smaller than max_freq - 2={max_freq - 2} "
+            f"to allow valid notch frequency sampling with 1 Hz transition bands."
         )
 
         # override bandwidth value when a magnitude is passed
@@ -600,8 +602,8 @@ class BandstopFilter(Transform):
 
         # Prevents transitions from going below 0 and above max_freq
         notched_freqs = self.rng.uniform(
-            low=1 + 2 * self.bandwidth,
-            high=self.max_freq - 1 - 2 * self.bandwidth,
+            low=1 + self.bandwidth / 2,
+            high=self.max_freq - 1 - self.bandwidth / 2,
             size=X.shape[0],
         )
         return {
