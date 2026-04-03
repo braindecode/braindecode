@@ -183,13 +183,22 @@ class BIOT(EEGModuleMixin, nn.Module):
             attn_layer_dropout=att_layer_drop_prob,
         )
 
+        self._head_activation = activation
         self.final_layer = _ClassificationHead(
             emb_size=self.embed_dim,
             n_outputs=self.n_outputs,
             activation=activation,
         )
 
-    def forward(self, x):
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.final_layer = _ClassificationHead(
+            emb_size=self.embed_dim,
+            n_outputs=n_outputs,
+            activation=self._head_activation,
+        )
+
+    def forward(self, x, return_features=False):
         """
         Pass the input through the BIOT encoder, and then through the
         classification head.
@@ -198,15 +207,24 @@ class BIOT(EEGModuleMixin, nn.Module):
         ----------
         x: Tensor
             (batch_size, n_channels, n_times)
+        return_features : bool
+            If True, return a dict with ``"features"`` and ``"cls_token"``
+            instead of the classification output.
 
         Returns
         -------
-        out: Tensor
-            (batch_size, n_outputs)
-        (out, emb): tuple Tensor
-            (batch_size, n_outputs), (batch_size, emb_size)
+        torch.Tensor or tuple or dict
+            Default: ``torch.Tensor`` of shape ``(batch_size, n_outputs)``.
+            If ``return_features=True``: ``dict`` with ``"features"``
+            ``(batch_size, emb_size)`` and ``"cls_token"`` (``None``).
+            If legacy ``return_feature=True`` (init param):
+            ``(out, emb)`` tuple (ignored when ``return_features=True``).
         """
         emb = self.encoder(x)
+
+        if return_features:
+            return {"features": emb, "cls_token": None}
+
         x = self.final_layer(emb)
 
         if self.return_feature:

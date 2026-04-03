@@ -48,7 +48,7 @@ jobs:
           cd docs
           make html
         env:
-          HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
 
       - name: Generate Notebooks from Examples
         run: |

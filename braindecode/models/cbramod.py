@@ -205,20 +205,15 @@ class CBraMod(EEGModuleMixin, nn.Module):
         self.encoder = _TransformerEncoder(encoder_layer, num_layers=n_layer)
         self.proj_out = nn.Sequential(nn.Linear(d_model, emb_dim))
 
+        self._emb_dim = emb_dim
+        self._patch_size = patch_size
         self._weights_init()
-
-        try:
-            n_times = self.n_times
-            n_chans = self.n_chans
-        except ValueError:
-            n_times = None
-            n_chans = None
 
         if return_encoder_output:
             self.final_layer = nn.Identity()
-        elif n_times is not None and n_chans is not None:
-            n_patch = n_times // patch_size
-            flat_dim = n_chans * n_patch * emb_dim
+        elif self._n_times is not None and self._n_chans is not None:
+            n_patch = self._n_times // patch_size
+            flat_dim = self._n_chans * n_patch * emb_dim
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.Linear(flat_dim, self.n_outputs)
             )
@@ -226,6 +221,17 @@ class CBraMod(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Sequential(
                 nn.Flatten(), nn.LazyLinear(self.n_outputs)
             )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        if self._n_times is not None and self._n_chans is not None:
+            n_patch = self._n_times // self._patch_size
+            flat_dim = self._n_chans * n_patch * self._emb_dim
+            self.final_layer = nn.Sequential(
+                nn.Flatten(), nn.Linear(flat_dim, n_outputs)
+            )
+        else:
+            self.final_layer = nn.Sequential(nn.Flatten(), nn.LazyLinear(n_outputs))
 
     def _weights_init(self):
         for m in self.modules():
@@ -237,11 +243,13 @@ class CBraMod(EEGModuleMixin, nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x, mask=None):
+    def forward(self, x, mask=None, return_features=False):
         x = self.rearrange(x)
         patch_emb = self.patch_embedding(x, mask)
         feats = self.encoder(patch_emb)
         out = self.proj_out(feats)
+        if return_features:
+            return {"features": out, "cls_token": None}
         return self.final_layer(out)
 
 
