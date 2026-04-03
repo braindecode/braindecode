@@ -558,8 +558,9 @@ class BandstopFilter(Transform):
                 f" Nyquist frequency ({nyq} Hz)."
                 f" Falling back to max_freq = {nyq}."
             )
-        assert bandwidth < max_freq, (
-            f"`bandwidth` needs to be smaller than max_freq={max_freq}"
+        assert bandwidth < max_freq - 2, (
+            f"`bandwidth` needs to be smaller than max_freq - 2={max_freq - 2} "
+            f"to allow valid notch frequency sampling with 1 Hz transition bands."
         )
 
         # override bandwidth value when a magnitude is passed
