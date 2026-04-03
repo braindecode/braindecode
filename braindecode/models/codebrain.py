@@ -450,7 +450,7 @@ class _GConv(nn.Module):
         # ========== Layers ==========
         if not self.linear:
             self.activation = activation()
-            self.dropout = nn.Dropout2d(dropout) if dropout > 0.0 else nn.Identity()
+            self.dropout = nn.Dropout1d(dropout) if dropout > 0.0 else nn.Identity()
             self.norm = (
                 nn.LayerNorm(self.d_model * self.channels)
                 if layer_norm
