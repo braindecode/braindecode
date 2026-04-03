@@ -13,17 +13,15 @@ from einops import rearrange
 from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
-contract = torch.einsum
-
 from braindecode.models.base import EEGModuleMixin
 
 
 class _GConv(nn.Module):
     """Sparse Global Convolution (SGConv) structured state-space layer.
 
-    Implements the SGConv layer from Section 3.3 of [codebrain]_. As described
-    in the paper, SGConv improves the convolution kernel by introducing two
-    features: *sparse parameterization* and *kernel decay*, making it "easier
+    Implements the SGConv layer from Section 3.3 of [codebrain_sgconv]_. As
+    described in the paper, SGConv improves the convolution kernel by introducing
+    two features: *sparse parameterization* and *kernel decay*, making it "easier
     and more efficient to compute compared to the traditional S4 kernel."
 
     The convolution is computed efficiently in :math:`O(N \\log N)` via FFT:
@@ -83,7 +81,7 @@ class _GConv(nn.Module):
 
     References
     ----------
-    .. [codebrain] Ding et al. (2025). CodeBrain: Scalable Code EEG
+    .. [codebrain_sgconv] Ding et al. (2025). CodeBrain: Scalable Code EEG
        Pre-Training for Unified Downstream BCI Tasks.
        https://arxiv.org/abs/2506.09110
     """
@@ -98,7 +96,6 @@ class _GConv(nn.Module):
         activation="gelu",
         dropout=0.0,
         transposed=True,
-        shift=False,
         linear=False,
         mode="cat_randn",
         layer_norm=False,
@@ -114,7 +111,6 @@ class _GConv(nn.Module):
         self.bidirectional = bidirectional
         self.channels = channels
         self.transposed = transposed
-        self.shift = shift
         self.linear = linear
         self.mode = mode
         self.l_max = l_max
@@ -209,10 +205,10 @@ class _GConv(nn.Module):
 
         k_f = torch.fft.rfft(k.float(), n=2 * L)
         u_f = torch.fft.rfft(u.float(), n=2 * L)
-        y_f = contract("bhl,chl->bchl", u_f, k_f)
+        y_f = torch.einsum("bhl,chl->bchl", u_f, k_f)
         y = torch.fft.irfft(y_f, n=2 * L)[..., :L]
 
-        y = y + contract("bhl,ch->bchl", u, self.D)
+        y = y + torch.einsum("bhl,ch->bchl", u, self.D)
         y = rearrange(y, "... c h l -> ... (c h) l")
 
         if not self.linear:
@@ -232,7 +228,7 @@ class _GConv(nn.Module):
 
 class Conv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, dilation=1):
-        super(Conv, self).__init__()
+        super().__init__()
         self.padding = dilation * (kernel_size - 1) // 2
         self.conv = nn.Conv1d(
             in_channels,
@@ -252,7 +248,7 @@ class Conv(nn.Module):
 class ZeroConv1d(nn.Module):
     # initializing the conv layers
     def __init__(self, in_channel, out_channel):
-        super(ZeroConv1d, self).__init__()
+        super().__init__()
         self.conv = nn.Conv1d(in_channel, out_channel, kernel_size=1, padding=0)
 
     def forward(self, x):
@@ -262,7 +258,7 @@ class ZeroConv1d(nn.Module):
 
 class RMSNorm(nn.Module):
     def __init__(self, dim, eps=1e-8):
-        super(RMSNorm, self).__init__()
+        super().__init__()
         self.eps = eps
         self.scale = nn.Parameter(torch.ones(1, dim, 1))
 
@@ -285,7 +281,7 @@ class ResidualBlock(nn.Module):
         s4_layernorm,
         swa_window_size: int = 1,
     ):
-        super(ResidualBlock, self).__init__()
+        super().__init__()
         self.res_channels = res_channels
         self.swa_window_size = swa_window_size
 
@@ -322,7 +318,10 @@ class ResidualBlock(nn.Module):
         nn.init.kaiming_normal_(self.skip_conv.parametrizations.weight.original1)
 
     def generate_local_window_mask(self, seq_len, window_size):
-        assert window_size % 2 == 1, "window_size should be odd number, like 7, 9, 11"
+        if window_size % 2 != 1:
+            raise ValueError(
+                f"window_size must be odd (e.g. 7, 9, 11), got {window_size}"
+            )
 
         half_window = window_size // 2
         idx = torch.arange(seq_len)
@@ -338,8 +337,7 @@ class ResidualBlock(nn.Module):
         x = self.sn(x)
         assert C == self.res_channels
 
-        part_t = rearrange(original, "b c l -> b c l")
-        h = h + part_t
+        h = h + original
 
         h = self.conv_layer(h)
 
@@ -411,7 +409,7 @@ class ResidualGroup(nn.Module):
         s4_layernorm,
         swa_window_size: int = 1,
     ):
-        super(ResidualGroup, self).__init__()
+        super().__init__()
         self.num_res_layers = num_res_layers
 
         self.residual_blocks = nn.ModuleList()
@@ -810,7 +808,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             nn.Linear(out_channels, self.n_outputs),
         )
 
-    def forward(self, inputs, mask=None):
+    def forward(self, inputs, mask=None, return_features=False):
         batch, n_chans, n_times = inputs.shape
         patch_size = self.patch_size
         seq_len = n_times // patch_size
@@ -831,6 +829,8 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             seq_len=seq_len,
         )
         x = self.norm(x)
+        if return_features:
+            return {"features": x, "cls_token": None}
         if self.pretrain_mode:
             if mask is not None:
                 x = x[mask == 1]
