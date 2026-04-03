@@ -1,4 +1,5 @@
 # Authors: Cedric Rommel <cedric.rommel@inria.fr>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -95,7 +96,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
         self.mapping = {
             "fc.weight": "final_layer.fc.weight",
-            "tc.bias": "final_layer.fc.bias",
+            "fc.bias": "final_layer.fc.bias",
         }
 
         # ======== Inception branches ========================

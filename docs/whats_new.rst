@@ -115,6 +115,13 @@ Bugs
   ``cite.html`` URL, which browsers resolve relative to the current page path and led
   to 404s (for example from ``install/install.html``). The link is now built with
   Sphinx's ``pathto()`` for each page so it always targets the cite page correctly.
+- Fix :class:`braindecode.models.EEGITNet` state dict mapping that pointed bias
+  to the weight key and referenced a nonexistent submodule path, and fix third
+  inception branch using the wrong variable for kernel length
+  (by `Sarthak Tayal`_)
+- Fix :class:`braindecode.models.EEGInceptionMI` state dict mapping typo where
+  the old key was ``tc.bias`` instead of ``fc.bias``
+  (by `Sarthak Tayal`_)
 - Fix multi-target channel windowing in :func:`braindecode.preprocessing.windowers.create_windows_from_target_channels`
   to use the union of valid target positions across all misc channels instead of only the first channel
   (by `Sarthak Tayal`_)
@@ -140,6 +147,9 @@ Bugs
   Now uses ``epochs.get_data(units="fT/cm")`` to bring data to a reasonable
   scale, and removes the misleading "importance of normalization" section whose
   conclusions were an artifact of the data scale issue (by `Bruno Aristimunha`_)
+- Fix :class:`braindecode.augmentation.BandstopFilter` notch center frequency range
+  using ``bandwidth/2`` instead of ``2*bandwidth`` to match docstring
+  (:gh:`548` by `Sarthak Tayal`_)
 - Fix model docstring inheritance: ``track_model_init_kwargs`` wrapped
   ``__init__`` with ``@wraps`` before the
   ``NumpyDocstringInheritanceInitMeta`` metaclass ran, causing
@@ -903,6 +913,7 @@ Authors
 .. _Can Han: https://github.com/hancan16
 .. _Christian Kothe: https://github.com/chkothe
 .. _Kuntal Kokate: https://github.com/Kkuntal990
+.. _GalAshkenazi1: https://github.com/GalAshkenazi1
 .. _Matthew Chen: https://github.com/MatthewChen37
 .. _Jonathan Dan: https://github.com/danjjl
 .. _Jonathan Lys: https://github.com/jonathanlys01

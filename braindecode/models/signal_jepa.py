@@ -374,6 +374,11 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         """
         # Check if this is a Hub-style load (from a directory path)
         if isinstance(model, (str, Path)) or (model is None and kwargs):
+            # Forward named params that would otherwise be dropped
+            if n_outputs is not None:
+                kwargs["n_outputs"] = n_outputs
+            if chs_info is not None:
+                kwargs["chs_info"] = chs_info
             # This is a Hub load, delegate to parent class
             if isinstance(model, (str, Path)):
                 # model is actually the repo_id or directory path
@@ -546,6 +551,9 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         """
         # Check if this is a Hub-style load (from a directory path)
         if isinstance(model, (str, Path)) or (model is None and kwargs):
+            # Forward named params that would otherwise be dropped
+            if n_outputs is not None:
+                kwargs["n_outputs"] = n_outputs
             # This is a Hub load, delegate to parent class
             if isinstance(model, (str, Path)):
                 # model is actually the repo_id or directory path
@@ -743,6 +751,9 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         """
         # Check if this is a Hub-style load (from a directory path)
         if isinstance(model, (str, Path)) or (model is None and kwargs):
+            # Forward named params that would otherwise be dropped
+            if n_outputs is not None:
+                kwargs["n_outputs"] = n_outputs
             # This is a Hub load, delegate to parent class
             if isinstance(model, (str, Path)):
                 # model is actually the repo_id or directory path
