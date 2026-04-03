@@ -56,9 +56,8 @@ class _GConv(nn.Module):
     bidirectional : bool, default=False
         If ``True``, applies the kernel in both forward and backward directions
         and sums the results.
-    activation : str, default="gelu"
-        Activation function after the convolution output (``"gelu"`` or
-        ``"relu"``).
+    activation : type[nn.Module], default=nn.GELU
+        Activation function class applied after the convolution output.
     dropout : float, default=0.0
         Dropout probability applied after activation.
     transposed : bool, default=True
@@ -93,7 +92,7 @@ class _GConv(nn.Module):
         l_max=1,
         channels=1,
         bidirectional=False,
-        activation="gelu",
+        activation: type[nn.Module] = nn.GELU,
         dropout=0.0,
         transposed=True,
         linear=False,
@@ -120,7 +119,7 @@ class _GConv(nn.Module):
             channels *= 2
 
         if not self.linear:
-            self.activation = nn.GELU() if activation == "gelu" else nn.ReLU()
+            self.activation = activation()
             self.dropout = nn.Dropout2d(dropout) if dropout > 0.0 else nn.Identity()
             self.norm = (
                 nn.LayerNorm(self.d_model * self.channels)
