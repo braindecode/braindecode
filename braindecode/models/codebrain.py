@@ -5,6 +5,8 @@
 # License: BSD (3-clause)
 
 import math
+import re
+from collections import OrderedDict
 from typing import Optional
 
 import torch
@@ -218,6 +220,38 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             nn.Dropout(drop_prob),
             nn.Linear(out_channels, self.n_outputs),
         )
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Remap upstream checkpoint keys to braindecode attribute names.
+
+        Handles four kinds of key differences from the original CodeBrain
+        checkpoint (``YjMajy/CodeBrain`` on HuggingFace):
+
+        1. ``module.`` prefix from ``DataParallel`` saving.
+        2. Attribute renames: ``S41`` -> ``sgconv``, ``sn`` -> ``rms_norm``,
+           ``.D`` -> ``.skip_weight``.
+        3. ``KernelModule`` wrapper: ``.kernel_list.N.kernel`` -> ``.kernel_list.N``.
+        4. Old ``weight_norm`` API: ``weight_g``/``weight_v`` ->
+           ``parametrizations.weight.original0``/``original1``.
+        """
+        remapped = OrderedDict()
+        for key, value in state_dict.items():
+            new_key = key.removeprefix("module.")
+            new_key = new_key.replace(".S41.", ".sgconv.")
+            new_key = new_key.replace(".sn.", ".rms_norm.")
+            if new_key.endswith(".D"):
+                new_key = new_key[:-2] + ".skip_weight"
+            new_key = re.sub(
+                r"\.kernel_list\.(\d+)\.kernel$", r".kernel_list.\1", new_key
+            )
+            new_key = new_key.replace(
+                ".weight_g", ".parametrizations.weight.original0"
+            )
+            new_key = new_key.replace(
+                ".weight_v", ".parametrizations.weight.original1"
+            )
+            remapped[new_key] = value
+        return super().load_state_dict(remapped, *args, **kwargs)
 
     def forward(self, inputs, mask=None, return_features=False):
         # inputs: (batch, n_chans, n_times)
