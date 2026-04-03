@@ -244,12 +244,8 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             new_key = re.sub(
                 r"\.kernel_list\.(\d+)\.kernel$", r".kernel_list.\1", new_key
             )
-            new_key = new_key.replace(
-                ".weight_g", ".parametrizations.weight.original0"
-            )
-            new_key = new_key.replace(
-                ".weight_v", ".parametrizations.weight.original1"
-            )
+            new_key = new_key.replace(".weight_g", ".parametrizations.weight.original0")
+            new_key = new_key.replace(".weight_v", ".parametrizations.weight.original1")
             remapped[new_key] = value
         return super().load_state_dict(remapped, *args, **kwargs)
 
@@ -436,9 +432,7 @@ class _GConv(nn.Module):
         self.kernel_list = nn.ParameterList()
         for _ in range(self.num_scales):
             if "randn" in mode:
-                kernel = torch.randn(
-                    n_conv_channels, self.d_model, self.kernel_dim
-                )
+                kernel = torch.randn(n_conv_channels, self.d_model, self.kernel_dim)
             elif "cos" in mode:
                 kernel = torch.cat(
                     [
@@ -456,17 +450,13 @@ class _GConv(nn.Module):
         # ========== Layers ==========
         if not self.linear:
             self.activation = activation()
-            self.dropout = (
-                nn.Dropout2d(dropout) if dropout > 0.0 else nn.Identity()
-            )
+            self.dropout = nn.Dropout2d(dropout) if dropout > 0.0 else nn.Identity()
             self.norm = (
                 nn.LayerNorm(self.d_model * self.channels)
                 if layer_norm
                 else nn.Identity()
             )
-            self.output_linear = nn.Linear(
-                self.d_model * self.channels, self.d_model
-            )
+            self.output_linear = nn.Linear(self.d_model * self.channels, self.d_model)
 
     def forward(self, x, return_kernel=False):
         # x: (batch, d_model, seq_len) if transposed, else (batch, seq_len, d_model)
@@ -511,12 +501,12 @@ class _GConv(nn.Module):
 
         if self.bidirectional:
             k_fwd, k_bwd = rearrange(
-                kernel, "(s channels) d_model seq_len -> s channels d_model seq_len", s=2
+                kernel,
+                "(s channels) d_model seq_len -> s channels d_model seq_len",
+                s=2,
             )
             # Combine forward and time-reversed backward kernels
-            kernel = F.pad(k_fwd, (0, seq_len)) + F.pad(
-                k_bwd.flip(-1), (seq_len, 0)
-            )
+            kernel = F.pad(k_fwd, (0, seq_len)) + F.pad(k_bwd.flip(-1), (seq_len, 0))
 
         # FFT-based convolution: O(N log N)
         # kernel_freq: (channels, d_model, freq_bins)
@@ -865,8 +855,8 @@ class _PatchEmbedding(nn.Module):
         pos_padding = (pos_kernel[0] // 2, pos_kernel[1] // 2)
         # emb_dim = conv_out_chans * temporal_output_len of first strided conv
         temporal_out_len = (
-            (patch_size + 2 * proj_padding - proj_kernel_size) // conv_out_chans + 1
-        )
+            patch_size + 2 * proj_padding - proj_kernel_size
+        ) // conv_out_chans + 1
         self.emb_dim = conv_out_chans * temporal_out_len
         self.d_model = self.emb_dim
 
