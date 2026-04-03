@@ -141,6 +141,9 @@ Bugs
   batch dimension instead of patch dimension in ``prepare_tokens``, and include
   pretrained weight typo mapping in ``self.mapping``
   (:gh:`887` by `Sarthak Tayal`_)
+- Fix :class:`braindecode.augmentation.BandstopFilter` notch center frequency range
+  using ``bandwidth/2`` instead of ``2*bandwidth`` to match docstring
+  (:gh:`548` by `Sarthak Tayal`_)
 - Fix model docstring inheritance: ``track_model_init_kwargs`` wrapped
   ``__init__`` with ``@wraps`` before the
   ``NumpyDocstringInheritanceInitMeta`` metaclass ran, causing
