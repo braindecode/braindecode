@@ -115,6 +115,13 @@ Bugs
   ``cite.html`` URL, which browsers resolve relative to the current page path and led
   to 404s (for example from ``install/install.html``). The link is now built with
   Sphinx's ``pathto()`` for each page so it always targets the cite page correctly.
+- Fix :class:`braindecode.models.EEGITNet` state dict mapping that pointed bias
+  to the weight key and referenced a nonexistent submodule path, and fix third
+  inception branch using the wrong variable for kernel length
+  (by `Sarthak Tayal`_)
+- Fix :class:`braindecode.models.EEGInceptionMI` state dict mapping typo where
+  the old key was ``tc.bias`` instead of ``fc.bias``
+  (by `Sarthak Tayal`_)
 - Fix multi-target channel windowing in :func:`braindecode.preprocessing.windowers.create_windows_from_target_channels`
   to use the union of valid target positions across all misc channels instead of only the first channel
   (by `Sarthak Tayal`_)

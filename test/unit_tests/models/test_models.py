@@ -3136,3 +3136,46 @@ def test_medformer_patch_len_configurations(patch_len_list):
 
     # Check that the number of patch embeddings matches
     assert len(model.enc_embedding.value_embeddings) == len(patch_len_list)
+
+
+def test_eegitnet_mapping_targets():
+    # mapping values should point to real keys in the model state dict
+    model = EEGITNet(
+        n_outputs=4, n_chans=22, n_times=1000,
+    )
+    sd_keys = set(model.state_dict().keys())
+    for old_key, new_key in model.mapping.items():
+        assert new_key in sd_keys, f"{new_key} not in state_dict"
+    # bias and weight should map separately
+    targets = list(model.mapping.values())
+    assert len(targets) == len(set(targets)), "mapping has duplicate targets"
+
+
+def test_eegitnet_inception_kernel_scales():
+    # third inception branch kernel should be 4x the base kernel length
+    klen = 16
+    model = EEGITNet(
+        n_outputs=4, n_chans=22, n_times=1000,
+        kernel_length=klen,
+    )
+    inc = model.inception_block
+    # branches order: kernel_length, kernel_length*2, kernel_length*4
+    k1 = inc.branches[0][0].kernel_size[1]
+    k2 = inc.branches[1][0].kernel_size[1]
+    k3 = inc.branches[2][0].kernel_size[1]
+    assert k1 == klen
+    assert k2 == klen * 2
+    assert k3 == klen * 4
+
+
+def test_eeginceptionmi_mapping_targets():
+    # mapping keys should match old param names, values should exist in state dict
+    model = EEGInceptionMI(
+        n_outputs=4, n_chans=22, sfreq=250,
+        input_window_seconds=4.5,
+    )
+    sd_keys = set(model.state_dict().keys())
+    for old_key, new_key in model.mapping.items():
+        assert new_key in sd_keys, f"{new_key} not in state_dict"
+    # old keys should not have typos
+    assert "fc.bias" in model.mapping
