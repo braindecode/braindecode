@@ -134,6 +134,12 @@ Bugs
   batch dimension instead of patch dimension in ``prepare_tokens``, and include
   pretrained weight typo mapping in ``self.mapping``
   (:gh:`887` by `Sarthak Tayal`_)
+- Fix temporal generalization tutorial producing degraded results (peak AUC
+  dropped from ~0.9 to ~0.75): MEG data in SI units (T/m) has variances ~1e-23,
+  so ``BatchNorm1d``'s ``eps=1e-5`` dominated the normalization denominator.
+  Now uses ``epochs.get_data(units="fT/cm")`` to bring data to a reasonable
+  scale, and removes the misleading "importance of normalization" section whose
+  conclusions were an artifact of the data scale issue (by `Bruno Aristimunha`_)
 - Fix model docstring inheritance: ``track_model_init_kwargs`` wrapped
   ``__init__`` with ``@wraps`` before the
   ``NumpyDocstringInheritanceInitMeta`` metaclass ran, causing
