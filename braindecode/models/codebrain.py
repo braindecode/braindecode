@@ -704,11 +704,24 @@ class CodeBrain(EEGModuleMixin, nn.Module):
     - **Classification head** (``final_layer``): Flattens the output and maps
       to ``n_outputs`` classes.
 
-    .. rubric:: Pre-training vs Fine-tuning
+    .. important::
+       **Pre-trained Weights Available**
 
-    Set ``pretrain_mode=True`` during pre-training to return ``(lm_head_t,
-    lm_head_f)`` codebook logits. Set ``pretrain_mode=False`` (default) for
-    fine-tuning to return ``(batch, n_outputs)`` class logits.
+       This model has pre-trained weights available on the Hugging Face Hub.
+       You can load them using:
+
+       .. code-block:: python
+
+           from braindecode.models import CodeBrain
+
+           # Load pre-trained model from Hugging Face Hub
+           model = CodeBrain.from_pretrained("braindecode/codebrain-pretrained")
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           model.push_to_hub("my-username/my-codebrain")
 
     Parameters
     ----------
@@ -739,13 +752,6 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         Number of output channels in the patch projection convolutions.
     conv_groups : int, default=5
         Number of groups for ``GroupNorm`` in the patch projection.
-    codebook_size_t : int, default=4096
-        Vocabulary size for the temporal codebook head (pre-training only).
-    codebook_size_f : int, default=4096
-        Vocabulary size for the spectral codebook head (pre-training only).
-    pretrain_mode : bool, default=False
-        If ``True``, returns ``(lm_head_t, lm_head_f)`` logits for masked
-        pre-training. If ``False``, returns ``(batch, n_outputs)`` logits.
     activation : type[nn.Module], default=nn.ReLU
         Non-linear activation class used in ``init_conv`` and ``final_conv``.
 
