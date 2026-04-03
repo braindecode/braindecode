@@ -601,8 +601,8 @@ class BandstopFilter(Transform):
 
         # Prevents transitions from going below 0 and above max_freq
         notched_freqs = self.rng.uniform(
-            low=1 + self.bandwidth / 2,  # was 2*bw, should be bw/2 per docstring
-            high=self.max_freq - 1 - self.bandwidth / 2,  # same fix here
+            low=1 + self.bandwidth / 2,
+            high=self.max_freq - 1 - self.bandwidth / 2,
             size=X.shape[0],
         )
         return {
