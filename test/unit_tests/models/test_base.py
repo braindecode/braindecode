@@ -3,6 +3,8 @@
 # License: BSD-3
 
 
+import json
+from operator import attrgetter
 from unittest.mock import patch
 
 import pytest
@@ -25,6 +27,34 @@ class DummyModuleNTime(EEGModuleMixin, nn.Sequential):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.add_module("dummy", nn.Linear(self.n_times, 1))
+
+
+class DummyModuleConfigRoundTrip(EEGModuleMixin, nn.Sequential):
+    """Dummy module exercising config round-trips."""
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        drop_prob=0.5,
+        activation: type[nn.Module] = nn.ReLU,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self.activation = activation
+        self.add_module("drop", nn.Dropout(drop_prob))
+        self.add_module("activation_module", activation())
+        self.add_module("linear", nn.Linear(self.n_times, self.n_outputs))
 
 
 @pytest.fixture(scope="function")
@@ -259,6 +289,56 @@ def test_raised_runtimeerror_kernel_size_get_output_shape(dummy_module: DummyMod
         dummy_module.get_output_shape()
 
 
+@pytest.fixture(scope="function")
+def config_roundtrip_without_hub_config():
+    model = DummyModuleConfigRoundTrip(
+        n_outputs=2,
+        n_chans=3,
+        chs_info=[{"ch_name": f"ch{i}"} for i in range(3)],
+        n_times=32,
+        input_window_seconds=0.32,
+        sfreq=100.0,
+        drop_prob=0.25,
+        activation=nn.ELU,
+    )
+    model._hub_mixin_config = None
+
+    config = model.get_config()
+
+    restored = DummyModuleConfigRoundTrip.from_config(json.loads(json.dumps(config)))
+    return model, config, restored
+
+
+@pytest.mark.parametrize(
+    "config_key, value_getter, use_identity",
+    [
+        pytest.param("drop_prob", attrgetter("drop.p"), False, id="drop-prob"),
+        pytest.param("activation", attrgetter("activation"), True, id="activation"),
+        pytest.param("n_outputs", attrgetter("n_outputs"), False, id="n-outputs"),
+        pytest.param("n_chans", attrgetter("n_chans"), False, id="n-chans"),
+        pytest.param("n_times", attrgetter("n_times"), False, id="n-times"),
+    ],
+)
+def test_get_config_roundtrip_without_hub_config(
+    config_roundtrip_without_hub_config, config_key, value_getter, use_identity
+):
+    model, config, restored = config_roundtrip_without_hub_config
+    expected = value_getter(model)
+    expected_config = (
+        f"{expected.__module__}.{expected.__qualname__}"
+        if isinstance(expected, type)
+        else expected
+    )
+
+    assert config[config_key] == expected_config
+
+    restored_value = value_getter(restored)
+    if use_identity:
+        assert restored_value is expected
+    else:
+        assert restored_value == expected
+
+
 def test_raised_runtimeerror_output_size_get_output_shape(dummy_module: DummyModule):
 
     dummy_module.add_module("good_conv", nn.Conv2d(1, 1, kernel_size=(1, 100)))
@@ -333,3 +413,109 @@ def test_fractional_input_window_seconds_inference(
         assert module.n_times == round(input_window_seconds * sfreq)
     if input_window_seconds is None:
         assert module.input_window_seconds == n_times / sfreq
+
+
+class _DummyModelWithParams(EEGModuleMixin, nn.Sequential):
+    """A model with its own documented parameters.
+
+    Parameters
+    ----------
+    hidden_size : int
+        Size of hidden layer.
+    drop_prob : float
+        Dropout probability.
+    """
+
+    def __init__(
+        self,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        hidden_size=64,
+        drop_prob=0.5,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self.hidden_size = hidden_size
+        self.drop_prob = drop_prob
+
+
+def test_docstring_inheritance_preserves_child_description():
+    """Regression test: child class description must not be replaced by parent's.
+
+    When NumpyDocstringInheritanceInitMeta is active the child class
+    docstring should keep its own description and Parameters section
+    while inheriting missing sections (Raises, Notes) from the parent.
+
+    A previous bug caused ``@wraps`` in ``track_model_init_kwargs`` to
+    run before the metaclass, making ``inspect.unwrap()`` bypass the
+    wrapper and read ``__doc__ = None`` from the original function.
+    This caused the parent description to overwrite the child's.
+    """
+    import os
+
+    doc = _DummyModelWithParams.__doc__
+    assert doc is not None, "Class docstring should not be None"
+
+    # Child description must always be present, regardless of env var
+    assert "A model with its own documented parameters" in doc, (
+        f"Child description was replaced by parent's. Got:\n{doc[:200]}"
+    )
+
+    is_enabled = os.environ.get("DOCSTRING_INHERITANCE_ENABLE") == "1"
+    if not is_enabled:
+        return
+
+    # --- Checks below only apply when docstring inheritance is active ---
+
+    # Parent description must not leak into the description section
+    assert "Mixin class for all EEG models" not in doc.split("Parameters")[0], (
+        "Parent description leaked into the child's description section"
+    )
+
+    # Inherited params should appear in the Parameters section (not just
+    # in Hub notes which also mention these names in prose)
+    params_section = doc[doc.index("Parameters") :]
+    assert "\nn_chans" in params_section or "n_chans :" in params_section, (
+        "Inherited parameter 'n_chans' missing from Parameters section"
+    )
+    assert "\nn_outputs" in params_section or "n_outputs :" in params_section, (
+        "Inherited parameter 'n_outputs' missing from Parameters section"
+    )
+
+    # Child-specific params must NOT show "The description is missing"
+    hidden_idx = params_section.index("hidden_size")
+    next_param_candidates = ["drop_prob", "n_chans", "n_outputs"]
+    end_idx = len(params_section)
+    for candidate in next_param_candidates:
+        try:
+            idx = params_section.index(candidate, hidden_idx + 1)
+            end_idx = min(end_idx, idx)
+        except ValueError:
+            pass
+    hidden_desc = params_section[hidden_idx:end_idx]
+    assert "description is missing" not in hidden_desc, (
+        f"Child parameter 'hidden_size' lost its description:\n{hidden_desc}"
+    )
+
+
+def test_init_kwargs_tracked_for_subclass():
+    """Verify that track_model_init_kwargs captures all constructor args."""
+    model = _DummyModelWithParams(
+        n_chans=8, n_outputs=2, n_times=100, hidden_size=32, drop_prob=0.3
+    )
+    kwargs = model._braindecode_init_kwargs
+    assert kwargs["hidden_size"] == 32
+    assert kwargs["drop_prob"] == 0.3
+    assert kwargs["n_chans"] == 8
+    assert kwargs["n_outputs"] == 2
+    assert kwargs["n_times"] == 100

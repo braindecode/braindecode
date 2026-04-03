@@ -1,4 +1,5 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 from warnings import catch_warnings, simplefilter
@@ -29,6 +30,7 @@ from braindecode.modules import (
     LinearWithConstraint,
     MaxNormLinear,
     SafeLog,
+    SqueezeAndExcitation,
     TimeDistributed,
 )
 
@@ -226,6 +228,16 @@ def test_mlp_increase(hidden_features):
         # For each layer that we add, the model
         # increase with 2 layers + 2 initial layers (input, output layer)
         assert len(model) == 2 * (len(hidden_features)) + 2
+
+
+def test_squeeze_and_excitation_forward():
+    module = SqueezeAndExcitation(in_channels=32, reduction_rate=4)
+    inputs = torch.rand(2, 32, 1, 64)
+
+    outputs = module(inputs)
+
+    assert module.fc1.out_channels == module.fc2.in_channels
+    assert outputs.shape == inputs.shape
 
 
 def test_segm_patch_not_learning():

@@ -406,6 +406,19 @@ def test_bandstop_filter_transform(rng_seed, random_batch, bandwidth, fail):
             assert filtered_bandwidth > 0.5 * transform.bandwidth
 
 
+def test_bandstop_freq_range_matches_docstring(rng_seed):
+    # notch center freqs should respect bw/2 bounds not 2*bw
+    sfreq = 100
+    bw = 10
+    transform = BandstopFilter(1.0, bandwidth=bw, sfreq=sfreq, random_state=rng_seed)
+    X = torch.randn(50, 2, 1000)
+    params = transform.get_augmentation_params(X, torch.zeros(50))
+    freqs = params["freqs_to_notch"]
+    transition = 1
+    assert freqs.min() >= transition + bw / 2
+    assert freqs.max() <= sfreq / 2 - transition - bw / 2
+
+
 def _get_frequency_peaks(time, signal, sfreq, min_peak_height=100):
     sp = fftshift(fft(signal))
     freq = fftshift(fftfreq(time.shape[-1], 1 / sfreq))

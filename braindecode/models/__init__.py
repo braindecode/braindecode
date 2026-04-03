@@ -12,6 +12,7 @@ from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
+from .dgcnn import DGCNN
 from .eegconformer import EEGConformer
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
@@ -54,6 +55,7 @@ from .tsinception import TSception
 from .usleep import USleep
 from .util import (
     _init_models_dict,
+    build_model_config,
     extract_channel_locations_from_chs_info,
     models_mandatory_parameters,
 )
@@ -87,6 +89,7 @@ __all__ = [
     "EEGSym",
     "EEGSimpleConv",
     "EEGTCNet",
+    "DGCNN",
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
@@ -116,6 +119,7 @@ __all__ = [
     "TIDNet",
     "TSception",
     "USleep",
+    "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",
 ]

@@ -1,4 +1,5 @@
 # Authors: Ghaith Bouallegue <ghaithbouallegue@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 from einops.layers.torch import Rearrange
@@ -94,8 +95,8 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             sfreq=sfreq,
         )
         self.mapping = {
-            "classification.1.weight": "final_layer.clf.weight",
-            "classification.1.bias": "final_layer.clf.weight",
+            "classification.1.weight": "final_layer.weight",
+            "classification.1.bias": "final_layer.bias",
         }
 
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
@@ -121,7 +122,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         block13 = self._get_inception_branch(
             in_channels=self.n_chans,
             out_channels=n_filters_time * 4,
-            kernel_length=n_filters_time * 4,
+            kernel_length=kernel_length * 4,
             activation=activation,
         )
         self.add_module("inception_block", InceptionBlock((block11, block12, block13)))

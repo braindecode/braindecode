@@ -427,6 +427,7 @@ def test_model_exported(model):
         "SyncNet",  # We found a fake tensor in the exported program constant's list.
         "EEGMiner",  # We found a fake tensor in the exported program constant's list.
         "SSTDPN",  # We found a fake tensor in the exported program constant's list.
+        "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
@@ -485,6 +486,10 @@ def test_model_torch_script(model):
         "LUNA",
         "REVE",
         "CBraMod",
+        "SignalJEPA",
+        "SignalJEPA_Contextual",
+        "SignalJEPA_PostLocal",
+        "SignalJEPA_PreLocal",
     ]
 
     if model.__class__.__name__ in not_working_models:

@@ -46,13 +46,11 @@ from mne.decoding import (
     SlidingEstimator,
     cross_val_multiscore,
 )
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import LabelEncoder
 from skorch.callbacks import LRScheduler
 from torch.optim import AdamW
 
 from braindecode import EEGClassifier
-from braindecode.models import EEGSimpleConv
 
 # Configure matplotlib for publication-quality plots
 plt.rcParams["figure.figsize"] = (10, 6)
@@ -111,7 +109,10 @@ epochs = mne.Epochs(
 epochs.pick(picks="meg", exclude="bads")  # remove stim and EOG
 del raw
 
-X = epochs.get_data(copy=False)  # MEG signals: n_epochs, n_meg_channels, n_times
+# MEG signals: n_epochs, n_meg_channels, n_times
+# Use fT/cm units instead of SI (T/m) so that BatchNorm1d's eps (~1e-5)
+# does not dominate the tiny SI-unit variance (~1e-23).
+X = epochs.get_data(units="fT/cm")
 y = epochs.events[:, 2]  # target: auditory left vs visual left
 y_encod = LabelEncoder().fit_transform(y)
 print("X shape: ", X.shape, "Y shape: ", y.shape, "Y encode shape: ", y_encod.shape)
@@ -164,8 +165,10 @@ class BasicMLP(nn.Module):
 # Note that the original MNE tutorial used an sklearn pipeline and prepended a
 # ``StandardScaler`` to the model. Instead, we will use a ``nn.BatchNorm1d``
 # layer to normalize the input data, which is equivalent to the ``StandardScaler``
-# in sklearn if we set the parameters ``affine=False`` and ``eps=0.0``. However,
-# pytorch does not allow ``eps=0.0``, so we set it to a small value instead. If the
+# in sklearn if we set the parameters ``affine=False`` and ``eps`` close to zero.
+# Note that MEG data must be converted from SI units (T/m, variance ~1e-23) to
+# display units (fT/cm) so that the ``eps`` parameter does not dominate the
+# normalization denominator. If the
 # batch size is the size of the whole dataset, then the ``nn.BatchNorm1d`` layer
 # will normalize each feature to have zero mean and unit variance just like the
 # ``StandardScaler``. However, if the batch size is smaller than the size of the
@@ -399,242 +402,6 @@ cbar.set_label("AUC Score", fontsize=11, fontweight="bold")
 cbar.ax.tick_params(labelsize=10)
 fig.tight_layout()
 
-
-###################################################################################################
-# (Optional) The importance of normalization
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# The following is an addendum to the original MNE tutorial analalyzing how crucial normalizing is
-# for temporal decoding/generalization. The original MNE tutorial used a ``StandardScaler`` to
-# normalize the input data beforehand for each channel, i.e. the mean and standard deviation of
-# each channel was computed across the entire dataset and then used to normalize each channel.
-# You could do the same thing with an ``EEGClassifier`` by using the ``StandardScaler`` in a
-# sklearn pipeline:
-
-# We aren't actually going to run this
-clf = make_pipeline(StandardScaler(), sliding_estimator_mlp_clf)
-
-###################################################################################################
-# However, since this is a deep learning library, we wanted to use something that aligns with
-# current deep learning practices, which is why we use a ``nn.BatchNorm1d`` layer to normalize
-# the input channels. Let's use another model from Braindecode, :py:mod:`EEGSimpleConv`,
-
-
-class DimWrapper(nn.Module):
-    """Wrapper that converts 2D input (batch, n_chans) to 3D (batch, n_chans, 1)
-
-    Helper module because the EEGSimpleConv model expects
-    input to be in the shape of (batch, n_chans, time), but since
-    we are only concerned with one time point, the data passed in is
-    in the shape of (batch, n_chans). This wrapper reshapes the input
-    to the shape of (batch, n_chans, 1) so that the model can be
-    trained on the data.
-    """
-
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-    def forward(self, x):
-        """Modify the input to be in the shape of (batch, n_chans, 1)
-
-        X form: (batch, n_chans)
-        Reshape to (batch, n_chans, 1)
-        """
-        if x.dim() == 2:
-            x = torch.unsqueeze(x, dim=-1)
-        return self.model(x)
-
-
-class WrappedEEGSimpleConvNoNorm(nn.Module):
-    """Wrapper that applies DimWrapper to EEGSimpleConv
-    and has no batch norm module.
-    """
-
-    def __init__(
-        self, n_chans, n_outputs, n_times, sfreq, feature_maps, kernel_size, n_convs
-    ):
-        super().__init__()
-        self.eeg_simple_conv = EEGSimpleConv(
-            n_chans=n_chans,
-            n_outputs=n_outputs,
-            n_times=n_times,
-            sfreq=sfreq,
-            feature_maps=feature_maps,
-            kernel_size=kernel_size,
-            n_convs=n_convs,
-        )
-        self.dim_wrapper = DimWrapper(self.eeg_simple_conv)
-
-    def forward(self, x):
-        return self.dim_wrapper(x)
-
-
-class WrappedEEGSimpleConvNorm(nn.Module):
-    """Wrapper that applies DimWrapper to EEGSimpleConv
-    and has batch norm module.
-    """
-
-    def __init__(
-        self, n_chans, n_outputs, n_times, sfreq, feature_maps, kernel_size, n_convs
-    ):
-        super().__init__()
-        self.eeg_simple_conv = EEGSimpleConv(
-            n_chans=n_chans,
-            n_outputs=n_outputs,
-            n_times=n_times,
-            sfreq=sfreq,
-            feature_maps=feature_maps,
-            kernel_size=kernel_size,
-            n_convs=n_convs,
-        )
-        self.dim_wrapper = DimWrapper(self.eeg_simple_conv)
-        self.norm = nn.BatchNorm1d(n_chans, affine=False, eps=1e-5)
-
-    def forward(self, x):
-        x_norm = self.norm(x)
-        return self.dim_wrapper(x_norm)
-
-
-###################################################################################################
-# Note that we have to wrap the model to include a DimWrapper and a BatchNorm1d layer. We create
-# two different wrappers, one that applies the BatchNorm1d layer and one that does not. Now let's
-# perform temporal decoding with both similar to the previous example and compare the results.
-
-###################################################################################################
-# Without normalization
-# ----------------------
-
-
-sliding_estimator_simple_conv_no_norm_clf = EEGClassifier(
-    WrappedEEGSimpleConvNoNorm,
-    module__n_chans=n_chans,
-    module__n_outputs=n_classes,
-    module__n_times=1,
-    module__sfreq=epochs.info["sfreq"],
-    module__feature_maps=32,
-    module__kernel_size=4,
-    module__n_convs=3,
-    criterion=nn.CrossEntropyLoss,
-    optimizer=AdamW,
-    optimizer__lr=0.01,
-    batch_size=8,  # Lower batch sizes == more interesting? Why?
-    max_epochs=EPOCHS,
-    callbacks=[
-        "accuracy",
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=EPOCHS - 1)),
-    ],
-    device=device,
-    classes=classes,
-    verbose=False,  # Otherwise it would print out every training run for each time point
-)
-
-time_decoding_simple_conv_no_norm = SlidingEstimator(
-    sliding_estimator_simple_conv_no_norm_clf, n_jobs=1, scoring="roc_auc", verbose=True
-)
-
-# cv = 3 for sake of speed
-scores = cross_val_multiscore(
-    time_decoding_simple_conv_no_norm,
-    torch.from_numpy(X).to(torch.float32),
-    y_encod,
-    cv=3,
-    n_jobs=1,
-)
-
-# Mean scores across cross-validation splits
-scores = np.mean(scores, axis=0)
-
-# Plot
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.plot(
-    epochs.times, scores, label="Without Normalization", linewidth=2.5, color="#E63946"
-)
-ax.axhline(
-    0.5, color="#A23B72", linestyle="--", linewidth=1.8, label="Chance Level", alpha=0.8
-)
-ax.fill_between(
-    epochs.times, 0.5, scores, where=(scores >= 0.5), alpha=0.15, color="#E63946"
-)
-ax.set_xlabel("Time (s)", fontsize=11, fontweight="bold")
-ax.set_ylabel("AUC Score", fontsize=11, fontweight="bold")
-ax.legend(loc="lower right", frameon=True, shadow=False, fancybox=False)
-ax.axvline(0.0, color="gray", linestyle="-", linewidth=1, alpha=0.5)
-ax.set_title(
-    "EEGSimpleConv Without Normalization", fontsize=12, fontweight="bold", pad=15
-)
-ax.grid(True, alpha=0.3, linestyle="-", linewidth=0.5)
-ax.set_ylim([0.4, 1.0])
-fig.tight_layout()
-
-###################################################################################################
-# With normalization
-# ----------------------
-
-sliding_estimator_simple_conv_norm_clf = EEGClassifier(
-    WrappedEEGSimpleConvNorm,
-    module__n_chans=n_chans,
-    module__n_outputs=n_classes,
-    module__n_times=1,
-    module__sfreq=epochs.info["sfreq"],
-    module__feature_maps=32,
-    module__kernel_size=4,
-    module__n_convs=3,
-    criterion=nn.CrossEntropyLoss,
-    optimizer=AdamW,
-    optimizer__lr=0.01,
-    batch_size=8,  # Lower batch sizes == more interesting? Why?
-    max_epochs=EPOCHS,
-    callbacks=[
-        "accuracy",
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=EPOCHS - 1)),
-    ],
-    device=device,
-    classes=classes,
-    verbose=False,  # Otherwise it would print out every training run for each time point
-)
-
-time_decoding_simple_conv_norm = SlidingEstimator(
-    sliding_estimator_simple_conv_norm_clf, n_jobs=1, scoring="roc_auc", verbose=True
-)
-
-# cv = 3 for sake of speed
-scores = cross_val_multiscore(
-    time_decoding_simple_conv_norm,
-    torch.from_numpy(X).to(torch.float32),
-    y_encod,
-    cv=3,
-    n_jobs=1,
-)
-
-# Mean scores across cross-validation splits
-scores = np.mean(scores, axis=0)
-
-# Plot
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.plot(
-    epochs.times, scores, label="With Normalization", linewidth=2.5, color="#06A77D"
-)
-ax.axhline(
-    0.5, color="#A23B72", linestyle="--", linewidth=1.8, label="Chance Level", alpha=0.8
-)
-ax.fill_between(
-    epochs.times, 0.5, scores, where=(scores >= 0.5), alpha=0.15, color="#06A77D"
-)
-ax.set_xlabel("Time (s)", fontsize=11, fontweight="bold")
-ax.set_ylabel("AUC Score", fontsize=11, fontweight="bold")
-ax.legend(loc="lower right", frameon=True, shadow=False, fancybox=False)
-ax.axvline(0.0, color="gray", linestyle="-", linewidth=1, alpha=0.5)
-ax.set_title("EEGSimpleConv With Normalization", fontsize=12, fontweight="bold", pad=15)
-ax.grid(True, alpha=0.3, linestyle="-", linewidth=0.5)
-ax.set_ylim([0.4, 1.0])
-fig.tight_layout()
-
-###################################################################################################
-# Although performing slightly worse than the previous examples, the model with normalization still
-# resembles the original MNE tutorial. On the other hand, the model without normalization cannot
-# effectively temporally decode at all, essentially having approximately 0.5 AUC at all time
-# points. This suggests that normalizing the data before feeding it into the model is crucial
-# for temporal decoding.
 
 ###################################################################################################
 # References

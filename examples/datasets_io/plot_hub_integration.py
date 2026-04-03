@@ -126,7 +126,6 @@ else:
     print(f"\nUploading WindowsDataset to {repo_id_windows}...")
     url = windows_dataset.push_to_hub(
         repo_id=repo_id_windows,
-        commit_message="Upload BNCI2014_001 WindowsDataset (epoched)",
         private=False,
     )
     print(f"✅ Uploaded to {url}!")
@@ -138,7 +137,6 @@ else:
     print(f"\nUploading EEGWindowsDataset to {repo_id_eegwindows}...")
     url = eegwindows_dataset.push_to_hub(
         repo_id=repo_id_eegwindows,
-        commit_message="Upload BNCI2014_001 EEGWindowsDataset (continuous)",
         private=False,
     )
     print(f"✅ Uploaded to {url}!")
@@ -150,7 +148,6 @@ else:
     print(f"\nUploading RawDataset to {repo_id_raw}...")
     url = raw_dataset.push_to_hub(
         repo_id=repo_id_raw,
-        commit_message="Upload BNCI2014_001 RawDataset",
         private=False,
     )
     print(f"✅ Uploaded to {url}!")
@@ -277,21 +274,12 @@ The Hub integration is fully compatible with PyTorch's training pipeline.
 """)
 
 ###############################################################################
-# Advanced: Version control and collaboration
-# --------------------------------------------
-# The Hub provides powerful features for dataset management:
-#
-# **Versioning**
-#
-# Every upload creates a new commit, allowing you to track changes:
-#
-# .. code-block:: python
-#
-#     # Upload updated version
-#     dataset.push_to_hub(
-#         repo_id="username/dataset-name",
-#         commit_message="Fixed label for subject 5"
-#     )
+# Advanced: Privacy, versioning, and collaboration
+# -------------------------------------------------
+# The Hub provides powerful features for dataset management and collaboration.
+# Every dataset repository on the Hub is backed by git-style versioning, so
+# you can track changes, create branches/tags for specific dataset states,
+# and collaborate with others through pull requests and reviews in the Hub UI.
 #
 # **Private datasets**
 #
@@ -302,18 +290,6 @@ The Hub integration is fully compatible with PyTorch's training pipeline.
 #     dataset.push_to_hub(
 #         repo_id="username/private-dataset",
 #         private=True
-#     )
-#
-# **Pull requests**
-#
-# Propose changes without directly modifying the dataset:
-#
-# .. code-block:: python
-#
-#     dataset.push_to_hub(
-#         repo_id="username/dataset-name",
-#         create_pr=True,
-#         commit_message="Propose additional preprocessing"
 #     )
 
 ###############################################################################

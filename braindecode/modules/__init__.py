@@ -1,4 +1,4 @@
-from .activation import LogActivation, SafeLog
+from .activation import LogActivation, SafeLog, Square
 from .attention import (
     CAT,
     CBAM,
@@ -19,6 +19,7 @@ from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
     CombinedConv,
+    Conv1dWithConstraint,
     Conv2dWithConstraint,
     DepthwiseConv2d,
 )
@@ -48,6 +49,7 @@ from .wrapper import Expression, IntermediateOutputWrapper
 __all__ = [
     "LogActivation",
     "SafeLog",
+    "Square",
     "CAT",
     "CBAM",
     "ECA",
@@ -67,6 +69,7 @@ __all__ = [
     "AvgPool2dWithConv",
     "CausalConv1d",
     "CombinedConv",
+    "Conv1dWithConstraint",
     "Conv2dWithConstraint",
     "DepthwiseConv2d",
     "FilterBankLayer",

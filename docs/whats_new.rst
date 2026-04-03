@@ -57,6 +57,17 @@ Current 1.4 (stable)
 
 Enhancements
 ============
+- Unlock the :bdg-dark:`SPD` model category in the documentation and link to the
+  `spd_learn <https://github.com/spdlearn/spd_learn/>`__ library with intersphinx
+  cross-references to its seven models (SPDNet, EEGSPDNet, TSMNet, TensorCSPNet,
+  PhaseSPDNet, Green, MAtt) (by `Bruno Aristimunha`_)
+- Hub integration docstring is now model-specific: each model's documentation
+  shows examples with its own class name instead of a generic ``EEGNetv4``
+  reference, and existing model notes are preserved (by `Bruno Aristimunha`_)
+- Optimize :func:`braindecode.preprocessing.exponential_moving_standardize` and
+  :func:`braindecode.preprocessing.exponential_moving_demean` by replacing
+  Pandas-based implementation with a more efficient SciPy ``lfilter`` version,
+  achieving a ~1.5x speedup (:gh:`950` by `Léo Burgund`_)
 - Add an optional ``lazy`` init path to :class:`braindecode.datasets.base.BaseConcatDataset`
   to defer cumulative size computation (and any downstream dataset length access) until
   first access, supporting truly lazy raw loading workflows.
@@ -68,21 +79,134 @@ Enhancements
 - Populate epochs metadata with the :class:`mne.Annotations`'s ``extras`` entries (:gh:`918` by `Pierre Guetschel`_)
 - Add :class:`braindecode.datasets.TUHEvents` dataset and improve other TUH datasets (:gh:`920` and :gh:`923` by `Pierre Guetschel`_)
 - Allow overlapping events in :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`923` by `Pierre Guetschel`_)
+- Better alignment of channels configuration with the pretrained LABRAM model, including a warning when initializing without channel information and improved documentation (:gh:`931` by `Young Truong`_ )
+- Add informative ``__repr__`` and ``_repr_html_`` to
+  :class:`braindecode.datasets.RawDataset`,
+  :class:`braindecode.datasets.base.EEGWindowsDataset`,
+  :class:`braindecode.datasets.base.WindowsDataset`, and
+  :class:`braindecode.datasets.BaseConcatDataset` so that printing or
+  displaying a dataset in a notebook shows channel count/types, sampling
+  frequency, duration/window size, channel names, description summary, and
+  epoch-level metadata including target distribution and extra metadata columns
+  (signal-level details marked ``*`` are taken from the first recording).
+- Add ``mapping``, ``preload``, ``picks``, ``drop_bad_windows``, and ``descriptions``
+  parameters to :func:`braindecode.datasets.mne.create_from_mne_epochs` to bring it to
+  parity with :func:`braindecode.datasets.mne.create_from_mne_raw`
+  (:gh:`941` by `Aman Srivastava`_).
+- Per-event-type windowing parameters in :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`942` by `Pierre Guetschel`_)
+- Add ``use_mne_epochs`` support to :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`943` by `Pierre Guetschel`_)
+- Faster loading from epochs on disk with :class:`braindecode.datasets.base.WindowsDataset` (:gh:`944` by `Pierre Guetschel`_)
+- Add possibility to convert :class:`braindecode.datasets.base.EEGWindowsDataset` to :class:`braindecode.datasets.base.WindowsDataset` for efficient storage (:gh:`952` by `Pierre Guetschel`_)
+- Add :class:`braindecode.models.DGCNN` model for EEG emotion recognition using dynamic graph convolutional neural networks (:gh:`947` by `Vandit Shah`_)
+- Add ``encoder_only`` mode to :class:`braindecode.models.BENDR` for 4-chunk temporal
+  pooling (Kostas et al. 2021, Section 2.4), and ``n_chans_pretrained`` parameter with
+  max-norm constrained channel projection for fine-tuning pretrained BENDR on datasets
+  with arbitrary channel counts (by `Kuntal Kokate`_)
+- Add dynamic SDPA fallback in :class:`braindecode.models.reve.ClassicalAttention` to support PyTorch versions without SDPA (by `GalAshkenazi1`_)
+- Add unified ``return_features`` parameter to ``forward()`` of all 7 foundation
+  models (:class:`~braindecode.models.EEGPT`, :class:`~braindecode.models.Labram`,
+  :class:`~braindecode.models.REVE`, :class:`~braindecode.models.BENDR`,
+  :class:`~braindecode.models.BIOT`, :class:`~braindecode.models.CBraMod`,
+  :class:`~braindecode.models.SignalJEPA` variants). When ``True``, returns a
+  consistent ``{"features": Tensor, "cls_token": Tensor | None}`` dict across
+  all models. Legacy parameters (``return_encoder_output``, ``return_feature``,
+  ``return_all_tokens``, etc.) continue to work unchanged
+  (by `Bruno Aristimunha`_).
+- Add :meth:`~braindecode.models.base.EEGModuleMixin.reset_head` to all 7
+  foundation models for replacing the classification head with a new number of
+  outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
+  automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
+  differs from the saved config (by `Bruno Aristimunha`_).
+
+API changes
+============
+- Add :meth:`braindecode.models.base.EEGModuleMixin.get_config` and
+  :meth:`braindecode.models.base.EEGModuleMixin.from_config` to all models,
+  enabling full JSON round-trip serialization and reconstruction of any model
+  including all ``__init__`` parameters (by `Bruno Aristimunha`_)
+- :meth:`~braindecode.models.base.EEGModuleMixin.push_to_hub` now saves **all**
+  model parameters to ``config.json`` (previously only 6 EEG-specific parameters
+  were saved; model-specific parameters like ``F1``, ``D``, ``drop_prob`` were
+  lost on reload) (by `Bruno Aristimunha`_)
+- Add :class:`braindecode.modules.Square` activation module and update
+  :class:`braindecode.models.ShallowFBCSPNet` to use ``type[nn.Module]`` for
+  ``conv_nonlin`` (backward-compatible with callable) (by `Bruno Aristimunha`_)
+- Replace ``LazyLinear`` with ``Linear`` in :class:`braindecode.models.CBraMod`
+  when input dimensions are known, improving Hub round-trip compatibility
+  (by `Bruno Aristimunha`_)
+
+Requirements
+============
+- Relaxed PyTorch requirement to >=2.0 to support Intel-based Macs (by `GalAshkenazi1`_)
 
 Bugs
 =====
-- Remove ``pandas<3.0`` restriction by requiring ``wfdb>=4.3.1`` which resolves the pandas 3.x incompatibility (:gh:`919` by `Bruno Aristimunha`_)
+- Fix the documentation header "Cite Braindecode" announcement link: it used a bare
+  ``cite.html`` URL, which browsers resolve relative to the current page path and led
+  to 404s (for example from ``install/install.html``). The link is now built with
+  Sphinx's ``pathto()`` for each page so it always targets the cite page correctly.
+- Fix :class:`braindecode.models.EEGITNet` state dict mapping that pointed bias
+  to the weight key and referenced a nonexistent submodule path, and fix third
+  inception branch using the wrong variable for kernel length
+  (by `Sarthak Tayal`_)
+- Fix :class:`braindecode.models.EEGInceptionMI` state dict mapping typo where
+  the old key was ``tc.bias`` instead of ``fc.bias``
+  (by `Sarthak Tayal`_)
+- Fix multi-target channel windowing in :func:`braindecode.preprocessing.windowers.create_windows_from_target_channels`
+  to use the union of valid target positions across all misc channels instead of only the first channel
+  (by `Sarthak Tayal`_)
 - Fix :func:`braindecode.preprocessing.preprocess.filterbank` to preserve info fields
   (``description``, ``line_freq``, ``device_info``, etc.) when creating filtered copies,
   avoiding merge conflicts in MNE when adding channels (:gh:`928` by `Bruno Aristimunha`_)
-- Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb`` (:gh:`919` by `Pierre Guetschel`_)
+- [Outdated:] *Restrict to ``pandas>=3.0`` due to incompatibility with ``wfdb``* (:gh:`919` by `Pierre Guetschel`_)
+- Fix multiple bugs in Labram positional encoding. Now the braindecode implementation is aligned with the original one (:gh:`931` by `Pierre Guetschel`_ )
+- Fix Zenodo citation: update to global concept DOI and add BibTeX/APA citation formats
+  in ``docs/cite.rst``, ``README.rst``, ``CITATION.cff``, and ``docs/conf.py``
+  (:gh:`937` by `Bruno Aristimunha`_)
+- Fix channel reduction in :class:`braindecode.modules.SqueezeAndExcitation` to avoid
+  runtime shape mismatches when the reduced channel count differs from the reduction rate
+  (:gh:`889` by `Sarthak Tayal`_)
+- Push large datasets to HuggingFace Hub using :func:`huggingface_hub.upload_large_folder` to avoid limitations, and allow resuming downloads (:gh:`945` and :gh:`953` by `Pierre Guetschel`_)
+- Fix :class:`braindecode.models.LUNA` channel location embeddings repeated along
+  batch dimension instead of patch dimension in ``prepare_tokens``, and include
+  pretrained weight typo mapping in ``self.mapping``
+  (:gh:`887` by `Sarthak Tayal`_)
+- Fix temporal generalization tutorial producing degraded results (peak AUC
+  dropped from ~0.9 to ~0.75): MEG data in SI units (T/m) has variances ~1e-23,
+  so ``BatchNorm1d``'s ``eps=1e-5`` dominated the normalization denominator.
+  Now uses ``epochs.get_data(units="fT/cm")`` to bring data to a reasonable
+  scale, and removes the misleading "importance of normalization" section whose
+  conclusions were an artifact of the data scale issue (by `Bruno Aristimunha`_)
+- Fix :class:`braindecode.augmentation.BandstopFilter` notch center frequency range
+  using ``bandwidth/2`` instead of ``2*bandwidth`` to match docstring
+  (:gh:`548` by `Sarthak Tayal`_)
+- Fix model docstring inheritance: ``track_model_init_kwargs`` wrapped
+  ``__init__`` with ``@wraps`` before the
+  ``NumpyDocstringInheritanceInitMeta`` metaclass ran, causing
+  ``inspect.unwrap()`` to bypass the wrapper and read ``__doc__=None``.
+  This replaced every model's description with the parent mixin's and
+  marked all model-specific parameters as "The description is missing"
+  when ``DOCSTRING_INHERITANCE_ENABLE=1`` was set during documentation
+  builds (:gh:`971` by `Bruno Aristimunha`_)
 
 Code health
-- None yet.
+============
+- Reorder model categories in documentation to follow the progression: Convolution,
+  Filterbank, Interpretability, Recurrent, Attention/Transformer, SPD, Graph Neural
+  Network, Channel, and Foundation Model (:gh:`962` by `Bruno Aristimunha`_)
+- Fix documentation build warnings and errors: correct numpydoc section underlines
+  in :class:`braindecode.models.EEGSym` and :class:`braindecode.models.SSTDPN`,
+  strip upstream ``.. rubric::`` directives from MNE and MOABB docstrings that
+  caused Sphinx errors, fix RST title levels in ``whats_new.rst``, correct bibtex
+  key for EEGPT, and ensure ``conf.py`` prioritises the local package on
+  ``sys.path`` (by `Bruno Aristimunha`_)
+- Remove deprecated ``torch.irfft`` fallback in :func:`braindecode.visualization.gradients.compute_amplitude_gradients_for_X`,
+  now uses ``torch.fft.irfft`` directly since braindecode requires ``torch>=2.2``
+  (by `Sarthak Tayal`_)
 
 
 Current 1.3.2 (stable)
-====================
+======================
 
 Enhancements
 ============
@@ -427,8 +551,8 @@ API changes
 
 .. _changes_0_8_0:
 
- Version 0.8 (11-2022)
-=======================
+Version 0.8 (11-2022)
+=====================
 
 Enhancements
 ============
@@ -774,7 +898,7 @@ API changes
 
 
 Authors
-~~~~~~~
+========
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Hubert Banville: https://github.com/hubertjb
@@ -819,9 +943,14 @@ Authors
 .. _Can Han: https://github.com/hancan16
 .. _Christian Kothe: https://github.com/chkothe
 .. _Kuntal Kokate: https://github.com/Kkuntal990
+.. _GalAshkenazi1: https://github.com/GalAshkenazi1
 .. _Matthew Chen: https://github.com/MatthewChen37
 .. _Jonathan Dan: https://github.com/danjjl
 .. _Jonathan Lys: https://github.com/jonathanlys01
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: https://github.com/AryaDro
 .. _Mattew Chew: https://github.com/MatthewChen37
+.. _Aman Srivastava: https://github.com/aman-coder03
+.. _Sarthak Tayal: https://github.com/tayal-sarthak
+.. _Vandit Shah: https://github.com/ShahVandit
+.. _Léo Burgund: https://github.com/leob000

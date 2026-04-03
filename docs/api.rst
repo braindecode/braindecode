@@ -15,7 +15,7 @@
 ********
 
 Model zoo availables in braindecode. The models are implemented as ``PyTorch``
-:py:class:`torch.nn.Modules` and can be used for various EEG decoding ways tasks.
+:py:class:`torch.nn.Module` and can be used for various EEG decoding ways tasks.
 
 All the models have the convention of having the signal related parameters named the
 same way, following the braindecode's standards:
@@ -27,23 +27,24 @@ same way, following the braindecode's standards:
 - (:fa:`clock`/ :fa:`wifi`\) ``input_window_seconds``: Length of the input window in
   seconds.
 - :fa:`info-circle` ``chs_info``: Information about each individual EEG channel. Refer
-  to :class:`mne.Info["chs"]`.
+  to :class:`mne.Info` (see its ``"chs"`` field for details).
 
 All the models assume that the input data is a 3D tensor of shape ``(batch_size,
 n_chans, n_times)``, and some models also accept a 4D tensor of shape ``(batch_size,
 n_chans, n_times, n_epochs)``, in case of cropped model.
 
-All the models are implemented as subclasses of :py:class:`EEGModuleMixin`, which is a
-base class for all EEG models in Braindecode. The :class:`EEGModuleMixin` class provides
-a common interface for all EEG models and derivate variables names if necessary.
+All the models are implemented as subclasses of
+:py:class:`~braindecode.models.EEGModuleMixin`, which is a base class for all EEG models
+in Braindecode. The :class:`~braindecode.models.EEGModuleMixin` class provides a common
+interface for all EEG models and can derive variable names when needed.
 
 .. important::
 
     **Hugging Face Hub Integration**
 
     All models in braindecode naturally possess the capability to push and pull from the
-    Hugging Face Hub through inheritance from :class:`PyTorchModelHubMixin`. This allows
-    you to:
+    Hugging Face Hub through inheritance from
+    :class:`~huggingface_hub.PyTorchModelHubMixin`. This allows you to:
 
     - **Load pre-trained models** from the Hub using
       ``Model.from_pretrained("repo_id")``
@@ -100,8 +101,8 @@ a common interface for all EEG models and derivate variables names if necessary.
             repo_id="username/my-eegnex-model", commit_message="Initial model upload"
         )
 
-    For more details, see the :class:`EEGModuleMixin` documentation and the
-    :ref:`hub-integration` tutorial.
+    For more details, see the :class:`~braindecode.models.EEGModuleMixin` documentation
+    and the :ref:`hub-integration` tutorial.
 
 :note: Auto-generated Pydantic configs are available when the optional
     ``braindecode[pydantic]`` extra (which installs ``pydantic`` and ``numpydantic``) is
@@ -135,6 +136,7 @@ a common interface for all EEG models and derivate variables names if necessary.
      CBraMod
      ContraWR
      CTNet
+     DGCNN
      Deep4Net
      DeepSleepNet
      EEGConformer

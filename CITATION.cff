@@ -10,7 +10,7 @@ authors:
     affiliation: "LISN-CNRS, Université Paris-Saclay & TAU, Inria, Gif-sur-Yvette, France"
     orcid: "https://orcid.org/0000-0001-5258-2995"
   - given-names: Pierre
-    family-names: Guetshel
+    family-names: Guetschel
     affiliation: "Donders Institute for Brain, Cognition and Behaviour, Radboud University, Nijmegen, The Netherlands"
     orcid: "https://orcid.org/0000-0002-8933-7640"
   - given-names: Martin
@@ -44,6 +44,9 @@ authors:
     family-names: Paillard
     affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
     orcid: "https://orcid.org/0009-0007-3267-7824"
+  - given-names: Aman
+    family-names: Srivastava
+    orcid: "https://orcid.org/0009-0008-6446-1216"
   - given-names: Bruna
     family-names: Junqueira Lopes
     orcid: "https://orcid.org/0000-0003-4703-9343"
@@ -86,5 +89,5 @@ keywords:
 identifiers:
   - description: "Code archive on Zenodo"
     type: doi
-    value: 10.5281/zenodo.8214376
+    value: 10.5281/zenodo.17699192
 ...

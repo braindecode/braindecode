@@ -25,6 +25,11 @@ import os.path as op
 import sys
 import warnings
 
+# Enable docstring inheritance before any braindecode imports so that
+# NumpyDocstringInheritanceInitMeta merges parent parameters into child
+# class docstrings (e.g. EEGModuleMixin params into every model).
+os.environ["DOCSTRING_INHERITANCE_ENABLE"] = "1"
+
 import matplotlib
 
 matplotlib.use("agg")
@@ -67,7 +72,8 @@ except Exception as e:
 needs_sphinx = "2.0"
 
 curdir = os.path.dirname(__file__)
-sys.path.append(os.path.abspath(os.path.join(curdir, "..", "braindecode")))
+# Ensure the local braindecode package is found before any editable install
+sys.path.insert(0, os.path.abspath(os.path.join(curdir, "..")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
 import sphinx_design
@@ -259,13 +265,19 @@ todo_include_todos = True
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
     "python": ("https://docs.python.org/{.major}".format(sys.version_info), None),
-    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
-    "scipy": ("https://docs.scipy.org/doc/scipy/reference", None),
-    "matplotlib": ("https://matplotlib.org/", None),
-    "sklearn": ("http://scikit-learn.org/stable", None),
-    "mne": ("http://mne.tools/stable", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "matplotlib": ("https://matplotlib.org/stable/", None),
+    "sklearn": ("https://scikit-learn.org/stable/", None),
+    "mne": ("https://mne.tools/stable/", None),
     "skorch": ("https://skorch.readthedocs.io/en/stable/", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
+    "huggingface_hub": (
+        "https://huggingface.co/docs/huggingface_hub/main/en/",
+        None,
+    ),
+    "mne_bids": ("https://mne.tools/mne-bids/stable/", None),
+    "spd_learn": ("https://spdlearn.org/", None),
 }
 
 sphinx_gallery_conf = {
@@ -337,13 +349,6 @@ html_theme_options = {
     "footer_start": ["copyright"],
     # 'pygment_light_style': 'default',
     "analytics": dict(google_analytics_id="G-7Q43R82K6D"),
-    "announcement": (
-        "<strong>Using Braindecode in academic work?</strong> "
-        "<a class='braindecode-announcement-cta' href='cite.html'>Cite Braindecode</a> "
-        "<span class='braindecode-announcement-secondary'>"
-        "DOI: <a href='https://doi.org/10.5281/zenodo.16279624'>10.5281/zenodo.16279624</a>"
-        "</span>"
-    ),
 }
 
 # The name of an image file (relative to this directory) to place at the top

@@ -11,11 +11,13 @@
 from __future__ import annotations
 
 import bisect
+import html as _html
 import json
 import os
 import shutil
 import warnings
 from abc import abstractmethod
+from collections import Counter
 from collections.abc import Callable
 from glob import glob
 from typing import Any, Generic, Iterable, no_type_check
@@ -40,6 +42,256 @@ def _create_description(description) -> pd.Series:
         if isinstance(description, dict):
             description = pd.Series(description)
     return description
+
+
+def _html_row(label, value):
+    """Generate a single HTML table row."""
+    label = _html.escape(str(label))
+    value = _html.escape(str(value))
+    return f"<tr><td><b>{label}</b></td><td>{value}</td></tr>"
+
+
+_METADATA_INTERNAL_COLS = {
+    "i_window_in_trial",
+    "i_start_in_trial",
+    "i_stop_in_trial",
+    "target",
+}
+
+
+def _metadata_summary(metadata):
+    """Summarize window metadata into a dict.
+
+    Returns a dict with keys: n_windows, target_info, extra_columns,
+    window_info, is_lazy.
+    """
+    is_lazy = not isinstance(metadata, pd.DataFrame)
+
+    if is_lazy:
+        n_windows = len(metadata)
+        columns = list(metadata.columns) if hasattr(metadata, "columns") else []
+        extra_columns = [str(c) for c in columns if c not in _METADATA_INTERNAL_COLS]
+        return {
+            "n_windows": n_windows,
+            "target_info": None,
+            "extra_columns": extra_columns,
+            "window_info": None,
+            "is_lazy": True,
+        }
+
+    n_windows = len(metadata)
+    extra_columns = [
+        str(c) for c in metadata.columns if c not in _METADATA_INTERNAL_COLS
+    ]
+
+    target_info = None
+    if "target" in metadata.columns:
+        targets = metadata["target"]
+        n_unique = targets.nunique()
+        if n_unique <= 10:
+            counts = targets.value_counts().sort_index().to_dict()
+            target_info = f"{n_unique} unique ({counts})"
+        else:
+            target_info = f"{n_unique} unique targets"
+
+    window_info = None
+    if "i_start_in_trial" in metadata.columns and "i_stop_in_trial" in metadata.columns:
+        sizes = metadata["i_stop_in_trial"] - metadata["i_start_in_trial"]
+        if len(sizes) == 0:
+            pass
+        elif (min_s := int(sizes.min())) == (max_s := int(sizes.max())):
+            window_info = {"min": min_s, "max": max_s, "uniform": True}
+        else:
+            window_info = {"min": min_s, "max": max_s, "uniform": False}
+
+    return {
+        "n_windows": n_windows,
+        "target_info": target_info,
+        "extra_columns": extra_columns,
+        "window_info": window_info,
+        "is_lazy": False,
+    }
+
+
+def _concat_metadata_summary(datasets):
+    """Aggregate metadata summary across datasets without full concatenation.
+
+    Returns a dict with keys: window_info, target_info, extra_columns.
+    """
+    overall_min = None
+    overall_max = None
+    target_counts = Counter()
+    extra_cols = set()
+
+    for ds in datasets:
+        if hasattr(ds, "windows"):
+            md = ds.windows.metadata
+        elif hasattr(ds, "metadata"):
+            md = ds.metadata
+        else:
+            continue
+        if md is None or len(md) == 0:
+            continue
+
+        extra_cols.update(
+            str(c) for c in md.columns if c not in _METADATA_INTERNAL_COLS
+        )
+
+        if "i_start_in_trial" in md.columns and "i_stop_in_trial" in md.columns:
+            sizes = md["i_stop_in_trial"] - md["i_start_in_trial"]
+            if len(sizes) > 0:
+                ds_min, ds_max = int(sizes.min()), int(sizes.max())
+                overall_min = (
+                    ds_min if overall_min is None else min(overall_min, ds_min)
+                )
+                overall_max = (
+                    ds_max if overall_max is None else max(overall_max, ds_max)
+                )
+
+        if "target" in md.columns:
+            target_counts.update(md["target"].value_counts().to_dict())
+
+    window_info = None
+    if overall_min is not None:
+        window_info = {
+            "min": overall_min,
+            "max": overall_max,
+            "uniform": overall_min == overall_max,
+        }
+
+    target_info = None
+    if target_counts:
+        n_unique = len(target_counts)
+        if n_unique <= 10:
+            sorted_counts = dict(sorted(target_counts.items()))
+            target_info = f"{n_unique} unique ({sorted_counts})"
+        else:
+            target_info = f"{n_unique} unique targets"
+
+    return {
+        "window_info": window_info,
+        "target_info": target_info,
+        "extra_columns": sorted(extra_cols),
+    }
+
+
+def _channel_info(mne_obj):
+    """Extract channel summary from an mne object.
+
+    Returns (n_ch, type_str, sfreq).
+    """
+    info = mne_obj.info
+    n_ch = info["nchan"]
+    sfreq = info["sfreq"]
+    ch_types = mne_obj.get_channel_types()
+    type_counts = Counter(ch_types)
+    type_str = ", ".join(f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items()))
+    return n_ch, type_str, sfreq
+
+
+def _window_info(crop_inds, sfreq):
+    """Extract window size from crop indices.
+
+    Returns (win_samples, win_secs) or None if crop_inds is empty.
+    """
+    if len(crop_inds) == 0:
+        return None
+    first = crop_inds[0]
+    win_samples = int(first[2] - first[1])
+    win_secs = win_samples / sfreq
+    return win_samples, win_secs
+
+
+class _ReprBuilder:
+    """Lightweight builder that renders both text and HTML from the same data."""
+
+    def __init__(self, cls_name, type_display=None):
+        self._cls_name = cls_name
+        self._type_display = type_display or cls_name
+        self._header_parts = []
+        self._header_rows = []
+        self._items = []
+
+    def add_header(self, header_text, label, value):
+        """Add to both the compact ``<ClassName | ...>`` line and an HTML row."""
+        self._header_parts.append(header_text)
+        self._header_rows.append((label, value))
+        return self
+
+    def add_row(self, label, value):
+        """Add a detail row (text: ``  label: value``, HTML: ``<tr>``)."""
+        self._items.append(("row", label, value))
+        return self
+
+    def add_footnote(self, text):
+        """Add a footnote (text: ``  (text)``, HTML: italic ``<td colspan=2>``)."""
+        self._items.append(("footnote", text, None))
+        return self
+
+    def to_repr(self):
+        if self._header_parts:
+            parts = " | ".join(self._header_parts)
+            lines = [f"<{self._cls_name} | {parts}>"]
+        else:
+            lines = [f"<{self._cls_name}>"]
+        for kind, label, value in self._items:
+            if kind == "row":
+                lines.append(f"  {label}: {value}")
+            else:
+                lines.append(f"  ({label})")
+        return "\n".join(lines)
+
+    def to_html(self):
+        rows = [_html_row("Type", self._type_display)]
+        for label, value in self._header_rows:
+            rows.append(_html_row(label, value))
+        for kind, label, value in self._items:
+            if kind == "row":
+                html_label = label[0].upper() + label[1:]
+                rows.append(_html_row(html_label, value))
+            else:
+                rows.append(
+                    f"<tr><td colspan='2'><i>{_html.escape(str(label))}</i></td></tr>"
+                )
+        table_rows = "\n".join(rows)
+        esc_name = _html.escape(str(self._cls_name))
+        return (
+            f"<table border='1' class='dataframe'>\n"
+            f"  <thead><tr><th colspan='2'>{esc_name}</th></tr></thead>\n"
+            f"  <tbody>\n{table_rows}\n  </tbody>\n</table>"
+        )
+
+
+def _build_windowed_repr(
+    cls_name, n_windows, mne_obj, crop_inds, description, metadata
+):
+    """Build repr for EEGWindowsDataset and WindowsDataset."""
+    b = _ReprBuilder(cls_name)
+    n_ch, type_str, sfreq = _channel_info(mne_obj)
+    b.add_header(f"{n_windows} windows", "Windows", n_windows)
+    b.add_header(f"{n_ch} ch ({type_str})", "Channels", f"{n_ch} ({type_str})")
+    wi = _window_info(crop_inds, sfreq)
+    if wi is not None:
+        win_samples, win_secs = wi
+        b.add_header(
+            f"{win_samples} samples/win ({win_secs:.3f} s)",
+            "Window size",
+            f"{win_samples} samples ({win_secs:.3f} s)",
+        )
+    b.add_header(f"{sfreq:.1f} Hz", "Sfreq", f"{sfreq:.1f} Hz")
+    if description is not None:
+        desc_items = ", ".join(f"{k}={v}" for k, v in description.items())
+        b.add_row("description", desc_items)
+    if metadata is not None:
+        summary = _metadata_summary(metadata)
+        if summary["is_lazy"]:
+            b.add_row("metadata", f"lazy ({summary['n_windows']} windows)")
+        else:
+            if summary["target_info"]:
+                b.add_row("targets", summary["target_info"])
+            if summary["extra_columns"]:
+                b.add_row("extra metadata", ", ".join(summary["extra_columns"]))
+    return b
 
 
 class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]]):
@@ -94,6 +346,15 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
             raise ValueError("Transform needs to be a callable.")
         self._transform = value
 
+    def _build_repr(self):
+        return _ReprBuilder(type(self).__name__)
+
+    def __repr__(self):
+        return self._build_repr().to_repr()
+
+    def _repr_html_(self):
+        return self._build_repr().to_html()
+
 
 # Type of the datasets contained in BaseConcatDataset
 T = TypeVar("T", bound=RecordDataset)
@@ -147,6 +408,23 @@ class RawDataset(RecordDataset):
 
     def __len__(self):
         return len(self.raw)
+
+    def _build_repr(self):
+        b = _ReprBuilder(type(self).__name__)
+        n_ch, type_str, sfreq = _channel_info(self.raw)
+        n_times = len(self.raw.times)
+        duration = n_times / sfreq
+        b.add_header(f"{n_ch} ch ({type_str})", "Channels", f"{n_ch} ({type_str})")
+        b.add_header(f"{sfreq:.1f} Hz", "Sfreq", f"{sfreq:.1f} Hz")
+        b.add_header(
+            f"{n_times} samples ({duration:.1f} s)",
+            "Samples",
+            f"{n_times} ({duration:.1f} s)",
+        )
+        if self.description is not None:
+            desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
+            b.add_row("description", desc_items)
+        return b
 
     def _target_name(self, target_name):
         if target_name is not None and not isinstance(target_name, (str, tuple, list)):
@@ -291,6 +569,99 @@ class EEGWindowsDataset(RecordDataset):
     def __len__(self):
         return len(self.crop_inds)
 
+    def _build_repr(self):
+        return _build_windowed_repr(
+            type(self).__name__,
+            len(self),
+            self.raw,
+            self.crop_inds,
+            self.description,
+            self.metadata,
+        )
+
+    def to_epochs_dataset(self) -> WindowsDataset:
+        """Converts this :class:`EEGWindowsDataset` to :class:`WindowsDataset` with ``mne.Epochs``.
+
+        In Braindecode, the data can either be stored as ``mne.io.Raw`` (in :class:`EEGWindowsDataset`)
+        or as ``mne.Epochs`` (in :class:`WindowsDataset`). This function converts from the first type to the second,
+        which can be useful for reducing disk space when you want to save a dataset.
+
+        Returns
+        -------
+        WindowsDataset
+            A new :class:`WindowsDataset` with ``mne.Epochs``.
+
+        Raises
+        ------
+        ValueError
+            If the dataset is not compatible with conversion. This includes:
+            - If targets are not obtained from metadata
+            - If windows have inconsistent sizes or there are no windows to convert
+            - If raw.first_samp!=0 (not supported for simplicity)
+        """
+        # Check the targets:
+        if self.targets_from != "metadata":
+            raise ValueError(
+                "to_epochs_dataset only works if targets are obtained from metadata."
+            )
+
+        # Check and get window sizes:
+        i_start_in_trial = self.crop_inds[:, 1]
+        i_stop_in_trial = self.crop_inds[:, 2]
+        sizes = np.unique(i_stop_in_trial - i_start_in_trial)
+        if len(sizes) > 1:
+            raise ValueError("Windows have inconsistent sizes.")
+        if len(sizes) != 1:
+            raise ValueError("No windows to convert.")
+        input_window_seconds = (sizes[0] - 1) / self.raw.info["sfreq"]
+
+        # Check raw.first_samp:
+        if self.raw.first_samp != 0:
+            raise ValueError(
+                f"to_epochs_dataset only works if raw.first_samp is 0, found {self.raw.first_samp=}"
+            )
+
+        # Create events and epochs:
+        events = np.zeros((len(self), 3), dtype=int)
+        events[:, 0] = i_start_in_trial
+        events[:, 2] = 1
+        epochs = mne.Epochs(
+            raw=self.raw,
+            events=events,
+            event_id={"window": 1},
+            tmin=0,
+            tmax=input_window_seconds,
+            metadata=self.metadata.copy(),
+            baseline=None,
+        )
+        # we skip dropping bads to be consistent with EEGWindowsDataset:
+        epochs._bad_dropped = True
+
+        # Populate new WindowsDataset:
+        windows = WindowsDataset(
+            epochs,
+            description=self.description,
+            transform=self.transform,
+            targets_from=self.targets_from,
+            last_target_only=self.last_target_only,
+        )
+
+        window_kwargs = list(getattr(self, "window_kwargs", []))
+        window_kwargs.append((self.to_epochs_dataset.__name__, {}))
+        setattr(windows, "window_kwargs", window_kwargs)
+        if hasattr(self, "raw_preproc_kwargs"):
+            setattr(
+                windows, "raw_preproc_kwargs", list(getattr(self, "raw_preproc_kwargs"))
+            )
+        if hasattr(self, "window_preproc_kwargs"):
+            setattr(
+                windows,
+                "window_preproc_kwargs",
+                list(getattr(self, "window_preproc_kwargs")),
+            )
+
+        return windows
+
 
 @register_dataset
 class WindowsDataset(RecordDataset):
@@ -329,6 +700,15 @@ class WindowsDataset(RecordDataset):
         last_target_only: bool = True,
     ):
         super().__init__(description, transform)
+        self._fast_disk = self._can_use_fast_get_epoch_from_raw(windows)
+        if not (self._fast_disk or windows.preload):
+            warnings.warn(
+                "The provided mne.Epochs object does not meet the requirements for "
+                "fast epoch access. This may lead to slow data loading from disk. "
+                "Consider preloading the epochs or checking the conditions in "
+                "WindowsDataset._can_use_fast_get_epoch_from_raw.",
+                UserWarning,
+            )
         self.windows = windows
         self.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
@@ -344,6 +724,20 @@ class WindowsDataset(RecordDataset):
             self.y = metadata.loc[:, "target"].to_list()
         self.raw_preproc_kwargs: list[dict[str, Any]] = []
         self.window_preproc_kwargs: list[dict[str, Any]] = []
+
+    @staticmethod
+    def _can_use_fast_get_epoch_from_raw(epochs: mne.BaseEpochs) -> bool:
+        """Check if we can use the fast _get_epoch_from_raw method,
+        or if we need to use the slow get_data method."""
+        return (
+            not epochs.preload
+            and epochs._bad_dropped
+            and epochs.detrend is None
+            and not epochs._do_baseline  # baseline is None
+            and (epochs._decim == 1)
+            and epochs._offset is None
+            and epochs._projector is None
+        )
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -362,7 +756,10 @@ class WindowsDataset(RecordDataset):
         np.ndarray
             Crop indices.
         """
-        X = self.windows.get_data(item=index)[0].astype("float32")
+        if self._fast_disk:
+            X = self.windows._get_epoch_from_raw(index).astype("float32")
+        else:
+            X = self.windows.get_data(item=index)[0].astype("float32")
         if self.transform is not None:
             X = self.transform(X)
         if self.targets_from == "metadata":
@@ -382,6 +779,16 @@ class WindowsDataset(RecordDataset):
 
     def __len__(self) -> int:
         return len(self.windows.events)
+
+    def _build_repr(self):
+        return _build_windowed_repr(
+            type(self).__name__,
+            len(self),
+            self.windows,
+            self.crop_inds,
+            self.description,
+            self.windows.metadata,
+        )
 
 
 @register_dataset
@@ -408,7 +815,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
     def __init__(
         self,
-        list_of_ds: list[T | BaseConcatDataset[T]],
+        list_of_ds: (
+            list[T] | list[BaseConcatDataset[T]] | list[T | BaseConcatDataset[T]]
+        ),
         target_transform: Callable | None = None,
         *,
         lazy: bool = False,
@@ -887,3 +1296,138 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             target_file_path = os.path.join(sub_dir, "target_name.json")
             with open(target_file_path, "w") as f:
                 json.dump({"target_name": ds.target_name}, f)
+
+    @staticmethod
+    def _signal_summary(ds):
+        """Return (mne_obj, is_windowed) from a dataset."""
+        if hasattr(ds, "windows"):
+            mne_obj = ds.windows
+        elif hasattr(ds, "raw"):
+            mne_obj = ds.raw
+        else:
+            return None, False
+        is_windowed = hasattr(ds, "crop_inds")
+        return mne_obj, is_windowed
+
+    def _build_repr(self):
+        n_ds = len(self.datasets)
+        b = _ReprBuilder("BaseConcatDataset")
+        if n_ds == 0:
+            b.add_header("0 datasets", "Recordings", 0)
+            return b
+
+        n_total = len(self)
+        ds_type = type(self.datasets[0]).__name__
+        first_ds = self.datasets[0]
+        mne_obj, is_windowed = self._signal_summary(first_ds)
+
+        b._type_display = f"BaseConcatDataset of {ds_type}"
+        b.add_header(f"{n_ds} {ds_type}(s)", "Recordings", n_ds)
+        b.add_header(f"{n_total} total samples", "Total samples", n_total)
+
+        if mne_obj is not None:
+            n_ch, type_str, sfreq = _channel_info(mne_obj)
+            b.add_row("Sfreq*", f"{sfreq:.1f} Hz")
+            b.add_row("Channels*", f"{n_ch} ({type_str})")
+
+            ch_names = mne_obj.info["ch_names"]
+            if len(ch_names) <= 10:
+                ch_str = ", ".join(ch_names)
+            else:
+                ch_str = (
+                    ", ".join(ch_names[:10]) + f", ... (+{len(ch_names) - 10} more)"
+                )
+            b.add_row("Ch. names*", ch_str)
+
+            montage = mne_obj.get_montage()
+            if montage is not None:
+                b.add_row("Montage*", montage.get_positions()["coord_frame"])
+
+            if not is_windowed:
+                n_times = len(mne_obj.times)
+                duration = n_times / sfreq
+                b.add_row("Duration*", f"{duration:.1f} s")
+
+            b.add_footnote("* from first recording")
+
+        desc = self.description
+        if desc is not None and not desc.empty:
+            col_str = ", ".join(str(c) for c in desc.columns)
+            b.add_row(
+                "Description",
+                f"{desc.shape[0]} recordings × {desc.shape[1]} columns [{col_str}]",
+            )
+
+        if is_windowed:
+            try:
+                summary = _concat_metadata_summary(self.datasets)
+                if summary["window_info"] is not None and mne_obj is not None:
+                    wi = summary["window_info"]
+                    if wi["uniform"]:
+                        win_secs = wi["min"] / sfreq
+                        b.add_row(
+                            "Window",
+                            f"{wi['min']} samples ({win_secs:.3f} s)",
+                        )
+                    else:
+                        min_secs = wi["min"] / sfreq
+                        max_secs = wi["max"] / sfreq
+                        b.add_row(
+                            "Window",
+                            f"{wi['min']}-{wi['max']} samples"
+                            f" ({min_secs:.3f}-{max_secs:.3f} s)",
+                        )
+                if summary["target_info"]:
+                    b.add_row("Targets", summary["target_info"])
+                if summary["extra_columns"]:
+                    b.add_row(
+                        "Extra meta",
+                        ", ".join(summary["extra_columns"]),
+                    )
+            except (TypeError, AttributeError):
+                pass
+
+        return b
+
+    def __repr__(self):
+        return self._build_repr().to_repr()
+
+    def _repr_html_(self):
+        return self._build_repr().to_html()
+
+    def to_epochs_dataset(self) -> BaseConcatDataset[WindowsDataset]:
+        """Converts this :class:`BaseConcatDataset` such that all datasets are :class:`WindowsDataset` with ``mne.Epochs``.
+
+        In Braindecode, the data can either be stored as ``mne.io.Raw`` (in :class:`EEGWindowsDataset`)
+        or as ``mne.Epochs`` (in :class:`WindowsDataset`). This function converts all the underlying datasets to
+        :class:`WindowsDataset` with ``mne.Epochs``.
+        This can be useful for reducing disk space when you want to save a dataset.
+
+        Returns
+        -------
+        BaseConcatDataset[WindowsDataset]
+            A new :class:`BaseConcatDataset` where all datasets are :class:`WindowsDataset` with ``mne.Epochs``.
+
+        Raises
+        ------
+        ValueError
+            If any of the underlying datasets is a :class:`RawDataset` or any other type that is not
+            :class:`EEGWindowsDataset` or :class:`WindowsDataset`, as they cannot be converted to epochs.
+        """
+        datasets = self.datasets
+        if not all(
+            isinstance(ds, (EEGWindowsDataset, WindowsDataset)) for ds in datasets
+        ):
+            raise ValueError(
+                "All datasets must be EEGWindowsDataset or WindowsDataset to convert to WindowsDataset."
+            )
+        new_datasets: list[WindowsDataset] = []
+        for ds in datasets:
+            if isinstance(ds, EEGWindowsDataset):
+                new_ds = ds.to_epochs_dataset()
+                new_datasets.append(new_ds)
+            elif isinstance(ds, WindowsDataset):
+                new_datasets.append(ds)
+        return BaseConcatDataset(
+            new_datasets, target_transform=self.target_transform, lazy=self._lazy
+        )

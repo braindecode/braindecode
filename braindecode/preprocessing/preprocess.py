@@ -5,6 +5,7 @@
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Léo Burgund <leo.burgund@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -24,11 +25,11 @@ else:
     from collections.abc import Callable
 
 import numpy as np
-import pandas as pd
 from joblib import Parallel, delayed
 from mne import BaseEpochs, create_info
 from mne.io import BaseRaw
 from numpy.typing import NDArray
+from scipy.signal import lfilter
 
 from braindecode.datasets.base import (
     BaseConcatDataset,
@@ -387,7 +388,7 @@ def _preprocess(
     _set_preproc_kwargs(ds, preprocessors)
 
     if save_dir is not None:
-        concat_ds = BaseConcatDataset([ds])
+        concat_ds: BaseConcatDataset[RecordDataset] = BaseConcatDataset([ds])
         concat_ds.save(save_dir, overwrite=overwrite, offset=ds_index)
     else:
         return ds
@@ -424,14 +425,17 @@ def exponential_moving_standardize(
 ):
     r"""Perform exponential moving standardization.
 
-    Compute the exponental moving mean :math:`m_t` at time `t` as
-    :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
+    Compute the exponential moving mean :math:`m_t` at time `t` as
+    a weighted average:
+    :math:`m_t = \frac{\sum_{i=0}^t (1-\alpha)^i x_{t-i}}{\sum_{i=0}^t (1-\alpha)^i}`
+    where :math:`\alpha` is ``factor_new``.
 
     Then, compute exponential moving variance :math:`v_t` at time `t` as
-    :math:`v_t=\mathrm{factornew} \cdot (m_t - x_t)^2 + (1 - \mathrm{factornew}) \cdot v_{t-1}`.
+    a weighted average of the squared demeaned signal:
+    :math:`v_t = \frac{\sum_{i=0}^t (1-\alpha)^i (x_{t-i} - m_{t-i})^2}{\sum_{i=0}^t (1-\alpha)^i}`.
 
     Finally, standardize the data point :math:`x_t` at time `t` as:
-    :math:`x'_t=(x_t - m_t) / max(\sqrt{->v_t}, eps)`.
+    :math:`x'_t=(x_t - m_t) / max(\sqrt{v_t}, eps)`.
 
 
     Parameters
@@ -448,34 +452,52 @@ def exponential_moving_standardize(
     standardized: np.ndarray (n_channels, n_times)
         Standardized data.
     """
-    data = data.T
-    df = pd.DataFrame(data)
-    meaned = df.ewm(alpha=factor_new).mean()
-    demeaned = df - meaned
+    if not (0 < factor_new <= 1):
+        raise ValueError(f"factor_new must be between 0 and 1, got {factor_new}")
+
+    # We use a ratio of two linear filters:
+    # y_t = N_t / D_t
+    # N_t = x_t + (1-alpha) * N_{t-1}, N_0 = x_0
+    # D_t = 1 + (1-alpha) * D_{t-1}, D_0 = 1
+    alpha = factor_new
+    _, n_times = data.shape
+    inv_alpha = 1.0 - alpha
+
+    # Filter a sequence of ones: [1, 1+(1-a), 1+(1-a)+(1-a)^2, ...]
+    d = lfilter([1.0], [1.0, -inv_alpha], np.ones(n_times))
+
+    n = lfilter([1.0], [1.0, -inv_alpha], data, axis=1)
+    meaned = n / d
+    demeaned = data - meaned
+
     squared = demeaned * demeaned
-    square_ewmed = squared.ewm(alpha=factor_new).mean()
-    standardized = demeaned / np.maximum(eps, np.sqrt(np.array(square_ewmed)))
-    standardized = np.array(standardized)
+    n_sq = lfilter([1.0], [1.0, -inv_alpha], squared, axis=1)
+    square_ewmed = n_sq / d
+
+    standardized = demeaned / np.maximum(eps, np.sqrt(square_ewmed))
+
     if init_block_size is not None:
-        i_time_axis = 0
-        init_mean = np.mean(data[0:init_block_size], axis=i_time_axis, keepdims=True)
-        init_std = np.std(data[0:init_block_size], axis=i_time_axis, keepdims=True)
-        init_block_standardized = (data[0:init_block_size] - init_mean) / np.maximum(
+        init_mean = np.mean(data[:, :init_block_size], axis=1, keepdims=True)
+        init_std = np.std(data[:, :init_block_size], axis=1, keepdims=True)
+        init_block_standardized = (data[:, :init_block_size] - init_mean) / np.maximum(
             eps, init_std
         )
-        standardized[0:init_block_size] = init_block_standardized
-    return standardized.T
+        standardized[:, :init_block_size] = init_block_standardized
+
+    return standardized
 
 
 def exponential_moving_demean(
     data: NDArray, factor_new: float = 0.001, init_block_size: int | None = None
 ):
-    r"""Perform exponential moving demeanining.
+    r"""Perform exponential moving demeaning.
 
-    Compute the exponental moving mean :math:`m_t` at time `t` as
-    :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
+    Compute the exponential moving mean :math:`m_t` at time `t` as
+    a weighted average:
+    :math:`m_t = \frac{\sum_{i=0}^t (1-\alpha)^i x_{t-i}}{\sum_{i=0}^t (1-\alpha)^i}`
+    where :math:`\alpha` is ``factor_new``.
 
-    Deman the data point :math:`x_t` at time `t` as:
+    Demean the data point :math:`x_t` at time `t` as:
     :math:`x'_t=(x_t - m_t)`.
 
     Parameters
@@ -490,16 +512,24 @@ def exponential_moving_demean(
     demeaned: np.ndarray (n_channels, n_times)
         Demeaned data.
     """
-    data = data.T
-    df = pd.DataFrame(data)
-    meaned = df.ewm(alpha=factor_new).mean()
-    demeaned = df - meaned
-    demeaned = np.array(demeaned)
+    if not (0 < factor_new <= 1):
+        raise ValueError(f"factor_new must be between 0 and 1, got {factor_new}")
+
+    alpha = factor_new
+    _, n_times = data.shape
+    inv_alpha = 1.0 - alpha
+
+    d = lfilter([1.0], [1.0, -inv_alpha], np.ones(n_times))
+
+    n = lfilter([1.0], [1.0, -inv_alpha], data, axis=1)
+    meaned = n / d
+    demeaned = data - meaned
+
     if init_block_size is not None:
-        i_time_axis = 0
-        init_mean = np.mean(data[0:init_block_size], axis=i_time_axis, keepdims=True)
-        demeaned[0:init_block_size] = data[0:init_block_size] - init_mean
-    return demeaned.T
+        init_mean = np.mean(data[:, :init_block_size], axis=1, keepdims=True)
+        demeaned[:, :init_block_size] = data[:, :init_block_size] - init_mean
+
+    return demeaned
 
 
 def filterbank(

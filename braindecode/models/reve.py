@@ -16,7 +16,16 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
-from torch.nn.attention import SDPBackend, sdpa_kernel
+
+# Safe import for older PyTorch versions (Support for Intel-based Macs)
+try:
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+
+    HAS_SDPA = True
+except ImportError:
+    HAS_SDPA = False
+    SDPBackend = None
+    sdpa_kernel = None
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -302,19 +311,7 @@ class REVE(EEGModuleMixin, nn.Module):
             geglu=self.use_geglu,
         )
 
-        final_dim = self._get_flattened_output_dim()
-
-        if self.use_attention_pooling:
-            self.final_layer = nn.Sequential(
-                nn.LayerNorm(self.embed_dim),
-                nn.Linear(self.embed_dim, self.n_outputs),
-            )
-        else:
-            self.final_layer = nn.Sequential(
-                nn.Flatten(),
-                nn.LayerNorm(final_dim),
-                nn.Linear(final_dim, self.n_outputs),
-            )
+        self._build_head(self.n_outputs)
 
         if self.use_attention_pooling:
             self.cls_query_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
@@ -343,6 +340,24 @@ class REVE(EEGModuleMixin, nn.Module):
         flat_dim = self.n_chans * n_patches * self.embed_dim
         return flat_dim
 
+    def _build_head(self, n_outputs):
+        if self.use_attention_pooling:
+            self.final_layer = nn.Sequential(
+                nn.LayerNorm(self.embed_dim),
+                nn.Linear(self.embed_dim, n_outputs),
+            )
+        else:
+            final_dim = self._get_flattened_output_dim()
+            self.final_layer = nn.Sequential(
+                nn.Flatten(),
+                nn.LayerNorm(final_dim),
+                nn.Linear(final_dim, n_outputs),
+            )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self._build_head(n_outputs)
+
     def get_positions(self, channel_names: list[str]) -> torch.Tensor:
         """Fetch channel positions from the position bank. The position bank is downloaded when the model is instantiated.
 
@@ -364,7 +379,8 @@ class REVE(EEGModuleMixin, nn.Module):
         eeg: torch.Tensor,
         pos: Optional[torch.Tensor] = None,
         return_output: bool = False,
-    ) -> Union[torch.Tensor, list[torch.Tensor]]:
+        return_features: bool = False,
+    ) -> Union[torch.Tensor, list[torch.Tensor], dict]:
         """
         Forward pass of the model.
 
@@ -383,16 +399,22 @@ class REVE(EEGModuleMixin, nn.Module):
         return_output : bool, optional
             If True, returns the output from the transformer directly.
             If False, applies the final layer and returns the processed output. Default is False.
+        return_features : bool, optional
+            If True, returns a dict ``{"features": Tensor, "cls_token": None}``
+            with encoder features before the final layer. Default is False.
 
         Returns
         -------
-        Union[torch.Tensor, list[torch.Tensor]]
-            - If `return_output` is False: Returns a single `torch.Tensor` (output after final layer).
-            - If `return_output` is True: Returns a `list[torch.Tensor]` (outputs from transformer layers).
-
-            The output tensor(s) from the model. If `return_output` is True,
-            returns the transformer output; otherwise, returns the output after the final layer.
+        torch.Tensor or list[torch.Tensor] or dict
+            Default: ``torch.Tensor`` after the final layer.
+            If ``return_output=True``: ``list[torch.Tensor]`` from transformer layers.
+            If ``return_features=True``: ``dict`` with ``"features"`` and ``"cls_token"`` keys.
         """
+
+        if return_output and return_features:
+            raise ValueError(
+                "return_output and return_features are mutually exclusive."
+            )
 
         patches = eeg.unfold(
             dimension=2,
@@ -443,6 +465,9 @@ class REVE(EEGModuleMixin, nn.Module):
             patch=n_patches,
             emb=self.embed_dim,
         )
+
+        if return_features:
+            return {"features": x, "cls_token": None}
 
         if self.use_attention_pooling:
             x = self._attention_pooling(x)
@@ -530,10 +555,21 @@ class FeedForward(nn.Module):
 
 
 class ClassicalAttention(nn.Module):
-    def __init__(self, heads: int, use_sdpa: bool = True):
+    def __init__(self, heads: int, use_sdpa: bool | None = None):
         super().__init__()
-        self.use_sdpa = use_sdpa
         self.heads = heads
+
+        if use_sdpa is None:
+            self.use_sdpa = HAS_SDPA
+        elif use_sdpa is True and not HAS_SDPA:
+            logger.warning(
+                "SDPA (Scaled Dot Product Attention) was requested, but it is not "
+                "available in your current PyTorch version. Falling back to naive "
+                "implementation. Please upgrade to PyTorch >= 2.2 for SDPA support."
+            )
+            self.use_sdpa = False
+        else:
+            self.use_sdpa = use_sdpa
 
     def forward(self, qkv: torch.Tensor) -> torch.Tensor:
         # Split concatenated QKV into separate tensors

@@ -7,6 +7,7 @@ Retrieved from https://openreview.net/forum?id=uazfjnFL0G
 
 Original Authors: Berkay Döner, Thorir Mar Ingolfsson
 Braindecode Adaptation: Bruno Aristimunha
+Contributions: Sarthak Tayal <sarthaktayal2@gmail.com>
 
 the LICENSE Of this file is APACHE-2.0.
 """
@@ -48,7 +49,7 @@ class LUNA(EEGModuleMixin, nn.Module):
        **Pre-trained Weights Available**
 
        This model has pre-trained weights available on the Hugging Face Hub
-       at `thorir/LUNA <https://huggingface.co/thorir/LUNA>`_.
+       at `PulpBio/LUNA <https://huggingface.co/PulpBio/LUNA>`_.
 
        Available model variants:
 
@@ -60,33 +61,19 @@ class LUNA(EEGModuleMixin, nn.Module):
 
        .. code-block:: python
 
-           from huggingface_hub import hf_hub_download
-           from safetensors.torch import load_file
            from braindecode.models import LUNA
 
-           # Download pre-trained weights
-           model_path = hf_hub_download(
-               repo_id="thorir/LUNA",
+           # Load pre-trained base model from Hugging Face Hub
+           model = LUNA.from_pretrained(
+               "PulpBio/LUNA",
                filename="LUNA_base.safetensors",
-           )
-
-           # Create model for classification (fine-tuning)
-           model = LUNA(
-               n_outputs=2,  # Number of classes for your task
+               n_outputs=2,
                n_chans=22,
                n_times=1000,
                embed_dim=64,
                num_queries=4,
                depth=8,
            )
-
-           # Load pre-trained encoder weights
-           state_dict = load_file(model_path)
-           # Apply key mapping for pretrained weights
-           mapping = model.mapping.copy()
-           mapping["cross_attn.temparature"] = "cross_attn.temperature"
-           mapped_state_dict = {mapping.get(k, k): v for k, v in state_dict.items()}
-           model.load_state_dict(mapped_state_dict, strict=False)
 
        To push your own trained model to the Hub:
 
@@ -170,6 +157,7 @@ class LUNA(EEGModuleMixin, nn.Module):
             "channel_location_embedder.0.fc2.bias": "channel_location_embedder.fc2.bias",
             "channel_location_embedder.0.norm.weight": "channel_location_embedder.norm.weight",
             "channel_location_embedder.0.norm.bias": "channel_location_embedder.norm.bias",
+            "cross_attn.temparature": "cross_attn.temperature",  # typo in pretrained weights
         }
 
         # Model parameters
@@ -315,8 +303,10 @@ class LUNA(EEGModuleMixin, nn.Module):
         channel_locations_emb = self.channel_location_embedder(channel_locations)
 
         x_tokenized = rearrange(x_masked, "B (C t) D -> (B t) C D", C=num_channels)
-        channel_locations_emb = channel_locations_emb.repeat(
-            num_patches_per_channel, 1, 1
+        channel_locations_emb = (
+            channel_locations_emb.repeat_interleave(  # was repeat(), wrong dim ordering
+                num_patches_per_channel, dim=0
+            )
         )
         x_tokenized = x_tokenized + channel_locations_emb
 

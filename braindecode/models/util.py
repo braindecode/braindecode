@@ -3,16 +3,144 @@
 #
 # License: BSD (3-clause)
 import inspect
+import warnings
 from copy import deepcopy
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Sequence
 
 import numpy as np
 import pandas as pd
-
-import braindecode.models as models
+import pydantic
 
 models_dict = {}
+
+_IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
+
+
+_EEG_PARAMS = frozenset(
+    {"n_outputs", "n_chans", "chs_info", "n_times", "input_window_seconds", "sfreq"}
+)
+
+_JSON_SAFE = (int, float, str, bool, type(None))
+
+
+def _is_jsonable(val):
+    """Return True if *val* is directly JSON-serializable."""
+    if isinstance(val, _JSON_SAFE):
+        return True
+    if isinstance(val, (list, tuple)):
+        return all(_is_jsonable(v) for v in val)
+    if isinstance(val, dict):
+        return all(isinstance(k, str) and _is_jsonable(v) for k, v in val.items())
+    return False
+
+
+def track_model_init_kwargs(cls) -> None:
+    """Instrument a model class so constructor kwargs are tracked."""
+    init = cls.__init__
+    if getattr(init, "_braindecode_tracks_init_kwargs", False):
+        return
+
+    init_signature = inspect.signature(init)
+
+    @wraps(init)
+    def wrapped(self, *args, **kwargs):
+        bound = init_signature.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+
+        captured_kwargs = {}
+        for name, param in init_signature.parameters.items():
+            if name == "self" or name not in bound.arguments:
+                continue
+            value = bound.arguments[name]
+            if param.kind == param.VAR_KEYWORD:
+                captured_kwargs.update(value)
+            elif param.kind != param.VAR_POSITIONAL:
+                captured_kwargs[name] = value
+        self._braindecode_init_kwargs = captured_kwargs
+        return init(self, *args, **kwargs)
+
+    setattr(wrapped, "_braindecode_tracks_init_kwargs", True)
+    cls.__init__ = wrapped
+
+
+def build_model_config(model) -> dict:
+    """Build a JSON-serializable config dict from a model instance.
+
+    Prefers ``_hub_mixin_config`` when available (it uses Hub coders to
+    encode custom types like ``functools.partial``). Otherwise reuses the
+    ``__init__`` keyword arguments captured at construction time.
+
+    Parameters
+    ----------
+    model : EEGModuleMixin
+        The model instance.
+
+    Returns
+    -------
+    dict
+        All ``__init__`` parameters, JSON-serializable.
+    """
+    hub_config = getattr(model, "_hub_mixin_config", None)
+    if hub_config is not None:
+        config = dict(hub_config)
+    else:
+        init_kwargs = getattr(model, "_braindecode_init_kwargs", None)
+        if init_kwargs is None:
+            raise RuntimeError(
+                f"{type(model).__name__} was instantiated without captured init kwargs; "
+                "cannot build a reliable config."
+            )
+
+        config = {}
+        for name, val in deepcopy(init_kwargs).items():
+            if name == "chs_info":
+                continue
+            if isinstance(val, type):
+                val = f"{val.__module__}.{val.__qualname__}"
+            elif not _is_jsonable(val):
+                continue
+            config[name] = val
+    chs_info = getattr(model, "_chs_info", None)
+    if chs_info is not None:
+        config["chs_info"] = model._serialize_chs_info(chs_info)
+    return config
+
+
+def resolve_type_kwargs(cls, kwargs):
+    """Resolve type-encoded strings in *kwargs* back to Python types.
+
+    When a model config is saved to JSON, ``type[nn.Module]`` parameters
+    (e.g. ``activation=nn.ELU``) are stored as dotted import paths like
+    ``"torch.nn.modules.activation.ELU"``.  This function resolves them
+    back to actual types using :class:`pydantic.ImportString`.
+
+    Parameters
+    ----------
+    cls : type
+        The model class whose ``__init__`` signature is inspected.
+    kwargs : dict
+        Keyword arguments to resolve in-place.
+
+    Returns
+    -------
+    dict
+        The same *kwargs* dict, with type strings resolved.
+    """
+    for name, param in inspect.signature(cls.__init__).parameters.items():
+        val = kwargs.get(name)
+        if isinstance(val, str) and "." in val and isinstance(param.default, type):
+            try:
+                kwargs[name] = _IMPORT_ADAPTER.validate_python(val)
+            except pydantic.ValidationError:
+                warnings.warn(
+                    f"Could not resolve type string {val!r} for parameter "
+                    f"{name!r} in {cls.__name__}",
+                    stacklevel=2,
+                )
+    return kwargs
+
 
 # For the models inside the init model, go through all the models
 # check those have the EEGMixin class inherited. If they are, add them to the
@@ -20,6 +148,8 @@ models_dict = {}
 
 
 def _init_models_dict():
+    import braindecode.models as models
+
     for m in inspect.getmembers(models, inspect.isclass):
         if (
             issubclass(m[1], models.base.EEGModuleMixin)
@@ -30,6 +160,7 @@ def _init_models_dict():
             models_dict[m[0]] = m[1]
 
 
+# Keep in sync with _EEG_PARAMS above.
 SigArgName = Literal[
     "n_outputs",
     "n_chans",
@@ -94,7 +225,7 @@ models_mandatory_parameters: list[
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 128.0}),
     ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("Labram", ["n_chans", "n_outputs", "n_times"], None),
+    ("Labram", ["chs_info", "n_outputs", "n_times"], None),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
     ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("ContraWR", ["n_chans", "n_outputs", "sfreq", "n_times"], {"sfreq": 200.0}),
@@ -133,6 +264,7 @@ models_mandatory_parameters: list[
         },
     ),
     ("CBraMod", ["n_outputs"], None),
+    ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
 ]
 
 ################################################################
@@ -301,7 +433,7 @@ def extract_channel_locations_from_chs_info(
     ----------
     chs_info : list of dict or None
         Channel information, typically from ``mne.Info.chs``. Each dict should
-        contain a 'loc' key with a 12-element array (MNE format) where indices 3:6
+        contain a 'loc' key with a 12-element array (MNE format) where indices 0:3
         represent the 3D cartesian coordinates.
     num_channels : int or None
         If specified, only extract the first ``num_channels`` channel locations.
@@ -315,7 +447,7 @@ def extract_channel_locations_from_chs_info(
 
     Notes
     -----
-    - This function handles both 12-element MNE location format (using indices 3:6)
+    - This function handles both 12-element MNE location format (using indices 0:3)
       and 3-element location format (using directly).
     - Invalid or missing locations cause extraction to stop at that point.
     - Returns None if no valid locations can be extracted.
@@ -347,14 +479,9 @@ def extract_channel_locations_from_chs_info(
         try:
             loc_array = np.asarray(loc, dtype=np.float32)
 
-            # MNE format: 12-element array with coordinates at indices 3:6
-            if loc_array.ndim == 1 and loc_array.size >= 6:
-                if loc_array.size == 12:
-                    # Standard MNE format
-                    coordinates = loc_array[3:6]
-                else:
-                    # Assume first 3 elements are coordinates
-                    coordinates = loc_array[:3]
+            # MNE format: 12-element array with electrode position at indices 0:3
+            if loc_array.ndim == 1 and loc_array.size >= 3:
+                coordinates = loc_array[:3]
             else:
                 break
 
@@ -365,7 +492,13 @@ def extract_channel_locations_from_chs_info(
     if len(locations) == 0:
         return None
 
-    return np.stack(locations, axis=0)
+    result = np.stack(locations, axis=0)
+
+    # Check positions are not all zero / degenerate
+    if np.allclose(result, 0):
+        return None
+
+    return result
 
 
 _summary_table = get_summary_table()

@@ -4,13 +4,16 @@ from types import UnionType
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import numpy as np
-from mne.utils import _soft_import
+import pydantic
 from typing_extensions import TypedDict
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import SigArgName, models_dict, models_mandatory_parameters
-
-pydantic = _soft_import(name="pydantic", purpose="model configuration", strict=False)
+from braindecode.models.util import (
+    SigArgName,
+    _init_models_dict,
+    models_dict,
+    models_mandatory_parameters,
+)
 
 try:
     from numpydantic import NDArray, Shape
@@ -57,8 +60,12 @@ SIGNAL_ARGS_TYPES = {
 }
 
 
-class BaseBraindecodeModelConfig(pydantic.BaseModel):  # type: ignore
+class BaseBraindecodeModelConfig(pydantic.BaseModel):
+    """Base class for braindecode model pydantic configs."""
+
     def create_instance(self) -> EEGModuleMixin:
+        if self.model_name_ not in models_dict:
+            _init_models_dict()
         model_cls = models_dict[self.model_name_]
         kwargs = self.model_dump(mode="python", exclude={"model_name_"})
         if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
@@ -90,13 +97,6 @@ def make_model_config(
     type
         A pydantic BaseModel subclass representing the model config.
     """
-    if not pydantic:
-        raise ImportError(
-            "pydantic is required to use make_model_config. "
-            "Please install braindecode[typing]."
-        )
-
-    # ironically, we need to ignore the type here to have the soft dependency.
 
     @pydantic.model_validator(mode="before")
     def validate_signal_params(cls, data: Any):
@@ -207,23 +207,23 @@ def make_model_config(
 # and define __all__ based on generated classes
 __all__ = ["make_model_config"]
 
-if not pydantic:
-    pass
-else:
-    models_configs: list[type[BaseBraindecodeModelConfig]] = []
-    for model_name, req, _ in models_mandatory_parameters:
-        model_cls = models_dict[model_name]
-        model_cfg = make_model_config(model_cls, req)
-        globals()[model_cfg.__name__] = model_cfg
-        __all__.append(model_cfg.__name__)
-        models_configs.append(model_cfg)
+if not models_dict:
+    _init_models_dict()
 
-    BraindecodeModelConfig = Annotated[  # type: ignore
-        Union[tuple(models_configs)],
-        pydantic.Field(
-            discriminator="model_name_", description="Braindecode model configuration"
-        ),
-    ]
+models_configs: list[type[BaseBraindecodeModelConfig]] = []
+for model_name, req, _ in models_mandatory_parameters:
+    model_cls = models_dict[model_name]
+    model_cfg = make_model_config(model_cls, req)
+    globals()[model_cfg.__name__] = model_cfg
+    __all__.append(model_cfg.__name__)
+    models_configs.append(model_cfg)
+
+BraindecodeModelConfig = Annotated[  # type: ignore[valid-type]
+    Union[tuple(models_configs)],
+    pydantic.Field(
+        discriminator="model_name_", description="Braindecode model configuration"
+    ),
+]
 
 # # Example usage:
 #

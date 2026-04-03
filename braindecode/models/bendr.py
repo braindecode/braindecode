@@ -3,8 +3,10 @@ import copy
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
+from torch.nn.utils.parametrize import register_parametrization
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.parametrization import MaxNormParametrize
 
 
 class BENDR(EEGModuleMixin, nn.Module):
@@ -183,6 +185,25 @@ class BENDR(EEGModuleMixin, nn.Module):
     final_layer : bool, default=True
         If True, includes a final linear classification layer that maps from encoder_h to
         n_outputs. If False, the model outputs the contextualized features directly.
+    encoder_only : bool, default=False
+        If True, bypass the contextualizer and use 4-chunk temporal pooling on the encoder
+        output instead. This corresponds to the encoder-only configuration described in
+        Section 2.4 and Table 2 of Kostas et al. (2021) [bendr]_, which outperformed the
+        full model on 4 out of 5 downstream tasks. The encoder output is split into 4 equal
+        temporal chunks, each chunk is mean-pooled, and the results are concatenated to
+        produce a feature vector of size ``encoder_h * 4`` (2048-dim with default settings).
+        The contextualizer is still created (to allow loading pretrained weights) but is not
+        used in the forward pass. Requires input length of at least
+        ``4 * product(enc_downsample)`` samples (384 with default downsampling of 96x).
+    n_chans_pretrained : int or None, default=None
+        Number of input channels the pretrained weights expect (20 for the official BENDR
+        checkpoint). When set and ``n_chans != n_chans_pretrained``, a 1x1 Conv1d with
+        max-norm constraint projects from ``n_chans`` to ``n_chans_pretrained`` before the
+        encoder. This allows fine-tuning pretrained BENDR on datasets with arbitrary channel
+        counts. When using ``from_pretrained``, pass ``strict=False`` since the checkpoint
+        will not contain ``channel_projection`` weights.
+    chan_proj_max_norm : float, default=1.0
+        Max-norm constraint value for the channel projection weights.
     """
 
     def __init__(
@@ -209,6 +230,9 @@ class BENDR(EEGModuleMixin, nn.Module):
         enc_downsample=(3, 2, 2, 2, 2, 2),
         start_token=-5,  # Value for start token embedding
         final_layer=True,  # Whether to include the final linear layer
+        encoder_only=False,  # If True, bypass contextualizer and use 4-chunk pooling
+        n_chans_pretrained=None,  # Expected input channels of pretrained weights
+        chan_proj_max_norm=1.0,  # Max-norm for channel projection weights
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -225,10 +249,22 @@ class BENDR(EEGModuleMixin, nn.Module):
         self.encoder_h = encoder_h
         self.contextualizer_hidden = contextualizer_hidden
         self.include_final_layer = final_layer
+        self.encoder_only = encoder_only
 
-        # Encoder: Use parameters from __init__
+        # Channel projection for pretrained weight compatibility
+        encoder_n_chans = self.n_chans
+        if n_chans_pretrained is not None and self.n_chans != n_chans_pretrained:
+            conv = nn.Conv1d(self.n_chans, n_chans_pretrained, 1, bias=False)
+            register_parametrization(
+                conv, "weight", MaxNormParametrize(chan_proj_max_norm)
+            )
+            self.channel_projection = conv
+            encoder_n_chans = n_chans_pretrained
+        else:
+            self.channel_projection = None
+
         self.encoder = _ConvEncoderBENDR(
-            in_features=self.n_chans,
+            in_features=encoder_n_chans,
             encoder_h=encoder_h,
             dropout=drop_prob,
             projection_head=projection_head,
@@ -248,35 +284,60 @@ class BENDR(EEGModuleMixin, nn.Module):
             layer_drop=layer_drop,
             start_token=start_token,  # Keep fixed start token value
         )
-        in_features = self.encoder.encoder_h  # Set in_features for final layer
+        # encoder_only → 4-chunk pooling produces encoder_h*4 features
+        # full model → start token produces encoder_h features
+        if self.encoder_only:
+            in_features = encoder_h * 4
+        else:
+            in_features = encoder_h
 
+        self._head_in_features = in_features
         self.final_layer = None
         if self.include_final_layer:
-            # Input to Linear will be [batch_size, encoder_h] after taking last timestep
-            linear = nn.Linear(in_features=in_features, out_features=self.n_outputs)
-            self.final_layer = nn.utils.parametrizations.weight_norm(
-                linear, name="weight", dim=1
-            )
+            self._build_head(self.n_outputs)
 
-    def forward(self, x):
-        # Input x: [batch_size, n_chans, n_times]
+    def _build_head(self, n_outputs):
+        linear = nn.Linear(in_features=self._head_in_features, out_features=n_outputs)
+        self.final_layer = nn.utils.parametrizations.weight_norm(
+            linear, name="weight", dim=1
+        )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.include_final_layer = True
+        self._build_head(n_outputs)
+
+    def forward(self, x, return_features=False):
+        if self.channel_projection is not None:
+            x = self.channel_projection(x)
         encoded = self.encoder(x)
         # encoded: [batch_size, encoder_h, n_encoded_times]
 
-        context = self.contextualizer(encoded)
-        # context: [batch_size, encoder_h, n_encoded_times + 1] (due to start token)
+        if self.encoder_only:
+            # 4-chunk temporal pooling (Kostas et al. 2021, Section 2.4)
+            n_time = encoded.shape[2]
+            if n_time < 4:
+                raise RuntimeError(
+                    f"Encoder output has {n_time} time steps, which is too few "
+                    f"for 4-chunk pooling (need at least 4). Increase input length."
+                )
+            # Use tensor_split for uneven chunks so no frames are dropped
+            chunks = torch.tensor_split(encoded, 4, dim=2)
+            feature = torch.cat([c.mean(dim=2) for c in chunks], dim=1)
+            # feature: [batch_size, encoder_h * 4]
+        else:
+            context = self.contextualizer(encoded)
+            # context: [batch_size, encoder_h, n_encoded_times + 1] (due to start token)
 
-        # Extract features - use the output corresponding to the start token (index 0)
-        # The output has shape [batch_size, features, seq_len+1]
-        # The start token was prepended at position 0 in the contextualizer before the
-        # transformer layers. After permutation back to [batch, features, seq_len+1],
-        # the start token output is at index 0.
-        # According to the paper (Kostas et al. 2021): "The transformer output of this
-        # initial position was not modified during pre-training, and only used for
-        # downstream tasks." This follows BERT's [CLS] token convention where the
-        # first token aggregates sequence information via self-attention.
-        feature = context[:, :, 0]
-        # feature: [batch_size, encoder_h]
+            # Extract features - use the output corresponding to the start token (index 0)
+            # According to the paper (Kostas et al. 2021): "The transformer output of this
+            # initial position was not modified during pre-training, and only used for
+            # downstream tasks." This follows BERT's [CLS] token convention.
+            feature = context[:, :, 0]
+            # feature: [batch_size, encoder_h]
+
+        if return_features:
+            return {"features": feature, "cls_token": None}
 
         if self.final_layer is not None:
             feature = self.final_layer(feature)
