@@ -73,6 +73,20 @@ Enhancements
   max-norm constrained channel projection for fine-tuning pretrained BENDR on datasets
   with arbitrary channel counts (by `Kuntal Kokate`_)
 - Add dynamic SDPA fallback in :class:`braindecode.models.reve.ClassicalAttention` to support PyTorch versions without SDPA (by `GalAshkenazi1`_)
+- Add unified ``return_features`` parameter to ``forward()`` of all 7 foundation
+  models (:class:`~braindecode.models.EEGPT`, :class:`~braindecode.models.Labram`,
+  :class:`~braindecode.models.REVE`, :class:`~braindecode.models.BENDR`,
+  :class:`~braindecode.models.BIOT`, :class:`~braindecode.models.CBraMod`,
+  :class:`~braindecode.models.SignalJEPA` variants). When ``True``, returns a
+  consistent ``{"features": Tensor, "cls_token": Tensor | None}`` dict across
+  all models. Legacy parameters (``return_encoder_output``, ``return_feature``,
+  ``return_all_tokens``, etc.) continue to work unchanged
+  (by `Bruno Aristimunha`_).
+- Add :meth:`~braindecode.models.base.EEGModuleMixin.reset_head` to all 7
+  foundation models for replacing the classification head with a new number of
+  outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
+  automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
+  differs from the saved config (by `Bruno Aristimunha`_).
 
 API changes
 ============
@@ -97,6 +111,17 @@ Requirements
 
 Bugs
 =====
+- Fix the documentation header "Cite Braindecode" announcement link: it used a bare
+  ``cite.html`` URL, which browsers resolve relative to the current page path and led
+  to 404s (for example from ``install/install.html``). The link is now built with
+  Sphinx's ``pathto()`` for each page so it always targets the cite page correctly.
+- Fix :class:`braindecode.models.EEGITNet` state dict mapping that pointed bias
+  to the weight key and referenced a nonexistent submodule path, and fix third
+  inception branch using the wrong variable for kernel length
+  (by `Sarthak Tayal`_)
+- Fix :class:`braindecode.models.EEGInceptionMI` state dict mapping typo where
+  the old key was ``tc.bias`` instead of ``fc.bias``
+  (by `Sarthak Tayal`_)
 - Fix multi-target channel windowing in :func:`braindecode.preprocessing.windowers.create_windows_from_target_channels`
   to use the union of valid target positions across all misc channels instead of only the first channel
   (by `Sarthak Tayal`_)
@@ -119,6 +144,14 @@ Bugs
 - Fix :class:`braindecode.augmentation.BandstopFilter` notch center frequency range
   using ``bandwidth/2`` instead of ``2*bandwidth`` to match docstring
   (:gh:`548` by `Sarthak Tayal`_)
+- Fix model docstring inheritance: ``track_model_init_kwargs`` wrapped
+  ``__init__`` with ``@wraps`` before the
+  ``NumpyDocstringInheritanceInitMeta`` metaclass ran, causing
+  ``inspect.unwrap()`` to bypass the wrapper and read ``__doc__=None``.
+  This replaced every model's description with the parent mixin's and
+  marked all model-specific parameters as "The description is missing"
+  when ``DOCSTRING_INHERITANCE_ENABLE=1`` was set during documentation
+  builds (:gh:`971` by `Bruno Aristimunha`_)
 
 Code health
 ============
@@ -874,6 +907,7 @@ Authors
 .. _Can Han: https://github.com/hancan16
 .. _Christian Kothe: https://github.com/chkothe
 .. _Kuntal Kokate: https://github.com/Kkuntal990
+.. _GalAshkenazi1: https://github.com/GalAshkenazi1
 .. _Matthew Chen: https://github.com/MatthewChen37
 .. _Jonathan Dan: https://github.com/danjjl
 .. _Jonathan Lys: https://github.com/jonathanlys01

@@ -59,7 +59,25 @@ def deprecated_args(obj, *old_new_args):
     return out_args
 
 
-class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta):
+class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
+    """Defer ``__init__`` wrapping until after docstring inheritance.
+
+    ``NumpyDocstringInheritanceInitMeta`` uses ``inspect.unwrap()``
+    internally, which bypasses ``@wraps`` wrappers.  By wrapping
+    ``__init__`` *after* docstring processing, the metaclass sees the
+    unwrapped function and correctly inherits ``cls.__doc__``.
+    """
+
+    def __init__(cls, class_name, class_bases, class_dict):
+        super().__init__(class_name, class_bases, class_dict)
+        # Only wrap subclass __init__s, not EEGModuleMixin itself.
+        # Wrapping the mixin would cause super().__init__() calls to
+        # overwrite _braindecode_init_kwargs captured by the subclass.
+        if any(isinstance(b, _BraindecodeDocstringMeta) for b in class_bases):
+            track_model_init_kwargs(cls)
+
+
+class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     """
     Mixin class for all EEG models in braindecode.
 
@@ -132,20 +150,46 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         # Load pretrained model
         model = {name}.from_pretrained("username/my-{name_lower}-model")
 
-    The integration automatically handles EEG-specific parameters (n_chans,
-    n_times, sfreq, chs_info, etc.) by saving them in a config file alongside
-    the model weights. This ensures that loaded models are correctly configured
-    for their original data specifications.
+        # Load with a different number of outputs (head is rebuilt automatically)
+        model = {name}.from_pretrained("username/my-{name_lower}-model", n_outputs=4)
+
+    **Extracting features and replacing the head:**
+
+    .. code-block::
+
+        import torch
+
+        x = torch.randn(1, model.n_chans, model.n_times)
+        # Extract encoder features (consistent dict across all models)
+        out = model(x, return_features=True)
+        features = out["features"]
+
+        # Replace the classification head
+        model.reset_head(n_outputs=10)
+
+    **Saving and restoring full configuration:**
+
+    .. code-block::
+
+        import json
+
+        config = model.get_config()            # all __init__ params
+        with open("config.json", "w") as f:
+            json.dump(config, f)
+
+        model2 = {name}.from_config(config)    # reconstruct (no weights)
 
     All model parameters (both EEG-specific and model-specific such as
     dropout rates, activation functions, number of filters) are automatically
     saved to the Hub and restored when loading.
+
+    See :ref:`load-pretrained-models` for a complete tutorial.
     """
 
     def __init_subclass__(cls, **kwargs):
         # Append model-specific Hub integration notes to the docstring.
-        # This runs after the metaclass, so we concatenate rather than
-        # override any existing Notes section in the subclass.
+        # This runs before the metaclass __init__, so the Hub notes will
+        # be included in the docstring that the metaclass processes.
         if cls.__doc__ is not None:
             hub_notes = cls._HUB_NOTES_TEMPLATE.format(
                 name=cls.__name__,
@@ -155,7 +199,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
 
         if not HAS_HF_HUB:
             super().__init_subclass__(**kwargs)
-            track_model_init_kwargs(cls)
             return
 
         base_tags = ["braindecode", cls.__name__]
@@ -195,7 +238,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             coders=coders,
             **kwargs,
         )
-        track_model_init_kwargs(cls)
 
     def __init__(
         self,
@@ -426,6 +468,34 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
         resolve_type_kwargs(cls, config)
         return cls(**config)
 
+    def reset_head(self, n_outputs):
+        """Replace the classification head for a new number of outputs.
+
+        This is called automatically by :meth:`from_pretrained` when the
+        user passes an ``n_outputs`` that differs from the saved config.
+        Override in subclasses that need a model-specific head structure.
+
+        Parameters
+        ----------
+        n_outputs : int
+            New number of output classes.
+
+        Examples
+        --------
+        >>> from braindecode.models import BENDR
+        >>> model = BENDR(n_chans=22, n_times=1000, n_outputs=4)
+        >>> model.reset_head(10)
+        >>> model.n_outputs
+        10
+
+        .. versionadded:: 1.4
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement reset_head(). "
+            "Override this method to support changing n_outputs after "
+            "loading pretrained weights."
+        )
+
     mapping: Optional[Dict[str, str]] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
@@ -625,15 +695,78 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=NumpyDocstringInheritanceInitMeta)
             **model_kwargs,
         ):
             model_kwargs.pop("braindecode_version", None)
+            filename = model_kwargs.pop("filename", None)
             resolve_type_kwargs(cls, model_kwargs)
-            return super()._from_pretrained(  # type: ignore
-                model_id=model_id,
-                revision=revision,
-                cache_dir=cache_dir,
-                force_download=force_download,
-                local_files_only=local_files_only,
-                token=token,
-                map_location=map_location,
-                strict=strict,
-                **model_kwargs,
-            )
+
+            # Read saved n_outputs from config.json to detect when the
+            # user wants a different number of outputs.  Works for both
+            # local directories and Hub repo IDs.
+            saved_n_outputs = None
+            try:
+                if Path(model_id).is_dir():
+                    config_file = Path(model_id) / "config.json"
+                else:
+                    config_file = huggingface_hub.hf_hub_download(
+                        repo_id=model_id,
+                        filename="config.json",
+                        revision=revision,
+                        cache_dir=cache_dir,
+                        force_download=force_download,
+                        token=token,
+                        local_files_only=local_files_only,
+                    )
+                with open(config_file, "r") as f:
+                    saved_n_outputs = json.load(f).get("n_outputs")
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass  # config unavailable; skip reset_head logic
+
+            requested_n_outputs = model_kwargs.get("n_outputs")
+
+            # If the user requests different n_outputs, load with the
+            # saved value first (so weights match), then swap the head.
+            if (
+                saved_n_outputs is not None
+                and requested_n_outputs is not None
+                and requested_n_outputs != saved_n_outputs
+            ):
+                model_kwargs["n_outputs"] = saved_n_outputs
+
+            # If a custom filename is provided, temporarily override the
+            # HuggingFace constant so the parent class downloads the
+            # correct file (e.g. "LUNA_base.safetensors" instead of
+            # "model.safetensors").
+            hf_constants = huggingface_hub.constants
+            _orig_safetensors = hf_constants.SAFETENSORS_SINGLE_FILE
+            if filename is not None:
+                hf_constants.SAFETENSORS_SINGLE_FILE = filename
+            try:
+                model = super()._from_pretrained(  # type: ignore
+                    model_id=model_id,
+                    revision=revision,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    local_files_only=local_files_only,
+                    token=token,
+                    map_location=map_location,
+                    strict=strict,
+                    **model_kwargs,
+                )
+            finally:
+                hf_constants.SAFETENSORS_SINGLE_FILE = _orig_safetensors
+
+            if (
+                saved_n_outputs is not None
+                and requested_n_outputs is not None
+                and requested_n_outputs != saved_n_outputs
+            ):
+                try:
+                    model.reset_head(requested_n_outputs)
+                except NotImplementedError:
+                    raise ValueError(
+                        f"{type(model).__name__} does not support changing "
+                        f"n_outputs after loading. Saved model has "
+                        f"n_outputs={saved_n_outputs}, but "
+                        f"n_outputs={requested_n_outputs} was requested."
+                    ) from None
+
+            return model
