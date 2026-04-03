@@ -22,37 +22,34 @@
 .. _current:
 
 
-Current 1.5.0 (Github)
+Current 1.5.0 (GitHub)
 ===============================
 
-Detailed list of changes
-~~~~~~~~~~~~~~~~~~~~~~~~
+Enhancements
+============
 
-🚀 Enhancements
-^^^^^^^^^^^^^^^
-
-🧐 API and behavior changes
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+API and behavior changes
+========================
 
 - None yet
 
-🛠 Requirements
-^^^^^^^^^^^^^^^
+Requirements
+============
 
 - None yet
 
-🪲 Bug fixes
-^^^^^^^^^^^^
+Bug fixes
+==========
 
 - None yet
 
-⚕️ Code health
-^^^^^^^^^^^^^^
+Code health
+============
 
 - None yet
 
 
-Current 1.4 (stable)
+Current 1.4.0 (stable)
 ===============================
 
 Enhancements
