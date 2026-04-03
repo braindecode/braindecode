@@ -106,8 +106,7 @@ class _GConv(nn.Module):
         decay_max: float = 2.0,
     ):
         super().__init__()
-        self.h = d_model
-        self.n = d_state
+        self.d_model = d_model
         self.bidirectional = bidirectional
         self.channels = channels
         self.transposed = transposed
@@ -115,7 +114,7 @@ class _GConv(nn.Module):
         self.mode = mode
         self.l_max = l_max
 
-        self.D = nn.Parameter(torch.randn(channels, self.h))
+        self.D = nn.Parameter(torch.randn(channels, self.d_model))
 
         if self.bidirectional:
             channels *= 2
@@ -124,11 +123,15 @@ class _GConv(nn.Module):
             self.activation = nn.GELU() if activation == "gelu" else nn.ReLU()
             self.dropout = nn.Dropout2d(dropout) if dropout > 0.0 else nn.Identity()
             self.norm = (
-                nn.LayerNorm(self.h * self.channels) if layer_norm else nn.Identity()
+                nn.LayerNorm(self.d_model * self.channels)
+                if layer_norm
+                else nn.Identity()
             )
 
         if not self.linear:
-            self.output_linear = nn.Linear(self.h * self.channels, self.h)
+            self.output_linear = nn.Linear(
+                self.d_model * self.channels, self.d_model
+            )
 
         self.init_scale = init_scale
         self.kernel_dim = kernel_dim
@@ -141,38 +144,41 @@ class _GConv(nn.Module):
         self.kernel_list = nn.ParameterList()
         for _ in range(self.num_scales):
             if "randn" in mode:
-                kernel = torch.randn(channels, self.h, self.kernel_dim)
+                kernel = torch.randn(channels, self.d_model, self.kernel_dim)
             elif "cos" in mode:
                 kernel = torch.cat(
                     [
                         torch.cos(
                             torch.linspace(0, 2 * i * math.pi, self.kernel_dim)
                         ).expand(channels, 1, self.kernel_dim)
-                        for i in range(self.h)
+                        for i in range(self.d_model)
                     ],
                     dim=1,
-                )[:, torch.randperm(self.h), :]
+                )[:, torch.randperm(self.d_model), :]
             else:
                 raise ValueError(f"Unknown mode {mode}")
             self.kernel_list.append(nn.Parameter(kernel))
 
         self.register_buffer(
             "multiplier",
-            torch.linspace(decay_min, decay_max, self.h).view(1, -1, 1),
+            torch.linspace(decay_min, decay_max, self.d_model).view(1, -1, 1),
         )
-        self.register_buffer("kernel_norm", torch.ones(channels, self.h, 1))
+        self.register_buffer("kernel_norm", torch.ones(channels, self.d_model, 1))
         self.register_buffer(
             "kernel_norm_initialized", torch.tensor(0, dtype=torch.bool)
         )
 
-    def forward(self, u, return_kernel=False):
+    def forward(self, x, return_kernel=False):
+        # x: (batch, d_model, seq_len) if transposed, else (batch, seq_len, d_model)
         if not self.transposed:
-            u = u.transpose(-1, -2)
-        L = u.size(-1)
+            x = x.transpose(-1, -2)
+        # x: (batch, d_model, seq_len)
+        seq_len = x.size(-1)
 
+        # Build multi-scale kernel by upsampling and decaying each sub-kernel
         kernel_list = []
         interpolate_mode = "nearest" if "nearest" in self.mode else "linear"
-        multiplier = self.multiplier
+        multiplier = self.multiplier  # (1, d_model, 1)
 
         if "cat" in self.mode:
             for i in range(self.num_scales):
@@ -182,48 +188,68 @@ class _GConv(nn.Module):
                     mode=interpolate_mode,
                 ) * multiplier ** (self.num_scales - i - 1)
                 kernel_list.append(kernel)
-            k = torch.cat(kernel_list, dim=-1)
+            # kernel: (channels, d_model, kernel_len)
+            kernel = torch.cat(kernel_list, dim=-1)
         else:
             raise ValueError(f"Unknown mode {self.mode}")
 
+        # Lazy-init kernel normalisation on first forward pass
         if not self.kernel_norm_initialized:
-            self.kernel_norm = k.norm(dim=-1, keepdim=True).detach()
+            self.kernel_norm = kernel.norm(dim=-1, keepdim=True).detach()
             self.kernel_norm_initialized = torch.tensor(
-                1, dtype=torch.bool, device=k.device
+                1, dtype=torch.bool, device=kernel.device
             )
 
-        if k.size(-1) > L:
-            k = k[..., :L]
-        elif k.size(-1) < L:
-            k = F.pad(k, (0, L - k.size(-1)))
+        # Pad or truncate kernel to match seq_len
+        if kernel.size(-1) > seq_len:
+            kernel = kernel[..., :seq_len]
+        elif kernel.size(-1) < seq_len:
+            kernel = F.pad(kernel, (0, seq_len - kernel.size(-1)))
 
-        k = k / self.kernel_norm
+        # kernel: (channels, d_model, seq_len) — normalised
+        kernel = kernel / self.kernel_norm
 
         if self.bidirectional:
-            k0, k1 = rearrange(k, "(s c) h l -> s c h l", s=2)
-            k = F.pad(k0, (0, L)) + F.pad(k1.flip(-1), (L, 0))
+            k_fwd, k_bwd = rearrange(
+                kernel, "(s channels) d_model seq_len -> s channels d_model seq_len", s=2
+            )
+            # Combine forward and time-reversed backward kernels
+            kernel = F.pad(k_fwd, (0, seq_len)) + F.pad(
+                k_bwd.flip(-1), (seq_len, 0)
+            )
 
-        k_f = torch.fft.rfft(k.float(), n=2 * L)
-        u_f = torch.fft.rfft(u.float(), n=2 * L)
-        y_f = torch.einsum("bhl,chl->bchl", u_f, k_f)
-        y = torch.fft.irfft(y_f, n=2 * L)[..., :L]
+        # FFT-based convolution: O(N log N)
+        # kernel_freq: (channels, d_model, freq_bins)
+        kernel_freq = torch.fft.rfft(kernel.float(), n=2 * seq_len)
+        # x_freq: (batch, d_model, freq_bins)
+        x_freq = torch.fft.rfft(x.float(), n=2 * seq_len)
+        # out_freq: (batch, channels, d_model, freq_bins)
+        out_freq = torch.einsum("bhl,chl->bchl", x_freq, kernel_freq)
+        # out: (batch, channels, d_model, seq_len)
+        out = torch.fft.irfft(out_freq, n=2 * seq_len)[..., :seq_len]
 
-        y = y + torch.einsum("bhl,ch->bchl", u, self.D)
-        y = rearrange(y, "... c h l -> ... (c h) l")
+        # Skip connection via learnable D matrix
+        # (batch, channels, d_model, seq_len)
+        out = out + torch.einsum("bhl,ch->bchl", x, self.D)
+        # Merge channels and d_model: (batch, channels * d_model, seq_len)
+        out = rearrange(out, "... c h l -> ... (c h) l")
 
         if not self.linear:
-            y = self.dropout(self.activation(y))
-            y = rearrange(y, "b c l -> b l c")
-            y = self.norm(y)
-            y = self.output_linear(y)
-            y = rearrange(y, "b l c -> b c l")
+            out = self.dropout(self.activation(out))
+            # (batch, seq_len, channels * d_model)
+            out = rearrange(out, "b c l -> b l c")
+            out = self.norm(out)
+            # (batch, seq_len, d_model)
+            out = self.output_linear(out)
+            # (batch, d_model, seq_len)
+            out = rearrange(out, "b l c -> b c l")
 
         if not self.transposed:
-            y = y.transpose(-1, -2)
+            out = out.transpose(-1, -2)
 
         if return_kernel:
-            return y, k
-        return y, None
+            return out, kernel
+        return out, None
 
 
 class Conv(nn.Module):
@@ -332,29 +358,44 @@ class ResidualBlock(nn.Module):
 
     def forward(self, input_data):
         x, original = input_data
-        h = x
-        _, C, L = x.shape
+        # x, original: (batch, res_channels, seq_len)
+        hidden = x
+        _, n_channels, seq_len = x.shape
         x = self.sn(x)
-        assert C == self.res_channels
+        assert n_channels == self.res_channels
 
-        h = h + original
+        # Add original input as residual shortcut
+        hidden = hidden + original
 
-        h = self.conv_layer(h)
+        # Conv expansion: (batch, res_channels, seq_len) -> (batch, 2*res_channels, seq_len)
+        hidden = self.conv_layer(hidden)
 
-        h = self.gelu(h)
-        h_t, _ = self.s41(h)
+        # SGConv SSM branch
+        hidden = self.gelu(hidden)
+        # h_ssm: (batch, 2*res_channels, seq_len)
+        h_ssm, _ = self.s41(hidden)
 
-        h_s = rearrange(h_t, "b c l -> b l c")
-        swa_mask = self.generate_local_window_mask(L, self.swa_window_size).to(x.device)
-        h_s, _ = self.attention(h_s, h_s, h_s, attn_mask=swa_mask)
-        h_s = rearrange(h_s, "b l c -> b c l")
+        # Sliding-window attention branch
+        # (batch, 2*res_channels, seq_len) -> (batch, seq_len, 2*res_channels)
+        h_attn = rearrange(h_ssm, "b c l -> b l c")
+        swa_mask = self.generate_local_window_mask(seq_len, self.swa_window_size).to(
+            x.device
+        )
+        h_attn, _ = self.attention(h_attn, h_attn, h_attn, attn_mask=swa_mask)
+        # (batch, seq_len, 2*res_channels) -> (batch, 2*res_channels, seq_len)
+        h_attn = rearrange(h_attn, "b l c -> b c l")
 
-        h = h_t + h_s
+        # Combine SSM and attention
+        # combined: (batch, 2*res_channels, seq_len)
+        combined = h_ssm + h_attn
 
-        out = torch.tanh(h[:, : self.res_channels, :]) * torch.sigmoid(
-            h[:, self.res_channels :, :]
+        # Gated activation: split into two halves along channel dim
+        # out: (batch, res_channels, seq_len)
+        out = torch.tanh(combined[:, : self.res_channels, :]) * torch.sigmoid(
+            combined[:, self.res_channels :, :]
         )
 
+        # Residual and skip projections: (batch, res_channels, seq_len)
         res = self.res_conv(out)
         assert x.shape == res.shape
         skip = self.skip_conv(out)
@@ -809,19 +850,35 @@ class CodeBrain(EEGModuleMixin, nn.Module):
         )
 
     def forward(self, inputs, mask=None, return_features=False):
+        # inputs: (batch, n_chans, n_times)
         batch, n_chans, n_times = inputs.shape
         patch_size = self.patch_size
         seq_len = n_times // patch_size
-        inputs = inputs[:, :, : seq_len * patch_size].reshape(
+
+        # Trim to nearest multiple of patch_size and reshape into patches
+        # (batch, n_chans, seq_len, patch_size)
+        x = inputs[:, :, : seq_len * patch_size].reshape(
             batch, n_chans, seq_len, patch_size
         )
-        inputs = self.patch_embedding(inputs, mask=mask)
+        # Dual temporal-spectral patch embedding
+        # (batch, n_chans, seq_len, emb_dim)
+        x = self.patch_embedding(x, mask=mask)
+
+        # Flatten channel and patch dims for 1-D convolution backbone
+        # (batch, emb_dim, n_chans * seq_len)
         x = rearrange(
-            inputs, "batch n_chans seq_len emb_dim -> batch emb_dim (n_chans seq_len)"
+            x, "batch n_chans seq_len emb_dim -> batch emb_dim (n_chans seq_len)"
         )
+        # (batch, res_channels, n_chans * seq_len)
         x = self.init_conv(x)
+        # Residual SSM + attention blocks → aggregated skip connections
+        # (batch, skip_channels, n_chans * seq_len)
         x = self.residual_layer(x)
+        # (batch, out_channels, n_chans * seq_len)
         x = self.final_conv(x)
+
+        # Restore channel and patch dims
+        # (batch, n_chans, seq_len, out_channels)
         x = rearrange(
             x,
             "batch out_channels (n_chans seq_len) -> batch n_chans seq_len out_channels",
@@ -829,6 +886,7 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             seq_len=seq_len,
         )
         x = self.norm(x)
+
         if return_features:
             return {"features": x, "cls_token": None}
         if self.pretrain_mode:
@@ -837,5 +895,5 @@ class CodeBrain(EEGModuleMixin, nn.Module):
             x_t = self.lm_head_t(x)
             x_f = self.lm_head_f(x)
             return (x_t, x_f)
-        else:
-            return self.final_layer(x)
+        # (batch, n_outputs)
+        return self.final_layer(x)
