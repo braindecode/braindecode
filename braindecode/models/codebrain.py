@@ -901,10 +901,10 @@ class _PatchEmbedding(nn.Module):
 
         # Merge channel and patch dims so Conv2d sees one image row per (channel, patch)
         # (batch, 1, n_chans * seq_len, patch_size)
-        mask_x = mask_x.contiguous().view(batch, 1, n_chans * seq_len, patch_size)
+        mask_x_conv = mask_x.contiguous().view(batch, 1, n_chans * seq_len, patch_size)
 
         # Temporal projection: conv stack outputs (batch, conv_ch, n_chans * seq_len, emb)
-        patch_emb = self.proj_in(mask_x)
+        patch_emb = self.proj_in(mask_x_conv)
 
         # Restore channel and patch dims, flatten conv channels into embedding dim
         # (batch, n_chans, seq_len, conv_ch * emb) = (batch, n_chans, seq_len, emb_dim)
@@ -915,9 +915,10 @@ class _PatchEmbedding(nn.Module):
             seq_len=seq_len,
         )
 
-        # Flatten patches for FFT: (batch * n_chans * seq_len, patch_size)
+        # Flatten masked patches for FFT: (batch * n_chans * seq_len, patch_size)
         patches_flat = rearrange(
-            x, "batch n_chans seq_len patch_size -> (batch n_chans seq_len) patch_size"
+            mask_x,
+            "batch n_chans seq_len patch_size -> (batch n_chans seq_len) patch_size",
         )
 
         # Spectral projection: rfft gives (batch * n_chans * seq_len, patch_size // 2 + 1)
