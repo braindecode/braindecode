@@ -7,14 +7,15 @@ for braindecode datasets, similar to the model Hub integration.
 
 .. warning::
     The format is **BIDS-inspired**, not **BIDS-compliant**. The metadata
-    files are BIDS-compliant, but the data is stored in Zarr format for
-    efficient training, which is not a valid BIDS EEG format.
+    files are BIDS-compliant, but the data is stored in a backend-specific
+    format (Zarr or MNE/FIF) for efficient training, which is not a valid
+    BIDS EEG format.
 
 The format follows a BIDS-inspired sourcedata structure:
 - sourcedata/braindecode/
   - dataset_description.json  (BIDS-compliant)
   - participants.tsv          (BIDS-compliant)
-  - dataset.zarr/             (NOT BIDS-compliant - efficient data store)
+  - dataset.zarr/ or dataset/ (backend-specific data store)
   - sub-<label>/
     - eeg/
       - *_events.tsv          (BIDS-compliant)
@@ -35,11 +36,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Union
 
-import mne
-import numpy as np
 import pandas as pd
-import scipy
-from mne._fiff.meas_info import Info
 from mne.utils import _soft_import
 
 if TYPE_CHECKING:
@@ -48,22 +45,13 @@ if TYPE_CHECKING:
 import braindecode
 
 # Import registry for dynamic class lookup (avoids circular imports)
-from ..registry import get_dataset_class, get_dataset_type
+from ..registry import get_dataset_type
 
 # Hub format and validation utilities
 from . import hub_format, hub_validation
-from .hub_io import (
-    _create_compressor,
-    _load_eegwindows_from_zarr,
-    _load_raw_from_zarr,
-    _load_windows_from_zarr,
-    _save_eegwindows_to_zarr,
-    _save_raw_to_zarr,
-    _save_windows_to_zarr,
-)
+from .formats import get_format_backend
 
-# Lazy import zarr and huggingface_hub
-zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
+# Lazy import huggingface_hub
 huggingface_hub = _soft_import(
     "huggingface_hub", purpose="hugging face integration", strict=False
 )
@@ -100,6 +88,7 @@ class HubDatasetMixin:
         repo_id: str,
         private: bool = False,
         token: Optional[str] = None,
+        format: str = "zarr",
         compression: str = "blosc",
         compression_level: int = 5,
         pipeline_name: str = "braindecode",
@@ -108,12 +97,11 @@ class HubDatasetMixin:
         **kwargs,
     ) -> str:
         """
-        Upload the dataset to the Hugging Face Hub in BIDS-like Zarr format.
+        Upload the dataset to the Hugging Face Hub in a BIDS-like structure.
 
-        The dataset is converted to Zarr format with blosc compression, which provides
-        optimal random access performance for PyTorch training. The data is stored
-        in a BIDS sourcedata-like structure with events.tsv, channels.tsv,
-        and participants.tsv sidecar files.
+        The dataset is converted to the chosen format (Zarr or MNE/FIF) and
+        stored in a BIDS sourcedata-like structure with events.tsv,
+        channels.tsv, and participants.tsv sidecar files.
 
         Parameters
         ----------
@@ -123,19 +111,21 @@ class HubDatasetMixin:
             Whether to create a private repository.
         token : str | None
             Hugging Face API token. If None, uses cached token.
+        format : str, default="zarr"
+            Storage format. ``"zarr"`` provides compression options.
+            ``"mne"`` stores data as FIF files and supports lazy loading
+            via ``preload=False``.
         compression : str, default="blosc"
             Compression algorithm for Zarr. Options: "blosc", "zstd", "gzip", None.
+            Ignored when ``format="mne"``.
         compression_level : int, default=5
             Compression level (0-9). Level 5 provides optimal balance.
+            Ignored when ``format="mne"``.
         pipeline_name : str, default="braindecode"
             Name of the processing pipeline for BIDS sourcedata.
         chunk_size : int, default=5_000_000
             Number of samples per chunk in Zarr along the time/window dimension.
-            Larger chunk sizes create fewer but larger chunks/files. This parameter
-            is used for both continuous data (e.g., RawDataset, EEGWindowsDataset)
-            and pre-cut windows (WindowsDataset). For WindowsDataset, multiple
-            windows may be stored in a single chunk depending on their duration
-            and the chosen ``chunk_size``.
+            Ignored when ``format="mne"``.
         local_cache_dir : str | Path | None
             Local directory to use for temporary files during upload. If None, uses
             the system temp directory and cleans it up after upload. If provided,
@@ -144,7 +134,7 @@ class HubDatasetMixin:
             - If the directory is empty (or does not exist), the cache is built
               there and a lock file (``format_info.json``) is written once
               the cache is complete, before the upload starts. The file
-              contains the zarr conversion parameters as JSON.
+              contains the conversion parameters as JSON.
             - If the lock file is present and its JSON parameters match the
               current call, cache creation is skipped and the upload resumes
               directly (useful for retrying interrupted uploads).
@@ -175,11 +165,14 @@ class HubDatasetMixin:
         ...     repo_id="myusername/nmt-dataset",
         ... )
         """
-        if huggingface_hub is False or zarr is False:
+        if huggingface_hub is False:
             raise ImportError(
-                "huggingface-hub or zarr is not installed. Install with: "
+                "huggingface-hub is not installed. Install with: "
                 "pip install braindecode[hub]"
             )
+
+        backend = get_format_backend(format)
+        backend.validate_dependencies()
 
         # Create API instance
         hf_api = huggingface_hub.HfApi(token=token)
@@ -195,13 +188,15 @@ class HubDatasetMixin:
         except Exception as e:
             raise RuntimeError(f"Failed to create repository: {e}")
 
-        format_info = self._get_format_info_inline()
-        format_info_lock = {
-            "format": "zarr",
-            "pipeline_name": pipeline_name,
+        format_params = {
             "compression": compression,
             "compression_level": compression_level,
             "chunk_size": chunk_size,
+        }
+        format_info = self._get_format_info_inline()
+        format_info_lock = {
+            **backend.build_format_info(format_params),
+            "pipeline_name": pipeline_name,
             "braindecode_version": braindecode.__version__,
             **format_info,
         }
@@ -269,12 +264,9 @@ class HubDatasetMixin:
         tmp_path,
         format_info_lock,
     ):
-        """Build the local cache directory with the dataset in Zarr format and BIDS-like structure.
-        This folder will be uploaded to the Hub"""
-        compression = format_info_lock["compression"]
-        compression_level = format_info_lock["compression_level"]
+        """Build the local cache directory with the dataset and BIDS-like structure.
+        This folder will be uploaded to the Hub."""
         pipeline_name = format_info_lock["pipeline_name"]
-        chunk_size = format_info_lock["chunk_size"]
 
         # Create BIDS-like sourcedata structure
         log.info("Creating BIDS-like sourcedata structure...")
@@ -293,16 +285,11 @@ class HubDatasetMixin:
         # Save BIDS sidecar files for each recording
         self._save_bids_sidecar_files(bids_layout)
 
-        # Convert dataset to Zarr format inside sourcedata
-        log.info("Converting dataset to Zarr format...")
-        dataset_path = sourcedata_dir / "dataset.zarr"
-
-        self._convert_to_zarr_inline(
-            dataset_path,
-            compression,
-            compression_level,
-            chunk_size,
-        )
+        # Convert dataset using the appropriate format backend
+        backend = get_format_backend(format_info_lock["format"])
+        dataset_path = sourcedata_dir / backend.get_data_filename()
+        log.info(f"Converting dataset to {backend.name} format...")
+        backend.convert_datasets(self.datasets, dataset_path, format_info_lock)
 
         # Save dataset metadata (README.md)
         self._save_dataset_card(tmp_path)
@@ -511,9 +498,9 @@ class HubDatasetMixin:
         >>> from torch.utils.data import DataLoader
         >>> loader = DataLoader(dataset, batch_size=32, shuffle=True)
         """
-        if zarr is False or huggingface_hub is False:
+        if huggingface_hub is False:
             raise ImportError(
-                "huggingface hub functionality is not installed. Install with: "
+                "huggingface-hub is not installed. Install with: "
                 "pip install braindecode[hub]"
             )
 
@@ -534,36 +521,35 @@ class HubDatasetMixin:
             if format_info_path.exists():
                 with open(format_info_path, "r") as f:
                     format_info = json.load(f)
-
-                # Verify it's zarr format
-                if format_info.get("format") != "zarr":
-                    raise ValueError(
-                        f"Dataset format is '{format_info.get('format')}', but only "
-                        "'zarr' format is supported. Please re-upload the dataset."
-                    )
             else:
                 format_info = {}
 
+            # Auto-detect format (default to zarr for backward compatibility)
+            format_name = format_info.get("format", "zarr")
+            backend = get_format_backend(format_name)
+            backend.validate_dependencies()
+
             pipeline_name = format_info.get("pipeline_name", "braindecode")
+            data_filename = backend.get_data_filename()
 
-            # Find zarr dataset path (try sourcedata, derivatives, then root)
-            zarr_path = (
-                Path(dataset_dir) / "sourcedata" / pipeline_name / "dataset.zarr"
+            # Find data path (try sourcedata, derivatives, then root)
+            data_path = (
+                Path(dataset_dir) / "sourcedata" / pipeline_name / data_filename
             )
-            if not zarr_path.exists():
-                zarr_path = (
-                    Path(dataset_dir) / "derivatives" / pipeline_name / "dataset.zarr"
+            if not data_path.exists():
+                data_path = (
+                    Path(dataset_dir) / "derivatives" / pipeline_name / data_filename
                 )
-            if not zarr_path.exists():
-                zarr_path = Path(dataset_dir) / "dataset.zarr"
+            if not data_path.exists():
+                data_path = Path(dataset_dir) / data_filename
 
-            if not zarr_path.exists():
+            if not data_path.exists():
                 raise FileNotFoundError(
-                    f"Zarr dataset not found at {zarr_path}. "
+                    f"Dataset not found at {data_path}. "
                     "The dataset may be in an unsupported format."
                 )
 
-            dataset = cls._load_from_zarr_inline(zarr_path, preload)
+            dataset = backend.load_datasets(data_path, preload)
 
             # Load BIDS metadata if available
             cls._load_bids_metadata(dataset, Path(dataset_dir), pipeline_name)
@@ -655,126 +641,31 @@ class HubDatasetMixin:
                 except Exception as e:
                     log.warning(f"Failed to load channels for recording {i_ds}: {e}")
 
+    # ------------------------------------------------------------------
+    # Backward-compatible wrappers (delegate to format backends)
+    # ------------------------------------------------------------------
+
     def _convert_to_zarr_inline(
         self,
-        output_path: Path,
-        compression: str,
-        compression_level: int,
-        chunk_size: int = 5_000_000,
-    ) -> None:
-        """Convert dataset to Zarr format (inline implementation)."""
+        output_path,
+        compression="blosc",
+        compression_level=5,
+        chunk_size=5_000_000,
+    ):
+        """Backward-compatible wrapper — delegates to ZarrBackend."""
+        backend = get_format_backend("zarr")
+        format_params = {
+            "compression": compression,
+            "compression_level": compression_level,
+            "chunk_size": chunk_size,
+        }
+        backend.convert_datasets(self.datasets, output_path, format_params)
 
-        if zarr is False or huggingface_hub is False:
-            raise ImportError(
-                "huggingface hub functionality is not installed. Install with: "
-                "pip install braindecode[hub]"
-            )
-
-        if output_path.exists():
-            raise FileExistsError(
-                f"{output_path} already exists. Set overwrite=True to replace it."
-            )
-
-        # Create zarr store (zarr v3 API)
-        root = zarr.open(str(output_path), mode="w")
-
-        # Validate uniformity across all datasets using shared validation
-        dataset_type, _, _ = hub_validation.validate_dataset_uniformity(self.datasets)
-
-        # Keep reference to first dataset for preprocessing kwargs
-        first_ds = self.datasets[0]
-
-        # Store global metadata
-        root.attrs["n_datasets"] = len(self.datasets)
-        root.attrs["dataset_type"] = dataset_type
-        root.attrs["braindecode_version"] = braindecode.__version__
-
-        # Track dependency versions for reproducibility
-        root.attrs["mne_version"] = mne.__version__
-        root.attrs["numpy_version"] = np.__version__
-        root.attrs["pandas_version"] = pd.__version__
-        root.attrs["zarr_version"] = zarr.__version__
-        root.attrs["scipy_version"] = scipy.__version__
-
-        # Save preprocessing kwargs (check first dataset, assuming uniform preprocessing)
-        # These are typically set by windowing functions on individual datasets
-        for kwarg_name in [
-            "raw_preproc_kwargs",
-            "window_kwargs",
-            "window_preproc_kwargs",
-        ]:
-            # Check first dataset for these attributes
-            if hasattr(first_ds, kwarg_name):
-                kwargs = getattr(first_ds, kwarg_name)
-                if kwargs:
-                    root.attrs[kwarg_name] = json.dumps(kwargs)
-
-        # Create compressor
-        compressor = _create_compressor(compression, compression_level)
-
-        # Save each recording
-        for i_ds, ds in enumerate(self.datasets):
-            grp = root.create_group(f"recording_{i_ds}")
-
-            if dataset_type == "WindowsDataset":
-                # Extract data from WindowsDataset
-                data = ds.windows.get_data()
-                metadata = ds.windows.metadata
-                description = ds.description
-                info_dict = ds.windows.info.to_json_dict()
-                target_name = ds.target_name if hasattr(ds, "target_name") else None
-
-                # Save using inlined function
-                _save_windows_to_zarr(
-                    grp,
-                    data,
-                    metadata,
-                    description,
-                    info_dict,
-                    compressor,
-                    target_name,
-                    chunk_size,
-                )
-
-            elif dataset_type == "EEGWindowsDataset":
-                # Get continuous raw data and metadata from EEGWindowsDataset
-                raw = ds.raw
-                metadata = ds.metadata
-                description = ds.description
-                info_dict = ds.raw.info.to_json_dict()
-                targets_from = ds.targets_from
-                last_target_only = ds.last_target_only
-
-                # Save using inlined function (saves continuous raw directly)
-                _save_eegwindows_to_zarr(
-                    grp,
-                    raw,
-                    metadata,
-                    description,
-                    info_dict,
-                    targets_from,
-                    last_target_only,
-                    compressor,
-                    chunk_size,
-                )
-
-            elif dataset_type == "RawDataset":
-                # Get continuous raw data from RawDataset
-                raw = ds.raw
-                description = ds.description
-                info_dict = ds.raw.info.to_json_dict()
-                target_name = ds.target_name if hasattr(ds, "target_name") else None
-
-                # Save using inlined function
-                _save_raw_to_zarr(
-                    grp,
-                    raw,
-                    description,
-                    info_dict,
-                    target_name,
-                    compressor,
-                    chunk_size,
-                )
+    @staticmethod
+    def _load_from_zarr_inline(input_path, preload=True):
+        """Backward-compatible wrapper — delegates to ZarrBackend."""
+        backend = get_format_backend("zarr")
+        return backend.load_datasets(input_path, preload)
 
     def _get_format_info_inline(self):
         """Get format info (inline implementation).
@@ -811,115 +702,6 @@ class HubDatasetMixin:
             "total_size_mb": round(total_size_mb, 2),
         }
 
-    @staticmethod
-    def _load_from_zarr_inline(input_path: Path, preload: bool):
-        """Load dataset from Zarr format (inline implementation).
-
-        This is an inline version of hub_formats.load_from_zarr() that avoids
-        circular import by using hub_formats_core directly.
-        """
-        if not input_path.exists():
-            raise FileNotFoundError(f"{input_path} does not exist.")
-
-        # Open zarr store (zarr v3 API)
-        root = zarr.open(str(input_path), mode="r")
-
-        n_datasets = root.attrs["n_datasets"]
-        dataset_type = root.attrs["dataset_type"]
-
-        # Get dataset classes from registry
-        WindowsDataset = get_dataset_class("WindowsDataset")
-        EEGWindowsDataset = get_dataset_class("EEGWindowsDataset")
-        RawDataset = get_dataset_class("RawDataset")
-        BaseConcatDataset = get_dataset_class("BaseConcatDataset")
-
-        datasets = []
-        for i_ds in range(n_datasets):
-            grp = root[f"recording_{i_ds}"]
-
-            if dataset_type == "WindowsDataset":
-                # Load using inlined function
-                data, metadata, description, info_dict, target_name = (
-                    _load_windows_from_zarr(grp, preload)
-                )
-
-                # Convert to MNE objects and create dataset
-                info = Info.from_json_dict(info_dict)
-                targets = metadata["target"].values
-                if np.issubdtype(targets.dtype, np.integer):
-                    event_ids = targets
-                else:
-                    event_ids = np.ones(len(metadata), dtype=int)
-                events = np.column_stack(
-                    [
-                        metadata["i_start_in_trial"].values.astype(int),
-                        np.zeros(len(metadata), dtype=int),
-                        event_ids,
-                    ]
-                )
-                epochs = mne.EpochsArray(data, info, events=events, metadata=metadata)
-                ds = WindowsDataset(epochs, description)
-                if target_name is not None:
-                    ds.target_name = target_name
-
-            elif dataset_type == "EEGWindowsDataset":
-                # Load using inlined function
-                (
-                    data,
-                    metadata,
-                    description,
-                    info_dict,
-                    targets_from,
-                    last_target_only,
-                ) = _load_eegwindows_from_zarr(grp, preload)
-
-                # Convert to MNE objects and create dataset
-                # Data is already in continuous format [n_channels, n_timepoints]
-                info = Info.from_json_dict(info_dict)
-                raw = mne.io.RawArray(data, info)
-                ds = EEGWindowsDataset(
-                    raw=raw,
-                    metadata=metadata,
-                    description=description,
-                    targets_from=targets_from,
-                    last_target_only=last_target_only,
-                )
-
-            elif dataset_type == "RawDataset":
-                # Load using inlined function
-                data, description, info_dict, target_name = _load_raw_from_zarr(
-                    grp, preload
-                )
-
-                # Convert to MNE objects and create dataset
-                # Data is in continuous format [n_channels, n_timepoints]
-                info = Info.from_json_dict(info_dict)
-                raw = mne.io.RawArray(data, info)
-                ds = RawDataset(raw, description)
-                if target_name is not None:
-                    ds.target_name = target_name
-
-            else:
-                raise ValueError(f"Unsupported dataset_type: {dataset_type}")
-
-            datasets.append(ds)
-
-        # Create concat dataset
-        concat_ds = BaseConcatDataset(datasets)
-
-        # Restore preprocessing kwargs (set on individual datasets, not concat)
-        for kwarg_name in [
-            "raw_preproc_kwargs",
-            "window_kwargs",
-            "window_preproc_kwargs",
-        ]:
-            if kwarg_name in root.attrs:
-                kwargs = json.loads(root.attrs[kwarg_name])
-                # Set on each individual dataset (where they were originally stored)
-                for ds in datasets:
-                    setattr(ds, kwarg_name, kwargs)
-
-        return concat_ds
 
 
 def _generate_readme_content(

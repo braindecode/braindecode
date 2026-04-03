@@ -599,10 +599,10 @@ def test_different_lengths_allowed(tmp_path):
 
 
 def test_lazy_loading_support(tmp_path):
-    """Test that datasets can be loaded with preload parameter.
+    """Test that Zarr backend warns about lazy loading and loads eagerly.
 
-    Note: Lazy loading (preload=False) is not fully implemented yet,
-    so data is always loaded into memory with a warning.
+    The Zarr backend does not support lazy loading. When preload=False is
+    requested, a warning is issued and data is loaded into memory anyway.
     """
     pytest.importorskip("zarr")
 
@@ -620,17 +620,17 @@ def test_lazy_loading_support(tmp_path):
         zarr_path, compression="blosc", compression_level=5
     )
 
-    # Load with preload=False (should warn and load anyway)
+    # Load with preload=False (should warn and load eagerly anyway)
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         loaded_lazy = windowed._load_from_zarr_inline(zarr_path, preload=False)
-        # Check that warning about lazy loading was issued
+        # Check that warning about lazy loading not being supported was issued
         assert any(
-            "Lazy loading from Zarr not fully implemented" in str(warning.message)
+            "not supported by the Zarr backend" in str(warning.message)
             for warning in w
         )
 
-    # Currently always loads into memory
+    # Zarr always loads into memory
     assert loaded_lazy.datasets[0].windows.preload
 
     # Load with preload=True
@@ -904,7 +904,7 @@ def test_push_to_hub_import_error(setup_concat_windows_dataset, tmp_path):
     # Mock the _soft_import to return False for huggingface_hub
     with mock.patch("braindecode.datasets.bids.hub.huggingface_hub", False):
         with pytest.raises(
-            ImportError, match="huggingface-hub or zarr is not installed"
+            ImportError, match="huggingface-hub is not installed"
         ):
             dataset.push_to_hub(
                 repo_id="test/repo",
@@ -927,9 +927,13 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
     mock_hf_api = mock.MagicMock()
     mock_hf_api.upload_large_folder.return_value = expected_url
 
+    from braindecode.datasets.bids.formats import get_format_backend
+
+    zarr_backend = get_format_backend("zarr")
+
     with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
         with mock.patch.object(
-            dataset, "_convert_to_zarr_inline"
+            zarr_backend, "convert_datasets"
         ) as mock_convert:
             with mock.patch.object(
                 dataset, "_save_dataset_card"
@@ -954,7 +958,7 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
         private=False,
     )
 
-    # Verify _convert_to_zarr_inline was called
+    # Verify convert_datasets was called on the zarr backend
     assert mock_convert.called
 
     # Verify _save_dataset_card was called
@@ -973,8 +977,12 @@ def test_push_to_hub_upload_failure(setup_concat_windows_dataset, tmp_path):
     mock_hf_api = mock.MagicMock()
     mock_hf_api.upload_large_folder.side_effect = Exception("Upload failed")
 
+    from braindecode.datasets.bids.formats import get_format_backend
+
+    zarr_backend = get_format_backend("zarr")
+
     with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
-        with mock.patch.object(dataset, "_convert_to_zarr_inline"):
+        with mock.patch.object(zarr_backend, "convert_datasets"):
             with mock.patch.object(dataset, "_save_dataset_card"):
                 with pytest.raises(
                     RuntimeError, match="Failed to upload dataset"
@@ -992,7 +1000,7 @@ def test_from_pull_from_hub_import_error(tmp_path):
     # Mock huggingface_hub as not available
     with mock.patch("braindecode.datasets.bids.hub.huggingface_hub", False):
         with pytest.raises(
-            ImportError, match="huggingface hub functionality is not installed"
+            ImportError, match="huggingface-hub is not installed"
         ):
             BaseConcatDataset.pull_from_hub(
                 repo_id="test/repo",
