@@ -1193,6 +1193,28 @@ def test_deepsleepnet_custom_cnn_params():
     x = torch.randn(2, 1, 3000)
     out = model(x)
     assert out.shape == (2, 5)
+    # verify custom filter counts took effect
+    assert model.cnn1.conv1[0].out_channels == 32
+    assert model.cnn1.conv2[0].out_channels == 64
+    assert model.cnn2.conv1[0].out_channels == 32
+    assert model.cnn2.conv2[0].out_channels == 64
+
+
+def test_deepsleepnet_feats_custom_bilstm():
+    model = DeepSleepNet(
+        n_chans=1, n_outputs=5, n_times=3000,
+        bilstm_hidden_size=256, return_feats=True,
+    )
+    model.eval()
+    x = torch.randn(2, 1, 3000)
+    out = model(x)
+    assert out.shape == (2, 256 * 2)
+    assert model.len_last_layer == 512
+
+
+def test_deepsleepnet_too_small_ntimes():
+    with pytest.raises(ValueError, match="n_times=10 is too small"):
+        DeepSleepNet(n_chans=1, n_outputs=5, n_times=10)
 
 
 @pytest.fixture
