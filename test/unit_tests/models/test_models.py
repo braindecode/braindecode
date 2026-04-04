@@ -5,6 +5,7 @@
 #          Daniel Wilson <dan.c.wil@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Matthew Chen <matt.chen42601@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 
