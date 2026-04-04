@@ -4,7 +4,7 @@
 # License: BSD (3-clause)
 import torch
 import torch.nn as nn
-from einops import rearrange
+from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -323,6 +323,12 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             nn.BatchNorm1d(num_features=fc_out_features),
         )
 
+        self.flatten_cnn = Rearrange(
+            "batch filters nchans ntimes -> batch (filters nchans ntimes)"
+        )
+        self.add_seq_dim = Rearrange("batch features -> batch 1 features")
+        self.remove_seq_dim = Rearrange("batch 1 features -> batch features")
+
         self.features_extractor = nn.Identity()
         self.len_last_layer = fc_out_features
         self.final_layer = (
@@ -333,14 +339,14 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     def forward(self, x):
         if x.ndim == 3:
-            x = rearrange(x, "b c t -> b 1 c t")
+            x = x.unsqueeze(1)
 
-        x1 = rearrange(self.cnn1(x), "b f h w -> b (f h w)")
-        x2 = rearrange(self.cnn2(x), "b f h w -> b (f h w)")
+        x1 = self.flatten_cnn(self.cnn1(x))
+        x2 = self.flatten_cnn(self.cnn2(x))
 
         x = self.dropout(torch.cat((x1, x2), dim=1))
         residual = self.fc(x)
-        x = rearrange(self.bilstm(rearrange(x, "b f -> b 1 f")), "b 1 f -> b f")
+        x = self.remove_seq_dim(self.bilstm(self.add_seq_dim(x)))
         x = self.dropout(x + residual)
 
         return self.final_layer(self.features_extractor(x))
