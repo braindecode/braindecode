@@ -241,6 +241,23 @@ class ZarrBackend:
             "chunk_size": self.chunk_size,
         }
 
+    def get_readme_data_section(self) -> str:
+        return """\
+**Data storage:**
+- `dataset.zarr/` — Zarr format (optimized for random access)
+
+```
+sourcedata/braindecode/
+├── dataset_description.json
+├── participants.tsv
+├── dataset.zarr/
+└── sub-<label>/
+    └── eeg/
+        ├── *_events.tsv
+        ├── *_channels.tsv
+        └── *_eeg.json
+```"""
+
     def convert_datasets(self, datasets, output_path: Path):
         """Convert a list of datasets to Zarr format on disk."""
         self.validate_dependencies()

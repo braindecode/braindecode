@@ -310,7 +310,7 @@ class HubDatasetMixin:
         backend.convert_datasets(self.datasets, dataset_path)
 
         # Save dataset metadata (README.md)
-        self._save_dataset_card(tmp_path)
+        self._save_dataset_card(tmp_path, backend=backend)
 
         # Save format info
         # This marks the cache as complete
@@ -318,16 +318,21 @@ class HubDatasetMixin:
         with open(format_info_path, "w", encoding="utf-8") as f:
             json.dump(format_info_lock, f, indent=2)
 
-    def _save_dataset_card(self, path: Path, bids_inspired: bool = True) -> None:
+    def _save_dataset_card(self, path: Path, backend=None) -> None:
         """Generate and save a dataset card (README.md) with metadata.
 
         Parameters
         ----------
         path : Path
             Directory where README.md will be saved.
-        bids_inspired : bool
-            Whether to include BIDS-inspired format documentation.
+        backend : FormatBackend | None
+            The resolved backend instance. Used to get the format name and
+            the data-section snippet for the README. If ``None``, defaults
+            to ``ZarrBackend()``.
         """
+        if backend is None:
+            backend = ZarrBackend()
+
         # Get info, which also validates uniformity across all datasets
         format_info = self._get_format_info_inline()
 
@@ -372,6 +377,8 @@ class HubDatasetMixin:
             data_type=data_type,
             n_windows=n_windows,
             total_duration=total_duration,
+            format_name=backend.name,
+            data_section=backend.get_readme_data_section(),
         )
 
         # Save README
@@ -738,7 +745,8 @@ def _generate_readme_content(
     data_type: str,
     n_windows: int,
     total_duration: float | None = None,
-    format: str = "zarr",
+    format_name: str = "zarr",
+    data_section: str = "",
 ):
     """Generate README.md content for a dataset uploaded to the Hub.
 
@@ -758,8 +766,11 @@ def _generate_readme_content(
         Number of windows/samples in the dataset.
     total_duration : float or None
         Total duration in seconds across all recordings.
-    format : str
-        Storage format (default: "zarr").
+    format_name : str
+        Storage format name (e.g., "zarr", "mne").
+    data_section : str
+        Markdown snippet describing data storage layout, provided by the
+        backend via ``get_readme_data_section()``.
 
     Returns
     -------
@@ -801,7 +812,7 @@ learning library for EEG/MEG/ECoG signals.
 | Total duration | {duration_str} |
 | Windows/samples | {n_windows:,} |
 | Size | {total_size_mb:.2f} MB |
-| Format | {format} |
+| Format | {format_name} |
 
 ## Quick Start
 
@@ -834,29 +845,16 @@ for X, y, metainfo in loader:
 ## BIDS-inspired Structure
 
 This dataset uses a **BIDS-inspired** organization. Metadata files follow BIDS
-conventions, while data is stored in Zarr format for efficient deep learning.
+conventions.
 
 **BIDS-style metadata:**
-- `dataset_description.json` - Dataset information
-- `participants.tsv` - Subject metadata
-- `*_events.tsv` - Trial/window events
-- `*_channels.tsv` - Channel information
-- `*_eeg.json` - Recording parameters
+- `dataset_description.json` — Dataset information
+- `participants.tsv` — Subject metadata
+- `*_events.tsv` — Trial/window events
+- `*_channels.tsv` — Channel information
+- `*_eeg.json` — Recording parameters
 
-**Data storage:**
-- `dataset.zarr/` - Zarr format (optimized for random access)
-
-```
-sourcedata/braindecode/
-├── dataset_description.json
-├── participants.tsv
-├── dataset.zarr/
-└── sub-<label>/
-    └── eeg/
-        ├── *_events.tsv
-        ├── *_channels.tsv
-        └── *_eeg.json
-```
+{data_section}
 
 ### Accessing Metadata
 

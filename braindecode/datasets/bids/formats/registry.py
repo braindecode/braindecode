@@ -37,6 +37,14 @@ class FormatBackend(Protocol):
         """
         ...
 
+    def get_readme_data_section(self) -> str:
+        """Return the markdown snippet describing data storage for the README.
+
+        This appears under the "BIDS-inspired Structure" heading in the
+        dataset card and should describe the data files and their layout.
+        """
+        ...
+
     def convert_datasets(
         self,
         datasets: list[BaseDataset],

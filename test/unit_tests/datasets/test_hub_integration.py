@@ -29,7 +29,7 @@ from braindecode.datasets import (
     BaseConcatDataset,
     RawDataset,
 )
-from braindecode.datasets.bids.hub_io import _create_compressor
+from braindecode.datasets.bids.formats.zarr_backend import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
 from braindecode.preprocessing import create_windows_from_events
 

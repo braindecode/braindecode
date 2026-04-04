@@ -72,6 +72,24 @@ class MneBackend:
             "split_size": self.split_size,
         }
 
+    def get_readme_data_section(self) -> str:
+        return """\
+**Data storage:**
+- `*_eeg.fif` — MNE FIF format (supports lazy loading with `preload=False`)
+
+```
+sourcedata/braindecode/
+├── dataset_description.json
+├── participants.tsv
+├── dataset_info.json
+└── sub-<label>/
+    └── eeg/
+        ├── *_eeg.fif
+        ├── *_events.tsv
+        ├── *_channels.tsv
+        └── *_eeg.json
+```"""
+
     # ------------------------------------------------------------------
     # Save
     # ------------------------------------------------------------------
