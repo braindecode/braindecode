@@ -334,30 +334,43 @@ def _build_windowed_repr(
     return b
 
 
+def _decode_zarr_array(zarr_path, group_name):
+    """Decode a zarr array into numpy. Results are LRU-cached across datasets."""
+    import zarr
+
+    root = zarr.open(str(zarr_path), mode="r")
+    return np.asarray(root[group_name]["data"])
+
+
+# LRU cache: keeps up to 64 decoded recordings in memory (~300-600 MB typical).
+# Each DataLoader worker gets its own cache (cache is not shared across processes).
+_decode_zarr_cached = __import__("functools").lru_cache(maxsize=64)(_decode_zarr_array)
+
+
 class _ZarrMixin:
-    """Shared zarr lazy-loading infrastructure for dataset classes."""
+    """Shared zarr lazy-loading infrastructure for dataset classes.
+
+    Uses a process-level LRU cache (max 64 recordings) so repeated reads
+    from the same recording are pure numpy indexing, while memory stays
+    bounded.  Each DataLoader worker builds its own cache.
+    """
 
     _zarr_data = None
-    _decoded_cache = None
 
     def _open_zarr(self):
-        """Open (or reopen) the zarr store and cache the array reference."""
+        """Open (or reopen) the zarr store and keep a lazy array reference."""
         import zarr
 
         root = zarr.open(str(self._zarr_path), mode="r")
         self._zarr_data = root[self._group_name]["data"]
-        self._decoded_cache = None
 
     def _get_zarr_decoded(self):
-        """Return decoded numpy array, caching on first access."""
-        if self._decoded_cache is None:
-            self._decoded_cache = np.asarray(self._zarr_data)
-        return self._decoded_cache
+        """Return decoded numpy array from the shared LRU cache."""
+        return _decode_zarr_cached(str(self._zarr_path), self._group_name)
 
     def __getstate__(self):
         state = self.__dict__.copy()
         state.pop("_zarr_data", None)
-        state.pop("_decoded_cache", None)
         return state
 
     def __setstate__(self, state):
@@ -366,7 +379,6 @@ class _ZarrMixin:
             self._open_zarr()
         else:
             self._zarr_data = None
-            self._decoded_cache = None
 
 
 class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]]):
@@ -524,10 +536,8 @@ class RawDataset(_ZarrMixin, RecordDataset):
             n_ch, type_str, sfreq = _channel_info(self.raw)
             n_times = len(self.raw.times)
         else:
-            n_ch = self._info_dict.get("nchan", 0)
-            sfreq = self._info_dict.get("sfreq", 0)
+            n_ch, type_str, sfreq = _channel_info_from_dict(self._info_dict)
             n_times = self._zarr_data.shape[1]
-            type_str = "EEG"
         duration = n_times / sfreq if sfreq > 0 else 0
         b.add_header(f"{n_ch} ch ({type_str})", "Channels", f"{n_ch} ({type_str})")
         b.add_header(f"{sfreq:.1f} Hz", "Sfreq", f"{sfreq:.1f} Hz")
