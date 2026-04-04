@@ -362,10 +362,22 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         return self.final_layer(self.features_extractor(x))
 
 
-def _conv_out(w, ksp):
-    """Apply out = (w + 2*p - k) // s + 1 for a (kernel, stride, padding) tuple."""
-    k, s, p = ksp
-    return (w + 2 * p - k) // s + 1
+def _conv_out(width, kernel_stride_padding):
+    """Compute output width after a conv/pool layer.
+
+    Uses the standard formula::
+
+        out = (width + 2 * padding - kernel_size) // stride + 1
+
+    Parameters
+    ----------
+    width : int
+        Input temporal width.
+    kernel_stride_padding : tuple of (int, int, int)
+        ``(kernel_size, stride, padding)`` of the layer.
+    """
+    kernel_size, stride, padding = kernel_stride_padding
+    return (width + 2 * padding - kernel_size) // stride + 1
 
 
 def _compute_feat_size(
