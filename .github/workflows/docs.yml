@@ -32,6 +32,14 @@ jobs:
           key: docs-mne-data-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
             docs-mne-data-
+      # Cache HuggingFace Hub models
+      - name: Create/Restore HuggingFace Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: docs-hf-hub-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            docs-hf-hub-
       # Install uv
       - name: Install uv
         uses: astral-sh/setup-uv@v3

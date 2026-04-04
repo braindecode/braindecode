@@ -52,11 +52,17 @@ library.
 # License: BSD (3-clause)
 
 import json
+import os
 import warnings
 
 import torch
+from huggingface_hub import login
 
 warnings.simplefilter("ignore")
+
+hf_token = os.environ.get("HF_TOKEN")
+if hf_token:
+    login(token=hf_token)
 
 ######################################################################
 # Loading a pretrained model
