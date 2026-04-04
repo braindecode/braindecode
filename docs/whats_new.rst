@@ -87,6 +87,11 @@ Enhancements
   outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
   automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
   differs from the saved config (by `Bruno Aristimunha`_).
+- Enable true lazy loading from Zarr when using
+  :meth:`~braindecode.datasets.BaseConcatDataset.pull_from_hub` or
+  ``load_from_zarr`` with ``preload=False``. Data stays on disk and is decoded
+  on first access per recording, giving ~5x faster load times and full
+  compatibility with multi-worker ``DataLoader`` (:gh:`978` by `Bruno Aristimunha`_).
 
 API changes
 ============
