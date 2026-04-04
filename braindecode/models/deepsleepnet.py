@@ -4,6 +4,7 @@
 # License: BSD (3-clause)
 import torch
 import torch.nn as nn
+from einops import rearrange
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -332,14 +333,14 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     def forward(self, x):
         if x.ndim == 3:
-            x = x.unsqueeze(1)
+            x = rearrange(x, "b c t -> b 1 c t")
 
-        x1 = self.cnn1(x).flatten(start_dim=1)
-        x2 = self.cnn2(x).flatten(start_dim=1)
+        x1 = rearrange(self.cnn1(x), "b f h w -> b (f h w)")
+        x2 = rearrange(self.cnn2(x), "b f h w -> b (f h w)")
 
         x = self.dropout(torch.cat((x1, x2), dim=1))
         residual = self.fc(x)
-        x = self.bilstm(x.unsqueeze(1)).squeeze(1)
+        x = rearrange(self.bilstm(rearrange(x, "b f -> b 1 f")), "b 1 f -> b f")
         x = self.dropout(x + residual)
 
         return self.final_layer(self.features_extractor(x))
