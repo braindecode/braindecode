@@ -54,7 +54,8 @@ dependencies = [
     'joblib',
     'torchinfo',
     'pandas',
-    'wfdb>=4.3.1',                   # we got the requests from here
+    'requests',
+    'wfdb>=4.3.1',
     'linear_attention_transformer',
     'docstring_inheritance',        # we get einops from here
     'rotary_embedding_torch',
