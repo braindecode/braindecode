@@ -39,7 +39,6 @@ import mne
 import numpy as np
 import pandas as pd
 import scipy
-from mne._fiff.meas_info import Info
 from mne.utils import _soft_import
 
 if TYPE_CHECKING:
@@ -733,7 +732,6 @@ class HubDatasetMixin:
                     info_dict,
                     compressor,
                     target_name,
-                    chunk_size,
                 )
 
             elif dataset_type == "EEGWindowsDataset":
@@ -836,6 +834,7 @@ class HubDatasetMixin:
         datasets = []
         for i_ds in range(n_datasets):
             grp = root[f"recording_{i_ds}"]
+            group_name = f"recording_{i_ds}"
 
             if dataset_type == "WindowsDataset":
                 # Load using inlined function
@@ -843,24 +842,36 @@ class HubDatasetMixin:
                     _load_windows_from_zarr(grp, preload)
                 )
 
-                # Convert to MNE objects and create dataset
-                info = Info.from_json_dict(info_dict)
-                targets = metadata["target"].values
-                if np.issubdtype(targets.dtype, np.integer):
-                    event_ids = targets
+                if preload:
+                    # Convert to MNE objects and create dataset
+                    info = mne.Info.from_json_dict(info_dict)
+                    targets = metadata["target"].values
+                    if np.issubdtype(targets.dtype, np.integer):
+                        event_ids = targets
+                    else:
+                        event_ids = np.ones(len(metadata), dtype=int)
+                    events = np.column_stack(
+                        [
+                            metadata["i_start_in_trial"].values.astype(int),
+                            np.zeros(len(metadata), dtype=int),
+                            event_ids,
+                        ]
+                    )
+                    epochs = mne.EpochsArray(
+                        data, info, events=events, metadata=metadata
+                    )
+                    ds = WindowsDataset(epochs, description)
+                    if target_name is not None:
+                        ds.target_name = target_name
                 else:
-                    event_ids = np.ones(len(metadata), dtype=int)
-                events = np.column_stack(
-                    [
-                        metadata["i_start_in_trial"].values.astype(int),
-                        np.zeros(len(metadata), dtype=int),
-                        event_ids,
-                    ]
-                )
-                epochs = mne.EpochsArray(data, info, events=events, metadata=metadata)
-                ds = WindowsDataset(epochs, description)
-                if target_name is not None:
-                    ds.target_name = target_name
+                    ds = WindowsDataset._from_zarr(
+                        zarr_path=input_path,
+                        group_name=group_name,
+                        metadata=metadata,
+                        description=description,
+                        info_dict=info_dict,
+                        target_name=target_name,
+                    )
 
             elif dataset_type == "EEGWindowsDataset":
                 # Load using inlined function
@@ -873,17 +884,28 @@ class HubDatasetMixin:
                     last_target_only,
                 ) = _load_eegwindows_from_zarr(grp, preload)
 
-                # Convert to MNE objects and create dataset
-                # Data is already in continuous format [n_channels, n_timepoints]
-                info = Info.from_json_dict(info_dict)
-                raw = mne.io.RawArray(data, info)
-                ds = EEGWindowsDataset(
-                    raw=raw,
-                    metadata=metadata,
-                    description=description,
-                    targets_from=targets_from,
-                    last_target_only=last_target_only,
-                )
+                if preload:
+                    # Convert to MNE objects and create dataset
+                    # Data is already in continuous format [n_channels, n_timepoints]
+                    info = mne.Info.from_json_dict(info_dict)
+                    raw = mne.io.RawArray(data, info)
+                    ds = EEGWindowsDataset(
+                        raw=raw,
+                        metadata=metadata,
+                        description=description,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
+                    )
+                else:
+                    ds = EEGWindowsDataset._from_zarr(
+                        zarr_path=input_path,
+                        group_name=group_name,
+                        metadata=metadata,
+                        description=description,
+                        info_dict=info_dict,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
+                    )
 
             elif dataset_type == "RawDataset":
                 # Load using inlined function
@@ -891,13 +913,22 @@ class HubDatasetMixin:
                     grp, preload
                 )
 
-                # Convert to MNE objects and create dataset
-                # Data is in continuous format [n_channels, n_timepoints]
-                info = Info.from_json_dict(info_dict)
-                raw = mne.io.RawArray(data, info)
-                ds = RawDataset(raw, description)
-                if target_name is not None:
-                    ds.target_name = target_name
+                if preload:
+                    # Convert to MNE objects and create dataset
+                    # Data is in continuous format [n_channels, n_timepoints]
+                    info = mne.Info.from_json_dict(info_dict)
+                    raw = mne.io.RawArray(data, info)
+                    ds = RawDataset(raw, description)
+                    if target_name is not None:
+                        ds.target_name = target_name
+                else:
+                    ds = RawDataset._from_zarr(
+                        zarr_path=input_path,
+                        group_name=group_name,
+                        description=description,
+                        info_dict=info_dict,
+                        target_name=target_name,
+                    )
 
             else:
                 raise ValueError(f"Unsupported dataset_type: {dataset_type}")
