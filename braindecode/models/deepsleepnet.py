@@ -143,82 +143,67 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    activation_large: nn.Module, default=nn.ELU
-        Activation function class to apply. Should be a PyTorch activation
-        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
-    activation_small: nn.Module, default=nn.ReLU
-        Activation function class to apply. Should be a PyTorch activation
-        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
-    return_feats : bool
-        If True, return the features, i.e. the output of the feature extractor
-        (before the final linear layer). If False, pass the features through
-        the final linear layer.
+    activation_large : type[nn.Module], default=nn.ELU
+        Activation class for the large-filter CNN path.
+    activation_small : type[nn.Module], default=nn.ReLU
+        Activation class for the small-filter CNN path.
+    return_feats : bool, default=False
+        If True, return features before the final linear layer.
     drop_prob : float, default=0.5
-        The dropout rate for regularization. Values should be between 0 and 1.
+        Dropout probability applied throughout the network.
     bilstm_hidden_size : int, default=512
-        Hidden size of the bidirectional LSTM. The residual fully connected
-        layer output dimension is ``2 * bilstm_hidden_size`` (to match the
-        BiLSTM concatenated forward/backward outputs).
+        Hidden size of the BiLSTM. The residual FC output dimension is
+        ``2 * bilstm_hidden_size`` to match the concatenated directions.
     bilstm_num_layers : int, default=2
         Number of stacked BiLSTM layers.
     small_n_filters_1 : int, default=64
-        Number of output filters in the first convolution of the small-filter
-        CNN path.
+        First-conv output channels for the small-filter path.
     small_n_filters_2 : int, default=128
-        Number of output filters in the deeper convolutions (conv2–conv4) of
-        the small-filter CNN path.
+        Deep-conv (conv2--conv4) output channels for the small-filter path.
     small_first_kernel_size : int, default=50
-        Temporal kernel size of the first convolution in the small-filter path
-        (paper value ≈ Fs/2).
+        First-conv kernel size for the small path (paper: Fs/2).
     small_first_stride : int, default=6
-        Stride of the first convolution in the small-filter path
-        (paper value ≈ Fs/16).
+        First-conv stride for the small path (paper: Fs/16).
     small_first_padding : int, default=22
-        Padding of the first convolution in the small-filter path.
+        First-conv padding for the small path.
     small_pool1_kernel_size : int, default=8
-        Kernel size of the first max-pooling in the small-filter path.
+        First max-pool kernel for the small path.
     small_pool1_stride : int, default=8
-        Stride of the first max-pooling in the small-filter path.
+        First max-pool stride for the small path.
     small_pool1_padding : int, default=2
-        Padding of the first max-pooling in the small-filter path.
+        First max-pool padding for the small path.
     small_deep_kernel_size : int, default=8
-        Temporal kernel size of the deeper convolutions (conv2–conv4) in the
-        small-filter path.
+        Deep-conv kernel size for the small path.
     small_pool2_kernel_size : int, default=4
-        Kernel size of the second max-pooling in the small-filter path.
+        Second max-pool kernel for the small path.
     small_pool2_stride : int, default=4
-        Stride of the second max-pooling in the small-filter path.
+        Second max-pool stride for the small path.
     small_pool2_padding : int, default=1
-        Padding of the second max-pooling in the small-filter path.
+        Second max-pool padding for the small path.
     large_n_filters_1 : int, default=64
-        Number of output filters in the first convolution of the large-filter
-        CNN path.
+        First-conv output channels for the large-filter path.
     large_n_filters_2 : int, default=128
-        Number of output filters in the deeper convolutions (conv2–conv4) of
-        the large-filter CNN path.
+        Deep-conv (conv2--conv4) output channels for the large-filter path.
     large_first_kernel_size : int, default=400
-        Temporal kernel size of the first convolution in the large-filter path
-        (paper value ≈ 4·Fs).
+        First-conv kernel size for the large path (paper: 4*Fs).
     large_first_stride : int, default=50
-        Stride of the first convolution in the large-filter path
-        (paper value ≈ Fs/2).
+        First-conv stride for the large path (paper: Fs/2).
     large_first_padding : int, default=175
-        Padding of the first convolution in the large-filter path.
+        First-conv padding for the large path.
     large_pool1_kernel_size : int, default=4
-        Kernel size of the first max-pooling in the large-filter path.
+        First max-pool kernel for the large path.
     large_pool1_stride : int, default=4
-        Stride of the first max-pooling in the large-filter path.
+        First max-pool stride for the large path.
     large_pool1_padding : int, default=0
-        Padding of the first max-pooling in the large-filter path.
+        First max-pool padding for the large path.
     large_deep_kernel_size : int, default=6
-        Temporal kernel size of the deeper convolutions (conv2–conv4) in the
-        large-filter path.
+        Deep-conv kernel size for the large path.
     large_pool2_kernel_size : int, default=2
-        Kernel size of the second max-pooling in the large-filter path.
+        Second max-pool kernel for the large path.
     large_pool2_stride : int, default=2
-        Stride of the second max-pooling in the large-filter path.
+        Second max-pool stride for the large path.
     large_pool2_padding : int, default=1
-        Padding of the second max-pooling in the large-filter path.
+        Second max-pool padding for the large path.
 
     References
     ----------
@@ -315,26 +300,14 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         feat_size = _compute_feat_size(
             self.n_chans,
             self.n_times,
-            small_n_filters_2=small_n_filters_2,
-            small_conv1_k=small_first_kernel_size,
-            small_conv1_s=small_first_stride,
-            small_conv1_p=small_first_padding,
-            small_pool1_k=small_pool1_kernel_size,
-            small_pool1_s=small_pool1_stride,
-            small_pool1_p=small_pool1_padding,
-            small_pool2_k=small_pool2_kernel_size,
-            small_pool2_s=small_pool2_stride,
-            small_pool2_p=small_pool2_padding,
-            large_n_filters_2=large_n_filters_2,
-            large_conv1_k=large_first_kernel_size,
-            large_conv1_s=large_first_stride,
-            large_conv1_p=large_first_padding,
-            large_pool1_k=large_pool1_kernel_size,
-            large_pool1_s=large_pool1_stride,
-            large_pool1_p=large_pool1_padding,
-            large_pool2_k=large_pool2_kernel_size,
-            large_pool2_s=large_pool2_stride,
-            large_pool2_p=large_pool2_padding,
+            small_n_filters_2,
+            (small_first_kernel_size, small_first_stride, small_first_padding),
+            (small_pool1_kernel_size, small_pool1_stride, small_pool1_padding),
+            (small_pool2_kernel_size, small_pool2_stride, small_pool2_padding),
+            large_n_filters_2,
+            (large_first_kernel_size, large_first_stride, large_first_padding),
+            (large_pool1_kernel_size, large_pool1_stride, large_pool1_padding),
+            (large_pool2_kernel_size, large_pool2_stride, large_pool2_padding),
         )
 
         fc_out_features = bilstm_hidden_size * 2
@@ -395,82 +368,32 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             return self.final_layer(feats)
 
 
-def _compute_path_width(
-    n_times,
-    conv1_k,
-    conv1_s,
-    conv1_p,
-    pool1_k,
-    pool1_s,
-    pool1_p,
-    pool2_k,
-    pool2_s,
-    pool2_p,
-):
-    """Compute output temporal width of a CNN path.
-
-    Uses the standard formula: out = (in + 2*padding - kernel) // stride + 1
-    for conv1, pool1, and pool2. Conv2–conv4 use ``padding='same'`` and
-    therefore preserve the temporal dimension.
-    """
-    w = (n_times + 2 * conv1_p - conv1_k) // conv1_s + 1  # conv1
-    w = (w + 2 * pool1_p - pool1_k) // pool1_s + 1  # pool1
-    # conv2, conv3, conv4: same padding
-    w = (w + 2 * pool2_p - pool2_k) // pool2_s + 1  # pool2
-    return w
+def _conv_out(w, ksp):
+    """Apply out = (w + 2*p - k) // s + 1 for a (kernel, stride, padding) tuple."""
+    k, s, p = ksp
+    return (w + 2 * p - k) // s + 1
 
 
 def _compute_feat_size(
     n_chans,
     n_times,
-    *,
-    small_n_filters_2,
-    small_conv1_k,
-    small_conv1_s,
-    small_conv1_p,
-    small_pool1_k,
-    small_pool1_s,
-    small_pool1_p,
-    small_pool2_k,
-    small_pool2_s,
-    small_pool2_p,
-    large_n_filters_2,
-    large_conv1_k,
-    large_conv1_s,
-    large_conv1_p,
-    large_pool1_k,
-    large_pool1_s,
-    large_pool1_p,
-    large_pool2_k,
-    large_pool2_s,
-    large_pool2_p,
+    s_filt,
+    s_conv1,
+    s_pool1,
+    s_pool2,
+    l_filt,
+    l_conv1,
+    l_pool1,
+    l_pool2,
 ):
-    """Analytically compute concatenated CNN feature size."""
-    sw = _compute_path_width(
-        n_times,
-        small_conv1_k,
-        small_conv1_s,
-        small_conv1_p,
-        small_pool1_k,
-        small_pool1_s,
-        small_pool1_p,
-        small_pool2_k,
-        small_pool2_s,
-        small_pool2_p,
-    )
-    lw = _compute_path_width(
-        n_times,
-        large_conv1_k,
-        large_conv1_s,
-        large_conv1_p,
-        large_pool1_k,
-        large_pool1_s,
-        large_pool1_p,
-        large_pool2_k,
-        large_pool2_s,
-        large_pool2_p,
-    )
-    return small_n_filters_2 * n_chans * sw + large_n_filters_2 * n_chans * lw
+    """Compute concatenated feature size of both CNN paths.
+
+    Each conv/pool arg is a ``(kernel, stride, padding)`` tuple.
+    Conv2-4 use same-padding so they don't change the width.
+    """
+    sw = _conv_out(_conv_out(_conv_out(n_times, s_conv1), s_pool1), s_pool2)
+    lw = _conv_out(_conv_out(_conv_out(n_times, l_conv1), l_pool1), l_pool2)
+    return n_chans * (s_filt * sw + l_filt * lw)
 
 
 class _SmallCNN(nn.Module):
