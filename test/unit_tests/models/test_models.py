@@ -1135,7 +1135,7 @@ def test_deepsleepnet_feats_with_hook():
     ],
 )
 def test_deepsleepnet_variable_input(n_chans, n_times, n_outputs):
-    # deepsleepnet shoud work with diffrent input shapes not just 1ch 3000t
+    # deepsleepnet should work with different input shapes not just 1ch 3000t
     model = DeepSleepNet(
         n_chans=n_chans, n_outputs=n_outputs, n_times=n_times,
     )

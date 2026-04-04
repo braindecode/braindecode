@@ -193,9 +193,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         # compute cnn feature size from actual input shape
         feat_size = self._get_feat_size()
 
-        self.bilstm = _BiLSTM(
-            input_size=feat_size, hidden_size=512, num_layers=2
-        )
+        self.bilstm = _BiLSTM(input_size=feat_size, hidden_size=512, num_layers=2)
         self.fc = nn.Sequential(
             nn.Linear(feat_size, 1024, bias=False),
             nn.BatchNorm1d(num_features=1024),
