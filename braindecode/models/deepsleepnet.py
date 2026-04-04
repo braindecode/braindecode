@@ -271,7 +271,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.cnn1 = _SmallCNN(
+        self.cnn1 = _CNNPath(
             n_filters_1=small_n_filters_1,
             n_filters_2=small_n_filters_2,
             first_kernel_size=small_first_kernel_size,
@@ -287,7 +287,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             activation=activation_small,
             drop_prob=drop_prob,
         )
-        self.cnn2 = _LargeCNN(
+        self.cnn2 = _CNNPath(
             n_filters_1=large_n_filters_1,
             n_filters_2=large_n_filters_2,
             first_kernel_size=large_first_kernel_size,
@@ -319,11 +319,13 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         )
 
         fc_out_features = bilstm_hidden_size * 2
-        self.bilstm = _BiLSTM(
+        self.bilstm = nn.LSTM(
             input_size=feat_size,
             hidden_size=bilstm_hidden_size,
             num_layers=bilstm_num_layers,
-            drop_prob=drop_prob,
+            batch_first=True,
+            dropout=drop_prob if bilstm_num_layers > 1 else 0.0,
+            bidirectional=True,
         )
         self.fc = nn.Sequential(
             nn.Linear(feat_size, fc_out_features, bias=False),
@@ -353,7 +355,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
         x = self.dropout(torch.cat((x1, x2), dim=1))
         residual = self.fc(x)
-        x = self.remove_seq_dim(self.bilstm(self.add_seq_dim(x)))
+        x, _ = self.bilstm(self.add_seq_dim(x))
+        x = self.remove_seq_dim(x)
         x = self.dropout(x + residual)
 
         return self.final_layer(self.features_extractor(x))
@@ -393,16 +396,18 @@ def _compute_feat_size(
     return n_chans * (s_filt * sw + l_filt * lw)
 
 
-class _SmallCNN(nn.Module):
-    r"""
-    Smaller filter sizes to learn temporal information.
+class _CNNPath(nn.Module):
+    """Single CNN path: conv1 → pool1 → dropout → conv2 → conv3 → conv4 → pool2.
+
+    Used twice in DeepSleepNet with different hyperparameters: once for the
+    small-filter (temporal) path and once for the large-filter (frequency) path.
 
     Parameters
     ----------
     n_filters_1 : int
         Output channels of the first convolution.
     n_filters_2 : int
-        Output channels of the deeper convolutions (conv2–conv4).
+        Output channels of the deeper convolutions (conv2--conv4).
     first_kernel_size : int
         Temporal kernel size of the first convolution.
     first_stride : int
@@ -515,152 +520,3 @@ class _SmallCNN(nn.Module):
         x = self.conv4(x)
         x = self.pool2(x)
         return x
-
-
-class _LargeCNN(nn.Module):
-    r"""
-    Larger filter sizes to learn frequency information.
-
-    Parameters
-    ----------
-    n_filters_1 : int
-        Output channels of the first convolution.
-    n_filters_2 : int
-        Output channels of the deeper convolutions (conv2–conv4).
-    first_kernel_size : int
-        Temporal kernel size of the first convolution.
-    first_stride : int
-        Stride of the first convolution.
-    first_padding : int
-        Padding of the first convolution.
-    pool1_kernel_size : int
-        Kernel size of the first max-pooling.
-    pool1_stride : int
-        Stride of the first max-pooling.
-    pool1_padding : int
-        Padding of the first max-pooling.
-    deep_kernel_size : int
-        Temporal kernel size shared by conv2, conv3, conv4.
-    pool2_kernel_size : int
-        Kernel size of the second max-pooling.
-    pool2_stride : int
-        Stride of the second max-pooling.
-    pool2_padding : int
-        Padding of the second max-pooling.
-    activation : type[nn.Module]
-        Activation function class.
-    drop_prob : float
-        Dropout probability.
-    """
-
-    def __init__(
-        self,
-        n_filters_1: int = 64,
-        n_filters_2: int = 128,
-        first_kernel_size: int = 400,
-        first_stride: int = 50,
-        first_padding: int = 175,
-        pool1_kernel_size: int = 4,
-        pool1_stride: int = 4,
-        pool1_padding: int = 0,
-        deep_kernel_size: int = 6,
-        pool2_kernel_size: int = 2,
-        pool2_stride: int = 2,
-        pool2_padding: int = 1,
-        activation: type[nn.Module] = nn.ELU,
-        drop_prob: float = 0.5,
-    ):
-        super().__init__()
-
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(
-                in_channels=1,
-                out_channels=n_filters_1,
-                kernel_size=(1, first_kernel_size),
-                stride=(1, first_stride),
-                padding=(0, first_padding),
-                bias=False,
-            ),
-            nn.BatchNorm2d(num_features=n_filters_1),
-            activation(),
-        )
-        self.pool1 = nn.MaxPool2d(
-            kernel_size=(1, pool1_kernel_size),
-            stride=(1, pool1_stride),
-            padding=(0, pool1_padding),
-        )
-        self.dropout = nn.Dropout(p=drop_prob)
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(
-                in_channels=n_filters_1,
-                out_channels=n_filters_2,
-                kernel_size=(1, deep_kernel_size),
-                stride=1,
-                padding="same",
-                bias=False,
-            ),
-            nn.BatchNorm2d(num_features=n_filters_2),
-            activation(),
-        )
-        self.conv3 = nn.Sequential(
-            nn.Conv2d(
-                in_channels=n_filters_2,
-                out_channels=n_filters_2,
-                kernel_size=(1, deep_kernel_size),
-                stride=1,
-                padding="same",
-                bias=False,
-            ),
-            nn.BatchNorm2d(num_features=n_filters_2),
-            activation(),
-        )
-        self.conv4 = nn.Sequential(
-            nn.Conv2d(
-                in_channels=n_filters_2,
-                out_channels=n_filters_2,
-                kernel_size=(1, deep_kernel_size),
-                stride=1,
-                padding="same",
-                bias=False,
-            ),
-            nn.BatchNorm2d(num_features=n_filters_2),
-            activation(),
-        )
-        self.pool2 = nn.MaxPool2d(
-            kernel_size=(1, pool2_kernel_size),
-            stride=(1, pool2_stride),
-            padding=(0, pool2_padding),
-        )
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.dropout(self.pool1(x))
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.pool2(x)
-        return x
-
-
-class _BiLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, drop_prob=0.5):
-        super(_BiLSTM, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(
-            input_size,
-            hidden_size,
-            num_layers,
-            batch_first=True,
-            dropout=drop_prob if num_layers > 1 else 0.0,
-            bidirectional=True,
-        )
-
-    def forward(self, x):
-        # set initial hidden and cell states
-        h0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
-        c0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
-
-        # forward propagate LSTM
-        out, _ = self.lstm(x, (h0, c0))
-        return out
