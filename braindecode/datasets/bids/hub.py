@@ -39,7 +39,6 @@ import mne
 import numpy as np
 import pandas as pd
 import scipy
-from mne._fiff.meas_info import Info
 from mne.utils import _soft_import
 
 if TYPE_CHECKING:
@@ -846,7 +845,7 @@ class HubDatasetMixin:
 
                 if preload:
                     # Convert to MNE objects and create dataset
-                    info = Info.from_json_dict(info_dict)
+                    info = mne.Info.from_json_dict(info_dict)
                     targets = metadata["target"].values
                     if np.issubdtype(targets.dtype, np.integer):
                         event_ids = targets
@@ -889,7 +888,7 @@ class HubDatasetMixin:
                 if preload:
                     # Convert to MNE objects and create dataset
                     # Data is already in continuous format [n_channels, n_timepoints]
-                    info = Info.from_json_dict(info_dict)
+                    info = mne.Info.from_json_dict(info_dict)
                     raw = mne.io.RawArray(data, info)
                     ds = EEGWindowsDataset(
                         raw=raw,
@@ -918,7 +917,7 @@ class HubDatasetMixin:
                 if preload:
                     # Convert to MNE objects and create dataset
                     # Data is in continuous format [n_channels, n_timepoints]
-                    info = Info.from_json_dict(info_dict)
+                    info = mne.Info.from_json_dict(info_dict)
                     raw = mne.io.RawArray(data, info)
                     ds = RawDataset(raw, description)
                     if target_name is not None:

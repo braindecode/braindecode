@@ -17,32 +17,6 @@ from mne.utils import _soft_import
 zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
 
 
-def _sanitize_for_json(obj):
-    """Replace NaN/Inf with None for valid JSON."""
-    if isinstance(obj, float):
-        if np.isnan(obj) or np.isinf(obj):
-            return None
-        return obj
-    if isinstance(obj, dict):
-        return {k: _sanitize_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_for_json(v) for v in obj]
-    if isinstance(obj, np.ndarray):
-        return _sanitize_for_json(obj.tolist())
-    return obj
-
-
-def _restore_nan_from_json(obj):
-    """Restore NaN values from None in JSON-loaded data."""
-    if isinstance(obj, dict):
-        return {k: _restore_nan_from_json(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        if len(obj) > 0 and all(isinstance(x, (int, float, type(None))) for x in obj):
-            return [np.nan if x is None else x for x in obj]
-        return [_restore_nan_from_json(v) for v in obj]
-    return obj
-
-
 def _save_windows_to_zarr(
     grp, data, metadata, description, info, compressor, target_name, chunk_size
 ):
@@ -71,7 +45,7 @@ def _save_windows_to_zarr(
     metadata.to_csv(metadata_path, sep="\t", index=True)
 
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = _sanitize_for_json(info)
+    grp.attrs["info"] = info
 
     if target_name is not None:
         grp.attrs["target_name"] = target_name
@@ -108,7 +82,7 @@ def _save_eegwindows_to_zarr(
     metadata.to_csv(metadata_path, sep="\t", index=True)
 
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = _sanitize_for_json(info)
+    grp.attrs["info"] = info
     grp.attrs["targets_from"] = targets_from
     grp.attrs["last_target_only"] = last_target_only
 
@@ -120,7 +94,7 @@ def _load_windows_from_zarr(grp, preload):
     metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
 
     description = pd.Series(grp.attrs["description"])
-    info_dict = _restore_nan_from_json(grp.attrs["info"])
+    info_dict = grp.attrs["info"]
 
     if preload:
         data = grp["data"][:]
@@ -139,7 +113,7 @@ def _load_eegwindows_from_zarr(grp, preload):
     metadata = pd.read_csv(metadata_path, sep="\t", index_col=0)
 
     description = pd.Series(grp.attrs["description"])
-    info_dict = _restore_nan_from_json(grp.attrs["info"])
+    info_dict = grp.attrs["info"]
 
     if preload:
         data = grp["data"][:]
@@ -169,7 +143,7 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chun
     )
 
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = _sanitize_for_json(info)
+    grp.attrs["info"] = info
 
     if target_name is not None:
         grp.attrs["target_name"] = target_name
@@ -178,7 +152,7 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chun
 def _load_raw_from_zarr(grp, preload):
     """Load RawDataset continuous raw data from Zarr group (low-level function)."""
     description = pd.Series(grp.attrs["description"])
-    info_dict = _restore_nan_from_json(grp.attrs["info"])
+    info_dict = grp.attrs["info"]
 
     if preload:
         data = grp["data"][:]
