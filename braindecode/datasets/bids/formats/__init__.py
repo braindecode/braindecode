@@ -13,10 +13,19 @@ Available backends:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from ...base import BaseDataset, BaseConcatDataset
+
+# Re-export public utilities from utils module
+from .utils import (  # noqa: F401
+    MNEParams,
+    ZarrParams,
+    _restore_nan_from_json,
+    _sanitize_for_json,
+    resolve_backend_params,
+)
 
 
 @runtime_checkable
@@ -29,8 +38,8 @@ class FormatBackend(Protocol):
         """Raise ImportError if required packages are missing."""
         ...
 
-    def get_data_filename(self) -> str:
-        """Return the data directory/file name (e.g. 'dataset.zarr')."""
+    def get_data_filename(self) -> Optional[str]:
+        """Return the data directory/file name, or None if per-subject."""
         ...
 
     def build_format_info(self, format_params: dict) -> dict:

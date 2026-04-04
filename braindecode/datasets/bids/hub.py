@@ -50,6 +50,7 @@ from ..registry import get_dataset_type
 # Hub format and validation utilities
 from . import hub_format, hub_validation
 from .formats import get_format_backend
+from .formats.utils import MNEParams, ZarrParams, resolve_backend_params
 
 # Lazy import huggingface_hub
 huggingface_hub = _soft_import(
@@ -88,11 +89,8 @@ class HubDatasetMixin:
         repo_id: str,
         private: bool = False,
         token: Optional[str] = None,
-        format: str = "zarr",
-        compression: str = "blosc",
-        compression_level: int = 5,
+        backend_params: Union[dict, ZarrParams, MNEParams, None] = None,
         pipeline_name: str = "braindecode",
-        chunk_size: int = 5_000_000,
         local_cache_dir: str | Path | None = None,
         **kwargs,
     ) -> str:
@@ -111,21 +109,25 @@ class HubDatasetMixin:
             Whether to create a private repository.
         token : str | None
             Hugging Face API token. If None, uses cached token.
-        format : str, default="zarr"
-            Storage format. ``"zarr"`` provides compression options.
-            ``"mne"`` stores data as FIF files and supports lazy loading
-            via ``preload=False``.
-        compression : str, default="blosc"
-            Compression algorithm for Zarr. Options: "blosc", "zstd", "gzip", None.
-            Ignored when ``format="mne"``.
-        compression_level : int, default=5
-            Compression level (0-9). Level 5 provides optimal balance.
-            Ignored when ``format="mne"``.
+        backend_params : dict | ZarrParams | MNEParams | None
+            Backend-specific parameters. Accepts a dataclass instance
+            (``ZarrParams`` or ``MNEParams``) or a plain dict with a
+            ``"format"`` key to select the backend. If ``None``, defaults
+            to ``ZarrParams()`` (Zarr with default settings).
+
+            Examples::
+
+                # Zarr with defaults
+                ds.push_to_hub("repo")
+
+                # MNE with defaults (dict form)
+                ds.push_to_hub("repo", backend_params={"format": "mne"})
+
+                # MNE with custom split size (dataclass form)
+                ds.push_to_hub("repo", backend_params=MNEParams(split_size="1GB"))
+
         pipeline_name : str, default="braindecode"
             Name of the processing pipeline for BIDS sourcedata.
-        chunk_size : int, default=5_000_000
-            Number of samples per chunk in Zarr along the time/window dimension.
-            Ignored when ``format="mne"``.
         local_cache_dir : str | Path | None
             Local directory to use for temporary files during upload. If None, uses
             the system temp directory and cleans it up after upload. If provided,
@@ -171,7 +173,10 @@ class HubDatasetMixin:
                 "pip install braindecode[hub]"
             )
 
-        backend = get_format_backend(format)
+        from dataclasses import asdict
+
+        params = resolve_backend_params(backend_params)
+        backend = get_format_backend(params.format)
         backend.validate_dependencies()
 
         # Create API instance
@@ -188,11 +193,7 @@ class HubDatasetMixin:
         except Exception as e:
             raise RuntimeError(f"Failed to create repository: {e}")
 
-        format_params = {
-            "compression": compression,
-            "compression_level": compression_level,
-            "chunk_size": chunk_size,
-        }
+        format_params = asdict(params)
         format_info = self._get_format_info_inline()
         format_info_lock = {
             **backend.build_format_info(format_params),
@@ -287,7 +288,12 @@ class HubDatasetMixin:
 
         # Convert dataset using the appropriate format backend
         backend = get_format_backend(format_info_lock["format"])
-        dataset_path = sourcedata_dir / backend.get_data_filename()
+        data_filename = backend.get_data_filename()
+        if data_filename is not None:
+            dataset_path = sourcedata_dir / data_filename
+        else:
+            # Backend writes per-subject files into the BIDS tree
+            dataset_path = sourcedata_dir
         log.info(f"Converting dataset to {backend.name} format...")
         backend.convert_datasets(self.datasets, dataset_path, format_info_lock)
 
@@ -533,15 +539,25 @@ class HubDatasetMixin:
             data_filename = backend.get_data_filename()
 
             # Find data path (try sourcedata, derivatives, then root)
-            data_path = (
-                Path(dataset_dir) / "sourcedata" / pipeline_name / data_filename
-            )
-            if not data_path.exists():
+            if data_filename is not None:
                 data_path = (
-                    Path(dataset_dir) / "derivatives" / pipeline_name / data_filename
+                    Path(dataset_dir) / "sourcedata" / pipeline_name / data_filename
                 )
-            if not data_path.exists():
-                data_path = Path(dataset_dir) / data_filename
+                if not data_path.exists():
+                    data_path = (
+                        Path(dataset_dir) / "derivatives" / pipeline_name / data_filename
+                    )
+                if not data_path.exists():
+                    data_path = Path(dataset_dir) / data_filename
+            else:
+                # Backend uses per-subject files; point to sourcedata dir
+                data_path = (
+                    Path(dataset_dir) / "sourcedata" / pipeline_name
+                )
+                if not data_path.exists():
+                    data_path = (
+                        Path(dataset_dir) / "derivatives" / pipeline_name
+                    )
 
             if not data_path.exists():
                 raise FileNotFoundError(

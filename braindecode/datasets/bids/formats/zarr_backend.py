@@ -25,38 +25,9 @@ import braindecode
 from ...registry import get_dataset_class, get_dataset_type
 from .. import hub_validation
 from . import register_format
+from .utils import _restore_nan_from_json, _sanitize_for_json
 
 zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
-
-
-# ---------------------------------------------------------------------------
-# JSON helpers
-# ---------------------------------------------------------------------------
-
-def _sanitize_for_json(obj):
-    """Replace NaN/Inf with None for valid JSON."""
-    if isinstance(obj, float):
-        if np.isnan(obj) or np.isinf(obj):
-            return None
-        return obj
-    if isinstance(obj, dict):
-        return {k: _sanitize_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_for_json(v) for v in obj]
-    if isinstance(obj, np.ndarray):
-        return _sanitize_for_json(obj.tolist())
-    return obj
-
-
-def _restore_nan_from_json(obj):
-    """Restore NaN values from None in JSON-loaded data."""
-    if isinstance(obj, dict):
-        return {k: _restore_nan_from_json(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        if len(obj) > 0 and all(isinstance(x, (int, float, type(None))) for x in obj):
-            return [np.nan if x is None else x for x in obj]
-        return [_restore_nan_from_json(v) for v in obj]
-    return obj
 
 
 # ---------------------------------------------------------------------------
