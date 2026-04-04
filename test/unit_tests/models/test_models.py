@@ -1155,61 +1155,45 @@ def test_deepsleepnet_variable_input(n_chans, n_times, n_outputs):
 
 
 @pytest.mark.parametrize(
-    "bilstm_hidden_size, bilstm_num_layers, drop_prob",
+    "bilstm_hidden_size, bilstm_num_layers, drop_prob, return_feats",
     [
-        (256, 1, 0.3),
-        (512, 2, 0.5),
-        (128, 3, 0.0),
+        (256, 1, 0.3, True),
+        (512, 2, 0.5, False),
+        (128, 3, 0.0, False),
     ],
 )
-def test_deepsleepnet_custom_params(bilstm_hidden_size, bilstm_num_layers, drop_prob):
-    n_chans, n_times, n_outputs = 1, 3000, 5
+def test_deepsleepnet_custom_params(
+    bilstm_hidden_size, bilstm_num_layers, drop_prob, return_feats
+):
     model = DeepSleepNet(
-        n_chans=n_chans,
-        n_outputs=n_outputs,
-        n_times=n_times,
+        n_chans=1, n_outputs=5, n_times=3000,
         bilstm_hidden_size=bilstm_hidden_size,
         bilstm_num_layers=bilstm_num_layers,
         drop_prob=drop_prob,
+        return_feats=return_feats,
     )
     model.eval()
-    x = torch.randn(2, n_chans, n_times)
-    out = model(x)
-    assert out.shape == (2, n_outputs)
-    assert model.len_last_layer == bilstm_hidden_size * 2
+    out = model(torch.randn(2, 1, 3000))
+    expected_feats = bilstm_hidden_size * 2
+    assert model.len_last_layer == expected_feats
+    if return_feats:
+        assert out.shape == (2, expected_feats)
+    else:
+        assert out.shape == (2, 5)
 
 
 def test_deepsleepnet_custom_cnn_params():
     model = DeepSleepNet(
-        n_chans=1,
-        n_outputs=5,
-        n_times=3000,
-        small_n_filters_1=32,
-        small_n_filters_2=64,
-        large_n_filters_1=32,
-        large_n_filters_2=64,
+        n_chans=1, n_outputs=5, n_times=3000,
+        small_n_filters_1=32, small_n_filters_2=64,
+        large_n_filters_1=32, large_n_filters_2=64,
     )
     model.eval()
-    x = torch.randn(2, 1, 3000)
-    out = model(x)
-    assert out.shape == (2, 5)
-    # verify custom filter counts took effect
+    assert model(torch.randn(2, 1, 3000)).shape == (2, 5)
     assert model.cnn1.conv1[0].out_channels == 32
     assert model.cnn1.conv2[0].out_channels == 64
     assert model.cnn2.conv1[0].out_channels == 32
     assert model.cnn2.conv2[0].out_channels == 64
-
-
-def test_deepsleepnet_feats_custom_bilstm():
-    model = DeepSleepNet(
-        n_chans=1, n_outputs=5, n_times=3000,
-        bilstm_hidden_size=256, return_feats=True,
-    )
-    model.eval()
-    x = torch.randn(2, 1, 3000)
-    out = model(x)
-    assert out.shape == (2, 256 * 2)
-    assert model.len_last_layer == 512
 
 
 def test_deepsleepnet_too_small_ntimes():
