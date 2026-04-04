@@ -400,7 +400,11 @@ checkpoints = [
 
 names, params_m, orgs = [], [], []
 for display, cls, kwargs, org in checkpoints:
-    mdl = cls.from_pretrained(**kwargs)
+    try:
+        mdl = cls.from_pretrained(**kwargs)
+    except Exception as e:
+        print(f"  {display:15s}  SKIPPED ({e.__class__.__name__})")
+        continue
     n_params = sum(
         p.numel()
         for p in mdl.parameters()
