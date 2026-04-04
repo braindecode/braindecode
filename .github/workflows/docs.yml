@@ -53,22 +53,10 @@ jobs:
         run: uv pip install --system -e .[all]
       # Show Braindecode Version
       - run: python -c "import braindecode; print(braindecode.__version__)"
-      # Login to Hugging Face and verify access before building docs
+      # Persist HF token to disk so sphinx-gallery examples can access gated repos
       - name: Login to Hugging Face Hub
         if: ${{ env.HF_TOKEN != '' }}
         run: python -c "import os; from huggingface_hub import login; login(token=os.environ['HF_TOKEN'])"
-      - name: Verify HuggingFace access and cache
-        if: ${{ env.HF_TOKEN != '' }}
-        run: |
-          echo "=== Logged-in user ==="
-          python -c "from huggingface_hub import whoami; print(whoami())"
-          echo "=== HF cache directory ==="
-          ls -la ~/.cache/huggingface/ 2>/dev/null || echo "No cache dir yet"
-          ls -la ~/.cache/huggingface/hub/ 2>/dev/null || echo "No hub cache yet"
-          echo "=== Token file ==="
-          test -f ~/.cache/huggingface/token && echo "Token file exists" || echo "No token file"
-          echo "=== Verify gated repo access (brain-bzh/reve-base) ==="
-          python -c "from huggingface_hub import model_info; info = model_info('brain-bzh/reve-base'); print(f'OK: {info.id}, private={info.private}, gated={info.gated}')"
       - name: Create Docs
         run: |
           cd docs
