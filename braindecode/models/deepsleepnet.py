@@ -40,10 +40,11 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
       (frequency precision).
 
     Each path consists of four convolutional layers (1-D convolution →
-    :class:`~torch.nn.BatchNorm2d` → :class:`~torch.nn.ReLU`) and two
-    :class:`~torch.nn.MaxPool2d` layers with :class:`~torch.nn.Dropout`
-    after the first pooling. Outputs from both paths are **concatenated**
-    to form the epoch embedding.
+    :class:`~torch.nn.BatchNorm2d` → activation, configurable via the
+    per-path activation settings) and two :class:`~torch.nn.MaxPool2d`
+    layers with :class:`~torch.nn.Dropout` after the first pooling.
+    Outputs from both paths are **concatenated** to form the epoch
+    embedding.
 
     .. rubric:: Sequence Residual Learning
 
