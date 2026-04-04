@@ -334,32 +334,49 @@ def _build_windowed_repr(
     return b
 
 
-@__import__("functools").lru_cache(maxsize=8)
-def _open_zarr_store(zarr_path):
-    """Open a zarr store once per process (LRU-cached by path).
+def _zarr_to_memmap(zarr_path, group_name):
+    """Decompress a zarr array to a ``.npy`` memmap file (one-time cost).
 
-    Each DataLoader worker gets its own cache. The store is read-only
-    and thread-safe. Only the store handle is cached, not decoded data.
+    The ``.npy`` file is written next to the zarr store so it benefits from
+    the HuggingFace cache lifecycle.  Subsequent calls return the existing
+    file instantly.  An atomic rename (write to ``.tmp``, then rename)
+    prevents corruption if multiple workers race.
     """
-    import zarr
+    cache_dir = Path(zarr_path).parent / ".braindecode_memmap"
+    npy_path = cache_dir / f"{group_name}.npy"
 
-    return zarr.open(str(zarr_path), mode="r")
+    if not npy_path.exists():
+        import zarr
+
+        store = zarr.open(str(zarr_path), mode="r")
+        arr = store[group_name]["data"]
+
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = cache_dir / f"{group_name}.tmp.npy"
+        np.save(str(tmp_path), np.asarray(arr))
+        # np.save appends .npy if missing, but we already include it
+        Path(str(tmp_path)).rename(npy_path)  # atomic on same filesystem
+
+    return npy_path
 
 
 class _ZarrMixin:
     """Shared zarr lazy-loading infrastructure for dataset classes.
 
-    Uses per-slice zarr reads (no full-array decode) so only the chunks
-    touched by each ``__getitem__`` call are decompressed. The zarr store
-    opener is LRU-cached per process for fast reuse across recordings.
+    On first access, each recording's zarr array is decompressed to a
+    ``.npy`` file and opened as a **numpy memmap**.  All subsequent reads
+    are OS page-cache hits — zero decompression, zero Python overhead,
+    automatically bounded by available RAM (the OS evicts cold pages).
+
+    Each DataLoader worker opens its own memmap (read-only, safe).
     """
 
     _zarr_data = None
 
     def _open_zarr(self):
-        """Get the lazy zarr array reference via the cached store opener."""
-        store = _open_zarr_store(str(self._zarr_path))
-        self._zarr_data = store[self._group_name]["data"]
+        """Decompress zarr → .npy (once), then memmap for all reads."""
+        npy_path = _zarr_to_memmap(str(self._zarr_path), self._group_name)
+        self._zarr_data = np.load(str(npy_path), mmap_mode="r")
 
     def __getstate__(self):
         state = self.__dict__.copy()
