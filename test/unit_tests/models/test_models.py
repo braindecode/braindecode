@@ -1179,6 +1179,22 @@ def test_deepsleepnet_custom_params(bilstm_hidden_size, bilstm_num_layers, drop_
     assert model.len_last_layer == bilstm_hidden_size * 2
 
 
+def test_deepsleepnet_custom_cnn_params():
+    model = DeepSleepNet(
+        n_chans=1,
+        n_outputs=5,
+        n_times=3000,
+        small_n_filters_1=32,
+        small_n_filters_2=64,
+        large_n_filters_1=32,
+        large_n_filters_2=64,
+    )
+    model.eval()
+    x = torch.randn(2, 1, 3000)
+    out = model(x)
+    assert out.shape == (2, 5)
+
+
 @pytest.fixture
 def sample_input():
     batch_size = 16
