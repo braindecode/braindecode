@@ -377,6 +377,12 @@ def _compute_feat_size(
     """
     sw = _conv_out(_conv_out(_conv_out(n_times, s_conv1), s_pool1), s_pool2)
     lw = _conv_out(_conv_out(_conv_out(n_times, l_conv1), l_pool1), l_pool2)
+    if sw <= 0 or lw <= 0:
+        raise ValueError(
+            f"n_times={n_times} is too small for the configured conv/pool "
+            f"parameters (small path width={sw}, large path width={lw}). "
+            f"Increase n_times or adjust kernel sizes."
+        )
     return n_chans * (s_filt * sw + l_filt * lw)
 
 

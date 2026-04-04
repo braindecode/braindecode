@@ -152,8 +152,8 @@ Bugs
   (:gh:`548` by `Sarthak Tayal`_)
 - Fix :class:`braindecode.models.DeepSleepNet` hardcoded linear layer size that
   caused a shape mismatch when using input shapes other than the default
-  1 channel, 3000 timepoints. the fc and bilstm input dimensions are now
-  computed dynamically from the cnn output
+  1 channel, 3000 timepoints. The FC and BiLSTM input dimensions are now
+  computed dynamically from the CNN output
   (:gh:`755` by `Sarthak Tayal`_)
 - Fix model docstring inheritance: ``track_model_init_kwargs`` wrapped
   ``__init__`` with ``@wraps`` before the

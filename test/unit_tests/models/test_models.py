@@ -1058,13 +1058,13 @@ def test_deepsleepnet(n_classes):
 
     model = DeepSleepNet(
         n_outputs=n_classes, return_feats=False,
-        n_chans=n_channels, n_times=np.ceil(input_size_s * sfreq).astype(int),
+        n_chans=n_channels, n_times=int(np.ceil(input_size_s * sfreq)),
     )
     model.eval()
 
     rng = np.random.RandomState(42)
     X = rng.randn(n_examples, n_channels,
-                  np.ceil(input_size_s * sfreq).astype(int))
+                  int(np.ceil(input_size_s * sfreq)))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
