@@ -908,8 +908,6 @@ def test_push_to_hub_import_error(setup_concat_windows_dataset, tmp_path):
         ):
             dataset.push_to_hub(
                 repo_id="test/repo",
-                compression="blosc",
-                compression_level=5,
             )
 
 
@@ -927,13 +925,11 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
     mock_hf_api = mock.MagicMock()
     mock_hf_api.upload_large_folder.return_value = expected_url
 
-    from braindecode.datasets.bids.formats import get_format_backend
-
-    zarr_backend = get_format_backend("zarr")
+    from braindecode.datasets.bids.formats.zarr_backend import ZarrBackend
 
     with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
         with mock.patch.object(
-            zarr_backend, "convert_datasets"
+            ZarrBackend, "convert_datasets"
         ) as mock_convert:
             with mock.patch.object(
                 dataset, "_save_dataset_card"
@@ -941,8 +937,6 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
                 # Call push_to_hub
                 result_url = dataset.push_to_hub(
                     repo_id=repo_id,
-                    compression="blosc",
-                    compression_level=5,
                     private=False,
                     token=None,
                 )
@@ -977,20 +971,16 @@ def test_push_to_hub_upload_failure(setup_concat_windows_dataset, tmp_path):
     mock_hf_api = mock.MagicMock()
     mock_hf_api.upload_large_folder.side_effect = Exception("Upload failed")
 
-    from braindecode.datasets.bids.formats import get_format_backend
-
-    zarr_backend = get_format_backend("zarr")
+    from braindecode.datasets.bids.formats.zarr_backend import ZarrBackend
 
     with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
-        with mock.patch.object(zarr_backend, "convert_datasets"):
+        with mock.patch.object(ZarrBackend, "convert_datasets"):
             with mock.patch.object(dataset, "_save_dataset_card"):
                 with pytest.raises(
                     RuntimeError, match="Failed to upload dataset"
                 ):
                     dataset.push_to_hub(
                         repo_id=repo_id,
-                        compression="blosc",
-                        compression_level=5,
                     )
 
 
@@ -1034,7 +1024,7 @@ def test_pull_from_hub_404_error(tmp_path):
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_create_compressor_zarr_not_available():
     """Test that _create_compressor raises ImportError when zarr not available."""
-    with mock.patch("braindecode.datasets.bids.hub_io.zarr", False):
+    with mock.patch("braindecode.datasets.bids.formats.zarr_backend.zarr", False):
         with pytest.raises(ImportError, match="Zarr is not installed"):
             _create_compressor("blosc", 5)
 
@@ -1085,3 +1075,286 @@ def test_save_dataset_card_all_dataset_types(tmp_path):
     raw_dataset._save_dataset_card(raw_path)
     raw_readme = (raw_path / "README.md").read_text()
     assert "Continuous (Raw)" in raw_readme or "raw" in raw_readme.lower()
+
+
+# ---------------------------------------------------------------------------
+# MNE/FIF backend tests
+# ---------------------------------------------------------------------------
+
+
+def _make_raw_concat(n_channels=3, n_times=1000, sfreq=100, n_subjects=1):
+    """Helper: create a BaseConcatDataset of RawDatasets with synthetic data."""
+    ch_names = [f"ch{i}" for i in range(n_channels)]
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
+    datasets = []
+    for s in range(n_subjects):
+        data = np.random.randn(n_channels, n_times)
+        raw = mne.io.RawArray(data, info)
+        desc = pd.Series({"subject": str(s + 1), "session": "T"})
+        ds = RawDataset(raw, desc)
+        ds.target_name = "mock_target"
+        datasets.append(ds)
+    return BaseConcatDataset(datasets)
+
+
+def _make_eegwindows_concat(n_channels=3, n_times=2000, sfreq=100):
+    """Helper: create a BaseConcatDataset of EEGWindowsDatasets."""
+    from braindecode.datasets.base import EEGWindowsDataset
+
+    ch_names = [f"ch{i}" for i in range(n_channels)]
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
+    data = np.random.randn(n_channels, n_times)
+    raw = mne.io.RawArray(data, info)
+    metadata = pd.DataFrame(
+        {
+            "i_window_in_trial": [0, 1, 2],
+            "i_start_in_trial": [0, 100, 200],
+            "i_stop_in_trial": [100, 200, 300],
+            "target": [0, 1, 0],
+        }
+    )
+    desc = pd.Series({"subject": "1", "session": "T"})
+    ds = EEGWindowsDataset(
+        raw=raw,
+        metadata=metadata,
+        description=desc,
+        targets_from="metadata",
+        last_target_only=True,
+    )
+    return BaseConcatDataset([ds])
+
+
+def _make_windows_concat(n_epochs=5, n_channels=3, n_times=100, sfreq=100):
+    """Helper: create a BaseConcatDataset of WindowsDatasets."""
+    from braindecode.datasets.base import WindowsDataset
+
+    ch_names = [f"ch{i}" for i in range(n_channels)]
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
+    data = np.random.randn(n_epochs, n_channels, n_times)
+    events = np.column_stack(
+        [
+            np.arange(0, n_epochs * n_times, n_times),
+            np.zeros(n_epochs, dtype=int),
+            np.array([1, 2, 1, 2, 1][:n_epochs]),
+        ]
+    )
+    metadata = pd.DataFrame(
+        {
+            "i_window_in_trial": range(n_epochs),
+            "i_start_in_trial": events[:, 0],
+            "i_stop_in_trial": events[:, 0] + n_times,
+            "target": [0, 1, 0, 1, 0][:n_epochs],
+        }
+    )
+    epochs = mne.EpochsArray(data, info, events=events, metadata=metadata)
+    desc = pd.Series({"subject": "1", "session": "T"})
+    ds = WindowsDataset(epochs, desc)
+    ds.target_name = "my_target"
+    return BaseConcatDataset([ds])
+
+
+def _setup_mne_sourcedata(tmp_path):
+    """Helper: create BIDS sourcedata layout for MNE backend tests."""
+    from braindecode.datasets.bids import hub_format
+
+    bids_layout = hub_format.BIDSSourcedataLayout(
+        tmp_path, pipeline_name="braindecode"
+    )
+    sourcedata_dir = bids_layout.create_structure()
+    bids_layout.save_dataset_description()
+    return sourcedata_dir
+
+
+@pytest.mark.parametrize("preload", [True, False])
+def test_mne_rawdataset_round_trip(tmp_path, preload):
+    """Test MNE backend round-trip for RawDataset with eager and lazy loading."""
+    from braindecode.datasets.bids.formats.mne_backend import MneBackend
+
+    concat = _make_raw_concat()
+    original_data = concat.datasets[0].raw.get_data()
+    sourcedata_dir = _setup_mne_sourcedata(tmp_path)
+
+    backend = MneBackend()
+    backend.convert_datasets(concat.datasets, sourcedata_dir)
+
+    loaded = backend.load_datasets(sourcedata_dir, preload=preload)
+
+    assert len(loaded.datasets) == 1
+    assert get_dataset_type(loaded.datasets[0]) == "RawDataset"
+
+    if preload:
+        assert loaded.datasets[0].raw.preload
+    else:
+        assert not loaded.datasets[0].raw.preload
+
+    # Data should match regardless of preload mode
+    loaded_data = loaded.datasets[0].raw.get_data()
+    np.testing.assert_allclose(original_data, loaded_data, rtol=1e-6)
+
+    # Verify description
+    pd.testing.assert_series_equal(
+        concat.datasets[0].description, loaded.datasets[0].description
+    )
+
+    # Verify target_name
+    assert loaded.datasets[0].target_name == "mock_target"
+
+    # Verify MNE info
+    assert loaded.datasets[0].raw.info["sfreq"] == 100
+    assert loaded.datasets[0].raw.ch_names == concat.datasets[0].raw.ch_names
+
+
+@pytest.mark.parametrize("preload", [True, False])
+def test_mne_eegwindows_round_trip(tmp_path, preload):
+    """Test MNE backend round-trip for EEGWindowsDataset with eager and lazy loading."""
+    from braindecode.datasets.bids.formats.mne_backend import MneBackend
+
+    concat = _make_eegwindows_concat()
+    original_data = concat.datasets[0].raw.get_data()
+    original_metadata = concat.datasets[0].metadata.copy()
+    sourcedata_dir = _setup_mne_sourcedata(tmp_path)
+
+    backend = MneBackend()
+    backend.convert_datasets(concat.datasets, sourcedata_dir)
+
+    loaded = backend.load_datasets(sourcedata_dir, preload=preload)
+
+    assert len(loaded.datasets) == 1
+    assert get_dataset_type(loaded.datasets[0]) == "EEGWindowsDataset"
+
+    if preload:
+        assert loaded.datasets[0].raw.preload
+    else:
+        assert not loaded.datasets[0].raw.preload
+
+    # Data should match
+    loaded_data = loaded.datasets[0].raw.get_data()
+    np.testing.assert_allclose(original_data, loaded_data, rtol=1e-6)
+
+    # Metadata should match
+    pd.testing.assert_frame_equal(original_metadata, loaded.datasets[0].metadata)
+
+    # EEGWindowsDataset-specific attributes
+    assert loaded.datasets[0].targets_from == "metadata"
+    assert loaded.datasets[0].last_target_only is True
+
+
+@pytest.mark.parametrize("preload", [True, False])
+def test_mne_windowsdataset_round_trip(tmp_path, preload):
+    """Test MNE backend round-trip for WindowsDataset with eager and lazy loading."""
+    from braindecode.datasets.bids.formats.mne_backend import MneBackend
+
+    concat = _make_windows_concat()
+    original_data = concat.datasets[0].windows.get_data()
+    sourcedata_dir = _setup_mne_sourcedata(tmp_path)
+
+    backend = MneBackend()
+    backend.convert_datasets(concat.datasets, sourcedata_dir)
+
+    loaded = backend.load_datasets(sourcedata_dir, preload=preload)
+
+    assert len(loaded.datasets) == 1
+    assert get_dataset_type(loaded.datasets[0]) == "WindowsDataset"
+
+    if preload:
+        assert loaded.datasets[0].windows.preload
+    else:
+        assert not loaded.datasets[0].windows.preload
+
+    # Data should match
+    loaded_data = loaded.datasets[0].windows.get_data()
+    np.testing.assert_allclose(original_data, loaded_data, rtol=1e-6)
+
+    # Verify target_name
+    assert loaded.datasets[0].target_name == "my_target"
+
+
+def test_mne_multi_subject_round_trip(tmp_path):
+    """Test MNE backend round-trip with multiple subjects."""
+    from braindecode.datasets.bids.formats.mne_backend import MneBackend
+
+    concat = _make_raw_concat(n_subjects=3)
+    original_data = [ds.raw.get_data() for ds in concat.datasets]
+    sourcedata_dir = _setup_mne_sourcedata(tmp_path)
+
+    backend = MneBackend()
+    backend.convert_datasets(concat.datasets, sourcedata_dir)
+
+    loaded = backend.load_datasets(sourcedata_dir, preload=True)
+
+    assert len(loaded.datasets) == 3
+    for i in range(3):
+        np.testing.assert_allclose(
+            original_data[i], loaded.datasets[i].raw.get_data(), rtol=1e-6
+        )
+
+
+def test_mne_build_local_cache(tmp_path):
+    """Test _build_local_cache with MNE backend produces correct structure."""
+    import json
+
+    import braindecode as bd
+    from braindecode.datasets.bids.formats.registry import resolve_backend_params
+
+    concat = _make_raw_concat()
+
+    backend = resolve_backend_params({"format": "mne"})
+    format_info = concat._get_format_info_inline()
+    format_info_lock = {
+        **backend.build_format_info(),
+        "pipeline_name": "braindecode",
+        "braindecode_version": bd.__version__,
+        **format_info,
+    }
+
+    concat._build_local_cache(tmp_path, format_info_lock)
+
+    # Verify structure
+    sd = tmp_path / "sourcedata" / "braindecode"
+    assert (sd / "dataset_info.json").exists()
+    assert (sd / "dataset_description.json").exists()
+    assert (sd / "participants.tsv").exists()
+
+    fif_files = list(sd.rglob("*.fif"))
+    assert len(fif_files) > 0
+
+    # Verify lock file
+    lock = json.loads((tmp_path / "format_info.json").read_text())
+    assert lock["format"] == "mne"
+
+
+def test_mne_resolve_backend_params():
+    """Test resolve_backend_params with MNE backend."""
+    from braindecode.datasets.bids.formats.mne_backend import MneBackend
+    from braindecode.datasets.bids.formats.registry import resolve_backend_params
+    from braindecode.datasets.bids.formats.zarr_backend import ZarrBackend
+
+    # None defaults to ZarrBackend
+    b = resolve_backend_params(None)
+    assert isinstance(b, ZarrBackend)
+
+    # Dict with format key
+    b = resolve_backend_params({"format": "mne", "split_size": "1GB"})
+    assert isinstance(b, MneBackend)
+    assert b.split_size == "1GB"
+
+    # Instance passthrough
+    b = resolve_backend_params(MneBackend(split_size="500MB"))
+    assert isinstance(b, MneBackend)
+    assert b.split_size == "500MB"
+
+    # Extra keys in dict are ignored
+    b = resolve_backend_params(
+        {"format": "mne", "split_size": "1GB", "unknown_key": "ignored"}
+    )
+    assert isinstance(b, MneBackend)
+    assert b.split_size == "1GB"
+
+
+def test_mne_manifest_not_found(tmp_path):
+    """Test that loading from a path without dataset_info.json raises error."""
+    from braindecode.datasets.bids.formats.mne_backend import MneBackend
+
+    backend = MneBackend()
+    with pytest.raises(FileNotFoundError, match="MNE backend manifest not found"):
+        backend.load_datasets(tmp_path, preload=True)
