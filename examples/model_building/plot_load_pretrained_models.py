@@ -398,6 +398,10 @@ checkpoints = [
     ),
 ]
 
+# Skip gated models when no HF token is available (e.g. fork PRs)
+if not hf_token:
+    checkpoints = [(d, c, k, o) for d, c, k, o in checkpoints if o != "brain-bzh"]
+
 names, params_m, orgs = [], [], []
 for display, cls, kwargs, org in checkpoints:
     mdl = cls.from_pretrained(**kwargs)
