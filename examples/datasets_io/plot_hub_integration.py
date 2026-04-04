@@ -18,6 +18,8 @@ The Hub integration allows you to:
 - **Version control** your datasets with git-like versioning
 - **Collaborate** on dataset curation and preprocessing
 - **Access datasets** from anywhere with automatic caching
+- **Choose a storage format**: Zarr (compressed, fast random access) or
+  MNE/FIF (lazy loading via memory-mapped files)
 
 We'll use the :class:`braindecode.datasets.BNCI2014_001` dataset as an example.
 """
@@ -31,6 +33,7 @@ import os
 from huggingface_hub import login
 
 from braindecode.datasets import BNCI2014_001, BaseConcatDataset
+from braindecode.datasets.bids.formats.mne_backend import MneBackend
 from braindecode.preprocessing import (
     create_windows_from_events,
 )
@@ -119,8 +122,8 @@ if not hf_token:
     print("\n⚠️  Skipping Hub upload examples (no HUGGING_FACE_TOKEN set)")
     print("To run this example with actual uploads, set HUGGING_FACE_TOKEN")
 else:
-    # Example 1: Upload WindowsDataset
-    # ---------------------------------
+    # Example 1: Upload WindowsDataset (default Zarr backend)
+    # -------------------------------------------------------
     repo_id_windows = "braindecode/example_dataset-windows"
 
     print(f"\nUploading WindowsDataset to {repo_id_windows}...")
@@ -130,8 +133,8 @@ else:
     )
     print(f"✅ Uploaded to {url}!")
 
-    # Example 2: Upload EEGWindowsDataset
-    # ------------------------------------
+    # Example 2: Upload EEGWindowsDataset (default Zarr backend)
+    # -----------------------------------------------------------
     repo_id_eegwindows = "braindecode/example_dataset-eegwindows"
 
     print(f"\nUploading EEGWindowsDataset to {repo_id_eegwindows}...")
@@ -141,38 +144,57 @@ else:
     )
     print(f"✅ Uploaded to {url}!")
 
-    # Example 3: Upload RawDataset
-    # -----------------------------
+    # Example 3: Upload RawDataset with MNE backend (lazy-loadable)
+    # --------------------------------------------------------------
     repo_id_raw = "braindecode/example_dataset-raw"
 
-    print(f"\nUploading RawDataset to {repo_id_raw}...")
+    print(f"\nUploading RawDataset (MNE format) to {repo_id_raw}...")
     url = raw_dataset.push_to_hub(
         repo_id=repo_id_raw,
         private=False,
+        backend_params=MneBackend(),  # FIF format, supports preload=False
     )
     print(f"✅ Uploaded to {url}!")
 
 print("""
 The example above demonstrates uploading to the Hugging Face Hub.
-All datasets are converted to Zarr format (optimized for fast loading)
-and uploaded with auto-generated dataset cards.
+By default, datasets are stored in Zarr format (compressed, fast random
+access). Pass backend_params=MneBackend() to use the MNE/FIF format
+instead, which supports true lazy loading via preload=False.
 
 For your own datasets, replace the repo_id with your Hugging Face username.
 """)
 
 ###############################################################################
-# Zarr Format
-# -----------
-# Datasets are uploaded in Zarr format, which provides:
+# Storage formats
+# ----------------
+# Two storage backends are available, selected via ``backend_params``:
 #
-# - Fastest random access (0.010 ms - critical for PyTorch training)
-# - Excellent compression with blosc
-# - Cloud-native, chunked storage
-# - Ideal for datasets of all sizes
-# - Based on comprehensive benchmarking with 1000 subjects
+# **Zarr** (default) — ``backend_params=None`` or ``ZarrBackend()``:
 #
-# The format parameters (compression, compression_level) are optimized by default
-# but can be customized if needed.
+# - Compressed, chunked storage (blosc by default)
+# - Fast random access — ideal for PyTorch training
+# - Does **not** support lazy loading (``preload=False`` loads all data)
+#
+# **MNE/FIF** — ``backend_params=MneBackend()`` or ``{"format": "mne"}``:
+#
+# - Native MNE FIF files, stored per-subject in BIDS directories
+# - Supports true lazy loading via memory-mapped files (``preload=False``)
+# - No compression; larger on disk but lower memory footprint at load time
+#
+# Both backends can also be configured via a plain dict:
+#
+# .. code-block:: python
+#
+#     # Zarr with custom compression
+#     dataset.push_to_hub("repo", backend_params={
+#         "format": "zarr", "compression": "gzip", "compression_level": 6,
+#     })
+#
+#     # MNE with custom split size
+#     dataset.push_to_hub("repo", backend_params={
+#         "format": "mne", "split_size": "1GB",
+#     })
 
 ###############################################################################
 # Download datasets from Hugging Face Hub
@@ -212,17 +234,18 @@ else:
     print("✅ Loaded EEGWindowsDataset!")
     print(f"   Number of windows: {len(loaded_eeg)}")
 
-    # Example 3: Download RawDataset
-    # -------------------------------
+    # Example 3: Download RawDataset (MNE format — lazy loading)
+    # -----------------------------------------------------------
     public_repo_raw = "braindecode/example_dataset-raw"
 
     print(f"\nDownloading RawDataset from {public_repo_raw}...")
     loaded_raw = BaseConcatDataset.pull_from_hub(
         public_repo_raw,
-        preload=True,
+        preload=False,  # Lazy loading — data stays on disk until accessed
     )
-    print("✅ Loaded RawDataset!")
+    print("✅ Loaded RawDataset (lazy)!")
     print(f"   Number of recordings: {len(loaded_raw.datasets)}")
+    print(f"   Data preloaded: {loaded_raw.datasets[0].raw.preload}")
 
 print("""
 The example above demonstrates downloading datasets from the Hub.
@@ -305,10 +328,9 @@ The Hub integration is fully compatible with PyTorch's training pipeline.
 #    - Known issues or limitations
 #    - Citation information
 #
-# 2. **Optimize compression if needed** - The default blosc compression (level 5)
-#    provides an optimal balance. For very large datasets, experiment with
-#    compression_level parameter (0-9) to find the best trade-off between
-#    size and speed for your use case.
+# 2. **Choose the right format** - Use the default Zarr backend for fast
+#    random access during training. Use ``MneBackend()`` when you need lazy
+#    loading (``preload=False``) to work with datasets that don't fit in memory.
 #
 # 3. **Test before sharing** - Always test that your uploaded dataset can be
 #    downloaded and used correctly:
@@ -335,13 +357,16 @@ Hugging Face Hub integration supports three dataset types:
 ✓ EEGWindowsDataset - Continuous with windowing metadata
 ✓ RawDataset - Continuous without windowing
 
+Storage backends:
+✓ Zarr (default) - Compressed, fast random access for training
+✓ MNE/FIF - Lazy loading via memory-mapped files (preload=False)
+
 Benefits:
 ✓ Share datasets with the research community
 ✓ Version control with git-like versioning
 ✓ Collaborate on dataset curation
 ✓ Access datasets from anywhere
 ✓ Automatic caching for faster repeated loads
-✓ Optimized Zarr format for fast training
 
 For more information:
 - Hugging Face Hub: https://huggingface.co
