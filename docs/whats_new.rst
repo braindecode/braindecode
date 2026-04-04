@@ -114,6 +114,12 @@ Enhancements
   outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
   automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
   differs from the saved config (by `Bruno Aristimunha`_).
+- Enable lazy loading from Zarr when using
+  :meth:`~braindecode.datasets.BaseConcatDataset.pull_from_hub` or
+  ``load_from_zarr`` with ``preload=False``. Data is decompressed lazily
+  and MNE objects (``.raw`` / ``.windows``) are reconstructed on first
+  access so ``preprocess()`` works on lazy datasets
+  (:gh:`978` by `Bruno Aristimunha`_).
 
 API changes
 ============
