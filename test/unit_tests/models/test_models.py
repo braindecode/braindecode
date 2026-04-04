@@ -1125,6 +1125,25 @@ def test_deepsleepnet_feats_with_hook():
     assert y_pred.shape == (n_examples, n_classes)
 
 
+@pytest.mark.parametrize(
+    "n_chans, n_times, n_outputs",
+    [
+        (64, 500, 1),
+        (2, 3000, 5),
+        (22, 1000, 3),
+    ],
+)
+def test_deepsleepnet_variable_input(n_chans, n_times, n_outputs):
+    # deepsleepnet shoud work with diffrent input shapes not just 1ch 3000t
+    model = DeepSleepNet(
+        n_chans=n_chans, n_outputs=n_outputs, n_times=n_times,
+    )
+    model.eval()
+    x = torch.randn(2, n_chans, n_times)
+    out = model(x)
+    assert out.shape == (2, n_outputs)
+
+
 @pytest.fixture
 def sample_input():
     batch_size = 16

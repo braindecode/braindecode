@@ -1,4 +1,5 @@
 # Authors: Théo Gnassounou <theo.gnassounou@inria.fr>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 import torch
@@ -188,9 +189,16 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         self.cnn1 = _SmallCNN(activation=activation_small, drop_prob=drop_prob)
         self.cnn2 = _LargeCNN(activation=activation_large, drop_prob=drop_prob)
         self.dropout = nn.Dropout(0.5)
-        self.bilstm = _BiLSTM(input_size=3072, hidden_size=512, num_layers=2)
+
+        # compute cnn feature size from actual input shape
+        feat_size = self._get_feat_size()
+
+        self.bilstm = _BiLSTM(
+            input_size=feat_size, hidden_size=512, num_layers=2
+        )
         self.fc = nn.Sequential(
-            nn.Linear(3072, 1024, bias=False), nn.BatchNorm1d(num_features=1024)
+            nn.Linear(feat_size, 1024, bias=False),
+            nn.BatchNorm1d(num_features=1024),
         )
 
         self.features_extractor = nn.Identity()
@@ -202,6 +210,16 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Linear(1024, self.n_outputs)
         else:
             self.final_layer = nn.Identity()
+
+    def _get_feat_size(self):
+        # pass dummy data through both cnns to get concatenated feature dim
+        n_chans = self.n_chans if self._n_chans is not None else 1
+        n_times = self.n_times if self._n_times is not None else 3000
+        dummy = torch.zeros(1, 1, n_chans, n_times)
+        with torch.no_grad():
+            s1 = self.cnn1(dummy).flatten(start_dim=1).shape[1]
+            s2 = self.cnn2(dummy).flatten(start_dim=1).shape[1]
+        return s1 + s2
 
     def forward(self, x):
         """Forward pass.
