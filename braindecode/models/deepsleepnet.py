@@ -19,135 +19,75 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         :alt: DeepSleepNet Architecture
         :width: 700px
 
-    .. rubric:: Architectural Overview
+    DeepSleepNet is a deep learning model for automatic sleep stage scoring
+    based on raw single-channel EEG. It consists of two main parts:
 
-    DeepSleepNet couples **dual-path convolution neural network representation learning** with
-    **sequence residual learning** via bidirectional LSTMs.
+    1. **Representation learning** — two CNNs with different filter sizes
+       extract time-invariant features from each 30-s EEG epoch.
+    2. **Sequence residual learning** — bidirectional LSTMs learn temporal
+       information such as stage transition rules, combined with a residual
+       shortcut from the CNN features.
 
-    The network have:
+    .. rubric:: Representation Learning
 
-    - (i) learns complementary, time-frequency features from each
-      30-s epoch using **two parallel CNNs** (small vs. large first-layer filters), then
-    - (ii) refines features through a **BiLSTM + residual shortcut** block, and finally
-    - (iii) outputs per-epoch sleep stages.
+    Two parallel CNN paths process the raw input simultaneously:
+
+    - **Small-filter path** — first conv uses filter length ≈ Fs/2 and
+      stride ≈ Fs/16, capturing *when* characteristic transients occur
+      (temporal precision).
+    - **Large-filter path** — first conv uses filter length ≈ 4·Fs and
+      stride ≈ Fs/2, capturing *which* frequency components dominate
+      (frequency precision).
+
+    Each path consists of four convolutional layers (1-D convolution →
+    :class:`~torch.nn.BatchNorm2d` → :class:`~torch.nn.ReLU`) and two
+    :class:`~torch.nn.MaxPool2d` layers with :class:`~torch.nn.Dropout`
+    after the first pooling. Outputs from both paths are **concatenated**
+    to form the epoch embedding.
+
+    .. rubric:: Sequence Residual Learning
+
+    Two layers of bidirectional LSTMs encode temporal dependencies across
+    epochs. A **residual shortcut** (fully connected →
+    :class:`~torch.nn.BatchNorm1d` → :class:`~torch.nn.ReLU`) projects
+    the CNN features to the BiLSTM output dimension and is **added** to
+    the BiLSTM output, improving gradient flow and preserving salient
+    CNN evidence.
+
+    .. rubric:: Implementation Differences
 
     .. note::
 
-       The original paper uses the BiLSTM to model **temporal dependencies
-       across a sequence of epochs**. This implementation processes **single
-       epochs** (sequence length 1), so the BiLSTM acts as a nonlinear
-       feature transform with a residual connection. To leverage multi-epoch
-       context, batch consecutive epochs as a sequence externally.
+       **Peephole connections.** The original implementation uses
+       TensorFlow ``LSTMCell`` with ``use_peepholes=True``, which allows
+       gates to inspect the cell state. :class:`torch.nn.LSTM` does not
+       support peepholes; this implementation uses standard LSTM gates.
 
-    In term of implementation:
+       **Sequence length.** The original model processes **sequences of
+       epochs** through the BiLSTM to capture cross-epoch transition rules.
+       This implementation processes **single epochs** (sequence length 1),
+       so the BiLSTM acts as a nonlinear feature transform with a residual
+       connection. To leverage multi-epoch context, batch consecutive
+       epochs as a sequence externally.
 
-    - (i) :class:`_RepresentationLearning` two CNNs extract epoch-wise features
-      (small-filter path for temporal precision; large-filter path for frequency precision);
-    - (ii) :class:`_SequenceResidualLearning` stacked BiLSTMs + residual shortcut
-      inject temporal context while preserving CNN evidence;
-    - (iii) :class:`_Classifier` linear readout (softmax) for the five sleep stages.
+       **Activation.** The original uses :class:`~torch.nn.ReLU` for both
+       CNN paths. This implementation defaults to :class:`~torch.nn.ELU`
+       for the large-filter path (``activation_large``), which can be
+       overridden.
 
-    .. rubric:: Macro Components
+    .. rubric:: Training (from the paper)
 
-    - :class:`_RepresentationLearning` **(dual-path CNN → epoch feature)**
-
-        - *Operations.*
-        - **Small-filter CNN** 4 times:
-
-            - :class:`~torch.nn.Conv1d`
-            - :class:`~torch.nn.BatchNorm1d`
-            - :class:`~torch.nn.ReLU`
-            - :class:`~torch.nn.MaxPool1d` after.
-
-        - First conv uses **filter length ≈ Fs/2** and **stride ≈ Fs/16** to emphasize *timing* of graphoelements.
-
-    - **Large-filter CNN**:
-
-        - Same stack but first conv uses **filter length ≈ 4·Fs** and
-        - **stride ≈ Fs/2** to emphasize *frequency* content.
-
-    - Outputs from both paths are **concatenated** into the epoch embedding ``a_t``.
-
-    - *Rationale.*
-      Two first-layer scales provide a **learned, dual-scale filter bank** that trades
-      temporal vs. frequency precision without hand-crafted features.
-
-    - :class:`_SequenceResidualLearning` (:class:`~torch.nn.BiLSTM` **context + residual fusion)**
-
-        - *Operations.*
-        - **Two-layer BiLSTM** processes the epoch embedding
-          forward and backward; hidden states from both directions are **concatenated**.
-        - A **shortcut MLP** (fully connected + :class:`~torch.nn.BatchNorm1d` + :class:`~torch.nn.ReLU`) projects ``a_t`` to the BiLSTM output
-          dimension and is **added** (residual) to the :class:`~torch.nn.BiLSTM` output at each time step.
-        - *Role.* Encodes **stage-transition rules** and smooths predictions over time while preserving
-          salient CNN features via the residual path.
-
-    - :class:`_Classifier` **(epoch-wise prediction)**
-
-        - *Operations.*
-        - :class:`~torch.nn.Linear` to produce per-epoch class probabilities.
-
-    Original training uses two-step optimization: CNN pretraining on class-balanced data,
-    then end-to-end fine-tuning with sequential batches.
-
-    .. rubric:: Convolutional Details
-
-    - **Temporal (where time-domain patterns are learned).**
-
-      Both CNN paths use **1-D temporal convolutions**. The *small-filter* path (first kernel ≈ Fs/2,
-      stride ≈ Fs/16) captures *when* characteristic transients occur; the *large-filter* path
-      (first kernel ≈ 4·Fs, stride ≈ Fs/2) captures *which* frequency components dominate over the
-      epoch. Deeper layers use **small kernels** to refine features with fewer parameters, interleaved
-      with **max pooling** for downsampling.
-
-    - **Spatial (how channels are processed).**
-
-      The original model operates on **single-channel** raw EEG; convolutions therefore mix only
-      along time (no spatial convolution across electrodes).
-
-    - **Spectral (how frequency information emerges).**
-
-      No explicit Fourier/wavelet transform is used. The **large-filter path** serves as a
-      *frequency-sensitive* analyzer, while the **small-filter path** remains *time-sensitive*,
-      together functioning as a **two-band learned filter bank** at the first layer.
-
-    .. rubric:: Attention / Sequential Modules
-
-    - **Type.** **Bidirectional LSTM** (two layers); forward and
-      backward streams are independent and concatenated.
-    - **Shapes.** The CNN produces an epoch embedding ``a_t ∈ R^{D}``;
-      BiLSTM outputs ``h_t ∈ R^{2H}``; the shortcut MLP maps ``a_t → R^{2H}`` to enable
-      **element-wise residual addition**.
-    - **Role.** In the paper, the BiLSTM models **long-range temporal dependencies**
-      across epochs. In this single-epoch implementation it acts as a nonlinear
-      feature mixer with a residual path.
-
-
-    .. rubric:: Additional Mechanisms
-
-    - **Residual shortcut over sequence encoder.** Adds projected CNN features to BiLSTM outputs,
-      improving gradient flow and retaining discriminative content from representation learning.
-    - **Two-step training.**
-
-        - (i) **Pretrain** the CNN paths with class-balanced sampling;
-        - (ii) **fine-tune** the full network with sequential batches, using **lower LR** for CNNs and **higher LR** for the
-          sequence encoder.
-
-    - **State handling.** BiLSTM states are **reinitialized per subject** so that temporal context
-      does not leak across recordings.
-
-
-    .. rubric:: Usage and Configuration
-
-    - **Epoch pipeline.** Use **two parallel CNNs** with the first conv sized to **Fs/2** (small path)
-      and **4·Fs** (large path), with strides **Fs/16** and **Fs/2**, respectively; stack three more
-      conv blocks with small kernels, plus **max pooling** in each path. Concatenate path outputs
-      to form epoch embeddings.
-    - **Sequence encoder.** Apply **two-layer BiLSTM** over the embeddings;
-      add a **projection MLP** on the CNN features and **sum** with BiLSTM outputs (residual).
-      Finish with :class:`~torch.nn.Linear` per epoch.
-    - **Reference implementation.** See the official repository for a faithful implementation and
-      training scripts.
+    - **Two-step procedure.** (i) Pre-train the CNN part on a
+      class-balanced training set using oversampling; (ii) fine-tune the
+      whole network with sequential batches using a lower learning rate
+      for the CNNs and a higher one for the sequence residual part.
+    - **Dropout** with probability 0.5 is used throughout the model.
+    - **L2 weight decay** (λ = 10⁻³) is applied only to the first
+      convolutional layers of both CNN paths.
+    - **Gradient clipping** rescales gradients when their global norm
+      exceeds a threshold.
+    - **State handling.** BiLSTM states are reinitialized per subject so
+      that temporal context does not leak across recordings.
 
     Parameters
     ----------
@@ -330,6 +270,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(feat_size, fc_out_features, bias=False),
             nn.BatchNorm1d(num_features=fc_out_features),
+            nn.ReLU(),
         )
 
         self.flatten_cnn = Rearrange(
