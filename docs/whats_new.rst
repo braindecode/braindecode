@@ -22,7 +22,34 @@
 .. _current:
 
 
-Version 1.4  (Source - GitHub)
+Current 1.5.0 (GitHub)
+===============================
+
+Enhancements
+============
+
+API and behavior changes
+========================
+
+- None yet
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- None yet
+
+Code health
+============
+
+- None yet
+
+
+Current 1.4.0 (stable)
 ===============================
 
 Enhancements
@@ -879,7 +906,7 @@ API changes
 
 
 Authors
-=======
+========
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Hubert Banville: https://github.com/hubertjb
