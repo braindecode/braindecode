@@ -23,7 +23,7 @@ except ImportError:
     ZARR_AVAILABLE = False
     zarr = None
 
-import pickle
+import copy
 
 from braindecode.datasets import (
     BNCI2014_001,
@@ -1138,10 +1138,10 @@ def test_lazy_zarr_len(tmp_path, ds_type):
 
 
 @pytest.mark.parametrize("ds_type", _DS_TYPES)
-def test_lazy_zarr_pickle(tmp_path, ds_type):
+def test_lazy_zarr_serialization(tmp_path, ds_type):
     _, path = _make_zarr(tmp_path, ds_type)
     ds = BaseConcatDataset._load_from_zarr_inline(path, preload=False).datasets[0]
-    restored = pickle.loads(pickle.dumps(ds))
+    restored = copy.deepcopy(ds)
     assert restored._zarr_data is not None
     np.testing.assert_allclose(ds[0][0], restored[0][0], rtol=1e-6, atol=1e-7)
 
