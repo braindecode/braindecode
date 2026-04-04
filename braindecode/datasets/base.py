@@ -335,7 +335,12 @@ def _build_windowed_repr(
 
 
 def _zarr_to_memmap(zarr_path, group_name):
-    """Decompress a zarr array to a ``.npy`` memmap (one-time, atomic)."""
+    """Decompress a zarr array to a float64 ``.npy`` memmap (one-time, atomic).
+
+    Saved as float64 so MNE objects can wrap the memmap zero-copy
+    (MNE requires float64 internally).  Copy-on-write mode (``'c'``)
+    means preprocessing writes go to RAM, the file stays untouched.
+    """
     cache_dir = Path(zarr_path).parent / ".braindecode_memmap"
     npy_path = cache_dir / f"{group_name}.npy"
 
@@ -347,7 +352,7 @@ def _zarr_to_memmap(zarr_path, group_name):
         arr = zarr.open(zarr_path, mode="r")[group_name]["data"]
         cache_dir.mkdir(parents=True, exist_ok=True)
         tmp_path = cache_dir / f"{group_name}.{os.getpid()}.tmp.npy"
-        np.save(tmp_path, np.asarray(arr))
+        np.save(tmp_path, np.asarray(arr).astype(np.float64))
         try:
             tmp_path.rename(npy_path)
         except OSError:
@@ -357,13 +362,26 @@ def _zarr_to_memmap(zarr_path, group_name):
 
 
 class _ZarrMixin:
-    """Zarr-to-memmap lazy loading: decompress once, memmap forever."""
+    """Zarr-to-memmap lazy loading with MNE compatibility.
+
+    Decompresses zarr to float64 ``.npy`` memmaps on first access.
+    MNE objects (``raw``/``windows``) are reconstructed lazily on first
+    property access, backed by copy-on-write memmaps so preprocessing
+    writes go to RAM while the file stays untouched.
+    """
 
     _zarr_data = None
 
     def _open_zarr(self):
         npy_path = _zarr_to_memmap(self._zarr_path, self._group_name)
-        self._zarr_data = np.load(npy_path, mmap_mode="r")
+        # 'c' = copy-on-write: reads from file, writes to RAM
+        self._zarr_data = np.load(npy_path, mmap_mode="c")
+
+    def _make_mne_info(self):
+        """Reconstruct ``mne.Info`` from stored dict (no data I/O)."""
+        from .bids.hub_io import _restore_nan_from_json
+
+        return mne.Info.from_json_dict(_restore_nan_from_json(self._info_dict))
 
     @classmethod
     def _init_zarr_base(cls, zarr_path, group_name, description, info_dict, transform):
@@ -381,6 +399,10 @@ class _ZarrMixin:
     def __getstate__(self):
         state = self.__dict__.copy()
         state.pop("_zarr_data", None)
+        # Drop lazily-constructed mne objects; they'll be rebuilt from memmap
+        if hasattr(self, "_zarr_path"):
+            state.pop("_raw", None)
+            state.pop("_windows", None)
         return state
 
     def __setstate__(self, state):
@@ -506,20 +528,29 @@ class RawDataset(_ZarrMixin, RecordDataset):
         obj = cls._init_zarr_base(
             zarr_path, group_name, description, info_dict, transform
         )
-        obj.raw = None
+        obj._raw = None
         obj.target_name = cls._target_name(obj, target_name)
         obj.raw_preproc_kwargs = []
         obj._open_zarr()
         return obj
 
+    @property
+    def raw(self):
+        if self._raw is None and self._zarr_data is not None:
+            self._raw = mne.io.RawArray(self._zarr_data, self._make_mne_info())
+        return self._raw
+
+    @raw.setter
+    def raw(self, value):
+        self._raw = value
+
     def __getitem__(self, index):
         if self._zarr_data is not None:
-            X = self._zarr_data[:, index]
-            # mne.Raw[:, scalar] returns (n_ch, 1) — match that shape
+            X = np.array(self._zarr_data[:, index], dtype="float32")
             if X.ndim == 1:
                 X = X[:, np.newaxis]
         else:
-            X = self.raw[:, index][0]
+            X = self._raw[:, index][0]
         y = None
         if self.target_name is not None:
             y = self.description[self.target_name]
@@ -668,7 +699,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         obj = cls._init_zarr_base(
             zarr_path, group_name, description, info_dict, transform
         )
-        obj.raw = None
+        obj._raw = None
         obj.metadata = metadata
         obj.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
@@ -682,6 +713,16 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         obj.raw_preproc_kwargs = []
         obj._open_zarr()
         return obj
+
+    @property
+    def raw(self):
+        if self._raw is None and self._zarr_data is not None:
+            self._raw = mne.io.RawArray(self._zarr_data, self._make_mne_info())
+        return self._raw
+
+    @raw.setter
+    def raw(self, value):
+        self._raw = value
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -908,7 +949,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         obj = cls._init_zarr_base(
             zarr_path, group_name, description, info_dict, transform
         )
-        obj.windows = None
+        obj._windows = None
         obj.target_name = target_name
         obj._fast_disk = False
         obj.last_target_only = last_target_only
@@ -925,6 +966,32 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         obj.window_preproc_kwargs = []
         obj._open_zarr()
         return obj
+
+    @property
+    def windows(self):
+        if self._windows is None and self._zarr_data is not None:
+            info = self._make_mne_info()
+            targets = self.metadata["target"].values
+            event_ids = (
+                targets
+                if np.issubdtype(targets.dtype, np.integer)
+                else np.ones(len(self.metadata), dtype=int)
+            )
+            events = np.column_stack(
+                [
+                    self.metadata["i_start_in_trial"].values.astype(int),
+                    np.zeros(len(self.metadata), dtype=int),
+                    event_ids,
+                ]
+            )
+            self._windows = mne.EpochsArray(
+                self._zarr_data, info, events=events, metadata=self.metadata
+            )
+        return self._windows
+
+    @windows.setter
+    def windows(self, value):
+        self._windows = value
 
     @staticmethod
     def _can_use_fast_get_epoch_from_raw(epochs: mne.BaseEpochs) -> bool:
@@ -983,13 +1050,13 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         return X, y, crop_inds
 
     def __len__(self) -> int:
-        if self.windows is not None:
-            return len(self.windows.events)
+        if self._windows is not None:
+            return len(self._windows.events)
         return len(self.crop_inds)
 
     def _build_repr(self):
-        mne_obj = self.windows
-        metadata = self.metadata if self.windows is None else self.windows.metadata
+        mne_obj = self._windows
+        metadata = self.metadata if self._windows is None else self._windows.metadata
         return _build_windowed_repr(
             type(self).__name__,
             len(self),
@@ -1224,8 +1291,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
         all_dfs = list()
         for ds in self.datasets:
-            if hasattr(ds, "windows") and ds.windows is not None:
-                df = ds.windows.metadata
+            if hasattr(ds, "_windows") and ds._windows is not None:
+                df = ds._windows.metadata
             else:
                 df = ds.metadata
             for k, v in ds.description.items():

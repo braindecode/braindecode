@@ -620,7 +620,7 @@ def test_lazy_loading_support(tmp_path):
     eager = windowed._load_from_zarr_inline(zarr_path, preload=True)
 
     # Lazy: no mne object, zarr reference set
-    assert lazy.datasets[0].windows is None
+    assert lazy.datasets[0]._windows is None
     assert lazy.datasets[0]._zarr_data is not None
     # Eager: mne object present
     assert eager.datasets[0].windows is not None
