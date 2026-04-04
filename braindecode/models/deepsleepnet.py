@@ -198,8 +198,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         self.cnn2 = _LargeCNN(activation=activation_large, drop_prob=drop_prob)
         self.dropout = nn.Dropout(drop_prob)
 
-        # compute cnn feature size from actual input shape
-        feat_size = self._get_feat_size()
+        feat_size = _compute_feat_size(self.n_chans, self.n_times)
 
         fc_out_features = bilstm_hidden_size * 2
         self.bilstm = _BiLSTM(
@@ -222,14 +221,6 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Linear(fc_out_features, self.n_outputs)
         else:
             self.final_layer = nn.Identity()
-
-    def _get_feat_size(self):
-        # pass dummy data through both cnns to get concatenated feature dim
-        dummy = torch.zeros(1, 1, self.n_chans, self.n_times)
-        with torch.no_grad():
-            s1 = self.cnn1(dummy).flatten(start_dim=1).shape[1]
-            s2 = self.cnn2(dummy).flatten(start_dim=1).shape[1]
-        return s1 + s2
 
     def forward(self, x):
         """Forward pass.
@@ -265,6 +256,31 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             return feats
         else:
             return self.final_layer(feats)
+
+
+def _compute_feat_size(n_chans, n_times):
+    """Analytically compute concatenated CNN feature size.
+
+    Traces the output dimensions through _SmallCNN and _LargeCNN
+    using the convolution/pooling output-size formula:
+        out = (in + 2*padding - kernel) // stride + 1
+    Layers with padding="same" preserve the spatial dimension.
+    """
+    # Small CNN path
+    sw = (n_times + 2 * 22 - 50) // 6 + 1  # conv1
+    sw = (sw + 2 * 2 - 8) // 8 + 1  # pool1
+    # conv2, conv3, conv4: same padding
+    sw = (sw + 2 * 1 - 4) // 4 + 1  # pool2
+    small_feat = 128 * n_chans * sw
+
+    # Large CNN path
+    lw = (n_times + 2 * 175 - 400) // 50 + 1  # conv1
+    lw = (lw - 4) // 4 + 1  # pool1
+    # conv2, conv3, conv4: same padding
+    lw = (lw + 2 * 1 - 2) // 2 + 1  # pool2
+    large_feat = 128 * n_chans * lw
+
+    return small_feat + large_feat
 
 
 class _SmallCNN(nn.Module):
