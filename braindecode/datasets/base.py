@@ -23,15 +23,20 @@ from glob import glob
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
 
+import mne
 import mne.io
 import numpy as np
 import pandas as pd
+from mne.utils import _soft_import
 from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset, IterableDataset
 from typing_extensions import TypeVar
 
 from .bids.hub import HubDatasetMixin
+from .bids.hub_io import _restore_nan_from_json
 from .registry import register_dataset
+
+zarr = _soft_import("zarr", purpose="lazy loading from Zarr", strict=False)
 
 
 def _create_description(description) -> pd.Series:
@@ -341,14 +346,11 @@ def _zarr_to_memmap(zarr_path, group_name):
     (MNE requires float64 internally).  Copy-on-write mode (``'c'``)
     means preprocessing writes go to RAM, the file stays untouched.
     """
-    cache_dir = Path(zarr_path).parent / ".braindecode_memmap"
+    zarr_p = Path(zarr_path)
+    cache_dir = zarr_p.parent / f".{zarr_p.name}_memmap"
     npy_path = cache_dir / f"{group_name}.npy"
 
     if not npy_path.exists():
-        import os
-
-        import zarr
-
         arr = zarr.open(zarr_path, mode="r")[group_name]["data"]
         cache_dir.mkdir(parents=True, exist_ok=True)
         tmp_path = cache_dir / f"{group_name}.{os.getpid()}.tmp.npy"
@@ -379,16 +381,13 @@ class _ZarrMixin:
 
     def _make_mne_info(self):
         """Reconstruct ``mne.Info`` from stored dict (no data I/O)."""
-        from .bids.hub_io import _restore_nan_from_json
-
         return mne.Info.from_json_dict(_restore_nan_from_json(self._info_dict))
 
     @classmethod
     def _init_zarr_base(cls, zarr_path, group_name, description, info_dict, transform):
         """Shared ``_from_zarr`` preamble: create instance with zarr attrs."""
-        from mne.utils import _soft_import
-
-        _soft_import("zarr", purpose="lazy loading from Zarr")
+        if zarr is False:
+            raise ImportError("zarr is required: pip install braindecode[hub]")
         obj = object.__new__(cls)
         RecordDataset.__init__(obj, description, transform)
         obj._zarr_path = Path(zarr_path)

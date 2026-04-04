@@ -34,7 +34,7 @@ def _restore_nan_from_json(obj):
 
 
 def _save_windows_to_zarr(
-    grp, data, metadata, description, info, compressor, target_name, chunk_size
+    grp, data, metadata, description, info, compressor, target_name
 ):
     """Save windowed data to Zarr group (low-level function).
 

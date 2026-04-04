@@ -732,7 +732,6 @@ class HubDatasetMixin:
                     info_dict,
                     compressor,
                     target_name,
-                    chunk_size,
                 )
 
             elif dataset_type == "EEGWindowsDataset":
