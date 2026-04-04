@@ -335,48 +335,48 @@ def _build_windowed_repr(
 
 
 def _zarr_to_memmap(zarr_path, group_name):
-    """Decompress a zarr array to a ``.npy`` memmap file (one-time cost).
-
-    The ``.npy`` file is written next to the zarr store so it benefits from
-    the HuggingFace cache lifecycle.  Subsequent calls return the existing
-    file instantly.  An atomic rename (write to ``.tmp``, then rename)
-    prevents corruption if multiple workers race.
-    """
+    """Decompress a zarr array to a ``.npy`` memmap (one-time, atomic)."""
     cache_dir = Path(zarr_path).parent / ".braindecode_memmap"
     npy_path = cache_dir / f"{group_name}.npy"
 
     if not npy_path.exists():
+        import os
+
         import zarr
 
-        store = zarr.open(str(zarr_path), mode="r")
-        arr = store[group_name]["data"]
-
+        arr = zarr.open(zarr_path, mode="r")[group_name]["data"]
         cache_dir.mkdir(parents=True, exist_ok=True)
-        tmp_path = cache_dir / f"{group_name}.tmp.npy"
-        np.save(str(tmp_path), np.asarray(arr))
-        # np.save appends .npy if missing, but we already include it
-        Path(str(tmp_path)).rename(npy_path)  # atomic on same filesystem
+        tmp_path = cache_dir / f"{group_name}.{os.getpid()}.tmp.npy"
+        np.save(tmp_path, np.asarray(arr))
+        try:
+            tmp_path.rename(npy_path)
+        except OSError:
+            tmp_path.unlink(missing_ok=True)
 
     return npy_path
 
 
 class _ZarrMixin:
-    """Shared zarr lazy-loading infrastructure for dataset classes.
-
-    On first access, each recording's zarr array is decompressed to a
-    ``.npy`` file and opened as a **numpy memmap**.  All subsequent reads
-    are OS page-cache hits — zero decompression, zero Python overhead,
-    automatically bounded by available RAM (the OS evicts cold pages).
-
-    Each DataLoader worker opens its own memmap (read-only, safe).
-    """
+    """Zarr-to-memmap lazy loading: decompress once, memmap forever."""
 
     _zarr_data = None
 
     def _open_zarr(self):
-        """Decompress zarr → .npy (once), then memmap for all reads."""
-        npy_path = _zarr_to_memmap(str(self._zarr_path), self._group_name)
-        self._zarr_data = np.load(str(npy_path), mmap_mode="r")
+        npy_path = _zarr_to_memmap(self._zarr_path, self._group_name)
+        self._zarr_data = np.load(npy_path, mmap_mode="r")
+
+    @classmethod
+    def _init_zarr_base(cls, zarr_path, group_name, description, info_dict, transform):
+        """Shared ``_from_zarr`` preamble: create instance with zarr attrs."""
+        from mne.utils import _soft_import
+
+        _soft_import("zarr", purpose="lazy loading from Zarr")
+        obj = object.__new__(cls)
+        RecordDataset.__init__(obj, description, transform)
+        obj._zarr_path = Path(zarr_path)
+        obj._group_name = group_name
+        obj._info_dict = info_dict
+        return obj
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -503,18 +503,12 @@ class RawDataset(_ZarrMixin, RecordDataset):
         transform=None,
     ):
         """Create a lazy Zarr-backed RawDataset (internal API)."""
-        from mne.utils import _soft_import
-
-        _soft_import("zarr", purpose="lazy loading from Zarr")
-
-        obj = object.__new__(cls)
-        RecordDataset.__init__(obj, description, transform)
+        obj = cls._init_zarr_base(
+            zarr_path, group_name, description, info_dict, transform
+        )
         obj.raw = None
-        obj._zarr_path = Path(zarr_path)
-        obj._group_name = group_name
-        obj._info_dict = info_dict
         obj.target_name = cls._target_name(obj, target_name)
-        obj.raw_preproc_kwargs: list[dict[str, Any]] = []
+        obj.raw_preproc_kwargs = []
         obj._open_zarr()
         return obj
 
@@ -671,16 +665,10 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         transform=None,
     ):
         """Create a lazy Zarr-backed EEGWindowsDataset (internal API)."""
-        from mne.utils import _soft_import
-
-        _soft_import("zarr", purpose="lazy loading from Zarr")
-
-        obj = object.__new__(cls)
-        RecordDataset.__init__(obj, description, transform)
+        obj = cls._init_zarr_base(
+            zarr_path, group_name, description, info_dict, transform
+        )
         obj.raw = None
-        obj._zarr_path = Path(zarr_path)
-        obj._group_name = group_name
-        obj._info_dict = info_dict
         obj.metadata = metadata
         obj.last_target_only = last_target_only
         if targets_from not in ("metadata", "channels"):
@@ -691,7 +679,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         ].to_numpy()
         if obj.targets_from == "metadata":
             obj.y = metadata.loc[:, "target"].to_list()
-        obj.raw_preproc_kwargs: list[dict[str, Any]] = []
+        obj.raw_preproc_kwargs = []
         obj._open_zarr()
         return obj
 
@@ -719,16 +707,12 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
 
         i_window_in_trial, i_start, i_stop = crop_inds
         if self._zarr_data is not None:
-            X = self._zarr_data[:, i_start:i_stop].astype("float32")
-            X = X.copy()
+            X = self._zarr_data[:, i_start:i_stop]
         else:
             X = self.raw._getitem(
                 (slice(None), slice(i_start, i_stop)), return_times=False
             )
-            X = X.astype("float32")
-            # ensure we don't give the user the option
-            # to accidentally modify the underlying array
-            X = X.copy()
+        X = np.array(X, dtype="float32")
         if self.transform is not None:
             X = self.transform(X)
         if self.targets_from == "metadata":
@@ -921,16 +905,10 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         last_target_only=True,
     ):
         """Create a lazy Zarr-backed WindowsDataset (internal API)."""
-        from mne.utils import _soft_import
-
-        _soft_import("zarr", purpose="lazy loading from Zarr")
-
-        obj = object.__new__(cls)
-        RecordDataset.__init__(obj, description, transform)
+        obj = cls._init_zarr_base(
+            zarr_path, group_name, description, info_dict, transform
+        )
         obj.windows = None
-        obj._zarr_path = Path(zarr_path)
-        obj._group_name = group_name
-        obj._info_dict = info_dict
         obj.target_name = target_name
         obj._fast_disk = False
         obj.last_target_only = last_target_only
@@ -943,8 +921,8 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         ].to_numpy()
         if obj.targets_from == "metadata":
             obj.y = metadata.loc[:, "target"].to_list()
-        obj.raw_preproc_kwargs: list[dict[str, Any]] = []
-        obj.window_preproc_kwargs: list[dict[str, Any]] = []
+        obj.raw_preproc_kwargs = []
+        obj.window_preproc_kwargs = []
         obj._open_zarr()
         return obj
 
