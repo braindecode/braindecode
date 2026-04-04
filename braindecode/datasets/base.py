@@ -312,7 +312,16 @@ def _zarr_to_memmap(zarr_path, group_name):
         arr = zarr.open(zarr_path, mode="r")[group_name]["data"]
         cache_dir.mkdir(parents=True, exist_ok=True)
         tmp_path = cache_dir / f"{group_name}.{os.getpid()}.tmp.npy"
-        np.save(tmp_path, np.asarray(arr).astype(np.float64))
+        # Write chunk-by-chunk to avoid materializing the full array in RAM
+        mm = np.lib.format.open_memmap(
+            tmp_path, mode="w+", dtype=np.float64, shape=arr.shape
+        )
+        chunk0 = arr.chunks[0] if hasattr(arr, "chunks") else arr.shape[0]
+        for start in range(0, arr.shape[0], chunk0):
+            end = min(start + chunk0, arr.shape[0])
+            mm[start:end] = np.asarray(arr[start:end], dtype=np.float64)
+        mm.flush()
+        del mm
         try:
             tmp_path.rename(npy_path)
         except OSError:
@@ -518,8 +527,8 @@ class RawDataset(_ZarrMixin, RecordDataset):
         return X, y
 
     def __len__(self):
-        if self.raw is not None:
-            return len(self.raw)
+        if self._raw is not None:
+            return len(self._raw)
         return self._zarr_data.shape[1]
 
     def _build_repr(self):

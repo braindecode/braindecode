@@ -36,11 +36,10 @@ def _restore_nan_from_json(obj):
 def _save_windows_to_zarr(
     grp, data, metadata, description, info, compressor, target_name
 ):
-    """Save windowed data to Zarr group (low-level function).
+    """Save windowed data to Zarr group.
 
-    Chunks along the window axis with 1 window per chunk so that
-    ``zarr_array[i]`` reads exactly one chunk — critical for fast
-    lazy loading in ``__getitem__``.
+    Uses 1 window per chunk so the one-time decompression to memmap
+    (on lazy load) stays fast per recording.
     """
     data_array = data.astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
