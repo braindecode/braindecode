@@ -36,14 +36,18 @@ def _restore_nan_from_json(obj):
 def _save_windows_to_zarr(
     grp, data, metadata, description, info, compressor, target_name, chunk_size
 ):
-    """Save windowed data to Zarr group (low-level function)."""
+    """Save windowed data to Zarr group (low-level function).
+
+    Chunks along the window axis with 1 window per chunk so that
+    ``zarr_array[i]`` reads exactly one chunk — critical for fast
+    lazy loading in ``__getitem__``.
+    """
     data_array = data.astype(np.float32)
     compressors_list = [compressor] if compressor is not None else None
 
-    max_windows_per_chunk = max(
-        1, chunk_size // (data_array.shape[1] * data_array.shape[2])
-    )
-    n_windows_per_chunk = min(data_array.shape[0], max_windows_per_chunk)
+    # 1 window per chunk: aligned with __getitem__(index) access pattern.
+    # Each chunk is (1, n_ch, n_t) — typically 50-300 KB, fast to decompress.
+    n_windows_per_chunk = 1
 
     grp.create_array(
         "data",

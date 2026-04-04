@@ -334,39 +334,32 @@ def _build_windowed_repr(
     return b
 
 
-def _decode_zarr_array(zarr_path, group_name):
-    """Decode a zarr array into numpy. Results are LRU-cached across datasets."""
+@__import__("functools").lru_cache(maxsize=8)
+def _open_zarr_store(zarr_path):
+    """Open a zarr store once per process (LRU-cached by path).
+
+    Each DataLoader worker gets its own cache. The store is read-only
+    and thread-safe. Only the store handle is cached, not decoded data.
+    """
     import zarr
 
-    root = zarr.open(str(zarr_path), mode="r")
-    return np.asarray(root[group_name]["data"])
-
-
-# LRU cache: keeps up to 64 decoded recordings in memory (~300-600 MB typical).
-# Each DataLoader worker gets its own cache (cache is not shared across processes).
-_decode_zarr_cached = __import__("functools").lru_cache(maxsize=64)(_decode_zarr_array)
+    return zarr.open(str(zarr_path), mode="r")
 
 
 class _ZarrMixin:
     """Shared zarr lazy-loading infrastructure for dataset classes.
 
-    Uses a process-level LRU cache (max 64 recordings) so repeated reads
-    from the same recording are pure numpy indexing, while memory stays
-    bounded.  Each DataLoader worker builds its own cache.
+    Uses per-slice zarr reads (no full-array decode) so only the chunks
+    touched by each ``__getitem__`` call are decompressed. The zarr store
+    opener is LRU-cached per process for fast reuse across recordings.
     """
 
     _zarr_data = None
 
     def _open_zarr(self):
-        """Open (or reopen) the zarr store and keep a lazy array reference."""
-        import zarr
-
-        root = zarr.open(str(self._zarr_path), mode="r")
-        self._zarr_data = root[self._group_name]["data"]
-
-    def _get_zarr_decoded(self):
-        """Return decoded numpy array from the shared LRU cache."""
-        return _decode_zarr_cached(str(self._zarr_path), self._group_name)
+        """Get the lazy zarr array reference via the cached store opener."""
+        store = _open_zarr_store(str(self._zarr_path))
+        self._zarr_data = store[self._group_name]["data"]
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -510,7 +503,7 @@ class RawDataset(_ZarrMixin, RecordDataset):
 
     def __getitem__(self, index):
         if self._zarr_data is not None:
-            X = self._get_zarr_decoded()[:, index]
+            X = self._zarr_data[:, index]
             # mne.Raw[:, scalar] returns (n_ch, 1) — match that shape
             if X.ndim == 1:
                 X = X[:, np.newaxis]
@@ -709,7 +702,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
 
         i_window_in_trial, i_start, i_stop = crop_inds
         if self._zarr_data is not None:
-            X = self._get_zarr_decoded()[:, i_start:i_stop].astype("float32")
+            X = self._zarr_data[:, i_start:i_stop].astype("float32")
             X = X.copy()
         else:
             X = self.raw._getitem(
@@ -970,7 +963,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
             Crop indices.
         """
         if self._zarr_data is not None:
-            X = self._get_zarr_decoded()[index].astype("float32")
+            X = self._zarr_data[index].astype("float32")
         elif self._fast_disk:
             X = self.windows._get_epoch_from_raw(index).astype("float32")
         else:
