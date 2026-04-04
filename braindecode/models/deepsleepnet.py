@@ -212,6 +212,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        self.return_feats = return_feats
         self.cnn1 = _CNNPath(
             n_filters_1=small_n_filters_1,
             n_filters_2=small_n_filters_2,
