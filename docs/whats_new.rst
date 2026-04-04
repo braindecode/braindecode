@@ -73,6 +73,12 @@ Enhancements
   max-norm constrained channel projection for fine-tuning pretrained BENDR on datasets
   with arbitrary channel counts (by `Kuntal Kokate`_)
 - Add dynamic SDPA fallback in :class:`braindecode.models.reve.ClassicalAttention` to support PyTorch versions without SDPA (by `GalAshkenazi1`_)
+- Add MNE/FIF storage backend for Hub integration, enabling true lazy loading
+  via memory-mapped FIF files when ``preload=False``. Refactor ``push_to_hub()``
+  to accept a unified ``backend_params`` argument (dict or backend instance)
+  instead of format-specific parameters. Each backend (``ZarrBackend``,
+  ``MneBackend``) is a dataclass combining configuration and implementation
+  (:gh:`976` by `Pierre Guetschel`_)
 - Add unified ``return_features`` parameter to ``forward()`` of all 7 foundation
   models (:class:`~braindecode.models.EEGPT`, :class:`~braindecode.models.Labram`,
   :class:`~braindecode.models.REVE`, :class:`~braindecode.models.BENDR`,

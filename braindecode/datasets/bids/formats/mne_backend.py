@@ -24,12 +24,11 @@ from pathlib import Path
 from typing import ClassVar
 
 import mne
-import numpy as np
 import pandas as pd
 
 import braindecode
 
-from ...registry import get_dataset_class, get_dataset_type
+from ...registry import get_dataset_class
 from .. import hub_format, hub_validation
 from .registry import register_format
 from .utils import _restore_nan_from_json, _sanitize_for_json
@@ -113,9 +112,7 @@ class MneBackend:
                     manifest[kwarg_name] = kwargs
 
         for i_ds, ds in enumerate(datasets):
-            description = (
-                ds.description if ds.description is not None else pd.Series()
-            )
+            description = ds.description if ds.description is not None else pd.Series()
 
             # Build BIDS path for FIF file
             bids_path = hub_format.description_to_bids_path(
@@ -135,18 +132,14 @@ class MneBackend:
 
             if dataset_type == "RawDataset":
                 ds.raw.save(fif_path, split_size=self.split_size, overwrite=True)
-                target_name = (
-                    ds.target_name if hasattr(ds, "target_name") else None
-                )
+                target_name = ds.target_name if hasattr(ds, "target_name") else None
                 if target_name is not None:
                     recording_info["target_name"] = target_name
 
             elif dataset_type == "EEGWindowsDataset":
                 ds.raw.save(fif_path, split_size=self.split_size, overwrite=True)
                 # Save metadata alongside FIF
-                meta_path = bids_path.copy().update(
-                    suffix="metadata", extension=".tsv"
-                )
+                meta_path = bids_path.copy().update(suffix="metadata", extension=".tsv")
                 ds.metadata.to_csv(
                     meta_path.fpath, sep="\t", index=True, encoding="utf-8"
                 )
@@ -166,18 +159,14 @@ class MneBackend:
                     ds.windows.save(
                         fif_path, split_size=self.split_size, overwrite=True
                     )
-                target_name = (
-                    ds.target_name if hasattr(ds, "target_name") else None
-                )
+                target_name = ds.target_name if hasattr(ds, "target_name") else None
                 if target_name is not None:
                     recording_info["target_name"] = target_name
 
             else:
                 raise ValueError(f"Unsupported dataset_type: {dataset_type}")
 
-            recording_info["fif_relpath"] = str(
-                fif_path.relative_to(output_path)
-            )
+            recording_info["fif_relpath"] = str(fif_path.relative_to(output_path))
             manifest["recordings"].append(recording_info)
 
             log.debug(f"Saved recording {i_ds} to {fif_path}")
@@ -187,9 +176,7 @@ class MneBackend:
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
 
-        log.info(
-            f"Saved {len(datasets)} recordings as FIF to {output_path}"
-        )
+        log.info(f"Saved {len(datasets)} recordings as FIF to {output_path}")
 
     # ------------------------------------------------------------------
     # Load
@@ -226,9 +213,7 @@ class MneBackend:
         datasets = []
         for rec in recordings:
             fif_path = input_path / rec["fif_relpath"]
-            description = pd.Series(
-                _restore_nan_from_json(rec["description"])
-            )
+            description = pd.Series(_restore_nan_from_json(rec["description"]))
 
             if dataset_type == "RawDataset":
                 raw = mne.io.read_raw_fif(fif_path, preload=preload)

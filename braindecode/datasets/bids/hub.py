@@ -50,8 +50,8 @@ from ..registry import get_dataset_type
 # Hub format and validation utilities
 from . import hub_format, hub_validation
 from .formats import get_format_backend
-from .formats.registry import resolve_backend_params
 from .formats.mne_backend import MneBackend
+from .formats.registry import resolve_backend_params
 from .formats.zarr_backend import ZarrBackend
 
 # Lazy import huggingface_hub
@@ -558,19 +558,18 @@ class HubDatasetMixin:
                 )
                 if not data_path.exists():
                     data_path = (
-                        Path(dataset_dir) / "derivatives" / pipeline_name / data_filename
+                        Path(dataset_dir)
+                        / "derivatives"
+                        / pipeline_name
+                        / data_filename
                     )
                 if not data_path.exists():
                     data_path = Path(dataset_dir) / data_filename
             else:
                 # Backend uses per-subject files; point to sourcedata dir
-                data_path = (
-                    Path(dataset_dir) / "sourcedata" / pipeline_name
-                )
+                data_path = Path(dataset_dir) / "sourcedata" / pipeline_name
                 if not data_path.exists():
-                    data_path = (
-                        Path(dataset_dir) / "derivatives" / pipeline_name
-                    )
+                    data_path = Path(dataset_dir) / "derivatives" / pipeline_name
 
             if not data_path.exists():
                 raise FileNotFoundError(
@@ -729,7 +728,6 @@ class HubDatasetMixin:
             "total_samples": total_samples,
             "total_size_mb": round(total_size_mb, 2),
         }
-
 
 
 def _generate_readme_content(

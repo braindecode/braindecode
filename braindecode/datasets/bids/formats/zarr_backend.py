@@ -24,7 +24,7 @@ from mne.utils import _soft_import
 
 import braindecode
 
-from ...registry import get_dataset_class, get_dataset_type
+from ...registry import get_dataset_class
 from .. import hub_validation
 from .registry import register_format
 from .utils import _restore_nan_from_json, _sanitize_for_json
@@ -35,6 +35,7 @@ zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
 # ---------------------------------------------------------------------------
 # Low-level Zarr save helpers
 # ---------------------------------------------------------------------------
+
 
 def _create_compressor(compression, compression_level):
     """Create a Zarr v3 compressor codec."""
@@ -147,6 +148,7 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chun
 # Low-level Zarr load helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_windows_from_zarr(grp):
     """Load windowed data from Zarr group (low-level function)."""
     store_path = getattr(grp.store, "path", getattr(grp.store, "root", None))
@@ -195,6 +197,7 @@ def _load_raw_from_zarr(grp):
 # ---------------------------------------------------------------------------
 # ZarrBackend
 # ---------------------------------------------------------------------------
+
 
 @register_format
 @dataclass
@@ -293,8 +296,14 @@ class ZarrBackend:
                 target_name = ds.target_name if hasattr(ds, "target_name") else None
 
                 _save_windows_to_zarr(
-                    grp, data, metadata, description, info_dict,
-                    compressor, target_name, self.chunk_size,
+                    grp,
+                    data,
+                    metadata,
+                    description,
+                    info_dict,
+                    compressor,
+                    target_name,
+                    self.chunk_size,
                 )
 
             elif dataset_type == "EEGWindowsDataset":
@@ -306,8 +315,15 @@ class ZarrBackend:
                 last_target_only = ds.last_target_only
 
                 _save_eegwindows_to_zarr(
-                    grp, raw, metadata, description, info_dict,
-                    targets_from, last_target_only, compressor, self.chunk_size,
+                    grp,
+                    raw,
+                    metadata,
+                    description,
+                    info_dict,
+                    targets_from,
+                    last_target_only,
+                    compressor,
+                    self.chunk_size,
                 )
 
             elif dataset_type == "RawDataset":
@@ -317,8 +333,13 @@ class ZarrBackend:
                 target_name = ds.target_name if hasattr(ds, "target_name") else None
 
                 _save_raw_to_zarr(
-                    grp, raw, description, info_dict,
-                    target_name, compressor, self.chunk_size,
+                    grp,
+                    raw,
+                    description,
+                    info_dict,
+                    target_name,
+                    compressor,
+                    self.chunk_size,
                 )
 
     def load_datasets(self, input_path: Path, preload: bool):
@@ -375,8 +396,12 @@ class ZarrBackend:
 
             elif dataset_type == "EEGWindowsDataset":
                 (
-                    data, metadata, description, info_dict,
-                    targets_from, last_target_only,
+                    data,
+                    metadata,
+                    description,
+                    info_dict,
+                    targets_from,
+                    last_target_only,
                 ) = _load_eegwindows_from_zarr(grp)
 
                 info = Info.from_json_dict(info_dict)

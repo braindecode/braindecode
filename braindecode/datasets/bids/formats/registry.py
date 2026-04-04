@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from ...base import BaseDataset, BaseConcatDataset
+    from ...base import BaseConcatDataset, BaseDataset
 
 
 @runtime_checkable
@@ -72,9 +72,7 @@ def get_format_backend(name: str) -> type:
     _ensure_builtins_loaded()
     if name not in _FORMAT_REGISTRY:
         available = ", ".join(sorted(_FORMAT_REGISTRY.keys()))
-        raise ValueError(
-            f"Unknown format '{name}'. Available formats: {available}"
-        )
+        raise ValueError(f"Unknown format '{name}'. Available formats: {available}")
     return _FORMAT_REGISTRY[name]
 
 
@@ -82,13 +80,14 @@ def _ensure_builtins_loaded():
     """Import built-in backends so they register themselves."""
     if _FORMAT_REGISTRY:
         return
-    from . import zarr_backend as _zarr  # noqa: F401
     from . import mne_backend as _mne  # noqa: F401
+    from . import zarr_backend as _zarr  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
 # Parameter resolution
 # ---------------------------------------------------------------------------
+
 
 def resolve_backend_params(backend_params):
     """Resolve ``backend_params`` to a backend instance.
@@ -120,9 +119,7 @@ def resolve_backend_params(backend_params):
         cls = _FORMAT_REGISTRY.get(fmt)
         if cls is None:
             available = ", ".join(sorted(_FORMAT_REGISTRY.keys()))
-            raise ValueError(
-                f"Unknown format '{fmt}'. Available: {available}"
-            )
+            raise ValueError(f"Unknown format '{fmt}'. Available: {available}")
         # Filter to only fields accepted by the dataclass
         valid_keys = {f.name for f in dataclasses.fields(cls)}
         p = {k: v for k, v in p.items() if k in valid_keys}

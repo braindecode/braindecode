@@ -14,7 +14,6 @@ from .formats.utils import (  # noqa: F401
     _restore_nan_from_json,
     _sanitize_for_json,
 )
-
 from .formats.zarr_backend import (  # noqa: F401
     _create_compressor,
     _load_eegwindows_from_zarr,
