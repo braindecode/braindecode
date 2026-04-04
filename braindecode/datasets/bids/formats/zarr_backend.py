@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import json
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 import mne
 import numpy as np
@@ -24,7 +26,7 @@ import braindecode
 
 from ...registry import get_dataset_class, get_dataset_type
 from .. import hub_validation
-from . import register_format
+from .registry import register_format
 from .utils import _restore_nan_from_json, _sanitize_for_json
 
 zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
@@ -194,10 +196,30 @@ def _load_raw_from_zarr(grp):
 # ZarrBackend
 # ---------------------------------------------------------------------------
 
+@register_format
+@dataclass
 class ZarrBackend:
-    """Zarr storage backend — compressed, eager-loaded."""
+    """Zarr storage backend — compressed, eager-loaded.
 
-    name = "zarr"
+    Parameters
+    ----------
+    compression : str
+        Compression algorithm. Default ``"blosc"``.
+    compression_level : int
+        Compression level 0-9. Default ``5``.
+    chunk_size : int
+        Samples per chunk. Default ``5_000_000``.
+    """
+
+    compression: str = "blosc"
+    compression_level: int = 5
+    chunk_size: int = 5_000_000
+
+    name: ClassVar[str] = "zarr"
+
+    @property
+    def format(self):
+        return "zarr"
 
     def validate_dependencies(self):
         if zarr is False:
@@ -208,15 +230,15 @@ class ZarrBackend:
     def get_data_filename(self) -> str:
         return "dataset.zarr"
 
-    def build_format_info(self, format_params: dict) -> dict:
+    def build_format_info(self) -> dict:
         return {
             "format": "zarr",
-            "compression": format_params.get("compression", "blosc"),
-            "compression_level": format_params.get("compression_level", 5),
-            "chunk_size": format_params.get("chunk_size", 5_000_000),
+            "compression": self.compression,
+            "compression_level": self.compression_level,
+            "chunk_size": self.chunk_size,
         }
 
-    def convert_datasets(self, datasets, output_path: Path, format_params: dict):
+    def convert_datasets(self, datasets, output_path: Path):
         """Convert a list of datasets to Zarr format on disk."""
         self.validate_dependencies()
 
@@ -224,10 +246,6 @@ class ZarrBackend:
             raise FileExistsError(
                 f"{output_path} already exists. Set overwrite=True to replace it."
             )
-
-        compression = format_params.get("compression", "blosc")
-        compression_level = format_params.get("compression_level", 5)
-        chunk_size = format_params.get("chunk_size", 5_000_000)
 
         # Create zarr store (zarr v3 API)
         root = zarr.open(str(output_path), mode="w")
@@ -261,7 +279,7 @@ class ZarrBackend:
                     root.attrs[kwarg_name] = json.dumps(kwargs)
 
         # Create compressor
-        compressor = _create_compressor(compression, compression_level)
+        compressor = _create_compressor(self.compression, self.compression_level)
 
         # Save each recording
         for i_ds, ds in enumerate(datasets):
@@ -276,7 +294,7 @@ class ZarrBackend:
 
                 _save_windows_to_zarr(
                     grp, data, metadata, description, info_dict,
-                    compressor, target_name, chunk_size,
+                    compressor, target_name, self.chunk_size,
                 )
 
             elif dataset_type == "EEGWindowsDataset":
@@ -289,7 +307,7 @@ class ZarrBackend:
 
                 _save_eegwindows_to_zarr(
                     grp, raw, metadata, description, info_dict,
-                    targets_from, last_target_only, compressor, chunk_size,
+                    targets_from, last_target_only, compressor, self.chunk_size,
                 )
 
             elif dataset_type == "RawDataset":
@@ -300,7 +318,7 @@ class ZarrBackend:
 
                 _save_raw_to_zarr(
                     grp, raw, description, info_dict,
-                    target_name, compressor, chunk_size,
+                    target_name, compressor, self.chunk_size,
                 )
 
     def load_datasets(self, input_path: Path, preload: bool):
@@ -399,6 +417,3 @@ class ZarrBackend:
                     setattr(ds, kwarg_name, kwargs)
 
         return concat_ds
-
-
-register_format(ZarrBackend())

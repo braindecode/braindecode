@@ -50,7 +50,9 @@ from ..registry import get_dataset_type
 # Hub format and validation utilities
 from . import hub_format, hub_validation
 from .formats import get_format_backend
-from .formats.utils import MNEParams, ZarrParams, resolve_backend_params
+from .formats.registry import resolve_backend_params
+from .formats.mne_backend import MneBackend
+from .formats.zarr_backend import ZarrBackend
 
 # Lazy import huggingface_hub
 huggingface_hub = _soft_import(
@@ -89,7 +91,7 @@ class HubDatasetMixin:
         repo_id: str,
         private: bool = False,
         token: Optional[str] = None,
-        backend_params: Union[dict, ZarrParams, MNEParams, None] = None,
+        backend_params: Union[dict, ZarrBackend, MneBackend, None] = None,
         pipeline_name: str = "braindecode",
         local_cache_dir: str | Path | None = None,
         **kwargs,
@@ -109,11 +111,25 @@ class HubDatasetMixin:
             Whether to create a private repository.
         token : str | None
             Hugging Face API token. If None, uses cached token.
-        backend_params : dict | ZarrParams | MNEParams | None
-            Backend-specific parameters. Accepts a dataclass instance
-            (``ZarrParams`` or ``MNEParams``) or a plain dict with a
-            ``"format"`` key to select the backend. If ``None``, defaults
-            to ``ZarrParams()`` (Zarr with default settings).
+        backend_params : dict | ZarrBackend | MneBackend | None
+            Backend-specific parameters. Pass a backend instance or a plain
+            dict with a ``"format"`` discriminator key. If ``None``, defaults
+            to ``ZarrBackend()`` (Zarr with default settings).
+
+            **Zarr backend** (``ZarrBackend`` / ``{"format": "zarr", ...}``):
+
+            - ``compression`` : str — Compression algorithm
+              (default ``"blosc"``). Options: ``"blosc"``, ``"zstd"``,
+              ``"gzip"``, ``None``.
+            - ``compression_level`` : int — Compression level 0-9
+              (default ``5``).
+            - ``chunk_size`` : int — Samples per chunk
+              (default ``5_000_000``).
+
+            **MNE backend** (``MneBackend`` / ``{"format": "mne", ...}``):
+
+            - ``split_size`` : str — Max file size before splitting
+              (default ``"2GB"``). E.g. ``"2GB"``, ``"500MB"``.
 
             Examples::
 
@@ -123,8 +139,8 @@ class HubDatasetMixin:
                 # MNE with defaults (dict form)
                 ds.push_to_hub("repo", backend_params={"format": "mne"})
 
-                # MNE with custom split size (dataclass form)
-                ds.push_to_hub("repo", backend_params=MNEParams(split_size="1GB"))
+                # MNE with custom split size
+                ds.push_to_hub("repo", backend_params=MneBackend(split_size="1GB"))
 
         pipeline_name : str, default="braindecode"
             Name of the processing pipeline for BIDS sourcedata.
@@ -173,10 +189,7 @@ class HubDatasetMixin:
                 "pip install braindecode[hub]"
             )
 
-        from dataclasses import asdict
-
-        params = resolve_backend_params(backend_params)
-        backend = get_format_backend(params.format)
+        backend = resolve_backend_params(backend_params)
         backend.validate_dependencies()
 
         # Create API instance
@@ -193,10 +206,9 @@ class HubDatasetMixin:
         except Exception as e:
             raise RuntimeError(f"Failed to create repository: {e}")
 
-        format_params = asdict(params)
         format_info = self._get_format_info_inline()
         format_info_lock = {
-            **backend.build_format_info(format_params),
+            **backend.build_format_info(),
             "pipeline_name": pipeline_name,
             "braindecode_version": braindecode.__version__,
             **format_info,
@@ -287,7 +299,7 @@ class HubDatasetMixin:
         self._save_bids_sidecar_files(bids_layout)
 
         # Convert dataset using the appropriate format backend
-        backend = get_format_backend(format_info_lock["format"])
+        backend = resolve_backend_params(format_info_lock)
         data_filename = backend.get_data_filename()
         if data_filename is not None:
             dataset_path = sourcedata_dir / data_filename
@@ -295,7 +307,7 @@ class HubDatasetMixin:
             # Backend writes per-subject files into the BIDS tree
             dataset_path = sourcedata_dir
         log.info(f"Converting dataset to {backend.name} format...")
-        backend.convert_datasets(self.datasets, dataset_path, format_info_lock)
+        backend.convert_datasets(self.datasets, dataset_path)
 
         # Save dataset metadata (README.md)
         self._save_dataset_card(tmp_path)
@@ -532,7 +544,8 @@ class HubDatasetMixin:
 
             # Auto-detect format (default to zarr for backward compatibility)
             format_name = format_info.get("format", "zarr")
-            backend = get_format_backend(format_name)
+            backend_cls = get_format_backend(format_name)
+            backend = backend_cls()
             backend.validate_dependencies()
 
             pipeline_name = format_info.get("pipeline_name", "braindecode")
@@ -669,18 +682,17 @@ class HubDatasetMixin:
         chunk_size=5_000_000,
     ):
         """Backward-compatible wrapper — delegates to ZarrBackend."""
-        backend = get_format_backend("zarr")
-        format_params = {
-            "compression": compression,
-            "compression_level": compression_level,
-            "chunk_size": chunk_size,
-        }
-        backend.convert_datasets(self.datasets, output_path, format_params)
+        backend = ZarrBackend(
+            compression=compression,
+            compression_level=compression_level,
+            chunk_size=chunk_size,
+        )
+        backend.convert_datasets(self.datasets, output_path)
 
     @staticmethod
     def _load_from_zarr_inline(input_path, preload=True):
         """Backward-compatible wrapper — delegates to ZarrBackend."""
-        backend = get_format_backend("zarr")
+        backend = ZarrBackend()
         return backend.load_datasets(input_path, preload)
 
     def _get_format_info_inline(self):

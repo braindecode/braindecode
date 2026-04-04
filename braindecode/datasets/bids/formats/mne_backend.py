@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import logging
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 import mne
 import numpy as np
@@ -29,16 +31,31 @@ import braindecode
 
 from ...registry import get_dataset_class, get_dataset_type
 from .. import hub_format, hub_validation
-from . import register_format
+from .registry import register_format
 from .utils import _restore_nan_from_json, _sanitize_for_json
 
 log = logging.getLogger(__name__)
 
 
+@register_format
+@dataclass
 class MneBackend:
-    """MNE/FIF storage backend — no compression, lazy-loadable."""
+    """MNE/FIF storage backend — no compression, lazy-loadable.
 
-    name = "mne"
+    Parameters
+    ----------
+    split_size : str
+        Max file size before splitting (e.g. "2GB", "500MB").
+        Default ``"2GB"``.
+    """
+
+    split_size: str = "2GB"
+
+    name: ClassVar[str] = "mne"
+
+    @property
+    def format(self):
+        return "mne"
 
     def validate_dependencies(self) -> None:
         # MNE is always available in braindecode
@@ -50,17 +67,17 @@ class MneBackend:
         # that the backend writes directly into sourcedata_dir.
         return None
 
-    def build_format_info(self, format_params: dict) -> dict:
+    def build_format_info(self) -> dict:
         return {
             "format": "mne",
-            "split_size": format_params.get("split_size", "2GB"),
+            "split_size": self.split_size,
         }
 
     # ------------------------------------------------------------------
     # Save
     # ------------------------------------------------------------------
 
-    def convert_datasets(self, datasets, output_path: Path, format_params: dict):
+    def convert_datasets(self, datasets, output_path: Path):
         """Serialize datasets as FIF files in per-subject BIDS directories.
 
         Parameters
@@ -69,11 +86,7 @@ class MneBackend:
             Datasets to serialize.
         output_path : Path
             The ``sourcedata/braindecode/`` directory.
-        format_params : dict
-            Must contain ``"split_size"`` (e.g. ``"2GB"``).
         """
-        split_size = format_params.get("split_size", "2GB")
-
         dataset_type, _, _ = hub_validation.validate_dataset_uniformity(datasets)
 
         first_ds = datasets[0]
@@ -84,7 +97,7 @@ class MneBackend:
             "dataset_type": dataset_type,
             "braindecode_version": braindecode.__version__,
             "mne_version": mne.__version__,
-            "split_size": split_size,
+            "split_size": self.split_size,
             "recordings": [],
         }
 
@@ -121,7 +134,7 @@ class MneBackend:
             }
 
             if dataset_type == "RawDataset":
-                ds.raw.save(fif_path, split_size=split_size, overwrite=True)
+                ds.raw.save(fif_path, split_size=self.split_size, overwrite=True)
                 target_name = (
                     ds.target_name if hasattr(ds, "target_name") else None
                 )
@@ -129,7 +142,7 @@ class MneBackend:
                     recording_info["target_name"] = target_name
 
             elif dataset_type == "EEGWindowsDataset":
-                ds.raw.save(fif_path, split_size=split_size, overwrite=True)
+                ds.raw.save(fif_path, split_size=self.split_size, overwrite=True)
                 # Save metadata alongside FIF
                 meta_path = bids_path.copy().update(
                     suffix="metadata", extension=".tsv"
@@ -151,7 +164,7 @@ class MneBackend:
                         category=RuntimeWarning,
                     )
                     ds.windows.save(
-                        fif_path, split_size=split_size, overwrite=True
+                        fif_path, split_size=self.split_size, overwrite=True
                     )
                 target_name = (
                     ds.target_name if hasattr(ds, "target_name") else None
@@ -270,6 +283,3 @@ class MneBackend:
                     setattr(ds, kwarg_name, kwargs)
 
         return concat_ds
-
-
-register_format(MneBackend())
