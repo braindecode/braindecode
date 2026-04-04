@@ -267,7 +267,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             dropout=drop_prob if bilstm_num_layers > 1 else 0.0,
             bidirectional=True,
         )
-        self.fc = nn.Sequential(
+        self.residual_shortcut = nn.Sequential(
             nn.Linear(feat_size, fc_out_features, bias=False),
             nn.BatchNorm1d(num_features=fc_out_features),
             nn.ReLU(),
@@ -295,7 +295,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         x2 = self.flatten_cnn(self.cnn2(x))
 
         x = self.dropout(torch.cat((x1, x2), dim=1))
-        residual = self.fc(x)
+        residual = self.residual_shortcut(x)
         x, _ = self.bilstm(self.add_seq_dim(x))
         x = self.remove_seq_dim(x)
         x = self.dropout(x + residual)
