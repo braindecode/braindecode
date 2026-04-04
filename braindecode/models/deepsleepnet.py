@@ -324,48 +324,25 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
         self.features_extractor = nn.Identity()
         self.len_last_layer = fc_out_features
-        self.return_feats = return_feats
-
-        # TODO: Add new way to handle return_features == True
-        if not return_feats:
-            self.final_layer = nn.Linear(fc_out_features, self.n_outputs)
-        else:
-            self.final_layer = nn.Identity()
+        self.final_layer = (
+            nn.Identity()
+            if return_feats
+            else nn.Linear(fc_out_features, self.n_outputs)
+        )
 
     def forward(self, x):
-        """Forward pass.
-
-        Parameters
-        ----------
-        x: torch.Tensor
-            Batch of EEG windows of shape (batch_size, n_channels, n_times).
-        """
-
         if x.ndim == 3:
             x = x.unsqueeze(1)
 
-        x1 = self.cnn1(x)
-        x1 = x1.flatten(start_dim=1)
+        x1 = self.cnn1(x).flatten(start_dim=1)
+        x2 = self.cnn2(x).flatten(start_dim=1)
 
-        x2 = self.cnn2(x)
-        x2 = x2.flatten(start_dim=1)
+        x = self.dropout(torch.cat((x1, x2), dim=1))
+        residual = self.fc(x)
+        x = self.bilstm(x.unsqueeze(1)).squeeze(1)
+        x = self.dropout(x + residual)
 
-        x = torch.cat((x1, x2), dim=1)
-        x = self.dropout(x)
-        temp = x.clone()
-        temp = self.fc(temp)
-        x = x.unsqueeze(1)
-        x = self.bilstm(x)
-        x = x.squeeze()
-        x = torch.add(x, temp)
-        x = self.dropout(x)
-
-        feats = self.features_extractor(x)
-
-        if self.return_feats:
-            return feats
-        else:
-            return self.final_layer(feats)
+        return self.final_layer(self.features_extractor(x))
 
 
 def _conv_out(w, ksp):
