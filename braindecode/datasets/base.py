@@ -182,14 +182,11 @@ def _concat_metadata_summary(datasets):
 
 
 def _channel_info(mne_obj):
-    """Extract channel summary from an mne object.
-
-    Returns (n_ch, type_str, sfreq).
-    """
-    info = mne_obj.info
+    """Extract (n_ch, type_str, sfreq) from an mne object or mne.Info."""
+    info = mne_obj if isinstance(mne_obj, mne.Info) else mne_obj.info
     n_ch = info["nchan"]
     sfreq = info["sfreq"]
-    ch_types = mne_obj.get_channel_types()
+    ch_types = info.get_channel_types()
     type_counts = Counter(ch_types)
     type_str = ", ".join(f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items()))
     return n_ch, type_str, sfreq
@@ -268,51 +265,12 @@ class _ReprBuilder:
         )
 
 
-_KIND_MAP = {2: "EEG", 502: "EMG", 201: "EOG", 602: "MISC", 1: "MEG"}
-_MNE_KIND_MISC = 602
-
-
-def _extract_kind(ch):
-    """Extract MNE channel kind int from a ch dict (handles NamedInt dicts)."""
-    kind = ch.get("kind", 2)
-    return kind.get("value", 2) if isinstance(kind, dict) else kind
-
-
-def _misc_mask_from_info_dict(info_dict):
-    """Return boolean array marking MISC channels from a serialized MNE info dict."""
-    chs = info_dict.get("chs", [])
-    return np.array([_extract_kind(ch) == _MNE_KIND_MISC for ch in chs])
-
-
-def _channel_info_from_dict(info_dict):
-    """Extract (n_ch, type_str, sfreq) from a serialized MNE info dict."""
-    n_ch = info_dict.get("nchan", 0)
-    sfreq = info_dict.get("sfreq", 0)
-    chs = info_dict.get("chs", [])
-    type_counts = Counter(_extract_kind(ch) for ch in chs)
-    type_str = ", ".join(
-        f"{cnt} {_KIND_MAP.get(k, str(k))}" for k, cnt in sorted(type_counts.items())
-    )
-    return n_ch, type_str, sfreq
-
-
 def _build_windowed_repr(
-    cls_name,
-    n_windows,
-    mne_obj,
-    crop_inds,
-    description,
-    metadata,
-    info_dict=None,
+    cls_name, n_windows, mne_obj, crop_inds, description, metadata
 ):
     """Build repr for EEGWindowsDataset and WindowsDataset."""
     b = _ReprBuilder(cls_name)
-    if mne_obj is not None:
-        n_ch, type_str, sfreq = _channel_info(mne_obj)
-    elif info_dict is not None:
-        n_ch, type_str, sfreq = _channel_info_from_dict(info_dict)
-    else:
-        n_ch, type_str, sfreq = 0, "", 0
+    n_ch, type_str, sfreq = _channel_info(mne_obj)
     b.add_header(f"{n_windows} windows", "Windows", n_windows)
     b.add_header(f"{n_ch} ch ({type_str})", "Channels", f"{n_ch} ({type_str})")
     wi = _window_info(crop_inds, sfreq)
@@ -566,11 +524,11 @@ class RawDataset(_ZarrMixin, RecordDataset):
 
     def _build_repr(self):
         b = _ReprBuilder(type(self).__name__)
-        if self.raw is not None:
-            n_ch, type_str, sfreq = _channel_info(self.raw)
-            n_times = len(self.raw.times)
+        if self._raw is not None:
+            n_ch, type_str, sfreq = _channel_info(self._raw)
+            n_times = len(self._raw.times)
         else:
-            n_ch, type_str, sfreq = _channel_info_from_dict(self._info_dict)
+            n_ch, type_str, sfreq = _channel_info(self._make_mne_info())
             n_times = self._zarr_data.shape[1]
         duration = n_times / sfreq if sfreq > 0 else 0
         b.add_header(f"{n_ch} ch ({type_str})", "Channels", f"{n_ch} ({type_str})")
@@ -758,10 +716,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            if self._zarr_data is not None:
-                misc_mask = _misc_mask_from_info_dict(self._info_dict)
-            else:
-                misc_mask = np.array(self.raw.get_channel_types()) == "misc"
+            misc_mask = np.array(self.raw.get_channel_types()) == "misc"
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
@@ -774,14 +729,14 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
         return len(self.crop_inds)
 
     def _build_repr(self):
+        mne_obj = self._raw if self._raw is not None else self._make_mne_info()
         return _build_windowed_repr(
             type(self).__name__,
             len(self),
-            self.raw,
+            mne_obj,
             self.crop_inds,
             self.description,
             self.metadata,
-            info_dict=getattr(self, "_info_dict", None),
         )
 
     def to_epochs_dataset(self) -> WindowsDataset:
@@ -1034,10 +989,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            if self._zarr_data is not None:
-                misc_mask = _misc_mask_from_info_dict(self._info_dict)
-            else:
-                misc_mask = np.array(self.windows.get_channel_types()) == "misc"
+            misc_mask = np.array(self.windows.get_channel_types()) == "misc"
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
@@ -1054,16 +1006,15 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         return len(self.crop_inds)
 
     def _build_repr(self):
-        mne_obj = self._windows
-        metadata = self.metadata if self._windows is None else self._windows.metadata
+        mne_obj = self._windows if self._windows is not None else self._make_mne_info()
+        md = self._windows.metadata if self._windows is not None else self.metadata
         return _build_windowed_repr(
             type(self).__name__,
             len(self),
             mne_obj,
             self.crop_inds,
             self.description,
-            metadata,
-            info_dict=getattr(self, "_info_dict", None),
+            md,
         )
 
 
