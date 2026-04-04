@@ -20,6 +20,7 @@ from abc import abstractmethod
 from collections import Counter
 from collections.abc import Callable
 from glob import glob
+from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
 
 import mne.io
@@ -262,12 +263,51 @@ class _ReprBuilder:
         )
 
 
+_KIND_MAP = {2: "EEG", 502: "EMG", 201: "EOG", 602: "MISC", 1: "MEG"}
+_MNE_KIND_MISC = 602
+
+
+def _extract_kind(ch):
+    """Extract MNE channel kind int from a ch dict (handles NamedInt dicts)."""
+    kind = ch.get("kind", 2)
+    return kind.get("value", 2) if isinstance(kind, dict) else kind
+
+
+def _misc_mask_from_info_dict(info_dict):
+    """Return boolean array marking MISC channels from a serialized MNE info dict."""
+    chs = info_dict.get("chs", [])
+    return np.array([_extract_kind(ch) == _MNE_KIND_MISC for ch in chs])
+
+
+def _channel_info_from_dict(info_dict):
+    """Extract (n_ch, type_str, sfreq) from a serialized MNE info dict."""
+    n_ch = info_dict.get("nchan", 0)
+    sfreq = info_dict.get("sfreq", 0)
+    chs = info_dict.get("chs", [])
+    type_counts = Counter(_extract_kind(ch) for ch in chs)
+    type_str = ", ".join(
+        f"{cnt} {_KIND_MAP.get(k, str(k))}" for k, cnt in sorted(type_counts.items())
+    )
+    return n_ch, type_str, sfreq
+
+
 def _build_windowed_repr(
-    cls_name, n_windows, mne_obj, crop_inds, description, metadata
+    cls_name,
+    n_windows,
+    mne_obj,
+    crop_inds,
+    description,
+    metadata,
+    info_dict=None,
 ):
     """Build repr for EEGWindowsDataset and WindowsDataset."""
     b = _ReprBuilder(cls_name)
-    n_ch, type_str, sfreq = _channel_info(mne_obj)
+    if mne_obj is not None:
+        n_ch, type_str, sfreq = _channel_info(mne_obj)
+    elif info_dict is not None:
+        n_ch, type_str, sfreq = _channel_info_from_dict(info_dict)
+    else:
+        n_ch, type_str, sfreq = 0, "", 0
     b.add_header(f"{n_windows} windows", "Windows", n_windows)
     b.add_header(f"{n_ch} ch ({type_str})", "Channels", f"{n_ch} ({type_str})")
     wi = _window_info(crop_inds, sfreq)
@@ -292,6 +332,41 @@ def _build_windowed_repr(
             if summary["extra_columns"]:
                 b.add_row("extra metadata", ", ".join(summary["extra_columns"]))
     return b
+
+
+class _ZarrMixin:
+    """Shared zarr lazy-loading infrastructure for dataset classes."""
+
+    _zarr_data = None
+    _decoded_cache = None
+
+    def _open_zarr(self):
+        """Open (or reopen) the zarr store and cache the array reference."""
+        import zarr
+
+        root = zarr.open(str(self._zarr_path), mode="r")
+        self._zarr_data = root[self._group_name]["data"]
+        self._decoded_cache = None
+
+    def _get_zarr_decoded(self):
+        """Return decoded numpy array, caching on first access."""
+        if self._decoded_cache is None:
+            self._decoded_cache = np.asarray(self._zarr_data)
+        return self._decoded_cache
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop("_zarr_data", None)
+        state.pop("_decoded_cache", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if hasattr(self, "_zarr_path"):
+            self._open_zarr()
+        else:
+            self._zarr_data = None
+            self._decoded_cache = None
 
 
 class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]]):
@@ -361,7 +436,7 @@ T = TypeVar("T", bound=RecordDataset)
 
 
 @register_dataset
-class RawDataset(RecordDataset):
+class RawDataset(_ZarrMixin, RecordDataset):
     """Returns samples from an mne.io.Raw object along with a target.
 
     Dataset which serves samples from an mne.io.Raw object along with a target.
@@ -395,8 +470,40 @@ class RawDataset(RecordDataset):
         self.target_name = self._target_name(target_name)
         self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
+    @classmethod
+    def _from_zarr(
+        cls,
+        zarr_path,
+        group_name,
+        description,
+        info_dict,
+        target_name=None,
+        transform=None,
+    ):
+        """Create a lazy Zarr-backed RawDataset (internal API)."""
+        from mne.utils import _soft_import
+
+        _soft_import("zarr", purpose="lazy loading from Zarr")
+
+        obj = object.__new__(cls)
+        RecordDataset.__init__(obj, description, transform)
+        obj.raw = None
+        obj._zarr_path = Path(zarr_path)
+        obj._group_name = group_name
+        obj._info_dict = info_dict
+        obj.target_name = cls._target_name(obj, target_name)
+        obj.raw_preproc_kwargs: list[dict[str, Any]] = []
+        obj._open_zarr()
+        return obj
+
     def __getitem__(self, index):
-        X = self.raw[:, index][0]
+        if self._zarr_data is not None:
+            X = self._get_zarr_decoded()[:, index]
+            # mne.Raw[:, scalar] returns (n_ch, 1) — match that shape
+            if X.ndim == 1:
+                X = X[:, np.newaxis]
+        else:
+            X = self.raw[:, index][0]
         y = None
         if self.target_name is not None:
             y = self.description[self.target_name]
@@ -407,13 +514,21 @@ class RawDataset(RecordDataset):
         return X, y
 
     def __len__(self):
-        return len(self.raw)
+        if self.raw is not None:
+            return len(self.raw)
+        return self._zarr_data.shape[1]
 
     def _build_repr(self):
         b = _ReprBuilder(type(self).__name__)
-        n_ch, type_str, sfreq = _channel_info(self.raw)
-        n_times = len(self.raw.times)
-        duration = n_times / sfreq
+        if self.raw is not None:
+            n_ch, type_str, sfreq = _channel_info(self.raw)
+            n_times = len(self.raw.times)
+        else:
+            n_ch = self._info_dict.get("nchan", 0)
+            sfreq = self._info_dict.get("sfreq", 0)
+            n_times = self._zarr_data.shape[1]
+            type_str = "EEG"
+        duration = n_times / sfreq if sfreq > 0 else 0
         b.add_header(f"{n_ch} ch ({type_str})", "Channels", f"{n_ch} ({type_str})")
         b.add_header(f"{sfreq:.1f} Hz", "Sfreq", f"{sfreq:.1f} Hz")
         b.add_header(
@@ -424,6 +539,8 @@ class RawDataset(RecordDataset):
         if self.description is not None:
             desc_items = ", ".join(f"{k}={v}" for k, v in self.description.items())
             b.add_row("description", desc_items)
+        if self._zarr_data is not None:
+            b.add_footnote("Data loaded lazily from Zarr")
         return b
 
     def _target_name(self, target_name):
@@ -464,7 +581,7 @@ class BaseDataset(RawDataset):
 
 
 @register_dataset
-class EEGWindowsDataset(RecordDataset):
+class EEGWindowsDataset(_ZarrMixin, RecordDataset):
     """Returns windows from an mne.Raw object, its window indices, along with a target.
 
     Dataset which serves windows from an mne.Epochs object along with their
@@ -521,6 +638,43 @@ class EEGWindowsDataset(RecordDataset):
             self.y = metadata.loc[:, "target"].to_list()
         self.raw_preproc_kwargs: list[dict[str, Any]] = []
 
+    @classmethod
+    def _from_zarr(
+        cls,
+        zarr_path,
+        group_name,
+        metadata,
+        description,
+        info_dict,
+        targets_from="metadata",
+        last_target_only=True,
+        transform=None,
+    ):
+        """Create a lazy Zarr-backed EEGWindowsDataset (internal API)."""
+        from mne.utils import _soft_import
+
+        _soft_import("zarr", purpose="lazy loading from Zarr")
+
+        obj = object.__new__(cls)
+        RecordDataset.__init__(obj, description, transform)
+        obj.raw = None
+        obj._zarr_path = Path(zarr_path)
+        obj._group_name = group_name
+        obj._info_dict = info_dict
+        obj.metadata = metadata
+        obj.last_target_only = last_target_only
+        if targets_from not in ("metadata", "channels"):
+            raise ValueError("Wrong value for parameter `targets_from`.")
+        obj.targets_from = targets_from
+        obj.crop_inds = metadata.loc[
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
+        if obj.targets_from == "metadata":
+            obj.y = metadata.loc[:, "target"].to_list()
+        obj.raw_preproc_kwargs: list[dict[str, Any]] = []
+        obj._open_zarr()
+        return obj
+
     def __getitem__(self, index: int):
         """Get a window and its target.
 
@@ -544,25 +698,31 @@ class EEGWindowsDataset(RecordDataset):
         crop_inds = self.crop_inds[index].tolist()
 
         i_window_in_trial, i_start, i_stop = crop_inds
-        X = self.raw._getitem((slice(None), slice(i_start, i_stop)), return_times=False)
-        X = X.astype("float32")
-        # ensure we don't give the user the option
-        # to accidentally modify the underlying array
-        X = X.copy()
+        if self._zarr_data is not None:
+            X = self._get_zarr_decoded()[:, i_start:i_stop].astype("float32")
+            X = X.copy()
+        else:
+            X = self.raw._getitem(
+                (slice(None), slice(i_start, i_stop)), return_times=False
+            )
+            X = X.astype("float32")
+            # ensure we don't give the user the option
+            # to accidentally modify the underlying array
+            X = X.copy()
         if self.transform is not None:
             X = self.transform(X)
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            misc_mask = np.array(self.raw.get_channel_types()) == "misc"
+            if self._zarr_data is not None:
+                misc_mask = _misc_mask_from_info_dict(self._info_dict)
+            else:
+                misc_mask = np.array(self.raw.get_channel_types()) == "misc"
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
                 y = X[misc_mask, :]
-            # ensure we don't give the user the option
-            # to accidentally modify the underlying array
             y = y.copy()
-            # remove the target channels from raw
             X = X[~misc_mask, :]
         return X, y, crop_inds
 
@@ -577,6 +737,7 @@ class EEGWindowsDataset(RecordDataset):
             self.crop_inds,
             self.description,
             self.metadata,
+            info_dict=getattr(self, "_info_dict", None),
         )
 
     def to_epochs_dataset(self) -> WindowsDataset:
@@ -664,7 +825,7 @@ class EEGWindowsDataset(RecordDataset):
 
 
 @register_dataset
-class WindowsDataset(RecordDataset):
+class WindowsDataset(_ZarrMixin, RecordDataset):
     """Returns windows from an mne.Epochs object along with a target.
 
     Dataset which serves windows from an mne.Epochs object along with their
@@ -717,6 +878,7 @@ class WindowsDataset(RecordDataset):
 
         metadata = self.windows.metadata
         assert metadata is not None, "WindowsDataset requires windows with metadata."
+        self.metadata = metadata
         self.crop_inds = metadata.loc[
             :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
         ].to_numpy()
@@ -724,6 +886,47 @@ class WindowsDataset(RecordDataset):
             self.y = metadata.loc[:, "target"].to_list()
         self.raw_preproc_kwargs: list[dict[str, Any]] = []
         self.window_preproc_kwargs: list[dict[str, Any]] = []
+
+    @classmethod
+    def _from_zarr(
+        cls,
+        zarr_path,
+        group_name,
+        metadata,
+        description,
+        info_dict,
+        target_name=None,
+        transform=None,
+        targets_from="metadata",
+        last_target_only=True,
+    ):
+        """Create a lazy Zarr-backed WindowsDataset (internal API)."""
+        from mne.utils import _soft_import
+
+        _soft_import("zarr", purpose="lazy loading from Zarr")
+
+        obj = object.__new__(cls)
+        RecordDataset.__init__(obj, description, transform)
+        obj.windows = None
+        obj._zarr_path = Path(zarr_path)
+        obj._group_name = group_name
+        obj._info_dict = info_dict
+        obj.target_name = target_name
+        obj._fast_disk = False
+        obj.last_target_only = last_target_only
+        if targets_from not in ("metadata", "channels"):
+            raise ValueError("Wrong value for parameter `targets_from`.")
+        obj.targets_from = targets_from
+        obj.metadata = metadata
+        obj.crop_inds = metadata.loc[
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
+        if obj.targets_from == "metadata":
+            obj.y = metadata.loc[:, "target"].to_list()
+        obj.raw_preproc_kwargs: list[dict[str, Any]] = []
+        obj.window_preproc_kwargs: list[dict[str, Any]] = []
+        obj._open_zarr()
+        return obj
 
     @staticmethod
     def _can_use_fast_get_epoch_from_raw(epochs: mne.BaseEpochs) -> bool:
@@ -756,7 +959,9 @@ class WindowsDataset(RecordDataset):
         np.ndarray
             Crop indices.
         """
-        if self._fast_disk:
+        if self._zarr_data is not None:
+            X = self._get_zarr_decoded()[index].astype("float32")
+        elif self._fast_disk:
             X = self.windows._get_epoch_from_raw(index).astype("float32")
         else:
             X = self.windows.get_data(item=index)[0].astype("float32")
@@ -765,12 +970,14 @@ class WindowsDataset(RecordDataset):
         if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            misc_mask = np.array(self.windows.get_channel_types()) == "misc"
+            if self._zarr_data is not None:
+                misc_mask = _misc_mask_from_info_dict(self._info_dict)
+            else:
+                misc_mask = np.array(self.windows.get_channel_types()) == "misc"
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
                 y = X[misc_mask, :]
-            # remove the target channels from raw
             X = X[~misc_mask, :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
@@ -778,16 +985,21 @@ class WindowsDataset(RecordDataset):
         return X, y, crop_inds
 
     def __len__(self) -> int:
-        return len(self.windows.events)
+        if self.windows is not None:
+            return len(self.windows.events)
+        return len(self.crop_inds)
 
     def _build_repr(self):
+        mne_obj = self.windows
+        metadata = self.metadata if self.windows is None else self.windows.metadata
         return _build_windowed_repr(
             type(self).__name__,
             len(self),
-            self.windows,
+            mne_obj,
             self.crop_inds,
             self.description,
-            self.windows.metadata,
+            metadata,
+            info_dict=getattr(self, "_info_dict", None),
         )
 
 
@@ -1014,7 +1226,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
         all_dfs = list()
         for ds in self.datasets:
-            if hasattr(ds, "windows"):
+            if hasattr(ds, "windows") and ds.windows is not None:
                 df = ds.windows.metadata
             else:
                 df = ds.metadata

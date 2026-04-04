@@ -8,7 +8,6 @@ These functions keep the Zarr serialization details isolated from hub.py.
 from __future__ import annotations
 
 import json
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -126,12 +125,7 @@ def _load_windows_from_zarr(grp, preload):
     if preload:
         data = grp["data"][:]
     else:
-        data = grp["data"][:]
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
+        data = grp["data"]  # lazy zarr.Array reference
 
     target_name = grp.attrs.get("target_name", None)
 
@@ -150,12 +144,7 @@ def _load_eegwindows_from_zarr(grp, preload):
     if preload:
         data = grp["data"][:]
     else:
-        data = grp["data"][:]
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
+        data = grp["data"]  # lazy zarr.Array reference
 
     targets_from = grp.attrs.get("targets_from", "metadata")
     last_target_only = grp.attrs.get("last_target_only", True)
@@ -194,12 +183,7 @@ def _load_raw_from_zarr(grp, preload):
     if preload:
         data = grp["data"][:]
     else:
-        data = grp["data"][:]
-        warnings.warn(
-            "Lazy loading from Zarr not fully implemented yet. "
-            "Loading all data into memory.",
-            UserWarning,
-        )
+        data = grp["data"]  # lazy zarr.Array reference
 
     target_name = grp.attrs.get("target_name", None)
 

@@ -6,7 +6,6 @@
 
 
 import inspect
-import warnings
 from unittest import mock
 
 import mne
@@ -24,10 +23,14 @@ except ImportError:
     ZARR_AVAILABLE = False
     zarr = None
 
+import pickle
+
 from braindecode.datasets import (
     BNCI2014_001,
     BaseConcatDataset,
+    EEGWindowsDataset,
     RawDataset,
+    WindowsDataset,
 )
 from braindecode.datasets.bids.hub_io import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
@@ -599,14 +602,9 @@ def test_different_lengths_allowed(tmp_path):
 
 
 def test_lazy_loading_support(tmp_path):
-    """Test that datasets can be loaded with preload parameter.
-
-    Note: Lazy loading (preload=False) is not fully implemented yet,
-    so data is always loaded into memory with a warning.
-    """
+    """Test that datasets can be loaded lazily with preload=False."""
     pytest.importorskip("zarr")
 
-    # Create and save a windowed dataset
     dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
         concat_ds=BaseConcatDataset([dataset.datasets[0]]),
@@ -616,29 +614,25 @@ def test_lazy_loading_support(tmp_path):
     )
 
     zarr_path = tmp_path / "lazy_test.zarr"
-    windowed._convert_to_zarr_inline(
-        zarr_path, compression="blosc", compression_level=5
-    )
+    windowed._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
 
-    # Load with preload=False (should warn and load anyway)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        loaded_lazy = windowed._load_from_zarr_inline(zarr_path, preload=False)
-        # Check that warning about lazy loading was issued
-        assert any(
-            "Lazy loading from Zarr not fully implemented" in str(warning.message)
-            for warning in w
-        )
+    lazy = windowed._load_from_zarr_inline(zarr_path, preload=False)
+    eager = windowed._load_from_zarr_inline(zarr_path, preload=True)
 
-    # Currently always loads into memory
-    assert loaded_lazy.datasets[0].windows.preload
+    # Lazy: no mne object, zarr reference set
+    assert lazy.datasets[0].windows is None
+    assert lazy.datasets[0]._zarr_data is not None
+    # Eager: mne object present
+    assert eager.datasets[0].windows is not None
+    assert eager.datasets[0].windows.preload
 
-    # Load with preload=True
-    loaded_eager = windowed._load_from_zarr_inline(zarr_path, preload=True)
-    assert loaded_eager.datasets[0].windows.preload
-
-    # Both should have same number of windows
-    assert len(loaded_lazy.datasets[0]) == len(loaded_eager.datasets[0])
+    # Same length and data
+    assert len(lazy.datasets[0]) == len(eager.datasets[0])
+    for i in range(min(5, len(lazy.datasets[0]))):
+        lX, ly, li = lazy.datasets[0][i]
+        eX, ey, ei = eager.datasets[0][i]
+        np.testing.assert_array_equal(lX, eX)
+        assert ly == ey and li == ei
 
 
 def test_preprocessing_kwargs_preserved(tmp_path):
@@ -1077,3 +1071,124 @@ def test_save_dataset_card_all_dataset_types(tmp_path):
     raw_dataset._save_dataset_card(raw_path)
     raw_readme = (raw_path / "README.md").read_text()
     assert "Continuous (Raw)" in raw_readme or "raw" in raw_readme.lower()
+
+
+# ---------------------------------------------------------------------------
+# Lazy Zarr loading tests (parametrized)
+# ---------------------------------------------------------------------------
+
+
+def _make_zarr(tmp_path, ds_type):
+    """Build a small dataset of the given type, save to zarr, return (ds, path)."""
+    pytest.importorskip("zarr")
+    n_ch, info = 3, mne.create_info([f"ch{i}" for i in range(3)], sfreq=100, ch_types="eeg")
+
+    if ds_type == "WindowsDataset":
+        n_w, n_t = 8, 100
+        data = np.random.randn(n_w, n_ch, n_t)
+        ev = np.column_stack([np.arange(n_w) * n_t, np.zeros(n_w, int), np.ones(n_w, int)])
+        md = pd.DataFrame({"i_window_in_trial": np.arange(n_w), "i_start_in_trial": ev[:, 0],
+                           "i_stop_in_trial": ev[:, 0] + n_t, "target": np.random.randint(0, 3, n_w)})
+        ds = BaseConcatDataset([WindowsDataset(
+            mne.EpochsArray(data, info, events=ev, metadata=md), pd.Series({"subject": "01"}))])
+    elif ds_type == "EEGWindowsDataset":
+        ws, n_w = 100, 6
+        raw = mne.io.RawArray(np.random.randn(n_ch, 800), info)
+        md = pd.DataFrame({"i_window_in_trial": np.arange(n_w), "i_start_in_trial": np.arange(n_w) * ws,
+                           "i_stop_in_trial": np.arange(n_w) * ws + ws, "target": np.random.randint(0, 2, n_w)})
+        ds = BaseConcatDataset([EEGWindowsDataset(raw, md, pd.Series({"subject": "02"}))])
+    else:
+        raw = mne.io.RawArray(np.random.randn(n_ch, 500), info)
+        ds = BaseConcatDataset([RawDataset(raw, pd.Series({"subject": "03", "target": 1}), target_name="target")])
+
+    p = tmp_path / f"{ds_type.lower()}.zarr"
+    ds._convert_to_zarr_inline(p, compression="blosc", compression_level=5)
+    return ds, p
+
+
+_DS_TYPES = ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]
+_DS_CLASSES = {"WindowsDataset": WindowsDataset, "EEGWindowsDataset": EEGWindowsDataset, "RawDataset": RawDataset}
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_round_trip_isinstance(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    ds = BaseConcatDataset._load_from_zarr_inline(path, preload=False).datasets[0]
+    assert isinstance(ds, _DS_CLASSES[ds_type])
+    assert get_dataset_type(ds) == ds_type
+    assert ds._zarr_data is not None
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_getitem_matches_preloaded(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    lazy = BaseConcatDataset._load_from_zarr_inline(path, preload=False)
+    eager = BaseConcatDataset._load_from_zarr_inline(path, preload=True)
+    for i in range(min(5, len(lazy.datasets[0]))):
+        l_out, e_out = lazy.datasets[0][i], eager.datasets[0][i]
+        np.testing.assert_allclose(l_out[0], e_out[0], rtol=1e-6, atol=1e-7)
+        assert l_out[1] == e_out[1]
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_len(tmp_path, ds_type):
+    orig, path = _make_zarr(tmp_path, ds_type)
+    lazy = BaseConcatDataset._load_from_zarr_inline(path, preload=False)
+    assert len(lazy.datasets[0]) == len(orig.datasets[0])
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_pickle(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    ds = BaseConcatDataset._load_from_zarr_inline(path, preload=False).datasets[0]
+    restored = pickle.loads(pickle.dumps(ds))
+    assert restored._zarr_data is not None
+    np.testing.assert_allclose(ds[0][0], restored[0][0], rtol=1e-6, atol=1e-7)
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_repr(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    ds = BaseConcatDataset._load_from_zarr_inline(path, preload=False).datasets[0]
+    assert ds_type in repr(ds)
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_transform(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    lazy = BaseConcatDataset._load_from_zarr_inline(path, preload=False)
+    lazy2 = BaseConcatDataset._load_from_zarr_inline(path, preload=False)
+    lazy.datasets[0].transform = lambda x: x * 2.0
+    np.testing.assert_allclose(lazy.datasets[0][0][0], lazy2.datasets[0][0][0] * 2.0)
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_concat_getitem(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    X = BaseConcatDataset._load_from_zarr_inline(path, preload=False)[0][0]
+    assert isinstance(X, np.ndarray) and X.dtype == np.float32
+
+
+@pytest.mark.parametrize("ds_type", ["WindowsDataset", "EEGWindowsDataset"])
+def test_lazy_zarr_get_metadata(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    md = BaseConcatDataset._load_from_zarr_inline(path, preload=False).get_metadata()
+    assert isinstance(md, pd.DataFrame) and "target" in md.columns
+
+
+def test_lazy_zarr_split(tmp_path):
+    pytest.importorskip("zarr")
+    info = mne.create_info([f"ch{i}" for i in range(3)], sfreq=100, ch_types="eeg")
+    dss = [RawDataset(mne.io.RawArray(np.random.randn(3, 500), info),
+                       pd.Series({"subject": str(s), "group": "A" if s < 2 else "B"}))
+           for s in range(3)]
+    p = tmp_path / "split.zarr"
+    BaseConcatDataset(dss)._convert_to_zarr_inline(p, compression="blosc", compression_level=5)
+    splits = BaseConcatDataset._load_from_zarr_inline(p, preload=False).split("group")
+    assert len(splits["A"].datasets) == 2 and len(splits["B"].datasets) == 1
+
+
+def test_lazy_zarr_preload_true_unchanged(tmp_path):
+    _, path = _make_zarr(tmp_path, "WindowsDataset")
+    eager = BaseConcatDataset._load_from_zarr_inline(path, preload=True)
+    assert eager.datasets[0].windows is not None and eager.datasets[0]._zarr_data is None
