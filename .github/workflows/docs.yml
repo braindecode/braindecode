@@ -56,12 +56,12 @@ jobs:
       # Login to Hugging Face and verify access before building docs
       - name: Login to Hugging Face Hub
         if: ${{ env.HF_TOKEN != '' }}
-        run: huggingface-cli login --token "$HF_TOKEN"
+        run: python -c "import os; from huggingface_hub import login; login(token=os.environ['HF_TOKEN'])"
       - name: Verify HuggingFace access and cache
         if: ${{ env.HF_TOKEN != '' }}
         run: |
           echo "=== Logged-in user ==="
-          huggingface-cli whoami
+          python -c "from huggingface_hub import whoami; print(whoami())"
           echo "=== HF cache directory ==="
           ls -la ~/.cache/huggingface/ 2>/dev/null || echo "No cache dir yet"
           ls -la ~/.cache/huggingface/hub/ 2>/dev/null || echo "No hub cache yet"
