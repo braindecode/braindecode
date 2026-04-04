@@ -211,9 +211,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     def _get_feat_size(self):
         # pass dummy data through both cnns to get concatenated feature dim
-        n_chans = self.n_chans if self._n_chans is not None else 1
-        n_times = self.n_times if self._n_times is not None else 3000
-        dummy = torch.zeros(1, 1, n_chans, n_times)
+        dummy = torch.zeros(1, 1, self.n_chans, self.n_times)
         with torch.no_grad():
             s1 = self.cnn1(dummy).flatten(start_dim=1).shape[1]
             s2 = self.cnn2(dummy).flatten(start_dim=1).shape[1]

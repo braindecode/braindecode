@@ -1056,7 +1056,10 @@ def test_deepsleepnet(n_classes):
     input_size_s = 30
     n_examples = 10
 
-    model = DeepSleepNet(n_outputs=n_classes, return_feats=False)
+    model = DeepSleepNet(
+        n_outputs=n_classes, return_feats=False,
+        n_chans=n_channels, n_times=np.ceil(input_size_s * sfreq).astype(int),
+    )
     model.eval()
 
     rng = np.random.RandomState(42)
@@ -1080,7 +1083,10 @@ def test_deepsleepnet_feats():
     n_classes = 3
     n_examples = 10
 
-    model = DeepSleepNet(n_outputs=n_classes, return_feats=True)
+    model = DeepSleepNet(
+        n_outputs=n_classes, return_feats=True,
+        n_chans=n_channels, n_times=int(sfreq * input_size_s),
+    )
     model.eval()
 
     rng = np.random.RandomState(42)
@@ -1098,7 +1104,10 @@ def test_deepsleepnet_feats_with_hook():
     n_classes = 3
     n_examples = 10
 
-    model = DeepSleepNet(n_outputs=n_classes, return_feats=False)
+    model = DeepSleepNet(
+        n_outputs=n_classes, return_feats=False,
+        n_chans=n_channels, n_times=int(sfreq * input_size_s),
+    )
     model.eval()
 
     rng = np.random.RandomState(42)
