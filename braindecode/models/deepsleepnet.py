@@ -155,6 +155,12 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         the final linear layer.
     drop_prob : float, default=0.5
         The dropout rate for regularization. Values should be between 0 and 1.
+    bilstm_hidden_size : int, default=512
+        Hidden size of the bidirectional LSTM. The residual fully connected
+        layer output dimension is ``2 * bilstm_hidden_size`` (to match the
+        BiLSTM concatenated forward/backward outputs).
+    bilstm_num_layers : int, default=2
+        Number of stacked BiLSTM layers.
 
     References
     ----------
@@ -176,6 +182,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         activation_large: type[nn.Module] = nn.ELU,
         activation_small: type[nn.Module] = nn.ReLU,
         drop_prob: float = 0.5,
+        bilstm_hidden_size: int = 512,
+        bilstm_num_layers: int = 2,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -188,24 +196,30 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.cnn1 = _SmallCNN(activation=activation_small, drop_prob=drop_prob)
         self.cnn2 = _LargeCNN(activation=activation_large, drop_prob=drop_prob)
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(drop_prob)
 
         # compute cnn feature size from actual input shape
         feat_size = self._get_feat_size()
 
-        self.bilstm = _BiLSTM(input_size=feat_size, hidden_size=512, num_layers=2)
+        fc_out_features = bilstm_hidden_size * 2
+        self.bilstm = _BiLSTM(
+            input_size=feat_size,
+            hidden_size=bilstm_hidden_size,
+            num_layers=bilstm_num_layers,
+            drop_prob=drop_prob,
+        )
         self.fc = nn.Sequential(
-            nn.Linear(feat_size, 1024, bias=False),
-            nn.BatchNorm1d(num_features=1024),
+            nn.Linear(feat_size, fc_out_features, bias=False),
+            nn.BatchNorm1d(num_features=fc_out_features),
         )
 
         self.features_extractor = nn.Identity()
-        self.len_last_layer = 1024
+        self.len_last_layer = fc_out_features
         self.return_feats = return_feats
 
         # TODO: Add new way to handle return_features == True
         if not return_feats:
-            self.final_layer = nn.Linear(1024, self.n_outputs)
+            self.final_layer = nn.Linear(fc_out_features, self.n_outputs)
         else:
             self.final_layer = nn.Identity()
 
@@ -408,7 +422,7 @@ class _LargeCNN(nn.Module):
 
 
 class _BiLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers):
+    def __init__(self, input_size, hidden_size, num_layers, drop_prob=0.5):
         super(_BiLSTM, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -417,7 +431,7 @@ class _BiLSTM(nn.Module):
             hidden_size,
             num_layers,
             batch_first=True,
-            dropout=0.5,
+            dropout=drop_prob if num_layers > 1 else 0.0,
             bidirectional=True,
         )
 

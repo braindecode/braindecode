@@ -1154,6 +1154,31 @@ def test_deepsleepnet_variable_input(n_chans, n_times, n_outputs):
     assert out.shape == (2, n_outputs)
 
 
+@pytest.mark.parametrize(
+    "bilstm_hidden_size, bilstm_num_layers, drop_prob",
+    [
+        (256, 1, 0.3),
+        (512, 2, 0.5),
+        (128, 3, 0.0),
+    ],
+)
+def test_deepsleepnet_custom_params(bilstm_hidden_size, bilstm_num_layers, drop_prob):
+    n_chans, n_times, n_outputs = 1, 3000, 5
+    model = DeepSleepNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        bilstm_hidden_size=bilstm_hidden_size,
+        bilstm_num_layers=bilstm_num_layers,
+        drop_prob=drop_prob,
+    )
+    model.eval()
+    x = torch.randn(2, n_chans, n_times)
+    out = model(x)
+    assert out.shape == (2, n_outputs)
+    assert model.len_last_layer == bilstm_hidden_size * 2
+
+
 @pytest.fixture
 def sample_input():
     batch_size = 16
