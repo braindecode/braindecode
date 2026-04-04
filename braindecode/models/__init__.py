@@ -8,6 +8,7 @@ from .bendr import BENDR
 from .biot import BIOT
 from .brainmodule import BrainModule
 from .cbramod import CBraMod
+from .codebrain import CodeBrain
 from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
@@ -72,6 +73,7 @@ __all__ = [
     "BIOT",
     "BENDR",
     "CBraMod",
+    "CodeBrain",
     "ContraWR",
     "CTNet",
     "Deep4Net",

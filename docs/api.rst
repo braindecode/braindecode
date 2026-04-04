@@ -67,6 +67,8 @@ interface for all EEG models and can derive variable names when needed.
 
     - :class:`BIOT` - Foundation model with pre-trained weights
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
+    - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
+      prediction
     - :class:`Labram` - Large Brain Model with pre-trained weights
     - :class:`REVE` - EEG foundation model with pre-trained weights
     - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
@@ -134,6 +136,7 @@ interface for all EEG models and can derive variable names when needed.
      BIOT
      BrainModule
      CBraMod
+     CodeBrain
      ContraWR
      CTNet
      DGCNN

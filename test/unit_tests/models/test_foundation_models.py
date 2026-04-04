@@ -18,7 +18,7 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, Labram
+from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.reve import RevePositionBank
 
@@ -1398,3 +1398,37 @@ def test_cbramod_forward_pass():
     x = torch.randn(2, 22, 1000)
     output = model(x)
     assert output.shape == (2, 22, 5, 200)
+
+
+# ==============================================================================
+# Tests for CodeBrain Model
+# ==============================================================================
+
+
+
+def test_codebrain_forward_pass():
+    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
+    x = torch.randn(2, 19, 6000)
+    output = model(x)
+    assert output.shape == (2, 2)
+
+
+def test_codebrain_pretrain_mode():
+    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000, pretrain_mode=True)
+    x = torch.randn(2, 19, 6000)
+    x_t, x_f = model(x)
+    # seq_len = 6000 // 200 = 30, output shape: (batch, n_chans, seq_len, codebook_size)
+    assert x_t.shape == (2, 19, 30, 4096)
+    assert x_f.shape == (2, 19, 30, 4096)
+
+
+def test_codebrain_return_features():
+    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
+    x = torch.randn(2, 19, 6000)
+    out = model(x, return_features=True)
+    assert isinstance(out, dict)
+    assert "features" in out
+    assert "cls_token" in out
+    # features shape: (batch, n_chans, seq_len, out_channels)
+    assert out["features"].shape == (2, 19, 30, 200)
+    assert out["cls_token"] is None
