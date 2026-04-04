@@ -28,16 +28,22 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     - (i) learns complementary, time-frequency features from each
       30-s epoch using **two parallel CNNs** (small vs. large first-layer filters), then
-    - (ii) models **temporal dependencies across epochs** using **two-layer BiLSTMs**
-      with a **residual shortcut** from the CNN features, and finally
-    - (iii) outputs per-epoch sleep stages. This design encodes both
-      epoch-local patterns and longer-range transition rules used by human scorers.
+    - (ii) refines features through a **BiLSTM + residual shortcut** block, and finally
+    - (iii) outputs per-epoch sleep stages.
+
+    .. note::
+
+       The original paper uses the BiLSTM to model **temporal dependencies
+       across a sequence of epochs**. This implementation processes **single
+       epochs** (sequence length 1), so the BiLSTM acts as a nonlinear
+       feature transform with a residual connection. To leverage multi-epoch
+       context, batch consecutive epochs as a sequence externally.
 
     In term of implementation:
 
     - (i) :class:`_RepresentationLearning` two CNNs extract epoch-wise features
       (small-filter path for temporal precision; large-filter path for frequency precision);
-    - (ii) :class:`_SequenceResidualLearning` stacked BiLSTMs with peepholes + residual shortcut
+    - (ii) :class:`_SequenceResidualLearning` stacked BiLSTMs + residual shortcut
       inject temporal context while preserving CNN evidence;
     - (iii) :class:`_Classifier` linear readout (softmax) for the five sleep stages.
 
@@ -69,8 +75,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
     - :class:`_SequenceResidualLearning` (:class:`~torch.nn.BiLSTM` **context + residual fusion)**
 
         - *Operations.*
-        - **Two-layer BiLSTM** with **peephole connections** processes the sequence of epoch embeddings
-          ``{a_t}`` forward and backward; hidden states from both directions are **concatenated**.
+        - **Two-layer BiLSTM** processes the epoch embedding
+          forward and backward; hidden states from both directions are **concatenated**.
         - A **shortcut MLP** (fully connected + :class:`~torch.nn.BatchNorm1d` + :class:`~torch.nn.ReLU`) projects ``a_t`` to the BiLSTM output
           dimension and is **added** (residual) to the :class:`~torch.nn.BiLSTM` output at each time step.
         - *Role.* Encodes **stage-transition rules** and smooths predictions over time while preserving
@@ -107,13 +113,14 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Attention / Sequential Modules
 
-    - **Type.** **Bidirectional LSTM** (two layers) with **peephole connections**; forward and
+    - **Type.** **Bidirectional LSTM** (two layers); forward and
       backward streams are independent and concatenated.
-    - **Shapes.** For a sequence of ``N`` epochs, the CNN produces ``{a_t} ∈ R^{D}``;
+    - **Shapes.** The CNN produces an epoch embedding ``a_t ∈ R^{D}``;
       BiLSTM outputs ``h_t ∈ R^{2H}``; the shortcut MLP maps ``a_t → R^{2H}`` to enable
       **element-wise residual addition**.
-    - **Role.** Models **long-range temporal dependencies** (e.g., persisting N2 without visible
-      K-complex/spindles), stabilizing per-epoch predictions.
+    - **Role.** In the paper, the BiLSTM models **long-range temporal dependencies**
+      across epochs. In this single-epoch implementation it acts as a nonlinear
+      feature mixer with a residual path.
 
 
     .. rubric:: Additional Mechanisms
@@ -136,7 +143,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
       and **4·Fs** (large path), with strides **Fs/16** and **Fs/2**, respectively; stack three more
       conv blocks with small kernels, plus **max pooling** in each path. Concatenate path outputs
       to form epoch embeddings.
-    - **Sequence encoder.** Apply **two-layer BiLSTM (peepholes)** over the sequence of embeddings;
+    - **Sequence encoder.** Apply **two-layer BiLSTM** over the embeddings;
       add a **projection MLP** on the CNN features and **sum** with BiLSTM outputs (residual).
       Finish with :class:`~torch.nn.Linear` per epoch.
     - **Reference implementation.** See the official repository for a faithful implementation and
