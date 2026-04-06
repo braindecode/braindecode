@@ -5,6 +5,7 @@ import platform
 from datetime import datetime
 from typing import Literal
 
+import pandas as pd
 import pytest
 
 from braindecode.datasets.tuh import (
@@ -250,7 +251,9 @@ def test_tuh_events(version):
     assert description.version.to_list() == [version] * files_count
     assert description.session.to_list() == [1, 1, 1]
     assert description.split.to_list() == ["eval", "eval", "train"]
-    assert description.event_prefix.to_list() == ["bckg", "pled", None]
+    event_prefixes = description.event_prefix.to_list()
+    assert event_prefixes[:2] == ["bckg", "pled"]
+    assert pd.isna(event_prefixes[2])
     assert description.run.to_list() == [0, 2, 0]
     assert description.age.to_list() == [36, 68, 19]
     assert description.gender.to_list() == ["F", "F", "F"]
