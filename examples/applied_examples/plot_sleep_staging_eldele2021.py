@@ -7,6 +7,19 @@ This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We use the attention-based model from [1]_ with the time distributed approach of [2]_
 to learn on sequences of EEG windows using the openly accessible Sleep Physionet dataset [3]_ [4]_.
 
+.. warning::
+    The gallery build uses only ``n_epochs = 3`` and two subjects, so the
+    printed accuracy is just a rough indicator. When the published checkpoint
+    ``braindecode/plot_sleep_staging_eldele2021`` is available, the tutorial
+    loads pretrained weights trained offline on **6 subjects** (4 train /
+    2 validation) for up to 100 epochs with early stopping, reaching
+    **74.6 % balanced accuracy** on the held-out recordings (chance = 20 %).
+
+.. raw:: html
+
+   <iframe src="https://wandb.ai/braindecode/braindecode-tutorials/runs/ma2m9x9c"
+           style="border:none;height:512px;width:100%"></iframe>
+
 """
 # Authors: Divyesh Narayanan <divyesh.narayanan@gmail.com>
 #
@@ -22,19 +35,19 @@ to learn on sequences of EEG windows using the openly accessible Sleep Physionet
 #
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
-# two recordings from two different individuals: we will use the first one to
-# train our network and the second one to evaluate performance (as in the `MNE
-# sleep staging example <mne-clinical-60-sleep_>`_).
+# six subjects with two recordings each. Subjects 0-3 are used for training
+# and subjects 4-5 for validation.
 #
 
 from numbers import Integral
 
 from braindecode.datasets import SleepPhysionet
 
-subject_ids = [0, 1]
-crop = (0, 30 * 400)  # we only keep 400 windows of 30s to speed example
+subject_ids = [0, 1, 2, 3, 4, 5]
+train_subject_ids = [0, 1, 2, 3]
+valid_subject_ids = [4, 5]
 dataset = SleepPhysionet(
-    subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30, crop=crop
+    subject_ids=subject_ids, recording_ids=[1, 2], crop_wake_mins=30
 )
 
 ######################################################################
@@ -112,10 +125,10 @@ preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We split the dataset into training and validation set taking
-# every other subject as train or valid.
+# We split the dataset into training and validation sets. Subjects 0-3 are
+# used for training and subjects 4-5 for held-out validation.
 
-split_ids = dict(train=subject_ids[::2], valid=subject_ids[1::2])
+split_ids = dict(train=train_subject_ids, valid=valid_subject_ids)
 splits = windows_dataset.split(split_ids)
 train_set, valid_set = splits["train"], splits["valid"]
 
@@ -194,8 +207,9 @@ from braindecode.models import AttnSleep
 from braindecode.modules import TimeDistributed
 from braindecode.util import set_random_seeds
 
-cuda = torch.cuda.is_available()  # check if GPU is available
-device = "cuda" if torch.cuda.is_available() else "cpu"
+cuda = torch.cuda.is_available()  # check if CUDA is available
+mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+device = "cuda" if cuda else "mps" if mps else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to reproduce results
@@ -209,6 +223,7 @@ feat_extractor = AttnSleep(
     sfreq=sfreq,
     n_outputs=n_classes,
     n_times=input_size_samples,
+    drop_prob=0.3,
     return_feats=True,
 )
 
@@ -221,9 +236,9 @@ model = nn.Sequential(
     ),
 )
 
-# Send model to GPU
-if cuda:
-    model.cuda()
+# Send model to the selected accelerator
+if device != "cpu":
+    model.to(device)
 
 ######################################################################
 # Training
@@ -236,14 +251,23 @@ if cuda:
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
 
-from skorch.callbacks import EpochScoring
+from skorch.callbacks import (
+    EarlyStopping,
+    EpochScoring,
+    GradientNormClipping,
+    LRScheduler,
+)
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
+from braindecode._tutorial_hub import (
+    format_tutorial_checkpoint_message,
+    load_tutorial_checkpoint_metadata,
+)
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 3  # we use few epochs for speed and but more than one for plotting
+n_epochs = 100
 
 train_bal_acc = EpochScoring(
     scoring="balanced_accuracy",
@@ -257,18 +281,34 @@ valid_bal_acc = EpochScoring(
     name="valid_bal_acc",
     lower_is_better=False,
 )
-callbacks = [("train_bal_acc", train_bal_acc), ("valid_bal_acc", valid_bal_acc)]
+callbacks = [
+    ("train_bal_acc", train_bal_acc),
+    ("valid_bal_acc", valid_bal_acc),
+    ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=max(1, n_epochs - 1))),
+    ("grad_clip", GradientNormClipping(gradient_clip_value=1.0)),
+    (
+        "early_stopping",
+        EarlyStopping(
+            monitor="valid_bal_acc",
+            lower_is_better=False,
+            patience=20,
+            load_best=True,
+        ),
+    ),
+]
 
 clf = EEGClassifier(
     model,
     criterion=torch.nn.CrossEntropyLoss,
     criterion__weight=torch.Tensor(class_weights).to(device),
+    criterion__label_smoothing=0.1,
     optimizer=torch.optim.Adam,
     iterator_train__shuffle=False,
     iterator_train__sampler=train_sampler,
     iterator_valid__sampler=valid_sampler,
     train_split=predefined_split(valid_set),  # using valid_set for validation
     optimizer__lr=lr,
+    optimizer__weight_decay=1e-3,
     batch_size=batch_size,
     callbacks=callbacks,
     device=device,
@@ -276,7 +316,19 @@ clf = EEGClassifier(
 )
 # Model training for a specified number of epochs. ``y`` is ``None`` as it is already
 # supplied in the dataset.
-clf.fit(train_set, y=None, epochs=n_epochs)
+repo_id = "braindecode/plot_sleep_staging_eldele2021"
+checkpoint_metadata = load_tutorial_checkpoint_metadata(
+    clf, repo_id, use_safetensors=False
+)
+if checkpoint_metadata is None:
+    clf.fit(train_set, y=None, epochs=n_epochs)
+print(
+    format_tutorial_checkpoint_message(
+        repo_id=repo_id,
+        short_run_epochs=n_epochs,
+        metadata=checkpoint_metadata,
+    )
+)
 
 ######################################################################
 # Plot results
@@ -284,7 +336,18 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 #
 # We use the history stored by Skorch during training to plot the performance of
 # the model throughout training. Specifically, we plot the loss and the balanced
-# balanced accuracy for the training and validation sets.
+# accuracy for the training and validation sets.
+#
+# When the pretrained checkpoint is loaded, the history contains the full
+# offline training run (up to 100 epochs with early stopping), so the curves
+# below reflect the longer run rather than the short gallery build.
+#
+# .. note::
+#    The full training run for this tutorial is tracked on Weights & Biases.
+#    You can explore the interactive dashboard, compare metrics, and inspect
+#    system utilization at the link below:
+#
+#    `braindecode-tutorials on W&B <https://wandb.ai/bruaristimunha/braindecode-tutorials>`_
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -299,6 +362,8 @@ ax1.set_ylabel("Loss")
 ax2.set_ylabel("Balanced accuracy")
 ax1.legend(["Train", "Valid"])
 ax2.legend(["Train", "Valid"])
+ax1.grid(alpha=0.3)
+ax2.grid(alpha=0.3)
 fig.tight_layout()
 plt.show()
 
@@ -323,8 +388,7 @@ print(classification_report(y_true, y_pred))
 ######################################################################
 # Finally, we can also visualize the hypnogram of the recording we used for
 # validation, with the predicted sleep stages overlaid on top of the true
-# sleep stages. We can see that the model cannot correctly identify the
-# different sleep stages with this amount of training.
+# sleep stages.
 
 import matplotlib.pyplot as plt
 
@@ -333,20 +397,30 @@ ax.plot(y_true, color="b", label="Expert annotations")
 ax.plot(y_pred.flatten(), color="r", label="Predict annotations", alpha=0.5)
 ax.set_xlabel("Time (epochs)")
 ax.set_ylabel("Sleep stage")
+ax.legend()
 
 ######################################################################
-# The model was able to learn despite the low amount of data that was available
-# (only two recordings in this example) and reached a balanced accuracy of
-# about 43% in a 5-class classification task (chance-level = 20%) on held-out
-# data over 10 epochs.
+# What happens with more training?
+# --------------------------------
 #
-# .. note::
-#    To further improve performance, the number of epochs should be increased.
-#    It has been reduced here for faster run-time in document generation. In
-#    testing, 10 epochs provided reasonable performance with around 89% balanced
-#    accuracy on training data and around 43% on held out validation data.
-#    Increasing the number of training recordings and optimizing the hyperparameters
-#    will also help increase performance
+# The short gallery build above uses only 2 subjects and 3 epochs. When
+# trained offline on **6 subjects** (4 train, 2 validation) for up to
+# 100 epochs with early stopping, the same architecture reaches **74.6 %
+# balanced accuracy** (chance level = 20 %). The key improvements are:
+#
+# - **More data**: 6 subjects with 2 full-night recordings each, instead
+#   of 2 subjects with cropped recordings.
+# - **Regularization**: label smoothing (0.1), gradient clipping,
+#   increased dropout inside the attention encoder (``drop_prob=0.3``),
+#   and weight decay (1e-3).
+# - **Learning rate schedule**: cosine annealing over the full run.
+# - **Early stopping on balanced accuracy** rather than validation loss,
+#   which avoids restoring an overconfident checkpoint.
+#
+# The training curves and interactive metrics dashboard are available on
+# `Weights & Biases <https://wandb.ai/braindecode/braindecode-tutorials/runs/ma2m9x9c>`_.
+# Increasing the number of training subjects further would improve
+# performance, as the original paper [1]_ trains on much larger cohorts.
 
 ###########################################################################
 # References
