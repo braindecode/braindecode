@@ -278,26 +278,13 @@ from skorch.callbacks import EarlyStopping, LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
-from braindecode._tutorial_hub import (
-    format_tutorial_checkpoint_message,
-    load_tutorial_checkpoint_metadata,
-)
 
 # A moderate AdamW learning rate is a reasonable starting point for EEGNeX:
 lr = 1e-3
 weight_decay = 0
 
 batch_size = 64
-n_epochs = 100
-
-######################################################################
-# .. warning::
-#    The gallery build keeps ``n_epochs = 4`` for runtime reasons, and a fresh
-#    local run at that budget can stay close to chance level. When the
-#    published checkpoint ``braindecode/plot_bcic_iv_2a_eegprep_cleaning`` is
-#    available, the tutorial loads it instead so the plots and confusion matrix
-#    reflect the longer offline run. The published checkpoint achieves 81.9%
-#    accuracy on the held-out data (chance = 25%, 51 epochs).
+n_epochs = 4
 
 clf = EEGClassifier(
     model,
@@ -315,34 +302,34 @@ clf = EEGClassifier(
     device=device,
     classes=classes,
 )
-# The public docs use a checkpoint trained offline for up to 100 epochs with
-# early stopping. If it is unavailable, we fall back to the short local run
-# used for this example script.
+# Model training for the specified number of epochs. ``y`` is ``None`` as it is
+# already supplied in the dataset.
+clf.fit(train_set, y=None, epochs=n_epochs)
+
+######################################################################
+# Training for longer
+# -------------------
+#
+# The gallery build above uses only ``n_epochs = 4``. When trained
+# offline for up to 100 epochs with early stopping, the model reaches
+# **81.9 % accuracy on the held-out session (chance = 25 %)**.
+#
+# We can load the pretrained checkpoint from the Hugging Face Hub and
+# inspect the full training curves:
+
+from huggingface_hub import hf_hub_download
+
 repo_id = "braindecode/plot_bcic_iv_2a_eegprep_cleaning"
-checkpoint_metadata = load_tutorial_checkpoint_metadata(clf, repo_id)
-if checkpoint_metadata is None:
-    # Model training for the specified number of epochs. ``y`` is ``None`` as it is
-    # already supplied in the dataset.
-    _ = clf.fit(train_set, y=None, epochs=n_epochs)
-print(
-    format_tutorial_checkpoint_message(
-        repo_id=repo_id,
-        short_run_epochs=n_epochs,
-        metadata=checkpoint_metadata,
-    )
+clf.initialize()
+clf.load_params(
+    f_params=hf_hub_download(repo_id, "params.safetensors"),
+    f_history=hf_hub_download(repo_id, "history.json"),
+    use_safetensors=True,
 )
 
-
 ######################################################################
-# Plotting Results
-# ----------------
-#
-
-
-######################################################################
-# Now we use the history stored by skorch throughout training to plot
-# accuracy and loss curves.
-#
+# Plot training curves
+# ~~~~~~~~~~~~~~~~~~~~
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -403,26 +390,15 @@ plt.tight_layout()
 #
 
 
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
 
-from braindecode.visualization import plot_confusion_matrix
-
-# generate confusion matrices
-# get the targets
 y_true = valid_set.get_metadata().target
 y_pred = clf.predict(valid_set)
 
-# generating confusion matrix
-confusion_mat = confusion_matrix(y_true, y_pred)
-
-# add class labels
-# label_dict is class_name : str -> i_class : int
 label_dict = windows_dataset.datasets[0].window_kwargs[0][1]["mapping"]
-# sort the labels by values (values are integer class labels)
 labels = [k for k, v in sorted(label_dict.items(), key=lambda kv: kv[1])]
 
-# plot the basic conf. matrix
-plot_confusion_matrix(confusion_mat, class_names=labels)
+ConfusionMatrixDisplay.from_predictions(y_true, y_pred, display_labels=labels)
 
 #############################################################
 #

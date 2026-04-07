@@ -8,14 +8,6 @@ Braindecode. We adapt the time distributed approach of [1]_ to learn on
 sequences of EEG windows using the openly accessible Sleep Physionet dataset
 [2]_ [3]_.
 
-.. warning::
-    The gallery build is intentionally short and uses only two recordings.
-    Even with ``n_epochs = 10``, this small setup can underperform badly. When
-    the published checkpoint ``braindecode/plot_sleep_staging_chambon2018`` is
-    available, the tutorial loads it instead so the reported metrics reflect
-    the longer offline run. The published checkpoint achieves 64.2% balanced
-    accuracy on the held-out data (chance = 20%, 19 epochs).
-
 """
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #
@@ -256,14 +248,10 @@ from skorch.callbacks import EarlyStopping, EpochScoring
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
-from braindecode._tutorial_hub import (
-    format_tutorial_checkpoint_message,
-    load_tutorial_checkpoint_metadata,
-)
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 100
+n_epochs = 10
 
 train_bal_acc = EpochScoring(
     scoring="balanced_accuracy",
@@ -300,30 +288,36 @@ clf = EEGClassifier(
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
+clf.fit(train_set, y=None, epochs=n_epochs)
+
+######################################################################
+# Training for longer
+# -------------------
+#
+# The gallery build above uses only ``n_epochs = 10``. When trained
+# offline for up to 100 epochs with early stopping, the model reaches
+# **64.2 % balanced accuracy on the held-out recording (chance = 20 %)**.
+#
+# We can load the pretrained checkpoint from the Hugging Face Hub and
+# inspect the full training curves:
+
+from huggingface_hub import hf_hub_download
+
 repo_id = "braindecode/plot_sleep_staging_chambon2018"
-checkpoint_metadata = load_tutorial_checkpoint_metadata(clf, repo_id)
-if checkpoint_metadata is None:
-    clf.fit(train_set, y=None, epochs=n_epochs)
-print(
-    format_tutorial_checkpoint_message(
-        repo_id=repo_id,
-        short_run_epochs=n_epochs,
-        metadata=checkpoint_metadata,
-    )
+clf.initialize()
+clf.load_params(
+    f_params=hf_hub_download(repo_id, "params.safetensors"),
+    f_history=hf_hub_download(repo_id, "history.json"),
+    use_safetensors=True,
 )
 
 ######################################################################
-# Plot results
-# ------------
-#
-# We use the history stored by Skorch during training to plot the performance of
-# the model throughout training. Specifically, we plot the loss and the balanced
-# balanced accuracy for the training and validation sets.
+# Plot training curves
+# ~~~~~~~~~~~~~~~~~~~~
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
 df.index.name = "Epoch"
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
@@ -333,6 +327,8 @@ ax1.set_ylabel("Loss")
 ax2.set_ylabel("Balanced accuracy")
 ax1.legend(["Train", "Valid"])
 ax2.legend(["Train", "Valid"])
+ax1.grid(alpha=0.3)
+ax2.grid(alpha=0.3)
 fig.tight_layout()
 plt.show()
 
@@ -340,17 +336,13 @@ plt.show()
 # Finally, we also display the confusion matrix and classification report:
 #
 
-from sklearn.metrics import classification_report, confusion_matrix
-
-from braindecode.visualization import plot_confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
 y_pred = clf.predict(valid_set)
 
-confusion_mat = confusion_matrix(y_true, y_pred)
-
-plot_confusion_matrix(
-    confusion_mat=confusion_mat, class_names=["Wake", "N1", "N2", "N3", "REM"]
+ConfusionMatrixDisplay.from_predictions(
+    y_true, y_pred, display_labels=["Wake", "N1", "N2", "N3", "REM"]
 )
 
 print(classification_report(y_true, y_pred))
@@ -368,18 +360,6 @@ ax.plot(y_true, color="b", label="Expert annotations")
 ax.plot(y_pred.flatten(), color="r", label="Predict annotations", alpha=0.5)
 ax.set_xlabel("Time (epochs)")
 ax.set_ylabel("Sleep stage")
-
-######################################################################
-# The short gallery configuration can still underfit because it uses only two
-# recordings.
-#
-# .. note::
-#    The printed message above tells you whether the tutorial used the short
-#    local run or a pretrained checkpoint trained offline for up to 100 epochs
-#    with early stopping. The checkpoint metadata reports the longer-run
-#    balanced accuracy on the held-out recording. More recordings,
-#    hyperparameter tuning, and longer sequences can improve performance
-#    further, especially when few EEG channels are available.
 
 ###########################################################################
 # References

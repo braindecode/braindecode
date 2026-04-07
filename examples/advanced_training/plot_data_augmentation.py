@@ -27,10 +27,6 @@ from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
-from braindecode._tutorial_hub import (
-    format_tutorial_checkpoint_message,
-    load_tutorial_checkpoint_metadata,
-)
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
@@ -244,14 +240,6 @@ weight_decay = 0
 batch_size = 64
 n_epochs = 4
 
-######################################################################
-# .. warning::
-#    The gallery build keeps ``n_epochs = 4`` for runtime reasons, and a fresh
-#    local run at that budget can still undertrain the augmented model. When
-#    the published checkpoint ``braindecode/plot_data_augmentation`` is
-#    available, the tutorial loads it instead so the example can stay fast
-#    while still reflecting a longer offline run.
-
 clf = EEGClassifier(
     model,
     iterator_train=AugmentedDataLoader,  # This tells EEGClassifier to use a custom DataLoader
@@ -269,19 +257,9 @@ clf = EEGClassifier(
     device=device,
     classes=classes,
 )
-repo_id = "braindecode/plot_data_augmentation"
-checkpoint_metadata = load_tutorial_checkpoint_metadata(clf, repo_id)
-if checkpoint_metadata is None:
-    # Model training for a specified number of epochs. `y` is None as it is already
-    # supplied in the dataset.
-    clf.fit(train_set, y=None, epochs=n_epochs)
-print(
-    format_tutorial_checkpoint_message(
-        repo_id=repo_id,
-        short_run_epochs=n_epochs,
-        metadata=checkpoint_metadata,
-    )
-)
+# Model training for a specified number of epochs. `y` is None as it is already
+# supplied in the dataset.
+clf.fit(train_set, y=None, epochs=n_epochs)
 
 ######################################################################
 # Manually composing Transforms

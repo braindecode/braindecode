@@ -42,16 +42,9 @@ import numpy as np
 import sklearn
 from mne import set_log_level
 
-from braindecode._tutorial_hub import (
-    load_tutorial_checkpoint_metadata,
-    load_tutorial_metadata,
-)
 from braindecode.datasets import BCICompetitionIVDataset4
 
 subject_id = 1
-repo_id = "braindecode/bcic_iv_4_ecog_cropped"
-reference_metadata = load_tutorial_metadata(repo_id)
-use_full_recordings = reference_metadata is not None
 dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 
 ######################################################################
@@ -100,33 +93,13 @@ factor_new = 1e-3
 init_block_size = 1000
 
 ######################################################################
-# .. warning::
-#    The short local fallback for this tutorial uses only the first ``30``
-#    seconds of the training recording and keeps ``n_epochs = 8``. When the
-#    published checkpoint ``braindecode/bcic_iv_4_ecog_cropped`` is available,
-#    the tutorial uses the whole recording and loads the offline full-recording
-#    reference run instead. The published checkpoint achieves a test-set mean
-#    Pearson r of 0.07 (15 epochs).
-preprocess_n_jobs = 1 if use_full_recordings else -1
-if use_full_recordings:
-    train_duration_s = float(train_set.datasets[0].raw.times[-1])
-    valid_tmin_s = 0.8 * train_duration_s
-    valid_set = preprocess(
-        copy.deepcopy(train_set),
-        [Preprocessor("crop", tmin=valid_tmin_s, tmax=None)],
-        n_jobs=preprocess_n_jobs,
-    )
-    preprocess(
-        train_set,
-        [Preprocessor("crop", tmin=0, tmax=valid_tmin_s)],
-        n_jobs=preprocess_n_jobs,
-    )
-else:
-    valid_set = preprocess(
-        copy.deepcopy(train_set), [Preprocessor("crop", tmin=24, tmax=30)], n_jobs=-1
-    )
-    preprocess(train_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
-    preprocess(test_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
+# We select only first 30 seconds from the training dataset to limit time and memory
+# to run this example. We split training dataset into train and validation (only 6 seconds).
+valid_set = preprocess(
+    copy.deepcopy(train_set), [Preprocessor("crop", tmin=24, tmax=30)], n_jobs=-1
+)
+preprocess(train_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
+preprocess(test_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
 
 ######################################################################
 # In time series targets setup, targets variables are stored in mne.Raw object as channels
@@ -146,9 +119,9 @@ preprocessors = [
     ),
 ]
 # Transform the data
-preprocess(train_set, preprocessors, n_jobs=preprocess_n_jobs)
-preprocess(valid_set, preprocessors, n_jobs=preprocess_n_jobs)
-preprocess(test_set, preprocessors, n_jobs=preprocess_n_jobs)
+preprocess(train_set, preprocessors)
+preprocess(valid_set, preprocessors)
+preprocess(test_set, preprocessors)
 
 # Extract sampling frequency, check that they are same in all datasets
 sfreq = train_set.datasets[0].raw.info["sfreq"]
@@ -310,7 +283,7 @@ from braindecode.training import CroppedTimeSeriesEpochScoring, TimeSeriesLoss
 lr = 0.0625 * 0.01
 weight_decay = 0
 batch_size = 27  # only 27 examples in train set, otherwise set to 64
-n_epochs = 100
+n_epochs = 8
 
 regressor = EEGRegressor(
     model,
@@ -353,21 +326,28 @@ set_log_level(verbose="WARNING")
 ######################################################################
 # Model training for a specified number of epochs. ``y`` is ``None`` as it is already supplied
 # in the dataset.
-checkpoint_metadata = load_tutorial_checkpoint_metadata(regressor, repo_id)
-if checkpoint_metadata is None:
-    regressor.fit(train_set, y=None, epochs=n_epochs)
-    print(
-        "This tutorial executed the short local fallback with only the first "
-        f"30 seconds of the training recording for {n_epochs} epochs."
-    )
-else:
-    print(
-        "Loaded pretrained weights from "
-        f"`{repo_id}`, trained offline on the whole recording with early "
-        f"stopping. Held-out test session mean Pearson r: "
-        f"{checkpoint_metadata['test_mean_pearson_r']:.3f}."
-    )
+regressor.fit(train_set, y=None, epochs=n_epochs)
 
+######################################################################
+# Training for longer
+# -------------------
+#
+# The gallery build above uses only ``n_epochs = 8``. When trained
+# offline on the full recording for up to 100 epochs with early stopping,
+# the model reaches a test-set mean Pearson r of **0.07**.
+#
+# We can load the pretrained checkpoint from the Hugging Face Hub and
+# inspect the full training curves:
+
+from huggingface_hub import hf_hub_download
+
+repo_id = "braindecode/bcic_iv_4_ecog_cropped"
+regressor.initialize()
+regressor.load_params(
+    f_params=hf_hub_download(repo_id, "params.safetensors"),
+    f_history=hf_hub_download(repo_id, "history.json"),
+    use_safetensors=True,
+)
 
 ######################################################################
 # Obtaining predictions and targets for the test, train, and validation dataset
@@ -403,12 +383,6 @@ preds_test, y_test = pad_and_select_predictions(preds_test, y_test)
 
 ######################################################################
 # We plot target and predicted finger flexion on training, validation, and test sets.
-#
-# .. note::
-#    If the published checkpoint is unavailable, this script falls back to a
-#    short cropped run on only the first ``30`` seconds of the training
-#    recording. When the checkpoint is available, the displayed predictions come
-#    from the whole-recording reference setup.
 #
 import matplotlib.pyplot as plt
 import pandas as pd

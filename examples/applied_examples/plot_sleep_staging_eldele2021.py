@@ -7,14 +7,6 @@ This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We use the attention-based model from [1]_ with the time distributed approach of [2]_
 to learn on sequences of EEG windows using the openly accessible Sleep Physionet dataset [3]_ [4]_.
 
-.. warning::
-    The gallery build uses only ``n_epochs = 3`` and two subjects, so the
-    printed accuracy is just a rough indicator. When the published checkpoint
-    ``braindecode/plot_sleep_staging_eldele2021`` is available, the tutorial
-    loads pretrained weights trained offline on **6 subjects** (4 train /
-    2 validation) for up to 100 epochs with early stopping, reaching
-    **74.6 % balanced accuracy** on the held-out recordings (chance = 20 %).
-
 .. raw:: html
 
    <iframe src="https://wandb.ai/braindecode/braindecode-tutorials/runs/ma2m9x9c"
@@ -260,14 +252,10 @@ from skorch.callbacks import (
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
-from braindecode._tutorial_hub import (
-    format_tutorial_checkpoint_message,
-    load_tutorial_checkpoint_metadata,
-)
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 100
+n_epochs = 3
 
 train_bal_acc = EpochScoring(
     scoring="balanced_accuracy",
@@ -316,43 +304,43 @@ clf = EEGClassifier(
 )
 # Model training for a specified number of epochs. ``y`` is ``None`` as it is already
 # supplied in the dataset.
+clf.fit(train_set, y=None, epochs=n_epochs)
+
+######################################################################
+# Training for longer
+# -------------------
+#
+# The gallery build above uses only ``n_epochs = 3``. When trained offline
+# for up to 100 epochs with early stopping, the same setup reaches
+# **74.6 % balanced accuracy** on the held-out recordings (chance = 20 %).
+#
+# The interactive training dashboard is on
+# `Weights & Biases <https://wandb.ai/braindecode/braindecode-tutorials/runs/ma2m9x9c>`_.
+#
+# We can load the pretrained checkpoint directly from the Hugging Face Hub
+# and inspect the full training curves. This checkpoint uses ``params.pt``
+# (not safetensors) due to the ``TimeDistributed`` wrapper:
+
+from huggingface_hub import hf_hub_download
+
 repo_id = "braindecode/plot_sleep_staging_eldele2021"
-checkpoint_metadata = load_tutorial_checkpoint_metadata(
-    clf, repo_id, use_safetensors=False
-)
-if checkpoint_metadata is None:
-    clf.fit(train_set, y=None, epochs=n_epochs)
-print(
-    format_tutorial_checkpoint_message(
-        repo_id=repo_id,
-        short_run_epochs=n_epochs,
-        metadata=checkpoint_metadata,
-    )
+clf.initialize()
+clf.load_params(
+    f_params=hf_hub_download(repo_id, "params.pt"),
+    f_history=hf_hub_download(repo_id, "history.json"),
+    use_safetensors=False,
 )
 
 ######################################################################
-# Plot results
-# ------------
+# Plot training curves
+# ~~~~~~~~~~~~~~~~~~~~
 #
-# We use the history stored by Skorch during training to plot the performance of
-# the model throughout training. Specifically, we plot the loss and the balanced
-# accuracy for the training and validation sets.
-#
-# When the pretrained checkpoint is loaded, the history contains the full
-# offline training run (up to 100 epochs with early stopping), so the curves
-# below reflect the longer run rather than the short gallery build.
-#
-# .. note::
-#    The full training run for this tutorial is tracked on Weights & Biases.
-#    You can explore the interactive dashboard, compare metrics, and inspect
-#    system utilization at the link below:
-#
-#    `braindecode-tutorials on W&B <https://wandb.ai/bruaristimunha/braindecode-tutorials>`_
+# The loaded history contains the full offline training run. We plot loss
+# and balanced accuracy over all epochs.
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
 df.index.name = "Epoch"
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
@@ -368,59 +356,34 @@ fig.tight_layout()
 plt.show()
 
 ######################################################################
-# Finally, we also display the confusion matrix and classification report:
+# Confusion matrix and classification report
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
+# Using the pretrained weights we can evaluate on the held-out validation
+# subjects and display the confusion matrix and per-class metrics.
 
-from sklearn.metrics import classification_report, confusion_matrix
-
-from braindecode.visualization import plot_confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
 y_pred = clf.predict(valid_set)
 
-confusion_mat = confusion_matrix(y_true, y_pred)
-
-plot_confusion_matrix(confusion_mat=confusion_mat)
-#                      class_names=['Wake', 'N1', 'N2', 'N3', 'N4', 'REM'])
+ConfusionMatrixDisplay.from_predictions(y_true, y_pred)
 
 print(classification_report(y_true, y_pred))
 
 ######################################################################
-# Finally, we can also visualize the hypnogram of the recording we used for
-# validation, with the predicted sleep stages overlaid on top of the true
-# sleep stages.
-
-import matplotlib.pyplot as plt
+# Hypnogram
+# ~~~~~~~~~
+#
+# Finally we overlay the predicted sleep stages on the expert annotations
+# for one of the validation recordings.
 
 fig, ax = plt.subplots(figsize=(15, 5))
 ax.plot(y_true, color="b", label="Expert annotations")
-ax.plot(y_pred.flatten(), color="r", label="Predict annotations", alpha=0.5)
+ax.plot(y_pred.flatten(), color="r", label="Predicted", alpha=0.5)
 ax.set_xlabel("Time (epochs)")
 ax.set_ylabel("Sleep stage")
 ax.legend()
-
-######################################################################
-# What happens with more training?
-# --------------------------------
-#
-# The short gallery build above uses only 2 subjects and 3 epochs. When
-# trained offline on **6 subjects** (4 train, 2 validation) for up to
-# 100 epochs with early stopping, the same architecture reaches **74.6 %
-# balanced accuracy** (chance level = 20 %). The key improvements are:
-#
-# - **More data**: 6 subjects with 2 full-night recordings each, instead
-#   of 2 subjects with cropped recordings.
-# - **Regularization**: label smoothing (0.1), gradient clipping,
-#   increased dropout inside the attention encoder (``drop_prob=0.3``),
-#   and weight decay (1e-3).
-# - **Learning rate schedule**: cosine annealing over the full run.
-# - **Early stopping on balanced accuracy** rather than validation loss,
-#   which avoids restoring an overconfident checkpoint.
-#
-# The training curves and interactive metrics dashboard are available on
-# `Weights & Biases <https://wandb.ai/braindecode/braindecode-tutorials/runs/ma2m9x9c>`_.
-# Increasing the number of training subjects further would improve
-# performance, as the original paper [1]_ trains on much larger cohorts.
 
 ###########################################################################
 # References
