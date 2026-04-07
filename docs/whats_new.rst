@@ -28,6 +28,11 @@ Current 1.5.0 (GitHub)
 Enhancements
 ============
 
+- Add tutorial hub checkpoint system: tutorials now train for a few epochs
+  then load pretrained weights from HuggingFace Hub to show full training
+  curves and metrics. All 9 tutorial checkpoints published to
+  ``huggingface.co/braindecode/``. (:pr:`985` by :user:`bruAristimunha`)
+
 API and behavior changes
 ========================
 
