@@ -102,9 +102,8 @@ def _make_wandb_callback(tutorial_name: str, config: dict):
     """Create a WandbLogger callback if wandb is enabled, else return None."""
     if _WANDB_PROJECT is None:
         return None
-    from skorch.callbacks import WandbLogger
-
-    import wandb
+    import wandb  # isort: skip
+    from skorch.callbacks import WandbLogger  # isort: skip
 
     run = wandb.init(
         project=_WANDB_PROJECT,
