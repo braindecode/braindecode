@@ -1,3 +1,7 @@
+# Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
+#
+# License: BSD (3-clause)
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -51,11 +55,11 @@ class SyncNet(EEGModuleMixin, nn.Module):
         The initialization range for omega parameters using uniform
         distribution. Default is (0, 1).
     beta_init_values : tuple of float, optional
-        The initialization range for beta parameters using uniform
-        distribution. Default is (0, 1). Default is (0, 0.05).
+        The initialization range for beta (decay) parameters using uniform
+        distribution. Default is (0, 0.05).
     phase_init_values : tuple of float, optional
-        The initialization range for phase parameters using `normal`
-        distribution. Default is (0, 1). Default is (0, 0.05).
+        The initialization range for phase parameters using normal
+        distribution. Default is (0, 0.05).
 
 
     Notes
@@ -146,12 +150,12 @@ class SyncNet(EEGModuleMixin, nn.Module):
         # Phase Shift
         self.phi_ini = nn.Parameter(
             torch.FloatTensor(1, 1, self.n_chans, self.num_filters).normal_(
-                self.beta_init_values[0], self.beta_init_values[1]
+                self.phase_init_values[0], self.phase_init_values[1]
             )
         )
         self.beta = nn.Parameter(
             torch.FloatTensor(1, 1, 1, self.num_filters).uniform_(
-                self.phase_init_values[0], self.phase_init_values[1]
+                self.beta_init_values[0], self.beta_init_values[1]
             )
         )
 
@@ -185,21 +189,21 @@ class SyncNet(EEGModuleMixin, nn.Module):
         # Output: (batch_size, n_chans, 1, n_times)
 
         # Compute the oscillatory component
+        # Shape: (1, filter_width, n_chans, num_filters)
         W_osc = self.amplitude * torch.cos(self.t * self.omega + self.phi_ini)
-        # W_osc is (1, filter_width, n_chans, 1)
 
         # Compute the decay component
-        t_squared = torch.pow(self.t, 2)  # Shape: (filter_width,)
-        t_squared_beta = t_squared * self.beta  # Shape: (filter_width, num_filters)
+        # Shape: (1, filter_width, 1, num_filters)
+        t_squared = torch.pow(self.t, 2)
+        t_squared_beta = t_squared * self.beta
         W_decay = torch.exp(-t_squared_beta)
-        # W_osc is (1, filter_width, 1, 1)
 
         # Combine oscillatory and decay components
-        # W shape: (1, n_chans, num_filters, filter_width)
+        # Shape: (1, filter_width, n_chans, num_filters)
         W = W_osc * W_decay
-        # W shape will be: (1, filter_width, n_chans, 1)
 
-        W = W.view(self.num_filters, self.n_chans, 1, self.filter_width)
+        # Permute to conv2d weight shape (out_channels, in_channels, kH, kW)
+        W = W.permute(3, 2, 0, 1).contiguous()
 
         # Apply convolution
         x_padded = self.pad_input(x.float())

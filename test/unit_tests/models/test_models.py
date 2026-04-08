@@ -52,6 +52,7 @@ from braindecode.models import (
     SleepStagerBlanco2020,
     SleepStagerChambon2018,
     SPARCNet,
+    SyncNet,
     TIDNet,
     TSception,
     USleep,
@@ -3255,3 +3256,28 @@ def test_eeginceptionmi_mapping_targets():
         assert new_key in sd_keys, f"{new_key} not in state_dict"
     # old keys should not have typos
     assert "fc.bias" in model.mapping
+
+
+def test_syncnet_param_init_uses_correct_ranges():
+    # phi_ini uses phase_init_values, beta uses beta_init_values
+    model = SyncNet(
+        n_chans=3, n_times=100, n_outputs=2,
+        beta_init_values=(0.0, 0.05),
+        phase_init_values=(0.0, 3.14),
+    )
+    # beta should stay in its uniform range
+    assert model.beta.data.min() >= 0.0
+    assert model.beta.data.max() <= 0.05
+    # phi_ini sampled from normal(0, 3.14), very unlikely all near zero
+    assert model.phi_ini.data.abs().max() > 0.01
+
+
+def test_syncnet_filter_weight_shape():
+    # conv2d weight must be (num_filters, n_chans, 1, filter_width)
+    model = SyncNet(
+        n_chans=4, n_times=200, n_outputs=2,
+        num_filters=3, filter_width=20,
+    )
+    x = torch.randn(2, 4, 200)
+    out = model(x)
+    assert out.shape == (2, 2)
