@@ -44,6 +44,12 @@ from braindecode.datasets.base import _zarr_to_memmap  # noqa: E402
 ARRAY_SHAPE = (256, 8 * 1024)
 CHUNKS = (64, 8 * 1024)
 
+# Hard caps so a hang in one child process cannot wedge the whole
+# test session.  CI runners vary wildly in speed (macOS in particular
+# can be 3–4x slower than a typical laptop), so these are generous.
+_BARRIER_TIMEOUT_S = 120.0
+_POOL_TIMEOUT_S = 600.0
+
 
 def _make_zarr(tmp_path: Path) -> Path:
     """Create a tiny on-disk zarr store with one group and one array."""
@@ -84,7 +90,11 @@ def _worker(zarr_path_str: str, group: str):
     different workers will observe different inodes at the same path.
     """
     assert _BARRIER is not None, "pool initializer was not invoked"
-    _BARRIER.wait()
+    # Cap the barrier wait so one crashed sibling cannot wedge the
+    # whole pool forever — without this the test can hang for the
+    # full CI job timeout on slow runners where a worker dies during
+    # spawn/import.
+    _BARRIER.wait(timeout=_BARRIER_TIMEOUT_S)
 
     npy_path = _zarr_to_memmap(Path(zarr_path_str), group)
 
@@ -117,10 +127,15 @@ def _run_race(tmp_path: Path, n_workers: int):
     with ctx.Pool(
         n_workers, initializer=_init_worker, initargs=(barrier,)
     ) as pool:
-        results = pool.starmap(
+        # starmap_async(...).get(timeout=...) gives us a hard wall-
+        # clock cap on the whole pool: if any worker deadlocks or
+        # stalls, the test fails with TimeoutError instead of hanging
+        # until the CI job runner kills it.
+        async_result = pool.starmap_async(
             _worker,
             [(str(zarr_path), "recording_0")] * n_workers,
         )
+        results = async_result.get(timeout=_POOL_TIMEOUT_S)
     return cache_dir, results
 
 
