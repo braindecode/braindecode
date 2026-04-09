@@ -49,7 +49,7 @@ Bug fixes
   The published file is now created exactly once via ``os.link`` and
   is never replaced, making the cache safe under arbitrary
   concurrent access on local POSIX, NFSv3, Lustre and SMB
-  (by `Pierre Guetschel`_)
+  (:gh:`986` by `Pierre Guetschel`_)
 
 Code health
 ============
