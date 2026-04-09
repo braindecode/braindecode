@@ -38,7 +38,6 @@ zarr = pytest.importorskip("zarr")
 
 from braindecode.datasets.base import _zarr_to_memmap  # noqa: E402
 
-
 # ~16 MB at float64: wide enough that 8 writers racing on the same
 # group overlap for long enough to exercise the TOCTOU window on a
 # local filesystem.
