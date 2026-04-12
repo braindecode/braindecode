@@ -841,6 +841,20 @@ class MultiHeadAttention(nn.Module):
     for flash-attention / memory-efficient kernels, with a manual fallback
     for older PyTorch versions.
 
+    Parameters
+    ----------
+    emb_size : int
+        The embedding dimension.
+    num_heads : int
+        Number of attention heads. Must evenly divide ``emb_size``.
+    dropout : float, optional
+        Dropout probability applied to attention weights. Default: 0.0.
+    mask : Tensor, optional
+        Attention mask passed to ``forward``. Follows the PyTorch SDPA
+        convention: for boolean masks ``True`` means **ignore** that
+        position; for float masks the values are **added** to the
+        attention scores before softmax.
+
     Examples
     --------
     >>> import torch
@@ -856,6 +870,11 @@ class MultiHeadAttention(nn.Module):
 
     def __init__(self, emb_size, num_heads, dropout=0.0):
         super().__init__()
+        if emb_size % num_heads != 0:
+            raise ValueError(
+                f"emb_size ({emb_size}) must be divisible by "
+                f"num_heads ({num_heads})."
+            )
         self.emb_size = emb_size
         self.num_heads = num_heads
         self.head_dim = emb_size // num_heads
@@ -882,7 +901,10 @@ class MultiHeadAttention(nn.Module):
             scaling = math.sqrt(self.head_dim)
             energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
             if mask is not None:
-                energy = energy + mask
+                if mask.dtype == torch.bool:
+                    energy = energy.masked_fill(mask, float("-inf"))
+                else:
+                    energy = energy + mask
             att = F.softmax(energy / scaling, dim=-1)
             if self.training and self.att_drop > 0:
                 att = F.dropout(att, p=self.att_drop, training=True)
