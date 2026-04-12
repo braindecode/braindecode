@@ -895,7 +895,11 @@ class MultiHeadAttention(nn.Module):
 
         dp = self.att_drop if self.training else 0.0
         out = F.scaled_dot_product_attention(
-            queries, keys, values, attn_mask=mask, dropout_p=dp,
+            queries,
+            keys,
+            values,
+            attn_mask=mask,
+            dropout_p=dp,
         )
 
         out = self.rearrange_unstack(out)
