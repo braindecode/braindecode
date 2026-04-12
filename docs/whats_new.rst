@@ -51,6 +51,15 @@ Bug fixes
   (by `Sarthak Tayal`_)
 - Fix incomplete author email in :class:`braindecode.models.TSception` header
   (by `Sarthak Tayal`_)
+- Fix a time-of-check-time-of-use race in
+  :func:`braindecode.datasets.base._zarr_to_memmap` that caused
+  concurrent workers to repeatedly ``rename``-replace the published
+  ``.npy`` cache, producing wasted I/O on local filesystems and
+  ``.nfsXXXX`` silly-rename files plus ``SIGBUS`` crashes on NFSv3.
+  The published file is now created exactly once via ``os.link`` and
+  is never replaced, making the cache safe under arbitrary
+  concurrent access on local POSIX, NFSv3, Lustre and SMB
+  (:gh:`986` by `Pierre Guetschel`_)
 
 Code health
 ============
