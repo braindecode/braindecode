@@ -3259,25 +3259,44 @@ def test_eeginceptionmi_mapping_targets():
 
 
 def test_syncnet_param_init_uses_correct_ranges():
-    # phi_ini uses phase_init_values, beta uses beta_init_values
+    # Use deterministic init values to verify phi_ini uses phase_init_values
+    # and beta uses beta_init_values (not swapped).
+    # uniform_(v, v) produces exactly v; normal_(mean, 0.0) produces exactly mean.
+    beta_value = 0.05
+    phase_value = 0.25
     model = SyncNet(
         n_chans=3, n_times=100, n_outputs=2,
-        beta_init_values=(0.0, 0.05),
-        phase_init_values=(0.0, 3.14),
+        beta_init_values=(beta_value, beta_value),
+        phase_init_values=(phase_value, 0.0),
     )
-    # beta should stay in its uniform range
-    assert model.beta.data.min() >= 0.0
-    assert model.beta.data.max() <= 0.05
-    # phi_ini sampled from normal(0, 3.14), very unlikely all near zero
-    assert model.phi_ini.data.abs().max() > 0.01
+    # beta should equal the exact uniform value
+    assert torch.all(model.beta.data == beta_value)
+    # phi_ini should equal the exact normal mean (with zero std)
+    assert torch.all(model.phi_ini.data == phase_value)
 
 
 def test_syncnet_filter_weight_shape():
-    # conv2d weight must be (num_filters, n_chans, 1, filter_width)
+    # conv2d weight must be (num_filters, n_chans, 1, filter_width).
+    # Verify that .permute() produces a different (correct) layout than .view(),
+    # which was the original bug.
+    torch.manual_seed(42)
+    n_chans, num_filters, filter_width = 4, 3, 20
     model = SyncNet(
-        n_chans=4, n_times=200, n_outputs=2,
-        num_filters=3, filter_width=20,
+        n_chans=n_chans, n_times=200, n_outputs=2,
+        num_filters=num_filters, filter_width=filter_width,
     )
-    x = torch.randn(2, 4, 200)
+    x = torch.randn(2, n_chans, 200)
     out = model(x)
     assert out.shape == (2, 2)
+
+    # Reconstruct W from model parameters to verify layout
+    W_osc = model.amplitude * torch.cos(model.t * model.omega + model.phi_ini)
+    W_decay = torch.exp(-torch.pow(model.t, 2) * model.beta)
+    W = W_osc * W_decay  # shape: (1, filter_width, n_chans, num_filters)
+
+    W_permuted = W.permute(3, 2, 0, 1)  # correct: (num_filters, n_chans, 1, filter_width)
+    assert W_permuted.shape == (num_filters, n_chans, 1, filter_width)
+
+    # .view() would silently produce wrong data layout despite same shape
+    W_viewed = W.reshape(num_filters, n_chans, 1, filter_width)
+    assert not torch.allclose(W_permuted, W_viewed)

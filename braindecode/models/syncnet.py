@@ -58,8 +58,8 @@ class SyncNet(EEGModuleMixin, nn.Module):
         The initialization range for beta (decay) parameters using uniform
         distribution. Default is (0, 0.05).
     phase_init_values : tuple of float, optional
-        The initialization range for phase parameters using normal
-        distribution. Default is (0, 0.05).
+        The initialization mean and standard deviation for phase
+        parameters using normal distribution. Default is (0, 0.05).
 
 
     Notes
