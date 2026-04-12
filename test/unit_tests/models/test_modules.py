@@ -1264,8 +1264,10 @@ def test_multi_head_attention_forward_shape():
 def test_multi_head_attention_bool_mask():
     from braindecode.modules import MultiHeadAttention
 
+    torch.manual_seed(42)
     mha = MultiHeadAttention(emb_size=16, num_heads=2)
     mha.eval()
+    torch.manual_seed(42)
     x = torch.randn(1, 4, 16)
 
     # Boolean mask: True = ignore. Mask out positions 2 and 3.
@@ -1276,7 +1278,8 @@ def test_multi_head_attention_bool_mask():
     out_no_mask = mha(x)
     assert out_masked.shape == out_no_mask.shape
     # Outputs should differ when mask is applied
-    assert not torch.allclose(out_masked, out_no_mask, atol=1e-5)
+    max_diff = (out_masked - out_no_mask).abs().max().item()
+    assert max_diff > 1e-3, f"Mask had no effect: max_diff={max_diff}"
 
 
 def test_multi_head_attention_invalid_emb_size():

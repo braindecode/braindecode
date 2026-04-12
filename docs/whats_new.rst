@@ -29,7 +29,8 @@ Enhancements
 ============
 
 - Use ``F.scaled_dot_product_attention`` in :class:`braindecode.modules.MultiHeadAttention`,
-  enabling flash-attention and memory-efficient kernels on supported hardware.
+  enabling optimized attention kernels (flash-attention on CUDA,
+  memory-efficient backends on other devices).
   By `Léo Burgund`_ and `Bruno Aristimunha`_.
   (:gh:`902`)
 

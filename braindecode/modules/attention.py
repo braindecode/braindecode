@@ -837,8 +837,8 @@ class CATLite(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multi-head self-attention block.
 
-    Uses ``F.scaled_dot_product_attention`` (PyTorch >= 2.0) for
-    flash-attention / memory-efficient kernels.
+    Uses ``F.scaled_dot_product_attention`` for optimized attention
+    kernels (flash-attention on CUDA, memory-efficient on other devices).
 
     Parameters
     ----------
