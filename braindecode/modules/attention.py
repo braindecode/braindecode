@@ -835,7 +835,25 @@ class CATLite(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    """Multi-head self-attention block.
+    """Multi-head self-attention with SDPA optimization.
+
+    Uses ``F.scaled_dot_product_attention`` when available (PyTorch >= 2.0)
+    for flash-attention / memory-efficient kernels, with a manual fallback
+    for older PyTorch versions.
+
+    Separate Q/K/V projections are used (instead of a concatenated
+    ``in_proj_weight``) so that each projection maintains its own
+    optimizer state, matching the training dynamics of the original
+    Song et al. (2022) implementation [song2022]_.
+
+    Parameters
+    ----------
+    emb_size : int
+        The embedding dimension.
+    num_heads : int
+        Number of attention heads.
+    dropout : float, optional
+        Dropout probability applied to attention weights. Default: 0.0.
 
     Examples
     --------
@@ -846,42 +864,58 @@ class MultiHeadAttention(nn.Module):
     >>> outputs = module(inputs)
     >>> outputs.shape
     torch.Size([2, 10, 32])
+
+    References
+    ----------
+    .. [song2022] Song, Y., Zheng, Q., Liu, B., & Gao, X. (2022).
+       EEG Conformer: Convolutional Transformer for EEG Decoding and
+       Visualization. IEEE Transactions on Neural Systems and
+       Rehabilitation Engineering.
     """
 
-    def __init__(self, emb_size, num_heads, dropout):
-        super().__init__()
-        self.emb_size = emb_size
-        self.num_heads = num_heads
-        self.keys = nn.Linear(emb_size, emb_size)
-        self.queries = nn.Linear(emb_size, emb_size)
-        self.values = nn.Linear(emb_size, emb_size)
-        self.att_drop = nn.Dropout(dropout)
-        self.projection = nn.Linear(emb_size, emb_size)
+    _has_sdpa = hasattr(torch.nn.functional, "scaled_dot_product_attention")
 
-        self.rearrange_stack = Rearrange(
-            "b n (h d) -> b h n d",
-            h=num_heads,
+    def __init__(self, emb_size, num_heads, dropout=0.0):
+        super().__init__()
+        assert emb_size % num_heads == 0, (
+            f"emb_size ({emb_size}) must be divisible by "
+            f"num_heads ({num_heads})"
         )
-        self.rearrange_unstack = Rearrange(
-            "b h n d -> b n (h d)",
-        )
+        self.num_heads = num_heads
+        self.head_dim = emb_size // num_heads
+        self.dropout_p = dropout
+
+        self.q_proj = nn.Linear(emb_size, emb_size)
+        self.k_proj = nn.Linear(emb_size, emb_size)
+        self.v_proj = nn.Linear(emb_size, emb_size)
+        self.out_proj = nn.Linear(emb_size, emb_size)
 
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
-        queries = self.rearrange_stack(self.queries(x))
-        keys = self.rearrange_stack(self.keys(x))
-        values = self.rearrange_stack(self.values(x))
-        energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
-        if mask is not None:
-            fill_value = float("-inf")
-            energy = energy.masked_fill(~mask, fill_value)
+        B, S, E = x.shape
+        H, D = self.num_heads, self.head_dim
 
-        scaling = self.emb_size ** (1 / 2)
-        att = F.softmax(energy / scaling, dim=-1)
-        att = self.att_drop(att)
-        out = torch.einsum("bhal, bhlv -> bhav ", att, values)
-        out = self.rearrange_unstack(out)
-        out = self.projection(out)
-        return out
+        q = self.q_proj(x).view(B, S, H, D).transpose(1, 2)
+        k = self.k_proj(x).view(B, S, H, D).transpose(1, 2)
+        v = self.v_proj(x).view(B, S, H, D).transpose(1, 2)
+
+        if self._has_sdpa:
+            dp = self.dropout_p if self.training else 0.0
+            out = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=mask, dropout_p=dp,
+            )
+        else:
+            # Manual fallback for PyTorch < 2.0
+            scale = math.sqrt(D)
+            energy = torch.matmul(q, k.transpose(-2, -1)) / scale
+            if mask is not None:
+                energy = energy + mask
+            att = torch.softmax(energy, dim=-1)
+            if self.training and self.dropout_p > 0:
+                att = F.dropout(att, p=self.dropout_p, training=True)
+            out = torch.matmul(att, v)
+
+        out = out.transpose(1, 2).contiguous().view(B, S, E)
+        return self.out_proj(out)
 
 
 class CrissCrossTransformerEncoderLayer(nn.Module):
