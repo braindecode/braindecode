@@ -881,11 +881,11 @@ class MultiHeadAttention(nn.Module):
         self.projection = nn.Linear(emb_size, emb_size)
 
         self.rearrange_stack = Rearrange(
-            "b n (h d) -> b h n d",
-            h=num_heads,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=num_heads,
         )
         self.rearrange_unstack = Rearrange(
-            "b h n d -> b n (h d)",
+            "batch heads seq head_dim -> batch seq (heads head_dim)",
         )
 
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
