@@ -29,8 +29,7 @@ Enhancements
 ============
 
 - Use ``F.scaled_dot_product_attention`` in :class:`braindecode.modules.MultiHeadAttention`,
-  enabling flash-attention and memory-efficient kernels on supported hardware
-  (PyTorch >= 2.0), with a manual fallback for older versions.
+  enabling flash-attention and memory-efficient kernels on supported hardware.
   By `Léo Burgund`_ and `Bruno Aristimunha`_.
   (:gh:`902`)
 
