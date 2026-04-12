@@ -1252,6 +1252,40 @@ def test_warning_conditions(n_bands, kernel_sizes, expected_warning):
         assert any(expected_warning in str(warn.message) for warn in w)
 
 
+def test_multi_head_attention_forward_shape():
+    from braindecode.modules import MultiHeadAttention
+
+    mha = MultiHeadAttention(emb_size=32, num_heads=4, dropout=0.1)
+    x = torch.randn(2, 10, 32)
+    out = mha(x)
+    assert out.shape == (2, 10, 32)
+
+
+def test_multi_head_attention_bool_mask():
+    from braindecode.modules import MultiHeadAttention
+
+    mha = MultiHeadAttention(emb_size=16, num_heads=2)
+    mha.eval()
+    x = torch.randn(1, 4, 16)
+
+    # Boolean mask: True = ignore. Mask out positions 2 and 3.
+    mask = torch.zeros(4, 4, dtype=torch.bool)
+    mask[:, 2:] = True
+
+    out_masked = mha(x, mask=mask)
+    out_no_mask = mha(x)
+    assert out_masked.shape == out_no_mask.shape
+    # Outputs should differ when mask is applied
+    assert not torch.allclose(out_masked, out_no_mask, atol=1e-5)
+
+
+def test_multi_head_attention_invalid_emb_size():
+    from braindecode.modules import MultiHeadAttention
+
+    with pytest.raises(ValueError, match="divisible"):
+        MultiHeadAttention(emb_size=33, num_heads=4)
+
+
 def test_forward_pass_ifnet_output_shape():
     block = _SpatioTemporalFeatureBlock(
         n_times=128,  # divisible by stride_factor

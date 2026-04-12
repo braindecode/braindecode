@@ -848,11 +848,6 @@ class MultiHeadAttention(nn.Module):
         Number of attention heads. Must evenly divide ``emb_size``.
     dropout : float, optional
         Dropout probability applied to attention weights. Default: 0.0.
-    mask : Tensor, optional
-        Attention mask passed to ``forward``. Follows the PyTorch SDPA
-        convention: for boolean masks ``True`` means **ignore** that
-        position; for float masks the values are **added** to the
-        attention scores before softmax.
 
     Examples
     --------
@@ -889,6 +884,18 @@ class MultiHeadAttention(nn.Module):
         )
 
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : Tensor
+            Input tensor of shape ``(batch, seq, emb_size)``.
+        mask : Tensor, optional
+            Attention mask following PyTorch SDPA convention: for boolean
+            masks ``True`` means **ignore** that position; for float
+            masks the values are **added** to attention scores before
+            softmax.
+        """
         queries = self.rearrange_stack(self.queries(x))
         keys = self.rearrange_stack(self.keys(x))
         values = self.rearrange_stack(self.values(x))

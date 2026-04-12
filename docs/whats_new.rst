@@ -36,7 +36,10 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- :class:`braindecode.modules.MultiHeadAttention` now follows PyTorch's SDPA mask
+  convention: boolean masks use ``True`` to **ignore** a position (previously
+  ``True`` meant keep). The scaling factor is now ``1/sqrt(head_dim)`` instead of
+  ``1/sqrt(emb_size)``. (:gh:`902`)
 
 Requirements
 ============
