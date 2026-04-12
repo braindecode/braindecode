@@ -1,4 +1,4 @@
-# Authors: Bruno Aristimunha <b.aristimunha>
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 

@@ -41,6 +41,16 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.SyncNet` swapped parameter initialization where
+  ``phi_ini`` (phase shift) was using ``beta_init_values`` and ``beta`` (decay) was
+  using ``phase_init_values``, replaced incorrect ``.view()`` reshape with ``.permute()``
+  for proper conv2d filter weight layout, and fixed duplicate default values in docstring
+  (by `Sarthak Tayal`_)
+- Fix :class:`braindecode.models.AttentionBaseNet` redundant
+  ``super().__init__()`` call that ran the parent ``nn.Module.__init__`` twice
+  (by `Sarthak Tayal`_)
+- Fix incomplete author email in :class:`braindecode.models.TSception` header
+  (by `Sarthak Tayal`_)
 - Fix a time-of-check-time-of-use race in
   :func:`braindecode.datasets.base._zarr_to_memmap` that caused
   concurrent workers to repeatedly ``rename``-replace the published

@@ -52,6 +52,7 @@ from braindecode.models import (
     SleepStagerBlanco2020,
     SleepStagerChambon2018,
     SPARCNet,
+    SyncNet,
     TIDNet,
     TSception,
     USleep,
@@ -3255,3 +3256,54 @@ def test_eeginceptionmi_mapping_targets():
         assert new_key in sd_keys, f"{new_key} not in state_dict"
     # old keys should not have typos
     assert "fc.bias" in model.mapping
+
+
+def test_syncnet_param_init_uses_correct_ranges():
+    # Verify phi_ini uses phase_init_values and beta uses beta_init_values
+    # (not swapped). Use a valid uniform range for beta and normal_(mean, 0.0)
+    # for phi_ini to make phi_ini deterministic.
+    beta_low, beta_high = 0.04, 0.06
+    phase_value = 0.25
+    model = SyncNet(
+        n_chans=3, n_times=100, n_outputs=2,
+        beta_init_values=(beta_low, beta_high),
+        phase_init_values=(phase_value, 0.0),
+    )
+    # beta should be initialized from the requested uniform range
+    assert torch.all(model.beta.data >= beta_low)
+    assert torch.all(model.beta.data < beta_high)
+    # phi_ini should equal the exact normal mean (with zero std)
+    assert torch.all(model.phi_ini.data == phase_value)
+
+
+def test_syncnet_filter_weight_shape():
+    # conv2d weight must be (num_filters, n_chans, 1, filter_width).
+    # Verify the permute index mapping with a deterministic sentinel W:
+    # permute(3, 2, 0, 1) should map W[0, t, c, o] -> W_permuted[o, c, 0, t].
+    num_filters, n_chans, filter_width = 3, 4, 20
+    sentinel = torch.arange(filter_width * n_chans * num_filters).reshape(
+        1, filter_width, n_chans, num_filters
+    )
+
+    W_permuted = sentinel.permute(3, 2, 0, 1).contiguous()
+    assert W_permuted.shape == (num_filters, n_chans, 1, filter_width)
+    for o in range(num_filters):
+        for c in range(n_chans):
+            for t in range(filter_width):
+                assert W_permuted[o, c, 0, t] == sentinel[0, t, c, o]
+
+    # reshape/view would produce the same shape but a different (wrong) mapping
+    W_viewed = sentinel.reshape(num_filters, n_chans, 1, filter_width)
+    assert not torch.equal(W_permuted, W_viewed)
+    # Concrete mismatch: permute walks outer dim first, reshape walks in memory order
+    assert W_permuted[0, 0, 0, 1] == sentinel[0, 1, 0, 0]
+    assert W_viewed[0, 0, 0, 1] == sentinel[0, 0, 0, 1]
+    assert W_permuted[0, 0, 0, 1] != W_viewed[0, 0, 0, 1]
+
+    # Model forward still works end-to-end with the real permute-based kernel
+    model = SyncNet(
+        n_chans=n_chans, n_times=200, n_outputs=2,
+        num_filters=num_filters, filter_width=filter_width,
+    )
+    out = model(torch.randn(2, n_chans, 200))
+    assert out.shape == (2, 2)

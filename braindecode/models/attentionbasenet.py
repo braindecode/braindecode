@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
+#
+# License: BSD (3-clause)
 import math
 
 from einops.layers.torch import Rearrange
@@ -275,8 +278,6 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         activation: type[nn.Module] = nn.ELU,
         extra_params: bool = False,
     ):
-        super(AttentionBaseNet, self).__init__()
-
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
