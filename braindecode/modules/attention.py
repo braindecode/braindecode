@@ -837,9 +837,8 @@ class CATLite(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multi-head self-attention block.
 
-    Uses ``F.scaled_dot_product_attention`` when available (PyTorch >= 2.0)
-    for flash-attention / memory-efficient kernels, with a manual fallback
-    for older PyTorch versions.
+    Uses ``F.scaled_dot_product_attention`` (PyTorch >= 2.0) for
+    flash-attention / memory-efficient kernels.
 
     Parameters
     ----------
@@ -866,14 +865,11 @@ class MultiHeadAttention(nn.Module):
     torch.Size([2, 10, 32])
     """
 
-    _has_sdpa = hasattr(torch.nn.functional, "scaled_dot_product_attention")
-
     def __init__(self, emb_size, num_heads, dropout=0.0):
         super().__init__()
         if emb_size % num_heads != 0:
             raise ValueError(
-                f"emb_size ({emb_size}) must be divisible by "
-                f"num_heads ({num_heads})."
+                f"emb_size ({emb_size}) must be divisible by num_heads ({num_heads})."
             )
         self.emb_size = emb_size
         self.num_heads = num_heads
@@ -897,23 +893,10 @@ class MultiHeadAttention(nn.Module):
         keys = self.rearrange_stack(self.keys(x))
         values = self.rearrange_stack(self.values(x))
 
-        if not self._has_sdpa:
-            scaling = math.sqrt(self.head_dim)
-            energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
-            if mask is not None:
-                if mask.dtype == torch.bool:
-                    energy = energy.masked_fill(mask, float("-inf"))
-                else:
-                    energy = energy + mask
-            att = F.softmax(energy / scaling, dim=-1)
-            if self.training and self.att_drop > 0:
-                att = F.dropout(att, p=self.att_drop, training=True)
-            out = torch.einsum("bhal, bhlv -> bhav", att, values)
-        else:
-            dp = self.att_drop if self.training else 0.0
-            out = F.scaled_dot_product_attention(
-                queries, keys, values, attn_mask=mask, dropout_p=dp,
-            )
+        dp = self.att_drop if self.training else 0.0
+        out = F.scaled_dot_product_attention(
+            queries, keys, values, attn_mask=mask, dropout_p=dp,
+        )
 
         out = self.rearrange_unstack(out)
         return self.projection(out)
