@@ -28,6 +28,12 @@ Current 1.5.0 (GitHub)
 Enhancements
 ============
 
+- Use ``F.scaled_dot_product_attention`` in :class:`braindecode.modules.MultiHeadAttention`,
+  enabling flash-attention and memory-efficient kernels on supported hardware
+  (PyTorch >= 2.0), with a manual fallback for older versions.
+  By `Léo Burgund`_ and `Bruno Aristimunha`_.
+  (:gh:`902`)
+
 API and behavior changes
 ========================
 
