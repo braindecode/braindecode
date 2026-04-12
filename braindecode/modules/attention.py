@@ -879,16 +879,14 @@ class MultiHeadAttention(nn.Module):
         values = self.rearrange_stack(self.values(x))
 
         if not self._has_sdpa:
-            scale = math.sqrt(self.head_dim)
-            energy = torch.matmul(
-                queries, keys.transpose(-2, -1)
-            ) / scale
+            scaling = math.sqrt(self.head_dim)
+            energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
             if mask is not None:
                 energy = energy + mask
-            att = torch.softmax(energy, dim=-1)
+            att = F.softmax(energy / scaling, dim=-1)
             if self.training and self.att_drop > 0:
                 att = F.dropout(att, p=self.att_drop, training=True)
-            out = torch.matmul(att, values)
+            out = torch.einsum("bhal, bhlv -> bhav", att, values)
         else:
             dp = self.att_drop if self.training else 0.0
             out = F.scaled_dot_product_attention(
