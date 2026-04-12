@@ -52,11 +52,17 @@ library.
 # License: BSD (3-clause)
 
 import json
+import os
 import warnings
 
 import torch
+from huggingface_hub import login
 
 warnings.simplefilter("ignore")
+
+hf_token = os.environ.get("HF_TOKEN")
+if hf_token:
+    login(token=hf_token)
 
 ######################################################################
 # Loading a pretrained model
@@ -406,6 +412,10 @@ checkpoints = [
         "PulpBio",
     ),
 ]
+
+# Skip gated models when no HF token is available (e.g. fork PRs)
+if not hf_token:
+    checkpoints = [(d, c, k, o) for d, c, k, o in checkpoints if o != "brain-bzh"]
 
 names, params_m, orgs = [], [], []
 for display, cls, kwargs, org in checkpoints:

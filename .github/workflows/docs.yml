@@ -13,6 +13,8 @@ on:
 jobs:
   build_docs:
     runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
     steps:
       ## Install Braindecode
       - name: Checking Out Repository
@@ -32,6 +34,14 @@ jobs:
           key: docs-mne-data-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
             docs-mne-data-
+      # Cache HuggingFace Hub models
+      - name: Create/Restore HuggingFace Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: docs-hf-hub-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            docs-hf-hub-
       # Install uv
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -43,12 +53,14 @@ jobs:
         run: uv pip install --system -e .[all]
       # Show Braindecode Version
       - run: python -c "import braindecode; print(braindecode.__version__)"
+      # Persist HF token to disk so sphinx-gallery examples can access gated repos
+      - name: Login to Hugging Face Hub
+        if: ${{ env.HF_TOKEN != '' }}
+        run: python -c "import os; from huggingface_hub import login; login(token=os.environ['HF_TOKEN'])"
       - name: Create Docs
         run: |
           cd docs
           make html
-        env:
-          HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
 
       - name: Generate Notebooks from Examples
         run: |

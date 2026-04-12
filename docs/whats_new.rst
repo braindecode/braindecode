@@ -22,7 +22,42 @@
 .. _current:
 
 
-Version 1.4  (Source - GitHub)
+Current 1.5.0 (GitHub)
+===============================
+
+Enhancements
+============
+
+API and behavior changes
+========================
+
+- None yet
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- Fix a time-of-check-time-of-use race in
+  :func:`braindecode.datasets.base._zarr_to_memmap` that caused
+  concurrent workers to repeatedly ``rename``-replace the published
+  ``.npy`` cache, producing wasted I/O on local filesystems and
+  ``.nfsXXXX`` silly-rename files plus ``SIGBUS`` crashes on NFSv3.
+  The published file is now created exactly once via ``os.link`` and
+  is never replaced, making the cache safe under arbitrary
+  concurrent access on local POSIX, NFSv3, Lustre and SMB
+  (:gh:`986` by `Pierre Guetschel`_)
+
+Code health
+============
+
+- None yet
+
+
+Current 1.4.0 (stable)
 ===============================
 
 Enhancements
@@ -88,6 +123,12 @@ Enhancements
   outputs. :meth:`~braindecode.models.base.EEGModuleMixin.from_pretrained` now
   automatically calls ``reset_head`` when the user passes an ``n_outputs`` that
   differs from the saved config (by `Bruno Aristimunha`_).
+- Enable lazy loading from Zarr when using
+  :meth:`~braindecode.datasets.BaseConcatDataset.pull_from_hub` or
+  ``load_from_zarr`` with ``preload=False``. Data is decompressed lazily
+  and MNE objects (``.raw`` / ``.windows``) are reconstructed on first
+  access so ``preprocess()`` works on lazy datasets
+  (:gh:`978` by `Bruno Aristimunha`_).
 
 API changes
 ============
@@ -151,6 +192,11 @@ Bugs
 - Fix :class:`braindecode.augmentation.BandstopFilter` notch center frequency range
   using ``bandwidth/2`` instead of ``2*bandwidth`` to match docstring
   (:gh:`548` by `Sarthak Tayal`_)
+- Fix :class:`braindecode.models.DeepSleepNet` hardcoded linear layer size that
+  caused a shape mismatch when using input shapes other than the default
+  1 channel, 3000 timepoints. The FC and BiLSTM input dimensions are now
+  computed dynamically from the CNN output
+  (:gh:`755` by `Sarthak Tayal`_)
 - Fix model docstring inheritance: ``track_model_init_kwargs`` wrapped
   ``__init__`` with ``@wraps`` before the
   ``NumpyDocstringInheritanceInitMeta`` metaclass ran, causing
@@ -869,7 +915,7 @@ API changes
 
 
 Authors
-=======
+========
 
 .. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Hubert Banville: https://github.com/hubertjb

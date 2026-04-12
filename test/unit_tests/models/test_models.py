@@ -5,6 +5,7 @@
 #          Daniel Wilson <dan.c.wil@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Matthew Chen <matt.chen42601@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 
@@ -1055,12 +1056,15 @@ def test_deepsleepnet(n_classes):
     input_size_s = 30
     n_examples = 10
 
-    model = DeepSleepNet(n_outputs=n_classes, return_feats=False)
+    model = DeepSleepNet(
+        n_outputs=n_classes, return_feats=False,
+        n_chans=n_channels, n_times=int(np.ceil(input_size_s * sfreq)),
+    )
     model.eval()
 
     rng = np.random.RandomState(42)
     X = rng.randn(n_examples, n_channels,
-                  np.ceil(input_size_s * sfreq).astype(int))
+                  int(np.ceil(input_size_s * sfreq)))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -1079,7 +1083,10 @@ def test_deepsleepnet_feats():
     n_classes = 3
     n_examples = 10
 
-    model = DeepSleepNet(n_outputs=n_classes, return_feats=True)
+    model = DeepSleepNet(
+        n_outputs=n_classes, return_feats=True,
+        n_chans=n_channels, n_times=int(sfreq * input_size_s),
+    )
     model.eval()
 
     rng = np.random.RandomState(42)
@@ -1097,7 +1104,10 @@ def test_deepsleepnet_feats_with_hook():
     n_classes = 3
     n_examples = 10
 
-    model = DeepSleepNet(n_outputs=n_classes, return_feats=False)
+    model = DeepSleepNet(
+        n_outputs=n_classes, return_feats=False,
+        n_chans=n_channels, n_times=int(sfreq * input_size_s),
+    )
     model.eval()
 
     rng = np.random.RandomState(42)
@@ -1123,6 +1133,72 @@ def test_deepsleepnet_feats_with_hook():
         model.len_last_layer,
     )
     assert y_pred.shape == (n_examples, n_classes)
+
+
+@pytest.mark.parametrize(
+    "n_chans, n_times, n_outputs",
+    [
+        (64, 500, 1),
+        (2, 3000, 5),
+        (22, 1000, 3),
+    ],
+)
+def test_deepsleepnet_variable_input(n_chans, n_times, n_outputs):
+    # deepsleepnet should work with different input shapes not just 1ch 3000t
+    model = DeepSleepNet(
+        n_chans=n_chans, n_outputs=n_outputs, n_times=n_times,
+    )
+    model.eval()
+    x = torch.randn(2, n_chans, n_times)
+    out = model(x)
+    assert out.shape == (2, n_outputs)
+
+
+@pytest.mark.parametrize(
+    "bilstm_hidden_size, bilstm_num_layers, drop_prob, return_feats",
+    [
+        (256, 1, 0.3, True),
+        (512, 2, 0.5, False),
+        (128, 3, 0.0, False),
+    ],
+)
+def test_deepsleepnet_custom_params(
+    bilstm_hidden_size, bilstm_num_layers, drop_prob, return_feats
+):
+    model = DeepSleepNet(
+        n_chans=1, n_outputs=5, n_times=3000,
+        bilstm_hidden_size=bilstm_hidden_size,
+        bilstm_num_layers=bilstm_num_layers,
+        drop_prob=drop_prob,
+        return_feats=return_feats,
+    )
+    model.eval()
+    out = model(torch.randn(2, 1, 3000))
+    expected_feats = bilstm_hidden_size * 2
+    assert model.len_last_layer == expected_feats
+    if return_feats:
+        assert out.shape == (2, expected_feats)
+    else:
+        assert out.shape == (2, 5)
+
+
+def test_deepsleepnet_custom_cnn_params():
+    model = DeepSleepNet(
+        n_chans=1, n_outputs=5, n_times=3000,
+        small_n_filters_1=32, small_n_filters_2=64,
+        large_n_filters_1=32, large_n_filters_2=64,
+    )
+    model.eval()
+    assert model(torch.randn(2, 1, 3000)).shape == (2, 5)
+    assert model.cnn1.conv1[0].out_channels == 32
+    assert model.cnn1.conv2[0].out_channels == 64
+    assert model.cnn2.conv1[0].out_channels == 32
+    assert model.cnn2.conv2[0].out_channels == 64
+
+
+def test_deepsleepnet_too_small_ntimes():
+    with pytest.raises(ValueError, match="n_times=10 is too small"):
+        DeepSleepNet(n_chans=1, n_outputs=5, n_times=10)
 
 
 @pytest.fixture
