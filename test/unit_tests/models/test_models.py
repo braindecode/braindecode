@@ -1598,6 +1598,14 @@ def test_model_trainable_parameters_biot(default_biot_params):
     assert trainable_params_clf == 514
 
 
+def test_biot_encoder_index_is_buffer(default_biot_params):
+    biot = BIOT(**default_biot_params)
+
+    assert "index" in dict(biot.encoder.named_buffers())
+    assert "index" not in dict(biot.encoder.named_parameters())
+    assert biot.encoder.index.dtype == torch.long
+
+
 @pytest.fixture
 def default_labram_params():
     return {
