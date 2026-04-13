@@ -71,7 +71,7 @@ Bug fixes
   (:gh:`986` by `Pierre Guetschel`_)
 - Register :class:`braindecode.models.BIOT` encoder ``index`` as a non-trainable
   buffer instead of a parameter (``torch.long``), so it is treated as module
-  state rather than trainable weights (:gh:`988` by `Bruno Aristimunha`_)
+  state rather than trainable weights (:gh:`988` by `Pierre Guetschel`_)
 
 Code health
 ============
