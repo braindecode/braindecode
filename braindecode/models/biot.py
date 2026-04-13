@@ -439,7 +439,7 @@ class _BIOTEncoder(nn.Module):
         self.channel_tokens = nn.Embedding(
             num_embeddings=n_chans, embedding_dim=emb_size
         )
-        self.index = nn.Parameter(torch.LongTensor(range(n_chans)), requires_grad=False)
+        self.register_buffer("index", torch.arange(n_chans, dtype=torch.long))
 
     def stft(self, sample):
         """
