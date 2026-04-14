@@ -428,6 +428,7 @@ def test_model_exported(model):
         "EEGMiner",  # We found a fake tensor in the exported program constant's list.
         "SSTDPN",  # We found a fake tensor in the exported program constant's list.
         "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
+        "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
@@ -486,6 +487,7 @@ def test_model_torch_script(model):
         "LUNA",
         "REVE",
         "CBraMod",
+        "CodeBrain",
         "SignalJEPA",
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",

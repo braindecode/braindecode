@@ -200,6 +200,11 @@ print(f"Reconstructed: n_outputs={model_copy.n_outputs}")
 #      - |check|
 #      - |check|
 #      - |check|
+#    * - :class:`~braindecode.models.CodeBrain`
+#      - |check|
+#      - |check|
+#      - |check|
+#      - |check|
 #    * - :class:`~braindecode.models.EEGPT`
 #      - |check|
 #      - |check|
@@ -257,6 +262,7 @@ from braindecode.models import (
     LUNA,
     REVE,
     CBraMod,
+    CodeBrain,
     Labram,
     SignalJEPA,
 )
@@ -294,6 +300,15 @@ checkpoints = [
             n_chans=22,
             n_times=1000,
             sfreq=250,
+        ),
+        "braindecode",
+    ),
+    (
+        "CodeBrain",
+        CodeBrain,
+        dict(
+            pretrained_model_name_or_path="braindecode/codebrain-pretrained",
+            n_outputs=2,
         ),
         "braindecode",
     ),
@@ -576,6 +591,9 @@ plt.show()
 #    * - :class:`~braindecode.models.CBraMod`
 #      - ``braindecode/cbramod-pretrained``
 #      - channel-agnostic
+#    * - :class:`~braindecode.models.CodeBrain`
+#      - ``braindecode/codebrain-pretrained``
+#      - 19 ch, 10-20, 200 Hz, TUEG
 #    * - :class:`~braindecode.models.EEGPT`
 #      - ``braindecode/eegpt-pretrained``
 #      - 62 ch, 250 Hz
