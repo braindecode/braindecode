@@ -30,7 +30,7 @@ class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg
     coil_type: int
     coord_frame: int
     kind: str
-    loc: _loc_type  # type: ignore[misc]
+    loc: _loc_type  # type: ignore[valid-type,misc]
     logno: int
     range: float
     scanno: int
