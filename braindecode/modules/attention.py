@@ -837,6 +837,18 @@ class CATLite(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multi-head self-attention block.
 
+    Uses ``F.scaled_dot_product_attention`` for optimized attention
+    kernels (flash-attention on CUDA, memory-efficient on other devices).
+
+    Parameters
+    ----------
+    emb_size : int
+        The embedding dimension.
+    num_heads : int
+        Number of attention heads. Must evenly divide ``emb_size``.
+    dropout : float, optional
+        Dropout probability applied to attention weights. Default: 0.0.
+
     Examples
     --------
     >>> import torch
@@ -848,40 +860,57 @@ class MultiHeadAttention(nn.Module):
     torch.Size([2, 10, 32])
     """
 
-    def __init__(self, emb_size, num_heads, dropout):
+    def __init__(self, emb_size, num_heads, dropout=0.0):
         super().__init__()
+        if emb_size % num_heads != 0:
+            raise ValueError(
+                f"emb_size ({emb_size}) must be divisible by num_heads ({num_heads})."
+            )
         self.emb_size = emb_size
         self.num_heads = num_heads
+        self.head_dim = emb_size // num_heads
         self.keys = nn.Linear(emb_size, emb_size)
         self.queries = nn.Linear(emb_size, emb_size)
         self.values = nn.Linear(emb_size, emb_size)
-        self.att_drop = nn.Dropout(dropout)
+        self.att_drop = dropout
         self.projection = nn.Linear(emb_size, emb_size)
 
         self.rearrange_stack = Rearrange(
-            "b n (h d) -> b h n d",
-            h=num_heads,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=num_heads,
         )
         self.rearrange_unstack = Rearrange(
-            "b h n d -> b n (h d)",
+            "batch heads seq head_dim -> batch seq (heads head_dim)",
         )
 
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : Tensor
+            Input tensor of shape ``(batch, seq, emb_size)``.
+        mask : Tensor, optional
+            Attention mask following PyTorch SDPA convention: for boolean
+            masks ``True`` means **ignore** that position; for float
+            masks the values are **added** to attention scores before
+            softmax.
+        """
         queries = self.rearrange_stack(self.queries(x))
         keys = self.rearrange_stack(self.keys(x))
         values = self.rearrange_stack(self.values(x))
-        energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
-        if mask is not None:
-            fill_value = float("-inf")
-            energy = energy.masked_fill(~mask, fill_value)
 
-        scaling = self.emb_size ** (1 / 2)
-        att = F.softmax(energy / scaling, dim=-1)
-        att = self.att_drop(att)
-        out = torch.einsum("bhal, bhlv -> bhav ", att, values)
+        dp = self.att_drop if self.training else 0.0
+        out = F.scaled_dot_product_attention(
+            queries,
+            keys,
+            values,
+            attn_mask=mask,
+            dropout_p=dp,
+        )
+
         out = self.rearrange_unstack(out)
-        out = self.projection(out)
-        return out
+        return self.projection(out)
 
 
 class CrissCrossTransformerEncoderLayer(nn.Module):

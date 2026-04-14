@@ -28,10 +28,19 @@ Current 1.5.0 (GitHub)
 Enhancements
 ============
 
+- Use ``F.scaled_dot_product_attention`` in :class:`braindecode.modules.MultiHeadAttention`,
+  enabling optimized attention kernels (flash-attention on CUDA,
+  memory-efficient backends on other devices).
+  By `Léo Burgund`_ and `Bruno Aristimunha`_.
+  (:gh:`902`)
+
 API and behavior changes
 ========================
 
-- None yet
+- :class:`braindecode.modules.MultiHeadAttention` now follows PyTorch's SDPA mask
+  convention: boolean masks use ``True`` to **ignore** a position (previously
+  ``True`` meant keep). The scaling factor is now ``1/sqrt(head_dim)`` instead of
+  ``1/sqrt(emb_size)``. (:gh:`902`)
 
 Requirements
 ============
@@ -41,6 +50,16 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.SyncNet` swapped parameter initialization where
+  ``phi_ini`` (phase shift) was using ``beta_init_values`` and ``beta`` (decay) was
+  using ``phase_init_values``, replaced incorrect ``.view()`` reshape with ``.permute()``
+  for proper conv2d filter weight layout, and fixed duplicate default values in docstring
+  (by `Sarthak Tayal`_)
+- Fix :class:`braindecode.models.AttentionBaseNet` redundant
+  ``super().__init__()`` call that ran the parent ``nn.Module.__init__`` twice
+  (by `Sarthak Tayal`_)
+- Fix incomplete author email in :class:`braindecode.models.TSception` header
+  (by `Sarthak Tayal`_)
 - Fix a time-of-check-time-of-use race in
   :func:`braindecode.datasets.base._zarr_to_memmap` that caused
   concurrent workers to repeatedly ``rename``-replace the published
@@ -50,6 +69,12 @@ Bug fixes
   is never replaced, making the cache safe under arbitrary
   concurrent access on local POSIX, NFSv3, Lustre and SMB
   (:gh:`986` by `Pierre Guetschel`_)
+- Register :class:`braindecode.models.BIOT` encoder ``index`` as a non-trainable
+  buffer instead of a parameter (``torch.long``), so it is treated as module
+  state rather than trainable weights (:gh:`988` by `Pierre Guetschel`_)
+- Fix ``TypeError: type 'Any' is not subscriptable`` when importing
+  ``braindecode.models.config`` without ``numpydantic`` installed on
+  Python 3.12+ (:gh:`871` by `Sarthak Tayal`_)
 
 Code health
 ============
