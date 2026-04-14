@@ -1,3 +1,4 @@
+# Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
 from collections.abc import Callable
 from inspect import signature
 from types import UnionType
@@ -17,10 +18,10 @@ from braindecode.models.util import (
 
 try:
     from numpydantic import NDArray, Shape
+
+    _loc_type = NDArray[Shape["12"], np.float64]
 except ImportError:
-    # we can't use soft import for numpydantic because numpydantic does not define its version in __init__
-    NDArray = Any  # type: ignore
-    Shape = Any  # type: ignore
+    _loc_type = np.ndarray  # type: ignore[misc]
 
 
 class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg]
@@ -29,7 +30,7 @@ class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg
     coil_type: int
     coord_frame: int
     kind: str
-    loc: NDArray[Shape["12"], np.float64]  # type: ignore[misc]
+    loc: _loc_type  # type: ignore[valid-type,misc]
     logno: int
     range: float
     scanno: int

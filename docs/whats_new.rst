@@ -72,6 +72,9 @@ Bug fixes
 - Register :class:`braindecode.models.BIOT` encoder ``index`` as a non-trainable
   buffer instead of a parameter (``torch.long``), so it is treated as module
   state rather than trainable weights (:gh:`988` by `Pierre Guetschel`_)
+- Fix ``TypeError: type 'Any' is not subscriptable`` when importing
+  ``braindecode.models.config`` without ``numpydantic`` installed on
+  Python 3.12+ (:gh:`871` by `Sarthak Tayal`_)
 
 Code health
 ============
