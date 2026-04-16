@@ -3,6 +3,7 @@
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #          Matthew Chen <matt.chen42601@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 
@@ -205,6 +206,18 @@ def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
     )
 
     assert all([not ds.raw.preload for ds in windows.datasets])
+
+
+def test_fixed_length_windows_stride_defaults_to_size(lazy_loadable_dataset):
+    # stride should default to window_size when not provided
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        window_size_samples=100,
+    )
+    for ds in windows.datasets:
+        starts = ds.metadata["i_start_in_trial"].values
+        diffs = np.diff(starts)
+        assert (diffs == 100).all()
 
 
 def test_one_window_per_original_trial(concat_ds_targets):
