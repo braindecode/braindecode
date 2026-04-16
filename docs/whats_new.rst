@@ -75,6 +75,10 @@ Bug fixes
 - Fix ``TypeError: type 'Any' is not subscriptable`` when importing
   ``braindecode.models.config`` without ``numpydantic`` installed on
   Python 3.12+ (:gh:`871` by `Sarthak Tayal`_)
+- Fix :func:`braindecode.preprocessing.create_fixed_length_windows` crashing
+  when only ``window_size_samples`` is provided without ``window_stride_samples``,
+  stride now defaults to window size as documented
+  (:gh:`509` by `Sarthak Tayal`_)
 
 Code health
 ============
