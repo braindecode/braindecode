@@ -1,14 +1,17 @@
 # Authors: Pierre Guetschel <pierre.guetschel@gmail.com>
 #
 # License: BSD (3-clause)
+
 import pytest
 import torch
 
 from braindecode.models.signal_jepa import (
+    _PRETRAIN_CHS_INFO,
     _ConvFeatureEncoder,
     _pos_encode_contineous,
     _pos_encode_time,
     _PosEncoder,
+    _resolve_channel_embedding_config,
 )
 
 
@@ -108,3 +111,70 @@ class TestPosEncoderModule:
         _ = model(**batch)
         batch["local_features"] = batch["local_features"].tile(1, 2, 1)
         _ = model(**batch)
+
+
+class TestResolveChannelEmbeddingConfig:
+    @staticmethod
+    def _fake_user_chs(names):
+        # Minimal chs_info-like list. Locs are arbitrary but present.
+        return [{"ch_name": n, "loc": [0.1, 0.2, 0.3]} for n in names]
+
+    def test_invalid_mode_raises(self):
+        with pytest.raises(ValueError, match="channel_embedding must be"):
+            _resolve_channel_embedding_config("bogus", None)
+
+    def test_scratch_without_chs_info_raises(self):
+        with pytest.raises(ValueError, match="chs_info is required"):
+            _resolve_channel_embedding_config("scratch", None)
+
+    def test_scratch_with_chs_info(self):
+        user = self._fake_user_chs(["A", "B", "C"])
+        eff, locs, idxs = _resolve_channel_embedding_config("scratch", user)
+        assert eff == user
+        assert locs == [ch["loc"] for ch in user]
+        assert torch.equal(idxs, torch.arange(3, dtype=torch.long))
+
+    def test_pretrain_aligned_without_chs_info(self):
+        eff, locs, idxs = _resolve_channel_embedding_config(
+            "pretrain_aligned", None
+        )
+        assert eff == _PRETRAIN_CHS_INFO
+        assert locs == [ch["loc"] for ch in _PRETRAIN_CHS_INFO]
+        assert torch.equal(idxs, torch.arange(62, dtype=torch.long))
+
+    def test_pretrain_aligned_with_subset(self):
+        # Pick three names from the pretrain set in non-monotonic order.
+        pretrain_names = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
+        chosen = [pretrain_names[5], pretrain_names[0], pretrain_names[10]]
+        user = self._fake_user_chs(chosen)
+        eff, locs, idxs = _resolve_channel_embedding_config(
+            "pretrain_aligned", user
+        )
+        assert eff == user  # user chs_info preserved
+        assert locs == [ch["loc"] for ch in _PRETRAIN_CHS_INFO]  # 62-long
+        assert torch.equal(idxs, torch.tensor([5, 0, 10], dtype=torch.long))
+
+    def test_pretrain_aligned_case_insensitive(self):
+        # Match regardless of casing on either side.
+        pretrain_names = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
+        real = pretrain_names[0]
+        flipped = real.swapcase()
+        user = self._fake_user_chs([flipped])
+        eff, locs, idxs = _resolve_channel_embedding_config(
+            "pretrain_aligned", user
+        )
+        assert idxs.tolist() == [0]
+
+    def test_pretrain_aligned_channel_outside_raises(self):
+        user = self._fake_user_chs(["__not_a_real_ch__"])
+        with pytest.raises(ValueError) as exc:
+            _resolve_channel_embedding_config("pretrain_aligned", user)
+        msg = str(exc.value)
+        assert "__not_a_real_ch__" in msg
+        assert "channel_embedding='scratch'" in msg
+        assert "signal-jepa_without-chans" in msg
+
+    def test_returns_long_tensor(self):
+        user = self._fake_user_chs(["A", "B"])
+        _, _, idxs = _resolve_channel_embedding_config("scratch", user)
+        assert idxs.dtype == torch.long

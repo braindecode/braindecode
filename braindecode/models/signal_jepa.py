@@ -93,6 +93,90 @@ _PRETRAIN_CHS_INFO: list[dict] = [
 ]
 
 
+def _resolve_channel_embedding_config(
+    channel_embedding: str,
+    chs_info: list[dict] | None,
+) -> tuple[list[dict], list[list[float] | None], torch.LongTensor]:
+    """Resolve the construction parameters for ``_ChannelEmbedding``.
+
+    Parameters
+    ----------
+    channel_embedding : {"scratch", "pretrain_aligned"}
+        How to initialize ``_ChannelEmbedding``. See
+        ``SignalJEPA`` docstring.
+    chs_info : list of dict | None
+        User-supplied channel information. Each element must be a
+        mapping with at least the keys ``"ch_name"`` and ``"loc"``.
+
+    Returns
+    -------
+    effective_chs_info : list of dict
+        The ``chs_info`` that ``EEGModuleMixin`` should see. Equal to
+        ``chs_info`` when provided, else ``_PRETRAIN_CHS_INFO``.
+    channel_locations : list of (list of float or None)
+        Locations used to initialize ``_ChannelEmbedding``. Length
+        equals ``num_embeddings`` (N in ``'scratch'`` mode, 62 in
+        ``'pretrain_aligned'`` mode).
+    ch_idxs : torch.LongTensor, shape ``(len(effective_chs_info),)``
+        Mapping from the user channel order to embedding indices.
+
+    Raises
+    ------
+    ValueError
+        If ``channel_embedding`` is not recognized, if
+        ``channel_embedding='scratch'`` is combined with
+        ``chs_info=None``, or if ``channel_embedding='pretrain_aligned'``
+        is combined with a ``chs_info`` that contains a channel name
+        absent from ``_PRETRAIN_CHS_INFO`` (case-insensitive match).
+    """
+    if channel_embedding not in ("scratch", "pretrain_aligned"):
+        raise ValueError(
+            "channel_embedding must be 'scratch' or 'pretrain_aligned', "
+            f"got {channel_embedding!r}"
+        )
+
+    if channel_embedding == "scratch":
+        if chs_info is None:
+            raise ValueError("chs_info is required when channel_embedding='scratch'")
+        effective_chs_info = list(chs_info)
+        channel_locations = [ch["loc"] for ch in effective_chs_info]
+        ch_idxs = torch.arange(len(effective_chs_info), dtype=torch.long)
+        return effective_chs_info, channel_locations, ch_idxs
+
+    # channel_embedding == "pretrain_aligned"
+    pretrain_name_to_idx = {
+        ch["ch_name"].lower(): i for i, ch in enumerate(_PRETRAIN_CHS_INFO)
+    }
+    channel_locations = [ch["loc"] for ch in _PRETRAIN_CHS_INFO]
+
+    if chs_info is None:
+        effective_chs_info = [dict(ch) for ch in _PRETRAIN_CHS_INFO]
+        ch_idxs = torch.arange(len(_PRETRAIN_CHS_INFO), dtype=torch.long)
+        return effective_chs_info, channel_locations, ch_idxs
+
+    missing = [
+        ch["ch_name"]
+        for ch in chs_info
+        if ch["ch_name"].lower() not in pretrain_name_to_idx
+    ]
+    if missing:
+        raise ValueError(
+            f"Channel(s) {missing} not in the Signal-JEPA pre-training set. "
+            "To load pretrained weights while keeping these channels, use:\n"
+            "  channel_embedding='scratch'\n"
+            "  hub_id='braindecode/signal-jepa_without-chans'\n"
+            "  strict=False  # on load_state_dict / from_pretrained\n"
+            "The pretrained channel embedding weights will not be loaded."
+        )
+
+    effective_chs_info = list(chs_info)
+    ch_idxs = torch.tensor(
+        [pretrain_name_to_idx[ch["ch_name"].lower()] for ch in chs_info],
+        dtype=torch.long,
+    )
+    return effective_chs_info, channel_locations, ch_idxs
+
+
 class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     r"""Base class for the SignalJEPA models
 
