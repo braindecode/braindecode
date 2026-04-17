@@ -87,7 +87,8 @@ class TestPosEncoderModule:
         return _PosEncoder(
             spat_dim=40,
             time_dim=60,
-            ch_locs=[[1.0, 2.0], [0.0, 1.0], [0.0, 0.0]],
+            channel_locations=[[1.0, 2.0], [0.0, 1.0], [0.0, 0.0]],
+            ch_idxs=torch.tensor([0, 1, 2, 0], dtype=torch.long),
             sfreq_features=128,
         )
 
@@ -178,3 +179,47 @@ class TestResolveChannelEmbeddingConfig:
         user = self._fake_user_chs(["A", "B"])
         _, _, idxs = _resolve_channel_embedding_config("scratch", user)
         assert idxs.dtype == torch.long
+
+
+class TestPosEncoderBuffer:
+    def test_default_ch_idxs_is_non_persistent(self):
+        pe = _PosEncoder(
+            spat_dim=4,
+            time_dim=6,
+            channel_locations=[[0.0, 0.0], [1.0, 1.0]],
+            ch_idxs=torch.tensor([0, 1], dtype=torch.long),
+            sfreq_features=1.0,
+        )
+        # Buffer is registered and accessible.
+        assert torch.equal(pe.default_ch_idxs, torch.tensor([0, 1]))
+        # Buffer is NOT in state_dict (persistent=False).
+        assert "default_ch_idxs" not in pe.state_dict()
+
+    def test_default_ch_idxs_used_when_forward_kwarg_is_none(self):
+        pe = _PosEncoder(
+            spat_dim=4,
+            time_dim=6,
+            channel_locations=[[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],
+            ch_idxs=torch.tensor([2, 0], dtype=torch.long),
+            sfreq_features=1.0,
+        )
+        # 2 user channels, each gets 5 time steps of features.
+        local_features = torch.zeros(1, 2 * 5, 10)
+        out_default = pe(local_features)
+        out_explicit = pe(
+            local_features,
+            ch_idxs=torch.tensor([[2, 0]], dtype=torch.long),
+        )
+        torch.testing.assert_close(out_default, out_explicit)
+
+    def test_default_ch_idxs_moves_with_to_device(self):
+        pe = _PosEncoder(
+            spat_dim=4,
+            time_dim=6,
+            channel_locations=[[0.0, 0.0], [1.0, 1.0]],
+            ch_idxs=torch.tensor([0, 1], dtype=torch.long),
+            sfreq_features=1.0,
+        )
+        # .to() is a no-op for CPU but still exercises the buffer registration.
+        pe = pe.to(torch.device("cpu"))
+        assert pe.default_ch_idxs.device == torch.device("cpu")

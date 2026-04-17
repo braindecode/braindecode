@@ -280,11 +280,12 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
             )
 
         if _init_transformer:
-            ch_locs = [ch["loc"] for ch in self.chs_info]  # type: ignore
+            ch_locs: list[list[float] | None] = [ch["loc"] for ch in self.chs_info]  # type: ignore
             self.pos_encoder = _PosEncoder(
                 spat_dim=pos_encoder__spat_dim,
                 time_dim=pos_encoder__time_dim,
-                ch_locs=ch_locs,
+                channel_locations=ch_locs,
+                ch_idxs=torch.arange(self.n_chans, dtype=torch.long),
                 sfreq_features=pos_encoder__sfreq_features,
                 spat_kwargs=pos_encoder__spat_kwargs,
             )
@@ -1139,8 +1140,14 @@ class _PosEncoder(nn.Module):
         i.e. the EEG channel.
     time_dim: int
         Number of dimensions to use to encode the temporal position of the patch.
-    ch_locs: list of list of float or 2d array
-        List of the n-dimensions locations of the EEG channels.
+    channel_locations: list of (list of float or None)
+        List of the n-dimensional locations of each entry in the channel
+        embedding table. Length equals the number of embedding rows
+        (N for ``'scratch'`` mode, 62 for ``'pretrain_aligned'`` mode).
+    ch_idxs: torch.LongTensor, shape ``(n_chans,)``
+        Default mapping from the model's channel order to rows of the
+        channel embedding table. Stored as a non-persistent buffer
+        (device-aware but excluded from ``state_dict``).
     sfreq_features: float
         The "downsampled" sampling frequency returned by the feature encoder.
     spat_kwargs: dict
@@ -1154,7 +1161,8 @@ class _PosEncoder(nn.Module):
         self,
         spat_dim: int,
         time_dim: int,
-        ch_locs,
+        channel_locations: list[list[float] | None],
+        ch_idxs: torch.LongTensor,
         sfreq_features: float,
         spat_kwargs: dict | None = None,
         max_seconds: float = 600.0,  # 10 minutes
@@ -1167,8 +1175,16 @@ class _PosEncoder(nn.Module):
 
         # Positional encoder for the spatial dimension:
         self.pos_encoder_spat = _ChannelEmbedding(
-            ch_locs, spat_dim, **spat_kwargs
+            channel_locations, spat_dim, **spat_kwargs
         )  # (batch_size, n_channels, spat_dim)
+
+        # Default channel index mapping. Registered as a non-persistent
+        # buffer so it follows .to(device) but is NOT saved to state_dict.
+        # The mapping is fully determined by chs_info + channel_embedding
+        # at __init__, so persisting it would duplicate config.json.
+        self.register_buffer(
+            "default_ch_idxs", ch_idxs.to(torch.long), persistent=False
+        )
 
         # Pre-computed tensor for positional encoding on the time dimension:
         self.encoding_time = torch.zeros(0, dtype=torch.float32, requires_grad=False)
@@ -1187,24 +1203,22 @@ class _PosEncoder(nn.Module):
         """
         Parameters
         ----------
-        * local_features: (batch_size, n_chans * n_times_out, emb_dim)
-        * ch_idxs: (batch_size, n_chans) | None
-            Indices of the channels to use in the ``ch_names`` list passed
-            as argument plus one. Index 0 is reserved for an unknown channel.
+        local_features : (batch_size, n_chans * n_times_out, emb_dim)
+        ch_idxs : (batch_size, n_chans) | None
+            Indices of the channels into the embedding table. When ``None``,
+            ``self.default_ch_idxs`` (shape ``(n_chans,)``) is broadcast
+            across the batch.
 
         Returns
         -------
-        pos_encoding: (batch_size, n_chans * n_times_out, emb_dim)
-            The first ``spat_dim`` dimensions encode the channels positional encoding
-            and the following ``time_dim`` dimensions encode the temporal positional encoding.
+        pos_encoding : (batch_size, n_chans * n_times_out, emb_dim)
+            The first ``spat_dim`` dimensions encode the channel positional
+            encoding; the following ``time_dim`` dimensions encode the
+            temporal positional encoding.
         """
         batch_size, n_chans_times, emb_dim = local_features.shape
         if ch_idxs is None:
-            ch_idxs = torch.arange(
-                0,
-                self.pos_encoder_spat.num_embeddings,
-                device=local_features.device,
-            ).repeat(batch_size, 1)
+            ch_idxs = self.default_ch_idxs[None, :].expand(batch_size, -1)
 
         batch_size_chs, n_chans = ch_idxs.shape
         assert emb_dim >= self.spat_dim + self.time_dim
