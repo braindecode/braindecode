@@ -373,6 +373,55 @@ class TestContextualFromPretrainedTransfer:
         )
         assert new_model.n_outputs == 4
 
+    def test_from_pretrained_transfer_pretrain_aligned_different_subset(self):
+        # Source uses pretrain_aligned with the first 3 channels of the
+        # pretraining set. Downstream uses a different 3-channel subset.
+        # The transferred default_ch_idxs MUST reflect the downstream
+        # channels, not the source channels.
+        pretrain_names = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
+        src_user = [
+            {
+                "ch_name": n,
+                "loc": [0.01 * (i + 1), 0.02 * (i + 1), 0.03 * (i + 1)],
+            }
+            for i, n in enumerate(pretrain_names[:3])  # rows 0, 1, 2
+        ]
+        src = SignalJEPA(
+            chs_info=src_user,
+            n_times=128,
+            sfreq=128,
+            channel_embedding="pretrain_aligned",
+        )
+        assert torch.equal(
+            src.pos_encoder.default_ch_idxs, torch.tensor([0, 1, 2])
+        )
+
+        dst_names = [pretrain_names[5], pretrain_names[0], pretrain_names[10]]
+        dst_user = [
+            {
+                "ch_name": n,
+                "loc": [0.01 * (i + 1), 0.02 * (i + 1), 0.03 * (i + 1)],
+            }
+            for i, n in enumerate(dst_names)
+        ]
+        new_model = SignalJEPA_Contextual.from_pretrained(
+            src,
+            n_outputs=4,
+            chs_info=dst_user,
+        )
+        # The buffer must be recomputed for the destination channels.
+        assert torch.equal(
+            new_model.pos_encoder.default_ch_idxs, torch.tensor([5, 0, 10])
+        )
+        # The 62-row embedding table is preserved unchanged.
+        assert new_model.pos_encoder.pos_encoder_spat.weight.shape[0] == 62
+        torch.testing.assert_close(
+            new_model.pos_encoder.pos_encoder_spat.weight,
+            src.pos_encoder.pos_encoder_spat.weight,
+        )
+        # The channel_embedding mode is preserved on the new model.
+        assert new_model._channel_embedding == "pretrain_aligned"
+
 
 try:
     import huggingface_hub  # noqa: F401

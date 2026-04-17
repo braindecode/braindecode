@@ -606,6 +606,15 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         new_model.pos_encoder = deepcopy(pos_encoder)
         new_model.transformer = deepcopy(transformer)
 
+        new_model._channel_embedding = model._channel_embedding
+        if chs_info is not None and model._channel_embedding == "pretrain_aligned":
+            _, _, new_ch_idxs = _resolve_channel_embedding_config(
+                "pretrain_aligned", chs_info
+            )
+            new_model.pos_encoder.register_buffer(
+                "default_ch_idxs", new_ch_idxs.to(torch.long), persistent=False
+            )
+
         return new_model
 
 
