@@ -121,6 +121,9 @@ class TestBIOTPretrained:
         assert out.shape == (2, model.n_outputs)
 
 
+_SJEPA_N_TIMES = 256  # arbitrary window length for loading downstream variants
+
+
 class TestSignalJEPAPretrained:
     """Tests for SignalJEPA pre-trained model."""
 
@@ -130,20 +133,19 @@ class TestSignalJEPAPretrained:
         from braindecode.models import SignalJEPA
 
         return SignalJEPA.from_pretrained(
-            "braindecode/SignalJEPA-pretrained",
+            "braindecode/signal-jepa",
             cache_dir=hub_cache_dir,
         )
 
     def test_load_from_hub(self, model):
         """Test that SignalJEPA can be loaded from Hugging Face Hub."""
         assert model is not None
-        assert model.n_chans == 19
-        assert model.n_times == 256
+        assert model.n_chans == 62
 
     def test_forward_pass(self, model):
         """Test that SignalJEPA forward pass works correctly."""
         model.eval()
-        x = torch.randn(2, model.n_chans, model.n_times)
+        x = torch.randn(2, model.n_chans, _SJEPA_N_TIMES)
         with torch.no_grad():
             out = model(x)
         # SignalJEPA outputs contextual features, not class predictions
@@ -160,15 +162,19 @@ class TestSignalJEPAContextualPretrained:
         from braindecode.models import SignalJEPA_Contextual
 
         return SignalJEPA_Contextual.from_pretrained(
-            "braindecode/SignalJEPA-Contextual-pretrained",
+            "braindecode/signal-jepa",
+            n_times=_SJEPA_N_TIMES,
+            n_outputs=4,
+            strict=False,
             cache_dir=hub_cache_dir,
         )
 
     def test_load_from_hub(self, model):
         """Test that SignalJEPA_Contextual can be loaded from Hugging Face Hub."""
         assert model is not None
-        assert model.n_chans == 19
-        assert model.n_times == 256
+        assert model.n_chans == 62
+        assert model.n_times == _SJEPA_N_TIMES
+        assert model.n_outputs == 4
 
     def test_forward_pass(self, model):
         """Test that SignalJEPA_Contextual forward pass works correctly."""
@@ -188,15 +194,20 @@ class TestSignalJEPAPostLocalPretrained:
         from braindecode.models import SignalJEPA_PostLocal
 
         return SignalJEPA_PostLocal.from_pretrained(
-            "braindecode/SignalJEPA-PostLocal-pretrained",
+            "braindecode/signal-jepa_without-chans",
+            n_chans=62,
+            n_times=_SJEPA_N_TIMES,
+            n_outputs=4,
+            strict=False,
             cache_dir=hub_cache_dir,
         )
 
     def test_load_from_hub(self, model):
         """Test that SignalJEPA_PostLocal can be loaded from Hugging Face Hub."""
         assert model is not None
-        assert model.n_chans == 19
-        assert model.n_times == 256
+        assert model.n_chans == 62
+        assert model.n_times == _SJEPA_N_TIMES
+        assert model.n_outputs == 4
 
     def test_forward_pass(self, model):
         """Test that SignalJEPA_PostLocal forward pass works correctly."""
@@ -216,15 +227,20 @@ class TestSignalJEPAPreLocalPretrained:
         from braindecode.models import SignalJEPA_PreLocal
 
         return SignalJEPA_PreLocal.from_pretrained(
-            "braindecode/SignalJEPA-PreLocal-pretrained",
+            "braindecode/signal-jepa_without-chans",
+            n_chans=62,
+            n_times=_SJEPA_N_TIMES,
+            n_outputs=4,
+            strict=False,
             cache_dir=hub_cache_dir,
         )
 
     def test_load_from_hub(self, model):
         """Test that SignalJEPA_PreLocal can be loaded from Hugging Face Hub."""
         assert model is not None
-        assert model.n_chans == 19
-        assert model.n_times == 256
+        assert model.n_chans == 62
+        assert model.n_times == _SJEPA_N_TIMES
+        assert model.n_outputs == 4
 
     def test_forward_pass(self, model):
         """Test that SignalJEPA_PreLocal forward pass works correctly."""
@@ -273,10 +289,11 @@ class TestLabramPretrained:
         ("BIOT", "braindecode/biot-pretrained-prest-16chs", 16),
         ("BIOT", "braindecode/biot-pretrained-shhs-prest-18chs", 18),
         ("BIOT", "braindecode/biot-pretrained-six-datasets-18chs", 18),
-        ("SignalJEPA", "braindecode/SignalJEPA-pretrained", 19),
-        ("SignalJEPA_Contextual", "braindecode/SignalJEPA-Contextual-pretrained", 19),
-        ("SignalJEPA_PostLocal", "braindecode/SignalJEPA-PostLocal-pretrained", 19),
-        ("SignalJEPA_PreLocal", "braindecode/SignalJEPA-PreLocal-pretrained", 19),
+        ("SignalJEPA", "braindecode/signal-jepa", 62),
+        # SignalJEPA_Contextual/PreLocal/PostLocal require extra kwargs
+        # (n_times, n_outputs, strict=False) that this parametrized test
+        # does not pass — they are exercised by the dedicated
+        # Test*Pretrained classes above.
         ("Labram", "braindecode/labram-pretrained", 128),
     ],
 )
@@ -302,9 +319,9 @@ def test_all_pretrained_models_load(model_cls, repo_id, expected_n_chans, hub_ca
     [
         ("BENDR", "braindecode/braindecode-bendr"),
         ("BIOT", "braindecode/biot-pretrained-prest-16chs"),
-        ("SignalJEPA_Contextual", "braindecode/SignalJEPA-Contextual-pretrained"),
-        ("SignalJEPA_PostLocal", "braindecode/SignalJEPA-PostLocal-pretrained"),
-        ("SignalJEPA_PreLocal", "braindecode/SignalJEPA-PreLocal-pretrained"),
+        # SignalJEPA_Contextual/PreLocal/PostLocal require extra kwargs
+        # (n_times, n_outputs, strict=False); exercised by their dedicated
+        # Test*Pretrained classes above.
         ("Labram", "braindecode/labram-pretrained"),
     ],
 )
