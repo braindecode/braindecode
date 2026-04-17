@@ -290,7 +290,6 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        # Store channel_embedding after super().__init__ so it's tracked by build_model_config
         self._channel_embedding = channel_embedding
 
         self.feature_encoder = None
