@@ -344,6 +344,74 @@ class SignalJEPA(_BaseSignalJEPA):
 
     .. versionadded:: 0.9
 
+    .. rubric:: Pretrained Weights
+
+    Two checkpoint variants are published on HuggingFace:
+
+    - ``braindecode/signal-jepa``: full encoder + pre-trained channel embedding
+      table (62 rows, one per pre-training channel). Use when your channel
+      names are a subset of the pre-training set (``channel_embedding='pretrain_aligned'``).
+    - ``braindecode/signal-jepa_without-chans``: same encoder, channel
+      embedding weights stripped. Use when your channel set differs from
+      pre-training; the table is freshly initialized from your channel
+      locations (``channel_embedding='scratch'``, the default).
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       .. code-block:: python
+
+           from braindecode.models import SignalJEPA
+
+           # Load encoder + pre-trained channel embeddings (62 channels):
+           model = SignalJEPA.from_pretrained("braindecode/signal-jepa")
+
+           # Select a subset of the 62 pre-training channels:
+           model = SignalJEPA.from_pretrained(
+               "braindecode/signal-jepa",
+               chs_info=[{"ch_name": "Fp1", "loc": [...]}, {"ch_name": "Cz", "loc": [...]}],
+           )
+
+           # Arbitrary channel set (channel embedding re-initialized from your locs):
+           model = SignalJEPA.from_pretrained(
+               "braindecode/signal-jepa_without-chans",
+               chs_info=[{"ch_name": "A", "loc": [...]}, ...],
+               strict=False,
+           )
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           model.push_to_hub(
+               repo_id="username/my-sjepa-model",
+               commit_message="Upload trained SignalJEPA model",
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
+
+    .. rubric:: Usage
+
+    .. code-block:: python
+
+        from braindecode.models import SignalJEPA
+
+        model = SignalJEPA(
+            chs_info=[{"ch_name": "Fp1", "loc": [...]}, ...],
+            input_window_seconds=16.0,
+            sfreq=128,
+        )
+
+        # Forward: (batch, n_chans, n_times) -> (batch, n_chans * n_patches, emb_dim)
+        features = model(eeg_data)
+
+    .. warning::
+
+        Pre-trained at **128 Hz** on EEG bandpass-filtered between
+        **0.5 and 40 Hz** and rescaled by a factor of :math:`10^{6}`
+        (volts to microvolts). Apply the same preprocessing to your
+        data to match the pre-training distribution.
+
     References
     ----------
     .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
@@ -432,6 +500,67 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         :alt: sJEPA Contextual.
 
     .. versionadded:: 0.9
+
+    .. rubric:: Pretrained Weights
+
+    Loads the pre-trained SSL encoder (feature encoder + transformer +
+    channel embedding) from the shared checkpoints. Two hub IDs are
+    available:
+
+    - ``braindecode/signal-jepa``: with pre-trained channel embeddings
+      (62 channels, ``channel_embedding='pretrain_aligned'``).
+    - ``braindecode/signal-jepa_without-chans``: without channel embeddings.
+      The embedding table is re-initialized from your channel locations
+      (``channel_embedding='scratch'``, the default).
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       .. code-block:: python
+
+           from braindecode.models import SignalJEPA_Contextual
+
+           # Use pre-trained channel embeddings (subset of the 62 channels):
+           model = SignalJEPA_Contextual.from_pretrained(
+               "braindecode/signal-jepa",
+               n_times=2048,  # required: the SSL checkpoint is n_times-agnostic
+               n_outputs=4,
+               strict=False,  # classifier head is not in the SSL checkpoint
+           )
+
+           # Arbitrary channel set:
+           model = SignalJEPA_Contextual.from_pretrained(
+               "braindecode/signal-jepa_without-chans",
+               chs_info=[{"ch_name": "A", "loc": [...]}, ...],
+               n_times=2048,
+               n_outputs=4,
+               strict=False,
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
+
+    .. rubric:: Usage
+
+    .. code-block:: python
+
+        from braindecode.models import SignalJEPA_Contextual
+
+        model = SignalJEPA_Contextual(
+            chs_info=[{"ch_name": "Fp1", "loc": [...]}, ...],
+            input_window_seconds=16.0,
+            sfreq=128,
+            n_outputs=4,  # e.g., 4-class classification
+        )
+
+        # Forward: (batch, n_chans, n_times) -> (batch, n_outputs)
+        output = model(eeg_data)
+
+    .. warning::
+
+        Pre-trained at **128 Hz** on EEG bandpass-filtered between
+        **0.5 and 40 Hz** and rescaled by a factor of :math:`10^{6}`
+        (volts to microvolts). Apply the same preprocessing to your
+        data to match the pre-training distribution.
 
     Parameters
     ----------
@@ -632,6 +761,54 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
     .. versionadded:: 0.9
 
+    .. rubric:: Pretrained Weights
+
+    Only the feature encoder weights are reused from the shared
+    SSL checkpoints. This model has no channel embedding nor transformer,
+    so ``strict=False`` is required at load time to skip the unused keys.
+    Either hub variant works; the ``_without-chans`` one is slightly
+    smaller.
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       .. code-block:: python
+
+           from braindecode.models import SignalJEPA_PostLocal
+
+           model = SignalJEPA_PostLocal.from_pretrained(
+               "braindecode/signal-jepa_without-chans",
+               n_chans=22,
+               input_window_seconds=16.0,
+               n_outputs=4,
+               strict=False,
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
+
+    .. rubric:: Usage
+
+    .. code-block:: python
+
+        from braindecode.models import SignalJEPA_PostLocal
+
+        model = SignalJEPA_PostLocal(
+            n_chans=22,
+            input_window_seconds=16.0,
+            sfreq=128,
+            n_outputs=4,  # e.g., 4-class classification
+        )
+
+        # Forward: (batch, n_chans, n_times) -> (batch, n_outputs)
+        output = model(eeg_data)
+
+    .. warning::
+
+        Pre-trained at **128 Hz** on EEG bandpass-filtered between
+        **0.5 and 40 Hz** and rescaled by a factor of :math:`10^{6}`
+        (volts to microvolts). Apply the same preprocessing to your
+        data to match the pre-training distribution.
+
     Parameters
     ----------
     n_spat_filters : int
@@ -800,32 +977,62 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     .. versionadded:: 0.9
 
+    .. rubric:: Pretrained Weights
+
+    Only the feature encoder weights are reused from the shared
+    SSL checkpoints. This model has no channel embedding nor transformer,
+    so ``strict=False`` is required at load time to skip the unused keys.
+    Either hub variant works; the ``_without-chans`` one is slightly
+    smaller.
+
     .. important::
        **Pre-trained Weights Available**
-
-       This model has pre-trained weights available on the Hugging Face Hub.
-       You can load them using:
 
        .. code-block:: python
 
            from braindecode.models import SignalJEPA_PreLocal
 
-           # Load pre-trained model from Hugging Face Hub
            model = SignalJEPA_PreLocal.from_pretrained(
-               "braindecode/SignalJEPA-PreLocal-pretrained"
+               "braindecode/signal-jepa_without-chans",
+               n_chans=22,
+               input_window_seconds=16.0,
+               n_outputs=4,
+               strict=False,
            )
 
        To push your own trained model to the Hub:
 
        .. code-block:: python
 
-           # After training your model
            model.push_to_hub(
                repo_id="username/my-sjepa-model",
                commit_message="Upload trained SignalJEPA model",
            )
 
        Requires installing ``braindecode[hug]`` for Hub integration.
+
+    .. rubric:: Usage
+
+    .. code-block:: python
+
+        from braindecode.models import SignalJEPA_PreLocal
+
+        model = SignalJEPA_PreLocal(
+            n_chans=22,
+            input_window_seconds=16.0,
+            sfreq=128,
+            n_outputs=4,  # e.g., 4-class classification
+        )
+
+        # Forward: (batch, n_chans, n_times) -> (batch, n_outputs)
+        output = model(eeg_data)
+
+    .. warning::
+
+        Pre-trained at **128 Hz** on EEG bandpass-filtered between
+        **0.5 and 40 Hz** and rescaled by a factor of :math:`10^{6}`
+        (volts to microvolts). Apply the same preprocessing to your
+        data to match the pre-training distribution.
 
     Parameters
     ----------
