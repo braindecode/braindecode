@@ -165,7 +165,7 @@ def _resolve_channel_embedding_config(
             f"Channel(s) {missing} not in the Signal-JEPA pre-training set. "
             "To load pretrained weights while keeping these channels, use:\n"
             "  channel_embedding='scratch'\n"
-            "  hub_id='braindecode/signal-jepa_without-chans'\n"
+            "  checkpoint 'braindecode/signal-jepa_without-chans'\n"
             "  strict=False  # on load_state_dict / from_pretrained\n"
             "The pretrained channel embedding weights will not be loaded."
         )
