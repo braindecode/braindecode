@@ -8,6 +8,7 @@ import torch
 from braindecode.models.signal_jepa import (
     _PRETRAIN_CHS_INFO,
     SignalJEPA,
+    SignalJEPA_Contextual,
     _ConvFeatureEncoder,
     _pos_encode_contineous,
     _pos_encode_time,
@@ -282,3 +283,67 @@ class TestSignalJEPAChannelEmbedding:
     def test_scratch_without_chs_info_raises(self):
         with pytest.raises(ValueError, match="chs_info is required"):
             SignalJEPA(n_chans=3, n_times=128, sfreq=128)
+
+
+class TestSignalJEPAForwardAPIChange:
+    def test_forward_rejects_ch_idxs_kwarg(self):
+        m = SignalJEPA(
+            chs_info=[
+                {"ch_name": "A", "loc": [0.1, 0.2, 0.3]},
+                {"ch_name": "B", "loc": [0.4, 0.5, 0.6]},
+            ],
+            n_times=2000,
+            sfreq=128,
+        )
+        X = torch.randn(1, 2, 2000)
+        with pytest.raises(TypeError):
+            m(X, ch_idxs=torch.tensor([[0, 1]]))
+
+    def test_contextual_forward_rejects_ch_idxs_kwarg(self):
+        m = SignalJEPA_Contextual(
+            chs_info=[
+                {"ch_name": "A", "loc": [0.1, 0.2, 0.3]},
+                {"ch_name": "B", "loc": [0.4, 0.5, 0.6]},
+            ],
+            n_times=2000,
+            sfreq=128,
+            n_outputs=4,
+        )
+        X = torch.randn(1, 2, 2000)
+        with pytest.raises(TypeError):
+            m(X, ch_idxs=torch.tensor([[0, 1]]))
+
+    def test_forward_runs_in_pretrain_aligned_mode(self):
+        pretrain_names = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
+        chosen = pretrain_names[:3]
+        user = [
+            {"ch_name": n, "loc": [0.1 * i, 0.2 * i, 0.3 * i]}
+            for i, n in enumerate(chosen)
+        ]
+        m = SignalJEPA(
+            chs_info=user,
+            n_times=2000,
+            sfreq=128,
+            channel_embedding="pretrain_aligned",
+        )
+        X = torch.randn(2, 3, 2000)
+        y = m(X)
+        # Output is (batch, n_chans * n_times_out, emb_dim). We just check
+        # that it runs and has the right batch dim.
+        assert y.shape[0] == 2
+
+    def test_contextual_channel_embedding_forwarded(self):
+        pretrain_names = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
+        user = [
+            {"ch_name": n, "loc": [0.1 * i, 0.2 * i, 0.3 * i]}
+            for i, n in enumerate(pretrain_names[:3])
+        ]
+        m = SignalJEPA_Contextual(
+            chs_info=user,
+            n_times=2000,
+            sfreq=128,
+            n_outputs=4,
+            channel_embedding="pretrain_aligned",
+        )
+        assert m._channel_embedding == "pretrain_aligned"
+        assert m.pos_encoder.pos_encoder_spat.weight.shape[0] == 62

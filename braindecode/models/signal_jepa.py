@@ -407,9 +407,9 @@ class SignalJEPA(_BaseSignalJEPA):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
 
-    def forward(self, X, ch_idxs: torch.Tensor | None = None, return_features=False):  # type: ignore
+    def forward(self, X, return_features=False):  # type: ignore
         local_features = self.feature_encoder(X)  # type: ignore
-        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
         contextual_features = self.transformer.encoder(local_features)  # type: ignore
         if return_features:
@@ -473,6 +473,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         transformer__num_decoder_layers: int = 4,
         transformer__nhead: int = 8,
         # other
+        channel_embedding: str = "scratch",
         _init_feature_encoder: bool = True,
         _init_transformer: bool = True,
     ):
@@ -496,6 +497,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             transformer__num_encoder_layers=transformer__num_encoder_layers,
             transformer__num_decoder_layers=transformer__num_decoder_layers,
             transformer__nhead=transformer__nhead,
+            channel_embedding=channel_embedding,
             _init_feature_encoder=_init_feature_encoder,
             _init_transformer=_init_transformer,
         )
@@ -520,9 +522,9 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             n_spat_filters=self._clf_n_spat_filters,
         )
 
-    def forward(self, X, ch_idxs: torch.Tensor | None = None, return_features=False):  # type: ignore
+    def forward(self, X, return_features=False):  # type: ignore
         local_features = self.feature_encoder(X)  # type: ignore
-        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
         contextual_features = self.transformer.encoder(local_features)  # type: ignore
         if return_features:
