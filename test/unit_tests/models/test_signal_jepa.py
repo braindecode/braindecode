@@ -347,3 +347,28 @@ class TestSignalJEPAForwardAPIChange:
         )
         assert m._channel_embedding == "pretrain_aligned"
         assert m.pos_encoder.pos_encoder_spat.weight.shape[0] == 62
+
+
+class TestContextualFromPretrainedTransfer:
+    def test_from_pretrained_transfer_with_chs_info(self):
+        # Build a source SignalJEPA with varying per-channel locs so that
+        # _ChannelEmbedding.reset_parameters does not divide by zero.
+        src_user = [
+            {"ch_name": n, "loc": [0.01 * (i + 1), 0.02 * (i + 1), 0.03 * (i + 1)]}
+            for i, n in enumerate(("A", "B", "C"))
+        ]
+        src = SignalJEPA(chs_info=src_user, n_times=128, sfreq=128)
+
+        # Transfer into a downstream classifier with chs_info set.
+        # Historically this raised AttributeError via the dead
+        # set_fixed_ch_names call; after Task 6 it should just work.
+        dst_user = [
+            {"ch_name": n, "loc": [0.01 * (i + 1), 0.02 * (i + 1), 0.03 * (i + 1)]}
+            for i, n in enumerate(("A", "B", "C"))
+        ]
+        new_model = SignalJEPA_Contextual.from_pretrained(
+            src,
+            n_outputs=4,
+            chs_info=dst_user,
+        )
+        assert new_model.n_outputs == 4

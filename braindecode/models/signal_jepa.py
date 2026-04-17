@@ -605,10 +605,6 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         new_model.pos_encoder = deepcopy(pos_encoder)
         new_model.transformer = deepcopy(transformer)
 
-        if chs_info is not None:
-            ch_names = [ch["ch_name"] for ch in chs_info]
-            new_model.pos_encoder.set_fixed_ch_names(ch_names)
-
         return new_model
 
 
