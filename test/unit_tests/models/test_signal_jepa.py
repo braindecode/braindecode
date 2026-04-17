@@ -372,3 +372,74 @@ class TestContextualFromPretrainedTransfer:
             chs_info=dst_user,
         )
         assert new_model.n_outputs == 4
+
+
+try:
+    import huggingface_hub  # noqa: F401
+
+    HAS_HF_HUB = True
+except ImportError:
+    HAS_HF_HUB = False
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="requires huggingface_hub")
+class TestHFRoundTrip:
+    def test_channel_embedding_survives_save_load(self, tmp_path):
+        pretrain_names = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
+        user = [
+            {
+                "ch_name": n,
+                "loc": [0.01 * (i + 1), 0.02 * (i + 1), 0.03 * (i + 1)],
+            }
+            for i, n in enumerate(pretrain_names[:3])
+        ]
+        model = SignalJEPA(
+            chs_info=user,
+            n_times=128,
+            sfreq=128,
+            channel_embedding="pretrain_aligned",
+        )
+
+        model.save_pretrained(str(tmp_path))
+        reloaded = SignalJEPA.from_pretrained(str(tmp_path))
+
+        assert reloaded._channel_embedding == "pretrain_aligned"
+        assert reloaded.pos_encoder.pos_encoder_spat.weight.shape[0] == 62
+        # The non-persistent buffer must NOT be in the saved state_dict.
+        assert "pos_encoder.default_ch_idxs" not in reloaded.state_dict()
+
+    def test_user_override_chs_info_at_load_time(self, tmp_path):
+        # Save with the full 62 channels, load with a 3-channel override.
+        model = SignalJEPA(
+            chs_info=None,  # triggers _PRETRAIN_CHS_INFO
+            n_times=128,
+            sfreq=128,
+            channel_embedding="pretrain_aligned",
+        )
+
+        pretrain_names = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
+        override_user = [
+            {
+                "ch_name": n,
+                "loc": [0.01 * (i + 1), 0.02 * (i + 1), 0.03 * (i + 1)],
+            }
+            for i, n in enumerate(pretrain_names[:3])
+        ]
+
+        model.save_pretrained(str(tmp_path))
+        reloaded = SignalJEPA.from_pretrained(
+            str(tmp_path), chs_info=override_user
+        )
+
+        assert reloaded.n_chans == 3
+        # Embedding table keeps 62 rows.
+        assert reloaded.pos_encoder.pos_encoder_spat.weight.shape[0] == 62
+        # Weights loaded correctly (not reinitialized): compare to source.
+        torch.testing.assert_close(
+            reloaded.pos_encoder.pos_encoder_spat.weight,
+            model.pos_encoder.pos_encoder_spat.weight,
+        )
+        # Mapping points to rows 0, 1, 2 of the pretrain set.
+        assert torch.equal(
+            reloaded.pos_encoder.default_ch_idxs, torch.tensor([0, 1, 2])
+        )
