@@ -79,7 +79,7 @@ Bug fixes
   :class:`braindecode.models.SignalJEPA_Contextual` to load pre-trained channel
   embedding weights when fine-tuning on a subset of the pre-training channels.
   Two new HuggingFace checkpoints are published: ``braindecode/signal-jepa`` and
-  ``braindecode/signal-jepa_without-chans`` (by `Pierre Guetschel`_)
+  ``braindecode/signal-jepa_without-chans`` (:gh:`991` by `Pierre Guetschel`_)
 
 Code health
 ============
