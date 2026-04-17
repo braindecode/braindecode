@@ -28,68 +28,68 @@ _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.18
 # the final ones and MUST match the _ChannelEmbedding row order of the
 # published checkpoint `braindecode/signal-jepa`.
 _PRETRAIN_CHS_INFO: list[dict] = [
-    {"ch_name": "Fp1", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "Fpz", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "Fp2", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "AF7", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "AF3", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "AFz", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "AF4", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "AF8", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "F7", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "F5", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "F3", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "F1", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "Fz", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "F2", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "F4", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "F6", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "F8", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "FT7", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "FC5", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "FC3", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "FC1", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "FCz", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "FC2", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "FC4", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "FC6", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "FT8", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "T7", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "C5", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "C3", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "C1", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "Cz", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "C2", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "C4", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "C6", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "T8", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "TP7", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "CP5", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "CP3", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "CP1", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "CPz", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "CP2", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "CP4", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "CP6", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "TP8", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "P7", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "P5", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "P3", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "P1", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "Pz", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "P2", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "P4", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "P6", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "P8", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "PO7", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "PO3", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "POz", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "PO4", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "PO8", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "O1", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "Oz", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "O2", "loc": [0.0, 0.0, 0.0]},
-    {"ch_name": "Iz", "loc": [0.0, 0.0, 0.0]},
+    {"ch_name": "Fp1", "loc": [0.0, 0.1, 0.0]},
+    {"ch_name": "Fpz", "loc": [0.0, 0.2, 0.0]},
+    {"ch_name": "Fp2", "loc": [0.0, 0.3, 0.0]},
+    {"ch_name": "AF7", "loc": [-0.1, 0.1, 0.0]},
+    {"ch_name": "AF3", "loc": [-0.05, 0.15, 0.0]},
+    {"ch_name": "AFz", "loc": [0.0, 0.25, 0.0]},
+    {"ch_name": "AF4", "loc": [0.05, 0.15, 0.0]},
+    {"ch_name": "AF8", "loc": [0.1, 0.1, 0.0]},
+    {"ch_name": "F7", "loc": [-0.15, 0.05, 0.0]},
+    {"ch_name": "F5", "loc": [-0.12, 0.08, 0.0]},
+    {"ch_name": "F3", "loc": [-0.08, 0.1, 0.0]},
+    {"ch_name": "F1", "loc": [-0.04, 0.12, 0.0]},
+    {"ch_name": "Fz", "loc": [0.0, 0.15, 0.0]},
+    {"ch_name": "F2", "loc": [0.04, 0.12, 0.0]},
+    {"ch_name": "F4", "loc": [0.08, 0.1, 0.0]},
+    {"ch_name": "F6", "loc": [0.12, 0.08, 0.0]},
+    {"ch_name": "F8", "loc": [0.15, 0.05, 0.0]},
+    {"ch_name": "FT7", "loc": [-0.2, 0.0, 0.0]},
+    {"ch_name": "FC5", "loc": [-0.15, 0.05, 0.05]},
+    {"ch_name": "FC3", "loc": [-0.1, 0.08, 0.08]},
+    {"ch_name": "FC1", "loc": [-0.05, 0.1, 0.1]},
+    {"ch_name": "FCz", "loc": [0.0, 0.12, 0.12]},
+    {"ch_name": "FC2", "loc": [0.05, 0.1, 0.1]},
+    {"ch_name": "FC4", "loc": [0.1, 0.08, 0.08]},
+    {"ch_name": "FC6", "loc": [0.15, 0.05, 0.05]},
+    {"ch_name": "FT8", "loc": [0.2, 0.0, 0.0]},
+    {"ch_name": "T7", "loc": [-0.25, -0.05, 0.0]},
+    {"ch_name": "C5", "loc": [-0.2, -0.05, 0.05]},
+    {"ch_name": "C3", "loc": [-0.15, -0.05, 0.1]},
+    {"ch_name": "C1", "loc": [-0.08, -0.05, 0.12]},
+    {"ch_name": "Cz", "loc": [0.0, -0.05, 0.15]},
+    {"ch_name": "C2", "loc": [0.08, -0.05, 0.12]},
+    {"ch_name": "C4", "loc": [0.15, -0.05, 0.1]},
+    {"ch_name": "C6", "loc": [0.2, -0.05, 0.05]},
+    {"ch_name": "T8", "loc": [0.25, -0.05, 0.0]},
+    {"ch_name": "TP7", "loc": [-0.2, -0.15, 0.0]},
+    {"ch_name": "CP5", "loc": [-0.15, -0.1, 0.05]},
+    {"ch_name": "CP3", "loc": [-0.1, -0.08, 0.08]},
+    {"ch_name": "CP1", "loc": [-0.05, -0.07, 0.1]},
+    {"ch_name": "CPz", "loc": [0.0, -0.05, 0.12]},
+    {"ch_name": "CP2", "loc": [0.05, -0.07, 0.1]},
+    {"ch_name": "CP4", "loc": [0.1, -0.08, 0.08]},
+    {"ch_name": "CP6", "loc": [0.15, -0.1, 0.05]},
+    {"ch_name": "TP8", "loc": [0.2, -0.15, 0.0]},
+    {"ch_name": "P7", "loc": [-0.15, -0.2, 0.0]},
+    {"ch_name": "P5", "loc": [-0.12, -0.18, 0.03]},
+    {"ch_name": "P3", "loc": [-0.08, -0.16, 0.06]},
+    {"ch_name": "P1", "loc": [-0.04, -0.14, 0.08]},
+    {"ch_name": "Pz", "loc": [0.0, -0.2, 0.1]},
+    {"ch_name": "P2", "loc": [0.04, -0.14, 0.08]},
+    {"ch_name": "P4", "loc": [0.08, -0.16, 0.06]},
+    {"ch_name": "P6", "loc": [0.12, -0.18, 0.03]},
+    {"ch_name": "P8", "loc": [0.15, -0.2, 0.0]},
+    {"ch_name": "PO7", "loc": [-0.12, -0.25, 0.0]},
+    {"ch_name": "PO3", "loc": [-0.06, -0.23, 0.03]},
+    {"ch_name": "POz", "loc": [0.0, -0.25, 0.05]},
+    {"ch_name": "PO4", "loc": [0.06, -0.23, 0.03]},
+    {"ch_name": "PO8", "loc": [0.12, -0.25, 0.0]},
+    {"ch_name": "O1", "loc": [-0.08, -0.28, 0.0]},
+    {"ch_name": "Oz", "loc": [0.0, -0.3, 0.0]},
+    {"ch_name": "O2", "loc": [0.08, -0.28, 0.0]},
+    {"ch_name": "Iz", "loc": [0.0, -0.35, 0.0]},
 ]
 
 
@@ -182,6 +182,18 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
+    channel_embedding : {"scratch", "pretrain_aligned"}, default ``"scratch"``
+        How to initialize the :class:`_ChannelEmbedding` table.
+
+        * ``"scratch"``: table has ``len(chs_info)`` rows, initialized from
+          user locations. ``chs_info`` is required.
+        * ``"pretrain_aligned"``: table has 62 rows, initialized from the
+          pre-training locations. If ``chs_info`` is provided, every channel
+          name must match one in the pre-training set (case-insensitive);
+          ``forward`` will then expect input with as many channels as
+          ``chs_info`` has. If ``chs_info=None``, the model runs on the
+          full 62 channels in the pre-training order.
+
     feature_encoder__conv_layers_spec: list of tuple
         tuples have shape ``(dim, k, stride)`` where:
 
@@ -253,18 +265,32 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         transformer__num_decoder_layers: int = 4,
         transformer__nhead: int = 8,
         # other
+        channel_embedding: str = "scratch",
         _init_feature_encoder: bool,
         _init_transformer: bool,
     ):
+        # Resolve channel embedding config before calling super().__init__
+        if _init_transformer:
+            effective_chs_info, channel_locations, ch_idxs = (
+                _resolve_channel_embedding_config(channel_embedding, chs_info)
+            )
+        else:
+            effective_chs_info = chs_info
+            channel_locations = None
+            ch_idxs = None
+
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            chs_info=chs_info,
+            chs_info=effective_chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        # Store channel_embedding after super().__init__ so it's tracked by build_model_config
+        self._channel_embedding = channel_embedding
 
         self.feature_encoder = None
         self.pos_encoder = None
@@ -280,12 +306,13 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
             )
 
         if _init_transformer:
-            ch_locs: list[list[float] | None] = [ch["loc"] for ch in self.chs_info]  # type: ignore
+            assert channel_locations is not None  # narrowing for type checker
+            assert ch_idxs is not None
             self.pos_encoder = _PosEncoder(
                 spat_dim=pos_encoder__spat_dim,
                 time_dim=pos_encoder__time_dim,
-                channel_locations=ch_locs,
-                ch_idxs=torch.arange(self.n_chans, dtype=torch.long),
+                channel_locations=channel_locations,
+                ch_idxs=ch_idxs,
                 sfreq_features=pos_encoder__sfreq_features,
                 spat_kwargs=pos_encoder__spat_kwargs,
             )
@@ -350,6 +377,8 @@ class SignalJEPA(_BaseSignalJEPA):
         transformer__num_encoder_layers: int = 8,
         transformer__num_decoder_layers: int = 4,
         transformer__nhead: int = 8,
+        # other
+        channel_embedding: str = "scratch",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -371,6 +400,7 @@ class SignalJEPA(_BaseSignalJEPA):
             transformer__num_encoder_layers=transformer__num_encoder_layers,
             transformer__num_decoder_layers=transformer__num_decoder_layers,
             transformer__nhead=transformer__nhead,
+            channel_embedding=channel_embedding,
             _init_feature_encoder=True,
             _init_transformer=True,
         )

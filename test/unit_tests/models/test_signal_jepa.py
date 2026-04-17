@@ -7,6 +7,7 @@ import torch
 
 from braindecode.models.signal_jepa import (
     _PRETRAIN_CHS_INFO,
+    SignalJEPA,
     _ConvFeatureEncoder,
     _pos_encode_contineous,
     _pos_encode_time,
@@ -223,3 +224,61 @@ class TestPosEncoderBuffer:
         # .to() is a no-op for CPU but still exercises the buffer registration.
         pe = pe.to(torch.device("cpu"))
         assert pe.default_ch_idxs.device == torch.device("cpu")
+
+
+class TestSignalJEPAChannelEmbedding:
+    @staticmethod
+    def _user_chs(names):
+        # Use realistic electrode coordinates (typical 10-20 system positions)
+        return [{"ch_name": n, "loc": [0.1 * i, 0.2 * i, 0.3 * i]} for i, n in enumerate(names)]
+
+    def test_scratch_default_is_scratch_mode(self):
+        user = self._user_chs(["A", "B", "C"])
+        m = SignalJEPA(chs_info=user, n_times=128, sfreq=128)
+        # Embedding table has N=3 rows in scratch mode.
+        assert m.pos_encoder.pos_encoder_spat.weight.shape[0] == 3
+        assert m._channel_embedding == "scratch"
+
+    def test_pretrain_aligned_no_chs_info(self):
+        m = SignalJEPA(
+            chs_info=None,
+            n_times=128,
+            sfreq=128,
+            channel_embedding="pretrain_aligned",
+        )
+        assert m.n_chans == 62
+        # Table has 62 rows.
+        assert m.pos_encoder.pos_encoder_spat.weight.shape[0] == 62
+
+    def test_pretrain_aligned_with_subset(self):
+        pretrain_names = [ch["ch_name"] for ch in _PRETRAIN_CHS_INFO]
+        chosen = [pretrain_names[5], pretrain_names[0], pretrain_names[10]]
+        user = self._user_chs(chosen)
+        m = SignalJEPA(
+            chs_info=user,
+            n_times=128,
+            sfreq=128,
+            channel_embedding="pretrain_aligned",
+        )
+        # Table has 62 rows regardless of user count.
+        assert m.pos_encoder.pos_encoder_spat.weight.shape[0] == 62
+        # User count is N=3.
+        assert m.n_chans == 3
+        # Mapping points to the right rows.
+        assert torch.equal(
+            m.pos_encoder.default_ch_idxs, torch.tensor([5, 0, 10])
+        )
+
+    def test_pretrain_aligned_bad_channel_raises(self):
+        user = self._user_chs(["__NOT_A_REAL_CHANNEL__"])
+        with pytest.raises(ValueError, match="not in the Signal-JEPA"):
+            SignalJEPA(
+                chs_info=user,
+                n_times=128,
+                sfreq=128,
+                channel_embedding="pretrain_aligned",
+            )
+
+    def test_scratch_without_chs_info_raises(self):
+        with pytest.raises(ValueError, match="chs_info is required"):
+            SignalJEPA(n_chans=3, n_times=128, sfreq=128)
