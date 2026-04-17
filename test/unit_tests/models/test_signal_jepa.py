@@ -231,7 +231,10 @@ class TestSignalJEPAChannelEmbedding:
     @staticmethod
     def _user_chs(names):
         # Use realistic electrode coordinates (typical 10-20 system positions)
-        return [{"ch_name": n, "loc": [0.1 * i, 0.2 * i, 0.3 * i]} for i, n in enumerate(names)]
+        return [
+            {"ch_name": n, "loc": [0.1 * i, 0.2 * i, 0.3 * i]}
+            for i, n in enumerate(names)
+        ]
 
     def test_scratch_default_is_scratch_mode(self):
         user = self._user_chs(["A", "B", "C"])
