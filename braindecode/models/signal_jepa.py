@@ -387,7 +387,7 @@ class SignalJEPA(_BaseSignalJEPA):
                commit_message="Upload trained SignalJEPA model",
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. rubric:: Usage
 
@@ -536,7 +536,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
                strict=False,
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. rubric:: Usage
 
@@ -783,7 +783,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
                strict=False,
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. rubric:: Usage
 
@@ -1008,7 +1008,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
                commit_message="Upload trained SignalJEPA model",
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
 
     .. rubric:: Usage
 
