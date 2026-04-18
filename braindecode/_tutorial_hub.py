@@ -88,16 +88,23 @@ def load_tutorial_checkpoint_metadata(
     params_name = PARAMS_FILENAME if use_safetensors else "params.pt"
     artifacts = _load_tutorial_hub_files(
         repo_id,
-        filenames=(params_name, HISTORY_FILENAME, METADATA_FILENAME),
+        filenames=(params_name, HISTORY_FILENAME),
         revision=revision,
     )
     if artifacts is None:
         return None
 
     metadata: dict = {}
-    if METADATA_FILENAME in artifacts:
+    metadata_artifact = _load_tutorial_hub_files(
+        repo_id,
+        filenames=(METADATA_FILENAME,),
+        revision=revision,
+    )
+    if metadata_artifact is not None:
         try:
-            metadata = json.loads(Path(artifacts[METADATA_FILENAME]).read_text())
+            metadata = json.loads(
+                Path(metadata_artifact[METADATA_FILENAME]).read_text()
+            )
         except (json.JSONDecodeError, OSError):
             pass
 

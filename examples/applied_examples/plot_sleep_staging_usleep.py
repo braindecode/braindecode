@@ -266,15 +266,17 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # We can load the pretrained checkpoint from the Hugging Face Hub and
 # inspect the full training curves:
 
-from huggingface_hub import hf_hub_download
+import warnings
+
+from braindecode._tutorial_hub import load_tutorial_checkpoint_metadata
 
 repo_id = "braindecode/plot_sleep_staging_usleep"
-clf.initialize()
-clf.load_params(
-    f_params=hf_hub_download(repo_id, "params.safetensors"),
-    f_history=hf_hub_download(repo_id, "history.json"),
-    use_safetensors=True,
-)
+if load_tutorial_checkpoint_metadata(clf, repo_id) is None:
+    warnings.warn(
+        f"Could not load pretrained checkpoint from {repo_id}; "
+        "continuing with the locally trained short-run model.",
+        stacklevel=2,
+    )
 
 ######################################################################
 # Plot training curves
@@ -307,6 +309,7 @@ y_pred = clf.predict(valid_set)
 ConfusionMatrixDisplay.from_predictions(
     y_true.flatten(),
     y_pred.flatten(),
+    labels=[0, 1, 2, 3, 4],
     display_labels=["Wake", "N1", "N2", "N3", "REM"],
 )
 

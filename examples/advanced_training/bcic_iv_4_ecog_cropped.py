@@ -339,15 +339,17 @@ regressor.fit(train_set, y=None, epochs=n_epochs)
 # We can load the pretrained checkpoint from the Hugging Face Hub and
 # inspect the full training curves:
 
-from huggingface_hub import hf_hub_download
+import warnings
+
+from braindecode._tutorial_hub import load_tutorial_checkpoint_metadata
 
 repo_id = "braindecode/bcic_iv_4_ecog_cropped"
-regressor.initialize()
-regressor.load_params(
-    f_params=hf_hub_download(repo_id, "params.safetensors"),
-    f_history=hf_hub_download(repo_id, "history.json"),
-    use_safetensors=True,
-)
+if load_tutorial_checkpoint_metadata(regressor, repo_id) is None:
+    warnings.warn(
+        f"Could not load pretrained checkpoint from {repo_id}; "
+        "continuing with the locally trained short-run model.",
+        stacklevel=2,
+    )
 
 ######################################################################
 # Obtaining predictions and targets for the test, train, and validation dataset

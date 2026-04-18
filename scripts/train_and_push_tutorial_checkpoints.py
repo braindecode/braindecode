@@ -89,7 +89,7 @@ AVAILABLE_TUTORIALS = (
 
 @dataclass
 class TutorialArtifacts:
-    clf: EEGClassifier
+    clf: EEGClassifier | EEGRegressor
     repo_id: str
     metadata: dict
 
@@ -117,6 +117,7 @@ def _make_wandb_callback(tutorial_name: str, config: dict):
 def _save_loss_curve(clf, output_dir: Path, tutorial_name: str):
     """Save a loss/metric curve plot as a PNG artifact."""
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -241,9 +242,7 @@ def _device_and_seed(seed: int = 20200220):
 
 def _pearson_r_score(net, dataset, y):
     preds = net.predict(dataset)
-    corr_coeffs = [
-        np.corrcoef(y[:, i], preds[:, i])[0, 1] for i in range(y.shape[1])
-    ]
+    corr_coeffs = [np.corrcoef(y[:, i], preds[:, i])[0, 1] for i in range(y.shape[1])]
     return float(np.nanmean(corr_coeffs))
 
 
@@ -358,7 +357,10 @@ def _ecog_trialwise(*, epochs: int, patience: int) -> TutorialArtifacts:
                     name="train_pearson_r",
                 ),
             ),
-            ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=max(1, epochs - 1))),
+            (
+                "lr_scheduler",
+                LRScheduler("CosineAnnealingLR", T_max=max(1, epochs - 1)),
+            ),
             ("early_stopping", EarlyStopping(patience=patience, load_best=True)),
         ],
         device=device,
@@ -493,7 +495,10 @@ def _ecog_cropped(*, epochs: int, patience: int) -> TutorialArtifacts:
         iterator_train__shuffle=True,
         batch_size=27,
         callbacks=[
-            ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=max(1, epochs - 1))),
+            (
+                "lr_scheduler",
+                LRScheduler("CosineAnnealingLR", T_max=max(1, epochs - 1)),
+            ),
             (
                 "r2_train",
                 CroppedTimeSeriesEpochScoring(
@@ -598,9 +603,7 @@ def _sleep_physionet_windows(
         dict(train=train_subject_ids, valid=valid_subject_ids)
     )
     train_set, valid_set = splits["train"], splits["valid"]
-    train_sampler = SequenceSampler(
-        train_set.get_metadata(), 3, 3, randomize=True
-    )
+    train_sampler = SequenceSampler(train_set.get_metadata(), 3, 3, randomize=True)
     valid_sampler = SequenceSampler(valid_set.get_metadata(), 3, 3)
     return train_set, valid_set, train_sampler, valid_sampler
 
@@ -685,7 +688,7 @@ def _sleep_usleep(*, epochs: int, patience: int) -> TutorialArtifacts:
         "final_valid_bal_acc": clf.history[-1, "valid_bal_acc"],
         "patience": patience,
         "short_run_epochs": 3,
-        "use_safetensors": False,
+        "use_safetensors": True,
         "tutorial": tutorial_name,
     }
     return TutorialArtifacts(
@@ -700,9 +703,9 @@ def _sleep_attnsleep(*, epochs: int, patience: int) -> TutorialArtifacts:
     train_set, valid_set, train_sampler, valid_sampler = _sleep_physionet_windows(
         picks="Fpz-Cz",
         recording_ids=[1, 2],
-        subject_ids=[0, 1, 2, 3, 4],
+        subject_ids=[0, 1, 2, 3, 4, 5],
         train_subject_ids=[0, 1, 2, 3],
-        valid_subject_ids=[4],
+        valid_subject_ids=[4, 5],
         raw_preprocessors=[
             Preprocessor(lambda data: multiply(data, 1e6), apply_on_array=True),
             Preprocessor("filter", l_freq=None, h_freq=30),
@@ -773,21 +776,24 @@ def _sleep_attnsleep(*, epochs: int, patience: int) -> TutorialArtifacts:
             ),
         ),
     ]
-    wandb_result = _make_wandb_callback(tutorial_name, config={
-        "model": "AttnSleep",
-        "sfreq": 100,
-        "drop_prob": 0.3,
-        "n_windows": 3,
-        "lr": 1e-3,
-        "weight_decay": 1e-3,
-        "label_smoothing": 0.1,
-        "batch_size": 32,
-        "epochs": epochs,
-        "patience": patience,
-        "train_subjects": [0, 1, 2, 3],
-        "valid_subjects": [4, 5],
-        "recording_ids": [1, 2],
-    })
+    wandb_result = _make_wandb_callback(
+        tutorial_name,
+        config={
+            "model": "AttnSleep",
+            "sfreq": 100,
+            "drop_prob": 0.3,
+            "n_windows": 3,
+            "lr": 1e-3,
+            "weight_decay": 1e-3,
+            "label_smoothing": 0.1,
+            "batch_size": 32,
+            "epochs": epochs,
+            "patience": patience,
+            "train_subjects": [0, 1, 2, 3],
+            "valid_subjects": [4, 5],
+            "recording_ids": [1, 2],
+        },
+    )
     if wandb_result is not None:
         callbacks.append(wandb_result[0])
     clf = EEGClassifier(
@@ -824,6 +830,7 @@ def _sleep_attnsleep(*, epochs: int, patience: int) -> TutorialArtifacts:
     }
     if wandb_result is not None:
         import wandb
+
         metadata["wandb_run_url"] = wandb_result[1].get_url()
         wandb.finish()
     return TutorialArtifacts(
@@ -927,7 +934,9 @@ def _sleep_chambon(*, epochs: int, patience: int) -> TutorialArtifacts:
     )
 
 
-def _cropped_shallow(*, subject_id: int, epochs: int, patience: int) -> TutorialArtifacts:
+def _cropped_shallow(
+    *, subject_id: int, epochs: int, patience: int
+) -> TutorialArtifacts:
     tutorial_name = "plot_bcic_iv_2a_moabb_cropped"
     dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
     _common_preprocessing(dataset, n_jobs=-1)
@@ -989,7 +998,9 @@ def _cropped_shallow(*, subject_id: int, epochs: int, patience: int) -> Tutorial
     )
 
 
-def _eegprep_eegnex(*, subject_id: int, epochs: int, patience: int) -> TutorialArtifacts:
+def _eegprep_eegnex(
+    *, subject_id: int, epochs: int, patience: int
+) -> TutorialArtifacts:
     tutorial_name = "plot_bcic_iv_2a_eegprep_cleaning"
     dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
     _common_preprocessing(dataset, use_eegprep=True, n_jobs=-1)
@@ -1140,9 +1151,7 @@ def _data_augmentation_search_table(cv_results: dict) -> pd.DataFrame:
             }
         )
 
-    search_results = pd.DataFrame(rows).sort_values(
-        ["sort_order", "display_magnitude"]
-    )
+    search_results = pd.DataFrame(rows).sort_values(["sort_order", "display_magnitude"])
     identity_validation_score = float(
         search_results.loc[
             search_results["augmentation"] == "IdentityTransform",
@@ -1206,7 +1215,10 @@ def _data_augmentation_search(*, subject_id: int, epochs: int, patience: int):
         batch_size=64,
         callbacks=[
             "accuracy",
-            ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=max(1, epochs - 1))),
+            (
+                "lr_scheduler",
+                LRScheduler("CosineAnnealingLR", T_max=max(1, epochs - 1)),
+            ),
             ("early_stopping", EarlyStopping(patience=patience, load_best=True)),
         ],
         device=device,
@@ -1231,7 +1243,9 @@ def _data_augmentation_search(*, subject_id: int, epochs: int, patience: int):
         search.fit(train_X, train_y, epochs=epochs)
 
     search_results = _data_augmentation_search_table(search.cv_results_)
-    best_run = search_results.sort_values("mean_validation_accuracy", ascending=False).iloc[0]
+    best_run = search_results.sort_values(
+        "mean_validation_accuracy", ascending=False
+    ).iloc[0]
     identity_validation_score = float(
         search_results.loc[
             search_results["augmentation"] == "IdentityTransform",
@@ -1286,7 +1300,7 @@ def train_tutorial(
             subject_id=subject_id,
             epochs=epochs,
             patience=patience,
-    )
+        )
     if tutorial_name == "plot_bcic_iv_2a_eegprep_cleaning":
         return _eegprep_eegnex(
             subject_id=subject_id,
@@ -1427,9 +1441,7 @@ def main():
     if args.wandb:
         _WANDB_PROJECT = args.wandb_project
 
-    tutorial_names = (
-        AVAILABLE_TUTORIALS if args.tutorial == "all" else (args.tutorial,)
-    )
+    tutorial_names = AVAILABLE_TUTORIALS if args.tutorial == "all" else (args.tutorial,)
 
     for tutorial_name in tutorial_names:
         print(f"Training {tutorial_name}...")

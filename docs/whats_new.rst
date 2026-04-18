@@ -29,7 +29,7 @@ Enhancements
 ============
 
 - Add tutorial hub checkpoint system: tutorials now train for a few epochs
-  then load pretrained weights from HuggingFace Hub to show full training
+  then load pretrained weights from Hugging Face Hub to show full training
   curves and metrics. All 9 tutorial checkpoints published to
   ``huggingface.co/braindecode/``. (:pr:`985` by :user:`bruAristimunha`)
 

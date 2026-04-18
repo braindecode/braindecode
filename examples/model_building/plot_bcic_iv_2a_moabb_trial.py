@@ -270,17 +270,21 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # **68.4 % accuracy on the held-out session (chance = 25 %)**.
 #
 # We can load the pretrained checkpoint from the Hugging Face Hub and
-# inspect the full training curves:
+# inspect the full training curves. If the optional ``huggingface_hub``
+# dependency is missing or the download fails, we continue with the
+# locally trained short-run model.
 
-from huggingface_hub import hf_hub_download
+import warnings
+
+from braindecode._tutorial_hub import load_tutorial_checkpoint_metadata
 
 repo_id = "braindecode/plot_bcic_iv_2a_moabb_trial"
-clf.initialize()
-clf.load_params(
-    f_params=hf_hub_download(repo_id, "params.safetensors"),
-    f_history=hf_hub_download(repo_id, "history.json"),
-    use_safetensors=True,
-)
+if load_tutorial_checkpoint_metadata(clf, repo_id) is None:
+    warnings.warn(
+        f"Could not load pretrained checkpoint from {repo_id}; "
+        "continuing with the locally trained short-run model.",
+        stacklevel=2,
+    )
 
 ######################################################################
 # Plot training curves
@@ -351,9 +355,13 @@ y_true = valid_set.get_metadata().target
 y_pred = clf.predict(valid_set)
 
 label_dict = windows_dataset.datasets[0].window_kwargs[0][1]["mapping"]
-labels = [k for k, v in sorted(label_dict.items(), key=lambda kv: kv[1])]
+sorted_items = sorted(label_dict.items(), key=lambda kv: kv[1])
+labels = [k for k, _ in sorted_items]
+class_ids = [v for _, v in sorted_items]
 
-ConfusionMatrixDisplay.from_predictions(y_true, y_pred, display_labels=labels)
+ConfusionMatrixDisplay.from_predictions(
+    y_true, y_pred, labels=class_ids, display_labels=labels
+)
 
 #############################################################
 #
