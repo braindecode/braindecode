@@ -1331,18 +1331,10 @@ class _ChannelEmbedding(nn.Embedding):
     def __init__(
         self, channel_locations: list[list[float] | None], embedding_dim: int, **kwargs
     ):
-        # MNE's Info['chs'][i]['loc'] is a 12-element array: loc[0:3] is the
-        # electrode position, loc[3:6] is the reference position (typically
-        # [0, 0, 0] unless a reference is explicitly set), loc[6:12] encode
-        # local orientation. Only loc[0:3] holds the actual channel location.
         self.coordinate_ranges = [
             (min(coords), max(coords))
             for coords in zip(
-                *[
-                    loc[:3] if len(loc) == 12 else loc
-                    for loc in channel_locations
-                    if loc is not None
-                ]
+                *[loc[:3] for loc in channel_locations if loc is not None]
             )
         ]
         channel_mins, channel_maxs = zip(*self.coordinate_ranges)
