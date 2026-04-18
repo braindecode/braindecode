@@ -333,13 +333,7 @@ checkpoints = [
     (
         "SignalJEPA",
         SignalJEPA,
-        dict(
-            pretrained_model_name_or_path="braindecode/SignalJEPA-pretrained",
-            n_outputs=2,
-            n_chans=19,
-            input_window_seconds=5,
-            sfreq=256,
-        ),
+        dict(pretrained_model_name_or_path="braindecode/signal-jepa"),
         "braindecode",
     ),
     (
@@ -600,18 +594,12 @@ plt.show()
 #    * - :class:`~braindecode.models.Labram`
 #      - ``braindecode/labram-pretrained``
 #      - 128 channels
-#    * - :class:`~braindecode.models.SignalJEPA`
-#      - ``braindecode/SignalJEPA-pretrained``
-#      - 19 channels
-#    * - :class:`~braindecode.models.SignalJEPA_Contextual`
-#      - ``braindecode/SignalJEPA-Contextual-pretrained``
-#      - 19 channels
-#    * - :class:`~braindecode.models.SignalJEPA_PostLocal`
-#      - ``braindecode/SignalJEPA-PostLocal-pretrained``
-#      - 19 channels
-#    * - :class:`~braindecode.models.SignalJEPA_PreLocal`
-#      - ``braindecode/SignalJEPA-PreLocal-pretrained``
-#      - 19 channels
+#    * - :class:`~braindecode.models.SignalJEPA` and downstream variants
+#      - ``braindecode/signal-jepa``
+#      - 62 channels + pre-trained channel embedding
+#    * - :class:`~braindecode.models.SignalJEPA` and downstream variants
+#      - ``braindecode/signal-jepa_without-chans``
+#      - arbitrary channel set (embedding stripped)
 #
 # External organizations
 # ~~~~~~~~~~~~~~~~~~~~~~

@@ -22,12 +22,179 @@ _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.18
     (64, 2, 2),
 )
 
+# The 62 channels used to pre-train Signal-JEPA. Derived from
+# `moabb.datasets.Lee2019_SSVEP` subject 1 session '1' run '1train'
+# (the first 62 ch_names; the last 5 of the dataset's 67 channels are
+# 4 EMG + 1 stim). Positions are from MNE's `standard_1005` montage.
+# Names and ORDER MUST match the _ChannelEmbedding row order of the
+# published HuggingFace checkpoint `braindecode/signal-jepa`.
+_PRETRAIN_CHS_INFO: list[dict] = [
+    {"ch_name": "Fp1", "loc": [-0.0294367, 0.0839171, -0.00699]},
+    {"ch_name": "Fp2", "loc": [0.0298723, 0.0848959, -0.00708]},
+    {"ch_name": "F7", "loc": [-0.0702629, 0.0424743, -0.01142]},
+    {"ch_name": "F3", "loc": [-0.0502438, 0.0531112, 0.042192]},
+    {"ch_name": "Fz", "loc": [0.0003122, 0.058512, 0.066462]},
+    {"ch_name": "F4", "loc": [0.0518362, 0.0543048, 0.040814]},
+    {"ch_name": "F8", "loc": [0.0730431, 0.0444217, -0.012]},
+    {"ch_name": "FC5", "loc": [-0.0772149, 0.0186433, 0.02446]},
+    {"ch_name": "FC1", "loc": [-0.0340619, 0.0260111, 0.079987]},
+    {"ch_name": "FC2", "loc": [0.0347841, 0.0264379, 0.078808]},
+    {"ch_name": "FC6", "loc": [0.0795341, 0.0199357, 0.024438]},
+    {"ch_name": "T7", "loc": [-0.0841611, -0.0160187, -0.009346]},
+    {"ch_name": "C3", "loc": [-0.0653581, -0.0116317, 0.064358]},
+    {"ch_name": "Cz", "loc": [0.0004009, -0.009167, 0.100244]},
+    {"ch_name": "C4", "loc": [0.0671179, -0.0109003, 0.06358]},
+    {"ch_name": "T8", "loc": [0.0850799, -0.0150203, -0.00949]},
+    {"ch_name": "TP9", "loc": [-0.0856192, -0.0465147, -0.045707]},
+    {"ch_name": "CP5", "loc": [-0.0795922, -0.0465507, 0.030949]},
+    {"ch_name": "CP1", "loc": [-0.0355131, -0.0472919, 0.091315]},
+    {"ch_name": "CP2", "loc": [0.0383838, -0.0470731, 0.090695]},
+    {"ch_name": "CP6", "loc": [0.0833218, -0.0461013, 0.031206]},
+    {"ch_name": "TP10", "loc": [0.0861618, -0.0470353, -0.045869]},
+    {"ch_name": "P7", "loc": [-0.0724343, -0.0734527, -0.002487]},
+    {"ch_name": "P3", "loc": [-0.0530073, -0.0787878, 0.05594]},
+    {"ch_name": "Pz", "loc": [0.0003247, -0.081115, 0.082615]},
+    {"ch_name": "P4", "loc": [0.0556667, -0.0785602, 0.056561]},
+    {"ch_name": "P8", "loc": [0.0730557, -0.0730683, -0.00254]},
+    {"ch_name": "PO9", "loc": [-0.0549104, -0.0980448, -0.035465]},
+    {"ch_name": "O1", "loc": [-0.0294134, -0.112449, 0.008839]},
+    {"ch_name": "Oz", "loc": [0.0001076, -0.114892, 0.014657]},
+    {"ch_name": "O2", "loc": [0.0298426, -0.112156, 0.0088]},
+    {"ch_name": "PO10", "loc": [0.0549876, -0.0980911, -0.035541]},
+    {"ch_name": "FC3", "loc": [-0.0601819, 0.0227162, 0.055544]},
+    {"ch_name": "FC4", "loc": [0.0622931, 0.0237228, 0.05563]},
+    {"ch_name": "C5", "loc": [-0.0802801, -0.0137597, 0.02916]},
+    {"ch_name": "C1", "loc": [-0.036158, -0.0099839, 0.089752]},
+    {"ch_name": "C2", "loc": [0.037672, -0.0096241, 0.088412]},
+    {"ch_name": "C6", "loc": [0.0834559, -0.0127763, 0.029208]},
+    {"ch_name": "CP3", "loc": [-0.0635562, -0.0470088, 0.065624]},
+    {"ch_name": "CPz", "loc": [0.0003858, -0.047318, 0.099432]},
+    {"ch_name": "CP4", "loc": [0.0666118, -0.0466372, 0.06558]},
+    {"ch_name": "P1", "loc": [-0.0286203, -0.0805249, 0.075436]},
+    {"ch_name": "P2", "loc": [0.0319197, -0.0804871, 0.076716]},
+    {"ch_name": "POz", "loc": [0.0002156, -0.102178, 0.050608]},
+    {"ch_name": "FT9", "loc": [-0.0840759, 0.0145673, -0.050429]},
+    {"ch_name": "FTT9h", "loc": [-0.084125, -0.0018467, -0.029794]},
+    {"ch_name": "TTP7h", "loc": [-0.0855651, -0.0306287, 0.011153]},
+    {"ch_name": "TP7", "loc": [-0.0848302, -0.0460217, -0.007056]},
+    {"ch_name": "TPP9h", "loc": [-0.0781602, -0.0607567, -0.023824]},
+    {"ch_name": "FT10", "loc": [0.0841131, 0.0143647, -0.050538]},
+    {"ch_name": "FTT10h", "loc": [0.084123, -0.0018083, -0.029638]},
+    {"ch_name": "TPP8h", "loc": [0.0785198, -0.0604323, 0.012902]},
+    {"ch_name": "TP8", "loc": [0.0855488, -0.0455453, -0.00713]},
+    {"ch_name": "TPP10h", "loc": [0.0789027, -0.0609553, -0.023805]},
+    {"ch_name": "F9", "loc": [-0.0701019, 0.0416523, -0.049952]},
+    {"ch_name": "F10", "loc": [0.0721141, 0.0420667, -0.050452]},
+    {"ch_name": "AF7", "loc": [-0.0548397, 0.0685722, -0.01059]},
+    {"ch_name": "AF3", "loc": [-0.0337007, 0.0768371, 0.021227]},
+    {"ch_name": "AF4", "loc": [0.0357123, 0.0777259, 0.021956]},
+    {"ch_name": "AF8", "loc": [0.0557433, 0.0696568, -0.010755]},
+    {"ch_name": "PO3", "loc": [-0.0365114, -0.1008529, 0.037167]},
+    {"ch_name": "PO4", "loc": [0.0367816, -0.1008491, 0.036397]},
+]
+
+
+def _resolve_channel_embedding_config(
+    channel_embedding: str,
+    chs_info: list[dict] | None,
+) -> tuple[list[dict], list[list[float] | None], torch.LongTensor]:
+    """Resolve the construction parameters for ``_ChannelEmbedding``.
+
+    Parameters
+    ----------
+    channel_embedding : {"scratch", "pretrain_aligned"}
+        How to initialize ``_ChannelEmbedding``. See
+        ``SignalJEPA`` docstring.
+    chs_info : list of dict | None
+        User-supplied channel information. Each element must be a
+        mapping with at least the keys ``"ch_name"`` and ``"loc"``.
+
+    Returns
+    -------
+    effective_chs_info : list of dict
+        The ``chs_info`` that ``EEGModuleMixin`` should see. Equal to
+        ``chs_info`` when provided, else ``_PRETRAIN_CHS_INFO``.
+    channel_locations : list of (list of float or None)
+        Locations used to initialize ``_ChannelEmbedding``. Length
+        equals ``num_embeddings`` (N in ``'scratch'`` mode, 62 in
+        ``'pretrain_aligned'`` mode).
+    ch_idxs : torch.LongTensor, shape ``(len(effective_chs_info),)``
+        Mapping from the user channel order to embedding indices.
+
+    Raises
+    ------
+    ValueError
+        If ``channel_embedding`` is not recognized, if
+        ``channel_embedding='scratch'`` is combined with
+        ``chs_info=None``, or if ``channel_embedding='pretrain_aligned'``
+        is combined with a ``chs_info`` that contains a channel name
+        absent from ``_PRETRAIN_CHS_INFO`` (case-insensitive match).
+    """
+    if channel_embedding not in ("scratch", "pretrain_aligned"):
+        raise ValueError(
+            "channel_embedding must be 'scratch' or 'pretrain_aligned', "
+            f"got {channel_embedding!r}"
+        )
+
+    if channel_embedding == "scratch":
+        if chs_info is None:
+            raise ValueError("chs_info is required when channel_embedding='scratch'")
+        effective_chs_info = list(chs_info)
+        channel_locations = [ch["loc"] for ch in effective_chs_info]
+        ch_idxs = torch.arange(len(effective_chs_info), dtype=torch.long)
+        return effective_chs_info, channel_locations, ch_idxs
+
+    # channel_embedding == "pretrain_aligned"
+    pretrain_name_to_idx = {
+        ch["ch_name"].lower(): i for i, ch in enumerate(_PRETRAIN_CHS_INFO)
+    }
+    channel_locations = [ch["loc"] for ch in _PRETRAIN_CHS_INFO]
+
+    if chs_info is None:
+        effective_chs_info = [dict(ch) for ch in _PRETRAIN_CHS_INFO]
+        ch_idxs = torch.arange(len(_PRETRAIN_CHS_INFO), dtype=torch.long)
+        return effective_chs_info, channel_locations, ch_idxs
+
+    missing = [
+        ch["ch_name"]
+        for ch in chs_info
+        if ch["ch_name"].lower() not in pretrain_name_to_idx
+    ]
+    if missing:
+        raise ValueError(
+            f"Channel(s) {missing} not in the Signal-JEPA pre-training set. "
+            "To load pretrained weights while keeping these channels, use:\n"
+            "  channel_embedding='scratch'\n"
+            "  checkpoint 'braindecode/signal-jepa_without-chans'\n"
+            "  strict=False  # on load_state_dict / from_pretrained\n"
+            "The pretrained channel embedding weights will not be loaded."
+        )
+
+    effective_chs_info = list(chs_info)
+    ch_idxs = torch.tensor(
+        [pretrain_name_to_idx[ch["ch_name"].lower()] for ch in chs_info],
+        dtype=torch.long,
+    )
+    return effective_chs_info, channel_locations, ch_idxs
+
 
 class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     r"""Base class for the SignalJEPA models
 
     Parameters
     ----------
+    channel_embedding : {"scratch", "pretrain_aligned"}, default ``"scratch"``
+        How to initialize the :class:`_ChannelEmbedding` table.
+
+        * ``"scratch"``: table has ``len(chs_info)`` rows, initialized from
+          user locations. ``chs_info`` is required.
+        * ``"pretrain_aligned"``: table has 62 rows, initialized from the
+          pre-training locations. If ``chs_info`` is provided, every channel
+          name must match one in the pre-training set (case-insensitive);
+          ``forward`` will then expect input with as many channels as
+          ``chs_info`` has. If ``chs_info=None``, the model runs on the
+          full 62 channels in the pre-training order.
+
     feature_encoder__conv_layers_spec: list of tuple
         tuples have shape ``(dim, k, stride)`` where:
 
@@ -99,18 +266,31 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         transformer__num_decoder_layers: int = 4,
         transformer__nhead: int = 8,
         # other
+        channel_embedding: str = "scratch",
         _init_feature_encoder: bool,
         _init_transformer: bool,
     ):
+        # Resolve channel embedding config before calling super().__init__
+        if _init_transformer:
+            effective_chs_info, channel_locations, ch_idxs = (
+                _resolve_channel_embedding_config(channel_embedding, chs_info)
+            )
+        else:
+            effective_chs_info = chs_info
+            channel_locations = None
+            ch_idxs = None
+
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            chs_info=chs_info,
+            chs_info=effective_chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        self._channel_embedding = channel_embedding
 
         self.feature_encoder = None
         self.pos_encoder = None
@@ -126,11 +306,13 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
             )
 
         if _init_transformer:
-            ch_locs = [ch["loc"] for ch in self.chs_info]  # type: ignore
+            assert channel_locations is not None  # narrowing for type checker
+            assert ch_idxs is not None
             self.pos_encoder = _PosEncoder(
                 spat_dim=pos_encoder__spat_dim,
                 time_dim=pos_encoder__time_dim,
-                ch_locs=ch_locs,
+                channel_locations=channel_locations,
+                ch_idxs=ch_idxs,
                 sfreq_features=pos_encoder__sfreq_features,
                 spat_kwargs=pos_encoder__spat_kwargs,
             )
@@ -160,6 +342,74 @@ class SignalJEPA(_BaseSignalJEPA):
     (random parameters) or from a pre-trained :class:`SignalJEPA` model.
 
     .. versionadded:: 0.9
+
+    .. rubric:: Pretrained Weights
+
+    Two checkpoint variants are published on HuggingFace:
+
+    - ``braindecode/signal-jepa``: full encoder + pre-trained channel embedding
+      table (62 rows, one per pre-training channel). Use when your channel
+      names are a subset of the pre-training set (``channel_embedding='pretrain_aligned'``).
+    - ``braindecode/signal-jepa_without-chans``: same encoder, channel
+      embedding weights stripped. Use when your channel set differs from
+      pre-training; the table is freshly initialized from your channel
+      locations (``channel_embedding='scratch'``, the default).
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       .. code-block:: python
+
+           from braindecode.models import SignalJEPA
+
+           # Load encoder + pre-trained channel embeddings (62 channels):
+           model = SignalJEPA.from_pretrained("braindecode/signal-jepa")
+
+           # Select a subset of the 62 pre-training channels:
+           model = SignalJEPA.from_pretrained(
+               "braindecode/signal-jepa",
+               chs_info=[{"ch_name": "Fp1", "loc": [...]}, {"ch_name": "Cz", "loc": [...]}],
+           )
+
+           # Arbitrary channel set (channel embedding re-initialized from your locs):
+           model = SignalJEPA.from_pretrained(
+               "braindecode/signal-jepa_without-chans",
+               chs_info=[{"ch_name": "A", "loc": [...]}, ...],
+               strict=False,
+           )
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           model.push_to_hub(
+               repo_id="username/my-sjepa-model",
+               commit_message="Upload trained SignalJEPA model",
+           )
+
+       Requires installing ``braindecode[hub]`` for Hub integration.
+
+    .. rubric:: Usage
+
+    .. code-block:: python
+
+        from braindecode.models import SignalJEPA
+
+        model = SignalJEPA(
+            chs_info=[{"ch_name": "Fp1", "loc": [...]}, ...],
+            input_window_seconds=16.0,
+            sfreq=128,
+        )
+
+        # Forward: (batch, n_chans, n_times) -> (batch, n_chans * n_patches, emb_dim)
+        features = model(eeg_data)
+
+    .. warning::
+
+        Pre-trained at **128 Hz** on EEG bandpass-filtered between
+        **0.5 and 40 Hz** and rescaled by a factor of :math:`10^{6}`
+        (volts to microvolts). Apply the same preprocessing to your
+        data to match the pre-training distribution.
 
     References
     ----------
@@ -195,6 +445,8 @@ class SignalJEPA(_BaseSignalJEPA):
         transformer__num_encoder_layers: int = 8,
         transformer__num_decoder_layers: int = 4,
         transformer__nhead: int = 8,
+        # other
+        channel_embedding: str = "scratch",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -216,15 +468,16 @@ class SignalJEPA(_BaseSignalJEPA):
             transformer__num_encoder_layers=transformer__num_encoder_layers,
             transformer__num_decoder_layers=transformer__num_decoder_layers,
             transformer__nhead=transformer__nhead,
+            channel_embedding=channel_embedding,
             _init_feature_encoder=True,
             _init_transformer=True,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
 
-    def forward(self, X, ch_idxs: torch.Tensor | None = None, return_features=False):  # type: ignore
+    def forward(self, X, return_features=False):  # type: ignore
         local_features = self.feature_encoder(X)  # type: ignore
-        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
         contextual_features = self.transformer.encoder(local_features)  # type: ignore
         if return_features:
@@ -246,6 +499,67 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         :alt: sJEPA Contextual.
 
     .. versionadded:: 0.9
+
+    .. rubric:: Pretrained Weights
+
+    Loads the pre-trained SSL encoder (feature encoder + transformer +
+    channel embedding) from the shared checkpoints. Two hub IDs are
+    available:
+
+    - ``braindecode/signal-jepa``: with pre-trained channel embeddings
+      (62 channels, ``channel_embedding='pretrain_aligned'``).
+    - ``braindecode/signal-jepa_without-chans``: without channel embeddings.
+      The embedding table is re-initialized from your channel locations
+      (``channel_embedding='scratch'``, the default).
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       .. code-block:: python
+
+           from braindecode.models import SignalJEPA_Contextual
+
+           # Use pre-trained channel embeddings (subset of the 62 channels):
+           model = SignalJEPA_Contextual.from_pretrained(
+               "braindecode/signal-jepa",
+               n_times=2048,  # required: the SSL checkpoint is n_times-agnostic
+               n_outputs=4,
+               strict=False,  # classifier head is not in the SSL checkpoint
+           )
+
+           # Arbitrary channel set:
+           model = SignalJEPA_Contextual.from_pretrained(
+               "braindecode/signal-jepa_without-chans",
+               chs_info=[{"ch_name": "A", "loc": [...]}, ...],
+               n_times=2048,
+               n_outputs=4,
+               strict=False,
+           )
+
+       Requires installing ``braindecode[hub]`` for Hub integration.
+
+    .. rubric:: Usage
+
+    .. code-block:: python
+
+        from braindecode.models import SignalJEPA_Contextual
+
+        model = SignalJEPA_Contextual(
+            chs_info=[{"ch_name": "Fp1", "loc": [...]}, ...],
+            input_window_seconds=16.0,
+            sfreq=128,
+            n_outputs=4,  # e.g., 4-class classification
+        )
+
+        # Forward: (batch, n_chans, n_times) -> (batch, n_outputs)
+        output = model(eeg_data)
+
+    .. warning::
+
+        Pre-trained at **128 Hz** on EEG bandpass-filtered between
+        **0.5 and 40 Hz** and rescaled by a factor of :math:`10^{6}`
+        (volts to microvolts). Apply the same preprocessing to your
+        data to match the pre-training distribution.
 
     Parameters
     ----------
@@ -288,6 +602,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         transformer__num_decoder_layers: int = 4,
         transformer__nhead: int = 8,
         # other
+        channel_embedding: str = "scratch",
         _init_feature_encoder: bool = True,
         _init_transformer: bool = True,
     ):
@@ -311,6 +626,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             transformer__num_encoder_layers=transformer__num_encoder_layers,
             transformer__num_decoder_layers=transformer__num_decoder_layers,
             transformer__nhead=transformer__nhead,
+            channel_embedding=channel_embedding,
             _init_feature_encoder=_init_feature_encoder,
             _init_transformer=_init_transformer,
         )
@@ -335,9 +651,9 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             n_spat_filters=self._clf_n_spat_filters,
         )
 
-    def forward(self, X, ch_idxs: torch.Tensor | None = None, return_features=False):  # type: ignore
+    def forward(self, X, return_features=False):  # type: ignore
         local_features = self.feature_encoder(X)  # type: ignore
-        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features)  # type: ignore
         local_features += pos_encoding  # type: ignore
         contextual_features = self.transformer.encoder(local_features)  # type: ignore
         if return_features:
@@ -418,9 +734,14 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         new_model.pos_encoder = deepcopy(pos_encoder)
         new_model.transformer = deepcopy(transformer)
 
-        if chs_info is not None:
-            ch_names = [ch["ch_name"] for ch in chs_info]
-            new_model.pos_encoder.set_fixed_ch_names(ch_names)
+        new_model._channel_embedding = model._channel_embedding
+        if chs_info is not None and model._channel_embedding == "pretrain_aligned":
+            _, _, new_ch_idxs = _resolve_channel_embedding_config(
+                "pretrain_aligned", chs_info
+            )
+            new_model.pos_encoder.register_buffer(
+                "default_ch_idxs", new_ch_idxs.to(torch.long), persistent=False
+            )
 
         return new_model
 
@@ -438,6 +759,54 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         :alt: sJEPA Pre-Local.
 
     .. versionadded:: 0.9
+
+    .. rubric:: Pretrained Weights
+
+    Only the feature encoder weights are reused from the shared
+    SSL checkpoints. This model has no channel embedding nor transformer,
+    so ``strict=False`` is required at load time to skip the unused keys.
+    Either hub variant works; the ``_without-chans`` one is slightly
+    smaller.
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       .. code-block:: python
+
+           from braindecode.models import SignalJEPA_PostLocal
+
+           model = SignalJEPA_PostLocal.from_pretrained(
+               "braindecode/signal-jepa_without-chans",
+               n_chans=22,
+               input_window_seconds=16.0,
+               n_outputs=4,
+               strict=False,
+           )
+
+       Requires installing ``braindecode[hub]`` for Hub integration.
+
+    .. rubric:: Usage
+
+    .. code-block:: python
+
+        from braindecode.models import SignalJEPA_PostLocal
+
+        model = SignalJEPA_PostLocal(
+            n_chans=22,
+            input_window_seconds=16.0,
+            sfreq=128,
+            n_outputs=4,  # e.g., 4-class classification
+        )
+
+        # Forward: (batch, n_chans, n_times) -> (batch, n_outputs)
+        output = model(eeg_data)
+
+    .. warning::
+
+        Pre-trained at **128 Hz** on EEG bandpass-filtered between
+        **0.5 and 40 Hz** and rescaled by a factor of :math:`10^{6}`
+        (volts to microvolts). Apply the same preprocessing to your
+        data to match the pre-training distribution.
 
     Parameters
     ----------
@@ -607,32 +976,62 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     .. versionadded:: 0.9
 
+    .. rubric:: Pretrained Weights
+
+    Only the feature encoder weights are reused from the shared
+    SSL checkpoints. This model has no channel embedding nor transformer,
+    so ``strict=False`` is required at load time to skip the unused keys.
+    Either hub variant works; the ``_without-chans`` one is slightly
+    smaller.
+
     .. important::
        **Pre-trained Weights Available**
-
-       This model has pre-trained weights available on the Hugging Face Hub.
-       You can load them using:
 
        .. code-block:: python
 
            from braindecode.models import SignalJEPA_PreLocal
 
-           # Load pre-trained model from Hugging Face Hub
            model = SignalJEPA_PreLocal.from_pretrained(
-               "braindecode/SignalJEPA-PreLocal-pretrained"
+               "braindecode/signal-jepa_without-chans",
+               n_chans=22,
+               input_window_seconds=16.0,
+               n_outputs=4,
+               strict=False,
            )
 
        To push your own trained model to the Hub:
 
        .. code-block:: python
 
-           # After training your model
            model.push_to_hub(
                repo_id="username/my-sjepa-model",
                commit_message="Upload trained SignalJEPA model",
            )
 
-       Requires installing ``braindecode[hug]`` for Hub integration.
+       Requires installing ``braindecode[hub]`` for Hub integration.
+
+    .. rubric:: Usage
+
+    .. code-block:: python
+
+        from braindecode.models import SignalJEPA_PreLocal
+
+        model = SignalJEPA_PreLocal(
+            n_chans=22,
+            input_window_seconds=16.0,
+            sfreq=128,
+            n_outputs=4,  # e.g., 4-class classification
+        )
+
+        # Forward: (batch, n_chans, n_times) -> (batch, n_outputs)
+        output = model(eeg_data)
+
+    .. warning::
+
+        Pre-trained at **128 Hz** on EEG bandpass-filtered between
+        **0.5 and 40 Hz** and rescaled by a factor of :math:`10^{6}`
+        (volts to microvolts). Apply the same preprocessing to your
+        data to match the pre-training distribution.
 
     Parameters
     ----------
@@ -935,11 +1334,7 @@ class _ChannelEmbedding(nn.Embedding):
         self.coordinate_ranges = [
             (min(coords), max(coords))
             for coords in zip(
-                *[
-                    loc[3:6] if len(loc) == 12 else loc
-                    for loc in channel_locations
-                    if loc is not None
-                ]
+                *[loc[:3] for loc in channel_locations if loc is not None]
             )
         ]
         channel_mins, channel_maxs = zip(*self.coordinate_ranges)
@@ -985,8 +1380,14 @@ class _PosEncoder(nn.Module):
         i.e. the EEG channel.
     time_dim: int
         Number of dimensions to use to encode the temporal position of the patch.
-    ch_locs: list of list of float or 2d array
-        List of the n-dimensions locations of the EEG channels.
+    channel_locations: list of (list of float or None)
+        List of the n-dimensional locations of each entry in the channel
+        embedding table. Length equals the number of embedding rows
+        (N for ``'scratch'`` mode, 62 for ``'pretrain_aligned'`` mode).
+    ch_idxs: torch.LongTensor, shape ``(n_chans,)``
+        Default mapping from the model's channel order to rows of the
+        channel embedding table. Stored as a non-persistent buffer
+        (device-aware but excluded from ``state_dict``).
     sfreq_features: float
         The "downsampled" sampling frequency returned by the feature encoder.
     spat_kwargs: dict
@@ -1000,7 +1401,8 @@ class _PosEncoder(nn.Module):
         self,
         spat_dim: int,
         time_dim: int,
-        ch_locs,
+        channel_locations: list[list[float] | None],
+        ch_idxs: torch.LongTensor,
         sfreq_features: float,
         spat_kwargs: dict | None = None,
         max_seconds: float = 600.0,  # 10 minutes
@@ -1013,8 +1415,16 @@ class _PosEncoder(nn.Module):
 
         # Positional encoder for the spatial dimension:
         self.pos_encoder_spat = _ChannelEmbedding(
-            ch_locs, spat_dim, **spat_kwargs
+            channel_locations, spat_dim, **spat_kwargs
         )  # (batch_size, n_channels, spat_dim)
+
+        # Default channel index mapping. Registered as a non-persistent
+        # buffer so it follows .to(device) but is NOT saved to state_dict.
+        # The mapping is fully determined by chs_info + channel_embedding
+        # at __init__, so persisting it would duplicate config.json.
+        self.register_buffer(
+            "default_ch_idxs", ch_idxs.to(torch.long), persistent=False
+        )
 
         # Pre-computed tensor for positional encoding on the time dimension:
         self.encoding_time = torch.zeros(0, dtype=torch.float32, requires_grad=False)
@@ -1033,24 +1443,22 @@ class _PosEncoder(nn.Module):
         """
         Parameters
         ----------
-        * local_features: (batch_size, n_chans * n_times_out, emb_dim)
-        * ch_idxs: (batch_size, n_chans) | None
-            Indices of the channels to use in the ``ch_names`` list passed
-            as argument plus one. Index 0 is reserved for an unknown channel.
+        local_features : (batch_size, n_chans * n_times_out, emb_dim)
+        ch_idxs : (batch_size, n_chans) | None
+            Indices of the channels into the embedding table. When ``None``,
+            ``self.default_ch_idxs`` (shape ``(n_chans,)``) is broadcast
+            across the batch.
 
         Returns
         -------
-        pos_encoding: (batch_size, n_chans * n_times_out, emb_dim)
-            The first ``spat_dim`` dimensions encode the channels positional encoding
-            and the following ``time_dim`` dimensions encode the temporal positional encoding.
+        pos_encoding : (batch_size, n_chans * n_times_out, emb_dim)
+            The first ``spat_dim`` dimensions encode the channel positional
+            encoding; the following ``time_dim`` dimensions encode the
+            temporal positional encoding.
         """
         batch_size, n_chans_times, emb_dim = local_features.shape
         if ch_idxs is None:
-            ch_idxs = torch.arange(
-                0,
-                self.pos_encoder_spat.num_embeddings,
-                device=local_features.device,
-            ).repeat(batch_size, 1)
+            ch_idxs = self.default_ch_idxs[None, :].expand(batch_size, -1)
 
         batch_size_chs, n_chans = ch_idxs.shape
         assert emb_dim >= self.spat_dim + self.time_dim

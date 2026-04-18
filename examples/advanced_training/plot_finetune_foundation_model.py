@@ -121,8 +121,11 @@ print(metadata.head(10))
 #
 
 model = SignalJEPA_PreLocal.from_pretrained(
-    "braindecode/SignalJEPA-PreLocal-pretrained",
+    "braindecode/signal-jepa_without-chans",
+    n_chans=19,
+    n_times=256,
     n_outputs=len(classes),
+    strict=False,
 )
 print(model)
 
@@ -243,7 +246,7 @@ clf = EEGClassifier(
     callbacks=[
         "accuracy",
         WeightsLoader(
-            url="https://huggingface.co/braindecode/SignalJEPA/resolve/main/signal-jepa_16s-60_adeuwv4s.pth"
+            url="https://huggingface.co/braindecode/signal-jepa_without-chans/resolve/main/pytorch_model.bin"
         ),
         Freezer(patterns="feature_encoder.*"),
     ],
