@@ -287,6 +287,30 @@ class TestSignalJEPAChannelEmbedding:
         with pytest.raises(ValueError, match="chs_info is required"):
             SignalJEPA(n_chans=3, n_times=128, sfreq=128)
 
+    def test_scratch_with_mne_info_chs_no_nan(self):
+        # Regression test: MNE's info['chs'] has 12-element `loc` arrays
+        # where loc[0:3] is the electrode position and loc[3:6] is the
+        # reference position (typically [0, 0, 0] for standard montages).
+        # Selecting the wrong slice collapsed every channel to the origin,
+        # yielded max_abs_coordinate=0, and produced NaN-filled embeddings.
+        mne = pytest.importorskip("mne")
+        info = mne.create_info(
+            ch_names=["Fp1", "Fp2", "C3", "C4", "Pz"],
+            sfreq=128.0,
+            ch_types="eeg",
+        )
+        info.set_montage(mne.channels.make_standard_montage("standard_1020"))
+        model = SignalJEPA(chs_info=info["chs"], n_times=1600, sfreq=200.0)
+        emb_weight = model.pos_encoder.pos_encoder_spat.weight
+        assert not torch.isnan(emb_weight).any(), (
+            "channel embedding weight contains NaNs — "
+            "loc slicing is still grabbing the reference position"
+        )
+        x = torch.randn(2, len(info["chs"]), 1600)
+        with torch.no_grad():
+            out = model(x)
+        assert not torch.isnan(out).any()
+
 
 class TestSignalJEPAForwardAPIChange:
     def test_forward_rejects_ch_idxs_kwarg(self):
