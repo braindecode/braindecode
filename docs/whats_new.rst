@@ -32,11 +32,19 @@ Enhancements
   then load pretrained weights from Hugging Face Hub to show full training
   curves and metrics. All 9 tutorial checkpoints published to
   ``huggingface.co/braindecode/``. (:pr:`985` by :user:`bruAristimunha`)
+- Use ``F.scaled_dot_product_attention`` in :class:`braindecode.modules.MultiHeadAttention`,
+  enabling optimized attention kernels (flash-attention on CUDA,
+  memory-efficient backends on other devices).
+  By `Léo Burgund`_ and `Bruno Aristimunha`_.
+  (:gh:`902`)
 
 API and behavior changes
 ========================
 
-- None yet
+- :class:`braindecode.modules.MultiHeadAttention` now follows PyTorch's SDPA mask
+  convention: boolean masks use ``True`` to **ignore** a position (previously
+  ``True`` meant keep). The scaling factor is now ``1/sqrt(head_dim)`` instead of
+  ``1/sqrt(emb_size)``. (:gh:`902`)
 
 Requirements
 ============
@@ -46,7 +54,31 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- Fix :class:`braindecode.models.SyncNet` swapped parameter initialization where
+  ``phi_ini`` (phase shift) was using ``beta_init_values`` and ``beta`` (decay) was
+  using ``phase_init_values``, replaced incorrect ``.view()`` reshape with ``.permute()``
+  for proper conv2d filter weight layout, and fixed duplicate default values in docstring
+  (by `Sarthak Tayal`_)
+- Fix :class:`braindecode.models.AttentionBaseNet` redundant
+  ``super().__init__()`` call that ran the parent ``nn.Module.__init__`` twice
+  (by `Sarthak Tayal`_)
+- Fix incomplete author email in :class:`braindecode.models.TSception` header
+  (by `Sarthak Tayal`_)
+- Fix a time-of-check-time-of-use race in
+  :func:`braindecode.datasets.base._zarr_to_memmap` that caused
+  concurrent workers to repeatedly ``rename``-replace the published
+  ``.npy`` cache, producing wasted I/O on local filesystems and
+  ``.nfsXXXX`` silly-rename files plus ``SIGBUS`` crashes on NFSv3.
+  The published file is now created exactly once via ``os.link`` and
+  is never replaced, making the cache safe under arbitrary
+  concurrent access on local POSIX, NFSv3, Lustre and SMB
+  (:gh:`986` by `Pierre Guetschel`_)
+- Register :class:`braindecode.models.BIOT` encoder ``index`` as a non-trainable
+  buffer instead of a parameter (``torch.long``), so it is treated as module
+  state rather than trainable weights (:gh:`988` by `Pierre Guetschel`_)
+- Fix ``TypeError: type 'Any' is not subscriptable`` when importing
+  ``braindecode.models.config`` without ``numpydantic`` installed on
+  Python 3.12+ (:gh:`871` by `Sarthak Tayal`_)
 
 Code health
 ============
@@ -77,6 +109,7 @@ Enhancements
   pretrained weights available at `braindecode/eegpt-pretrained <https://huggingface.co/braindecode/eegpt-pretrained>`_
   (:gh:`908` by `Young Truong`_ and `Kuntal Kokate`_)
 - Add :class:`braindecode.models.CBraMod` model (:gh:`914` by `Pierre Guetschel`_)
+- Add :class:`braindecode.models.CodeBrain` foundation model with pretrained weight loading from HuggingFace (:gh:`964` by `Vandit Shah`_)
 - Expose additional arguments of :func:`mne_bids.read_raw_bids` in :class:`braindecode.datasets.BIDSDataset` (:gh:`918` by `Pierre Guetschel`_)
 - Populate epochs metadata with the :class:`mne.Annotations`'s ``extras`` entries (:gh:`918` by `Pierre Guetschel`_)
 - Add :class:`braindecode.datasets.TUHEvents` dataset and improve other TUH datasets (:gh:`920` and :gh:`923` by `Pierre Guetschel`_)
