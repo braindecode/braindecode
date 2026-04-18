@@ -81,6 +81,11 @@ Bug fixes
 - Fix ``TypeError: type 'Any' is not subscriptable`` when importing
   ``braindecode.models.config`` without ``numpydantic`` installed on
   Python 3.12+ (:gh:`871` by `Sarthak Tayal`_)
+- Add ``channel_embedding`` parameter to :class:`braindecode.models.SignalJEPA` and
+  :class:`braindecode.models.SignalJEPA_Contextual` to load pre-trained channel
+  embedding weights when fine-tuning on a subset of the pre-training channels.
+  Two new HuggingFace checkpoints are published: ``braindecode/signal-jepa`` and
+  ``braindecode/signal-jepa_without-chans`` (:gh:`991` by `Pierre Guetschel`_)
 
 Code health
 ============
