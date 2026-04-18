@@ -323,12 +323,19 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 
 import warnings
 
-from braindecode._tutorial_hub import load_tutorial_checkpoint_metadata
-
 repo_id = "braindecode/plot_sleep_staging_eldele2021"
-if load_tutorial_checkpoint_metadata(clf, repo_id, use_safetensors=False) is None:
+try:
+    from huggingface_hub import hf_hub_download
+
+    clf.initialize()
+    clf.load_params(
+        f_params=hf_hub_download(repo_id, "params.pt"),
+        f_history=hf_hub_download(repo_id, "history.json"),
+        use_safetensors=False,
+    )
+except Exception as exc:
     warnings.warn(
-        f"Could not load pretrained checkpoint from {repo_id}; "
+        f"Could not load pretrained checkpoint from {repo_id} ({exc}); "
         "continuing with the locally trained short-run model.",
         stacklevel=2,
     )

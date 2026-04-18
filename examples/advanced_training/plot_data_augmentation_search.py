@@ -55,7 +55,6 @@ from skorch.callbacks import EarlyStopping, LRScheduler
 from skorch.dataset import ValidSplit
 
 from braindecode import EEGClassifier
-from braindecode._tutorial_hub import load_tutorial_artifact_paths
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
@@ -432,10 +431,16 @@ search = GridSearchCV(
 )
 
 repo_id = "braindecode/plot_data_augmentation_search"
-artifact_paths = load_tutorial_artifact_paths(
-    repo_id,
-    filenames=("search_results.csv", "metadata.json"),
-)
+artifact_paths = None
+try:
+    from huggingface_hub import hf_hub_download
+
+    artifact_paths = {
+        "search_results.csv": hf_hub_download(repo_id, "search_results.csv"),
+        "metadata.json": hf_hub_download(repo_id, "metadata.json"),
+    }
+except Exception:
+    artifact_paths = None
 
 ######################################################################
 # Analysing the best fit
