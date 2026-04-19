@@ -10,6 +10,7 @@ from collections import OrderedDict
 from typing import Literal
 from warnings import warn
 
+import numpy as np
 import torch
 import torch.nn as nn
 from einops import rearrange
@@ -1578,3 +1579,797 @@ class _TemporalConv(nn.Module):
         x = self.act_layer_3(self.norm3(self.conv3(x)))
         x = self.transpose_temporal_channel(x)
         return x
+
+
+# -----------------------------------------------------------------------------
+# Canonical channel positions for InterpolatedLaBraM (MNE-ready)
+#
+# Channels in LABRAM_CHANNEL_ORDER come from several sources:
+#   - standard_1005 names (majority): looked up directly by uppercase key
+#   - bipolar pairs "A-B"  → midpoint of A and B (from standard_1005)
+#   - legacy 10-20 aliases T3/T4/T5/T6 → T7/T8/P7/P8 (standard_1005)
+#   - mastoid M1/M2, ear A1/A2 → standard_1005 (A1/A2 already present there)
+#   - O9/O10 → standard_1020
+#   - CB1/CB2 → standard_postfixed (Cb1/Cb2 cerebellar sites)
+#   - T1/T2 → standard_postfixed (anterior temporal, same as FT9/FT10)
+#   - IZ → standard_1005 (inion area)
+#   - intermediate CFC1-CFC6 → midpoint(FCn, Cn) in standard_1005
+#   - CFC7/CFC8 → midpoint(FT7, T7) / midpoint(FT8, T8)
+#   - CCP7/CCP8 → midpoint(T7, TP7) / midpoint(T8, TP8)
+#   - FTT9h/TTP7h/TPP9h/FTT10h/TPP8h/TPP10h → standard_1005 (h-suffix entries)
+#
+# The `loc` values are only used to build an MNE interpolation matrix
+# for InterpolatedLaBraM. They are NOT used by Labram itself, which
+# relies on learned position embeddings indexed by channel name.
+# -----------------------------------------------------------------------------
+
+_LABRAM_TARGET_CHS_INFO: list[dict] = [
+    # 0: FP1 — standard_1005
+    {
+        "ch_name": "FP1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.02943670, 0.08391710, -0.00699000], dtype=float),
+    },
+    # 1: FPZ — standard_1005
+    {
+        "ch_name": "FPZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00011230, 0.08824700, -0.00171300], dtype=float),
+    },
+    # 2: FP2 — standard_1005
+    {
+        "ch_name": "FP2",
+        "kind": "eeg",
+        "loc": np.asarray([0.02987230, 0.08489590, -0.00708000], dtype=float),
+    },
+    # 3: AF9 — standard_1005
+    {
+        "ch_name": "AF9",
+        "kind": "eeg",
+        "loc": np.asarray([-0.04897080, 0.06408720, -0.04768300], dtype=float),
+    },
+    # 4: AF7 — standard_1005
+    {
+        "ch_name": "AF7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.05483970, 0.06857220, -0.01059000], dtype=float),
+    },
+    # 5: AF5 — standard_1005
+    {
+        "ch_name": "AF5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.04543070, 0.07286220, 0.00597800], dtype=float),
+    },
+    # 6: AF3 — standard_1005
+    {
+        "ch_name": "AF3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.03370070, 0.07683710, 0.02122700], dtype=float),
+    },
+    # 7: AF1 — standard_1005
+    {
+        "ch_name": "AF1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.01847170, 0.07990410, 0.03275200], dtype=float),
+    },
+    # 8: AFZ — standard_1005
+    {
+        "ch_name": "AFZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00023130, 0.08077100, 0.03541700], dtype=float),
+    },
+    # 9: AF2 — standard_1005
+    {
+        "ch_name": "AF2",
+        "kind": "eeg",
+        "loc": np.asarray([0.01982030, 0.08030190, 0.03276400], dtype=float),
+    },
+    # 10: AF4 — standard_1005
+    {
+        "ch_name": "AF4",
+        "kind": "eeg",
+        "loc": np.asarray([0.03571230, 0.07772590, 0.02195600], dtype=float),
+    },
+    # 11: AF6 — standard_1005
+    {
+        "ch_name": "AF6",
+        "kind": "eeg",
+        "loc": np.asarray([0.04658430, 0.07380780, 0.00603400], dtype=float),
+    },
+    # 12: AF8 — standard_1005
+    {
+        "ch_name": "AF8",
+        "kind": "eeg",
+        "loc": np.asarray([0.05574330, 0.06965680, -0.01075500], dtype=float),
+    },
+    # 13: AF10 — standard_1005
+    {
+        "ch_name": "AF10",
+        "kind": "eeg",
+        "loc": np.asarray([0.05043520, 0.06386980, -0.04800500], dtype=float),
+    },
+    # 14: F9 — standard_1005
+    {
+        "ch_name": "F9",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07010190, 0.04165230, -0.04995200], dtype=float),
+    },
+    # 15: F7 — standard_1005
+    {
+        "ch_name": "F7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07026290, 0.04247430, -0.01142000], dtype=float),
+    },
+    # 16: F5 — standard_1005
+    {
+        "ch_name": "F5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.06446580, 0.04803530, 0.01692100], dtype=float),
+    },
+    # 17: F3 — standard_1005
+    {
+        "ch_name": "F3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.05024380, 0.05311120, 0.04219200], dtype=float),
+    },
+    # 18: F1 — standard_1005
+    {
+        "ch_name": "F1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.02749580, 0.05693110, 0.06034200], dtype=float),
+    },
+    # 19: FZ — standard_1005
+    {
+        "ch_name": "FZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00031220, 0.05851200, 0.06646200], dtype=float),
+    },
+    # 20: F2 — standard_1005
+    {
+        "ch_name": "F2",
+        "kind": "eeg",
+        "loc": np.asarray([0.02951420, 0.05760190, 0.05954000], dtype=float),
+    },
+    # 21: F4 — standard_1005
+    {
+        "ch_name": "F4",
+        "kind": "eeg",
+        "loc": np.asarray([0.05183620, 0.05430480, 0.04081400], dtype=float),
+    },
+    # 22: F6 — standard_1005
+    {
+        "ch_name": "F6",
+        "kind": "eeg",
+        "loc": np.asarray([0.06791420, 0.04982970, 0.01636700], dtype=float),
+    },
+    # 23: F8 — standard_1005
+    {
+        "ch_name": "F8",
+        "kind": "eeg",
+        "loc": np.asarray([0.07304310, 0.04442170, -0.01200000], dtype=float),
+    },
+    # 24: F10 — standard_1005
+    {
+        "ch_name": "F10",
+        "kind": "eeg",
+        "loc": np.asarray([0.07211410, 0.04206670, -0.05045200], dtype=float),
+    },
+    # 25: FT9 — standard_1005
+    {
+        "ch_name": "FT9",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08407590, 0.01456730, -0.05042900], dtype=float),
+    },
+    # 26: FT7 — standard_1005
+    {
+        "ch_name": "FT7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08077500, 0.01412030, -0.01113500], dtype=float),
+    },
+    # 27: FC5 — standard_1005
+    {
+        "ch_name": "FC5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07721490, 0.01864330, 0.02446000], dtype=float),
+    },
+    # 28: FC3 — standard_1005
+    {
+        "ch_name": "FC3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.06018190, 0.02271620, 0.05554400], dtype=float),
+    },
+    # 29: FC1 — standard_1005
+    {
+        "ch_name": "FC1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.03406190, 0.02601110, 0.07998700], dtype=float),
+    },
+    # 30: FCZ — standard_1005
+    {
+        "ch_name": "FCZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00037610, 0.02739000, 0.08866800], dtype=float),
+    },
+    # 31: FC2 — standard_1005
+    {
+        "ch_name": "FC2",
+        "kind": "eeg",
+        "loc": np.asarray([0.03478410, 0.02643790, 0.07880800], dtype=float),
+    },
+    # 32: FC4 — standard_1005
+    {
+        "ch_name": "FC4",
+        "kind": "eeg",
+        "loc": np.asarray([0.06229310, 0.02372280, 0.05563000], dtype=float),
+    },
+    # 33: FC6 — standard_1005
+    {
+        "ch_name": "FC6",
+        "kind": "eeg",
+        "loc": np.asarray([0.07953410, 0.01993570, 0.02443800], dtype=float),
+    },
+    # 34: FT8 — standard_1005
+    {
+        "ch_name": "FT8",
+        "kind": "eeg",
+        "loc": np.asarray([0.08181510, 0.01541670, -0.01133000], dtype=float),
+    },
+    # 35: FT10 — standard_1005
+    {
+        "ch_name": "FT10",
+        "kind": "eeg",
+        "loc": np.asarray([0.08411310, 0.01436470, -0.05053800], dtype=float),
+    },
+    # 36: T9 — standard_1005
+    {
+        "ch_name": "T9",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08589410, -0.01582870, -0.04828300], dtype=float),
+    },
+    # 37: T7 — standard_1005
+    {
+        "ch_name": "T7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08416110, -0.01601870, -0.00934600], dtype=float),
+    },
+    # 38: C5 — standard_1005
+    {
+        "ch_name": "C5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08028010, -0.01375970, 0.02916000], dtype=float),
+    },
+    # 39: C3 — standard_1005
+    {
+        "ch_name": "C3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.06535810, -0.01163170, 0.06435800], dtype=float),
+    },
+    # 40: C1 — standard_1005
+    {
+        "ch_name": "C1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.03615800, -0.00998390, 0.08975200], dtype=float),
+    },
+    # 41: CZ — standard_1005
+    {
+        "ch_name": "CZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00040090, -0.00916700, 0.10024400], dtype=float),
+    },
+    # 42: C2 — standard_1005
+    {
+        "ch_name": "C2",
+        "kind": "eeg",
+        "loc": np.asarray([0.03767200, -0.00962410, 0.08841200], dtype=float),
+    },
+    # 43: C4 — standard_1005
+    {
+        "ch_name": "C4",
+        "kind": "eeg",
+        "loc": np.asarray([0.06711790, -0.01090030, 0.06358000], dtype=float),
+    },
+    # 44: C6 — standard_1005
+    {
+        "ch_name": "C6",
+        "kind": "eeg",
+        "loc": np.asarray([0.08345590, -0.01277630, 0.02920800], dtype=float),
+    },
+    # 45: T8 — standard_1005
+    {
+        "ch_name": "T8",
+        "kind": "eeg",
+        "loc": np.asarray([0.08507990, -0.01502030, -0.00949000], dtype=float),
+    },
+    # 46: T10 — standard_1005
+    {
+        "ch_name": "T10",
+        "kind": "eeg",
+        "loc": np.asarray([0.08555990, -0.01636130, -0.04827100], dtype=float),
+    },
+    # 47: TP9 — standard_1005
+    {
+        "ch_name": "TP9",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08561920, -0.04651470, -0.04570700], dtype=float),
+    },
+    # 48: TP7 — standard_1005
+    {
+        "ch_name": "TP7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08483020, -0.04602170, -0.00705600], dtype=float),
+    },
+    # 49: CP5 — standard_1005
+    {
+        "ch_name": "CP5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07959220, -0.04655070, 0.03094900], dtype=float),
+    },
+    # 50: CP3 — standard_1005
+    {
+        "ch_name": "CP3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.06355620, -0.04700880, 0.06562400], dtype=float),
+    },
+    # 51: CP1 — standard_1005
+    {
+        "ch_name": "CP1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.03551310, -0.04729190, 0.09131500], dtype=float),
+    },
+    # 52: CPZ — standard_1005
+    {
+        "ch_name": "CPZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00038580, -0.04731800, 0.09943200], dtype=float),
+    },
+    # 53: CP2 — standard_1005
+    {
+        "ch_name": "CP2",
+        "kind": "eeg",
+        "loc": np.asarray([0.03838380, -0.04707310, 0.09069500], dtype=float),
+    },
+    # 54: CP4 — standard_1005
+    {
+        "ch_name": "CP4",
+        "kind": "eeg",
+        "loc": np.asarray([0.06661180, -0.04663720, 0.06558000], dtype=float),
+    },
+    # 55: CP6 — standard_1005
+    {
+        "ch_name": "CP6",
+        "kind": "eeg",
+        "loc": np.asarray([0.08332180, -0.04610130, 0.03120600], dtype=float),
+    },
+    # 56: TP8 — standard_1005
+    {
+        "ch_name": "TP8",
+        "kind": "eeg",
+        "loc": np.asarray([0.08554880, -0.04554530, -0.00713000], dtype=float),
+    },
+    # 57: TP10 — standard_1005
+    {
+        "ch_name": "TP10",
+        "kind": "eeg",
+        "loc": np.asarray([0.08616180, -0.04703530, -0.04586900], dtype=float),
+    },
+    # 58: P9 — standard_1005
+    {
+        "ch_name": "P9",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07300930, -0.07376570, -0.04099800], dtype=float),
+    },
+    # 59: P7 — standard_1005
+    {
+        "ch_name": "P7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07243430, -0.07345270, -0.00248700], dtype=float),
+    },
+    # 60: P5 — standard_1005
+    {
+        "ch_name": "P5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.06727230, -0.07629070, 0.02838200], dtype=float),
+    },
+    # 61: P3 — standard_1005
+    {
+        "ch_name": "P3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.05300730, -0.07878780, 0.05594000], dtype=float),
+    },
+    # 62: P1 — standard_1005
+    {
+        "ch_name": "P1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.02862030, -0.08052490, 0.07543600], dtype=float),
+    },
+    # 63: PZ — standard_1005
+    {
+        "ch_name": "PZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00032470, -0.08111500, 0.08261500], dtype=float),
+    },
+    # 64: P2 — standard_1005
+    {
+        "ch_name": "P2",
+        "kind": "eeg",
+        "loc": np.asarray([0.03191970, -0.08048710, 0.07671600], dtype=float),
+    },
+    # 65: P4 — standard_1005
+    {
+        "ch_name": "P4",
+        "kind": "eeg",
+        "loc": np.asarray([0.05566670, -0.07856020, 0.05656100], dtype=float),
+    },
+    # 66: P6 — standard_1005
+    {
+        "ch_name": "P6",
+        "kind": "eeg",
+        "loc": np.asarray([0.06788770, -0.07590430, 0.02809100], dtype=float),
+    },
+    # 67: P8 — standard_1005
+    {
+        "ch_name": "P8",
+        "kind": "eeg",
+        "loc": np.asarray([0.07305570, -0.07306830, -0.00254000], dtype=float),
+    },
+    # 68: P10 — standard_1005
+    {
+        "ch_name": "P10",
+        "kind": "eeg",
+        "loc": np.asarray([0.07389470, -0.07439030, -0.04122000], dtype=float),
+    },
+    # 69: PO9 — standard_1005
+    {
+        "ch_name": "PO9",
+        "kind": "eeg",
+        "loc": np.asarray([-0.05491040, -0.09804480, -0.03546500], dtype=float),
+    },
+    # 70: PO7 — standard_1005
+    {
+        "ch_name": "PO7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.05484040, -0.09752790, 0.00279200], dtype=float),
+    },
+    # 71: PO5 — standard_1005
+    {
+        "ch_name": "PO5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.04842440, -0.09934080, 0.02159900], dtype=float),
+    },
+    # 72: PO3 — standard_1005
+    {
+        "ch_name": "PO3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.03651140, -0.10085290, 0.03716700], dtype=float),
+    },
+    # 73: PO1 — standard_1005
+    {
+        "ch_name": "PO1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.01897240, -0.10176800, 0.04653600], dtype=float),
+    },
+    # 74: POZ — standard_1005
+    {
+        "ch_name": "POZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00021560, -0.10217800, 0.05060800], dtype=float),
+    },
+    # 75: PO2 — standard_1005
+    {
+        "ch_name": "PO2",
+        "kind": "eeg",
+        "loc": np.asarray([0.01987760, -0.10179300, 0.04639300], dtype=float),
+    },
+    # 76: PO4 — standard_1005
+    {
+        "ch_name": "PO4",
+        "kind": "eeg",
+        "loc": np.asarray([0.03678160, -0.10084910, 0.03639700], dtype=float),
+    },
+    # 77: PO6 — standard_1005
+    {
+        "ch_name": "PO6",
+        "kind": "eeg",
+        "loc": np.asarray([0.04981960, -0.09944610, 0.02172700], dtype=float),
+    },
+    # 78: PO8 — standard_1005
+    {
+        "ch_name": "PO8",
+        "kind": "eeg",
+        "loc": np.asarray([0.05566660, -0.09762510, 0.00273000], dtype=float),
+    },
+    # 79: PO10 — standard_1005
+    {
+        "ch_name": "PO10",
+        "kind": "eeg",
+        "loc": np.asarray([0.05498760, -0.09809110, -0.03554100], dtype=float),
+    },
+    # 80: O1 — standard_1005
+    {
+        "ch_name": "O1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.02941340, -0.11244900, 0.00883900], dtype=float),
+    },
+    # 81: OZ — standard_1005
+    {
+        "ch_name": "OZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00010760, -0.11489200, 0.01465700], dtype=float),
+    },
+    # 82: O2 — standard_1005
+    {
+        "ch_name": "O2",
+        "kind": "eeg",
+        "loc": np.asarray([0.02984260, -0.11215600, 0.00880000], dtype=float),
+    },
+    # 83: O9 — standard_1020
+    {
+        "ch_name": "O9",
+        "kind": "eeg",
+        "loc": np.asarray([-0.02981840, -0.11457000, -0.02921600], dtype=float),
+    },
+    # 84: CB1 — standard_postfixed (cerebellar site; coincides with PO9 in standard_1005)
+    {
+        "ch_name": "CB1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.05491040, -0.09804480, -0.03546500], dtype=float),
+    },
+    # 85: CB2 — standard_postfixed (cerebellar site; coincides with PO10 in standard_1005)
+    {
+        "ch_name": "CB2",
+        "kind": "eeg",
+        "loc": np.asarray([0.05498760, -0.09809110, -0.03554100], dtype=float),
+    },
+    # 86: IZ — standard_1005 (inion area)
+    {
+        "ch_name": "IZ",
+        "kind": "eeg",
+        "loc": np.asarray([0.00000450, -0.11856500, -0.02307800], dtype=float),
+    },
+    # 87: O10 — standard_1020
+    {
+        "ch_name": "O10",
+        "kind": "eeg",
+        "loc": np.asarray([0.02974160, -0.11426000, -0.02925600], dtype=float),
+    },
+    # 88: T3 — legacy alias of T7 (standard_1005)
+    {
+        "ch_name": "T3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08416110, -0.01601870, -0.00934600], dtype=float),
+    },
+    # 89: T5 — legacy alias of P7 (standard_1005)
+    {
+        "ch_name": "T5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07243430, -0.07345270, -0.00248700], dtype=float),
+    },
+    # 90: T4 — legacy alias of T8 (standard_1005)
+    {
+        "ch_name": "T4",
+        "kind": "eeg",
+        "loc": np.asarray([0.08507990, -0.01502030, -0.00949000], dtype=float),
+    },
+    # 91: T6 — legacy alias of P8 (standard_1005)
+    {
+        "ch_name": "T6",
+        "kind": "eeg",
+        "loc": np.asarray([0.07305570, -0.07306830, -0.00254000], dtype=float),
+    },
+    # 92: M1 — standard_1005 (left mastoid)
+    {
+        "ch_name": "M1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08607610, -0.04498970, -0.06798600], dtype=float),
+    },
+    # 93: M2 — standard_1005 (right mastoid)
+    {
+        "ch_name": "M2",
+        "kind": "eeg",
+        "loc": np.asarray([0.08579390, -0.04500930, -0.06803100], dtype=float),
+    },
+    # 94: A1 — standard_1005 (left ear reference)
+    {
+        "ch_name": "A1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08607610, -0.02498970, -0.06798600], dtype=float),
+    },
+    # 95: A2 — standard_1005 (right ear reference)
+    {
+        "ch_name": "A2",
+        "kind": "eeg",
+        "loc": np.asarray([0.08579390, -0.02500930, -0.06803100], dtype=float),
+    },
+    # 96: CFC1 — midpoint(FC1, C1) in standard_1005
+    {
+        "ch_name": "CFC1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.03510995, 0.00801360, 0.08486950], dtype=float),
+    },
+    # 97: CFC2 — midpoint(FC2, C2) in standard_1005
+    {
+        "ch_name": "CFC2",
+        "kind": "eeg",
+        "loc": np.asarray([0.03622805, 0.00840690, 0.08361000], dtype=float),
+    },
+    # 98: CFC3 — midpoint(FC3, C3) in standard_1005
+    {
+        "ch_name": "CFC3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.06277000, 0.00554225, 0.05995100], dtype=float),
+    },
+    # 99: CFC4 — midpoint(FC4, C4) in standard_1005
+    {
+        "ch_name": "CFC4",
+        "kind": "eeg",
+        "loc": np.asarray([0.06470550, 0.00641125, 0.05960500], dtype=float),
+    },
+    # 100: CFC5 — midpoint(FC5, C5) in standard_1005
+    {
+        "ch_name": "CFC5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07874750, 0.00244180, 0.02681000], dtype=float),
+    },
+    # 101: CFC6 — midpoint(FC6, C6) in standard_1005
+    {
+        "ch_name": "CFC6",
+        "kind": "eeg",
+        "loc": np.asarray([0.08149500, 0.00357970, 0.02682300], dtype=float),
+    },
+    # 102: CFC7 — midpoint(FT7, T7) in standard_1005
+    {
+        "ch_name": "CFC7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08246805, -0.00094920, -0.01024050], dtype=float),
+    },
+    # 103: CFC8 — midpoint(FT8, T8) in standard_1005
+    {
+        "ch_name": "CFC8",
+        "kind": "eeg",
+        "loc": np.asarray([0.08344750, 0.00019820, -0.01041000], dtype=float),
+    },
+    # 104: CCP1 — standard_1005
+    {
+        "ch_name": "CCP1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.03693010, -0.02856990, 0.09173400], dtype=float),
+    },
+    # 105: CCP2 — standard_1005
+    {
+        "ch_name": "CCP2",
+        "kind": "eeg",
+        "loc": np.asarray([0.03853990, -0.02822510, 0.09097600], dtype=float),
+    },
+    # 106: CCP3 — standard_1005
+    {
+        "ch_name": "CCP3",
+        "kind": "eeg",
+        "loc": np.asarray([-0.06612810, -0.02929570, 0.06589800], dtype=float),
+    },
+    # 107: CCP4 — standard_1005
+    {
+        "ch_name": "CCP4",
+        "kind": "eeg",
+        "loc": np.asarray([0.06885390, -0.02864030, 0.06641000], dtype=float),
+    },
+    # 108: CCP5 — standard_1005
+    {
+        "ch_name": "CCP5",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08154310, -0.03017270, 0.03027300], dtype=float),
+    },
+    # 109: CCP6 — standard_1005
+    {
+        "ch_name": "CCP6",
+        "kind": "eeg",
+        "loc": np.asarray([0.08455290, -0.02937830, 0.03087800], dtype=float),
+    },
+    # 110: CCP7 — midpoint(T7, TP7) in standard_1005
+    {
+        "ch_name": "CCP7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08449565, -0.03102020, -0.00820100], dtype=float),
+    },
+    # 111: CCP8 — midpoint(T8, TP8) in standard_1005
+    {
+        "ch_name": "CCP8",
+        "kind": "eeg",
+        "loc": np.asarray([0.08531435, -0.03028280, -0.00831000], dtype=float),
+    },
+    # 112: T1 — standard_postfixed (anterior temporal; same position as FT9 in standard_1005)
+    {
+        "ch_name": "T1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08407590, 0.01456730, -0.05042900], dtype=float),
+    },
+    # 113: T2 — standard_postfixed (anterior temporal; same position as FT10 in standard_1005)
+    {
+        "ch_name": "T2",
+        "kind": "eeg",
+        "loc": np.asarray([0.08411310, 0.01436470, -0.05053800], dtype=float),
+    },
+    # 114: FTT9h — standard_1005 (h-suffix intermediate position)
+    {
+        "ch_name": "FTT9h",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08412500, -0.00184670, -0.02979400], dtype=float),
+    },
+    # 115: TTP7h — standard_1005 (h-suffix intermediate position)
+    {
+        "ch_name": "TTP7h",
+        "kind": "eeg",
+        "loc": np.asarray([-0.08556510, -0.03062870, 0.01115300], dtype=float),
+    },
+    # 116: TPP9h — standard_1005 (h-suffix intermediate position)
+    {
+        "ch_name": "TPP9h",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07816020, -0.06075670, -0.02382400], dtype=float),
+    },
+    # 117: FTT10h — standard_1005 (h-suffix intermediate position)
+    {
+        "ch_name": "FTT10h",
+        "kind": "eeg",
+        "loc": np.asarray([0.08412300, -0.00180830, -0.02963800], dtype=float),
+    },
+    # 118: TPP8h — standard_1005 (h-suffix intermediate position)
+    {
+        "ch_name": "TPP8h",
+        "kind": "eeg",
+        "loc": np.asarray([0.07851980, -0.06043230, 0.01290200], dtype=float),
+    },
+    # 119: TPP10h — standard_1005 (h-suffix intermediate position)
+    {
+        "ch_name": "TPP10h",
+        "kind": "eeg",
+        "loc": np.asarray([0.07890270, -0.06095530, -0.02380500], dtype=float),
+    },
+    # 120: FP1-F7 — bipolar: midpoint(FP1, F7) from standard_1005
+    {
+        "ch_name": "FP1-F7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.04984980, 0.06319570, -0.00920500], dtype=float),
+    },
+    # 121: F7-T7 — bipolar: midpoint(F7, T7) from standard_1005
+    {
+        "ch_name": "F7-T7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07721200, 0.01322780, -0.01038300], dtype=float),
+    },
+    # 122: T7-P7 — bipolar: midpoint(T7, P7) from standard_1005
+    {
+        "ch_name": "T7-P7",
+        "kind": "eeg",
+        "loc": np.asarray([-0.07829770, -0.04473570, -0.00591650], dtype=float),
+    },
+    # 123: P7-O1 — bipolar: midpoint(P7, O1) from standard_1005
+    {
+        "ch_name": "P7-O1",
+        "kind": "eeg",
+        "loc": np.asarray([-0.05092385, -0.09295085, 0.00317600], dtype=float),
+    },
+    # 124: FP2-F8 — bipolar: midpoint(FP2, F8) from standard_1005
+    {
+        "ch_name": "FP2-F8",
+        "kind": "eeg",
+        "loc": np.asarray([0.05145770, 0.06465880, -0.00954000], dtype=float),
+    },
+    # 125: F8-T8 — bipolar: midpoint(F8, T8) from standard_1005
+    {
+        "ch_name": "F8-T8",
+        "kind": "eeg",
+        "loc": np.asarray([0.07906150, 0.01470070, -0.01074500], dtype=float),
+    },
+    # 126: T8-P8 — bipolar: midpoint(T8, P8) from standard_1005
+    {
+        "ch_name": "T8-P8",
+        "kind": "eeg",
+        "loc": np.asarray([0.07906780, -0.04404430, -0.00601500], dtype=float),
+    },
+    # 127: P8-O2 — bipolar: midpoint(P8, O2) from standard_1005
+    {
+        "ch_name": "P8-O2",
+        "kind": "eeg",
+        "loc": np.asarray([0.05144915, -0.09261215, 0.00313000], dtype=float),
+    },
+]
