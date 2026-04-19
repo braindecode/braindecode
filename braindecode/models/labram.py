@@ -30,7 +30,10 @@ from braindecode.modules import MLP, DropPath
 #
 # Channels positions come from several sources:
 #   - standard_1005 names (majority): looked up directly by uppercase key
-#   - bipolar pairs "A-B"  → midpoint of A and B (from standard_1005)
+#   - bipolar pairs "A-B"  → midpoint of A and B (from standard_1005).
+#     TODO: this is a simplification. A bipolar signal V(A)-V(B) cannot
+#     be faithfully recovered by spatial interpolation at the midpoint.
+#     Revisit in a follow-up PR (e.g. a dedicated BipolarDerivationLayer).
 #   - legacy 10-20 aliases T3/T4/T5/T6 → T7/T8/P7/P8 (standard_1005)
 #   - mastoid M1/M2, ear A1/A2 → standard_1005 (A1/A2 already present there)
 #   - O9/O10 → standard_1020
