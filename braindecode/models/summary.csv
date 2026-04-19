@@ -51,4 +51,4 @@ REVE,General,Classification,200,"n_outputs, n_times, n_chans",69481476,"REVE(n_t
 DGCNN,Emotion Recognition,Classification,128,"n_chans, n_outputs, n_times, chs_info",1037385,"DGCNN(n_chans=62, n_outputs=4, n_times=128)","Graph Neural Network,Channel"
 InterpolatedBIOT,"Sleep Staging, Epilepsy",Classification,200,"chs_info, n_outputs, n_times, sfreq",3184101,"InterpolatedBIOT(chs_info=<user>, n_outputs=5, sfreq=200, n_times=6000)","Foundation Model,Channel"
 InterpolatedLaBraM,General,"Classification, Embedding",200,"chs_info, n_outputs, n_times",5866196,"InterpolatedLaBraM(chs_info=<user>, n_outputs=4, n_times=1000)","Convolution,Foundation Model,Channel"
-InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info","InterpolatedSignalJEPA(chs_info=<user>)","Convolution,Channel,Foundation Model"
+InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info",3456882,"InterpolatedSignalJEPA(chs_info=<user>)","Convolution,Channel,Foundation Model"

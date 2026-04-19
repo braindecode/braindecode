@@ -131,6 +131,7 @@ def InterpolatedModel(
     backbone_doc = model_cls.__doc__ or ""
     _Interpolated.__doc__ = (
         f"Channel-interpolating wrapper around :class:`{model_cls.__name__}`.\n\n"
+        ":bdg-dark-line:`Channel`\n\n"
         f"Accepts arbitrary user ``chs_info`` and projects them to the\n"
         f"backbone's canonical channel set via\n"
         f":class:`~braindecode.modules.ChannelInterpolationLayer`.\n\n"
