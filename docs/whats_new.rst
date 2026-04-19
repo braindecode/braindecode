@@ -28,6 +28,12 @@ Current 1.5.0 (GitHub)
 Enhancements
 ============
 
+- Tutorials now train for a few epochs then load pretrained weights from
+  Hugging Face Hub to show full training curves and metrics. All 9 tutorial
+  checkpoints published to ``huggingface.co/braindecode/``. The offline
+  training script used to produce the checkpoints is available as a gist:
+  https://gist.github.com/bruAristimunha/27d74c8410fe9d0db258a03f42efa7c6.
+  (:pr:`985` by :user:`bruAristimunha`)
 - Use ``F.scaled_dot_product_attention`` in :class:`braindecode.modules.MultiHeadAttention`,
   enabling optimized attention kernels (flash-attention on CUDA,
   memory-efficient backends on other devices).

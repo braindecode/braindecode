@@ -7,6 +7,11 @@ This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We use the attention-based model from [1]_ with the time distributed approach of [2]_
 to learn on sequences of EEG windows using the openly accessible Sleep Physionet dataset [3]_ [4]_.
 
+.. raw:: html
+
+   <iframe src="https://wandb.ai/braindecode/braindecode-tutorials/runs/ma2m9x9c"
+           style="border:none;height:512px;width:100%"></iframe>
+
 """
 # Authors: Divyesh Narayanan <divyesh.narayanan@gmail.com>
 #
@@ -22,19 +27,19 @@ to learn on sequences of EEG windows using the openly accessible Sleep Physionet
 #
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
-# two recordings from two different individuals: we will use the first one to
-# train our network and the second one to evaluate performance (as in the `MNE
-# sleep staging example <mne-clinical-60-sleep_>`_).
+# six subjects with two recordings each. Subjects 0-3 are used for training
+# and subjects 4-5 for validation.
 #
 
 from numbers import Integral
 
 from braindecode.datasets import SleepPhysionet
 
-subject_ids = [0, 1]
-crop = (0, 30 * 400)  # we only keep 400 windows of 30s to speed example
+subject_ids = [0, 1, 2, 3, 4, 5]
+train_subject_ids = [0, 1, 2, 3]
+valid_subject_ids = [4, 5]
 dataset = SleepPhysionet(
-    subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30, crop=crop
+    subject_ids=subject_ids, recording_ids=[1, 2], crop_wake_mins=30
 )
 
 ######################################################################
@@ -112,10 +117,10 @@ preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We split the dataset into training and validation set taking
-# every other subject as train or valid.
+# We split the dataset into training and validation sets. Subjects 0-3 are
+# used for training and subjects 4-5 for held-out validation.
 
-split_ids = dict(train=subject_ids[::2], valid=subject_ids[1::2])
+split_ids = dict(train=train_subject_ids, valid=valid_subject_ids)
 splits = windows_dataset.split(split_ids)
 train_set, valid_set = splits["train"], splits["valid"]
 
@@ -194,8 +199,9 @@ from braindecode.models import AttnSleep
 from braindecode.modules import TimeDistributed
 from braindecode.util import set_random_seeds
 
-cuda = torch.cuda.is_available()  # check if GPU is available
-device = "cuda" if torch.cuda.is_available() else "cpu"
+cuda = torch.cuda.is_available()  # check if CUDA is available
+mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+device = "cuda" if cuda else "mps" if mps else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to reproduce results
@@ -209,6 +215,7 @@ feat_extractor = AttnSleep(
     sfreq=sfreq,
     n_outputs=n_classes,
     n_times=input_size_samples,
+    drop_prob=0.3,
     return_feats=True,
 )
 
@@ -221,9 +228,9 @@ model = nn.Sequential(
     ),
 )
 
-# Send model to GPU
-if cuda:
-    model.cuda()
+# Send model to the selected accelerator
+if device != "cpu":
+    model.to(device)
 
 ######################################################################
 # Training
@@ -236,14 +243,19 @@ if cuda:
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
 
-from skorch.callbacks import EpochScoring
+from skorch.callbacks import (
+    EarlyStopping,
+    EpochScoring,
+    GradientNormClipping,
+    LRScheduler,
+)
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 3  # we use few epochs for speed and but more than one for plotting
+n_epochs = 3
 
 train_bal_acc = EpochScoring(
     scoring="balanced_accuracy",
@@ -257,18 +269,34 @@ valid_bal_acc = EpochScoring(
     name="valid_bal_acc",
     lower_is_better=False,
 )
-callbacks = [("train_bal_acc", train_bal_acc), ("valid_bal_acc", valid_bal_acc)]
+callbacks = [
+    ("train_bal_acc", train_bal_acc),
+    ("valid_bal_acc", valid_bal_acc),
+    ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=max(1, n_epochs - 1))),
+    ("grad_clip", GradientNormClipping(gradient_clip_value=1.0)),
+    (
+        "early_stopping",
+        EarlyStopping(
+            monitor="valid_bal_acc",
+            lower_is_better=False,
+            patience=20,
+            load_best=True,
+        ),
+    ),
+]
 
 clf = EEGClassifier(
     model,
     criterion=torch.nn.CrossEntropyLoss,
     criterion__weight=torch.Tensor(class_weights).to(device),
+    criterion__label_smoothing=0.1,
     optimizer=torch.optim.Adam,
     iterator_train__shuffle=False,
     iterator_train__sampler=train_sampler,
     iterator_valid__sampler=valid_sampler,
     train_split=predefined_split(valid_set),  # using valid_set for validation
     optimizer__lr=lr,
+    optimizer__weight_decay=1e-3,
     batch_size=batch_size,
     callbacks=callbacks,
     device=device,
@@ -279,17 +307,52 @@ clf = EEGClassifier(
 clf.fit(train_set, y=None, epochs=n_epochs)
 
 ######################################################################
-# Plot results
-# ------------
+# Training for longer
+# -------------------
 #
-# We use the history stored by Skorch during training to plot the performance of
-# the model throughout training. Specifically, we plot the loss and the balanced
-# balanced accuracy for the training and validation sets.
+# The gallery build above uses only ``n_epochs = 3``. When trained offline
+# for up to 100 epochs with early stopping, the same setup reaches
+# **74.6 % balanced accuracy** on the held-out recordings (chance = 20 %).
+#
+# The interactive training dashboard is on
+# `Weights & Biases <https://wandb.ai/braindecode/braindecode-tutorials/runs/ma2m9x9c>`_,
+# and the offline trainer used to produce all tutorial checkpoints is
+# available as a
+# `public gist <https://gist.github.com/bruAristimunha/27d74c8410fe9d0db258a03f42efa7c6>`_.
+#
+# We can load the pretrained checkpoint directly from the Hugging Face Hub
+# and inspect the full training curves. This checkpoint uses ``params.pt``
+# (not safetensors) due to the ``TimeDistributed`` wrapper:
+
+import warnings
+
+repo_id = "braindecode/plot_sleep_staging_eldele2021"
+try:
+    from huggingface_hub import hf_hub_download
+
+    clf.initialize()
+    clf.load_params(
+        f_params=hf_hub_download(repo_id, "params.pt"),
+        f_history=hf_hub_download(repo_id, "history.json"),
+        use_safetensors=False,
+    )
+except Exception as exc:
+    warnings.warn(
+        f"Could not load pretrained checkpoint from {repo_id} ({exc}); "
+        "continuing with the locally trained short-run model.",
+        stacklevel=2,
+    )
+
+######################################################################
+# Plot training curves
+# ~~~~~~~~~~~~~~~~~~~~
+#
+# The loaded history contains the full offline training run. We plot loss
+# and balanced accuracy over all epochs.
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
 df.index.name = "Epoch"
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
@@ -299,54 +362,45 @@ ax1.set_ylabel("Loss")
 ax2.set_ylabel("Balanced accuracy")
 ax1.legend(["Train", "Valid"])
 ax2.legend(["Train", "Valid"])
+ax1.grid(alpha=0.3)
+ax2.grid(alpha=0.3)
 fig.tight_layout()
 plt.show()
 
 ######################################################################
-# Finally, we also display the confusion matrix and classification report:
+# Confusion matrix and classification report
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
+# Using the pretrained weights we can evaluate on the held-out validation
+# subjects and display the confusion matrix and per-class metrics.
 
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
-from braindecode.visualization import plot_confusion_matrix
-
-y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
+y_true = [valid_set[i][1] for i in valid_sampler]
 y_pred = clf.predict(valid_set)
 
-confusion_mat = confusion_matrix(y_true, y_pred)
-
-plot_confusion_matrix(confusion_mat=confusion_mat)
-#                      class_names=['Wake', 'N1', 'N2', 'N3', 'N4', 'REM'])
+ConfusionMatrixDisplay.from_predictions(
+    y_true,
+    y_pred,
+    labels=[0, 1, 2, 3, 4],
+    display_labels=["Wake", "N1", "N2", "N3", "REM"],
+)
 
 print(classification_report(y_true, y_pred))
 
 ######################################################################
-# Finally, we can also visualize the hypnogram of the recording we used for
-# validation, with the predicted sleep stages overlaid on top of the true
-# sleep stages. We can see that the model cannot correctly identify the
-# different sleep stages with this amount of training.
-
-import matplotlib.pyplot as plt
+# Hypnogram
+# ~~~~~~~~~
+#
+# Finally we overlay the predicted sleep stages on the expert annotations
+# for one of the validation recordings.
 
 fig, ax = plt.subplots(figsize=(15, 5))
 ax.plot(y_true, color="b", label="Expert annotations")
-ax.plot(y_pred.flatten(), color="r", label="Predict annotations", alpha=0.5)
+ax.plot(y_pred.flatten(), color="r", label="Predicted", alpha=0.5)
 ax.set_xlabel("Time (epochs)")
 ax.set_ylabel("Sleep stage")
-
-######################################################################
-# The model was able to learn despite the low amount of data that was available
-# (only two recordings in this example) and reached a balanced accuracy of
-# about 43% in a 5-class classification task (chance-level = 20%) on held-out
-# data over 10 epochs.
-#
-# .. note::
-#    To further improve performance, the number of epochs should be increased.
-#    It has been reduced here for faster run-time in document generation. In
-#    testing, 10 epochs provided reasonable performance with around 89% balanced
-#    accuracy on training data and around 43% on held out validation data.
-#    Increasing the number of training recordings and optimizing the hyperparameters
-#    will also help increase performance
+ax.legend()
 
 ###########################################################################
 # References
