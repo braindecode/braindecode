@@ -3,10 +3,41 @@ import copy
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn.utils.parametrize import register_parametrization
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.parametrization import MaxNormParametrize
+
+# The 19 EEG channels used to pre-train BENDR, in the order expected by the
+# `braindecode/braindecode-bendr` checkpoint. Taken verbatim from
+# `dn3.transforms.instance.To1020.EEG_20_div`
+# (https://github.com/SPOClab-ca/dn3/blob/master/dn3/transforms/instance.py).
+# Positions were obtained once from MNE's ``standard_1005`` montage and
+# then hard-coded below (T5/T6 are legacy names that share their positions
+# with P7/P8 in that montage).
+# NOTE: the checkpoint expects a 20th input channel ``SCALE``, a relative-
+# amplitude statistic (not an electrode) appended by
+# ``dn3.transforms.instance.To1020(include_scale_ch=True)`` during
+# pre-training. Pass it as the last channel.
+_BENDR_TARGET_CHS: list[tuple[str, tuple[float, float, float]]] = [
+    ("FP1", (-0.0294367, +0.0839171, -0.0069900)),  # standard_1005
+    ("FP2", (+0.0298723, +0.0848959, -0.0070800)),  # standard_1005
+    ("F7", (-0.0702629, +0.0424743, -0.0114200)),  # standard_1005
+    ("F3", (-0.0502438, +0.0531112, +0.0421920)),  # standard_1005
+    ("FZ", (+0.0003122, +0.0585120, +0.0664620)),  # standard_1005
+    ("F4", (+0.0518362, +0.0543048, +0.0408140)),  # standard_1005
+    ("F8", (+0.0730431, +0.0444217, -0.0120000)),  # standard_1005
+    ("T7", (-0.0841611, -0.0160187, -0.0093460)),  # standard_1005
+    ("C3", (-0.0653581, -0.0116317, +0.0643580)),  # standard_1005
+    ("CZ", (+0.0004009, -0.0091670, +0.1002440)),  # standard_1005
+    ("C4", (+0.0671179, -0.0109003, +0.0635800)),  # standard_1005
+    ("T8", (+0.0850799, -0.0150203, -0.0094900)),  # standard_1005
+    ("T5", (-0.0724343, -0.0734527, -0.0024870)),  # standard_1005 (= P7)
+    ("P3", (-0.0530073, -0.0787878, +0.0559400)),  # standard_1005
+    ("PZ", (+0.0003247, -0.0811150, +0.0826150)),  # standard_1005
+    ("P4", (+0.0556667, -0.0785602, +0.0565610)),  # standard_1005
+    ("T6", (+0.0730557, -0.0730683, -0.0025400)),  # standard_1005 (= P8)
+    ("O1", (-0.0294134, -0.1124490, +0.0088390)),  # standard_1005
+    ("O2", (+0.0298426, -0.1121560, +0.0088000)),  # standard_1005
+]
 
 
 class BENDR(EEGModuleMixin, nn.Module):
@@ -195,15 +226,6 @@ class BENDR(EEGModuleMixin, nn.Module):
         The contextualizer is still created (to allow loading pretrained weights) but is not
         used in the forward pass. Requires input length of at least
         ``4 * product(enc_downsample)`` samples (384 with default downsampling of 96x).
-    n_chans_pretrained : int or None, default=None
-        Number of input channels the pretrained weights expect (20 for the official BENDR
-        checkpoint). When set and ``n_chans != n_chans_pretrained``, a 1x1 Conv1d with
-        max-norm constraint projects from ``n_chans`` to ``n_chans_pretrained`` before the
-        encoder. This allows fine-tuning pretrained BENDR on datasets with arbitrary channel
-        counts. When using ``from_pretrained``, pass ``strict=False`` since the checkpoint
-        will not contain ``channel_projection`` weights.
-    chan_proj_max_norm : float, default=1.0
-        Max-norm constraint value for the channel projection weights.
     """
 
     def __init__(
@@ -231,8 +253,6 @@ class BENDR(EEGModuleMixin, nn.Module):
         start_token=-5,  # Value for start token embedding
         final_layer=True,  # Whether to include the final linear layer
         encoder_only=False,  # If True, bypass contextualizer and use 4-chunk pooling
-        n_chans_pretrained=None,  # Expected input channels of pretrained weights
-        chan_proj_max_norm=1.0,  # Max-norm for channel projection weights
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -251,20 +271,8 @@ class BENDR(EEGModuleMixin, nn.Module):
         self.include_final_layer = final_layer
         self.encoder_only = encoder_only
 
-        # Channel projection for pretrained weight compatibility
-        encoder_n_chans = self.n_chans
-        if n_chans_pretrained is not None and self.n_chans != n_chans_pretrained:
-            conv = nn.Conv1d(self.n_chans, n_chans_pretrained, 1, bias=False)
-            register_parametrization(
-                conv, "weight", MaxNormParametrize(chan_proj_max_norm)
-            )
-            self.channel_projection = conv
-            encoder_n_chans = n_chans_pretrained
-        else:
-            self.channel_projection = None
-
         self.encoder = _ConvEncoderBENDR(
-            in_features=encoder_n_chans,
+            in_features=self.n_chans,
             encoder_h=encoder_h,
             dropout=drop_prob,
             projection_head=projection_head,
@@ -308,8 +316,6 @@ class BENDR(EEGModuleMixin, nn.Module):
         self._build_head(n_outputs)
 
     def forward(self, x, return_features=False):
-        if self.channel_projection is not None:
-            x = self.channel_projection(x)
         encoded = self.encoder(x)
         # encoded: [batch_size, encoder_h, n_encoded_times]
 

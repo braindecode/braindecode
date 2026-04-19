@@ -41,6 +41,16 @@ API and behavior changes
   convention: boolean masks use ``True`` to **ignore** a position (previously
   ``True`` meant keep). The scaling factor is now ``1/sqrt(head_dim)`` instead of
   ``1/sqrt(emb_size)``. (:gh:`902`)
+- Remove the ``n_chans_pretrained`` and ``chan_proj_max_norm`` parameters and the
+  ``channel_projection`` layer from :class:`braindecode.models.BENDR`. The model
+  now strictly expects ``n_chans=20`` when loading the official
+  ``braindecode/braindecode-bendr`` checkpoint, in the channel order hard-coded
+  as ``braindecode.models.bendr._BENDR_TARGET_CHS`` (19 EEG channels from the
+  ``dn3.transforms.instance.To1020.EEG_20_div`` ordering, plus a 20th
+  relative-amplitude ``SCALE`` channel). The official checkpoint has been re-uploaded in
+  a flat state-dict layout so ``from_pretrained`` now actually loads the
+  pretrained weights (the previous nested layout caused ``load_state_dict`` to
+  silently match 0 of 99 weights). (by `Pierre Guetschel`_)
 
 Requirements
 ============
