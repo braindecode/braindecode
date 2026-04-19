@@ -42,6 +42,12 @@ Enhancements
   :class:`braindecode.models.InterpolatedSignalJEPA`, and
   :class:`braindecode.models.InterpolatedBIOT` for the corresponding
   pre-trained models. (:gh:`993` by `Pierre Guetschel`_)
+- Mark deterministic index buffers (:class:`braindecode.models.BIOT` encoder's
+  ``index`` and :class:`braindecode.models.REVE`'s position ``embedding`` bank)
+  as non-persistent. They are rebuilt from ``__init__`` arguments on every
+  instantiation, so keeping them in ``state_dict`` only bloated checkpoints and
+  caused spurious mismatches when ``n_chans`` (or the position-bank config)
+  differed between save and load. (:gh:`993` by `Pierre Guetschel`_)
 
 API and behavior changes
 ========================
