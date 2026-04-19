@@ -157,6 +157,10 @@ interface for all EEG models and can derive variable names when needed.
      FBLightConvNet
      FBMSNet
      IFNet
+     InterpolatedBIOT
+     InterpolatedLaBraM
+     InterpolatedModel
+     InterpolatedSignalJEPA
      Labram
      LUNA
      MEDFormer
@@ -280,6 +284,7 @@ These modules implement Filter Bank as Layer and generalizer Gaussian layer.
     :template: class_in_subdir
     :recursive:
 
+    ChannelInterpolationLayer
     FilterBankLayer
     GeneralizedGaussianFilter
 
