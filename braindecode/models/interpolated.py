@@ -61,6 +61,11 @@ def InterpolatedModel(
             # super() is impossible: nn.Module's ``__setattr__`` requires
             # nn.Module.__init__ to have run, and the chain would wipe
             # self._modules when it reaches it again.
+            # Drop any user-supplied n_chans from kwargs — the backbone
+            # must see len(target_chs_info), which EEGModuleMixin derives
+            # from chs_info.  Keeping n_chans=len(user) would trigger the
+            # base class's ``n_chans != len(chs_info)`` consistency check.
+            kwargs.pop("n_chans", None)
             super().__init__(chs_info=target_chs_info, **kwargs)
 
             layer = ChannelInterpolationLayer(
@@ -104,6 +109,18 @@ def InterpolatedModel(
 
     _Interpolated.__name__ = name or f"Interpolated{model_cls.__name__}"
     _Interpolated.__qualname__ = _Interpolated.__name__
+    # Propagate the backbone docstring so Sphinx and the categorization tests
+    # can read the class badges.  Prepend a short header so the class shows
+    # up clearly in documentation as distinct from the backbone.
+    backbone_doc = model_cls.__doc__ or ""
+    _Interpolated.__doc__ = (
+        f"Channel-interpolating wrapper around :class:`{model_cls.__name__}`.\n\n"
+        f"Accepts arbitrary user ``chs_info`` and projects them to the\n"
+        f"backbone's canonical channel set via\n"
+        f":class:`~braindecode.modules.ChannelInterpolationLayer`.\n\n"
+        f"For all other parameters and behavior see the backbone\n"
+        f"documentation reproduced below.\n\n" + backbone_doc
+    )
     return _Interpolated
 
 
