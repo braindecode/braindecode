@@ -1578,3 +1578,20 @@ def _pos_encode_contineous(
     pos_encoding[0::2] = torch.sin(xx * div_term)
     pos_encoding[1::2] = torch.cos(xx * div_term)
     return pos_encoding
+
+
+# -----------------------------------------------------------------------------
+# InterpolatedSignalJEPA — experimental channel-interpolation variant
+# -----------------------------------------------------------------------------
+# A :func:`~braindecode.models.interpolated.InterpolatedModel` wrapper around
+# :class:`SignalJEPA` whose target channel set is the 62-channel pre-training
+# montage. Accepts arbitrary user ``chs_info``; projects to the canonical
+# 62 channels via an MNE-backed (frozen by default) interpolation matrix.
+#
+# Coexists with ``SignalJEPA(channel_embedding="pretrain_aligned")`` (added
+# in PR #991). The latter requires user channels to be a strict subset of the
+# pre-training set; the former handles arbitrary channels via interpolation.
+
+from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
+
+InterpolatedSignalJEPA = InterpolatedModel(SignalJEPA, _PRETRAIN_CHS_INFO)

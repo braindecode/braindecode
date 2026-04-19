@@ -136,3 +136,42 @@ def test_build_chs_info_from_montage_returns_list_of_dicts():
 def test_build_chs_info_from_montage_raises_on_unknown_name():
     with pytest.raises(ValueError, match="not found"):
         _build_chs_info_from_montage(["NotAChannel"], montage="standard_1005")
+
+
+def test_interpolated_signal_jepa_is_shipped():
+    from braindecode.models import InterpolatedSignalJEPA, SignalJEPA
+
+    assert issubclass(InterpolatedSignalJEPA, SignalJEPA)
+    # SignalJEPA itself does NOT carry _TARGET_CHS_INFO (only the variant does).
+    assert not hasattr(SignalJEPA, "_TARGET_CHS_INFO")
+    assert hasattr(InterpolatedSignalJEPA, "_TARGET_CHS_INFO")
+    # 62 pretrain channels
+    assert len(InterpolatedSignalJEPA._TARGET_CHS_INFO) == 62
+
+
+def test_interpolated_signal_jepa_accepts_arbitrary_user_channels():
+    from braindecode.models import InterpolatedSignalJEPA
+
+    user = _target_5ch()  # 5 real EEG channels
+    model = InterpolatedSignalJEPA(
+        chs_info=user,
+        interpolation_mode="always",
+    )
+    # Forward returns the SSL encoder output (2D or 3D tensor depending on config).
+    # SignalJEPA's default conv spec needs at least 256 time samples at 128 Hz
+    # (the 5-stage strided-conv stack requires >=2 frames out of the last stage).
+    x = torch.zeros(1, 5, 256)  # 2 seconds at 128 Hz
+    y = model(x)
+    assert y.shape[0] == 1
+
+
+def test_signal_jepa_pretrain_aligned_still_works():
+    # Regression guard: PR #991's channel_embedding="pretrain_aligned" path
+    # must remain functional alongside the new InterpolatedSignalJEPA.
+    from braindecode.models import SignalJEPA
+    from braindecode.models.signal_jepa import _PRETRAIN_CHS_INFO
+
+    # Use a 3-channel subset of the pretrain set (valid for pretrain_aligned).
+    subset = _PRETRAIN_CHS_INFO[:3]
+    model = SignalJEPA(chs_info=subset, channel_embedding="pretrain_aligned")
+    assert model is not None  # instantiates without error

@@ -30,6 +30,7 @@ from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
 from .hybrid import HybridNet
 from .ifnet import IFNet
+from .interpolated import InterpolatedModel
 from .labram import Labram
 from .luna import LUNA
 from .medformer import MEDFormer
@@ -39,6 +40,7 @@ from .reve import REVE
 from .sccnet import SCCNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
+    InterpolatedSignalJEPA,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -97,6 +99,8 @@ __all__ = [
     "FBMSNet",
     "HybridNet",
     "IFNet",
+    "InterpolatedModel",
+    "InterpolatedSignalJEPA",
     "Labram",
     "LUNA",
     "extract_channel_locations_from_chs_info",

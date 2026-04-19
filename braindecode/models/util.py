@@ -240,6 +240,7 @@ models_mandatory_parameters: list[
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("SignalJEPA", ["chs_info"], None),
+    ("InterpolatedSignalJEPA", ["chs_info"], None),
     ("SignalJEPA_Contextual", ["chs_info", "n_times", "n_outputs"], None),
     ("SignalJEPA_PostLocal", ["n_chans", "n_times", "n_outputs"], None),
     ("SignalJEPA_PreLocal", ["n_chans", "n_times", "n_outputs"], None),
