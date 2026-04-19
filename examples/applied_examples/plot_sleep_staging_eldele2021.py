@@ -315,7 +315,10 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # **74.6 % balanced accuracy** on the held-out recordings (chance = 20 %).
 #
 # The interactive training dashboard is on
-# `Weights & Biases <https://wandb.ai/braindecode/braindecode-tutorials/runs/ma2m9x9c>`_.
+# `Weights & Biases <https://wandb.ai/braindecode/braindecode-tutorials/runs/ma2m9x9c>`_,
+# and the offline trainer used to produce all tutorial checkpoints is
+# available as a
+# `public gist <https://gist.github.com/bruAristimunha/27d74c8410fe9d0db258a03f42efa7c6>`_.
 #
 # We can load the pretrained checkpoint directly from the Hugging Face Hub
 # and inspect the full training curves. This checkpoint uses ``params.pt``
