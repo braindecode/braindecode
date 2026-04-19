@@ -92,3 +92,31 @@ def test_always_mode_uses_mne_even_when_names_match():
     assert torch.any(off_diag.abs() > 1e-6), (
         "expected non-trivial MNE-computed matrix, got pure diagonal"
     )
+
+
+def test_name_match_partial_overwrites_matched_rows_with_one_hots():
+    # src: Fz, Cz, Pz, C3, C4 (5 — MNE needs ≥4)
+    # tgt: Fz, F3, Cz, P3 — Fz and Cz match; F3 and P3 don't.
+    src = [_montage_ch(n) for n in ["Fz", "Cz", "Pz", "C3", "C4"]]
+    tgt = [_montage_ch(n) for n in ["Fz", "F3", "Cz", "P3"]]
+    layer = ChannelInterpolationLayer(src, tgt, mode="name_match")
+    W = layer.matrix
+    assert W.shape == (4, 5)
+
+    # Matched rows are one-hots on the matching src index.
+    # Fz → tgt row 0, src col 0
+    torch.testing.assert_close(
+        W[0], torch.tensor([1.0, 0.0, 0.0, 0.0, 0.0])
+    )
+    # Cz → tgt row 2, src col 1
+    torch.testing.assert_close(
+        W[2], torch.tensor([0.0, 1.0, 0.0, 0.0, 0.0])
+    )
+    # Unmatched row (F3, row 1) came from MNE: NOT a pure one-hot.
+    nonzero_count_row1 = (W[1].abs() > 1e-6).sum().item()
+    assert nonzero_count_row1 > 1, (
+        f"expected MNE-computed row (>1 nonzeros), got {nonzero_count_row1}"
+    )
+    # Unmatched row (P3, row 3) came from MNE.
+    nonzero_count_row3 = (W[3].abs() > 1e-6).sum().item()
+    assert nonzero_count_row3 > 1

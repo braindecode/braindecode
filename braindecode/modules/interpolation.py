@@ -81,6 +81,14 @@ class ChannelInterpolationLayer(nn.Module):
 
         # Otherwise: compute the full matrix via MNE.
         W = _compute_interpolation_matrix_mne(src, tgt, method=method)
+
+        # In name_match mode, overwrite rows whose target name matches a src
+        # name with a one-hot (positions ignored for those rows).
+        if mode == "name_match":
+            for i, j in matches:
+                if j is not None:
+                    W[i] = 0.0
+                    W[i, j] = 1.0
         return W
 
 
