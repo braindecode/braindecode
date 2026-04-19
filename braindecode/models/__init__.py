@@ -31,7 +31,7 @@ from .fbmsnet import FBMSNet
 from .hybrid import HybridNet
 from .ifnet import IFNet
 from .interpolated import InterpolatedModel
-from .labram import Labram
+from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
 from .medformer import MEDFormer
 from .msvtnet import MSVTNet
@@ -99,6 +99,7 @@ __all__ = [
     "FBMSNet",
     "HybridNet",
     "IFNet",
+    "InterpolatedLaBraM",
     "InterpolatedModel",
     "InterpolatedSignalJEPA",
     "Labram",

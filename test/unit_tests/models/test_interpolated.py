@@ -165,6 +165,39 @@ def test_interpolated_signal_jepa_accepts_arbitrary_user_channels():
     assert y.shape[0] == 1
 
 
+def test_interpolated_labram_is_shipped():
+    from braindecode.models import InterpolatedLaBraM
+    from braindecode.models.labram import Labram
+
+    assert issubclass(InterpolatedLaBraM, Labram)
+    assert not hasattr(Labram, "_TARGET_CHS_INFO")
+    assert hasattr(InterpolatedLaBraM, "_TARGET_CHS_INFO")
+    assert len(InterpolatedLaBraM._TARGET_CHS_INFO) == 128
+
+
+def test_interpolated_labram_accepts_arbitrary_user_channels():
+    from braindecode.models import InterpolatedLaBraM
+
+    user = _target_5ch()  # 5 real EEG channels (Fz, Cz, Pz, C3, C4)
+    model = InterpolatedLaBraM(
+        chs_info=user,
+        n_outputs=2,
+        n_times=200,
+        interpolation_mode="always",
+    )
+    assert model.n_chans == 5
+    y = model(torch.zeros(1, 5, 200))
+    assert y.shape == (1, 2)
+
+
+def test_labram_rejects_non_canonical_chs():
+    from braindecode.models.labram import Labram
+
+    user = _target_5ch()  # 5 non-canonical (for Labram) channels
+    with pytest.raises(ValueError, match="InterpolatedLaBraM"):
+        Labram(chs_info=user, n_outputs=2, n_times=200)
+
+
 def test_signal_jepa_pretrain_aligned_still_works():
     # Regression guard: PR #991's channel_embedding="pretrain_aligned" path
     # must remain functional alongside the new InterpolatedSignalJEPA.

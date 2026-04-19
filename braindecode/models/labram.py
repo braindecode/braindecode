@@ -7,7 +7,6 @@ License: BSD 3 clause
 """
 
 from collections import OrderedDict
-from typing import Literal
 from warnings import warn
 
 import numpy as np
@@ -330,13 +329,6 @@ class Labram(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.GELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
-    on_unknown_chs: Literal["ignore", "warn", "raise"], default="warn"
-        Determines behavior when channels that are not in LABRAM_CHANNEL_ORDER
-        are passed to the forward method. Options:
-        - "ignore": Silently ignore and drop unmatched channels, then proceed with matched ones.
-        - "warn": Issue a warning listing unmatched channels, and drop them.
-        - "raise": Raise an error and halt execution if any unmatched channels are found.
-        An error is always raised when unknown channels are passed during model initialization (via ``chs_info``).
 
     References
     ----------
@@ -383,7 +375,6 @@ class Labram(EEGModuleMixin, nn.Module):
         neural_tokenizer=True,
         attn_head_dim=None,
         activation: type[nn.Module] = nn.GELU,
-        on_unknown_chs: Literal["ignore", "warn", "raise"] = "warn",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -395,8 +386,22 @@ class Labram(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq
 
-        self.on_unknown_chs = on_unknown_chs
-        self._setup_channel_mapping()
+        # Require chs_info to match LABRAM_CHANNEL_ORDER exactly (case-insensitive).
+        # Arbitrary channel sets should go through InterpolatedLaBraM.
+        try:
+            _chs_info = self.chs_info
+        except ValueError:
+            _chs_info = None
+        if _chs_info is not None:
+            user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
+            canonical = LABRAM_CHANNEL_ORDER
+            if [n.lower() for n in user_names] != [n.lower() for n in canonical]:
+                raise ValueError(
+                    f"Labram requires chs_info to match LABRAM_CHANNEL_ORDER exactly "
+                    f"({len(canonical)} channels, specific order). Got {len(user_names)} "
+                    f"channels. For arbitrary channel sets, use InterpolatedLaBraM "
+                    f"(from braindecode.models import InterpolatedLaBraM)."
+                )
 
         self.patch_size = patch_size
         self.num_features = self.embed_dim = embed_dim
@@ -589,122 +594,6 @@ class Labram(EEGModuleMixin, nn.Module):
             nn.init.constant_(layer.bias, 0)
             nn.init.constant_(layer.weight, 1.0)
 
-    def _setup_channel_mapping(self):
-        # Normalize channel names to uppercase for case-insensitive matching
-        labram_order_upper = [ch.upper() for ch in LABRAM_CHANNEL_ORDER]
-        # Build a lookup from LABRAM_CHANNEL_ORDER
-        self._labram_ch_to_idx = {ch: i for i, ch in enumerate(labram_order_upper)}
-
-        self._input_channels_mask: torch.Tensor | None = None
-        self._labram_ch_indices: torch.Tensor | None = None
-        try:
-            chs_info = self.chs_info
-        except ValueError:
-            return
-        # Get ch_names from chs_info
-        ch_names = [ch["ch_name"] for ch in chs_info]
-        # input_channels_mask: use to drop unknown channels form the input tensor
-        # labram_ch_indices: used to select the corresponding position embeddings, which preserves alignment for any subset of channels.
-        self._input_channels_mask, self._labram_ch_indices = self._get_channel_indices(
-            ch_names
-        )
-
-    def _get_channel_indices(
-        self, ch_names: list[str]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Normalize to uppercase for matching
-        ch_names_upper = [ch.upper() for ch in ch_names]
-
-        # Find which input channels are in LABRAM_CHANNEL_ORDER
-        matched_channels = []
-        unmatched_channels = []
-        input_channels_mask = []
-        for i, ch_name in enumerate(ch_names_upper):
-            if ch_name in self._labram_ch_to_idx:
-                matched_channels.append((i, ch_name, self._labram_ch_to_idx[ch_name]))
-                input_channels_mask.append(True)
-            else:
-                unmatched_channels.append(ch_name)
-                input_channels_mask.append(False)
-
-        if not matched_channels:
-            raise ValueError(
-                "No input channels matched LABRAM_CHANNEL_ORDER. Channel reordering "
-                "can not be applied."
-            )
-
-        if unmatched_channels and self.on_unknown_chs != "ignore":
-            msg = (
-                f"The following channel names are not in LABRAM_CHANNEL_ORDER and "
-                f"will be excluded: {unmatched_channels}. Only matched channels will "
-                f"be used for inference."
-            )
-            if self.on_unknown_chs == "raise":
-                raise ValueError(msg)
-            warn(msg, UserWarning)
-
-        input_channels_mask_tensor = torch.tensor(input_channels_mask, dtype=torch.bool)
-        labram_indices = torch.tensor(
-            [ch[2] for ch in matched_channels], dtype=torch.long
-        )
-        return input_channels_mask_tensor, labram_indices
-
-    def _select_channels(self, x, ch_names):
-        """
-        Select input channels to match LABRAM_CHANNEL_ORDER.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor of shape (batch, n_chans, n_times).
-
-        Returns
-        -------
-        x_selected : torch.Tensor
-            Selected tensor of shape (batch, n_matched_chans, n_times).
-        input_chans : torch.Tensor or None
-            Indices for selecting position embeddings, including the [CLS] token
-            at index 0. Returns None if reordering is not enabled.
-
-        Notes
-        -----
-        The selection ensures that channels are processed in the same relative
-        order as LABRAM_CHANNEL_ORDER. When absolute position embeddings are
-        enabled, we also return indices that select the corresponding LABRAM
-        positions, which preserves alignment for any subset of channels.
-        """
-        if ch_names is not None:
-            assert len(ch_names) == x.shape[1], (
-                "Length of ch_names must match number of channels in input tensor."
-            )
-            input_channels_mask, labram_ch_indices = self._get_channel_indices(ch_names)
-        else:
-            input_channels_mask = self._input_channels_mask
-            labram_ch_indices = self._labram_ch_indices
-
-        if input_channels_mask is None or labram_ch_indices is None:
-            raise ValueError(
-                "Channel information is not available. Please either provide "
-                "the `ch_names` argument to the forward method, or ensure that channel information is provided "
-                "during model initialization (via `chs_info`)."
-            )
-        if len(input_channels_mask) != x.shape[1]:
-            raise ValueError(
-                "Length of input_channels_mask does not match number of channels in input tensor. "
-                "Please provide channel information via the `ch_names` argument to the forward method, or ensure that channel information is provided during model initialization (via `chs_info`)."
-            )
-
-        # Select the channels that are available in LABRAM_CHANNEL_ORDER
-        x_available = x[:, input_channels_mask, :]
-
-        cls_index = torch.tensor(
-            [0],
-            device=labram_ch_indices.device,
-            dtype=labram_ch_indices.dtype,
-        )
-        input_chans = torch.cat([cls_index, labram_ch_indices + 1])
-        return x_available, input_chans
-
     def get_num_layers(self):
         """
         Convenience method to get the number of layers in the model.
@@ -824,7 +713,6 @@ class Labram(EEGModuleMixin, nn.Module):
     def forward(
         self,
         x,
-        ch_names: list[str] | None = None,
         return_patch_tokens=False,
         return_all_tokens=False,
         return_features=False,
@@ -837,12 +725,6 @@ class Labram(EEGModuleMixin, nn.Module):
         x: torch.Tensor
             The input data with shape (batch, n_chans, n_times)
             or (batch, n_chans, n_patches, patch size).
-        ch_names: list of str or None
-            Optional list of channel names corresponding to the input data.
-            This list is used to reorder channels to match LABRAM_CHANNEL_ORDER.
-            If not provided, the channels provided during model initialization
-            (via ``chs_info``), channels will be used instead
-            If neither is provided, an error will be raised.
         return_features : bool
             If True, return a dict with ``"features"`` (patch tokens) and
             ``"cls_token"`` instead of the classification output.
@@ -856,8 +738,11 @@ class Labram(EEGModuleMixin, nn.Module):
         torch.Tensor or dict
             The output of the model with dimensions (batch, n_outputs)
         """
-        # Apply automatic channel reordering if configured and input_chans not provided
-        x, input_chans = self._select_channels(x, ch_names=ch_names)
+        # After __init__ validation, x already has chs_info == LABRAM_CHANNEL_ORDER,
+        # so input_chans is always arange(len(canonical) + 1) (CLS + all canonical).
+        input_chans = torch.arange(
+            len(LABRAM_CHANNEL_ORDER) + 1, device=x.device, dtype=torch.long
+        )
 
         if return_features:
             x = self.forward_features(
@@ -1615,3 +1500,21 @@ class _TemporalConv(nn.Module):
         x = self.act_layer_3(self.norm3(self.conv3(x)))
         x = self.transpose_temporal_channel(x)
         return x
+
+
+# -----------------------------------------------------------------------------
+# InterpolatedLaBraM — experimental channel-interpolation variant of Labram
+# -----------------------------------------------------------------------------
+# A :func:`~braindecode.models.interpolated.InterpolatedModel` wrapper around
+# :class:`Labram` whose target channel set is the 128-channel canonical
+# ``LABRAM_CHANNEL_ORDER``. Accepts arbitrary user ``chs_info``; projects to
+# the canonical 128 channels via an MNE-backed (frozen by default)
+# interpolation matrix.
+#
+# NOTE: 8 of the 128 canonical channels are bipolar derivations (e.g. FP1-F7);
+# their positions are approximated as midpoints — see the TODO in
+# ``_LABRAM_TARGET_CHS_TUPLES``.
+
+from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
+
+InterpolatedLaBraM = InterpolatedModel(Labram, _LABRAM_TARGET_CHS_INFO)

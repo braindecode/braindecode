@@ -226,6 +226,7 @@ models_mandatory_parameters: list[
     ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
     ("Labram", ["chs_info", "n_outputs", "n_times"], None),
+    ("InterpolatedLaBraM", ["chs_info", "n_outputs", "n_times"], None),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
     ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("ContraWR", ["n_chans", "n_outputs", "sfreq", "n_times"], {"sfreq": 200.0}),
