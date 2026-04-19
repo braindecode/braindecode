@@ -4,7 +4,10 @@
 import numpy as np
 import torch
 
-from braindecode.modules.interpolation import ChannelInterpolationLayer
+from braindecode.modules.interpolation import (
+    ChannelInterpolationLayer,
+    _compute_interpolation_matrix_mne,
+)
 
 
 def _ch(name, loc=(0.0, 0.0, 0.0)):
@@ -52,3 +55,23 @@ def test_forward_applies_matrix_over_channel_axis():
     assert y.shape == (1, 2, 3)
     torch.testing.assert_close(y[0, 0], torch.tensor([10.0, 20.0, 30.0]))
     torch.testing.assert_close(y[0, 1], torch.tensor([1.0, 2.0, 3.0]))
+
+
+def _montage_ch(name):
+    # Positions from a real montage: we pick a handful of 10-20 names.
+    import mne
+
+    mtg = mne.channels.make_standard_montage("standard_1005")
+    pos = mtg.get_positions()["ch_pos"]
+    return {"ch_name": name, "kind": "eeg", "loc": np.asarray(pos[name], dtype=float)}
+
+
+def test_compute_mne_matrix_returns_correct_shape():
+    src = [_montage_ch(n) for n in ["Fz", "Cz", "Pz", "C3", "C4"]]
+    tgt = [_montage_ch(n) for n in ["F3", "F4", "P3", "P4"]]
+    W = _compute_interpolation_matrix_mne(src, tgt, method="spline")
+    assert isinstance(W, torch.Tensor)
+    assert W.dtype == torch.float32
+    assert W.shape == (4, 5)
+    # Should not be all-zero
+    assert torch.any(W.abs() > 1e-6)

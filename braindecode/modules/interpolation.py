@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -73,3 +74,47 @@ class ChannelInterpolationLayer(nn.Module):
                 W[i, j] = 1.0
             return W
         raise NotImplementedError("only all-match name_match is implemented in Task 1")
+
+
+def _compute_interpolation_matrix_mne(
+    src_chs_info: list[dict],
+    tgt_chs_info: list[dict],
+    method: str = "spline",
+) -> torch.Tensor:
+    """Compute an interpolation matrix ``W`` of shape ``(n_tgt, n_src)`` via MNE.
+
+    Uses the identity-input trick: feed an identity matrix through
+    ``Raw.interpolate_to`` so each output column corresponds to one
+    source channel.
+    """
+    import mne
+
+    src_names = [s["ch_name"] for s in src_chs_info]
+    src_locs = np.stack(
+        [np.asarray(s["loc"], dtype=float)[:3] for s in src_chs_info], axis=0
+    )
+    tgt_names = [t["ch_name"] for t in tgt_chs_info]
+    tgt_locs = np.stack(
+        [np.asarray(t["loc"], dtype=float)[:3] for t in tgt_chs_info], axis=0
+    )
+
+    info_src = mne.create_info(ch_names=src_names, sfreq=100.0, ch_types="eeg")
+    montage_src = mne.channels.make_dig_montage(
+        ch_pos=dict(zip(src_names, src_locs)), coord_frame="head"
+    )
+    info_src.set_montage(montage_src)
+    identity = np.eye(len(src_chs_info), dtype=np.float64)
+    raw = mne.io.RawArray(identity, info_src, verbose="ERROR")
+
+    montage_tgt = mne.channels.make_dig_montage(
+        ch_pos=dict(zip(tgt_names, tgt_locs)), coord_frame="head"
+    )
+
+    raw_new = raw.interpolate_to(montage_tgt, method=method)
+    W = raw_new.get_data()  # (n_tgt, n_src)
+
+    assert W.shape == (len(tgt_chs_info), len(src_chs_info)), (
+        f"Unexpected matrix shape {W.shape}; expected "
+        f"({len(tgt_chs_info)}, {len(src_chs_info)})."
+    )
+    return torch.tensor(W, dtype=torch.float32)
