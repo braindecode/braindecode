@@ -64,16 +64,24 @@ class ChannelInterpolationLayer(nn.Module):
         mode: str,
         method: str,
     ) -> torch.Tensor:
+        if mode not in ("always", "name_match"):
+            raise ValueError(f"mode must be 'always' or 'name_match', got {mode!r}")
+
         name_to_src = {s["ch_name"].lower(): i for i, s in enumerate(src)}
         matches = [
             (i, name_to_src.get(t["ch_name"].lower())) for i, t in enumerate(tgt)
         ]
+
+        # Short-circuit: name_match with full coverage → permutation, no MNE.
         if mode == "name_match" and all(j is not None for _, j in matches):
             W = torch.zeros(len(tgt), len(src))
             for i, j in matches:
                 W[i, j] = 1.0
             return W
-        raise NotImplementedError("only all-match name_match is implemented in Task 1")
+
+        # Otherwise: compute the full matrix via MNE.
+        W = _compute_interpolation_matrix_mne(src, tgt, method=method)
+        return W
 
 
 def _compute_interpolation_matrix_mne(
