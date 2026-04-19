@@ -113,15 +113,18 @@ def InterpolatedModel(
 
         if not _is_sequential:
 
-            def forward(self, x):
+            def forward(self, x, *args, **kwargs):
                 # During super().__init__() the interpolation_layer attr
                 # does not exist yet; any dummy forward call (e.g. from
                 # get_output_shape) must pass through unchanged so the
                 # backbone sees its expected target-shape input.
+                # Forward *args / **kwargs so backbone-specific flags
+                # like ``return_features`` keep working through the
+                # wrapper.
                 interp = getattr(self, "interpolation_layer", None)
                 if interp is not None:
                     x = interp(x)
-                return super().forward(x)
+                return super().forward(x, *args, **kwargs)
 
     _Interpolated.__name__ = name or f"Interpolated{model_cls.__name__}"
     _Interpolated.__qualname__ = _Interpolated.__name__

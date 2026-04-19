@@ -10,12 +10,14 @@ from braindecode.models import (
     EEGPT,
     REVE,
     CBraMod,
+    InterpolatedLaBraM,
     Labram,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
     SignalJEPA_PreLocal,
 )
+from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
 
@@ -51,7 +53,11 @@ def _chs(names=None, n=N_CHANS):
 _MODELS = [
     pytest.param(EEGPT, N_CHANS, {}, False, id="EEGPT"),
     pytest.param(
-        Labram, N_CHANS, {"patch_size": 200, "chs_info": _chs()}, True, id="Labram"
+        InterpolatedLaBraM,
+        N_CHANS,
+        {"patch_size": 200, "chs_info": _chs()},
+        True,
+        id="InterpolatedLaBraM",
     ),
     pytest.param(
         REVE,
@@ -130,7 +136,7 @@ _LEGACY = [
     ),
     pytest.param(
         Labram,
-        {"patch_size": 200, "chs_info": _chs()},
+        {"patch_size": 200, "chs_info": _LABRAM_TARGET_CHS_INFO},
         {"return_all_tokens": True},
         lambda out: isinstance(out, torch.Tensor),
         id="Labram-all_tokens",
@@ -140,10 +146,15 @@ _LEGACY = [
 
 @pytest.mark.parametrize("cls, init_kw, fwd_kw, check", _LEGACY)
 def test_legacy_params(cls, init_kw, fwd_kw, check):
-    model = cls(n_chans=N_CHANS, n_times=N_TIMES, n_outputs=N_OUTPUTS, **init_kw)
+    # When init_kw supplies chs_info, derive n_chans from it (some backbones
+    # like refactored Labram require chs_info to match a canonical order and
+    # will reject a user-provided n_chans that does not equal len(chs_info)).
+    nc = len(init_kw["chs_info"]) if "chs_info" in init_kw else N_CHANS
+    extra = {} if "chs_info" in init_kw else {"n_chans": nc}
+    model = cls(n_times=N_TIMES, n_outputs=N_OUTPUTS, **extra, **init_kw)
     model.eval()
     with torch.no_grad():
-        out = model(torch.randn(BATCH, N_CHANS, N_TIMES), **fwd_kw)
+        out = model(torch.randn(BATCH, nc, N_TIMES), **fwd_kw)
     assert check(out)
 
 
