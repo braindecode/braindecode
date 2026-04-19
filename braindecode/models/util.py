@@ -224,6 +224,7 @@ models_mandatory_parameters: list[
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 128.0}),
     ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
+    ("InterpolatedBIOT", ["chs_info", "n_outputs", "sfreq", "n_times"], None),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
     ("Labram", ["chs_info", "n_outputs", "n_times"], None),
     ("InterpolatedLaBraM", ["chs_info", "n_outputs", "n_times"], None),
