@@ -83,3 +83,38 @@ def test_get_output_shape_does_not_crash():
     )
     shape = model.get_output_shape()
     assert shape[0] == 1  # batch
+
+
+def test_get_config_preserves_user_chs_info():
+    target = _target_5ch()
+    user = _target_5ch()[:4]
+    Cls = InterpolatedModel(EEGNet, target_chs_info=target)
+    model = Cls(
+        chs_info=user,
+        n_outputs=2,
+        n_times=200,
+        interpolation_mode="name_match",
+    )
+    config = model.get_config()
+    # chs_info stored is user's (4 channels), not target's (5)
+    assert len(config["chs_info"]) == 4
+    # extra kwargs are captured
+    assert config["interpolation_mode"] == "name_match"
+    assert config["n_outputs"] == 2
+
+
+def test_from_config_round_trip():
+    target = _target_5ch()
+    user = _target_5ch()[:4]
+    Cls = InterpolatedModel(EEGNet, target_chs_info=target)
+    model1 = Cls(
+        chs_info=user,
+        n_outputs=2,
+        n_times=200,
+        interpolation_mode="name_match",
+    )
+    config = model1.get_config()
+    model2 = Cls.from_config(config)
+    assert model2.n_chans == 4
+    assert len(model2.chs_info) == 4
+    assert model2._TARGET_CHS_INFO == target
