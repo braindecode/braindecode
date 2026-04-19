@@ -182,3 +182,23 @@ def test_channel_interpolation_layer_is_exported_from_braindecode_modules():
 
     assert hasattr(modules, "ChannelInterpolationLayer")
     assert modules.ChannelInterpolationLayer is ChannelInterpolationLayer
+
+
+def test_name_match_full_coverage_does_not_call_mne(monkeypatch):
+    # Short-circuit guarantee: if every target name matches a src name,
+    # the MNE helper must not be invoked (linear-probing use case).
+    called = {"n": 0}
+
+    def fake_mne(*args, **kwargs):
+        called["n"] += 1
+        raise AssertionError("MNE should not be called on full name coverage")
+
+    monkeypatch.setattr(
+        "braindecode.modules.interpolation._compute_interpolation_matrix_mne",
+        fake_mne,
+    )
+    src = [_ch("Fz"), _ch("Cz"), _ch("Pz")]
+    tgt = [_ch("Pz"), _ch("Fz"), _ch("Cz")]
+    layer = ChannelInterpolationLayer(src, tgt, mode="name_match")
+    assert layer.matrix.shape == (3, 3)
+    assert called["n"] == 0

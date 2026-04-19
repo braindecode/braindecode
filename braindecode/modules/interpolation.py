@@ -11,11 +11,18 @@ from torch import nn
 
 
 def _assert_eeg_only(chs_info: list[dict], where: str) -> None:
-    """Raise if ``chs_info`` contains any non-EEG channel."""
+    """Raise if ``chs_info`` contains any non-EEG channel.
+
+    A channel is rejected only when its ``"kind"`` explicitly declares a
+    non-EEG type (string ``!= "eeg"`` case-insensitively, or FIFF integer
+    code ``!= 2``). Channels with missing or ``None`` ``"kind"`` are
+    accepted as EEG — many braindecode users build ``chs_info`` by hand
+    without setting ``"kind"``.
+    """
     for ch in chs_info:
         kind = ch.get("kind")
-        # Strings are the convention in braindecode (e.g. "eeg"); MNE
-        # integer codes also occur — FIFF EEG kind is 2.
+        if kind is None:
+            continue  # permissive: unknown kind treated as EEG
         if isinstance(kind, str) and kind.lower() != "eeg":
             raise ValueError(
                 f"ChannelInterpolationLayer: non-EEG channel "
@@ -51,7 +58,16 @@ class ChannelInterpolationLayer(nn.Module):
     tgt_chs_info : list of dict
         Target channel info; same structure.
     mode : {"always", "name_match"}
-        See design spec. Default ``"always"``.
+        How the matrix is built. Default ``"always"``.
+
+        * ``"always"``: every row of ``W`` is computed via
+          :func:`mne.io.Raw.interpolate_to` using the 3D positions.
+        * ``"name_match"``: for each target channel whose ``ch_name``
+          (case-insensitive) also appears in ``src_chs_info``, the
+          corresponding row of ``W`` is a one-hot vector selecting that
+          source channel (its 3D position is ignored). Remaining rows,
+          if any, are filled via MNE. If every target name has a source
+          match, MNE is not invoked and no ``"loc"`` is required.
     method : str
         Forwarded to ``mne.Raw.interpolate_to`` ``method`` argument when an
         MNE-based matrix is needed. Default ``"spline"``.
@@ -131,8 +147,25 @@ def _compute_interpolation_matrix_mne(
     """Compute an interpolation matrix ``W`` of shape ``(n_tgt, n_src)`` via MNE.
 
     Uses the identity-input trick: feed an identity matrix through
-    ``Raw.interpolate_to`` so each output column corresponds to one
-    source channel.
+    :meth:`mne.io.Raw.interpolate_to` so each output column corresponds
+    to one source channel, giving the interpolation matrix directly.
+
+    Parameters
+    ----------
+    src_chs_info : list of dict
+        Source channel info; each dict must have ``"ch_name"`` and
+        ``"loc"`` (shape ``(3,)`` or MNE 12-element form).
+    tgt_chs_info : list of dict
+        Target channel info; same structure.
+    method : str
+        Forwarded to :meth:`mne.io.Raw.interpolate_to`. Default
+        ``"spline"`` (MNE's own default; ``"MNE"`` is also accepted by
+        recent MNE releases).
+
+    Returns
+    -------
+    torch.Tensor
+        Float32 tensor of shape ``(n_tgt, n_src)``.
     """
     import mne
 
@@ -160,8 +193,9 @@ def _compute_interpolation_matrix_mne(
     raw_new = raw.interpolate_to(montage_tgt, method=method)
     W = raw_new.get_data()  # (n_tgt, n_src)
 
-    assert W.shape == (len(tgt_chs_info), len(src_chs_info)), (
-        f"Unexpected matrix shape {W.shape}; expected "
-        f"({len(tgt_chs_info)}, {len(src_chs_info)})."
-    )
+    if W.shape != (len(tgt_chs_info), len(src_chs_info)):
+        raise RuntimeError(
+            f"Unexpected matrix shape {W.shape} returned by MNE; expected "
+            f"({len(tgt_chs_info)}, {len(src_chs_info)})."
+        )
     return torch.tensor(W, dtype=torch.float32)
