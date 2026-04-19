@@ -39,6 +39,21 @@ Enhancements
   memory-efficient backends on other devices).
   By `Léo Burgund`_ and `Bruno Aristimunha`_.
   (:gh:`902`)
+- Add experimental channel interpolation feature: new
+  :class:`braindecode.modules.ChannelInterpolationLayer` plus the
+  :func:`braindecode.models.InterpolatedModel` class factory project arbitrary
+  user channel sets to a model's canonical set via an MNE-backed (frozen by
+  default) interpolation matrix. Ship pre-built variants
+  :class:`braindecode.models.InterpolatedLaBraM`,
+  :class:`braindecode.models.InterpolatedSignalJEPA`, and
+  :class:`braindecode.models.InterpolatedBIOT` for the corresponding
+  pre-trained models. (:gh:`993` by `Pierre Guetschel`_)
+- Mark deterministic index buffers (:class:`braindecode.models.BIOT` encoder's
+  ``index`` and :class:`braindecode.models.REVE`'s position ``embedding`` bank)
+  as non-persistent. They are rebuilt from ``__init__`` arguments on every
+  instantiation, so keeping them in ``state_dict`` only bloated checkpoints and
+  caused spurious mismatches when ``n_chans`` (or the position-bank config)
+  differed between save and load. (:gh:`993` by `Pierre Guetschel`_)
 
 API and behavior changes
 ========================
@@ -47,6 +62,12 @@ API and behavior changes
   convention: boolean masks use ``True`` to **ignore** a position (previously
   ``True`` meant keep). The scaling factor is now ``1/sqrt(head_dim)`` instead of
   ``1/sqrt(emb_size)``. (:gh:`902`)
+- :class:`braindecode.models.Labram` now requires ``chs_info`` to match
+  ``LABRAM_CHANNEL_ORDER`` exactly (128 channels, canonical order). The
+  ``on_unknown_chs`` parameter and the forward-time ``ch_names`` argument are
+  removed. Users with arbitrary channel sets should migrate to
+  :class:`braindecode.models.InterpolatedLaBraM`. (:gh:`993`
+  by `Pierre Guetschel`_)
 
 Requirements
 ============
