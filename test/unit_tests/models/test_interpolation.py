@@ -175,3 +175,10 @@ def test_trainable_false_default():
     tgt = [_ch("A")]
     layer = ChannelInterpolationLayer(src, tgt, mode="name_match")
     assert not layer.trainable
+
+
+def test_channel_interpolation_layer_is_exported_from_braindecode_modules():
+    import braindecode.modules as modules
+
+    assert hasattr(modules, "ChannelInterpolationLayer")
+    assert modules.ChannelInterpolationLayer is ChannelInterpolationLayer
