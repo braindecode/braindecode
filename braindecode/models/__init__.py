@@ -5,7 +5,7 @@ from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
 from .bendr import BENDR
-from .biot import BIOT
+from .biot import BIOT, InterpolatedBIOT
 from .brainmodule import BrainModule
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
@@ -30,7 +30,8 @@ from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
 from .hybrid import HybridNet
 from .ifnet import IFNet
-from .labram import Labram
+from .interpolated import InterpolatedModel
+from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
 from .medformer import MEDFormer
 from .msvtnet import MSVTNet
@@ -39,6 +40,7 @@ from .reve import REVE
 from .sccnet import SCCNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
+    InterpolatedSignalJEPA,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -97,6 +99,10 @@ __all__ = [
     "FBMSNet",
     "HybridNet",
     "IFNet",
+    "InterpolatedBIOT",
+    "InterpolatedLaBraM",
+    "InterpolatedModel",
+    "InterpolatedSignalJEPA",
     "Labram",
     "LUNA",
     "extract_channel_locations_from_chs_info",

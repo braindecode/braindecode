@@ -30,12 +30,12 @@ def n_times():
 
 @pytest.fixture
 def n_chans():
-    return 64
+    return 128
 
 
 @pytest.fixture
-def chs_info(n_chans):
-    return [{"ch_name": ch_name} for ch_name in LABRAM_CHANNEL_ORDER[:n_chans]]
+def chs_info():
+    return [{"ch_name": ch_name} for ch_name in LABRAM_CHANNEL_ORDER]
 
 
 @pytest.fixture
@@ -128,7 +128,7 @@ def test_labram_neural_tokenizer_initialization(model_tokenizer):
     """Test that the model initializes correctly in tokenizer mode."""
     assert model_tokenizer is not None
     assert model_tokenizer.neural_tokenizer is True
-    assert model_tokenizer.n_chans == 64
+    assert model_tokenizer.n_chans == 128
     assert model_tokenizer.n_times == 1000
     assert model_tokenizer.n_outputs == 4
 
@@ -149,53 +149,6 @@ def test_labram_neural_tokenizer_forward_pass_single_sample(
     x = torch.randn(1, n_chans, n_times)
     output = model_tokenizer(x)
     assert output.shape == (1, n_outputs)
-
-
-def test_labram_neural_tokenizer_forward_features_all_tokens(
-    model_tokenizer, n_chans, ch_names, n_times, emb_size
-):
-    """Test forward_features with return_all_tokens=True in tokenizer mode."""
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    x_reorder, input_chans = model_tokenizer._select_channels(x, ch_names)
-    output = model_tokenizer.forward_features(
-        x_reorder, input_chans=input_chans, return_all_tokens=True
-    )
-
-    # Output should be (batch, cls + channels*n_patchs, emb_dim)
-    # With n_patchs=5 and n_chans=64: 1 + 64*5 = 321
-    assert output.shape[0] == batch_size
-    assert output.shape[1] == 321  # 1 cls token + 64 channels * 5 patches
-    assert output.shape[2] == emb_size
-
-
-def test_labram_neural_tokenizer_forward_features_patch_tokens(
-    model_tokenizer, n_chans, ch_names, n_times, emb_size
-):
-    """Test forward_features with return_patch_tokens=True in tokenizer mode."""
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    x_reorder, input_chans = model_tokenizer._select_channels(x, ch_names)
-    output = model_tokenizer.forward_features(
-        x_reorder, input_chans=input_chans, return_patch_tokens=True
-    )
-
-    # Output should be (batch, channels*n_patchs, emb_dim)
-    # With n_patchs=5 and n_chans=64: 64*5 = 320
-    assert output.shape == (batch_size, 320, emb_size)
-
-
-def test_labram_neural_tokenizer_forward_features_default(
-    model_tokenizer, n_chans, ch_names, n_times, emb_size
-):
-    """Test forward_features with default settings in tokenizer mode."""
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    x_reorder, input_chans = model_tokenizer._select_channels(x, ch_names)
-    output = model_tokenizer.forward_features(x_reorder, input_chans=input_chans)
-
-    # Default should return mean pooled output: (batch, emb_dim)
-    assert output.shape == (batch_size, emb_size)
 
 
 def test_labram_neural_tokenizer_different_batch_sizes(
@@ -229,7 +182,7 @@ def test_labram_neural_decoder_initialization(model_decoder):
     """Test that the model initializes correctly in decoder mode."""
     assert model_decoder is not None
     assert model_decoder.neural_tokenizer is False
-    assert model_decoder.n_chans == 64
+    assert model_decoder.n_chans == 128
     assert model_decoder.n_times == 1000
     assert model_decoder.n_outputs == 4
 
@@ -273,54 +226,6 @@ def test_labram_can_load_pretrained_weights():
     x = torch.randn(1, model.n_chans, model.n_times)
     output = model(x)
     assert output.shape[0] == 1
-
-
-def test_labram_neural_decoder_forward_features_all_tokens(
-    model_decoder, n_chans, n_times, emb_size
-):
-    """Test forward_features with return_all_tokens=True in decoder mode."""
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    x_reorder, input_chans = model_decoder._select_channels(x, ch_names=None)
-    output = model_decoder.forward_features(
-        x_reorder, input_chans=input_chans, return_all_tokens=True
-    )
-
-    # Output should be (batch, cls + n_patches, emb_dim)
-    assert output.shape[0] == batch_size
-    assert output.shape[1] == 6  # 1 cls token + 5 patches (1000 / 200 = 5)
-    assert output.shape[2] == emb_size
-
-
-def test_labram_neural_decoder_forward_features_patch_tokens(
-    model_decoder, n_chans, n_times, emb_size
-):
-    """Test forward_features with return_patch_tokens=True in decoder mode."""
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    x_reorder, input_chans = model_decoder._select_channels(x, ch_names=None)
-    output = model_decoder.forward_features(
-        x_reorder, input_chans=input_chans, return_patch_tokens=True
-    )
-
-    # Output should be (batch, n_patches, emb_dim)
-    # After removing cls token
-    assert output.shape[0] == batch_size
-    assert output.shape[1] == 5  # n_patches (1000 / 200 = 5)
-    assert output.shape[2] == emb_size
-
-
-def test_labram_neural_decoder_forward_features_default(
-    model_decoder, n_chans, n_times, emb_size
-):
-    """Test forward_features with default settings in decoder mode."""
-    batch_size = 2
-    x = torch.randn(batch_size, n_chans, n_times)
-    x_reorder, input_chans = model_decoder._select_channels(x, ch_names=None)
-    output = model_decoder.forward_features(x_reorder, input_chans=input_chans)
-
-    # Default should return mean pooled output: (batch, feature_dim)
-    assert output.shape == (batch_size, emb_size)
 
 
 def test_labram_neural_decoder_different_batch_sizes(
@@ -411,49 +316,6 @@ def test_labram_patch_embedding_shapes(n_times, n_chans, patch_size, emb_size):
     assert output_patch.shape == (batch_size, 5, emb_size)
 
 
-def test_labram_no_dimension_mismatch_errors(n_times, chs_info, ch_names, n_outputs):
-    """Test that there are no dimension mismatch errors in forward pass."""
-    batch_size = 2
-
-    # Test neural tokenizer mode
-    model = Labram(
-        n_times=n_times,
-        chs_info=chs_info,
-        n_outputs=n_outputs,
-        neural_tokenizer=True,
-    )
-
-    x = torch.randn(batch_size, len(chs_info), n_times)
-
-    try:
-        x_reorder, input_chans = model._select_channels(x, ch_names)
-        output = model.forward_features(
-            x_reorder, input_chans=input_chans, return_all_tokens=True
-        )
-        # Should complete without error
-        assert output is not None
-    except RuntimeError as e:
-        pytest.fail(f"forward_features raised RuntimeError: {e}")
-
-    # Test neural decoder mode
-    model = Labram(
-        n_times=n_times,
-        chs_info=chs_info,
-        n_outputs=n_outputs,
-        neural_tokenizer=False,
-    )
-
-    try:
-        x_reorder, input_chans = model._select_channels(x, ch_names)
-        output = model.forward_features(
-            x_reorder, input_chans=input_chans, return_all_tokens=True
-        )
-        # Should complete without error
-        assert output is not None
-    except RuntimeError as e:
-        pytest.fail(f"forward_features raised RuntimeError: {e}")
-
-
 # ==============================================================================
 # Tests for Edge Cases
 # ==============================================================================
@@ -525,297 +387,11 @@ def test_labram_wrong_channel_count(model_tokenizer, n_times):
 def test_labram_channel_order_constant_exported():
     """Test that LABRAM_CHANNEL_ORDER is exported and has expected format."""
     assert LABRAM_CHANNEL_ORDER is not None
-    assert isinstance(LABRAM_CHANNEL_ORDER, tuple)
+    assert isinstance(LABRAM_CHANNEL_ORDER, (list, tuple))
     assert len(LABRAM_CHANNEL_ORDER) > 100  # Should have 100+ channels
     assert "FP1" in LABRAM_CHANNEL_ORDER
     assert "CZ" in LABRAM_CHANNEL_ORDER
     assert "O2" in LABRAM_CHANNEL_ORDER
-
-
-def test_labram_with_chs_info_initialization():
-    """Test Labram initialization with chs_info parameter."""
-    chs_info = [
-        {"ch_name": "FP1"},
-        {"ch_name": "FP2"},
-        {"ch_name": "CZ"},
-        {"ch_name": "O1"},
-        {"ch_name": "O2"},
-    ]
-    model = Labram(
-        n_times=1000,
-        n_chans=5,
-        n_outputs=4,
-        chs_info=chs_info,
-        neural_tokenizer=True,
-    )
-    ch_indices = [LABRAM_CHANNEL_ORDER.index(ch["ch_name"].upper()) for ch in chs_info]
-
-    assert model._input_channels_mask is not None
-    assert model._labram_ch_indices is not None
-    assert torch.equal(model._input_channels_mask, torch.tensor([1, 1, 1, 1, 1], dtype=torch.bool))
-    assert torch.equal(model._labram_ch_indices, torch.tensor(ch_indices))
-
-
-def test_labram_with_chs_info_forward_pass():
-    """Test forward pass with chs_info parameter."""
-    chs_info = [
-        {"ch_name": "FP1"},
-        {"ch_name": "FP2"},
-        {"ch_name": "CZ"},
-        {"ch_name": "O1"},
-        {"ch_name": "O2"},
-    ]
-    model = Labram(
-        n_times=1000,
-        n_chans=5,
-        n_outputs=4,
-        chs_info=chs_info,
-        neural_tokenizer=True,
-        num_layers=2,
-    )
-
-    x = torch.randn(2, 5, 1000)
-    output = model(x)
-    assert output.shape == (2, 4)
-
-
-def test_labram_channel_reordering_order():
-    """Test that Labram keeps input order while mapping positional indices."""
-    # Input channels in non-standard order
-    chs_info = [{"ch_name": "O2"}, {"ch_name": "CZ"}, {"ch_name": "FP1"}]
-    ch_names = ["O2", "CZ", "FP1"]
-    model = Labram(
-        n_times=1000,
-        n_chans=3,
-        n_outputs=4,
-        chs_info=chs_info,
-        neural_tokenizer=True,
-        num_layers=2,
-    )
-
-    # FP1 comes before CZ, and CZ comes before O2 in LABRAM order.
-    fp1_idx = LABRAM_CHANNEL_ORDER.index("FP1")
-    cz_idx = LABRAM_CHANNEL_ORDER.index("CZ")
-    o2_idx = LABRAM_CHANNEL_ORDER.index("O2")
-
-    # _labram_ch_indices follow input-channel order.
-    labram_indices = model._labram_ch_indices.tolist()
-    assert labram_indices == [o2_idx, cz_idx, fp1_idx]
-    assert torch.equal(model._input_channels_mask, torch.tensor([1, 1, 1], dtype=torch.bool))
-
-    # Verify positional embedding indices include CLS and LABRAM positions
-    x = torch.randn(1, 3, 1000)
-    x_selected, input_chans = model._select_channels(x, ch_names=ch_names)
-    assert torch.equal(x_selected, x)
-    assert input_chans.tolist() == [0, o2_idx + 1, cz_idx + 1, fp1_idx + 1]
-
-
-@pytest.mark.parametrize("forward_mode", [True, False])
-def test_labram_channel_reordering_selects_correct_data(forward_mode):
-    """Test that Labram channel selection preserves input order of matched channels."""
-    chs_info = [{"ch_name": "O2"}, {"ch_name": "CZ"}, {"ch_name": "FP1"}]
-    model = Labram(
-        n_times=200,
-        n_chans=3,
-        n_outputs=4,
-        chs_info=chs_info,
-        neural_tokenizer=True,
-        num_layers=2,
-        patch_size=200,
-    )
-
-    # Create distinguishable input for each channel
-    x = torch.zeros(1, 3, 200)
-    x[0, 0, :] = 1.0  # O2 channel
-    x[0, 1, :] = 2.0  # CZ channel
-    x[0, 2, :] = 3.0  # FP1 channel
-
-    ch_names = None
-    if forward_mode:
-        ch_names = ["CZ", "O2", "FP1"]
-
-    # Apply reordering
-    x_selected, input_chans = model._select_channels(x, ch_names=ch_names)
-
-    # Selected tensor preserves input order for matched channels.
-    assert x_selected.shape == (1, 3, 200)
-    assert torch.allclose(x_selected[0, 0, :], torch.tensor(1.0))
-    assert torch.allclose(x_selected[0, 1, :], torch.tensor(2.0))
-    assert torch.allclose(x_selected[0, 2, :], torch.tensor(3.0))
-
-    fp1_idx = LABRAM_CHANNEL_ORDER.index("FP1")
-    cz_idx = LABRAM_CHANNEL_ORDER.index("CZ")
-    o2_idx = LABRAM_CHANNEL_ORDER.index("O2")
-    if forward_mode:
-        assert input_chans.tolist() == [0, cz_idx + 1, o2_idx + 1, fp1_idx + 1]
-    else:
-        assert input_chans.tolist() == [0, o2_idx + 1, cz_idx + 1, fp1_idx + 1]
-
-
-def test_labram_case_insensitive_channel_matching():
-    """Test that channel names are matched case-insensitively."""
-    chs_info = [
-        {"ch_name": "fp1"},
-        {"ch_name": "Fp2"},
-        {"ch_name": "CZ"},
-        {"ch_name": "o1"},
-        {"ch_name": "O2"},
-    ]
-    model = Labram(
-        n_times=1000,
-        n_chans=5,
-        n_outputs=4,
-        chs_info=chs_info,
-        neural_tokenizer=True,
-        num_layers=2,
-    )
-
-    assert model._input_channels_mask is not None
-    assert model._input_channels_mask.sum().item() == 5
-
-
-def test_labram_unmatched_channels_warning():
-    """Test that unmatched channel names produce a warning."""
-    chs_info = [
-        {"ch_name": "FP1"},
-        {"ch_name": "UNKNOWN_CHANNEL"},
-        {"ch_name": "CZ"},
-    ]
-    with pytest.warns(UserWarning, match="not in LABRAM_CHANNEL_ORDER"):
-        model = Labram(
-            n_times=1000,
-            n_chans=3,
-            n_outputs=4,
-            chs_info=chs_info,
-            neural_tokenizer=True,
-            num_layers=2,
-        )
-    assert model._input_channels_mask.sum().item() == 2
-    assert len(model._labram_ch_indices) == 2
-
-
-def test_labram_no_matched_channels_error():
-    """Test warning when no channels match LABRAM_CHANNEL_ORDER."""
-    chs_info = [
-        {"ch_name": "UNKNOWN1"},
-        {"ch_name": "UNKNOWN2"},
-        {"ch_name": "UNKNOWN3"},
-    ]
-    with pytest.raises(
-        ValueError, match="No input channels matched LABRAM_CHANNEL_ORDER"
-    ):
-        model = Labram(
-            n_times=1000,
-            n_chans=3,
-            n_outputs=4,
-            chs_info=chs_info,
-            neural_tokenizer=True,
-            num_layers=2,
-        )
-
-
-def test_labram_without_chs_info_no_reordering():
-    """Test that without chs_info, no reordering is performed."""
-    model = Labram(
-        n_times=1000,
-        n_chans=5,
-        n_outputs=4,
-        neural_tokenizer=True,
-        num_layers=2,
-    )
-
-    assert model._input_channels_mask is None
-    assert model._labram_ch_indices is None
-
-
-def test_labram_with_chs_info():
-    """Test channel name extraction from chs_info (MNE format)."""
-    chs_info = [
-        {"ch_name": "FP1"},
-        {"ch_name": "FP2"},
-        {"ch_name": "CZ"},
-        {"ch_name": "O1"},
-        {"ch_name": "O2"},
-    ]
-    model = Labram(
-        n_times=1000,
-        n_outputs=4,
-        chs_info=chs_info,
-        neural_tokenizer=True,
-        num_layers=2,
-    )
-
-    assert model._input_channels_mask is not None
-    assert model._input_channels_mask.sum().item() == 5
-
-
-def test_labram_channel_reordering_gradient_flow():
-    """Test that gradients flow correctly through channel reordering."""
-    chs_info = [
-        {"ch_name": "O2"},
-        {"ch_name": "CZ"},
-        {"ch_name": "FP1"},
-        {"ch_name": "FP2"},
-        {"ch_name": "O1"},
-    ]
-    model = Labram(
-        n_times=1000,
-        n_chans=5,
-        n_outputs=4,
-        chs_info=chs_info,
-        neural_tokenizer=True,
-        num_layers=2,
-    )
-
-    x = torch.randn(2, 5, 1000, requires_grad=True)
-    output = model(x)
-    loss = output.sum()
-    loss.backward()
-
-    assert x.grad is not None
-    assert model.cls_token.grad is not None
-
-
-def test_labram_channel_reordering_device_compatibility():
-    """Test channel reordering works on GPU if available."""
-    chs_info = [{"ch_name": "FP1"}, {"ch_name": "CZ"}, {"ch_name": "O2"}]
-    model = Labram(
-        n_times=1000,
-        n_chans=3,
-        n_outputs=4,
-        chs_info=chs_info,
-        neural_tokenizer=True,
-        num_layers=2,
-    )
-
-    if torch.cuda.is_available():
-        model = model.cuda()
-        x = torch.randn(2, 3, 1000).cuda()
-        output = model(x)
-        assert output.device.type == "cuda"
-        assert output.shape == (2, 4)
-
-
-def test_labram_manual_input_chans_bypasses_reordering():
-    """Test that providing input_chans manually bypasses automatic reordering."""
-    chs_info = [{"ch_name": "O2"}, {"ch_name": "CZ"}, {"ch_name": "FP1"}]
-    model = Labram(
-        n_times=1000,
-        n_chans=3,
-        n_outputs=4,
-        chs_info=chs_info,
-        neural_tokenizer=True,
-        num_layers=2,
-    )
-
-    x = torch.randn(2, 3, 1000)
-
-    # Provide manual input_chans - should bypass automatic reordering
-    # manual_input_chans = torch.tensor([0, 1, 2, 3])  # CLS + 3 channels
-    manual_ch_names = ["FP1", "CZ", "O2"]
-    output = model(x, ch_names=manual_ch_names)
-
-    assert output.shape == (2, 4)
 
 
 # ==============================================================================

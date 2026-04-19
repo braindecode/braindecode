@@ -24,6 +24,7 @@ from .convolution import (
     DepthwiseConv2d,
 )
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
+from .interpolation import ChannelInterpolationLayer
 from .layers import (
     Chomp1d,
     DropPath,
@@ -52,6 +53,7 @@ __all__ = [
     "Square",
     "CAT",
     "CBAM",
+    "ChannelInterpolationLayer",
     "ECA",
     "FCA",
     "GCT",

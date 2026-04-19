@@ -1610,8 +1610,8 @@ def test_biot_encoder_index_is_buffer(default_biot_params):
 def default_labram_params():
     return {
         "n_times": 1000,
-        "n_chans": 64,
-        "chs_info": [{"ch_name": ch_name} for ch_name in LABRAM_CHANNEL_ORDER[:64]],
+        "n_chans": 128,
+        "chs_info": [{"ch_name": ch_name} for ch_name in LABRAM_CHANNEL_ORDER],
         "patch_size": 200,
         "sfreq": 200,
         "qk_norm": partial(nn.LayerNorm, eps=1e-6),
@@ -1700,14 +1700,16 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
         out_patches = labram_base(X, return_all_tokens=False,
                                   return_patch_tokens=True)
 
+        # 128 channels * 5 patches (1000 / 200) = 640 patch tokens
         assert out_patches.shape == torch.Size(
-            [1, 320, default_labram_params["n_outputs"]]
+            [1, 640, default_labram_params["n_outputs"]]
         )
 
         out_all_tokens = labram_base(X, return_all_tokens=True,
                                      return_patch_tokens=False)
+        # 1 cls token + 640 patch tokens = 641
         assert out_all_tokens.shape == torch.Size(
-            [1, 321, default_labram_params["n_outputs"]]
+            [1, 641, default_labram_params["n_outputs"]]
         )
 
 

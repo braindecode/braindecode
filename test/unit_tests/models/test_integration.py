@@ -29,6 +29,9 @@ from braindecode.models import (
     FBCNet,
     FBLightConvNet,
     FBMSNet,
+    InterpolatedBIOT,
+    InterpolatedLaBraM,
+    InterpolatedSignalJEPA,
     SyncNet,
     USleep,
 )
@@ -147,6 +150,10 @@ def test_model_integration(model_name, required_params, signal_params):
         "input_window_seconds",
         "n_chans",
     }
+    # signal_params may be a callable (used to defer imports that would cause
+    # circular dependencies at module-load time); resolve it before checking.
+    if callable(signal_params):
+        signal_params = signal_params()
     assert signal_params is None or isinstance(signal_params, dict)
     if signal_params is not None:
         assert set(signal_params.keys()) <= set(default_signal_params.keys())
@@ -297,7 +304,14 @@ def test_model_has_activation_parameter(model_class):
     Test that checks if the model class's __init__ method has a parameter
     named 'activation' or any parameter that starts with 'activation'.
     """
-    if model_class in [EEGMiner, REVE, EEGPT]:
+    if model_class in [
+        EEGMiner,
+        REVE,
+        EEGPT,
+        InterpolatedBIOT,
+        InterpolatedLaBraM,
+        InterpolatedSignalJEPA,
+    ]:
         pytest.skip(f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
     init_method = model_class.__init__
@@ -362,6 +376,9 @@ def test_model_has_drop_prob_parameter(model_class):
         FBLightConvNet,
         SSTDPN,
         REVE,
+        InterpolatedBIOT,
+        InterpolatedLaBraM,
+        InterpolatedSignalJEPA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -492,6 +509,9 @@ def test_model_torch_script(model):
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",
         "SignalJEPA_PreLocal",
+        "InterpolatedBIOT",
+        "InterpolatedLaBraM",
+        "InterpolatedSignalJEPA",
     ]
 
     if model.__class__.__name__ in not_working_models:

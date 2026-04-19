@@ -846,7 +846,7 @@ class RevePositionBank(torch.nn.Module):
             self.mapping = {name: i for i, name in enumerate(self.position_names)}
             positions_data = list(config.values())
             positions = torch.tensor(positions_data, dtype=torch.float32)
-            self.register_buffer("embedding", positions)
+            self.register_buffer("embedding", positions, persistent=False)
 
             # Validate shape (N, 3)
             if self.embedding.dim() != 2 or self.embedding.shape[1] != 3:

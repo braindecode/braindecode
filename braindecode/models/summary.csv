@@ -49,3 +49,6 @@ LUNA,General,"Classification,Embedding",128,"n_chans, n_times, sfreq, chs_info",
 MEDFormer,General,Classification,250,"n_chans, n_outputs, n_times",5313924,"MEDFormer(n_chans=22, n_outputs=4, n_times=1000)","Foundation Model,Convolution"
 REVE,General,Classification,200,"n_outputs, n_times, n_chans",69481476,"REVE(n_times=1000, n_outputs=4, n_chans=19)","Foundation Model,Attention/Transformer"
 DGCNN,Emotion Recognition,Classification,128,"n_chans, n_outputs, n_times, chs_info",1037385,"DGCNN(n_chans=62, n_outputs=4, n_times=128)","Graph Neural Network,Channel"
+InterpolatedBIOT,"Sleep Staging, Epilepsy",Classification,200,"chs_info, n_outputs, n_times, sfreq",3184101,"InterpolatedBIOT(chs_info=<user>, n_outputs=5, sfreq=200, n_times=6000)","Foundation Model,Channel"
+InterpolatedLaBraM,General,"Classification, Embedding",200,"chs_info, n_outputs, n_times",5866196,"InterpolatedLaBraM(chs_info=<user>, n_outputs=4, n_times=1000)","Convolution,Foundation Model,Channel"
+InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info",3456882,"InterpolatedSignalJEPA(chs_info=<user>)","Convolution,Channel,Foundation Model"

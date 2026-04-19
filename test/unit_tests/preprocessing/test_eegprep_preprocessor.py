@@ -361,6 +361,35 @@ def test_resample(base_concat_ds):
 
 
 @pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
+def test_resample_preserves_annotation_durations(base_concat_ds):
+    """Test that EEGPrep resampling keeps MNE annotation durations intact."""
+    raw = base_concat_ds.datasets[0].raw
+    raw.set_annotations(
+        mne.Annotations(
+            onset=[1.0, 4.0],
+            duration=[0.4, 0.6],
+            description=["event_a", "event_b"],
+        )
+    )
+
+    new_sfreq = 128.0
+    preprocess(base_concat_ds, [Resampling(sfreq=new_sfreq)])
+
+    processed_raw = base_concat_ds.datasets[0].raw
+    assert processed_raw.info["sfreq"] == new_sfreq
+    np.testing.assert_allclose(
+        processed_raw.annotations.onset,
+        [1.0, 4.0],
+        atol=1 / new_sfreq,
+    )
+    np.testing.assert_allclose(
+        processed_raw.annotations.duration,
+        [0.4, 0.6],
+        atol=1 / new_sfreq,
+    )
+
+
+@pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")
 def test_remove_common_average_reference(base_concat_ds):
     """Test that RemoveCommonAverageReference removes the common average."""
     # Apply RemoveCommonAverageReference preprocessor
