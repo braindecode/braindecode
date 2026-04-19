@@ -223,6 +223,35 @@ def test_interpolated_biot_accepts_arbitrary_user_channels():
     assert y.shape == (1, 2)
 
 
+def test_interpolated_bendr_is_shipped():
+    from braindecode.models import BENDR, InterpolatedBENDR
+
+    assert issubclass(InterpolatedBENDR, BENDR)
+    assert not hasattr(BENDR, "_TARGET_CHS_INFO")
+    assert hasattr(InterpolatedBENDR, "_TARGET_CHS_INFO")
+    # 19 EEG channels + 1 SCALE amplitude-statistic placeholder.
+    assert len(InterpolatedBENDR._TARGET_CHS_INFO) == 20
+    assert InterpolatedBENDR._TARGET_CHS_INFO[-1]["ch_name"] == "SCALE"
+
+
+def test_interpolated_bendr_accepts_arbitrary_user_channels():
+    from braindecode.models import InterpolatedBENDR
+
+    user = _target_5ch()  # 5 real EEG channels (Fz, Cz, Pz, C3, C4)
+    model = InterpolatedBENDR(
+        chs_info=user,
+        n_outputs=2,
+        n_times=1000,
+        sfreq=256,
+        interpolation_mode="always",
+    )
+    assert model.n_chans == 5
+    # Backbone still sees the 20 canonical BENDR channels.
+    assert model.interpolation_layer.matrix.shape == (20, 5)
+    y = model(torch.zeros(1, 5, 1000))
+    assert y.shape == (1, 2)
+
+
 def test_signal_jepa_pretrain_aligned_still_works():
     # Regression guard: PR #991's channel_embedding="pretrain_aligned" path
     # must remain functional alongside the new InterpolatedSignalJEPA.

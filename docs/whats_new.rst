@@ -64,10 +64,15 @@ API and behavior changes
   ``1/sqrt(emb_size)``. (:gh:`902`)
 - :class:`braindecode.models.BENDR`: remove the ``n_chans_pretrained`` /
   ``chan_proj_max_norm`` parameters and the ``channel_projection`` layer; hard-code
-  the 20 pre-training channels as ``_BENDR_TARGET_CHS``. The official
+  the 20 pre-training channels as ``_BENDR_TARGET_CHS_TUPLES``. The official
   ``braindecode/braindecode-bendr`` checkpoint has been re-uploaded flat so
   ``from_pretrained`` now loads its 99 weights (previously 0 of 99 matched
-  silently). (:gh:`992` by `Pierre Guetschel`_)
+  silently). Also ships :class:`braindecode.models.InterpolatedBENDR`, the
+  :func:`~braindecode.models.InterpolatedModel` wrapper that accepts arbitrary
+  user ``chs_info`` and projects to the canonical 20 BENDR channels (the
+  ``SCALE`` target has no physical position, so its interpolation row is a
+  spatial spline of the user's EEG — not the dn3 amplitude statistic).
+  (:gh:`992` by `Pierre Guetschel`_)
 - :class:`braindecode.models.Labram` now requires ``chs_info`` to match
   ``LABRAM_CHANNEL_ORDER`` exactly (128 channels, canonical order). The
   ``on_unknown_chs`` parameter and the forward-time ``ch_names`` argument are

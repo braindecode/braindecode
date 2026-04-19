@@ -320,6 +320,11 @@ models_mandatory_parameters: list[
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BrainModule", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BENDR", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "InterpolatedBENDR",
+        ["chs_info", "n_outputs", "n_times"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     (

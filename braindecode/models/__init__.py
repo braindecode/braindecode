@@ -4,7 +4,7 @@ from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
-from .bendr import BENDR
+from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
 from .brainmodule import BrainModule
 from .cbramod import CBraMod
@@ -99,6 +99,7 @@ __all__ = [
     "FBMSNet",
     "HybridNet",
     "IFNet",
+    "InterpolatedBENDR",
     "InterpolatedBIOT",
     "InterpolatedLaBraM",
     "InterpolatedModel",

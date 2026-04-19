@@ -1,23 +1,30 @@
 import copy
 
+import numpy as np
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 
-# The 19 EEG channels used to pre-train BENDR, in the order expected by the
-# `braindecode/braindecode-bendr` checkpoint. Taken verbatim from
-# `dn3.transforms.instance.To1020.EEG_20_div`
+# The 20 channels used to pre-train BENDR, in the order expected by the
+# `braindecode/braindecode-bendr` checkpoint. The first 19 entries are the
+# EEG channels taken verbatim from `dn3.transforms.instance.To1020.EEG_20_div`
 # (https://github.com/SPOClab-ca/dn3/blob/master/dn3/transforms/instance.py).
-# Positions were obtained once from MNE's ``standard_1005`` montage and
-# then hard-coded below (T5/T6 are legacy names that share their positions
-# with P7/P8 in that montage).
-# NOTE: the checkpoint expects a 20th input channel ``SCALE``, a relative-
-# amplitude statistic (not an electrode) appended by
-# ``dn3.transforms.instance.To1020(include_scale_ch=True)`` during
-# pre-training. Pass it as the last channel.
-_BENDR_TARGET_CHS: list[tuple[str, tuple[float, float, float]]] = [
+# Their positions come from MNE's ``standard_1005`` montage (T5/T6 are
+# legacy names that share positions with P7/P8 there).
+#
+# The 20th entry is ``SCALE``, a relative-amplitude statistic (not an
+# electrode) appended by ``To1020(include_scale_ch=True)`` during
+# pre-training. Since it has no physical position, the ``loc`` below is
+# the centroid of the 19 EEG positions — purely a placeholder so that
+# :class:`~braindecode.modules.ChannelInterpolationLayer` (used by
+# :class:`InterpolatedBENDR`) can build a valid spline interpolation
+# matrix. It is NOT the SCALE the pre-training pipeline computes
+# (which is an RMS-like amplitude via ``dn3.MappingDeep1010``); users
+# who need a faithful SCALE must compute it themselves and feed 20
+# channels to :class:`BENDR` directly.
+_BENDR_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
     ("FP1", (-0.0294367, +0.0839171, -0.0069900)),  # standard_1005
     ("FP2", (+0.0298723, +0.0848959, -0.0070800)),  # standard_1005
     ("F7", (-0.0702629, +0.0424743, -0.0114200)),  # standard_1005
@@ -37,7 +44,17 @@ _BENDR_TARGET_CHS: list[tuple[str, tuple[float, float, float]]] = [
     ("T6", (+0.0730557, -0.0730683, -0.0025400)),  # standard_1005 (= P8)
     ("O1", (-0.0294134, -0.1124490, +0.0088390)),  # standard_1005
     ("O2", (+0.0298426, -0.1121560, +0.0088000)),  # standard_1005
+    (
+        "SCALE",
+        (+0.0006439, -0.0131942, +0.0278448),
+    ),  # centroid of the 19 EEG positions (placeholder; see comment above)
 ]
+
+_BENDR_TARGET_CHS_INFO: list[dict] = [
+    {"ch_name": ch, "kind": "eeg", "loc": np.asarray(loc, dtype=float)}
+    for ch, loc in _BENDR_TARGET_CHS_TUPLES
+]
+BENDR_CHANNEL_ORDER: list[str] = [ch for ch, _ in _BENDR_TARGET_CHS_TUPLES]
 
 
 class BENDR(EEGModuleMixin, nn.Module):
@@ -558,3 +575,23 @@ class _BENDRContextualizer(nn.Module):
         # x: [batch_size, in_features, seq_len + 1]
 
         return x
+
+
+# -----------------------------------------------------------------------------
+# InterpolatedBENDR — experimental channel-interpolation variant of BENDR
+# -----------------------------------------------------------------------------
+# Wraps :class:`BENDR` with an MNE-backed channel-interpolation layer that
+# projects arbitrary user ``chs_info`` to the canonical 20-channel BENDR
+# input (:data:`_BENDR_TARGET_CHS_INFO` — the 19 pre-training EEG channels
+# plus a ``SCALE`` placeholder at the centroid of those 19 positions).
+# Frozen by default; set ``trainable=True`` to fine-tune the projection.
+#
+# NOTE: the ``SCALE`` target has no physical position, so the row of the
+# interpolation matrix that produces it is a spatial spline of the user's
+# EEG channels — *not* the dn3 ``MappingDeep1010`` RMS statistic the
+# checkpoint saw during pre-training. Expect degraded zero-shot transfer
+# from the SCALE channel; downstream fine-tuning should still work.
+
+from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
+
+InterpolatedBENDR = InterpolatedModel(BENDR, _BENDR_TARGET_CHS_INFO)
