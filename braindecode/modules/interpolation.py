@@ -25,8 +25,8 @@ class ChannelInterpolationLayer(nn.Module):
     mode : {"always", "name_match"}
         See design spec. Default ``"always"``.
     method : str
-        Forwarded to ``mne.channels.interpolation`` when an MNE-based
-        matrix is needed. Default ``"MNE"``.
+        Forwarded to ``mne.Raw.interpolate_to`` ``method`` argument when an
+        MNE-based matrix is needed. Default ``"spline"``.
     trainable : bool
         If ``True`` the matrix is an ``nn.Parameter`` (stored in
         ``state_dict``). If ``False`` it is a non-persistent buffer
@@ -38,7 +38,7 @@ class ChannelInterpolationLayer(nn.Module):
         src_chs_info: list[dict],
         tgt_chs_info: list[dict],
         mode: Literal["always", "name_match"] = "always",
-        method: str = "MNE",
+        method: str = "spline",
         trainable: bool = False,
     ) -> None:
         super().__init__()
