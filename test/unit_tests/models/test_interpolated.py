@@ -50,3 +50,36 @@ def test_factory_forward_shape_matches_user_channels():
     )
     y = model(torch.zeros(1, 4, 200))
     assert y.shape[0] == 1  # batch dim preserved
+
+
+def test_user_facing_chs_info_and_n_chans_reflect_user_after_init():
+    target = _target_5ch()
+    # 4 user channels — all names present in target, so name_match avoids
+    # MNE for matched channels; only the 1 unmatched target channel needs
+    # MNE interpolation (4 src points satisfies MNE's minimum of 4).
+    user = _target_5ch()[:4]
+    Cls = InterpolatedModel(EEGNet, target_chs_info=target)
+    model = Cls(
+        chs_info=user,
+        n_outputs=2,
+        n_times=200,
+        interpolation_mode="name_match",
+    )
+    assert model.n_chans == 4
+    assert len(model.chs_info) == 4
+    assert model._TARGET_CHS_INFO == target
+    assert model.input_shape[1] == 4  # user's channel count, not target's
+
+
+def test_get_output_shape_does_not_crash():
+    target = _target_5ch()
+    user = _target_5ch()[:4]
+    Cls = InterpolatedModel(EEGNet, target_chs_info=target)
+    model = Cls(
+        chs_info=user,
+        n_outputs=2,
+        n_times=200,
+        interpolation_mode="name_match",
+    )
+    shape = model.get_output_shape()
+    assert shape[0] == 1  # batch
