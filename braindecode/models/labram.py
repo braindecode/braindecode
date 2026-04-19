@@ -1517,4 +1517,6 @@ class _TemporalConv(nn.Module):
 
 from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
 
-InterpolatedLaBraM = InterpolatedModel(Labram, _LABRAM_TARGET_CHS_INFO)
+InterpolatedLaBraM = InterpolatedModel(
+    Labram, _LABRAM_TARGET_CHS_INFO, name="InterpolatedLaBraM"
+)
