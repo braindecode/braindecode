@@ -48,25 +48,41 @@ def InterpolatedModel(
         def __init__(
             self,
             chs_info,
+            n_outputs=None,
+            n_times=None,
+            input_window_seconds=None,
+            sfreq=None,
+            n_chans=None,
             interpolation_method: str = "spline",
             interpolation_mode: Literal["always", "name_match"] = "name_match",
             trainable: bool = False,
             **kwargs,
         ):
+            # Signal-related params are declared EXPLICITLY here so that
+            # skorch's ``EEGClassifier._set_signal_args`` (which inspects
+            # the ``__init__`` signature via ``inspect.signature``) can
+            # auto-forward them from the training dataset. They would not
+            # be discoverable if they were collapsed into ``**kwargs``.
+            # ``n_chans`` is declared for the same discoverability reason
+            # but intentionally ignored: the backbone must see
+            # ``len(target_chs_info)`` derived from ``chs_info``.
+            del n_chans
             # Backbone init uses the target channels. During this call,
             # some backbones run a dummy forward (e.g. to size the head);
-            # `self.interpolation_layer` does not exist yet — the
+            # ``self.interpolation_layer`` does not exist yet — the
             # ``forward`` override below falls back to pass-through when
-            # the attribute is absent. Assigning an nn.Identity() before
-            # super() is impossible: nn.Module's ``__setattr__`` requires
-            # nn.Module.__init__ to have run, and the chain would wipe
-            # self._modules when it reaches it again.
-            # Drop any user-supplied n_chans from kwargs — the backbone
-            # must see len(target_chs_info), which EEGModuleMixin derives
-            # from chs_info.  Keeping n_chans=len(user) would trigger the
-            # base class's ``n_chans != len(chs_info)`` consistency check.
-            kwargs.pop("n_chans", None)
-            super().__init__(chs_info=target_chs_info, **kwargs)
+            # the attribute is absent. Assigning an ``nn.Identity()``
+            # before ``super()`` is impossible: ``nn.Module.__setattr__``
+            # requires ``nn.Module.__init__`` to have run, and the chain
+            # would wipe ``self._modules`` when it reaches it again.
+            super().__init__(
+                chs_info=target_chs_info,
+                n_outputs=n_outputs,
+                n_times=n_times,
+                input_window_seconds=input_window_seconds,
+                sfreq=sfreq,
+                **kwargs,
+            )
 
             layer = ChannelInterpolationLayer(
                 src_chs_info=chs_info,
