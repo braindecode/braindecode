@@ -48,6 +48,14 @@ Enhancements
   :class:`braindecode.models.InterpolatedSignalJEPA`, and
   :class:`braindecode.models.InterpolatedBIOT` for the corresponding
   pre-trained models. (:gh:`993` by `Pierre Guetschel`_)
+- Add a tutorial walking through the experimental ``Interpolated*`` family
+  (:ref:`channel-interpolation-tutorial`): failure mode of the vanilla
+  backbones on non-canonical channel sets, one-line fix via
+  :class:`braindecode.models.InterpolatedLaBraM` /
+  :class:`braindecode.models.InterpolatedBIOT` /
+  :class:`braindecode.models.InterpolatedSignalJEPA`, side-by-side
+  visualisation of the ``name_match`` vs ``always`` interpolation matrices,
+  and the ``trainable=True`` flag. (:gh:`994` by `Pierre Guetschel`_)
 - Mark deterministic index buffers (:class:`braindecode.models.BIOT` encoder's
   ``index`` and :class:`braindecode.models.REVE`'s position ``embedding`` bank)
   as non-persistent. They are rebuilt from ``__init__`` arguments on every
