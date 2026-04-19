@@ -151,3 +151,27 @@ def test_missing_loc_is_ok_for_full_name_match():
     tgt = [{"ch_name": "Cz", "kind": "eeg"}, {"ch_name": "Fz", "kind": "eeg"}]
     layer = ChannelInterpolationLayer(src, tgt, mode="name_match")
     assert layer.matrix.shape == (2, 2)
+
+
+def test_trainable_false_matrix_is_buffer_and_not_in_state_dict():
+    src = [_ch("A")]
+    tgt = [_ch("A")]
+    layer = ChannelInterpolationLayer(src, tgt, mode="name_match", trainable=False)
+    assert "matrix" not in dict(layer.named_parameters())
+    assert "matrix" not in layer.state_dict()
+
+
+def test_trainable_true_matrix_is_parameter_and_in_state_dict():
+    src = [_ch("A")]
+    tgt = [_ch("A")]
+    layer = ChannelInterpolationLayer(src, tgt, mode="name_match", trainable=True)
+    assert "matrix" in dict(layer.named_parameters())
+    assert layer.matrix.requires_grad
+    assert "matrix" in layer.state_dict()
+
+
+def test_trainable_false_default():
+    src = [_ch("A")]
+    tgt = [_ch("A")]
+    layer = ChannelInterpolationLayer(src, tgt, mode="name_match")
+    assert not layer.trainable
