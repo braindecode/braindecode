@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional, Type
 
+import numpy as np
 import torch.nn as nn
 
 from braindecode.modules.interpolation import ChannelInterpolationLayer
@@ -104,3 +105,41 @@ def InterpolatedModel(
     _Interpolated.__name__ = name or f"Interpolated{model_cls.__name__}"
     _Interpolated.__qualname__ = _Interpolated.__name__
     return _Interpolated
+
+
+def _build_chs_info_from_montage(names: list[str], montage: str) -> list[dict]:
+    """Build a ``list[dict]`` ``chs_info`` from channel names + an MNE montage.
+
+    Each returned dict has ``ch_name``, ``kind="eeg"``, and ``loc`` (shape
+    ``(3,)``). Used by braindecode's shipped ``Interpolated*`` variants to
+    turn a bare list of canonical channel names into the dict form
+    ``ChannelInterpolationLayer`` expects.
+
+    Parameters
+    ----------
+    names : list of str
+        Channel names in the desired order.
+    montage : str
+        Name of an MNE standard montage (e.g. ``"standard_1005"``).
+
+    Returns
+    -------
+    list of dict
+
+    Raises
+    ------
+    ValueError
+        If a name is not found in the montage.
+    """
+    import mne
+
+    mtg = mne.channels.make_standard_montage(montage)
+    ch_pos = mtg.get_positions()["ch_pos"]
+    out = []
+    for n in names:
+        if n not in ch_pos:
+            raise ValueError(f"Channel {n!r} not found in montage {montage!r}.")
+        out.append(
+            {"ch_name": n, "kind": "eeg", "loc": np.asarray(ch_pos[n], dtype=float)}
+        )
+    return out

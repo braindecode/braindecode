@@ -6,7 +6,10 @@ import pytest
 import torch
 
 from braindecode.models.eegnet import EEGNet
-from braindecode.models.interpolated import InterpolatedModel
+from braindecode.models.interpolated import (
+    InterpolatedModel,
+    _build_chs_info_from_montage,
+)
 
 
 def _ch(name, loc=(0.0, 0.0, 0.0)):
@@ -118,3 +121,18 @@ def test_from_config_round_trip():
     assert model2.n_chans == 4
     assert len(model2.chs_info) == 4
     assert model2._TARGET_CHS_INFO == target
+
+
+def test_build_chs_info_from_montage_returns_list_of_dicts():
+    info = _build_chs_info_from_montage(["Fz", "Cz", "Pz"], montage="standard_1005")
+    assert isinstance(info, list) and len(info) == 3
+    for ch in info:
+        assert set(ch.keys()) >= {"ch_name", "loc", "kind"}
+        assert ch["kind"] == "eeg"
+        assert isinstance(ch["loc"], np.ndarray)
+        assert ch["loc"].shape == (3,)
+
+
+def test_build_chs_info_from_montage_raises_on_unknown_name():
+    with pytest.raises(ValueError, match="not found"):
+        _build_chs_info_from_montage(["NotAChannel"], montage="standard_1005")
