@@ -10,6 +10,34 @@ import torch
 from torch import nn
 
 
+def _assert_eeg_only(chs_info: list[dict], where: str) -> None:
+    """Raise if ``chs_info`` contains any non-EEG channel."""
+    for ch in chs_info:
+        kind = ch.get("kind")
+        # Strings are the convention in braindecode (e.g. "eeg"); MNE
+        # integer codes also occur — FIFF EEG kind is 2.
+        if isinstance(kind, str) and kind.lower() != "eeg":
+            raise ValueError(
+                f"ChannelInterpolationLayer: non-EEG channel "
+                f"{ch.get('ch_name')!r} (kind={kind!r}) in {where}."
+            )
+        if isinstance(kind, int) and kind != 2:
+            raise ValueError(
+                f"ChannelInterpolationLayer: non-EEG channel "
+                f"{ch.get('ch_name')!r} (kind={kind}) in {where}."
+            )
+
+
+def _assert_locs_present(chs_info: list[dict], where: str) -> None:
+    """Raise if any channel lacks a ``'loc'`` entry (required by MNE)."""
+    for ch in chs_info:
+        if "loc" not in ch or ch["loc"] is None:
+            raise ValueError(
+                f"ChannelInterpolationLayer: channel {ch.get('ch_name')!r} "
+                f"in {where} has no 'loc' — required for MNE interpolation."
+            )
+
+
 class ChannelInterpolationLayer(nn.Module):
     """Projects an input from one channel set to another via a fixed (or learnable) matrix.
 
@@ -67,6 +95,9 @@ class ChannelInterpolationLayer(nn.Module):
         if mode not in ("always", "name_match"):
             raise ValueError(f"mode must be 'always' or 'name_match', got {mode!r}")
 
+        _assert_eeg_only(src, where="src_chs_info")
+        _assert_eeg_only(tgt, where="tgt_chs_info")
+
         name_to_src = {s["ch_name"].lower(): i for i, s in enumerate(src)}
         matches = [
             (i, name_to_src.get(t["ch_name"].lower())) for i, t in enumerate(tgt)
@@ -79,11 +110,11 @@ class ChannelInterpolationLayer(nn.Module):
                 W[i, j] = 1.0
             return W
 
-        # Otherwise: compute the full matrix via MNE.
+        # Otherwise: compute via MNE (loc required).
+        _assert_locs_present(src, where="src_chs_info")
+        _assert_locs_present(tgt, where="tgt_chs_info")
         W = _compute_interpolation_matrix_mne(src, tgt, method=method)
 
-        # In name_match mode, overwrite rows whose target name matches a src
-        # name with a one-hot (positions ignored for those rows).
         if mode == "name_match":
             for i, j in matches:
                 if j is not None:

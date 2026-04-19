@@ -2,6 +2,7 @@
 #
 # License: BSD (3-clause)
 import numpy as np
+import pytest
 import torch
 
 from braindecode.modules.interpolation import (
@@ -120,3 +121,33 @@ def test_name_match_partial_overwrites_matched_rows_with_one_hots():
     # Unmatched row (P3, row 3) came from MNE.
     nonzero_count_row3 = (W[3].abs() > 1e-6).sum().item()
     assert nonzero_count_row3 > 1
+
+
+def test_non_eeg_channel_in_src_raises():
+    src = [_ch("Fz"), {"ch_name": "EMG1", "kind": "emg", "loc": np.zeros(3)}]
+    tgt = [_ch("Fz")]
+    with pytest.raises(ValueError, match="non-EEG channel"):
+        ChannelInterpolationLayer(src, tgt, mode="name_match")
+
+
+def test_non_eeg_channel_in_tgt_raises():
+    src = [_ch("Fz")]
+    tgt = [_ch("Fz"), {"ch_name": "EOG1", "kind": "eog", "loc": np.zeros(3)}]
+    with pytest.raises(ValueError, match="non-EEG channel"):
+        ChannelInterpolationLayer(src, tgt, mode="name_match")
+
+
+def test_missing_loc_raises_when_mne_needed():
+    # mode="always" always calls MNE, so missing loc must raise.
+    src = [{"ch_name": "Fz", "kind": "eeg"}]
+    tgt = [{"ch_name": "Cz", "kind": "eeg", "loc": np.zeros(3)}]
+    with pytest.raises(ValueError, match="'loc'"):
+        ChannelInterpolationLayer(src, tgt, mode="always")
+
+
+def test_missing_loc_is_ok_for_full_name_match():
+    # Full coverage → no MNE call → loc not required.
+    src = [{"ch_name": "Fz", "kind": "eeg"}, {"ch_name": "Cz", "kind": "eeg"}]
+    tgt = [{"ch_name": "Cz", "kind": "eeg"}, {"ch_name": "Fz", "kind": "eeg"}]
+    layer = ChannelInterpolationLayer(src, tgt, mode="name_match")
+    assert layer.matrix.shape == (2, 2)
