@@ -185,15 +185,63 @@ SigArgName = Literal[
 # required_params: list[str]
 #   The signal-related parameters that are needed to initialize
 #   the model.
-# signal_params: dict | None
+# signal_params: dict | callable | None
 #   The characteristics of the signal that should be passed to
 #   the model tested in case the default_signal_params are not
-#   compatible with this model.
+#   compatible with this model.  May also be a zero-argument
+#   callable returning a dict (used to defer imports that would
+#   create circular dependencies).
 #   The keys of this dictionary can only be among those of
 #   default_signal_params.
 ################################################################
+
+_rng = np.random.default_rng(12)
+# Default 3-channel chs_info used by most model tests
+_chs_info_3ch = [
+    {
+        "ch_name": f"C{i}",
+        "kind": "eeg",
+        "loc": _rng.random(12),
+    }
+    for i in range(1, 4)
+]
+# 4-channel variant: MNE interpolation requires >=4 digitisation points
+_chs_info_4ch = [
+    {
+        "ch_name": f"C{i}",
+        "kind": "eeg",
+        "loc": _rng.random(12),
+    }
+    for i in range(1, 5)
+]
+
+
+def _get_labram_chs_info() -> list[dict]:
+    """Return the 128-channel canonical chs_info for LaBraM with 12-element locs.
+
+    Uses a lazy import from the ``labram`` module to avoid a circular import:
+    ``util.py`` is loaded by ``base.py`` before ``labram.py`` is fully
+    initialized.  The ``_LABRAM_TARGET_CHS_INFO`` entries store only a
+    3-element loc; this function zero-pads each to the 12-element MNE format
+    required by ``ChsInfoType``.
+    """
+    import numpy as np
+
+    from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
+
+    result = []
+    for ch in _LABRAM_TARGET_CHS_INFO:
+        loc3 = np.asarray(ch["loc"], dtype=float)
+        loc12 = np.zeros(12, dtype=float)
+        loc12[:3] = loc3[:3]
+        result.append(
+            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc12.tolist()}
+        )
+    return result
+
+
 models_mandatory_parameters: list[
-    tuple[str, list[SigArgName], dict[SigArgName, Any] | None]
+    tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("BDTCN", ["n_chans", "n_outputs"], None),
@@ -224,10 +272,24 @@ models_mandatory_parameters: list[
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 128.0}),
     ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
-    ("InterpolatedBIOT", ["chs_info", "n_outputs", "sfreq", "n_times"], None),
+    (
+        "InterpolatedBIOT",
+        ["chs_info", "n_outputs", "sfreq", "n_times"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("Labram", ["chs_info", "n_outputs", "n_times"], None),
-    ("InterpolatedLaBraM", ["chs_info", "n_outputs", "n_times"], None),
+    (
+        "Labram",
+        ["chs_info", "n_outputs", "n_times"],
+        # Callable: Labram requires the exact 128-ch canonical order; deferred to
+        # avoid a circular import (util.py is loaded by base.py before labram.py).
+        lambda: {"chs_info": _get_labram_chs_info()},
+    ),
+    (
+        "InterpolatedLaBraM",
+        ["chs_info", "n_outputs", "n_times"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
     ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("ContraWR", ["n_chans", "n_outputs", "sfreq", "n_times"], {"sfreq": 200.0}),
@@ -242,7 +304,11 @@ models_mandatory_parameters: list[
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("SignalJEPA", ["chs_info"], None),
-    ("InterpolatedSignalJEPA", ["chs_info"], None),
+    (
+        "InterpolatedSignalJEPA",
+        ["chs_info"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
     ("SignalJEPA_Contextual", ["chs_info", "n_times", "n_outputs"], None),
     ("SignalJEPA_PostLocal", ["n_chans", "n_times", "n_outputs"], None),
     ("SignalJEPA_PreLocal", ["n_chans", "n_times", "n_outputs"], None),
@@ -283,35 +349,33 @@ models_mandatory_parameters: list[
 ################################################################
 non_classification_models = [
     "SignalJEPA",
+    "InterpolatedSignalJEPA",
 ]
 
 ################################################################
 
-rng = np.random.default_rng(12)
-# Generating the channel info
-chs_info = [
-    {
-        "ch_name": f"C{i}",
-        "kind": "eeg",
-        "loc": rng.random(12),
-    }
-    for i in range(1, 4)
-]
 default_signal_params: dict[SigArgName, Any] = {
     "n_times": 1000,
     "sfreq": 250.0,
     "n_outputs": 2,
-    "chs_info": chs_info,
-    "n_chans": len(chs_info),
+    "chs_info": _chs_info_3ch,
+    "n_chans": len(_chs_info_3ch),
     "input_window_seconds": 4.0,
 }
 
 
 def _get_signal_params(
-    signal_params: dict[SigArgName, Any] | None,
+    signal_params: dict[SigArgName, Any] | None | Any,
     required_params: list[SigArgName] | None = None,
 ) -> dict[SigArgName, Any]:
-    """Get signal parameters for model initialization in tests."""
+    """Get signal parameters for model initialization in tests.
+
+    ``signal_params`` may also be a zero-argument callable that returns a
+    ``dict``; this is used to defer imports that would cause circular
+    dependencies at module-load time (e.g. the Labram canonical channel list).
+    """
+    if callable(signal_params):
+        signal_params = signal_params()
     sp = deepcopy(default_signal_params)
     if signal_params is not None:
         sp.update(signal_params)
@@ -319,7 +383,7 @@ def _get_signal_params(
             sp["n_chans"] = len(signal_params["chs_info"])
         if "n_chans" in signal_params and "chs_info" not in signal_params:
             sp["chs_info"] = [
-                {"ch_name": f"C{i}", "kind": "eeg", "loc": rng.random(12)}
+                {"ch_name": f"C{i}", "kind": "eeg", "loc": _rng.random(12)}
                 for i in range(signal_params["n_chans"])
             ]
         assert isinstance(sp["n_times"], int)
