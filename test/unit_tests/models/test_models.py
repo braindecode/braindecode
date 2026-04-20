@@ -2999,23 +2999,21 @@ def test_bendr_dropout_configurations(drop_prob):
 
 
 @pytest.mark.parametrize(
-    "n_chans,n_outputs,encoder_only,final_layer,expected",
+    "n_chans,n_outputs,final_layer,expected",
     [
-        (20, 4, True, True, (2, 4)),       # encoder-only basic
-        (20, 2, True, True, (2, 2)),        # encoder-only binary
-        (20, 10, True, True, (2, 10)),      # encoder-only multi-class
-        (20, 4, True, False, (2, 2048)),    # encoder-only no final layer
+        (20, 4, True, (2, 4)),       # encoder-only basic
+        (20, 2, True, (2, 2)),        # encoder-only binary
+        (20, 10, True, (2, 10)),      # encoder-only multi-class
+        (20, 4, False, (2, 2048)),    # encoder-only no final layer
     ],
 )
-def test_bendr_encoder_only(
-    n_chans, n_outputs, encoder_only, final_layer, expected,
-):
+def test_bendr_encoder_only(n_chans, n_outputs, final_layer, expected):
     """Test output shapes for encoder-only configs."""
     set_random_seeds(0, False)
 
     model = BENDR(
         n_chans=n_chans, n_outputs=n_outputs, n_times=5120, sfreq=256,
-        encoder_only=encoder_only, final_layer=final_layer,
+        encoder_only=True, final_layer=final_layer,
     )
     x = torch.randn(2, n_chans, 5120)
     y = model(x)

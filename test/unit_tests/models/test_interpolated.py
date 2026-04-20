@@ -252,6 +252,14 @@ def test_interpolated_bendr_accepts_arbitrary_user_channels():
     assert y.shape == (1, 2)
 
 
+def test_bendr_rejects_non_canonical_chs():
+    from braindecode.models import BENDR
+
+    user = _target_5ch()  # 5 non-canonical (for BENDR) channels
+    with pytest.raises(ValueError, match="InterpolatedBENDR"):
+        BENDR(chs_info=user, n_outputs=2, n_times=1000, sfreq=256)
+
+
 def test_signal_jepa_pretrain_aligned_still_works():
     # Regression guard: PR #991's channel_embedding="pretrain_aligned" path
     # must remain functional alongside the new InterpolatedSignalJEPA.

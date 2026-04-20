@@ -283,6 +283,27 @@ class BENDR(EEGModuleMixin, nn.Module):
         # Keep these parameters if needed later, otherwise they are captured by the mixin
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        # If the user supplies chs_info, require it to match BENDR_CHANNEL_ORDER
+        # exactly (case-insensitive). Arbitrary channel sets should go through
+        # InterpolatedBENDR — same pattern as Labram / InterpolatedLaBraM.
+        # When chs_info is absent (the usual n_chans=20 path, incl.
+        # from_pretrained), no check is performed.
+        try:
+            _chs_info = self.chs_info
+        except ValueError:
+            _chs_info = None
+        if _chs_info is not None:
+            user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
+            canonical = BENDR_CHANNEL_ORDER
+            if [n.lower() for n in user_names] != [n.lower() for n in canonical]:
+                raise ValueError(
+                    f"BENDR requires chs_info to match BENDR_CHANNEL_ORDER exactly "
+                    f"({len(canonical)} channels, specific order; last is 'SCALE'). "
+                    f"Got {len(user_names)} channel(s). For arbitrary channel sets, "
+                    f"use InterpolatedBENDR "
+                    f"(from braindecode.models import InterpolatedBENDR)."
+                )
+
         self.encoder_h = encoder_h
         self.contextualizer_hidden = contextualizer_hidden
         self.include_final_layer = final_layer
