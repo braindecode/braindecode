@@ -1,37 +1,45 @@
 # type: ignore
-r""".. _channel-interpolation-tutorial:
+""".. _channel-interpolation-tutorial:
 
-Adapting Foundation Models to Arbitrary Channel Sets
-=====================================================
+Loading Pretrained Foundation Models on Arbitrary Channel Sets
+==============================================================
 
-Most pretrained EEG foundation models are trained on a fixed,
-canonical channel montage (e.g. LaBraM uses a specific 128-channel
-set, BIOT a specific 18-channel TCP montage).  When you want to
-fine-tune one of these models on a dataset whose channel layout is
-different — either a different number of channels or a different
-spatial arrangement — you hit a wall: the model simply cannot be
-instantiated on your data.
+Most pretrained EEG foundation models were trained on a specific,
+canonical channel montage:
 
-braindecode ships an **experimental** solution for this: the
-``Interpolated*`` family of model wrappers.  They insert a frozen
-(by default) spatial-interpolation matrix before the backbone so
-that, from the backbone's perspective, the input always has the
-canonical channel set it was trained on.
+* :class:`~braindecode.models.Labram` was pretrained on a fixed
+  128-channel set;
+* :class:`~braindecode.models.BIOT` on an 18-channel TCP montage;
+* :class:`~braindecode.models.SignalJEPA` on 62 channels.
+
+When you want to fine-tune one of these checkpoints on a dataset
+whose channel layout is different — fewer channels, different
+naming, different reference — you cannot just call
+``from_pretrained``: the backbone refuses to accept an input that
+does not match the pretrained shape.
+
+The ``Interpolated*`` family of model wrappers solves this. Each
+wrapper inserts a spatial-interpolation layer in front of the
+backbone, so the pretrained weights see exactly the canonical
+input they were trained on. The interpolation matrix is built
+from the user's channel positions using MNE's spline-based
+interpolation.
 
 This tutorial covers:
 
-* what the underlying :class:`ChannelInterpolationLayer` does,
-* how to use the shipped :class:`InterpolatedLaBraM`,
-  :class:`InterpolatedBIOT` and :class:`InterpolatedSignalJEPA`
-  variants on your own channel layout,
-* the two interpolation ``mode``\\ s (``"name_match"`` vs
-  ``"always"``) and when to prefer each,
-* the ``trainable`` flag for data-driven spatial filters.
+* loading a pretrained foundation model on a non-canonical
+  channel set with a single ``from_pretrained`` call,
+* what the interpolation matrix actually does, visualised with
+  scalp topomaps,
+* the same recipe for the other shipped variants
+  (:class:`~braindecode.models.InterpolatedBIOT`,
+  :class:`~braindecode.models.InterpolatedSignalJEPA`),
+* the ``trainable=True`` flag for data-driven projections.
 
 .. warning::
 
-   The ``Interpolated*`` API is experimental and may change without
-   a deprecation cycle.
+   The ``Interpolated*`` API is experimental and may change
+   without a deprecation cycle.
 
 .. contents:: This example covers:
    :local:
@@ -41,6 +49,8 @@ This tutorial covers:
 # Authors: Pierre Guetschel <pierre.guetschel@gmail.com>
 #
 # License: BSD (3-clause)
+
+import warnings
 
 import matplotlib.pyplot as plt
 import mne
@@ -54,189 +64,219 @@ from braindecode.models import (
     InterpolatedSignalJEPA,
     Labram,
 )
-from braindecode.modules import ChannelInterpolationLayer
 
+warnings.simplefilter("ignore")
+mne.set_log_level("ERROR")
 torch.manual_seed(0)
 np.random.seed(0)
 
 ######################################################################
-# The problem: your channels are not the model's channels
-# --------------------------------------------------------
+# Setting the scene: a real EEG dataset
+# --------------------------------------
 #
-# We load one subject of the BNCI2014_001 motor-imagery dataset.  Its
-# 22-channel layout is a subset of the standard 10-20 montage.
+# We load a single subject of the BNCI2014_001 motor-imagery dataset
+# to obtain a realistic 22-channel EEG montage (a subset of the 10-20
+# system).  We will only use the channel layout, not the recordings
+# themselves, so a single subject is enough.
 #
 
-subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
-
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[3])
 montage = mne.channels.make_standard_montage("standard_1020")
 for ds in dataset.datasets:
     ds.raw.pick_types(eeg=True)
     ds.raw.set_montage(montage)
 
-chs_info = dataset.datasets[0].raw.info["chs"]
+raw_info = dataset.datasets[0].raw.info  # MNE Info, kept around for plotting
+chs_info = raw_info["chs"]
 user_ch_names = [ch["ch_name"] for ch in chs_info]
-print(f"Dataset has {len(chs_info)} channels: {user_ch_names}")
+
+print(f"Dataset has {len(chs_info)} channels:")
+print(user_ch_names)
 
 ######################################################################
-# LaBraM was pretrained on a canonical 128-channel layout.  Passing
-# our 22-channel montage directly is rejected at construction time:
+# The wall: the pretrained model refuses our channels
+# ----------------------------------------------------
+#
+# The ``Labram`` checkpoint on the Hugging Face Hub
+# (``braindecode/labram-pretrained``) was trained on a specific
+# 128-channel layout.  The vanilla :class:`~braindecode.models.Labram`
+# class enforces that layout strictly: passing any other ``chs_info``
+# raises an error at construction time.
 #
 
 try:
-    Labram(chs_info=chs_info, n_times=1000, n_outputs=4, patch_size=200)
+    Labram(chs_info=chs_info, n_times=3000, n_outputs=4, patch_size=200)
 except ValueError as exc:
-    print(f"Labram refused our chs_info:\n  {exc}")
+    print("Labram refused our chs_info:")
+    print(f"  {exc}")
 
 ######################################################################
-# Before the ``Interpolated*`` wrappers existed, adapting a
-# foundation model to a new montage required manual surgery on the
-# first spatial layer.  We can now do it in one line.
-#
+# Without the wrapper, you would have to surgically rebuild the
+# first spatial layer of the model and decide yourself how to map
+# your channels onto the canonical set — error-prone and difficult
+# to keep aligned with the pretrained weights.
 
 ######################################################################
-# ``InterpolatedLaBraM``: one-line channel adaptation
-# ----------------------------------------------------
+# The fix: a one-line ``from_pretrained``
+# ----------------------------------------
 #
-# ``InterpolatedLaBraM`` is a subclass of :class:`Labram` that
-# **prepends** a frozen spatial-interpolation layer before the
-# backbone.  From the user's side, it accepts any ``chs_info``; from
-# the backbone's side, the input is always the canonical
-# 128-channel tensor the pretrained weights expect.
+# :class:`~braindecode.models.InterpolatedLaBraM` is a subclass of
+# :class:`~braindecode.models.Labram` that prepends a frozen
+# spatial-interpolation layer.  From the user's side it accepts any
+# ``chs_info``; from the backbone's side the input is always the
+# canonical 128-channel tensor the pretrained weights expect.
+#
+# This means the standard ``from_pretrained`` workflow just works:
+# pass your own ``chs_info`` (and the same ``n_times`` the
+# checkpoint was trained on, here 3000 samples), use
+# ``strict=False`` because the interpolation matrix is not in the
+# checkpoint, and you are done.
 #
 
-model = InterpolatedLaBraM(
+model = InterpolatedLaBraM.from_pretrained(
+    "braindecode/labram-pretrained",
     chs_info=chs_info,
-    n_times=1000,
+    n_times=3000,
     n_outputs=4,
     patch_size=200,
+    strict=False,
 )
-x = torch.randn(2, len(chs_info), 1000)
+print(f"Loaded checkpoint, model has {model.n_chans} channels")
+print(f"chs_info matches the user's: {model.chs_info[0]['ch_name']}, ...")
+
+######################################################################
+# A forward pass goes through the interpolation layer first and
+# the pretrained backbone second, returning logits of the user's
+# requested ``n_outputs``:
+#
+
+x = torch.randn(2, len(chs_info), 3000)
 model.eval()
 with torch.no_grad():
     out = model(x)
-print(f"Input shape  : {tuple(x.shape)}")
-print(f"Output shape : {tuple(out.shape)}")
+print(f"Input  : {tuple(x.shape)}")
+print(f"Output : {tuple(out.shape)}")
 
 ######################################################################
-# The user-facing view of the model reports the *user's* channel
-# count, not the canonical one, so the model plays nicely with the
-# rest of braindecode (``EEGClassifier``, cross-validation, logging):
+# .. note::
 #
-
-print(f"model.n_chans          = {model.n_chans}")
-print(f"len(model.chs_info)    = {len(model.chs_info)}")
-
-######################################################################
-# Internally, an ``interpolation_layer`` has been inserted:
-#
-
-print(model.interpolation_layer)
+#    Why ``strict=False``? In the default (frozen) mode the
+#    interpolation matrix is a *non-persistent buffer*: it is
+#    derived from your ``chs_info`` at construction time and is
+#    deliberately absent from ``state_dict``.  Loading without
+#    ``strict=False`` is also fine in practice — there are no
+#    extra keys to complain about — but ``strict=False`` is the
+#    safe default when mixing user-provided geometry with
+#    third-party checkpoints.
 
 ######################################################################
-# Under the hood: ``ChannelInterpolationLayer``
-# ----------------------------------------------
+# Under the hood: MNE-backed spline interpolation
+# ------------------------------------------------
 #
-# The layer is a thin ``nn.Module`` whose forward is a single matrix
-# multiplication ``W @ x``, where ``W`` has shape
-# ``(n_target_chans, n_source_chans)``.
+# The interpolation layer is a thin
+# :class:`~braindecode.modules.ChannelInterpolationLayer` whose
+# forward pass is a single matrix multiplication:
 #
-# Two ``mode``\\ s control how ``W`` is built:
+# .. math::
 #
-# * ``"name_match"`` (default): for every target channel whose name
-#   also appears in the source, use the identity mapping for that row.
-#   Target channels without a source-name match fall back to MNE's
-#   spatial interpolation.
-# * ``"always"``: every row is computed from MNE's spline
-#   interpolation based on 3D sensor positions, even when names
-#   would have matched.
+#    x_{\text{target}} = W \cdot x_{\text{source}},
 #
-# We build both layers on top of LaBraM's canonical 128-channel set
-# to compare:
+# where ``W`` has shape ``(n_target_chans, n_source_chans)``.
+# ``W`` is built once at construction time using
+# :meth:`mne.io.Raw.interpolate_to` (spline interpolation): for
+# every target sensor position, MNE fits a smooth spherical-spline
+# field through the source signals and reads its value at the
+# target.  This produces a fixed linear combination per target
+# channel that depends only on the geometry, not on the data.
+#
+# We can read ``W`` directly from the model:
 #
 
+W = model.interpolation_layer.matrix.detach().cpu().numpy()
 target_chs_info = InterpolatedLaBraM._TARGET_CHS_INFO
-
-layer_name_match = ChannelInterpolationLayer(
-    src_chs_info=chs_info,
-    tgt_chs_info=target_chs_info,
-    mode="name_match",
-)
-layer_always = ChannelInterpolationLayer(
-    src_chs_info=chs_info,
-    tgt_chs_info=target_chs_info,
-    mode="always",
-)
-
-W_name = layer_name_match.matrix
-W_always = layer_always.matrix
-
-print(f"name_match : {W_name.shape}, nonzeros = {int(W_name.count_nonzero())}")
-print(f"always     : {W_always.shape}, nonzeros = {int(W_always.count_nonzero())}")
+target_names = [ch["ch_name"] for ch in target_chs_info]
+print(f"W shape: {W.shape} (target × source)")
 
 ######################################################################
-# ``name_match`` produces a sparse (mostly zero) matrix because the
-# target rows whose name is one of our 22 input channels are
-# one-hot.  ``always`` produces a dense matrix because every row is
-# a spatial interpolation over all 22 input channels.
+# Visualising the spatial filters
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# The two matrices look very different — let's visualise them side
-# by side:
+# Each row of ``W`` is a *spatial filter*: it tells how the
+# 22 source channels are linearly combined to estimate one target
+# channel that the source montage does not have.  The natural way
+# to look at a spatial filter is a scalp topomap on the source
+# channel positions: red areas mean source channels with positive
+# weight, blue areas mean negative weight.
+#
+# We pick three canonical target channels that are **not** in our
+# source montage (so they are genuinely interpolated, not just
+# passed through), spread across frontal, temporal, and occipital
+# regions:
 #
 
-fig, axes = plt.subplots(1, 2, figsize=(10, 5), dpi=110)
-for ax, W, title in zip(
-    axes,
-    [W_name.abs().numpy(), W_always.abs().numpy()],
-    ['mode="name_match"', 'mode="always"'],
-):
-    im = ax.imshow(W, aspect="auto", cmap="magma", vmin=0, vmax=max(W.max(), 1e-6))
-    ax.set_title(title, fontsize=11)
-    ax.set_xlabel("source channel (user)")
-    ax.set_ylabel("target channel (canonical)")
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+src_names_lower = {name.lower() for name in user_ch_names}
+target_names_lower = [name.lower() for name in target_names]
+chosen_targets = ["FP1", "T7", "O1"]
+chosen_idx = [target_names_lower.index(name.lower()) for name in chosen_targets]
+assert all(name.lower() not in src_names_lower for name in chosen_targets), (
+    "chosen targets must be interpolated, not name-matched"
+)
+
+fig, axes = plt.subplots(1, len(chosen_targets), figsize=(11, 3.2), dpi=110)
+for ax, name, idx in zip(axes, chosen_targets, chosen_idx):
+    weights = W[idx]
+    vmax = float(np.abs(weights).max())
+    mne.viz.plot_topomap(
+        weights,
+        raw_info,
+        axes=ax,
+        show=False,
+        cmap="RdBu_r",
+        vlim=(-vmax, vmax),
+        contours=0,
+        sensors=True,
+    )
+    ax.set_title(f"target = {name}", fontsize=11)
 fig.suptitle(
-    "Interpolation matrix |W| — target (128) × source (22)",
-    fontsize=12,
-    y=1.02,
+    "Spatial filter (one row of W) used to estimate each target channel\n"
+    "from the 22 source channels",
+    fontsize=11,
+    y=1.05,
 )
 fig.tight_layout()
 plt.show()
 
 ######################################################################
-# **Which mode should you pick?**
+# Notice how each filter is **localised under the target sensor**:
+# to estimate the signal at Fp1 the layer relies mostly on the
+# frontal source channels, T7 leans on the left central row, and
+# O1 mixes the parieto-occipital source channels.  This is the
+# spline interpolation doing exactly what one would expect from a
+# scalp field smoothed across sensor positions.
 #
-# * Prefer ``"name_match"`` when many of your channels share names
-#   with the canonical set: you preserve the pretrained weights'
-#   original mapping for those channels and only interpolate the
-#   missing ones.
-# * Prefer ``"always"`` when channel names are unreliable (e.g.
-#   reference schemes differ) and you trust positions more — or
-#   when you want a smoother, fully spatial projection.
-#
-# The default is ``"name_match"`` because it is the safer bet for
-# linear probing (no source channel is altered when it could have
-# been passed through as-is).
+# Because ``W`` depends only on positions, channels that share a
+# name between source and target (here ``Fz``, ``Cz``, ``Pz``,
+# ``POz``) get a one-hot row and pass through unchanged — so the
+# pretrained weights see those source channels exactly where they
+# expect them.
 
 ######################################################################
 # Other shipped variants
 # ----------------------
 #
-# The same pattern applies to :class:`InterpolatedBIOT` (18 canonical
-# bipolar channels) and :class:`InterpolatedSignalJEPA` (62 canonical
-# channels).  All three accept your ``chs_info`` directly:
+# The same recipe applies to the other foundation models that
+# ship a fixed pretrained montage.  Construction-only examples
+# (without loading the actual checkpoints):
 #
 
 model_biot = InterpolatedBIOT(
     chs_info=chs_info,
     n_outputs=4,
-    n_times=1000,
-    sfreq=250,
+    n_times=2000,
+    sfreq=200,
 )
-with torch.no_grad():
-    out_biot = model_biot(x)
-print(f"InterpolatedBIOT  : input {tuple(x.shape)} -> output {tuple(out_biot.shape)}")
+out_biot = model_biot(torch.randn(2, len(chs_info), 2000))
+print(f"InterpolatedBIOT  output: {tuple(out_biot.shape)}")
 
 model_sjepa = InterpolatedSignalJEPA(
     chs_info=chs_info,
@@ -244,84 +284,69 @@ model_sjepa = InterpolatedSignalJEPA(
     n_times=512,
     sfreq=128,
 )
-x_sjepa = torch.randn(2, len(chs_info), 512)
-with torch.no_grad():
-    out_sjepa = model_sjepa(x_sjepa)
-print(
-    f"InterpolatedSignalJEPA: input {tuple(x_sjepa.shape)} "
-    f"-> features {tuple(out_sjepa.shape)}"
-)
+out_sjepa = model_sjepa(torch.randn(2, len(chs_info), 512))
+print(f"InterpolatedSignalJEPA features: {tuple(out_sjepa.shape)}")
 
 ######################################################################
-# Loading pretrained weights
-# --------------------------
-#
-# ``Interpolated*`` classes are strict subclasses of their
-# backbones, so the pretrained weights on the Hugging Face Hub
-# load without any renaming.  The only extra parameter is the
-# interpolation matrix, which is absent from the checkpoint
-# (it is derived from your ``chs_info``) — use ``strict=False``:
+# To load the corresponding pretrained weights, swap the
+# constructor for ``from_pretrained``, e.g.:
 #
 # .. code-block:: python
 #
-#    model = InterpolatedLaBraM.from_pretrained(
-#        "braindecode/labram-pretrained",
+#    model_biot = InterpolatedBIOT.from_pretrained(
+#        "braindecode/biot-pretrained-shhs-prest-18chs",
 #        chs_info=chs_info,
-#        n_outputs=4,
-#        n_times=1000,
-#        strict=False,  # interpolation_layer.matrix is not in the checkpoint
+#        strict=False,
 #    )
 #
-# For the full fine-tuning workflow — including freezing the
-# backbone and training only a new head — see
-# :ref:`finetune-foundation-model`.
+# See :ref:`load-pretrained-models` for the available checkpoints.
 
 ######################################################################
 # Making the interpolation trainable
 # -----------------------------------
 #
-# By default the interpolation matrix is a **frozen buffer**: it is
-# computed once from ``chs_info`` at construction time and never
-# updated during training.  This is the right choice for linear
-# probing, because it guarantees that the pretrained weights see
-# the exact input they were trained on.
+# By default the interpolation matrix is a frozen, non-persistent
+# buffer — recomputed from ``chs_info`` at every ``__init__`` and
+# never updated by the optimizer.  This is the safe choice for
+# linear probing: the pretrained weights see exactly the input
+# they were trained for.
 #
-# For larger fine-tuning budgets you may want to let the network
-# learn a better spatial projection.  Pass ``trainable=True``:
+# For larger fine-tuning budgets you can let the network learn a
+# better spatial projection by passing ``trainable=True``.  The
+# matrix is then an :class:`torch.nn.Parameter`, initialised from
+# the same MNE spline interpolation, optimised jointly with the
+# backbone, and saved to ``state_dict``.
 #
 
 model_trainable = InterpolatedLaBraM(
     chs_info=chs_info,
-    n_times=1000,
+    n_times=3000,
     n_outputs=4,
     patch_size=200,
     trainable=True,
 )
-interp_params = [
-    (name, p.requires_grad)
-    for name, p in model_trainable.named_parameters()
-    if "interpolation_layer" in name
-]
 print("Trainable interpolation parameters:")
-for name, grad in interp_params:
-    print(f"  {name}  requires_grad={grad}")
-
-######################################################################
-# In this mode the matrix is an ``nn.Parameter`` initialised from
-# the same MNE spline interpolation, and is optimised jointly with
-# the backbone.
+for name, p in model_trainable.named_parameters():
+    if "interpolation_layer" in name:
+        print(f"  {name}  shape={tuple(p.shape)}  requires_grad={p.requires_grad}")
 
 ######################################################################
 # Summary
 # -------
 #
-# * ``Interpolated*`` wrappers let you use any foundation model on
-#   any channel layout by prepending a spatial-projection layer.
-# * The projection is frozen by default (safe for linear probing)
-#   and can be made trainable for larger fine-tunes.
-# * Two modes — ``"name_match"`` and ``"always"`` — trade off
-#   *preserve source channels* vs *smoother projection*.
-# * The shipped variants are :class:`InterpolatedLaBraM`,
-#   :class:`InterpolatedBIOT` and :class:`InterpolatedSignalJEPA`;
-#   for custom backbones use :func:`InterpolatedModel`.
+# * ``Interpolated*`` wrappers let you call ``from_pretrained``
+#   on a foundation-model checkpoint with **any** channel layout,
+#   in one line.
+# * The projection is built once from MNE's spline interpolation
+#   and stored as a frozen non-persistent buffer — safe for
+#   linear probing.
+# * For larger fine-tuning budgets, ``trainable=True`` turns it
+#   into an ``nn.Parameter`` initialised from the same MNE
+#   solution.
+# * The shipped variants are
+#   :class:`~braindecode.models.InterpolatedLaBraM`,
+#   :class:`~braindecode.models.InterpolatedBIOT`, and
+#   :class:`~braindecode.models.InterpolatedSignalJEPA`; for
+#   custom backbones, use the
+#   :func:`~braindecode.models.InterpolatedModel` factory.
 #
