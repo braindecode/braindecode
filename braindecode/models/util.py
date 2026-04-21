@@ -240,6 +240,28 @@ def _get_labram_chs_info() -> list[dict]:
     return result
 
 
+def _get_bendr_chs_info() -> list[dict]:
+    """Return the 20-channel canonical chs_info for BENDR with 12-element locs.
+
+    Same lazy-import rationale as :func:`_get_labram_chs_info`. The last entry
+    is the ``SCALE`` amplitude-statistic placeholder (see
+    ``braindecode.models.bendr``).
+    """
+    import numpy as np
+
+    from braindecode.models.bendr import _BENDR_TARGET_CHS_INFO
+
+    result = []
+    for ch in _BENDR_TARGET_CHS_INFO:
+        loc3 = np.asarray(ch["loc"], dtype=float)
+        loc12 = np.zeros(12, dtype=float)
+        loc12[:3] = loc3[:3]
+        result.append(
+            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc12.tolist()}
+        )
+    return result
+
+
 models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
 ] = [
@@ -319,7 +341,19 @@ models_mandatory_parameters: list[
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BrainModule", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
-    ("BENDR", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "BENDR",
+        ["n_chans", "n_outputs", "n_times"],
+        # Callable: BENDR now requires chs_info to match BENDR_CHANNEL_ORDER
+        # when supplied; deferred to avoid a circular import (util.py is loaded
+        # by base.py before bendr.py).
+        lambda: {"chs_info": _get_bendr_chs_info()},
+    ),
+    (
+        "InterpolatedBENDR",
+        ["chs_info", "n_outputs", "n_times"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     (

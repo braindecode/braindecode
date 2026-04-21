@@ -157,6 +157,7 @@ interface for all EEG models and can derive variable names when needed.
      FBLightConvNet
      FBMSNet
      IFNet
+     InterpolatedBENDR
      InterpolatedBIOT
      InterpolatedLaBraM
      InterpolatedModel
