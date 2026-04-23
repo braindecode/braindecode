@@ -28,6 +28,7 @@ from .eegtcnet import EEGTCNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
+from .generic_neuromotor_interface import GenericNeuromotorInterface
 from .hybrid import HybridNet
 from .ifnet import IFNet
 from .interpolated import InterpolatedModel
@@ -97,6 +98,7 @@ __all__ = [
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
+    "GenericNeuromotorInterface",
     "HybridNet",
     "IFNet",
     "InterpolatedBENDR",

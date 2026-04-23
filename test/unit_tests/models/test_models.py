@@ -43,6 +43,7 @@ from braindecode.models import (
     EEGTCNet,
     FBCNet,
     FBMSNet,
+    GenericNeuromotorInterface,
     HybridNet,
     IFNet,
     Labram,
@@ -3265,3 +3266,73 @@ def test_syncnet_filter_weight_shape():
     )
     out = model(torch.randn(2, n_chans, 200))
     assert out.shape == (2, 2)
+
+
+# ---------------------------------------------------------------------------
+# GenericNeuromotorInterface
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def gni_default():
+    """Build the default 15-layer handwriting conformer once per test module."""
+    return GenericNeuromotorInterface(n_times=32000).eval()
+
+
+def _small_gni(**kwargs):
+    defaults = dict(
+        n_times=800,
+        conformer_num_layers=1,
+        conformer_attn_window_size=0,
+        conformer_kernel_size=3,
+        conformer_stride=1,
+        time_reduction_stride=1,
+        drop_prob=0.0,
+    )
+    defaults.update(kwargs)
+    return GenericNeuromotorInterface(**defaults)
+
+
+def test_gni_default_contract(gni_default):
+    x = torch.randn(1, 16, 32000)
+    with torch.no_grad():
+        y = gni_default(x)
+
+    n_params = sum(p.numel() for p in gni_default.parameters() if p.requires_grad)
+    lengths = gni_default.compute_output_lengths(torch.tensor([32000, 40000]))
+
+    assert n_params == 1_021_284
+    assert y.shape == (1, 38, 100)
+    assert lengths[0].item() == y.shape[1]
+    assert lengths[1] > lengths[0]
+
+
+def test_gni_head_log_softmax_and_config():
+    m = _small_gni(log_softmax=True).eval()
+    with torch.no_grad():
+        y = m(torch.randn(1, 16, 800))
+
+    assert torch.allclose(y.exp().sum(dim=-1), torch.ones_like(y[..., 0]), atol=1e-5)
+    assert GenericNeuromotorInterface.from_config(m.get_config()).n_outputs == 100
+    m.reset_head(30)
+    assert m.n_outputs == 30
+    assert m.final_layer.out_features == 30
+
+
+def test_gni_ctc_backward():
+    torch.manual_seed(0)
+    m = _small_gni().train()
+    x = torch.randn(2, 16, 800)
+    emissions = m(x)  # (N, T, V)
+    log_probs = torch.log_softmax(emissions, dim=-1).transpose(0, 1)  # (T, N, V)
+    input_lengths = m.compute_output_lengths(torch.tensor([800, 800]))
+    target_lengths = torch.tensor([2, 2])
+    targets = torch.randint(1, 100, (2, 2))
+    loss = torch.nn.CTCLoss(blank=0, zero_infinity=True)(
+        log_probs, targets, input_lengths, target_lengths
+    )
+    loss.backward()
+
+    assert input_lengths.min() >= target_lengths.max()
+    assert m.final_layer.weight.grad is not None
+    assert any(p.grad is not None for p in m.conformer.parameters())

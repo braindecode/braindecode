@@ -414,6 +414,16 @@ def test_model_compiled(model):
     Verifies that all models can be torch compiled without issue
     and if the outputs are the same.
     """
+    not_compilable_models = [
+        # torch.compile currently stalls on the STFT/eigendecomposition-based
+        # MPF featurizer at the default handwriting input size.
+        "GenericNeuromotorInterface",
+    ]
+    if model.__class__.__name__ in not_compilable_models:
+        pytest.skip(
+            f"Skipping {model.__class__.__name__} as not working with torch.compile"
+        )
+
     # This assumes the model has attributes n_chans and n_times
     try:
         n_chans = model.n_chans
@@ -449,6 +459,9 @@ def test_model_exported(model):
         "SSTDPN",  # We found a fake tensor in the exported program constant's list.
         "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
         "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
+        # torch.export cannot handle torch.linalg.eigh + torch.stft used
+        # in the MPF featurizer.
+        "GenericNeuromotorInterface",
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
@@ -508,6 +521,9 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # torch.export cannot handle torch.linalg.eigh + torch.stft used
+        # in the MPF featurizer.
+        "GenericNeuromotorInterface",
         "SignalJEPA",
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",

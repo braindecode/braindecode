@@ -336,6 +336,17 @@ models_mandatory_parameters: list[
     ("SignalJEPA_PreLocal", ["n_chans", "n_times", "n_outputs"], None),
     ("FBCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("FBMSNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    (
+        "GenericNeuromotorInterface",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 32000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 16.0,
+            "n_outputs": 100,
+        },
+    ),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
@@ -384,6 +395,8 @@ models_mandatory_parameters: list[
 non_classification_models = [
     "SignalJEPA",
     "InterpolatedSignalJEPA",
+    # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
+    "GenericNeuromotorInterface",
 ]
 
 ################################################################
