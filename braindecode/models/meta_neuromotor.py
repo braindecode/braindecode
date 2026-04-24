@@ -559,7 +559,43 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
 
 
 class _ChannelwiseSTFT(nn.Module):
-    """Short-time Fourier transform applied independently to every channel."""
+    """Short-time Fourier transform applied independently to every channel.
+
+    First stage of the MPF featurizer. Given sEMG sampled at ``fs`` (2 kHz
+    in the paper [gni2025]_), it returns the complex discrete Fourier
+    transform of each channel over a sliding STFT window of ``n_fft``
+    samples, hopped by ``hop_length`` samples. Each column of the output
+    is normalized by the Euclidean norm of the window so that downstream
+    estimates of power / cross-spectral density are independent of the
+    window shape.
+
+    Paper defaults (handwriting decoder): ``n_fft = 64`` (32 ms at
+    2 kHz), ``hop_length = 10`` (5 ms), Hann window, ``center=False`` so
+    the transform is strictly causal. The module is a fixed signal-
+    processing stage - no trainable parameters.
+
+    Parameters
+    ----------
+    n_fft : int
+        FFT size (also STFT window length, in samples).
+    hop_length : int
+        STFT hop, in samples. Must be smaller than ``n_fft``.
+
+    Notes
+    -----
+    Input : ``(batch, channels, time)``, real.
+    Output: ``(batch, channels, n_fft // 2 + 1, num_stft_frames)``,
+    complex. ``num_stft_frames = 1 + (time - n_fft) // hop_length``.
+
+    The STFT is computed on a ``(batch * channels, time)`` view and
+    unflattened afterwards, keeping the per-channel transforms
+    independent (no mixing across channels at this stage).
+
+    References
+    ----------
+    See :class:`_MultivariatePowerFrequencyFeatures` for the full MPF
+    pipeline and its paper reference.
+    """
 
     def __init__(self, n_fft: int, hop_length: int) -> None:
         super().__init__()
@@ -589,7 +625,58 @@ class _ChannelwiseSTFT(nn.Module):
 
 
 class _FrequencyBandAverager(nn.Module):
-    """Average frequency bins into fixed ``(low, high)`` Hz bands."""
+    """Reduce high-resolution FFT bins to a few physiologically motivated bands.
+
+    Each band is defined by a ``(low, high)`` pair in Hz and acts as an
+    indicator mask over the FFT grid: bin ``k`` is kept if
+    ``low < freqs_hz[k] <= high``. The module returns, per band, the
+    mean of the input tensor over the bins in that band. This is the
+    "binning + sum over frequency bins" step of the MPF features in
+    [gni2025]_, Methods ("MPF features").
+
+    The paper's defaults are six non-overlapping bands targeting the
+    sEMG power spectrum:
+
+        (0, 62.5), (62.5, 125), (125, 250),
+        (250, 375), (375, 687.5), (687.5, 1000)   # Hz
+
+    The released training config in ``facebookresearch/generic-
+    neuromotor-interface`` - mirrored by
+    :data:`_DEFAULT_MPF_FREQUENCY_BINS` - uses slightly overlapping
+    bands that reproduce the pretrained checkpoints:
+
+        (0, 50), (30, 100), (100, 225),
+        (225, 375), (375, 700), (700, 1000)       # Hz
+
+    Pass ``frequency_bins=None`` to disable the averaging and return the
+    raw FFT-bin axis (a no-op forward).
+
+    Parameters
+    ----------
+    n_fft : int
+        FFT size used by the upstream :class:`_ChannelwiseSTFT` (needed
+        to recover the Hz grid of the FFT bins).
+    fs : float
+        Sampling frequency in Hz.
+    frequency_bins : sequence of (float, float) or None
+        Bands to average over. When ``None``, the module is a no-op.
+
+    Notes
+    -----
+    Input : ``(batch, time, freqs, channels1, channels2)``.
+    Output: ``(batch, time, num_bands, channels1, channels2)``.
+
+    ``freq_masks`` is a ``(1, 1, num_bands, n_fft // 2 + 1, 1, 1)``
+    float buffer. Each band must contain at least one FFT bin; the
+    constructor raises if a band is empty for the given ``fs / n_fft``.
+
+    A band's output is ``weighted.sum(freq_axis) / mask.sum(freq_axis)``,
+    i.e. an arithmetic mean over the FFT bins the band selects.
+
+    References
+    ----------
+    See :class:`_MultivariatePowerFrequencyFeatures`.
+    """
 
     def __init__(
         self,
@@ -639,7 +726,52 @@ class _FrequencyBandAverager(nn.Module):
 
 
 class _CrossSpectralDensity(nn.Module):
-    """Estimate channel-pair cross-spectral density inside each MPF window."""
+    """Magnitude-squared cross-spectral density between every channel pair.
+
+    For the MPF featurizer of [gni2025]_, cross-spectral density was
+    chosen over channel-wise power "to preserve cross-channel
+    relationships in the spectral domain" (Methods, "MPF features"). It
+    is the frequency-domain analogue of the spatial covariance matrix
+    used by the Riemannian-geometry BCI pipelines of Barachant et al.
+    2012 and the pyRiemann toolbox [pyriemann]_, from which the paper
+    borrows the matrix-log step that follows (see
+    :class:`_SPDMatrixLog`).
+
+    Given per-window per-channel STFT samples
+
+    .. math::
+
+        X \\in \\mathbb{C}^{\\text{channels} \\times \\text{window}},
+
+    this module computes the Hermitian outer product (per MPF window and
+    per FFT bin), normalised by the window length:
+
+    .. math::
+
+        C = \\frac{1}{\\text{window}}\\, X \\, X^{*},
+        \\qquad C \\in \\mathbb{C}^{\\text{channels} \\times
+        \\text{channels}},
+
+    then returns ``|C|**2`` (element-wise squared magnitude). The
+    absolute value / squaring is applied before band averaging so the
+    downstream :class:`_FrequencyBandAverager` receives real-valued
+    data - this matches the released upstream implementation and its
+    pretrained checkpoints, even though the paper's Methods prose
+    describes the ordering in the opposite direction.
+
+    Notes
+    -----
+    Implemented with einops ``pack`` / ``unpack`` so the same matmul
+    broadcasts over any leading ``(batch, time, freq)`` structure. The
+    module has no trainable parameters.
+
+    Input : ``(..., channels, window)``, complex.
+    Output: ``(..., channels1, channels2)``, real.
+
+    References
+    ----------
+    See :class:`_MultivariatePowerFrequencyFeatures`.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -681,27 +813,85 @@ class _SPDMatrixLog(nn.Module):
 
 
 class _MultivariatePowerFrequencyFeatures(nn.Module):
-    """Convert raw multichannel signal to multivariate power frequency (MPF) features.
+    """Multivariate power frequency (MPF) features from raw sEMG.
 
-       Input: ``(batch, channels, time)``. Output:
-       ``(batch, num_freq_bins, channels, channels, time')``: the per-band matrix
-       logarithm of the cross-spectral density between channel pairs.
+    MPF is the handwriting / wrist decoder's front-end featurizer from
+    [gni2025]_ (Methods, "MPF features"). The module converts a raw
+    multichannel time series into a per-band, time-strided stack of
+    channel-by-channel cross-spectral matrices - the frequency-domain
+    analogue of the classical spatial-covariance features used by
+    Riemannian-geometry BCI pipelines (Barachant et al. 2012,
+    [pyriemann]_), adapted to sEMG.
 
-       Parameters
+    Rationale (paper excerpt). *"In the case of EEG, MPF features have
+    proven to be a simple and robust featurization achieving state of
+    the art, or near state of the art, performance for many tasks. In
+    agreement with the literature, we find that MPF features offer
+    clear advantages on the wrist classification task over RMS power
+    (Extended Data Fig. 6)."*
+
+    .. rubric:: Pipeline
+
+    The five stages are composed in this order; each is a separate
+    submodule for readability and bit-exact parity with upstream:
+
+    1. :class:`_ChannelwiseSTFT` - complex DFT per channel.
+       ``n_fft=64`` (32 ms at 2 kHz), hop ``10`` (5 ms), Hann window,
+       ``center=False`` for strict causality.
+    2. ``x.unfold(-1, size, step)`` - group consecutive STFT frames
+       into MPF windows of length ``window_length / fft_stride`` = 16
+       at the paper defaults, striding by ``stride / fft_stride`` = 4.
+       The resulting MPF frame rate is ``fs / stride`` = 50 Hz.
+    3. :class:`_CrossSpectralDensity` - per-window outer product
+       ``X X^* / window``, then ``|.|**2``. Preserves cross-channel
+       relationships in the spectral domain while producing a real
+       symmetric ``(channels, channels)`` matrix per FFT bin.
+    4. :class:`_FrequencyBandAverager` - average FFT bins into the 6
+       physiologically motivated bands of the paper
+       (0-62.5, 62.5-125, 125-250, 250-375, 375-687.5, 687.5-1000 Hz,
+       or the released-checkpoint variant in
+       :data:`_DEFAULT_MPF_FREQUENCY_BINS`).
+    5. :class:`_SPDMatrixLog` - Log-Euclidean map on each per-band
+       symmetric positive-definite matrix (Barachant et al. 2012;
+       [pyriemann]_). Moves the per-band covariances onto a tangent
+       vector space where subsequent linear layers and the MLP-based
+       rotation-invariance module operate naturally.
+
+    Paper (handwriting decoder) uses ``window_length = 160`` samples
+    (80 ms), ``stride = 40`` samples (20 ms). The wrist decoder uses
+    ``window_length = 200`` (100 ms). The input is assumed to be
+    already rescaled by ``2.46e-6`` (to unit noise s.d.) and digitally
+    high-passed at 40 Hz (4th-order Butterworth) per the paper - these
+    preprocessing steps are *not* applied inside this module.
+
+    Parameters
     ----------
-       window_length : int
-           Window length for computation of MPF features. Must be larger than ``n_fft``.
-       stride : int
-           Number of samples to stride between consecutive MPF windows.
-       n_fft : int
-           FFT size (also STFT window size).
-       fft_stride : int
-           Hop size of the STFT. Must divide ``stride`` and be ``<= n_fft``.
-       fs : float
-           Sampling frequency of the input in Hz.
-       frequency_bins : sequence of (float, float) or None
-           Average FFT frequencies within each ``(low, high)`` Hz bin. If ``None``,
-           all FFT frequencies are returned as is.
+    window_length : int
+        Total length (in raw samples) of the MPF window. Must be > ``n_fft``.
+    stride : int
+        Hop between consecutive MPF windows, in raw samples. Must be a
+        multiple of ``fft_stride``.
+    n_fft : int
+        FFT size (and length of the inner STFT window).
+    fft_stride : int
+        Inner STFT hop, in raw samples. Must be ``<= n_fft`` and
+        ``<= stride``.
+    fs : float
+        Sampling frequency of the input signal in Hz.
+    frequency_bins : sequence of (float, float) or None
+        Frequency bands to average over. ``None`` returns raw FFT bins.
+
+    Notes
+    -----
+    Input : ``(batch, channels, time)``, real, sampled at ``fs``.
+    Output: ``(batch, num_bands, channels, channels, time')``, real,
+    sampled at ``fs / stride``. The output time length is shorter than
+    the input by ``left_context = window_length - fft_stride + n_fft - 1``
+    samples (computed at construction).
+
+    The module is a fixed signal-processing stage - it registers buffers
+    (``stft.window``, ``stft.window_norm``, optional ``band_averager.
+    freq_masks``) but contains *no trainable parameters*.
     """
 
     def __init__(
