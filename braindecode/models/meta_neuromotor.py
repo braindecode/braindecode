@@ -604,11 +604,14 @@ class _ChannelwiseSTFT(nn.Module):
         window = torch.hann_window(n_fft, periodic=False)
         self.register_buffer("window", window)
         self.register_buffer("window_norm", torch.linalg.vector_norm(window))
+        self.flatten_batch_channels = Rearrange(
+            "batch channels time -> (batch channels) time"
+        )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         batch_size, num_channels, _ = inputs.shape
         stft = torch.stft(
-            rearrange(inputs, "batch channels time -> (batch channels) time"),
+            self.flatten_batch_channels(inputs),
             n_fft=self.n_fft,
             hop_length=self.hop_length,
             window=cast(torch.Tensor, self.window),
@@ -618,12 +621,7 @@ class _ChannelwiseSTFT(nn.Module):
             return_complex=True,
         )
         stft = stft / cast(torch.Tensor, self.window_norm)
-        return rearrange(
-            stft,
-            "(batch channels) freqs time -> batch channels freqs time",
-            batch=batch_size,
-            channels=num_channels,
-        )
+        return stft.unflatten(0, (batch_size, num_channels))
 
 
 class _FrequencyBandAverager(nn.Module):
@@ -636,12 +634,19 @@ class _FrequencyBandAverager(nn.Module):
         frequency_bins: Sequence[tuple[float, float]] | None,
     ) -> None:
         super().__init__()
+
         self.frequency_bins = frequency_bins
         self.n_output_freqs = n_fft // 2 + 1
+
         if frequency_bins is not None:
             freq_masks = self._build_freq_masks(n_fft, fs, frequency_bins)
             self.register_buffer("freq_masks", freq_masks)
             self.n_output_freqs = len(frequency_bins)
+
+        self.add_band_axis = Rearrange(
+            "batch time freq channels1 channels2 -> "
+            "batch time 1 freq channels1 channels2"
+        )
 
     @staticmethod
     def _build_freq_masks(
@@ -665,12 +670,7 @@ class _FrequencyBandAverager(nn.Module):
             return x
 
         freq_masks = cast(torch.Tensor, self.freq_masks)
-        weighted = rearrange(
-            x,
-            "batch time freq channels1 channels2 -> "
-            "batch time 1 freq channels1 channels2",
-        )
-        weighted = weighted * freq_masks
+        weighted = self.add_band_axis(x) * freq_masks
         return weighted.sum(dim=3) / freq_masks.sum(dim=3)
 
 
@@ -692,15 +692,17 @@ class _SlidingWindowLast(nn.Module):
 class _CrossSpectralDensity(nn.Module):
     """Estimate channel-pair cross-spectral density inside each MPF window."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.transpose_last_two = Rearrange(
+            "items channels window -> items window channels"
+        )
+
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         window_size = inputs.shape[-1]
+        # Pack over all leading dims so matmul broadcasts uniformly.
         outputs, packed_shape = pack([inputs], "* channels window")
-        outputs = (
-            outputs
-            @ rearrange(
-                outputs.conj(), "items channels window -> items window channels"
-            )
-        ) / window_size
+        outputs = (outputs @ self.transpose_last_two(outputs.conj())) / window_size
         outputs = outputs.abs().pow(2)
         return unpack(outputs, packed_shape, "* channels1 channels2")[0]
 
@@ -716,11 +718,16 @@ class _SPDMatrixLog(nn.Module):
     ``facebookresearch/generic-neuromotor-interface/.../networks.py``).
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.broadcast_eigvals = Rearrange("... channels -> ... 1 channels")
+        self.transpose_eigvecs = Rearrange("... row col -> ... col row")
+
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         eigvals, eigvecs = torch.linalg.eigh(inputs)
         eigvals = eigvals.log().nan_to_num(nan=0.0, neginf=0.0)
-        return (eigvecs * rearrange(eigvals, "... channels -> ... 1 channels")) @ (
-            rearrange(eigvecs, "... row col -> ... col row")
+        return (eigvecs * self.broadcast_eigvals(eigvals)) @ self.transpose_eigvecs(
+            eigvecs
         )
 
 
@@ -787,28 +794,29 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
         )
         self.spd_log = _SPDMatrixLog()
 
-        # amount by which output time length is shorter than input time length
+        # Amount by which output time length is shorter than input time length
         # when considering only the featurizer.
         self.left_context = self.window_length - self.fft_stride + self.n_fft - 1
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        outputs = self.stft(inputs)
-        outputs = self.frame(outputs)
-        outputs = rearrange(
-            outputs,
-            "batch channels freqs windows window -> "
-            "batch windows freqs channels window",
+        # Reorder framed STFT chunks so CSD broadcasts over (windows, freqs).
+        self.csd_input_layout = Rearrange(
+            "batch channels freqs windows window -> batch windows freqs channels window"
         )
-
-        outputs = self.csd(outputs)
-        outputs = self.band_averager(outputs)
-        outputs = self.spd_log(outputs)
-
-        return rearrange(
-            outputs,
+        # Put MPF time last to match the (batch, freqs, chans, chans, time)
+        # layout consumed downstream by the rotation-invariant MLP.
+        self.time_last_layout = Rearrange(
             "batch time freqs channels1 channels2 -> "
-            "batch freqs channels1 channels2 time",
+            "batch freqs channels1 channels2 time"
         )
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        x = self.stft(inputs)
+        x = self.frame(x)
+        x = self.csd_input_layout(x)
+        x = self.csd(x)
+        x = self.band_averager(x)
+        x = self.spd_log(x)
+        return self.time_last_layout(x)
 
     def compute_time_downsampling(self, input_lengths: torch.Tensor) -> torch.Tensor:
         cospectrum_len = 1 + (input_lengths - self.n_fft) // self.fft_stride
@@ -906,6 +914,16 @@ class _RotationInvariantMPFMLP(nn.Module):
             "batch time rotation freqs covariance -> "
             "batch time rotation (freqs covariance)"
         )
+        # Stacked rotations come out of torch.stack as
+        # (batch, freqs, c1, c2, time, rotation); put time first so the MLP
+        # broadcasts cleanly across (time, rotation).
+        self.rotations_to_time_major = Rearrange(
+            "batch freqs channels1 channels2 time rotation -> "
+            "batch time rotation freqs channels1 channels2"
+        )
+        self.features_to_time_last = Rearrange(
+            "batch time features -> batch features time"
+        )
         self.fully_connected_layers = nn.ModuleList()
         dim = num_freqs * min(
             num_channels * (num_adjacent_cov + 1),
@@ -923,17 +941,13 @@ class _RotationInvariantMPFMLP(nn.Module):
             ],
             dim=-1,
         )
-        x = rearrange(
-            x,
-            "batch freqs channels1 channels2 time rotation -> "
-            "batch time rotation freqs channels1 channels2",
-        )
+        x = self.rotations_to_time_major(x)
         x = self.vectorize(x)
         x = self.flatten_features(x)
         for layer in self.fully_connected_layers:
             x = self.activation(layer(x))
         x = reduce(x, "batch time rotation features -> batch time features", "mean")
-        return rearrange(x, "batch time features -> batch features time")
+        return self.features_to_time_last(x)
 
 
 class _AxesMask(nn.Module):
@@ -1210,6 +1224,27 @@ class _MultiHeadAttention(nn.Module):
         self.stride = self.attention_window.stride
         self._init_and_register_attn_mask()
 
+        # Static reshapes used by _windows / _attn_params / forward.
+        self.flatten_trailing = Rearrange("batch time ... -> batch time (...)")
+        self.window_last_to_first = Rearrange(
+            "batch time channels window -> batch time window channels"
+        )
+        self.merge_batch_time = Rearrange(
+            "batch time window channels -> (batch time) window channels"
+        )
+        self.transpose_and_back = Rearrange(
+            "batch_time (window channels) -> batch_time window channels",
+            window=self.window_size,
+            channels=self.input_dim,
+        )
+        self.flatten_window_channels = Rearrange(
+            "batch_time window channels -> batch_time (channels window)"
+        )
+        self.add_query_axis = Rearrange("batch_time channels -> batch_time 1 channels")
+        self.add_mask_axis = Rearrange(
+            "batch_time_heads window -> batch_time_heads 1 window"
+        )
+
     def _init_and_register_attn_mask(self) -> None:
         # 1s indicate positions that are masked out (PyTorch MHA convention
         # is 0 to attend). The mask is anti-diagonal-triangular so that
@@ -1222,31 +1257,20 @@ class _MultiHeadAttention(nn.Module):
         return cast(torch.Tensor, self.attn_mask)
 
     def _windows(self, inputs: torch.Tensor) -> torch.Tensor:
-        inputs = rearrange(inputs, "batch time ... -> batch time (...)")
+        inputs = self.flatten_trailing(inputs)
         if inputs.shape[-1] != self.input_dim:
             raise ValueError(
                 f"Expected flattened input dim {self.input_dim}, got {inputs.shape[-1]}"
             )
-        windows = self.attention_window(inputs)
-        return rearrange(
-            windows, "batch time channels window -> batch time window channels"
-        )
+        return self.window_last_to_first(self.attention_window(inputs))
 
     def _attn_params(self, windows: torch.Tensor):
-        windows = rearrange(
-            windows, "batch time window channels -> (batch time) window channels"
-        )
+        windows = self.merge_batch_time(windows)
         query = windows[:, -1]
-        # Match the upstream key/value ordering from transpose(...).reshape(...).
-        kv = rearrange(
-            windows, "batch_time window channels -> batch_time (channels window)"
-        )
-        kv = rearrange(
-            kv,
-            "batch_time (window channels) -> batch_time window channels",
-            window=self.window_size,
-            channels=self.input_dim,
-        )
+        # Reorder (window, channels) then split back the same way the
+        # upstream transpose(...).reshape(...) does, so key/value indexing
+        # matches the pretrained checkpoints exactly.
+        kv = self.transpose_and_back(self.flatten_window_channels(windows))
         return query, kv, kv
 
     def _attn_mask_op(
@@ -1291,17 +1315,14 @@ class _MultiHeadAttention(nn.Module):
         batch_size, input_time = inputs.shape[:2]
         attn_mask = self._full_attn_mask(windows, 0, input_time)
         output, _ = self.op(
-            query=rearrange(query, "batch_time channels -> batch_time 1 channels"),
+            query=self.add_query_axis(query),
             key=key,
             value=value,
-            attn_mask=rearrange(
-                attn_mask, "batch_time_heads window -> batch_time_heads 1 window"
-            ),
+            attn_mask=self.add_mask_axis(attn_mask),
         )
-        output = rearrange(
-            output, "(batch time) 1 channels -> batch time 1 channels", batch=batch_size
-        )
-        return output
+        # Un-merge (batch * time) back to (batch, time) while keeping the
+        # singleton query axis the downstream conformer block expects.
+        return output.unflatten(0, (batch_size, -1))
 
 
 class _Conv1d(nn.Module):
