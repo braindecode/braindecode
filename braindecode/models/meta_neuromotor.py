@@ -52,15 +52,16 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
     Labs, Nature 2025). Takes raw 16-channel surface EMG recorded at the
     wrist and emits a per-token score sequence for CTC decoding
     [graves2006ctc]_. The upstream repository
-    (``facebookresearch/generic-neuromotor-interface``) ships one
-    architecture per task: 1-DOF wrist control, discrete gestures and
-    handwriting. Only the handwriting head is ported here.
+    (`facebookresearch/generic-neuromotor-interface
+    <https://github.com/facebookresearch/generic-neuromotor-interface>`_)
+    ships one architecture per task: 1-DOF wrist control, discrete
+    gestures and handwriting. Only the handwriting head is ported here.
 
     .. rubric:: Macro Components
 
     The forward pass is a strict sequence of five modules, in order:
 
-    1. :class:`_MultivariatePowerFrequencyFeatures` (MPF features, fixed
+    1. ``_MultivariatePowerFrequencyFeatures`` (MPF features, fixed
        signal-processing stage, no trainable parameters).
 
        - Channel-wise STFT (:func:`torch.stft`) -- ``n_fft=64`` (32 ms),
@@ -78,12 +79,12 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
        Output shape ``(batch, num_freq_bins, n_chans, n_chans, time')``
        at 50 Hz (= ``sfreq / mpf_stride``).
 
-    2. :class:`_MaskAug` -- SpecAugment [park2019specaug]_ on the MPF
+    2. ``_MaskAug`` -- SpecAugment [park2019specaug]_ on the MPF
        features during training, no-op at eval. Zero parameters.
        Hyperparameters ``mask_max_num_masks=(3, 2)`` and
        ``mask_max_lengths=(5, 1)`` match the released checkpoints.
 
-    3. :class:`_RotationInvariantMPFMLP` -- armband-rotation invariance.
+    3. ``_RotationInvariantMPFMLP`` -- armband-rotation invariance.
 
        - Circular roll of the 16-channel cross-spectral matrix by each
          offset in ``invariance_offsets`` (default ``{-1, 0, +1}``).
@@ -606,7 +607,7 @@ class _FrequencyBandAverager(nn.Module):
     Parameters
     ----------
     n_fft : int
-        FFT size used by the upstream :class:`_ChannelwiseSTFT` (needed
+        FFT size used by the upstream ``_ChannelwiseSTFT`` (needed
         to recover the Hz grid of the FFT bins).
     fs : float
         Sampling frequency in Hz.
@@ -627,7 +628,7 @@ class _FrequencyBandAverager(nn.Module):
 
     References
     ----------
-    See :class:`_MultivariatePowerFrequencyFeatures`.
+    See ``_MultivariatePowerFrequencyFeatures``.
     """
 
     def __init__(
@@ -683,7 +684,7 @@ class _CrossSpectralDensity(nn.Module):
     Paper rationale (Methods, "MPF features"): *"The cross-spectral
     density was chosen to preserve cross-channel relationships in the
     spectral domain."* The paper's matrix-log step that follows (see
-    :class:`_SPDMatrixLog`) cites Barachant et al. 2012's Riemannian-
+    ``_SPDMatrixLog``) cites Barachant et al. 2012's Riemannian-
     geometry BCI pipelines and the pyRiemann toolbox [pyriemann]_.
 
     Given per-window per-channel STFT samples
@@ -701,7 +702,7 @@ class _CrossSpectralDensity(nn.Module):
     Methods prose describes the ordering in the opposite direction
     (sum across frequency first, then take the squared magnitude);
     this code does element-wise ``|.|**2`` here and lets the downstream
-    :class:`_FrequencyBandAverager` sum real values. That is the order
+    ``_FrequencyBandAverager`` sum real values. That is the order
     used by the released upstream implementation and reproduced by the
     pretrained checkpoints.
 
@@ -716,7 +717,7 @@ class _CrossSpectralDensity(nn.Module):
 
     References
     ----------
-    See :class:`_MultivariatePowerFrequencyFeatures`.
+    See ``_MultivariatePowerFrequencyFeatures``.
     """
 
     def __init__(self) -> None:
@@ -747,7 +748,8 @@ class _SPDMatrixLog(nn.Module):
     with ``0``. Clamping to a positive floor *before* the log would be
     more numerically robust but would shift ``log`` outputs for small
     eigenvalues enough to diverge from the pretrained checkpoints - see
-    the paper's ``facebookresearch/generic-neuromotor-interface``
+    the paper's `facebookresearch/generic-neuromotor-interface
+    <https://github.com/facebookresearch/generic-neuromotor-interface>`_
     reference code.
 
     See Also
@@ -800,7 +802,7 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
     The five stages are composed in this order; each is a separate
     submodule for readability and bit-exact parity with upstream:
 
-    1. :class:`_ChannelwiseSTFT` - complex DFT per channel.
+    1. ``_ChannelwiseSTFT`` - complex DFT per channel.
        ``n_fft=64`` (32 ms at 2 kHz), hop ``10`` (5 ms), Hann window,
        ``center=False`` for strict causality.
     2. ``x.unfold(-1, size, step)`` - group consecutive STFT frames
@@ -808,16 +810,16 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
        at the paper defaults, striding by ``stride / fft_stride`` = 4.
        The resulting MPF frame rate is ``fs / stride`` = 50 Hz at the
        paper defaults (derived; not quoted verbatim in the paper).
-    3. :class:`_CrossSpectralDensity` - per-window Hermitian outer
+    3. ``_CrossSpectralDensity`` - per-window Hermitian outer
        product ``X X^H / window``, then element-wise ``|.|**2``.
        Preserves cross-channel relationships in the spectral domain
        while producing a real symmetric ``(channels, channels)`` matrix
        per FFT bin.
-    4. :class:`_FrequencyBandAverager` - average FFT bins into the
+    4. ``_FrequencyBandAverager`` - average FFT bins into the
        paper's six bands (0-62.5, 62.5-125, 125-250, 250-375,
        375-687.5, 687.5-1000 Hz), or the released-checkpoint variant
        used as the ``mpf_frequency_bins`` default.
-    5. :class:`_SPDMatrixLog` - matrix logarithm on each per-band
+    5. ``_SPDMatrixLog`` - matrix logarithm on each per-band
        symmetric positive-definite matrix (Barachant et al. 2012;
        [pyriemann]_). In the Log-Euclidean framework this maps SPD
        matrices onto the tangent space at the identity, where linear
@@ -1203,7 +1205,7 @@ class _Window(nn.Module):
     """Causal sliding-window extraction for ``(batch, time, ...)`` tensors.
 
     Core utility used by the conformer's windowed causal attention
-    (:class:`_MultiHeadAttention`) and by the frame-stacking step before
+    (``_MultiHeadAttention``) and by the frame-stacking step before
     the conformer encoder (``_build_handwriting_encoder``). Given a time
     series and a ``kernel_size`` receptive field, the module slices the
     input into overlapping windows at a ``stride`` hop, optionally with
@@ -1242,7 +1244,7 @@ class _Window(nn.Module):
         for real history). Does **not** affect this module's ``forward``
         computation - padding is always ``state_size`` zeros on the
         left. ``lpad`` only shifts :attr:`extra_left_context`, which is
-        read by :class:`_Residual` / :class:`_SlicedSequential` when
+        read by ``_Residual`` / ``_SlicedSequential`` when
         slicing skip connections.
 
         String aliases resolve to integers:
@@ -1262,7 +1264,7 @@ class _Window(nn.Module):
     extra_left_context : int
         ``receptive_field - 1 - lpad``. Number of leading output frames
         to drop before the skip connection aligns with the child output.
-        Consumed by :class:`_Residual` / :class:`_SlicedSequential`.
+        Consumed by ``_Residual`` / ``_SlicedSequential``.
 
     Notes
     -----
@@ -1507,7 +1509,7 @@ class _Conv1d(nn.Module):
     """1D convolution for ``(batch, time, channels)`` tensors.
 
     Used inside the conformer's convolution block
-    (:func:`_conformer_encoder_block`) as the depthwise temporal conv.
+    (``_conformer_encoder_block``) as the depthwise temporal conv.
     The rest of the conformer block operates in time-major (``NTC``)
     layout - matrix multiplies, LayerNorm, GLU - whereas PyTorch's
     :class:`torch.nn.Conv1d` expects channel-first (``NCT``). Rather
@@ -1515,8 +1517,8 @@ class _Conv1d(nn.Module):
     ``nn.Conv1d`` between two :class:`einops.layers.torch.Rearrange`
     layers so the block stays uniformly ``NTC``.
 
-    It also exposes the two attributes :class:`_SlicedSequential`
-    consumes, so residual skips (:class:`_Residual`) slice correctly
+    It also exposes the two attributes ``_SlicedSequential``
+    consumes, so residual skips (``_Residual``) slice correctly
     when the conv stride is ``>1``:
 
     - ``stride``             : forwarded from :class:`torch.nn.Conv1d`.

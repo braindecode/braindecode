@@ -165,6 +165,7 @@ interface for all EEG models and can derive variable names when needed.
      Labram
      LUNA
      MEDFormer
+     MetaNeuromotorHand
      MSVTNet
      PBT
      REVE
