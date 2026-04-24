@@ -724,6 +724,59 @@ class _FrequencyBandAverager(nn.Module):
         return weighted.sum(dim=3) / freq_masks.sum(dim=3)
 
 
+class _SlideWindow(nn.Module):
+    """Sliding-window view of a tensor along one axis.
+
+    Wraps :meth:`torch.Tensor.unfold` (the tensor method, *not*
+    :class:`torch.nn.Unfold`). Kept as a dedicated ``nn.Module`` so
+    ``forward`` methods read as a flat sequence of layer calls.
+
+    Why not :class:`torch.nn.Unfold`? ``torch.nn.Unfold`` is the 2D
+    image-patching op used in ``im2col``-style conv; it expects a fixed
+    4D ``(N, C, H, W)`` input and produces ``(N, C * kH * kW, L)`` by
+    flattening the kernel into the channel axis. What we need here is a
+    **1D sliding view along an arbitrary axis** that preserves every
+    other axis (including possibly-complex dtypes and leading shape
+    like ``(batch, channels, freqs, time)``). PyTorch exposes that as
+    ``tensor.unfold(dim, size, step)``; there is no built-in
+    ``nn.Unfold1d`` for it, so we wrap the method in a light module.
+
+    Parameters
+    ----------
+    dim : int
+        Axis to unfold.
+    size : int
+        Window length along ``dim``, in samples.
+    step : int
+        Hop between consecutive windows, in samples.
+    """
+
+    def __init__(self, dim: int, size: int, step: int) -> None:
+        super().__init__()
+        self.dim = dim
+        self.size = size
+        self.step = step
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return inputs.unfold(dimension=self.dim, size=self.size, step=self.step)
+
+
+class _TakeEvery(nn.Module):
+    """Keep every ``step``-th sample along the last axis, ``nn.Module`` wrapper.
+
+    Single-line convenience around ``inputs[..., :: step]``, kept as a
+    module so the :class:`_Window` forward pass is a flat sequence of
+    layer calls.
+    """
+
+    def __init__(self, step: int) -> None:
+        super().__init__()
+        self.step = step
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return inputs[..., :: self.step]
+
+
 class _CrossSpectralDensity(nn.Module):
     """Magnitude-squared cross-spectral density between every channel pair.
 
@@ -948,11 +1001,14 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
         else:
             self.frequency_bins = None
 
-        # Number of STFT bins grouped into one MPF frame, and hop between frames.
-        self._frame_size = self.window_length // self.fft_stride
-        self._frame_step = self.stride // self.fft_stride
-
         self.stft = _ChannelwiseSTFT(n_fft=self.n_fft, hop_length=self.fft_stride)
+        # Group consecutive STFT bins into MPF windows; the hop size is the
+        # MPF stride, downsampled from raw samples to STFT frames.
+        self.frame = _SlideWindow(
+            dim=-1,
+            size=self.window_length // self.fft_stride,
+            step=self.stride // self.fft_stride,
+        )
         self.csd = _CrossSpectralDensity()
         self.band_averager = _FrequencyBandAverager(
             n_fft=self.n_fft,
@@ -978,7 +1034,7 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         x = self.stft(inputs)
-        x = x.unfold(dimension=-1, size=self._frame_size, step=self._frame_step)
+        x = self.frame(x)
         x = self.csd_input_layout(x)
         x = self.csd(x)
         x = self.band_averager(x)
@@ -1323,14 +1379,15 @@ class _Window(nn.Module):
         self.extra_left_context = self.receptive_field - 1 - self.lpad
         self.dilation = dilation
         self.kernel_size = kernel_size
+        # Unfold time axis + keep every dilation-th sample inside each window.
+        self.frame = _SlideWindow(dim=1, size=self.receptive_field, step=stride)
+        self.dilation_selector = _TakeEvery(dilation)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         if self.state_size > 0:
             inputs = F.pad(inputs, (0, 0, self.state_size, 0), "constant", 0)
-        windows = inputs.unfold(
-            dimension=1, size=self.receptive_field, step=self.stride
-        )
-        return windows[..., :: self.dilation]
+        windows = self.frame(inputs)
+        return self.dilation_selector(windows)
 
 
 class _Residual(nn.Module):
@@ -1677,22 +1734,6 @@ def _conformer_encoder_block(
     )
 
 
-def _as_layer_list(val, num_layers: int, name: str):
-    """Broadcast a scalar to a per-layer list, or validate an explicit list.
-
-    Used by :func:`_conformer_encoder` to normalise the three per-block
-    schedules (``kernel_size``, ``attn_window_size``, ``attn_lpad``).
-    ``stride`` has its own, different broadcast rule (scalar applies to
-    the last block only) and so is handled inline there.
-    """
-    if isinstance(val, (list, tuple)):
-        out = list(val)
-        if len(out) != num_layers:
-            raise ValueError(f"{name} length {len(out)} != num_layers {num_layers}")
-        return out
-    return [val] * num_layers
-
-
 def _conformer_encoder(
     input_dim: int,
     ffn_dim: int,
@@ -1705,15 +1746,25 @@ def _conformer_encoder(
     drop_prob: float = 0.0,
     activation: type[nn.Module] = nn.SiLU,
 ) -> _SlicedSequential:
-    kernel_size = _as_layer_list(kernel_size, num_layers, "kernel_size")
-    attn_window_size = _as_layer_list(attn_window_size, num_layers, "attn_window_size")
-    attn_lpad = _as_layer_list(attn_lpad, num_layers, "attn_lpad")
+    def _broadcast(val, name: str):
+        if isinstance(val, (list, tuple)):
+            out = list(val)
+            if len(out) != num_layers:
+                raise ValueError(f"{name} length {len(out)} != num_layers {num_layers}")
+            return out
+        return [val] * num_layers
+
+    kernel_size = _broadcast(kernel_size, "kernel_size")
+    attn_window_size = _broadcast(attn_window_size, "attn_window_size")
+    attn_lpad = _broadcast(attn_lpad, "attn_lpad")
+
+    # ``stride`` has a different rule: a scalar applies only to the last
+    # block so the whole encoder downsamples by that factor once.
     if isinstance(stride, (list, tuple)):
         stride = list(stride)
         if len(stride) != num_layers:
             raise ValueError("stride length must match num_layers")
     else:
-        # scalar: apply only to the last block (entire encoder downsamples by stride)
         stride = [1] * (num_layers - 1) + [stride]
 
     seq = [
