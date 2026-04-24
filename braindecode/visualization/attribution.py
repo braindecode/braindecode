@@ -1,3 +1,7 @@
+# Authors: Vandit Shah <vanditshah@outlook.com>
+#
+# License: BSD (3-clause)
+
 import torch
 from captum.attr import (
     LRP,

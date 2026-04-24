@@ -1,3 +1,8 @@
+# Authors: Vandit Shah <shahvanditt@gmail.com>
+#
+# License: BSD (3-clause)
+
+
 import itertools
 
 import numpy as np

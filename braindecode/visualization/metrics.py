@@ -1,4 +1,7 @@
-from copy import deepcopy
+# Authors: Vandit Shah <shahvanditt@gmail.com>
+#
+# License: BSD (3-clause)
+
 
 import numpy as np
 from scipy import stats
@@ -82,17 +85,14 @@ def _compute_channel_metrics(
 ):
     assert reference.shape == explanations.shape
 
-    explanations = explanations.copy()
-    reference = reference.copy()
-    explanations[np.isnan(explanations)] = 0
-    reference[np.isnan(reference)] = 0
+    explanations = np.nan_to_num(explanations, nan=0.0)
+    reference = np.nan_to_num(reference, nan=0.0)
 
     if gt_flag:
         reference = np.abs(reference)
 
-    explanation_abs = deepcopy(explanations)
     explanation_abs = (
-        np.abs(explanation_abs) if abs_condition else np.clip(explanation_abs, 0, None)
+        np.abs(explanations) if abs_condition else np.clip(explanations, 0, None)
     )
 
     return _compute_metrics_core(explanations, reference, explanation_abs, prctile_val)
@@ -111,17 +111,16 @@ def _compute_topo_metrics(
     )
     reference_topo = np.array([project_to_topomap(r, chs_info) for r in reference])
 
-    explanations_topo[np.isnan(explanations_topo)] = 0
-    reference_topo[np.isnan(reference_topo)] = 0
+    explanations_topo = np.nan_to_num(explanations_topo, nan=0.0)
+    reference_topo = np.nan_to_num(reference_topo, nan=0.0)
 
     assert explanations_topo.shape == reference_topo.shape
 
     if gt_flag:
         reference_topo = np.abs(reference_topo)
 
-    explanation_abs = deepcopy(explanations_topo)
     explanation_abs = (
-        np.abs(explanation_abs) if abs_condition else np.clip(explanation_abs, 0, None)
+        np.abs(explanations_topo) if abs_condition else np.clip(explanations_topo, 0, None)
     )
 
     return _compute_metrics_core(
@@ -141,32 +140,32 @@ def _compute_metrics_core(explanations, reference, explanation_abs, prctile_val)
             continue
 
         # Raw attribution map for this sample
-        attr = deepcopy(explanations[idx])
+        attr = explanations[idx]
         # Min-max normalized attribution
         attr_norm = (attr - attr.min()) / (attr.max() - attr.min())
 
         # Absolute-value attribution (negatives zeroed or flipped depending on abs_condition)
-        attr_abs = deepcopy(explanation_abs[idx])
+        attr_abs = explanation_abs[idx]
         # Min-max normalized absolute attribution
         attr_absnorm = (attr_abs - attr_abs.min()) / (attr_abs.max() - attr_abs.min())
 
         # Ground truth / reference map for this sample
-        gt = deepcopy(reference[idx])
+        gt = reference[idx]
         # Min-max normalized ground truth
         gt_norm = (gt - gt.min()) / (gt.max() - gt.min())
 
         # Top-percentile masked attribution (only top prctile_val% retained)
-        attr_topperc = deepcopy(attr)
+        attr_topperc = attr.copy()
         attr_topperc[attr < np.percentile(attr, prctile_val)] = 0
 
         # Top-percentile masked ground truth
-        gt_topperc = deepcopy(gt_norm)
+        gt_topperc = gt_norm.copy()
         gt_topperc[gt_norm < np.percentile(gt_norm, prctile_val)] = 0
 
         # Top-K mask: keep top-K attribution values where K = number of GT-positive locations
         n_gt_positive = len(np.where(gt > 0)[0])
         topk_threshold = np.sort(attr_absnorm.flatten())[-n_gt_positive]
-        attr_topk = deepcopy(attr_absnorm)
+        attr_topk = attr_absnorm.copy()
         attr_topk[attr_absnorm < topk_threshold] = 0
 
         #  SSIM: structural similarity between attribution and ground truth
