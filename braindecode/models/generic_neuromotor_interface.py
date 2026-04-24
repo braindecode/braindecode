@@ -16,6 +16,8 @@ from typing import Literal, cast
 
 import torch
 import torch.nn.functional as F
+from einops import rearrange
+from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -40,27 +42,105 @@ def _normalize_frequency_bins(
     return tuple(normalized)
 
 
-class _Permute(nn.Module):
-    """Permute tensor dims by symbolic names.
+class _ChannelwiseSTFT(nn.Module):
+    """Short-time Fourier transform applied independently to every channel."""
 
-    ``_Permute('NTC', 'NCT') == x.permute(0, 2, 1)``.
-    """
-
-    def __init__(self, from_dims: str, to_dims: str) -> None:
+    def __init__(self, n_fft: int, hop_length: int) -> None:
         super().__init__()
-        if len(from_dims) != len(to_dims):
-            raise ValueError("from_dims and to_dims must have the same length")
-        if len(from_dims) not in {3, 4, 5, 6}:
-            raise ValueError("Only 3, 4, 5, and 6D tensors are supported")
-        self.from_dims = from_dims
-        self.to_dims = to_dims
-        self._permute_idx: list[int] = [from_dims.index(d) for d in to_dims]
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        window = torch.hann_window(n_fft, periodic=False)
+        self.register_buffer("window", window)
+        self.register_buffer("window_norm", torch.linalg.vector_norm(window))
 
-    def get_inverse_permute(self) -> "_Permute":
-        return _Permute(from_dims=self.to_dims, to_dims=self.from_dims)
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        batch_size, num_channels, _ = inputs.shape
+        stft = torch.stft(
+            rearrange(inputs, "batch channels time -> (batch channels) time"),
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            window=cast(torch.Tensor, self.window),
+            center=False,
+            normalized=False,
+            onesided=True,
+            return_complex=True,
+        )
+        stft = stft / cast(torch.Tensor, self.window_norm)
+        return rearrange(
+            stft,
+            "(batch channels) freqs time -> batch channels freqs time",
+            batch=batch_size,
+            channels=num_channels,
+        )
+
+
+class _FrequencyBandAverager(nn.Module):
+    """Average frequency bins into fixed ``(low, high)`` Hz bands."""
+
+    def __init__(
+        self,
+        n_fft: int,
+        fs: float,
+        frequency_bins: Sequence[tuple[float, float]] | None,
+    ) -> None:
+        super().__init__()
+        self.frequency_bins = frequency_bins
+        self.n_output_freqs = n_fft // 2 + 1
+        if frequency_bins is not None:
+            freq_masks = self._build_freq_masks(n_fft, fs, frequency_bins)
+            self.register_buffer("freq_masks", freq_masks)
+            self.n_output_freqs = len(frequency_bins)
+
+    @staticmethod
+    def _build_freq_masks(
+        n_fft: int,
+        fs: float,
+        frequency_bins: Sequence[tuple[float, float]],
+    ) -> torch.Tensor:
+        freqs_hz = torch.fft.rfftfreq(n_fft, d=1.0 / fs)
+        freq_masks = torch.stack(
+            [
+                torch.logical_and(freqs_hz > start, freqs_hz <= end)
+                for start, end in frequency_bins
+            ]
+        ).to(dtype=torch.float32)
+        if (freq_masks.sum(dim=1) == 0).any():
+            raise ValueError("Each frequency bin must contain at least one FFT bin")
+        return rearrange(freq_masks, "band freq -> 1 1 band freq 1 1")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.permute(self._permute_idx)
+        if self.frequency_bins is None:
+            return x
+
+        freq_masks = cast(torch.Tensor, self.freq_masks)
+        return torch.stack(
+            [
+                (x * freq_mask).sum(2) / freq_mask.sum(2)
+                for freq_mask in freq_masks.unbind(2)
+            ],
+            dim=2,
+        )
+
+
+class _CrossSpectralDensity(nn.Module):
+    """Estimate channel-pair cross-spectral density inside each MPF window."""
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        input_dims = inputs.shape
+        num_channels, window_size = input_dims[-2:]
+        outputs = inputs.reshape(-1, num_channels, window_size)
+        outputs = (outputs @ outputs.transpose(-2, -1).conj()) / window_size
+        outputs = outputs.abs().pow(2)
+        return outputs.reshape(*input_dims[:-2], num_channels, num_channels)
+
+
+class _SPDMatrixLog(nn.Module):
+    """Apply the SPD matrix logarithm through an eigenvalue decomposition."""
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        eigvals, eigvecs = torch.linalg.eigh(inputs)
+        eigvals = eigvals.log().nan_to_num(nan=0.0, neginf=0.0)
+        return (eigvecs * eigvals.unsqueeze(dim=-2)) @ eigvecs.transpose(-1, -2)
 
 
 class _MultivariatePowerFrequencyFeatures(nn.Module):
@@ -113,102 +193,42 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
         self.fs = fs
         self.frequency_bins = _normalize_frequency_bins(frequency_bins)
 
-        window = torch.hann_window(self.n_fft, periodic=False)
-        self.register_buffer("window", window)
-        self.register_buffer(
-            "window_normalization_factor", torch.linalg.vector_norm(window)
+        self.stft = _ChannelwiseSTFT(n_fft=self.n_fft, hop_length=self.fft_stride)
+        self.csd = _CrossSpectralDensity()
+        self.band_averager = _FrequencyBandAverager(
+            n_fft=self.n_fft,
+            fs=self.fs,
+            frequency_bins=self.frequency_bins,
         )
-
-        if self.frequency_bins is not None:
-            freq_masks = self._build_freq_masks(
-                self.n_fft, self.fs, self.frequency_bins
-            )
-            self.register_buffer("freq_masks", freq_masks)
+        self.spd_log = _SPDMatrixLog()
 
         # amount by which output time length is shorter than input time length
-        # when considering only the featurizer (for use with _SlicedSequential).
+        # when considering only the featurizer.
         self.left_context = self.window_length - self.fft_stride + self.n_fft - 1
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        batch_size, num_channels, _ = inputs.shape
-        num_freqs = self.n_fft // 2 + 1
-
-        outputs = torch.stft(
-            inputs.reshape(batch_size * num_channels, -1),
-            n_fft=self.n_fft,
-            hop_length=self.fft_stride,
-            window=cast(torch.Tensor, self.window),
-            center=False,
-            normalized=False,
-            onesided=True,
-            return_complex=True,
-        ) / cast(
-            torch.Tensor, self.window_normalization_factor
-        )  # (batch * channels, freqs, time)
+        outputs = self.stft(inputs)
 
         outputs = outputs.unfold(
             dimension=-1,
             size=self.window_length // self.fft_stride,
             step=self.stride // self.fft_stride,
-        )  # (batch * channels, freqs, windows, window_size)
-
-        _, _, num_windows, window_size = outputs.shape
-        outputs = outputs.reshape(
-            batch_size, num_channels, num_freqs, num_windows, window_size
+        )
+        outputs = rearrange(
+            outputs,
+            "batch channels freqs windows window -> "
+            "batch windows freqs channels window",
         )
 
-        # (batch, channels, freqs, windows, window_size)
-        #  -> (batch, windows, freqs, channels, window_size)
-        outputs = outputs.transpose(1, 3)
+        outputs = self.csd(outputs)
+        outputs = self.band_averager(outputs)
+        outputs = self.spd_log(outputs)
 
-        outputs = self._compute_strided_cross_spectral_density(outputs)
-
-        if self.frequency_bins is not None:
-            freq_masks = cast(torch.Tensor, self.freq_masks)
-            outputs = torch.stack(
-                [
-                    (outputs * freq_mask).sum(2) / freq_mask.sum(2)
-                    for freq_mask in freq_masks.unbind(2)
-                ],
-                dim=2,
-            )
-
-        # Matrix logarithm (Barachant et al. 2012) via eigen-decomposition.
-        eigvals, eigvecs = torch.linalg.eigh(outputs)
-        eigvals = eigvals.log().nan_to_num(nan=0.0, neginf=0.0)
-        outputs = (eigvecs * eigvals.unsqueeze(dim=-2)) @ eigvecs.transpose(-1, -2)
-
-        # (batch, time, freq, chan, chan) -> (batch, freq, chan, chan, time)
-        outputs = outputs.permute(0, 2, 3, 4, 1)
-        return outputs
-
-    @staticmethod
-    def _build_freq_masks(
-        n_fft: int,
-        fs: float,
-        frequency_bins: Sequence[tuple[float, float]],
-    ) -> torch.Tensor:
-        freqs_hz = torch.fft.rfftfreq(n_fft, d=1.0 / fs)
-        freq_masks = torch.stack(
-            [
-                torch.logical_and(freqs_hz > start, freqs_hz <= end)
-                for start, end in frequency_bins
-            ]
-        ).to(dtype=torch.float32)
-        if (freq_masks.sum(dim=1) == 0).any():
-            raise ValueError("Each frequency bin must contain at least one FFT bin")
-        return freq_masks.reshape(1, 1, len(frequency_bins), len(freqs_hz), 1, 1)
-
-    @staticmethod
-    def _compute_strided_cross_spectral_density(
-        inputs: torch.Tensor,
-    ) -> torch.Tensor:
-        input_dims = inputs.shape
-        num_channels, window_size = input_dims[-2:]
-        outputs = inputs.reshape(-1, num_channels, window_size)
-        outputs = (outputs @ outputs.transpose(-2, -1).conj()) / window_size
-        outputs = outputs.abs().pow(2)
-        return outputs.reshape(*input_dims[:-2], num_channels, num_channels)
+        return rearrange(
+            outputs,
+            "batch time freqs channels1 channels2 -> "
+            "batch freqs channels1 channels2 time",
+        )
 
     def compute_time_downsampling(self, input_lengths: torch.Tensor) -> torch.Tensor:
         cospectrum_len = 1 + (input_lengths - self.n_fft) // self.fft_stride
@@ -251,6 +271,9 @@ class _VectorizeSymmetricMatrix(nn.Module):
             flattened_matrix_indices,
             persistent=False,
         )
+        self.flatten_matrix = Rearrange(
+            "batch time rotation freqs row col -> batch time rotation freqs (row col)"
+        )
 
     @staticmethod
     def _get_adjacent_cov_mask(
@@ -264,9 +287,9 @@ class _VectorizeSymmetricMatrix(nn.Module):
         return mask
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        inputs = inputs.flatten(4)
+        inputs = self.flatten_matrix(inputs)
         indices = cast(torch.Tensor, self.flattened_matrix_indices)
-        return inputs[:, :, :, :, indices]
+        return torch.index_select(inputs, dim=-1, index=indices)
 
 
 class _RotationInvariantMPFMLP(nn.Module):
@@ -298,7 +321,10 @@ class _RotationInvariantMPFMLP(nn.Module):
             num_channels=num_channels,
             num_adjacent_cov=num_adjacent_cov,
         )
-        self.flatten = nn.Flatten(start_dim=3)
+        self.flatten_features = Rearrange(
+            "batch time rotation freqs covariance -> "
+            "batch time rotation (freqs covariance)"
+        )
         self.fully_connected_layers = nn.ModuleList()
         dim = num_freqs * min(
             num_channels * (num_adjacent_cov + 1),
@@ -316,14 +342,17 @@ class _RotationInvariantMPFMLP(nn.Module):
             ],
             dim=-1,
         )
-        # (batch, freq, chan, chan, time, rot) -> (batch, time, rot, freq, chan, chan)
-        x = x.permute(0, 4, 5, 1, 2, 3)
+        x = rearrange(
+            x,
+            "batch freqs channels1 channels2 time rotation -> "
+            "batch time rotation freqs channels1 channels2",
+        )
         x = self.vectorize(x)
-        x = self.flatten(x)
+        x = self.flatten_features(x)
         for layer in self.fully_connected_layers:
             x = self.activation(layer(x))
         x = torch.mean(x, dim=2, keepdim=False)  # average over rotations
-        return x.permute(0, 2, 1)  # (batch, feat, time)
+        return rearrange(x, "batch time features -> batch features time")
 
 
 class _AxesMask(nn.Module):
@@ -374,6 +403,22 @@ class _AxesMask(nn.Module):
         return x
 
 
+class _RepeatedRandomMask(nn.Module):
+    """Apply one mask layer a random number of times during training."""
+
+    def __init__(self, max_num_masks: int, mask: _AxesMask) -> None:
+        super().__init__()
+        self.max_num_masks = max_num_masks
+        self.mask = mask
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        n_masks = int(torch.randint(self.max_num_masks + 1, size=()).item())
+        x = inputs
+        for _ in range(n_masks):
+            x = self.mask(x)
+        return x
+
+
 class _MaskAug(nn.Module):
     """SpecAugment on MPF features (time and frequency masking, train-only).
 
@@ -409,18 +454,19 @@ class _MaskAug(nn.Module):
         if axes_by_coord is None:
             axes_by_coord = {"N": (0,), "F": (1,), "C": (2, 3), "T": (4,)}
 
-        self.max_num_masks: list[int] = []
         self.masks = nn.ModuleList()
         for dim in "CFT":
             if dim not in dims or dim not in axes_by_coord:
                 continue
             dim_idx = dims.index(dim)
-            self.max_num_masks.append(max_num_masks[dim_idx])
             self.masks.append(
-                _AxesMask(
-                    max_mask_length=max_mask_lengths[dim_idx],
-                    axes=axes_by_coord[dim],
-                    mask_value=mask_value,
+                _RepeatedRandomMask(
+                    max_num_masks=max_num_masks[dim_idx],
+                    mask=_AxesMask(
+                        max_mask_length=max_mask_lengths[dim_idx],
+                        axes=axes_by_coord[dim],
+                        mask_value=mask_value,
+                    ),
                 )
             )
 
@@ -428,18 +474,29 @@ class _MaskAug(nn.Module):
         if not self.training:
             return inputs
         x = inputs
-        for i, mask in enumerate(self.masks):
-            n_masks = int(torch.randint(self.max_num_masks[i] + 1, size=()).item())
-            for _ in range(n_masks):
-                x = mask(x)
+        for mask in self.masks:
+            x = mask(x)
         return x
 
 
-class _Window(nn.Module):
-    """Extract sliding windows from a sequence.
+class _TakeEvery(nn.Module):
+    """Select every ``step`` samples along the last axis."""
 
-    Input ``(N, T, ...)`` -> output ``(N, T', ..., kernel_size)`` where
-    ``T' = ceildiv(T - dilation*(kernel_size-1), stride)``.
+    def __init__(self, step: int) -> None:
+        super().__init__()
+        self.step = step
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return inputs[..., :: self.step]
+
+
+class _Window(nn.Module):
+    """Causal sliding-window extraction for ``(batch, time, ...)`` tensors.
+
+    The layer pads the left context, unfolds the time axis with ``stride``, and
+    appends a final axis containing the sampled window. ``dilation`` is applied
+    on that final axis, so callers receive windows with exactly ``kernel_size``
+    effective samples.
     """
 
     def __init__(
@@ -475,6 +532,7 @@ class _Window(nn.Module):
         self.extra_left_context = self.receptive_field - 1 - self.lpad
         self.dilation = dilation
         self.kernel_size = kernel_size
+        self.dilation_selector = _TakeEvery(dilation)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         if self.state_size > 0:
@@ -484,7 +542,7 @@ class _Window(nn.Module):
         windows = buffered.unfold(
             dimension=1, size=self.receptive_field, step=self.stride
         )
-        return windows[..., :: self.dilation]
+        return self.dilation_selector(windows)
 
 
 class _Residual(nn.Module):
@@ -557,18 +615,18 @@ class _MultiHeadAttention(nn.Module):
             dropout=dropout,
             batch_first=True,
         )
-        self.window = _Window(
+        self.attention_window = _Window(
             kernel_size=window_size,
             stride=stride,
             lpad=lpad,
         )
-        self.lpad = self.window.lpad
+        self.lpad = self.attention_window.lpad
         if self.lpad > 0 and stride > 1:
             raise NotImplementedError(
                 "MultiHeadAttention only supports unit stride when lpad > 0"
             )
-        self.extra_left_context = self.window.extra_left_context
-        self.stride = self.window.stride
+        self.extra_left_context = self.attention_window.extra_left_context
+        self.stride = self.attention_window.stride
         self._init_and_register_attn_mask()
 
     def _init_and_register_attn_mask(self) -> None:
@@ -583,11 +641,11 @@ class _MultiHeadAttention(nn.Module):
         return cast(torch.Tensor, self.attn_mask)
 
     def _windows(self, inputs: torch.Tensor) -> torch.Tensor:
-        N, T_in = inputs.shape[:2]
-        inputs = inputs.reshape((N, T_in, self.input_dim))
-        windows = self.window(inputs)
+        batch_size, input_time = inputs.shape[:2]
+        inputs = inputs.reshape((batch_size, input_time, self.input_dim))
+        windows = self.attention_window(inputs)
         windows = windows.transpose(-1, -2).reshape(
-            (N, -1, self.window_size, self.input_dim)
+            (batch_size, -1, self.window_size, self.input_dim)
         )
         return windows
 
@@ -624,31 +682,36 @@ class _MultiHeadAttention(nn.Module):
         t_start: int,
         t_end: int,
     ) -> torch.Tensor:
-        N, T_out = windows.shape[:2]
+        batch_size, output_time = windows.shape[:2]
         attn_mask = self._attn_mask_op(windows, t_start, t_end)
         return (
-            attn_mask.reshape(1, T_out, 1, -1)
-            .expand(N, T_out, self.op.num_heads, -1)
-            .reshape(N * T_out * self.op.num_heads, -1)
+            attn_mask.reshape(1, output_time, 1, -1)
+            .expand(batch_size, output_time, self.op.num_heads, -1)
+            .reshape(batch_size * output_time * self.op.num_heads, -1)
         )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         windows = self._windows(inputs)
         query, key, value = self._attn_params(windows)
-        N, T_in = inputs.shape[:2]
-        attn_mask = self._full_attn_mask(windows, 0, T_in)
+        batch_size, input_time = inputs.shape[:2]
+        attn_mask = self._full_attn_mask(windows, 0, input_time)
         output, _ = self.op(
             query=query.unsqueeze(1),
             key=key,
             value=value,
             attn_mask=attn_mask.unsqueeze(1),
         )
-        output = output.reshape(N, -1, self.input_dim).unsqueeze(2)
+        output = output.reshape(batch_size, -1, self.input_dim).unsqueeze(2)
         return output
 
 
 class _Conv1d(nn.Module):
-    """Conv1d in ``NTC`` format that exposes ``extra_left_context``/``stride``."""
+    """1D convolution for ``(batch, time, channels)`` tensors.
+
+    PyTorch's :class:`~torch.nn.Conv1d` expects channel-first input. This wrapper
+    keeps the conformer blocks in time-major layout while exposing the stride and
+    left-context metadata used by :class:`_SlicedSequential`.
+    """
 
     def __init__(
         self,
@@ -661,8 +724,8 @@ class _Conv1d(nn.Module):
         groups: int = 1,
     ) -> None:
         super().__init__()
-        self.permute_forward = _Permute("NTC", "NCT")
-        self.permute_back = self.permute_forward.get_inverse_permute()
+        self.to_channels_first = Rearrange("batch time channels -> batch channels time")
+        self.to_time_first = Rearrange("batch channels time -> batch time channels")
         self.receptive_field = 1 + dilation * (kernel_size - 1)
         self.state_size = self.receptive_field - stride
         self.stride = stride
@@ -678,14 +741,14 @@ class _Conv1d(nn.Module):
         )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.permute_back(self.net(self.permute_forward(inputs)))
+        return self.to_time_first(self.net(self.to_channels_first(inputs)))
 
 
 def _time_reduction_layer(stride: int, lpad: _LPadType = 0) -> nn.Module:
     """Frame stacking: ``(B, T, C)`` -> ``(B, T', C*stride)``."""
     return _SlicedSequential(
         _Window(kernel_size=stride, stride=stride, lpad=lpad),
-        _Permute("NTCS", "NTSC"),
+        Rearrange("batch time channels stride -> batch time stride channels"),
         nn.Flatten(start_dim=2),
     )
 
@@ -780,7 +843,8 @@ def _conformer_encoder_block(
     )
 
 
-def _broadcast(val, num_layers: int, name: str):
+def _as_layer_list(val, num_layers: int, name: str):
+    """Return a per-layer list, validating explicit per-layer schedules."""
     if isinstance(val, (list, tuple)):
         out = list(val)
         if len(out) != num_layers:
@@ -797,15 +861,13 @@ def _conformer_encoder(
     num_heads: int,
     attn_window_size,
     num_layers: int,
-    conv_lpad=0,
     attn_lpad="steady",
     drop_prob: float = 0.0,
     activation: type[nn.Module] = nn.SiLU,
 ) -> _SlicedSequential:
-    kernel_size = _broadcast(kernel_size, num_layers, "kernel_size")
-    attn_window_size = _broadcast(attn_window_size, num_layers, "attn_window_size")
-    conv_lpad = _broadcast(conv_lpad, num_layers, "conv_lpad")
-    attn_lpad = _broadcast(attn_lpad, num_layers, "attn_lpad")
+    kernel_size = _as_layer_list(kernel_size, num_layers, "kernel_size")
+    attn_window_size = _as_layer_list(attn_window_size, num_layers, "attn_window_size")
+    attn_lpad = _as_layer_list(attn_lpad, num_layers, "attn_lpad")
     if isinstance(stride, (list, tuple)):
         stride = list(stride)
         if len(stride) != num_layers:
@@ -890,41 +952,9 @@ _DEFAULT_MPF_FREQUENCY_BINS: tuple[tuple[float, float], ...] = (
 )
 # Paper's 15-layer handwriting config. Only used when ``num_layers == 15`` and
 # ``stride`` / ``attn_window_size`` are left unset.
-_PAPER_CONFORMER_STRIDE_15: tuple[int, ...] = (
-    1,
-    1,
-    1,
-    1,
-    2,
-    1,
-    1,
-    1,
-    1,
-    2,
-    1,
-    1,
-    1,
-    1,
-    1,
-)
-_PAPER_CONFORMER_ATTN_WINDOW_15: tuple[int, ...] = (
-    16,
-    16,
-    16,
-    16,
-    16,
-    16,
-    16,
-    16,
-    16,
-    16,
-    8,
-    8,
-    8,
-    8,
-    8,
-)
-_PAPER_NUM_LAYERS: int = 15
+_PAPER_CONFORMER_STRIDE_15: tuple[int, ...] = (1, 1, 1, 1, 2) * 2 + (1,) * 5
+_PAPER_CONFORMER_ATTN_WINDOW_15: tuple[int, ...] = (16,) * 10 + (8,) * 5
+_PAPER_NUM_LAYERS: int = len(_PAPER_CONFORMER_STRIDE_15)
 
 
 def _resolve_conformer_stride(
@@ -963,6 +993,7 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
     r"""Generic neuromotor interface for handwriting from Meta (2025) [gni2025]_.
 
     :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`
+    :bdg-secondary:`Recurrent` :bdg-primary:`CTC`
 
     .. rubric:: Architectural Overview
 
@@ -1100,11 +1131,9 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
 
         ckpt = torch.load("model_checkpoint.ckpt", weights_only=False)
         sd = {k[len("network."):]: v for k, v in ckpt["state_dict"].items()}
-        # The final linear moved out of the conformer into `final_layer`.
-        sd["final_layer.weight"] = sd.pop("conformer.3.weight")
-        sd["final_layer.bias"] = sd.pop("conformer.3.bias")
 
         model = GenericNeuromotorInterface(n_times=32000, log_softmax=True)
+        # load_state_dict applies the class-level ``mapping`` for upstream keys.
         model.load_state_dict(sd, strict=True)
 
     .. _download script: https://github.com/facebookresearch/generic-neuromotor-interface#download-the-data-and-models
@@ -1116,6 +1145,14 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
         Nature. https://www.nature.com/articles/s41586-025-09255-w
         Code: https://github.com/facebookresearch/generic-neuromotor-interface
     """
+
+    mapping = {
+        "featurizer.window": "featurizer.stft.window",
+        "featurizer.window_normalization_factor": "featurizer.stft.window_norm",
+        "featurizer.freq_masks": "featurizer.band_averager.freq_masks",
+        "conformer.3.weight": "final_layer.weight",
+        "conformer.3.bias": "final_layer.bias",
+    }
 
     def __init__(
         self,
@@ -1199,6 +1236,9 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
             num_adjacent_cov=num_adjacent_cov,
             activation=invariance_activation,
         )
+        self.features_to_sequence = Rearrange(
+            "batch features time -> batch time features"
+        )
 
         self.conformer = _build_handwriting_encoder(
             in_dim=invariance_hidden_dims[-1],
@@ -1243,7 +1283,7 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
         x = self.featurizer(x)
         x = self.specaug(x)
         x = self.rotation_invariant_mlp(x)
-        x = x.transpose(-1, -2)  # (N, C, T') -> (N, T', C)
+        x = self.features_to_sequence(x)
         x = self.conformer(x)
         x = self.final_layer(x)
         if self.log_softmax:
