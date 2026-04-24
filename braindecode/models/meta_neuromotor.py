@@ -625,7 +625,7 @@ class _ChannelwiseSTFT(nn.Module):
 
 
 class _FrequencyBandAverager(nn.Module):
-    """Reduce high-resolution FFT bins to a few physiologically motivated bands.
+    """Reduce high-resolution FFT bins to a few coarse ``(low, high)`` Hz bands.
 
     Each band is defined by a ``(low, high)`` pair in Hz and acts as an
     indicator mask over the FFT grid: bin ``k`` is kept if
@@ -634,8 +634,8 @@ class _FrequencyBandAverager(nn.Module):
     "binning + sum over frequency bins" step of the MPF features in
     [gni2025]_, Methods ("MPF features").
 
-    The paper's defaults are six non-overlapping bands targeting the
-    sEMG power spectrum:
+    The paper's six non-overlapping bands span 0 Hz up to the Nyquist
+    frequency at ``fs = 2 kHz``:
 
         (0, 62.5), (62.5, 125), (125, 250),
         (250, 375), (375, 687.5), (687.5, 1000)   # Hz
@@ -728,36 +728,30 @@ class _FrequencyBandAverager(nn.Module):
 class _CrossSpectralDensity(nn.Module):
     """Magnitude-squared cross-spectral density between every channel pair.
 
-    For the MPF featurizer of [gni2025]_, cross-spectral density was
-    chosen over channel-wise power "to preserve cross-channel
-    relationships in the spectral domain" (Methods, "MPF features"). It
-    is the frequency-domain analogue of the spatial covariance matrix
-    used by the Riemannian-geometry BCI pipelines of Barachant et al.
-    2012 and the pyRiemann toolbox [pyriemann]_, from which the paper
-    borrows the matrix-log step that follows (see
-    :class:`_SPDMatrixLog`).
+    Paper rationale (Methods, "MPF features"): *"The cross-spectral
+    density was chosen to preserve cross-channel relationships in the
+    spectral domain."* The paper's matrix-log step that follows (see
+    :class:`_SPDMatrixLog`) cites Barachant et al. 2012's Riemannian-
+    geometry BCI pipelines and the pyRiemann toolbox [pyriemann]_.
 
     Given per-window per-channel STFT samples
+    ``X`` of shape ``(channels, window)`` (complex), this module
+    computes, per MPF window and per FFT bin:
 
     .. math::
 
-        X \\in \\mathbb{C}^{\\text{channels} \\times \\text{window}},
-
-    this module computes the Hermitian outer product (per MPF window and
-    per FFT bin), normalised by the window length:
-
-    .. math::
-
-        C = \\frac{1}{\\text{window}}\\, X \\, X^{*},
+        C = \\frac{1}{\\text{window}}\\, X \\, X^{H},
         \\qquad C \\in \\mathbb{C}^{\\text{channels} \\times
         \\text{channels}},
 
-    then returns ``|C|**2`` (element-wise squared magnitude). The
-    absolute value / squaring is applied before band averaging so the
-    downstream :class:`_FrequencyBandAverager` receives real-valued
-    data - this matches the released upstream implementation and its
-    pretrained checkpoints, even though the paper's Methods prose
-    describes the ordering in the opposite direction.
+    where :math:`X^{H}` denotes the conjugate transpose, and then
+    returns ``|C|**2`` (element-wise squared magnitude). The paper's
+    Methods prose describes the ordering in the opposite direction
+    (sum across frequency first, then take the squared magnitude);
+    this code does element-wise ``|.|**2`` here and lets the downstream
+    :class:`_FrequencyBandAverager` sum real values. That is the order
+    used by the released upstream implementation and reproduced by the
+    pretrained checkpoints.
 
     Notes
     -----
@@ -818,10 +812,11 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
     MPF is the handwriting / wrist decoder's front-end featurizer from
     [gni2025]_ (Methods, "MPF features"). The module converts a raw
     multichannel time series into a per-band, time-strided stack of
-    channel-by-channel cross-spectral matrices - the frequency-domain
-    analogue of the classical spatial-covariance features used by
-    Riemannian-geometry BCI pipelines (Barachant et al. 2012,
-    [pyriemann]_), adapted to sEMG.
+    channel-by-channel cross-spectral matrices, followed by a per-matrix
+    Log-Euclidean map. The paper cites Barachant et al. 2012 for the
+    matrix-log step and the pyRiemann toolbox [pyriemann]_ for the
+    reference implementation of both the cross-spectral density
+    estimation and the matrix logarithm.
 
     Rationale (paper excerpt). *"In the case of EEG, MPF features have
     proven to be a simple and robust featurization achieving state of
@@ -841,21 +836,22 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
     2. ``x.unfold(-1, size, step)`` - group consecutive STFT frames
        into MPF windows of length ``window_length / fft_stride`` = 16
        at the paper defaults, striding by ``stride / fft_stride`` = 4.
-       The resulting MPF frame rate is ``fs / stride`` = 50 Hz.
-    3. :class:`_CrossSpectralDensity` - per-window outer product
-       ``X X^* / window``, then ``|.|**2``. Preserves cross-channel
-       relationships in the spectral domain while producing a real
-       symmetric ``(channels, channels)`` matrix per FFT bin.
-    4. :class:`_FrequencyBandAverager` - average FFT bins into the 6
-       physiologically motivated bands of the paper
-       (0-62.5, 62.5-125, 125-250, 250-375, 375-687.5, 687.5-1000 Hz,
-       or the released-checkpoint variant in
-       :data:`_DEFAULT_MPF_FREQUENCY_BINS`).
-    5. :class:`_SPDMatrixLog` - Log-Euclidean map on each per-band
+       The resulting MPF frame rate is ``fs / stride`` = 50 Hz at the
+       paper defaults (derived; not quoted verbatim in the paper).
+    3. :class:`_CrossSpectralDensity` - per-window Hermitian outer
+       product ``X X^H / window``, then element-wise ``|.|**2``.
+       Preserves cross-channel relationships in the spectral domain
+       while producing a real symmetric ``(channels, channels)`` matrix
+       per FFT bin.
+    4. :class:`_FrequencyBandAverager` - average FFT bins into the
+       paper's six bands (0-62.5, 62.5-125, 125-250, 250-375,
+       375-687.5, 687.5-1000 Hz), or the released-checkpoint variant
+       in :data:`_DEFAULT_MPF_FREQUENCY_BINS`.
+    5. :class:`_SPDMatrixLog` - matrix logarithm on each per-band
        symmetric positive-definite matrix (Barachant et al. 2012;
-       [pyriemann]_). Moves the per-band covariances onto a tangent
-       vector space where subsequent linear layers and the MLP-based
-       rotation-invariance module operate naturally.
+       [pyriemann]_). In the Log-Euclidean framework this maps SPD
+       matrices onto the tangent space at the identity, where linear
+       operations like the downstream MLP are well defined.
 
     Paper (handwriting decoder) uses ``window_length = 160`` samples
     (80 ms), ``stride = 40`` samples (20 ms). The wrist decoder uses
@@ -885,9 +881,10 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
     -----
     Input : ``(batch, channels, time)``, real, sampled at ``fs``.
     Output: ``(batch, num_bands, channels, channels, time')``, real,
-    sampled at ``fs / stride``. The output time length is shorter than
-    the input by ``left_context = window_length - fft_stride + n_fft - 1``
-    samples (computed at construction).
+    at the MPF frame rate of ``fs / stride``. The exact mapping between
+    input length and output ``time'`` is in :meth:`compute_time_downsampling`;
+    ``self.left_context = window_length - fft_stride + n_fft - 1`` is the
+    number of *input samples* consumed before the first valid MPF frame.
 
     The module is a fixed signal-processing stage - it registers buffers
     (``stft.window``, ``stft.window_norm``, optional ``band_averager.
