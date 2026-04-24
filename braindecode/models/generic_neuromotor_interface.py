@@ -1039,52 +1039,124 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
 
     .. rubric:: Architectural Overview
 
-    Conformer-based sEMG-to-character architecture designed for the handwriting
-    task of the generic neuromotor interface dataset. Takes raw 16-channel surface
-    EMG as input and emits a sequence of per-token log-probabilities suitable for
-    a CTC decoder.
+    Conformer-based surface-EMG-to-character decoder for the handwriting task of
+    Meta's generic neuromotor interface (CTRL-labs at Reality Labs, Nature 2025).
+    It takes raw 16-channel surface EMG recorded at the wrist and emits a
+    per-token score sequence suitable for CTC decoding [graves2006ctc]_. The
+    upstream repository (``facebookresearch/generic-neuromotor-interface``)
+    ships three sibling architectures for three tasks (1-DOF wrist control,
+    discrete gestures, handwriting); only the handwriting / conformer head is
+    ported here.
 
-    The pipeline is:
+    The pipeline mirrors the paper's Methods (Fig. 1 / Extended Data Fig. 6):
 
-    1. :class:`_MultivariatePowerFrequencyFeatures`: STFT to cross-spectral
-       density between each pair of channels, band-averaging, matrix logarithm
-       (Barachant et al. 2012). Produces features of shape
+    1. :class:`_MultivariatePowerFrequencyFeatures` (MPF): channel-wise STFT,
+       pairwise cross-spectral density (CSD), averaging into ``(low, high)``
+       Hz bands, and an SPD matrix logarithm (Barachant et al. 2012; pyRiemann
+       [pyriemann]_). Produces a tensor of shape
        ``(batch, num_freq_bins, n_chans, n_chans, time')``.
-    2. :class:`_MaskAug`: SpecAugment-style time/frequency masking (train-only).
+    2. :class:`_MaskAug`: SpecAugment [park2019specaug]_ — time and frequency
+       masking of the MPF feature map, active only during training.
     3. :class:`_RotationInvariantMPFMLP`: rolls the cross-channel matrix by
-       ``offsets`` along the (circular) channel dimension, vectorizes the
-       upper-triangle keeping only ``num_adjacent_cov`` off-diagonals, applies a
-       small MLP to each rotation, then **averages over rotations**. The
-       averaging enforces invariance to rotations of the circular EMG armband.
-    4. Conformer encoder: stack of ``num_layers`` blocks, each
-       FF(1/2) -> causal windowed MHA -> depthwise conv -> FF(1/2) -> LayerNorm.
-       Internal strides (2x twice by default) downsample the emission rate.
+       ``invariance_offsets`` along the (circular) channel dimension,
+       vectorizes the upper triangle keeping only ``num_adjacent_cov``
+       off-diagonals, applies a small MLP to each rotation, then **averages
+       over rotations**. The average enforces (approximate) invariance to
+       rigid rotations of the 16-electrode armband around the wrist.
+    4. Conformer encoder [gulati2020conformer]_: 15 blocks by default, each
+       FF(½) → causal windowed MHA → depthwise conv → FF(½) → LayerNorm.
+       Per-block stride ``2`` at blocks 5 and 10, attention window ``16`` for
+       blocks 1–10 and ``8`` for blocks 11–15 (the paper's schedule).
+       Attention is restricted to a fixed local window ending at the current
+       frame, giving a streaming / causal model.
     5. Linear readout to ``n_outputs`` classes, optionally followed by
        :class:`~torch.nn.LogSoftmax`.
+
+    .. rubric:: Hardware, signal and training corpus
+
+    The upstream sEMG-RD research wristband has 48 electrode pins arranged as
+    **16 bipolar channels** aligned with the proximal–distal forearm axis, a
+    2 kHz sample rate, a 2.46 μVrms noise floor, and an analog front-end with
+    a 20 Hz high-pass and 850 Hz low-pass. Before featurization the raw
+    signal is rescaled by ``2.46e-6`` (to unit noise s.d.) and digitally
+    high-passed at 40 Hz (4th-order Butterworth) to suppress motion artifacts.
+
+    The published handwriting decoder was trained on recordings from
+    **6,627 participants** (≈1 h 15 min each) prompted to "write" text
+    sampled from Simple English Wikipedia, the Google Schema-guided Dialogue
+    dataset and Reddit, in three postures (seated on surface, seated on leg,
+    standing on leg). Participants wrote letters, digits, words and phrases;
+    spaces were either implicit or prompted by a right-dash token that the
+    participant produced with a right index swipe. Train/val/test split was
+    geometric scaling from 25 to 6,527 train participants, 50 val, 50 test.
+
+    .. rubric:: MPF featurizer (paper defaults)
+
+    ``sEMG (2 kHz)`` →
+    ``STFT(n_fft=64 samples / 32 ms, hop=10 samples / 5 ms)`` →
+    per-pair complex cross-spectrum → squared magnitude, band-averaged into
+    6 bins, then **matrix-log** on each 16×16 SPD matrix, produced every
+    ``mpf_stride = 40 samples (20 ms)`` over a ``mpf_window_length = 160
+    samples (80 ms)`` window. Output rate: 50 Hz before the conformer's
+    ``time_reduction_stride`` and the 2× internal strides.
+
+    The paper's frequency bins are non-overlapping (``0–62.5``, ``62.5–125``,
+    ``125–250``, ``250–375``, ``375–687.5``, ``687.5–1000`` Hz), but the
+    upstream training config — matched by :data:`_DEFAULT_MPF_FREQUENCY_BINS`
+    — uses slightly overlapping bins (``0–50``, ``30–100``, ``100–225``,
+    ``225–375``, ``375–700``, ``700–1000`` Hz); the code default reproduces
+    the released checkpoints.
+
+    .. rubric:: Training recipe (from the paper, for reference)
+
+    - **Loss**: CTC [graves2006ctc]_ with FastEmit regularization
+      [fastemit2021]_ to reduce streaming latency.
+    - **Vocabulary**: lowercase ``[a-z]``, digits ``[0-9]``, punctuation
+      ``[,.?'!]`` and four control gestures (``space``, ``dash``,
+      ``backspace``, ``pinch``); the deployed networks used
+      ``vocab_size = 100`` (the default) to reserve blank / unused slots.
+      Greedy CTC decoding (collapse repeats) was used at test time.
+    - **Optimizer**: AdamW, ``weight_decay = 5e-2``.
+    - **Learning rate**: cosine annealing from ``6e-4`` (1 M-parameter model)
+      or ``3e-4`` (60 M) with a 1,500-step warmup and ``min_lr = 0``.
+    - **Batching**: global batch size 512 (= 32 processes × 16), prompts
+      zero-padded to the longest in the batch; gradient clipping at norm
+      ``0.1``; 200 epochs. Training the largest model took ≈4 d 17 h on
+      4 × NVIDIA A10G GPUs.
+    - **Augmentation**: SpecAugment on the MPF features (time / frequency
+      masks; ``mask_max_num_masks=(3, 2)``, ``mask_max_lengths=(5, 1)``)
+      plus random circular channel rotations of ``{-1, 0, +1}``.
+
+    Reported closed-loop performance: **20.9 WPM** on held-out naive users
+    (n = 20), compared with 25.1 WPM on a pen-and-paper baseline and 36 WPM
+    on a mobile keyboard; personalization with 20 min of data improves
+    offline CER by ≈16 %.
 
     .. rubric:: Output shape and CTC usage
 
     The forward pass returns a tensor of shape ``(batch, T_out, n_outputs)``,
-    which is the **natural** layout for CTC. ``T_out`` is the downsampled emission
-    sequence length; it can be computed from the input length via
-    :meth:`compute_output_lengths`. For :class:`~torch.nn.CTCLoss`, move the time
-    dimension first: ``emissions.transpose(0, 1)``.
+    which is the natural layout for CTC. ``T_out`` is the downsampled
+    emission sequence length and can be obtained from the input length via
+    :meth:`compute_output_lengths`. For :class:`~torch.nn.CTCLoss`, move the
+    time dimension first: ``emissions.transpose(0, 1)``.
 
     .. warning::
 
         The rotation-invariant MLP assumes **circular channel adjacency** (the
-        16-electrode EMG armband used in the paper). For arbitrary EEG montages,
-        the rotation invariance is not meaningful and this model should not be
-        used as-is.
+        16-electrode EMG armband used in the paper). For arbitrary EEG
+        montages, the rotation invariance is not meaningful and this model
+        should not be used as-is.
 
     .. warning::
 
-        **License - noncommercial use only.** This module is a derivative of
+        **License — noncommercial use only.** This module is a derivative of
         Meta's reference implementation and is released under
         `CC BY-NC 4.0 <https://creativecommons.org/licenses/by-nc/4.0/>`_, the
-        same license as the upstream repository. It is **not** covered by
-        braindecode's BSD-3 license and must not be used in commercial products
-        or services. Using the pretrained weights carries the same restriction.
+        same license as the upstream repository. The paper itself is
+        distributed under CC BY-NC-ND 4.0. Neither is covered by
+        braindecode's BSD-3 license, and both must not be used in commercial
+        products or services. Using the pretrained weights carries the same
+        restriction.
 
     .. versionadded:: 1.4
 
@@ -1182,10 +1254,24 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [gni2025] Meta, 2025. A generic non-invasive
-        neuromotor interface for human-computer interaction.
-        Nature. https://www.nature.com/articles/s41586-025-09255-w
+    .. [gni2025] CTRL-labs at Reality Labs (Kaifosh, P., Reardon, T. R. et al.),
+        2025. A generic non-invasive neuromotor interface for human-computer
+        interaction. Nature 645, 702–710.
+        https://doi.org/10.1038/s41586-025-09255-w.
         Code: https://github.com/facebookresearch/generic-neuromotor-interface
+    .. [gulati2020conformer] Gulati, A. et al., 2020. Conformer: convolution-
+        augmented transformer for speech recognition. Proc. Interspeech,
+        5036–5040.
+    .. [graves2006ctc] Graves, A., Fernández, S., Gomez, F., Schmidhuber, J.,
+        2006. Connectionist temporal classification: labelling unsegmented
+        sequence data with recurrent neural networks. Proc. ICML, 369–376.
+    .. [park2019specaug] Park, D. S. et al., 2019. SpecAugment: a simple data
+        augmentation method for automatic speech recognition. Proc.
+        Interspeech, 2613–2617.
+    .. [fastemit2021] Yu, J. et al., 2021. FastEmit: low-latency streaming
+        ASR with sequence-level emission regularization. Proc. ICASSP.
+    .. [pyriemann] Barachant, A. et al. pyRiemann: Biosignals classification
+        with Riemannian geometry. https://github.com/pyRiemann/pyRiemann
     """
 
     mapping = {
