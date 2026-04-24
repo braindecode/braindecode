@@ -951,7 +951,7 @@ def _build_handwriting_encoder(
     """Build the encoder stack up to (but not including) the final readout.
 
     The final classification layer and optional log-softmax live on the outer
-    :class:`GenericNeuromotorInterface` so that ``reset_head`` and the
+    :class:`MetaNeuromotorHand` so that ``reset_head`` and the
     ``final_layer`` introspection convention of braindecode work uniformly.
     """
     seq: list[nn.Module] = []
@@ -1031,7 +1031,7 @@ def _resolve_conformer_attn_window(
     return 16
 
 
-class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
+class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
     r"""Generic neuromotor interface for handwriting from Meta (2025) [gni2025]_.
 
     :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`
@@ -1242,12 +1242,12 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
     (`download script`_ in the upstream repo)::
 
         import torch
-        from braindecode.models import GenericNeuromotorInterface
+        from braindecode.models import MetaNeuromotorHand
 
         ckpt = torch.load("model_checkpoint.ckpt", weights_only=False)
         sd = {k[len("network."):]: v for k, v in ckpt["state_dict"].items()}
 
-        model = GenericNeuromotorInterface(n_times=32000, log_softmax=True)
+        model = MetaNeuromotorHand(n_times=32000, log_softmax=True)
         # load_state_dict applies the class-level ``mapping`` for upstream keys.
         model.load_state_dict(sd, strict=True)
 

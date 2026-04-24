@@ -43,11 +43,11 @@ from braindecode.models import (
     EEGTCNet,
     FBCNet,
     FBMSNet,
-    GenericNeuromotorInterface,
     HybridNet,
     IFNet,
     Labram,
     MEDFormer,
+    MetaNeuromotorHand,
     SCCNet,
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
@@ -3269,14 +3269,14 @@ def test_syncnet_filter_weight_shape():
 
 
 # ---------------------------------------------------------------------------
-# GenericNeuromotorInterface
+# MetaNeuromotorHand
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
 def gni_default():
     """Build the default 15-layer handwriting conformer once per test module."""
-    return GenericNeuromotorInterface(n_times=32000).eval()
+    return MetaNeuromotorHand(n_times=32000).eval()
 
 
 def _small_gni(**kwargs):
@@ -3290,7 +3290,7 @@ def _small_gni(**kwargs):
         drop_prob=0.0,
     )
     defaults.update(kwargs)
-    return GenericNeuromotorInterface(**defaults)
+    return MetaNeuromotorHand(**defaults)
 
 
 def test_gni_default_contract(gni_default):
@@ -3313,7 +3313,7 @@ def test_gni_head_log_softmax_and_config():
         y = m(torch.randn(1, 16, 800))
 
     assert torch.allclose(y.exp().sum(dim=-1), torch.ones_like(y[..., 0]), atol=1e-5)
-    assert GenericNeuromotorInterface.from_config(m.get_config()).n_outputs == 100
+    assert MetaNeuromotorHand.from_config(m.get_config()).n_outputs == 100
     m.reset_head(30)
     assert m.n_outputs == 30
     assert m.final_layer.out_features == 30

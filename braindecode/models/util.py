@@ -337,7 +337,7 @@ models_mandatory_parameters: list[
     ("FBCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("FBMSNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     (
-        "GenericNeuromotorInterface",
+        "MetaNeuromotorHand",
         ["n_chans", "n_outputs", "n_times", "sfreq"],
         {
             "n_chans": 16,
@@ -396,7 +396,7 @@ non_classification_models = [
     "SignalJEPA",
     "InterpolatedSignalJEPA",
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
-    "GenericNeuromotorInterface",
+    "MetaNeuromotorHand",
 ]
 
 ################################################################

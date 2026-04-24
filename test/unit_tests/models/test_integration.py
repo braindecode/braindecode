@@ -417,7 +417,7 @@ def test_model_compiled(model):
     not_compilable_models = [
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
-        "GenericNeuromotorInterface",
+        "MetaNeuromotorHand",
     ]
     if model.__class__.__name__ in not_compilable_models:
         pytest.skip(
@@ -461,7 +461,7 @@ def test_model_exported(model):
         "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
         # torch.export cannot handle torch.linalg.eigh + torch.stft used
         # in the MPF featurizer.
-        "GenericNeuromotorInterface",
+        "MetaNeuromotorHand",
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
@@ -523,7 +523,7 @@ def test_model_torch_script(model):
         "CodeBrain",
         # torch.export cannot handle torch.linalg.eigh + torch.stft used
         # in the MPF featurizer.
-        "GenericNeuromotorInterface",
+        "MetaNeuromotorHand",
         "SignalJEPA",
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",

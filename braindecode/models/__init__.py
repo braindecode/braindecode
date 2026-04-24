@@ -28,13 +28,13 @@ from .eegtcnet import EEGTCNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
-from .generic_neuromotor_interface import GenericNeuromotorInterface
 from .hybrid import HybridNet
 from .ifnet import IFNet
 from .interpolated import InterpolatedModel
 from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
 from .medformer import MEDFormer
+from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
 from .patchedtransformer import PBT
 from .reve import REVE
@@ -98,7 +98,7 @@ __all__ = [
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
-    "GenericNeuromotorInterface",
+    "MetaNeuromotorHand",
     "HybridNet",
     "IFNet",
     "InterpolatedBENDR",
