@@ -406,7 +406,6 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, sfreq, n_times, input_window_seconds, chs_info
 
         self.log_softmax = log_softmax
-        mpf_frequency_bins = _normalize_frequency_bins(mpf_frequency_bins)
         n_mpf_freqs = (
             len(mpf_frequency_bins)
             if mpf_frequency_bins is not None
@@ -441,16 +440,30 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
             "batch features time -> batch time features"
         )
 
+        # Fall back to the paper's 15-layer schedule when the user leaves
+        # the conformer stride / attention window unset; otherwise broadcast
+        # a scalar across every block.
+        if conformer_stride is None:
+            conformer_stride = (
+                _PAPER_CONFORMER_STRIDE_15
+                if conformer_num_layers == _PAPER_NUM_LAYERS
+                else 2
+            )
+        if conformer_attn_window_size is None:
+            conformer_attn_window_size = (
+                _PAPER_CONFORMER_ATTN_WINDOW_15
+                if conformer_num_layers == _PAPER_NUM_LAYERS
+                else 16
+            )
+
         self.conformer = _build_handwriting_encoder(
             in_dim=invariance_hidden_dims[-1],
             input_dim=conformer_input_dim,
             ffn_dim=conformer_ffn_dim,
             kernel_size=conformer_kernel_size,
-            stride=_resolve_conformer_stride(conformer_stride, conformer_num_layers),
+            stride=conformer_stride,
             num_heads=conformer_num_heads,
-            attn_window_size=_resolve_conformer_attn_window(
-                conformer_attn_window_size, conformer_num_layers
-            ),
+            attn_window_size=conformer_attn_window_size,
             num_layers=conformer_num_layers,
             drop_prob=drop_prob,
             time_reduction_stride=time_reduction_stride,
@@ -545,55 +558,6 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
 # ---------------------------------------------------------------------------
 
 
-def _resolve_conformer_stride(
-    stride: int | Sequence[int] | None, num_layers: int
-) -> int | Sequence[int]:
-    """Resolve the default stride schedule.
-
-    - ``None`` + ``num_layers == 15`` -> the paper's 15-layer schedule.
-    - ``None`` otherwise -> ``1`` everywhere except the last block (``2``),
-         i.e. a single 2x downsampling at the end of the encoder.
-    - anything else -> passed through (validated later).
-    """
-    if stride is not None:
-        return stride
-    if num_layers == _PAPER_NUM_LAYERS:
-        return _PAPER_CONFORMER_STRIDE_15
-    return 2  # scalar applied only to the last block by _conformer_encoder
-
-
-def _resolve_conformer_attn_window(
-    attn_window: int | Sequence[int] | None, num_layers: int
-) -> int | Sequence[int]:
-    """Resolve the default attention-window schedule.
-
-    - ``None`` + ``num_layers == 15`` -> the paper's 15-layer schedule.
-    - ``None`` otherwise -> ``16`` for every block.
-    """
-    if attn_window is not None:
-        return attn_window
-    if num_layers == _PAPER_NUM_LAYERS:
-        return _PAPER_CONFORMER_ATTN_WINDOW_15
-    return 16
-
-
-def _normalize_frequency_bins(
-    frequency_bins: Sequence[Sequence[float]] | None,
-) -> tuple[tuple[float, float], ...] | None:
-    if frequency_bins is None:
-        return None
-
-    normalized = []
-    for band in frequency_bins:
-        if len(band) != 2:
-            raise ValueError("Each frequency bin must contain exactly two values")
-        start, end = band
-        if end <= start:
-            raise ValueError("Frequency bin end must be greater than start")
-        normalized.append((float(start), float(end)))
-    return tuple(normalized)
-
-
 class _ChannelwiseSTFT(nn.Module):
     """Short-time Fourier transform applied independently to every channel."""
 
@@ -672,21 +636,6 @@ class _FrequencyBandAverager(nn.Module):
         freq_masks = cast(torch.Tensor, self.freq_masks)
         weighted = self.add_band_axis(x) * freq_masks
         return weighted.sum(dim=3) / freq_masks.sum(dim=3)
-
-
-class _SlidingWindowLast(nn.Module):
-    """Unfold the last axis into overlapping windows of fixed ``size`` and ``step``.
-
-    Input ``(..., time)`` -> output ``(..., num_windows, size)``.
-    """
-
-    def __init__(self, size: int, step: int) -> None:
-        super().__init__()
-        self.size = size
-        self.step = step
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return inputs.unfold(dimension=-1, size=self.size, step=self.step)
 
 
 class _CrossSpectralDensity(nn.Module):
@@ -779,13 +728,27 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
         self.n_fft = n_fft
         self.fft_stride = fft_stride
         self.fs = fs
-        self.frequency_bins = _normalize_frequency_bins(frequency_bins)
+
+        if frequency_bins is not None:
+            bands: list[tuple[float, float]] = []
+            for band in frequency_bins:
+                if len(band) != 2:
+                    raise ValueError(
+                        "Each frequency bin must contain exactly two values"
+                    )
+                low, high = float(band[0]), float(band[1])
+                if high <= low:
+                    raise ValueError("Frequency bin end must be greater than start")
+                bands.append((low, high))
+            self.frequency_bins: tuple[tuple[float, float], ...] | None = tuple(bands)
+        else:
+            self.frequency_bins = None
+
+        # Number of STFT bins grouped into one MPF frame, and hop between frames.
+        self._frame_size = self.window_length // self.fft_stride
+        self._frame_step = self.stride // self.fft_stride
 
         self.stft = _ChannelwiseSTFT(n_fft=self.n_fft, hop_length=self.fft_stride)
-        self.frame = _SlidingWindowLast(
-            size=self.window_length // self.fft_stride,
-            step=self.stride // self.fft_stride,
-        )
         self.csd = _CrossSpectralDensity()
         self.band_averager = _FrequencyBandAverager(
             n_fft=self.n_fft,
@@ -811,7 +774,7 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         x = self.stft(inputs)
-        x = self.frame(x)
+        x = x.unfold(dimension=-1, size=self._frame_size, step=self._frame_step)
         x = self.csd_input_layout(x)
         x = self.csd(x)
         x = self.band_averager(x)
@@ -1074,17 +1037,6 @@ class _MaskAug(nn.Module):
         return x
 
 
-class _TakeEvery(nn.Module):
-    """Select every ``step`` samples along the last axis."""
-
-    def __init__(self, step: int) -> None:
-        super().__init__()
-        self.step = step
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return inputs[..., :: self.step]
-
-
 class _Window(nn.Module):
     """Causal sliding-window extraction for ``(batch, time, ...)`` tensors.
 
@@ -1127,17 +1079,14 @@ class _Window(nn.Module):
         self.extra_left_context = self.receptive_field - 1 - self.lpad
         self.dilation = dilation
         self.kernel_size = kernel_size
-        self.dilation_selector = _TakeEvery(dilation)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         if self.state_size > 0:
-            buffered = F.pad(inputs, (0, 0, self.state_size, 0), "constant", 0)
-        else:
-            buffered = inputs
-        windows = buffered.unfold(
+            inputs = F.pad(inputs, (0, 0, self.state_size, 0), "constant", 0)
+        windows = inputs.unfold(
             dimension=1, size=self.receptive_field, step=self.stride
         )
-        return self.dilation_selector(windows)
+        return windows[..., :: self.dilation]
 
 
 class _Residual(nn.Module):
