@@ -1042,12 +1042,11 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
     Conformer-based surface-EMG-to-character decoder for the handwriting task of
     Meta's generic neuromotor interface (CTRL-labs at Reality Labs, Nature 2025).
     It takes raw 16-channel surface EMG recorded at the wrist and emits a
-    per-token score sequence that feeds directly into a CTC loss or decoder
-    [graves2006ctc]_. The
-    upstream repository (``facebookresearch/generic-neuromotor-interface``)
-    ships three sibling architectures for three tasks (1-DOF wrist control,
-    discrete gestures, handwriting); only the handwriting / conformer head is
-    ported here.
+    per-token score sequence that feeds a CTC loss or decoder
+    [graves2006ctc]_. The upstream repository
+    (``facebookresearch/generic-neuromotor-interface``) has one architecture
+    per task for 1-DOF wrist control, discrete gestures, and handwriting;
+    only the handwriting / conformer head is ported here.
 
     The pipeline mirrors the paper's Methods (Fig. 1 / Extended Data Fig. 6):
 
@@ -1069,7 +1068,7 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
        Per-block stride ``2`` at blocks 5 and 10, attention window ``16`` for
        blocks 1–10 and ``8`` for blocks 11–15 (the paper's schedule).
        Attention is restricted to a fixed local window ending at the current
-       frame, giving a streaming / causal model.
+       frame, so the model runs as a streaming causal decoder.
     5. Linear readout to ``n_outputs`` classes, optionally followed by
        :class:`~torch.nn.LogSoftmax`.
 
@@ -1088,8 +1087,9 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
     dataset and Reddit, in three postures (seated on surface, seated on leg,
     standing on leg). Participants wrote letters, digits, words and phrases;
     spaces were either implicit or prompted by a right-dash token that the
-    participant produced with a right index swipe. Train/val/test split was
-    geometric scaling from 25 to 6,527 train participants, 50 val, 50 test.
+    participant produced with a right index swipe. Training sizes scale
+    geometrically from 25 to 6,527 participants; validation and test sets
+    hold 50 participants each.
 
     .. rubric:: MPF featurizer (paper defaults)
 
