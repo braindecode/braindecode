@@ -724,59 +724,6 @@ class _FrequencyBandAverager(nn.Module):
         return weighted.sum(dim=3) / freq_masks.sum(dim=3)
 
 
-class _SlideWindow(nn.Module):
-    """Sliding-window view of a tensor along one axis.
-
-    Wraps :meth:`torch.Tensor.unfold` (the tensor method, *not*
-    :class:`torch.nn.Unfold`). Kept as a dedicated ``nn.Module`` so
-    ``forward`` methods read as a flat sequence of layer calls.
-
-    Why not :class:`torch.nn.Unfold`? ``torch.nn.Unfold`` is the 2D
-    image-patching op used in ``im2col``-style conv; it expects a fixed
-    4D ``(N, C, H, W)`` input and produces ``(N, C * kH * kW, L)`` by
-    flattening the kernel into the channel axis. What we need here is a
-    **1D sliding view along an arbitrary axis** that preserves every
-    other axis (including possibly-complex dtypes and leading shape
-    like ``(batch, channels, freqs, time)``). PyTorch exposes that as
-    ``tensor.unfold(dim, size, step)``; there is no built-in
-    ``nn.Unfold1d`` for it, so we wrap the method in a light module.
-
-    Parameters
-    ----------
-    dim : int
-        Axis to unfold.
-    size : int
-        Window length along ``dim``, in samples.
-    step : int
-        Hop between consecutive windows, in samples.
-    """
-
-    def __init__(self, dim: int, size: int, step: int) -> None:
-        super().__init__()
-        self.dim = dim
-        self.size = size
-        self.step = step
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return inputs.unfold(dimension=self.dim, size=self.size, step=self.step)
-
-
-class _TakeEvery(nn.Module):
-    """Keep every ``step``-th sample along the last axis, ``nn.Module`` wrapper.
-
-    Single-line convenience around ``inputs[..., :: step]``, kept as a
-    module so the :class:`_Window` forward pass is a flat sequence of
-    layer calls.
-    """
-
-    def __init__(self, step: int) -> None:
-        super().__init__()
-        self.step = step
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return inputs[..., :: self.step]
-
-
 class _CrossSpectralDensity(nn.Module):
     """Magnitude-squared cross-spectral density between every channel pair.
 
@@ -1002,12 +949,25 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
             self.frequency_bins = None
 
         self.stft = _ChannelwiseSTFT(n_fft=self.n_fft, hop_length=self.fft_stride)
-        # Group consecutive STFT bins into MPF windows; the hop size is the
-        # MPF stride, downsampled from raw samples to STFT frames.
-        self.frame = _SlideWindow(
-            dim=-1,
-            size=self.window_length // self.fft_stride,
-            step=self.stride // self.fft_stride,
+        # Slide over the STFT time axis with :class:`torch.nn.Unfold`
+        # (2D ``im2col``, used with ``kernel_h = 1`` so it only slides the
+        # last axis). On the STFT output ``(batch, channels, freqs, time)``
+        # this yields ``(batch, channels * window, freqs * new_time)``; the
+        # ``frame_layout`` rearrange below un-packs it into the
+        # ``(batch, new_time, freqs, channels, window)`` shape the CSD
+        # module expects.
+        mpf_window_size = self.window_length // self.fft_stride
+        mpf_window_step = self.stride // self.fft_stride
+        n_freqs = self.n_fft // 2 + 1
+        self.frame = nn.Unfold(
+            kernel_size=(1, mpf_window_size),
+            stride=(1, mpf_window_step),
+        )
+        self.frame_layout = Rearrange(
+            "batch (channels window) (freqs new_time) -> "
+            "batch new_time freqs channels window",
+            window=mpf_window_size,
+            freqs=n_freqs,
         )
         self.csd = _CrossSpectralDensity()
         self.band_averager = _FrequencyBandAverager(
@@ -1021,10 +981,6 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
         # when considering only the featurizer.
         self.left_context = self.window_length - self.fft_stride + self.n_fft - 1
 
-        # Reorder framed STFT chunks so CSD broadcasts over (windows, freqs).
-        self.csd_input_layout = Rearrange(
-            "batch channels freqs windows window -> batch windows freqs channels window"
-        )
         # Put MPF time last to match the (batch, freqs, chans, chans, time)
         # layout consumed downstream by the rotation-invariant MLP.
         self.time_last_layout = Rearrange(
@@ -1035,7 +991,7 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         x = self.stft(inputs)
         x = self.frame(x)
-        x = self.csd_input_layout(x)
+        x = self.frame_layout(x)
         x = self.csd(x)
         x = self.band_averager(x)
         x = self.spd_log(x)
@@ -1379,15 +1335,18 @@ class _Window(nn.Module):
         self.extra_left_context = self.receptive_field - 1 - self.lpad
         self.dilation = dilation
         self.kernel_size = kernel_size
-        # Unfold time axis + keep every dilation-th sample inside each window.
-        self.frame = _SlideWindow(dim=1, size=self.receptive_field, step=stride)
-        self.dilation_selector = _TakeEvery(dilation)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        # Pad, unfold the time axis, then keep every dilation-th sample in
+        # each window. ``_Window`` already owns the causal-padding logic and
+        # the lpad-mode branching, so the unfold and dilation slice stay
+        # inline here rather than being factored into separate modules.
         if self.state_size > 0:
             inputs = F.pad(inputs, (0, 0, self.state_size, 0), "constant", 0)
-        windows = self.frame(inputs)
-        return self.dilation_selector(windows)
+        windows = inputs.unfold(
+            dimension=1, size=self.receptive_field, step=self.stride
+        )
+        return windows[..., :: self.dilation]
 
 
 class _Residual(nn.Module):
