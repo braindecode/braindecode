@@ -49,7 +49,6 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
     r"""Generic neuromotor interface for handwriting from Meta (2025) [gni2025]_.
 
     :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`
-    :bdg-primary:`CTC`
 
     .. figure:: https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41586-025-09255-w/MediaObjects/41586_2025_9255_Fig1_HTML.png
         :align: center
@@ -783,14 +782,32 @@ class _CrossSpectralDensity(nn.Module):
 
 
 class _SPDMatrixLog(nn.Module):
-    """SPD matrix logarithm via eigendecomposition.
+    """SPD matrix logarithm via eigendecomposition (Log-Euclidean framework).
 
-    Matches the upstream Meta implementation exactly: eigenvalues are
-    log-transformed first, and any resulting ``NaN`` / ``-inf`` (from zero
-    or numerically negative eigenvalues) is replaced with ``0``. Clamping
-    to a positive floor before the log would be more numerically robust
-    but would diverge from the pretrained checkpoints (see
-    ``facebookresearch/generic-neuromotor-interface/.../networks.py``).
+    Computes ``log(A) = V diag(log(eigvals)) V^T`` on a batch of
+    symmetric positive-(semi-)definite matrices, producing their tangent
+    vectors at the identity in the Barachant 2012 Log-Euclidean sense.
+
+    Matches the upstream Meta implementation [gni2025]_ exactly:
+    eigenvalues are log-transformed first, and any resulting ``NaN`` /
+    ``-inf`` (from zero or numerically negative eigenvalues) is replaced
+    with ``0``. Clamping to a positive floor *before* the log would be
+    more numerically robust but would shift ``log`` outputs for small
+    eigenvalues enough to diverge from the pretrained checkpoints - see
+    the paper's ``facebookresearch/generic-neuromotor-interface``
+    reference code.
+
+    See Also
+    --------
+    :func:`spd_learn.functional.matrix_log`
+        A more feature-complete matrix-log in the
+        `SPD Learn <https://spdlearn.org/>`_ library, part of a broader
+        suite of Riemannian SPD operations (exp map, parallel transport,
+        geodesics, SPDNet-family models). It applies an eigenvalue
+        ``safe_clamp`` by default, which is a different numerical
+        convention from the one frozen into Meta's pretrained
+        checkpoint - so we inline the minimal operation here rather
+        than add ``spd_learn`` as a hard dependency of this model.
     """
 
     def __init__(self) -> None:
@@ -976,12 +993,25 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
 
 
 class _VectorizeSymmetricMatrix(nn.Module):
-    """Vectorize a symmetric matrix, keeping only adjacent off-diagonals.
+    """Half-vectorize a symmetric matrix, keeping only adjacent off-diagonals.
 
-    Assumes an input of 6 dimensions whose last two (``num_channels, num_channels``)
-    describe a symmetric matrix. Keeps the upper-triangular values whose row-column
-    distance (modulo ``num_channels`` for circular adjacency) is at most
-    ``num_adjacent_cov``.
+    Assumes an input of 6 dimensions whose last two (``num_channels,
+    num_channels``) describe a symmetric matrix. Returns the upper-
+    triangular values whose row-column distance is at most
+    ``num_adjacent_cov`` **in circular / modulo-``num_channels`` sense**,
+    so bin ``|i - j| mod num_channels <= num_adjacent_cov`` is kept.
+    That circular adjacency assumption encodes the paper's 16-electrode
+    armband topology - physically adjacent channels wrap around the
+    wrist, so channel 15 is a neighbour of channel 0.
+
+    See Also
+    --------
+    :func:`spd_learn.functional.sym_to_upper`
+        General half-vectorizer for symmetric matrices in
+        `SPD Learn <https://spdlearn.org/>`_. Returns the full upper
+        triangle and therefore does not carry the paper's circular-
+        adjacency masking; for the handwriting decoder we need the
+        armband-specific band-truncation that this class applies.
     """
 
     def __init__(
@@ -1196,10 +1226,68 @@ class _MaskAug(nn.Module):
 class _Window(nn.Module):
     """Causal sliding-window extraction for ``(batch, time, ...)`` tensors.
 
-    The layer pads the left context, unfolds the time axis with ``stride``, and
-    appends a final axis containing the sampled window. ``dilation`` is applied
-    on that final axis, so callers receive windows with exactly ``kernel_size``
-    effective samples.
+    Core utility used by the conformer's windowed causal attention
+    (:class:`_MultiHeadAttention`) and by the frame-stacking step before
+    the conformer encoder (``_build_handwriting_encoder``). Given a time
+    series and a ``kernel_size`` receptive field, the module slices the
+    input into overlapping windows at a ``stride`` hop, optionally with
+    dilation inside each window. Output windows are strictly causal:
+    window ``t`` ends at input time ``t``, never looking ahead.
+
+    Behaviour along the time axis:
+
+    1. Left-padding of ``state_size = receptive_field - stride`` zeros
+       (minus any explicit ``lpad``, see below) is prepended so that the
+       first output window is well-defined.
+    2. ``inputs.unfold(dim=1, size=receptive_field, step=stride)`` groups
+       consecutive samples into a new last axis.
+    3. ``windows[..., :: dilation]`` keeps every ``dilation``-th sample
+       inside each window, leaving ``kernel_size`` effective samples per
+       window regardless of ``dilation``.
+
+    The combination of ``kernel_size``, ``stride`` and ``dilation``
+    determines the effective receptive field:
+    ``receptive_field = 1 + dilation * (kernel_size - 1)``.
+
+    Parameters
+    ----------
+    kernel_size : int
+        Number of samples kept inside each output window (after
+        ``dilation`` subsampling).
+    stride : int, default 1
+        Hop between consecutive output windows, in input samples. Must
+        be ``<= receptive_field``.
+    dilation : int, default 1
+        Spacing between samples kept inside each window. ``1`` is
+        contiguous; larger values skip input samples.
+    lpad : int or {"none", "steady", "full"}, default 0
+        Amount of extra causal left padding to apply beyond the
+        streaming steady-state:
+
+        - ``"none"`` / ``0``  -> padding is exactly
+          ``receptive_field - stride``; the first valid output appears
+          after ``extra_left_context`` input samples.
+        - ``"steady"``        -> add ``state_size`` more padding so the
+          output time length matches the input time length exactly
+          (typical for attention blocks that must not downsample).
+        - ``"full"``          -> pad the full ``receptive_field - 1``
+          samples; the first output is centred on the very first input
+          sample.
+
+    Attributes
+    ----------
+    receptive_field : int
+        ``1 + dilation * (kernel_size - 1)``.
+    extra_left_context : int
+        Number of input samples consumed before the first valid output
+        window. Consumed by :class:`_SlicedSequential` to keep skip
+        connections in :class:`_Residual` aligned with strided children.
+
+    Notes
+    -----
+    Input  : ``(batch, time, ...)``.
+    Output : ``(batch, time_out, ..., kernel_size)`` where
+    ``time_out = ceildiv(time + state_size - receptive_field + 1, stride)``.
     """
 
     def __init__(
@@ -1433,9 +1521,39 @@ class _MultiHeadAttention(nn.Module):
 class _Conv1d(nn.Module):
     """1D convolution for ``(batch, time, channels)`` tensors.
 
-    PyTorch's :class:`~torch.nn.Conv1d` expects channel-first input. This wrapper
-    keeps the conformer blocks in time-major layout while exposing the stride and
-    left-context metadata used by :class:`_SlicedSequential`.
+    Used inside the conformer's convolution block
+    (:func:`_conformer_encoder_block`) as the depthwise temporal conv.
+    The rest of the conformer block operates in time-major (``NTC``)
+    layout - matrix multiplies, LayerNorm, GLU - whereas PyTorch's
+    :class:`torch.nn.Conv1d` expects channel-first (``NCT``). Rather
+    than interleave ad-hoc permutes, this wrapper sandwiches a plain
+    ``nn.Conv1d`` between two :class:`einops.layers.torch.Rearrange`
+    layers so the block stays uniformly ``NTC``.
+
+    It also exposes the two attributes :class:`_SlicedSequential`
+    consumes, so residual skips (:class:`_Residual`) slice correctly
+    when the conv stride is ``>1``:
+
+    - ``stride``             : forwarded from :class:`torch.nn.Conv1d`.
+    - ``extra_left_context`` : ``receptive_field - 1 = dilation *
+      (kernel_size - 1)``, the number of input samples the conv
+      consumes before producing its first valid output sample.
+
+    Parameters
+    ----------
+    in_channels, out_channels : int
+        Channel counts of the inner :class:`torch.nn.Conv1d`.
+    kernel_size, stride, dilation, bias, groups
+        Forwarded to :class:`torch.nn.Conv1d`. Handwriting conformer
+        uses ``kernel_size=8`` and ``groups=in_channels`` (depthwise).
+
+    Notes
+    -----
+    Input  : ``(batch, time, channels)``.
+    Output : ``(batch, time_out, out_channels)`` where ``time_out``
+    is the same as :class:`torch.nn.Conv1d` would produce on the
+    permuted tensor (``time - receptive_field + 1`` if ``stride=1``,
+    strided-downsampled otherwise).
     """
 
     def __init__(
@@ -1560,7 +1678,13 @@ def _conformer_encoder_block(
 
 
 def _as_layer_list(val, num_layers: int, name: str):
-    """Return a per-layer list, validating explicit per-layer schedules."""
+    """Broadcast a scalar to a per-layer list, or validate an explicit list.
+
+    Used by :func:`_conformer_encoder` to normalise the three per-block
+    schedules (``kernel_size``, ``attn_window_size``, ``attn_lpad``).
+    ``stride`` has its own, different broadcast rule (scalar applies to
+    the last block only) and so is handled inline there.
+    """
     if isinstance(val, (list, tuple)):
         out = list(val)
         if len(out) != num_layers:
