@@ -120,7 +120,9 @@ def _compute_topo_metrics(
         reference_topo = np.abs(reference_topo)
 
     explanation_abs = (
-        np.abs(explanations_topo) if abs_condition else np.clip(explanations_topo, 0, None)
+        np.abs(explanations_topo)
+        if abs_condition
+        else np.clip(explanations_topo, 0, None)
     )
 
     return _compute_metrics_core(
