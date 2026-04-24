@@ -459,9 +459,6 @@ def test_model_exported(model):
         "SSTDPN",  # We found a fake tensor in the exported program constant's list.
         "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
         "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
-        # torch.export cannot handle torch.linalg.eigh + torch.stft used
-        # in the MPF featurizer.
-        "MetaNeuromotorHand",
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
@@ -521,8 +518,8 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
-        # torch.export cannot handle torch.linalg.eigh + torch.stft used
-        # in the MPF featurizer.
+        # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
+        # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
         "SignalJEPA",
         "SignalJEPA_Contextual",

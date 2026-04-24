@@ -26,21 +26,6 @@ from braindecode.models.base import EEGModuleMixin
 _LPadType = int | Literal["none", "steady", "full"]
 
 
-_DEFAULT_MPF_FREQUENCY_BINS: tuple[tuple[float, float], ...] = (
-    (0.0, 50.0),
-    (30.0, 100.0),
-    (100.0, 225.0),
-    (225.0, 375.0),
-    (375.0, 700.0),
-    (700.0, 1000.0),
-)
-# Paper's 15-layer handwriting config. Only used when ``num_layers == 15`` and
-# ``stride`` / ``attn_window_size`` are left unset.
-_PAPER_CONFORMER_STRIDE_15: tuple[int, ...] = (1, 1, 1, 1, 2) * 2 + (1,) * 5
-_PAPER_CONFORMER_ATTN_WINDOW_15: tuple[int, ...] = (16,) * 10 + (8,) * 5
-_PAPER_NUM_LAYERS: int = len(_PAPER_CONFORMER_STRIDE_15)
-
-
 # ---------------------------------------------------------------------------
 # Main model
 # ---------------------------------------------------------------------------
@@ -163,7 +148,7 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
 
     The paper's frequency bins are non-overlapping (0-62.5, 62.5-125,
     125-250, 250-375, 375-687.5, 687.5-1000 Hz), but the upstream
-    training config -- matched by :data:`_DEFAULT_MPF_FREQUENCY_BINS` --
+    training config -- matched by the ``mpf_frequency_bins`` default --
     uses slightly overlapping bins (0-50, 30-100, 100-225, 225-375,
     375-700, 700-1000 Hz); the code default reproduces the released
     checkpoints.
@@ -267,20 +252,21 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
         Feed-forward hidden dim inside each block.
     conformer_kernel_size : int or sequence of int
         Depthwise-conv kernel size per block.
-    conformer_stride : int, sequence of int, or None
+    conformer_stride : int or sequence of int
         Depthwise-conv stride per block. As a scalar, applied only to
         the last block (entire encoder downsamples by ``stride``); as a
-        list of length ``conformer_num_layers``, applied per block.
-        When ``None`` (default), resolves to the paper's 15-layer
-        schedule if ``conformer_num_layers == 15`` and to ``2`` (a
-        single 2x downsampling at the end) otherwise.
+        sequence of length ``conformer_num_layers``, applied per block.
+        Defaults to the paper's 15-layer schedule
+        ``(1, 1, 1, 1, 2) * 2 + (1,) * 5`` (2x downsampling at blocks 5
+        and 10). When overriding ``conformer_num_layers``, also pass a
+        matching schedule or a scalar.
     conformer_num_heads : int
         Number of attention heads.
-    conformer_attn_window_size : int, sequence of int, or None
-        Attention receptive field per block. When ``None`` (default),
-        resolves to the paper's 15-layer schedule if
-        ``conformer_num_layers == 15`` and to ``16`` (uniform)
-        otherwise.
+    conformer_attn_window_size : int or sequence of int
+        Attention receptive field per block. Defaults to the paper's
+        15-layer schedule ``(16,) * 10 + (8,) * 5``. When overriding
+        ``conformer_num_layers``, also pass a matching schedule or a
+        scalar.
     conformer_num_layers : int
         Number of conformer blocks.
     drop_prob : float
@@ -366,7 +352,12 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
         mpf_n_fft: int = 64,
         mpf_fft_stride: int = 10,
         mpf_frequency_bins: Sequence[Sequence[float]] | None = (
-            _DEFAULT_MPF_FREQUENCY_BINS
+            (0.0, 50.0),
+            (30.0, 100.0),
+            (100.0, 225.0),
+            (225.0, 375.0),
+            (375.0, 700.0),
+            (700.0, 1000.0),
         ),
         # SpecAugment
         mask_max_num_masks: Sequence[int] = (3, 2),
@@ -381,9 +372,9 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
         conformer_input_dim: int = 64,
         conformer_ffn_dim: int = 128,
         conformer_kernel_size: int | Sequence[int] = 8,
-        conformer_stride: int | Sequence[int] | None = None,
+        conformer_stride: int | Sequence[int] = ((1, 1, 1, 1, 2) * 2 + (1,) * 5),
         conformer_num_heads: int = 4,
-        conformer_attn_window_size: int | Sequence[int] | None = None,
+        conformer_attn_window_size: int | Sequence[int] = ((16,) * 10 + (8,) * 5),
         conformer_num_layers: int = 15,
         drop_prob: float = 0.1,
         time_reduction_stride: int = 2,
@@ -440,22 +431,6 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
             "batch features time -> batch time features"
         )
 
-        # Fall back to the paper's 15-layer schedule when the user leaves
-        # the conformer stride / attention window unset; otherwise broadcast
-        # a scalar across every block.
-        if conformer_stride is None:
-            conformer_stride = (
-                _PAPER_CONFORMER_STRIDE_15
-                if conformer_num_layers == _PAPER_NUM_LAYERS
-                else 2
-            )
-        if conformer_attn_window_size is None:
-            conformer_attn_window_size = (
-                _PAPER_CONFORMER_ATTN_WINDOW_15
-                if conformer_num_layers == _PAPER_NUM_LAYERS
-                else 16
-            )
-
         self.conformer = _build_handwriting_encoder(
             in_dim=invariance_hidden_dims[-1],
             input_dim=conformer_input_dim,
@@ -470,9 +445,11 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
             activation=activation,
         )
 
-        # Slice describing the valid emission region (used by CTC length computation).
+        # Slice describing the valid emission region (used by CTC length
+        # computation). ``compute_output_lengths`` only reads ``start`` and
+        # ``step``, so ``stop`` is ``None`` for clarity.
         self.output_slice: slice = slice(
-            self.conformer.extra_left_context, -1, self.conformer.stride
+            self.conformer.extra_left_context, None, self.conformer.stride
         )
 
         # Final classification head (kept as a top-level module so that
@@ -483,16 +460,16 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Run the full pipeline.
 
-           Parameters
+        Parameters
         ----------
-           x : torch.Tensor
-               Raw multi-channel input of shape ``(batch, n_chans, n_times)``.
+        x : torch.Tensor
+            Raw multi-channel input of shape ``(batch, n_chans, n_times)``.
 
-           Returns
+        Returns
         -------
-           emissions : torch.Tensor
-               Shape ``(batch, T_out, n_outputs)``. Log-probabilities if
-               ``log_softmax=True``, otherwise logits.
+        emissions : torch.Tensor
+            Shape ``(batch, T_out, n_outputs)``. Log-probabilities if
+            ``log_softmax=True``, otherwise logits.
         """
         x = self.featurizer(x)
         x = self.specaug(x)
@@ -512,19 +489,19 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
     def compute_output_lengths(self, input_lengths: torch.Tensor) -> torch.Tensor:
         """Compute the valid emission length for each input sequence.
 
-           This is the length that should be passed to :class:`~torch.nn.CTCLoss`
-           as ``input_lengths``.
+        This is the length that should be passed to :class:`~torch.nn.CTCLoss`
+        as ``input_lengths``.
 
-           Parameters
+        Parameters
         ----------
-           input_lengths : torch.Tensor
-               Integer tensor of shape ``(batch,)`` holding the input time
-               lengths in samples.
+        input_lengths : torch.Tensor
+            Integer tensor of shape ``(batch,)`` holding the input time
+            lengths in samples.
 
-           Returns
+        Returns
         -------
-           torch.Tensor
-               Integer tensor of shape ``(batch,)`` with emission lengths.
+        torch.Tensor
+            Integer tensor of shape ``(batch,)`` with emission lengths.
         """
         lengths = self.featurizer.compute_time_downsampling(input_lengths)
         slc = self.output_slice
@@ -616,9 +593,9 @@ class _FrequencyBandAverager(nn.Module):
         (250, 375), (375, 687.5), (687.5, 1000)   # Hz
 
     The released training config in ``facebookresearch/generic-
-    neuromotor-interface`` - mirrored by
-    :data:`_DEFAULT_MPF_FREQUENCY_BINS` - uses slightly overlapping
-    bands that reproduce the pretrained checkpoints:
+    neuromotor-interface`` - mirrored by :class:`MetaNeuromotorHand`'s
+    ``mpf_frequency_bins`` default - uses slightly overlapping bands
+    that reproduce the pretrained checkpoints:
 
         (0, 50), (30, 100), (100, 225),
         (225, 375), (375, 700), (700, 1000)       # Hz
@@ -688,7 +665,7 @@ class _FrequencyBandAverager(nn.Module):
             ]
         ).to(dtype=torch.float32)
         if (freq_masks.sum(dim=1) == 0).any():
-            raise ValueError("Each frequency bin must contain at least one FFT bin")
+            raise ValueError("Each frequency band must contain at least one FFT bin")
         return rearrange(freq_masks, "band freq -> 1 1 band freq 1 1")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -839,7 +816,7 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
     4. :class:`_FrequencyBandAverager` - average FFT bins into the
        paper's six bands (0-62.5, 62.5-125, 125-250, 250-375,
        375-687.5, 687.5-1000 Hz), or the released-checkpoint variant
-       in :data:`_DEFAULT_MPF_FREQUENCY_BINS`.
+       used as the ``mpf_frequency_bins`` default.
     5. :class:`_SPDMatrixLog` - matrix logarithm on each per-band
        symmetric positive-definite matrix (Barachant et al. 2012;
        [pyriemann]_). In the Log-Euclidean framework this maps SPD
@@ -1188,19 +1165,30 @@ class _MaskAug(nn.Module):
             n_masks = int(torch.randint(max_num_masks + 1, size=()).item())
             for _ in range(n_masks):
                 data_length = x.size(axes[0])
+                # Inclusive upper bound so ``max_mask_length`` is reachable
+                # (a float sample + ``.long()`` makes the bound exclusive and
+                # always zero when ``max_mask_length == 1``).
                 effective_max = min(max_mask_length, data_length)
-                length = (
-                    torch.rand(batch, device=x.device, dtype=x.dtype) * effective_max
+                mask_length = torch.randint(
+                    0,
+                    effective_max + 1,
+                    (batch,),
+                    device=x.device,
+                    dtype=torch.long,
                 )
-                start = torch.rand(batch, device=x.device, dtype=x.dtype) * (
-                    data_length - length
-                )
-                mask_start = start.long()
-                mask_end = mask_start + length.long()
+                # Per-sample start ~ Uniform{0, ..., data_length - mask_length}.
+                # Drawn in float32 to keep integer precision under fp16/bf16
+                # training and cast back to long for indexing.
+                start_range = (data_length - mask_length).to(torch.float32)
+                mask_start = (
+                    torch.rand(batch, device=x.device, dtype=torch.float32)
+                    * start_range
+                ).to(torch.long)
+                mask_end = mask_start + mask_length
                 for _ in range(x.ndim - 1):
                     mask_start = mask_start.unsqueeze(-1)
                     mask_end = mask_end.unsqueeze(-1)
-                idx = torch.arange(0, data_length, device=x.device, dtype=x.dtype)
+                idx = torch.arange(0, data_length, device=x.device, dtype=torch.long)
                 mask_idx = (idx >= mask_start) & (idx < mask_end)
                 for axis in axes:
                     if x.size(axis) != data_length:
@@ -1224,9 +1212,9 @@ class _Window(nn.Module):
 
     Behaviour along the time axis:
 
-    1. Left-padding of ``state_size = receptive_field - stride`` zeros
-       (minus any explicit ``lpad``, see below) is prepended so that the
-       first output window is well-defined.
+    1. Left-padding of ``state_size = receptive_field - stride`` zeros is
+       prepended so that the first output window is well-defined. The
+       amount of padding is independent of ``lpad`` (see below).
     2. ``inputs.unfold(dim=1, size=receptive_field, step=stride)`` groups
        consecutive samples into a new last axis.
     3. ``windows[..., :: dilation]`` keeps every ``dilation``-th sample
@@ -1249,27 +1237,32 @@ class _Window(nn.Module):
         Spacing between samples kept inside each window. ``1`` is
         contiguous; larger values skip input samples.
     lpad : int or {"none", "steady", "full"}, default 0
-        Amount of extra causal left padding to apply beyond the
-        streaming steady-state:
+        Number of leading output frames whose zero-padded left context
+        should be treated as valid (i.e., used as a steady-state stand-in
+        for real history). Does **not** affect this module's ``forward``
+        computation - padding is always ``state_size`` zeros on the
+        left. ``lpad`` only shifts :attr:`extra_left_context`, which is
+        read by :class:`_Residual` / :class:`_SlicedSequential` when
+        slicing skip connections.
 
-        - ``"none"`` / ``0``  -> padding is exactly
-          ``receptive_field - stride``; the first valid output appears
-          after ``extra_left_context`` input samples.
-        - ``"steady"``        -> add ``state_size`` more padding so the
-          output time length matches the input time length exactly
-          (typical for attention blocks that must not downsample).
-        - ``"full"``          -> pad the full ``receptive_field - 1``
-          samples; the first output is centred on the very first input
-          sample.
+        String aliases resolve to integers:
+
+        - ``"none"`` / ``0``  -> ``lpad = 0``; drop every warmed-up
+          frame before aligning skip connections (largest
+          ``extra_left_context``).
+        - ``"steady"``        -> ``lpad = state_size``; keep the
+          steady-state frames (typical for unit-stride attention).
+        - ``"full"``          -> ``lpad = receptive_field - 1``; trust
+          every output frame, ``extra_left_context == 0``.
 
     Attributes
     ----------
     receptive_field : int
         ``1 + dilation * (kernel_size - 1)``.
     extra_left_context : int
-        Number of input samples consumed before the first valid output
-        window. Consumed by :class:`_SlicedSequential` to keep skip
-        connections in :class:`_Residual` aligned with strided children.
+        ``receptive_field - 1 - lpad``. Number of leading output frames
+        to drop before the skip connection aligns with the child output.
+        Consumed by :class:`_Residual` / :class:`_SlicedSequential`.
 
     Notes
     -----
