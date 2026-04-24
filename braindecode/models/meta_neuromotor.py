@@ -221,7 +221,7 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
         commercial products or services. Using the pretrained weights
         carries the same restriction.
 
-    .. versionadded:: 1.4
+    .. versionadded:: 1.5
 
     Parameters
     ----------

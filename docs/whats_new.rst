@@ -62,6 +62,21 @@ Enhancements
   instantiation, so keeping them in ``state_dict`` only bloated checkpoints and
   caused spurious mismatches when ``n_chans`` (or the position-bank config)
   differed between save and load. (:gh:`993` by `Pierre Guetschel`_)
+- Add :class:`braindecode.models.MetaNeuromotorHand`, a port of the
+  handwriting decoder from Meta / CTRL-labs' generic neuromotor interface
+  (Kaifosh, Reardon et al., Nature 2025). The model takes raw 16-channel
+  surface EMG from the wristband at 2 kHz and produces per-token scores
+  for CTC decoding of handwritten text. The pipeline is a fixed
+  multivariate power frequency (MPF) featurizer (channel-wise STFT,
+  cross-spectral density, frequency-band averaging, and SPD matrix
+  logarithm) followed by a circular rotation-invariant MLP and a
+  15-block causal conformer encoder. Meta's pretrained checkpoint loads
+  directly via ``load_state_dict`` (after stripping the ``network.``
+  prefix); the port is bit-exact to the upstream reference
+  implementation on real sEMG. Distributed under CC BY-NC 4.0 to match
+  the upstream repository; see the class docstring for the license
+  warning and the pretrained-checkpoint loading recipe.
+  By `Bruno Aristimunha`_.
 
 API and behavior changes
 ========================
