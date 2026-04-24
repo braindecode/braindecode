@@ -23,7 +23,6 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 
 _LPadType = int | Literal["none", "steady", "full"]
-_SPD_LOG_EPS_SCALE = 100.0
 
 
 def _normalize_frequency_bins(
@@ -123,6 +122,21 @@ class _FrequencyBandAverager(nn.Module):
         return weighted.sum(dim=3) / freq_masks.sum(dim=3)
 
 
+class _SlidingWindowLast(nn.Module):
+    """Unfold the last axis into overlapping windows of fixed ``size`` and ``step``.
+
+    Input ``(..., time)`` -> output ``(..., num_windows, size)``.
+    """
+
+    def __init__(self, size: int, step: int) -> None:
+        super().__init__()
+        self.size = size
+        self.step = step
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        return inputs.unfold(dimension=-1, size=self.size, step=self.step)
+
+
 class _CrossSpectralDensity(nn.Module):
     """Estimate channel-pair cross-spectral density inside each MPF window."""
 
@@ -144,7 +158,7 @@ class _SPDMatrixLog(nn.Module):
 
     @staticmethod
     def _eigval_floor(dtype: torch.dtype) -> float:
-        return _SPD_LOG_EPS_SCALE * torch.finfo(dtype).eps
+        return 100.0 * torch.finfo(dtype).eps
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         eigvals, eigvecs = torch.linalg.eigh(inputs)
@@ -205,6 +219,10 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
         self.frequency_bins = _normalize_frequency_bins(frequency_bins)
 
         self.stft = _ChannelwiseSTFT(n_fft=self.n_fft, hop_length=self.fft_stride)
+        self.frame = _SlidingWindowLast(
+            size=self.window_length // self.fft_stride,
+            step=self.stride // self.fft_stride,
+        )
         self.csd = _CrossSpectralDensity()
         self.band_averager = _FrequencyBandAverager(
             n_fft=self.n_fft,
@@ -219,12 +237,7 @@ class _MultivariatePowerFrequencyFeatures(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         outputs = self.stft(inputs)
-
-        outputs = outputs.unfold(
-            dimension=-1,
-            size=self.window_length // self.fft_stride,
-            step=self.stride // self.fft_stride,
-        )
+        outputs = self.frame(outputs)
         outputs = rearrange(
             outputs,
             "batch channels freqs windows window -> "
@@ -290,12 +303,13 @@ class _VectorizeSymmetricMatrix(nn.Module):
     def _get_adjacent_cov_mask(
         num_channels: int, num_adjacent_diagonals: int
     ) -> torch.Tensor:
-        mask = torch.eye(num_channels)
-        for i in range(num_channels):
-            for j in range(num_adjacent_diagonals):
-                mask[i, (i + j + 1) % num_channels] = 1
-                mask[i, (i - j - 1) % num_channels] = 1
-        return mask
+        # 1 where |i - j| mod num_channels <= num_adjacent_diagonals (circular adjacency).
+        idx = torch.arange(num_channels)
+        circular_diff = (idx[:, None] - idx[None, :]) % num_channels
+        is_adjacent = (circular_diff <= num_adjacent_diagonals) | (
+            circular_diff >= num_channels - num_adjacent_diagonals
+        )
+        return is_adjacent.to(torch.float32)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         inputs = self.flatten_matrix(inputs)
@@ -1021,7 +1035,7 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
     r"""Generic neuromotor interface for handwriting from Meta (2025) [gni2025]_.
 
     :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`
-    :bdg-secondary:`Recurrent` :bdg-primary:`CTC`
+    :bdg-primary:`CTC`
 
     .. rubric:: Architectural Overview
 
