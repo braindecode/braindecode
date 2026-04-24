@@ -16,6 +16,7 @@ from typing import Literal, cast
 
 import torch
 import torch.nn.functional as F
+import torchaudio.transforms as ta_transforms
 from einops import pack, rearrange, reduce, repeat, unpack
 from einops.layers.torch import Rearrange
 from torch import nn
@@ -557,21 +558,24 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
 # ---------------------------------------------------------------------------
 
 
-class _ChannelwiseSTFT(nn.Module):
+class _ChannelwiseSTFT(ta_transforms.Spectrogram):
     """Short-time Fourier transform applied independently to every channel.
 
-    First stage of the MPF featurizer. Given sEMG sampled at ``fs`` (2 kHz
-    in the paper [gni2025]_), it returns the complex discrete Fourier
-    transform of each channel over a sliding STFT window of ``n_fft``
-    samples, hopped by ``hop_length`` samples. Each column of the output
-    is normalized by the Euclidean norm of the window so that downstream
-    estimates of power / cross-spectral density are independent of the
-    window shape.
+    First stage of the MPF featurizer. Thin subclass of
+    :class:`torchaudio.transforms.Spectrogram` configured to match the
+    paper [gni2025]_: Hann window with ``periodic=False``, ``center=False``
+    for strict causality, ``normalized=True`` so every output column is
+    divided by the Euclidean norm of the window, ``power=None`` so the
+    result is complex. Input ``(batch, channels, time)`` becomes
+    ``(batch, channels, n_fft // 2 + 1, num_stft_frames)`` complex with
+    ``num_stft_frames = 1 + (time - n_fft) // hop_length``.
 
-    Paper defaults (handwriting decoder): ``n_fft = 64`` (32 ms at
-    2 kHz), ``hop_length = 10`` (5 ms), Hann window, ``center=False`` so
-    the transform is strictly causal. The module is a fixed signal-
-    processing stage - no trainable parameters.
+    Also registers a ``window_norm`` buffer, unused in forward but kept
+    for state-dict compatibility with the upstream Meta checkpoint (which
+    stores ``window_normalization_factor`` as a persistent scalar).
+
+    Paper defaults (handwriting decoder): ``n_fft = 64`` (32 ms at 2 kHz),
+    ``hop_length = 10`` (5 ms). The module has no trainable parameters.
 
     Parameters
     ----------
@@ -579,48 +583,20 @@ class _ChannelwiseSTFT(nn.Module):
         FFT size (also STFT window length, in samples).
     hop_length : int
         STFT hop, in samples. Must be smaller than ``n_fft``.
-
-    Notes
-    -----
-    Input : ``(batch, channels, time)``, real.
-    Output: ``(batch, channels, n_fft // 2 + 1, num_stft_frames)``,
-    complex. ``num_stft_frames = 1 + (time - n_fft) // hop_length``.
-
-    The STFT is computed on a ``(batch * channels, time)`` view and
-    unflattened afterwards, keeping the per-channel transforms
-    independent (no mixing across channels at this stage).
-
-    References
-    ----------
-    See :class:`_MultivariatePowerFrequencyFeatures` for the full MPF
-    pipeline and its paper reference.
     """
 
     def __init__(self, n_fft: int, hop_length: int) -> None:
-        super().__init__()
-        self.n_fft = n_fft
-        self.hop_length = hop_length
-        window = torch.hann_window(n_fft, periodic=False)
-        self.register_buffer("window", window)
-        self.register_buffer("window_norm", torch.linalg.vector_norm(window))
-        self.flatten_batch_channels = Rearrange(
-            "batch channels time -> (batch channels) time"
-        )
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        batch_size, num_channels, _ = inputs.shape
-        stft = torch.stft(
-            self.flatten_batch_channels(inputs),
-            n_fft=self.n_fft,
-            hop_length=self.hop_length,
-            window=cast(torch.Tensor, self.window),
+        super().__init__(
+            n_fft=n_fft,
+            hop_length=hop_length,
+            window_fn=lambda n: torch.hann_window(n, periodic=False),
             center=False,
-            normalized=False,
+            normalized=True,
             onesided=True,
-            return_complex=True,
+            power=None,
         )
-        stft = stft / cast(torch.Tensor, self.window_norm)
-        return stft.unflatten(0, (batch_size, num_channels))
+        # Kept for upstream-checkpoint key compatibility; not read anywhere.
+        self.register_buffer("window_norm", torch.linalg.vector_norm(self.window))
 
 
 class _FrequencyBandAverager(nn.Module):
