@@ -18,12 +18,12 @@ import torch
 import torch.nn.functional as F
 from einops import pack, rearrange, reduce, repeat, unpack
 from einops.layers.torch import Rearrange
-from spd_learn.functional import matrix_log
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 
 _LPadType = int | Literal["none", "steady", "full"]
+_SPD_LOG_EPS_SCALE = 100.0
 
 
 def _normalize_frequency_bins(
@@ -140,10 +140,18 @@ class _CrossSpectralDensity(nn.Module):
 
 
 class _SPDMatrixLog(nn.Module):
-    """Apply SPD Learn's dtype-stable matrix logarithm."""
+    """Apply a dtype-stable SPD matrix logarithm."""
+
+    @staticmethod
+    def _eigval_floor(dtype: torch.dtype) -> float:
+        return _SPD_LOG_EPS_SCALE * torch.finfo(dtype).eps
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return matrix_log.apply(inputs)
+        eigvals, eigvecs = torch.linalg.eigh(inputs)
+        eigvals = eigvals.clamp_min(self._eigval_floor(eigvals.dtype)).log()
+        return (eigvecs * rearrange(eigvals, "... channels -> ... 1 channels")) @ (
+            rearrange(eigvecs, "... row col -> ... col row")
+        )
 
 
 class _MultivariatePowerFrequencyFeatures(nn.Module):
