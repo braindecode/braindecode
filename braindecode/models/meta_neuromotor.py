@@ -121,8 +121,8 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
          window ``16`` for blocks 1-10 then ``8`` for blocks 11-15.
        - Causality: attention is restricted to a fixed local window
          ending at the current frame, so the encoder runs as a streaming
-         causal decoder. A ``_time_reduction_layer`` before the stack
-         halves the frame rate once more.
+         causal decoder. A frame-stacking step before the stack halves
+         the frame rate once more.
 
     5. :class:`torch.nn.Linear` classification head, optionally followed
        by :func:`torch.nn.functional.log_softmax`. The final linear
@@ -913,87 +913,29 @@ class _RotationInvariantMPFMLP(nn.Module):
         return self.features_to_time_last(x)
 
 
-class _AxesMask(nn.Module):
-    """Samples and applies a filler mask along one or more axes (SpecAugment).
-
-    The same mask of length drawn from ``[0, max_mask_length]`` is applied to every
-    axis in ``axes``; all masked axes must have the same length.
-    """
-
-    def __init__(
-        self,
-        max_mask_length: int,
-        axes: tuple[int, ...],
-        mask_value: float = 0.0,
-    ) -> None:
-        super().__init__()
-        for axis in axes:
-            if axis <= 0:
-                raise ValueError("Cannot mask batch dim")
-        self.max_mask_length = max_mask_length
-        self.axes = axes
-        self.mask_value = mask_value
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        if not self.training:
-            return inputs
-        N = inputs.size(0)
-        device = inputs.device
-        dtype = inputs.dtype
-        data_length = inputs.size(self.axes[0])
-        max_mask_length = min(self.max_mask_length, data_length)
-        value = torch.rand(N, device=device, dtype=dtype) * max_mask_length
-        min_value = torch.rand(N, device=device, dtype=dtype) * (data_length - value)
-        mask_start = min_value.long()
-        mask_end = mask_start + value.long()
-        for _ in range(inputs.ndim - 1):
-            mask_start = mask_start.unsqueeze(-1)
-            mask_end = mask_end.unsqueeze(-1)
-        idx = torch.arange(0, data_length, device=device, dtype=dtype)
-        mask_idx = (idx >= mask_start) & (idx < mask_end)
-        x = inputs
-        for axis in self.axes:
-            if x.size(axis) != data_length:
-                raise ValueError("All axes to mask must have the same length")
-            x = x.transpose(axis, -1)
-            x = x.masked_fill(mask_idx, self.mask_value)
-            x = x.transpose(-1, axis)
-        return x
-
-
-class _RepeatedRandomMask(nn.Module):
-    """Apply one mask layer a random number of times during training."""
-
-    def __init__(self, max_num_masks: int, mask: _AxesMask) -> None:
-        super().__init__()
-        self.max_num_masks = max_num_masks
-        self.mask = mask
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        n_masks = int(torch.randint(self.max_num_masks + 1, size=()).item())
-        x = inputs
-        for _ in range(n_masks):
-            x = self.mask(x)
-        return x
-
-
 class _MaskAug(nn.Module):
-    """SpecAugment on MPF features (time and frequency masking, train-only).
+    """SpecAugment on MPF features (time / frequency masking, train-only).
 
-       Parameters
+    For each coord in ``dims`` (ordered among ``{"C", "F", "T"}``), draw a
+    uniform ``n_masks`` in ``[0, max_num_masks[d]]`` and apply that many
+    masks, each of a length drawn from ``[0, max_mask_lengths[d]]`` and
+    placed at a uniform random start. A single mask is broadcast across
+    every axis listed in ``axes_by_coord[coord]``, so for coord ``"C"``
+    (axes ``(2, 3)`` by default) the same bin is blanked on both the row
+    and column channel axes of the cross-channel covariance.
+
+    Parameters
     ----------
-       max_num_masks : sequence of int
-           Max number of masks per dim (order matches ``dims``).
-       max_mask_lengths : sequence of int
-           Max length of each mask per dim (order matches ``dims``).
-       dims : str
-           Ordered coordinates to mask. One of ``"T"``, ``"F"``, ``"C"``, or any
-           combination (e.g. ``"TF"``).
-       axes_by_coord : dict[str, tuple[int, ...]] or None
-           Mapping of supported dims to tensor axes. Defaults to
-           ``{'N':(0,), 'F':(1,), 'C':(2, 3), 'T':(4,)}``.
-       mask_value : float
-           Filler value for masked positions.
+    max_num_masks : sequence of int
+        Max number of masks per dim (order matches ``dims``).
+    max_mask_lengths : sequence of int
+        Max length of each mask per dim (order matches ``dims``).
+    dims : str
+        Ordered coordinates to mask.
+    axes_by_coord : dict[str, tuple[int, ...]] or None
+        Mapping of supported dims to tensor axes.
+    mask_value : float
+        Filler value for masked positions.
     """
 
     def __init__(
@@ -1012,28 +954,55 @@ class _MaskAug(nn.Module):
         if axes_by_coord is None:
             axes_by_coord = {"N": (0,), "F": (1,), "C": (2, 3), "T": (4,)}
 
-        self.masks = nn.ModuleList()
+        # Pre-resolve the mask schedule, in canonical "CFT" order, so forward
+        # is a plain nested loop with no dict lookups or class indirection.
+        plans: list[tuple[int, int, tuple[int, ...]]] = []
         for dim in "CFT":
             if dim not in dims or dim not in axes_by_coord:
                 continue
-            dim_idx = dims.index(dim)
-            self.masks.append(
-                _RepeatedRandomMask(
-                    max_num_masks=max_num_masks[dim_idx],
-                    mask=_AxesMask(
-                        max_mask_length=max_mask_lengths[dim_idx],
-                        axes=axes_by_coord[dim],
-                        mask_value=mask_value,
-                    ),
+            for axis in axes_by_coord[dim]:
+                if axis <= 0:
+                    raise ValueError("Cannot mask batch dim")
+            idx = dims.index(dim)
+            plans.append(
+                (
+                    int(max_num_masks[idx]),
+                    int(max_mask_lengths[idx]),
+                    axes_by_coord[dim],
                 )
             )
+        self._plans = plans
+        self.mask_value = mask_value
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         if not self.training:
             return inputs
         x = inputs
-        for mask in self.masks:
-            x = mask(x)
+        batch = x.size(0)
+        for max_num_masks, max_mask_length, axes in self._plans:
+            n_masks = int(torch.randint(max_num_masks + 1, size=()).item())
+            for _ in range(n_masks):
+                data_length = x.size(axes[0])
+                effective_max = min(max_mask_length, data_length)
+                length = (
+                    torch.rand(batch, device=x.device, dtype=x.dtype) * effective_max
+                )
+                start = torch.rand(batch, device=x.device, dtype=x.dtype) * (
+                    data_length - length
+                )
+                mask_start = start.long()
+                mask_end = mask_start + length.long()
+                for _ in range(x.ndim - 1):
+                    mask_start = mask_start.unsqueeze(-1)
+                    mask_end = mask_end.unsqueeze(-1)
+                idx = torch.arange(0, data_length, device=x.device, dtype=x.dtype)
+                mask_idx = (idx >= mask_start) & (idx < mask_end)
+                for axis in axes:
+                    if x.size(axis) != data_length:
+                        raise ValueError("All axes to mask must have the same length")
+                    x = x.transpose(axis, -1)
+                    x = x.masked_fill(mask_idx, self.mask_value)
+                    x = x.transpose(-1, axis)
         return x
 
 
@@ -1313,14 +1282,6 @@ class _Conv1d(nn.Module):
         return self.to_time_first(self.net(self.to_channels_first(inputs)))
 
 
-def _time_reduction_layer(stride: int, lpad: _LPadType = 0) -> nn.Module:
-    """Frame stacking: ``(B, T, C)`` -> ``(B, T', C*stride)``."""
-    return _SlicedSequential(
-        _Window(kernel_size=stride, stride=stride, lpad=lpad),
-        Rearrange("batch time channels stride -> batch time (stride channels)"),
-    )
-
-
 def _conformer_encoder_block(
     input_dim: int,
     ffn_dim: int,
@@ -1483,9 +1444,20 @@ def _build_handwriting_encoder(
     seq: list[nn.Module] = []
     dim = in_dim
     if time_reduction_stride > 1:
+        # Frame-stack: (B, T, C) -> (B, T', C * stride) via a lpad="none"
+        # causal window, then a pointwise Linear back to `input_dim`.
         seq.extend(
             [
-                _time_reduction_layer(stride=time_reduction_stride, lpad="none"),
+                _SlicedSequential(
+                    _Window(
+                        kernel_size=time_reduction_stride,
+                        stride=time_reduction_stride,
+                        lpad="none",
+                    ),
+                    Rearrange(
+                        "batch time channels stride -> batch time (stride channels)"
+                    ),
+                ),
                 nn.Linear(dim * time_reduction_stride, input_dim),
             ]
         )
