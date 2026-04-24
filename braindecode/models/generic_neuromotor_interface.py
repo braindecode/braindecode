@@ -6,7 +6,7 @@
 # Architecture adapted from the official implementation at
 # https://github.com/facebookresearch/generic-neuromotor-interface
 # released under CC BY-NC 4.0. This derivative inherits the same
-# noncommercial terms and is not covered by braindecode's BSD-3 license.
+# noncommercial terms and is not covered by braindecode's BSD-3 license!
 
 from __future__ import annotations
 
@@ -1042,7 +1042,8 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
     Conformer-based surface-EMG-to-character decoder for the handwriting task of
     Meta's generic neuromotor interface (CTRL-labs at Reality Labs, Nature 2025).
     It takes raw 16-channel surface EMG recorded at the wrist and emits a
-    per-token score sequence suitable for CTC decoding [graves2006ctc]_. The
+    per-token score sequence that feeds directly into a CTC loss or decoder
+    [graves2006ctc]_. The
     upstream repository (``facebookresearch/generic-neuromotor-interface``)
     ships three sibling architectures for three tasks (1-DOF wrist control,
     discrete gestures, handwriting); only the handwriting / conformer head is
@@ -1107,7 +1108,7 @@ class GenericNeuromotorInterface(EEGModuleMixin, nn.Module):
     ``225–375``, ``375–700``, ``700–1000`` Hz); the code default reproduces
     the released checkpoints.
 
-    .. rubric:: Training recipe (from the paper, for reference)
+    .. rubric:: Training recipe (paper values, not defaults of this class)
 
     - **Loss**: CTC [graves2006ctc]_ with FastEmit regularization
       [fastemit2021]_ to reduce streaming latency.
