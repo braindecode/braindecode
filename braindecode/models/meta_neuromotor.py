@@ -341,9 +341,10 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
     .. [fastemit2021] Yu, J. et al., 2021. FastEmit: low-latency
         streaming ASR with sequence-level emission regularization.
         Proc. ICASSP.
-    .. [pyriemann] Barachant, A. et al. pyRiemann: Biosignals
-        classification with Riemannian geometry.
-        https://github.com/pyRiemann/pyRiemann
+    .. [pyriemann] Barachant, A., Barthelemy, Q., King, J.-R., Gramfort,
+        A., Chevallier, S., Rodrigues, P. L. C., ... Aristimunha, B.,
+        2026. pyRiemann (v0.10). Zenodo.
+        https://doi.org/10.5281/zenodo.593816
     """
 
     mapping = {
