@@ -58,6 +58,7 @@ dependencies = [
     'linear_attention_transformer',
     'docstring_inheritance',        # we get einops from here
     'rotary_embedding_torch',
+    'spd_learn>=0.1.0',
     'pydantic>=2.0',
 ]
 
