@@ -51,15 +51,21 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
     :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`
     :bdg-primary:`CTC`
 
-    .. figure:: https://raw.githubusercontent.com/facebookresearch/generic-neuromotor-interface/main/images/figure_1.png
+    .. figure:: https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41586-025-09255-w/MediaObjects/41586_2025_9255_Fig1_HTML.png
         :align: center
-        :alt: Generic Neuromotor Interface — Handwriting decoder overview.
+        :alt: Platform and decoding pipeline from the Nature paper (Figure 1).
         :width: 700px
 
-        Figure 1 from the paper [gni2025]_. Surface EMG from a 16-channel
-        wristband (left) is converted into multivariate power–frequency
-        features, passed through a rotation-invariant MLP and a 15-block
-        causal conformer, and decoded by greedy CTC into text (right).
+        Figure 1 from the paper [gni2025]_ — *"A hardware and software
+        platform for high-throughput recording and real-time decoding of
+        sEMG at the wrist."* Shows the 16-channel sEMG-RD wristband, the
+        three tasks (handwriting, gestures, wrist control), and the
+        per-task decoding pipeline at a block level. Block-level
+        architecture details for the handwriting conformer (MPF featurizer,
+        rotation-invariant MLP, per-block strides and attention windows)
+        are in the paper's Extended Data and Supplementary Information
+        (`MOESM1_ESM.pdf
+        <https://static-content.springer.com/esm/art%3A10.1038%2Fs41586-025-09255-w/MediaObjects/41586_2025_9255_MOESM1_ESM.pdf>`_).
 
     .. rubric:: Architectural Overview
 
