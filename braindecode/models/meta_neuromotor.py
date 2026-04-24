@@ -48,296 +48,302 @@ _PAPER_NUM_LAYERS: int = len(_PAPER_CONFORMER_STRIDE_15)
 class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
     r"""Generic neuromotor interface for handwriting from Meta (2025) [gni2025]_.
 
-       :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`
+    :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`
+    :bdg-primary:`CTC`
 
-       .. figure:: https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41586-025-09255-w/MediaObjects/41586_2025_9255_Fig1_HTML.png
-           :align: center
-           :alt: Platform and decoding pipeline from the Nature paper (Figure 1).
-           :width: 700px
+    .. figure:: https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41586-025-09255-w/MediaObjects/41586_2025_9255_Fig1_HTML.png
+        :align: center
+        :alt: Platform and decoding pipeline from the Nature paper (Figure 1).
+        :width: 700px
 
-           Figure 1 from the paper [gni2025]_ - *"A hardware and software
-           platform for high-throughput recording and real-time decoding of
-           sEMG at the wrist."* Shows the 16-channel sEMG-RD wristband, the
-           three tasks (handwriting, gestures, wrist control), and the
-           per-task decoding pipeline at a block level.
+        Figure 1 from the paper [gni2025]_ - *"A hardware and software
+        platform for high-throughput recording and real-time decoding of
+        sEMG at the wrist."* Shows the 16-channel sEMG-RD wristband, the
+        three tasks (handwriting, gestures, wrist control) and the
+        per-task decoding pipeline at a block level.
 
+    Conformer-based surface-EMG-to-character decoder for the handwriting
+    task of Meta's generic neuromotor interface (CTRL-labs at Reality
+    Labs, Nature 2025). Takes raw 16-channel surface EMG recorded at the
+    wrist and emits a per-token score sequence for CTC decoding
+    [graves2006ctc]_. The upstream repository
+    (``facebookresearch/generic-neuromotor-interface``) ships one
+    architecture per task: 1-DOF wrist control, discrete gestures and
+    handwriting. Only the handwriting head is ported here.
 
-       .. rubric:: Architectural Overview
+    .. rubric:: Macro Components
 
-       Conformer-based surface-EMG-to-character decoder for the handwriting task
-       of Meta's generic neuromotor interface (CTRL-labs at Reality Labs, Nature
-       2025). Takes raw 16-channel surface EMG recorded at the wrist and emits a
-       per-token score sequence for CTC decoding [graves2006ctc]_. The upstream
-       repository (``facebookresearch/generic-neuromotor-interface``) has one
-       architecture per task, 1-DOF wrist control, discrete gestures, and
-       handwriting, only the handwriting head is ported here.
+    The forward pass is a strict sequence of five modules, in order:
 
-       .. rubric:: Macro Components
+    1. :class:`_MultivariatePowerFrequencyFeatures` (MPF features, fixed
+       signal-processing stage, no trainable parameters).
 
-       The forward pass is a strict sequence of five modules. In order:
+       - Channel-wise STFT (:func:`torch.stft`) -- ``n_fft=64`` (32 ms),
+         hop ``10`` (5 ms), Hann window.
+       - Strided windowing of consecutive STFT bins into
+         ``mpf_window_length`` (80 ms) windows sliding every
+         ``mpf_stride`` (20 ms).
+       - Per-pair cross-spectral density across channels, squared
+         magnitude.
+       - Frequency-band averaging over 6 bands
+         (0-50, 30-100, 100-225, 225-375, 375-700, 700-1000 Hz).
+       - SPD matrix logarithm via eigendecomposition
+         (Barachant et al. 2012; [pyriemann]_).
 
-    - :class:`_MultivariatePowerFrequencyFeatures` **(MPF features - fixed
-         signal-processing stage, no trainable parameters)**
+       Output shape ``(batch, num_freq_bins, n_chans, n_chans, time')``
+       at 50 Hz (= ``sfreq / mpf_stride``).
 
-    - *Operations.*
+    2. :class:`_MaskAug` -- SpecAugment [park2019specaug]_ on the MPF
+       features during training, no-op at eval. Zero parameters.
+       Hyperparameters ``mask_max_num_masks=(3, 2)`` and
+       ``mask_max_lengths=(5, 1)`` match the released checkpoints.
 
-    - Channel-wise **STFT** (:func:`torch.stft`) - n_fft ``64`` (32 ms),
-             hop ``10`` (5 ms), Hann window.
-    - **Strided windowing**: groups consecutive STFT bins into
-             ``mpf_window_length`` (80 ms) windows sliding every
-             ``mpf_stride`` (20 ms).
-    - Per-pair **cross-spectral density** across channels, squared
-             magnitude.
-    - **Frequency-band averaging** over 6 bands (0-50, 30-100,
-             100-225, 225-375, 375-700, 700-1000 Hz).
-    - **SPD matrix logarithm** via eigendecomposition (Barachant et al.
-             2012; [pyriemann]_).
+    3. :class:`_RotationInvariantMPFMLP` -- armband-rotation invariance.
 
-    - *Output shape.* ``(batch, num_freq_bins, n_chans, n_chans, time')``
-           at 50 Hz (= 2000 / ``mpf_stride``).
+       - Circular roll of the 16-channel cross-spectral matrix by each
+         offset in ``invariance_offsets`` (default ``{-1, 0, +1}``).
+       - Vectorize upper triangle keeping only ``num_adjacent_cov``
+         off-diagonals (assumes circular adjacency of the armband).
+       - Shared MLP applied to each rotated vector.
+       - Mean-pool across rotations -- enforces approximate invariance
+         to rigid rotations of the armband around the wrist.
 
-    - :class:`_MaskAug` **(SpecAugment [park2019specaug]_, training only)**
+       Output shape ``(batch, hidden_dim, time')`` with
+       ``hidden_dim = 64`` by default.
 
-    - Time and frequency masking of the MPF feature map; no-op at eval.
-    - Zero parameters. Hyperparameters ``mask_max_num_masks=(3, 2)`` and
-           ``mask_max_lengths=(5, 1)`` match the released checkpoints.
+    4. Causal conformer encoder [gulati2020conformer]_.
 
-    - :class:`_RotationInvariantMPFMLP` **(armband-rotation invariance)**
+       - Block structure: FF(half) -> windowed causal multi-head
+         attention -> depthwise convolution -> FF(half) ->
+         :class:`torch.nn.LayerNorm`.
+       - Depth: 15 blocks. The paper's schedule has stride ``2`` at
+         blocks 5 and 10 (total 4x temporal downsampling) and attention
+         window ``16`` for blocks 1-10 then ``8`` for blocks 11-15.
+       - Causality: attention is restricted to a fixed local window
+         ending at the current frame, so the encoder runs as a streaming
+         causal decoder. A ``_time_reduction_layer`` before the stack
+         halves the frame rate once more.
 
-    - *Operations.*
+    5. :class:`torch.nn.Linear` classification head, optionally followed
+       by :func:`torch.nn.functional.log_softmax`. The final linear
+       projects to ``n_outputs`` (vocabulary size, default ``100``).
+       Log-softmax is gated by ``log_softmax``; disabled by default
+       since braindecode models conventionally return logits.
 
-    - **Circular roll** of the 16-channel cross-spectral matrix by
-             each offset in ``invariance_offsets`` (default ``{-1, 0, +1}``).
-    - **Vectorize upper triangle** keeping only ``num_adjacent_cov``
-             off-diagonals (assumes circular adjacency of the armband).
-    - Shared **MLP** (one :class:`torch.nn.Linear` + LeakyReLU per
-             hidden dim) applied to each rotated vector.
-    - **Mean-pool across rotations** - enforces approximate invariance
-             to rigid rotations of the armband around the wrist.
+    .. rubric:: Hardware, signal and training corpus
 
-    - *Output shape.* ``(batch, hidden_dim, time')`` with
-           ``hidden_dim = 64`` by default.
+    The upstream sEMG-RD research wristband has 48 electrode pins
+    arranged as 16 bipolar channels aligned with the proximal-distal
+    forearm axis, a 2 kHz sample rate, a ~2.46 uVrms noise floor, and
+    an analog front-end with a 20 Hz high-pass and 850 Hz low-pass.
+    Before featurization the raw signal is rescaled by ``2.46e-6``
+    (to unit noise s.d.) and digitally high-passed at 40 Hz (4th-order
+    Butterworth) to suppress motion artifacts.
 
-    - **Causal conformer encoder** [gulati2020conformer]_
+    The published handwriting decoder was trained on recordings from
+    ~6,627 participants (~1 h 15 min each) prompted to "write" text
+    sampled from Simple English Wikipedia, the Google Schema-guided
+    Dialogue dataset and Reddit, in three postures (seated on surface,
+    seated on leg, standing on leg). Participants wrote letters, digits,
+    words and phrases; spaces were either implicit or prompted by a
+    right-dash token produced via a right-index swipe. Training sizes
+    scale geometrically from 25 to 6,527 participants; validation and
+    test sets hold 50 participants each.
 
-    - *Block structure.* FF(½) → **windowed causal MHA** → **depthwise
-           conv** → FF(½) → :class:`torch.nn.LayerNorm`.
-    - *Depth.* 15 blocks. The paper's schedule has stride ``2`` at blocks
-           5 and 10 (total 4x temporal downsampling) and attention window
-           ``16`` for blocks 1-10 then ``8`` for blocks 11-15.
-    - *Causality.* Attention is restricted to a fixed local window ending
-           at the current frame, so the full encoder is a streaming causal
-           decoder. A ``_time_reduction_layer`` before the stack further
-           halves the frame rate.
+    .. rubric:: MPF featurizer (paper defaults)
 
-    - :class:`torch.nn.Linear` **+ optional** :class:`torch.nn.LogSoftmax`
-         **(classification head)**
+    ``sEMG (2 kHz)`` ->
+    ``STFT(n_fft=64 samples / 32 ms, hop=10 samples / 5 ms)`` ->
+    per-pair complex cross-spectrum -> squared magnitude, band-averaged
+    into 6 bins, then matrix-log on each 16x16 SPD matrix, produced
+    every ``mpf_stride = 40 samples (20 ms)`` over a
+    ``mpf_window_length = 160 samples (80 ms)`` window. Output rate:
+    50 Hz before the conformer's ``time_reduction_stride`` and the
+    2x internal strides.
 
-    - Final linear projection to ``n_outputs`` (vocabulary size, default
-           ``100``). LogSoftmax is gated by ``log_softmax``; disabled by
-           default since braindecode models conventionally return logits.
+    The paper's frequency bins are non-overlapping (0-62.5, 62.5-125,
+    125-250, 250-375, 375-687.5, 687.5-1000 Hz), but the upstream
+    training config -- matched by :data:`_DEFAULT_MPF_FREQUENCY_BINS` --
+    uses slightly overlapping bins (0-50, 30-100, 100-225, 225-375,
+    375-700, 700-1000 Hz); the code default reproduces the released
+    checkpoints.
 
-       .. rubric:: Hardware, signal and training corpus
-
-       The upstream sEMG-RD research wristband has 48 electrode pins arranged as
-       **16 bipolar channels** aligned with the proximal-distal forearm axis, a
-       2 kHz sample rate, a 2.46 μVrms noise floor, and an analog front-end with
-       a 20 Hz high-pass and 850 Hz low-pass. Before featurization the raw
-       signal is rescaled by ``2.46e-6`` (to unit noise s.d.) and digitally
-       high-passed at 40 Hz (4th-order Butterworth) to suppress motion artifacts.
-
-       The published handwriting decoder was trained on recordings from
-       **6,627 participants** (≈1 h 15 min each) prompted to "write" text
-       sampled from Simple English Wikipedia, the Google Schema-guided Dialogue
-       dataset and Reddit, in three postures (seated on surface, seated on leg,
-       standing on leg). Participants wrote letters, digits, words and phrases;
-       spaces were either implicit or prompted by a right-dash token that the
-       participant produced with a right index swipe. Training sizes scale
-       geometrically from 25 to 6,527 participants; validation and test sets
-       hold 50 participants each.
-
-       .. rubric:: MPF featurizer (paper defaults)
-
-       ``sEMG (2 kHz)`` →
-       ``STFT(n_fft=64 samples / 32 ms, hop=10 samples / 5 ms)`` →
-       per-pair complex cross-spectrum → squared magnitude, band-averaged into
-       6 bins, then **matrix-log** on each 16x16 SPD matrix, produced every
-       ``mpf_stride = 40 samples (20 ms)`` over a ``mpf_window_length = 160
-       samples (80 ms)`` window. Output rate: 50 Hz before the conformer's
-       ``time_reduction_stride`` and the 2x internal strides.
-
-       The paper's frequency bins are non-overlapping (``0-62.5``, ``62.5-125``,
-       ``125-250``, ``250-375``, ``375-687.5``, ``687.5-1000`` Hz), but the
-       upstream training config - matched by :data:`_DEFAULT_MPF_FREQUENCY_BINS`
-    - uses slightly overlapping bins (``0-50``, ``30-100``, ``100-225``,
-       ``225-375``, ``375-700``, ``700-1000`` Hz); the code default reproduces
-       the released checkpoints.
-
-       .. rubric:: Training recipe (paper values, not defaults of this class)
+    .. rubric:: Training recipe (paper values, not defaults of this class)
 
     - **Loss**: CTC [graves2006ctc]_ with FastEmit regularization
-         [fastemit2021]_ to reduce streaming latency.
+      [fastemit2021]_ to reduce streaming latency.
     - **Vocabulary**: lowercase ``[a-z]``, digits ``[0-9]``, punctuation
-         ``[,.?'!]`` and four control gestures (``space``, ``dash``,
-         ``backspace``, ``pinch``); the deployed networks used
-         ``vocab_size = 100`` (the default) to reserve blank / unused slots.
-         Greedy CTC decoding (collapse repeats) was used at test time.
+      ``[,.?'!]`` and four control gestures (``space``, ``dash``,
+      ``backspace``, ``pinch``); the deployed networks used
+      ``vocab_size = 100`` (the default) to reserve blank / unused
+      slots. Greedy CTC decoding (collapse repeats) was used at test.
     - **Optimizer**: AdamW, ``weight_decay = 5e-2``.
-    - **Learning rate**: cosine annealing from ``6e-4`` (1 M-parameter model)
-         or ``3e-4`` (60 M) with a 1,500-step warmup and ``min_lr = 0``.
-    - **Batching**: global batch size 512 (= 32 processes x 16), prompts
-         zero-padded to the longest in the batch; gradient clipping at norm
-         ``0.1``; 200 epochs. Training the largest model took ≈4 d 17 h on
-         4 x NVIDIA A10G GPUs.
-    - **Augmentation**: SpecAugment on the MPF features (time / frequency
-         masks; ``mask_max_num_masks=(3, 2)``, ``mask_max_lengths=(5, 1)``)
-         plus random circular channel rotations of ``{-1, 0, +1}``.
+    - **Learning rate**: cosine annealing from ``6e-4`` (1 M-parameter
+      model) or ``3e-4`` (60 M) with a 1,500-step warmup and
+      ``min_lr = 0``.
+    - **Batching**: global batch size 512 (= 32 processes x 16),
+      prompts zero-padded to the longest in the batch; gradient
+      clipping at norm ``0.1``; 200 epochs. Training the largest model
+      took ~4 d 17 h on 4 x NVIDIA A10G GPUs.
+    - **Augmentation**: SpecAugment on the MPF features (time and
+      frequency masks; ``mask_max_num_masks=(3, 2)``,
+      ``mask_max_lengths=(5, 1)``) plus random circular channel
+      rotations of ``{-1, 0, +1}``.
 
-       Reported closed-loop performance: **20.9 WPM** on held-out naive users
-       (n = 20), compared with 25.1 WPM on a pen-and-paper baseline and 36 WPM
-       on a mobile keyboard; personalization with 20 min of data improves
-       offline CER by ≈16 %.
+    Reported closed-loop performance: ``20.9 WPM`` on held-out naive
+    users (n = 20), compared with ``25.1 WPM`` on a pen-and-paper
+    baseline and ``36 WPM`` on a mobile keyboard; personalization with
+    20 min of data improves offline CER by ~16 %.
 
-       .. rubric:: Output shape and CTC usage
+    .. rubric:: Output shape and CTC usage
 
-       The forward pass returns a tensor of shape ``(batch, T_out, n_outputs)``,
-       which is the natural layout for CTC. ``T_out`` is the downsampled
-       emission sequence length and can be obtained from the input length via
-       :meth:`compute_output_lengths`. For :class:`~torch.nn.CTCLoss`, move the
-       time dimension first: ``emissions.transpose(0, 1)``.
+    The forward pass returns a tensor of shape
+    ``(batch, T_out, n_outputs)``, the natural layout for CTC.
+    ``T_out`` is the downsampled emission sequence length and can be
+    obtained from the input length via :meth:`compute_output_lengths`.
+    For :class:`torch.nn.CTCLoss`, move the time dimension first:
+    ``emissions.transpose(0, 1)``.
 
-       .. warning::
+    .. warning::
+        The rotation-invariant MLP assumes circular channel adjacency
+        (the 16-electrode EMG armband used in the paper). For arbitrary
+        EEG montages the rotation invariance is not meaningful and this
+        model should not be used as-is.
 
-           The rotation-invariant MLP assumes **circular channel adjacency** (the
-           16-electrode EMG armband used in the paper). For arbitrary EEG
-           montages, the rotation invariance is not meaningful and this model
-           should not be used as-is.
+    .. warning::
+        **License -- noncommercial use only.** This module is a
+        derivative of Meta's reference implementation and is released
+        under `CC BY-NC 4.0
+        <https://creativecommons.org/licenses/by-nc/4.0/>`_, the same
+        license as the upstream repository. The paper itself is
+        distributed under CC BY-NC-ND 4.0. Neither is covered by
+        braindecode's BSD-3 license, and both must not be used in
+        commercial products or services. Using the pretrained weights
+        carries the same restriction.
 
-       .. warning::
+    .. versionadded:: 1.4
 
-           **License - noncommercial use only.** This module is a derivative of
-           Meta's reference implementation and is released under
-           `CC BY-NC 4.0 <https://creativecommons.org/licenses/by-nc/4.0/>`_, the
-           same license as the upstream repository. The paper itself is
-           distributed under CC BY-NC-ND 4.0. Neither is covered by
-           braindecode's BSD-3 license, and both must not be used in commercial
-           products or services. Using the pretrained weights carries the same
-           restriction.
-
-       .. versionadded:: 1.4
-
-       Parameters
+    Parameters
     ----------
-       n_outputs : int
-           Vocabulary size for CTC. Defaults to ``100`` (handwriting charset).
-       n_chans : int
-           Number of EMG channels. Defaults to ``16`` (one armband).
-       sfreq : float
-           Sampling frequency in Hz. Defaults to ``2000``.
-       mpf_window_length : int
-           MPF window length in samples.
-       mpf_stride : int
-           MPF frame stride in samples.
-       mpf_n_fft : int
-           STFT window / FFT size.
-       mpf_fft_stride : int
-           STFT hop size. Must divide ``mpf_stride`` and be ``<= mpf_n_fft``.
-       mpf_frequency_bins : sequence of (float, float) or None
-           ``(low, high)`` Hz bands to average the cross-spectrum over. If ``None``,
-           all FFT frequency bins are used.
-       mask_max_num_masks : sequence of int
-           Max number of SpecAugment masks per dim (order matches ``mask_dims``).
-       mask_max_lengths : sequence of int
-           Max mask length per dim (order matches ``mask_dims``).
-       mask_dims : str
-           Axes to mask, among ``"CFT"``. Defaults to ``"TF"``.
-       mask_value : float
-           Filler value for masked regions.
-       invariance_hidden_dims : sequence of int
-           Hidden layer sizes of the per-rotation MLP. Output feature dim is
-           ``invariance_hidden_dims[-1]``.
-       invariance_offsets : sequence of int
-           Circular channel rotations to average over.
-       num_adjacent_cov : int
-           Number of adjacent off-diagonals of the cross-channel cov matrix to keep.
-       conformer_input_dim : int
-           Conformer embedding dimension ``D``.
-       conformer_ffn_dim : int
-           Feed-forward hidden dim inside each block.
-       conformer_kernel_size : int or sequence of int
-           Depthwise-conv kernel size per block.
-       conformer_stride : int, sequence of int, or None
-           Depthwise-conv stride per block. As a scalar, applied only to the last
-           block (entire encoder downsamples by ``stride``); as a list of length
-           ``conformer_num_layers``, applied per block. When ``None`` (default),
-           resolves to the paper's 15-layer schedule if ``conformer_num_layers==15``
-           and to ``2`` (a single 2x downsampling at the end) otherwise.
-       conformer_num_heads : int
-           Number of attention heads.
-       conformer_attn_window_size : int, sequence of int, or None
-           Attention receptive field per block. When ``None`` (default), resolves
-           to the paper's 15-layer schedule if ``conformer_num_layers==15`` and to
-           ``16`` (uniform) otherwise.
-       conformer_num_layers : int
-           Number of conformer blocks.
-       drop_prob : float
-           Dropout probability applied throughout the conformer (FFN, conv and
-           attention blocks).
-       time_reduction_stride : int
-           Frame-stacking stride applied **before** the conformer. ``1`` disables it.
-       log_softmax : bool
-           If ``True``, apply :func:`torch.nn.functional.log_softmax` to the
-           emissions. Disabled by default (braindecode models return logits).
-       activation : type of nn.Module
-           Activation class used inside the conformer feed-forward and convolution
-           blocks. Defaults to :class:`torch.nn.SiLU`.
-       invariance_activation : type of nn.Module
-           Activation class used inside the rotation-invariant MLP. Defaults to
-           :class:`torch.nn.LeakyReLU`.
-       n_times : int, optional
-           Forwarded to :class:`EEGModuleMixin`.
-       input_window_seconds : float, optional
-           Forwarded to :class:`EEGModuleMixin`.
-       chs_info : list of dict, optional
-           Forwarded to :class:`EEGModuleMixin`.
+    n_outputs : int
+        Vocabulary size for CTC. Defaults to ``100`` (handwriting
+        charset).
+    n_chans : int
+        Number of EMG channels. Defaults to ``16`` (one armband).
+    sfreq : float
+        Sampling frequency in Hz. Defaults to ``2000``.
+    mpf_window_length : int
+        MPF window length in samples.
+    mpf_stride : int
+        MPF frame stride in samples.
+    mpf_n_fft : int
+        STFT window / FFT size.
+    mpf_fft_stride : int
+        STFT hop size. Must divide ``mpf_stride`` and be
+        ``<= mpf_n_fft``.
+    mpf_frequency_bins : sequence of (float, float) or None
+        ``(low, high)`` Hz bands to average the cross-spectrum over.
+        If ``None``, all FFT frequency bins are used.
+    mask_max_num_masks : sequence of int
+        Max number of SpecAugment masks per dim (order matches
+        ``mask_dims``).
+    mask_max_lengths : sequence of int
+        Max mask length per dim (order matches ``mask_dims``).
+    mask_dims : str
+        Axes to mask, among ``"CFT"``. Defaults to ``"TF"``.
+    mask_value : float
+        Filler value for masked regions.
+    invariance_hidden_dims : sequence of int
+        Hidden layer sizes of the per-rotation MLP. Output feature dim
+        is ``invariance_hidden_dims[-1]``.
+    invariance_offsets : sequence of int
+        Circular channel rotations to average over.
+    num_adjacent_cov : int
+        Number of adjacent off-diagonals of the cross-channel
+        covariance matrix to keep.
+    conformer_input_dim : int
+        Conformer embedding dimension ``D``.
+    conformer_ffn_dim : int
+        Feed-forward hidden dim inside each block.
+    conformer_kernel_size : int or sequence of int
+        Depthwise-conv kernel size per block.
+    conformer_stride : int, sequence of int, or None
+        Depthwise-conv stride per block. As a scalar, applied only to
+        the last block (entire encoder downsamples by ``stride``); as a
+        list of length ``conformer_num_layers``, applied per block.
+        When ``None`` (default), resolves to the paper's 15-layer
+        schedule if ``conformer_num_layers == 15`` and to ``2`` (a
+        single 2x downsampling at the end) otherwise.
+    conformer_num_heads : int
+        Number of attention heads.
+    conformer_attn_window_size : int, sequence of int, or None
+        Attention receptive field per block. When ``None`` (default),
+        resolves to the paper's 15-layer schedule if
+        ``conformer_num_layers == 15`` and to ``16`` (uniform)
+        otherwise.
+    conformer_num_layers : int
+        Number of conformer blocks.
+    drop_prob : float
+        Dropout probability applied throughout the conformer (FFN,
+        conv and attention blocks).
+    time_reduction_stride : int
+        Frame-stacking stride applied **before** the conformer.
+        ``1`` disables it.
+    log_softmax : bool
+        If ``True``, apply :func:`torch.nn.functional.log_softmax` to
+        the emissions. Disabled by default (braindecode models return
+        logits).
+    activation : type of nn.Module
+        Activation class used inside the conformer feed-forward and
+        convolution blocks. Defaults to :class:`torch.nn.SiLU`.
+    invariance_activation : type of nn.Module
+        Activation class used inside the rotation-invariant MLP.
+        Defaults to :class:`torch.nn.LeakyReLU`.
 
-       Examples
+    Examples
     --------
-       Load Meta's pretrained handwriting checkpoint
-       (`download script`_ in the upstream repo)::
+    Load Meta's pretrained handwriting checkpoint (`download script`_
+    in the upstream repo)::
 
-           import torch
-           from braindecode.models import MetaNeuromotorHand
+        import torch
+        from braindecode.models import MetaNeuromotorHand
 
-           ckpt = torch.load("model_checkpoint.ckpt", weights_only=False)
-           sd = {k[len("network."):]: v for k, v in ckpt["state_dict"].items()}
+        ckpt = torch.load("model_checkpoint.ckpt", weights_only=False)
+        sd = {
+            k[len("network."):]: v
+            for k, v in ckpt["state_dict"].items()
+            if k.startswith("network.")
+        }
 
-           model = MetaNeuromotorHand(n_times=32000, log_softmax=True)
-           # load_state_dict applies the class-level ``mapping`` for upstream keys.
-           model.load_state_dict(sd, strict=True)
+        model = MetaNeuromotorHand(n_times=32000, log_softmax=True)
+        # load_state_dict applies the class-level ``mapping`` for
+        # upstream keys.
+        model.load_state_dict(sd, strict=True)
 
-       .. _download script: https://github.com/facebookresearch/generic-neuromotor-interface#download-the-data-and-models
+    .. _download script: https://github.com/facebookresearch/generic-neuromotor-interface#download-the-data-and-models
 
-       References
+    References
     ----------
-       .. [gni2025] CTRL-labs at Reality Labs (Kaifosh, P., Reardon, T. R. et al.),
-           2025. A generic non-invasive neuromotor interface for human-computer
-           interaction. Nature 645, 702-710.
-           https://doi.org/10.1038/s41586-025-09255-w.
-           Code: https://github.com/facebookresearch/generic-neuromotor-interface
-       .. [gulati2020conformer] Gulati, A. et al., 2020. Conformer: convolution-
-           augmented transformer for speech recognition. Proc. Interspeech,
-           5036-5040.
-       .. [graves2006ctc] Graves, A., Fernández, S., Gomez, F., Schmidhuber, J.,
-           2006. Connectionist temporal classification: labelling unsegmented
-           sequence data with recurrent neural networks. Proc. ICML, 369-376.
-       .. [park2019specaug] Park, D. S. et al., 2019. SpecAugment: a simple data
-           augmentation method for automatic speech recognition. Proc.
-           Interspeech, 2613-2617.
-       .. [fastemit2021] Yu, J. et al., 2021. FastEmit: low-latency streaming
-           ASR with sequence-level emission regularization. Proc. ICASSP.
-       .. [pyriemann] Barachant, A. et al. pyRiemann: Biosignals classification
-           with Riemannian geometry. https://github.com/pyRiemann/pyRiemann
+    .. [gni2025] CTRL-labs at Reality Labs (Kaifosh, P., Reardon, T. R.
+        et al.), 2025. A generic non-invasive neuromotor interface for
+        human-computer interaction. Nature 645, 702-710.
+        https://doi.org/10.1038/s41586-025-09255-w
+    .. [gulati2020conformer] Gulati, A. et al., 2020. Conformer:
+        convolution-augmented transformer for speech recognition.
+        Proc. Interspeech, 5036-5040.
+    .. [graves2006ctc] Graves, A., Fernandez, S., Gomez, F.,
+        Schmidhuber, J., 2006. Connectionist temporal classification:
+        labelling unsegmented sequence data with recurrent neural
+        networks. Proc. ICML, 369-376.
+    .. [park2019specaug] Park, D. S. et al., 2019. SpecAugment:
+        a simple data augmentation method for automatic speech
+        recognition. Proc. Interspeech, 2613-2617.
+    .. [fastemit2021] Yu, J. et al., 2021. FastEmit: low-latency
+        streaming ASR with sequence-level emission regularization.
+        Proc. ICASSP.
+    .. [pyriemann] Barachant, A. et al. pyRiemann: Biosignals
+        classification with Riemannian geometry.
+        https://github.com/pyRiemann/pyRiemann
     """
 
     mapping = {
