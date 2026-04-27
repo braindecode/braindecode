@@ -282,7 +282,7 @@ preprocessors = [
     Preprocessor(
         custom_crop, tmin=tmin, tmax=tmax, include_tmax=False, apply_on_array=False
     ),
-    # pick first so car ref does not pull in artifacts from dropped chans
+    # pick first so the average reference does not pull in artifacts from dropped channels
     Preprocessor("pick_channels", ch_names=short_ch_names, ordered=True),
     Preprocessor("set_eeg_reference", ref_channels="average", ch_type="eeg"),
     Preprocessor(
