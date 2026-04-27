@@ -14,7 +14,8 @@ including simple preprocessing steps as well as cutting of compute windows.
 
 """
 
-# Author: Lukas Gemein <l.gemein@gmail.com>
+# Authors: Lukas Gemein <l.gemein@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -257,8 +258,8 @@ tuh = select_by_channels(tuh, short_ch_names)
 # steps that are executed through 'mne':
 #
 # - Crop the recordings to a region of interest
-# - Re-reference all recordings to 'ar' (requires load)
 # - Pick channels of interest
+# - Re-reference all recordings to average reference (CAR) (requires load)
 # - Scale signals to micro volts (requires load)
 # - Clip outlier values to +/- 800 micro volts (requires load)
 # - Resample recordings to a common frequency (requires load)
@@ -281,8 +282,9 @@ preprocessors = [
     Preprocessor(
         custom_crop, tmin=tmin, tmax=tmax, include_tmax=False, apply_on_array=False
     ),
-    Preprocessor("set_eeg_reference", ref_channels="average", ch_type="eeg"),
+    # pick first so the average reference does not pull in artifacts from dropped channels
     Preprocessor("pick_channels", ch_names=short_ch_names, ordered=True),
+    Preprocessor("set_eeg_reference", ref_channels="average", ch_type="eeg"),
     Preprocessor(
         lambda data: multiply(data, factor), apply_on_array=True
     ),  # Convert from V to uV
