@@ -259,7 +259,7 @@ tuh = select_by_channels(tuh, short_ch_names)
 #
 # - Crop the recordings to a region of interest
 # - Pick channels of interest
-# - Re-reference all recordings to 'ar' (requires load)
+# - Re-reference all recordings to average reference (CAR) (requires load)
 # - Scale signals to micro volts (requires load)
 # - Clip outlier values to +/- 800 micro volts (requires load)
 # - Resample recordings to a common frequency (requires load)
