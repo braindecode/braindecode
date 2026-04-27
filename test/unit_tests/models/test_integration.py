@@ -414,6 +414,16 @@ def test_model_compiled(model):
     Verifies that all models can be torch compiled without issue
     and if the outputs are the same.
     """
+    not_compilable_models = [
+        # torch.compile currently stalls on the STFT/eigendecomposition-based
+        # MPF featurizer at the default handwriting input size.
+        "MetaNeuromotorHand",
+    ]
+    if model.__class__.__name__ in not_compilable_models:
+        pytest.skip(
+            f"Skipping {model.__class__.__name__} as not working with torch.compile"
+        )
+
     # This assumes the model has attributes n_chans and n_times
     try:
         n_chans = model.n_chans
@@ -508,6 +518,9 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
+        # (torch.linalg.eigh + torch.stft).
+        "MetaNeuromotorHand",
         "SignalJEPA",
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",
