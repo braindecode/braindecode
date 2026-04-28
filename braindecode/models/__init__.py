@@ -34,6 +34,7 @@ from .interpolated import InterpolatedModel
 from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
 from .medformer import MEDFormer
+from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
 from .patchedtransformer import PBT
 from .reve import REVE
@@ -97,6 +98,7 @@ __all__ = [
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
+    "MetaNeuromotorHand",
     "HybridNet",
     "IFNet",
     "InterpolatedBENDR",

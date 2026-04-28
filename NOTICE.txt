@@ -11,8 +11,13 @@ All files within the `src/` directory are licensed under the BSD-3-Clause Licens
 The following components are licensed under the Creative Commons Attribution-NonCommercial 4.0 International License:
 
 - `braindecode/models/eegminer.py`
+- `braindecode/models/meta_neuromotor.py`
 
 As well as class later imported into the `braindecode.models.module` named as GeneralizedGaussianFilter.
+
+The `meta_neuromotor.py` file is a derivative of
+`facebookresearch/generic-neuromotor-interface`, released by Meta Platforms,
+Inc. under CC BY-NC 4.0, and inherits the same noncommercial terms.
 
 ## License Links
 

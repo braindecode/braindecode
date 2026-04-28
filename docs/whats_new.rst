@@ -33,7 +33,7 @@ Enhancements
   checkpoints published to ``huggingface.co/braindecode/``. The offline
   training script used to produce the checkpoints is available as a gist:
   https://gist.github.com/bruAristimunha/27d74c8410fe9d0db258a03f42efa7c6.
-  (:pr:`985` by :user:`bruAristimunha`)
+  (:gh:`985` by `Bruno Aristimunha`_)
 - Use ``F.scaled_dot_product_attention`` in :class:`braindecode.modules.MultiHeadAttention`,
   enabling optimized attention kernels (flash-attention on CUDA,
   memory-efficient backends on other devices).
@@ -72,6 +72,21 @@ Enhancements
   :func:`mne.viz.plot_topomap`), and :func:`~braindecode.visualization.compute_metrics`
   for quantitative attribution comparison. A new tutorial,
   :ref:`interpretability-tutorial`, walks through the full pipeline.
+- Add :class:`braindecode.models.MetaNeuromotorHand`, a port of the
+  handwriting decoder from Meta / CTRL-labs' generic neuromotor interface
+  (Kaifosh, Reardon et al., Nature 2025). The model takes raw 16-channel
+  surface EMG from the wristband at 2 kHz and produces per-token scores
+  for CTC decoding of handwritten text. The pipeline is a fixed
+  multivariate power frequency (MPF) featurizer (channel-wise STFT,
+  cross-spectral density, frequency-band averaging, and SPD matrix
+  logarithm) followed by a circular rotation-invariant MLP and a
+  15-block causal conformer encoder. Meta's pretrained checkpoint loads
+  directly via ``load_state_dict`` (after stripping the ``network.``
+  prefix); the port is bit-exact to the upstream reference
+  implementation on real sEMG. Distributed under CC BY-NC 4.0 to match
+  the upstream repository; see the class docstring for the license
+  warning and the pretrained-checkpoint loading recipe.
+  By `Bruno Aristimunha`_.
 
 API and behavior changes
 ========================
@@ -136,6 +151,12 @@ Bug fixes
   embedding weights when fine-tuning on a subset of the pre-training channels.
   Two new HuggingFace checkpoints are published: ``braindecode/signal-jepa`` and
   ``braindecode/signal-jepa_without-chans`` (:gh:`991` by `Pierre Guetschel`_)
+- Bump ``openneuro-py`` to ``>=2026.4.0`` so the docs build picks up upstream
+  PR ``#308`` (``DatasetFile.key`` → ``id``). The previous ``<2026.4`` pin
+  (:gh:`1000`) avoided a libc double-free seen with newer releases but broke
+  ``examples/datasets_io/plot_bids_dataset_example.py`` against the live
+  OpenNeuro 5.0.0 GraphQL schema (``Cannot query field "key" on type
+  "DatasetFile"``) (:gh:`1002` by `Bruno Aristimunha`_)
 
 Code health
 ============
