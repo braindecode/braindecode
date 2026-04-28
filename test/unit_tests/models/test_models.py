@@ -3449,3 +3449,19 @@ def test_emg2qwerty_rejects_short_input():
         m(torch.randn(1, 32, 50))    # below n_fft
     with pytest.raises(ValueError, match="receptive field"):
         m(torch.randn(1, 32, 200))   # above n_fft, below receptive field
+
+
+def test_emg2qwerty_compute_output_lengths_floor_for_short_inputs():
+    """``input_lengths < n_fft`` must yield zero-length emissions.
+
+    Regression for a subtle off-by-one: when the formula uses
+    ``rounding_mode="trunc"``, the negative numerator ``(T - n_fft)``
+    rounds toward zero and ``spec_len`` ends up at ``1`` instead of
+    ``0``. The bug stays masked while ``kernel_width > 1`` because
+    ``clamp_min(0)`` absorbs the off-by-one, but it leaks through when
+    ``kernel_width == 1``. The fix is ``rounding_mode="floor"``.
+    """
+    m = _small_emg2qwerty(kernel_width=1, block_channels=(12, 12))
+    # T < n_fft — must report 0 emission frames.
+    out = m.compute_output_lengths(torch.tensor([10, 0, 50]))
+    assert out.tolist() == [0, 0, 0], out.tolist()

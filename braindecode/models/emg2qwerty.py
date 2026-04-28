@@ -198,8 +198,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         upstream emg2qwerty). Pass any non-parametrized activation class
         (``nn.GELU``, ``nn.SiLU``, …) for ablations.
     drop_prob : float
-        Dropout probability applied inside each ``_TDSFullyConnectedBlock``
-        between the two ``Linear`` layers. Default ``0.0`` matches the
+        Dropout probability applied inside each ``_TDSFullyConnectedBlock``,
+        once after the activation between the two ``Linear`` layers and
+        again after the second ``Linear``. Default ``0.0`` matches the
         upstream paper recipe (no dropout). Set ``> 0`` for regularized
         training.
 
@@ -457,11 +458,17 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         rejects those inputs upfront so the two methods agree on what's
         a usable shape.
         """
+        # Use ``floor`` (not ``trunc``) so that ``input_lengths < n_fft``
+        # yields ``spec_len == 0`` rather than ``1``: ``trunc`` rounds
+        # toward zero, which would give ``(-x) // h == 0`` for negative
+        # numerators and bake an off-by-one into the encoder-output
+        # length whenever ``kernel_width == 1`` (no temporal shrink to
+        # mask it via ``clamp_min``).
         spec_len = (
             torch.div(
                 input_lengths - self.n_fft,
                 self.hop_length,
-                rounding_mode="trunc",
+                rounding_mode="floor",
             )
             + 1
         )
