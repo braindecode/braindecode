@@ -380,7 +380,14 @@ class _LogSpectrogram(nn.Module):
         self.hop_length = hop_length
         self.num_bands = num_bands
         self.electrodes_per_band = electrodes_per_band
-        self.register_buffer("window", torch.hann_window(n_fft), persistent=False)
+        # ``periodic=True`` (the torch default) matches upstream emg2qwerty,
+        # which builds the window via ``torchaudio.transforms.Spectrogram``
+        # with default ``window_fn``. Made explicit so the choice is visible.
+        self.register_buffer(
+            "window",
+            torch.hann_window(n_fft, periodic=True),
+            persistent=False,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         N, C, T = x.shape
