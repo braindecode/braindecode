@@ -12,6 +12,7 @@ from collections.abc import Sequence
 
 import torch
 import torch.nn.functional as F
+import torchaudio.transforms as ta_transforms
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -337,11 +338,30 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         return emissions.transpose(0, 1).contiguous()
 
     def reset_head(self, n_outputs: int) -> None:
-        """Replace the classification head for a new vocabulary size."""
+        """Replace the classification head for a new vocabulary size.
+
+        The replacement :class:`~torch.nn.Linear` inherits the existing
+        head's dtype and device so a subsequent ``forward()`` does not
+        crash after ``model.double()`` or ``model.to(device)``. The
+        captured init config (``get_config()``) is also kept in sync so
+        save/load round-trips rebuild the new head.
+        """
         if n_outputs <= 0:
             raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
-        self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
+        old_head = self.final_layer
+        self.final_layer = nn.Linear(old_head.in_features, n_outputs).to(
+            device=old_head.weight.device, dtype=old_head.weight.dtype
+        )
         self._n_outputs = n_outputs
+        # Keep the init-kwargs snapshot used by ``get_config()`` aligned with
+        # the live head, so ``EMG2QwertyNet.from_config(m.get_config())``
+        # rebuilds the head with the new vocab size.
+        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
+        if init_kwargs is not None and "n_outputs" in init_kwargs:
+            init_kwargs["n_outputs"] = n_outputs
+        hub_config = getattr(self, "_hub_mixin_config", None)
+        if hub_config is not None and "n_outputs" in hub_config:
+            hub_config["n_outputs"] = n_outputs
 
     def compute_output_lengths(self, input_lengths: torch.Tensor) -> torch.Tensor:
         """Map per-sample input lengths to CTC emission lengths.
@@ -364,19 +384,27 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
     def get_output_shape(self) -> tuple[int, ...]:
         """Shape of ``forward`` output for a batch of size 1.
 
-        Overrides the base impl so the dummy ``n_times`` is at least the
-        encoder's receptive field (otherwise downstream LayerNorms crash
-        on empty inputs). Falls back to that minimum when ``n_times`` was
-        not set at construction time.
+        Uses the user-supplied ``n_times`` so this method's reported
+        shape is consistent with what ``forward()`` accepts. If the
+        configured ``n_times`` is below the encoder's receptive field,
+        ``forward()`` would raise; we mirror that here. Falls back to
+        the receptive-field minimum only when ``n_times`` was not set
+        at construction time.
         """
         min_n_times = (
             self.n_fft + self._n_conv_blocks * (self.kernel_width - 1) * self.hop_length
         )
         try:
-            user_n_times = self.n_times
+            n_times = self.n_times
         except ValueError:
-            user_n_times = min_n_times
-        n_times = max(user_n_times, min_n_times)
+            n_times = min_n_times
+        if n_times < min_n_times:
+            raise ValueError(
+                f"n_times={n_times} is shorter than the encoder's receptive "
+                f"field ({min_n_times} samples); ``forward()`` would reject "
+                f"this input. Increase n_times or override n_fft / hop_length "
+                f"/ kernel_width."
+            )
         with torch.inference_mode():
             dtype = next(self.parameters()).dtype
             device = next(self.parameters()).device
@@ -405,18 +433,31 @@ class _LogSpectrogram(nn.Module):
         log_eps: float = 1e-6,
     ) -> None:
         super().__init__()
+        if log_eps <= 0:
+            raise ValueError(f"log_eps must be > 0; got {log_eps}.")
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.num_bands = num_bands
         self.electrodes_per_band = electrodes_per_band
         self.log_eps = log_eps
-        # ``periodic=True`` (the torch default) matches upstream emg2qwerty,
-        # which builds the window via ``torchaudio.transforms.Spectrogram``
-        # with default ``window_fn``. Made explicit so the choice is visible.
-        self.register_buffer(
-            "window",
-            torch.hann_window(n_fft, periodic=True),
-            persistent=False,
+        # Use ``torchaudio.transforms.Spectrogram`` directly (instead of
+        # ``torch.stft`` + ``abs().pow(2)``) so that ``normalized=True``
+        # divides by ``sum(window**2)`` as upstream emg2qwerty does, rather
+        # than by ``n_fft`` (which is what ``torch.stft(normalized=True)``
+        # would do — silently rescales every power bin and shifts the log
+        # by a constant, breaking upstream-checkpoint numerics).
+        self.spectrogram = ta_transforms.Spectrogram(
+            n_fft=n_fft,
+            hop_length=hop_length,
+            normalized=True,
+            center=False,
+        )
+        # Re-register the Hann window as non-persistent so it doesn't pollute
+        # ``state_dict`` (upstream emg2qwerty checkpoints don't ship this
+        # buffer either: their spectrogram lives in the dataset transform,
+        # not in the model).
+        self.spectrogram.register_buffer(
+            "window", self.spectrogram.window, persistent=False
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -428,20 +469,11 @@ class _LogSpectrogram(nn.Module):
                 f"({self.num_bands} bands × {self.electrodes_per_band} "
                 f"electrodes); got {n_channels}."
             )
-        stft_complex = torch.stft(
-            x.reshape(batch_size * n_channels, n_samples),
-            n_fft=self.n_fft,
-            hop_length=self.hop_length,
-            window=self.window.to(device=x.device, dtype=x.dtype),
-            normalized=True,
-            center=False,
-            return_complex=True,
-        )
-        power_spec = stft_complex.abs().pow(2)
+        # ``torchaudio.transforms.Spectrogram`` returns ``(..., freq, time)``
+        # for power=2 (the default).
+        power_spec = self.spectrogram(x)
         n_freq_bins, n_frames = power_spec.shape[-2], power_spec.shape[-1]
-        log_power = torch.log10(power_spec + self.log_eps).reshape(
-            batch_size, n_channels, n_freq_bins, n_frames
-        )
+        log_power = torch.log10(power_spec + self.log_eps)
         return log_power.reshape(
             batch_size,
             self.num_bands,
