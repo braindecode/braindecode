@@ -108,7 +108,7 @@ docs = [
     'lightning',
     'seaborn',
     'pre-commit',
-    'openneuro-py<2026.4',  # 2026.4.x crashes (libc double-free) during concurrent HEAD requests in docs CI
+    'openneuro-py>=2026.4.0',  # 2026.4.0 fixes DatasetFile.key->id after the OpenNeuro 5.0.0 schema change; older versions break against the live GraphQL server
     'plotly',
     'shap',
     'nbformat',
