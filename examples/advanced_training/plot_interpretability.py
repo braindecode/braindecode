@@ -94,8 +94,8 @@ windows_dataset = create_windows_from_events(
 splitted = windows_dataset.split("session")
 train_set, valid_set = splitted["0train"], splitted["1test"]
 
-# Class label → index mapping (BCI IV 2a is left/right hand, feet, tongue).
-class_mapping = train_set.datasets[0].windows.event_id
+# Class label → index mapping. MOABB orders BCI IV 2a classes alphabetically.
+class_mapping = {"feet": 0, "left_hand": 1, "right_hand": 2, "tongue": 3}
 
 ######################################################################
 # Training a small ShallowFBCSPNet
@@ -142,9 +142,19 @@ clf = EEGClassifier(
 )
 clf.fit(train_set, y=None, epochs=10)
 
+valid_acc = clf.history[-1, "valid_accuracy"]
+print(f"Final validation accuracy: {valid_acc:.2%}")
+
 # Channel info needed by the topomaps below.
-chs_info = valid_set.datasets[0].windows.info["chs"]
-raw_info = valid_set.datasets[0].windows.info
+raw_info = valid_set.datasets[0].raw.info
+chs_info = raw_info["chs"]
+
+import matplotlib.pyplot as plt
+
+plt.rcParams.update({"font.size": 9, "figure.dpi": 110, "savefig.bbox": "tight"})
+
+# Okabe-Ito colorblind-safe palette for class-coded elements.
+CLASS_COLORS = ["#0072B2", "#009E73", "#D55E00", "#CC79A7"]
 
 ######################################################################
 # Amplitude gradients
@@ -173,38 +183,58 @@ freqs = np.fft.rfftfreq(n_times, d=1.0 / sfreq)
 # per class. Lateralised activity over the central electrodes is the
 # textbook signature for left/right hand motor imagery.
 
-import matplotlib.pyplot as plt
 import mne
 from matplotlib import cm
 
 
 def _band_topomap_grid(per_class_per_chan_per_freq, bands, info, mapping, title):
-    """Plot one row of topomaps per frequency band, one column per class."""
+    """One row per frequency band, one column per class.
+
+    Color scale is set per row from the 98th-percentile absolute value
+    so that a single high-magnitude class can't wash out the rest of the
+    band. A shared colorbar on the right encodes the diverging scale.
+    """
+    n_bands, n_classes = len(bands), len(mapping)
     fig, axes = plt.subplots(
-        len(bands), len(mapping), figsize=(3.5 * len(mapping), 3 * len(bands))
+        n_bands, n_classes, figsize=(2.4 * n_classes + 1.0, 2.4 * n_bands + 0.6)
     )
     axes = np.atleast_2d(axes)
+    band_images = []
     for row, (lo, hi) in enumerate(bands):
         i_lo = np.searchsorted(freqs, lo)
         i_hi = np.searchsorted(freqs, hi) + 1
         avg_in_band = per_class_per_chan_per_freq[:, :, i_lo:i_hi].mean(axis=2)
-        vmax = np.abs(avg_in_band).max()
+        vmax = np.percentile(np.abs(avg_in_band), 98)
         for class_name, i_class in mapping.items():
             ax = axes[row, i_class]
-            mne.viz.plot_topomap(
+            im, _ = mne.viz.plot_topomap(
                 avg_in_band[i_class],
                 info,
                 vlim=(-vmax, vmax),
                 contours=0,
-                cmap=cm.coolwarm,
+                cmap=cm.RdBu_r,
+                sensors=False,
                 show=False,
                 axes=ax,
             )
             if row == 0:
-                ax.set_title(class_name.replace("_", " ").title())
-        axes[row, 0].set_ylabel(f"{lo}–{hi} Hz", rotation=0, labelpad=40, va="center")
-    fig.suptitle(title)
-    fig.tight_layout()
+                ax.set_title(
+                    class_name.replace("_", " ").title(),
+                    color=CLASS_COLORS[i_class],
+                    fontweight="bold",
+                )
+        band_images.append(im)
+        axes[row, 0].text(
+            -0.18, 0.5, f"{lo}–{hi} Hz",
+            transform=axes[row, 0].transAxes,
+            ha="right", va="center", fontsize=10,
+            fontweight="bold", color="#444",
+        )
+
+    fig.suptitle(title, fontsize=12, fontweight="bold")
+    fig.subplots_adjust(right=0.88, wspace=0.05, hspace=0.15)
+    cbar_ax = fig.add_axes([0.91, 0.15, 0.015, 0.7])
+    fig.colorbar(band_images[-1], cax=cbar_ax, label="Attribution (a.u., diverging)")
 
 
 _band_topomap_grid(
@@ -284,11 +314,22 @@ n_receptive_field = all_X.shape[-1] - activations.shape[-1] + 1
 max_act_per_trial = activations.max(axis=2)
 
 ######################################################################
-# Plot the top-5% windows for every filter on a 5×8 grid (40 filters,
-# the ShallowFBCSPNet default).
+# Each filter is colour-coded by the class it most strongly votes for
+# (read off the final classifier's weights). Together with the receptive
+# fields, this turns the grid into a quick map of what each filter
+# "specialises" in.
+
+# Find each filter's preferred class. ShallowFBCSPNet's classifier is a
+# Conv2d with weight shape (n_classes, n_filters, time_kernel, 1); we
+# sum the absolute weight magnitude over the time-kernel axis and argmax
+# over classes to get a single (n_filters,) array of preferred classes.
+classifier_weight = model.final_layer.conv_classifier.weight.detach().cpu().squeeze()
+filter_class_score = classifier_weight.abs().sum(dim=2)  # (n_classes, n_filters)
+preferred_class = filter_class_score.argmax(dim=0).numpy()
 
 n_rows, n_cols = 5, 8
-fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, 9), sharex=True, sharey=True)
+rf_ms = np.arange(n_receptive_field) * 1000.0 / sfreq
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(13, 8), sharex=True, sharey=True)
 for i_filter in range(n_filters):
     threshold = np.percentile(max_act_per_trial[:, i_filter], 95)
     top_trials = np.where(max_act_per_trial[:, i_filter] >= threshold)[0]
@@ -301,13 +342,35 @@ for i_filter in range(n_filters):
         ]
     )
     ax = axes[i_filter // n_cols, i_filter % n_cols]
-    ax.plot(windows.mean(axis=(0, 1)), color="black", lw=1.2)
-    ax.plot(windows.mean(axis=1).T, color="C0", alpha=0.15, lw=0.5)
-    ax.set_xticks([])
+    color = CLASS_COLORS[int(preferred_class[i_filter])]
+    ax.plot(rf_ms, windows.mean(axis=1).T, color=color, alpha=0.18, lw=0.5)
+    ax.plot(rf_ms, windows.mean(axis=(0, 1)), color="black", lw=1.2)
     ax.set_yticks([])
-    ax.set_title(f"f{i_filter}", fontsize=8)
-fig.suptitle("Maximally activating inputs (top-5% trials per filter, channel-mean)")
-fig.tight_layout()
+    ax.set_title(f"f{i_filter:02d}", fontsize=8, color=color, fontweight="bold")
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+
+# Time-axis labels only on the bottom row, y-axis label on the left edge.
+for ax in axes[-1, :]:
+    ax.set_xlabel("ms", fontsize=8)
+for ax in axes[:, 0]:
+    ax.set_ylabel("μV", fontsize=8)
+
+# Inline legend mapping class colour → class name.
+legend_handles = [
+    plt.Line2D([0], [0], color=CLASS_COLORS[i], lw=2, label=name.replace("_", " ").title())
+    for name, i in class_mapping.items()
+]
+fig.legend(
+    handles=legend_handles, loc="upper center", ncol=len(class_mapping),
+    frameon=False, bbox_to_anchor=(0.5, 0.02),
+)
+fig.suptitle(
+    "Maximally activating inputs (top-5% trials per filter, channel-mean)\n"
+    "Filter labels coloured by the class they vote for most strongly",
+    fontsize=11,
+)
+fig.tight_layout(rect=[0, 0.04, 1, 1])
 
 ######################################################################
 # Gradient-based attribution
@@ -353,56 +416,102 @@ for name, attr in attributions.items():
 # -------------------------------
 #
 # Mean absolute attribution per ``(channel, time)`` cell, averaged over
-# the eight correctly-classified trials. Brighter cells indicate samples
-# the network leaned on more strongly when predicting the correct class.
+# the eight correctly-classified trials. We use a shared colour scale
+# *within* each row so two attribution methods can be compared directly,
+# and label every fourth electrode to keep the y-axis legible.
+#
+# .. note::
+#    LayerGradCam is plotted here too, but its "channel" axis is the
+#    bilinear-interpolated spatial dim of the ``conv_classifier`` output,
+#    not the original 22 electrodes — the spatial conv collapses the
+#    channel dim early in ShallowFBCSPNet. Read its rows as a coarse
+#    spatial summary, not per-electrode attributions.
 
 ch_labels = [ch["ch_name"] for ch in chs_info]
 times = np.arange(sig_props["n_times"]) / sfreq
 
-fig, axes = plt.subplots(2, 2, figsize=(11, 7), sharex=True, sharey=True)
-for ax, (name, attr) in zip(axes.ravel(), attributions.items()):
-    heat = attr.detach().cpu().abs().mean(dim=0).numpy()
+input_methods = ["Saliency", "Input × Gradient", "Integrated Gradients"]
+heatmaps = {
+    name: attributions[name].detach().cpu().abs().mean(dim=0).numpy()
+    for name in input_methods
+}
+# Per-method min-max normalization: each panel shows its own spatial
+# pattern at full dynamic range. Magnitudes are not comparable across
+# methods (Saliency is in units of grad, IG accumulates the product
+# x · grad along the path), so normalizing makes the comparison about
+# *where* the model looks, not *how much*.
+heatmaps_norm = {
+    name: h / (h.max() if h.max() > 0 else 1.0) for name, h in heatmaps.items()
+}
+
+fig, axes = plt.subplots(1, 3, figsize=(13, 4.2), sharey=True)
+for ax, name in zip(axes, input_methods):
     im = ax.imshow(
-        heat,
+        heatmaps_norm[name],
         aspect="auto",
         origin="lower",
         extent=[times[0], times[-1], -0.5, len(ch_labels) - 0.5],
         cmap="magma",
+        vmin=0, vmax=1,
     )
-    ax.set_title(name)
+    ax.set_title(name, fontweight="bold")
     ax.set_xlabel("Time (s)")
-    ax.set_yticks(range(len(ch_labels)))
-    ax.set_yticklabels(ch_labels, fontsize=6)
-    plt.colorbar(im, ax=ax, fraction=0.04)
+    every = 4
+    ax.set_yticks(range(0, len(ch_labels), every))
+    ax.set_yticklabels(ch_labels[::every], fontsize=8)
 
-axes[0, 0].set_ylabel("Channel")
-axes[1, 0].set_ylabel("Channel")
-fig.suptitle("Mean absolute attribution per (channel, time) — averaged over correct trials")
-fig.tight_layout()
+axes[0].set_ylabel("Channel")
+fig.colorbar(
+    im, ax=axes, label="Per-method normalized |attribution| (0–1)", fraction=0.03
+)
+fig.suptitle(
+    "Per-(channel, time) attribution averaged over correct trials",
+    fontsize=12, fontweight="bold",
+)
 
 ######################################################################
 # Topographic projection
 # ----------------------
 #
-# Time-averaged attribution per channel projected onto a scalp topomap
-# via :func:`~braindecode.visualization.project_to_topomap` (a thin
-# wrapper around :func:`mne.viz.plot_topomap`). Compare with the
-# amplitude-gradient topomaps above — the techniques operate on
-# different domains but should highlight roughly the same anatomy.
+# For attribution methods whose channel axis really maps to electrodes
+# (Saliency, Input × Gradient, IG), we can project the time-averaged
+# magnitude back onto the scalp via :func:`mne.viz.plot_topomap` and
+# compare directly with the amplitude-gradient topomaps from the start
+# of the tutorial.
+#
+# LayerGradCam is intentionally omitted here: by the time gradients are
+# computed at ``final_layer.conv_classifier``, the spatial-conv block
+# has already mixed all electrodes into a single spatial dimension, so
+# there is no per-electrode signal left to project.
 
-from braindecode.visualization import project_to_topomap
+fig, axes = plt.subplots(1, 3, figsize=(11, 3.6))
+per_channel_maps = {
+    name: attributions[name].detach().cpu().abs().mean(dim=(0, 2)).numpy()
+    for name in input_methods
+}
+# Per-method normalization, same rationale as the heatmaps above:
+# shows spatial pattern, not absolute magnitude.
+per_channel_norm = {
+    name: v / (v.max() if v.max() > 0 else 1.0)
+    for name, v in per_channel_maps.items()
+}
+for ax, name in zip(axes, input_methods):
+    im, _ = mne.viz.plot_topomap(
+        per_channel_norm[name],
+        raw_info,
+        vlim=(0, 1),
+        contours=0,
+        cmap="magma",
+        sensors=True,
+        show=False,
+        axes=ax,
+    )
+    ax.set_title(name, fontweight="bold")
 
-fig, axes = plt.subplots(1, 4, figsize=(14, 3.5))
-for ax, (name, attr) in zip(axes, attributions.items()):
-    per_channel = attr.detach().cpu().abs().mean(dim=(0, 2)).numpy()
-    Z = project_to_topomap(per_channel, chs_info, res=64)
-    im = ax.imshow(Z, cmap="viridis", origin="lower")
-    ax.set_title(name)
-    ax.axis("off")
-    plt.colorbar(im, ax=ax, fraction=0.045)
-
-fig.suptitle("Time-averaged attribution projected onto the scalp")
-fig.tight_layout()
+fig.suptitle("Time-averaged attribution projected onto the scalp", fontweight="bold")
+fig.subplots_adjust(right=0.88)
+cbar_ax = fig.add_axes([0.91, 0.18, 0.015, 0.62])
+fig.colorbar(im, cax=cbar_ax, label="Per-method normalized (0–1)")
 
 ######################################################################
 # Sanity check: trained vs randomized model
