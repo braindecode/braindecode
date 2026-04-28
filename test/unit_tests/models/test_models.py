@@ -41,6 +41,7 @@ from braindecode.models import (
     EEGNeX,
     EEGSimpleConv,
     EEGTCNet,
+    EMG2QwertyNet,
     FBCNet,
     FBMSNet,
     HybridNet,
@@ -3336,3 +3337,104 @@ def test_gni_ctc_backward():
     assert input_lengths.min() >= target_lengths.max()
     assert m.final_layer.weight.grad is not None
     assert any(p.grad is not None for p in m.conformer.parameters())
+
+
+# ---------------------------------------------------------------------------
+# EMG2QwertyNet
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def emg2qwerty_default():
+    """Build the default 4-block TDS-Conv-CTC encoder once per test module."""
+    return EMG2QwertyNet(n_times=8000).eval()
+
+
+def _small_emg2qwerty(**kwargs):
+    defaults = dict(
+        n_times=4000,
+        mlp_features=(48,),
+        block_channels=(12, 12),
+        kernel_width=8,
+    )
+    defaults.update(kwargs)
+    return EMG2QwertyNet(**defaults)
+
+
+def test_emg2qwerty_default_contract(emg2qwerty_default):
+    x = torch.randn(1, 32, 8000)
+    with torch.no_grad():
+        y = emg2qwerty_default(x)
+
+    n_params = sum(
+        p.numel() for p in emg2qwerty_default.parameters() if p.requires_grad
+    )
+    lengths = emg2qwerty_default.compute_output_lengths(
+        torch.tensor([8000, 12000])
+    )
+
+    assert n_params == 5_293_315
+    assert y.shape == (1, 373, 99)
+    assert lengths[0].item() == y.shape[1]
+    assert lengths[1] > lengths[0]
+
+
+def test_emg2qwerty_head_log_softmax_and_config():
+    m = _small_emg2qwerty(log_softmax=True).eval()
+    with torch.no_grad():
+        y = m(torch.randn(1, 32, 4000))
+
+    assert torch.allclose(
+        y.exp().sum(dim=-1), torch.ones_like(y[..., 0]), atol=1e-5
+    )
+    assert EMG2QwertyNet.from_config(m.get_config()).n_outputs == 99
+    m.reset_head(30)
+    assert m.n_outputs == 30
+    assert m.final_layer.out_features == 30
+
+
+def test_emg2qwerty_ctc_backward():
+    torch.manual_seed(0)
+    m = _small_emg2qwerty().train()
+    x = torch.randn(2, 32, 4000)
+    emissions = m(x)  # (N, T, V)
+    log_probs = torch.log_softmax(emissions, dim=-1).transpose(0, 1)  # (T, N, V)
+    input_lengths = m.compute_output_lengths(torch.tensor([4000, 4000]))
+    target_lengths = torch.tensor([2, 2])
+    targets = torch.randint(0, 98, (2, 2))
+    loss = torch.nn.CTCLoss(blank=98, zero_infinity=True)(
+        log_probs, targets, input_lengths, target_lengths
+    )
+    loss.backward()
+
+    assert input_lengths.min() >= target_lengths.max()
+    assert m.final_layer.weight.grad is not None
+    assert any(p.grad is not None for p in m.model.parameters())
+
+
+def test_emg2qwerty_state_dict_key_layout():
+    """All parameter keys live under ``model.{0,1,3}.*`` or ``final_layer.*``.
+
+    The encoder ``nn.Sequential`` matches upstream emg2qwerty's index
+    layout for its parameter-bearing children; the head sits at the
+    top-level ``self.final_layer`` and is renamed via ``mapping`` when
+    loading upstream checkpoints.
+    """
+    m = _small_emg2qwerty()
+    keys = list(m.state_dict().keys())
+    allowed = ("model.0.", "model.1.", "model.3.", "final_layer.")
+    bad = [k for k in keys if not k.startswith(allowed)]
+    assert not bad, f"unexpected keys outside encoder + final_layer: {bad}"
+    # Hann window is registered as non-persistent: must NOT be in state_dict.
+    assert not any(k.startswith("spectrogram.") for k in keys)
+    # Class-level mapping renames the upstream head keys.
+    assert set(EMG2QwertyNet.mapping) == {"model.4.weight", "model.4.bias"}
+
+
+def test_emg2qwerty_rejects_short_input():
+    """forward must reject ``n_times < n_fft`` instead of crashing inside
+    ``torch.stft`` — keeps the contract symmetric with
+    ``compute_output_lengths``."""
+    m = _small_emg2qwerty(n_fft=64, hop_length=16)
+    with pytest.raises(ValueError, match="n_fft"):
+        m(torch.randn(1, 32, 50))

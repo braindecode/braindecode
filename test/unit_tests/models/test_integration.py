@@ -418,6 +418,9 @@ def test_model_compiled(model):
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
         "MetaNeuromotorHand",
+        # torch.compile + complex-valued torch.stft at the default
+        # 8000-sample window is unstable on multiple PyTorch versions.
+        "EMG2QwertyNet",
     ]
     if model.__class__.__name__ in not_compilable_models:
         pytest.skip(
@@ -521,6 +524,9 @@ def test_model_torch_script(model):
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
+        # TorchScript can't trace through ``torch.stft(return_complex=True)``
+        # in the log-spectrogram front-end.
+        "EMG2QwertyNet",
         "SignalJEPA",
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",

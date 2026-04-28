@@ -77,6 +77,25 @@ Enhancements
   the upstream repository; see the class docstring for the license
   warning and the pretrained-checkpoint loading recipe.
   By `Bruno Aristimunha`_.
+- Add :class:`braindecode.models.EMG2QwertyNet`, a port of the
+  TDS-Conv-CTC touch-typing decoder from
+  ``facebookresearch/emg2qwerty`` (Sivakumar et al., NeurIPS 2024). The
+  model takes raw 32-channel surface EMG (two 16-electrode wristbands at
+  2 kHz) and emits per-frame log-probabilities over a 99-class typing
+  vocabulary (98 keys + CTC blank). The pipeline is a parameter-free
+  log-spectrogram front-end, per-electrode-per-band BatchNorm, a
+  circular rotation-invariant MLP (one per band), and a stack of
+  Time-Depth-Separable convolutional blocks ([Hannun2019TDS]_) without
+  temporal padding. The encoder ``nn.Sequential`` mirrors upstream's
+  ``TDSConvCTCModule.model`` indices for parameter-bearing children, so
+  upstream emg2qwerty checkpoints load directly via ``load_state_dict``
+  (after stripping the PyTorch-Lightning ``network.`` prefix); the
+  class-level :attr:`~braindecode.models.EMG2QwertyNet.mapping` only
+  remaps the head from ``model.4.{weight,bias}`` to
+  ``final_layer.{weight,bias}``. Distributed under CC BY-NC 4.0 to
+  match the upstream repository; see the class docstring for the
+  license warning and the pretrained-checkpoint loading recipe.
+  By `Bruno Aristimunha`_.
 
 API and behavior changes
 ========================

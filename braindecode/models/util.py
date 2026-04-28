@@ -347,6 +347,17 @@ models_mandatory_parameters: list[
             "n_outputs": 100,
         },
     ),
+    (
+        "EMG2QwertyNet",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 32,
+            "n_times": 8000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 4.0,
+            "n_outputs": 99,
+        },
+    ),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
@@ -397,6 +408,7 @@ non_classification_models = [
     "InterpolatedSignalJEPA",
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
+    "EMG2QwertyNet",
 ]
 
 ################################################################
