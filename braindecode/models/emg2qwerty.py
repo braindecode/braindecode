@@ -9,9 +9,8 @@
 # noncommercial terms and is not covered by braindecode's BSD-3 license!
 """``EMG2QwertyNet`` — TDS-Conv-CTC for sEMG-to-keystroke decoding.
 
-Single self-contained module: the model class plus its private layer helpers
-plus the small public character-set / CER-metric / greedy-CTC-decoder utilities
-needed for offline evaluation. Mirrors the file layout of
+Single self-contained module: the model class plus its private layer
+helpers. Mirrors the file layout of
 :mod:`braindecode.models.meta_neuromotor` (one file under CC BY-NC,
 private layer helpers prefixed with ``_``).
 """
@@ -71,25 +70,26 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
 
     3. ``_MultiBandRotationInvariantMLP`` (``self.model[1]``) — per-band
        rotation-invariant MLP. Each 16-electrode band is circularly rolled
-       by every offset in ``invariance_offsets`` (default ``{-1, 0, +1}``),
-       passed through a shared MLP, and mean-pooled across rolls.
-       Approximates rigid-rotation invariance of the wristband.
+       by the fixed offsets ``(-1, 0, +1)``, passed through a shared MLP,
+       and mean-pooled across rolls. Approximates rigid-rotation
+       invariance of the wristband.
 
     4. ``_TDSConvEncoder`` (``self.model[3]``, after ``nn.Flatten`` at
-       index 2) — stack of ``_TDSConv2dBlock`` interleaved with
-       ``_TDSFullyConnectedBlock``. Each conv block uses
-       ``1 × kernel_width`` 2-D convolution with no temporal padding, so
-       it strips ``kernel_width - 1`` frames from the start of the
+       ``self.model[2]``) — stack of ``_TDSConv2dBlock`` interleaved
+       with ``_TDSFullyConnectedBlock``. Each conv block uses
+       ``1 × kernel_width`` 2-D convolution with no temporal padding,
+       so it strips ``kernel_width - 1`` frames from the start of the
        sequence per block. With the default
        ``block_channels=(24, 24, 24, 24)`` and ``kernel_width=32``, the
        encoder removes ``4 × 31 = 124`` frames in total.
 
-    5. :class:`~torch.nn.Linear` head (``self.model[4]``, exposed as
-       ``self.final_layer`` via a property so braindecode's "find the
-       head" introspection and :meth:`reset_head` work uniformly).
-       Optionally followed by :func:`~torch.nn.functional.log_softmax`
-       (``log_softmax`` flag), disabled by default since braindecode
-       models conventionally return logits.
+    5. :class:`~torch.nn.Linear` classification head exposed as the
+       top-level submodule ``self.final_layer`` (so it shows up in
+       :func:`~torch.nn.Module.named_modules` and ``print(model)``;
+       :meth:`reset_head` swaps it cleanly). Optionally followed by
+       :func:`~torch.nn.functional.log_softmax` (``log_softmax``
+       constructor flag, disabled by default since braindecode models
+       conventionally return logits).
 
     .. rubric:: State-dict layout and upstream-checkpoint compatibility
 
@@ -396,8 +396,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             Raw EMG of shape ``(batch, n_chans=32, n_times)``.
-            ``n_times`` must be at least ``n_fft`` (no implicit padding;
-            short inputs would otherwise crash inside :func:`torch.stft`).
+            ``n_times`` must be at least the encoder's full receptive
+            field, ``n_fft + n_conv_blocks * (kernel_width - 1) *
+            hop_length``. Shorter inputs are rejected upfront with a
+            clear ``ValueError`` so we never crash deep inside
+            :func:`torch.stft` or :class:`~torch.nn.Conv2d`.
 
         Returns
         -------
@@ -410,11 +413,26 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
                 f"expected (batch, {self.n_chans}, T) input; got shape "
                 f"{tuple(x.shape)}."
             )
-        if x.shape[-1] < self.n_fft:
+        # Tightest forward precondition: enforce the full encoder
+        # receptive field, not just ``n_fft``. With only the n_fft check
+        # ``torch.stft`` succeeds for ``n_times`` in
+        # ``[n_fft, min_required)`` and the model crashes deeper inside
+        # the no-padding ``Conv2d`` of ``_TDSConv2dBlock`` (kernel size
+        # exceeds available frames). Raise upfront with the same formula
+        # used by :meth:`compute_output_lengths` and
+        # :meth:`get_output_shape`.
+        min_n_times = (
+            self.n_fft + self._n_conv_blocks * (self.kernel_width - 1) * self.hop_length
+        )
+        if x.shape[-1] < min_n_times:
             raise ValueError(
-                f"n_times={x.shape[-1]} is shorter than n_fft={self.n_fft}; "
-                f"the STFT front-end requires at least n_fft samples per "
-                f"window. Use a longer window or override n_fft/hop_length."
+                f"n_times={x.shape[-1]} is shorter than the encoder's "
+                f"receptive field ({min_n_times} samples = n_fft + "
+                f"n_conv_blocks * (kernel_width - 1) * hop_length, with "
+                f"n_fft={self.n_fft}, hop_length={self.hop_length}, "
+                f"n_conv_blocks={self._n_conv_blocks}, "
+                f"kernel_width={self.kernel_width}). Use a longer window "
+                f"or override n_fft / hop_length / kernel_width."
             )
         h = self.spectrogram(x)  # (T, N, 2, 16, freq)
         h = self.model(h)  # (T_out, N, num_features)

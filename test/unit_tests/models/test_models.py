@@ -3432,9 +3432,20 @@ def test_emg2qwerty_state_dict_key_layout():
 
 
 def test_emg2qwerty_rejects_short_input():
-    """forward must reject ``n_times < n_fft`` instead of crashing inside
-    ``torch.stft`` — keeps the contract symmetric with
-    ``compute_output_lengths``."""
-    m = _small_emg2qwerty(n_fft=64, hop_length=16)
+    """forward must reject inputs shorter than the encoder receptive field.
+
+    Just-enforcing ``n_times >= n_fft`` is necessary but not sufficient:
+    ``torch.stft`` would succeed for ``n_times`` in
+    ``[n_fft, n_fft + n_conv_blocks * (kernel_width - 1) * hop_length)``
+    and the model would crash deeper inside :class:`~torch.nn.Conv2d`.
+    ``forward`` must use the full receptive-field formula and raise
+    upfront with a clear ``ValueError`` (mentioning ``n_fft`` so users
+    can grep for the limit).
+    """
+    m = _small_emg2qwerty(n_fft=64, hop_length=16, kernel_width=8,
+                          block_channels=(12, 12))
+    # Receptive field = 64 + 2 * 7 * 16 = 64 + 224 = 288 samples.
     with pytest.raises(ValueError, match="n_fft"):
-        m(torch.randn(1, 32, 50))
+        m(torch.randn(1, 32, 50))    # below n_fft
+    with pytest.raises(ValueError, match="receptive field"):
+        m(torch.randn(1, 32, 200))   # above n_fft, below receptive field
