@@ -108,7 +108,7 @@ docs = [
     'lightning',
     'seaborn',
     'pre-commit',
-    'openneuro-py<2026.4',  # 2026.4.x crashes (libc double-free) during concurrent HEAD requests in docs CI
+    'openneuro-py==2026.4.0',  # 2026.4.0 brings the DatasetFile.key->id GraphQL fix; 2026.4.1 raises HEAD concurrency 5->50 which has been linked to a libc double-free in docs CI
     'plotly',
     'shap',
     'nbformat',
