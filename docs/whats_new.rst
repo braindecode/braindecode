@@ -161,6 +161,12 @@ Bug fixes
   embedding weights when fine-tuning on a subset of the pre-training channels.
   Two new HuggingFace checkpoints are published: ``braindecode/signal-jepa`` and
   ``braindecode/signal-jepa_without-chans`` (:gh:`991` by `Pierre Guetschel`_)
+- Bump ``openneuro-py`` to ``>=2026.4.0`` so the docs build picks up upstream
+  PR ``#308`` (``DatasetFile.key`` → ``id``). The previous ``<2026.4`` pin
+  (:gh:`1000`) avoided a libc double-free seen with newer releases but broke
+  ``examples/datasets_io/plot_bids_dataset_example.py`` against the live
+  OpenNeuro 5.0.0 GraphQL schema (``Cannot query field "key" on type
+  "DatasetFile"``) (:gh:`1002` by `Bruno Aristimunha`_)
 
 Code health
 ============
