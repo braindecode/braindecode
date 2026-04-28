@@ -108,7 +108,7 @@ docs = [
     'lightning',
     'seaborn',
     'pre-commit',
-    'openneuro-py==2026.4.0',  # 2026.4.0 brings the DatasetFile.key->id GraphQL fix; 2026.4.1 raises HEAD concurrency 5->50 which has been linked to a libc double-free in docs CI
+    'openneuro-py>=2026.4.0',  # 2026.4.0 fixes DatasetFile.key->id after the OpenNeuro 5.0.0 schema change; older versions break against the live GraphQL server
     'plotly',
     'shap',
     'nbformat',
