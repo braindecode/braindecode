@@ -2,18 +2,9 @@
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (Braindecode adaptation)
 #
 # License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
-#
-# Architecture adapted from the official implementation at
-# https://github.com/facebookresearch/emg2qwerty (NeurIPS 2024)
-# released under CC BY-NC 4.0. This derivative inherits the same
-# noncommercial terms and is not covered by braindecode's BSD-3 license!
-"""``EMG2QwertyNet``: TDS-Conv-CTC for sEMG-to-keystroke decoding.
-
-Single self-contained module: the model class plus its private layer
-helpers. Mirrors the file layout of
-:mod:`braindecode.models.meta_neuromotor` (one file under CC BY-NC,
-private layer helpers prefixed with ``_``).
-"""
+# Adapted from https://github.com/facebookresearch/emg2qwerty (NeurIPS 2024).
+# Inherits CC BY-NC 4.0; not covered by braindecode's BSD-3 license.
+"""``EMG2QwertyNet``: TDS-Conv-CTC for sEMG-to-keystroke decoding."""
 
 from __future__ import annotations
 
@@ -25,132 +16,67 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 
-# ---------------------------------------------------------------------------
-# Main model
-# ---------------------------------------------------------------------------
-
 
 class EMG2QwertyNet(EEGModuleMixin, nn.Module):
-    r"""TDS-Conv-CTC sEMG-to-keystroke decoder (emg2qwerty) [emg2qwerty2024]_.
+    r"""Decoder mapping surface electromyography (sEMG) to keystrokes
+    (emg2qwerty) [emg2qwerty2024]_.
 
-    :bdg-success:`Convolution` :bdg-info:`CTC`
+    :bdg-success:`Convolution`
 
-    .. figure:: https://user-images.githubusercontent.com/172884/131012947-66cab4c4-963c-4f1a-af12-47fea1681f09.png
-        :align: center
-        :alt: emg2qwerty dataset and TDS-Conv-CTC pipeline.
-        :width: 500px
+    Time-Depth-Separable (TDS) [hannun2019tds]_ convolutional encoder
+    followed by a Connectionist Temporal Classification (CTC) head
+    [graves2006ctc]_. Takes raw 32-channel sEMG (2 wristbands × 16
+    electrodes) at 2 kHz and emits per-frame scores over the 99-class
+    typing vocabulary (98 keys + 1 CTC blank).
 
-        Touch-typing on a QWERTY keyboard while wearing two 16-electrode
-        sEMG wristbands (left + right). The TDS-Conv-CTC baseline maps
-        the dual-armband EMG stream into per-frame character probabilities
-        trained with Connectionist Temporal Classification [graves2006ctc]_.
+    .. rubric:: Pipeline
 
-    Time-Depth-Separable convolutional encoder with a CTC head, ported from
-    `facebookresearch/emg2qwerty
-    <https://github.com/facebookresearch/emg2qwerty>`_ [emg2qwerty2024]_.
-    Takes raw 32-channel sEMG (two wristbands × 16 electrodes) at 2 kHz and
-    emits a per-token score sequence over the 99-class typing vocabulary
-    (98 keys + CTC blank).
+    1. **Log-spectrogram front-end**: per-channel Short-Time Fourier
+       Transform (:func:`~torch.stft`) with ``n_fft=64``,
+       ``hop_length=16``, Hann window, ``center=False``, then squared
+       magnitude and ``log10(p + 1e-6)``. Output frame rate 125 Hz. No
+       trainable parameters.
+    2. **Spectrogram BatchNorm**: :class:`~torch.nn.BatchNorm2d` over
+       the ``(batch, freq, time)`` slice for each of the
+       ``num_bands × electrodes_per_band`` channels.
+    3. **Per-band rotation-invariant multi-layer perceptron (MLP)**:
+       for each band, a shared MLP is applied to circular rolls
+       ``(-1, 0, +1)`` of the electrode axis, then mean-pooled.
+    4. **TDS convolutional encoder**: stack of ``len(block_channels)``
+       TDS conv blocks interleaved with feedforward blocks. No temporal
+       padding, so each conv block strips ``kernel_width - 1`` frames.
+    5. **Linear classification head**: :class:`~torch.nn.Linear`
+       projecting to ``n_outputs``, optionally followed by
+       :func:`~torch.nn.functional.log_softmax` (off by default;
+       braindecode models return logits).
 
-    .. rubric:: Macro Components
+    .. rubric:: Output
 
-    The forward pass has five stages:
+    Returns ``(batch, T_out, n_outputs)``. With ``n_times=8000`` and
+    defaults, ``T_out=373``. For :class:`~torch.nn.CTCLoss`, transpose
+    to ``(T_out, batch, n_outputs)``; use :meth:`compute_output_lengths`
+    for emission lengths.
 
-    1. Log-spectrogram front-end (``self.spectrogram``, no trainable
-       parameters). Channel-wise STFT with ``n_fft=64`` (32 ms at 2 kHz),
-       ``hop_length=16`` (8 ms), Hann window, ``normalized=True``,
-       ``center=False`` (strict causality). Power is log10-transformed
-       (``log10(p + 1e-6)``) and the channel axis is split into
-       ``(num_bands=2, electrodes=16)``. Output shape ``(T_spec, batch,
-       2, 16, freq=33)`` at 125 Hz frame rate.
+    .. rubric:: Paper training recipe
 
-    2. ``_SpectrogramNorm`` (``self.model[0]``): per-electrode-per-band
-       :class:`~torch.nn.BatchNorm2d` over the ``(batch, freq, time)`` slice
-       for each of the ``2 × 16 = 32`` channels.
-
-    3. ``_MultiBandRotationInvariantMLP`` (``self.model[1]``): per-band
-       rotation-invariant MLP. Each 16-electrode band is circularly rolled
-       by the fixed offsets ``(-1, 0, +1)``, passed through a shared MLP,
-       and mean-pooled across rolls. Approximates rigid-rotation
-       invariance of the wristband.
-
-    4. ``_TDSConvEncoder`` (``self.model[3]``, after ``nn.Flatten`` at
-       ``self.model[2]``): stack of ``_TDSConv2dBlock`` interleaved
-       with ``_TDSFullyConnectedBlock``. Each conv block uses
-       ``1 × kernel_width`` 2-D convolution with no temporal padding,
-       so it strips ``kernel_width - 1`` frames from the start of the
-       sequence per block. With the default
-       ``block_channels=(24, 24, 24, 24)`` and ``kernel_width=32``, the
-       encoder removes ``4 × 31 = 124`` frames in total.
-
-    5. :class:`~torch.nn.Linear` classification head exposed as the
-       top-level submodule ``self.final_layer`` (so it shows up in
-       :func:`~torch.nn.Module.named_modules` and ``print(model)``;
-       :meth:`reset_head` swaps it). Optionally followed by
-       :func:`~torch.nn.functional.log_softmax` (``log_softmax``
-       constructor flag, disabled by default since braindecode models
-       conventionally return logits).
-
-    .. rubric:: State-dict layout and upstream-checkpoint compatibility
-
-    ``self.model`` is an ``nn.Sequential`` whose children sit at the same
-    integer indices as upstream emg2qwerty's ``TDSConvCTCModule.model``
-    for the encoder portion (``0/1/3``); the classification head is
-    broken out as ``self.final_layer`` so it shows up in
-    :func:`~torch.nn.Module.named_modules` and ``print(model)``. Two
-    explicit entries in :attr:`mapping` translate upstream's
-    ``model.4.{weight,bias}`` into our ``final_layer.{weight,bias}``.
-    Stripping the PyTorch-Lightning ``network.`` prefix from an upstream
-    checkpoint is the only manual step:
-
-    .. code-block::
-
-        sd = {k[len("network."):]: v
-              for k, v in ckpt["state_dict"].items()
-              if k.startswith("network.")}
-        model.load_state_dict(sd, strict=True)
-
-    The log-spectrogram front-end (``self.spectrogram``) sits outside
-    ``self.model`` and contributes zero parameters; its STFT window is
-    a non-persistent buffer that does not appear in ``state_dict``.
-
-    .. rubric:: Output shape and CTC usage
-
-    The forward pass returns ``(batch, T_out, n_outputs)``, the layout
-    that :class:`~torch.nn.CTCLoss` expects after a transpose. ``T_out``
-    is the downsampled emission length recoverable from the input length
-    via :meth:`compute_output_lengths`. For ``CTCLoss``, transpose the
-    time dimension first: ``emissions.transpose(0, 1)``. With the default
-    config and ``n_times=8000`` (4 s @ 2 kHz), ``T_out=373``.
-
-    .. rubric:: Training recipe (paper values)
-
-    - **Loss**: plain :class:`~torch.nn.CTCLoss` on log-softmax of the
-      model's emissions (no FastEmit, no entropy regularization).
-    - **Vocabulary**: 98 keys + 1 blank → ``n_outputs=99``. Lowercase
-      ``[a-z]``, uppercase ``[A-Z]``, digits ``[0-9]``, ASCII punctuation,
-      and four modifiers (``Key.{backspace,enter,space,shift}``).
-    - **Optimizer**: :class:`~torch.optim.Adam`, ``lr=1e-3``,
-      ``weight_decay=0`` (plain Adam, **not** AdamW).
-    - **Schedule**: linear warmup from ``lr=1e-8`` over the first 10 epochs
-      (essentially zero), then cosine annealing to ``eta_min=1e-6``,
-      150 epochs total. The slow warmup is structural. Without it, CTC
-      collapses to all-blank prediction within one epoch on small data,
-      because predicting blank everywhere is a trivial local minimum.
-    - **Augmentation**: random circular per-band channel rotations
-      ``{-1, 0, +1}`` plus per-band temporal jitter up to ±60 samples
-      (30 ms), and SpecAugment on the log-spectrogram
-      (``n_time_masks=3``, ``time_mask_param=25``, ``n_freq_masks=2``,
-      ``freq_mask_param=4``).
-    - **Decoding**: greedy CTC by default; the upstream paper also
-      reports a beam decoder with a 6-gram character-level KenLM language
-      model (not ported here).
+    - **Loss**: :class:`~torch.nn.CTCLoss` on log-softmax outputs.
+    - **Vocabulary**: 98 keys + 1 blank (``n_outputs = 99``).
+    - **Optimizer**: :class:`~torch.optim.Adam`, lr 1e-3, weight decay 0.
+    - **Schedule**: 10-epoch linear warmup from lr 1e-8, then cosine
+      annealing to 1e-6 over 150 epochs. The slow warmup is required.
+      Without it, CTC collapses to all-blank within one epoch (a trivial
+      local minimum).
+    - **Augmentation**: per-band electrode rotations by -1/0/+1 positions,
+      ±60-sample temporal jitter, and SpecAugment [park2019specaug]_ on
+      the log-spectrogram.
+    - **Decoding**: greedy CTC. Upstream also reports a 6-gram KenLM
+      beam decoder, not ported here.
 
     .. warning::
         The rotation-invariant MLP assumes circular adjacency of the 16
         electrodes within each band (the wristband geometry of the paper).
-        For arbitrary EEG montages the rotation invariance is not
-        meaningful and this model should not be used as-is.
+        For arbitrary EEG montages the symmetry does not hold and this
+        model should not be used as-is.
 
     .. warning::
         **License: noncommercial use only.** This module is a derivative
@@ -184,61 +110,54 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         Hidden sizes of the rotation-invariant MLP. Output dim per band
         is ``mlp_features[-1]``.
     block_channels : sequence of int
-        Channel count per ``_TDSConv2dBlock``. The model's internal
+        Channel count per TDS convolutional block. The model's internal
         ``num_features = 2 * mlp_features[-1]`` must be evenly divisible
         by each entry.
     kernel_width : int
-        Temporal kernel size of each ``_TDSConv2dBlock``.
+        Temporal kernel size of each TDS convolutional block.
     log_softmax : bool
         If ``True``, apply :func:`~torch.nn.functional.log_softmax` to the
         emissions. Disabled by default (braindecode models return logits).
     activation : type of nn.Module
         Activation class used inside the rotation-invariant MLP and the
-        TDS conv/FC blocks. Defaults to :class:`~torch.nn.ReLU` (matches
-        upstream emg2qwerty). Pass any non-parametrized activation class
-        (``nn.GELU``, ``nn.SiLU``, …) for ablations.
+        TDS blocks. Defaults to :class:`~torch.nn.ReLU` (matches upstream
+        emg2qwerty). Pass any non-parametrized activation class
+        (:class:`~torch.nn.GELU`, :class:`~torch.nn.SiLU`, …) for
+        ablations.
     drop_prob : float
-        Dropout probability applied inside each ``_TDSFullyConnectedBlock``,
-        once after the activation between the two ``Linear`` layers and
-        again after the second ``Linear``. Default ``0.0`` matches the
-        upstream paper recipe (no dropout). Set ``> 0`` for regularized
-        training.
+        Dropout probability applied inside each TDS feedforward block,
+        once after the activation between the two :class:`~torch.nn.Linear`
+        layers and again after the second :class:`~torch.nn.Linear`.
+        Default ``0.0`` matches the upstream paper recipe (no dropout).
+        Set ``> 0`` for regularized training.
 
     Examples
     --------
-    Train-time forward pass and CTC loss::
+    Build the model and run a forward pass on a 4-second sEMG batch::
 
         import torch
-        import torch.nn as nn
-        import torch.nn.functional as F
         from braindecode.models import EMG2QwertyNet
 
         model = EMG2QwertyNet(
             n_outputs=99, n_chans=32, n_times=8000, sfreq=2000,
         )
-        x = torch.randn(2, 32, 8000)              # (batch, n_chans, n_times)
-        emissions = model(x)                       # (batch, T_out, 99)
+        x = torch.randn(2, 32, 8000)
+        emissions = model(x)
+
+    Compute a CTC loss on the emissions::
+
+        import torch.nn as nn
+        import torch.nn.functional as F
+
         log_probs = F.log_softmax(emissions, dim=-1).transpose(0, 1)
-        emit_lens = model.compute_output_lengths(torch.tensor([8000, 8000]))
+        input_lengths = model.compute_output_lengths(
+            torch.tensor([8000, 8000])
+        )
         targets = torch.randint(0, 98, (2, 20), dtype=torch.long)
         target_lengths = torch.tensor([20, 15], dtype=torch.int32)
         loss = nn.CTCLoss(blank=98, zero_infinity=True)(
-            log_probs, targets, emit_lens, target_lengths,
+            log_probs, targets, input_lengths, target_lengths,
         )
-
-    Load an upstream emg2qwerty checkpoint::
-
-        ckpt = torch.load("personalized.ckpt", weights_only=False)
-        # PyTorch Lightning prefixes ``TDSConvCTCModule.model`` keys with
-        # "network.". Strip that prefix so upstream keys (``model.0.*``,
-        # ``model.1.*``, ``model.3.*``, ``model.4.{weight,bias}``) land
-        # where :attr:`mapping` expects them.
-        sd = {
-            k[len("network."):]: v
-            for k, v in ckpt["state_dict"].items()
-            if k.startswith("network.")
-        }
-        model.load_state_dict(sd, strict=True)
 
     References
     ----------
@@ -257,18 +176,8 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
     .. [park2019specaug] Park, D. S. et al., 2019. SpecAugment: a simple
         data augmentation method for automatic speech recognition.
         Proc. Interspeech, 2613-2617.
-    .. [fastemit2021] Yu, J. et al., 2021. FastEmit: low-latency
-        streaming ASR with sequence-level emission regularization.
-        Proc. ICASSP.
     """
 
-    #: State-dict key remapping for upstream emg2qwerty checkpoints.
-    #: Upstream's ``TDSConvCTCModule.model`` is an ``nn.Sequential`` whose
-    #: head sits at index ``4``; here the head is broken out as
-    #: ``self.final_layer`` so it shows up in :func:`~torch.nn.Module.named_modules`
-    #: and ``print(model)``. The two entries below remap the head; the
-    #: encoder keys (``model.0.*``, ``model.1.*``, ``model.3.*``) match
-    #: upstream verbatim.
     mapping = {
         "model.4.weight": "final_layer.weight",
         "model.4.bias": "final_layer.bias",
@@ -300,21 +209,13 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        # Free the keyword-arg names so subsequent code reads them only via
-        # the EEGModuleMixin properties (``self.n_outputs`` etc.). Mirrors
-        # the pattern in ``MetaNeuromotorHand``.
         del n_outputs, n_chans, sfreq, n_times, input_window_seconds, chs_info
 
-        # --- Validate inputs ---------------------------------------------
-        # Architectural fixed values: 2 wristbands of 16 electrodes each.
         if self.n_chans != 32:
             raise ValueError(
                 f"EMG2QwertyNet expects 32 channels (2 bands × 16 "
                 f"electrodes); got {self.n_chans}."
             )
-        # Default STFT params (n_fft=64 / hop=16) are calibrated for
-        # sfreq=2000 (32 ms / 8 ms windows). Refuse silently-different
-        # time semantics.
         if self.sfreq != 2000.0 and (n_fft, hop_length) == (64, 16):
             raise ValueError(
                 f"EMG2QwertyNet's default n_fft=64, hop_length=16 are "
@@ -326,25 +227,15 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         if not block_channels:
             raise ValueError("block_channels must contain at least one entry.")
 
-        # --- Stash hyperparameters used outside ``__init__`` --------------
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.kernel_width = kernel_width
         self.log_softmax = log_softmax
 
         n_freq_bins = n_fft // 2 + 1
-        # _NUM_BANDS=2, _ELECTRODES_PER_BAND=16 are inlined as literals
-        # below: those numbers are fixed by emg2qwerty's two-wristband
-        # architecture and validated against ``self.n_chans`` above.
-        in_features = 16 * n_freq_bins  # electrodes × freq
-        num_features = 2 * mlp_features[-1]  # bands × mlp_out
+        in_features = 16 * n_freq_bins
+        num_features = 2 * mlp_features[-1]
 
-        # --- Build submodules --------------------------------------------
-        # Log-spectrogram front-end. Kept SEPARATE from ``self.model`` so
-        # the inner Sequential's children sit at the same integer indices
-        # as upstream emg2qwerty's encoder (which computes the spectrogram
-        # in its dataset transform, not in the model). Hann window is a
-        # non-persistent buffer — contributes zero keys to ``state_dict``.
         self.spectrogram = _LogSpectrogram(
             n_fft=n_fft,
             hop_length=hop_length,
@@ -352,23 +243,19 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             electrodes_per_band=16,
         )
 
-        # Encoder ``nn.Sequential``. The classification head is broken
-        # out as ``self.final_layer`` (below) so ``print(model)`` and
-        # ``named_modules`` show it. The encoder children index-match
-        # upstream emg2qwerty's ``TDSConvCTCModule.model`` for indices
-        # 0/1/3 (index 2 is a parameter-free Flatten); upstream's index
-        # 4 is the final Linear, remapped to ``final_layer`` via
-        # :attr:`mapping`.
+        # Indices 0/1/3 match upstream's ``TDSConvCTCModule.model``;
+        # index 2 is a parameter-free Flatten; upstream's index 4 (head)
+        # is broken out as ``self.final_layer`` and remapped via :attr:`mapping`.
         self.model = nn.Sequential(
-            _SpectrogramNorm(channels=2 * 16),  # 0
-            _MultiBandRotationInvariantMLP(  # 1
+            _SpectrogramNorm(channels=2 * 16),
+            _MultiBandRotationInvariantMLP(
                 in_features=in_features,
                 mlp_features=list(mlp_features),
                 num_bands=2,
                 activation=activation,
             ),
-            nn.Flatten(start_dim=2),  # 2
-            _TDSConvEncoder(  # 3
+            nn.Flatten(start_dim=2),
+            _TDSConvEncoder(
                 num_features=num_features,
                 block_channels=list(block_channels),
                 kernel_width=kernel_width,
@@ -377,15 +264,8 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             ),
         )
 
-        # Classification head as a top-level submodule. Direct assignment
-        # in :meth:`reset_head` works because there is no @property
-        # interfering with ``nn.Module.__setattr__``'s Module-aware path.
         self.final_layer = nn.Linear(num_features, self.n_outputs)
 
-        # Cache the conv-block count so ``compute_output_lengths`` can't
-        # silently desync if a future ``_TDSConvEncoder`` variant adds
-        # other block types. ``self.model[3]`` is the encoder per the
-        # layout above.
         self._n_conv_blocks = sum(
             isinstance(m, _TDSConv2dBlock) for m in self.model[3].tds_conv_blocks
         )
@@ -396,12 +276,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Raw EMG of shape ``(batch, n_chans=32, n_times)``.
-            ``n_times`` must be at least the encoder's full receptive
-            field, ``n_fft + n_conv_blocks * (kernel_width - 1) *
-            hop_length``. Shorter inputs are rejected upfront with a
-            clear ``ValueError`` so we never crash deep inside
-            :func:`torch.stft` or :class:`~torch.nn.Conv2d`.
+            Raw EMG of shape ``(batch, n_chans=32, n_times)``. ``n_times``
+            must be at least the encoder's receptive field, ``n_fft +
+            n_conv_blocks * (kernel_width - 1) * hop_length``.
 
         Returns
         -------
@@ -414,14 +291,6 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
                 f"expected (batch, {self.n_chans}, T) input; got shape "
                 f"{tuple(x.shape)}."
             )
-        # Tightest forward precondition: enforce the full encoder
-        # receptive field, not just ``n_fft``. With only the n_fft check
-        # ``torch.stft`` succeeds for ``n_times`` in
-        # ``[n_fft, min_required)`` and the model crashes deeper inside
-        # the no-padding ``Conv2d`` of ``_TDSConv2dBlock`` (kernel size
-        # exceeds available frames). Raise upfront with the same formula
-        # used by :meth:`compute_output_lengths` and
-        # :meth:`get_output_shape`.
         min_n_times = (
             self.n_fft + self._n_conv_blocks * (self.kernel_width - 1) * self.hop_length
         )
@@ -432,15 +301,14 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
                 f"n_conv_blocks * (kernel_width - 1) * hop_length, with "
                 f"n_fft={self.n_fft}, hop_length={self.hop_length}, "
                 f"n_conv_blocks={self._n_conv_blocks}, "
-                f"kernel_width={self.kernel_width}). Use a longer window "
-                f"or override n_fft / hop_length / kernel_width."
+                f"kernel_width={self.kernel_width})."
             )
-        h = self.spectrogram(x)  # (T, N, 2, 16, freq)
-        h = self.model(h)  # (T_out, N, num_features)
-        h = self.final_layer(h)  # (T_out, N, n_outputs)
+        h = self.spectrogram(x)
+        h = self.model(h)
+        h = self.final_layer(h)
         if self.log_softmax:
             h = F.log_softmax(h, dim=-1)
-        return h.transpose(0, 1).contiguous()  # (N, T_out, n_outputs)
+        return h.transpose(0, 1).contiguous()
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new vocabulary size."""
@@ -453,17 +321,10 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         """Map per-sample input lengths to CTC emission lengths.
 
         ``T_out = (T - n_fft) // hop_length + 1 -
-        n_conv_blocks * (kernel_width - 1)``, clamped to zero. Inputs with
-        ``T < n_fft`` produce zero-length emissions; :meth:`forward`
-        rejects those inputs upfront so the two methods agree on what's
-        a usable shape.
+        n_conv_blocks * (kernel_width - 1)``, clamped to zero.
         """
-        # Use ``floor`` (not ``trunc``) so that ``input_lengths < n_fft``
-        # yields ``spec_len == 0`` rather than ``1``: ``trunc`` rounds
-        # toward zero, which would give ``(-x) // h == 0`` for negative
-        # numerators and bake an off-by-one into the encoder-output
-        # length whenever ``kernel_width == 1`` (no temporal shrink to
-        # mask it via ``clamp_min``).
+        # ``floor`` (not ``trunc``) keeps ``T < n_fft`` mapping to 0 instead
+        # of 1 — matters when ``kernel_width == 1`` (no encoder shrink).
         spec_len = (
             torch.div(
                 input_lengths - self.n_fft,
@@ -477,12 +338,10 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
     def get_output_shape(self) -> tuple[int, ...]:
         """Shape of ``forward`` output for a batch of size 1.
 
-        Overrides the base implementation so the dummy ``n_times`` is
-        always at least the encoder's full receptive field; otherwise
-        ``forward`` produces zero-length emissions and downstream layer
-        norms crash on empty inputs. If ``n_times`` was not specified at
-        construction time, the receptive-field minimum is used as a
-        fallback (``EEGModuleMixin.n_times`` would otherwise raise).
+        Overrides the base impl so the dummy ``n_times`` is at least the
+        encoder's receptive field (otherwise downstream LayerNorms crash
+        on empty inputs). Falls back to that minimum when ``n_times`` was
+        not set at construction time.
         """
         min_n_times = (
             self.n_fft + self._n_conv_blocks * (self.kernel_width - 1) * self.hop_length
@@ -499,31 +358,14 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             return tuple(self.forward(x).shape)
 
 
-# ---------------------------------------------------------------------------
-# Private helpers — model layers
-# ---------------------------------------------------------------------------
-
-
 class _LogSpectrogram(nn.Module):
-    r"""Per-channel log10 power STFT, reshaped per band.
+    r"""Per-channel log10-power STFT, reshaped per band.
 
-    Turns raw multi-channel EMG into the log-spectrogram layout expected
-    by :class:`_SpectrogramNorm` and the rotation-invariant MLP downstream.
-
-    Input  : ``(batch, num_bands * electrodes_per_band, n_times)``.
-    Output : ``(T_spec, batch, num_bands, electrodes_per_band, freq)``
-    where ``T_spec = (n_times - n_fft) // hop_length + 1`` and
-    ``freq = n_fft // 2 + 1``.
-
-    Computes :func:`torch.stft` per channel with a Hann window
-    (``normalized=True``, ``center=False``), takes squared magnitude,
-    log10-transforms with a small floor of ``1e-6``, and splits the
-    flattened channel axis into ``(num_bands, electrodes_per_band)``
-    before moving time to the leading axis.
-
-    The Hann window is registered as a non-persistent buffer
-    (``persistent=False``): it moves with ``.to(device)`` but does not
-    appear in :meth:`~torch.nn.Module.state_dict`.
+    ``(batch, num_bands * electrodes_per_band, n_times)`` →
+    ``(T_spec, batch, num_bands, electrodes_per_band, freq)`` with
+    ``T_spec = (n_times - n_fft) // hop_length + 1`` and
+    ``freq = n_fft // 2 + 1``. Hann window is non-persistent (excluded
+    from ``state_dict``).
     """
 
     def __init__(
@@ -549,7 +391,6 @@ class _LogSpectrogram(nn.Module):
                 f"({self.num_bands} bands × {self.electrodes_per_band} "
                 f"electrodes); got {C}."
             )
-        # Compute STFT per channel: flatten (N, C) into a single batch.
         spec = torch.stft(
             x.reshape(N * C, T),
             n_fft=self.n_fft,
@@ -558,11 +399,10 @@ class _LogSpectrogram(nn.Module):
             normalized=True,
             center=False,
             return_complex=True,
-        )  # (N*C, freq, T_spec)
-        power = spec.abs().pow(2)  # squared magnitude
+        )
+        power = spec.abs().pow(2)
         n_freq, T_spec = power.shape[-2], power.shape[-1]
         logspec = torch.log10(power + 1e-6).reshape(N, C, n_freq, T_spec)
-        # Split channels into (bands, electrodes); move time to leading axis.
         return logspec.reshape(
             N, self.num_bands, self.electrodes_per_band, n_freq, T_spec
         ).movedim(-1, 0)
@@ -571,9 +411,8 @@ class _LogSpectrogram(nn.Module):
 class _SpectrogramNorm(nn.Module):
     r""":class:`~torch.nn.BatchNorm2d` over (band × electrode) channels.
 
-    Input shape ``(T, N, num_bands, electrodes, freq)``. Stats are
-    computed over the ``(N, freq, T)`` slice for each of the
-    ``num_bands * electrodes`` channels independently.
+    Input ``(T, N, bands, electrodes, freq)``; stats computed over
+    ``(N, freq, T)`` per ``bands * electrodes`` channel.
     """
 
     def __init__(self, channels: int) -> None:
@@ -596,9 +435,8 @@ class _SpectrogramNorm(nn.Module):
 class _RotationInvariantMLP(nn.Module):
     r"""Single-band rotation-invariant MLP.
 
-    Applies the MLP to each of ``len(offsets)`` circular rolls of the
-    electrode axis, then mean- or max-pools across rolls. Enforces
-    approximate rigid-rotation invariance of the wristband.
+    Applies the MLP to each circular roll in ``offsets`` and pools
+    (mean/max) across rolls — approximate wristband-rotation invariance.
     """
 
     def __init__(
@@ -630,10 +468,10 @@ class _RotationInvariantMLP(nn.Module):
 
 
 class _MultiBandRotationInvariantMLP(nn.Module):
-    r"""Per-band rotation-invariant MLP, repeated independently per band.
+    r"""Independent rotation-invariant MLP per band.
 
-    Input shape ``(T, N, num_bands, electrodes, ...)``;
-    output shape ``(T, N, num_bands, mlp_features[-1])``.
+    ``(T, N, num_bands, electrodes, ...)`` →
+    ``(T, N, num_bands, mlp_features[-1])``.
     """
 
     def __init__(
@@ -679,9 +517,8 @@ class _MultiBandRotationInvariantMLP(nn.Module):
 class _TDSConv2dBlock(nn.Module):
     r"""Time-Depth-Separable 2-D conv block ([hannun2019tds]_).
 
-    1×``kernel_width`` convolution followed by ReLU, residual skip, and
-    LayerNorm. No temporal padding: each block strips
-    ``kernel_width - 1`` frames from the start of the sequence.
+    1×``kernel_width`` conv + activation + residual + LayerNorm. No
+    temporal padding: strips ``kernel_width - 1`` frames per block.
     """
 
     def __init__(
@@ -709,12 +546,8 @@ class _TDSConv2dBlock(nn.Module):
         x = self.activation(x)
         x = x.reshape(N, C, -1).movedim(-1, 0)
         T_out = x.shape[0]
-        # Skip-connection alignment: with ``kernel_size=(1, kernel_width)``
-        # and no temporal padding, output frame ``i`` looks at input
-        # frames ``[i, i + kernel_width - 1]`` and is naturally aligned
-        # with input frame ``i + (kernel_width - 1)``. So the residual
-        # for the ``T_out`` outputs is the LAST ``T_out`` input frames,
-        # i.e. ``inputs[T_in - T_out:] = inputs[-T_out:]``.
+        # Output frame i aligns with input frame i+(kernel_width-1), so
+        # the residual is the LAST T_out input frames.
         x = x + inputs[-T_out:]
         return self.layer_norm(x)
 
@@ -746,23 +579,12 @@ class _TDSFullyConnectedBlock(nn.Module):
 
 
 class _TDSConvEncoder(nn.Module):
-    r"""Stack of :class:`_TDSConv2dBlock` interleaved with ``_TDSFullyConnectedBlock``.
+    r"""``_TDSConv2dBlock`` + ``_TDSFullyConnectedBlock`` stack.
 
-    With ``len(block_channels) = K`` and no temporal padding, the encoder
-    strips ``K * (kernel_width - 1)`` frames in total. Each ``ch`` in
-    ``block_channels`` must evenly divide ``num_features`` (the input's
-    last dim) so the conv block can fold features as
-    ``(channels=ch, width=num_features // ch)``.
-
-    Design constraints (used by ``EMG2QwertyNet.compute_output_lengths``
-    and ``get_output_shape``):
-
-    - Conv blocks are ``_TDSConv2dBlock`` instances; FC blocks are
-      ``_TDSFullyConnectedBlock`` instances. The output-length math
-      assumes only the conv blocks shrink ``T``.
-    - ``kernel_width`` is identical across all blocks.
-    - No temporal padding anywhere; each conv block takes ``T_in`` frames
-      to ``T_in - kernel_width + 1`` frames.
+    With ``K = len(block_channels)`` blocks and no temporal padding, the
+    encoder strips ``K * (kernel_width - 1)`` frames in total. Each ``ch``
+    must evenly divide ``num_features`` so the conv block can fold features
+    as ``(channels=ch, width=num_features // ch)``.
     """
 
     def __init__(

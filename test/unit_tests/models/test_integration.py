@@ -418,9 +418,6 @@ def test_model_compiled(model):
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
         "MetaNeuromotorHand",
-        # torch.compile + complex-valued torch.stft at the default
-        # 8000-sample window is unstable on multiple PyTorch versions.
-        "EMG2QwertyNet",
     ]
     if model.__class__.__name__ in not_compilable_models:
         pytest.skip(

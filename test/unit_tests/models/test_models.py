@@ -3351,8 +3351,14 @@ def emg2qwerty_default():
 
 
 def _small_emg2qwerty(**kwargs):
+    """Tiny config for fast unit tests.
+
+    Receptive field is ``n_fft + n_conv_blocks * (kernel_width - 1) *
+    hop_length = 64 + 2 * 7 * 16 = 288`` samples; ``n_times=500`` keeps
+    the forward small while leaving headroom for the encoder.
+    """
     defaults = dict(
-        n_times=4000,
+        n_times=500,
         mlp_features=(48,),
         block_channels=(12, 12),
         kernel_width=8,
@@ -3379,89 +3385,68 @@ def test_emg2qwerty_default_contract(emg2qwerty_default):
     assert lengths[1] > lengths[0]
 
 
-def test_emg2qwerty_head_log_softmax_and_config():
-    m = _small_emg2qwerty(log_softmax=True).eval()
-    with torch.no_grad():
-        y = m(torch.randn(1, 32, 4000))
+def test_emg2qwerty_train_eval_and_state_dict():
+    """Smoke-test small config: log_softmax head, CTC backward, key layout.
 
-    assert torch.allclose(
-        y.exp().sum(dim=-1), torch.ones_like(y[..., 0]), atol=1e-5
-    )
-    assert EMG2QwertyNet.from_config(m.get_config()).n_outputs == 99
-    m.reset_head(30)
-    assert m.n_outputs == 30
-    assert m.final_layer.out_features == 30
-
-
-def test_emg2qwerty_ctc_backward():
+    Covers the full small-model contract in one pass: log-softmax
+    normalization, ``from_config`` round-trip, ``reset_head``, a CTC
+    backward step, and the upstream-compatible ``state_dict`` layout
+    (encoder under ``model.{0,1,3}.*``, head at ``final_layer.*``,
+    non-persistent STFT window absent).
+    """
     torch.manual_seed(0)
-    m = _small_emg2qwerty().train()
-    x = torch.randn(2, 32, 4000)
-    emissions = m(x)  # (N, T, V)
-    log_probs = torch.log_softmax(emissions, dim=-1).transpose(0, 1)  # (T, N, V)
-    input_lengths = m.compute_output_lengths(torch.tensor([4000, 4000]))
+    m = _small_emg2qwerty(log_softmax=True).train()
+
+    x = torch.randn(2, 32, 500)
+    log_probs = m(x).transpose(0, 1)  # already log-softmaxed
+    assert torch.allclose(
+        log_probs.exp().sum(dim=-1),
+        torch.ones_like(log_probs[..., 0]),
+        atol=1e-5,
+    )
+
+    input_lengths = m.compute_output_lengths(torch.tensor([500, 500]))
     target_lengths = torch.tensor([2, 2])
     targets = torch.randint(0, 98, (2, 2))
     loss = torch.nn.CTCLoss(blank=98, zero_infinity=True)(
         log_probs, targets, input_lengths, target_lengths
     )
     loss.backward()
-
     assert input_lengths.min() >= target_lengths.max()
     assert m.final_layer.weight.grad is not None
     assert any(p.grad is not None for p in m.model.parameters())
 
+    assert EMG2QwertyNet.from_config(m.get_config()).n_outputs == 99
+    m.reset_head(30)
+    assert m.n_outputs == 30 and m.final_layer.out_features == 30
 
-def test_emg2qwerty_state_dict_key_layout():
-    """All parameter keys live under ``model.{0,1,3}.*`` or ``final_layer.*``.
-
-    The encoder ``nn.Sequential`` matches upstream emg2qwerty's index
-    layout for its parameter-bearing children; the head sits at the
-    top-level ``self.final_layer`` and is renamed via ``mapping`` when
-    loading upstream checkpoints.
-    """
-    m = _small_emg2qwerty()
     keys = list(m.state_dict().keys())
     allowed = ("model.0.", "model.1.", "model.3.", "final_layer.")
-    bad = [k for k in keys if not k.startswith(allowed)]
-    assert not bad, f"unexpected keys outside encoder + final_layer: {bad}"
-    # Hann window is registered as non-persistent: must NOT be in state_dict.
+    assert not [k for k in keys if not k.startswith(allowed)]
     assert not any(k.startswith("spectrogram.") for k in keys)
-    # Class-level mapping renames the upstream head keys.
     assert set(EMG2QwertyNet.mapping) == {"model.4.weight", "model.4.bias"}
 
 
-def test_emg2qwerty_rejects_short_input():
-    """forward must reject inputs shorter than the encoder receptive field.
+def test_emg2qwerty_input_validation():
+    """forward rejects short inputs; compute_output_lengths floors to zero.
 
-    Just-enforcing ``n_times >= n_fft`` is necessary but not sufficient:
-    ``torch.stft`` would succeed for ``n_times`` in
-    ``[n_fft, n_fft + n_conv_blocks * (kernel_width - 1) * hop_length)``
-    and the model would crash deeper inside :class:`~torch.nn.Conv2d`.
-    ``forward`` must use the full receptive-field formula and raise
-    upfront with a clear ``ValueError`` (mentioning ``n_fft`` so users
-    can grep for the limit).
+    Two related contracts. (1) ``forward`` must enforce the full encoder
+    receptive field, not just ``n_fft`` — otherwise ``torch.stft``
+    succeeds for ``n_times`` in ``[n_fft, receptive_field)`` and the
+    model crashes deep inside :class:`~torch.nn.Conv2d`. (2)
+    ``compute_output_lengths`` must use ``rounding_mode="floor"`` so
+    that ``T < n_fft`` reports zero emission frames; ``trunc`` would
+    silently return ``1`` when ``kernel_width == 1`` (no encoder shrink
+    to mask the off-by-one via ``clamp_min``).
     """
     m = _small_emg2qwerty(n_fft=64, hop_length=16, kernel_width=8,
                           block_channels=(12, 12))
-    # Receptive field = 64 + 2 * 7 * 16 = 64 + 224 = 288 samples.
+    # Receptive field = 64 + 2 * 7 * 16 = 288.
     with pytest.raises(ValueError, match="n_fft"):
-        m(torch.randn(1, 32, 50))    # below n_fft
+        m(torch.randn(1, 32, 50))
     with pytest.raises(ValueError, match="receptive field"):
-        m(torch.randn(1, 32, 200))   # above n_fft, below receptive field
+        m(torch.randn(1, 32, 200))
 
-
-def test_emg2qwerty_compute_output_lengths_floor_for_short_inputs():
-    """``input_lengths < n_fft`` must yield zero-length emissions.
-
-    Regression for a subtle off-by-one: when the formula uses
-    ``rounding_mode="trunc"``, the negative numerator ``(T - n_fft)``
-    rounds toward zero and ``spec_len`` ends up at ``1`` instead of
-    ``0``. The bug stays masked while ``kernel_width > 1`` because
-    ``clamp_min(0)`` absorbs the off-by-one, but it leaks through when
-    ``kernel_width == 1``. The fix is ``rounding_mode="floor"``.
-    """
-    m = _small_emg2qwerty(kernel_width=1, block_channels=(12, 12))
-    # T < n_fft — must report 0 emission frames.
-    out = m.compute_output_lengths(torch.tensor([10, 0, 50]))
-    assert out.tolist() == [0, 0, 0], out.tolist()
+    m_floor = _small_emg2qwerty(kernel_width=1, block_channels=(12, 12))
+    out = m_floor.compute_output_lengths(torch.tensor([10, 0, 50]))
+    assert out.tolist() == [0, 0, 0]
