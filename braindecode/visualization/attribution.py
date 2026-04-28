@@ -63,6 +63,8 @@ def attribute_image_features(model, input_tensor, target, method, layer=None):
     algorithm = get_attribution_method(model, method, layer=layer)
 
     if method == "LayerGradCam":
+        # Captum applies ReLU to LayerGradCam by default; pass False to keep
+        # signed activations so downstream metrics see both signs.
         attributions = algorithm.attribute(
             input_tensor, target=target, relu_attributions=False
         )
@@ -138,8 +140,8 @@ def get_attribution_method(model, method, layer=None):
     method : str
         Captum attribution method name. See :func:`attribute_image_features`.
     layer : torch.nn.Module, optional
-        Target layer for layer-wise methods. Falls back to the last child
-        module of ``model`` if not provided.
+        Target layer; required for ``GuidedGradCam`` and ``LayerGradCam``,
+        unused otherwise.
 
     Returns
     -------
@@ -149,11 +151,16 @@ def get_attribution_method(model, method, layer=None):
     Raises
     ------
     ValueError
-        If ``method`` is not one of the supported method names.
+        If ``method`` is not one of the supported method names, or if
+        ``layer`` is required but not provided.
     """
     captum_attr = _import_captum()
-    if layer is None:
-        layer = list(model.children())[-1]
+
+    if method in _LAYER_REQUIRED_METHODS and layer is None:
+        raise ValueError(
+            f"method='{method}' requires a `layer` argument; pass the target "
+            "module (e.g. the last convolutional layer)."
+        )
 
     methods = {
         "Saliency": captum_attr.Saliency,

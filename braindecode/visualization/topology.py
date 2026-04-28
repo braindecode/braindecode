@@ -41,13 +41,16 @@ def project_to_topomap(data, chs_info, res=64):
         plt.close(fig)
 
 
+_TOPOMAP_PLACEHOLDER_SFREQ = 1.0  # mne.create_info requires sfreq, but plot_topomap reads only positions.
+
+
 def _info_from_chs_info(chs_info):
     """Build an :class:`mne.Info` object from a braindecode ``chs_info`` list."""
     import mne
 
     info = mne.create_info(
         ch_names=[ch["ch_name"] for ch in chs_info],
-        sfreq=1.0,
+        sfreq=_TOPOMAP_PLACEHOLDER_SFREQ,
         ch_types="eeg",
     )
     with info._unlock():

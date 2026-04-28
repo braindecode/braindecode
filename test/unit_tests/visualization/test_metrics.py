@@ -80,7 +80,7 @@ def test_similarity_metrics_perfect(positive_reference):
 
 def test_relevance_accuracy_perfect(positive_reference):
     scores, _ = compute_metrics(positive_reference.copy(), positive_reference)
-    assert np.all(scores[:, 4] > 0.99), f"MassAccuracy_top5: {scores[:, 4]}"
+    assert np.all(scores[:, 4] > 0.99), f"MassAccuracy_topperc: {scores[:, 4]}"
     assert np.all(scores[:, 5] > 0.99), f"RankAccuracy_topK: {scores[:, 5]}"
     assert np.all(scores[:, 6] > 0.99), f"MassAccuracy_norm: {scores[:, 6]}"
     assert np.all(scores[:, 7] > 0.99), f"MassAccuracy_absnorm: {scores[:, 7]}"
@@ -137,7 +137,7 @@ def test_high_prctile_retains_fewer_values(random_data):
     explanations, reference = random_data
     scores_95, _ = compute_metrics(explanations.copy(), reference.copy(), prctile_val=95)
     scores_50, _ = compute_metrics(explanations.copy(), reference.copy(), prctile_val=50)
-    # Cosine_top5_abs (idx 0) is computed on the top-percentile masked maps.
+    # Cosine_topperc_abs (idx 0) is computed on the top-percentile masked maps.
     assert not np.allclose(scores_95[:, 0], scores_50[:, 0])
 
 

@@ -8,15 +8,15 @@ import numpy as np
 from braindecode.visualization.topology import project_to_topomap
 
 METRIC_NAMES = [
-    "Cosine_top5_abs",
+    "Cosine_topperc_abs",
     "Cosine_absnorm",
     "Cosine_norm",
     "Cosine_raw",
-    "RelevanceMassAccuracy_top5",
+    "RelevanceMassAccuracy_topperc",
     "RelevanceRankAccuracy_topK",
     "RelevanceMassAccuracy_norm",
     "RelevanceMassAccuracy_absnorm",
-    "Pearson_topK_vs_top5ref",
+    "Pearson_topK_vs_topperc",
     "Pearson_absnorm_vs_refnorm",
     "Pearson_norm_vs_refnorm",
     "Pearson_raw_vs_refnorm",
@@ -58,7 +58,7 @@ def compute_metrics(
         negative values to zero.
     prctile_val : float, default=95
         Top-percentile threshold (e.g. 95 keeps the top 5%) used for
-        ``*_top5`` masks.
+        ``*_topperc`` masks.
 
     Returns
     -------
@@ -149,7 +149,11 @@ def _compute(attr, gt, attr_abs, prctile_val):
 
 
 def _safe_div(num, den):
-    return num / np.where(den == 0, 1.0, den)
+    """Element-wise division returning 0 where the denominator is 0."""
+    out = np.zeros_like(num, dtype=float)
+    nonzero = den != 0
+    np.divide(num, den, out=out, where=nonzero)
+    return out
 
 
 def _minmax(X):
