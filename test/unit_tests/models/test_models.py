@@ -3427,6 +3427,29 @@ def test_emg2qwerty_train_eval_and_state_dict():
     assert set(EMG2QwertyNet.mapping) == {"model.4.weight", "model.4.bias"}
 
 
+def test_emg2qwerty_flexible_band_geometry():
+    """num_bands and electrodes_per_band can deviate from the wristband default.
+
+    Smoke-checks that a non-default ``(num_bands=3, electrodes_per_band=8)``
+    config (24 channels) builds and forwards. Validates that ``n_chans``
+    inconsistent with the geometry raises.
+    """
+    m = _small_emg2qwerty(
+        n_chans=24,
+        num_bands=3,
+        electrodes_per_band=8,
+        rotation_offsets=(0,),
+        pooling="max",
+        log_eps=1e-5,
+    ).eval()
+    with torch.no_grad():
+        y = m(torch.randn(1, 24, 500))
+    assert y.shape[0] == 1 and y.shape[2] == 99
+
+    with pytest.raises(ValueError, match="n_chans == num_bands"):
+        EMG2QwertyNet(n_chans=33, num_bands=2, electrodes_per_band=16, n_times=500)
+
+
 def test_emg2qwerty_input_validation():
     """forward rejects short inputs; compute_output_lengths floors to zero.
 

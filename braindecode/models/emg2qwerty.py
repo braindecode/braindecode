@@ -32,10 +32,10 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
     .. rubric:: Pipeline
 
     1. **Log-spectrogram front-end**: per-channel Short-Time Fourier
-       Transform (:func:`~torch.stft`) with ``n_fft=64``,
-       ``hop_length=16``, Hann window, ``center=False``, then squared
-       magnitude and ``log10(p + 1e-6)``. Output frame rate 125 Hz. No
-       trainable parameters.
+       Transform (:func:`~torch.stft`) with Hann window, ``center=False``,
+       then squared magnitude and ``log10(p + log_eps)``. With the
+       defaults (``n_fft=64``, ``hop_length=16``, ``sfreq=2000``) the
+       output frame rate is 125 Hz. No trainable parameters.
     2. **Spectrogram BatchNorm**: :class:`~torch.nn.BatchNorm2d` over
        the ``(batch, freq, time)`` slice for each of the
        ``num_bands × electrodes_per_band`` channels.
@@ -73,10 +73,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
       beam decoder, not ported here.
 
     .. warning::
-        The rotation-invariant MLP assumes circular adjacency of the 16
-        electrodes within each band (the wristband geometry of the paper).
-        For arbitrary EEG montages the symmetry does not hold and this
-        model should not be used as-is.
+        The rotation-invariant MLP assumes circular adjacency of the
+        electrodes within each band (the wristband geometry of the
+        paper, ``electrodes_per_band=16``). For arbitrary EEG montages
+        the symmetry does not hold and this model should not be used
+        as-is.
 
     .. warning::
         **License: noncommercial use only.** This module is a derivative
@@ -95,24 +96,37 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         Vocabulary size for CTC, including the blank class. Defaults to
         ``99`` (98 keys + 1 blank).
     n_chans : int
-        Number of EMG channels. Must equal ``32`` (2 bands × 16
-        electrodes).
+        Number of EMG channels. Must equal
+        ``num_bands * electrodes_per_band`` (default ``32`` = ``2 * 16``).
     sfreq : float
         Sampling frequency in Hz. Defaults to ``2000``. ``n_fft`` and
-        ``hop_length`` defaults are calibrated for this rate; passing a
-        different ``sfreq`` without overriding the STFT params raises
-        :class:`ValueError` to avoid silent time/frequency rescaling.
+        ``hop_length`` defaults are calibrated for this rate; pass
+        matching values when changing ``sfreq``.
+    num_bands : int
+        Number of EMG bands (e.g. one per wristband). Defaults to ``2``.
+    electrodes_per_band : int
+        Number of electrodes per band. Defaults to ``16``. The
+        rotation-invariant MLP assumes circular adjacency along this
+        axis.
     n_fft : int
         STFT window size in samples.
     hop_length : int
         STFT hop in samples.
+    log_eps : float
+        Floor added inside ``log10(power + log_eps)`` to keep the log
+        finite at silent samples. Defaults to ``1e-6``.
     mlp_features : sequence of int
         Hidden sizes of the rotation-invariant MLP. Output dim per band
         is ``mlp_features[-1]``.
+    rotation_offsets : sequence of int
+        Circular electrode offsets used to enforce approximate
+        rotation invariance. Defaults to ``(-1, 0, 1)``.
+    pooling : {"mean", "max"}
+        Pool reduction across the rotation rolls. Defaults to ``"mean"``.
     block_channels : sequence of int
         Channel count per TDS convolutional block. The model's internal
-        ``num_features = 2 * mlp_features[-1]`` must be evenly divisible
-        by each entry.
+        ``num_features = num_bands * mlp_features[-1]`` must be evenly
+        divisible by each entry.
     kernel_width : int
         Temporal kernel size of each TDS convolutional block.
     log_softmax : bool
@@ -188,9 +202,14 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         n_outputs: int = 99,
         n_chans: int = 32,
         sfreq: float = 2000.0,
+        num_bands: int = 2,
+        electrodes_per_band: int = 16,
         n_fft: int = 64,
         hop_length: int = 16,
+        log_eps: float = 1e-6,
         mlp_features: Sequence[int] = (384,),
+        rotation_offsets: Sequence[int] = (-1, 0, 1),
+        pooling: str = "mean",
         block_channels: Sequence[int] = (24, 24, 24, 24),
         kernel_width: int = 32,
         log_softmax: bool = False,
@@ -211,47 +230,55 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, sfreq, n_times, input_window_seconds, chs_info
 
-        if self.n_chans != 32:
+        if num_bands < 1 or electrodes_per_band < 1:
             raise ValueError(
-                f"EMG2QwertyNet expects 32 channels (2 bands × 16 "
-                f"electrodes); got {self.n_chans}."
+                f"num_bands and electrodes_per_band must be >= 1; got "
+                f"num_bands={num_bands}, electrodes_per_band={electrodes_per_band}."
             )
-        if self.sfreq != 2000.0 and (n_fft, hop_length) == (64, 16):
+        if self.n_chans != num_bands * electrodes_per_band:
             raise ValueError(
-                f"EMG2QwertyNet's default n_fft=64, hop_length=16 are "
-                f"calibrated for sfreq=2000 Hz. Got sfreq={self.sfreq}. "
-                f"Pass sfreq=2000 or override n_fft / hop_length to match."
+                f"EMG2QwertyNet expects n_chans == num_bands * "
+                f"electrodes_per_band ({num_bands} * {electrodes_per_band} "
+                f"= {num_bands * electrodes_per_band}); got "
+                f"n_chans={self.n_chans}."
             )
         if not mlp_features:
             raise ValueError("mlp_features must contain at least one entry.")
         if not block_channels:
             raise ValueError("block_channels must contain at least one entry.")
+        if pooling not in {"max", "mean"}:
+            raise ValueError(f"pooling must be 'max' or 'mean'; got {pooling!r}.")
 
+        self.num_bands = num_bands
+        self.electrodes_per_band = electrodes_per_band
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.kernel_width = kernel_width
         self.log_softmax = log_softmax
 
         n_freq_bins = n_fft // 2 + 1
-        in_features = 16 * n_freq_bins
-        num_features = 2 * mlp_features[-1]
+        in_features = electrodes_per_band * n_freq_bins
+        num_features = num_bands * mlp_features[-1]
 
         self.spectrogram = _LogSpectrogram(
             n_fft=n_fft,
             hop_length=hop_length,
-            num_bands=2,
-            electrodes_per_band=16,
+            num_bands=num_bands,
+            electrodes_per_band=electrodes_per_band,
+            log_eps=log_eps,
         )
 
         # Indices 0/1/3 match upstream's ``TDSConvCTCModule.model``;
         # index 2 is a parameter-free Flatten; upstream's index 4 (head)
         # is broken out as ``self.final_layer`` and remapped via :attr:`mapping`.
         self.model = nn.Sequential(
-            _SpectrogramNorm(channels=2 * 16),
+            _SpectrogramNorm(channels=num_bands * electrodes_per_band),
             _MultiBandRotationInvariantMLP(
                 in_features=in_features,
                 mlp_features=list(mlp_features),
-                num_bands=2,
+                num_bands=num_bands,
+                offsets=rotation_offsets,
+                pooling=pooling,
                 activation=activation,
             ),
             nn.Flatten(start_dim=2),
@@ -375,12 +402,14 @@ class _LogSpectrogram(nn.Module):
         hop_length: int,
         num_bands: int,
         electrodes_per_band: int,
+        log_eps: float = 1e-6,
     ) -> None:
         super().__init__()
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.num_bands = num_bands
         self.electrodes_per_band = electrodes_per_band
+        self.log_eps = log_eps
         # ``periodic=True`` (the torch default) matches upstream emg2qwerty,
         # which builds the window via ``torchaudio.transforms.Spectrogram``
         # with default ``window_fn``. Made explicit so the choice is visible.
@@ -410,7 +439,7 @@ class _LogSpectrogram(nn.Module):
         )
         power_spec = stft_complex.abs().pow(2)
         n_freq_bins, n_frames = power_spec.shape[-2], power_spec.shape[-1]
-        log_power = torch.log10(power_spec + 1e-6).reshape(
+        log_power = torch.log10(power_spec + self.log_eps).reshape(
             batch_size, n_channels, n_freq_bins, n_frames
         )
         return log_power.reshape(
