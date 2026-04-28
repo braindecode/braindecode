@@ -3,21 +3,32 @@
 # License: BSD (3-clause)
 
 import torch
-from captum.attr import (
-    LRP,
-    Deconvolution,
-    DeepLift,
-    GuidedBackprop,
-    GuidedGradCam,
-    InputXGradient,
-    IntegratedGradients,
-    LayerGradCam,
-    Saliency,
-)
-from pytorch_grad_cam import FullGrad, GradCAM, GradCAMPlusPlus, LayerCAM, ScoreCAM
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
 _CAM_METHODS = {"GradCAM", "GradCAMPlusPlus", "ScoreCAM", "LayerCAM", "FullGrad"}
+_LAYER_REQUIRED_METHODS = _CAM_METHODS | {"GuidedGradCam", "LayerGradCam"}
+
+_VIZ_EXTRAS_HINT = (
+    "Attribution methods require the optional `viz` extras "
+    "(captum, grad-cam, scikit-image). Install with "
+    "`pip install braindecode[viz]`."
+)
+
+
+def _import_captum():
+    try:
+        from captum import attr as captum_attr
+    except ImportError as exc:
+        raise ImportError(_VIZ_EXTRAS_HINT) from exc
+    return captum_attr
+
+
+def _import_grad_cam():
+    try:
+        import pytorch_grad_cam as cam
+        from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+    except ImportError as exc:
+        raise ImportError(_VIZ_EXTRAS_HINT) from exc
+    return cam, ClassifierOutputTarget
 
 
 def attribute_image_features(model, input_tensor, target, method, layer=None):
@@ -63,9 +74,16 @@ def attribute_image_features(model, input_tensor, target, method, layer=None):
     numpy.ndarray
         Attribution map of the same spatial shape as ``input_tensor``.
     """
+    if method in _LAYER_REQUIRED_METHODS and layer is None:
+        raise ValueError(
+            f"method='{method}' requires a `layer` argument; pass the target "
+            "module (e.g. the last convolutional layer)."
+        )
+
     model.zero_grad()
 
     if method in _CAM_METHODS:
+        _, ClassifierOutputTarget = _import_grad_cam()
         # pytorch-grad-cam requires at least 4D input (batch, C, H, W).
         # EEG inputs are 3D (batch, n_chans, n_times); unsqueeze to
         # (batch, n_chans, n_times, 1) which matches what Ensure4d produces
@@ -80,29 +98,28 @@ def attribute_image_features(model, input_tensor, target, method, layer=None):
         if needs_unsqueeze and attributions.ndim == 3:
             attributions = attributions[..., 0]
         return attributions
+
+    captum_attr = _import_captum()
+    algorithm = get_attribution_method(model, method, layer=layer)
+    if method == "LayerGradCam":
+        attributions = algorithm.attribute(
+            input_tensor, target=target, relu_attributions=False
+        )
+        attributions = captum_attr.LayerAttribution.interpolate(
+            attributions, input_tensor.shape[-2:]
+        )
     else:
-        from captum.attr import LayerAttribution
-
-        algorithm = get_attribution_method(model, method, layer=layer)
-        if method == "LayerGradCam":
-            attributions = algorithm.attribute(
-                input_tensor, target=target, relu_attributions=False
+        attributions = algorithm.attribute(input_tensor, target=target)
+        if method == "GuidedGradCam" and attributions.numel() == 0:
+            raise ValueError(
+                "GuidedGradCam returned empty attributions. This typically "
+                "happens when the model internally changes the input "
+                "dimensionality (e.g. via Ensure4d), causing a spatial "
+                "dimension mismatch during interpolation. Use a model that "
+                "keeps consistent input/layer dimensions."
             )
-            attributions = LayerAttribution.interpolate(
-                attributions, input_tensor.shape[-2:]
-            )
-        else:
-            attributions = algorithm.attribute(input_tensor, target=target)
-            if method == "GuidedGradCam" and attributions.numel() == 0:
-                raise ValueError(
-                    "GuidedGradCam returned empty attributions. This typically "
-                    "happens when the model internally changes the input "
-                    "dimensionality (e.g. via Ensure4d), causing a spatial "
-                    "dimension mismatch during interpolation. Use a model that "
-                    "keeps consistent input/layer dimensions."
-                )
 
-        return attributions.cpu().detach().numpy().squeeze()
+    return attributions.cpu().detach().numpy().squeeze()
 
 
 def get_attributions(model, X, y, method, layer=None, device="cpu"):
@@ -189,19 +206,20 @@ def get_attribution_method(model, method, layer=None):
     ValueError
         If ``method`` is not one of the supported method names.
     """
+    captum_attr = _import_captum()
     if layer is None:
         layer = list(model.children())[-1]
 
     methods = {
-        "Saliency": lambda: Saliency(model),
-        "InputXGradient": lambda: InputXGradient(model),
-        "IntegratedGradients": lambda: IntegratedGradients(model),
-        "GuidedBackprop": lambda: GuidedBackprop(model),
-        "Deconvolution": lambda: Deconvolution(model),
-        "DeepLift": lambda: DeepLift(model),
-        "LRP": lambda: LRP(model),
-        "GuidedGradCam": lambda: GuidedGradCam(model, layer),
-        "LayerGradCam": lambda: LayerGradCam(model, layer),
+        "Saliency": lambda: captum_attr.Saliency(model),
+        "InputXGradient": lambda: captum_attr.InputXGradient(model),
+        "IntegratedGradients": lambda: captum_attr.IntegratedGradients(model),
+        "GuidedBackprop": lambda: captum_attr.GuidedBackprop(model),
+        "Deconvolution": lambda: captum_attr.Deconvolution(model),
+        "DeepLift": lambda: captum_attr.DeepLift(model),
+        "LRP": lambda: captum_attr.LRP(model),
+        "GuidedGradCam": lambda: captum_attr.GuidedGradCam(model, layer),
+        "LayerGradCam": lambda: captum_attr.LayerGradCam(model, layer),
     }
 
     if method not in methods:
@@ -242,14 +260,15 @@ def get_cam_method(model, method, target_layers):
     ValueError
         If ``method`` is not one of the supported CAM method names.
     """
+    cam, _ = _import_grad_cam()
     methods = {
-        "GradCAM": lambda: GradCAM(model=model, target_layers=target_layers),
-        "GradCAMPlusPlus": lambda: GradCAMPlusPlus(
+        "GradCAM": lambda: cam.GradCAM(model=model, target_layers=target_layers),
+        "GradCAMPlusPlus": lambda: cam.GradCAMPlusPlus(
             model=model, target_layers=target_layers
         ),
-        "ScoreCAM": lambda: ScoreCAM(model=model, target_layers=target_layers),
-        "LayerCAM": lambda: LayerCAM(model=model, target_layers=target_layers),
-        "FullGrad": lambda: FullGrad(model=model, target_layers=target_layers),
+        "ScoreCAM": lambda: cam.ScoreCAM(model=model, target_layers=target_layers),
+        "LayerCAM": lambda: cam.LayerCAM(model=model, target_layers=target_layers),
+        "FullGrad": lambda: cam.FullGrad(model=model, target_layers=target_layers),
     }
 
     if method not in methods:

@@ -59,9 +59,6 @@ dependencies = [
     'docstring_inheritance',        # we get einops from here
     'rotary_embedding_torch',
     'pydantic>=2.0',
-    'captum>=0.9.0',
-    'grad-cam>=1.5.5',
-    'scikit-image>=0.25.0',
 ]
 
 [tool.uv]
@@ -81,6 +78,11 @@ documentation = "https://braindecode.org/stable/index.html"
 moabb = ["moabb>=1.4.3"]
 eegprep = ["eegprep[eeglabio]>=0.2.23"]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
+viz = [
+    'captum>=0.9.0',
+    'grad-cam>=1.5.5',
+    'scikit-image>=0.25.0',
+]
 tests = [
     'pytest',
     'pytest-cov',
@@ -125,6 +127,7 @@ all = [
     "braindecode[hub]",
     "braindecode[eegprep]",
     "braindecode[typing]",
+    "braindecode[viz]",
 ]
 
 [tool.setuptools]

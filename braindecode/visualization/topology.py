@@ -2,18 +2,12 @@
 #
 # License: BSD (3-clause)
 
-
 import itertools
 
 import numpy as np
 from mne.channels.layout import _find_topomap_coords
-from mne.defaults import _BORDER_DEFAULT, _EXTRAPOLATE_DEFAULT
+from mne.defaults import _BORDER_DEFAULT
 from mne.utils import _check_option, _check_sphere, _validate_type
-
-try:
-    from mne.io.pick import _MEG_CH_TYPES_SPLIT
-except ImportError:
-    _MEG_CH_TYPES_SPLIT = ()
 
 
 def project_to_topomap(data, chs_info, res=64):
@@ -39,10 +33,23 @@ def project_to_topomap(data, chs_info, res=64):
     numpy.ndarray
         Interpolated scalp map of shape ``(res, res)``.
     """
+    Xi, Yi, interp = _build_topomap(chs_info, res)
+    interp.set_values(data)
+    return interp.set_locations(Xi, Yi)()
+
+
+def _build_topomap(chs_info, res=64):
+    """Build the per-channel-info topomap geometry once for batched reuse.
+
+    Returns the grid coordinates and an unconfigured interpolator that callers
+    feed per-sample values to via :meth:`_GridData.set_values`. Used by
+    :func:`project_to_topomap` for one-shot calls and by metrics code that
+    projects many samples sharing the same montage.
+    """
     import mne
 
     ch_names = [ch["ch_name"] for ch in chs_info]
-    info = mne.create_info(ch_names=ch_names, sfreq=256.0, ch_types="eeg")
+    info = mne.create_info(ch_names=ch_names, sfreq=1.0, ch_types="eeg")
 
     with info._unlock():
         for i, ch in enumerate(chs_info):
@@ -50,131 +57,73 @@ def project_to_topomap(data, chs_info, res=64):
                 info["chs"][i]["loc"] = np.array(ch["loc"], dtype=np.float64)
 
     sphere = _check_sphere(None)
-    picks = list(range(len(data)))
-    pos2d = _find_topomap_coords(info, picks=picks, sphere=sphere)
-
-    extrapolate = _check_extrapolate(_EXTRAPOLATE_DEFAULT, "eeg")
-    outlines = _make_head_outlines(sphere, pos2d, "head", (0.0, 0.0))
-    _, Xi, Yi, interp = _setup_interp(
-        pos2d, res, extrapolate, sphere, outlines, _BORDER_DEFAULT
-    )
-    interp.set_values(data)
-    Z = interp.set_locations(Xi, Yi)()
-    return Z
+    pos2d = _find_topomap_coords(info, picks=list(range(len(chs_info))), sphere=sphere)
+    outlines = _make_head_outlines(sphere, pos2d, (0.0, 0.0))
+    Xi, Yi, interp = _setup_interp(pos2d, res, "head", outlines, _BORDER_DEFAULT)
+    return Xi, Yi, interp
 
 
-def _check_extrapolate(extrapolate, ch_type):
-    _check_option("extrapolate", extrapolate, ("box", "local", "head", "auto"))
-    if extrapolate == "auto":
-        extrapolate = "local" if ch_type in _MEG_CH_TYPES_SPLIT else "head"
-    return extrapolate
-
-
-def _make_head_outlines(sphere, pos, outlines, clip_origin):
-    assert isinstance(sphere, np.ndarray)
+def _make_head_outlines(sphere, pos, clip_origin):
+    if not isinstance(sphere, np.ndarray):
+        raise TypeError(f"sphere must be a numpy array, got {type(sphere).__name__}")
     x, y, _, radius = sphere
 
-    if outlines in ("head", "skirt", None):
-        ll = np.linspace(0, 2 * np.pi, 101)
-        head_x = np.cos(ll) * radius + x
-        head_y = np.sin(ll) * radius + y
-        dx = np.exp(np.arccos(np.deg2rad(12)) * 1j)
-        dx, dy = dx.real, dx.imag
-        nose_x = np.array([-dx, 0, dx]) * radius + x
-        nose_y = np.array([dy, 1.15, dy]) * radius + y
-        ear_x = np.array(
-            [
-                0.497,
-                0.510,
-                0.518,
-                0.5299,
-                0.5419,
-                0.54,
-                0.547,
-                0.532,
-                0.510,
-                0.489,
-            ]
-        ) * (radius * 2)
-        ear_y = (
-            np.array(
-                [
-                    0.0555,
-                    0.0775,
-                    0.0783,
-                    0.0746,
-                    0.0555,
-                    -0.0055,
-                    -0.0932,
-                    -0.1313,
-                    -0.1384,
-                    -0.1199,
-                ]
-            )
-            * (radius * 2)
-            + y
+    ll = np.linspace(0, 2 * np.pi, 101)
+    head_x = np.cos(ll) * radius + x
+    head_y = np.sin(ll) * radius + y
+    dx = np.exp(np.arccos(np.deg2rad(12)) * 1j)
+    dx, dy = dx.real, dx.imag
+    nose_x = np.array([-dx, 0, dx]) * radius + x
+    nose_y = np.array([dy, 1.15, dy]) * radius + y
+    ear_x = np.array(
+        [0.497, 0.510, 0.518, 0.5299, 0.5419, 0.54, 0.547, 0.532, 0.510, 0.489]
+    ) * (radius * 2)
+    ear_y = (
+        np.array(
+            [0.0555, 0.0775, 0.0783, 0.0746, 0.0555, -0.0055, -0.0932, -0.1313, -0.1384, -0.1199]
         )
+        * (radius * 2)
+        + y
+    )
 
-        if outlines is not None:
-            outlines_dict = dict(
-                head=(head_x, head_y),
-                nose=(nose_x, nose_y),
-                ear_left=(ear_x + x, ear_y),
-                ear_right=(-ear_x + x, ear_y),
-            )
-        else:
-            outlines_dict = dict()
-
-        mask_scale = 1.25 if outlines == "skirt" else 1.0
-        mask_scale = max(
-            mask_scale,
-            np.linalg.norm(pos, axis=1).max() * 1.01 / radius,
-        )
-        outlines_dict["mask_pos"] = (mask_scale * head_x, mask_scale * head_y)
-        clip_radius = radius * mask_scale
-        outlines_dict["clip_radius"] = (clip_radius,) * 2
-        outlines_dict["clip_origin"] = clip_origin
-        outlines = outlines_dict
-
-    elif isinstance(outlines, dict):
-        if "mask_pos" not in outlines:
-            raise ValueError("You must specify the coordinates of the image mask.")
-    else:
-        raise ValueError("Invalid value for `outlines`.")
-
-    return outlines
+    mask_scale = max(1.0, np.linalg.norm(pos, axis=1).max() * 1.01 / radius)
+    clip_radius = radius * mask_scale
+    return dict(
+        head=(head_x, head_y),
+        nose=(nose_x, nose_y),
+        ear_left=(ear_x + x, ear_y),
+        ear_right=(-ear_x + x, ear_y),
+        mask_pos=(mask_scale * head_x, mask_scale * head_y),
+        clip_radius=(clip_radius, clip_radius),
+        clip_origin=clip_origin,
+    )
 
 
-def _setup_interp(pos, res, extrapolate, sphere, outlines, border):
-    xlim = np.inf, -np.inf
-    ylim = np.inf, -np.inf
+def _setup_interp(pos, res, extrapolate, outlines, border):
     mask_ = np.c_[outlines["mask_pos"]]
     clip_radius = outlines["clip_radius"]
     clip_origin = outlines.get("clip_origin", (0.0, 0.0))
-    xmin = np.min(np.r_[xlim[0], mask_[:, 0], clip_origin[0] - clip_radius[0]])
-    xmax = np.max(np.r_[xlim[1], mask_[:, 0], clip_origin[0] + clip_radius[0]])
-    ymin = np.min(np.r_[ylim[0], mask_[:, 1], clip_origin[1] - clip_radius[1]])
-    ymax = np.max(np.r_[ylim[1], mask_[:, 1], clip_origin[1] + clip_radius[1]])
-    xi = np.linspace(xmin, xmax, res)
-    yi = np.linspace(ymin, ymax, res)
-    Xi, Yi = np.meshgrid(xi, yi)
+    xmin = min(mask_[:, 0].min(), clip_origin[0] - clip_radius[0])
+    xmax = max(mask_[:, 0].max(), clip_origin[0] + clip_radius[0])
+    ymin = min(mask_[:, 1].min(), clip_origin[1] - clip_radius[1])
+    ymax = max(mask_[:, 1].max(), clip_origin[1] + clip_radius[1])
+    Xi, Yi = np.meshgrid(np.linspace(xmin, xmax, res), np.linspace(ymin, ymax, res))
     interp = _GridData(pos, extrapolate, clip_origin, clip_radius, border)
-    extent = (xmin, xmax, ymin, ymax)
-    return extent, Xi, Yi, interp
+    return Xi, Yi, interp
 
 
 class _GridData:
     """Unstructured (x, y) data interpolator via Clough-Tocher triangulation."""
 
     def __init__(self, pos, extrapolate, origin, radii, border):
-        assert pos.ndim == 2 and pos.shape[1] == 2, pos.shape
+        if pos.ndim != 2 or pos.shape[1] != 2:
+            raise ValueError(f"pos must have shape (n, 2), got {pos.shape}")
         _validate_type(border, ("numeric", str), "border")
         if isinstance(border, str):
             _check_option("border", border, ("mean",), extra="when a string")
 
-        outer_pts, mask_pts, tri = _get_extra_points(pos, extrapolate, origin, radii)
+        outer_pts, _, tri = _get_extra_points(pos, extrapolate, origin, radii)
         self.n_extra = outer_pts.shape[0]
-        self.mask_pts = mask_pts
         self.border = border
         self.tri = tri
 
@@ -217,7 +166,8 @@ def _get_extra_points(pos, extrapolate, origin, radii):
     from scipy.spatial import Delaunay
 
     radii = np.array(radii, float)
-    assert radii.shape == (2,)
+    if radii.shape != (2,):
+        raise ValueError(f"radii must have shape (2,), got {radii.shape}")
     x, y = origin
     _check_option("extrapolate", extrapolate, ("head", "box", "local"))
 
@@ -304,7 +254,7 @@ def _get_extra_points(pos, extrapolate, origin, radii):
         hull_extended = np.unique(hull_extended.reshape((-1, 2)), axis=0)
         new_pos = np.concatenate([hull_extended] + add_points)
     else:
-        assert extrapolate == "head"
+        # extrapolate == "head"
         angle = np.arcsin(distance / np.mean(radii))
         n_pnts = max(12, int(np.round(2 * np.pi / angle)))
         points_l = np.linspace(0, 2 * np.pi, n_pnts, endpoint=False)

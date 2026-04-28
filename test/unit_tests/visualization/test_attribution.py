@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pytest
 import torch
@@ -8,14 +10,15 @@ from braindecode.visualization.attribution import (
     get_attributions,
 )
 
+from .conftest import SEED
+
 N_CHANS = 18
 N_TIMES = 600
 N_OUTPUTS = 2
 BATCH = 6
-_SEED = 0
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def model():
     m = ShallowFBCSPNet(
         n_chans=N_CHANS,
@@ -27,9 +30,9 @@ def model():
     return m
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def batch(model):
-    torch.manual_seed(_SEED)
+    torch.manual_seed(SEED)
     X = torch.randn(BATCH, N_CHANS, N_TIMES, requires_grad=True)
     with torch.no_grad():
         y = model(X).argmax(dim=1)
@@ -67,7 +70,6 @@ def test_attribute_image_features_layer_method_shape(model, batch):
     "LayerCAM",
 ])
 def test_cam_methods_shape(model, batch, method):
-    """CAM methods return (batch, n_times) — spatial dims of the 3-D input."""
     X, y = batch
     layer = model.final_layer.conv_classifier
     attr = attribute_image_features(model, X, y, method, layer=layer)
@@ -76,24 +78,31 @@ def test_cam_methods_shape(model, batch, method):
     )
 
 
-def test_attributions_nonzero(model, batch):
-    """Attributions must not be all-zero — gradient must actually flow."""
+def test_attributions_meaningfully_nonzero(model, batch):
+    """Saliency must produce non-trivial gradient flow, not just a single nonzero pixel."""
     X, y = batch
     attr = attribute_image_features(model, X, y, "Saliency")
-    assert np.any(attr != 0), "Saliency returned all-zero attributions"
+    assert np.mean(np.abs(attr)) > 1e-8, (
+        f"Saliency mean abs attribution {np.mean(np.abs(attr)):.2e} is too small"
+    )
 
 
 def test_different_inputs_different_attributions(model, batch):
-    """Two different inputs must produce different attribution maps."""
     X, y = batch
     attr1 = attribute_image_features(model, X[:3], y[:3], "Saliency")
     attr2 = attribute_image_features(model, X[3:], y[3:], "Saliency")
     assert not np.allclose(attr1, attr2), "Different inputs produced identical attributions"
 
 
+@pytest.mark.parametrize("method", ["GradCAM", "LayerGradCam", "GuidedGradCam"])
+def test_layer_required_methods_raise_without_layer(model, batch, method):
+    X, y = batch
+    with pytest.raises(ValueError, match="requires a `layer` argument"):
+        attribute_image_features(model, X, y, method)
+
+
 def test_get_attributions_output_shapes(model):
-    """Returned attribution shape must match (n_correct, n_chans, n_times)."""
-    rng = np.random.default_rng(_SEED + 1)
+    rng = np.random.default_rng(SEED + 1)
     X = rng.standard_normal((BATCH, N_CHANS, N_TIMES)).astype(np.float32)
     y = np.array([0, 1, 0, 1, 0, 1])
 
@@ -106,16 +115,18 @@ def test_get_attributions_output_shapes(model):
 
 
 def test_get_attributions_only_correct_samples(model):
-    """Only correctly classified samples must be returned."""
+    """Only correctly classified samples must be returned. Deepcopies model
+    because this test mutates classifier weights and the fixture is module-scoped."""
+    m = copy.deepcopy(model)
     with torch.no_grad():
-        model.final_layer.conv_classifier.weight[1, :] = 0.0
-        model.final_layer.conv_classifier.bias[1] = -1e6
+        m.final_layer.conv_classifier.weight[1, :] = 0.0
+        m.final_layer.conv_classifier.bias[1] = -1e6
 
-    rng = np.random.default_rng(_SEED + 2)
+    rng = np.random.default_rng(SEED + 2)
     X = rng.standard_normal((BATCH, N_CHANS, N_TIMES)).astype(np.float32)
     y = np.array([0, 1, 0, 1, 0, 1])
 
-    attributions, labels = get_attributions(model, X, y, method="Saliency")
+    attributions, labels = get_attributions(m, X, y, method="Saliency")
 
     assert np.all(labels == 0), "Only class-0 samples should be returned"
     assert attributions.shape[0] == (y == 0).sum()
