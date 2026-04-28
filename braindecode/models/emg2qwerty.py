@@ -303,12 +303,12 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
                 f"n_conv_blocks={self._n_conv_blocks}, "
                 f"kernel_width={self.kernel_width})."
             )
-        h = self.spectrogram(x)
-        h = self.model(h)
-        h = self.final_layer(h)
+        spectrogram = self.spectrogram(x)
+        encoded = self.model(spectrogram)
+        emissions = self.final_layer(encoded)
         if self.log_softmax:
-            h = F.log_softmax(h, dim=-1)
-        return h.transpose(0, 1).contiguous()
+            emissions = F.log_softmax(emissions, dim=-1)
+        return emissions.transpose(0, 1).contiguous()
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new vocabulary size."""
@@ -354,8 +354,10 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         with torch.inference_mode():
             dtype = next(self.parameters()).dtype
             device = next(self.parameters()).device
-            x = torch.zeros(1, self.n_chans, n_times, dtype=dtype, device=device)
-            return tuple(self.forward(x).shape)
+            dummy_input = torch.zeros(
+                1, self.n_chans, n_times, dtype=dtype, device=device
+            )
+            return tuple(self.forward(dummy_input).shape)
 
 
 class _LogSpectrogram(nn.Module):
@@ -390,16 +392,16 @@ class _LogSpectrogram(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        N, C, T = x.shape
-        if C != self.num_bands * self.electrodes_per_band:
+        batch_size, n_channels, n_samples = x.shape
+        if n_channels != self.num_bands * self.electrodes_per_band:
             raise ValueError(
                 f"_LogSpectrogram expected "
                 f"{self.num_bands * self.electrodes_per_band} channels "
                 f"({self.num_bands} bands × {self.electrodes_per_band} "
-                f"electrodes); got {C}."
+                f"electrodes); got {n_channels}."
             )
-        spec = torch.stft(
-            x.reshape(N * C, T),
+        stft_complex = torch.stft(
+            x.reshape(batch_size * n_channels, n_samples),
             n_fft=self.n_fft,
             hop_length=self.hop_length,
             window=self.window.to(x.dtype),
@@ -407,11 +409,17 @@ class _LogSpectrogram(nn.Module):
             center=False,
             return_complex=True,
         )
-        power = spec.abs().pow(2)
-        n_freq, T_spec = power.shape[-2], power.shape[-1]
-        logspec = torch.log10(power + 1e-6).reshape(N, C, n_freq, T_spec)
-        return logspec.reshape(
-            N, self.num_bands, self.electrodes_per_band, n_freq, T_spec
+        power_spec = stft_complex.abs().pow(2)
+        n_freq_bins, n_frames = power_spec.shape[-2], power_spec.shape[-1]
+        log_power = torch.log10(power_spec + 1e-6).reshape(
+            batch_size, n_channels, n_freq_bins, n_frames
+        )
+        return log_power.reshape(
+            batch_size,
+            self.num_bands,
+            self.electrodes_per_band,
+            n_freq_bins,
+            n_frames,
         ).movedim(-1, 0)
 
 
@@ -428,15 +436,20 @@ class _SpectrogramNorm(nn.Module):
         self.batch_norm = nn.BatchNorm2d(channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        T, N, bands, C, freq = x.shape
-        if self.channels != bands * C:
+        n_frames, batch_size, n_bands, n_electrodes, n_freq_bins = x.shape
+        if self.channels != n_bands * n_electrodes:
             raise ValueError(
                 f"_SpectrogramNorm expected {self.channels} flat channels "
-                f"({bands} bands × {C} electrodes); got bands*C={bands * C}."
+                f"({n_bands} bands × {n_electrodes} electrodes); "
+                f"got bands*electrodes={n_bands * n_electrodes}."
             )
-        x = x.movedim(0, -1).reshape(N, bands * C, freq, T)
-        x = self.batch_norm(x)
-        return x.reshape(N, bands, C, freq, T).movedim(-1, 0)
+        flattened = x.movedim(0, -1).reshape(
+            batch_size, n_bands * n_electrodes, n_freq_bins, n_frames
+        )
+        normalized = self.batch_norm(flattened)
+        return normalized.reshape(
+            batch_size, n_bands, n_electrodes, n_freq_bins, n_frames
+        ).movedim(-1, 0)
 
 
 class _RotationInvariantMLP(nn.Module):
@@ -458,10 +471,10 @@ class _RotationInvariantMLP(nn.Module):
         if not mlp_features:
             raise ValueError("mlp_features must contain at least one entry.")
         layers: list[nn.Module] = []
-        in_f = in_features
-        for out_f in mlp_features:
-            layers.extend([nn.Linear(in_f, out_f), activation()])
-            in_f = out_f
+        in_dim = in_features
+        for out_dim in mlp_features:
+            layers.extend([nn.Linear(in_dim, out_dim), activation()])
+            in_dim = out_dim
         self.mlp = nn.Sequential(*layers)
         if pooling not in {"max", "mean"}:
             raise ValueError(f"pooling must be 'max' or 'mean'; got {pooling}.")
@@ -469,9 +482,13 @@ class _RotationInvariantMLP(nn.Module):
         self.offsets = tuple(offsets) if len(offsets) > 0 else (0,)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        x = torch.stack([inputs.roll(o, dims=2) for o in self.offsets], dim=2)
-        x = self.mlp(x.flatten(start_dim=3))
-        return x.max(dim=2).values if self.pooling == "max" else x.mean(dim=2)
+        rolled = torch.stack(
+            [inputs.roll(offset, dims=2) for offset in self.offsets], dim=2
+        )
+        per_roll_features = self.mlp(rolled.flatten(start_dim=3))
+        if self.pooling == "max":
+            return per_roll_features.max(dim=2).values
+        return per_roll_features.mean(dim=2)
 
 
 class _MultiBandRotationInvariantMLP(nn.Module):
@@ -514,9 +531,9 @@ class _MultiBandRotationInvariantMLP(nn.Module):
                 f"{self.stack_dim} == {self.num_bands}; got input shape "
                 f"{tuple(inputs.shape)}."
             )
-        per_band = inputs.unbind(self.stack_dim)
+        per_band_inputs = inputs.unbind(self.stack_dim)
         return torch.stack(
-            [mlp(b) for mlp, b in zip(self.mlps, per_band)],
+            [mlp(band_input) for mlp, band_input in zip(self.mlps, per_band_inputs)],
             dim=self.stack_dim,
         )
 
@@ -547,16 +564,17 @@ class _TDSConv2dBlock(nn.Module):
         self.layer_norm = nn.LayerNorm(channels * width)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        T_in, N, C = inputs.shape
-        x = inputs.movedim(0, -1).reshape(N, self.channels, self.width, T_in)
-        x = self.conv2d(x)
-        x = self.activation(x)
-        x = x.reshape(N, C, -1).movedim(-1, 0)
-        T_out = x.shape[0]
+        n_in_frames, batch_size, n_features = inputs.shape
+        folded = inputs.movedim(0, -1).reshape(
+            batch_size, self.channels, self.width, n_in_frames
+        )
+        conv_out = self.activation(self.conv2d(folded))
+        conv_out = conv_out.reshape(batch_size, n_features, -1).movedim(-1, 0)
+        n_out_frames = conv_out.shape[0]
         # Output frame i aligns with input frame i+(kernel_width-1), so
-        # the residual is the LAST T_out input frames.
-        x = x + inputs[-T_out:]
-        return self.layer_norm(x)
+        # the residual is the LAST n_out_frames input frames.
+        residual_added = conv_out + inputs[-n_out_frames:]
+        return self.layer_norm(residual_added)
 
 
 class _TDSFullyConnectedBlock(nn.Module):
@@ -606,17 +624,17 @@ class _TDSConvEncoder(nn.Module):
         if not block_channels:
             raise ValueError("block_channels must be non-empty.")
         blocks: list[nn.Module] = []
-        for ch in block_channels:
-            if num_features % ch != 0:
+        for n_block_channels in block_channels:
+            if num_features % n_block_channels != 0:
                 raise ValueError(
-                    f"block_channels entry {ch} does not evenly divide "
-                    f"num_features={num_features}."
+                    f"block_channels entry {n_block_channels} does not evenly "
+                    f"divide num_features={num_features}."
                 )
             blocks.extend(
                 [
                     _TDSConv2dBlock(
-                        ch,
-                        num_features // ch,
+                        n_block_channels,
+                        num_features // n_block_channels,
                         kernel_width,
                         activation=activation,
                     ),
