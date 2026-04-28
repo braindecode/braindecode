@@ -4,12 +4,10 @@
 
 import torch
 
-_CAM_METHODS = {"GradCAM", "GradCAMPlusPlus", "ScoreCAM", "LayerCAM", "FullGrad"}
-_LAYER_REQUIRED_METHODS = _CAM_METHODS | {"GuidedGradCam", "LayerGradCam"}
+_LAYER_REQUIRED_METHODS = {"GuidedGradCam", "LayerGradCam"}
 
 _VIZ_EXTRAS_HINT = (
-    "Attribution methods require the optional `viz` extras "
-    "(captum, grad-cam, scikit-image). Install with "
+    "Attribution methods require captum. Install with "
     "`pip install braindecode[viz]`."
 )
 
@@ -22,17 +20,8 @@ def _import_captum():
     return captum_attr
 
 
-def _import_grad_cam():
-    try:
-        import pytorch_grad_cam as cam
-        from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
-    except ImportError as exc:
-        raise ImportError(_VIZ_EXTRAS_HINT) from exc
-    return cam, ClassifierOutputTarget
-
-
 def attribute_image_features(model, input_tensor, target, method, layer=None):
-    """Compute attribution maps for EEG input using a specified method.
+    """Compute attribution maps for EEG input using a Captum method.
 
     Parameters
     ----------
@@ -43,9 +32,7 @@ def attribute_image_features(model, input_tensor, target, method, layer=None):
     target : torch.Tensor
         Class labels for each sample in the batch.
     method : str
-        Attribution method name. One of:
-
-        **Captum methods:**
+        Captum attribution method. One of:
 
         - ``"Saliency"`` — gradient magnitude w.r.t. input
         - ``"InputXGradient"`` — element-wise input × gradient
@@ -57,17 +44,8 @@ def attribute_image_features(model, input_tensor, target, method, layer=None):
         - ``"GuidedGradCam"`` — GuidedBackprop × GradCAM (requires ``layer``)
         - ``"LayerGradCam"`` — class activation maps at a specific layer
           (requires ``layer``)
-
-        **CAM methods** (require ``layer``):
-
-        - ``"GradCAM"`` — gradient-weighted class activation maps
-        - ``"GradCAMPlusPlus"`` — improved GradCAM with higher-order gradients
-        - ``"ScoreCAM"`` — perturbation-based CAM without gradients
-        - ``"LayerCAM"`` — spatial class activation maps per layer
-        - ``"FullGrad"`` — full-gradient saliency maps
     layer : torch.nn.Module, optional
-        Target layer for layer-wise methods. Required for CAM methods and
-        ``"GuidedGradCam"``, ``"LayerGradCam"``.
+        Target layer for ``GuidedGradCam`` / ``LayerGradCam``.
 
     Returns
     -------
@@ -80,27 +58,10 @@ def attribute_image_features(model, input_tensor, target, method, layer=None):
             "module (e.g. the last convolutional layer)."
         )
 
-    model.zero_grad()
-
-    if method in _CAM_METHODS:
-        _, ClassifierOutputTarget = _import_grad_cam()
-        # pytorch-grad-cam requires at least 4D input (batch, C, H, W).
-        # EEG inputs are 3D (batch, n_chans, n_times); unsqueeze to
-        # (batch, n_chans, n_times, 1) which matches what Ensure4d produces
-        # internally, so the model forward pass is unaffected.
-        needs_unsqueeze = input_tensor.ndim == 3
-        if needs_unsqueeze:
-            input_tensor = input_tensor.unsqueeze(-1)
-        targets = [ClassifierOutputTarget(t.item()) for t in target]
-        algorithm = get_cam_method(model, method, target_layers=[layer])
-        attributions = algorithm(input_tensor=input_tensor, targets=targets)
-        # Output is (batch, n_times, 1) for 4D input; drop the trailing dim.
-        if needs_unsqueeze and attributions.ndim == 3:
-            attributions = attributions[..., 0]
-        return attributions
-
     captum_attr = _import_captum()
+    model.zero_grad()
     algorithm = get_attribution_method(model, method, layer=layer)
+
     if method == "LayerGradCam":
         attributions = algorithm.attribute(
             input_tensor, target=target, relu_attributions=False
@@ -112,11 +73,9 @@ def attribute_image_features(model, input_tensor, target, method, layer=None):
         attributions = algorithm.attribute(input_tensor, target=target)
         if method == "GuidedGradCam" and attributions.numel() == 0:
             raise ValueError(
-                "GuidedGradCam returned empty attributions. This typically "
-                "happens when the model internally changes the input "
-                "dimensionality (e.g. via Ensure4d), causing a spatial "
-                "dimension mismatch during interpolation. Use a model that "
-                "keeps consistent input/layer dimensions."
+                "GuidedGradCam returned empty attributions, typically because "
+                "the model changes input dimensionality internally (e.g. via "
+                "Ensure4d). Use a model that keeps consistent input/layer dims."
             )
 
     return attributions.cpu().detach().numpy().squeeze()
@@ -126,7 +85,7 @@ def get_attributions(model, X, y, method, layer=None, device="cpu"):
     """Compute attribution maps for correctly classified EEG samples.
 
     Runs inference on the full dataset, filters to correctly classified
-    samples, then computes attribution maps for each sample.
+    samples, then computes attribution maps.
 
     Parameters
     ----------
@@ -137,12 +96,11 @@ def get_attributions(model, X, y, method, layer=None, device="cpu"):
     y : numpy.ndarray
         True class labels of shape ``(n_samples,)``.
     method : str
-        Attribution method name. See :func:`attribute_image_features` for
-        supported values.
+        Captum attribution method. See :func:`attribute_image_features`.
     layer : torch.nn.Module, optional
         Target layer for layer-wise methods.
     device : str, default="cpu"
-        Device to run inference on (``"cpu"`` or ``"cuda"``).
+        Device to run inference on.
 
     Returns
     -------
@@ -154,21 +112,19 @@ def get_attributions(model, X, y, method, layer=None, device="cpu"):
     model.eval()
     model.to(device)
 
-    X_tensor = torch.tensor(X, dtype=torch.float32).to(device)
-    y_tensor = torch.tensor(y, dtype=torch.long).to(device)
+    X_tensor = torch.tensor(X, dtype=torch.float32, device=device)
+    y_tensor = torch.tensor(y, dtype=torch.long, device=device)
 
     with torch.no_grad():
         preds = model(X_tensor).argmax(dim=1)
 
     correct = preds == y_tensor
-    X_correct = X_tensor[correct]
+    X_correct = X_tensor[correct].requires_grad_(True)
     y_correct = y_tensor[correct]
 
-    X_correct.requires_grad_(True)
     attributions = attribute_image_features(
         model, X_correct, y_correct, method, layer=layer
     )
-
     return attributions, y_correct.cpu().numpy()
 
 
@@ -180,18 +136,7 @@ def get_attribution_method(model, method, layer=None):
     model : torch.nn.Module
         The braindecode model to explain.
     method : str
-        Attribution method name. One of:
-
-        - ``"Saliency"`` — gradient magnitude w.r.t. input
-        - ``"InputXGradient"`` — element-wise input × gradient
-        - ``"IntegratedGradients"`` — path integral of gradients from baseline
-        - ``"GuidedBackprop"`` — backpropagation through ReLU positive activations
-        - ``"Deconvolution"`` — DeconvNet-style backward pass
-        - ``"DeepLift"`` — contribution scores via activation differences
-        - ``"LRP"`` — Layer-wise Relevance Propagation
-        - ``"GuidedGradCam"`` — GuidedBackprop × GradCAM (requires ``layer``)
-        - ``"LayerGradCam"`` — class activation maps at a specific layer
-          (requires ``layer``)
+        Captum attribution method name. See :func:`attribute_image_features`.
     layer : torch.nn.Module, optional
         Target layer for layer-wise methods. Falls back to the last child
         module of ``model`` if not provided.
@@ -211,15 +156,15 @@ def get_attribution_method(model, method, layer=None):
         layer = list(model.children())[-1]
 
     methods = {
-        "Saliency": lambda: captum_attr.Saliency(model),
-        "InputXGradient": lambda: captum_attr.InputXGradient(model),
-        "IntegratedGradients": lambda: captum_attr.IntegratedGradients(model),
-        "GuidedBackprop": lambda: captum_attr.GuidedBackprop(model),
-        "Deconvolution": lambda: captum_attr.Deconvolution(model),
-        "DeepLift": lambda: captum_attr.DeepLift(model),
-        "LRP": lambda: captum_attr.LRP(model),
-        "GuidedGradCam": lambda: captum_attr.GuidedGradCam(model, layer),
-        "LayerGradCam": lambda: captum_attr.LayerGradCam(model, layer),
+        "Saliency": captum_attr.Saliency,
+        "InputXGradient": captum_attr.InputXGradient,
+        "IntegratedGradients": captum_attr.IntegratedGradients,
+        "GuidedBackprop": captum_attr.GuidedBackprop,
+        "Deconvolution": captum_attr.Deconvolution,
+        "DeepLift": captum_attr.DeepLift,
+        "LRP": captum_attr.LRP,
+        "GuidedGradCam": lambda m: captum_attr.GuidedGradCam(m, layer),
+        "LayerGradCam": lambda m: captum_attr.LayerGradCam(m, layer),
     }
 
     if method not in methods:
@@ -228,53 +173,4 @@ def get_attribution_method(model, method, layer=None):
             f"Choose one of: {sorted(methods.keys())}"
         )
 
-    return methods[method]()
-
-
-def get_cam_method(model, method, target_layers):
-    """Factory for pytorch-grad-cam CAM method instances.
-
-    Parameters
-    ----------
-    model : torch.nn.Module
-        The braindecode model to explain.
-    method : str
-        CAM method name. One of:
-
-        - ``"GradCAM"`` — gradient-weighted class activation maps
-        - ``"GradCAMPlusPlus"`` — improved GradCAM with higher-order gradients
-        - ``"ScoreCAM"`` — perturbation-based CAM without gradients
-        - ``"LayerCAM"`` — spatial class activation maps per layer
-        - ``"FullGrad"`` — full-gradient saliency maps
-    target_layers : list of torch.nn.Module
-        List of layers to compute CAM activations from. Typically the last
-        convolutional layer, e.g. ``[model.conv5]``.
-
-    Returns
-    -------
-    pytorch_grad_cam.base_cam.BaseCAM
-        Instantiated CAM object ready to call with input tensors.
-
-    Raises
-    ------
-    ValueError
-        If ``method`` is not one of the supported CAM method names.
-    """
-    cam, _ = _import_grad_cam()
-    methods = {
-        "GradCAM": lambda: cam.GradCAM(model=model, target_layers=target_layers),
-        "GradCAMPlusPlus": lambda: cam.GradCAMPlusPlus(
-            model=model, target_layers=target_layers
-        ),
-        "ScoreCAM": lambda: cam.ScoreCAM(model=model, target_layers=target_layers),
-        "LayerCAM": lambda: cam.LayerCAM(model=model, target_layers=target_layers),
-        "FullGrad": lambda: cam.FullGrad(model=model, target_layers=target_layers),
-    }
-
-    if method not in methods:
-        raise ValueError(
-            f"Unsupported CAM method: '{method}'. "
-            f"Choose one of: {sorted(methods.keys())}"
-        )
-
-    return methods[method]()
+    return methods[method](model)

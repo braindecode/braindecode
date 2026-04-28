@@ -54,32 +54,15 @@ def test_attribute_image_features_shape(model, batch, method):
     )
 
 
-def test_attribute_image_features_layer_method_shape(model, batch):
-    """LayerGradCam output at layer resolution must be interpolated to input shape."""
+def test_layer_grad_cam_shape(model, batch):
+    """LayerGradCam output is interpolated back to the input shape."""
     X, y = batch
     layer = model.final_layer.conv_classifier
     attr = attribute_image_features(model, X, y, "LayerGradCam", layer=layer)
-    assert attr.shape == (BATCH, N_CHANS, N_TIMES), (
-        f"LayerGradCam: expected {(BATCH, N_CHANS, N_TIMES)}, got {attr.shape}"
-    )
-
-
-@pytest.mark.parametrize("method", [
-    "GradCAM",
-    "GradCAMPlusPlus",
-    "LayerCAM",
-])
-def test_cam_methods_shape(model, batch, method):
-    X, y = batch
-    layer = model.final_layer.conv_classifier
-    attr = attribute_image_features(model, X, y, method, layer=layer)
-    assert attr.shape == (BATCH, N_TIMES), (
-        f"{method}: expected {(BATCH, N_TIMES)}, got {attr.shape}"
-    )
+    assert attr.shape == (BATCH, N_CHANS, N_TIMES)
 
 
 def test_attributions_meaningfully_nonzero(model, batch):
-    """Saliency must produce non-trivial gradient flow, not just a single nonzero pixel."""
     X, y = batch
     attr = attribute_image_features(model, X, y, "Saliency")
     assert np.mean(np.abs(attr)) > 1e-8, (
@@ -91,14 +74,20 @@ def test_different_inputs_different_attributions(model, batch):
     X, y = batch
     attr1 = attribute_image_features(model, X[:3], y[:3], "Saliency")
     attr2 = attribute_image_features(model, X[3:], y[3:], "Saliency")
-    assert not np.allclose(attr1, attr2), "Different inputs produced identical attributions"
+    assert not np.allclose(attr1, attr2)
 
 
-@pytest.mark.parametrize("method", ["GradCAM", "LayerGradCam", "GuidedGradCam"])
+@pytest.mark.parametrize("method", ["LayerGradCam", "GuidedGradCam"])
 def test_layer_required_methods_raise_without_layer(model, batch, method):
     X, y = batch
     with pytest.raises(ValueError, match="requires a `layer` argument"):
         attribute_image_features(model, X, y, method)
+
+
+def test_unsupported_method_raises(model, batch):
+    X, y = batch
+    with pytest.raises(ValueError, match="Unsupported attribution method"):
+        attribute_image_features(model, X, y, "NotAMethod")
 
 
 def test_get_attributions_output_shapes(model):
@@ -115,8 +104,7 @@ def test_get_attributions_output_shapes(model):
 
 
 def test_get_attributions_only_correct_samples(model):
-    """Only correctly classified samples must be returned. Deepcopies model
-    because this test mutates classifier weights and the fixture is module-scoped."""
+    """Module-scoped model is deepcopied because this test mutates classifier weights."""
     m = copy.deepcopy(model)
     with torch.no_grad():
         m.final_layer.conv_classifier.weight[1, :] = 0.0
@@ -128,5 +116,5 @@ def test_get_attributions_only_correct_samples(model):
 
     attributions, labels = get_attributions(m, X, y, method="Saliency")
 
-    assert np.all(labels == 0), "Only class-0 samples should be returned"
+    assert np.all(labels == 0)
     assert attributions.shape[0] == (y == 0).sum()

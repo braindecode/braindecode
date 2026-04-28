@@ -4,27 +4,10 @@
 
 
 import numpy as np
-from scipy import stats
-from sklearn.metrics.pairwise import cosine_similarity
 
-from braindecode.visualization.topology import _build_topomap
-
-
-def _import_ssim():
-    try:
-        from skimage.metrics import structural_similarity
-    except ImportError as exc:
-        raise ImportError(
-            "compute_metrics requires scikit-image; install with "
-            "`pip install braindecode[viz]`."
-        ) from exc
-    return structural_similarity
+from braindecode.visualization.topology import project_to_topomap
 
 METRIC_NAMES = [
-    "SSIM_top5_abs",
-    "SSIM_absnorm",
-    "SSIM_norm",
-    "SSIM_raw",
     "Cosine_top5_abs",
     "Cosine_absnorm",
     "Cosine_norm",
@@ -38,22 +21,23 @@ METRIC_NAMES = [
     "Pearson_norm_vs_refnorm",
     "Pearson_raw_vs_refnorm",
 ]
+N_METRICS = len(METRIC_NAMES)
 
 
 def compute_metrics(
     explanations,
     reference,
     chs_info=None,
-    gt_flag=True,
-    abs_condition=False,
+    abs_reference=True,
+    abs_explanation=False,
     prctile_val=95,
 ):
-    """Compute 16 attribution quality metrics between explanations and reference.
+    """Compute attribution-quality metrics between explanations and reference.
 
-    If ``chs_info`` is provided, attributions are first projected onto a 2D
-    scalp topography via MNE before computing metrics (topographic mode).
-    Otherwise metrics are computed directly on the raw attribution maps
-    (channel-wise mode).
+    If ``chs_info`` is provided, attributions are first averaged over time
+    and projected onto a 2-D scalp topography via MNE before computing
+    metrics (topographic mode). Otherwise metrics are computed directly on
+    the raw attribution maps (channel-wise mode).
 
     Parameters
     ----------
@@ -63,43 +47,30 @@ def compute_metrics(
         Ground truth or baseline attribution maps, same shape as
         ``explanations``.
     chs_info : list of dict, optional
-        Channel info list (braindecode ``chs_info`` format with ``ch_name``
-        and position fields). If provided, enables topographic projection.
-    gt_flag : bool, default=True
+        Channel info list (braindecode ``chs_info`` format). If provided,
+        enables topographic projection.
+    abs_reference : bool, default=True
         If True, take absolute value of ``reference`` (ground truth mode).
         If False, use ``reference`` as-is (comparison mode, e.g. randomized
         weights).
-    abs_condition : bool, default=False
-        If True, take absolute value of ``explanations``. If False, zero
-        negative values only.
+    abs_explanation : bool, default=False
+        If True, take absolute value of ``explanations``. If False, clip
+        negative values to zero.
     prctile_val : float, default=95
         Top-percentile threshold (e.g. 95 keeps the top 5%) used for
-        ``*_top5_abs`` and top-percentile reference masks. The top-K mask
-        used for ``RelevanceRankAccuracy`` and ``Pearson_topK`` is
-        independently sized from the count of GT-positive entries.
+        ``*_top5`` masks.
 
     Returns
     -------
     metrics : numpy.ndarray
-        Array of shape ``(n_samples, 16)`` with metric values per sample.
-        See :data:`METRIC_NAMES` for the metric at each index.
+        Array of shape ``(n_samples, 12)`` with metric values per sample.
+        See :data:`METRIC_NAMES` for the metric at each index. Skipped
+        samples have an all-zero row.
     n_skipped : int
         Number of samples skipped due to all-zero or constant attributions
         or reference.
     """
-    if chs_info is not None:
-        return _compute_topo_metrics(
-            explanations, reference, chs_info, gt_flag, abs_condition, prctile_val
-        )
-    return _compute_channel_metrics(
-        explanations, reference, gt_flag, abs_condition, prctile_val
-    )
-
-
-def _compute_channel_metrics(
-    explanations, reference, gt_flag, abs_condition, prctile_val
-):
-    if reference.shape != explanations.shape:
+    if explanations.shape != reference.shape:
         raise ValueError(
             f"reference shape {reference.shape} does not match "
             f"explanations shape {explanations.shape}"
@@ -108,148 +79,123 @@ def _compute_channel_metrics(
     explanations = np.nan_to_num(explanations, nan=0.0)
     reference = np.nan_to_num(reference, nan=0.0)
 
-    if gt_flag:
+    if chs_info is not None:
+        explanations = _project_batch(explanations.mean(axis=2), chs_info)
+        reference = _project_batch(reference.mean(axis=2), chs_info)
+        explanations = np.nan_to_num(explanations, nan=0.0)
+        reference = np.nan_to_num(reference, nan=0.0)
+
+    if abs_reference:
         reference = np.abs(reference)
 
     explanation_abs = (
-        np.abs(explanations) if abs_condition else np.clip(explanations, 0, None)
+        np.abs(explanations) if abs_explanation else np.clip(explanations, 0, None)
     )
 
-    return _compute_metrics_core(explanations, reference, explanation_abs, prctile_val)
+    return _compute(explanations, reference, explanation_abs, prctile_val)
 
 
-def _compute_topo_metrics(
-    explanations, reference, chs_info, gt_flag, abs_condition, prctile_val
-):
-    explanations = np.mean(explanations, axis=2)
-    reference = np.mean(reference, axis=2)
+def _project_batch(arr, chs_info):
+    return np.stack([project_to_topomap(a, chs_info) for a in arr])
 
-    # Build the topomap interpolator once and reuse for every sample —
-    # all the geometry (info, sphere, Delaunay triangulation) depends only
-    # on chs_info, not on the per-sample values.
-    Xi, Yi, interp = _build_topomap(chs_info)
 
-    def _project(arr):
-        return np.array(
-            [interp.set_values(a).set_locations(Xi, Yi)() for a in arr]
-        )
+def _compute(attr, gt, attr_abs, prctile_val):
+    n = attr.shape[0]
+    A = attr.reshape(n, -1)
+    G = gt.reshape(n, -1)
+    Aabs = attr_abs.reshape(n, -1)
 
-    explanations_topo = np.nan_to_num(_project(explanations), nan=0.0)
-    reference_topo = np.nan_to_num(_project(reference), nan=0.0)
+    A_norm = _minmax(A)
+    Aabs_norm = _minmax(Aabs)
+    G_norm = _minmax(G)
 
-    if gt_flag:
-        reference_topo = np.abs(reference_topo)
+    A_topperc = _topperc_mask(A, prctile_val)
+    G_topperc = _topperc_mask(G_norm, prctile_val)
 
-    explanation_abs = (
-        np.abs(explanations_topo)
-        if abs_condition
-        else np.clip(explanations_topo, 0, None)
+    # K = number of strictly positive entries in gt (per sample, varies).
+    k_per_sample = (G > 0).sum(axis=1)
+    A_topk = _topk_mask(Aabs_norm, k_per_sample)
+
+    # Boolean GT mask used for indexing — non-zero counts as "positive"
+    # (preserves original behaviour where negative gt entries contribute
+    # under abs_reference=False).
+    G_bool = G.astype(bool)
+
+    skip = (
+        (Aabs.sum(axis=1) == 0)
+        | (G.sum(axis=1) == 0)
+        | (A.max(axis=1) == A.min(axis=1))
+        | (Aabs.max(axis=1) == Aabs.min(axis=1))
+        | (G.max(axis=1) == G.min(axis=1))
+        | (k_per_sample == 0)
     )
 
-    return _compute_metrics_core(
-        explanations_topo, reference_topo, explanation_abs, prctile_val
-    )
+    scores = np.zeros((n, N_METRICS))
+    scores[:, 0] = _cosine(G_topperc, A_topperc)
+    scores[:, 1] = _cosine(G_norm, Aabs_norm)
+    scores[:, 2] = _cosine(G_norm, A_norm)
+    scores[:, 3] = _cosine(G_norm, A)
+    scores[:, 4] = _mass_acc(A_topperc, G_bool)
+    scores[:, 5] = _rank_acc(A_topk, G_bool)
+    scores[:, 6] = _mass_acc(A_norm, G_bool)
+    scores[:, 7] = _mass_acc(Aabs_norm, G_bool)
+    scores[:, 8] = _pearson(A_topk, G_topperc)
+    scores[:, 9] = _pearson(Aabs_norm, G_norm)
+    scores[:, 10] = _pearson(A_norm, G_norm)
+    scores[:, 11] = _pearson(A, G_norm)
+
+    scores[skip] = 0.0
+    return scores, int(skip.sum())
 
 
-def _safe_minmax(x):
-    """Min-max normalize, returning zeros if x is constant."""
-    lo, hi = x.min(), x.max()
-    rng = hi - lo
-    if rng == 0:
-        return np.zeros_like(x), 0.0
-    return (x - lo) / rng, rng
+def _safe_div(num, den):
+    return num / np.where(den == 0, 1.0, den)
 
 
-def _compute_metrics_core(explanations, reference, explanation_abs, prctile_val):
-    ssim = _import_ssim()
-    n_samples = explanations.shape[0]
-    scores = np.zeros((n_samples, 16))
-    n_skipped = 0
+def _minmax(X):
+    """Per-sample min-max normalize. X: (n, F)."""
+    lo = X.min(axis=1, keepdims=True)
+    hi = X.max(axis=1, keepdims=True)
+    return _safe_div(X - lo, hi - lo)
 
-    for idx in range(n_samples):
-        attr = explanations[idx]
-        attr_abs = explanation_abs[idx]
-        gt = reference[idx]
 
-        attr_norm, attr_range = _safe_minmax(attr)
-        attr_absnorm, attr_abs_range = _safe_minmax(attr_abs)
-        gt_norm, gt_range = _safe_minmax(gt)
+def _topperc_mask(X, prctile_val):
+    """Zero values strictly below the per-sample top-percentile threshold."""
+    threshold = np.percentile(X, prctile_val, axis=1, keepdims=True)
+    return np.where(X < threshold, 0.0, X)
 
-        # Skip degenerate samples: all-zero attribution/reference, or constant
-        # values that make min-max normalization undefined.
-        if (
-            np.all(attr_abs == 0)
-            or np.all(gt == 0)
-            or attr_range == 0
-            or attr_abs_range == 0
-            or gt_range == 0
-        ):
-            n_skipped += 1
+
+def _topk_mask(X, k_per_sample):
+    """Per-sample top-K mask. K varies per sample, so this loops over rows."""
+    out = np.zeros_like(X)
+    for i, k in enumerate(k_per_sample):
+        if k <= 0:
             continue
-
-        # Two masks with subtly different semantics, preserved from the
-        # original implementation: count only positives for K, but use
-        # non-zero as the GT indicator mask (matters when gt_flag=False
-        # leaves negative reference values in place).
-        n_gt_positive = int((gt > 0).sum())
-        gt_bool = gt.astype(bool, copy=False)
-        if n_gt_positive == 0:
-            n_skipped += 1
-            continue
-
-        # Top-percentile masks (zero everything below the prctile_val threshold).
-        attr_topperc = np.where(attr < np.percentile(attr, prctile_val), 0, attr)
-        gt_topperc = np.where(gt_norm < np.percentile(gt_norm, prctile_val), 0, gt_norm)
-
-        # Top-K mask: keep the K largest abs-normalized attribution entries
-        # where K = number of GT-positive locations. np.partition is O(N)
-        # vs O(N log N) for full sort.
-        flat = attr_absnorm.ravel()
-        topk_threshold = np.partition(flat, -n_gt_positive)[-n_gt_positive]
-        attr_topk = np.where(attr_absnorm < topk_threshold, 0, attr_absnorm)
-
-        # SSIM data ranges. The masked maps can become near-constant on
-        # degenerate inputs; fall back to the unmasked range to keep SSIM
-        # well-defined.
-        topperc_range = attr_topperc.max() - attr_topperc.min()
-        if topperc_range == 0:
-            topperc_range = attr_range
-
-        scores[idx, 0] = ssim(gt_topperc, attr_topperc, win_size=7, data_range=topperc_range)
-        # min-max normalized arrays have data_range == 1 by construction.
-        scores[idx, 1] = ssim(gt_norm, attr_absnorm, win_size=7, data_range=1.0)
-        scores[idx, 2] = ssim(gt_norm, attr_norm, win_size=7, data_range=1.0)
-        scores[idx, 3] = ssim(gt_norm, attr, win_size=7, data_range=attr_range)
-
-        scores[idx, 4] = cosine_similarity(
-            gt_topperc.reshape(1, -1), attr_topperc.reshape(1, -1)
-        )[0, 0]
-        scores[idx, 5] = cosine_similarity(
-            gt_norm.reshape(1, -1), attr_absnorm.reshape(1, -1)
-        )[0, 0]
-        scores[idx, 6] = cosine_similarity(
-            gt_norm.reshape(1, -1), attr_norm.reshape(1, -1)
-        )[0, 0]
-        scores[idx, 7] = cosine_similarity(
-            gt_norm.reshape(1, -1), attr.reshape(1, -1)
-        )[0, 0]
-
-        # Relevance mass / rank accuracy: fraction of attribution mass that
-        # falls within GT-positive locations. Guards against zero denominators
-        # produced by adversarial inputs (e.g. all-negative attributions).
-        scores[idx, 8] = _safe_div(np.abs(attr_topperc[gt_bool]).sum(), attr_topperc.sum())
-        topk_count = np.count_nonzero(attr_topk)
-        scores[idx, 9] = _safe_div(np.count_nonzero(attr_topk[gt_bool]), topk_count)
-        scores[idx, 10] = _safe_div(np.abs(attr_norm[gt_bool]).sum(), attr_norm.sum())
-        scores[idx, 11] = _safe_div(np.abs(attr_absnorm[gt_bool]).sum(), attr_absnorm.sum())
-
-        scores[idx, 12], _ = stats.pearsonr(attr_topk.ravel(), gt_topperc.ravel())
-        scores[idx, 13], _ = stats.pearsonr(attr_absnorm.ravel(), gt_norm.ravel())
-        scores[idx, 14], _ = stats.pearsonr(attr_norm.ravel(), gt_norm.ravel())
-        scores[idx, 15], _ = stats.pearsonr(attr.ravel(), gt_norm.ravel())
-
-    return scores, n_skipped
+        threshold = np.partition(X[i], -k)[-k]
+        out[i] = np.where(X[i] < threshold, 0.0, X[i])
+    return out
 
 
-def _safe_div(num, denom):
-    return num / denom if denom != 0 else 0.0
+def _cosine(A, B):
+    """Per-sample cosine similarity for batched (n, F) arrays."""
+    return _safe_div((A * B).sum(axis=1), np.linalg.norm(A, axis=1) * np.linalg.norm(B, axis=1))
+
+
+def _pearson(A, B):
+    """Per-sample Pearson correlation for batched (n, F) arrays."""
+    Ac = A - A.mean(axis=1, keepdims=True)
+    Bc = B - B.mean(axis=1, keepdims=True)
+    den = np.sqrt((Ac * Ac).sum(axis=1) * (Bc * Bc).sum(axis=1))
+    return _safe_div((Ac * Bc).sum(axis=1), den)
+
+
+def _mass_acc(attr, gt_bool):
+    """Fraction of attribution mass landing within GT-positive locations."""
+    correct = np.where(gt_bool, np.abs(attr), 0.0).sum(axis=1)
+    return _safe_div(correct, attr.sum(axis=1))
+
+
+def _rank_acc(attr_topk, gt_bool):
+    """Fraction of top-K attribution locations that fall within GT-positive locations."""
+    is_topk = attr_topk != 0
+    return _safe_div((is_topk & gt_bool).sum(axis=1), is_topk.sum(axis=1))
