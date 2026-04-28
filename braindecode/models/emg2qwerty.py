@@ -404,7 +404,7 @@ class _LogSpectrogram(nn.Module):
             x.reshape(batch_size * n_channels, n_samples),
             n_fft=self.n_fft,
             hop_length=self.hop_length,
-            window=self.window.to(x.dtype),
+            window=self.window.to(device=x.device, dtype=x.dtype),
             normalized=True,
             center=False,
             return_complex=True,
