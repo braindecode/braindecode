@@ -7,7 +7,7 @@
 # https://github.com/facebookresearch/emg2qwerty (NeurIPS 2024)
 # released under CC BY-NC 4.0. This derivative inherits the same
 # noncommercial terms and is not covered by braindecode's BSD-3 license!
-"""``EMG2QwertyNet`` — TDS-Conv-CTC for sEMG-to-keystroke decoding.
+"""``EMG2QwertyNet``: TDS-Conv-CTC for sEMG-to-keystroke decoding.
 
 Single self-contained module: the model class plus its private layer
 helpers. Mirrors the file layout of
@@ -54,9 +54,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Macro Components
 
-    The forward pass is a strict five-stage sequence:
+    The forward pass has five stages:
 
-    1. **Log-spectrogram** front-end (``self.spectrogram``, no trainable
+    1. Log-spectrogram front-end (``self.spectrogram``, no trainable
        parameters). Channel-wise STFT with ``n_fft=64`` (32 ms at 2 kHz),
        ``hop_length=16`` (8 ms), Hann window, ``normalized=True``,
        ``center=False`` (strict causality). Power is log10-transformed
@@ -64,18 +64,18 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
        ``(num_bands=2, electrodes=16)``. Output shape ``(T_spec, batch,
        2, 16, freq=33)`` at 125 Hz frame rate.
 
-    2. ``_SpectrogramNorm`` (``self.model[0]``) — per-electrode-per-band
+    2. ``_SpectrogramNorm`` (``self.model[0]``): per-electrode-per-band
        :class:`~torch.nn.BatchNorm2d` over the ``(batch, freq, time)`` slice
        for each of the ``2 × 16 = 32`` channels.
 
-    3. ``_MultiBandRotationInvariantMLP`` (``self.model[1]``) — per-band
+    3. ``_MultiBandRotationInvariantMLP`` (``self.model[1]``): per-band
        rotation-invariant MLP. Each 16-electrode band is circularly rolled
        by the fixed offsets ``(-1, 0, +1)``, passed through a shared MLP,
        and mean-pooled across rolls. Approximates rigid-rotation
        invariance of the wristband.
 
     4. ``_TDSConvEncoder`` (``self.model[3]``, after ``nn.Flatten`` at
-       ``self.model[2]``) — stack of ``_TDSConv2dBlock`` interleaved
+       ``self.model[2]``): stack of ``_TDSConv2dBlock`` interleaved
        with ``_TDSFullyConnectedBlock``. Each conv block uses
        ``1 × kernel_width`` 2-D convolution with no temporal padding,
        so it strips ``kernel_width - 1`` frames from the start of the
@@ -86,7 +86,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
     5. :class:`~torch.nn.Linear` classification head exposed as the
        top-level submodule ``self.final_layer`` (so it shows up in
        :func:`~torch.nn.Module.named_modules` and ``print(model)``;
-       :meth:`reset_head` swaps it cleanly). Optionally followed by
+       :meth:`reset_head` swaps it). Optionally followed by
        :func:`~torch.nn.functional.log_softmax` (``log_softmax``
        constructor flag, disabled by default since braindecode models
        conventionally return logits).
@@ -116,11 +116,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Output shape and CTC usage
 
-    The forward pass returns ``(batch, T_out, n_outputs)`` — the natural
-    layout for :class:`~torch.nn.CTCLoss`. ``T_out`` is the downsampled
-    emission length recoverable from the input length via
-    :meth:`compute_output_lengths`. For ``CTCLoss``, transpose the time
-    dimension first: ``emissions.transpose(0, 1)``. With the default
+    The forward pass returns ``(batch, T_out, n_outputs)``, the layout
+    that :class:`~torch.nn.CTCLoss` expects after a transpose. ``T_out``
+    is the downsampled emission length recoverable from the input length
+    via :meth:`compute_output_lengths`. For ``CTCLoss``, transpose the
+    time dimension first: ``emissions.transpose(0, 1)``. With the default
     config and ``n_times=8000`` (4 s @ 2 kHz), ``T_out=373``.
 
     .. rubric:: Training recipe (paper values)
@@ -134,7 +134,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
       ``weight_decay=0`` (plain Adam, **not** AdamW).
     - **Schedule**: linear warmup from ``lr=1e-8`` over the first 10 epochs
       (essentially zero), then cosine annealing to ``eta_min=1e-6``,
-      150 epochs total. The slow warmup is structural — without it CTC
+      150 epochs total. The slow warmup is structural. Without it, CTC
       collapses to all-blank prediction within one epoch on small data,
       because predicting blank everywhere is a trivial local minimum.
     - **Augmentation**: random circular per-band channel rotations
@@ -153,7 +153,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         meaningful and this model should not be used as-is.
 
     .. warning::
-        **License — noncommercial use only.** This module is a derivative
+        **License: noncommercial use only.** This module is a derivative
         of Meta's reference implementation released under
         `CC BY-NC 4.0 <https://creativecommons.org/licenses/by-nc/4.0/>`_,
         the same license as the upstream repository. Not covered by
@@ -673,7 +673,7 @@ class _TDSConv2dBlock(nn.Module):
     r"""Time-Depth-Separable 2-D conv block ([hannun2019tds]_).
 
     1×``kernel_width`` convolution followed by ReLU, residual skip, and
-    LayerNorm. No temporal padding — each block strips
+    LayerNorm. No temporal padding: each block strips
     ``kernel_width - 1`` frames from the start of the sequence.
     """
 
@@ -754,7 +754,7 @@ class _TDSConvEncoder(nn.Module):
       ``_TDSFullyConnectedBlock`` instances. The output-length math
       assumes only the conv blocks shrink ``T``.
     - ``kernel_width`` is identical across all blocks.
-    - No temporal padding anywhere — each conv block takes ``T_in`` frames
+    - No temporal padding anywhere; each conv block takes ``T_in`` frames
       to ``T_in - kernel_width + 1`` frames.
     """
 
