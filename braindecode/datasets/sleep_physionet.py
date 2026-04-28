@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 import os
+import time
 
 import mne
 import numpy as np
 import pandas as pd
+import requests
 from mne.datasets.sleep_physionet.age import fetch_data
 
 from .base import BaseConcatDataset, RawDataset
@@ -59,7 +61,16 @@ class SleepPhysionet(BaseConcatDataset):
         if recording_ids is None:
             recording_ids = [1, 2]
 
-        paths = fetch_data(subject_ids, recording=recording_ids, on_missing="warn")
+        for attempt in range(5):
+            try:
+                paths = fetch_data(
+                    subject_ids, recording=recording_ids, on_missing="warn"
+                )
+                break
+            except requests.exceptions.RequestException:
+                if attempt == 4:
+                    raise
+                time.sleep(10)
 
         all_base_ds = list()
         for p in paths:
