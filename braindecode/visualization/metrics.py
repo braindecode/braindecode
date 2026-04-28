@@ -1,9 +1,17 @@
 # Authors: Vandit Shah <shahvanditt@gmail.com>
+#          Akshay Sujatha Ravindran <asujatharavindran@uh.edu>  (12-metric
+#          and 4-SSIM layout adapted from the author's research code for
+#          Sujatha Ravindran & Contreras-Vidal, "An empirical comparison
+#          of deep learning explainability approaches for EEG using
+#          simulated ground truth," Scientific Reports 13, 2023.
+#          DOI: 10.1038/s41598-023-43871-8)
 #
 # License: BSD (3-clause)
 
 
 import numpy as np
+import torch
+import torch.nn.functional as F
 
 from braindecode.visualization.topology import project_to_topomap
 
@@ -22,6 +30,53 @@ METRIC_NAMES = [
     "Pearson_raw_vs_refnorm",
 ]
 N_METRICS = len(METRIC_NAMES)
+
+SSIM_METRIC_NAMES = [
+    "SSIM_topperc",
+    "SSIM_absnorm",
+    "SSIM_norm",
+    "SSIM_raw",
+]
+
+
+def _ssim_uniform(img_a, img_b, win_size, data_range):
+    """Uniform-window SSIM (Wang et al., 2004), no extra dependencies.
+
+    Pure-torch reimplementation of :func:`skimage.metrics.structural_similarity`
+    with ``gaussian_weights=False`` and the default Bessel-corrected
+    sample covariance. Matches skimage to machine epsilon (~2e-16)
+    when both run in float64.
+    """
+    if win_size < 3 or win_size % 2 == 0:
+        raise ValueError(f"win_size must be odd and >= 3, got {win_size}")
+
+    a = torch.as_tensor(img_a, dtype=torch.float64).reshape(1, 1, *img_a.shape)
+    b = torch.as_tensor(img_b, dtype=torch.float64).reshape(1, 1, *img_b.shape)
+
+    n_pixels_per_window = float(win_size * win_size)
+    cov_norm = n_pixels_per_window / (n_pixels_per_window - 1.0)  # Bessel
+
+    def pool(t):
+        return F.avg_pool2d(t, kernel_size=win_size, stride=1)
+
+    mu_a = pool(a)
+    mu_b = pool(b)
+    mu_a2 = mu_a * mu_a
+    mu_b2 = mu_b * mu_b
+    mu_ab = mu_a * mu_b
+
+    sigma_a2 = cov_norm * (pool(a * a) - mu_a2)
+    sigma_b2 = cov_norm * (pool(b * b) - mu_b2)
+    sigma_ab = cov_norm * (pool(a * b) - mu_ab)
+
+    k1, k2 = 0.01, 0.03
+    c1 = (k1 * data_range) ** 2
+    c2 = (k2 * data_range) ** 2
+
+    numerator = (2.0 * mu_ab + c1) * (2.0 * sigma_ab + c2)
+    denominator = (mu_a2 + mu_b2 + c1) * (sigma_a2 + sigma_b2 + c2)
+
+    return float((numerator / denominator).mean().item())
 
 
 def compute_metrics(
@@ -182,7 +237,9 @@ def _topk_mask(X, k_per_sample):
 
 def _cosine(A, B):
     """Per-sample cosine similarity for batched (n, F) arrays."""
-    return _safe_div((A * B).sum(axis=1), np.linalg.norm(A, axis=1) * np.linalg.norm(B, axis=1))
+    return _safe_div(
+        (A * B).sum(axis=1), np.linalg.norm(A, axis=1) * np.linalg.norm(B, axis=1)
+    )
 
 
 def _pearson(A, B):
@@ -203,3 +260,157 @@ def _rank_acc(attr_topk, gt_bool):
     """Fraction of top-K attribution locations that fall within GT-positive locations."""
     is_topk = attr_topk != 0
     return _safe_div((is_topk & gt_bool).sum(axis=1), is_topk.sum(axis=1))
+
+
+def compute_ssim_metrics(
+    explanations,
+    reference,
+    chs_info=None,
+    abs_reference=True,
+    abs_explanation=False,
+    prctile_val=95,
+    win_size=7,
+):
+    """Compute four SSIM-based attribution-quality metrics.
+
+    Companion to :func:`compute_metrics`. Returned column order matches
+    :data:`SSIM_METRIC_NAMES`:
+
+    1. ``SSIM_topperc``  : SSIM between top-percentile masks
+       (each kept at its own scale).
+    2. ``SSIM_absnorm``  : SSIM between min-max-normalized
+       ``|explanation|`` and reference.
+    3. ``SSIM_norm``     : SSIM between min-max-normalized raw
+       explanation and reference.
+    4. ``SSIM_raw``      : SSIM between raw explanation and
+       normalized reference.
+
+    Requires :mod:`skimage` (``pip install braindecode[viz]``).
+
+    Parameters
+    ----------
+    explanations, reference : numpy.ndarray
+        Same shape ``(n_samples, n_chans, n_times)``. When ``chs_info``
+        is given, each sample is time-averaged and projected to a 2-D
+        topomap before SSIM, matching :func:`compute_metrics`'
+        topographic mode.
+    chs_info : list of dict, optional
+        Channel info; enables topographic projection.
+    abs_reference, abs_explanation : bool
+        Same semantics as in :func:`compute_metrics`.
+    prctile_val : float
+        Top-percentile threshold for the ``SSIM_topperc`` mask.
+    win_size : int
+        SSIM sliding-window size. ``7`` matches the benchmark in
+        Sujatha Ravindran & Contreras-Vidal (2023).
+
+    Returns
+    -------
+    scores : numpy.ndarray of shape ``(n_samples, 4)``
+        SSIM values per sample. Skipped samples have an all-zero row.
+    n_skipped : int
+        Number of samples skipped due to all-zero or constant
+        attributions or reference.
+    """
+    if explanations.shape != reference.shape:
+        raise ValueError(
+            f"reference shape {reference.shape} does not match "
+            f"explanations shape {explanations.shape}"
+        )
+
+    explanations = np.nan_to_num(explanations, nan=0.0)
+    reference = np.nan_to_num(reference, nan=0.0)
+
+    if chs_info is not None:
+        explanations = _project_batch(explanations.mean(axis=2), chs_info)
+        reference = _project_batch(reference.mean(axis=2), chs_info)
+        explanations = np.nan_to_num(explanations, nan=0.0)
+        reference = np.nan_to_num(reference, nan=0.0)
+
+    if abs_reference:
+        reference = np.abs(reference)
+
+    explanation_abs = (
+        np.abs(explanations) if abs_explanation else np.clip(explanations, 0, None)
+    )
+
+    n_samples = explanations.shape[0]
+    scores = np.zeros((n_samples, 4))
+    n_skipped = 0
+    for i in range(n_samples):
+        exp = explanations[i]
+        ref = reference[i]
+        exp_abs = explanation_abs[i]
+
+        # Skip degenerate samples; matches compute_metrics' policy.
+        if (
+            exp_abs.sum() == 0
+            or ref.sum() == 0
+            or exp.max() == exp.min()
+            or exp_abs.max() == exp_abs.min()
+            or ref.max() == ref.min()
+        ):
+            n_skipped += 1
+            continue
+
+        exp_norm = _minmax_2d(exp)
+        exp_abs_norm = _minmax_2d(exp_abs)
+        ref_norm = _minmax_2d(ref)
+
+        exp_topperc = np.where(exp < np.percentile(exp, prctile_val), 0.0, exp)
+        ref_topperc = np.where(
+            ref_norm < np.percentile(ref_norm, prctile_val), 0.0, ref_norm
+        )
+
+        # Shrink win_size to fit the array if needed (must stay odd ≥ 3).
+        effective_win = _fit_win_size(win_size, exp.shape)
+
+        scores[i, 0] = _ssim_uniform(
+            ref_topperc,
+            exp_topperc,
+            effective_win,
+            _range_or_one(exp_topperc),
+        )
+        scores[i, 1] = _ssim_uniform(
+            ref_norm,
+            exp_abs_norm,
+            effective_win,
+            _range_or_one(exp_abs_norm),
+        )
+        scores[i, 2] = _ssim_uniform(
+            ref_norm,
+            exp_norm,
+            effective_win,
+            _range_or_one(exp_norm),
+        )
+        scores[i, 3] = _ssim_uniform(
+            ref_norm,
+            exp,
+            effective_win,
+            _range_or_one(exp),
+        )
+
+    return scores, n_skipped
+
+
+def _minmax_2d(arr):
+    lo, hi = arr.min(), arr.max()
+    if hi - lo == 0:
+        return np.zeros_like(arr, dtype=float)
+    return (arr - lo) / (hi - lo)
+
+
+def _range_or_one(arr):
+    span = float(np.nanmax(arr) - np.nanmin(arr))
+    return span if span > 0 else 1.0
+
+
+def _fit_win_size(requested, shape):
+    """Largest odd window size that fits inside ``shape``, capped at ``requested``."""
+    smallest_dim = min(shape)
+    if smallest_dim < 3:
+        raise ValueError(f"SSIM needs both image dims >= 3; got shape {shape}.")
+    upper = min(requested, smallest_dim)
+    if upper % 2 == 0:
+        upper -= 1
+    return max(upper, 3)

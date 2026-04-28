@@ -3,36 +3,33 @@
 Interpretability of EEG Decoders
 ================================
 
-This tutorial walks through the interpretability utilities in
-:mod:`braindecode.visualization` applied to a motor-imagery decoder. We
-train a small :class:`~braindecode.models.ShallowFBCSPNet` on the BCI
-Competition IV 2a dataset and ask the same question from several angles:
-**what is the network actually using?**
+This tutorial trains a small :class:`~braindecode.models.ShallowFBCSPNet`
+on BCI IV 2a motor imagery, then asks which parts of the input the
+network actually uses, and which attribution methods we can trust to
+tell us. The tour follows the EEG-XAI benchmark of Sujatha Ravindran &
+Contreras-Vidal, Sci Rep 2023 (DOI 10.1038/s41598-023-43871-8): two
+sanity checks (label and weight randomization) decide whether an
+attribution map reflects what the model learned, or just its
+architecture.
 
-The tour combines two families of techniques:
+Outline:
 
-*Frequency-domain and activation-space analyses* (adapted from the
-CuttingGardens 2023 Braindecode tutorial by R. Schirrmeister):
-
-- :func:`~braindecode.visualization.compute_amplitude_gradients` —
-  gradient of class predictions w.r.t. spectral amplitudes
-- a Haufe-style transform that turns those gradients ("filters") into
-  the more interpretable "patterns"
-- maximally activating inputs — the receptive-field windows that excite
-  each filter the most
-
-*Gradient-based attribution* (built on plain PyTorch autograd, no extra
-dependencies):
-
-- :func:`~braindecode.visualization.saliency` — ``|∂y[target] / ∂x|``
-- :func:`~braindecode.visualization.integrated_gradients` — path
-  integral from a baseline (Sundararajan et al., 2017)
-- :func:`~braindecode.visualization.layer_grad_cam` — class-discriminative
-  localization at a chosen layer
-- :func:`~braindecode.visualization.project_to_topomap` — per-channel
-  values to a 2-D scalp map via :func:`mne.viz.plot_topomap`
-- :func:`~braindecode.visualization.compute_metrics` — quantitative
-  comparison of attribution maps against a reference
+1. Frequency-domain analysis — :func:`~braindecode.visualization.compute_amplitude_gradients`
+   gives a per-class amplitude-gradient field; the Haufe transform turns
+   those filters into class-distinctive patterns.
+2. Per-trial attribution — :func:`~braindecode.visualization.saliency`
+   and :func:`~braindecode.visualization.integrated_gradients` (plain
+   PyTorch); :func:`~braindecode.visualization.deep_lift` (Captum,
+   loaded if available — install with ``pip install braindecode[viz]``).
+3. Where on the scalp does the network look — single topomap with the
+   landmark electrodes labelled.
+4. **Are the explanations trustworthy?** Label randomization
+   (:func:`~braindecode.visualization.random_target`) and cascading
+   weight randomization (:func:`~braindecode.visualization.cascading_layer_reset`)
+   answer this. Quantitative scoring uses
+   :func:`~braindecode.visualization.compute_metrics` (12 metrics) and
+   :func:`~braindecode.visualization.compute_ssim_metrics` (4 SSIM
+   variants, pure-torch).
 
 .. contents:: This example covers:
    :local:
@@ -44,6 +41,41 @@ dependencies):
 #
 # License: BSD (3-clause)
 
+import copy
+
+import einops
+import matplotlib.pyplot as plt
+import mne
+import numpy as np
+import torch
+from matplotlib import cm
+from numpy import multiply
+from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
+
+from braindecode import EEGClassifier
+from braindecode.datasets import MOABBDataset
+from braindecode.datautil import infer_signal_properties
+from braindecode.models import ShallowFBCSPNet
+from braindecode.preprocessing import (
+    Preprocessor,
+    create_windows_from_events,
+    exponential_moving_standardize,
+    preprocess,
+)
+from braindecode.util import set_random_seeds
+from braindecode.visualization import (
+    METRIC_NAMES,
+    cascading_layer_reset,
+    compute_amplitude_gradients,
+    compute_metrics,
+    compute_ssim_metrics,
+    integrated_gradients,
+    random_target,
+    saliency,
+    select_correctly_classified,
+)
+
 ######################################################################
 # Loading and preparing the data
 # ------------------------------
@@ -51,32 +83,23 @@ dependencies):
 # We reuse the BCI Competition IV 2a setup: a single subject,
 # bandpass-filtered to 4–38 Hz, with exponential moving standardization.
 
-from numpy import multiply
-
-from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing import (
-    Preprocessor,
-    create_windows_from_events,
-    exponential_moving_standardize,
-    preprocess,
-)
-
-subject_id = 3
+subject_id = 1
 dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 low_cut_hz, high_cut_hz = 4.0, 38.0
-factor_new, init_block_size, factor = 1e-3, 1000, 1e6
+ems_factor_new, ems_init_block_size = 1e-3, 1000
+volt_to_microvolt = 1e6
 
 preprocess(
     dataset,
     [
         Preprocessor("pick_types", eeg=True, meg=False, stim=False),
-        Preprocessor(lambda data: multiply(data, factor)),
+        Preprocessor(lambda data: multiply(data, volt_to_microvolt)),
         Preprocessor("filter", l_freq=low_cut_hz, h_freq=high_cut_hz),
         Preprocessor(
             exponential_moving_standardize,
-            factor_new=factor_new,
-            init_block_size=init_block_size,
+            factor_new=ems_factor_new,
+            init_block_size=ems_init_block_size,
         ),
     ],
     n_jobs=-1,
@@ -91,41 +114,35 @@ windows_dataset = create_windows_from_events(
     preload=True,
 )
 
-splitted = windows_dataset.split("session")
-train_set, valid_set = splitted["0train"], splitted["1test"]
+split_by_session = windows_dataset.split("session")
+train_set, valid_set = split_by_session["0train"], split_by_session["1test"]
 
-# Class label → index mapping. MOABB orders BCI IV 2a classes alphabetically.
-class_mapping = {"feet": 0, "left_hand": 1, "right_hand": 2, "tongue": 3}
+# BCI IV 2a labels in MOABB's alphabetical order; the tuple position is
+# the integer class id.
+LABELS = ("feet", "left_hand", "right_hand", "tongue")
 
 ######################################################################
 # Training a small ShallowFBCSPNet
 # --------------------------------
 #
-# Ten epochs is enough to get usable accuracy for the examples below; for
-# a real analysis you'd train longer.
+# Thirty epochs is enough to push validation accuracy well above chance
+# for this subject; the resulting attribution maps are correspondingly
+# sharper than at 10 epochs.
 
-import torch
-from skorch.callbacks import LRScheduler
-from skorch.helper import predefined_split
+n_epochs = 30
+cuda_available = torch.cuda.is_available()
+device = "cuda" if cuda_available else "cpu"
+set_random_seeds(seed=20240205, cuda=cuda_available)
 
-from braindecode import EEGClassifier
-from braindecode.datautil import infer_signal_properties
-from braindecode.models import ShallowFBCSPNet
-from braindecode.util import set_random_seeds
-
-cuda = torch.cuda.is_available()
-device = "cuda" if cuda else "cpu"
-set_random_seeds(seed=20240205, cuda=cuda)
-
-sig_props = infer_signal_properties(train_set, mode="classification")
+signal_properties = infer_signal_properties(train_set, mode="classification")
 model = ShallowFBCSPNet(
-    n_chans=sig_props["n_chans"],
-    n_outputs=sig_props["n_outputs"],
-    n_times=sig_props["n_times"],
+    n_chans=signal_properties["n_chans"],
+    n_outputs=signal_properties["n_outputs"],
+    n_times=signal_properties["n_times"],
     final_conv_length="auto",
 ).to(device)
 
-clf = EEGClassifier(
+classifier = EEGClassifier(
     model,
     criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
@@ -135,26 +152,24 @@ clf = EEGClassifier(
     batch_size=64,
     callbacks=[
         "accuracy",
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=10)),
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs)),
     ],
     device=device,
-    classes=list(range(sig_props["n_outputs"])),
+    classes=list(range(signal_properties["n_outputs"])),
 )
-clf.fit(train_set, y=None, epochs=10)
+classifier.fit(train_set, y=None, epochs=n_epochs)
 
-valid_acc = clf.history[-1, "valid_accuracy"]
-print(f"Final validation accuracy: {valid_acc:.2%}")
+valid_accuracy = classifier.history[-1, "valid_accuracy"]
+print(f"Final validation accuracy: {valid_accuracy:.2%}")
 
 # Channel info needed by the topomaps below.
 raw_info = valid_set.datasets[0].raw.info
-chs_info = raw_info["chs"]
-
-import matplotlib.pyplot as plt
+channels_info = raw_info["chs"]
 
 plt.rcParams.update({"font.size": 9, "figure.dpi": 110, "savefig.bbox": "tight"})
 
-# Okabe-Ito colorblind-safe palette for class-coded elements.
-CLASS_COLORS = ["#0072B2", "#009E73", "#D55E00", "#CC79A7"]
+# Okabe-Ito colorblind-safe palette, one entry per label.
+LABEL_COLORS = ("#0072B2", "#009E73", "#D55E00", "#CC79A7")
 
 ######################################################################
 # Amplitude gradients
@@ -162,20 +177,20 @@ CLASS_COLORS = ["#0072B2", "#009E73", "#D55E00", "#CC79A7"]
 #
 # How does changing the spectral amplitude at each (channel, frequency)
 # move the network's class scores? :func:`compute_amplitude_gradients`
-# answers exactly this — for every output unit it computes the gradient
-# of the mean class score w.r.t. the input amplitudes (over all training
-# trials), so we get an interpretable ``(n_classes, n_chans, n_freqs)``
-# tensor after averaging over trials.
+# answers that question. For every output unit it computes the gradient
+# of the mean class score w.r.t. the input amplitudes over all training
+# trials. After averaging over trials we get an
+# ``(n_classes, n_chans, n_freqs)`` tensor.
 
-import numpy as np
+amplitude_gradients_per_trial = compute_amplitude_gradients(
+    model, train_set, batch_size=64
+)
+mean_amplitude_gradients = amplitude_gradients_per_trial.mean(
+    axis=1
+)  # (n_classes, n_chans, n_freqs)
 
-from braindecode.visualization import compute_amplitude_gradients
-
-amp_grads_per_filter = compute_amplitude_gradients(model, train_set, batch_size=64)
-avg_amp_grads = amp_grads_per_filter.mean(axis=1)  # (n_classes, n_chans, n_freqs)
-
-n_times = train_set[0][0].shape[1]
-freqs = np.fft.rfftfreq(n_times, d=1.0 / sfreq)
+n_input_samples = train_set[0][0].shape[1]
+frequencies_hz = np.fft.rfftfreq(n_input_samples, d=1.0 / sfreq)
 
 ######################################################################
 # We average the per-frequency gradients inside the canonical motor
@@ -183,369 +198,442 @@ freqs = np.fft.rfftfreq(n_times, d=1.0 / sfreq)
 # per class. Lateralised activity over the central electrodes is the
 # textbook signature for left/right hand motor imagery.
 
-import mne
-from matplotlib import cm
 
-
-def _band_topomap_grid(per_class_per_chan_per_freq, bands, info, mapping, title):
+def _band_topomap_grid(
+    values_per_class_chan_freq, frequency_bands, mne_info, labels, title
+):
     """One row per frequency band, one column per class.
 
     Color scale is set per row from the 98th-percentile absolute value
     so that a single high-magnitude class can't wash out the rest of the
-    band. A shared colorbar on the right encodes the diverging scale.
+    band. The shared colorbar on the right uses scientific notation
+    folded into its label, so no floating ``1e-6`` exponent appears.
     """
-    n_bands, n_classes = len(bands), len(mapping)
+    n_bands, n_classes = len(frequency_bands), len(labels)
     fig, axes = plt.subplots(
-        n_bands, n_classes, figsize=(2.4 * n_classes + 1.0, 2.4 * n_bands + 0.6)
+        n_bands, n_classes, figsize=(2.6 * n_classes + 1.6, 2.4 * n_bands + 1.0)
     )
     axes = np.atleast_2d(axes)
-    band_images = []
-    for row, (lo, hi) in enumerate(bands):
-        i_lo = np.searchsorted(freqs, lo)
-        i_hi = np.searchsorted(freqs, hi) + 1
-        avg_in_band = per_class_per_chan_per_freq[:, :, i_lo:i_hi].mean(axis=2)
-        vmax = np.percentile(np.abs(avg_in_band), 98)
-        for class_name, i_class in mapping.items():
-            ax = axes[row, i_class]
-            im, _ = mne.viz.plot_topomap(
-                avg_in_band[i_class],
-                info,
-                vlim=(-vmax, vmax),
+    band_images, band_color_limits = [], []
+    for row_idx, (band_low_hz, band_high_hz) in enumerate(frequency_bands):
+        low_freq_idx = np.searchsorted(frequencies_hz, band_low_hz)
+        high_freq_idx = np.searchsorted(frequencies_hz, band_high_hz) + 1
+        mean_in_band = values_per_class_chan_freq[
+            :, :, low_freq_idx:high_freq_idx
+        ].mean(axis=2)
+        band_color_limit = np.percentile(np.abs(mean_in_band), 98)
+        band_color_limits.append(band_color_limit)
+        for class_idx, label in enumerate(labels):
+            ax = axes[row_idx, class_idx]
+            topomap_image, _ = mne.viz.plot_topomap(
+                mean_in_band[class_idx],
+                mne_info,
+                vlim=(-band_color_limit, band_color_limit),
                 contours=0,
                 cmap=cm.RdBu_r,
                 sensors=False,
                 show=False,
                 axes=ax,
             )
-            if row == 0:
+            if row_idx == 0:
                 ax.set_title(
-                    class_name.replace("_", " ").title(),
-                    color=CLASS_COLORS[i_class],
+                    label.replace("_", " ").title(),
+                    color=LABEL_COLORS[class_idx],
                     fontweight="bold",
+                    fontsize=10,
                 )
-        band_images.append(im)
-        axes[row, 0].text(
-            -0.18, 0.5, f"{lo}–{hi} Hz",
-            transform=axes[row, 0].transAxes,
-            ha="right", va="center", fontsize=10,
-            fontweight="bold", color="#444",
+        band_images.append(topomap_image)
+        axes[row_idx, 0].text(
+            -0.18,
+            0.5,
+            f"{band_low_hz}–{band_high_hz} Hz",
+            transform=axes[row_idx, 0].transAxes,
+            ha="right",
+            va="center",
+            fontsize=9,
+            fontweight="bold",
+            color="#444",
         )
 
-    fig.suptitle(title, fontsize=12, fontweight="bold")
-    fig.subplots_adjust(right=0.88, wspace=0.05, hspace=0.15)
-    cbar_ax = fig.add_axes([0.91, 0.15, 0.015, 0.7])
-    fig.colorbar(band_images[-1], cax=cbar_ax, label="Attribution (a.u., diverging)")
+    # Fold the colorbar's scientific exponent into the label so it
+    # doesn't float as a "1e-6" annotation outside the axes.
+    largest_limit = max(band_color_limits)
+    exponent = int(np.floor(np.log10(largest_limit))) if largest_limit > 0 else 0
+    scale = 10**exponent
+    fig.suptitle(title, fontsize=11, fontweight="bold", y=0.99)
+    fig.subplots_adjust(right=0.88, top=0.90, wspace=0.05, hspace=0.15)
+    colorbar_ax = fig.add_axes([0.91, 0.18, 0.015, 0.65])
+    cbar = fig.colorbar(band_images[-1], cax=colorbar_ax)
+    cbar.formatter.set_scientific(False)
+    cbar.ax.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda v, _pos: f"{v / scale:+.1f}")
+    )
+    cbar.set_label(
+        f"Attribution × 10$^{{{exponent}}}$ (diverging)",
+        fontsize=9,
+    )
 
 
 _band_topomap_grid(
-    avg_amp_grads,
-    bands=[(7, 13), (14, 30)],
-    info=raw_info,
-    mapping=class_mapping,
-    title="Amplitude gradients (filters)",
+    mean_amplitude_gradients,
+    frequency_bands=[(7, 13), (14, 30)],
+    mne_info=raw_info,
+    labels=LABELS,
+    title="Amplitude gradients carry distinct α/β signatures across classes",
 )
 
 ######################################################################
 # Filters → patterns (Haufe transform)
 # ------------------------------------
 #
-# Gradients (the network's "filters") mix two effects: the genuine
-# class-relevant signal *and* whatever noise correlations exist between
-# channels and frequencies. Haufe et al. (2014) show that multiplying
-# the filters by the input covariance recovers the underlying patterns,
-# which are typically much easier to read.
+# Gradients (the network's "filters") mix two effects: the
+# class-relevant signal *and* the noise correlations between channels
+# and frequencies. Haufe et al. (2014) show that multiplying the
+# filters by the input covariance recovers the underlying patterns.
+#
+# In practice the input covariance for amplitude features is dominated
+# by a near-rank-1 component (the average spectrum, ~1/f). Applied
+# directly, that component leaves a class-uniform offset on every
+# channel and the topographies look flat. Subtracting the across-class
+# mean from the gradients before the transform removes that shared
+# component and reveals what is *distinctive* about each class.
 
-import einops
+train_inputs = np.stack([x for x, *_ in train_set])
+train_amplitudes = np.abs(np.fft.rfft(train_inputs, axis=-1))
+n_channels = train_amplitudes.shape[1]
+n_frequencies = train_amplitudes.shape[2]
 
-train_X = np.stack([x for x, *_ in train_set])
-amplitudes = np.abs(np.fft.rfft(train_X, axis=-1))
-
-amp_cov = einops.rearrange(
-    np.cov(einops.rearrange(amplitudes, "trial channel freq -> (channel freq) trial")),
-    "(c1 f1) (c2 f2) -> c1 f1 c2 f2",
-    c1=amplitudes.shape[1], c2=amplitudes.shape[1],
-    f1=amplitudes.shape[2], f2=amplitudes.shape[2],
+amplitude_covariance = einops.rearrange(
+    np.cov(
+        einops.rearrange(train_amplitudes, "trial channel freq -> (channel freq) trial")
+    ),
+    "(chan_a freq_a) (chan_b freq_b) -> chan_a freq_a chan_b freq_b",
+    chan_a=n_channels,
+    chan_b=n_channels,
+    freq_a=n_frequencies,
+    freq_b=n_frequencies,
 )
 
-patterns = einops.einsum(
-    avg_amp_grads, amp_cov,
-    "classes chan freq, chan freq c2 f2 -> classes c2 f2",
+class_centered_gradients = mean_amplitude_gradients - mean_amplitude_gradients.mean(
+    axis=0, keepdims=True
+)
+
+haufe_patterns = einops.einsum(
+    class_centered_gradients,
+    amplitude_covariance,
+    "classes chan freq, chan freq chan_b freq_b -> classes chan_b freq_b",
 )
 
 _band_topomap_grid(
-    patterns,
-    bands=[(7, 13), (14, 30)],
-    info=raw_info,
-    mapping=class_mapping,
-    title="Patterns (Haufe transform of the filters)",
+    haufe_patterns,
+    frequency_bands=[(7, 13), (14, 30)],
+    mne_info=raw_info,
+    labels=LABELS,
+    title="Haufe patterns isolate the class-distinctive part of each gradient",
 )
 
 ######################################################################
-# Maximally activating inputs
-# ---------------------------
+# Per-trial attribution
+# ---------------------
 #
-# For each filter in the spatial-temporal block, find the trials whose
-# activation is in the top 5%, extract the receptive-field-sized window
-# centred on the peak, and plot the per-channel mean of those windows.
-# Filters with a coherent pattern across their top trials are learning
-# something stable; filters with no consistent signature are dead weight.
+# We now switch from population averages to per-trial attribution in the
+# time domain. Each method below takes ``(model, x, target)`` and
+# returns an attribution tensor with the same spatial shape as ``x``.
+# Saliency and Integrated Gradients (IG) are pure-PyTorch primitives.
+# DeepLIFT is loaded conditionally; the paper [5]_ identifies it as the
+# most robust attribution method for EEG, so we include it whenever
+# ``captum`` is importable.
 
-activations = []
+valid_inputs = np.stack([x for x, *_ in valid_set]).astype(np.float32)
+valid_labels = np.array([y for _, y, *_ in valid_set])
 
-
-def _capture(_, __, output):
-    activations.append(output.detach().cpu().numpy())
-
-
-handle = model.bnorm.register_forward_hook(_capture)
-loader = torch.utils.data.DataLoader(train_set, batch_size=128, shuffle=False)
-batch_inputs = []
-for X_batch, *_ in loader:
-    with torch.no_grad():
-        model(X_batch.to(device))
-    batch_inputs.append(X_batch.numpy())
-handle.remove()
-
-# Activations: (trials, n_filters, time_out, 1) for ShallowFBCSPNet.
-activations = np.concatenate(activations).squeeze(-1)
-all_X = np.concatenate(batch_inputs)
-n_filters = activations.shape[1]
-n_receptive_field = all_X.shape[-1] - activations.shape[-1] + 1
-max_act_per_trial = activations.max(axis=2)
-
-######################################################################
-# Each filter is colour-coded by the class it most strongly votes for
-# (read off the final classifier's weights). Together with the receptive
-# fields, this turns the grid into a quick map of what each filter
-# "specialises" in.
-
-# Find each filter's preferred class. ShallowFBCSPNet's classifier is a
-# Conv2d with weight shape (n_classes, n_filters, time_kernel, 1); we
-# sum the absolute weight magnitude over the time-kernel axis and argmax
-# over classes to get a single (n_filters,) array of preferred classes.
-classifier_weight = model.final_layer.conv_classifier.weight.detach().cpu().squeeze()
-filter_class_score = classifier_weight.abs().sum(dim=2)  # (n_classes, n_filters)
-preferred_class = filter_class_score.argmax(dim=0).numpy()
-
-n_rows, n_cols = 5, 8
-rf_ms = np.arange(n_receptive_field) * 1000.0 / sfreq
-fig, axes = plt.subplots(n_rows, n_cols, figsize=(13, 8), sharex=True, sharey=True)
-for i_filter in range(n_filters):
-    threshold = np.percentile(max_act_per_trial[:, i_filter], 95)
-    top_trials = np.where(max_act_per_trial[:, i_filter] >= threshold)[0]
-    peak_times = activations[top_trials, i_filter].argmax(axis=-1)
-
-    windows = np.stack(
-        [
-            all_X[t, :, peak : peak + n_receptive_field]
-            for t, peak in zip(top_trials, peak_times)
-        ]
-    )
-    ax = axes[i_filter // n_cols, i_filter % n_cols]
-    color = CLASS_COLORS[int(preferred_class[i_filter])]
-    ax.plot(rf_ms, windows.mean(axis=1).T, color=color, alpha=0.18, lw=0.5)
-    ax.plot(rf_ms, windows.mean(axis=(0, 1)), color="black", lw=1.2)
-    ax.set_yticks([])
-    ax.set_title(f"f{i_filter:02d}", fontsize=8, color=color, fontweight="bold")
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
-
-# Time-axis labels only on the bottom row, y-axis label on the left edge.
-for ax in axes[-1, :]:
-    ax.set_xlabel("ms", fontsize=8)
-for ax in axes[:, 0]:
-    ax.set_ylabel("μV", fontsize=8)
-
-# Inline legend mapping class colour → class name.
-legend_handles = [
-    plt.Line2D([0], [0], color=CLASS_COLORS[i], lw=2, label=name.replace("_", " ").title())
-    for name, i in class_mapping.items()
-]
-fig.legend(
-    handles=legend_handles, loc="upper center", ncol=len(class_mapping),
-    frameon=False, bbox_to_anchor=(0.5, 0.02),
+correctly_classified_inputs, correctly_classified_labels = select_correctly_classified(
+    model, valid_inputs, valid_labels, device=device
 )
-fig.suptitle(
-    "Maximally activating inputs (top-5% trials per filter, channel-mean)\n"
-    "Filter labels coloured by the class they vote for most strongly",
-    fontsize=11,
-)
-fig.tight_layout(rect=[0, 0.04, 1, 1])
-
-######################################################################
-# Gradient-based attribution
-# --------------------------
-#
-# Now we switch from frequency-domain analysis to per-trial attribution
-# in the time domain. The four functions below take ``(model, x, target)``
-# and return a tensor of the same spatial shape as ``x``.
-
-from braindecode.visualization import (
-    input_x_gradient,
-    integrated_gradients,
-    layer_grad_cam,
-    saliency,
-    select_correctly_classified,
+print(
+    f"Correctly classified: {correctly_classified_inputs.shape[0]} "
+    f"/ {valid_inputs.shape[0]}"
 )
 
-X_val = np.stack([x for x, *_ in valid_set]).astype(np.float32)
-y_val = np.array([y for _, y, *_ in valid_set])
+n_examples_to_show = min(8, correctly_classified_inputs.shape[0])
+example_inputs = correctly_classified_inputs[:n_examples_to_show]
+example_labels = correctly_classified_labels[:n_examples_to_show]
 
-X_correct, y_correct = select_correctly_classified(model, X_val, y_val, device=device)
-print(f"Correctly classified: {X_correct.shape[0]} / {X_val.shape[0]}")
 
-n_show = min(8, X_correct.shape[0])
-X_batch = X_correct[:n_show]
-y_batch = y_correct[:n_show]
+def _saliency(m, x, y):
+    return saliency(m, x, y).detach().cpu().numpy()
 
-# `final_layer.conv_classifier` is the last conv before the average-pool /
-# log-softmax in ShallowFBCSPNet — a natural choice for the layer-CAM target.
-target_layer = model.final_layer.conv_classifier
 
-attributions = {
-    "Saliency": saliency(model, X_batch, y_batch),
-    "Input × Gradient": input_x_gradient(model, X_batch, y_batch),
-    "Integrated Gradients": integrated_gradients(model, X_batch, y_batch, steps=32),
-    "LayerGradCam": layer_grad_cam(model, X_batch, y_batch, target_layer),
-}
-for name, attr in attributions.items():
-    print(f"{name:>22s} → {tuple(attr.shape)}")
+def _integrated_gradients(m, x, y):
+    return integrated_gradients(m, x, y, steps=32).detach().cpu().numpy()
 
-######################################################################
-# Heatmaps over channels and time
-# -------------------------------
-#
-# Mean absolute attribution per ``(channel, time)`` cell, averaged over
-# the eight correctly-classified trials. We use a shared colour scale
-# *within* each row so two attribution methods can be compared directly,
-# and label every fourth electrode to keep the y-axis legible.
-#
-# .. note::
-#    LayerGradCam is plotted here too, but its "channel" axis is the
-#    bilinear-interpolated spatial dim of the ``conv_classifier`` output,
-#    not the original 22 electrodes — the spatial conv collapses the
-#    channel dim early in ShallowFBCSPNet. Read its rows as a coarse
-#    spatial summary, not per-electrode attributions.
 
-ch_labels = [ch["ch_name"] for ch in chs_info]
-times = np.arange(sig_props["n_times"]) / sfreq
-
-input_methods = ["Saliency", "Input × Gradient", "Integrated Gradients"]
-heatmaps = {
-    name: attributions[name].detach().cpu().abs().mean(dim=0).numpy()
-    for name in input_methods
-}
-# Per-method min-max normalization: each panel shows its own spatial
-# pattern at full dynamic range. Magnitudes are not comparable across
-# methods (Saliency is in units of grad, IG accumulates the product
-# x · grad along the path), so normalizing makes the comparison about
-# *where* the model looks, not *how much*.
-heatmaps_norm = {
-    name: h / (h.max() if h.max() > 0 else 1.0) for name, h in heatmaps.items()
+methods = {
+    "Saliency": _saliency,
+    "Integrated Gradients": _integrated_gradients,
 }
 
-fig, axes = plt.subplots(1, 3, figsize=(13, 4.2), sharey=True)
-for ax, name in zip(axes, input_methods):
-    im = ax.imshow(
-        heatmaps_norm[name],
-        aspect="auto",
-        origin="lower",
-        extent=[times[0], times[-1], -0.5, len(ch_labels) - 0.5],
-        cmap="magma",
-        vmin=0, vmax=1,
-    )
-    ax.set_title(name, fontweight="bold")
-    ax.set_xlabel("Time (s)")
-    every = 4
-    ax.set_yticks(range(0, len(ch_labels), every))
-    ax.set_yticklabels(ch_labels[::every], fontsize=8)
+try:
+    from braindecode.visualization import deep_lift
 
-axes[0].set_ylabel("Channel")
+    def _deep_lift(m, x, y):
+        return deep_lift(m, x, y).detach().cpu().numpy()
+
+    methods["DeepLIFT"] = _deep_lift
+    print("DeepLIFT loaded (Captum available).")
+except ImportError:
+    print("DeepLIFT skipped (install with `pip install braindecode[viz]`).")
+
+trained_attributions = {
+    name: fn(model, example_inputs, example_labels) for name, fn in methods.items()
+}
+for method_name, attribution in trained_attributions.items():
+    print(f"  {method_name:>22s} → {attribution.shape}")
+
+######################################################################
+# Where on the scalp does the network look?
+# ------------------------------------------
+#
+# We collapse each attribution to one value per electrode — mean absolute
+# value across trials and time — and project onto the scalp. The methods
+# agree closely on this dataset (see the printed pairwise correlations),
+# so we plot a single panel showing their average and label C3 / Cz / C4
+# for orientation.
+
+channel_names = [ch["ch_name"] for ch in channels_info]
+
+per_channel_per_method = {}
+for method_name, attribution in trained_attributions.items():
+    per_channel = np.abs(attribution).mean(axis=(0, 2))
+    per_channel_per_method[method_name] = per_channel / max(per_channel.max(), 1e-12)
+
+method_names = list(per_channel_per_method)
+print("\nPer-channel attribution agreement (Pearson r):")
+for i, name_a in enumerate(method_names):
+    for name_b in method_names[i + 1 :]:
+        r = float(
+            np.corrcoef(per_channel_per_method[name_a], per_channel_per_method[name_b])[
+                0, 1
+            ]
+        )
+        print(f"  {name_a:>22s} vs {name_b:<22s} r = {r:+.3f}")
+
+mean_per_channel = np.mean([per_channel_per_method[n] for n in method_names], axis=0)
+
+landmark_channels = {"C3", "Cz", "C4"}
+landmark_labels = [name if name in landmark_channels else "" for name in channel_names]
+
+fig, ax = plt.subplots(figsize=(5.2, 4.4))
+topomap_image, _ = mne.viz.plot_topomap(
+    mean_per_channel,
+    raw_info,
+    vlim=(0, 1),
+    contours=0,
+    cmap="magma",
+    sensors=True,
+    names=landmark_labels,
+    show=False,
+    axes=ax,
+)
+ax.set_title(
+    f"Mean attribution across {len(method_names)} methods, projected on the scalp",
+    fontsize=10,
+    fontweight="bold",
+)
 fig.colorbar(
-    im, ax=axes, label="Per-method normalized |attribution| (0–1)", fraction=0.03
-)
-fig.suptitle(
-    "Per-(channel, time) attribution averaged over correct trials",
-    fontsize=12, fontweight="bold",
+    topomap_image,
+    ax=ax,
+    fraction=0.04,
+    pad=0.04,
+    label="Per-method normalized (0–1)",
 )
 
 ######################################################################
-# Topographic projection
-# ----------------------
+# Are the explanations trustworthy?
+# ---------------------------------
 #
-# For attribution methods whose channel axis really maps to electrodes
-# (Saliency, Input × Gradient, IG), we can project the time-averaged
-# magnitude back onto the scalp via :func:`mne.viz.plot_topomap` and
-# compare directly with the amplitude-gradient topomaps from the start
-# of the tutorial.
+# A good attribution map should depend on **what** the model learned and
+# on **which class** we ask about. Adebayo et al. [4]_ formalised two
+# sanity checks; Sujatha Ravindran & Contreras-Vidal [5]_ applied them
+# to twelve attribution methods on simulated EEG. Their headline
+# finding: vanilla Saliency, the most common method in EEG, is *not*
+# class- or model-specific, while DeepLIFT remains both accurate and
+# robust across the temporal, spatial, and spectral regimes they tested.
 #
-# LayerGradCam is intentionally omitted here: by the time gradients are
-# computed at ``final_layer.conv_classifier``, the spatial-conv block
-# has already mixed all electrodes into a single spatial dimension, so
-# there is no per-electrode signal left to project.
+# We can replicate the qualitative result on this small motor-imagery
+# example by computing two cosine similarities for each method:
+#
+# - **Label randomization**: re-attribute on the trained model with a
+#   wrong-class target (via :func:`~braindecode.visualization.random_target`).
+#   A method that depends on the requested class should produce a
+#   different map → low cosine to the trained-target attribution.
+# - **Weight randomization, cascading**: walk the model's modules from
+#   output to input, resetting parameters one at a time
+#   (:func:`~braindecode.visualization.cascading_layer_reset`), and
+#   measure how fast the attribution drifts away from the trained one.
+#   A method that depends on the learned weights should drift quickly.
+#
+# In both checks **lower cosine = better**: the attribution is sensitive
+# to the manipulation, so it is doing its job.
 
-fig, axes = plt.subplots(1, 3, figsize=(11, 3.6))
-per_channel_maps = {
-    name: attributions[name].detach().cpu().abs().mean(dim=(0, 2)).numpy()
-    for name in input_methods
-}
-# Per-method normalization, same rationale as the heatmaps above:
-# shows spatial pattern, not absolute magnitude.
-per_channel_norm = {
-    name: v / (v.max() if v.max() > 0 else 1.0)
-    for name, v in per_channel_maps.items()
-}
-for ax, name in zip(axes, input_methods):
-    im, _ = mne.viz.plot_topomap(
-        per_channel_norm[name],
-        raw_info,
-        vlim=(0, 1),
-        contours=0,
-        cmap="magma",
-        sensors=True,
-        show=False,
-        axes=ax,
+set_random_seeds(seed=20240205, cuda=cuda_available)
+n_classes = signal_properties["n_outputs"]
+
+
+def _flat_cosine(a, b):
+    a, b = a.reshape(-1), b.reshape(-1)
+    return float((a * b).sum() / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-12))
+
+
+# --- Label randomization: one cosine per method ---
+random_labels = random_target(example_labels, n_classes=n_classes)
+label_random_cosine = {
+    name: _flat_cosine(
+        trained_attributions[name], fn(model, example_inputs, random_labels)
     )
-    ax.set_title(name, fontweight="bold")
+    for name, fn in methods.items()
+}
 
-fig.suptitle("Time-averaged attribution projected onto the scalp", fontweight="bold")
-fig.subplots_adjust(right=0.88)
-cbar_ax = fig.add_axes([0.91, 0.18, 0.015, 0.62])
-fig.colorbar(im, cax=cbar_ax, label="Per-method normalized (0–1)")
+# --- Cascading weight randomization: one curve per method ---
+cascade_levels = [0]
+cascade_cosines = {name: [1.0] for name in methods}
+for level, (_layer_name, randomized_model) in enumerate(
+    cascading_layer_reset(model), start=1
+):
+    cascade_levels.append(level)
+    for name, fn in methods.items():
+        rand_attr = fn(randomized_model, example_inputs, example_labels)
+        cascade_cosines[name].append(
+            _flat_cosine(trained_attributions[name], rand_attr)
+        )
+
+n_levels = len(cascade_levels) - 1
+fully_random_cosine = {name: cascade_cosines[name][-1] for name in methods}
 
 ######################################################################
-# Sanity check: trained vs randomized model
-# -----------------------------------------
+# The figure puts the two checks side by side: each method gets a bar
+# in the left panel (label vs full-weight randomization) and a curve in
+# the right panel (cosine versus number of layers reset, output → input).
+
+method_palette = {
+    "Saliency": "#D55E00",
+    "Integrated Gradients": "#0072B2",
+    "DeepLIFT": "#009E73",
+}
+fig, (ax_bar, ax_cascade) = plt.subplots(1, 2, figsize=(11, 4.2))
+
+bar_x = np.arange(len(methods))
+bar_width = 0.36
+ax_bar.bar(
+    bar_x - bar_width / 2,
+    [label_random_cosine[n] for n in methods],
+    bar_width,
+    color=[method_palette.get(n, "#888") for n in methods],
+    label="Label randomization",
+    edgecolor="white",
+)
+ax_bar.bar(
+    bar_x + bar_width / 2,
+    [fully_random_cosine[n] for n in methods],
+    bar_width,
+    color=[method_palette.get(n, "#888") for n in methods],
+    alpha=0.45,
+    label="Full weight randomization",
+    edgecolor="white",
+    hatch="//",
+)
+ax_bar.set_xticks(bar_x)
+ax_bar.set_xticklabels(list(methods), fontsize=9)
+ax_bar.set_ylim(0, max(1.05, max(label_random_cosine.values()) + 0.05))
+ax_bar.axhline(1.0, color="#a30000", lw=0.8, ls=":", alpha=0.7)
+ax_bar.set_ylabel("Cosine to trained-model attribution\n(lower is better)")
+ax_bar.set_title("Sanity-check scores", fontsize=10, fontweight="bold")
+ax_bar.legend(loc="upper right", frameon=False, fontsize=8)
+for spine in ("top", "right"):
+    ax_bar.spines[spine].set_visible(False)
+
+for name in methods:
+    ax_cascade.plot(
+        cascade_levels,
+        cascade_cosines[name],
+        marker="o",
+        color=method_palette.get(name, "#888"),
+        label=name,
+        lw=1.6,
+        markersize=4,
+    )
+ax_cascade.set_xlabel(f"# layers reset (output → input, total {n_levels})")
+ax_cascade.set_ylabel("Cosine to trained-model attribution")
+ax_cascade.set_title("Cascading weight randomization", fontsize=10, fontweight="bold")
+ax_cascade.set_ylim(-0.1, 1.05)
+ax_cascade.axhline(0.0, color="#888", lw=0.6, ls=":")
+ax_cascade.legend(loc="best", frameon=False, fontsize=8)
+for spine in ("top", "right"):
+    ax_cascade.spines[spine].set_visible(False)
+
+fig.suptitle(
+    "Methods that survive both randomizations are reflecting architecture, not learning",
+    fontsize=11,
+    fontweight="bold",
+)
+fig.tight_layout(rect=[0, 0, 1, 0.94])
+
+######################################################################
+# Quantitative scoring with `compute_metrics` and `compute_ssim_metrics`
+# ----------------------------------------------------------------------
 #
-# Adebayo et al. (2018) showed that some saliency methods produce
-# essentially the same map for a trained network and one with random
-# weights — i.e. the explanation is an architectural artifact, not a
-# learned signal. :func:`~braindecode.visualization.compute_metrics`
-# turns this into a quantitative diagnostic. Low cosine / Pearson
-# values mean the trained model's saliency is qualitatively different
-# from random; high values are a red flag.
-
-import copy
-
-from braindecode.visualization import METRIC_NAMES, compute_metrics
+# `compute_metrics` returns 12 cosine / Pearson / mass-accuracy variants
+# per sample; `compute_ssim_metrics` adds four SSIM-based scores using a
+# pure-torch implementation. Below we report a four-metric summary for
+# each method against its weight-randomized counterpart. The trained
+# model's attribution should score **low** on all four.
 
 
-def _reset(module):
+def _reset_all(module):
     if hasattr(module, "reset_parameters"):
         module.reset_parameters()
 
 
-random_model = copy.deepcopy(model).apply(_reset).eval().to(device)
+random_weight_model = copy.deepcopy(model).apply(_reset_all).eval().to(device)
 
-trained_attr = saliency(model, X_batch, y_batch).detach().cpu().numpy()
-random_attr = saliency(random_model, X_batch, y_batch).detach().cpu().numpy()
-
-scores, n_skipped = compute_metrics(trained_attr, random_attr, abs_reference=True)
-print(f"\nMetrics (trained vs randomized Saliency, n_skipped={n_skipped}):")
-for name, col in zip(METRIC_NAMES, scores.T):
-    print(f"  {name:30s} mean = {col.mean():+.3f}  std = {col.std():.3f}")
+SUMMARY_METRICS = ("Cosine_absnorm", "Pearson_absnorm_vs_refnorm")
+print("\nMethod scores vs fully-randomized weights (lower = more sensitive = better):")
+header = (
+    f"  {'Method':<22s}"
+    + "".join(f"{m:>22s}" for m in SUMMARY_METRICS)
+    + f"{'SSIM_absnorm':>16s}"
+)
+print(header)
+for name, fn in methods.items():
+    rand_attr = fn(random_weight_model, example_inputs, example_labels)
+    cos_pearson, _ = compute_metrics(
+        trained_attributions[name], rand_attr, abs_reference=True
+    )
+    by_name = dict(zip(METRIC_NAMES, cos_pearson.T))
+    ssim_scores, _ = compute_ssim_metrics(
+        trained_attributions[name], rand_attr, abs_reference=True
+    )
+    ssim_absnorm = float(ssim_scores[:, 1].mean())
+    line = f"  {name:<22s}"
+    for m in SUMMARY_METRICS:
+        line += f"{by_name[m].mean():>+22.3f}"
+    line += f"{ssim_absnorm:>+16.3f}"
+    print(line)
 
 ######################################################################
+# Take-aways
+# ----------
+#
+# - Looking at one attribution map is not enough on EEG. Saliency, the
+#   most popular technique in the literature, is often invariant to both
+#   class and model — see [5]_ for the simulation evidence.
+# - When in doubt, run the two checks above. The cascading curve in
+#   particular distinguishes methods that genuinely depend on weights
+#   (curve drops fast) from those that mostly reflect architecture
+#   (curve stays near 1).
+# - DeepLIFT is the consistent winner in [5]_; this tutorial includes it
+#   automatically when Captum is installed (``pip install braindecode[viz]``).
+#
 # References
 # ----------
 #
@@ -557,7 +645,9 @@ for name, col in zip(METRIC_NAMES, scores.T):
 #        NeuroImage, 87, 96–110.
 # .. [3] Sundararajan, M., Taly, A., & Yan, Q. (2017). *Axiomatic
 #        Attribution for Deep Networks.* ICML.
-# .. [4] Selvaraju, R. R., et al. (2017). *Grad-CAM: Visual Explanations
-#        from Deep Networks via Gradient-based Localization.* ICCV.
-# .. [5] Adebayo, J., et al. (2018). *Sanity Checks for Saliency Maps.*
+# .. [4] Adebayo, J., et al. (2018). *Sanity Checks for Saliency Maps.*
 #        NeurIPS.
+# .. [5] Sujatha Ravindran, A., & Contreras-Vidal, J. (2023). *An
+#        empirical comparison of deep learning explainability approaches
+#        for EEG using simulated ground truth.* Scientific Reports, 13.
+#        DOI: 10.1038/s41598-023-43871-8
