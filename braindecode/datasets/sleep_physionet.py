@@ -61,16 +61,19 @@ class SleepPhysionet(BaseConcatDataset):
         if recording_ids is None:
             recording_ids = [1, 2]
 
-        for attempt in range(5):
+        max_attempts = 5
+        retry_delay_s = 10
+
+        for attempt in range(max_attempts):
             try:
                 paths = fetch_data(
                     subject_ids, recording=recording_ids, on_missing="warn"
                 )
                 break
             except requests.exceptions.RequestException:
-                if attempt == 4:
+                if attempt == max_attempts - 1:
                     raise
-                time.sleep(10)
+                time.sleep(retry_delay_s)
 
         all_base_ds = list()
         for p in paths:
