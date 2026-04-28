@@ -6,8 +6,11 @@ import torch
 
 from braindecode.models import ShallowFBCSPNet
 from braindecode.visualization.attribution import (
-    attribute_image_features,
-    get_attributions,
+    input_x_gradient,
+    integrated_gradients,
+    layer_grad_cam,
+    saliency,
+    select_correctly_classified,
 )
 
 from .conftest import SEED
@@ -33,78 +36,88 @@ def model():
 @pytest.fixture(scope="module")
 def batch(model):
     torch.manual_seed(SEED)
-    X = torch.randn(BATCH, N_CHANS, N_TIMES, requires_grad=True)
+    X = torch.randn(BATCH, N_CHANS, N_TIMES)
     with torch.no_grad():
         y = model(X).argmax(dim=1)
     return X, y
 
 
-@pytest.mark.parametrize("method", [
-    "Saliency",
-    "InputXGradient",
-    "IntegratedGradients",
-    "GuidedBackprop",
-    "DeepLift",
-])
-def test_attribute_image_features_shape(model, batch, method):
+@pytest.mark.parametrize("fn", [saliency, input_x_gradient, integrated_gradients])
+def test_input_attribution_shape(model, batch, fn):
     X, y = batch
-    attr = attribute_image_features(model, X, y, method)
-    assert attr.shape == (BATCH, N_CHANS, N_TIMES), (
-        f"{method}: expected {(BATCH, N_CHANS, N_TIMES)}, got {attr.shape}"
-    )
-
-
-def test_layer_grad_cam_shape(model, batch):
-    """LayerGradCam output is interpolated back to the input shape."""
-    X, y = batch
-    layer = model.final_layer.conv_classifier
-    attr = attribute_image_features(model, X, y, "LayerGradCam", layer=layer)
+    attr = fn(model, X, y).detach().cpu().numpy()
     assert attr.shape == (BATCH, N_CHANS, N_TIMES)
 
 
-def test_attributions_meaningfully_nonzero(model, batch):
+def test_layer_grad_cam_shape(model, batch):
     X, y = batch
-    attr = attribute_image_features(model, X, y, "Saliency")
-    assert np.mean(np.abs(attr)) > 1e-8, (
-        f"Saliency mean abs attribution {np.mean(np.abs(attr)):.2e} is too small"
-    )
+    attr = layer_grad_cam(model, X, y, model.final_layer.conv_classifier)
+    assert tuple(attr.shape) == (BATCH, N_CHANS, N_TIMES)
+
+
+def test_saliency_meaningfully_nonzero(model, batch):
+    X, y = batch
+    attr = saliency(model, X, y).detach().cpu().numpy()
+    assert np.mean(np.abs(attr)) > 1e-8
 
 
 def test_different_inputs_different_attributions(model, batch):
     X, y = batch
-    attr1 = attribute_image_features(model, X[:3], y[:3], "Saliency")
-    attr2 = attribute_image_features(model, X[3:], y[3:], "Saliency")
-    assert not np.allclose(attr1, attr2)
+    a1 = saliency(model, X[:3], y[:3]).detach().cpu().numpy()
+    a2 = saliency(model, X[3:], y[3:]).detach().cpu().numpy()
+    assert not np.allclose(a1, a2)
 
 
-@pytest.mark.parametrize("method", ["LayerGradCam", "GuidedGradCam"])
-def test_layer_required_methods_raise_without_layer(model, batch, method):
+def test_integrated_gradients_zero_at_baseline(model, batch):
+    """IG must be zero when input equals baseline (delta is zero)."""
     X, y = batch
-    with pytest.raises(ValueError, match="requires a `layer` argument"):
-        attribute_image_features(model, X, y, method)
+    baseline = X.clone()
+    attr = integrated_gradients(model, X, y, baseline=baseline, steps=8)
+    np.testing.assert_allclose(attr.detach().cpu().numpy(), 0.0, atol=1e-6)
 
 
-def test_unsupported_method_raises(model, batch):
-    X, y = batch
-    with pytest.raises(ValueError, match="Unsupported attribution method"):
-        attribute_image_features(model, X, y, "NotAMethod")
+def test_integrated_gradients_completeness_on_linear_model():
+    """IG completeness: sum_i attr_i == f(x) - f(baseline) holds exactly for
+    linear models, where grad is constant along the path."""
+    torch.manual_seed(SEED)
+    n_in, n_out = N_CHANS * N_TIMES, N_OUTPUTS
+
+    class FlatLinear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin = torch.nn.Linear(n_in, n_out)
+
+        def forward(self, x):
+            return self.lin(x.flatten(1))
+
+    m = FlatLinear().eval()
+    X = torch.randn(BATCH, N_CHANS, N_TIMES)
+    y = torch.randint(0, n_out, (BATCH,))
+    baseline = torch.zeros_like(X)
+
+    attr = integrated_gradients(m, X, y, baseline=baseline, steps=8)
+    with torch.no_grad():
+        delta = (
+            m(X).gather(1, y.view(-1, 1)).squeeze()
+            - m(baseline).gather(1, y.view(-1, 1)).squeeze()
+        )
+    summed = attr.sum(dim=tuple(range(1, attr.ndim)))
+    np.testing.assert_allclose(summed.numpy(), delta.numpy(), atol=1e-5)
 
 
-def test_get_attributions_output_shapes(model):
+def test_select_correctly_classified_shapes(model):
     rng = np.random.default_rng(SEED + 1)
     X = rng.standard_normal((BATCH, N_CHANS, N_TIMES)).astype(np.float32)
     y = np.array([0, 1, 0, 1, 0, 1])
 
-    attributions, labels = get_attributions(model, X, y, method="Saliency")
-
-    assert attributions.ndim == 3
-    assert attributions.shape[1] == N_CHANS
-    assert attributions.shape[2] == N_TIMES
-    assert labels.shape[0] == attributions.shape[0]
+    X_correct, y_correct = select_correctly_classified(model, X, y)
+    assert X_correct.ndim == 3
+    assert X_correct.shape[1:] == (N_CHANS, N_TIMES)
+    assert y_correct.shape[0] == X_correct.shape[0]
 
 
-def test_get_attributions_only_correct_samples(model):
-    """Module-scoped model is deepcopied because this test mutates classifier weights."""
+def test_select_correctly_classified_filters_wrong_class(model):
+    """Module-scoped model is deepcopied since this test mutates classifier weights."""
     m = copy.deepcopy(model)
     with torch.no_grad():
         m.final_layer.conv_classifier.weight[1, :] = 0.0
@@ -114,7 +127,6 @@ def test_get_attributions_only_correct_samples(model):
     X = rng.standard_normal((BATCH, N_CHANS, N_TIMES)).astype(np.float32)
     y = np.array([0, 1, 0, 1, 0, 1])
 
-    attributions, labels = get_attributions(m, X, y, method="Saliency")
-
-    assert np.all(labels == 0)
-    assert attributions.shape[0] == (y == 0).sum()
+    X_correct, y_correct = select_correctly_classified(m, X, y)
+    assert torch.all(y_correct == 0)
+    assert X_correct.shape[0] == int((y == 0).sum())

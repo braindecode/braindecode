@@ -2,182 +2,114 @@
 #
 # License: BSD (3-clause)
 
+"""Attribution utilities built on plain PyTorch autograd.
+
+Functions take ``(model, x, target)`` and return a tensor of attributions
+the same spatial shape as ``x`` (after interpolation for layer-CAM). All
+heavy lifting goes through :func:`torch.autograd.grad` so braindecode
+takes no extra optional dependencies.
+"""
+
 import torch
-
-_LAYER_REQUIRED_METHODS = {"GuidedGradCam", "LayerGradCam"}
-
-_VIZ_EXTRAS_HINT = (
-    "Attribution methods require captum. Install with "
-    "`pip install braindecode[viz]`."
-)
+import torch.nn.functional as F
 
 
-def _import_captum():
+def saliency(model, x, target):
+    """Vanilla saliency: ``|d y[target] / d x|``.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+    x : torch.Tensor of shape ``(batch, n_chans, n_times)``
+    target : torch.Tensor of shape ``(batch,)``
+        Class indices.
+
+    Returns
+    -------
+    torch.Tensor of the same shape as ``x``.
+    """
+    grad = _input_grad(model, x, target)
+    return grad.abs()
+
+
+def input_x_gradient(model, x, target):
+    """Element-wise input × input-gradient."""
+    x_leaf = x.detach().clone().requires_grad_(True)
+    grad = _input_grad(model, x_leaf, target)
+    return x_leaf.detach() * grad
+
+
+def integrated_gradients(model, x, target, baseline=None, steps=50):
+    """Integrated Gradients (Sundararajan et al., 2017).
+
+    Path integral of input gradients from ``baseline`` to ``x`` evaluated
+    by the midpoint rule with ``steps`` evaluations. Default baseline is
+    zeros. The midpoint rule is second-order accurate, so a moderate
+    ``steps`` value already satisfies the completeness axiom
+    (sum of attributions ≈ ``f(x) - f(baseline)``).
+    """
+    if baseline is None:
+        baseline = torch.zeros_like(x)
+    delta = x - baseline
+
+    accumulated = torch.zeros_like(x)
+    for k in range(steps):
+        alpha = (k + 0.5) / steps
+        xi = baseline + alpha * delta
+        accumulated = accumulated + _input_grad(model, xi, target)
+    return delta * (accumulated / steps)
+
+
+def layer_grad_cam(model, x, target, layer):
+    """Layer GradCAM: class-discriminative localization at ``layer``.
+
+    Computes the gradient of the target output w.r.t. the layer's
+    output activations, averages over spatial dims to obtain
+    channel-wise weights, weights the activations, then bilinear-resamples
+    the resulting map back to the input's last two dimensions.
+    """
+    captured = {}
+
+    def _capture(_, __, output):
+        captured["activation"] = output
+
+    handle = layer.register_forward_hook(_capture)
     try:
-        from captum import attr as captum_attr
-    except ImportError as exc:
-        raise ImportError(_VIZ_EXTRAS_HINT) from exc
-    return captum_attr
+        x_leaf = x.detach().clone().requires_grad_(True)
+        output = model(x_leaf)
+        target_score = output.gather(1, target.view(-1, 1)).sum()
+        (grad,) = torch.autograd.grad(target_score, captured["activation"])
+    finally:
+        handle.remove()
 
-
-def attribute_image_features(model, input_tensor, target, method, layer=None):
-    """Compute attribution maps for EEG input using a Captum method.
-
-    Parameters
-    ----------
-    model : torch.nn.Module
-        The braindecode model to explain.
-    input_tensor : torch.Tensor
-        Input EEG tensor of shape ``(batch, n_chans, n_times)``.
-    target : torch.Tensor
-        Class labels for each sample in the batch.
-    method : str
-        Captum attribution method. One of:
-
-        - ``"Saliency"`` — gradient magnitude w.r.t. input
-        - ``"InputXGradient"`` — element-wise input × gradient
-        - ``"IntegratedGradients"`` — path integral of gradients from baseline
-        - ``"GuidedBackprop"`` — backpropagation through ReLU positive activations
-        - ``"Deconvolution"`` — DeconvNet-style backward pass
-        - ``"DeepLift"`` — contribution scores via activation differences
-        - ``"LRP"`` — Layer-wise Relevance Propagation
-        - ``"GuidedGradCam"`` — GuidedBackprop × GradCAM (requires ``layer``)
-        - ``"LayerGradCam"`` — class activation maps at a specific layer
-          (requires ``layer``)
-    layer : torch.nn.Module, optional
-        Target layer for ``GuidedGradCam`` / ``LayerGradCam``.
-
-    Returns
-    -------
-    numpy.ndarray
-        Attribution map of the same spatial shape as ``input_tensor``.
-    """
-    if method in _LAYER_REQUIRED_METHODS and layer is None:
-        raise ValueError(
-            f"method='{method}' requires a `layer` argument; pass the target "
-            "module (e.g. the last convolutional layer)."
-        )
-
-    captum_attr = _import_captum()
-    model.zero_grad()
-    algorithm = get_attribution_method(model, method, layer=layer)
-
-    if method == "LayerGradCam":
-        # Captum applies ReLU to LayerGradCam by default; pass False to keep
-        # signed activations so downstream metrics see both signs.
-        attributions = algorithm.attribute(
-            input_tensor, target=target, relu_attributions=False
-        )
-        attributions = captum_attr.LayerAttribution.interpolate(
-            attributions, input_tensor.shape[-2:]
-        )
-    else:
-        attributions = algorithm.attribute(input_tensor, target=target)
-        if method == "GuidedGradCam" and attributions.numel() == 0:
-            raise ValueError(
-                "GuidedGradCam returned empty attributions, typically because "
-                "the model changes input dimensionality internally (e.g. via "
-                "Ensure4d). Use a model that keeps consistent input/layer dims."
-            )
-
-    return attributions.cpu().detach().numpy().squeeze()
-
-
-def get_attributions(model, X, y, method, layer=None, device="cpu"):
-    """Compute attribution maps for correctly classified EEG samples.
-
-    Runs inference on the full dataset, filters to correctly classified
-    samples, then computes attribution maps.
-
-    Parameters
-    ----------
-    model : torch.nn.Module
-        The braindecode model to explain.
-    X : numpy.ndarray
-        EEG data of shape ``(n_samples, n_chans, n_times)``.
-    y : numpy.ndarray
-        True class labels of shape ``(n_samples,)``.
-    method : str
-        Captum attribution method. See :func:`attribute_image_features`.
-    layer : torch.nn.Module, optional
-        Target layer for layer-wise methods.
-    device : str, default="cpu"
-        Device to run inference on.
-
-    Returns
-    -------
-    attributions : numpy.ndarray
-        Attribution maps of shape ``(n_correct, n_chans, n_times)``.
-    labels : numpy.ndarray
-        True labels for the correctly classified samples.
-    """
-    model.eval()
-    model.to(device)
-
-    X_tensor = torch.tensor(X, dtype=torch.float32, device=device)
-    y_tensor = torch.tensor(y, dtype=torch.long, device=device)
-
-    with torch.no_grad():
-        preds = model(X_tensor).argmax(dim=1)
-
-    correct = preds == y_tensor
-    X_correct = X_tensor[correct].requires_grad_(True)
-    y_correct = y_tensor[correct]
-
-    attributions = attribute_image_features(
-        model, X_correct, y_correct, method, layer=layer
+    activation = captured["activation"]
+    spatial_dims = tuple(range(2, activation.ndim))
+    weights = grad.mean(dim=spatial_dims, keepdim=True)
+    cam = (weights * activation).sum(dim=1, keepdim=True)
+    cam = F.interpolate(
+        cam, size=x.shape[-2:], mode="bilinear", align_corners=False
     )
-    return attributions, y_correct.cpu().numpy()
+    return cam.squeeze(1)
 
 
-def get_attribution_method(model, method, layer=None):
-    """Factory for Captum attribution method instances.
+def select_correctly_classified(model, X, y, device="cpu"):
+    """Filter ``(X, y)`` down to samples the model classifies correctly.
 
-    Parameters
-    ----------
-    model : torch.nn.Module
-        The braindecode model to explain.
-    method : str
-        Captum attribution method name. See :func:`attribute_image_features`.
-    layer : torch.nn.Module, optional
-        Target layer; required for ``GuidedGradCam`` and ``LayerGradCam``,
-        unused otherwise.
-
-    Returns
-    -------
-    captum.attr._utils.attribution.Attribution
-        Instantiated Captum attribution object.
-
-    Raises
-    ------
-    ValueError
-        If ``method`` is not one of the supported method names, or if
-        ``layer`` is required but not provided.
+    Accepts numpy arrays or tensors and returns tensors on ``device``.
     """
-    captum_attr = _import_captum()
+    model.eval().to(device)
+    X = torch.as_tensor(X, dtype=torch.float32, device=device)
+    y = torch.as_tensor(y, dtype=torch.long, device=device)
+    with torch.no_grad():
+        preds = model(X).argmax(dim=1)
+    correct = preds == y
+    return X[correct], y[correct]
 
-    if method in _LAYER_REQUIRED_METHODS and layer is None:
-        raise ValueError(
-            f"method='{method}' requires a `layer` argument; pass the target "
-            "module (e.g. the last convolutional layer)."
-        )
 
-    methods = {
-        "Saliency": captum_attr.Saliency,
-        "InputXGradient": captum_attr.InputXGradient,
-        "IntegratedGradients": captum_attr.IntegratedGradients,
-        "GuidedBackprop": captum_attr.GuidedBackprop,
-        "Deconvolution": captum_attr.Deconvolution,
-        "DeepLift": captum_attr.DeepLift,
-        "LRP": captum_attr.LRP,
-        "GuidedGradCam": lambda m: captum_attr.GuidedGradCam(m, layer),
-        "LayerGradCam": lambda m: captum_attr.LayerGradCam(m, layer),
-    }
-
-    if method not in methods:
-        raise ValueError(
-            f"Unsupported attribution method: '{method}'. "
-            f"Choose one of: {sorted(methods.keys())}"
-        )
-
-    return methods[method](model)
+def _input_grad(model, x, target):
+    """Gradient of the per-sample target output w.r.t. ``x``."""
+    x_leaf = x if x.requires_grad and x.is_leaf else x.detach().clone().requires_grad_(True)
+    output = model(x_leaf)
+    target_score = output.gather(1, target.view(-1, 1)).sum()
+    (grad,) = torch.autograd.grad(target_score, x_leaf)
+    return grad
