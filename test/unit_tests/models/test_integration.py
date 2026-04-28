@@ -521,9 +521,6 @@ def test_model_torch_script(model):
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
-        # TorchScript can't trace through ``torch.stft(return_complex=True)``
-        # in the log-spectrogram front-end.
-        "EMG2QwertyNet",
         "SignalJEPA",
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",

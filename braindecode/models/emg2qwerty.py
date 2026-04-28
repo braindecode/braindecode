@@ -288,8 +288,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         """
         if x.ndim != 3 or x.shape[-2] != self.n_chans:
             raise ValueError(
-                f"expected (batch, {self.n_chans}, T) input; got shape "
-                f"{tuple(x.shape)}."
+                f"expected (batch, {self.n_chans}, T) input; got shape {x.shape}."
             )
         min_n_times = (
             self.n_fft + self._n_conv_blocks * (self.kernel_width - 1) * self.hop_length
@@ -529,13 +528,16 @@ class _MultiBandRotationInvariantMLP(nn.Module):
             raise ValueError(
                 f"_MultiBandRotationInvariantMLP expected dim "
                 f"{self.stack_dim} == {self.num_bands}; got input shape "
-                f"{tuple(inputs.shape)}."
+                f"{inputs.shape}."
             )
         per_band_inputs = inputs.unbind(self.stack_dim)
-        return torch.stack(
-            [mlp(band_input) for mlp, band_input in zip(self.mlps, per_band_inputs)],
-            dim=self.stack_dim,
-        )
+        # Indexed loop (instead of ``zip(self.mlps, per_band_inputs)``) so the
+        # forward is TorchScript-scriptable: ``zip`` over a ``ModuleList`` and
+        # a dynamic-length ``unbind`` list can't be statically sized.
+        band_outputs: list[torch.Tensor] = []
+        for band_idx, mlp in enumerate(self.mlps):
+            band_outputs.append(mlp(per_band_inputs[band_idx]))
+        return torch.stack(band_outputs, dim=self.stack_dim)
 
 
 class _TDSConv2dBlock(nn.Module):
