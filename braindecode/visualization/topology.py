@@ -8,9 +8,9 @@ import numpy as np
 def project_to_topomap(data, chs_info, res=64):
     """Project per-channel attribution values onto a 2-D scalp topomap grid.
 
-    Thin wrapper around :func:`mne.viz.plot_topomap` that returns the
-    interpolated ``(res, res)`` image array. MNE handles the channel
-    geometry, sphere fitting, and Clough-Tocher interpolation.
+    Projects channel values onto a ``(res, res)`` grid using Clough-Tocher
+    triangulation on the 2-D electrode positions obtained from MNE's sphere
+    fitting.
 
     Parameters
     ----------
@@ -26,19 +26,26 @@ def project_to_topomap(data, chs_info, res=64):
     Returns
     -------
     numpy.ndarray
-        Interpolated scalp map of shape ``(res, res)``. Pixels outside
-        the head outline are NaN.
+        Interpolated scalp map of shape ``(res, res)``.
     """
-    import matplotlib.pyplot as plt
-    import mne
+    from scipy.interpolate import CloughTocher2DInterpolator
+    from mne.channels.layout import _find_topomap_coords
+    from mne.utils import _check_sphere
 
     info = _info_from_chs_info(chs_info)
-    fig, ax = plt.subplots()
-    try:
-        im, _ = mne.viz.plot_topomap(data, info, axes=ax, show=False, res=res)
-        return np.asarray(im.get_array(), dtype=float)
-    finally:
-        plt.close(fig)
+    sphere = _check_sphere(None)
+    pos2d = _find_topomap_coords(info, picks=list(range(len(data))), sphere=sphere)
+
+    pad = 0.1
+    xmin, xmax = pos2d[:, 0].min(), pos2d[:, 0].max()
+    ymin, ymax = pos2d[:, 1].min(), pos2d[:, 1].max()
+    xpad = pad * (xmax - xmin)
+    ypad = pad * (ymax - ymin)
+    xi = np.linspace(xmin - xpad, xmax + xpad, res)
+    yi = np.linspace(ymin - ypad, ymax + ypad, res)
+    Xi, Yi = np.meshgrid(xi, yi)
+
+    return CloughTocher2DInterpolator(pos2d, data, fill_value=0.0)(Xi, Yi)
 
 
 _TOPOMAP_PLACEHOLDER_SFREQ = 1.0  # mne.create_info requires sfreq, but plot_topomap reads only positions.
