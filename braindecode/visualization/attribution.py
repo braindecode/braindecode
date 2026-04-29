@@ -26,8 +26,16 @@ Every function takes ``(model, x, target)`` and returns a tensor of
 attributions with the same spatial shape as ``x``.
 """
 
+import copy
+
+import numpy as np
 import torch
 import torch.nn.functional as F
+
+try:
+    from captum import attr as _captum_attr
+except ImportError:  # pragma: no cover, exercised only without captum
+    _captum_attr = None
 
 _CAPTUM_HINT = (
     "This attribution method requires captum. "
@@ -36,12 +44,10 @@ _CAPTUM_HINT = (
 
 
 def _import_captum():
-    """Lazy import of :mod:`captum.attr`. Raises ImportError otherwise."""
-    try:
-        from captum import attr as captum_attr
-    except ImportError as exc:  # pragma: no cover, exercised only without captum
-        raise ImportError(_CAPTUM_HINT) from exc
-    return captum_attr
+    """Return :mod:`captum.attr`, raising ImportError if captum is missing."""
+    if _captum_attr is None:  # pragma: no cover, exercised only without captum
+        raise ImportError(_CAPTUM_HINT)
+    return _captum_attr
 
 
 def saliency(model, x, target):
@@ -236,9 +242,7 @@ def random_target(target, n_classes, generator=None):
     """
     if n_classes < 2:
         raise ValueError("n_classes must be at least 2 to pick a different class.")
-    rng = (
-        generator if generator is not None else __import__("numpy").random.default_rng()
-    )
+    rng = generator if generator is not None else np.random.default_rng()
 
     if isinstance(target, torch.Tensor):
         original_device = target.device
@@ -248,8 +252,6 @@ def random_target(target, n_classes, generator=None):
             target.shape
         )
 
-    import numpy as np
-
     arr = np.asarray(target)
     if arr.ndim == 0:
         return int(_draw_random_targets(arr.reshape(1), n_classes, rng)[0])
@@ -258,8 +260,6 @@ def random_target(target, n_classes, generator=None):
 
 
 def _draw_random_targets(flat, n_classes, rng):
-    import numpy as np
-
     out = rng.integers(low=0, high=n_classes - 1, size=flat.shape)
     out = np.where(out >= flat, out + 1, out)
     return out
@@ -295,9 +295,7 @@ def cascading_layer_reset(model, deepcopy_first=True):
         A model whose layers from this one back to the output are
         randomly re-initialized.
     """
-    import copy as _copy
-
-    target = _copy.deepcopy(model) if deepcopy_first else model
+    target = copy.deepcopy(model) if deepcopy_first else model
 
     resettable = [
         (name, module)

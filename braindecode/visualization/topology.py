@@ -2,7 +2,15 @@
 #
 # License: BSD (3-clause)
 
+import mne
 import numpy as np
+from mne.channels.layout import _find_topomap_coords
+from mne.utils import _check_sphere
+from scipy.interpolate import CloughTocher2DInterpolator
+
+_TOPOMAP_PLACEHOLDER_SFREQ = (
+    1.0  # mne.create_info requires sfreq, but plot_topomap reads only positions.
+)
 
 
 def project_to_topomap(data, chs_info, res=64):
@@ -10,7 +18,8 @@ def project_to_topomap(data, chs_info, res=64):
 
     Projects channel values onto a ``(res, res)`` grid using Clough-Tocher
     triangulation on the 2-D electrode positions obtained from MNE's sphere
-    fitting.
+    fitting. Points outside the convex hull of the electrode positions are
+    set to ``NaN``.
 
     Parameters
     ----------
@@ -26,12 +35,9 @@ def project_to_topomap(data, chs_info, res=64):
     Returns
     -------
     numpy.ndarray
-        Interpolated scalp map of shape ``(res, res)``.
+        Interpolated scalp map of shape ``(res, res)``. Pixels outside the
+        electrode convex hull are ``NaN``.
     """
-    from scipy.interpolate import CloughTocher2DInterpolator
-    from mne.channels.layout import _find_topomap_coords
-    from mne.utils import _check_sphere
-
     info = _info_from_chs_info(chs_info)
     sphere = _check_sphere(None)
     pos2d = _find_topomap_coords(info, picks=list(range(len(data))), sphere=sphere)
@@ -45,16 +51,11 @@ def project_to_topomap(data, chs_info, res=64):
     yi = np.linspace(ymin - ypad, ymax + ypad, res)
     Xi, Yi = np.meshgrid(xi, yi)
 
-    return CloughTocher2DInterpolator(pos2d, data, fill_value=0.0)(Xi, Yi)
-
-
-_TOPOMAP_PLACEHOLDER_SFREQ = 1.0  # mne.create_info requires sfreq, but plot_topomap reads only positions.
+    return CloughTocher2DInterpolator(pos2d, data, fill_value=np.nan)(Xi, Yi)
 
 
 def _info_from_chs_info(chs_info):
     """Build an :class:`mne.Info` object from a braindecode ``chs_info`` list."""
-    import mne
-
     info = mne.create_info(
         ch_names=[ch["ch_name"] for ch in chs_info],
         sfreq=_TOPOMAP_PLACEHOLDER_SFREQ,
