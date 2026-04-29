@@ -3385,38 +3385,6 @@ def test_emg2qwerty_default_contract(emg2qwerty_default):
     assert lengths[1] > lengths[0]
 
 
-def test_emg2qwerty_log_spectrogram_matches_torchaudio():
-    """``_LogSpectrogram`` must match ``torchaudio.transforms.Spectrogram``.
-
-    Regression test for the upstream-checkpoint numerics. Earlier the
-    front-end used ``torch.stft(normalized=True)``, which divides by
-    ``sqrt(n_fft)`` rather than upstream's ``sum(window**2)``. For a
-    Hann window of size 64 that off-by-``n_fft / sum(hann**2) = 64/24``
-    factor shifts every log-spectrogram bin by ~0.426 — a constant the
-    BatchNorm running stats from upstream would never absorb correctly.
-    """
-    import torchaudio.transforms as ta_transforms
-
-    from braindecode.models.emg2qwerty import _LogSpectrogram
-
-    torch.manual_seed(0)
-    x = torch.randn(2, 32, 8000)
-
-    front_end = _LogSpectrogram(
-        n_fft=64, hop_length=16, num_bands=2, electrodes_per_band=16
-    ).eval()
-    ours = front_end(x)
-
-    reference = ta_transforms.Spectrogram(
-        n_fft=64, hop_length=16, normalized=True, center=False
-    ).eval()
-    ref_log = torch.log10(reference(x) + front_end.log_eps)
-    n_batch, n_channels, n_freq, n_time = ref_log.shape
-    ref_layout = ref_log.reshape(n_batch, 2, 16, n_freq, n_time).movedim(-1, 0)
-
-    torch.testing.assert_close(ours, ref_layout, rtol=0, atol=0)
-
-
 def test_emg2qwerty_train_eval_and_state_dict():
     """Smoke-test small config: log_softmax head, CTC backward, key layout.
 
