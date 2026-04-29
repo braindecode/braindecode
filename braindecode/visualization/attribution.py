@@ -1,4 +1,4 @@
-# Authors: Vandit Shah <vanditshah@outlook.com>
+# Authors: Vandit Shah <shahvandit@gmail.com>
 #          Akshay Sujatha Ravindran <asujatharavindran@uh.edu>  (random-target
 #          and cascading-layer-randomization helpers adapted from the author's
 #          research code for Sujatha Ravindran & Contreras-Vidal, "An empirical

@@ -285,7 +285,7 @@ def compute_ssim_metrics(
     4. ``SSIM_raw``      : SSIM between raw explanation and
        normalized reference.
 
-    Requires :mod:`skimage` (``pip install braindecode[viz]``).
+    No extra dependencies; SSIM is computed with a pure-PyTorch implementation.
 
     Parameters
     ----------
