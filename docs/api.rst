@@ -813,5 +813,19 @@ for understanding the performance of the model and for interpreting the results.
 .. autosummary::
     :toctree: generated/
 
-     compute_amplitude_gradients
+     amplitude_gradients
+     amplitude_gradients_per_trial
+     saliency
+     input_x_gradient
+     integrated_gradients
+     layer_grad_cam
+     guided_backprop
+     deconvolution
+     deep_lift
+     lrp
+     random_target
+     cascading_layer_reset
+     compute_metrics
+     compute_ssim_metrics
+     project_to_topomap
      plot_confusion_matrix
