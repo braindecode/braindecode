@@ -36,6 +36,17 @@ Integrated Gradients, DeepLIFT); (iii) both sanity checks plus the
 twelve attribution-quality metrics and four SSIM variants from
 :mod:`braindecode.visualization.metrics`.
 
+.. note::
+
+    **TL;DR.** On a properly-trained ShallowFBCSPNet the contralateral
+    motor-imagery topography is recoverable from amplitude gradients
+    (Fig 2), all three captum methods pass the cascade sanity check on
+    this subject (Fig 4), and the choice of robustness metric flips the
+    method ranking (Fig 5). DeepLIFT remains the safest default for new
+    work because the paper's broader benchmark identifies it as the only
+    method that survives both sanity checks across all three simulation
+    regimes.
+
 .. contents:: This example covers:
    :local:
    :depth: 2
@@ -228,7 +239,15 @@ model = classifier.module_
 raw_info = valid_set.datasets[0].raw.info
 channels_info = raw_info["chs"]
 
-plt.rcParams.update({"font.size": 9, "figure.dpi": 110, "savefig.bbox": "tight"})
+plt.rcParams.update(
+    {
+        "font.size": 9,
+        "figure.dpi": 110,
+        "savefig.bbox": "tight",
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Helvetica", "Arial", "DejaVu Sans"],
+    }
+)
 
 # Okabe-Ito colorblind-safe palette, one entry per label.
 LABEL_COLORS = ("#0072B2", "#009E73", "#D55E00", "#CC79A7")
@@ -801,28 +820,85 @@ metric_table = pd.DataFrame(method_metric_rows).T  # rows = methods, cols = metr
 mass_rank_cols = [c for c in metric_table.columns if "Accuracy" in c]
 metric_table = metric_table.drop(columns=mass_rank_cols)
 
-print("\nFull metric table vs fully-randomized weights (lower = more sensitive):")
-print(
-    f"(Sensitivity metrics dropped, they saturate at 1.0 without\n"
-    f" simulated ground truth: {mass_rank_cols})"
-)
-with pd.option_context(
-    "display.float_format",
-    "{:+.3f}".format,
-    "display.max_columns",
-    None,
-    "display.width",
-    220,
-):
-    print(metric_table.to_string())
-
-# Highlight where the methods disagree on ranking. For each metric we
-# sort methods low→high and report the rank of each. Disagreement across
-# columns is the paper's [5]_ central point: no single number is enough.
+# Render the table as a heatmap rather than ASCII text. Top panel: raw
+# scores (lower is better, capped at 0.7 since no method exceeds that
+# here, which gives the colour scale useful contrast). Bottom panel:
+# rank colour-coded by *deviation from consensus* — green where one
+# method clearly beats the other two, red where it clearly loses. Cells
+# where the colour changes column-to-column are where the metrics
+# disagree, which is the paper's [5]_ central point.
 ranks = metric_table.rank(axis=0, method="min", ascending=True).astype(int)
-print("\nMethod rank per metric (1 = lowest score = most randomization-sensitive):")
-with pd.option_context("display.max_columns", None, "display.width", 220):
-    print(ranks.to_string())
+val_max = max(0.5, metric_table.values.max() * 1.1)
+
+fig, (ax_val, ax_rank) = plt.subplots(
+    2, 1, figsize=(11, 4.6), gridspec_kw={"height_ratios": [1, 1]}
+)
+
+im_val = ax_val.imshow(
+    metric_table.values,
+    cmap="RdYlGn_r",
+    vmin=0.0,
+    vmax=val_max,
+    aspect="auto",
+    interpolation="nearest",
+)
+ax_val.set_xticks([])  # x-axis labels only on the bottom panel
+ax_val.set_yticks(range(len(metric_table.index)))
+ax_val.set_yticklabels(metric_table.index, fontsize=9)
+ax_val.set_title(
+    "Score vs random-weight model (lower = more sensitive)",
+    fontsize=10,
+    fontweight="bold",
+)
+for i, j in np.ndindex(metric_table.values.shape):
+    val = metric_table.values[i, j]
+    ax_val.text(
+        j,
+        i,
+        f"{val:+.2f}",
+        ha="center",
+        va="center",
+        fontsize=8,
+        color="white" if val > 0.55 * val_max or val < -0.1 else "black",
+    )
+cbar_val = fig.colorbar(im_val, ax=ax_val, fraction=0.025, pad=0.01)
+cbar_val.set_label("Pearson r", fontsize=8)
+
+# Bottom panel: divergent palette anchored at rank 2 (the median).
+# Cells coloured by how far each method departs from consensus.
+im_rank = ax_rank.imshow(
+    ranks.values,
+    cmap="RdYlGn_r",
+    vmin=1,
+    vmax=3,
+    aspect="auto",
+    interpolation="nearest",
+)
+ax_rank.set_xticks(range(len(ranks.columns)))
+ax_rank.set_xticklabels(ranks.columns, rotation=35, ha="right", fontsize=8)
+ax_rank.set_yticks(range(len(ranks.index)))
+ax_rank.set_yticklabels(ranks.index, fontsize=9)
+ax_rank.set_title(
+    "Per-metric rank (1 = most sensitive)",
+    fontsize=10,
+    fontweight="bold",
+)
+for i, j in np.ndindex(ranks.values.shape):
+    rank_val = ranks.values[i, j]
+    ax_rank.text(
+        j,
+        i,
+        f"{rank_val}",
+        ha="center",
+        va="center",
+        fontsize=10,
+        fontweight="bold",
+        color="white" if rank_val == 3 else "black",
+    )
+cbar_rank = fig.colorbar(im_rank, ax=ax_rank, fraction=0.025, pad=0.01, ticks=[1, 2, 3])
+cbar_rank.set_label("Rank", fontsize=8)
+
+fig.tight_layout()
 
 ######################################################################
 # Take-aways
