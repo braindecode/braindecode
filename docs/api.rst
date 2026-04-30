@@ -802,19 +802,32 @@ Functions available in braindecode util module.
  Visualization
 ***************
 
-Visualization module contains functions for visualizing EEG data, including plotting the
-confusion matrix and computing amplitude gradients. The visualization module is useful
-for understanding the performance of the model and for interpreting the results.
+Tools for opening up trained EEG decoders: per-trial attribution maps, sanity-check
+protocols that probe whether those maps reflect what the model actually learned,
+attribution-quality metrics, topographic projection, and confusion-matrix plotting.
+
+The end-to-end workflow tracks the EEG-XAI benchmark of Sujatha Ravindran &
+Contreras-Vidal (Sci Rep 2023, DOI `10.1038/s41598-023-43871-8
+<https://doi.org/10.1038/s41598-023-43871-8>`_): compute attributions, randomize labels
+and weights, score the resulting maps against the trained-model reference, and decide
+which methods are trustworthy on your data. See the :ref:`interpretability tutorial
+<interpretability-tutorial>` for a worked example on BCI IV 2a.
 
 :py:mod:`braindecode.visualization`:
 
 .. currentmodule:: braindecode.visualization
 
+Time-domain attribution
+=======================
+
+Per-trial attribution maps in the input domain. Each function takes ``(model, x,
+target)`` and returns a tensor with the same spatial shape as ``x``; all are thin
+wrappers around `captum <https://captum.ai/>`_ (a soft dependency installed via ``pip
+install braindecode[viz]``) and raise :class:`ImportError` without it.
+
 .. autosummary::
     :toctree: generated/
 
-     amplitude_gradients
-     amplitude_gradients_per_trial
      saliency
      input_x_gradient
      integrated_gradients
@@ -823,9 +836,73 @@ for understanding the performance of the model and for interpreting the results.
      deconvolution
      deep_lift
      lrp
+
+Frequency-domain attribution
+============================
+
+Gradient of each model output with respect to the **amplitude spectrum** of the input —
+a complement to the time-domain methods that makes oscillatory contributions (e.g.
+alpha/beta motor imagery) visible directly in the topomap. Implemented in pure PyTorch
+via ``rfft``/``irfft`` round-tripping; no captum needed.
+
+.. autosummary::
+    :toctree: generated/
+
+     amplitude_gradients
+     amplitude_gradients_per_trial
+
+Sanity-check protocols
+======================
+
+Adebayo et al. (NeurIPS 2018) randomization checks for attribution maps, reused on EEG
+decoders by Sujatha Ravindran & Contreras-Vidal. :func:`random_target` powers the
+**label-randomization** check (does the map change when you ask about the wrong class?)
+and :func:`cascading_layer_reset` powers the **weight-randomization** check (does the
+map collapse as the trained weights are progressively replaced?). An attribution method
+that survives both is suspicious — its output likely reflects architecture rather than
+learning.
+
+.. autosummary::
+    :toctree: generated/
+
      random_target
      cascading_layer_reset
+
+Attribution-quality metrics
+===========================
+
+Score how similar two attribution maps are: typically a trained-model attribution
+against a randomized-model attribution, or against a ground-truth mask from a simulator.
+:func:`compute_metrics` returns twelve cosine / Pearson / mass-accuracy / rank-accuracy
+variants; :func:`compute_ssim_metrics` adds four SSIM-based scores using a pure-torch
+reimplementation of skimage's structural similarity (no extra dependency). Pass
+``chs_info=`` to score topographic projections instead of raw attribution maps.
+
+.. autosummary::
+    :toctree: generated/
+
      compute_metrics
      compute_ssim_metrics
+     METRIC_NAMES
+     SSIM_METRIC_NAMES
+
+Topography
+==========
+
+Project per-channel scalar values onto a 2-D scalp topomap grid via Clough-Tocher
+triangulation on MNE-derived sensor coordinates. Returns a plain ``ndarray`` so callers
+can compose with their own plotting stack rather than going through
+:func:`mne.viz.plot_topomap` (and its matplotlib roundtrip).
+
+.. autosummary::
+    :toctree: generated/
+
      project_to_topomap
+
+Plotting
+========
+
+.. autosummary::
+    :toctree: generated/
+
      plot_confusion_matrix
