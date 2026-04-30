@@ -153,6 +153,7 @@ interface for all EEG models and can derive variable names when needed.
      EEGSimpleConv
      EEGSym
      EEGTCNet
+     EMG2QwertyNet
      FBCNet
      FBLightConvNet
      FBMSNet

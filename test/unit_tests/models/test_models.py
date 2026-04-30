@@ -41,6 +41,7 @@ from braindecode.models import (
     EEGNeX,
     EEGSimpleConv,
     EEGTCNet,
+    EMG2QwertyNet,
     FBCNet,
     FBMSNet,
     HybridNet,
@@ -3336,3 +3337,185 @@ def test_gni_ctc_backward():
     assert input_lengths.min() >= target_lengths.max()
     assert m.final_layer.weight.grad is not None
     assert any(p.grad is not None for p in m.conformer.parameters())
+
+
+# ---------------------------------------------------------------------------
+# EMG2QwertyNet
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def emg2qwerty_default():
+    """Build the default 4-block TDS-Conv-CTC encoder once per test module."""
+    return EMG2QwertyNet(n_times=8000).eval()
+
+
+def _small_emg2qwerty(**kwargs):
+    """Tiny config for fast unit tests.
+
+    Receptive field is ``n_fft + n_conv_blocks * (kernel_width - 1) *
+    hop_length = 64 + 2 * 7 * 16 = 288`` samples; ``n_times=500`` keeps
+    the forward small while leaving headroom for the encoder.
+    """
+    defaults = dict(
+        n_times=500,
+        mlp_features=(48,),
+        block_channels=(12, 12),
+        kernel_width=8,
+    )
+    defaults.update(kwargs)
+    return EMG2QwertyNet(**defaults)
+
+
+def test_emg2qwerty_default_contract(emg2qwerty_default):
+    x = torch.randn(1, 32, 8000)
+    with torch.no_grad():
+        y = emg2qwerty_default(x)
+
+    n_params = sum(
+        p.numel() for p in emg2qwerty_default.parameters() if p.requires_grad
+    )
+    lengths = emg2qwerty_default.compute_output_lengths(
+        torch.tensor([8000, 12000])
+    )
+
+    assert n_params == 5_293_315
+    assert y.shape == (1, 373, 99)
+    assert lengths[0].item() == y.shape[1]
+    assert lengths[1] > lengths[0]
+
+
+def test_emg2qwerty_train_eval_and_state_dict():
+    """Smoke-test small config: log_softmax head, CTC backward, key layout.
+
+    Covers the full small-model contract in one pass: log-softmax
+    normalization, ``from_config`` round-trip, ``reset_head``, a CTC
+    backward step, and the upstream-compatible ``state_dict`` layout
+    (encoder under ``model.{0,1,3}.*``, head at ``final_layer.*``,
+    non-persistent STFT window absent).
+    """
+    torch.manual_seed(0)
+    m = _small_emg2qwerty(log_softmax=True).train()
+
+    x = torch.randn(2, 32, 500)
+    log_probs = m(x).transpose(0, 1)  # already log-softmaxed
+    assert torch.allclose(
+        log_probs.exp().sum(dim=-1),
+        torch.ones_like(log_probs[..., 0]),
+        atol=1e-5,
+    )
+
+    input_lengths = m.compute_output_lengths(torch.tensor([500, 500]))
+    target_lengths = torch.tensor([2, 2])
+    targets = torch.randint(0, 98, (2, 2))
+    loss = torch.nn.CTCLoss(blank=98, zero_infinity=True)(
+        log_probs, targets, input_lengths, target_lengths
+    )
+    loss.backward()
+    assert input_lengths.min() >= target_lengths.max()
+    assert m.final_layer.weight.grad is not None
+    assert any(p.grad is not None for p in m.model.parameters())
+
+    assert EMG2QwertyNet.from_config(m.get_config()).n_outputs == 99
+
+    # ``reset_head`` must propagate to ``get_config`` so save/restore
+    # round-trips rebuild the head with the new vocab size, and must
+    # inherit dtype/device so post-``.double()``/``.to(...)`` calls keep
+    # the model usable.
+    m_dbl = _small_emg2qwerty().double().train()
+    m_dbl.reset_head(30)
+    assert m_dbl.n_outputs == 30 and m_dbl.final_layer.out_features == 30
+    assert m_dbl.final_layer.weight.dtype == torch.float64
+    assert m_dbl.get_config()["n_outputs"] == 30
+    assert EMG2QwertyNet.from_config(m_dbl.get_config()).n_outputs == 30
+    # Forward must still work after dtype change + reset_head.
+    with torch.no_grad():
+        m_dbl(torch.randn(1, 32, 500, dtype=torch.float64))
+
+    keys = list(m.state_dict().keys())
+    allowed = ("model.0.", "model.1.", "model.3.", "final_layer.")
+    assert not [k for k in keys if not k.startswith(allowed)]
+    assert not any(k.startswith("spectrogram.") for k in keys)
+    # Mapping values must point at the actual top-level head keys, not
+    # just any string — guards against typos in upstream-checkpoint
+    # head remap.
+    assert EMG2QwertyNet.mapping == {
+        "model.4.weight": "final_layer.weight",
+        "model.4.bias": "final_layer.bias",
+    }
+    for new_key in EMG2QwertyNet.mapping.values():
+        assert new_key in keys, f"mapping target {new_key!r} missing from state_dict"
+
+
+def test_emg2qwerty_flexible_band_geometry():
+    """num_bands and electrodes_per_band can deviate from the wristband default.
+
+    Smoke-checks that a non-default ``(num_bands=3, electrodes_per_band=8)``
+    config (24 channels) builds and forwards. Validates that ``n_chans``
+    inconsistent with the geometry raises.
+    """
+    m_no_rot = _small_emg2qwerty(
+        n_chans=24,
+        num_bands=3,
+        electrodes_per_band=8,
+        rotation_offsets=(0,),
+        pooling="max",
+        log_eps=1e-5,
+    ).eval()
+    with torch.no_grad():
+        y_no_rot = m_no_rot(torch.randn(1, 24, 500))
+    assert y_no_rot.shape[0] == 1 and y_no_rot.shape[2] == 99
+
+    # ``rotation_offsets=(0,)`` must produce identical output for
+    # rolled-and-unrolled inputs along the electrode axis. Confirms the
+    # caller-provided offsets are actually honored (and not silently
+    # replaced by the default ``(-1, 0, +1)``).
+    m_default_rot = _small_emg2qwerty(
+        n_chans=24,
+        num_bands=3,
+        electrodes_per_band=8,
+        rotation_offsets=(-2, 0, +2),
+        pooling="mean",
+    ).eval()
+    assert m_default_rot.model[1].mlps[0].offsets == (-2, 0, 2)
+    assert m_no_rot.model[1].mlps[0].offsets == (0,)
+    assert m_no_rot.model[1].mlps[0].pooling == "max"
+
+    with pytest.raises(ValueError, match="n_chans == num_bands"):
+        EMG2QwertyNet(n_chans=33, num_bands=2, electrodes_per_band=16, n_times=500)
+    with pytest.raises(ValueError, match="log_eps"):
+        _small_emg2qwerty(log_eps=0.0)
+    with pytest.raises(ValueError, match="pooling"):
+        _small_emg2qwerty(pooling="sum")
+
+
+def test_emg2qwerty_input_validation():
+    """forward rejects short inputs; compute_output_lengths floors to zero.
+
+    Two related contracts. (1) ``forward`` must enforce the full encoder
+    receptive field, not just ``n_fft`` — otherwise ``torch.stft``
+    succeeds for ``n_times`` in ``[n_fft, receptive_field)`` and the
+    model crashes deep inside :class:`~torch.nn.Conv2d`. (2)
+    ``compute_output_lengths`` must use ``rounding_mode="floor"`` so
+    that ``T < n_fft`` reports zero emission frames; ``trunc`` would
+    silently return ``1`` when ``kernel_width == 1`` (no encoder shrink
+    to mask the off-by-one via ``clamp_min``).
+    """
+    m = _small_emg2qwerty(n_fft=64, hop_length=16, kernel_width=8,
+                          block_channels=(12, 12))
+    # Receptive field = 64 + 2 * 7 * 16 = 288.
+    with pytest.raises(ValueError, match="n_fft"):
+        m(torch.randn(1, 32, 50))
+    with pytest.raises(ValueError, match="receptive field"):
+        m(torch.randn(1, 32, 200))
+    # Boundary: exactly the receptive-field length must be accepted and
+    # produce a single output frame from each conv block.
+    with torch.no_grad():
+        y_min = m(torch.randn(1, 32, 288))
+    assert y_min.shape[0] == 1 and y_min.shape[2] == 99
+
+    m_floor = _small_emg2qwerty(kernel_width=1, block_channels=(12, 12))
+    # T < n_fft -> 0; T == n_fft -> 1 (boundary); T > n_fft increments
+    # by ``floor((T - n_fft) / hop_length) + 1``.
+    out = m_floor.compute_output_lengths(torch.tensor([10, 0, 50, 64, 80]))
+    assert out.tolist() == [0, 0, 0, 1, 2]

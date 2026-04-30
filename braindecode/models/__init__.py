@@ -25,6 +25,7 @@ from .eegpt import EEGPT
 from .eegsimpleconv import EEGSimpleConv
 from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
+from .emg2qwerty import EMG2QwertyNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
@@ -95,6 +96,7 @@ __all__ = [
     "EEGSimpleConv",
     "EEGTCNet",
     "DGCNN",
+    "EMG2QwertyNet",
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
