@@ -299,7 +299,12 @@ frequencies_hz = np.fft.rfftfreq(n_input_samples, d=1.0 / sfreq)
 
 
 def _band_topomap_grid(
-    values_per_class_chan_freq, frequency_bands, mne_info, labels, title
+    values_per_class_chan_freq,
+    frequency_bands,
+    mne_info,
+    labels,
+    title,
+    landmark_channels=None,
 ):
     """One row per frequency band, one column per class.
 
@@ -307,12 +312,21 @@ def _band_topomap_grid(
     so that a single high-magnitude class can't wash out the rest of the
     band. The shared colorbar on the right uses scientific notation
     folded into its label, so no floating ``1e-6`` exponent appears.
+    Pass ``landmark_channels`` (e.g. ``{"C3", "Cz", "C4"}``) to label
+    those electrodes on every topomap so the reader can orient.
     """
     n_bands, n_classes = len(frequency_bands), len(labels)
     fig, axes = plt.subplots(
         n_bands, n_classes, figsize=(2.6 * n_classes + 1.6, 2.4 * n_bands + 1.0)
     )
     axes = np.atleast_2d(axes)
+    if landmark_channels:
+        ch_names = mne_info["ch_names"]
+        names_arg = [n if n in landmark_channels else "" for n in ch_names]
+        sensors_arg = True
+    else:
+        names_arg = None
+        sensors_arg = False
     band_images, band_color_limits = [], []
     for row_idx, (band_low_hz, band_high_hz) in enumerate(frequency_bands):
         low_freq_idx = np.searchsorted(frequencies_hz, band_low_hz)
@@ -330,7 +344,8 @@ def _band_topomap_grid(
                 vlim=(-band_color_limit, band_color_limit),
                 contours=0,
                 cmap=cm.RdBu_r,
-                sensors=False,
+                sensors=sensors_arg,
+                names=names_arg,
                 show=False,
                 axes=ax,
             )
@@ -436,6 +451,7 @@ _band_topomap_grid(
     mne_info=raw_info,
     labels=LABELS,
     title="Haufe patterns isolate the class-distinctive part of each gradient",
+    landmark_channels={"C3", "Cz", "C4"},
 )
 
 ######################################################################
@@ -558,7 +574,7 @@ topomap_image, _ = mne.viz.plot_topomap(
     axes=ax,
 )
 ax.set_title(
-    f"Mean attribution across {len(method_names)} methods, projected on the scalp",
+    "All three methods agree the network attends to motor cortex",
     fontsize=10,
     fontweight="bold",
 )
@@ -567,7 +583,7 @@ fig.colorbar(
     ax=ax,
     fraction=0.04,
     pad=0.04,
-    label="Per-method normalized (0–1)",
+    label="Mean attribution magnitude\n(per-method max-normalized)",
 )
 
 ######################################################################
@@ -718,6 +734,7 @@ for name in methods:
         lw=1.6,
         markersize=4,
     )
+ax_cascade.set_xticks(range(n_levels + 1))
 ax_cascade.set_xlabel(f"# layers reset (output → input, total {n_levels})")
 ax_cascade.set_ylabel("Per-trial Pearson r vs trained model")
 ax_cascade.set_title("Cascading weight randomization", fontsize=10, fontweight="bold")
@@ -729,7 +746,7 @@ for spine in ("top", "right"):
     ax_cascade.spines[spine].set_visible(False)
 
 fig.suptitle(
-    "Methods that survive both randomizations are reflecting architecture, not learning",
+    "Lower values mean the attribution depends on what the network learned",
     fontsize=11,
     fontweight="bold",
 )
@@ -836,8 +853,8 @@ fig, (ax_val, ax_rank) = plt.subplots(
 
 im_val = ax_val.imshow(
     metric_table.values,
-    cmap="RdYlGn_r",
-    vmin=0.0,
+    cmap="RdBu_r",
+    vmin=-val_max,
     vmax=val_max,
     aspect="auto",
     interpolation="nearest",
@@ -859,7 +876,7 @@ for i, j in np.ndindex(metric_table.values.shape):
         ha="center",
         va="center",
         fontsize=8,
-        color="white" if val > 0.55 * val_max or val < -0.1 else "black",
+        color="white" if abs(val) > 0.6 * val_max else "black",
     )
 cbar_val = fig.colorbar(im_val, ax=ax_val, fraction=0.025, pad=0.01)
 cbar_val.set_label("Pearson r", fontsize=8)
@@ -868,7 +885,7 @@ cbar_val.set_label("Pearson r", fontsize=8)
 # Cells coloured by how far each method departs from consensus.
 im_rank = ax_rank.imshow(
     ranks.values,
-    cmap="RdYlGn_r",
+    cmap="RdBu_r",
     vmin=1,
     vmax=3,
     aspect="auto",
@@ -893,7 +910,7 @@ for i, j in np.ndindex(ranks.values.shape):
         va="center",
         fontsize=10,
         fontweight="bold",
-        color="white" if rank_val == 3 else "black",
+        color="white" if rank_val in (1, 3) else "black",
     )
 cbar_rank = fig.colorbar(im_rank, ax=ax_rank, fraction=0.025, pad=0.01, ticks=[1, 2, 3])
 cbar_rank.set_label("Rank", fontsize=8)
