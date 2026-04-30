@@ -8,10 +8,6 @@ from mne.channels.layout import _find_topomap_coords
 from mne.utils import _check_sphere
 from scipy.interpolate import CloughTocher2DInterpolator
 
-_TOPOMAP_PLACEHOLDER_SFREQ = (
-    1.0  # mne.create_info requires sfreq, but plot_topomap reads only positions.
-)
-
 
 def project_to_topomap(data, chs_info, res=64):
     """Project per-channel attribution values onto a 2-D scalp topomap grid.
@@ -58,7 +54,7 @@ def _info_from_chs_info(chs_info):
     """Build an :class:`mne.Info` object from a braindecode ``chs_info`` list."""
     info = mne.create_info(
         ch_names=[ch["ch_name"] for ch in chs_info],
-        sfreq=_TOPOMAP_PLACEHOLDER_SFREQ,
+        sfreq=1.0,  # placeholder, not used in topomap plotting
         ch_types="eeg",
     )
     with info._unlock():
