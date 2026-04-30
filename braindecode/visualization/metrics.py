@@ -125,6 +125,23 @@ def compute_metrics(
         Number of samples skipped due to all-zero or constant attributions
         or reference.
     """
+    explanations, reference, explanation_abs = _prepare_attributions(
+        explanations, reference, chs_info, abs_reference, abs_explanation
+    )
+    return _compute(explanations, reference, explanation_abs, prctile_val)
+
+
+def _prepare_attributions(
+    explanations, reference, chs_info, abs_reference, abs_explanation
+):
+    """Shared preamble for :func:`compute_metrics` and :func:`compute_ssim_metrics`.
+
+    Validates the shapes match, replaces NaNs with zero, optionally
+    projects each sample (mean over time) onto a 2-D scalp topomap, and
+    derives the abs/clipped explanation map.
+
+    Returns ``(explanations, reference, explanation_abs)``.
+    """
     if explanations.shape != reference.shape:
         raise ValueError(
             f"reference shape {reference.shape} does not match "
@@ -146,8 +163,7 @@ def compute_metrics(
     explanation_abs = (
         np.abs(explanations) if abs_explanation else np.clip(explanations, 0, None)
     )
-
-    return _compute(explanations, reference, explanation_abs, prctile_val)
+    return explanations, reference, explanation_abs
 
 
 def _project_batch(arr, chs_info):
@@ -312,26 +328,8 @@ def compute_ssim_metrics(
         Number of samples skipped due to all-zero or constant
         attributions or reference.
     """
-    if explanations.shape != reference.shape:
-        raise ValueError(
-            f"reference shape {reference.shape} does not match "
-            f"explanations shape {explanations.shape}"
-        )
-
-    explanations = np.nan_to_num(explanations, nan=0.0)
-    reference = np.nan_to_num(reference, nan=0.0)
-
-    if chs_info is not None:
-        explanations = _project_batch(explanations.mean(axis=2), chs_info)
-        reference = _project_batch(reference.mean(axis=2), chs_info)
-        explanations = np.nan_to_num(explanations, nan=0.0)
-        reference = np.nan_to_num(reference, nan=0.0)
-
-    if abs_reference:
-        reference = np.abs(reference)
-
-    explanation_abs = (
-        np.abs(explanations) if abs_explanation else np.clip(explanations, 0, None)
+    explanations, reference, explanation_abs = _prepare_attributions(
+        explanations, reference, chs_info, abs_reference, abs_explanation
     )
 
     n_samples = explanations.shape[0]

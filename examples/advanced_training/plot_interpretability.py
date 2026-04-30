@@ -14,13 +14,15 @@ architecture.
 
 Outline:
 
-1. Frequency-domain analysis — :func:`~braindecode.visualization.compute_amplitude_gradients`
+1. Frequency-domain analysis —
+   :func:`~braindecode.visualization.amplitude_gradients_per_trial`
    gives a per-class amplitude-gradient field; the Haufe transform turns
    those filters into class-distinctive patterns.
-2. Per-trial attribution — :func:`~braindecode.visualization.saliency`
-   and :func:`~braindecode.visualization.integrated_gradients` (plain
-   PyTorch); :func:`~braindecode.visualization.deep_lift` (Captum,
-   loaded if available — install with ``pip install braindecode[viz]``).
+2. Per-trial attribution — :func:`~braindecode.visualization.saliency`,
+   :func:`~braindecode.visualization.integrated_gradients`, and
+   :func:`~braindecode.visualization.deep_lift`. All three are thin
+   wrappers around captum (install with ``pip install braindecode[viz]``);
+   the paper [5]_ identifies DeepLIFT as the most robust of the three on EEG.
 3. Where on the scalp does the network look — single topomap with the
    landmark electrodes labelled.
 4. **Are the explanations trustworthy?** Label randomization
@@ -66,14 +68,14 @@ from braindecode.preprocessing import (
 from braindecode.util import set_random_seeds
 from braindecode.visualization import (
     METRIC_NAMES,
+    amplitude_gradients_per_trial,
     cascading_layer_reset,
-    compute_amplitude_gradients,
     compute_metrics,
     compute_ssim_metrics,
+    deep_lift,
     integrated_gradients,
     random_target,
     saliency,
-    select_correctly_classified,
 )
 
 ######################################################################
@@ -176,16 +178,16 @@ LABEL_COLORS = ("#0072B2", "#009E73", "#D55E00", "#CC79A7")
 # -------------------
 #
 # How does changing the spectral amplitude at each (channel, frequency)
-# move the network's class scores? :func:`compute_amplitude_gradients`
+# move the network's class scores? :func:`amplitude_gradients_per_trial`
 # answers that question. For every output unit it computes the gradient
 # of the mean class score w.r.t. the input amplitudes over all training
 # trials. After averaging over trials we get an
 # ``(n_classes, n_chans, n_freqs)`` tensor.
 
-amplitude_gradients_per_trial = compute_amplitude_gradients(
+per_trial_amplitude_gradients = amplitude_gradients_per_trial(
     model, train_set, batch_size=64
 )
-mean_amplitude_gradients = amplitude_gradients_per_trial.mean(
+mean_amplitude_gradients = per_trial_amplitude_gradients.mean(
     axis=1
 )  # (n_classes, n_chans, n_freqs)
 
@@ -339,17 +341,21 @@ _band_topomap_grid(
 # We now switch from population averages to per-trial attribution in the
 # time domain. Each method below takes ``(model, x, target)`` and
 # returns an attribution tensor with the same spatial shape as ``x``.
-# Saliency and Integrated Gradients (IG) are pure-PyTorch primitives.
-# DeepLIFT is loaded conditionally; the paper [5]_ identifies it as the
-# most robust attribution method for EEG, so we include it whenever
-# ``captum`` is importable.
+# All three are captum-backed; the paper [5]_ identifies DeepLIFT as the
+# most robust of the three on EEG.
 
 valid_inputs = np.stack([x for x, *_ in valid_set]).astype(np.float32)
 valid_labels = np.array([y for _, y, *_ in valid_set])
 
-correctly_classified_inputs, correctly_classified_labels = select_correctly_classified(
-    model, valid_inputs, valid_labels, device=device
-)
+# Keep only trials the model classifies correctly: attribution maps for
+# misclassified trials would explain the *wrong* class, which muddies the
+# sanity-check signal below.
+valid_inputs_t = torch.as_tensor(valid_inputs, dtype=torch.float32, device=device)
+valid_labels_t = torch.as_tensor(valid_labels, dtype=torch.long, device=device)
+with torch.no_grad():
+    correct_mask = model(valid_inputs_t).argmax(dim=1) == valid_labels_t
+correctly_classified_inputs = valid_inputs_t[correct_mask]
+correctly_classified_labels = valid_labels_t[correct_mask]
 print(
     f"Correctly classified: {correctly_classified_inputs.shape[0]} "
     f"/ {valid_inputs.shape[0]}"
@@ -360,29 +366,13 @@ example_inputs = correctly_classified_inputs[:n_examples_to_show]
 example_labels = correctly_classified_labels[:n_examples_to_show]
 
 
-def _saliency(m, x, y):
-    return saliency(m, x, y).detach().cpu().numpy()
-
-
-def _integrated_gradients(m, x, y):
-    return integrated_gradients(m, x, y, steps=32).detach().cpu().numpy()
-
-
 methods = {
-    "Saliency": _saliency,
-    "Integrated Gradients": _integrated_gradients,
+    "Saliency": lambda m, x, y: saliency(m, x, y).cpu().numpy(),
+    "Integrated Gradients": lambda m, x, y: integrated_gradients(m, x, y, steps=32)
+    .cpu()
+    .numpy(),
+    "DeepLIFT": lambda m, x, y: deep_lift(m, x, y).cpu().numpy(),
 }
-
-try:
-    from braindecode.visualization import deep_lift
-
-    def _deep_lift(m, x, y):
-        return deep_lift(m, x, y).detach().cpu().numpy()
-
-    methods["DeepLIFT"] = _deep_lift
-    print("DeepLIFT loaded (Captum available).")
-except ImportError:
-    print("DeepLIFT skipped (install with `pip install braindecode[viz]`).")
 
 trained_attributions = {
     name: fn(model, example_inputs, example_labels) for name, fn in methods.items()

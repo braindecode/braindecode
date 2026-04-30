@@ -1,19 +1,20 @@
-import copy
-
 import numpy as np
 import pytest
 import torch
 
-from braindecode.models import ShallowFBCSPNet
-from braindecode.visualization.attribution import (
+# All attribution methods are captum-backed wrappers; skip cleanly if
+# captum (the optional `viz` dep) isn't installed.
+pytest.importorskip("captum")
+
+from braindecode.models import ShallowFBCSPNet  # noqa: E402
+from braindecode.visualization.attribution import (  # noqa: E402
     input_x_gradient,
     integrated_gradients,
     layer_grad_cam,
     saliency,
-    select_correctly_classified,
 )
 
-from .conftest import SEED
+from .conftest import SEED  # noqa: E402
 
 N_CHANS = 18
 N_TIMES = 600
@@ -103,30 +104,3 @@ def test_integrated_gradients_completeness_on_linear_model():
         )
     summed = attr.sum(dim=tuple(range(1, attr.ndim)))
     np.testing.assert_allclose(summed.numpy(), delta.numpy(), atol=1e-5)
-
-
-def test_select_correctly_classified_shapes(model):
-    rng = np.random.default_rng(SEED + 1)
-    X = rng.standard_normal((BATCH, N_CHANS, N_TIMES)).astype(np.float32)
-    y = np.array([0, 1, 0, 1, 0, 1])
-
-    X_correct, y_correct = select_correctly_classified(model, X, y)
-    assert X_correct.ndim == 3
-    assert X_correct.shape[1:] == (N_CHANS, N_TIMES)
-    assert y_correct.shape[0] == X_correct.shape[0]
-
-
-def test_select_correctly_classified_filters_wrong_class(model):
-    """Module-scoped model is deepcopied since this test mutates classifier weights."""
-    m = copy.deepcopy(model)
-    with torch.no_grad():
-        m.final_layer.conv_classifier.weight[1, :] = 0.0
-        m.final_layer.conv_classifier.bias[1] = -1e6
-
-    rng = np.random.default_rng(SEED + 2)
-    X = rng.standard_normal((BATCH, N_CHANS, N_TIMES)).astype(np.float32)
-    y = np.array([0, 1, 0, 1, 0, 1])
-
-    X_correct, y_correct = select_correctly_classified(m, X, y)
-    assert torch.all(y_correct == 0)
-    assert X_correct.shape[0] == int((y == 0).sum())

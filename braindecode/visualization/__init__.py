@@ -3,7 +3,6 @@ Functions for visualisations, especially of the ConvNets.
 """
 
 from .attribution import (
-    cascading_layer_reset,
     deconvolution,
     deep_lift,
     guided_backprop,
@@ -11,25 +10,25 @@ from .attribution import (
     integrated_gradients,
     layer_grad_cam,
     lrp,
-    random_target,
     saliency,
-    select_correctly_classified,
 )
 from .confusion_matrices import plot_confusion_matrix
-from .gradients import compute_amplitude_gradients
+from .frequency import amplitude_gradients, amplitude_gradients_per_trial
 from .metrics import (
     METRIC_NAMES,
     SSIM_METRIC_NAMES,
     compute_metrics,
     compute_ssim_metrics,
 )
+from .sanity import cascading_layer_reset, random_target
 from .topology import project_to_topomap
 
 __all__ = [
     "METRIC_NAMES",
     "SSIM_METRIC_NAMES",
+    "amplitude_gradients",
+    "amplitude_gradients_per_trial",
     "cascading_layer_reset",
-    "compute_amplitude_gradients",
     "compute_metrics",
     "compute_ssim_metrics",
     "deconvolution",
@@ -43,5 +42,4 @@ __all__ = [
     "project_to_topomap",
     "random_target",
     "saliency",
-    "select_correctly_classified",
 ]
