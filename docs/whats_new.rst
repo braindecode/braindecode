@@ -167,6 +167,8 @@ Bug fixes
   ``examples/datasets_io/plot_bids_dataset_example.py`` against the live
   OpenNeuro 5.0.0 GraphQL schema (``Cannot query field "key" on type
   "DatasetFile"``) (:gh:`1002` by `Bruno Aristimunha`_)
+- Retry transient TLS failures from ``physionet.org`` when fetching
+  :class:`braindecode.datasets.SleepPhysionet` (by `Bruno Aristimunha`_)
 
 Code health
 ============
