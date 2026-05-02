@@ -6,6 +6,7 @@
 #          David Sabbagh <dav.sabbagh@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Léo Burgund <leo.burgund@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -217,6 +218,7 @@ def preprocess(
     offset: int = 0,
     copy_data: bool | None = None,
     parallel_kwargs: dict | None = None,
+    max_nbytes: int | str | None = "1M",
 ):
     """Apply preprocessors to a concat dataset.
 
@@ -244,14 +246,22 @@ def preprocess(
         Additional keyword arguments forwarded to ``joblib.Parallel``.
         Defaults to None (equivalent to ``{}``).
         See https://joblib.readthedocs.io/en/stable/generated/joblib.Parallel.html for details.
+    max_nbytes : int, str, or None
+        Forwarded to ``joblib.Parallel`` to control the size threshold above
+        which preloaded arrays are memory mapped to disk as read-only. Pass
+        ``None`` to disable memory mapping when a preprocessor resizes the
+        underlying data (for example ``filterbank``), which would otherwise
+        fail with an ``mmap can't resize a readonly`` error. When the
+        preprocessing run hits that error, ``preprocess`` automatically
+        retries once with memory mapping disabled to avoid wasting the work
+        already done. ``parallel_kwargs['max_nbytes']`` takes precedence if
+        both are provided.
 
     Returns
     -------
     BaseConcatDataset
         Preprocessed dataset.
     """
-    # In case of serialization, make sure directory is available before
-    # preprocessing
     if save_dir is not None and not overwrite:
         _check_save_dir_empty(save_dir)
 
@@ -266,22 +276,49 @@ def preprocess(
     parallel_params.setdefault(
         "prefer", "threads" if platform.system() == "Windows" else None
     )
+    parallel_params.setdefault("max_nbytes", max_nbytes)
 
-    list_of_ds = Parallel(n_jobs=n_jobs, **parallel_params)(
-        delayed(_preprocess)(
-            ds,
-            i + offset,
-            preprocessors,
-            save_dir,
-            overwrite,
-            copy_data=(
-                (parallel_processing and (save_dir is None))
-                if copy_data is None
-                else copy_data
-            ),
+    def _run(params):
+        return Parallel(n_jobs=n_jobs, **params)(
+            delayed(_preprocess)(
+                ds,
+                i + offset,
+                preprocessors,
+                save_dir,
+                overwrite,
+                copy_data=(
+                    (parallel_processing and (save_dir is None))
+                    if copy_data is None
+                    else copy_data
+                ),
+            )
+            for i, ds in enumerate(concat_ds.datasets)
         )
-        for i, ds in enumerate(concat_ds.datasets)
-    )
+
+    try:
+        list_of_ds = _run(parallel_params)
+    except Exception as exc:
+        msg = str(exc)
+        mmap_failure = "mmap" in msg and ("readonly" in msg or "read-only" in msg)
+        if not mmap_failure:
+            raise
+        if parallel_params.get("max_nbytes") is None:
+            raise RuntimeError(
+                "Parallel preprocessing failed because joblib memory mapped "
+                "a preloaded array that a preprocessor then attempted to "
+                "resize, even with memory mapping disabled. Supply a "
+                "``save_dir`` so that the data is reloaded with "
+                "``preload=False``."
+            ) from exc
+        warn(
+            "Parallel preprocessing failed because joblib memory mapped a "
+            "preloaded array that a preprocessor then attempted to resize. "
+            "Retrying with memory mapping disabled (max_nbytes=None). To "
+            "skip this retry on future calls, pass ``max_nbytes=None`` to "
+            "``preprocess`` or supply a ``save_dir``."
+        )
+        parallel_params["max_nbytes"] = None
+        list_of_ds = _run(parallel_params)
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
         ids_to_load = [i + offset for i in range(len(concat_ds.datasets))]
