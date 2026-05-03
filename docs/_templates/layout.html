@@ -52,10 +52,10 @@
 {% endblock %}
 
 {% block docs_body %}
-<!-- Google Tag Manager (noscript) -->
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NWDKLVNR"
-height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-<!-- End Google Tag Manager (noscript) -->
+{# Intentionally no GTM <noscript> iframe: it would load unconditionally
+   for JS-disabled users and bypass the doNotTrack check the JS bootstrap
+   above honors. The GTM container's value comes from JS-driven events,
+   so the fallback is low-signal anyway. #}
 <div>
   {% block body %} {% endblock %}
 </div>
