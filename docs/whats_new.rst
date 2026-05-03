@@ -28,6 +28,13 @@ Current 1.5.0 (GitHub)
 Enhancements
 ============
 
+- Redesign the documentation landing page (``docs/index.rst``) in a
+  pyhealth.dev-style layout: animated brain → EEG → net hero, fact strip
+  highlighting MOABB / EEGDash interoperability, interactive model-zoo
+  browser sourced from ``braindecode/models/summary.csv``, Hugging Face
+  Hub integration row, and a tutorial-thumbnail carousel. Adds
+  ``sphinxext-opengraph`` to docs extras and a ``SoftwareApplication``
+  JSON-LD block. (:gh:`1007` by `Bruno Aristimunha`_)
 - Tutorials now train for a few epochs then load pretrained weights from
   Hugging Face Hub to show full training curves and metrics. All 9 tutorial
   checkpoints published to ``huggingface.co/braindecode/``. The offline

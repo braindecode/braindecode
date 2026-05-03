@@ -84,6 +84,13 @@ html[data-theme="dark"] .bd-landing {
 .bd-landing * { box-sizing: border-box; }
 .bd-landing img { max-width: 100%; display: block; }
 .bd-landing a { color: inherit; text-decoration: none; }
+/* Override the site-wide `--text-align: justify` from style.css. Justify
+   in narrow column body copy creates ugly inter-word gaps in modern
+   browsers (no proper hyphenation), and this landing reads like a
+   marketing page, not a research paper. */
+.bd-landing,
+.bd-landing p,
+.bd-landing li { text-align: left; }
 .bd-landing .bd-mono {
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: .92em;
