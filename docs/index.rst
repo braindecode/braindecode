@@ -31,7 +31,7 @@
         <div class="hero-text">
           <div class="hero-eyebrow">
             <span class="dot"></span>
-            <span>EEG · ECoG · MEG &nbsp;·&nbsp; Open source since 2017</span>
+            <span>EEG · ECoG · MEG · EMG · iEEG &nbsp;·&nbsp; Open source since 2017</span>
           </div>
           <h1 class="hero-title">
             Decode raw <em>brain signals</em> with <span class="highlight">deep learning.</span>
@@ -91,37 +91,37 @@
             <image xlink:href="_static/brain_only.png" x="6" y="78" width="138" height="160" preserveAspectRatio="xMidYMid meet" class="hero-brain-img"/>
 
             <g class="bd-eeg" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
-              <path class="bd-eeg-line ch1" d="M130 116 q 6 -8 12 0 t 12 0 t 12 0 t 12 0 q 4 -6 8 0 q 4 5 8 0 q 4 -7 8 0 q 6 -8 12 0 t 12 0 t 12 0 t 12 0 q 6 -7 12 0 t 12 0 t 12 0 t 12 0 q 6 -6 12 0 t 12 0 t 12 0 L 466 116"/>
-              <path class="bd-eeg-line ch2" d="M130 144 q 12 -12 24 0 t 24 0 t 24 0 q 12 -8 24 0 t 24 0 t 24 0 q 12 -10 24 0 t 24 0 L 466 144"/>
-              <path class="bd-eeg-line ch3" d="M130 172 q 8 -14 16 0 t 16 0 t 16 0 t 16 0 q 8 -10 16 0 t 16 0 t 16 0 t 16 0 q 8 -12 16 0 t 16 0 t 16 0 L 466 172"/>
-              <path class="bd-eeg-line ch4" d="M130 200 q 4 -14 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 q 4 -10 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 q 4 -12 8 0 t 8 0 t 8 0 t 8 0 L 466 200"/>
+              <path class="bd-eeg-line ch1" d="M130 116 q 6 -8 12 0 t 12 0 t 12 0 t 12 0 q 4 -6 8 0 q 4 5 8 0 q 4 -7 8 0 q 6 -8 12 0 t 12 0 t 12 0 t 12 0 q 6 -7 12 0 t 12 0 t 12 0 t 12 0 q 6 -6 12 0 t 12 0 t 12 0 L 450 116"/>
+              <path class="bd-eeg-line ch2" d="M130 144 q 12 -12 24 0 t 24 0 t 24 0 q 12 -8 24 0 t 24 0 t 24 0 q 12 -10 24 0 t 24 0 L 450 144"/>
+              <path class="bd-eeg-line ch3" d="M130 172 q 8 -14 16 0 t 16 0 t 16 0 t 16 0 q 8 -10 16 0 t 16 0 t 16 0 t 16 0 q 8 -12 16 0 t 16 0 t 16 0 L 450 172"/>
+              <path class="bd-eeg-line ch4" d="M130 200 q 4 -14 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 q 4 -10 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 q 4 -12 8 0 t 8 0 t 8 0 t 8 0 L 450 200"/>
             </g>
 
             <rect class="bd-window" x="250" y="100" width="44" height="124" rx="3" fill="#3a6c97" fill-opacity=".09" stroke="#3a6c97" stroke-opacity=".55" stroke-dasharray="4 3" stroke-width="1.2"/>
 
             <g class="bd-net">
               <g class="bd-edges-1" stroke="#3a6c97" stroke-width="1" stroke-opacity=".55" fill="none">
-                <line x1="478" y1="116" x2="528" y2="130"/><line x1="478" y1="116" x2="528" y2="158"/><line x1="478" y1="116" x2="528" y2="186"/>
-                <line x1="478" y1="144" x2="528" y2="130"/><line x1="478" y1="144" x2="528" y2="158"/><line x1="478" y1="144" x2="528" y2="186"/>
-                <line x1="478" y1="172" x2="528" y2="130"/><line x1="478" y1="172" x2="528" y2="158"/><line x1="478" y1="172" x2="528" y2="186"/>
-                <line x1="478" y1="200" x2="528" y2="130"/><line x1="478" y1="200" x2="528" y2="158"/><line x1="478" y1="200" x2="528" y2="186"/>
+                <line x1="462" y1="116" x2="512" y2="130"/><line x1="462" y1="116" x2="512" y2="158"/><line x1="462" y1="116" x2="512" y2="186"/>
+                <line x1="462" y1="144" x2="512" y2="130"/><line x1="462" y1="144" x2="512" y2="158"/><line x1="462" y1="144" x2="512" y2="186"/>
+                <line x1="462" y1="172" x2="512" y2="130"/><line x1="462" y1="172" x2="512" y2="158"/><line x1="462" y1="172" x2="512" y2="186"/>
+                <line x1="462" y1="200" x2="512" y2="130"/><line x1="462" y1="200" x2="512" y2="158"/><line x1="462" y1="200" x2="512" y2="186"/>
               </g>
               <g class="bd-edges-2" stroke="#3a6c97" stroke-width="1.2" stroke-opacity=".7" fill="none">
-                <line x1="528" y1="130" x2="572" y2="158"/><line x1="528" y1="158" x2="572" y2="158"/><line x1="528" y1="186" x2="572" y2="158"/>
+                <line x1="512" y1="130" x2="556" y2="158"/><line x1="512" y1="158" x2="556" y2="158"/><line x1="512" y1="186" x2="556" y2="158"/>
               </g>
               <g class="bd-nodes-in">
-                <circle class="n n-c1" cx="478" cy="116" r="7"/>
-                <circle class="n n-c2" cx="478" cy="144" r="7"/>
-                <circle class="n n-c3" cx="478" cy="172" r="7"/>
-                <circle class="n n-c4" cx="478" cy="200" r="7"/>
+                <circle class="n n-c1" cx="462" cy="116" r="7"/>
+                <circle class="n n-c2" cx="462" cy="144" r="7"/>
+                <circle class="n n-c3" cx="462" cy="172" r="7"/>
+                <circle class="n n-c4" cx="462" cy="200" r="7"/>
               </g>
               <g class="bd-nodes-h" fill="#3a6c97">
-                <circle cx="528" cy="130" r="7"/>
-                <circle cx="528" cy="158" r="7"/>
-                <circle cx="528" cy="186" r="7"/>
+                <circle cx="512" cy="130" r="7"/>
+                <circle cx="512" cy="158" r="7"/>
+                <circle cx="512" cy="186" r="7"/>
               </g>
-              <circle class="bd-readout" cx="572" cy="158" r="10" fill="#b46a2c" filter="url(#bd-glow)"/>
-              <text class="bd-readout-label" x="566" y="180" text-anchor="end">right hand</text>
+              <circle class="bd-readout" cx="556" cy="158" r="10" fill="#b46a2c" filter="url(#bd-glow)"/>
+              <text class="bd-readout-label" x="556" y="192" text-anchor="middle">right hand</text>
             </g>
           </svg>
         </div>
@@ -696,9 +696,8 @@
             <h5>Resources</h5>
             <ul>
               <li><a href="whats_new.html">What's new</a></li>
-              <li><a href="https://github.com/braindecode/braindecode/issues" target="_blank" rel="noopener">Roadmap</a></li>
+              <li><a href="https://github.com/braindecode/braindecode/issues" target="_blank" rel="noopener">Issues</a></li>
               <li><a href="help.html">Help &amp; support</a></li>
-              <li><a href="https://github.com/braindecode/braindecode/blob/master/CODE_OF_CONDUCT.md" target="_blank" rel="noopener">Code of conduct</a></li>
             </ul>
           </div>
           <div>

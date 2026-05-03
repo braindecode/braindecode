@@ -13,6 +13,10 @@ import csv
 import json
 import os.path as op
 
+from sphinx.util import logging
+
+logger = logging.getLogger(__name__)
+
 # Maps the CSV's "Categorization" tags (comma-separated, multi-tag per model)
 # to the canonical category IDs used by the landing's chip filter.
 # The first matched tag wins; a model with "Convolution,Attention/Transformer"
@@ -70,15 +74,16 @@ def generate_zoo_data(app=None, *_args) -> None:
     if not op.exists(csv_path):
         # Don't fail the build if the CSV is missing — landing.js falls back
         # to its inline list. The build still works for partial trees.
-        if app is not None:
-            app.warn(f"zoo_data_gen: {csv_path} not found, skipping")
+        logger.warning("zoo_data_gen: %s not found, skipping", csv_path)
         return
 
-    # Skip the rebuild if zoo-data.js is already up to date with the CSV.
-    # Touching the output file on every config-init invalidates Sphinx's
-    # static-asset fingerprint and forces a re-copy on incremental builds.
-    if op.exists(out_path) and op.getmtime(out_path) >= op.getmtime(csv_path):
-        return
+    # Skip the rebuild if zoo-data.js is already up to date with the CSV
+    # *and* this generator script. Editing classifier rules in this file
+    # without touching the CSV would otherwise leave stale JS in place.
+    if op.exists(out_path):
+        out_mtime = op.getmtime(out_path)
+        if out_mtime >= op.getmtime(csv_path) and out_mtime >= op.getmtime(__file__):
+            return
 
     models: list[dict] = []
     cat_counts: dict[str, dict] = {

@@ -208,6 +208,7 @@ html[data-theme="dark"] .bd-landing {
   display: inline-flex;
   align-items: center;
   gap: .65rem;
+  margin-top: 1rem;
   border: 1px dashed var(--bd-line-2);
   background: var(--bd-paper-2);
   padding: .55rem .9rem;
@@ -254,8 +255,8 @@ html[data-theme="dark"] .bd-landing {
   line-height: 1.5;
   color: var(--bd-muted);
   max-width: 56ch;
-  margin: 2rem 0 1.6rem;
-  padding-top: 1.4rem;
+  margin: 1.25rem 0 1rem;
+  padding-top: .9rem;
   border-top: 1px dashed var(--bd-line);
 }
 
@@ -264,8 +265,8 @@ html[data-theme="dark"] .bd-landing {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0;
-  margin-top: 1.25rem;
-  padding-top: 1.1rem;
+  margin-top: .9rem;
+  padding-top: .8rem;
   border-top: 1px dashed var(--bd-line-2);
   max-width: 540px;
 }

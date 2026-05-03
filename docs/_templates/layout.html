@@ -2,11 +2,14 @@
 
 {% block extrahead %}
   <!-- Google Tag Manager (single analytics entry point — drives any GA4 / GTAG
-       configured inside the GTM container; do not add a second gtag here) -->
-  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+       configured inside the GTM container; do not add a second gtag here).
+       Honors the Do-Not-Track signal so privacy-conscious users opt out. -->
+  <script>(function(w,d,s,l,i){
+    if (w.doNotTrack=='1' || w.navigator.doNotTrack=='1' || w.navigator.doNotTrack=='yes') return;
+    w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
   })(window,document,'script','dataLayer','GTM-NWDKLVNR');</script>
   <!-- End Google Tag Manager -->
 

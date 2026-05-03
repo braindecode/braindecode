@@ -54,13 +54,22 @@
     { id: "spd",          label: "SPD",            color: "purple" },
   ];
 
+  // Defensive HTML-escape for any field interpolated into innerHTML below.
+  // Today the data is generated from an in-repo CSV, so escaping is belt-
+  // and-braces — but the cost is negligible and it stops a future
+  // contributor from accidentally letting tag-like text break the layout.
+  var ESC_MAP = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return ESC_MAP[c]; });
+  }
+
   function bdInit() {
     var root = document.querySelector(".bd-landing");
     if (!root) return;
-    bdInitInstall(root);
-    bdInitCodeStepper(root);
-    bdInitZoo(root);
-    bdInitDownloads(root);
+    [bdInitInstall, bdInitCodeStepper, bdInitZoo, bdInitDownloads].forEach(function (fn) {
+      try { fn(root); }
+      catch (e) { (window.console || {warn: function () {}}).warn("[bd-landing] " + fn.name + " failed:", e); }
+    });
   }
 
   function bdInitDownloads(root) {
@@ -169,16 +178,21 @@
       } else {
         var html = filtered.map(function (m) {
           var color = catColor(m.cat);
-          var paperLine = m.paper ? '<span class="zoo-card-paper">' + m.paper + '</span>' : "";
-          var yearMeta = m.year ? '<span>·</span><span>' + m.year + '</span>' : "";
-          var paramsMeta = m.params ? '<span><b>' + m.params + '</b> params</span>' : "";
+          var name = esc(m.name);
+          var desc = esc(m.desc);
+          var paper = m.paper ? esc(m.paper) : "";
+          var params = m.params ? esc(m.params) : "";
+          var year = m.year ? esc(m.year) : "";
+          var paperLine = paper ? '<span class="zoo-card-paper">' + paper + '</span>' : "";
+          var yearMeta = year ? '<span>·</span><span>' + year + '</span>' : "";
+          var paramsMeta = params ? '<span><b>' + params + '</b> params</span>' : "";
           return '<button class="zoo-card" type="button">'
                + '<div class="zoo-card-head">'
-               + '<span class="zoo-card-name">' + m.name + '</span>'
-               + '<span class="zoo-card-cat ' + color + '">' + catLabel(m.cat) + '</span>'
+               + '<span class="zoo-card-name">' + name + '</span>'
+               + '<span class="zoo-card-cat ' + color + '">' + esc(catLabel(m.cat)) + '</span>'
                + '</div>'
                + paperLine
-               + '<span class="zoo-card-desc">' + m.desc + '</span>'
+               + '<span class="zoo-card-desc">' + desc + '</span>'
                + '<div class="zoo-card-meta">'
                + paramsMeta
                + yearMeta
