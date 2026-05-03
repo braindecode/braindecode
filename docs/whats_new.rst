@@ -62,6 +62,16 @@ Enhancements
   instantiation, so keeping them in ``state_dict`` only bloated checkpoints and
   caused spurious mismatches when ``n_chans`` (or the position-bank config)
   differed between save and load. (:gh:`993` by `Pierre Guetschel`_)
+- Add :mod:`braindecode.visualization` interpretability utilities, all built on
+  plain PyTorch autograd with no extra dependencies:
+  :func:`~braindecode.visualization.saliency`,
+  :func:`~braindecode.visualization.input_x_gradient`,
+  :func:`~braindecode.visualization.integrated_gradients`,
+  :func:`~braindecode.visualization.layer_grad_cam`,
+  :func:`~braindecode.visualization.project_to_topomap` (thin wrapper around
+  :func:`mne.viz.plot_topomap`), and :func:`~braindecode.visualization.compute_metrics`
+  for quantitative attribution comparison. A new tutorial,
+  :ref:`interpretability-tutorial`, walks through the full pipeline.
 - Add :class:`braindecode.models.MetaNeuromotorHand`, a port of the
   handwriting decoder from Meta / CTRL-labs' generic neuromotor interface
   (Kaifosh, Reardon et al., Nature 2025). The model takes raw 16-channel
