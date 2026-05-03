@@ -100,6 +100,7 @@ docs = [
     'sphinx-autobuild',
     'sphinxcontrib-bibtex',
     'sphinx_sitemap',
+    'sphinxext-opengraph',
     'pydata_sphinx_theme',
     'numpydoc',
     'memory_profiler',

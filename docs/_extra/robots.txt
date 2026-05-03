@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
 
-# Point crawlers to the generated sitemap
-Sitemap: https://braindecode.org/dev/sitemap.xml
+# Point crawlers to the generated sitemap (lives at the site root)
+Sitemap: https://braindecode.org/sitemap.xml

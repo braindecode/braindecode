@@ -1,7 +1,8 @@
 {%- extends 'pydata_sphinx_theme/layout.html' %}
 
 {% block extrahead %}
-  <!-- Google Tag Manager -->
+  <!-- Google Tag Manager (single analytics entry point — drives any GA4 / GTAG
+       configured inside the GTM container; do not add a second gtag here) -->
   <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
   new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
   j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
@@ -9,17 +10,42 @@
   })(window,document,'script','dataLayer','GTM-NWDKLVNR');</script>
   <!-- End Google Tag Manager -->
 
-  <link rel="canonical" href="braindecode.org/index.html" />
   {{ super() }}
 
-  <!-- Google Analytics (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-CHY0V439ZQ"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-CHY0V439ZQ');
+  {% if pagename == 'index' %}
+  {# `<meta name="description">` and `<meta property="og:description">` are
+     emitted by sphinxext-opengraph (see ogp_enable_meta_description in conf.py)
+     using the `.. meta::` block in index.rst — don't duplicate them here. #}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Braindecode",
+    "alternateName": "braindecode",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Cross-platform",
+    "description": "Open-source PyTorch toolbox for decoding raw EEG, ECoG and MEG with deep learning. Datasets, preprocessing, augmentations, and 65+ published models.",
+    "url": "https://braindecode.org/",
+    "license": "https://opensource.org/license/bsd-3-clause",
+    "softwareVersion": "{{ release }}",
+    "programmingLanguage": "Python",
+    "downloadUrl": "https://pypi.org/project/braindecode/",
+    "codeRepository": "https://github.com/braindecode/braindecode",
+    "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+    "publisher": {
+      "@type": "Organization",
+      "name": "The Braindecode Developers",
+      "url": "https://braindecode.org/",
+      "logo": "https://braindecode.org/_static/braindecode_long.svg",
+      "sameAs": [
+        "https://github.com/braindecode/braindecode",
+        "https://pypi.org/project/braindecode/",
+        "https://doi.org/10.5281/zenodo.17699192"
+      ]
+    }
+  }
   </script>
+  {% endif %}
 {% endblock %}
 
 {% block docs_body %}
@@ -29,15 +55,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <!-- End Google Tag Manager (noscript) -->
 <div>
   {% block body %} {% endblock %}
-  {% if pagename == 'index' %}
-    {%- include 'homepage.html' -%}
-  {% endif %}
 </div>
 {% endblock %}
 
 {%- block scripts_end %}
     {{ super() }}
-    <script src="https://braindecode.org/versionwarning.js"></script>
-    {% if pagename == 'index' %}
-    {% endif %}
+    <script src="https://braindecode.org/versionwarning.js" defer></script>
 {%- endblock %}
