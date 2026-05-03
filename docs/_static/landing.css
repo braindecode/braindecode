@@ -14,25 +14,28 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap");
 
 /* --- Pydata-sphinx-theme overrides for the index page ----------------
-   landing.css now ships on every page (Sphinx fingerprints it for cache-
-   busting), so the overrides are scoped via :has(.bd-landing) — only
-   the index page contains a .bd-landing wrapper, so these rules are
-   inert everywhere else.
+   landing.css ships on every page (Sphinx fingerprints it for cache-
+   busting). The `bd-page-index` class is added to <html> by a tiny
+   script in `_templates/layout.html` when `pagename == 'index'`, so
+   these page-level overrides only apply on the landing page.
+
+   We deliberately don't rely on `:has(.bd-landing)` so the page still
+   renders correctly in browsers that lack :has() support.
 */
-body:has(.bd-landing) .bd-page-width {
+.bd-page-index .bd-page-width {
   max-width: none !important;
 }
-body:has(.bd-landing) .bd-article-container {
-  max-width: none !important;
-  padding: 0 !important;
-}
-body:has(.bd-landing) .bd-article-container > div {
+.bd-page-index .bd-article-container {
   max-width: none !important;
   padding: 0 !important;
 }
-body:has(.bd-landing) .bd-footer,
-body:has(.bd-landing) .bd-footer-content,
-body:has(.bd-landing) .prev-next-footer {
+.bd-page-index .bd-article-container > div {
+  max-width: none !important;
+  padding: 0 !important;
+}
+.bd-page-index .bd-footer,
+.bd-page-index .bd-footer-content,
+.bd-page-index .prev-next-footer {
   display: none !important;
 }
 

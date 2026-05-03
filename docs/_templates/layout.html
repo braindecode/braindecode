@@ -16,6 +16,10 @@
   {{ super() }}
 
   {% if pagename == 'index' %}
+  {# Tag the document so landing.css can target it without relying on
+     `:has(.bd-landing)` (browsers without :has() would otherwise miss
+     the page-level overrides and render the chrome twice). #}
+  <script>document.documentElement.classList.add("bd-page-index");</script>
   {# `<meta name="description">` and `<meta property="og:description">` are
      emitted by sphinxext-opengraph (see ogp_enable_meta_description in conf.py)
      using the `.. meta::` block in index.rst — don't duplicate them here. #}

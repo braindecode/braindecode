@@ -187,10 +187,15 @@
         if (q && !((m.name + " " + m.paper + " " + m.desc).toLowerCase().includes(q))) { return false; }
         return true;
       });
-      // render cards
+      // render cards. Keep the .zoo-grid node stable and toggle the
+      // .is-empty modifier instead of swapping the element via outerHTML
+      // (which would leave the cached `grid` reference detached and make
+      // subsequent renders harder to reason about).
       if (filtered.length === 0) {
-        grid.outerHTML = "<div class=\"zoo-empty bd-zoo-target\">No models match — try another filter or query.</div>";
+        grid.classList.add("is-empty");
+        grid.innerHTML = "<div class=\"zoo-empty\">No models match — try another filter or query.</div>";
       } else {
+        grid.classList.remove("is-empty");
         var html = filtered.map(function (m) {
           var color = catColor(m.cat);
           var name = esc(m.name);
@@ -207,7 +212,11 @@
           var paramsMeta = params
             ? "<span><b>" + params + "</b> params</span>"
             : "";
-          return "<button class=\"zoo-card\" type=\"button\">"
+          // Cards use <article> (not <button>): they are presentational
+          // model summaries, not interactive controls. Wrapping them in a
+          // <button> created an a11y mismatch — keyboard/SR users got an
+          // activatable element that did nothing.
+          return "<article class=\"zoo-card\">"
                + "<div class=\"zoo-card-head\">"
                + "<span class=\"zoo-card-name\">" + name + "</span>"
                + "<span class=\"zoo-card-cat " + esc(color) + "\">" + esc(catLabel(m.cat)) + "</span>"
@@ -218,21 +227,9 @@
                + paramsMeta
                + yearMeta
                + "</div>"
-               + "</button>";
+               + "</article>";
         }).join("");
-        // Replace contents of grid (avoid recreating the element)
-        var current = root.querySelector(".bd-zoo-target") || grid;
-        if (!current.classList.contains("zoo-grid")) {
-          // empty placeholder is in DOM — replace it with a fresh grid
-          var newGrid = document.createElement("div");
-          newGrid.className = "zoo-grid bd-zoo-target";
-          newGrid.innerHTML = html;
-          current.parentNode.replaceChild(newGrid, current);
-          grid = newGrid;
-        } else {
-          grid.classList.add("bd-zoo-target");
-          grid.innerHTML = html;
-        }
+        grid.innerHTML = html;
       }
       // footer count
       if (foot) {
@@ -243,7 +240,6 @@
       }
     }
 
-    grid.classList.add("bd-zoo-target");
     render();
   }
 

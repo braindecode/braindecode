@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import os.path as op
 
 from sphinx.util import logging
@@ -63,13 +64,20 @@ def _format_params(raw: str) -> str:
     return str(n)
 
 
-def generate_zoo_data(app=None, *_args) -> None:
-    """Sphinx ``config-inited`` hook. Writes ``docs/_static/zoo-data.js``."""
+def generate_zoo_data(app, *_args) -> None:
+    """Sphinx ``builder-inited`` hook.
+
+    Writes the generated ``zoo-data.js`` into the build's ``outdir/_static``
+    rather than into the source tree. This keeps `make html` from dirtying
+    tracked files in CI and on read-only source checkouts.
+    """
     here = op.dirname(op.abspath(__file__))
     csv_path = op.normpath(
         op.join(here, "..", "..", "braindecode", "models", "summary.csv")
     )
-    out_path = op.normpath(op.join(here, "..", "_static", "zoo-data.js"))
+    out_dir = op.join(app.outdir, "_static")
+    out_path = op.join(out_dir, "zoo-data.js")
+    os.makedirs(out_dir, exist_ok=True)
 
     if not op.exists(csv_path):
         # Don't fail the build if the CSV is missing — landing.js falls back
@@ -174,5 +182,8 @@ def _color_for(cid: str) -> str:
 
 
 def setup(app):
-    app.connect("config-inited", generate_zoo_data)
+    # `builder-inited` runs after `app.outdir` is established, unlike
+    # `config-inited`. We need outdir to write the generated JS into the
+    # build output rather than the source tree.
+    app.connect("builder-inited", generate_zoo_data)
     return {"version": "1.0", "parallel_read_safe": True}

@@ -69,3 +69,6 @@ venv/
 examples/model_building/lightning_logs/*
 
 thesis/
+
+# zoo-data.js is auto-generated into the build outdir by docs/sphinxext/zoo_data_gen.py
+docs/_static/zoo-data.js
