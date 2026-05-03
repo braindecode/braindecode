@@ -246,19 +246,24 @@ html[data-theme="dark"] .bd-landing {
 .bd-landing .hero-meta strong { color: var(--bd-ink); font-weight: 600; }
 .bd-landing .hero-meta .meta-item { display: inline-flex; align-items: center; gap: .4rem; }
 
-/* hero italic audience tagline (second lede) */
+/* second lede — plain body type so the keyword-rich audience pitch
+   ("neuroscientists … deep learning … neurophysiological data") reads
+   as part of the indexable intro paragraph rather than as decorative
+   typography. Crawlers don't penalize italic, but a uniform body block
+   keeps the first ~150 words coherent for snippet selection. */
 .bd-landing .hero-tagline-emphasis {
-  font-family: "Fraunces", Georgia, serif;
-  font-style: italic;
-  font-variation-settings: "opsz" 24, "SOFT" 30;
-  font-size: 1.05rem;
-  line-height: 1.5;
-  color: var(--bd-muted);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 1.02rem;
+  line-height: 1.55;
+  color: var(--bd-ink-2);
   max-width: 56ch;
   margin: 1.25rem 0 1rem;
   padding-top: .9rem;
   border-top: 1px dashed var(--bd-line);
 }
+.bd-landing .hero-tagline-emphasis strong { color: var(--bd-ink); font-weight: 600; }
 
 /* hero side-row mini-facts (3 numeric callouts under the install pill) */
 .bd-landing .hero-side-row {

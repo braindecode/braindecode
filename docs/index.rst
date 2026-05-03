@@ -62,8 +62,9 @@
             </span>
           </button>
           <p class="hero-tagline-emphasis">
-            For neuroscientists who want to work with deep learning, and deep
-            learning researchers who want to work with neurophysiological data.
+            For <strong>neuroscientists</strong> who want to work with deep learning,
+            and <strong>deep learning researchers</strong> who want to work with
+            neurophysiological data.
           </p>
 
           <div class="hero-meta">
