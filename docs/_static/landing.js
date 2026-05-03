@@ -70,19 +70,6 @@
     });
   }
 
-  function bdInit() {
-    var root = document.querySelector(".bd-landing");
-    if (!root) { return; }
-    [bdInitInstall, bdInitCodeStepper, bdInitZoo, bdInitDownloads].forEach(function (fn) {
-      try {
-        fn(root);
-      } catch (e) {
-        var w = window.console || { warn: function () {} };
-        w.warn("[bd-landing] " + (fn.name || "init") + " failed:", e);
-      }
-    });
-  }
-
   function bdInitDownloads(root) {
     var el = root.querySelector("#bd-downloads-num");
     if (!el) { return; }
@@ -241,6 +228,19 @@
     }
 
     render();
+  }
+
+  function bdInit() {
+    var root = document.querySelector(".bd-landing");
+    if (!root) { return; }
+    [bdInitInstall, bdInitCodeStepper, bdInitZoo, bdInitDownloads].forEach(function (fn) {
+      try {
+        fn(root);
+      } catch (e) {
+        var w = window.console || { warn: function () {} };
+        w.warn("[bd-landing] " + (fn.name || "init") + " failed:", e);
+      }
+    });
   }
 
   if (document.readyState === "loading") {

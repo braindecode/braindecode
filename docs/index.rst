@@ -385,7 +385,7 @@
             <div>
               <p class="section-eyebrow" style="margin:0 0 .55rem">Hugging Face Hub</p>
               <h2 class="section-title">Pretrained, on the Hub.</h2>
-              <p class="section-sub">Every Braindecode model implements <code class="bd-mono">from_pretrained</code> and <code class="bd-mono">push_to_hub</code> &mdash; the same unified API as <code class="bd-mono">transformers</code>. Models serialize as a <strong>config-driven JSON + safetensors</strong> pair (diffable, audit-friendly), and datasets ride on <strong>Zarr</strong> so push / pull stream chunks lazily without re-uploading the full archive.</p>
+              <p class="section-sub">Every Braindecode model implements <code class="bd-mono">from_pretrained</code> and <code class="bd-mono">push_to_hub</code>, the same unified API as <code class="bd-mono">transformers</code>. Models serialize as a <strong>config-driven JSON + safetensors</strong> pair (diffable, audit-friendly), and datasets ride on <strong>Zarr</strong> so push / pull stream chunks lazily without re-uploading the full archive.</p>
             </div>
           </div>
 
@@ -393,14 +393,14 @@
             <div class="bd-hf-card">
               <span class="bd-hf-tag">Models</span>
               <h3>Curated foundation weights</h3>
-              <p>BENDR, EEGPT, Signal-JEPA, LaBraM, BIOT and more &mdash; pretrained checkpoints stored as <strong>safetensors</strong> alongside a <strong>readable JSON config</strong>, so fine-tuning is reproducible and weight provenance stays auditable. Curated and benchmarked under <a href="https://huggingface.co/spaces/braindecode/OpenEEGBench" target="_blank" rel="noopener" class="feature-inline-link">OpenEEG-Bench</a>.</p>
+              <p>BENDR, EEGPT, Signal-JEPA, LaBraM, BIOT and more. Pretrained checkpoints stored as <strong>safetensors</strong> alongside a <strong>readable JSON config</strong>, so fine-tuning is reproducible and weight provenance stays auditable. Curated and benchmarked under <a href="https://huggingface.co/spaces/braindecode/OpenEEGBench" target="_blank" rel="noopener" class="feature-inline-link">OpenEEG-Bench</a>.</p>
               <code class="bd-hf-snippet">model = EEGPT.from_pretrained("braindecode/eegpt")</code>
               <a class="bd-hf-link" href="https://huggingface.co/braindecode" target="_blank" rel="noopener">Visit huggingface.co/braindecode →</a>
             </div>
             <div class="bd-hf-card">
               <span class="bd-hf-tag">Datasets</span>
               <h3>Share &amp; pull EEG datasets</h3>
-              <p>Push <code class="bd-mono">WindowsDataset</code>, <code class="bd-mono">EEGWindowsDataset</code> or <code class="bd-mono">RawDataset</code> objects to the Hub with one call. Storage is <strong>Zarr-backed</strong>, so subsequent pulls only fetch the chunks you read &mdash; ideal for multi-GB sessions over flaky links. EEGDash mirrors 700+ BIDS-ready EEG/MEG datasets the same way.</p>
+              <p>Push <code class="bd-mono">WindowsDataset</code>, <code class="bd-mono">EEGWindowsDataset</code> or <code class="bd-mono">RawDataset</code> objects to the Hub with one call. Storage is <strong>Zarr-backed</strong>, so subsequent pulls only fetch the chunks you read. Useful for multi-GB sessions over flaky links. EEGDash mirrors 700+ BIDS-ready EEG/MEG datasets the same way.</p>
               <code class="bd-hf-snippet">ds.push_to_hub("alice/bnci2014_001")</code>
               <a class="bd-hf-link" href="https://eegdash.org/" target="_blank" rel="noopener">Browse EEGDash datasets →</a>
             </div>
@@ -589,7 +589,7 @@
     <section class="section" id="ecosystem">
       <div class="container">
         <div class="section-head">
-          <div class="section-eyebrow">In the ecosystem</div>
+          <div class="section-eyebrow">In good company</div>
           <h2 class="section-title">Built and shared <em>with neighbors.</em></h2>
           <p class="section-sub">Open neural decoding doesn't live alone. Braindecode plugs into a wider open-source neuroscience stack, ships sibling projects that round out the data story, and is built on top of by other research toolkits.</p>
         </div>
