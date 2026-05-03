@@ -54,36 +54,46 @@
     { id: "spd",          label: "SPD",            color: "purple" },
   ];
 
-  // Defensive HTML-escape for any field interpolated into innerHTML below.
-  // Today the data is generated from an in-repo CSV, so escaping is belt-
-  // and-braces — but the cost is negligible and it stops a future
-  // contributor from accidentally letting tag-like text break the layout.
-  var ESC_MAP = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
+  // Defensive HTML-escape for any field interpolated below. The lookup uses
+  // a switch (not a plain-object index) to avoid Codacy's
+  // "Generic Object Injection Sink" rule on dynamic bracket-access.
   function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return ESC_MAP[c]; });
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      switch (c) {
+        case "&":  return "&amp;";
+        case "<":  return "&lt;";
+        case ">":  return "&gt;";
+        case "\"": return "&quot;";
+        case "'":  return "&#39;";
+        default:   return c;
+      }
+    });
   }
 
   function bdInit() {
     var root = document.querySelector(".bd-landing");
-    if (!root) return;
+    if (!root) { return; }
     [bdInitInstall, bdInitCodeStepper, bdInitZoo, bdInitDownloads].forEach(function (fn) {
-      try { fn(root); }
-      catch (e) { (window.console || {warn: function () {}}).warn("[bd-landing] " + fn.name + " failed:", e); }
+      try {
+        fn(root);
+      } catch (e) {
+        var w = window.console || { warn: function () {} };
+        w.warn("[bd-landing] " + (fn.name || "init") + " failed:", e);
+      }
     });
   }
 
   function bdInitDownloads(root) {
     var el = root.querySelector("#bd-downloads-num");
-    if (!el) return;
+    if (!el) { return; }
     var doFetch = function () {
       // shields.io proxies pepy.tech and returns CORS-friendly JSON.
       fetch("https://img.shields.io/pepy/dt/braindecode.json")
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
-          if (!j || !j.value) return;
+          if (!j || !j.value) { return; }
           // value is "894k" / "1.2M" — uppercase the unit for visual consistency
-          var v = String(j.value).replace(/k$/, "K").replace(/m$/, "M");
-          el.textContent = v;
+          el.textContent = String(j.value).replace(/k$/, "K").replace(/m$/, "M");
         })
         .catch(function () { /* keep static fallback */ });
     };
@@ -95,15 +105,15 @@
         obs.disconnect();
         doFetch();
       }
-    }, {rootMargin: "200px"});
+    }, { rootMargin: "200px" });
     io.observe(el);
   }
 
   function bdInitInstall(root) {
     var btn = root.querySelector(".hero-install");
-    if (!btn) return;
+    if (!btn) { return; }
     btn.addEventListener("click", function () {
-      if (!navigator.clipboard) return;
+      if (!navigator.clipboard) { return; }
       navigator.clipboard.writeText("pip install braindecode").then(function () {
         btn.classList.add("is-copied");
         // CSS toggles between .icon-clipboard and .icon-check on .is-copied
@@ -115,7 +125,7 @@
   function bdInitCodeStepper(root) {
     var steps = root.querySelectorAll(".code-step");
     var lines = root.querySelectorAll(".code-content > div[data-step]");
-    if (!steps.length || !lines.length) return;
+    if (!steps.length || !lines.length) { return; }
     var setActive = function (idx) {
       steps.forEach(function (s, i) { s.classList.toggle("active", i === idx); });
       lines.forEach(function (l) {
@@ -132,12 +142,20 @@
     var toolbar = root.querySelector(".zoo-toolbar");
     var grid = root.querySelector(".zoo-grid");
     var foot = root.querySelector(".zoo-foot");
-    if (!toolbar || !grid) return;
+    if (!toolbar || !grid) { return; }
 
     var state = { cat: "all", q: "" };
 
     var counts = { all: BD_MODELS.length };
-    BD_MODELS.forEach(function (m) { counts[m.cat] = (counts[m.cat] || 0) + 1; });
+    BD_MODELS.forEach(function (m) {
+      counts[m.cat] = (counts[m.cat] || 0) + 1;
+    });
+
+    // Cache category metadata by id so render() doesn't re-scan the array.
+    var catById = {};
+    BD_CATEGORIES.forEach(function (c) { catById[c.id] = c; });
+    function catLabel(id) { var c = catById[id]; return c ? c.label : id; }
+    function catColor(id) { var c = catById[id]; return c ? c.color : ""; }
 
     // Build chips
     var searchEl = toolbar.querySelector(".zoo-search");
@@ -146,7 +164,7 @@
       btn.type = "button";
       btn.className = "zoo-chip" + (c.id === "all" ? " active" : "");
       btn.dataset.cat = c.id;
-      btn.innerHTML = c.label + ' <span class="chip-count">' + (counts[c.id] || 0) + '</span>';
+      btn.innerHTML = esc(c.label) + " <span class=\"chip-count\">" + (counts[c.id] || 0) + "</span>";
       btn.addEventListener("click", function () { state.cat = c.id; render(); });
       toolbar.insertBefore(btn, searchEl);
     });
@@ -157,9 +175,6 @@
       input.addEventListener("input", function (e) { state.q = e.target.value; render(); });
     }
 
-    function catLabel(id) { var c = BD_CATEGORIES.find(function (x) { return x.id === id; }); return c ? c.label : id; }
-    function catColor(id) { var c = BD_CATEGORIES.find(function (x) { return x.id === id; }); return c ? c.color : ""; }
-
     function render() {
       // chip active state
       toolbar.querySelectorAll(".zoo-chip").forEach(function (b) {
@@ -168,13 +183,13 @@
       // filter
       var q = state.q.toLowerCase();
       var filtered = BD_MODELS.filter(function (m) {
-        if (state.cat !== "all" && m.cat !== state.cat) return false;
-        if (q && !((m.name + " " + m.paper + " " + m.desc).toLowerCase().includes(q))) return false;
+        if (state.cat !== "all" && m.cat !== state.cat) { return false; }
+        if (q && !((m.name + " " + m.paper + " " + m.desc).toLowerCase().includes(q))) { return false; }
         return true;
       });
       // render cards
       if (filtered.length === 0) {
-        grid.outerHTML = '<div class="zoo-empty bd-zoo-target">No models match — try another filter or query.</div>';
+        grid.outerHTML = "<div class=\"zoo-empty bd-zoo-target\">No models match — try another filter or query.</div>";
       } else {
         var html = filtered.map(function (m) {
           var color = catColor(m.cat);
@@ -183,21 +198,27 @@
           var paper = m.paper ? esc(m.paper) : "";
           var params = m.params ? esc(m.params) : "";
           var year = m.year ? esc(m.year) : "";
-          var paperLine = paper ? '<span class="zoo-card-paper">' + paper + '</span>' : "";
-          var yearMeta = year ? '<span>·</span><span>' + year + '</span>' : "";
-          var paramsMeta = params ? '<span><b>' + params + '</b> params</span>' : "";
-          return '<button class="zoo-card" type="button">'
-               + '<div class="zoo-card-head">'
-               + '<span class="zoo-card-name">' + name + '</span>'
-               + '<span class="zoo-card-cat ' + color + '">' + esc(catLabel(m.cat)) + '</span>'
-               + '</div>'
+          var paperLine = paper
+            ? "<span class=\"zoo-card-paper\">" + paper + "</span>"
+            : "";
+          var yearMeta = year
+            ? "<span>·</span><span>" + year + "</span>"
+            : "";
+          var paramsMeta = params
+            ? "<span><b>" + params + "</b> params</span>"
+            : "";
+          return "<button class=\"zoo-card\" type=\"button\">"
+               + "<div class=\"zoo-card-head\">"
+               + "<span class=\"zoo-card-name\">" + name + "</span>"
+               + "<span class=\"zoo-card-cat " + esc(color) + "\">" + esc(catLabel(m.cat)) + "</span>"
+               + "</div>"
                + paperLine
-               + '<span class="zoo-card-desc">' + desc + '</span>'
-               + '<div class="zoo-card-meta">'
+               + "<span class=\"zoo-card-desc\">" + desc + "</span>"
+               + "<div class=\"zoo-card-meta\">"
                + paramsMeta
                + yearMeta
-               + '</div>'
-               + '</button>';
+               + "</div>"
+               + "</button>";
         }).join("");
         // Replace contents of grid (avoid recreating the element)
         var current = root.querySelector(".bd-zoo-target") || grid;
@@ -216,7 +237,9 @@
       // footer count
       if (foot) {
         var span = foot.querySelector(".zoo-foot-count");
-        if (span) span.textContent = filtered.length + " of " + BD_MODELS.length + " shown · curated subset";
+        if (span) {
+          span.textContent = filtered.length + " of " + BD_MODELS.length + " shown · curated subset";
+        }
       }
     }
 
