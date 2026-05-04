@@ -121,7 +121,6 @@
                 <circle cx="512" cy="186" r="7"/>
               </g>
               <circle class="bd-readout" cx="556" cy="158" r="10" fill="#b46a2c" filter="url(#bd-glow)"/>
-              <text class="bd-readout-label" x="556" y="192" text-anchor="middle">right hand</text>
             </g>
           </svg>
         </div>
