@@ -1928,16 +1928,25 @@ html[data-theme="dark"] .bd-landing .logo-strip-logos img {
   color: var(--bd-warm);
 }
 
+/* Solid filled pill instead of `background-clip: text` gradient. The
+   gradient-text trick rendered the word as invisible in browsers that
+   silently drop background-clip on inline elements (older Firefox /
+   some embedded WebKits), and the visual didn't actually resemble
+   Meta's wordmark anyway — a flat blue chip is more legible and
+   universally renders. */
 .bd-landing .ecosystem-meta-mark {
-  font-family: -apple-system, "Segoe UI", "Inter", sans-serif;
-  font-weight: 900;
-  font-size: 0.95rem;
-  letter-spacing: -0.03em;
-  background: linear-gradient(90deg, #0867f1 0%, #0fb3ff 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, #0064e0 0%, #0fb3ff 100%);
+  padding: 0.18rem 0.5rem;
+  border-radius: 3px;
+  line-height: 1.4;
+  text-transform: none;
 }
 
 .bd-landing .ecosystem-name {
