@@ -198,7 +198,7 @@
       if (!foot) { return; }
       var span = foot.querySelector(".zoo-foot-count");
       if (!span) { return; }
-      span.textContent = filteredLen + " of " + BD_MODELS.length + " shown · curated subset";
+      span.textContent = filteredLen + " of " + BD_MODELS.length + " shown";
     }
 
     function paintEmpty() {

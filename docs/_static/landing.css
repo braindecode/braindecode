@@ -2,7 +2,6 @@
    Braindecode — Landing redesign (ported from claude.ai/design
    prototype "Braindecode Landing.html").
 
-/* stylelint-disable no-descending-specificity */
    Editorial scientific aesthetic.
    Type: Inter (body) + JetBrains Mono (code/labels) + Fraunces (display)
    Palette: warm paper, slate ink, brand blue, warm amber accent.
@@ -11,6 +10,8 @@
    the rest of the Sphinx site. Custom properties live on .bd-landing
    itself rather than :root for the same reason.
    ========================================================= */
+
+/* stylelint-disable no-descending-specificity */
 
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap");
 
