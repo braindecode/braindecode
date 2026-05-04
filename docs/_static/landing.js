@@ -54,20 +54,20 @@
     { id: "spd",          label: "SPD",            color: "purple" },
   ];
 
-  // Defensive HTML-escape for any field interpolated below. The lookup uses
-  // a switch (not a plain-object index) to avoid Codacy's
-  // "Generic Object Injection Sink" rule on dynamic bracket-access.
+  // Defensive HTML-escape. Map.get keeps cyclomatic complexity low and
+  // sidesteps Codacy's "Generic Object Injection Sink" warning on plain
+  // dynamic-key bracket access.
+  var ESC_MAP = new Map([
+    ["&", "&amp;"],
+    ["<", "&lt;"],
+    [">", "&gt;"],
+    ["\"", "&quot;"],
+    ["'", "&#39;"],
+  ]);
+  function escOne(c) { return ESC_MAP.get(c) || c; }
   function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
-      switch (c) {
-        case "&":  return "&amp;";
-        case "<":  return "&lt;";
-        case ">":  return "&gt;";
-        case "\"": return "&quot;";
-        case "'":  return "&#39;";
-        default:   return c;
-      }
-    });
+    var str = s == null ? "" : String(s);
+    return str.replace(/[&<>"']/g, escOne);
   }
 
   function bdInitDownloads(root) {
@@ -148,6 +148,17 @@
     function catLabel(id) { var c = catById.get(id); return c ? c.label : id; }
     function catColor(id) { var c = catById.get(id); return c ? c.color : ""; }
 
+    // Predicates split out of filter() so each helper stays under
+    // Codacy's cyclomatic-complexity-of-4 ceiling.
+    function matchesCat(m) {
+      return state.cat === "all" || m.cat === state.cat;
+    }
+    function matchesQuery(m, q) {
+      if (!q) { return true; }
+      var hay = (m.name + " " + m.paper + " " + m.desc).toLowerCase();
+      return hay.includes(q);
+    }
+
     function render() {
       // chip active state
       toolbar.querySelectorAll(".zoo-chip").forEach(function (b) {
@@ -156,9 +167,7 @@
       // filter
       var q = state.q.toLowerCase();
       var filtered = BD_MODELS.filter(function (m) {
-        if (state.cat !== "all" && m.cat !== state.cat) { return false; }
-        if (q && !((m.name + " " + m.paper + " " + m.desc).toLowerCase().includes(q))) { return false; }
-        return true;
+        return matchesCat(m) && matchesQuery(m, q);
       });
       // render cards. Keep the .zoo-grid node stable and toggle the
       // .is-empty modifier instead of swapping the element via outerHTML
@@ -221,7 +230,14 @@
       btn.type = "button";
       btn.className = "zoo-chip" + (c.id === "all" ? " active" : "");
       btn.dataset.cat = c.id;
-      btn.innerHTML = esc(c.label) + " <span class=\"chip-count\">" + (counts.get(c.id) || 0) + "</span>";
+      // Build the chip via DOM nodes (textContent / appendChild) instead
+      // of innerHTML — Codacy's "Unsafe assignment to innerHTML" rule
+      // doesn't trip and this is faster than parsing an HTML string.
+      btn.appendChild(document.createTextNode(c.label + " "));
+      var countSpan = document.createElement("span");
+      countSpan.className = "chip-count";
+      countSpan.textContent = String(counts.get(c.id) || 0);
+      btn.appendChild(countSpan);
       btn.addEventListener("click", function () { state.cat = c.id; render(); });
       toolbar.insertBefore(btn, searchEl);
     });
@@ -242,7 +258,7 @@
       try {
         fn(root);
       } catch (e) {
-        var w = window.console || { warn: function () {} };
+        var w = window.console || { warn() {} };
         w.warn("[bd-landing] " + (fn.name || "init") + " failed:", e);
       }
     });
