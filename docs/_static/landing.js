@@ -4,8 +4,19 @@
   // Model zoo data: prefer the build-time auto-generated list (sourced from
   // braindecode/models/summary.csv via docs/sphinxext/zoo_data_gen.py).
   // Fall back to the inline curated list so this file still works when
-  // served standalone.
-  var BD_MODELS = (typeof window !== "undefined" && window.BD_MODELS) || [
+  // served standalone. Each accessor lives in its own function to keep
+  // the IIFE body's cyclomatic complexity below Codacy's 4 limit (the
+  // `&&`/`||` short-circuits would otherwise inflate it).
+  function injectedModels() {
+    if (typeof window === "undefined") { return null; }
+    return window.BD_MODELS || null;
+  }
+  function injectedCategories() {
+    if (typeof window === "undefined") { return null; }
+    return window.BD_CATEGORIES || null;
+  }
+
+  var BD_MODELS = injectedModels() || [
     { name: "EEGNetv4",          cat: "convolution",   year: 2018, params: "3.7 K",  paper: "Lawhern et al., 2018",          desc: "Compact depthwise + separable conv classifier" },
     { name: "ShallowFBCSPNet",   cat: "convolution",   year: 2017, params: "47 K",   paper: "Schirrmeister et al., 2017",    desc: "Filter-bank-CSP-style shallow ConvNet" },
     { name: "Deep4Net",          cat: "convolution",   year: 2017, params: "284 K",  paper: "Schirrmeister et al., 2017",    desc: "Four-block deep ConvNet for raw EEG" },
@@ -41,7 +52,7 @@
     { name: "SPDNet",            cat: "spd",           year: 2017, params: "8 K",    paper: "Huang et al., 2017",            desc: "SPD manifold network" },
   ];
 
-  var BD_CATEGORIES = (typeof window !== "undefined" && window.BD_CATEGORIES) || [
+  var BD_CATEGORIES = injectedCategories() || [
     { id: "all",          label: "All",            color: "gray" },
     { id: "convolution",  label: "Convolution",    color: "" },
     { id: "attention",    label: "Attention",      color: "warm" },
