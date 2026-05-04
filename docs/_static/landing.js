@@ -54,22 +54,6 @@
     { id: "spd",          label: "SPD",            color: "purple" },
   ];
 
-  // Defensive HTML-escape. Map.get keeps cyclomatic complexity low and
-  // sidesteps Codacy's "Generic Object Injection Sink" warning on plain
-  // dynamic-key bracket access.
-  var ESC_MAP = new Map([
-    ["&", "&amp;"],
-    ["<", "&lt;"],
-    [">", "&gt;"],
-    ["\"", "&quot;"],
-    ["'", "&#39;"],
-  ]);
-  function escOne(c) { return ESC_MAP.get(c) || c; }
-  function esc(s) {
-    var str = s == null ? "" : String(s);
-    return str.replace(/[&<>"']/g, escOne);
-  }
-
   function bdInitDownloads(root) {
     var el = root.querySelector("#bd-downloads-num");
     if (!el) { return; }
@@ -159,67 +143,76 @@
       return hay.includes(q);
     }
 
-    function render() {
-      // chip active state
+    // Helper: build one zoo card as a DOM tree (no innerHTML).
+    function makeChild(tag, className, textNode) {
+      var el = document.createElement(tag);
+      if (className) { el.className = className; }
+      if (textNode) { el.appendChild(document.createTextNode(textNode)); }
+      return el;
+    }
+    function makeMetaSpan(text) {
+      return makeChild("span", null, text);
+    }
+    function makeCard(m) {
+      var card = makeChild("article", "zoo-card");
+      var head = makeChild("div", "zoo-card-head");
+      head.appendChild(makeChild("span", "zoo-card-name", m.name));
+      head.appendChild(makeChild("span", "zoo-card-cat " + catColor(m.cat), catLabel(m.cat)));
+      card.appendChild(head);
+      if (m.paper) { card.appendChild(makeChild("span", "zoo-card-paper", m.paper)); }
+      card.appendChild(makeChild("span", "zoo-card-desc", m.desc));
+      var meta = makeChild("div", "zoo-card-meta");
+      if (m.params) {
+        var pSpan = document.createElement("span");
+        var b = makeChild("b", null, String(m.params));
+        pSpan.appendChild(b);
+        pSpan.appendChild(document.createTextNode(" params"));
+        meta.appendChild(pSpan);
+      }
+      if (m.year) {
+        meta.appendChild(makeMetaSpan("·"));
+        meta.appendChild(makeMetaSpan(String(m.year)));
+      }
+      card.appendChild(meta);
+      return card;
+    }
+
+    function refreshChips() {
       toolbar.querySelectorAll(".zoo-chip").forEach(function (b) {
         b.classList.toggle("active", b.dataset.cat === state.cat);
       });
-      // filter
+    }
+
+    function refreshFooter(filteredLen) {
+      if (!foot) { return; }
+      var span = foot.querySelector(".zoo-foot-count");
+      if (!span) { return; }
+      span.textContent = filteredLen + " of " + BD_MODELS.length + " shown · curated subset";
+    }
+
+    function paintEmpty() {
+      grid.classList.add("is-empty");
+      while (grid.firstChild) { grid.removeChild(grid.firstChild); }
+      grid.appendChild(makeChild("div", "zoo-empty", "No models match — try another filter or query."));
+    }
+
+    function paintCards(filtered) {
+      grid.classList.remove("is-empty");
+      var frag = document.createDocumentFragment();
+      filtered.forEach(function (m) { frag.appendChild(makeCard(m)); });
+      while (grid.firstChild) { grid.removeChild(grid.firstChild); }
+      grid.appendChild(frag);
+    }
+
+    function render() {
+      refreshChips();
       var q = state.q.toLowerCase();
       var filtered = BD_MODELS.filter(function (m) {
         return matchesCat(m) && matchesQuery(m, q);
       });
-      // render cards. Keep the .zoo-grid node stable and toggle the
-      // .is-empty modifier instead of swapping the element via outerHTML
-      // (which would leave the cached `grid` reference detached and make
-      // subsequent renders harder to reason about).
-      if (filtered.length === 0) {
-        grid.classList.add("is-empty");
-        grid.innerHTML = "<div class=\"zoo-empty\">No models match — try another filter or query.</div>";
-      } else {
-        grid.classList.remove("is-empty");
-        var html = filtered.map(function (m) {
-          var color = catColor(m.cat);
-          var name = esc(m.name);
-          var desc = esc(m.desc);
-          var paper = m.paper ? esc(m.paper) : "";
-          var params = m.params ? esc(m.params) : "";
-          var year = m.year ? esc(m.year) : "";
-          var paperLine = paper
-            ? "<span class=\"zoo-card-paper\">" + paper + "</span>"
-            : "";
-          var yearMeta = year
-            ? "<span>·</span><span>" + year + "</span>"
-            : "";
-          var paramsMeta = params
-            ? "<span><b>" + params + "</b> params</span>"
-            : "";
-          // Cards use <article> (not <button>): they are presentational
-          // model summaries, not interactive controls. Wrapping them in a
-          // <button> created an a11y mismatch — keyboard/SR users got an
-          // activatable element that did nothing.
-          return "<article class=\"zoo-card\">"
-               + "<div class=\"zoo-card-head\">"
-               + "<span class=\"zoo-card-name\">" + name + "</span>"
-               + "<span class=\"zoo-card-cat " + esc(color) + "\">" + esc(catLabel(m.cat)) + "</span>"
-               + "</div>"
-               + paperLine
-               + "<span class=\"zoo-card-desc\">" + desc + "</span>"
-               + "<div class=\"zoo-card-meta\">"
-               + paramsMeta
-               + yearMeta
-               + "</div>"
-               + "</article>";
-        }).join("");
-        grid.innerHTML = html;
-      }
-      // footer count
-      if (foot) {
-        var span = foot.querySelector(".zoo-foot-count");
-        if (span) {
-          span.textContent = filtered.length + " of " + BD_MODELS.length + " shown · curated subset";
-        }
-      }
+      if (filtered.length === 0) { paintEmpty(); }
+      else { paintCards(filtered); }
+      refreshFooter(filtered.length);
     }
 
     // Build chips (now that render() is defined above us so the click
@@ -269,4 +262,4 @@
   } else {
     bdInit();
   }
-})();
+}());

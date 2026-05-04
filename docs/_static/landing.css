@@ -2,6 +2,7 @@
    Braindecode — Landing redesign (ported from claude.ai/design
    prototype "Braindecode Landing.html").
 
+/* stylelint-disable no-descending-specificity */
    Editorial scientific aesthetic.
    Type: Inter (body) + JetBrains Mono (code/labels) + Fraunces (display)
    Palette: warm paper, slate ink, brand blue, warm amber accent.
@@ -42,7 +43,7 @@
 }
 
 .bd-landing {
-  --bd-paper: #ffffff;
+  --bd-paper: #fff;
   --bd-paper-2: #f6f7f8;
   --bd-ink: #14181f;
   --bd-ink-2: #2a323d;
@@ -56,6 +57,7 @@
   --bd-warm: #b46a2c;
   --bd-warm-soft: #f3e3d2;
   --bd-good: #4f7d5a;
+
   /* hover/highlight accents — alias of brand for consistent theming */
   --bd-accent: var(--bd-brand);
   --bd-accent-soft: var(--bd-brand-soft);
@@ -105,6 +107,7 @@ html[data-theme="dark"] .bd-landing {
   color: inherit;
   text-decoration: none;
 }
+
 /* Override the site-wide `--text-align: justify` from style.css. Justify
    in narrow column body copy creates ugly inter-word gaps in modern
    browsers (no proper hyphenation), and this landing reads like a
@@ -124,6 +127,7 @@ html[data-theme="dark"] .bd-landing {
   width: min(100% - 2.5rem, 1200px);
   margin: 0 auto;
 }
+
 /* ---------- HERO ---------- */
 .bd-landing .hero {
   position: relative;
@@ -443,6 +447,7 @@ html[data-theme="dark"] .bd-landing {
 
 .bd-landing .hero-brain-img {
   filter: drop-shadow(0 4px 12px rgba(31, 74, 115, 0.22));
+
   /* Source PNG has a flat medial right edge; soften it so the EEG traces
      appear to emerge from inside the brain rather than from a hard cut. */
   -webkit-mask-image: linear-gradient(
@@ -453,6 +458,7 @@ html[data-theme="dark"] .bd-landing {
   );
   mask-image: linear-gradient(to right, black 0%, black 70%, transparent 100%);
 }
+
 /* readout label — directly tags the highlighted output node */
 .bd-landing .bd-readout-label {
   font-family: "JetBrains Mono", monospace;
@@ -521,12 +527,12 @@ html[data-theme="dark"] .bd-landing {
   }
 
   45% {
-    transform: translateX(0px);
+    transform: translateX(0);
     opacity: 1;
   }
 
   55% {
-    transform: translateX(0px);
+    transform: translateX(0);
     opacity: 1;
   }
 
@@ -655,6 +661,7 @@ html[data-theme="dark"] .bd-landing {
     transform: scale(1);
     opacity: 0.95;
   }
+
   10%,
   30% {
     transform: scale(1.35);
@@ -729,6 +736,7 @@ html[data-theme="dark"] .bd-landing {
   color: var(--bd-accent);
   letter-spacing: -0.01em;
 }
+
 /* "live" download stat with pulsing dot */
 .bd-landing .bd-live-stat {
   position: relative;
