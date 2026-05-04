@@ -15,6 +15,8 @@ junit-results.xml
 *.egg*
 *.tmproj
 *.png
+!docs/_static/*.png
+!docs/_static/**/*.png
 *.dat
 .DS_Store
 auto_examples
@@ -67,3 +69,6 @@ venv/
 examples/model_building/lightning_logs/*
 
 thesis/
+
+# zoo-data.js is auto-generated into the build outdir by docs/sphinxext/zoo_data_gen.py
+docs/_static/zoo-data.js
