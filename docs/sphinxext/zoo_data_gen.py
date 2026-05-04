@@ -80,9 +80,19 @@ def generate_zoo_data(app, *_args) -> None:
     os.makedirs(out_dir, exist_ok=True)
 
     if not op.exists(csv_path):
-        # Don't fail the build if the CSV is missing — landing.js falls back
-        # to its inline list. The build still works for partial trees.
-        logger.warning("zoo_data_gen: %s not found, skipping", csv_path)
+        # Don't fail the build if the CSV is missing. landing.js falls back
+        # to its inline list, but `html_js_files` always emits the
+        # `<script src="_static/zoo-data.js">` tag — write a minimal stub
+        # so the asset reference doesn't 404.
+        logger.warning("zoo_data_gen: %s not found, writing empty stub", csv_path)
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(
+                "// Auto-generated stub: braindecode/models/summary.csv was\n"
+                "// not found at build time. landing.js will fall back to\n"
+                "// its inline curated list.\n"
+                "window.BD_MODELS = [];\n"
+                "window.BD_CATEGORIES = [];\n"
+            )
         return
 
     # Skip the rebuild if zoo-data.js is already up to date with the CSV

@@ -42,6 +42,25 @@
   display: none !important;
 }
 
+/* Visually hide the Sphinx-generated <h1> on the landing page. Sphinx
+   wraps the page in `<section><h1>...</h1>...</section>`, so the SEO
+   H1 is the first <h1> directly inside .bd-landing > section. We keep
+   it in the DOM for screen readers and crawlers but pull it off-screen
+   with the standard sr-only clip-path. The visible hero headline
+   uses `.hero-title` so it isn't matched. */
+.bd-landing > section > h1:first-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .bd-landing {
   --bd-paper: #fff;
   --bd-paper-2: #f6f7f8;
@@ -1407,17 +1426,16 @@ html[data-theme="dark"] .bd-landing .logo-strip-logos img {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  cursor: pointer;
-  transition: all 0.12s;
+  transition: border-color 0.12s, box-shadow 0.12s;
   text-align: left;
   font-family: inherit;
   color: inherit;
 }
 
+/* Subtle border tint on hover; no translate / cursor change because
+   .zoo-card is a presentational <article>, not an interactive control. */
 .bd-landing .zoo-card:hover {
-  border-color: var(--bd-brand);
-  transform: translateY(-2px);
-  box-shadow: var(--bd-shadow-md);
+  border-color: var(--bd-line-2);
 }
 
 .bd-landing .zoo-card-head {

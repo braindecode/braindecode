@@ -367,13 +367,12 @@ html_static_path = ["_static"]
 html_extra_path = ["_extra"]
 html_css_files = [
     "style.css",
-    "landing.css",
 ]
-# defer = doesn't block parsing; preserves order
-html_js_files = [
-    ("zoo-data.js", {"defer": "defer"}),
-    ("landing.js", {"defer": "defer"}),
-]
+# Note: landing.css and the landing JS files (zoo-data.js, landing.js)
+# are *not* registered globally — they only ship on the index page,
+# injected from `_templates/layout.html` under `pagename == 'index'`.
+# Loading them site-wide added ~2k lines of CSS + a third-party
+# Google-Fonts request to every doc page for no benefit.
 
 # Favicon for the site
 html_favicon = "_static/braindecode_symbol.png"
@@ -481,15 +480,19 @@ latex_documents = [
         "manual",
     ),
 ]
-html_baseurl = "https://braindecode.org/"
+# Master/dev builds publish under /dev/ on GitHub Pages (see
+# .github/workflows/docs.yml `destination_dir: dev`). The baseurl,
+# OG canonical, and the sitemap location must match the actual deploy
+# path or crawlers will end up on 404s.
+html_baseurl = "https://braindecode.org/dev/"
 sitemap_filename = "sitemap.xml"
 # Flat URLs (no /en/{version}/) — same pattern as MOABB.
 sitemap_url_scheme = "{link}"
 
 # --- Open Graph / Twitter Card / meta description ---
-ogp_site_url = "https://braindecode.org/"
+ogp_site_url = "https://braindecode.org/dev/"
 ogp_site_name = "Braindecode"
-ogp_image = "https://braindecode.org/_static/braindecode_long.svg"
+ogp_image = "https://braindecode.org/dev/_static/braindecode_long.svg"
 ogp_image_alt = (
     "Braindecode — open-source PyTorch toolbox for decoding raw EEG, ECoG and MEG"
 )

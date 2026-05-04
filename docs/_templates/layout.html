@@ -16,6 +16,14 @@
   {{ super() }}
 
   {% if pagename == 'index' %}
+  {# Landing-only assets. Injected here (not in conf.py's
+     html_css_files / html_js_files) so they don't ship on every doc
+     page — landing.css is ~2k lines and pulls in Google Fonts, and
+     landing.js wires interactions only the landing page uses. #}
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="{{ pathto('_static/landing.css', 1) }}">
+  <script src="{{ pathto('_static/zoo-data.js', 1) }}" defer></script>
+  <script src="{{ pathto('_static/landing.js', 1) }}" defer></script>
   {# Tag the document so landing.css can target it without relying on
      `:has(.bd-landing)` (browsers without :has() would otherwise miss
      the page-level overrides and render the chrome twice). #}

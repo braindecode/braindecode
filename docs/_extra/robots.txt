@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /
 
-# Point crawlers to the generated sitemap (lives at the site root)
-Sitemap: https://braindecode.org/sitemap.xml
+# Point crawlers to the generated sitemap. Master/dev builds deploy
+# under /dev/ on GitHub Pages, so the sitemap lives there.
+Sitemap: https://braindecode.org/dev/sitemap.xml
