@@ -133,34 +133,20 @@
 
     var state = { cat: "all", q: "" };
 
-    var counts = { all: BD_MODELS.length };
+    // Use Map (not plain object) for dynamic-key lookups so Codacy's
+    // "Variable Assigned to Object Injection Sink" rule doesn't trip
+    // on `counts[m.cat]` / `catById[id]` style access.
+    var counts = new Map();
+    counts.set("all", BD_MODELS.length);
     BD_MODELS.forEach(function (m) {
-      counts[m.cat] = (counts[m.cat] || 0) + 1;
+      counts.set(m.cat, (counts.get(m.cat) || 0) + 1);
     });
 
     // Cache category metadata by id so render() doesn't re-scan the array.
-    var catById = {};
-    BD_CATEGORIES.forEach(function (c) { catById[c.id] = c; });
-    function catLabel(id) { var c = catById[id]; return c ? c.label : id; }
-    function catColor(id) { var c = catById[id]; return c ? c.color : ""; }
-
-    // Build chips
-    var searchEl = toolbar.querySelector(".zoo-search");
-    BD_CATEGORIES.forEach(function (c) {
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "zoo-chip" + (c.id === "all" ? " active" : "");
-      btn.dataset.cat = c.id;
-      btn.innerHTML = esc(c.label) + " <span class=\"chip-count\">" + (counts[c.id] || 0) + "</span>";
-      btn.addEventListener("click", function () { state.cat = c.id; render(); });
-      toolbar.insertBefore(btn, searchEl);
-    });
-
-    // Wire search
-    var input = root.querySelector(".zoo-search input");
-    if (input) {
-      input.addEventListener("input", function (e) { state.q = e.target.value; render(); });
-    }
+    var catById = new Map();
+    BD_CATEGORIES.forEach(function (c) { catById.set(c.id, c); });
+    function catLabel(id) { var c = catById.get(id); return c ? c.label : id; }
+    function catColor(id) { var c = catById.get(id); return c ? c.color : ""; }
 
     function render() {
       // chip active state
@@ -225,6 +211,25 @@
           span.textContent = filtered.length + " of " + BD_MODELS.length + " shown · curated subset";
         }
       }
+    }
+
+    // Build chips (now that render() is defined above us so the click
+    // handler doesn't reference an undeclared name).
+    var searchEl = toolbar.querySelector(".zoo-search");
+    BD_CATEGORIES.forEach(function (c) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "zoo-chip" + (c.id === "all" ? " active" : "");
+      btn.dataset.cat = c.id;
+      btn.innerHTML = esc(c.label) + " <span class=\"chip-count\">" + (counts.get(c.id) || 0) + "</span>";
+      btn.addEventListener("click", function () { state.cat = c.id; render(); });
+      toolbar.insertBefore(btn, searchEl);
+    });
+
+    // Wire search
+    var input = root.querySelector(".zoo-search input");
+    if (input) {
+      input.addEventListener("input", function (e) { state.q = e.target.value; render(); });
     }
 
     render();
