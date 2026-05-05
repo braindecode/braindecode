@@ -289,6 +289,11 @@ Requirements
 
 Bugs
 =====
+- Improve the error message when :meth:`from_pretrained` or :meth:`push_to_hub`
+  are called without the optional ``huggingface_hub`` dependency installed.
+  Users now get a clear :class:`ImportError` with installation instructions
+  (``pip install 'braindecode[hub]'``) instead of an ``AttributeError``.
+  (:gh:`1024` by `@copilot`_)
 - Fix the documentation header "Cite Braindecode" announcement link: it used a bare
   ``cite.html`` URL, which browsers resolve relative to the current page path and led
   to 404s (for example from ``install/install.html``). The link is now built with

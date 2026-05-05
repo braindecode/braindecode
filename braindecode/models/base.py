@@ -34,7 +34,24 @@ HAS_HF_HUB = huggingface_hub is not False
 
 
 class _BaseHubMixin:
-    pass
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        raise ImportError(
+            f"{cls.__name__}.from_pretrained() requires the `huggingface_hub` "
+            "package. Install it with:\n\n"
+            "    pip install 'braindecode[hub]'\n\n"
+            "Note: on some shells (e.g. Zsh on macOS) you need the quotes around "
+            "'braindecode[hub]'."
+        )
+
+    def push_to_hub(self, *args, **kwargs):
+        raise ImportError(
+            f"{self.__class__.__name__}.push_to_hub() requires the `huggingface_hub` "
+            "package. Install it with:\n\n"
+            "    pip install 'braindecode[hub]'\n\n"
+            "Note: on some shells (e.g. Zsh on macOS) you need the quotes around "
+            "'braindecode[hub]'."
+        )
 
 
 # Define base class for hub mixin
