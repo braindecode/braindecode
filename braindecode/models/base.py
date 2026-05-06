@@ -39,7 +39,7 @@ _HF_INSTALL_HINT = (
 )
 
 
-class _BaseHubMixin:
+class _BaseHubMixinStub:
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
         raise ImportError(f"{cls.__name__}.from_pretrained() {_HF_INSTALL_HINT}")
@@ -49,8 +49,9 @@ class _BaseHubMixin:
 
 
 # Define base class for hub mixin
-if HAS_HF_HUB:
-    _BaseHubMixin: Type = huggingface_hub.PyTorchModelHubMixin  # type: ignore
+_BaseHubMixin: Type = (
+    huggingface_hub.PyTorchModelHubMixin if HAS_HF_HUB else _BaseHubMixinStub
+)
 
 
 def deprecated_args(obj, *old_new_args):
