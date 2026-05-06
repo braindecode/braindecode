@@ -4,6 +4,9 @@
 
 
 import json
+import subprocess
+import sys
+import textwrap
 from operator import attrgetter
 from unittest.mock import patch
 
@@ -519,3 +522,30 @@ def test_init_kwargs_tracked_for_subclass():
     assert kwargs["n_chans"] == 8
     assert kwargs["n_outputs"] == 2
     assert kwargs["n_times"] == 100
+
+
+def test_hub_method_install_hint_no_hf():
+    """Without huggingface_hub, stubs raise ImportError with install hint."""
+    # Subprocess: braindecode.models.base binds _BaseHubMixin at import time.
+    script = textwrap.dedent("""
+        import sys
+        class B:
+            def find_spec(self, n, *a, **k):
+                if n.startswith("huggingface_hub"):
+                    raise ImportError(n)
+                return None
+        sys.meta_path.insert(0, B())
+        from braindecode.models import EEGNet
+        for fn in (
+            lambda: EEGNet.from_pretrained("r"),
+            lambda: EEGNet(n_outputs=2, n_chans=22, n_times=1000).push_to_hub("r"),
+        ):
+            try: fn()
+            except ImportError as e: print(e)
+    """)
+    out = subprocess.check_output(
+        [sys.executable, "-c", script], text=True, timeout=120
+    )
+    assert "EEGNet.from_pretrained" in out
+    assert "EEGNet.push_to_hub" in out
+    assert out.count("braindecode[hub]") == 2
