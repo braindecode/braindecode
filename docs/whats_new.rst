@@ -173,6 +173,10 @@ Bug fixes
 - Fix ``TypeError: type 'Any' is not subscriptable`` when importing
   ``braindecode.models.config`` without ``numpydantic`` installed on
   Python 3.12+ (:gh:`871` by `Sarthak Tayal`_)
+- Fix :func:`braindecode.preprocessing.create_fixed_length_windows` crashing
+  when only ``window_size_samples`` is provided without ``window_stride_samples``,
+  stride now defaults to window size as documented
+  (:gh:`990` by `Sarthak Tayal`_)
 - Add ``channel_embedding`` parameter to :class:`braindecode.models.SignalJEPA` and
   :class:`braindecode.models.SignalJEPA_Contextual` to load pre-trained channel
   embedding weights when fine-tuning on a subset of the pre-training channels.
