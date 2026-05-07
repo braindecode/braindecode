@@ -1340,6 +1340,64 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             raise TypeError("target_transform must be a callable.")
         self._target_transform = fn
 
+    def set_target(self, column: str) -> "BaseConcatDataset":
+        """Use ``column`` as the per-window target ``y``.
+
+        For each subdataset, ``column`` is looked up in per-window
+        ``metadata`` first, then in the per-record ``description``
+        (broadcast to every window). The resolved values overwrite
+        ``ds.metadata['target']`` and ``ds.y``, so the DataLoader yields
+        the new label without rebuilding the windows.
+
+        Parameters
+        ----------
+        column : str
+            Name of a metadata column or description field (BIDS entity,
+            participants.tsv extra, ...).
+
+        Returns
+        -------
+        self : BaseConcatDataset
+
+        Raises
+        ------
+        TypeError
+            If any subdataset is not windowed.
+        ValueError
+            If ``column`` is not present on a subdataset's metadata or
+            description.
+        """
+        for i, ds in enumerate(self.datasets):
+            if not isinstance(ds, (WindowsDataset, EEGWindowsDataset)):
+                raise TypeError(
+                    "set_target requires WindowsDataset/EEGWindowsDataset; "
+                    f"datasets[{i}] is {type(ds).__name__}."
+                )
+            n = len(ds)
+            md = ds.metadata
+            if column in md.columns:
+                values = md[column].iloc[:n].to_list()
+            elif (
+                isinstance(ds.description, pd.Series) and column in ds.description.index
+            ):
+                values = [ds.description[column]] * n
+            else:
+                desc_keys = (
+                    list(ds.description.index)
+                    if isinstance(ds.description, pd.Series)
+                    else []
+                )
+                raise ValueError(
+                    f"Column {column!r} not found on datasets[{i}]: "
+                    f"metadata cols={list(md.columns)}, "
+                    f"description keys={desc_keys}."
+                )
+            new_md = md.copy()
+            new_md["target"] = values
+            ds.metadata = new_md
+            ds.y = list(values)
+        return self
+
     def _outdated_save(self, path, overwrite=False):
         """This is a copy of the old saving function, that had inconsistent.
 

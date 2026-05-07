@@ -28,6 +28,13 @@ Current 1.5.0 (GitHub)
 Enhancements
 ============
 
+- Add :meth:`braindecode.datasets.BaseConcatDataset.set_target` to swap
+  any per-window metadata column or per-record description field
+  (e.g. a BIDS entity, a participants.tsv extra) into the dataset's
+  target ``y`` in one call, replacing the manual
+  ``for ds in concat.datasets: ds.metadata.loc[:, 'target'] = ...; ds.y = ...``
+  loop. By `Bruno Aristimunha`_.
+
 - Redesign the documentation landing page (``docs/index.rst``) in a
   pyhealth.dev-style layout: animated brain → EEG → net hero, fact strip
   highlighting MOABB / EEGDash interoperability, interactive model-zoo

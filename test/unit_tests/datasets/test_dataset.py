@@ -401,6 +401,42 @@ def test_concat_dataset_invalid_target_transform(concat_windows_dataset):
         concat_windows_dataset.target_transform = 0
 
 
+def test_set_target_from_description(concat_windows_dataset):
+    """``set_target('subject')`` broadcasts the per-record description value
+    across every window and syncs ``ds.y``."""
+    # Earlier tests leak target_transform=sum onto the shared fixture;
+    # reset it so __getitem__ yields raw ints.
+    concat_windows_dataset.target_transform = None
+    orig = [list(ds.y) for ds in concat_windows_dataset.datasets]
+    orig_metadata = [ds.metadata.copy() for ds in concat_windows_dataset.datasets]
+    try:
+        ret = concat_windows_dataset.set_target("subject")
+        assert ret is concat_windows_dataset
+        for ds in concat_windows_dataset.datasets:
+            expected = int(ds.description["subject"])
+            assert all(int(v) == expected for v in ds.y)
+            assert (ds.metadata["target"].astype(int) == expected).all()
+        _, y0, _ = concat_windows_dataset[0]
+        assert int(y0) == int(
+            concat_windows_dataset.datasets[0].description["subject"]
+        )
+    finally:
+        for ds, y, md in zip(concat_windows_dataset.datasets, orig, orig_metadata):
+            ds.y = list(y)
+            ds.metadata = md
+
+
+def test_set_target_missing_column(concat_windows_dataset):
+    with pytest.raises(ValueError, match="not found"):
+        concat_windows_dataset.set_target("does_not_exist")
+
+
+def test_set_target_requires_windowed_datasets(concat_ds_targets):
+    concat_ds = concat_ds_targets[0]
+    with pytest.raises(TypeError, match="WindowsDataset"):
+        concat_ds.set_target("subject")
+
+
 def test_multi_target_dataset(set_up):
     _, base_dataset, _, _, _, _ = set_up
     base_dataset.target_name = ["pathological", "gender", "age"]
