@@ -18,7 +18,7 @@ import shutil
 import warnings
 from abc import abstractmethod
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from glob import glob
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
@@ -1340,7 +1340,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             raise TypeError("target_transform must be a callable.")
         self._target_transform = fn
 
-    def set_target(self, column: str) -> "BaseConcatDataset":
+    def set_target(self, column: Hashable) -> "BaseConcatDataset":
         """Use ``column`` as the target ``y`` for every subdataset.
 
         Dispatches on the subdataset type:
@@ -1349,6 +1349,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
           ``column`` is looked up in per-window ``metadata`` first, then in
           the per-record ``description`` (broadcast to every window). The
           resolved values overwrite ``ds.metadata['target']`` and ``ds.y``.
+          For :class:`WindowsDataset`, the underlying ``ds.windows.metadata``
+          is kept in sync so ``get_metadata()`` and the repr reflect the
+          new target.
         * For :class:`RawDataset`, ``column`` must exist on the
           ``description``. ``ds.target_name`` is set to ``column`` so
           ``__getitem__`` reads ``description[column]`` as ``y`` on every
@@ -1356,9 +1359,10 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
         Parameters
         ----------
-        column : str
+        column : Hashable
             Name of a metadata column or description field (BIDS entity,
-            participants.tsv extra, ...).
+            participants.tsv extra, ...). Typically a string, but any
+            hashable that pandas accepts as a column label is allowed.
 
         Returns
         -------
@@ -1368,10 +1372,14 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         ------
         TypeError
             If any subdataset is not a :class:`WindowsDataset`,
-            :class:`EEGWindowsDataset`, or :class:`RawDataset`.
+            :class:`EEGWindowsDataset`, or :class:`RawDataset`, or if a
+            windowed subdataset has lazy (non-DataFrame) metadata.
         ValueError
             If ``column`` is not present on a subdataset's metadata or
-            description.
+            description, or if a windowed subdataset has
+            ``targets_from='channels'`` (which would make this a silent
+            no-op since ``__getitem__`` reads y from misc channels, not
+            from ``metadata['target']``).
         """
         for i, ds in enumerate(self.datasets):
             if isinstance(ds, (WindowsDataset, EEGWindowsDataset)):
@@ -1384,6 +1392,16 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                         f"DataFrame; datasets[{i}].metadata is "
                         f"{type(ds.metadata).__name__}. Re-window with "
                         "lazy_metadata=False to use set_target."
+                    )
+                if getattr(ds, "targets_from", "metadata") != "metadata":
+                    # __getitem__ would read y from misc channels; writing
+                    # metadata['target']/ds.y would be a silent no-op.
+                    raise ValueError(
+                        f"datasets[{i}] has targets_from="
+                        f"{ds.targets_from!r}; set_target only applies when "
+                        "targets_from='metadata' (otherwise __getitem__ "
+                        "derives y from misc channels and would ignore the "
+                        "rewritten target column)."
                     )
                 n = len(ds)
                 md = ds.metadata
@@ -1405,9 +1423,15 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                         f"metadata cols={list(md.columns)}, "
                         f"description keys={desc_keys}."
                     )
-                new_md = md.copy()
-                new_md["target"] = values
-                ds.metadata = new_md
+                # In-place write so the WindowsDataset's metadata and the
+                # underlying mne.Epochs.metadata (which start as the same
+                # object reference) both reflect the new target. Defensive
+                # second write covers the case where they got de-aliased
+                # earlier by a caller-side reassignment.
+                md["target"] = values
+                windows_obj = getattr(ds, "_windows", None)
+                if windows_obj is not None and windows_obj.metadata is not md:
+                    windows_obj.metadata["target"] = values
                 ds.y = list(values)
             elif isinstance(ds, RawDataset):
                 if (

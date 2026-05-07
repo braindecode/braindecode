@@ -470,6 +470,42 @@ def test_set_target_rejects_lazy_metadata(concat_ds_targets):
         lazy_windows.set_target("subject")
 
 
+def test_set_target_syncs_windows_metadata(set_up):
+    """``ds.metadata`` and ``ds.windows.metadata`` start as the same object.
+    ``set_target`` must keep them in sync so ``get_metadata()`` and repr
+    paths see the new target column instead of stale values."""
+    _, _, _, windows_dataset, _, _ = set_up
+    concat = BaseConcatDataset([windows_dataset])
+    orig_target = list(windows_dataset.metadata["target"])
+    orig_y = list(windows_dataset.y)
+    try:
+        concat.set_target("i_window_in_trial")
+        # Both views must agree.
+        assert list(windows_dataset.metadata["target"]) == list(
+            windows_dataset.windows.metadata["target"]
+        )
+        # And get_metadata() (which reads ds._windows.metadata first) sees it.
+        agg = concat.get_metadata()
+        assert list(agg["target"]) == list(windows_dataset.metadata["target"])
+    finally:
+        windows_dataset.metadata["target"] = orig_target
+        if windows_dataset.windows.metadata is not windows_dataset.metadata:
+            windows_dataset.windows.metadata["target"] = orig_target
+        windows_dataset.y = orig_y
+
+
+def test_set_target_rejects_targets_from_channels(set_up):
+    """When ``targets_from='channels'``, __getitem__ derives y from misc
+    channels and ignores ``metadata['target']`` / ``ds.y``. set_target
+    must refuse to silently no-op."""
+    _, _, mne_epochs, _, _, _ = set_up
+    desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
+    ch_ds = WindowsDataset(mne_epochs, desc, targets_from="channels")
+    concat = BaseConcatDataset([ch_ds])
+    with pytest.raises(ValueError, match="targets_from"):
+        concat.set_target("pathological")
+
+
 def test_set_target_composes_with_target_transform(concat_windows_dataset):
     """``target_transform`` must run *after* ``set_target`` writes the new
     ``y`` so users can layer scalar reshaping on top of column selection."""
