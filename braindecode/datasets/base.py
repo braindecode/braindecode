@@ -1375,6 +1375,16 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         """
         for i, ds in enumerate(self.datasets):
             if isinstance(ds, (WindowsDataset, EEGWindowsDataset)):
+                if not isinstance(ds.metadata, pd.DataFrame):
+                    # _LazyDataFrame (lazy_metadata=True) does not implement
+                    # .copy()/__setitem__, so the in-place write below would
+                    # raise AttributeError. Surface the precondition cleanly.
+                    raise TypeError(
+                        "set_target requires a materialized metadata "
+                        f"DataFrame; datasets[{i}].metadata is "
+                        f"{type(ds.metadata).__name__}. Re-window with "
+                        "lazy_metadata=False to use set_target."
+                    )
                 n = len(ds)
                 md = ds.metadata
                 if column in md.columns:

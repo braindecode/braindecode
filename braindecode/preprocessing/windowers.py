@@ -886,6 +886,9 @@ def _create_fixed_length_windows(
     if mapping is not None:
         # in case of multiple targets
         if isinstance(target, pd.Series):
+            # Plain comprehension instead of Series.replace(mapping):
+            # replace() emits a pandas FutureWarning about silent downcasting
+            # and the result is immediately list-ified anyway.
             target = [mapping.get(v, v) for v in target]
         # in case of single value target
         else:

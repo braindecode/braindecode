@@ -453,6 +453,44 @@ def test_set_target_missing_on_raw_concat(concat_ds_targets):
         concat_ds.set_target("does_not_exist_on_raw")
 
 
+def test_set_target_rejects_lazy_metadata(concat_ds_targets):
+    """``lazy_metadata=True`` produces a ``_LazyDataFrame`` which lacks
+    .copy()/__setitem__. ``set_target`` must surface this precondition
+    with a clear TypeError instead of an AttributeError from inside
+    pandas land."""
+    concat_ds = concat_ds_targets[0]
+    lazy_windows = create_fixed_length_windows(
+        concat_ds,
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=True,
+        lazy_metadata=True,
+    )
+    with pytest.raises(TypeError, match="lazy_metadata=False"):
+        lazy_windows.set_target("subject")
+
+
+def test_set_target_composes_with_target_transform(concat_windows_dataset):
+    """``target_transform`` must run *after* ``set_target`` writes the new
+    ``y`` so users can layer scalar reshaping on top of column selection."""
+    concat_windows_dataset.target_transform = None
+    orig = [list(ds.y) for ds in concat_windows_dataset.datasets]
+    orig_metadata = [ds.metadata.copy() for ds in concat_windows_dataset.datasets]
+    try:
+        concat_windows_dataset.set_target("subject")
+        concat_windows_dataset.target_transform = lambda subj: int(subj) * 100 + 7
+        _, y, _ = concat_windows_dataset[0]
+        expected = (
+            int(concat_windows_dataset.datasets[0].description["subject"]) * 100 + 7
+        )
+        assert y == expected
+    finally:
+        concat_windows_dataset.target_transform = None
+        for ds, y, md in zip(concat_windows_dataset.datasets, orig, orig_metadata):
+            ds.y = list(y)
+            ds.metadata = md
+
+
 def test_multi_target_dataset(set_up):
     _, base_dataset, _, _, _, _ = set_up
     base_dataset.target_name = ["pathological", "gender", "age"]
