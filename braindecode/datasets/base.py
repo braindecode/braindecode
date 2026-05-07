@@ -1341,13 +1341,18 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         self._target_transform = fn
 
     def set_target(self, column: str) -> "BaseConcatDataset":
-        """Use ``column`` as the per-window target ``y``.
+        """Use ``column`` as the target ``y`` for every subdataset.
 
-        For each subdataset, ``column`` is looked up in per-window
-        ``metadata`` first, then in the per-record ``description``
-        (broadcast to every window). The resolved values overwrite
-        ``ds.metadata['target']`` and ``ds.y``, so the DataLoader yields
-        the new label without rebuilding the windows.
+        Dispatches on the subdataset type:
+
+        * For :class:`WindowsDataset` / :class:`EEGWindowsDataset`,
+          ``column`` is looked up in per-window ``metadata`` first, then in
+          the per-record ``description`` (broadcast to every window). The
+          resolved values overwrite ``ds.metadata['target']`` and ``ds.y``.
+        * For :class:`RawDataset`, ``column`` must exist on the
+          ``description``. ``ds.target_name`` is set to ``column`` so
+          ``__getitem__`` reads ``description[column]`` as ``y`` on every
+          access — no rebuild needed.
 
         Parameters
         ----------
@@ -1362,40 +1367,58 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         Raises
         ------
         TypeError
-            If any subdataset is not windowed.
+            If any subdataset is not a :class:`WindowsDataset`,
+            :class:`EEGWindowsDataset`, or :class:`RawDataset`.
         ValueError
             If ``column`` is not present on a subdataset's metadata or
             description.
         """
         for i, ds in enumerate(self.datasets):
-            if not isinstance(ds, (WindowsDataset, EEGWindowsDataset)):
-                raise TypeError(
-                    "set_target requires WindowsDataset/EEGWindowsDataset; "
-                    f"datasets[{i}] is {type(ds).__name__}."
-                )
-            n = len(ds)
-            md = ds.metadata
-            if column in md.columns:
-                values = md[column].iloc[:n].to_list()
-            elif (
-                isinstance(ds.description, pd.Series) and column in ds.description.index
-            ):
-                values = [ds.description[column]] * n
+            if isinstance(ds, (WindowsDataset, EEGWindowsDataset)):
+                n = len(ds)
+                md = ds.metadata
+                if column in md.columns:
+                    values = md[column].iloc[:n].to_list()
+                elif (
+                    isinstance(ds.description, pd.Series)
+                    and column in ds.description.index
+                ):
+                    values = [ds.description[column]] * n
+                else:
+                    desc_keys = (
+                        list(ds.description.index)
+                        if isinstance(ds.description, pd.Series)
+                        else []
+                    )
+                    raise ValueError(
+                        f"Column {column!r} not found on datasets[{i}]: "
+                        f"metadata cols={list(md.columns)}, "
+                        f"description keys={desc_keys}."
+                    )
+                new_md = md.copy()
+                new_md["target"] = values
+                ds.metadata = new_md
+                ds.y = list(values)
+            elif isinstance(ds, RawDataset):
+                if (
+                    not isinstance(ds.description, pd.Series)
+                    or column not in ds.description.index
+                ):
+                    desc_keys = (
+                        list(ds.description.index)
+                        if isinstance(ds.description, pd.Series)
+                        else []
+                    )
+                    raise ValueError(
+                        f"Column {column!r} not found on datasets[{i}] "
+                        f"description (keys={desc_keys})."
+                    )
+                ds.target_name = column
             else:
-                desc_keys = (
-                    list(ds.description.index)
-                    if isinstance(ds.description, pd.Series)
-                    else []
+                raise TypeError(
+                    "set_target requires WindowsDataset, EEGWindowsDataset, "
+                    f"or RawDataset; datasets[{i}] is {type(ds).__name__}."
                 )
-                raise ValueError(
-                    f"Column {column!r} not found on datasets[{i}]: "
-                    f"metadata cols={list(md.columns)}, "
-                    f"description keys={desc_keys}."
-                )
-            new_md = md.copy()
-            new_md["target"] = values
-            ds.metadata = new_md
-            ds.y = list(values)
         return self
 
     def _outdated_save(self, path, overwrite=False):

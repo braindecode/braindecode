@@ -33,7 +33,10 @@ Enhancements
   (e.g. a BIDS entity, a participants.tsv extra) into the dataset's
   target ``y`` in one call, replacing the manual
   ``for ds in concat.datasets: ds.metadata.loc[:, 'target'] = ...; ds.y = ...``
-  loop. By `Bruno Aristimunha`_.
+  loop. Dispatches on the subdataset type: writes
+  ``metadata['target']`` / ``ds.y`` for windowed records, and points
+  ``target_name`` at the chosen description field for raw records.
+  By `Bruno Aristimunha`_.
 
 - Redesign the documentation landing page (``docs/index.rst``) in a
   pyhealth.dev-style layout: animated brain → EEG → net hero, fact strip

@@ -310,7 +310,7 @@ def test_set_description_base_dataset(concat_ds_targets):
     # try to set existing description without overwriting
     with pytest.raises(
         AssertionError,
-        match="'how' already in description. Please rename or set overwrite to" " True.",
+        match="'how' already in description. Please rename or set overwrite to True.",
     ):
         concat_ds.set_description(
             {
@@ -375,7 +375,7 @@ def test_set_description_windows_dataset(concat_windows_dataset):
     # try to set existing description without overwriting using Series
     with pytest.raises(
         AssertionError,
-        match="'wow' already in description. Please rename or set overwrite to" " True.",
+        match="'wow' already in description. Please rename or set overwrite to True.",
     ):
         window_ds.set_description(pd.Series({"wow": "error"}), overwrite=False)
 
@@ -417,9 +417,7 @@ def test_set_target_from_description(concat_windows_dataset):
             assert all(int(v) == expected for v in ds.y)
             assert (ds.metadata["target"].astype(int) == expected).all()
         _, y0, _ = concat_windows_dataset[0]
-        assert int(y0) == int(
-            concat_windows_dataset.datasets[0].description["subject"]
-        )
+        assert int(y0) == int(concat_windows_dataset.datasets[0].description["subject"])
     finally:
         for ds, y, md in zip(concat_windows_dataset.datasets, orig, orig_metadata):
             ds.y = list(y)
@@ -431,10 +429,28 @@ def test_set_target_missing_column(concat_windows_dataset):
         concat_windows_dataset.set_target("does_not_exist")
 
 
-def test_set_target_requires_windowed_datasets(concat_ds_targets):
+def test_set_target_on_raw_concat(concat_ds_targets):
+    """For a concat of RawDatasets, ``set_target`` points each subdataset's
+    ``target_name`` at the chosen description field; ``__getitem__`` then
+    reads ``description[target_name]`` as ``y`` with no rebuild."""
     concat_ds = concat_ds_targets[0]
-    with pytest.raises(TypeError, match="WindowsDataset"):
-        concat_ds.set_target("subject")
+    orig_target_names = [ds.target_name for ds in concat_ds.datasets]
+    try:
+        ret = concat_ds.set_target("subject")
+        assert ret is concat_ds
+        for ds in concat_ds.datasets:
+            assert ds.target_name == "subject"
+            _, y = ds[0]
+            assert y == ds.description["subject"]
+    finally:
+        for ds, name in zip(concat_ds.datasets, orig_target_names):
+            ds.target_name = name
+
+
+def test_set_target_missing_on_raw_concat(concat_ds_targets):
+    concat_ds = concat_ds_targets[0]
+    with pytest.raises(ValueError, match="not found"):
+        concat_ds.set_target("does_not_exist_on_raw")
 
 
 def test_multi_target_dataset(set_up):
@@ -632,7 +648,9 @@ def test_iterable_dataset_raises_typeerror(lazy):
         def __iter__(self):
             yield 1
 
-    with pytest.raises(TypeError, match="ConcatDataset does not support IterableDataset"):
+    with pytest.raises(
+        TypeError, match="ConcatDataset does not support IterableDataset"
+    ):
         BaseConcatDataset([DummyIterableDataset()], lazy=lazy)
 
 
@@ -838,7 +856,15 @@ def test_can_use_fast_get_epoch_from_raw_true(fast_load_epochs):
         ("_projector", np.eye(2)),
         ("preload", True),
     ],
-    ids=["bad_dropped", "do_baseline", "detrend", "decim", "offset", "projector", "preload"],
+    ids=[
+        "bad_dropped",
+        "do_baseline",
+        "detrend",
+        "decim",
+        "offset",
+        "projector",
+        "preload",
+    ],
 )
 def test_can_use_fast_get_epoch_from_raw_false(fast_load_epochs, attribute, bad_value):
     """Each condition violated in isolation → _can_use_fast_get_epoch_from_raw returns False."""
@@ -856,7 +882,7 @@ def test_windows_dataset_fast_disk_enabled(fast_load_windows_dataset):
 @pytest.mark.parametrize(
     "attribute,bad_value,expects_warning",
     [
-        ("preload", True, False),      # preloaded → _fast_disk=False but no warning
+        ("preload", True, False),  # preloaded → _fast_disk=False but no warning
         ("_do_baseline", True, True),  # fast-loading blocked, not preloaded → warn
         ("detrend", 1, True),
         ("_decim", 2, True),
