@@ -247,15 +247,13 @@ def preprocess(
         Defaults to None (equivalent to ``{}``).
         See https://joblib.readthedocs.io/en/stable/generated/joblib.Parallel.html for details.
     max_nbytes : int, str, or None
-        Forwarded to ``joblib.Parallel`` to control the size threshold above
-        which preloaded arrays are memory mapped to disk as read-only. Pass
-        ``None`` to disable memory mapping when a preprocessor resizes the
-        underlying data (for example ``filterbank``), which would otherwise
-        fail with an ``mmap can't resize a readonly`` error. When the
-        preprocessing run hits that error, ``preprocess`` automatically
-        retries once with memory mapping disabled to avoid wasting the work
-        already done. ``parallel_kwargs['max_nbytes']`` takes precedence if
-        both are provided.
+        Threshold (in bytes; or e.g. ``"1M"``) above which joblib memory-maps
+        preloaded arrays as read-only when dispatching to worker processes.
+        Effective only when ``n_jobs != 1``. Pass ``None`` to disable memory
+        mapping when a preprocessor resizes the underlying data (for example
+        ``filterbank``), which would otherwise fail with an ``mmap can't
+        resize a readonly`` error. ``parallel_kwargs['max_nbytes']`` takes
+        precedence if both are provided.
 
     Returns
     -------
@@ -278,8 +276,8 @@ def preprocess(
     )
     parallel_params.setdefault("max_nbytes", max_nbytes)
 
-    def _run(params):
-        return Parallel(n_jobs=n_jobs, **params)(
+    try:
+        list_of_ds = Parallel(n_jobs=n_jobs, **parallel_params)(
             delayed(_preprocess)(
                 ds,
                 i + offset,
@@ -294,31 +292,17 @@ def preprocess(
             )
             for i, ds in enumerate(concat_ds.datasets)
         )
-
-    try:
-        list_of_ds = _run(parallel_params)
-    except Exception as exc:
-        msg = str(exc)
-        mmap_failure = "mmap" in msg and ("readonly" in msg or "read-only" in msg)
-        if not mmap_failure:
-            raise
-        if parallel_params.get("max_nbytes") is None:
+    except (BufferError, ValueError, OSError) as exc:
+        msg = str(exc).lower().replace("-", "")
+        if "mmap" in msg and "readonly" in msg:
             raise RuntimeError(
-                "Parallel preprocessing failed because joblib memory mapped "
+                "Parallel preprocessing failed because joblib memory-mapped "
                 "a preloaded array that a preprocessor then attempted to "
-                "resize, even with memory mapping disabled. Supply a "
-                "``save_dir`` so that the data is reloaded with "
-                "``preload=False``."
+                "resize (e.g. ``filterbank``). Pass ``max_nbytes=None`` to "
+                "``preprocess`` to disable memory mapping, or supply a "
+                "``save_dir`` so the data is reloaded with ``preload=False``."
             ) from exc
-        warn(
-            "Parallel preprocessing failed because joblib memory mapped a "
-            "preloaded array that a preprocessor then attempted to resize. "
-            "Retrying with memory mapping disabled (max_nbytes=None). To "
-            "skip this retry on future calls, pass ``max_nbytes=None`` to "
-            "``preprocess`` or supply a ``save_dir``."
-        )
-        parallel_params["max_nbytes"] = None
-        list_of_ds = _run(parallel_params)
+        raise
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
         ids_to_load = [i + offset for i in range(len(concat_ds.datasets))]

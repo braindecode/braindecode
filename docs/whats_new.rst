@@ -325,13 +325,12 @@ Bugs
   when ``DOCSTRING_INHERITANCE_ENABLE=1`` was set during documentation
   builds (:gh:`971` by `Bruno Aristimunha`_)
 - Expose ``max_nbytes`` directly on
-  :func:`braindecode.preprocessing.preprocess.preprocess` and recover from
-  the ``mmap can't resize a readonly`` failure raised when joblib memory
-  maps a preloaded array that a preprocessor later tries to resize.
-  ``preprocess`` now warns and automatically retries the run once with
-  memory mapping disabled so that the preprocessing work already done is
-  not thrown away. Users can opt out of the retry by passing
-  ``max_nbytes=None`` up front or supplying a ``save_dir``
+  :func:`braindecode.preprocessing.preprocess.preprocess` and turn the
+  cryptic ``mmap can't resize a readonly`` failure (raised when joblib
+  memory-maps a preloaded array that a preprocessor later tries to
+  resize) into an actionable error explaining how to fix it: pass
+  ``max_nbytes=None`` to disable memory mapping, or supply a ``save_dir``
+  so data is reloaded with ``preload=False``
   (:gh:`325` by `Sarthak Tayal`_)
 
 Code health
