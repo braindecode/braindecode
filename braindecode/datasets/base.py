@@ -1432,7 +1432,10 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 windows_obj = getattr(ds, "_windows", None)
                 if windows_obj is not None and windows_obj.metadata is not md:
                     windows_obj.metadata["target"] = values
-                ds.y = list(values)
+                # values is already a fresh list (Series.to_list() / [x] * n);
+                # no defensive copy needed — pandas keeps its own representation
+                # for md["target"] so mutating ds.y won't reach back into it.
+                ds.y = values
             elif isinstance(ds, RawDataset):
                 if (
                     not isinstance(ds.description, pd.Series)
