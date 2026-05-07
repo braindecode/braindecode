@@ -100,8 +100,10 @@ extensions = [
     "sphinx.ext.linkcode",
     "sphinx_sitemap",
     "sphinx_design",
+    "sphinxext.opengraph",
     "numpydoc",
     "gh_substitutions",
+    "zoo_data_gen",
 ]
 
 
@@ -348,7 +350,9 @@ html_theme_options = {
     },
     "footer_start": ["copyright"],
     # 'pygment_light_style': 'default',
-    "analytics": dict(google_analytics_id="G-7Q43R82K6D"),
+    # Analytics intentionally NOT configured here — the project uses GTM
+    # (GTM-NWDKLVNR) injected from _templates/layout.html as the single
+    # entry point. Adding theme analytics on top would double-count.
 }
 
 # The name of an image file (relative to this directory) to place at the top
@@ -359,9 +363,16 @@ html_logo = "_static/braindecode_symbol.png"
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
+# Files copied verbatim into the build root (robots.txt, etc.)
+html_extra_path = ["_extra"]
 html_css_files = [
     "style.css",
 ]
+# Note: landing.css and the landing JS files (zoo-data.js, landing.js)
+# are *not* registered globally — they only ship on the index page,
+# injected from `_templates/layout.html` under `pagename == 'index'`.
+# Loading them site-wide added ~2k lines of CSS + a third-party
+# Google-Fonts request to every doc page for no benefit.
 
 # Favicon for the site
 html_favicon = "_static/braindecode_symbol.png"
@@ -469,8 +480,29 @@ latex_documents = [
         "manual",
     ),
 ]
-html_baseurl = "https://braindecode.org"
+# Master/dev builds publish under /dev/ on GitHub Pages (see
+# .github/workflows/docs.yml `destination_dir: dev`). The baseurl,
+# OG canonical, and the sitemap location must match the actual deploy
+# path or crawlers will end up on 404s.
+html_baseurl = "https://braindecode.org/dev/"
 sitemap_filename = "sitemap.xml"
+# Flat URLs (no /en/{version}/) — same pattern as MOABB.
+sitemap_url_scheme = "{link}"
+
+# --- Open Graph / Twitter Card / meta description ---
+ogp_site_url = "https://braindecode.org/dev/"
+ogp_site_name = "Braindecode"
+ogp_image = "https://braindecode.org/dev/_static/braindecode_long.svg"
+ogp_image_alt = (
+    "Braindecode — open-source PyTorch toolbox for decoding raw EEG, ECoG and MEG"
+)
+ogp_description_length = 200
+ogp_enable_meta_description = True
+ogp_type = "website"
+ogp_custom_meta_tags = [
+    '<meta name="twitter:card" content="summary_large_image" />',
+    '<meta name="twitter:site" content="@braindecode" />',
+]
 # -- Fontawesome support -----------------------------------------------------
 
 # here the "fab" and "fas" refer to "brand" and "solid" (determines which font

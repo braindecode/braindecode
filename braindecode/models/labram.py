@@ -7,9 +7,9 @@ License: BSD 3 clause
 """
 
 from collections import OrderedDict
-from typing import Literal
 from warnings import warn
 
+import numpy as np
 import torch
 import torch.nn as nn
 from einops import rearrange
@@ -20,141 +20,177 @@ from braindecode.functional import rescale_parameter
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import MLP, DropPath
 
+# -----------------------------------------------------------------------------
 # Standard 10-20 system electrode positions used by LaBraM for position embeddings.
 # This defines the canonical channel order that the pretrained LaBraM model expects.
 # Channels from input data will be automatically reordered to match this order.
 # Reference: https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/utils.py#L42-L57
 # We just commented the last 8 channels to match the 128 in the pretrained weights here
-LABRAM_CHANNEL_ORDER = (
-    "FP1",
-    "FPZ",
-    "FP2",
-    "AF9",
-    "AF7",
-    "AF5",
-    "AF3",
-    "AF1",
-    "AFZ",
-    "AF2",
-    "AF4",
-    "AF6",
-    "AF8",
-    "AF10",
-    "F9",
-    "F7",
-    "F5",
-    "F3",
-    "F1",
-    "FZ",
-    "F2",
-    "F4",
-    "F6",
-    "F8",
-    "F10",
-    "FT9",
-    "FT7",
-    "FC5",
-    "FC3",
-    "FC1",
-    "FCZ",
-    "FC2",
-    "FC4",
-    "FC6",
-    "FT8",
-    "FT10",
-    "T9",
-    "T7",
-    "C5",
-    "C3",
-    "C1",
-    "CZ",
-    "C2",
-    "C4",
-    "C6",
-    "T8",
-    "T10",
-    "TP9",
-    "TP7",
-    "CP5",
-    "CP3",
-    "CP1",
-    "CPZ",
-    "CP2",
-    "CP4",
-    "CP6",
-    "TP8",
-    "TP10",
-    "P9",
-    "P7",
-    "P5",
-    "P3",
-    "P1",
-    "PZ",
-    "P2",
-    "P4",
-    "P6",
-    "P8",
-    "P10",
-    "PO9",
-    "PO7",
-    "PO5",
-    "PO3",
-    "PO1",
-    "POZ",
-    "PO2",
-    "PO4",
-    "PO6",
-    "PO8",
-    "PO10",
-    "O1",
-    "OZ",
-    "O2",
-    "O9",
-    "CB1",
-    "CB2",
-    "IZ",
-    "O10",
-    "T3",
-    "T5",
-    "T4",
-    "T6",
-    "M1",
-    "M2",
-    "A1",
-    "A2",
-    "CFC1",
-    "CFC2",
-    "CFC3",
-    "CFC4",
-    "CFC5",
-    "CFC6",
-    "CFC7",
-    "CFC8",
-    "CCP1",
-    "CCP2",
-    "CCP3",
-    "CCP4",
-    "CCP5",
-    "CCP6",
-    "CCP7",
-    "CCP8",
-    "T1",
-    "T2",
-    "FTT9h",
-    "TTP7h",
-    "TPP9h",
-    "FTT10h",
-    "TPP8h",
-    "TPP10h",
-    "FP1-F7",
-    "F7-T7",
-    "T7-P7",
-    "P7-O1",
-    "FP2-F8",
-    "F8-T8",
-    "T8-P8",
-    "P8-O2",  # "FP1-F3", "F3-C3", "C3-P3", "P3-O1", "FP2-F4", "F4-C4", "C4-P4", "P4-O2"
-)
+#
+# Channels positions come from several sources:
+#   - standard_1005 names (majority): looked up directly by uppercase key
+#   - bipolar pairs "A-B"  → midpoint of A and B (from standard_1005).
+#     TODO: this is a simplification. A bipolar signal V(A)-V(B) cannot
+#     be faithfully recovered by spatial interpolation at the midpoint.
+#     Revisit in a follow-up PR (e.g. a dedicated BipolarDerivationLayer).
+#   - legacy 10-20 aliases T3/T4/T5/T6 → T7/T8/P7/P8 (standard_1005)
+#   - mastoid M1/M2, ear A1/A2 → standard_1005 (A1/A2 already present there)
+#   - O9/O10 → standard_1020
+#   - CB1/CB2 → standard_postfixed (Cb1/Cb2 cerebellar sites)
+#   - T1/T2 → standard_postfixed (anterior temporal, same as FT9/FT10)
+#   - IZ → standard_1005 (inion area)
+#   - intermediate CFC1-CFC6 → midpoint(FCn, Cn) in standard_1005
+#   - CFC7/CFC8 → midpoint(FT7, T7) / midpoint(FT8, T8)
+#   - CCP7/CCP8 → midpoint(T7, TP7) / midpoint(T8, TP8)
+#   - FTT9h/TTP7h/TPP9h/FTT10h/TPP8h/TPP10h → standard_1005 (h-suffix entries)
+#
+# The `loc` values are only used to build an MNE interpolation matrix
+# for InterpolatedLaBraM. They are NOT used by Labram itself, which
+# relies on learned position embeddings indexed by channel name.
+# -----------------------------------------------------------------------------
+
+# fmt: off
+_LABRAM_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
+    ("FP1", (-0.02943670, 0.08391710, -0.00699000)),  # standard_1005
+    ("FPZ", (0.00011230, 0.08824700, -0.00171300)),  # standard_1005
+    ("FP2", (0.02987230, 0.08489590, -0.00708000)),  # standard_1005
+    ("AF9", (-0.04897080, 0.06408720, -0.04768300)),  # standard_1005
+    ("AF7", (-0.05483970, 0.06857220, -0.01059000)),  # standard_1005
+    ("AF5", (-0.04543070, 0.07286220, 0.00597800)),  # standard_1005
+    ("AF3", (-0.03370070, 0.07683710, 0.02122700)),  # standard_1005
+    ("AF1", (-0.01847170, 0.07990410, 0.03275200)),  # standard_1005
+    ("AFZ", (0.00023130, 0.08077100, 0.03541700)),  # standard_1005
+    ("AF2", (0.01982030, 0.08030190, 0.03276400)),  # standard_1005
+    ("AF4", (0.03571230, 0.07772590, 0.02195600)),  # standard_1005
+    ("AF6", (0.04658430, 0.07380780, 0.00603400)),  # standard_1005
+    ("AF8", (0.05574330, 0.06965680, -0.01075500)),  # standard_1005
+    ("AF10", (0.05043520, 0.06386980, -0.04800500)),  # standard_1005
+    ("F9", (-0.07010190, 0.04165230, -0.04995200)),  # standard_1005
+    ("F7", (-0.07026290, 0.04247430, -0.01142000)),  # standard_1005
+    ("F5", (-0.06446580, 0.04803530, 0.01692100)),  # standard_1005
+    ("F3", (-0.05024380, 0.05311120, 0.04219200)),  # standard_1005
+    ("F1", (-0.02749580, 0.05693110, 0.06034200)),  # standard_1005
+    ("FZ", (0.00031220, 0.05851200, 0.06646200)),  # standard_1005
+    ("F2", (0.02951420, 0.05760190, 0.05954000)),  # standard_1005
+    ("F4", (0.05183620, 0.05430480, 0.04081400)),  # standard_1005
+    ("F6", (0.06791420, 0.04982970, 0.01636700)),  # standard_1005
+    ("F8", (0.07304310, 0.04442170, -0.01200000)),  # standard_1005
+    ("F10", (0.07211410, 0.04206670, -0.05045200)),  # standard_1005
+    ("FT9", (-0.08407590, 0.01456730, -0.05042900)),  # standard_1005
+    ("FT7", (-0.08077500, 0.01412030, -0.01113500)),  # standard_1005
+    ("FC5", (-0.07721490, 0.01864330, 0.02446000)),  # standard_1005
+    ("FC3", (-0.06018190, 0.02271620, 0.05554400)),  # standard_1005
+    ("FC1", (-0.03406190, 0.02601110, 0.07998700)),  # standard_1005
+    ("FCZ", (0.00037610, 0.02739000, 0.08866800)),  # standard_1005
+    ("FC2", (0.03478410, 0.02643790, 0.07880800)),  # standard_1005
+    ("FC4", (0.06229310, 0.02372280, 0.05563000)),  # standard_1005
+    ("FC6", (0.07953410, 0.01993570, 0.02443800)),  # standard_1005
+    ("FT8", (0.08181510, 0.01541670, -0.01133000)),  # standard_1005
+    ("FT10", (0.08411310, 0.01436470, -0.05053800)),  # standard_1005
+    ("T9", (-0.08589410, -0.01582870, -0.04828300)),  # standard_1005
+    ("T7", (-0.08416110, -0.01601870, -0.00934600)),  # standard_1005
+    ("C5", (-0.08028010, -0.01375970, 0.02916000)),  # standard_1005
+    ("C3", (-0.06535810, -0.01163170, 0.06435800)),  # standard_1005
+    ("C1", (-0.03615800, -0.00998390, 0.08975200)),  # standard_1005
+    ("CZ", (0.00040090, -0.00916700, 0.10024400)),  # standard_1005
+    ("C2", (0.03767200, -0.00962410, 0.08841200)),  # standard_1005
+    ("C4", (0.06711790, -0.01090030, 0.06358000)),  # standard_1005
+    ("C6", (0.08345590, -0.01277630, 0.02920800)),  # standard_1005
+    ("T8", (0.08507990, -0.01502030, -0.00949000)),  # standard_1005
+    ("T10", (0.08555990, -0.01636130, -0.04827100)),  # standard_1005
+    ("TP9", (-0.08561920, -0.04651470, -0.04570700)),  # standard_1005
+    ("TP7", (-0.08483020, -0.04602170, -0.00705600)),  # standard_1005
+    ("CP5", (-0.07959220, -0.04655070, 0.03094900)),  # standard_1005
+    ("CP3", (-0.06355620, -0.04700880, 0.06562400)),  # standard_1005
+    ("CP1", (-0.03551310, -0.04729190, 0.09131500)),  # standard_1005
+    ("CPZ", (0.00038580, -0.04731800, 0.09943200)),  # standard_1005
+    ("CP2", (0.03838380, -0.04707310, 0.09069500)),  # standard_1005
+    ("CP4", (0.06661180, -0.04663720, 0.06558000)),  # standard_1005
+    ("CP6", (0.08332180, -0.04610130, 0.03120600)),  # standard_1005
+    ("TP8", (0.08554880, -0.04554530, -0.00713000)),  # standard_1005
+    ("TP10", (0.08616180, -0.04703530, -0.04586900)),  # standard_1005
+    ("P9", (-0.07300930, -0.07376570, -0.04099800)),  # standard_1005
+    ("P7", (-0.07243430, -0.07345270, -0.00248700)),  # standard_1005
+    ("P5", (-0.06727230, -0.07629070, 0.02838200)),  # standard_1005
+    ("P3", (-0.05300730, -0.07878780, 0.05594000)),  # standard_1005
+    ("P1", (-0.02862030, -0.08052490, 0.07543600)),  # standard_1005
+    ("PZ", (0.00032470, -0.08111500, 0.08261500)),  # standard_1005
+    ("P2", (0.03191970, -0.08048710, 0.07671600)),  # standard_1005
+    ("P4", (0.05566670, -0.07856020, 0.05656100)),  # standard_1005
+    ("P6", (0.06788770, -0.07590430, 0.02809100)),  # standard_1005
+    ("P8", (0.07305570, -0.07306830, -0.00254000)),  # standard_1005
+    ("P10", (0.07389470, -0.07439030, -0.04122000)),  # standard_1005
+    ("PO9", (-0.05491040, -0.09804480, -0.03546500)),  # standard_1005
+    ("PO7", (-0.05484040, -0.09752790, 0.00279200)),  # standard_1005
+    ("PO5", (-0.04842440, -0.09934080, 0.02159900)),  # standard_1005
+    ("PO3", (-0.03651140, -0.10085290, 0.03716700)),  # standard_1005
+    ("PO1", (-0.01897240, -0.10176800, 0.04653600)),  # standard_1005
+    ("POZ", (0.00021560, -0.10217800, 0.05060800)),  # standard_1005
+    ("PO2", (0.01987760, -0.10179300, 0.04639300)),  # standard_1005
+    ("PO4", (0.03678160, -0.10084910, 0.03639700)),  # standard_1005
+    ("PO6", (0.04981960, -0.09944610, 0.02172700)),  # standard_1005
+    ("PO8", (0.05566660, -0.09762510, 0.00273000)),  # standard_1005
+    ("PO10", (0.05498760, -0.09809110, -0.03554100)),  # standard_1005
+    ("O1", (-0.02941340, -0.11244900, 0.00883900)),  # standard_1005
+    ("OZ", (0.00010760, -0.11489200, 0.01465700)),  # standard_1005
+    ("O2", (0.02984260, -0.11215600, 0.00880000)),  # standard_1005
+    ("O9", (-0.02981840, -0.11457000, -0.02921600)),  # standard_1020
+    ("CB1", (-0.05491040, -0.09804480, -0.03546500)),  # standard_postfixed (cerebellar site; coincides with PO9 in standard_1005)
+    ("CB2", (0.05498760, -0.09809110, -0.03554100)),  # standard_postfixed (cerebellar site; coincides with PO10 in standard_1005)
+    ("IZ", (0.00000450, -0.11856500, -0.02307800)),  # standard_1005 (inion area)
+    ("O10", (0.02974160, -0.11426000, -0.02925600)),  # standard_1020
+    ("T3", (-0.08416110, -0.01601870, -0.00934600)),  # legacy alias of T7 (standard_1005)
+    ("T5", (-0.07243430, -0.07345270, -0.00248700)),  # legacy alias of P7 (standard_1005)
+    ("T4", (0.08507990, -0.01502030, -0.00949000)),  # legacy alias of T8 (standard_1005)
+    ("T6", (0.07305570, -0.07306830, -0.00254000)),  # legacy alias of P8 (standard_1005)
+    ("M1", (-0.08607610, -0.04498970, -0.06798600)),  # standard_1005 (left mastoid)
+    ("M2", (0.08579390, -0.04500930, -0.06803100)),  # standard_1005 (right mastoid)
+    ("A1", (-0.08607610, -0.02498970, -0.06798600)),  # standard_1005 (left ear reference)
+    ("A2", (0.08579390, -0.02500930, -0.06803100)),  # standard_1005 (right ear reference)
+    ("CFC1", (-0.03510995, 0.00801360, 0.08486950)),  # midpoint(FC1, C1) in standard_1005
+    ("CFC2", (0.03622805, 0.00840690, 0.08361000)),  # midpoint(FC2, C2) in standard_1005
+    ("CFC3", (-0.06277000, 0.00554225, 0.05995100)),  # midpoint(FC3, C3) in standard_1005
+    ("CFC4", (0.06470550, 0.00641125, 0.05960500)),  # midpoint(FC4, C4) in standard_1005
+    ("CFC5", (-0.07874750, 0.00244180, 0.02681000)),  # midpoint(FC5, C5) in standard_1005
+    ("CFC6", (0.08149500, 0.00357970, 0.02682300)),  # midpoint(FC6, C6) in standard_1005
+    ("CFC7", (-0.08246805, -0.00094920, -0.01024050)),  # midpoint(FT7, T7) in standard_1005
+    ("CFC8", (0.08344750, 0.00019820, -0.01041000)),  # midpoint(FT8, T8) in standard_1005
+    ("CCP1", (-0.03693010, -0.02856990, 0.09173400)),  # standard_1005
+    ("CCP2", (0.03853990, -0.02822510, 0.09097600)),  # standard_1005
+    ("CCP3", (-0.06612810, -0.02929570, 0.06589800)),  # standard_1005
+    ("CCP4", (0.06885390, -0.02864030, 0.06641000)),  # standard_1005
+    ("CCP5", (-0.08154310, -0.03017270, 0.03027300)),  # standard_1005
+    ("CCP6", (0.08455290, -0.02937830, 0.03087800)),  # standard_1005
+    ("CCP7", (-0.08449565, -0.03102020, -0.00820100)),  # midpoint(T7, TP7) in standard_1005
+    ("CCP8", (0.08531435, -0.03028280, -0.00831000)),  # midpoint(T8, TP8) in standard_1005
+    ("T1", (-0.08407590, 0.01456730, -0.05042900)),  # standard_postfixed (anterior temporal; same position as FT9 in standard_1005)
+    ("T2", (0.08411310, 0.01436470, -0.05053800)),  # standard_postfixed (anterior temporal; same position as FT10 in standard_1005)
+    ("FTT9h", (-0.08412500, -0.00184670, -0.02979400)),  # standard_1005 (h-suffix intermediate position)
+    ("TTP7h", (-0.08556510, -0.03062870, 0.01115300)),  # standard_1005 (h-suffix intermediate position)
+    ("TPP9h", (-0.07816020, -0.06075670, -0.02382400)),  # standard_1005 (h-suffix intermediate position)
+    ("FTT10h", (0.08412300, -0.00180830, -0.02963800)),  # standard_1005 (h-suffix intermediate position)
+    ("TPP8h", (0.07851980, -0.06043230, 0.01290200)),  # standard_1005 (h-suffix intermediate position)
+    ("TPP10h", (0.07890270, -0.06095530, -0.02380500)),  # standard_1005 (h-suffix intermediate position)
+    ("FP1-F7", (-0.04984980, 0.06319570, -0.00920500)),  # bipolar: midpoint(FP1, F7) from standard_1005
+    ("F7-T7", (-0.07721200, 0.01322780, -0.01038300)),  # bipolar: midpoint(F7, T7) from standard_1005
+    ("T7-P7", (-0.07829770, -0.04473570, -0.00591650)),  # bipolar: midpoint(T7, P7) from standard_1005
+    ("P7-O1", (-0.05092385, -0.09295085, 0.00317600)),  # bipolar: midpoint(P7, O1) from standard_1005
+    ("FP2-F8", (0.05145770, 0.06465880, -0.00954000)),  # bipolar: midpoint(FP2, F8) from standard_1005
+    ("F8-T8", (0.07906150, 0.01470070, -0.01074500)),  # bipolar: midpoint(F8, T8) from standard_1005
+    ("T8-P8", (0.07906780, -0.04404430, -0.00601500)),  # bipolar: midpoint(T8, P8) from standard_1005
+    ("P8-O2", (0.05144915, -0.09261215, 0.00313000)),  # bipolar: midpoint(P8, O2) from standard_1005
+]   # "FP1-F3", "F3-C3", "C3-P3", "P3-O1", "FP2-F4", "F4-C4", "C4-P4", "P4-O2"
+# fmt: on
+
+_LABRAM_TARGET_CHS_INFO = [
+    {
+        "ch_name": ch,
+        "kind": "eeg",
+        "loc": np.asarray(loc, dtype=float),
+    }
+    for ch, loc in _LABRAM_TARGET_CHS_TUPLES
+]
+LABRAM_CHANNEL_ORDER = [ch for ch, _ in _LABRAM_TARGET_CHS_TUPLES]
 
 
 class Labram(EEGModuleMixin, nn.Module):
@@ -293,13 +329,6 @@ class Labram(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.GELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
-    on_unknown_chs: Literal["ignore", "warn", "raise"], default="warn"
-        Determines behavior when channels that are not in LABRAM_CHANNEL_ORDER
-        are passed to the forward method. Options:
-        - "ignore": Silently ignore and drop unmatched channels, then proceed with matched ones.
-        - "warn": Issue a warning listing unmatched channels, and drop them.
-        - "raise": Raise an error and halt execution if any unmatched channels are found.
-        An error is always raised when unknown channels are passed during model initialization (via ``chs_info``).
 
     References
     ----------
@@ -346,7 +375,6 @@ class Labram(EEGModuleMixin, nn.Module):
         neural_tokenizer=True,
         attn_head_dim=None,
         activation: type[nn.Module] = nn.GELU,
-        on_unknown_chs: Literal["ignore", "warn", "raise"] = "warn",
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -358,8 +386,22 @@ class Labram(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq
 
-        self.on_unknown_chs = on_unknown_chs
-        self._setup_channel_mapping()
+        # Require chs_info to match LABRAM_CHANNEL_ORDER exactly (case-insensitive).
+        # Arbitrary channel sets should go through InterpolatedLaBraM.
+        try:
+            _chs_info = self.chs_info
+        except ValueError:
+            _chs_info = None
+        if _chs_info is not None:
+            user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
+            canonical = LABRAM_CHANNEL_ORDER
+            if [n.lower() for n in user_names] != [n.lower() for n in canonical]:
+                raise ValueError(
+                    f"Labram requires chs_info to match LABRAM_CHANNEL_ORDER exactly "
+                    f"({len(canonical)} channels, specific order). Got {len(user_names)} "
+                    f"channels. For arbitrary channel sets, use InterpolatedLaBraM "
+                    f"(from braindecode.models import InterpolatedLaBraM)."
+                )
 
         self.patch_size = patch_size
         self.num_features = self.embed_dim = embed_dim
@@ -552,122 +594,6 @@ class Labram(EEGModuleMixin, nn.Module):
             nn.init.constant_(layer.bias, 0)
             nn.init.constant_(layer.weight, 1.0)
 
-    def _setup_channel_mapping(self):
-        # Normalize channel names to uppercase for case-insensitive matching
-        labram_order_upper = [ch.upper() for ch in LABRAM_CHANNEL_ORDER]
-        # Build a lookup from LABRAM_CHANNEL_ORDER
-        self._labram_ch_to_idx = {ch: i for i, ch in enumerate(labram_order_upper)}
-
-        self._input_channels_mask: torch.Tensor | None = None
-        self._labram_ch_indices: torch.Tensor | None = None
-        try:
-            chs_info = self.chs_info
-        except ValueError:
-            return
-        # Get ch_names from chs_info
-        ch_names = [ch["ch_name"] for ch in chs_info]
-        # input_channels_mask: use to drop unknown channels form the input tensor
-        # labram_ch_indices: used to select the corresponding position embeddings, which preserves alignment for any subset of channels.
-        self._input_channels_mask, self._labram_ch_indices = self._get_channel_indices(
-            ch_names
-        )
-
-    def _get_channel_indices(
-        self, ch_names: list[str]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Normalize to uppercase for matching
-        ch_names_upper = [ch.upper() for ch in ch_names]
-
-        # Find which input channels are in LABRAM_CHANNEL_ORDER
-        matched_channels = []
-        unmatched_channels = []
-        input_channels_mask = []
-        for i, ch_name in enumerate(ch_names_upper):
-            if ch_name in self._labram_ch_to_idx:
-                matched_channels.append((i, ch_name, self._labram_ch_to_idx[ch_name]))
-                input_channels_mask.append(True)
-            else:
-                unmatched_channels.append(ch_name)
-                input_channels_mask.append(False)
-
-        if not matched_channels:
-            raise ValueError(
-                "No input channels matched LABRAM_CHANNEL_ORDER. Channel reordering "
-                "can not be applied."
-            )
-
-        if unmatched_channels and self.on_unknown_chs != "ignore":
-            msg = (
-                f"The following channel names are not in LABRAM_CHANNEL_ORDER and "
-                f"will be excluded: {unmatched_channels}. Only matched channels will "
-                f"be used for inference."
-            )
-            if self.on_unknown_chs == "raise":
-                raise ValueError(msg)
-            warn(msg, UserWarning)
-
-        input_channels_mask_tensor = torch.tensor(input_channels_mask, dtype=torch.bool)
-        labram_indices = torch.tensor(
-            [ch[2] for ch in matched_channels], dtype=torch.long
-        )
-        return input_channels_mask_tensor, labram_indices
-
-    def _select_channels(self, x, ch_names):
-        """
-        Select input channels to match LABRAM_CHANNEL_ORDER.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor of shape (batch, n_chans, n_times).
-
-        Returns
-        -------
-        x_selected : torch.Tensor
-            Selected tensor of shape (batch, n_matched_chans, n_times).
-        input_chans : torch.Tensor or None
-            Indices for selecting position embeddings, including the [CLS] token
-            at index 0. Returns None if reordering is not enabled.
-
-        Notes
-        -----
-        The selection ensures that channels are processed in the same relative
-        order as LABRAM_CHANNEL_ORDER. When absolute position embeddings are
-        enabled, we also return indices that select the corresponding LABRAM
-        positions, which preserves alignment for any subset of channels.
-        """
-        if ch_names is not None:
-            assert len(ch_names) == x.shape[1], (
-                "Length of ch_names must match number of channels in input tensor."
-            )
-            input_channels_mask, labram_ch_indices = self._get_channel_indices(ch_names)
-        else:
-            input_channels_mask = self._input_channels_mask
-            labram_ch_indices = self._labram_ch_indices
-
-        if input_channels_mask is None or labram_ch_indices is None:
-            raise ValueError(
-                "Channel information is not available. Please either provide "
-                "the `ch_names` argument to the forward method, or ensure that channel information is provided "
-                "during model initialization (via `chs_info`)."
-            )
-        if len(input_channels_mask) != x.shape[1]:
-            raise ValueError(
-                "Length of input_channels_mask does not match number of channels in input tensor. "
-                "Please provide channel information via the `ch_names` argument to the forward method, or ensure that channel information is provided during model initialization (via `chs_info`)."
-            )
-
-        # Select the channels that are available in LABRAM_CHANNEL_ORDER
-        x_available = x[:, input_channels_mask, :]
-
-        cls_index = torch.tensor(
-            [0],
-            device=labram_ch_indices.device,
-            dtype=labram_ch_indices.dtype,
-        )
-        input_chans = torch.cat([cls_index, labram_ch_indices + 1])
-        return x_available, input_chans
-
     def get_num_layers(self):
         """
         Convenience method to get the number of layers in the model.
@@ -787,7 +713,6 @@ class Labram(EEGModuleMixin, nn.Module):
     def forward(
         self,
         x,
-        ch_names: list[str] | None = None,
         return_patch_tokens=False,
         return_all_tokens=False,
         return_features=False,
@@ -800,12 +725,6 @@ class Labram(EEGModuleMixin, nn.Module):
         x: torch.Tensor
             The input data with shape (batch, n_chans, n_times)
             or (batch, n_chans, n_patches, patch size).
-        ch_names: list of str or None
-            Optional list of channel names corresponding to the input data.
-            This list is used to reorder channels to match LABRAM_CHANNEL_ORDER.
-            If not provided, the channels provided during model initialization
-            (via ``chs_info``), channels will be used instead
-            If neither is provided, an error will be raised.
         return_features : bool
             If True, return a dict with ``"features"`` (patch tokens) and
             ``"cls_token"`` instead of the classification output.
@@ -819,8 +738,11 @@ class Labram(EEGModuleMixin, nn.Module):
         torch.Tensor or dict
             The output of the model with dimensions (batch, n_outputs)
         """
-        # Apply automatic channel reordering if configured and input_chans not provided
-        x, input_chans = self._select_channels(x, ch_names=ch_names)
+        # After __init__ validation, x already has chs_info == LABRAM_CHANNEL_ORDER,
+        # so input_chans is always arange(len(canonical) + 1) (CLS + all canonical).
+        input_chans = torch.arange(
+            len(LABRAM_CHANNEL_ORDER) + 1, device=x.device, dtype=torch.long
+        )
 
         if return_features:
             x = self.forward_features(
@@ -1578,3 +1500,23 @@ class _TemporalConv(nn.Module):
         x = self.act_layer_3(self.norm3(self.conv3(x)))
         x = self.transpose_temporal_channel(x)
         return x
+
+
+# -----------------------------------------------------------------------------
+# InterpolatedLaBraM — experimental channel-interpolation variant of Labram
+# -----------------------------------------------------------------------------
+# A :func:`~braindecode.models.interpolated.InterpolatedModel` wrapper around
+# :class:`Labram` whose target channel set is the 128-channel canonical
+# ``LABRAM_CHANNEL_ORDER``. Accepts arbitrary user ``chs_info``; projects to
+# the canonical 128 channels via an MNE-backed (frozen by default)
+# interpolation matrix.
+#
+# NOTE: 8 of the 128 canonical channels are bipolar derivations (e.g. FP1-F7);
+# their positions are approximated as midpoints — see the TODO in
+# ``_LABRAM_TARGET_CHS_TUPLES``.
+
+from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
+
+InterpolatedLaBraM = InterpolatedModel(
+    Labram, _LABRAM_TARGET_CHS_INFO, name="InterpolatedLaBraM"
+)

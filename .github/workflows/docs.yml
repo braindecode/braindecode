@@ -23,24 +23,29 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      # Cache MNE Data
-      # Dedicated cache for docs (single platform: ubuntu-latest)
-      # Cache key includes hash of pyproject.toml to invalidate when dependencies change
+      # Cache MNE Data and HuggingFace Hub weights.
+      # Both caches are content-addressed (filenames + checksums for MNE,
+      # commit-pinned safetensors for HF), so they don't need to invalidate on
+      # pyproject.toml changes. Using github.run_id as the primary save key
+      # forces a fresh save each run; restore-keys lets every run start from
+      # the most recent cache instead of cold-downloading from physionet.org /
+      # huggingface.co.
       - name: Create/Restore MNE Data Cache
         id: cache-mne_data
         uses: actions/cache@v4
         with:
           path: ~/mne_data
-          key: docs-mne-data-${{ hashFiles('pyproject.toml') }}
+          key: docs-mne-data-v1-${{ github.run_id }}
           restore-keys: |
+            docs-mne-data-v1-
             docs-mne-data-
-      # Cache HuggingFace Hub models
       - name: Create/Restore HuggingFace Cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface/hub
-          key: docs-hf-hub-${{ hashFiles('pyproject.toml') }}
+          key: docs-hf-hub-v1-${{ github.run_id }}
           restore-keys: |
+            docs-hf-hub-v1-
             docs-hf-hub-
       # Install uv
       - name: Install uv

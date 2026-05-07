@@ -1,43 +1,79 @@
 {%- extends 'pydata_sphinx_theme/layout.html' %}
 
 {% block extrahead %}
-  <!-- Google Tag Manager -->
-  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  <!-- Google Tag Manager (single analytics entry point — drives any GA4 / GTAG
+       configured inside the GTM container; do not add a second gtag here).
+       Honors the Do-Not-Track signal so privacy-conscious users opt out. -->
+  <script>(function(w,d,s,l,i){
+    if (w.doNotTrack=='1' || w.navigator.doNotTrack=='1' || w.navigator.doNotTrack=='yes') return;
+    w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
   })(window,document,'script','dataLayer','GTM-NWDKLVNR');</script>
   <!-- End Google Tag Manager -->
 
-  <link rel="canonical" href="braindecode.org/index.html" />
   {{ super() }}
 
-  <!-- Google Analytics (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-CHY0V439ZQ"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-CHY0V439ZQ');
+  {% if pagename == 'index' %}
+  {# Landing-only assets. Injected here (not in conf.py's
+     html_css_files / html_js_files) so they don't ship on every doc
+     page — landing.css is ~2k lines and pulls in Google Fonts, and
+     landing.js wires interactions only the landing page uses. #}
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="{{ pathto('_static/landing.css', 1) }}">
+  <script src="{{ pathto('_static/zoo-data.js', 1) }}" defer></script>
+  <script src="{{ pathto('_static/landing.js', 1) }}" defer></script>
+  {# Tag the document so landing.css can target it without relying on
+     `:has(.bd-landing)` (browsers without :has() would otherwise miss
+     the page-level overrides and render the chrome twice). #}
+  <script>document.documentElement.classList.add("bd-page-index");</script>
+  {# `<meta name="description">` and `<meta property="og:description">` are
+     emitted by sphinxext-opengraph (see ogp_enable_meta_description in conf.py)
+     using the `.. meta::` block in index.rst — don't duplicate them here. #}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Braindecode",
+    "alternateName": "braindecode",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Cross-platform",
+    "description": "Open-source PyTorch toolbox for decoding raw EEG, ECoG and MEG with deep learning. Datasets, preprocessing, augmentations, and 65+ published models.",
+    "url": "https://braindecode.org/dev/",
+    "license": "https://spdx.org/licenses/BSD-3-Clause.html",
+    "softwareVersion": "{{ release }}",
+    "programmingLanguage": "Python",
+    "downloadUrl": "https://pypi.org/project/braindecode/",
+    "codeRepository": "https://github.com/braindecode/braindecode",
+    "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+    "publisher": {
+      "@type": "Organization",
+      "name": "The Braindecode Developers",
+      "url": "https://braindecode.org/dev/",
+      "logo": "https://braindecode.org/dev/_static/braindecode_long.svg",
+      "sameAs": [
+        "https://github.com/braindecode/braindecode",
+        "https://pypi.org/project/braindecode/",
+        "https://doi.org/10.5281/zenodo.17699192"
+      ]
+    }
+  }
   </script>
+  {% endif %}
 {% endblock %}
 
 {% block docs_body %}
-<!-- Google Tag Manager (noscript) -->
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NWDKLVNR"
-height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-<!-- End Google Tag Manager (noscript) -->
+{# Intentionally no GTM <noscript> iframe: it would load unconditionally
+   for JS-disabled users and bypass the doNotTrack check the JS bootstrap
+   above honors. The GTM container's value comes from JS-driven events,
+   so the fallback is low-signal anyway. #}
 <div>
   {% block body %} {% endblock %}
-  {% if pagename == 'index' %}
-    {%- include 'homepage.html' -%}
-  {% endif %}
 </div>
 {% endblock %}
 
 {%- block scripts_end %}
     {{ super() }}
-    <script src="https://braindecode.org/versionwarning.js"></script>
-    {% if pagename == 'index' %}
-    {% endif %}
+    <script src="https://braindecode.org/versionwarning.js" defer></script>
 {%- endblock %}

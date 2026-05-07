@@ -1,0 +1,26 @@
+---
+# Codacy project configuration.
+#
+# The defaults are sensible for most projects, but the docs landing page
+# (`docs/_static/landing.{css,js}`) is intentionally written with
+# compact single-line CSS rules (faster to read in a 1500-line file) and
+# uses function declarations after their reference site (legal in JS due
+# to hoisting). Both patterns get flagged by stylelint / ESLint default
+# configs that Codacy ships, so we narrow those rules below.
+engines:
+  stylelint:
+    enabled: true
+    rules:
+      # docs/_static/landing.css uses single-line rules for SVG keyframes
+      # and one-liner overrides where the visual pairing is the point.
+      declaration-block-single-line-max-declarations: false
+      # Blank-line-before-rule is a stylistic preference; the file
+      # already separates major sections with header comments.
+      rule-empty-line-before: false
+      # Allow lower-case shorthand hex; the file mixes 3- and 6-digit.
+      color-hex-length: false
+exclude_paths:
+  - docs/_build/**
+  - docs/auto_examples/**
+  - docs/sg_execution_times.rst
+  - examples/**

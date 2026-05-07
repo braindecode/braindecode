@@ -28,11 +28,92 @@ Current 1.5.0 (GitHub)
 Enhancements
 ============
 
+- Redesign the documentation landing page (``docs/index.rst``) in a
+  pyhealth.dev-style layout: animated brain → EEG → net hero, fact strip
+  highlighting MOABB / EEGDash interoperability, interactive model-zoo
+  browser sourced from ``braindecode/models/summary.csv``, Hugging Face
+  Hub integration row, and a tutorial-thumbnail carousel. Adds
+  ``sphinxext-opengraph`` to docs extras and a ``SoftwareApplication``
+  JSON-LD block. (:gh:`1007` by `Bruno Aristimunha`_)
+- Tutorials now train for a few epochs then load pretrained weights from
+  Hugging Face Hub to show full training curves and metrics. All 9 tutorial
+  checkpoints published to ``huggingface.co/braindecode/``. The offline
+  training script used to produce the checkpoints is available as a gist:
+  https://gist.github.com/bruAristimunha/27d74c8410fe9d0db258a03f42efa7c6.
+  (:gh:`985` by `Bruno Aristimunha`_)
 - Use ``F.scaled_dot_product_attention`` in :class:`braindecode.modules.MultiHeadAttention`,
   enabling optimized attention kernels (flash-attention on CUDA,
   memory-efficient backends on other devices).
   By `Léo Burgund`_ and `Bruno Aristimunha`_.
   (:gh:`902`)
+- Add experimental channel interpolation feature: new
+  :class:`braindecode.modules.ChannelInterpolationLayer` plus the
+  :func:`braindecode.models.InterpolatedModel` class factory project arbitrary
+  user channel sets to a model's canonical set via an MNE-backed (frozen by
+  default) interpolation matrix. Ship pre-built variants
+  :class:`braindecode.models.InterpolatedLaBraM`,
+  :class:`braindecode.models.InterpolatedSignalJEPA`, and
+  :class:`braindecode.models.InterpolatedBIOT` for the corresponding
+  pre-trained models. (:gh:`993` by `Pierre Guetschel`_)
+- Add a tutorial walking through the experimental ``Interpolated*`` family
+  (:ref:`channel-interpolation-tutorial`): failure mode of the vanilla
+  backbones on non-canonical channel sets, one-line fix via
+  :class:`braindecode.models.InterpolatedLaBraM` /
+  :class:`braindecode.models.InterpolatedBIOT` /
+  :class:`braindecode.models.InterpolatedSignalJEPA`, side-by-side
+  visualisation of the ``name_match`` vs ``always`` interpolation matrices,
+  and the ``trainable=True`` flag. (:gh:`994` by `Pierre Guetschel`_)
+- Mark deterministic index buffers (:class:`braindecode.models.BIOT` encoder's
+  ``index`` and :class:`braindecode.models.REVE`'s position ``embedding`` bank)
+  as non-persistent. They are rebuilt from ``__init__`` arguments on every
+  instantiation, so keeping them in ``state_dict`` only bloated checkpoints and
+  caused spurious mismatches when ``n_chans`` (or the position-bank config)
+  differed between save and load. (:gh:`993` by `Pierre Guetschel`_)
+- Add :mod:`braindecode.visualization` interpretability utilities, all built on
+  plain PyTorch autograd with no extra dependencies:
+  :func:`~braindecode.visualization.saliency`,
+  :func:`~braindecode.visualization.input_x_gradient`,
+  :func:`~braindecode.visualization.integrated_gradients`,
+  :func:`~braindecode.visualization.layer_grad_cam`,
+  :func:`~braindecode.visualization.project_to_topomap` (thin wrapper around
+  :func:`mne.viz.plot_topomap`), and :func:`~braindecode.visualization.compute_metrics`
+  for quantitative attribution comparison. A new tutorial,
+  :ref:`interpretability-tutorial`, walks through the full pipeline.
+- Add :class:`braindecode.models.MetaNeuromotorHand`, a port of the
+  handwriting decoder from Meta / CTRL-labs' generic neuromotor interface
+  (Kaifosh, Reardon et al., Nature 2025). The model takes raw 16-channel
+  surface EMG from the wristband at 2 kHz and produces per-token scores
+  for CTC decoding of handwritten text. The pipeline is a fixed
+  multivariate power frequency (MPF) featurizer (channel-wise STFT,
+  cross-spectral density, frequency-band averaging, and SPD matrix
+  logarithm) followed by a circular rotation-invariant MLP and a
+  15-block causal conformer encoder. Meta's pretrained checkpoint loads
+  directly via ``load_state_dict`` (after stripping the ``network.``
+  prefix); the port is bit-exact to the upstream reference
+  implementation on real sEMG. Distributed under CC BY-NC 4.0 to match
+  the upstream repository; see the class docstring for the license
+  warning and the pretrained-checkpoint loading recipe.
+  By `Bruno Aristimunha`_.
+- Add :class:`braindecode.models.EMG2QwertyNet`, a port of the
+  TDS-Conv-CTC touch-typing decoder from
+  ``facebookresearch/emg2qwerty`` (Sivakumar et al., NeurIPS 2024). The
+  model takes raw 32-channel surface EMG (two 16-electrode wristbands at
+  2 kHz) and emits per-frame scores over a 99-class typing
+  vocabulary (98 keys + CTC blank); pass ``log_softmax=True`` to get
+  log-probabilities directly consumable by :class:`~torch.nn.CTCLoss`. The pipeline is a parameter-free
+  log-spectrogram front-end, per-electrode-per-band BatchNorm, a
+  circular rotation-invariant MLP (one per band), and a stack of
+  Time-Depth-Separable convolutional blocks (Hannun et al., 2019) without
+  temporal padding. The encoder ``nn.Sequential`` mirrors upstream's
+  ``TDSConvCTCModule.model`` indices for parameter-bearing children, so
+  upstream emg2qwerty checkpoints load directly via ``load_state_dict``
+  (after stripping the PyTorch-Lightning ``network.`` prefix); the
+  class-level :attr:`~braindecode.models.EMG2QwertyNet.mapping` only
+  remaps the head from ``model.4.{weight,bias}`` to
+  ``final_layer.{weight,bias}``. Distributed under CC BY-NC 4.0 to
+  match the upstream repository; see the class docstring for the
+  license warning and the pretrained-checkpoint loading recipe.
+  By `Bruno Aristimunha`_.
 
 API and behavior changes
 ========================
@@ -41,6 +122,23 @@ API and behavior changes
   convention: boolean masks use ``True`` to **ignore** a position (previously
   ``True`` meant keep). The scaling factor is now ``1/sqrt(head_dim)`` instead of
   ``1/sqrt(emb_size)``. (:gh:`902`)
+- :class:`braindecode.models.BENDR`: remove the ``n_chans_pretrained`` /
+  ``chan_proj_max_norm`` parameters and the ``channel_projection`` layer; hard-code
+  the 20 pre-training channels as ``_BENDR_TARGET_CHS_TUPLES``. The official
+  ``braindecode/braindecode-bendr`` checkpoint has been re-uploaded flat so
+  ``from_pretrained`` now loads its 99 weights (previously 0 of 99 matched
+  silently). Also ships :class:`braindecode.models.InterpolatedBENDR`, the
+  :func:`~braindecode.models.InterpolatedModel` wrapper that accepts arbitrary
+  user ``chs_info`` and projects to the canonical 20 BENDR channels (the
+  ``SCALE`` target has no physical position, so its interpolation row is a
+  spatial spline of the user's EEG — not the dn3 amplitude statistic).
+  (:gh:`992` by `Pierre Guetschel`_)
+- :class:`braindecode.models.Labram` now requires ``chs_info`` to match
+  ``LABRAM_CHANNEL_ORDER`` exactly (128 channels, canonical order). The
+  ``on_unknown_chs`` parameter and the forward-time ``ch_names`` argument are
+  removed. Users with arbitrary channel sets should migrate to
+  :class:`braindecode.models.InterpolatedLaBraM`. (:gh:`993`
+  by `Pierre Guetschel`_)
 
 Requirements
 ============
@@ -78,7 +176,20 @@ Bug fixes
 - Fix :func:`braindecode.preprocessing.create_fixed_length_windows` crashing
   when only ``window_size_samples`` is provided without ``window_stride_samples``,
   stride now defaults to window size as documented
-  (:gh:`509` by `Sarthak Tayal`_)
+  (:gh:`990` by `Sarthak Tayal`_)
+- Add ``channel_embedding`` parameter to :class:`braindecode.models.SignalJEPA` and
+  :class:`braindecode.models.SignalJEPA_Contextual` to load pre-trained channel
+  embedding weights when fine-tuning on a subset of the pre-training channels.
+  Two new HuggingFace checkpoints are published: ``braindecode/signal-jepa`` and
+  ``braindecode/signal-jepa_without-chans`` (:gh:`991` by `Pierre Guetschel`_)
+- Bump ``openneuro-py`` to ``>=2026.4.0`` so the docs build picks up upstream
+  PR ``#308`` (``DatasetFile.key`` → ``id``). The previous ``<2026.4`` pin
+  (:gh:`1000`) avoided a libc double-free seen with newer releases but broke
+  ``examples/datasets_io/plot_bids_dataset_example.py`` against the live
+  OpenNeuro 5.0.0 GraphQL schema (``Cannot query field "key" on type
+  "DatasetFile"``) (:gh:`1002` by `Bruno Aristimunha`_)
+- Retry transient TLS failures from ``physionet.org`` when fetching
+  :class:`braindecode.datasets.SleepPhysionet` (by `Bruno Aristimunha`_)
 
 Code health
 ============
@@ -182,6 +293,11 @@ Requirements
 
 Bugs
 =====
+- Improve the error message when :meth:`from_pretrained` or :meth:`push_to_hub`
+  are called without the optional ``huggingface_hub`` dependency installed.
+  Users now get a clear :class:`ImportError` with installation instructions
+  (``pip install 'braindecode[hub]'``) instead of an ``AttributeError``.
+  (:gh:`1024` by `@copilot`_)
 - Fix the documentation header "Cite Braindecode" announcement link: it used a bare
   ``cite.html`` URL, which browsers resolve relative to the current page path and led
   to 404s (for example from ``install/install.html``). The link is now built with
@@ -234,6 +350,14 @@ Bugs
   marked all model-specific parameters as "The description is missing"
   when ``DOCSTRING_INHERITANCE_ENABLE=1`` was set during documentation
   builds (:gh:`971` by `Bruno Aristimunha`_)
+- Expose ``max_nbytes`` directly on
+  :func:`braindecode.preprocessing.preprocess.preprocess` and turn the
+  cryptic ``mmap can't resize a readonly`` failure (raised when joblib
+  memory-maps a preloaded array that a preprocessor later tries to
+  resize) into an actionable error explaining how to fix it: pass
+  ``max_nbytes=None`` to disable memory mapping, or supply a ``save_dir``
+  so data is reloaded with ``preload=False``
+  (:gh:`325` by `Sarthak Tayal`_)
 
 Code health
 ============

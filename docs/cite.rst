@@ -21,7 +21,7 @@ You can use the following BibTeX entry:
 
 .. code-block:: bibtex
 
-    @software{braindecode,
+    @misc{braindecode,
       author = {Aristimunha, Bruno and
                 Guetschel, Pierre and
                 Wimpff, Martin and
@@ -41,9 +41,9 @@ You can use the following BibTeX entry:
                 Schirrmeister, Robin Tibor},
       title = {Braindecode: toolbox for decoding raw electrophysiological brain data
                with deep learning models},
+      howpublished = {Zenodo},
       url = {https://github.com/braindecode/braindecode},
       doi = {10.5281/zenodo.17699192},
-      publisher = {Zenodo},
       license = {BSD-3-Clause},
     }
 

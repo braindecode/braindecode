@@ -579,3 +579,53 @@ def test_preprocessing_function_on_raw(base_concat_ds, prep_class_name, init_kwa
         preprocess(base_concat_ds, [preprocessor], n_jobs=1)
     except Exception as e:
         pytest.fail(f"{prep_class_name} failed with {type(e).__name__}: {str(e)}")
+
+
+def test_preprocess_raises_actionable_error_on_mmap_resize_failure(
+    base_concat_ds, monkeypatch
+):
+    """The mmap-readonly failure is converted into an actionable RuntimeError."""
+    import importlib
+
+    preprocess_module = importlib.import_module(
+        "braindecode.preprocessing.preprocess"
+    )
+    n_calls = {"count": 0}
+
+    class FailingParallel:
+        def __init__(self, *args, **kwargs):
+            n_calls["count"] += 1
+
+        def __call__(self, iterable):
+            raise BufferError("mmap can't resize a readonly memory map.")
+
+    monkeypatch.setattr(preprocess_module, "Parallel", FailingParallel)
+
+    preprocessors = [Crop(tmax=10, include_tmax=False)]
+    with pytest.raises(RuntimeError, match=r"max_nbytes=None.*save_dir") as excinfo:
+        preprocess(base_concat_ds, preprocessors, n_jobs=2)
+
+    assert n_calls["count"] == 1, "preprocess must not retry; it should raise once"
+    assert isinstance(excinfo.value.__cause__, BufferError)
+
+
+def test_preprocess_propagates_unrelated_buffer_error(base_concat_ds, monkeypatch):
+    """A BufferError that is not an mmap-resize failure must propagate unchanged."""
+    import importlib
+
+    preprocess_module = importlib.import_module(
+        "braindecode.preprocessing.preprocess"
+    )
+
+    class FailingWithUnrelatedError:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, iterable):
+            raise BufferError("some unrelated buffer error")
+
+    monkeypatch.setattr(preprocess_module, "Parallel", FailingWithUnrelatedError)
+
+    preprocessors = [Crop(tmax=10, include_tmax=False)]
+    with pytest.raises(BufferError, match="unrelated"):
+        preprocess(base_concat_ds, preprocessors, n_jobs=2)

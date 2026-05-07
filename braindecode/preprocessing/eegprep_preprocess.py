@@ -90,6 +90,53 @@ class EEGPrepBasePreprocessor(Preprocessor):
         """Apply the preprocessor to an EEGLAB EEG structure. Overridden by subclass."""
         ...
 
+    @staticmethod
+    def _get_annotation_durations(raw: BaseRaw) -> list[float]:
+        """Capture annotation durations in seconds before the EEGLAB round-trip."""
+        if raw.annotations is None or len(raw.annotations) == 0:
+            return []
+        return [float(duration) for duration in raw.annotations.duration]
+
+    @staticmethod
+    def _duration_to_samples(duration_s: float, sfreq: float) -> int:
+        """Convert a duration in seconds to EEGLAB event samples."""
+        duration_samples = int(round(duration_s * sfreq))
+        if duration_s > 0:
+            return max(1, duration_samples)
+        return duration_samples
+
+    @staticmethod
+    def _restore_event_durations(
+        eeg: dict[str, Any],
+        annotation_durations: Sequence[float],
+        opname: str,
+    ) -> None:
+        """Restore annotation durations after EEGPrep may have changed the sampling rate."""
+        events = eeg.get("event", [])
+        if len(events) == 0:
+            return
+
+        non_boundary_events = [ev for ev in events if ev.get("type") != "boundary"]
+        if annotation_durations and len(non_boundary_events) != len(
+            annotation_durations
+        ):
+            log.warning(
+                "EEGPrep event count changed during %s processing (%d annotated events,"
+                " %d non-boundary events); restoring durations in order for the"
+                " overlapping subset only.",
+                opname,
+                len(annotation_durations),
+                len(non_boundary_events),
+            )
+
+        sfreq = float(eeg["srate"])
+        to_samples = EEGPrepBasePreprocessor._duration_to_samples
+        for ev, duration_s in zip(non_boundary_events, annotation_durations):
+            ev["duration"] = to_samples(duration_s, sfreq)
+
+        for ev in events:
+            ev.setdefault("duration", 1)
+
     def _apply_op(self, raw: BaseRaw) -> None:
         """Internal method that does the actual work; this is called by Preprocessor.apply()."""
         # handle error if eegprep is not available
@@ -121,17 +168,13 @@ class EEGPrepBasePreprocessor(Preprocessor):
             eeg = raw
             non_eeg = None
 
+        annotation_durations = self._get_annotation_durations(eeg)
         eeg = eegprep.mne2eeg(eeg)
 
         # back up channel locations for potential later use
         orig_chanlocs = [cl.copy() for cl in eeg["chanlocs"]]
 
-        # ensure all events in EEG structure have a 'duration' field; this is
-        # necessary for some of the EEGPrep operations to succeed
-        if not all("duration" in ev for ev in eeg["event"]):
-            for ev in eeg["event"]:
-                if "duration" not in ev:
-                    ev["duration"] = 1
+        self._restore_event_durations(eeg, annotation_durations, opname)
 
         if self.force_dtype is not None:
             eeg["data"] = eeg["data"].astype(self.force_dtype)
@@ -141,6 +184,8 @@ class EEGPrepBasePreprocessor(Preprocessor):
 
         if self.force_dtype is not None:
             eeg["data"] = eeg["data"].astype(self.force_dtype)
+
+        self._restore_event_durations(eeg, annotation_durations, opname)
 
         # rename EEGLAB-type boundary events to a form that's recognized by MNE so they
         # (or intersecting epochs) are ignored during potential downstream epoching

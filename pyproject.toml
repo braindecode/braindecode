@@ -78,6 +78,7 @@ documentation = "https://braindecode.org/stable/index.html"
 moabb = ["moabb>=1.4.3"]
 eegprep = ["eegprep[eeglabio]>=0.2.23"]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
+viz = ["captum>=0.7.0"]
 tests = [
     'pytest',
     'pytest-cov',
@@ -99,6 +100,7 @@ docs = [
     'sphinx-autobuild',
     'sphinxcontrib-bibtex',
     'sphinx_sitemap',
+    'sphinxext-opengraph',
     'pydata_sphinx_theme',
     'numpydoc',
     'memory_profiler',
@@ -108,7 +110,7 @@ docs = [
     'lightning',
     'seaborn',
     'pre-commit',
-    'openneuro-py',
+    'openneuro-py>=2026.4.0',  # 2026.4.0 fixes DatasetFile.key->id after the OpenNeuro 5.0.0 schema change; older versions break against the live GraphQL server
     'plotly',
     'shap',
     'nbformat',
@@ -122,6 +124,7 @@ all = [
     "braindecode[hub]",
     "braindecode[eegprep]",
     "braindecode[typing]",
+    "braindecode[viz]",
 ]
 
 [tool.setuptools]

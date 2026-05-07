@@ -1,11 +1,56 @@
 import math
 from warnings import warn
 
+import numpy as np
 import torch
 import torch.nn as nn
 from linear_attention_transformer import LinearAttentionTransformer
 
 from braindecode.models.base import EEGModuleMixin
+
+# -----------------------------------------------------------------------------
+# Canonical channel order for InterpolatedBIOT — the 18-channel TCP bipolar
+# montage used by BIOT's shhs-prest and six-datasets pretrained checkpoints.
+# Source: https://github.com/ycq091044/BIOT (README + datasets/TUAB/process.py
+# + datasets/SHHS/process.py). Indices 0-15 are the TCP 16-channel bipolar
+# derivations; indices 16-17 are SHHS differential channels.
+#
+# The `loc` values are only used to build an MNE interpolation matrix for
+# InterpolatedBIOT. All entries are bipolar / differential derivations.
+# TODO: positions are stored as the midpoint of the two constituent
+# electrodes. This is a simplification — a bipolar signal V(A)-V(B) cannot
+# be faithfully recovered by spatial interpolation at the midpoint. Revisit
+# in a follow-up PR (e.g. a dedicated BipolarDerivationLayer).
+# -----------------------------------------------------------------------------
+
+# fmt: off
+_BIOT_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
+    ("FP1-F7", (-0.04984980, 0.06319570, -0.00920500)),
+    ("F7-T7", (-0.07721200, 0.01322780, -0.01038300)),
+    ("T7-P7", (-0.07829770, -0.04473570, -0.00591650)),
+    ("P7-O1", (-0.05092385, -0.09295085, 0.00317600)),
+    ("FP2-F8", (0.05145770, 0.06465880, -0.00954000)),
+    ("F8-T8", (0.07906150, 0.01470070, -0.01074500)),
+    ("T8-P8", (0.07906780, -0.04404430, -0.00601500)),
+    ("P8-O2", (0.05144915, -0.09261215, 0.00313000)),
+    ("FP1-F3", (-0.03984025, 0.06851415, 0.01760100)),
+    ("F3-C3", (-0.05780095, 0.02073975, 0.05327500)),
+    ("C3-P3", (-0.05918270, -0.04520975, 0.06014900)),
+    ("P3-O1", (-0.04121035, -0.09561840, 0.03238950)),
+    ("FP2-F4", (0.04085425, 0.06960035, 0.01686700)),
+    ("F4-C4", (0.05947705, 0.02170225, 0.05219700)),
+    ("C4-P4", (0.06139230, -0.04473025, 0.06007050)),
+    ("P4-O2", (0.04275465, -0.09535810, 0.03268050)),
+    ("C3-A2", (0.01021790, -0.01832050, -0.00183650)),
+    ("C4-A1", (-0.00947910, -0.01794500, -0.00220300)),
+]
+# fmt: on
+
+_BIOT_TARGET_CHS_INFO = [
+    {"ch_name": ch, "kind": "eeg", "loc": np.asarray(loc, dtype=float)}
+    for ch, loc in _BIOT_TARGET_CHS_TUPLES
+]
+BIOT_CHANNEL_ORDER = [ch for ch, _ in _BIOT_TARGET_CHS_TUPLES]
 
 
 class BIOT(EEGModuleMixin, nn.Module):
@@ -439,7 +484,9 @@ class _BIOTEncoder(nn.Module):
         self.channel_tokens = nn.Embedding(
             num_embeddings=n_chans, embedding_dim=emb_size
         )
-        self.register_buffer("index", torch.arange(n_chans, dtype=torch.long))
+        self.register_buffer(
+            "index", torch.arange(n_chans, dtype=torch.long), persistent=False
+        )
 
     def stft(self, sample):
         """
@@ -553,3 +600,16 @@ class _BIOTEncoder(nn.Module):
         # (batch_size, emb)
         emb = self.transformer(emb).mean(dim=1)
         return emb
+
+
+# -----------------------------------------------------------------------------
+# InterpolatedBIOT — experimental channel-interpolation variant of BIOT
+# -----------------------------------------------------------------------------
+# Wraps :class:`BIOT` with an MNE-backed channel-interpolation layer that
+# projects arbitrary user ``chs_info`` to the canonical 18-channel BIOT
+# montage (:data:`_BIOT_TARGET_CHS_INFO`). Frozen by default; set
+# ``trainable=True`` to fine-tune the projection matrix.
+
+from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
+
+InterpolatedBIOT = InterpolatedModel(BIOT, _BIOT_TARGET_CHS_INFO)

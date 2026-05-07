@@ -33,13 +33,25 @@ huggingface_hub = _soft_import(
 HAS_HF_HUB = huggingface_hub is not False
 
 
-class _BaseHubMixin:
-    pass
+_HF_INSTALL_HINT = (
+    "requires the `huggingface_hub` package. "
+    "Install with: pip install 'braindecode[hub]'"
+)
+
+
+class _BaseHubMixinStub:
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        raise ImportError(f"{cls.__name__}.from_pretrained() {_HF_INSTALL_HINT}")
+
+    def push_to_hub(self, *args, **kwargs):
+        raise ImportError(f"{type(self).__name__}.push_to_hub() {_HF_INSTALL_HINT}")
 
 
 # Define base class for hub mixin
-if HAS_HF_HUB:
-    _BaseHubMixin: Type = huggingface_hub.PyTorchModelHubMixin  # type: ignore
+_BaseHubMixin: Type = (
+    huggingface_hub.PyTorchModelHubMixin if HAS_HF_HUB else _BaseHubMixinStub
+)
 
 
 def deprecated_args(obj, *old_new_args):

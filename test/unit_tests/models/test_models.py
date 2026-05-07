@@ -41,12 +41,14 @@ from braindecode.models import (
     EEGNeX,
     EEGSimpleConv,
     EEGTCNet,
+    EMG2QwertyNet,
     FBCNet,
     FBMSNet,
     HybridNet,
     IFNet,
     Labram,
     MEDFormer,
+    MetaNeuromotorHand,
     SCCNet,
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
@@ -1610,8 +1612,8 @@ def test_biot_encoder_index_is_buffer(default_biot_params):
 def default_labram_params():
     return {
         "n_times": 1000,
-        "n_chans": 64,
-        "chs_info": [{"ch_name": ch_name} for ch_name in LABRAM_CHANNEL_ORDER[:64]],
+        "n_chans": 128,
+        "chs_info": [{"ch_name": ch_name} for ch_name in LABRAM_CHANNEL_ORDER],
         "patch_size": 200,
         "sfreq": 200,
         "qk_norm": partial(nn.LayerNorm, eps=1e-6),
@@ -1700,14 +1702,16 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
         out_patches = labram_base(X, return_all_tokens=False,
                                   return_patch_tokens=True)
 
+        # 128 channels * 5 patches (1000 / 200) = 640 patch tokens
         assert out_patches.shape == torch.Size(
-            [1, 320, default_labram_params["n_outputs"]]
+            [1, 640, default_labram_params["n_outputs"]]
         )
 
         out_all_tokens = labram_base(X, return_all_tokens=True,
                                      return_patch_tokens=False)
+        # 1 cls token + 640 patch tokens = 641
         assert out_all_tokens.shape == torch.Size(
-            [1, 321, default_labram_params["n_outputs"]]
+            [1, 641, default_labram_params["n_outputs"]]
         )
 
 
@@ -2997,33 +3001,25 @@ def test_bendr_dropout_configurations(drop_prob):
 
 
 @pytest.mark.parametrize(
-    "n_chans,n_outputs,encoder_only,n_chans_pretrained,final_layer,expected",
+    "n_chans,n_outputs,final_layer,expected",
     [
-        (20, 4, True, None, True, (2, 4)),       # encoder-only basic
-        (20, 2, True, None, True, (2, 2)),        # encoder-only binary
-        (20, 10, True, None, True, (2, 10)),      # encoder-only multi-class
-        (20, 4, True, None, False, (2, 2048)),    # encoder-only no final layer
-        (64, 4, False, 20, True, (2, 4)),         # channel projection only
-        (64, 4, True, 20, True, (2, 4)),          # channel projection + encoder-only
+        (20, 4, True, (2, 4)),       # encoder-only basic
+        (20, 2, True, (2, 2)),        # encoder-only binary
+        (20, 10, True, (2, 10)),      # encoder-only multi-class
+        (20, 4, False, (2, 2048)),    # encoder-only no final layer
     ],
 )
-def test_bendr_encoder_only_and_channel_projection(
-    n_chans, n_outputs, encoder_only, n_chans_pretrained, final_layer, expected,
-):
-    """Test output shapes for encoder-only and channel projection configs."""
+def test_bendr_encoder_only(n_chans, n_outputs, final_layer, expected):
+    """Test output shapes for encoder-only configs."""
     set_random_seeds(0, False)
 
     model = BENDR(
         n_chans=n_chans, n_outputs=n_outputs, n_times=5120, sfreq=256,
-        encoder_only=encoder_only, n_chans_pretrained=n_chans_pretrained,
-        final_layer=final_layer,
+        encoder_only=True, final_layer=final_layer,
     )
     x = torch.randn(2, n_chans, 5120)
     y = model(x)
     assert y.shape == expected, f"Expected {expected}, got {y.shape}"
-
-    if n_chans_pretrained and n_chans != n_chans_pretrained:
-        assert model.channel_projection is not None
 
 
 @pytest.mark.parametrize("n_times", [2560, 5120, 10240])
@@ -3039,25 +3035,14 @@ def test_bendr_encoder_only_variable_length(n_times):
     assert y.shape == (2, 4), f"Failed for length {n_times}: got {y.shape}"
 
 
-@pytest.mark.parametrize(
-    "encoder_only,n_chans,n_chans_pretrained",
-    [
-        (True, 20, None),   # encoder-only: encoder grads, no contextualizer grads
-        (False, 64, 20),    # channel projection: projection has grads
-        (True, 64, 20),     # both combined
-    ],
-)
-def test_bendr_new_features_gradient_flow(
-    encoder_only, n_chans, n_chans_pretrained,
-):
-    """Test gradient flow for encoder-only and channel projection modes."""
+def test_bendr_encoder_only_gradient_flow():
+    """Encoder-only mode: encoder has grads, contextualizer does not."""
     set_random_seeds(0, False)
 
     model = BENDR(
-        n_chans=n_chans, n_outputs=4, n_times=5120, sfreq=256,
-        encoder_only=encoder_only, n_chans_pretrained=n_chans_pretrained,
+        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, encoder_only=True,
     )
-    x = torch.randn(2, n_chans, 5120, requires_grad=True)
+    x = torch.randn(2, 20, 5120, requires_grad=True)
     model(x).sum().backward()
 
     encoder_has_grad = any(
@@ -3066,19 +3051,11 @@ def test_bendr_new_features_gradient_flow(
     )
     assert encoder_has_grad, "No gradients in encoder"
 
-    if encoder_only:
-        ctx_has_grad = any(
-            p.grad is not None and p.grad.abs().sum() > 0
-            for p in model.contextualizer.parameters()
-        )
-        assert not ctx_has_grad, "Contextualizer should have no grads"
-
-    if model.channel_projection is not None:
-        proj_has_grad = any(
-            p.grad is not None and p.grad.abs().sum() > 0
-            for p in model.channel_projection.parameters()
-        )
-        assert proj_has_grad, "No gradients in channel projection"
+    ctx_has_grad = any(
+        p.grad is not None and p.grad.abs().sum() > 0
+        for p in model.contextualizer.parameters()
+    )
+    assert not ctx_has_grad, "Contextualizer should have no grads"
 
 
 def test_bendr_encoder_only_parameter_counts():
@@ -3122,16 +3099,6 @@ def test_bendr_backward_compatibility():
     )
 
 
-def test_bendr_channel_projection_not_created_when_matching():
-    """No projection when n_chans matches n_chans_pretrained."""
-    set_random_seeds(0, False)
-
-    model = BENDR(
-        n_chans=20, n_outputs=4, n_times=5120, sfreq=256, n_chans_pretrained=20,
-    )
-    assert model.channel_projection is None
-
-
 def test_bendr_encoder_only_short_input_raises():
     """RuntimeError when input is too short for 4-chunk pooling."""
     model = BENDR(
@@ -3139,21 +3106,6 @@ def test_bendr_encoder_only_short_input_raises():
     )
     with pytest.raises(RuntimeError, match="too few"):
         model(torch.randn(2, 20, 96))
-
-
-def test_bendr_channel_projection_max_norm():
-    """Max-norm constraint is applied to channel projection weights."""
-    set_random_seeds(0, False)
-
-    max_norm = 0.5
-    model = BENDR(
-        n_chans=64, n_outputs=4, n_times=5120, sfreq=256,
-        n_chans_pretrained=20, chan_proj_max_norm=max_norm,
-    )
-    weight = model.channel_projection.weight
-    per_filter_norms = weight.reshape(weight.shape[0], -1).norm(p=2, dim=1)
-    assert (per_filter_norms <= max_norm + 1e-6).all(), \
-        f"Max-norm violated: max={per_filter_norms.max().item()}"
 
 
 @pytest.mark.parametrize(
@@ -3315,3 +3267,255 @@ def test_syncnet_filter_weight_shape():
     )
     out = model(torch.randn(2, n_chans, 200))
     assert out.shape == (2, 2)
+
+
+# ---------------------------------------------------------------------------
+# MetaNeuromotorHand
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def gni_default():
+    """Build the default 15-layer handwriting conformer once per test module."""
+    return MetaNeuromotorHand(n_times=32000).eval()
+
+
+def _small_gni(**kwargs):
+    defaults = dict(
+        n_times=800,
+        conformer_num_layers=1,
+        conformer_attn_window_size=0,
+        conformer_kernel_size=3,
+        conformer_stride=1,
+        time_reduction_stride=1,
+        drop_prob=0.0,
+    )
+    defaults.update(kwargs)
+    return MetaNeuromotorHand(**defaults)
+
+
+def test_gni_default_contract(gni_default):
+    x = torch.randn(1, 16, 32000)
+    with torch.no_grad():
+        y = gni_default(x)
+
+    n_params = sum(p.numel() for p in gni_default.parameters() if p.requires_grad)
+    lengths = gni_default.compute_output_lengths(torch.tensor([32000, 40000]))
+
+    assert n_params == 1_021_284
+    assert y.shape == (1, 38, 100)
+    assert lengths[0].item() == y.shape[1]
+    assert lengths[1] > lengths[0]
+
+
+def test_gni_head_log_softmax_and_config():
+    m = _small_gni(log_softmax=True).eval()
+    with torch.no_grad():
+        y = m(torch.randn(1, 16, 800))
+
+    assert torch.allclose(y.exp().sum(dim=-1), torch.ones_like(y[..., 0]), atol=1e-5)
+    assert MetaNeuromotorHand.from_config(m.get_config()).n_outputs == 100
+    m.reset_head(30)
+    assert m.n_outputs == 30
+    assert m.final_layer.out_features == 30
+
+
+def test_gni_ctc_backward():
+    torch.manual_seed(0)
+    m = _small_gni().train()
+    x = torch.randn(2, 16, 800)
+    emissions = m(x)  # (N, T, V)
+    log_probs = torch.log_softmax(emissions, dim=-1).transpose(0, 1)  # (T, N, V)
+    input_lengths = m.compute_output_lengths(torch.tensor([800, 800]))
+    target_lengths = torch.tensor([2, 2])
+    targets = torch.randint(1, 100, (2, 2))
+    loss = torch.nn.CTCLoss(blank=0, zero_infinity=True)(
+        log_probs, targets, input_lengths, target_lengths
+    )
+    loss.backward()
+
+    assert input_lengths.min() >= target_lengths.max()
+    assert m.final_layer.weight.grad is not None
+    assert any(p.grad is not None for p in m.conformer.parameters())
+
+
+# ---------------------------------------------------------------------------
+# EMG2QwertyNet
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def emg2qwerty_default():
+    """Build the default 4-block TDS-Conv-CTC encoder once per test module."""
+    return EMG2QwertyNet(n_times=8000).eval()
+
+
+def _small_emg2qwerty(**kwargs):
+    """Tiny config for fast unit tests.
+
+    Receptive field is ``n_fft + n_conv_blocks * (kernel_width - 1) *
+    hop_length = 64 + 2 * 7 * 16 = 288`` samples; ``n_times=500`` keeps
+    the forward small while leaving headroom for the encoder.
+    """
+    defaults = dict(
+        n_times=500,
+        mlp_features=(48,),
+        block_channels=(12, 12),
+        kernel_width=8,
+    )
+    defaults.update(kwargs)
+    return EMG2QwertyNet(**defaults)
+
+
+def test_emg2qwerty_default_contract(emg2qwerty_default):
+    x = torch.randn(1, 32, 8000)
+    with torch.no_grad():
+        y = emg2qwerty_default(x)
+
+    n_params = sum(
+        p.numel() for p in emg2qwerty_default.parameters() if p.requires_grad
+    )
+    lengths = emg2qwerty_default.compute_output_lengths(
+        torch.tensor([8000, 12000])
+    )
+
+    assert n_params == 5_293_315
+    assert y.shape == (1, 373, 99)
+    assert lengths[0].item() == y.shape[1]
+    assert lengths[1] > lengths[0]
+
+
+def test_emg2qwerty_train_eval_and_state_dict():
+    """Smoke-test small config: log_softmax head, CTC backward, key layout.
+
+    Covers the full small-model contract in one pass: log-softmax
+    normalization, ``from_config`` round-trip, ``reset_head``, a CTC
+    backward step, and the upstream-compatible ``state_dict`` layout
+    (encoder under ``model.{0,1,3}.*``, head at ``final_layer.*``,
+    non-persistent STFT window absent).
+    """
+    torch.manual_seed(0)
+    m = _small_emg2qwerty(log_softmax=True).train()
+
+    x = torch.randn(2, 32, 500)
+    log_probs = m(x).transpose(0, 1)  # already log-softmaxed
+    assert torch.allclose(
+        log_probs.exp().sum(dim=-1),
+        torch.ones_like(log_probs[..., 0]),
+        atol=1e-5,
+    )
+
+    input_lengths = m.compute_output_lengths(torch.tensor([500, 500]))
+    target_lengths = torch.tensor([2, 2])
+    targets = torch.randint(0, 98, (2, 2))
+    loss = torch.nn.CTCLoss(blank=98, zero_infinity=True)(
+        log_probs, targets, input_lengths, target_lengths
+    )
+    loss.backward()
+    assert input_lengths.min() >= target_lengths.max()
+    assert m.final_layer.weight.grad is not None
+    assert any(p.grad is not None for p in m.model.parameters())
+
+    assert EMG2QwertyNet.from_config(m.get_config()).n_outputs == 99
+
+    # ``reset_head`` must propagate to ``get_config`` so save/restore
+    # round-trips rebuild the head with the new vocab size, and must
+    # inherit dtype/device so post-``.double()``/``.to(...)`` calls keep
+    # the model usable.
+    m_dbl = _small_emg2qwerty().double().train()
+    m_dbl.reset_head(30)
+    assert m_dbl.n_outputs == 30 and m_dbl.final_layer.out_features == 30
+    assert m_dbl.final_layer.weight.dtype == torch.float64
+    assert m_dbl.get_config()["n_outputs"] == 30
+    assert EMG2QwertyNet.from_config(m_dbl.get_config()).n_outputs == 30
+    # Forward must still work after dtype change + reset_head.
+    with torch.no_grad():
+        m_dbl(torch.randn(1, 32, 500, dtype=torch.float64))
+
+    keys = list(m.state_dict().keys())
+    allowed = ("model.0.", "model.1.", "model.3.", "final_layer.")
+    assert not [k for k in keys if not k.startswith(allowed)]
+    assert not any(k.startswith("spectrogram.") for k in keys)
+    # Mapping values must point at the actual top-level head keys, not
+    # just any string — guards against typos in upstream-checkpoint
+    # head remap.
+    assert EMG2QwertyNet.mapping == {
+        "model.4.weight": "final_layer.weight",
+        "model.4.bias": "final_layer.bias",
+    }
+    for new_key in EMG2QwertyNet.mapping.values():
+        assert new_key in keys, f"mapping target {new_key!r} missing from state_dict"
+
+
+def test_emg2qwerty_flexible_band_geometry():
+    """num_bands and electrodes_per_band can deviate from the wristband default.
+
+    Smoke-checks that a non-default ``(num_bands=3, electrodes_per_band=8)``
+    config (24 channels) builds and forwards. Validates that ``n_chans``
+    inconsistent with the geometry raises.
+    """
+    m_no_rot = _small_emg2qwerty(
+        n_chans=24,
+        num_bands=3,
+        electrodes_per_band=8,
+        rotation_offsets=(0,),
+        pooling="max",
+        log_eps=1e-5,
+    ).eval()
+    with torch.no_grad():
+        y_no_rot = m_no_rot(torch.randn(1, 24, 500))
+    assert y_no_rot.shape[0] == 1 and y_no_rot.shape[2] == 99
+
+    # ``rotation_offsets=(0,)`` must produce identical output for
+    # rolled-and-unrolled inputs along the electrode axis. Confirms the
+    # caller-provided offsets are actually honored (and not silently
+    # replaced by the default ``(-1, 0, +1)``).
+    m_default_rot = _small_emg2qwerty(
+        n_chans=24,
+        num_bands=3,
+        electrodes_per_band=8,
+        rotation_offsets=(-2, 0, +2),
+        pooling="mean",
+    ).eval()
+    assert m_default_rot.model[1].mlps[0].offsets == (-2, 0, 2)
+    assert m_no_rot.model[1].mlps[0].offsets == (0,)
+    assert m_no_rot.model[1].mlps[0].pooling == "max"
+
+    with pytest.raises(ValueError, match="n_chans == num_bands"):
+        EMG2QwertyNet(n_chans=33, num_bands=2, electrodes_per_band=16, n_times=500)
+    with pytest.raises(ValueError, match="log_eps"):
+        _small_emg2qwerty(log_eps=0.0)
+    with pytest.raises(ValueError, match="pooling"):
+        _small_emg2qwerty(pooling="sum")
+
+
+def test_emg2qwerty_input_validation():
+    """forward rejects short inputs; compute_output_lengths floors to zero.
+
+    Two related contracts. (1) ``forward`` must enforce the full encoder
+    receptive field, not just ``n_fft`` — otherwise ``torch.stft``
+    succeeds for ``n_times`` in ``[n_fft, receptive_field)`` and the
+    model crashes deep inside :class:`~torch.nn.Conv2d`. (2)
+    ``compute_output_lengths`` must use ``rounding_mode="floor"`` so
+    that ``T < n_fft`` reports zero emission frames; ``trunc`` would
+    silently return ``1`` when ``kernel_width == 1`` (no encoder shrink
+    to mask the off-by-one via ``clamp_min``).
+    """
+    m = _small_emg2qwerty(n_fft=64, hop_length=16, kernel_width=8,
+                          block_channels=(12, 12))
+    # Receptive field = 64 + 2 * 7 * 16 = 288.
+    with pytest.raises(ValueError, match="n_fft"):
+        m(torch.randn(1, 32, 50))
+    with pytest.raises(ValueError, match="receptive field"):
+        m(torch.randn(1, 32, 200))
+    # Boundary: exactly the receptive-field length must be accepted and
+    # produce a single output frame from each conv block.
+    with torch.no_grad():
+        y_min = m(torch.randn(1, 32, 288))
+    assert y_min.shape[0] == 1 and y_min.shape[2] == 99
+
+    m_floor = _small_emg2qwerty(kernel_width=1, block_channels=(12, 12))
+    # T < n_fft -> 0; T == n_fft -> 1 (boundary); T > n_fft increments
+    # by ``floor((T - n_fft) / hop_length) + 1``.
+    out = m_floor.compute_output_lengths(torch.tensor([10, 0, 50, 64, 80]))
+    assert out.tolist() == [0, 0, 0, 1, 2]
