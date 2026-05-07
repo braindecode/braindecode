@@ -22,7 +22,7 @@
 .. _current:
 
 
-Current 1.5.0 (GitHub)
+Current 1.5.0 (stable)
 ===============================
 
 Enhancements
@@ -140,11 +140,6 @@ API and behavior changes
   :class:`braindecode.models.InterpolatedLaBraM`. (:gh:`993`
   by `Pierre Guetschel`_)
 
-Requirements
-============
-
-- None yet
-
 Bug fixes
 ==========
 
@@ -190,11 +185,6 @@ Bug fixes
   "DatasetFile"``) (:gh:`1002` by `Bruno Aristimunha`_)
 - Retry transient TLS failures from ``physionet.org`` when fetching
   :class:`braindecode.datasets.SleepPhysionet` (by `Bruno Aristimunha`_)
-
-Code health
-============
-
-- None yet
 
 
 Current 1.4.0 (stable)
