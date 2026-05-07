@@ -6,6 +6,7 @@
 #          David Sabbagh <dav.sabbagh@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Léo Burgund <leo.burgund@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -217,6 +218,7 @@ def preprocess(
     offset: int = 0,
     copy_data: bool | None = None,
     parallel_kwargs: dict | None = None,
+    max_nbytes: int | str | None = "1M",
 ):
     """Apply preprocessors to a concat dataset.
 
@@ -244,14 +246,20 @@ def preprocess(
         Additional keyword arguments forwarded to ``joblib.Parallel``.
         Defaults to None (equivalent to ``{}``).
         See https://joblib.readthedocs.io/en/stable/generated/joblib.Parallel.html for details.
+    max_nbytes : int, str, or None
+        Threshold (in bytes; or e.g. ``"1M"``) above which joblib memory-maps
+        preloaded arrays as read-only when dispatching to worker processes.
+        Effective only when ``n_jobs != 1``. Pass ``None`` to disable memory
+        mapping when a preprocessor resizes the underlying data (for example
+        ``filterbank``), which would otherwise fail with an ``mmap can't
+        resize a readonly`` error. ``parallel_kwargs['max_nbytes']`` takes
+        precedence if both are provided.
 
     Returns
     -------
     BaseConcatDataset
         Preprocessed dataset.
     """
-    # In case of serialization, make sure directory is available before
-    # preprocessing
     if save_dir is not None and not overwrite:
         _check_save_dir_empty(save_dir)
 
@@ -266,22 +274,35 @@ def preprocess(
     parallel_params.setdefault(
         "prefer", "threads" if platform.system() == "Windows" else None
     )
+    parallel_params.setdefault("max_nbytes", max_nbytes)
 
-    list_of_ds = Parallel(n_jobs=n_jobs, **parallel_params)(
-        delayed(_preprocess)(
-            ds,
-            i + offset,
-            preprocessors,
-            save_dir,
-            overwrite,
-            copy_data=(
-                (parallel_processing and (save_dir is None))
-                if copy_data is None
-                else copy_data
-            ),
+    try:
+        list_of_ds = Parallel(n_jobs=n_jobs, **parallel_params)(
+            delayed(_preprocess)(
+                ds,
+                i + offset,
+                preprocessors,
+                save_dir,
+                overwrite,
+                copy_data=(
+                    (parallel_processing and (save_dir is None))
+                    if copy_data is None
+                    else copy_data
+                ),
+            )
+            for i, ds in enumerate(concat_ds.datasets)
         )
-        for i, ds in enumerate(concat_ds.datasets)
-    )
+    except (BufferError, ValueError, OSError) as exc:
+        msg = str(exc).lower().replace("-", "")
+        if "mmap" in msg and "readonly" in msg:
+            raise RuntimeError(
+                "Parallel preprocessing failed because joblib memory-mapped "
+                "a preloaded array that a preprocessor then attempted to "
+                "resize (e.g. ``filterbank``). Pass ``max_nbytes=None`` to "
+                "``preprocess`` to disable memory mapping, or supply a "
+                "``save_dir`` so the data is reloaded with ``preload=False``."
+            ) from exc
+        raise
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
         ids_to_load = [i + offset for i in range(len(concat_ds.datasets))]
