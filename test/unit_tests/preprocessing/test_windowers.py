@@ -216,6 +216,7 @@ def test_fixed_length_windows_stride_defaults_to_size(lazy_loadable_dataset):
     )
     for ds in windows.datasets:
         starts = ds.metadata["i_start_in_trial"].values
+        assert len(starts) > 1
         diffs = np.diff(starts)
         assert (diffs == 100).all()
 
