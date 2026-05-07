@@ -886,7 +886,7 @@ def _create_fixed_length_windows(
     if mapping is not None:
         # in case of multiple targets
         if isinstance(target, pd.Series):
-            target = target.replace(mapping).to_list()
+            target = [mapping.get(v, v) for v in target]
         # in case of single value target
         else:
             target = mapping[target]
