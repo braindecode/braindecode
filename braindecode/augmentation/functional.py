@@ -1342,8 +1342,8 @@ def band_rotation(
         covers ±1-electrode misalignment.  Must be non-empty.  Defaults
         to ``(-1, 0, 1)``.
     max_temporal_jitter : int, optional
-        Max ±-sample temporal shift applied to band 1 only, regardless
-        of ``num_bands``.  Defaults to 0 (disabled).  Must be ``>= 0``.
+        Max ±-sample temporal shift applied to band 1 only when
+        ``num_bands >= 2``.  Defaults to 0 (disabled).  Must be ``>= 0``.
     circular_jitter : bool, optional
         If True (the default, paper-faithful), the temporal jitter is a
         circular ``torch.roll`` — samples shifted off one edge wrap to
