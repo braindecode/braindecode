@@ -1367,7 +1367,9 @@ class BandRotation(Transform):
     emg2qwerty surface-EMG keystroke decoding task: the channel axis is
     laid out as ``(B, num_bands * electrodes_per_band, T)`` with bands
     contiguous, each band gets a uniform circular roll along the channel
-    axis, and band 1 also gets a sample-level temporal shift.
+    axis, and band 1 also gets a sample-level temporal shift (regardless
+    of ``num_bands``).  The same offset / shift is applied to every
+    sample in a transformed sub-batch (one set of parameters per call).
 
     Parameters
     ----------

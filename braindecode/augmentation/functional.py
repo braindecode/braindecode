@@ -1339,8 +1339,8 @@ def band_rotation(
         Per-band roll values to sample from uniformly.  ``(-1, 0, 1)``
         covers ±1-electrode misalignment.  Defaults to ``(-1, 0, 1)``.
     max_temporal_jitter : int, optional
-        Max ±-sample temporal shift applied to band 1.  Defaults to 0
-        (disabled).
+        Max ±-sample temporal shift applied to band 1 only, regardless
+        of ``num_bands``.  Defaults to 0 (disabled).  Must be ``>= 0``.
     random_state : int | numpy.random.RandomState, optional
         Seed / generator for sampling rotation + jitter values.
 
@@ -1358,6 +1358,10 @@ def band_rotation(
        "emg2qwerty: A Large Dataset with Baselines for Touch Typing using
        Surface Electromyography." *NeurIPS Datasets and Benchmarks Track*.
     """
+    if not band_offsets:
+        raise ValueError("band_offsets must be non-empty")
+    if max_temporal_jitter < 0:
+        raise ValueError(f"max_temporal_jitter must be >= 0, got {max_temporal_jitter}")
     expected_channels = num_bands * electrodes_per_band
     if X.shape[1] != expected_channels:
         raise ValueError(

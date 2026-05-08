@@ -152,10 +152,35 @@ def test_band_rotation_rejects_mismatched_channel_count():
         )
 
 
+def test_band_rotation_rejects_empty_band_offsets():
+    X = torch.randn(2, 32, 64)
+    y = torch.zeros(2)
+    with pytest.raises(ValueError, match="band_offsets must be non-empty"):
+        band_rotation(
+            X, y, num_bands=2, electrodes_per_band=16,
+            band_offsets=(), max_temporal_jitter=0,
+            random_state=0,
+        )
+
+
+def test_band_rotation_rejects_negative_jitter():
+    X = torch.randn(2, 32, 64)
+    y = torch.zeros(2)
+    with pytest.raises(ValueError, match="max_temporal_jitter must be >= 0"):
+        band_rotation(
+            X, y, num_bands=2, electrodes_per_band=16,
+            band_offsets=(-1, 1), max_temporal_jitter=-3,
+            random_state=0,
+        )
+
+
 def test_band_rotation_circular_roll_preserves_values():
     """Per-band roll is circular: every input value should appear in the
     output (no zero-padding) when offsets are non-trivial."""
-    # Use a deterministic-shape input so we can compare value sets.
+    # Small, deterministic input so the sorted-list comparison stays
+    # ``O(n log n)`` on a few-hundred-element tensor.  Don't scale this up
+    # to large shapes — for production-size inputs use a ``set``-based
+    # equality check instead.
     X = torch.arange(2 * 16 * 8).float().view(2, 16, 8)
     y = torch.zeros(2)
     out, _ = band_rotation(
