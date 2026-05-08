@@ -28,6 +28,14 @@ Current 1.5.0 (stable)
 Enhancements
 ============
 
+- Add :class:`braindecode.augmentation.BandRotation` and
+  :func:`braindecode.augmentation.functional.band_rotation`: per-band
+  circular roll along the channel axis plus inter-band temporal jitter,
+  for surface-EMG inputs shaped ``(B, num_bands * electrodes_per_band, T)``.
+  Models small wristband rotation between sessions and relative timing
+  noise between two arms, from the emg2qwerty paper (Sivakumar et al.,
+  NeurIPS 2024).  By `Bruno Aristimunha`_.
+
 - Add :meth:`braindecode.datasets.BaseConcatDataset.set_target` to swap
   any per-window metadata column or per-record description field
   (e.g. a BIDS entity, a participants.tsv extra) into the dataset's

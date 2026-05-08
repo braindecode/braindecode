@@ -19,6 +19,7 @@ from braindecode.augmentation.functional import (
     sensors_rotation,
 )
 from braindecode.augmentation.transforms import (
+    BandRotation,
     BandstopFilter,
     ChannelsDropout,
     ChannelsShuffle,
@@ -758,10 +759,30 @@ def test_mask_encoding_transform(
             assert np.sum(sample[0, :].detach().cpu().numpy() == 0) >= segment_length
 
 
+def test_band_rotation_transform_seed_reproducibility():
+    """Two ``BandRotation`` instances built with the same seed produce
+    bit-identical outputs on the same input."""
+    X = torch.randn(4, 32, 64)
+    kw = dict(
+        probability=1.0, num_bands=2, electrodes_per_band=16,
+        band_offsets=(-1, 0, 1), max_temporal_jitter=4,
+    )
+    out_a = BandRotation(**kw, random_state=123)(X)
+    out_b = BandRotation(**kw, random_state=123)(X)
+    assert torch.equal(out_a, out_b)
+    # Probability=0 path: input passes through.
+    assert torch.equal(BandRotation(**{**kw, "probability": 0.0})(X), X)
+
+
 @pytest.mark.parametrize(
     "augmentation,kwargs",
     [
         (IdentityTransform, {"probability": 0.5}),
+        (
+            BandRotation,
+            # random_batch is 22 channels → 2 bands × 11 electrodes
+            {"probability": 0.5, "num_bands": 2, "electrodes_per_band": 11},
+        ),
         (BandstopFilter, {"probability": 0.5, "sfreq": 100}),
         (ChannelsDropout, {"probability": 0.5}),
         (ChannelsShuffle, {"probability": 0.5}),

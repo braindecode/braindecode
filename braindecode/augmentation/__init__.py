@@ -4,6 +4,7 @@ from . import functional
 from .base import AugmentedDataLoader, Compose, IdentityTransform, Transform
 from .transforms import (
     AmplitudeScale,
+    BandRotation,
     BandstopFilter,
     ChannelsDropout,
     ChannelsReref,
@@ -47,6 +48,7 @@ __all__ = [
     "SegmentationReconstruction",
     "MaskEncoding",
     "AmplitudeScale",
+    "BandRotation",
     "ChannelsReref",
     "functional",
 ]
