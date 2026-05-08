@@ -112,22 +112,23 @@ def test_amplitude_scale():
 
 
 def test_band_rotation_shape_and_seed_reproducibility():
-    # 2 bands × 8 electrodes/band; small T for fast assertions.
+    # 2 bands × 8 electrodes/band; small T for fast assertions.  Force
+    # ``band_offsets=(2,)`` so we get a deterministic non-zero rotation
+    # regardless of the RNG draw — the previous version asserted the
+    # output differs from the input under ``random_state=42``, which
+    # silently couples the test to the sampler's exact draw sequence.
     X = torch.randn(4, 16, 32)
     y = torch.zeros(4)
-    out1, _ = band_rotation(
-        X, y, num_bands=2, electrodes_per_band=8,
-        band_offsets=(-1, 0, 1), max_temporal_jitter=4,
+    kwargs = dict(
+        num_bands=2, electrodes_per_band=8,
+        band_offsets=(2,), max_temporal_jitter=0,
         random_state=42,
     )
-    out2, _ = band_rotation(
-        X, y, num_bands=2, electrodes_per_band=8,
-        band_offsets=(-1, 0, 1), max_temporal_jitter=4,
-        random_state=42,
-    )
+    out1, _ = band_rotation(X, y, **kwargs)
+    out2, _ = band_rotation(X, y, **kwargs)
     assert out1.shape == X.shape
     assert torch.equal(out1, out2)  # same seed → identical
-    assert not torch.equal(out1, X)  # something rolled
+    assert not torch.equal(out1, X)  # offsets=(2,) guarantees a roll
 
 
 def test_band_rotation_no_op_when_offsets_zero_and_no_jitter():
@@ -172,6 +173,60 @@ def test_band_rotation_rejects_negative_jitter():
             band_offsets=(-1, 1), max_temporal_jitter=-3,
             random_state=0,
         )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "msg"),
+    [
+        ({"num_bands": 0}, "num_bands must be >= 1"),
+        ({"electrodes_per_band": 0}, "electrodes_per_band must be >= 1"),
+        ({"band_offsets": (1.5, 2.0)}, "band_offsets must contain integers"),
+    ],
+)
+def test_band_rotation_rejects_invalid_params(kwargs, msg):
+    X = torch.randn(2, 32, 64)
+    y = torch.zeros(2)
+    base = dict(num_bands=2, electrodes_per_band=16, band_offsets=(-1, 1),
+                max_temporal_jitter=0, random_state=0)
+    base.update(kwargs)
+    with pytest.raises(ValueError, match=msg):
+        band_rotation(X, y, **base)
+
+
+def test_band_rotation_circular_jitter_wraps_vs_zero_pads():
+    """``circular_jitter=False`` zero-pads the gap; ``True`` (default)
+    wraps end-of-window samples to the start.  We use a deterministic
+    band_offsets=(0,) so the rotation step is a no-op and the only
+    visible change is the temporal shift on band 1."""
+    # Band 0 = constant 1.0, band 1 = ramp 1..T (avoid 0 so we can check
+    # "is 0 present?" as a marker of zero-padding).  Channel layout
+    # ``(B=1, num_bands*E=4, T=8)`` keeps assertions readable.
+    T = 8
+    band0 = torch.ones(1, 2, T)
+    band1 = torch.arange(1, T + 1, dtype=torch.float).expand(1, 2, T).clone()
+    X = torch.cat([band0, band1], dim=1)  # (1, 4, T)
+    y = torch.zeros(1)
+
+    common = dict(
+        num_bands=2, electrodes_per_band=2, band_offsets=(0,),
+        max_temporal_jitter=3,
+    )
+    # With a fixed seed, both branches sample the same shift; only the
+    # boundary handling differs.
+    out_circ, _ = band_rotation(X, y, **common, circular_jitter=True, random_state=11)
+    out_pad, _ = band_rotation(X, y, **common, circular_jitter=False, random_state=11)
+
+    # Same shift sampled in both → outputs disagree only inside the
+    # |shift|-wide boundary region of band 1.
+    diff = (out_circ != out_pad).any(dim=1).squeeze(0)  # (T,)
+    n_diff = int(diff.sum())
+    assert 0 < n_diff <= common["max_temporal_jitter"]
+    # Padded variant has zeros somewhere on band 1's edge; circular has
+    # the original ramp values wrapped around.
+    band1_pad = out_pad[0, 2:, :]
+    band1_circ = out_circ[0, 2:, :]
+    assert (band1_pad == 0).any()
+    assert not (band1_circ == 0).any()
 
 
 def test_band_rotation_circular_roll_preserves_values():

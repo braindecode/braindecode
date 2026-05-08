@@ -1377,17 +1377,23 @@ class BandRotation(Transform):
         Float setting the probability of applying the operation.
     num_bands : int, optional
         Number of electrode bands (e.g. ``2`` for left + right wristband).
-        Defaults to 2.
+        Must be ``>= 1``.  Defaults to 2.
     electrodes_per_band : int, optional
-        Electrodes per band (e.g. ``16``).  Defaults to 16.
+        Electrodes per band (e.g. ``16``).  Must be ``>= 1``.  Defaults
+        to 16.
     band_offsets : tuple of int, optional
         Per-band roll values to sample from uniformly.  ``(-1, 0, 1)``
-        covers ±1-electrode misalignment.  Defaults to ``(-1, 0, 1)``.
+        covers ±1-electrode misalignment.  Must be non-empty.  Defaults
+        to ``(-1, 0, 1)``.
     max_temporal_jitter : int, optional
         Max ±-sample temporal shift applied to band 1.  Defaults to 0
-        (jitter disabled).  The emg2qwerty paper uses 120 samples
-        (60 ms at 2 kHz).
-    random_state : int | numpy.random.Generator, optional
+        (jitter disabled).  Must be ``>= 0``.  The emg2qwerty paper uses
+        120 samples (60 ms at 2 kHz).
+    circular_jitter : bool, optional
+        If True (default, paper-faithful) the jitter is a circular roll;
+        if False the gap left by the shift is zero-padded.  See
+        :func:`band_rotation`.
+    random_state : int | numpy.random.RandomState, optional
         Seed for the rotation / jitter sampler.  Defaults to None.
 
     References
@@ -1407,13 +1413,32 @@ class BandRotation(Transform):
         electrodes_per_band=16,
         band_offsets=(-1, 0, 1),
         max_temporal_jitter=0,
+        circular_jitter=True,
         random_state=None,
     ):
         super().__init__(probability=probability, random_state=random_state)
+        # Up-front parameter validation; the underlying ``band_rotation``
+        # also re-checks at call time, but raising here surfaces config
+        # mistakes when the Transform is built rather than on the first
+        # batch.
+        if num_bands < 1:
+            raise ValueError(f"num_bands must be >= 1, got {num_bands}")
+        if electrodes_per_band < 1:
+            raise ValueError(
+                f"electrodes_per_band must be >= 1, got {electrodes_per_band}"
+            )
+        band_offsets = tuple(band_offsets)
+        if not band_offsets:
+            raise ValueError("band_offsets must be non-empty")
+        if max_temporal_jitter < 0:
+            raise ValueError(
+                f"max_temporal_jitter must be >= 0, got {max_temporal_jitter}"
+            )
         self.num_bands = num_bands
         self.electrodes_per_band = electrodes_per_band
-        self.band_offsets = tuple(band_offsets)
+        self.band_offsets = band_offsets
         self.max_temporal_jitter = max_temporal_jitter
+        self.circular_jitter = circular_jitter
 
     def get_augmentation_params(self, *batch):
         return {
@@ -1421,5 +1446,6 @@ class BandRotation(Transform):
             "electrodes_per_band": self.electrodes_per_band,
             "band_offsets": self.band_offsets,
             "max_temporal_jitter": self.max_temporal_jitter,
+            "circular_jitter": self.circular_jitter,
             "random_state": self.rng,
         }

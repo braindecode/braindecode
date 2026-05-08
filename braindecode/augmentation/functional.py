@@ -1307,6 +1307,7 @@ def band_rotation(
     electrodes_per_band: int = 16,
     band_offsets: tuple[int, ...] = (-1, 0, 1),
     max_temporal_jitter: int = 0,
+    circular_jitter: bool = True,
     random_state: int | np.random.RandomState | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Per-band electrode rotation + inter-band temporal jitter.
@@ -1332,15 +1333,24 @@ def band_rotation(
         Labels (returned unchanged).
     num_bands : int, optional
         Number of electrode bands (e.g. ``2`` for left + right wristband).
-        Defaults to 2.
+        Must be ``>= 1``.  Defaults to 2.
     electrodes_per_band : int, optional
-        Electrodes per band (e.g. ``16``).  Defaults to 16.
+        Electrodes per band (e.g. ``16``).  Must be ``>= 1``.  Defaults
+        to 16.
     band_offsets : tuple of int, optional
         Per-band roll values to sample from uniformly.  ``(-1, 0, 1)``
-        covers ±1-electrode misalignment.  Defaults to ``(-1, 0, 1)``.
+        covers ±1-electrode misalignment.  Must be non-empty.  Defaults
+        to ``(-1, 0, 1)``.
     max_temporal_jitter : int, optional
         Max ±-sample temporal shift applied to band 1 only, regardless
         of ``num_bands``.  Defaults to 0 (disabled).  Must be ``>= 0``.
+    circular_jitter : bool, optional
+        If True (the default, paper-faithful), the temporal jitter is a
+        circular ``torch.roll`` — samples shifted off one edge wrap to
+        the other.  If False, the gap left by the shift is zero-padded
+        and the shifted-off samples are dropped, avoiding wrap-around
+        discontinuity at the cost of a small zeroed margin.  Has no
+        effect when ``max_temporal_jitter == 0``.
     random_state : int | numpy.random.RandomState, optional
         Seed / generator for sampling rotation + jitter values.
 
@@ -1358,8 +1368,14 @@ def band_rotation(
        "emg2qwerty: A Large Dataset with Baselines for Touch Typing using
        Surface Electromyography." *NeurIPS Datasets and Benchmarks Track*.
     """
+    if num_bands < 1:
+        raise ValueError(f"num_bands must be >= 1, got {num_bands}")
+    if electrodes_per_band < 1:
+        raise ValueError(f"electrodes_per_band must be >= 1, got {electrodes_per_band}")
     if not band_offsets:
         raise ValueError("band_offsets must be non-empty")
+    if not all(isinstance(o, (int, np.integer)) for o in band_offsets):
+        raise ValueError(f"band_offsets must contain integers, got {band_offsets!r}")
     if max_temporal_jitter < 0:
         raise ValueError(f"max_temporal_jitter must be >= 0, got {max_temporal_jitter}")
     expected_channels = num_bands * electrodes_per_band
@@ -1383,11 +1399,25 @@ def band_rotation(
             sl = slice(b * electrodes_per_band, (b + 1) * electrodes_per_band)
             out[:, sl, :] = torch.roll(out[:, sl, :], offset, dims=1)
 
-    # Inter-band temporal jitter — by paper recipe, band 1 only.
+    # Inter-band temporal jitter — paper recipe applies it to band 1 only.
     if max_temporal_jitter > 0 and num_bands >= 2:
         shift = int(rng.randint(-max_temporal_jitter, max_temporal_jitter + 1))
         if shift:
             sl = slice(electrodes_per_band, 2 * electrodes_per_band)
-            out[:, sl, :] = torch.roll(out[:, sl, :], shift, dims=2)
+            band1 = out[:, sl, :]
+            if circular_jitter:
+                # Paper-faithful circular shift; wraps end-of-window
+                # samples to the start (and vice versa).
+                out[:, sl, :] = torch.roll(band1, shift, dims=2)
+            else:
+                # Crop-and-pad shift: drop samples that fall off one end,
+                # zero-pad the gap on the other.  Avoids the wrap-around
+                # discontinuity at the cost of a ``|shift|``-sample margin.
+                shifted = torch.zeros_like(band1)
+                if shift > 0:
+                    shifted[:, :, shift:] = band1[:, :, :-shift]
+                else:  # shift < 0
+                    shifted[:, :, :shift] = band1[:, :, -shift:]
+                out[:, sl, :] = shifted
 
     return out, y
