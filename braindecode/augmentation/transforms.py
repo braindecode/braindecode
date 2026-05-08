@@ -1363,11 +1363,11 @@ class BandRotation(Transform):
     """Per-band electrode rotation + inter-band temporal jitter.
 
     Models small wristband rotation between sessions and relative timing
-    noise between two arms.  Originally introduced in [Sivakumar2024]_ for
-    the emg2qwerty surface-EMG keystroke decoding task: the channel axis
-    is laid out as ``(B, num_bands * electrodes_per_band, T)`` with bands
+    noise between two arms.  Introduced in [Sivakumar2024]_ for the
+    emg2qwerty surface-EMG keystroke decoding task: the channel axis is
+    laid out as ``(B, num_bands * electrodes_per_band, T)`` with bands
     contiguous, each band gets a uniform circular roll along the channel
-    axis, and band 1 additionally gets a sample-level temporal shift.
+    axis, and band 1 also gets a sample-level temporal shift.
 
     Parameters
     ----------

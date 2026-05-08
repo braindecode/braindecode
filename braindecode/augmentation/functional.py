@@ -1312,10 +1312,10 @@ def band_rotation(
     """Per-band electrode rotation + inter-band temporal jitter.
 
     Models small wristband rotation between sessions and relative timing
-    noise between two arms.  Originally introduced in [Sivakumar2024]_ for
-    the emg2qwerty CTC keystroke decoding task: each electrode band gets
-    its own circular roll along the channel axis (``Uniform(band_offsets)``
-    positions), and band 1 additionally gets a sample-level temporal shift
+    noise between two arms.  Introduced in [Sivakumar2024]_ for the
+    emg2qwerty CTC keystroke decoding task: each electrode band gets its
+    own circular roll along the channel axis (``Uniform(band_offsets)``
+    positions), and band 1 also gets a sample-level temporal shift
     (``Uniform(-max_temporal_jitter, +max_temporal_jitter)``) along the
     time axis.
 
@@ -1358,26 +1358,21 @@ def band_rotation(
        "emg2qwerty: A Large Dataset with Baselines for Touch Typing using
        Surface Electromyography." *NeurIPS Datasets and Benchmarks Track*.
     """
-    if X.shape[1] != num_bands * electrodes_per_band:
+    expected_channels = num_bands * electrodes_per_band
+    if X.shape[1] != expected_channels:
         raise ValueError(
-            f"X.shape[1] = {X.shape[1]} must equal "
-            f"num_bands * electrodes_per_band = "
-            f"{num_bands} * {electrodes_per_band} = "
-            f"{num_bands * electrodes_per_band}"
+            f"X.shape[1]={X.shape[1]} != num_bands * electrodes_per_band="
+            f"{expected_channels}"
         )
 
     rng = check_random_state(random_state)
     band_offsets_arr = np.asarray(band_offsets)
     out = X.clone()
 
-    # Per-band channel-axis rolls.  This is a Python-level loop over
-    # ``num_bands`` (typically 2 for left + right wristband) but each
-    # iteration calls ``torch.roll`` which is already vectorized across
-    # batch / channels / time.  A single ``torch.gather`` collapsing all
-    # bands was benchmarked and is ~16 % *slower* for ``num_bands == 2``
-    # on CPU (the index tensor is larger than what two contiguous rolls
-    # touch); only at ``num_bands >= 8`` does the gather win, which is
-    # outside any current usage.
+    # Per-band channel-axis rolls.  A vectorized ``torch.gather`` was
+    # benchmarked and is ~16 % slower for the typical ``num_bands == 2``
+    # case on CPU (the index tensor is larger than what two contiguous
+    # rolls touch); the gather only wins past ``num_bands >= 8``.
     for b in range(num_bands):
         offset = int(rng.choice(band_offsets_arr))
         if offset:

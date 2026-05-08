@@ -144,7 +144,7 @@ def test_band_rotation_no_op_when_offsets_zero_and_no_jitter():
 def test_band_rotation_rejects_mismatched_channel_count():
     X = torch.randn(2, 30, 64)  # 30 != 2 * 16
     y = torch.zeros(2)
-    with pytest.raises(ValueError, match="num_bands \\* electrodes_per_band"):
+    with pytest.raises(ValueError, match="num_bands \\* electrodes_per_band="):
         band_rotation(
             X, y, num_bands=2, electrodes_per_band=16,
             band_offsets=(-1, 1), max_temporal_jitter=0,
