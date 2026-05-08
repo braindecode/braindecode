@@ -4,6 +4,7 @@ import torch
 from braindecode.augmentation.functional import (
     _analytic_transform,
     amplitude_scale,
+    band_rotation,
     channels_rereference,
     channels_shuffle,
     segmentation_reconstruction,
@@ -108,6 +109,62 @@ def test_amplitude_scale():
     # Check if the output is the same as the input
     assert torch.equal(transformed_X1, X)
     assert torch.equal(transformed_X0, torch.zeros_like(X))
+
+
+def test_band_rotation_shape_and_seed_reproducibility():
+    # 2 bands × 8 electrodes/band; small T for fast assertions.
+    X = torch.randn(4, 16, 32)
+    y = torch.zeros(4)
+    out1, _ = band_rotation(
+        X, y, num_bands=2, electrodes_per_band=8,
+        band_offsets=(-1, 0, 1), max_temporal_jitter=4,
+        random_state=42,
+    )
+    out2, _ = band_rotation(
+        X, y, num_bands=2, electrodes_per_band=8,
+        band_offsets=(-1, 0, 1), max_temporal_jitter=4,
+        random_state=42,
+    )
+    assert out1.shape == X.shape
+    assert torch.equal(out1, out2)  # same seed → identical
+    assert not torch.equal(out1, X)  # something rolled
+
+
+def test_band_rotation_no_op_when_offsets_zero_and_no_jitter():
+    X = torch.randn(2, 32, 64)
+    y = torch.zeros(2)
+    out, _ = band_rotation(
+        X, y, num_bands=2, electrodes_per_band=16,
+        band_offsets=(0,), max_temporal_jitter=0,
+        random_state=0,
+    )
+    assert torch.equal(out, X)
+
+
+def test_band_rotation_rejects_mismatched_channel_count():
+    X = torch.randn(2, 30, 64)  # 30 != 2 * 16
+    y = torch.zeros(2)
+    with pytest.raises(ValueError, match="num_bands \\* electrodes_per_band"):
+        band_rotation(
+            X, y, num_bands=2, electrodes_per_band=16,
+            band_offsets=(-1, 1), max_temporal_jitter=0,
+            random_state=0,
+        )
+
+
+def test_band_rotation_circular_roll_preserves_values():
+    """Per-band roll is circular: every input value should appear in the
+    output (no zero-padding) when offsets are non-trivial."""
+    # Use a deterministic-shape input so we can compare value sets.
+    X = torch.arange(2 * 16 * 8).float().view(2, 16, 8)
+    y = torch.zeros(2)
+    out, _ = band_rotation(
+        X, y, num_bands=2, electrodes_per_band=8,
+        band_offsets=(2,),  # force a +2 roll on every band
+        max_temporal_jitter=0,
+        random_state=0,
+    )
+    assert sorted(out.flatten().tolist()) == sorted(X.flatten().tolist())
 
 
 def test_channel_reref():

@@ -16,6 +16,7 @@ from mne.channels import make_standard_montage
 from .base import Transform
 from .functional import (
     amplitude_scale,
+    band_rotation,
     bandstop_filter,
     channels_dropout,
     channels_permute,
@@ -1356,3 +1357,67 @@ class AmplitudeScale(Transform):
     def get_augmentation_params(self, *batch):
         """Return transform parameters."""
         return {"random_state": self.rng, "scale": self.scale}
+
+
+class BandRotation(Transform):
+    """Per-band electrode rotation + inter-band temporal jitter.
+
+    Models small wristband rotation between sessions and relative timing
+    noise between two arms.  Originally introduced in [Sivakumar2024]_ for
+    the emg2qwerty surface-EMG keystroke decoding task: the channel axis
+    is laid out as ``(B, num_bands * electrodes_per_band, T)`` with bands
+    contiguous, each band gets a uniform circular roll along the channel
+    axis, and band 1 additionally gets a sample-level temporal shift.
+
+    Parameters
+    ----------
+    probability : float
+        Float setting the probability of applying the operation.
+    num_bands : int, optional
+        Number of electrode bands (e.g. ``2`` for left + right wristband).
+        Defaults to 2.
+    electrodes_per_band : int, optional
+        Electrodes per band (e.g. ``16``).  Defaults to 16.
+    band_offsets : tuple of int, optional
+        Per-band roll values to sample from uniformly.  ``(-1, 0, 1)``
+        covers ±1-electrode misalignment.  Defaults to ``(-1, 0, 1)``.
+    max_temporal_jitter : int, optional
+        Max ±-sample temporal shift applied to band 1.  Defaults to 0
+        (jitter disabled).  The emg2qwerty paper uses 120 samples
+        (60 ms at 2 kHz).
+    random_state : int | numpy.random.Generator, optional
+        Seed for the rotation / jitter sampler.  Defaults to None.
+
+    References
+    ----------
+    .. [Sivakumar2024] Sivakumar, V., Seely, J., Du, A., Bittner, S. R.,
+       Berenzweig, A., Bolarinwa, A., Gramfort, A., & Mandel, M. I. (2024).
+       "emg2qwerty: A Large Dataset with Baselines for Touch Typing using
+       Surface Electromyography." *NeurIPS Datasets and Benchmarks Track*.
+    """
+
+    operation = staticmethod(band_rotation)  # type: ignore[assignment]
+
+    def __init__(
+        self,
+        probability,
+        num_bands=2,
+        electrodes_per_band=16,
+        band_offsets=(-1, 0, 1),
+        max_temporal_jitter=0,
+        random_state=None,
+    ):
+        super().__init__(probability=probability, random_state=random_state)
+        self.num_bands = num_bands
+        self.electrodes_per_band = electrodes_per_band
+        self.band_offsets = tuple(band_offsets)
+        self.max_temporal_jitter = max_temporal_jitter
+
+    def get_augmentation_params(self, *batch):
+        return {
+            "num_bands": self.num_bands,
+            "electrodes_per_band": self.electrodes_per_band,
+            "band_offsets": self.band_offsets,
+            "max_temporal_jitter": self.max_temporal_jitter,
+            "random_state": self.rng,
+        }

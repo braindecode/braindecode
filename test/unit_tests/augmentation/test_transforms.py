@@ -19,6 +19,7 @@ from braindecode.augmentation.functional import (
     sensors_rotation,
 )
 from braindecode.augmentation.transforms import (
+    BandRotation,
     BandstopFilter,
     ChannelsDropout,
     ChannelsShuffle,
@@ -762,6 +763,11 @@ def test_mask_encoding_transform(
     "augmentation,kwargs",
     [
         (IdentityTransform, {"probability": 0.5}),
+        (
+            BandRotation,
+            # random_batch is 22 channels → 2 bands × 11 electrodes
+            {"probability": 0.5, "num_bands": 2, "electrodes_per_band": 11},
+        ),
         (BandstopFilter, {"probability": 0.5, "sfreq": 100}),
         (ChannelsDropout, {"probability": 0.5}),
         (ChannelsShuffle, {"probability": 0.5}),
