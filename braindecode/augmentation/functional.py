@@ -1372,6 +1372,10 @@ def band_rotation(
         raise ValueError(f"num_bands must be >= 1, got {num_bands}")
     if electrodes_per_band < 1:
         raise ValueError(f"electrodes_per_band must be >= 1, got {electrodes_per_band}")
+    # Normalise to a tuple before truth-testing so callers can pass any
+    # sequence-like (incl. ``np.ndarray``) without hitting numpy's
+    # ambiguous-truth-value error on ``if not band_offsets``.
+    band_offsets = tuple(band_offsets)
     if not band_offsets:
         raise ValueError("band_offsets must be non-empty")
     if not all(isinstance(o, (int, np.integer)) for o in band_offsets):
