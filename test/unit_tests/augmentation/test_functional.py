@@ -212,17 +212,25 @@ def test_band_rotation_circular_jitter_wraps_vs_zero_pads():
         max_temporal_jitter=3,
     )
     # With a fixed seed, both branches sample the same shift; only the
-    # boundary handling differs.
+    # boundary handling differs.  ``shift`` is drawn from
+    # ``[-max_temporal_jitter, +max_temporal_jitter]`` and may legitimately
+    # be 0, so we branch on the observed ``n_diff`` rather than assuming a
+    # particular RNG draw — the test stays valid even if the sampler order
+    # changes upstream.
     out_circ, _ = band_rotation(X, y, **common, circular_jitter=True, random_state=11)
     out_pad, _ = band_rotation(X, y, **common, circular_jitter=False, random_state=11)
 
-    # Same shift sampled in both → outputs disagree only inside the
-    # |shift|-wide boundary region of band 1.
     diff = (out_circ != out_pad).any(dim=1).squeeze(0)  # (T,)
     n_diff = int(diff.sum())
-    assert 0 < n_diff <= common["max_temporal_jitter"]
-    # Padded variant has zeros somewhere on band 1's edge; circular has
-    # the original ramp values wrapped around.
+    if n_diff == 0:
+        # shift==0: both modes are no-ops on the time axis (band_offsets=(0,)
+        # also makes the channel roll a no-op), so outputs must equal X.
+        assert torch.equal(out_circ, X)
+        assert torch.equal(out_pad, X)
+        return
+    # shift!=0: differences are confined to the |shift|-wide boundary on
+    # band 1; padded variant zeros that boundary while circular wraps it.
+    assert n_diff <= common["max_temporal_jitter"]
     band1_pad = out_pad[0, 2:, :]
     band1_circ = out_circ[0, 2:, :]
     assert (band1_pad == 0).any()
@@ -234,8 +242,10 @@ def test_band_rotation_circular_roll_preserves_values():
     output (no zero-padding) when offsets are non-trivial."""
     # Small, deterministic input so the sorted-list comparison stays
     # ``O(n log n)`` on a few-hundred-element tensor.  Don't scale this up
-    # to large shapes — for production-size inputs use a ``set``-based
-    # equality check instead.
+    # to large shapes — for production-size inputs use a multiset-aware
+    # check (e.g. ``torch.unique(..., return_counts=True)`` or histogram
+    # comparison); a ``set`` would silently drop duplicates and miss
+    # value-multiplicity bugs.
     X = torch.arange(2 * 16 * 8).float().view(2, 16, 8)
     y = torch.zeros(2)
     out, _ = band_rotation(

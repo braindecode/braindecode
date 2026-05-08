@@ -1430,6 +1430,10 @@ class BandRotation(Transform):
         band_offsets = tuple(band_offsets)
         if not band_offsets:
             raise ValueError("band_offsets must be non-empty")
+        if not all(isinstance(o, (int, np.integer)) for o in band_offsets):
+            raise ValueError(
+                f"band_offsets must contain integers, got {band_offsets!r}"
+            )
         if max_temporal_jitter < 0:
             raise ValueError(
                 f"max_temporal_jitter must be >= 0, got {max_temporal_jitter}"
