@@ -11,6 +11,7 @@
 
 from collections import OrderedDict
 from functools import partial
+from unittest import mock
 
 import mne
 import numpy as np
@@ -3550,17 +3551,49 @@ def test_emg2qwerty_spec_augment_train_only():
     assert torch.equal(y_eval_a, y_eval_b)
 
     # Train mode: SpecAugment is stochastic (random number of masks in
-    # ``[0, n_*_masks]``). Seed 1 picks both n_t > 0 and n_f > 0 so the
-    # assertion is deterministic for this specific seed/config. Seed 3
-    # picks a different draw, exercising the stochastic branch.
+    # ``[0, n_*_masks]``). Force the mask-count draws so the assertion is
+    # deterministic regardless of the global RNG / torchaudio versions —
+    # ``forward`` calls ``torch.randint(n+1, ())`` exactly twice (time
+    # then frequency); both must come back ``>= 1``.
     m.train()
     spec = m.spectrogram(x)
-    torch.manual_seed(1)
-    aug_a = m.spec_augment(spec)
-    torch.manual_seed(3)
-    aug_b = m.spec_augment(spec)
+    real_randint = torch.randint
+
+    def force_nonzero_count(*args, **kwargs):
+        size = kwargs.get("size", args[1] if len(args) >= 2 else None)
+        if size == ():
+            return torch.tensor(2, dtype=torch.long)
+            # ``2`` is in [0, 3] (n_time_masks=3) and [0, 2] (n_freq_masks=2),
+            # so the spec_augment forward applies two time masks and two freq
+            # masks per call.
+        return real_randint(*args, **kwargs)
+
+    with mock.patch("torch.randint", side_effect=force_nonzero_count):
+        aug_a = m.spec_augment(spec)
+        aug_b = m.spec_augment(spec)
     assert not torch.equal(aug_a, spec), "SpecAugment must mutate the spectrogram"
     assert not torch.equal(aug_a, aug_b), "SpecAugment must be stochastic"
+
+    # Band-sharing contract: every electrode within a (sample, band) pair
+    # must see the same mask pattern. ``masked_fill`` with mean ≈ original
+    # values would mask invisibly, so build a tensor whose elements are all
+    # distinct integers — any change is then exact-detectable.
+    contiguous_spec = torch.arange(spec.numel(), dtype=spec.dtype).reshape(spec.shape)
+    with mock.patch("torch.randint", side_effect=force_nonzero_count):
+        contiguous_aug = m.spec_augment(contiguous_spec)
+    changed = contiguous_aug != contiguous_spec  # (T, B, num_bands, electrodes, freq)
+    # Reduce over (T, freq) to a (B, num_bands, electrodes) "did electrode e
+    # see ANY mask?" tensor; band-shared masking ⇒ all electrodes within a
+    # (b, band) row share the per-(T, freq) pattern.
+    n_electrodes = changed.shape[-2]
+    for b in range(changed.shape[1]):
+        for band in range(changed.shape[2]):
+            ref = changed[:, b, band, 0, :]
+            for e in range(1, n_electrodes):
+                assert torch.equal(changed[:, b, band, e, :], ref), (
+                    f"electrode {e} mask differs from electrode 0 in "
+                    f"(B={b}, band={band}) — masking is not band-shared"
+                )
 
     # No new state-dict keys.
     keys = list(m.state_dict().keys())

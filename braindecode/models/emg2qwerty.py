@@ -568,11 +568,18 @@ class _SpecAugment(nn.Module):
     r"""SpecAugment masking on the log-spectrogram during training.
 
     Applies up to ``n_time_masks`` × ``time_mask_param``-frame time bands
-    and ``n_freq_masks`` × ``freq_mask_param``-bin frequency bands, IID
-    per ``(sample × band)`` and shared across the electrodes within a band
-    — per-electrode masking is :math:`\\sim 32\\times` more aggressive and
-    collapses CTC. No-op outside training. Defaults match Sivakumar et al.
-    Sec 5.2 (3×25 / 2×4 frames-bins, ``prob=1.0``).
+    and ``n_freq_masks`` × ``freq_mask_param``-bin frequency bands, with
+    one mask drawn per ``(sample × band)`` row and broadcast across all
+    electrodes within that band — so a wristband's 16 electrodes share
+    the same masked window. No-op outside ``training``. Defaults match
+    Sivakumar et al. Sec 5.2 (3×25 / 2×4 frames-bins, ``prob=1.0``).
+
+    Implemented as pure tensor ops (per-row vectorised start / width
+    sampling, on-device mean fill, ``masked_fill`` broadcast) so the
+    forward pass keeps no host round-trips on GPU. ``torchaudio``'s
+    ``TimeMasking(iid_masks=True)`` cannot be reused here because, on a
+    ``(B*num_bands, electrodes, freq, T)`` tensor, it samples one mask
+    per ``(batch, electrode)`` pair instead of per ``(sample × band)``.
     """
 
     def __init__(
@@ -602,11 +609,36 @@ class _SpecAugment(nn.Module):
         self.n_freq_masks = n_freq_masks
         self.freq_mask_param = freq_mask_param
         self.prob = prob
-        # ``iid_masks=True`` so every (sample × band) row gets its own mask;
-        # without it, the same time window is masked across all bands and the
-        # CTC head collapses to all-blank during warmup.
-        self.time_mask = ta_transforms.TimeMasking(time_mask_param, iid_masks=True)
-        self.freq_mask = ta_transforms.FrequencyMasking(freq_mask_param, iid_masks=True)
+
+    @staticmethod
+    def _band_shared_axis_mask(
+        n_rows: int,
+        axis_len: int,
+        max_mask_param: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """One mask per row, shared across the orthogonal axes.
+
+        Returns a ``(n_rows, axis_len)`` boolean tensor where row ``i``
+        marks a contiguous span ``[start_i, start_i + width_i)`` to be
+        masked. ``width_i`` is sampled in ``[0, min(max_mask_param,
+        axis_len)]``; ``start_i`` in ``[0, axis_len - width_i]``. Both
+        draws stay on-device.
+        """
+        effective = min(max_mask_param, axis_len)
+        if effective <= 0 or n_rows <= 0:
+            return torch.zeros(n_rows, axis_len, dtype=torch.bool, device=device)
+        widths = torch.randint(0, effective + 1, (n_rows,), device=device)
+        # Float-then-cast keeps integer precision under fp16/bf16 — same trick
+        # ``_MaskAug`` uses in ``meta_neuromotor``.
+        max_starts = (axis_len - widths).to(torch.float32)
+        starts = (
+            torch.rand(n_rows, device=device, dtype=torch.float32) * max_starts
+        ).to(torch.long)
+        positions = torch.arange(axis_len, device=device)
+        return (positions[None, :] >= starts[:, None]) & (
+            positions[None, :] < (starts + widths)[:, None]
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # ``x``: (T_spec, B, num_bands, electrodes, freq).
@@ -619,20 +651,30 @@ class _SpecAugment(nn.Module):
         if self.prob < 1.0 and torch.rand((), device="cpu").item() >= self.prob:
             return x
         n_frames, batch_size, n_bands, n_electrodes, n_freq_bins = x.shape
-        # Reshape to ``(B*num_bands, electrodes, freq, T_spec)`` so iid_masks
-        # draws one mask per (sample × band) shared across electrodes.
-        flat = x.movedim(0, -1).reshape(
-            batch_size * n_bands, n_electrodes, n_freq_bins, n_frames
-        )
-        # Mask to per-window mean: in log-spec space 0 = log(power=1), well
-        # above the typical distribution and would inject artificial spikes.
-        mask_value = float(flat.mean().item())
+        n_rows = batch_size * n_bands
+        # Reshape to ``(B*num_bands, electrodes, freq, T_spec)`` so a mask of
+        # shape ``(n_rows, ..., L)`` broadcasts across the electrode axis —
+        # the missing dim is 1, so every electrode in a band sees the same
+        # masked window.
+        flat = x.movedim(0, -1).reshape(n_rows, n_electrodes, n_freq_bins, n_frames)
+        # 0-D on-device fill value; in log-spec space the natural zero is
+        # ``log(power=1)`` which sits well above the typical distribution and
+        # would inject artificial spikes. Mean over all elements matches the
+        # original neuralbench callback behaviour but stays on-device (no
+        # ``.item()`` host sync per forward).
+        mask_value = flat.mean()
         n_t = int(torch.randint(self.n_time_masks + 1, ()).item())
         for _ in range(n_t):
-            flat = self.time_mask(flat, mask_value=mask_value)
+            time_mask = self._band_shared_axis_mask(
+                n_rows, n_frames, self.time_mask_param, flat.device
+            )
+            flat = flat.masked_fill(time_mask[:, None, None, :], mask_value)
         n_f = int(torch.randint(self.n_freq_masks + 1, ()).item())
         for _ in range(n_f):
-            flat = self.freq_mask(flat, mask_value=mask_value)
+            freq_mask = self._band_shared_axis_mask(
+                n_rows, n_freq_bins, self.freq_mask_param, flat.device
+            )
+            flat = flat.masked_fill(freq_mask[:, None, :, None], mask_value)
         return flat.reshape(
             batch_size, n_bands, n_electrodes, n_freq_bins, n_frames
         ).movedim(-1, 0)

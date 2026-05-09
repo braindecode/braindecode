@@ -36,6 +36,20 @@ Enhancements
   noise between two arms, from the emg2qwerty paper (Sivakumar et al.,
   NeurIPS 2024).  By `Bruno Aristimunha`_.
 
+- Build SpecAugment [park2019specaug]_ into
+  :class:`braindecode.models.EMG2QwertyNet` as a parameter-free submodule
+  gated by a new ``spec_augment`` constructor flag (default ``False``).
+  When enabled, applies up to ``n_time_masks`` × ``time_mask_param``
+  time bands and ``n_freq_masks`` × ``freq_mask_param`` frequency bands
+  on the log-spectrogram during ``train()`` only, with one mask drawn
+  per ``(sample × band)`` and broadcast across all electrodes within
+  the band. Implemented with on-device tensor ops (no host syncs).
+  Also adds a ``return_features`` flag to
+  :meth:`braindecode.models.EMG2QwertyNet.forward` so the encoder can
+  drop into downstream wrappers expecting a
+  ``{"features": (B, T_out, num_features), "cls_token": None}`` dict
+  (BIOT / signal-JEPA convention). By `Bruno Aristimunha`_.
+
 - Add :meth:`braindecode.datasets.BaseConcatDataset.set_target` to swap
   any per-window metadata column or per-record description field
   (e.g. a BIDS entity, a participants.tsv extra) into the dataset's
