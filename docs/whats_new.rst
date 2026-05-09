@@ -36,7 +36,7 @@ Enhancements
   noise between two arms, from the emg2qwerty paper (Sivakumar et al.,
   NeurIPS 2024).  By `Bruno Aristimunha`_.
 
-- Build SpecAugment [park2019specaug]_ into
+- Build SpecAugment (Park et al., Interspeech 2019) into
   :class:`braindecode.models.EMG2QwertyNet` as a parameter-free submodule
   gated by a new ``spec_augment`` constructor flag (default ``False``).
   When enabled, applies up to ``n_time_masks`` × ``time_mask_param``
