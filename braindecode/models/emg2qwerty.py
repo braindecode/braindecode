@@ -172,6 +172,16 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
     spec_augment_prob : float
         Probability of running SpecAugment on a given training batch
         (Bernoulli gate before sampling mask counts). Defaults to ``1.0``.
+    return_feature : bool
+        If ``True``, ``forward`` returns a tuple
+        ``(emissions, features)`` instead of just ``emissions`` —
+        :class:`braindecode.models.BIOT`-style legacy feature path. Lets
+        configuration-driven downstream wrappers (e.g. neuroai's
+        ``DownstreamWrapperModel`` with ``model_output_key=1``) pick up
+        the encoder representation without passing a runtime kwarg.
+        Defaults to ``False``. Mutually compatible with the runtime
+        ``return_features`` (plural) flag, which still wins when set
+        to ``True``.
 
     Examples
     --------
@@ -249,6 +259,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         n_freq_masks: int = 2,
         freq_mask_param: int = 4,
         spec_augment_prob: float = 1.0,
+        return_feature: bool = False,
         # Standard braindecode args
         n_times: int | None = None,
         input_window_seconds: float | None = None,
@@ -289,6 +300,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         self.hop_length = hop_length
         self.kernel_width = kernel_width
         self.log_softmax = log_softmax
+        self.return_feature = return_feature
 
         n_freq_bins = n_fft // 2 + 1
         in_features = electrodes_per_band * n_freq_bins
@@ -350,7 +362,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False
-    ) -> torch.Tensor | dict[str, torch.Tensor | None]:
+    ) -> (
+        torch.Tensor
+        | dict[str, torch.Tensor | None]
+        | tuple[torch.Tensor, torch.Tensor]
+    ):
         """Run the full pipeline.
 
         Parameters
@@ -367,20 +383,29 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             when they apply their own probe/aggregation. Matches the
             BIOT / signal-JEPA convention so the same neuroai
             ``DownstreamWrapperModel(model_output_key="features")``
-            can consume it.
+            can consume it. Wins over the constructor-time
+            ``return_feature`` flag when set.
 
         Returns
         -------
-        torch.Tensor or dict
-            Default (``return_features=False``): ``torch.Tensor`` of
-            shape ``(batch, T_out, n_outputs)``. Log-probabilities if
+        torch.Tensor or dict or tuple
+            Default (``return_features=False``, init
+            ``return_feature=False``): ``torch.Tensor`` of shape
+            ``(batch, T_out, n_outputs)``. Log-probabilities if
             ``log_softmax=True``, otherwise logits.
 
-            If ``return_features=True``: ``dict`` with
+            If runtime ``return_features=True``: ``dict`` with
             ``"features"`` (shape ``(batch, T_out, num_features)``,
             where ``num_features = num_bands * mlp_features[-1]``) and
             ``"cls_token"`` (always ``None`` — TDS-Conv has no
             ``[CLS]``).
+
+            If init ``return_feature=True`` and runtime
+            ``return_features=False``: tuple ``(emissions, features)``
+            where ``features`` has shape ``(batch, T_out,
+            num_features)``. Same layout BIOT exposes for
+            configuration-driven feature extraction (e.g. neuroai's
+            ``model_output_key=1``).
         """
         if x.ndim != 3 or x.shape[-2] != self.n_chans:
             raise ValueError(
@@ -401,18 +426,19 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         spectrogram = self.spectrogram(x)
         spectrogram = self.spec_augment(spectrogram)
         encoded = self.model(spectrogram)
+        # ``encoded`` is (T_out, B, num_features). Transpose to (B, T_out,
+        # num_features) so feature consumers (and neuroai's downstream
+        # wrappers) see the same batch-first layout as the emissions tensor.
+        features = encoded.transpose(0, 1).contiguous()
         if return_features:
-            # ``encoded`` is (T_out, B, num_features). Transpose to
-            # (B, T_out, num_features) so feature consumers see the
-            # same batch-first layout as the default emissions tensor.
-            return {
-                "features": encoded.transpose(0, 1).contiguous(),
-                "cls_token": None,
-            }
+            return {"features": features, "cls_token": None}
         emissions = self.final_layer(encoded)
         if self.log_softmax:
             emissions = F.log_softmax(emissions, dim=-1)
-        return emissions.transpose(0, 1).contiguous()
+        emissions = emissions.transpose(0, 1).contiguous()
+        if self.return_feature:
+            return emissions, features
+        return emissions
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new vocabulary size.
@@ -488,9 +514,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             dummy_input = torch.zeros(
                 1, self.n_chans, n_times, dtype=dtype, device=device
             )
-            # ``return_features=False`` is the default; assert here so mypy
-            # narrows the union return type to ``Tensor`` for ``.shape``.
-            emissions = self.forward(dummy_input, return_features=False)
+            # ``return_features=False`` keeps the dict path off; the init
+            # ``return_feature`` flag may still produce a tuple, so unpack
+            # the emissions explicitly to report the public output shape.
+            out = self.forward(dummy_input, return_features=False)
+            emissions = out[0] if isinstance(out, tuple) else out
             assert isinstance(emissions, torch.Tensor)
             return tuple(emissions.shape)
 
@@ -567,19 +595,20 @@ class _LogSpectrogram(nn.Module):
 class _SpecAugment(nn.Module):
     r"""SpecAugment masking on the log-spectrogram during training.
 
-    Applies up to ``n_time_masks`` × ``time_mask_param``-frame time bands
-    and ``n_freq_masks`` × ``freq_mask_param``-bin frequency bands, with
-    one mask drawn per ``(sample × band)`` row and broadcast across all
-    electrodes within that band — so a wristband's 16 electrodes share
-    the same masked window. No-op outside ``training``. Defaults match
-    Sivakumar et al. Sec 5.2 (3×25 / 2×4 frames-bins, ``prob=1.0``).
+    Applies up to ``n_time_masks`` × ``time_mask_param``-frame time
+    bands and ``n_freq_masks`` × ``freq_mask_param``-bin frequency
+    bands. Masks are independent per ``(sample × band × electrode)``
+    triple — same recipe as the upstream emg2qwerty
+    :class:`emg2qwerty.transforms.SpecAugment` dataset transform
+    (Sivakumar et al. Sec 5.2 / NeurIPS 2024), which is
+    :func:`torchaudio.functional.mask_along_axis_iid`-style masking
+    sampled per leading dim of a spectrogram with shape
+    ``(..., freq, time)``. No-op outside ``training``.
 
-    Implemented as pure tensor ops (per-row vectorised start / width
-    sampling, on-device mean fill, ``masked_fill`` broadcast) so the
-    forward pass keeps no host round-trips on GPU. ``torchaudio``'s
-    ``TimeMasking(iid_masks=True)`` cannot be reused here because, on a
-    ``(B*num_bands, electrodes, freq, T)`` tensor, it samples one mask
-    per ``(batch, electrode)`` pair instead of per ``(sample × band)``.
+    The mask fill value is the on-device mean of the spectrogram —
+    ``log(power=1)=0`` would sit well above the typical log-power
+    distribution and inject artificial spikes — and stays a 0-D
+    tensor so the forward pass adds no host round-trip on GPU.
     """
 
     def __init__(
@@ -609,36 +638,13 @@ class _SpecAugment(nn.Module):
         self.n_freq_masks = n_freq_masks
         self.freq_mask_param = freq_mask_param
         self.prob = prob
-
-    @staticmethod
-    def _band_shared_axis_mask(
-        n_rows: int,
-        axis_len: int,
-        max_mask_param: int,
-        device: torch.device,
-    ) -> torch.Tensor:
-        """One mask per row, shared across the orthogonal axes.
-
-        Returns a ``(n_rows, axis_len)`` boolean tensor where row ``i``
-        marks a contiguous span ``[start_i, start_i + width_i)`` to be
-        masked. ``width_i`` is sampled in ``[0, min(max_mask_param,
-        axis_len)]``; ``start_i`` in ``[0, axis_len - width_i]``. Both
-        draws stay on-device.
-        """
-        effective = min(max_mask_param, axis_len)
-        if effective <= 0 or n_rows <= 0:
-            return torch.zeros(n_rows, axis_len, dtype=torch.bool, device=device)
-        widths = torch.randint(0, effective + 1, (n_rows,), device=device)
-        # Float-then-cast keeps integer precision under fp16/bf16 — same trick
-        # ``_MaskAug`` uses in ``meta_neuromotor``.
-        max_starts = (axis_len - widths).to(torch.float32)
-        starts = (
-            torch.rand(n_rows, device=device, dtype=torch.float32) * max_starts
-        ).to(torch.long)
-        positions = torch.arange(axis_len, device=device)
-        return (positions[None, :] >= starts[:, None]) & (
-            positions[None, :] < (starts + widths)[:, None]
-        )
+        # ``iid_masks=True`` so masking is sampled over every leading dim
+        # except the trailing ``(freq, time)`` pair — i.e. one mask per
+        # ``(sample × band × electrode)`` on a 5-D
+        # ``(B, num_bands, electrodes, freq, T)`` input. Matches upstream
+        # emg2qwerty's per-``(band × electrode)`` dataset-time recipe.
+        self.time_mask = ta_transforms.TimeMasking(time_mask_param, iid_masks=True)
+        self.freq_mask = ta_transforms.FrequencyMasking(freq_mask_param, iid_masks=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # ``x``: (T_spec, B, num_bands, electrodes, freq).
@@ -650,34 +656,22 @@ class _SpecAugment(nn.Module):
             return x
         if self.prob < 1.0 and torch.rand((), device="cpu").item() >= self.prob:
             return x
-        n_frames, batch_size, n_bands, n_electrodes, n_freq_bins = x.shape
-        n_rows = batch_size * n_bands
-        # Reshape to ``(B*num_bands, electrodes, freq, T_spec)`` so a mask of
-        # shape ``(n_rows, ..., L)`` broadcasts across the electrode axis —
-        # the missing dim is 1, so every electrode in a band sees the same
-        # masked window.
-        flat = x.movedim(0, -1).reshape(n_rows, n_electrodes, n_freq_bins, n_frames)
-        # 0-D on-device fill value; in log-spec space the natural zero is
-        # ``log(power=1)`` which sits well above the typical distribution and
-        # would inject artificial spikes. Mean over all elements matches the
-        # original neuralbench callback behaviour but stays on-device (no
-        # ``.item()`` host sync per forward).
-        mask_value = flat.mean()
+        # ``torchaudio`` masking expects ``(..., freq, time)``; here that means
+        # ``(B, num_bands, electrodes, freq, T_spec)``. Move time to the end
+        # rather than reshaping into 4D, because ``mask_along_axis_iid`` draws
+        # one mask per leading-axis index, so the 5-D layout already gives the
+        # desired per-``(B × num_bands × electrodes)`` independence.
+        spec = x.movedim(0, -1).contiguous()
+        # 0-D on-device tensor — ``masked_fill`` / ``torch.where`` accept it
+        # without a host sync.
+        mask_value = spec.mean()
         n_t = int(torch.randint(self.n_time_masks + 1, ()).item())
         for _ in range(n_t):
-            time_mask = self._band_shared_axis_mask(
-                n_rows, n_frames, self.time_mask_param, flat.device
-            )
-            flat = flat.masked_fill(time_mask[:, None, None, :], mask_value)
+            spec = self.time_mask(spec, mask_value=mask_value)
         n_f = int(torch.randint(self.n_freq_masks + 1, ()).item())
         for _ in range(n_f):
-            freq_mask = self._band_shared_axis_mask(
-                n_rows, n_freq_bins, self.freq_mask_param, flat.device
-            )
-            flat = flat.masked_fill(freq_mask[:, None, :, None], mask_value)
-        return flat.reshape(
-            batch_size, n_bands, n_electrodes, n_freq_bins, n_frames
-        ).movedim(-1, 0)
+            spec = self.freq_mask(spec, mask_value=mask_value)
+        return spec.movedim(-1, 0)
 
 
 class _SpectrogramNorm(nn.Module):

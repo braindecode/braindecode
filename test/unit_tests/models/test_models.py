@@ -3574,26 +3574,36 @@ def test_emg2qwerty_spec_augment_train_only():
     assert not torch.equal(aug_a, spec), "SpecAugment must mutate the spectrogram"
     assert not torch.equal(aug_a, aug_b), "SpecAugment must be stochastic"
 
-    # Band-sharing contract: every electrode within a (sample, band) pair
-    # must see the same mask pattern. ``masked_fill`` with mean ≈ original
-    # values would mask invisibly, so build a tensor whose elements are all
-    # distinct integers — any change is then exact-detectable.
+    # Per-(sample × band × electrode) independence contract — matches
+    # upstream ``emg2qwerty.transforms.SpecAugment`` (Sivakumar et al.
+    # Sec 5.2), which applies torchaudio ``iid_masks=True`` on a 4-D
+    # ``(bands, electrodes, freq, T)`` sample and so draws one mask
+    # per ``(band, electrode)`` pair. On a uniquely-valued tensor, at
+    # least one ``(B, band)`` row must show different mask patterns
+    # across its electrodes — i.e. masking must NOT be band-shared.
     contiguous_spec = torch.arange(spec.numel(), dtype=spec.dtype).reshape(spec.shape)
     with mock.patch("torch.randint", side_effect=force_nonzero_count):
         contiguous_aug = m.spec_augment(contiguous_spec)
     changed = contiguous_aug != contiguous_spec  # (T, B, num_bands, electrodes, freq)
-    # Reduce over (T, freq) to a (B, num_bands, electrodes) "did electrode e
-    # see ANY mask?" tensor; band-shared masking ⇒ all electrodes within a
-    # (b, band) row share the per-(T, freq) pattern.
     n_electrodes = changed.shape[-2]
+    found_per_electrode_diff = False
     for b in range(changed.shape[1]):
         for band in range(changed.shape[2]):
             ref = changed[:, b, band, 0, :]
             for e in range(1, n_electrodes):
-                assert torch.equal(changed[:, b, band, e, :], ref), (
-                    f"electrode {e} mask differs from electrode 0 in "
-                    f"(B={b}, band={band}) — masking is not band-shared"
-                )
+                if not torch.equal(changed[:, b, band, e, :], ref):
+                    found_per_electrode_diff = True
+                    break
+            if found_per_electrode_diff:
+                break
+        if found_per_electrode_diff:
+            break
+    assert found_per_electrode_diff, (
+        "SpecAugment must produce per-(B, band, electrode) independent "
+        "masks (matches upstream emg2qwerty); every (B, band) row "
+        "showing identical masks across all electrodes indicates "
+        "band-shared masking, which is a regression."
+    )
 
     # No new state-dict keys.
     keys = list(m.state_dict().keys())
@@ -3673,3 +3683,53 @@ def test_emg2qwerty_return_features_dict_layout():
     # the head reproduces the emissions tensor up to log-softmax).
     head_out = m.final_layer(feats)
     assert torch.allclose(head_out, emissions, atol=1e-5)
+
+
+def test_emg2qwerty_return_feature_init_tuple():
+    """``return_feature=True`` (init kwarg) yields a BIOT-style tuple.
+
+    Configuration-driven downstream wrappers (neuroai's
+    ``DownstreamWrapperModel`` with ``model_output_key=1``) call
+    ``model(**dummy_batch)`` without runtime kwargs, so the model has to
+    expose the encoder representation through its default forward path
+    too. Mirrors :class:`braindecode.models.BIOT`'s legacy
+    ``return_feature=True`` init flag: ``forward(x)`` returns
+    ``(emissions, features)``. Runtime ``return_features=True`` (dict)
+    keeps winning when both are set.
+    """
+    torch.manual_seed(0)
+    mlp_features = (48,)
+    num_bands = 2
+    expected_num_features = num_bands * mlp_features[-1]
+
+    m = _small_emg2qwerty(mlp_features=mlp_features, return_feature=True).eval()
+    x = torch.randn(2, 32, 500)
+
+    with torch.no_grad():
+        out = m(x)
+    assert isinstance(out, tuple) and len(out) == 2
+    emissions, features = out
+    assert emissions.shape[0] == 2 and emissions.shape[2] == 99
+    assert features.shape == (2, emissions.shape[1], expected_num_features)
+    # Same content invariant as the dict path.
+    assert torch.allclose(m.final_layer(features), emissions, atol=1e-5)
+
+    # Runtime dict flag wins over init tuple flag.
+    with torch.no_grad():
+        bundle = m(x, return_features=True)
+    assert isinstance(bundle, dict)
+    assert torch.equal(bundle["features"], features)
+
+    # Round-trip: ``return_feature`` survives ``get_config`` so reloaded
+    # models keep the same wrapper-compatible output shape.
+    cfg = m.get_config()
+    assert cfg["return_feature"] is True
+    m2 = EMG2QwertyNet.from_config(cfg)
+    with torch.no_grad():
+        out2 = m2(x)
+    assert isinstance(out2, tuple) and len(out2) == 2
+
+    # ``get_output_shape`` must keep reporting the emissions shape, not
+    # the tuple itself, so braindecode's introspection helpers don't
+    # break for callers who flip this flag.
+    assert m.get_output_shape() == (1, emissions.shape[1], 99)

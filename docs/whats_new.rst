@@ -41,14 +41,20 @@ Enhancements
   gated by a new ``spec_augment`` constructor flag (default ``False``).
   When enabled, applies up to ``n_time_masks`` × ``time_mask_param``
   time bands and ``n_freq_masks`` × ``freq_mask_param`` frequency bands
-  on the log-spectrogram during ``train()`` only, with one mask drawn
-  per ``(sample × band)`` and broadcast across all electrodes within
-  the band. Implemented with on-device tensor ops (no host syncs).
-  Also adds a ``return_features`` flag to
-  :meth:`braindecode.models.EMG2QwertyNet.forward` so the encoder can
-  drop into downstream wrappers expecting a
-  ``{"features": (B, T_out, num_features), "cls_token": None}`` dict
-  (BIOT / signal-JEPA convention). By `Bruno Aristimunha`_.
+  on the log-spectrogram during ``train()`` only, with masks sampled
+  IID per ``(sample × band × electrode)`` triple — same recipe as the
+  upstream ``emg2qwerty.transforms.SpecAugment`` dataset transform. The
+  mask fill value stays a 0-D on-device tensor (``spec.mean()``) so the
+  forward pass adds no host round-trip on GPU. Also adds a
+  ``return_features`` runtime flag to
+  :meth:`braindecode.models.EMG2QwertyNet.forward` (returns
+  ``{"features": (B, T_out, num_features), "cls_token": None}``,
+  BIOT / signal-JEPA convention) and a matching ``return_feature``
+  constructor flag (returns ``(emissions, features)`` tuple, BIOT-style
+  legacy path) so downstream wrappers — such as neuroai's
+  ``DownstreamWrapperModel`` — can pick up the encoder representation
+  via ``model_output_key="features"`` (dict) or ``model_output_key=1``
+  (tuple) without changes to their call site. By `Bruno Aristimunha`_.
 
 - Add :meth:`braindecode.datasets.BaseConcatDataset.set_target` to swap
   any per-window metadata column or per-record description field
