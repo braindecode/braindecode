@@ -18,7 +18,7 @@ import shutil
 import warnings
 from abc import abstractmethod
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from glob import glob
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
@@ -1339,6 +1339,124 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         if not (callable(fn) or fn is None):
             raise TypeError("target_transform must be a callable.")
         self._target_transform = fn
+
+    def set_target(self, column: Hashable) -> "BaseConcatDataset":
+        """Use ``column`` as the target ``y`` for every subdataset.
+
+        Dispatches on the subdataset type:
+
+        * For :class:`WindowsDataset` / :class:`EEGWindowsDataset`,
+          ``column`` is looked up in per-window ``metadata`` first, then in
+          the per-record ``description`` (broadcast to every window). The
+          resolved values overwrite ``ds.metadata['target']`` and ``ds.y``.
+          For :class:`WindowsDataset`, the underlying ``ds.windows.metadata``
+          is kept in sync so ``get_metadata()`` and the repr reflect the
+          new target.
+        * For :class:`RawDataset`, ``column`` must exist on the
+          ``description``. ``ds.target_name`` is set to ``column`` so
+          ``__getitem__`` reads ``description[column]`` as ``y`` on every
+          access — no rebuild needed.
+
+        Parameters
+        ----------
+        column : Hashable
+            Name of a metadata column or description field (BIDS entity,
+            participants.tsv extra, ...). Typically a string, but any
+            hashable that pandas accepts as a column label is allowed.
+
+        Returns
+        -------
+        self : BaseConcatDataset
+
+        Raises
+        ------
+        TypeError
+            If any subdataset is not a :class:`WindowsDataset`,
+            :class:`EEGWindowsDataset`, or :class:`RawDataset`, or if a
+            windowed subdataset has lazy (non-DataFrame) metadata.
+        ValueError
+            If ``column`` is not present on a subdataset's metadata or
+            description, or if a windowed subdataset has
+            ``targets_from='channels'`` (which would make this a silent
+            no-op since ``__getitem__`` reads y from misc channels, not
+            from ``metadata['target']``).
+        """
+        for i, ds in enumerate(self.datasets):
+            if isinstance(ds, (WindowsDataset, EEGWindowsDataset)):
+                if not isinstance(ds.metadata, pd.DataFrame):
+                    # _LazyDataFrame (lazy_metadata=True) does not implement
+                    # .copy()/__setitem__, so the in-place write below would
+                    # raise AttributeError. Surface the precondition cleanly.
+                    raise TypeError(
+                        "set_target requires a materialized metadata "
+                        f"DataFrame; datasets[{i}].metadata is "
+                        f"{type(ds.metadata).__name__}. Re-window with "
+                        "lazy_metadata=False to use set_target."
+                    )
+                if getattr(ds, "targets_from", "metadata") != "metadata":
+                    # __getitem__ would read y from misc channels; writing
+                    # metadata['target']/ds.y would be a silent no-op.
+                    raise ValueError(
+                        f"datasets[{i}] has targets_from="
+                        f"{ds.targets_from!r}; set_target only applies when "
+                        "targets_from='metadata' (otherwise __getitem__ "
+                        "derives y from misc channels and would ignore the "
+                        "rewritten target column)."
+                    )
+                n = len(ds)
+                md = ds.metadata
+                if column in md.columns:
+                    values = md[column].iloc[:n].to_list()
+                elif (
+                    isinstance(ds.description, pd.Series)
+                    and column in ds.description.index
+                ):
+                    values = [ds.description[column]] * n
+                else:
+                    desc_keys = (
+                        list(ds.description.index)
+                        if isinstance(ds.description, pd.Series)
+                        else []
+                    )
+                    raise ValueError(
+                        f"Column {column!r} not found on datasets[{i}]: "
+                        f"metadata cols={list(md.columns)}, "
+                        f"description keys={desc_keys}."
+                    )
+                # In-place write so the WindowsDataset's metadata and the
+                # underlying mne.Epochs.metadata (which start as the same
+                # object reference) both reflect the new target. Defensive
+                # second write covers the case where they got de-aliased
+                # earlier by a caller-side reassignment.
+                md["target"] = values
+                windows_obj = getattr(ds, "_windows", None)
+                if windows_obj is not None and windows_obj.metadata is not md:
+                    windows_obj.metadata["target"] = values
+                # values is already a fresh list (Series.to_list() / [x] * n);
+                # no defensive copy needed — pandas keeps its own representation
+                # for md["target"] so mutating ds.y won't reach back into it.
+                ds.y = values
+            elif isinstance(ds, RawDataset):
+                if (
+                    not isinstance(ds.description, pd.Series)
+                    or column not in ds.description.index
+                ):
+                    desc_keys = (
+                        list(ds.description.index)
+                        if isinstance(ds.description, pd.Series)
+                        else []
+                    )
+                    raise ValueError(
+                        f"Column {column!r} not found on datasets[{i}] "
+                        f"description (keys={desc_keys})."
+                    )
+                ds.target_name = column
+            else:
+                raise TypeError(
+                    "set_target requires WindowsDataset, EEGWindowsDataset, "
+                    f"or RawDataset; datasets[{i}] is {type(ds).__name__}."
+                )
+        return self
 
     def _outdated_save(self, path, overwrite=False):
         """This is a copy of the old saving function, that had inconsistent.

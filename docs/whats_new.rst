@@ -22,11 +22,29 @@
 .. _current:
 
 
-Current 1.5.0 (GitHub)
+Current 1.5.0 (stable)
 ===============================
 
 Enhancements
 ============
+
+- Add :class:`braindecode.augmentation.BandRotation` and
+  :func:`braindecode.augmentation.functional.band_rotation`: per-band
+  circular roll along the channel axis plus inter-band temporal jitter,
+  for surface-EMG inputs shaped ``(B, num_bands * electrodes_per_band, T)``.
+  Models small wristband rotation between sessions and relative timing
+  noise between two arms, from the emg2qwerty paper (Sivakumar et al.,
+  NeurIPS 2024).  By `Bruno Aristimunha`_.
+
+- Add :meth:`braindecode.datasets.BaseConcatDataset.set_target` to swap
+  any per-window metadata column or per-record description field
+  (e.g. a BIDS entity, a participants.tsv extra) into the dataset's
+  target ``y`` in one call, replacing the manual
+  ``for ds in concat.datasets: ds.metadata.loc[:, 'target'] = ...; ds.y = ...``
+  loop. Dispatches on the subdataset type: writes
+  ``metadata['target']`` / ``ds.y`` for windowed records, and points
+  ``target_name`` at the chosen description field for raw records.
+  By `Bruno Aristimunha`_.
 
 - Redesign the documentation landing page (``docs/index.rst``) in a
   pyhealth.dev-style layout: animated brain → EEG → net hero, fact strip
@@ -140,11 +158,6 @@ API and behavior changes
   :class:`braindecode.models.InterpolatedLaBraM`. (:gh:`993`
   by `Pierre Guetschel`_)
 
-Requirements
-============
-
-- None yet
-
 Bug fixes
 ==========
 
@@ -190,11 +203,6 @@ Bug fixes
   "DatasetFile"``) (:gh:`1002` by `Bruno Aristimunha`_)
 - Retry transient TLS failures from ``physionet.org`` when fetching
   :class:`braindecode.datasets.SleepPhysionet` (by `Bruno Aristimunha`_)
-
-Code health
-============
-
-- None yet
 
 
 Current 1.4.0 (stable)
