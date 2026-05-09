@@ -69,7 +69,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
       local minimum).
     - **Augmentation**: per-band electrode rotations by -1/0/+1 positions,
       ±60-sample temporal jitter, and SpecAugment [park2019specaug]_ on
-      the log-spectrogram.
+      the log-spectrogram. SpecAugment is built into the model
+      (``spec_augment=True``) and only fires in training mode; the
+      time/frequency-jitter pieces are dataset-side augmentations.
     - **Decoding**: greedy CTC. Upstream also reports a 6-gram KenLM
       beam decoder, not ported here.
 
@@ -145,6 +147,27 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         layers and again after the second :class:`~torch.nn.Linear`.
         Default ``0.0`` matches the upstream paper recipe (no dropout).
         Set ``> 0`` for regularized training.
+    spec_augment : bool
+        If ``True``, apply SpecAugment [park2019specaug]_ time/frequency
+        masking on the log-spectrogram during training only. Disabled in
+        ``eval`` mode and absent from the parameter / state-dict count.
+        Defaults to ``False``; set to ``True`` to match the upstream
+        emg2qwerty paper recipe.
+    n_time_masks : int
+        Maximum number of time masks applied per call. Each forward pass
+        samples a uniform integer in ``[0, n_time_masks]``. Defaults to
+        ``3`` (Sivakumar et al. Sec 5.2).
+    time_mask_param : int
+        Maximum time-mask width in spectrogram frames. Defaults to ``25``.
+    n_freq_masks : int
+        Maximum number of frequency masks applied per call. Each forward
+        pass samples a uniform integer in ``[0, n_freq_masks]``. Defaults
+        to ``2``.
+    freq_mask_param : int
+        Maximum frequency-mask width in STFT bins. Defaults to ``4``.
+    spec_augment_prob : float
+        Probability of running SpecAugment on a given training batch
+        (Bernoulli gate before sampling mask counts). Defaults to ``1.0``.
 
     Examples
     --------
@@ -216,6 +239,12 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         log_softmax: bool = False,
         activation: type[nn.Module] = nn.ReLU,
         drop_prob: float = 0.0,
+        spec_augment: bool = False,
+        n_time_masks: int = 3,
+        time_mask_param: int = 25,
+        n_freq_masks: int = 2,
+        freq_mask_param: int = 4,
+        spec_augment_prob: float = 1.0,
         # Standard braindecode args
         n_times: int | None = None,
         input_window_seconds: float | None = None,
@@ -268,6 +297,23 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             electrodes_per_band=electrodes_per_band,
             log_eps=log_eps,
         )
+
+        # Built-in SpecAugment lives between the spectrogram and the BatchNorm
+        # so it operates on the log-power tensor (matches upstream emg2qwerty
+        # and the previous neuralbench callback). ``nn.Identity`` keeps the
+        # forward path symmetrical without contributing parameters or
+        # state-dict keys when SpecAugment is disabled.
+        self.spec_augment: nn.Module
+        if spec_augment:
+            self.spec_augment = _SpecAugment(
+                n_time_masks=n_time_masks,
+                time_mask_param=time_mask_param,
+                n_freq_masks=n_freq_masks,
+                freq_mask_param=freq_mask_param,
+                prob=spec_augment_prob,
+            )
+        else:
+            self.spec_augment = nn.Identity()
 
         # Indices 0/1/3 match upstream's ``TDSConvCTCModule.model``;
         # index 2 is a parameter-free Flatten; upstream's index 4 (head)
@@ -331,6 +377,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
                 f"kernel_width={self.kernel_width})."
             )
         spectrogram = self.spectrogram(x)
+        spectrogram = self.spec_augment(spectrogram)
         encoded = self.model(spectrogram)
         emissions = self.final_layer(encoded)
         if self.log_softmax:
@@ -480,6 +527,80 @@ class _LogSpectrogram(nn.Module):
             self.electrodes_per_band,
             n_freq_bins,
             n_frames,
+        ).movedim(-1, 0)
+
+
+class _SpecAugment(nn.Module):
+    r"""SpecAugment masking on the log-spectrogram during training.
+
+    Applies up to ``n_time_masks`` × ``time_mask_param``-frame time bands
+    and ``n_freq_masks`` × ``freq_mask_param``-bin frequency bands, IID
+    per ``(sample × band)`` and shared across the electrodes within a band
+    — per-electrode masking is :math:`\\sim 32\\times` more aggressive and
+    collapses CTC. No-op outside training. Defaults match Sivakumar et al.
+    Sec 5.2 (3×25 / 2×4 frames-bins, ``prob=1.0``).
+    """
+
+    def __init__(
+        self,
+        n_time_masks: int = 3,
+        time_mask_param: int = 25,
+        n_freq_masks: int = 2,
+        freq_mask_param: int = 4,
+        prob: float = 1.0,
+    ) -> None:
+        super().__init__()
+        if n_time_masks < 0 or n_freq_masks < 0:
+            raise ValueError(
+                f"n_time_masks and n_freq_masks must be >= 0; got "
+                f"n_time_masks={n_time_masks}, n_freq_masks={n_freq_masks}."
+            )
+        if time_mask_param < 0 or freq_mask_param < 0:
+            raise ValueError(
+                f"time_mask_param and freq_mask_param must be >= 0; got "
+                f"time_mask_param={time_mask_param}, "
+                f"freq_mask_param={freq_mask_param}."
+            )
+        if not 0.0 <= prob <= 1.0:
+            raise ValueError(f"prob must be in [0, 1]; got {prob}.")
+        self.n_time_masks = n_time_masks
+        self.time_mask_param = time_mask_param
+        self.n_freq_masks = n_freq_masks
+        self.freq_mask_param = freq_mask_param
+        self.prob = prob
+        # ``iid_masks=True`` so every (sample × band) row gets its own mask;
+        # without it, the same time window is masked across all bands and the
+        # CTC head collapses to all-blank during warmup.
+        self.time_mask = ta_transforms.TimeMasking(time_mask_param, iid_masks=True)
+        self.freq_mask = ta_transforms.FrequencyMasking(freq_mask_param, iid_masks=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # ``x``: (T_spec, B, num_bands, electrodes, freq).
+        if (
+            not self.training
+            or self.prob <= 0.0
+            or (self.n_time_masks == 0 and self.n_freq_masks == 0)
+        ):
+            return x
+        if self.prob < 1.0 and torch.rand((), device="cpu").item() >= self.prob:
+            return x
+        n_frames, batch_size, n_bands, n_electrodes, n_freq_bins = x.shape
+        # Reshape to ``(B*num_bands, electrodes, freq, T_spec)`` so iid_masks
+        # draws one mask per (sample × band) shared across electrodes.
+        flat = x.movedim(0, -1).reshape(
+            batch_size * n_bands, n_electrodes, n_freq_bins, n_frames
+        )
+        # Mask to per-window mean: in log-spec space 0 = log(power=1), well
+        # above the typical distribution and would inject artificial spikes.
+        mask_value = float(flat.mean().item())
+        n_t = int(torch.randint(self.n_time_masks + 1, ()).item())
+        for _ in range(n_t):
+            flat = self.time_mask(flat, mask_value=mask_value)
+        n_f = int(torch.randint(self.n_freq_masks + 1, ()).item())
+        for _ in range(n_f):
+            flat = self.freq_mask(flat, mask_value=mask_value)
+        return flat.reshape(
+            batch_size, n_bands, n_electrodes, n_freq_bins, n_frames
         ).movedim(-1, 0)
 
 

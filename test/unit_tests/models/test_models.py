@@ -3519,3 +3519,86 @@ def test_emg2qwerty_input_validation():
     # by ``floor((T - n_fft) / hop_length) + 1``.
     out = m_floor.compute_output_lengths(torch.tensor([10, 0, 50, 64, 80]))
     assert out.tolist() == [0, 0, 0, 1, 2]
+
+
+def test_emg2qwerty_spec_augment_train_only():
+    """SpecAugment runs only in train mode and is parameter-free.
+
+    Built-in SpecAugment (replaces the old neuralbench callback) must:
+    (1) be a no-op in eval mode so deterministic forwards stay
+    deterministic and inference is unaffected; (2) actually mutate
+    the encoder input under train mode so it acts as augmentation;
+    (3) carry zero parameters / state-dict keys so upstream-checkpoint
+    layout remains untouched; (4) round-trip via ``from_config``.
+    """
+    torch.manual_seed(0)
+    m = _small_emg2qwerty(
+        spec_augment=True,
+        n_time_masks=3,
+        time_mask_param=8,
+        n_freq_masks=2,
+        freq_mask_param=4,
+        spec_augment_prob=1.0,
+    )
+    x = torch.randn(2, 32, 500)
+
+    # Eval mode: deterministic, identical across calls.
+    m.eval()
+    with torch.no_grad():
+        y_eval_a = m(x)
+        y_eval_b = m(x)
+    assert torch.equal(y_eval_a, y_eval_b)
+
+    # Train mode: SpecAugment is stochastic (random number of masks in
+    # ``[0, n_*_masks]``). Seed 1 picks both n_t > 0 and n_f > 0 so the
+    # assertion is deterministic for this specific seed/config. Seed 3
+    # picks a different draw, exercising the stochastic branch.
+    m.train()
+    spec = m.spectrogram(x)
+    torch.manual_seed(1)
+    aug_a = m.spec_augment(spec)
+    torch.manual_seed(3)
+    aug_b = m.spec_augment(spec)
+    assert not torch.equal(aug_a, spec), "SpecAugment must mutate the spectrogram"
+    assert not torch.equal(aug_a, aug_b), "SpecAugment must be stochastic"
+
+    # No new state-dict keys.
+    keys = list(m.state_dict().keys())
+    allowed = ("model.0.", "model.1.", "model.3.", "final_layer.")
+    assert not [k for k in keys if not k.startswith(allowed)]
+
+    # Round-trip via ``get_config`` keeps SpecAugment enabled with the
+    # same kwargs (so reloaded models reproduce the augmentation recipe).
+    cfg = m.get_config()
+    assert cfg["spec_augment"] is True
+    assert cfg["time_mask_param"] == 8
+    m2 = EMG2QwertyNet.from_config(cfg)
+    assert isinstance(m2.spec_augment, type(m.spec_augment))
+
+
+def test_emg2qwerty_spec_augment_disabled_default():
+    """Default ``spec_augment=False`` builds an Identity passthrough.
+
+    The default model must be backward-compatible: SpecAugment off, no
+    new state-dict keys, and forward in train mode is deterministic
+    modulo BatchNorm running stats (which we sidestep by checking
+    ``spec_augment`` directly).
+    """
+    m = _small_emg2qwerty()
+    assert isinstance(m.spec_augment, torch.nn.Identity)
+
+    m.train()
+    x = torch.randn(2, 32, 500)
+    spec = m.spectrogram(x)
+    out = m.spec_augment(spec)
+    assert torch.equal(out, spec)
+
+
+def test_emg2qwerty_spec_augment_validation():
+    """SpecAugment constructor rejects out-of-range parameters."""
+    with pytest.raises(ValueError, match="n_time_masks"):
+        _small_emg2qwerty(spec_augment=True, n_time_masks=-1)
+    with pytest.raises(ValueError, match="time_mask_param"):
+        _small_emg2qwerty(spec_augment=True, time_mask_param=-1)
+    with pytest.raises(ValueError, match="prob"):
+        _small_emg2qwerty(spec_augment=True, spec_augment_prob=1.5)
