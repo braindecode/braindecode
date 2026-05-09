@@ -3602,3 +3602,41 @@ def test_emg2qwerty_spec_augment_validation():
         _small_emg2qwerty(spec_augment=True, time_mask_param=-1)
     with pytest.raises(ValueError, match="prob"):
         _small_emg2qwerty(spec_augment=True, spec_augment_prob=1.5)
+
+
+def test_emg2qwerty_return_features_dict_layout():
+    """``forward(x, return_features=True)`` matches BIOT/signal-JEPA convention.
+
+    The downstream feature-extraction path used by neuroai's
+    ``DownstreamWrapperModel(model_output_key="features")``: the model
+    returns a dict with a batch-first ``(B, T_out, num_features)``
+    tensor under ``"features"`` and a placeholder ``"cls_token": None``.
+    Default ``return_features=False`` must still return the emissions
+    tensor unchanged for backward compatibility.
+    """
+    torch.manual_seed(0)
+    mlp_features = (48,)
+    num_bands = 2
+    expected_num_features = num_bands * mlp_features[-1]
+
+    m = _small_emg2qwerty(mlp_features=mlp_features).eval()
+    x = torch.randn(2, 32, 500)
+    with torch.no_grad():
+        emissions = m(x)
+        bundle = m(x, return_features=True)
+
+    # Default branch: tensor of emissions, unchanged.
+    assert isinstance(emissions, torch.Tensor)
+    assert emissions.shape[0] == 2 and emissions.shape[2] == 99
+
+    # Feature branch: dict with the expected key set and the encoder
+    # representation pre-final_layer (so it does *not* match emissions).
+    assert isinstance(bundle, dict)
+    assert set(bundle.keys()) == {"features", "cls_token"}
+    assert bundle["cls_token"] is None
+    feats = bundle["features"]
+    assert feats.shape == (2, emissions.shape[1], expected_num_features)
+    # Sanity: features must be the input to ``final_layer`` (so applying
+    # the head reproduces the emissions tensor up to log-softmax).
+    head_out = m.final_layer(feats)
+    assert torch.allclose(head_out, emissions, atol=1e-5)

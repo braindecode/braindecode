@@ -56,7 +56,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
     Returns ``(batch, T_out, n_outputs)``. With ``n_times=8000`` and
     defaults, ``T_out=373``. For :class:`~torch.nn.CTCLoss`, transpose
     to ``(T_out, batch, n_outputs)``; use :meth:`compute_output_lengths`
-    for emission lengths.
+    for emission lengths. Pass ``return_features=True`` to return the
+    pre-classifier encoder representation as a
+    ``{"features": (batch, T_out, num_features), "cls_token": None}``
+    dict, matching the BIOT / signal-JEPA convention used by downstream
+    wrappers (e.g. neuroai's ``DownstreamWrapperModel``).
 
     .. rubric:: Paper training recipe
 
@@ -344,7 +348,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             isinstance(m, _TDSConv2dBlock) for m in self.model[3].tds_conv_blocks
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> torch.Tensor | dict[str, torch.Tensor | None]:
         """Run the full pipeline.
 
         Parameters
@@ -353,12 +359,28 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             Raw EMG of shape ``(batch, n_chans=32, n_times)``. ``n_times``
             must be at least the encoder's receptive field, ``n_fft +
             n_conv_blocks * (kernel_width - 1) * hop_length``.
+        return_features : bool
+            If ``True``, return a ``dict`` with the encoder representation
+            instead of the classification emissions. The encoder is the
+            full TDS-Conv stack up to (but not including)
+            ``self.final_layer`` — i.e. what downstream wrappers want
+            when they apply their own probe/aggregation. Matches the
+            BIOT / signal-JEPA convention so the same neuroai
+            ``DownstreamWrapperModel(model_output_key="features")``
+            can consume it.
 
         Returns
         -------
-        emissions : torch.Tensor
-            Shape ``(batch, T_out, n_outputs)``. Log-probabilities if
+        torch.Tensor or dict
+            Default (``return_features=False``): ``torch.Tensor`` of
+            shape ``(batch, T_out, n_outputs)``. Log-probabilities if
             ``log_softmax=True``, otherwise logits.
+
+            If ``return_features=True``: ``dict`` with
+            ``"features"`` (shape ``(batch, T_out, num_features)``,
+            where ``num_features = num_bands * mlp_features[-1]``) and
+            ``"cls_token"`` (always ``None`` — TDS-Conv has no
+            ``[CLS]``).
         """
         if x.ndim != 3 or x.shape[-2] != self.n_chans:
             raise ValueError(
@@ -379,6 +401,14 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         spectrogram = self.spectrogram(x)
         spectrogram = self.spec_augment(spectrogram)
         encoded = self.model(spectrogram)
+        if return_features:
+            # ``encoded`` is (T_out, B, num_features). Transpose to
+            # (B, T_out, num_features) so feature consumers see the
+            # same batch-first layout as the default emissions tensor.
+            return {
+                "features": encoded.transpose(0, 1).contiguous(),
+                "cls_token": None,
+            }
         emissions = self.final_layer(encoded)
         if self.log_softmax:
             emissions = F.log_softmax(emissions, dim=-1)
@@ -458,7 +488,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             dummy_input = torch.zeros(
                 1, self.n_chans, n_times, dtype=dtype, device=device
             )
-            return tuple(self.forward(dummy_input).shape)
+            # ``return_features=False`` is the default; assert here so mypy
+            # narrows the union return type to ``Tensor`` for ``.shape``.
+            emissions = self.forward(dummy_input, return_features=False)
+            assert isinstance(emissions, torch.Tensor)
+            return tuple(emissions.shape)
 
 
 class _LogSpectrogram(nn.Module):
