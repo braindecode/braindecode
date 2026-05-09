@@ -426,18 +426,21 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         spectrogram = self.spectrogram(x)
         spectrogram = self.spec_augment(spectrogram)
         encoded = self.model(spectrogram)
-        # ``encoded`` is (T_out, B, num_features). Transpose to (B, T_out,
-        # num_features) so feature consumers (and neuroai's downstream
-        # wrappers) see the same batch-first layout as the emissions tensor.
-        features = encoded.transpose(0, 1).contiguous()
+        # ``encoded`` is (T_out, B, num_features); only materialise the
+        # batch-first features tensor in the branches that actually return
+        # it, so the default emissions-only path skips the extra transpose
+        # + contiguous copy on every forward.
         if return_features:
-            return {"features": features, "cls_token": None}
+            return {
+                "features": encoded.transpose(0, 1).contiguous(),
+                "cls_token": None,
+            }
         emissions = self.final_layer(encoded)
         if self.log_softmax:
             emissions = F.log_softmax(emissions, dim=-1)
         emissions = emissions.transpose(0, 1).contiguous()
         if self.return_feature:
-            return emissions, features
+            return emissions, encoded.transpose(0, 1).contiguous()
         return emissions
 
     def reset_head(self, n_outputs: int) -> None:
@@ -654,7 +657,13 @@ class _SpecAugment(nn.Module):
             or (self.n_time_masks == 0 and self.n_freq_masks == 0)
         ):
             return x
-        if self.prob < 1.0 and torch.rand((), device="cpu").item() >= self.prob:
+        # All RNG draws use ``x.device`` so reproducibility seeds the same
+        # stream regardless of whether the user calls ``torch.manual_seed``
+        # or ``torch.cuda.manual_seed`` — and so torchaudio's internal
+        # device-side RNG and our Python-level gate stay in sync. ``.item()``
+        # still forces a host sync for the Python ``if``/loop bound, but
+        # that is unavoidable for control flow.
+        if self.prob < 1.0 and torch.rand((), device=x.device).item() >= self.prob:
             return x
         # ``torchaudio`` masking expects ``(..., freq, time)``; here that means
         # ``(B, num_bands, electrodes, freq, T_spec)``. Move time to the end
@@ -665,10 +674,10 @@ class _SpecAugment(nn.Module):
         # 0-D on-device tensor — ``masked_fill`` / ``torch.where`` accept it
         # without a host sync.
         mask_value = spec.mean()
-        n_t = int(torch.randint(self.n_time_masks + 1, ()).item())
+        n_t = int(torch.randint(self.n_time_masks + 1, (), device=x.device).item())
         for _ in range(n_t):
             spec = self.time_mask(spec, mask_value=mask_value)
-        n_f = int(torch.randint(self.n_freq_masks + 1, ()).item())
+        n_f = int(torch.randint(self.n_freq_masks + 1, (), device=x.device).item())
         for _ in range(n_f):
             spec = self.freq_mask(spec, mask_value=mask_value)
         return spec.movedim(-1, 0)
