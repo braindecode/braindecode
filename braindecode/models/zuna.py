@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import math
-import warnings
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Union
@@ -19,7 +18,6 @@ from torch.nn import functional as F
 
 import braindecode.models.base as bd_base
 from braindecode.models.util import extract_channel_locations_from_chs_info
-
 
 # ZUNA requires flex_attention from >=torch 2.5 during sequence packing
 try:
@@ -161,9 +159,12 @@ class _RMSNorm(nn.Module):
 class _Attention(nn.Module):
     def __init__(self, args: _ZUNAEncoderArgs):
         super().__init__()
+        n_heads = (
+            args.n_heads if args.n_heads is not None else args.dim // args.head_dim
+        )
         self.dim = args.dim
-        self.head_dim = args.head_dim or args.dim // args.n_heads
-        self.n_heads = args.n_heads or args.dim // self.head_dim
+        self.head_dim = args.head_dim or args.dim // n_heads
+        self.n_heads = n_heads
         self.n_kv_heads = args.n_kv_heads or self.n_heads
         if self.n_heads % self.n_kv_heads != 0:
             raise ValueError("n_heads must be divisible by n_kv_heads.")
@@ -291,10 +292,7 @@ def _create_document_mask(
         valid = torch.zeros_like(noop_mask(b, h, q_idx, kv_idx))
         for start, end in doc_bounds:
             in_doc = (
-                (q_idx >= start)
-                & (q_idx < end)
-                & (kv_idx >= start)
-                & (kv_idx < end)
+                (q_idx >= start) & (q_idx < end) & (kv_idx >= start) & (kv_idx < end)
             )
             in_window = (q_idx - kv_idx).abs() <= sliding_window
             valid = valid | (in_doc & in_window)
@@ -315,9 +313,7 @@ class _ZUNAEncoder(nn.Module):
     def __init__(self, args: _ZUNAEncoderArgs):
         super().__init__()
         if args.encoder_hidden_dim is not None:
-            args = _ZUNAEncoderArgs(
-                **{**args.__dict__, "dim": args.encoder_hidden_dim}
-            )
+            args = _ZUNAEncoderArgs(**{**args.__dict__, "dim": args.encoder_hidden_dim})
         self.dim = args.dim
         self.downsample_factor = args.encoder_latent_downsample_factor
         self.sliding_window = args.encoder_sliding_window
@@ -331,9 +327,13 @@ class _ZUNAEncoder(nn.Module):
             else None
         )
 
+        n_heads = (
+            args.n_heads if args.n_heads is not None else args.dim // args.head_dim
+        )
+        head_dim = args.head_dim or args.dim // n_heads
         self.rope_embeddings = _RotaryEmbedding(
             theta=args.rope_theta,
-            head_dim=args.head_dim or args.dim // args.n_heads,
+            head_dim=head_dim,
             max_seqlen=args.max_seqlen,
             rope_dim=args.rope_dim,
         )
@@ -382,9 +382,7 @@ class _ZUNAEncoder(nn.Module):
         for layer in self.layers:
             h = layer(h, freq_cis=freq_cis, tok_idx=tok_idx, mask=mask)
 
-        h = h.reshape(
-            h.shape[0], num_groups, self.downsample_factor + 1, h.shape[-1]
-        )
+        h = h.reshape(h.shape[0], num_groups, self.downsample_factor + 1, h.shape[-1])
         registers = h[:, :, 0, :][:, :original_seqlen, :].contiguous()
         return self.output(self.norm(registers))
 
@@ -444,9 +442,7 @@ def _discretize_channel_positions(
             [[-0.13, -0.13, -0.13], [0.13, 0.13, 0.13]]
         )
     else:
-        raise ValueError(
-            "chan_pos_xyz_extremes_type must be 'twelves' or 'thirteens'."
-        )
+        raise ValueError("chan_pos_xyz_extremes_type must be 'twelves' or 'thirteens'.")
     normalized = (channel_positions - extremes[0]) / (extremes[1] - extremes[0])
     return torch.clamp((normalized * num_bins).long(), 0, num_bins - 1)
 
@@ -516,10 +512,12 @@ def _build_zuna_encoder_args(model_config: dict) -> _ZUNAEncoderArgs:
 
 
 class ZUNA(bd_base.EEGModuleMixin, nn.Module):
-    r"""Encoder-only ZUNA model (see Github repo for reconstruction).
+    r"""ZUNA encoder with a Braindecode classification head.
 
-    ZUNA tokenizes EEG into channel-by-coarse-time tokens and, in this version, returns latent
-    encodings for downstream probes. The
+    :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel` :bdg-info:`Attention/Transformer`
+
+    ZUNA tokenizes EEG into channel-by-coarse-time tokens and returns class
+    logits by default. The
     encoder architecture is fixed to the public ``Zyphra/ZUNA`` Hugging Face
     config (see :func:`_zuna_published_config`); the constructor only exposes
     Braindecode signal metadata and channel-coordinate resolution options.
@@ -541,8 +539,7 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     Parameters
     ----------
     n_outputs : int | None
-        Declared output count carried on the module for downstream probes;
-        ZUNA itself has no classification head (see :meth:`reset_head`).
+        Number of output classes or regression targets.
     n_chans : int | None
         Number of EEG channels. Inferred from ``chs_info`` when not given.
     chs_info : list of dict | None
@@ -601,7 +598,13 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         ) = _zuna_channel_position_config()
         self.encoder = _ZUNAEncoder(_build_zuna_encoder_args(model_config))
         self._init_weights()
-        self.final_layer = nn.Identity()
+        self.final_layer = self._make_final_layer(self.n_outputs)
+
+    def _make_final_layer(self, n_outputs: int) -> nn.Module:
+        return nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(self.n_chans * self.encoder_output_dim, n_outputs),
+        )
 
     def _init_weights(self):
         self.encoder.rope_embeddings.reset_parameters()
@@ -757,9 +760,8 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             If ``True`` return a dict with ``"features"`` (time-pooled
             per-channel latents, the canonical probe input), ``"cls_token"``
             (``None``), and the ZUNA-specific ``"token_latents"`` /
-            ``"structured_latents"`` tensors. Default returns ``"features"``
-            directly so the encoder slots into the standard braindecode
-            ``forward(x)`` contract.
+            ``"structured_latents"`` tensors. Default returns logits with
+            shape ``(batch, n_outputs)``.
         """
         x = self._apply_channel_mask(x, channel_mask, dropped_channels, channel_names)
         tokens = self._tokenize(x)
@@ -787,9 +789,7 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         seq_lens = torch.full((batch,), seq_len, dtype=torch.long, device=x.device)
 
         packed_latents = self.encoder(packed_tokens, seq_lens, packed_tok_idx)
-        token_latents = packed_latents.reshape(
-            batch, seq_len, self.encoder_output_dim
-        )
+        token_latents = packed_latents.reshape(batch, seq_len, self.encoder_output_dim)
         structured_latents = token_latents.reshape(
             batch, self.n_chans, coarse_time, self.encoder_output_dim
         )
@@ -802,18 +802,16 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
                 "token_latents": token_latents,
                 "structured_latents": structured_latents,
             }
-        return time_pooled_latents
+        return self.final_layer(time_pooled_latents)
 
-    def get_output_shape(self) -> tuple[int, int, int]:
-        return (1, self.n_chans, self.encoder_output_dim)
+    def get_output_shape(self) -> tuple[int, int]:
+        return (1, self.n_outputs)
 
     def reset_head(self, n_outputs):
-        """Update ``n_outputs`` metadata; ZUNA has no classification head.
-
-        ZUNA is a feature extractor: :meth:`forward` returns time-pooled
-        per-channel latents (shape ``(batch, n_chans, encoder_output_dim)``)
-        and the model exposes :class:`torch.nn.Identity` as ``final_layer``.
-        Wire a downstream probe yourself to obtain logits; this method only
-        records the declared output count on the module.
-        """
+        """Replace the classification head for a new number of outputs."""
         self._n_outputs = n_outputs
+        reference = next(self.parameters())
+        self.final_layer = self._make_final_layer(n_outputs).to(
+            device=reference.device,
+            dtype=reference.dtype,
+        )

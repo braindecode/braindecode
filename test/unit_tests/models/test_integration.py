@@ -213,6 +213,8 @@ def test_model_integration_full(model_name, required_params, signal_params):
     """
     if model_name in non_classification_models:
         pytest.skip(f"Skipping {model_name} as not meant for classification")
+    if model_name == "ZUNA" and not torch.cuda.is_available():
+        pytest.skip("ZUNA forward with gradients requires CUDA (flex_attention).")
 
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
@@ -264,6 +266,8 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
     """
     if model_name in non_classification_models:
         pytest.skip(f"Skipping {model_name} as not meant for classification")
+    if model_name == "ZUNA" and not torch.cuda.is_available():
+        pytest.skip("ZUNA forward with gradients requires CUDA (flex_attention).")
 
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
@@ -427,6 +431,8 @@ def test_model_compiled(model):
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
         "MetaNeuromotorHand",
+        # flex_attention's BlockMask construction is not compile-stable here.
+        "ZUNA",
     ]
     if model.__class__.__name__ in not_compilable_models:
         pytest.skip(

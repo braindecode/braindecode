@@ -9,6 +9,7 @@
 #
 # License: BSD-3
 
+import inspect
 from collections import OrderedDict
 from functools import partial
 from unittest import mock
@@ -27,6 +28,7 @@ from braindecode.models import (
     DGCNN,
     EEGPT,
     TCN,
+    ZUNA,
     ATCNet,
     AttentionBaseNet,
     AttnSleep,
@@ -60,7 +62,6 @@ from braindecode.models import (
     TIDNet,
     TSception,
     USleep,
-    ZUNA,
 )
 from braindecode.models.eegpt import (
     _apply_rotary_emb,
@@ -1445,11 +1446,11 @@ def _zuna_forward(model, *args, **kwargs):
 @pytest.fixture
 def small_zuna(monkeypatch):
     monkeypatch.setattr(zuna, "_zuna_published_config", _small_zuna_config)
-    return ZUNA(n_chans=3, n_times=1280)
+    return ZUNA(n_chans=3, n_outputs=2, n_times=1280)
 
 
 @pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
-def test_zuna_forward_default_returns_features_tensor(small_zuna):
+def test_zuna_forward_default_returns_logits(small_zuna):
     x = torch.randn(2, 3, 1280)
     channel_positions = torch.tensor(
         [[0.0, 0.0, 0.0], [0.01, 0.02, 0.03], [-0.01, 0.02, 0.03]]
@@ -1458,7 +1459,20 @@ def test_zuna_forward_default_returns_features_tensor(small_zuna):
     out = _zuna_forward(small_zuna, x, channel_positions=channel_positions)
 
     assert isinstance(out, torch.Tensor)
-    assert out.shape == (2, 3, 12)
+    assert out.shape == (2, 2)
+
+
+def test_zuna_declares_braindecode_mandatory_parameters():
+    params = inspect.signature(ZUNA.__init__).parameters
+
+    assert {
+        "n_outputs",
+        "n_chans",
+        "chs_info",
+        "n_times",
+        "input_window_seconds",
+        "sfreq",
+    } <= set(params)
 
 
 @pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
@@ -1522,7 +1536,7 @@ def test_zuna_forward_uses_chs_info_positions(monkeypatch):
         {"ch_name": "B", "loc": np.array([0.01, 0.02, 0.03])},
         {"ch_name": "C", "loc": np.array([-0.01, 0.02, 0.03])},
     ]
-    model = ZUNA(n_times=1280, chs_info=chs_info)
+    model = ZUNA(n_outputs=2, n_times=1280, chs_info=chs_info)
 
     out = _zuna_forward(model, torch.randn(1, 3, 1280), return_features=True)
 
@@ -1532,7 +1546,7 @@ def test_zuna_forward_uses_chs_info_positions(monkeypatch):
 @pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
 def test_zuna_get_output_shape_matches_default_forward(small_zuna):
     expected_shape = small_zuna.get_output_shape()
-    assert expected_shape == (1, 3, 12)
+    assert expected_shape == (1, 2)
 
     channel_positions = torch.zeros(3, 3)
     out = _zuna_forward(
@@ -1563,7 +1577,7 @@ def test_zuna_requires_channel_positions_or_names(small_zuna):
 @pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
 def test_zuna_rejects_non_zuna_n_times():
     with pytest.raises(ValueError, match="5 seconds sampled at 256 Hz"):
-        ZUNA(n_chans=3, n_times=1279)
+        ZUNA(n_chans=3, n_outputs=2, n_times=1279)
 
 
 @pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
@@ -1649,6 +1663,19 @@ def test_zuna_load_pretrained_weights_strips_upstream_prefix(
     loaded_state = small_zuna.encoder.state_dict()
     for key, expected in randomized.items():
         torch.testing.assert_close(loaded_state[key], expected)
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_reset_head_replaces_final_layer(small_zuna):
+    small_zuna.reset_head(5)
+    channel_positions = torch.zeros(3, 3)
+
+    out = _zuna_forward(
+        small_zuna, torch.randn(2, 3, 1280), channel_positions=channel_positions
+    )
+
+    assert small_zuna.n_outputs == 5
+    assert out.shape == (2, 5)
 
 
 def test_zuna_published_config_matches_upstream_yaml():

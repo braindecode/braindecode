@@ -397,7 +397,7 @@ models_mandatory_parameters: list[
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
     (
         "ZUNA",
-        ["chs_info"],
+        ["chs_info", "n_outputs"],
         {
             "n_times": 1280,
             "sfreq": 256.0,
@@ -418,8 +418,6 @@ non_classification_models = [
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
-    # Encoder-only foundation model; forward returns latents, not class logits.
-    "ZUNA",
 ]
 
 ################################################################
