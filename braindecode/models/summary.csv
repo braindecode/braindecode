@@ -55,3 +55,4 @@ InterpolatedBENDR,General,"Classification,Embedding",250,"chs_info, n_outputs, n
 InterpolatedBIOT,"Sleep Staging, Epilepsy",Classification,200,"chs_info, n_outputs, n_times, sfreq",3184101,"InterpolatedBIOT(chs_info=<user>, n_outputs=5, sfreq=200, n_times=6000)","Foundation Model,Channel"
 InterpolatedLaBraM,General,"Classification, Embedding",200,"chs_info, n_outputs, n_times",5866196,"InterpolatedLaBraM(chs_info=<user>, n_outputs=4, n_times=1000)","Convolution,Foundation Model,Channel"
 InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info",3456882,"InterpolatedSignalJEPA(chs_info=<user>)","Convolution,Channel,Foundation Model"
+ZUNA,General,"Classification,Embedding",256,"chs_info, n_outputs, n_times",172069668,"ZUNA(chs_info=<user>, n_outputs=4, n_times=1280)","Foundation Model,Channel,Attention/Transformer"

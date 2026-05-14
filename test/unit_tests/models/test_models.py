@@ -9,6 +9,7 @@
 #
 # License: BSD-3
 
+import inspect
 from collections import OrderedDict
 from functools import partial
 from unittest import mock
@@ -20,12 +21,14 @@ import torch
 from sklearn.utils import check_random_state
 from torch import nn
 
+import braindecode.models.zuna as zuna
 from braindecode.models import (
     BENDR,
     BIOT,
     DGCNN,
     EEGPT,
     TCN,
+    ZUNA,
     ATCNet,
     AttentionBaseNet,
     AttnSleep,
@@ -1411,6 +1414,292 @@ def _make_chs_info(n_chans):
     info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
     return info["chs"]
+
+
+def _small_zuna_config():
+    return {
+        "dim": 16,
+        "n_layers": 1,
+        "head_dim": 8,
+        "n_heads": 2,
+        "input_dim": 32,
+        "encoder_input_dim": 32,
+        "encoder_output_dim": 12,
+        "encoder_latent_downsample_factor": 1,
+        "encoder_sliding_window": 65536,
+        "sliding_window": 65536,
+        "adaptive_loss_weighting": True,
+        "max_seqlen": 50,
+        "rope_dim": 4,
+        "rope_theta": 10000.0,
+        "tok_idx_type": "{x,y,z,tc}",
+        "dropout_type": "zeros",
+        "stft_global_sigma": 0.1,
+    }
+
+
+def _zuna_forward(model, *args, **kwargs):
+    with torch.inference_mode():
+        return model(*args, **kwargs)
+
+
+@pytest.fixture
+def small_zuna(monkeypatch):
+    monkeypatch.setattr(zuna, "_zuna_published_config", _small_zuna_config)
+    return ZUNA(n_chans=3, n_outputs=2, n_times=1280)
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_forward_default_returns_logits(small_zuna):
+    x = torch.randn(2, 3, 1280)
+    channel_positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [0.01, 0.02, 0.03], [-0.01, 0.02, 0.03]]
+    )
+
+    out = _zuna_forward(small_zuna, x, channel_positions=channel_positions)
+
+    assert isinstance(out, torch.Tensor)
+    assert out.shape == (2, 2)
+
+
+def test_zuna_declares_braindecode_mandatory_parameters():
+    params = inspect.signature(ZUNA.__init__).parameters
+
+    assert {
+        "n_outputs",
+        "n_chans",
+        "chs_info",
+        "n_times",
+        "input_window_seconds",
+        "sfreq",
+    } <= set(params)
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_forward_return_features_dict(small_zuna):
+    x = torch.randn(2, 3, 1280)
+    channel_positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [0.01, 0.02, 0.03], [-0.01, 0.02, 0.03]]
+    )
+
+    out = _zuna_forward(
+        small_zuna, x, channel_positions=channel_positions, return_features=True
+    )
+
+    assert set(out) == {"features", "cls_token", "token_latents", "structured_latents"}
+    assert out["cls_token"] is None
+    assert out["features"].shape == (2, 3, 12)
+    assert out["token_latents"].shape == (2, 120, 12)
+    assert out["structured_latents"].shape == (2, 3, 40, 12)
+    torch.testing.assert_close(
+        out["features"], out["structured_latents"].mean(dim=2)
+    )
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_batched_forward_matches_per_sample(small_zuna):
+    model = small_zuna.eval()
+    x = torch.randn(3, 3, 1280)
+    channel_positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [0.01, 0.02, 0.03], [-0.01, 0.02, 0.03]]
+    )
+
+    batched = _zuna_forward(model, x, channel_positions=channel_positions)
+    per_sample = torch.cat(
+        [
+            _zuna_forward(model, x[i : i + 1], channel_positions=channel_positions)
+            for i in range(x.shape[0])
+        ],
+        dim=0,
+    )
+
+    torch.testing.assert_close(batched, per_sample)
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_forward_resolves_standard_montage_channel_names(small_zuna):
+    out = _zuna_forward(
+        small_zuna,
+        torch.randn(1, 3, 1280),
+        channel_names=["Fz", "Cz", "Pz"],
+        return_features=True,
+    )
+
+    assert out["structured_latents"].shape == (1, 3, 40, 12)
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_forward_uses_chs_info_positions(monkeypatch):
+    monkeypatch.setattr(zuna, "_zuna_published_config", _small_zuna_config)
+    chs_info = [
+        {"ch_name": "A", "loc": np.array([0.0, 0.0, 0.0])},
+        {"ch_name": "B", "loc": np.array([0.01, 0.02, 0.03])},
+        {"ch_name": "C", "loc": np.array([-0.01, 0.02, 0.03])},
+    ]
+    model = ZUNA(n_outputs=2, n_times=1280, chs_info=chs_info)
+
+    out = _zuna_forward(model, torch.randn(1, 3, 1280), return_features=True)
+
+    assert out["structured_latents"].shape == (1, 3, 40, 12)
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_get_output_shape_matches_default_forward(small_zuna):
+    expected_shape = small_zuna.get_output_shape()
+    assert expected_shape == (1, 2)
+
+    channel_positions = torch.zeros(3, 3)
+    out = _zuna_forward(
+        small_zuna, torch.randn(1, 3, 1280), channel_positions=channel_positions
+    )
+    assert tuple(out.shape) == expected_shape
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_exposes_sfreq_and_input_window(small_zuna):
+    assert small_zuna.sfreq == 256.0
+    assert small_zuna.input_window_seconds == 5.0
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_importable_from_models_package():
+    from braindecode.models import ZUNA as ImportedZUNA
+
+    assert ImportedZUNA is ZUNA
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_requires_channel_positions_or_names(small_zuna):
+    with pytest.raises(ValueError, match="ZUNA requires channels coordinates or names"):
+        small_zuna(torch.randn(1, 3, 1280))
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_rejects_non_zuna_n_times():
+    with pytest.raises(ValueError, match="5 seconds sampled at 256 Hz"):
+        ZUNA(n_chans=3, n_outputs=2, n_times=1279)
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_rejects_non_zuna_forward_length(small_zuna):
+    x = torch.randn(1, 3, 1279)
+    channel_positions = torch.zeros(3, 3)
+
+    with pytest.raises(ValueError, match="5 seconds sampled at 256 Hz"):
+        _zuna_forward(small_zuna, x, channel_positions=channel_positions)
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_channel_mask_matches_explicit_zeroing(small_zuna):
+    model = small_zuna.eval()
+    x = torch.randn(1, 3, 1280)
+    channel_positions = torch.zeros(3, 3)
+    channel_mask = torch.tensor([True, False, True])
+
+    masked = _zuna_forward(
+        model,
+        x,
+        channel_positions=channel_positions,
+        channel_mask=channel_mask,
+        return_features=True,
+    )
+    x_zeroed = x.clone()
+    x_zeroed[:, 1] = 0
+    explicit = _zuna_forward(
+        model, x_zeroed, channel_positions=channel_positions, return_features=True
+    )
+
+    torch.testing.assert_close(masked["token_latents"], explicit["token_latents"])
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_dropped_channels_accepts_channel_names(small_zuna):
+    model = small_zuna.eval()
+    x = torch.randn(1, 3, 1280)
+    channel_positions = torch.zeros(3, 3)
+
+    by_name = _zuna_forward(
+        model,
+        x,
+        channel_positions=channel_positions,
+        channel_names=["Fz", "Cz", "Pz"],
+        dropped_channels=["Cz"],
+        return_features=True,
+    )
+    x_zeroed = x.clone()
+    x_zeroed[:, 1] = 0
+    explicit = _zuna_forward(
+        model, x_zeroed, channel_positions=channel_positions, return_features=True
+    )
+
+    torch.testing.assert_close(by_name["token_latents"], explicit["token_latents"])
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_load_pretrained_weights_strips_upstream_prefix(
+    monkeypatch, tmp_path, small_zuna
+):
+    # The upstream Zyphra checkpoint stores the encoder under
+    # "model.encoder.<key>"; load_pretrained_weights() must strip both the
+    # "model." and "encoder." prefixes and ignore any non-encoder keys.
+    safetensors_torch = pytest.importorskip("safetensors.torch")
+    huggingface_hub = pytest.importorskip("huggingface_hub")
+
+    target_state = small_zuna.encoder.state_dict()
+    randomized = {k: torch.randn_like(v) for k, v in target_state.items()}
+    upstream_state = {f"model.encoder.{k}": v for k, v in randomized.items()}
+    upstream_state["model.decoder.dummy"] = torch.zeros(1)
+
+    weights_path = tmp_path / "zuna.safetensors"
+    safetensors_torch.save_file(upstream_state, str(weights_path))
+
+    def fake_download(*args, **kwargs):
+        return str(weights_path)
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_download)
+
+    small_zuna.load_pretrained_weights()
+
+    loaded_state = small_zuna.encoder.state_dict()
+    for key, expected in randomized.items():
+        torch.testing.assert_close(loaded_state[key], expected)
+
+
+@pytest.mark.skipif(not zuna.HAS_FLEX, reason="ZUNA requires torch flex_attention")
+def test_zuna_reset_head_replaces_final_layer(small_zuna):
+    small_zuna.reset_head(5)
+    channel_positions = torch.zeros(3, 3)
+
+    out = _zuna_forward(
+        small_zuna, torch.randn(2, 3, 1280), channel_positions=channel_positions
+    )
+
+    assert small_zuna.n_outputs == 5
+    assert out.shape == (2, 5)
+
+
+def test_zuna_published_config_matches_upstream_yaml():
+    # Regression guard: these values are the field-for-field encoder
+    # arguments published in Zyphra/ZUNA's config_infer.yaml. Update both
+    # this snapshot and _zuna_published_config() together if upstream
+    # changes; the model will silently produce non-comparable embeddings
+    # otherwise.
+    expected = {
+        "dim": 1024,
+        "n_layers": 16,
+        "head_dim": 64,
+        "encoder_input_dim": 32,
+        "encoder_output_dim": 32,
+        "encoder_latent_downsample_factor": 1,
+        "encoder_sliding_window": 65536,
+        "max_seqlen": 50,
+        "rope_dim": 4,
+        "rope_theta": 10000.0,
+        "tok_idx_type": "{x,y,z,tc}",
+        "dropout_type": "zeros",
+        "stft_global_sigma": 0.1,
+    }
+    assert zuna._zuna_published_config() == expected
 
 
 @pytest.mark.parametrize(

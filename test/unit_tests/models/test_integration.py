@@ -23,6 +23,7 @@ from braindecode.models import (
     EEGPT,
     REVE,
     SSTDPN,
+    ZUNA,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -168,6 +169,12 @@ def test_model_integration(model_name, required_params, signal_params):
 
     model_kwargs_list = _get_possible_signal_params(sp, required_params)
 
+    # flex_attention forward requires requires_grad=False on CPU; model params
+    # default to requires_grad=True, so this smoke test cannot run on CPU.
+    needs_cuda = model_name == "ZUNA"
+    if needs_cuda and not torch.cuda.is_available():
+        pytest.skip(f"{model_name} forward requires CUDA (flex_attention).")
+
     for model_kwargs in model_kwargs_list:
         # test initialisation:
         model = model_class(**model_kwargs)
@@ -206,6 +213,8 @@ def test_model_integration_full(model_name, required_params, signal_params):
     """
     if model_name in non_classification_models:
         pytest.skip(f"Skipping {model_name} as not meant for classification")
+    if model_name == "ZUNA" and not torch.cuda.is_available():
+        pytest.skip("ZUNA forward with gradients requires CUDA (flex_attention).")
 
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
@@ -257,6 +266,8 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
     """
     if model_name in non_classification_models:
         pytest.skip(f"Skipping {model_name} as not meant for classification")
+    if model_name == "ZUNA" and not torch.cuda.is_available():
+        pytest.skip("ZUNA forward with gradients requires CUDA (flex_attention).")
 
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
@@ -313,6 +324,7 @@ def test_model_has_activation_parameter(model_class):
         InterpolatedBIOT,
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
+        ZUNA,
     ]:
         pytest.skip(f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
@@ -382,6 +394,7 @@ def test_model_has_drop_prob_parameter(model_class):
         InterpolatedBIOT,
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
+        ZUNA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -418,6 +431,8 @@ def test_model_compiled(model):
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
         "MetaNeuromotorHand",
+        # flex_attention's BlockMask construction is not compile-stable here.
+        "ZUNA",
     ]
     if model.__class__.__name__ in not_compilable_models:
         pytest.skip(
@@ -459,6 +474,8 @@ def test_model_exported(model):
         "SSTDPN",  # We found a fake tensor in the exported program constant's list.
         "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
         "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
+        # flex_attention's BlockMask construction uses data-dependent ops.
+        "ZUNA",
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
@@ -529,6 +546,8 @@ def test_model_torch_script(model):
         "InterpolatedBIOT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
+        # flex_attention is not scriptable.
+        "ZUNA",
     ]
 
     if model.__class__.__name__ in not_working_models:
