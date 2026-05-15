@@ -1143,7 +1143,7 @@ Authors
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _GalAshkenazi1: https://github.com/GalAshkenazi1
 .. _Matthew Chen: https://github.com/MatthewChen37
-.. _Jonathan Dan: https://github.com/danjjl
+.. _Jonathan Dan: https://github.com/jon-dan
 .. _Jonathan Lys: https://github.com/jonathanlys01
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: https://github.com/AryaDro
