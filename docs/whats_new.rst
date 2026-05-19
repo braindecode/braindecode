@@ -22,7 +22,7 @@
 .. _current:
 
 
-Current 1.5.0 (stable)
+Current 1.5.1 (stable)
 ===============================
 
 Enhancements
@@ -34,7 +34,7 @@ Enhancements
   for surface-EMG inputs shaped ``(B, num_bands * electrodes_per_band, T)``.
   Models small wristband rotation between sessions and relative timing
   noise between two arms, from the emg2qwerty paper (Sivakumar et al.,
-  NeurIPS 2024).  By `Bruno Aristimunha`_.
+  NeurIPS 2024). (:gh:`1013` by `Bruno Aristimunha`_)
 
 - Build SpecAugment (Park et al., Interspeech 2019) into
   :class:`braindecode.models.EMG2QwertyNet` as a parameter-free submodule
@@ -54,7 +54,28 @@ Enhancements
   legacy path) so downstream wrappers — such as neuroai's
   ``DownstreamWrapperModel`` — can pick up the encoder representation
   via ``model_output_key="features"`` (dict) or ``model_output_key=1``
-  (tuple) without changes to their call site. By `Bruno Aristimunha`_.
+  (tuple) without changes to their call site. (:gh:`1015` by
+  `Bruno Aristimunha`_)
+
+Bug fixes
+==========
+
+- Fix :class:`braindecode.augmentation.AmplitudeScale` crashing on the
+  default ``random_state=None`` and on the ``numpy.random.RandomState``
+  instance that :class:`braindecode.augmentation.Transform` passes in via
+  ``self.rng``. The previous ``torch.Generator().manual_seed(...)`` path
+  was incompatible with both; the implementation now routes through
+  ``check_random_state`` like the rest of the augmentation module.
+  (:gh:`1021` by `Sarthak Tayal`_)
+- Fix 404 author link for `Jonathan Dan`_ in the changelog
+  (:gh:`1022`)
+
+
+Current 1.5.0 (stable)
+===============================
+
+Enhancements
+============
 
 - Add :meth:`braindecode.datasets.BaseConcatDataset.set_target` to swap
   any per-window metadata column or per-record description field
