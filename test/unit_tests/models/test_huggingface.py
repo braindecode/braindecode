@@ -247,9 +247,9 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
 
     sample_input = torch.randn(2, n_chans, n_times)
 
-    with torch.inference_mode():
-        out_original = model(sample_input)
-        out_restored = restored(sample_input)
+    out_original = model(sample_input)
+
+    out_restored = restored(sample_input)
     torch.testing.assert_close(out_restored, out_original)
 
 

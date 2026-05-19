@@ -2,14 +2,12 @@
 #
 # License: BSD (3-clause)
 #
-# This code ports the encoder-side inference path from:
+# Ports the encoder-side inference path from:
 # https://github.com/Zyphra/zuna
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from enum import Enum
 from typing import Optional, Union
 
 import torch
@@ -19,540 +17,227 @@ from torch.nn import functional as F
 import braindecode.models.base as bd_base
 from braindecode.models.util import extract_channel_locations_from_chs_info
 
-# ZUNA requires flex_attention from >=torch 2.5 during sequence packing
-try:
-    from torch.nn.attention.flex_attention import (
-        BlockMask,
-        create_block_mask,
-        flex_attention,
-        noop_mask,
+# ---------------------------------------------------------------------------
+# Published architecture constants (Zyphra/ZUNA config_infer.yaml).
+# Update together with the upstream checkpoint, or pretrained weights will
+# silently produce non-comparable embeddings.
+# ---------------------------------------------------------------------------
+ZUNA_N_TIMES = 1280
+ZUNA_SFREQ = 256.0
+ZUNA_INPUT_WINDOW = 5.0
+
+ZUNA_DIM = 1024
+ZUNA_N_LAYERS = 16
+ZUNA_N_HEADS = 8
+ZUNA_HEAD_DIM = 64
+ZUNA_FINE_TIME_PTS = 32  # encoder_input_dim
+ZUNA_LATENT_DIM = 32  # encoder_output_dim
+ZUNA_MAX_SEQLEN = 50
+ZUNA_ROPE_THETA = 10000.0
+ZUNA_ROPE_DIM = 4  # 4D RoPE over (x, y, z, coarse_time)
+
+ZUNA_POS_BINS = 50
+ZUNA_POS_HALF_RANGE = 0.12  # head/scalp radius normalisation
+
+ZUNA_HF_REPO = "Zyphra/ZUNA"
+ZUNA_HF_WEIGHTS = "model-00001-of-00001.safetensors"
+
+_SIGNAL_ERROR = (
+    f"ZUNA requires inputs with {ZUNA_N_TIMES} time steps: "
+    f"{ZUNA_INPUT_WINDOW:g} seconds sampled at {ZUNA_SFREQ:g} Hz."
+)
+
+
+def _encoder_config() -> dict:
+    """Encoder kwargs baked from Zyphra/ZUNA config_infer.yaml.
+
+    Kept as a function so unit tests can monkey-patch it with a small
+    config without touching the public constants.
+    """
+    return {
+        "dim": ZUNA_DIM,
+        "n_layers": ZUNA_N_LAYERS,
+        "n_heads": ZUNA_N_HEADS,
+        "head_dim": ZUNA_HEAD_DIM,
+        "input_dim": ZUNA_FINE_TIME_PTS,
+        "output_dim": ZUNA_LATENT_DIM,
+        "max_seqlen": ZUNA_MAX_SEQLEN,
+        "rope_theta": ZUNA_ROPE_THETA,
+        "rope_dim": ZUNA_ROPE_DIM,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Rotary embedding (4D over channel position + coarse time)
+# ---------------------------------------------------------------------------
+def _precompute_freqs_cis(rot_dim: int, end: int, theta: float) -> torch.Tensor:
+    freqs = 1.0 / (
+        theta ** (torch.arange(0, rot_dim, 2)[: rot_dim // 2].float() / rot_dim)
     )
-
-    HAS_FLEX = True
-except ImportError:
-    BlockMask = None
-    create_block_mask = None
-    flex_attention = None
-    noop_mask = None
-    HAS_FLEX = False
-
-
-class InitStdFactor(Enum):
-    DISABLED = "disabled"
-    GLOBAL_DEPTH = "global_depth"
-    CURRENT_DEPTH = "current_depth"
-    DIM_RATIO = "dim_ratio"
-
-
-@dataclass
-class _ZUNAEncoderArgs:
-    dim: int = 1024
-    n_layers: int = 16
-    head_dim: int = 64
-    n_heads: Optional[int] = 8
-    n_kv_heads: Optional[int] = None
-    ffn_dim_multiplier: Optional[float] = None
-    multiple_of: int = 256
-    norm_eps: float = 1e-5
-    rope_theta: float = 10000.0
-    init_base_std: Optional[float] = None
-    init_std_factor: str = "disabled"
-    max_seqlen: int = 50
-    rope_dim: int = 4
-    tok_idx_type: str = "{x,y,z,tc}"
-    encoder_input_dim: int = 32
-    encoder_output_dim: int = 32
-    encoder_latent_downsample_factor: int = 1
-    encoder_sliding_window: int = 65536
-    encoder_hidden_dim: Optional[int] = None
-    stft_global_sigma: float = 0.1
-    dropout_type: str = "zeros"
-
-
-def _repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
-    if n_rep == 1:
-        return x
-    batch, seqlen, n_kv_heads, head_dim = x.shape
-    return (
-        x[:, :, :, None, :]
-        .expand(batch, seqlen, n_kv_heads, n_rep, head_dim)
-        .reshape(batch, seqlen, n_kv_heads * n_rep, head_dim)
-    )
-
-
-def _precompute_freqs_cis(dim: int, end: int, theta: float) -> torch.Tensor:
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: dim // 2].float() / dim))
-    t = torch.arange(end, device=freqs.device)
-    freqs = torch.outer(t, freqs).float()
+    t = torch.arange(end)
+    freqs = torch.outer(t, freqs)
     cos, sin = freqs.cos(), freqs.sin()
-    return torch.stack((cos, -sin, sin, cos), dim=-1).view(*freqs.size(), 2, 2)
+    return torch.stack((cos, -sin, sin, cos), dim=-1).view(end, rot_dim // 2, 2, 2)
 
 
-def _reshape_for_broadcast(
-    freqs_cis: torch.Tensor, x: torch.Tensor, seq_dim: int
-) -> torch.Tensor:
-    ndim = x.ndim
-    expected_shape = (x.shape[seq_dim], x.shape[-3], 2, 2)
-    if freqs_cis.shape != expected_shape:
-        raise ValueError(
-            f"freqs_cis has shape {tuple(freqs_cis.shape)}, expected "
-            f"{expected_shape} for rotary embedding."
-        )
-    shape = [
-        d if i == seq_dim or i == ndim - 3 else 1 for i, d in enumerate(x.shape[:-2])
-    ] + [2, 2]
-    return freqs_cis.view(*shape)
+def _apply_rotary(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+    # x: (B, L, n_heads, head_dim); freqs_cis: (L, head_dim/2, 2, 2).
+    x_ = x.reshape(*x.shape[:-1], -1, 1, 2)
+    freqs = freqs_cis.view(1, freqs_cis.shape[0], 1, freqs_cis.shape[1], 2, 2).float()
+    return (x_ * freqs).sum(-1).flatten(-2).type_as(x)
 
 
-def _apply_rotary_emb(
-    xq: torch.Tensor,
-    xk: torch.Tensor,
-    seq_dim: int,
-    freqs_cis: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    xq_ = xq.reshape(*xq.shape[:-1], -1, 1, 2)
-    xk_ = xk.reshape(*xk.shape[:-1], -1, 1, 2)
-    freqs_cis = _reshape_for_broadcast(freqs_cis, xq_, seq_dim).float()
-    xq_out = (xq_ * freqs_cis).sum(5).flatten(3)
-    xk_out = (xk_ * freqs_cis).sum(5).flatten(3)
-    return xq_out.type_as(xq), xk_out.type_as(xk)
-
-
-class _RotaryEmbedding(nn.Module):
-    def __init__(self, theta: float, head_dim: int, max_seqlen: int, rope_dim: int):
-        super().__init__()
-        if head_dim % rope_dim != 0:
-            raise ValueError("head_dim must be divisible by rope_dim.")
-        self.theta = theta
-        self.head_dim = head_dim
-        self.max_seqlen = max_seqlen
-        self.rope_dim = rope_dim
-        self.register_buffer(
-            "freqs_cis",
-            _precompute_freqs_cis(head_dim // rope_dim, max_seqlen, theta),
-            persistent=False,
-        )
-
-    def reset_parameters(self):
-        self.freqs_cis[...] = _precompute_freqs_cis(
-            self.head_dim // self.rope_dim, self.max_seqlen, self.theta
-        )
-
-    def forward(self, seqlen: int) -> torch.Tensor:
-        return self.freqs_cis[:seqlen]
-
-
-class _RMSNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
-        super().__init__()
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        output = x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
-        return (output.float() * self.weight.float()).type_as(x)
-
-    def reset_parameters(self):
-        nn.init.ones_(self.weight)
-
-
+# ---------------------------------------------------------------------------
+# Transformer block
+# ---------------------------------------------------------------------------
 class _Attention(nn.Module):
-    def __init__(self, args: _ZUNAEncoderArgs):
+    def __init__(self, dim: int, n_heads: int, head_dim: int):
         super().__init__()
-        n_heads = (
-            args.n_heads if args.n_heads is not None else args.dim // args.head_dim
-        )
-        self.dim = args.dim
-        self.head_dim = args.head_dim or args.dim // n_heads
         self.n_heads = n_heads
-        self.n_kv_heads = args.n_kv_heads or self.n_heads
-        if self.n_heads % self.n_kv_heads != 0:
-            raise ValueError("n_heads must be divisible by n_kv_heads.")
-        self.heads_per_group = self.n_heads // self.n_kv_heads
-        self.rope_dim = args.rope_dim
+        self.head_dim = head_dim
+        inner = n_heads * head_dim
+        self.wq = nn.Linear(dim, inner, bias=False)
+        self.wk = nn.Linear(dim, inner, bias=False)
+        self.wv = nn.Linear(dim, inner, bias=False)
+        self.wo = nn.Linear(inner, dim, bias=False)
 
-        self.wq = nn.Linear(args.dim, self.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wo = nn.Linear(self.n_heads * self.head_dim, args.dim, bias=False)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        freq_cis: torch.Tensor,
-        tok_idx: Optional[torch.Tensor],
-        mask: Optional[BlockMask],
-    ) -> torch.Tensor:
-        batch, seq_len, _ = x.shape
-        xq = self.wq(x)
-        xk = self.wk(x)
-        xv = self.wv(x)
-        output_shape = xq.shape
-
-        xq = xq.view(batch, seq_len, self.n_heads, self.head_dim)
-        xk = xk.view(batch, seq_len, self.n_kv_heads, self.head_dim)
-        xv = xv.view(batch, seq_len, self.n_kv_heads, self.head_dim)
-
-        if self.rope_dim == 1:
-            freqs = freq_cis[tok_idx] if tok_idx is not None else freq_cis[:seq_len]
-            xq, xk = _apply_rotary_emb(xq, xk, 1, freqs)
-        elif self.rope_dim == 4:
-            if tok_idx is None:
-                raise ValueError("4D RoPE requires tok_idx.")
-            freq_parts = [freq_cis[tok_idx[:, i]] for i in range(self.rope_dim)]
-            xq, xk = _apply_rotary_emb(xq, xk, 1, torch.cat(freq_parts, dim=1))
-        elif self.rope_dim != 0:
-            raise ValueError(f"Unsupported rope_dim={self.rope_dim}.")
-
-        xk = _repeat_kv(xk, self.heads_per_group)
-        xv = _repeat_kv(xv, self.heads_per_group)
-        xq, xk, xv = (t.transpose(1, 2) for t in (xq, xk, xv))
-        out = flex_attention(xq, xk, xv, block_mask=mask)
-        out = out.transpose(1, 2).contiguous()
-        return self.wo(out.reshape(output_shape))
-
-    def reset_parameters(self, init_std: Optional[float], factor: float):
-        init_std = init_std or self.dim**-0.5
-        for w in (self.wq, self.wk, self.wv):
-            nn.init.trunc_normal_(
-                w.weight, mean=0.0, std=init_std, a=-3 * init_std, b=3 * init_std
-            )
-        nn.init.trunc_normal_(
-            self.wo.weight,
-            mean=0.0,
-            std=init_std / factor,
-            a=-3 * init_std,
-            b=3 * init_std,
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+        b, seq_len, _ = x.shape
+        shape = (b, seq_len, self.n_heads, self.head_dim)
+        xq = _apply_rotary(self.wq(x).view(shape), freqs_cis)
+        xk = _apply_rotary(self.wk(x).view(shape), freqs_cis)
+        xv = self.wv(x).view(shape)
+        # SDPA expects (B, n_heads, L, head_dim). Each batch element is its
+        # own document — no mask needed.
+        out = F.scaled_dot_product_attention(
+            xq.transpose(1, 2), xk.transpose(1, 2), xv.transpose(1, 2)
         )
+        return self.wo(out.transpose(1, 2).reshape(b, seq_len, -1))
 
 
 class _FeedForward(nn.Module):
-    def __init__(self, args: _ZUNAEncoderArgs):
+    def __init__(self, dim: int, multiple_of: int = 256):
         super().__init__()
-        hidden_dim = int(2 * (4 * args.dim) / 3)
-        if args.ffn_dim_multiplier is not None:
-            hidden_dim = int(args.ffn_dim_multiplier * hidden_dim)
-        hidden_dim = args.multiple_of * math.ceil(hidden_dim / args.multiple_of)
-        self.dim = args.dim
-        self.hidden_dim = hidden_dim
-        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
-        self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
+        hidden = multiple_of * math.ceil(int(8 * dim / 3) / multiple_of)
+        self.w1 = nn.Linear(dim, hidden, bias=False)
+        self.w2 = nn.Linear(hidden, dim, bias=False)
+        self.w3 = nn.Linear(dim, hidden, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
-    def reset_parameters(self, init_std: Optional[float], factor: float):
-        in_std = init_std or self.dim**-0.5
-        out_std = (init_std or self.hidden_dim**-0.5) / factor
-        for w in (self.w1, self.w3):
-            nn.init.trunc_normal_(
-                w.weight, mean=0.0, std=in_std, a=-3 * in_std, b=3 * in_std
-            )
-        nn.init.trunc_normal_(
-            self.w2.weight, mean=0.0, std=out_std, a=-3 * out_std, b=3 * out_std
-        )
-
 
 class _TransformerBlock(nn.Module):
-    def __init__(self, args: _ZUNAEncoderArgs):
+    def __init__(self, dim: int, n_heads: int, head_dim: int, norm_eps: float):
         super().__init__()
-        self.attention = _Attention(args)
-        self.feed_forward = _FeedForward(args)
-        self.attention_norm = _RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = _RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention = _Attention(dim, n_heads, head_dim)
+        self.feed_forward = _FeedForward(dim)
+        self.attention_norm = nn.RMSNorm(dim, eps=norm_eps)
+        self.ffn_norm = nn.RMSNorm(dim, eps=norm_eps)
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        freq_cis: torch.Tensor,
-        tok_idx: Optional[torch.Tensor],
-        mask: Optional[BlockMask],
-    ) -> torch.Tensor:
-        h = x + self.attention(self.attention_norm(x), freq_cis, tok_idx, mask)
-        return h + self.feed_forward(self.ffn_norm(h))
-
-    def init_weights(self, init_std: Optional[float], factor: float):
-        self.attention.reset_parameters(init_std, factor)
-        self.attention_norm.reset_parameters()
-        self.feed_forward.reset_parameters(init_std, factor)
-        self.ffn_norm.reset_parameters()
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+        x = x + self.attention(self.attention_norm(x), freqs_cis)
+        return x + self.feed_forward(self.ffn_norm(x))
 
 
-def _create_document_mask(
-    lengths: torch.Tensor, sliding_window: int, device: torch.device
-):
-    lengths_cpu = lengths.detach().cpu()
-    doc_end = lengths_cpu.cumsum(0).tolist()
-    doc_start = [0] + doc_end[:-1]
-    total = int(lengths_cpu.sum().item())
-    doc_bounds = list(zip(doc_start, doc_end))
-
-    def mask_mod(b, h, q_idx, kv_idx):
-        valid = torch.zeros_like(noop_mask(b, h, q_idx, kv_idx))
-        for start, end in doc_bounds:
-            in_doc = (
-                (q_idx >= start) & (q_idx < end) & (kv_idx >= start) & (kv_idx < end)
-            )
-            in_window = (q_idx - kv_idx).abs() <= sliding_window
-            valid = valid | (in_doc & in_window)
-        return valid
-
-    return create_block_mask(
-        mask_mod,
-        None,
-        None,
-        total,
-        total,
-        device=device,
-        _compile=device.type == "cuda",
-    )
-
-
+# ---------------------------------------------------------------------------
+# Encoder
+# ---------------------------------------------------------------------------
 class _ZUNAEncoder(nn.Module):
-    def __init__(self, args: _ZUNAEncoderArgs):
-        super().__init__()
-        if args.encoder_hidden_dim is not None:
-            args = _ZUNAEncoderArgs(**{**args.__dict__, "dim": args.encoder_hidden_dim})
-        self.dim = args.dim
-        self.downsample_factor = args.encoder_latent_downsample_factor
-        self.sliding_window = args.encoder_sliding_window
-        self.init_base_std = args.init_base_std
-        self.init_std_factor = InitStdFactor(args.init_std_factor)
-        self.max_seqlen = args.max_seqlen
-        self.dropout_type = args.dropout_type
-        self.dropout_vec = (
-            nn.Parameter(args.stft_global_sigma * torch.rand(1, args.encoder_input_dim))
-            if args.dropout_type == "learnable"
-            else None
-        )
-
-        n_heads = (
-            args.n_heads if args.n_heads is not None else args.dim // args.head_dim
-        )
-        head_dim = args.head_dim or args.dim // n_heads
-        self.rope_embeddings = _RotaryEmbedding(
-            theta=args.rope_theta,
-            head_dim=head_dim,
-            max_seqlen=args.max_seqlen,
-            rope_dim=args.rope_dim,
-        )
-        self.layers = nn.ModuleList(
-            [_TransformerBlock(args) for _ in range(args.n_layers)]
-        )
-        self.tok_embeddings = nn.Linear(args.encoder_input_dim, args.dim)
-        self.norm = _RMSNorm(args.dim, eps=args.norm_eps)
-        self.registers = nn.Parameter(torch.zeros(1, args.encoder_input_dim))
-        self.output = nn.Linear(args.dim, args.encoder_output_dim, bias=False)
-
-    def _interleave_registers(self, x: torch.Tensor) -> tuple[torch.Tensor, int]:
-        batch, seqlen, dim = x.shape
-        df = self.downsample_factor
-        num_groups = math.ceil(seqlen / df)
-        new_seqlen = num_groups * df
-        if new_seqlen > seqlen:
-            x = torch.cat([x, x.new_zeros(batch, new_seqlen - seqlen, dim)], dim=1)
-        x = x.reshape(batch, num_groups, df, dim)
-        regs = self.registers.expand(batch, num_groups, -1).unsqueeze(2)
-        token_values = torch.cat([regs, x], dim=2).reshape(batch, -1, dim)
-        return token_values.contiguous(), num_groups
-
-    def forward(
+    def __init__(
         self,
-        token_values: torch.Tensor,
-        seq_lens: torch.Tensor,
-        tok_idx: torch.Tensor,
-    ) -> torch.Tensor:
-        original_seqlen = token_values.shape[1]
-        token_values, num_groups = self._interleave_registers(token_values)
-        do_idx = token_values.sum(dim=2).eq(0).squeeze(0)
-        if self.dropout_vec is not None and do_idx.any():
-            token_values[:, do_idx, :] = self.dropout_vec
-
-        h = self.tok_embeddings(token_values)
-        mask = _create_document_mask(
-            seq_lens * (self.downsample_factor + 1),
-            self.sliding_window,
-            device=token_values.device,
+        dim: int = ZUNA_DIM,
+        n_layers: int = ZUNA_N_LAYERS,
+        n_heads: int = ZUNA_N_HEADS,
+        head_dim: int = ZUNA_HEAD_DIM,
+        input_dim: int = ZUNA_FINE_TIME_PTS,
+        output_dim: int = ZUNA_LATENT_DIM,
+        max_seqlen: int = ZUNA_MAX_SEQLEN,
+        rope_theta: float = ZUNA_ROPE_THETA,
+        rope_dim: int = ZUNA_ROPE_DIM,
+        norm_eps: float = 1e-5,
+    ):
+        super().__init__()
+        if head_dim % rope_dim != 0:
+            raise ValueError("head_dim must be divisible by rope_dim.")
+        self.tok_embeddings = nn.Linear(input_dim, dim)
+        self.registers = nn.Parameter(torch.zeros(1, input_dim))
+        self.layers = nn.ModuleList(
+            _TransformerBlock(dim, n_heads, head_dim, norm_eps) for _ in range(n_layers)
         )
-        tok_idx = tok_idx.repeat_interleave(repeats=self.downsample_factor + 1, dim=1)
-        tok_idx = tok_idx.squeeze(0)
-        freq_cis = self.rope_embeddings(seqlen=self.max_seqlen)
+        self.norm = nn.RMSNorm(dim, eps=norm_eps)
+        self.output = nn.Linear(dim, output_dim, bias=False)
+        self.register_buffer(
+            "freqs_cis",
+            _precompute_freqs_cis(head_dim // rope_dim, max_seqlen, rope_theta),
+            persistent=False,
+        )
 
+    def forward(self, tokens: torch.Tensor, tok_idx: torch.Tensor) -> torch.Tensor:
+        # tokens: (B, L, input_dim); tok_idx: (L, rope_dim).
+        b, seq_len, _ = tokens.shape
+
+        # Interleave one register token per source token, doubling the length.
+        regs = self.registers.expand(b, seq_len, -1).unsqueeze(2)
+        tokens = torch.cat([regs, tokens.unsqueeze(2)], dim=2).reshape(
+            b, 2 * seq_len, -1
+        )
+
+        # 4D RoPE: stack per-axis rotation matrices along head_dim/2. With
+        # ``tok_idx`` of shape (L, rope_dim), the gather yields
+        # (L, rope_dim, head_dim/(2*rope_dim), 2, 2); flatten gives the
+        # expected (L, head_dim/2, 2, 2).
+        tok_idx = tok_idx.repeat_interleave(2, dim=0)
+        freqs_cis = self.freqs_cis[tok_idx].flatten(1, 2)
+
+        h = self.tok_embeddings(tokens)
         for layer in self.layers:
-            h = layer(h, freq_cis=freq_cis, tok_idx=tok_idx, mask=mask)
-
-        h = h.reshape(h.shape[0], num_groups, self.downsample_factor + 1, h.shape[-1])
-        registers = h[:, :, 0, :][:, :original_seqlen, :].contiguous()
-        return self.output(self.norm(registers))
+            h = layer(h, freqs_cis)
+        h = h.reshape(b, seq_len, 2, -1)[:, :, 0]  # take the register slot
+        return self.output(self.norm(h))
 
 
-def _resolve_channel_positions(
-    channel_positions: Optional[torch.Tensor],
-    channel_names: Optional[list[str]],
-    chs_info: Optional[list[dict]],
-    device: torch.device,
-    dtype: torch.dtype,
-    montage: Optional[str],
-) -> torch.Tensor:
-    if channel_positions is not None:
-        pos = torch.as_tensor(channel_positions, dtype=dtype, device=device)
-        if pos.ndim != 2 or pos.shape[1] != 3:
-            raise ValueError("channel_positions must have shape (n_chans, 3).")
-        return pos
-
-    chs_positions = extract_channel_locations_from_chs_info(chs_info)
-    if chs_positions is not None:
-        return torch.as_tensor(chs_positions, dtype=dtype, device=device)
-
-    if channel_names is not None and montage is not None:
-        import mne
-
-        mne_montage = mne.channels.make_standard_montage(montage)
-        pos_dict = mne_montage.get_positions()["ch_pos"]
-        missing = [name for name in channel_names if name not in pos_dict]
-        if missing:
-            raise ValueError(
-                f"Channel names {missing} not found in MNE standard montage "
-                f"{montage!r}."
-            )
-        return torch.stack(
-            [
-                torch.as_tensor(pos_dict[name], dtype=dtype, device=device)
-                for name in channel_names
-            ]
-        )
-
-    if channel_names is None:
-        raise ValueError("ZUNA requires channels coordinates or names")
-    raise ValueError("ZUNA requires a montage to resolve channel names")
-
-
-def _discretize_channel_positions(
-    channel_positions: torch.Tensor,
-    num_bins: int,
-    extremes_type: str,
-) -> torch.Tensor:
-    if extremes_type == "twelves":
-        extremes = channel_positions.new_tensor(
-            [[-0.12, -0.12, -0.12], [0.12, 0.12, 0.12]]
-        )
-    elif extremes_type == "thirteens":
-        extremes = channel_positions.new_tensor(
-            [[-0.13, -0.13, -0.13], [0.13, 0.13, 0.13]]
-        )
-    else:
-        raise ValueError("chan_pos_xyz_extremes_type must be 'twelves' or 'thirteens'.")
-    normalized = (channel_positions - extremes[0]) / (extremes[1] - extremes[0])
-    return torch.clamp((normalized * num_bins).long(), 0, num_bins - 1)
-
-
-def _zuna_signal_error_message() -> str:
-    n_times, sample_frequency, input_window_seconds = _zuna_expected_signal()
-    return (
-        "ZUNA requires inputs with "
-        f"{n_times} time steps: {input_window_seconds:g} seconds sampled at "
-        f"{sample_frequency:g} Hz."
-    )
-
-
-def _validate_zuna_n_times(n_times: Optional[int]) -> None:
-    expected_n_times, _, _ = _zuna_expected_signal()
-    if n_times is not None and n_times != expected_n_times:
-        raise ValueError(_zuna_signal_error_message())
-
-
-def _zuna_expected_signal() -> tuple[int, float, float]:
-    return 1280, 256.0, 5.0
-
-
-def _zuna_hf_files() -> tuple[str, str, str]:
-    return "Zyphra/ZUNA", "model-00001-of-00001.safetensors", "config.json"
-
-
-def _zuna_channel_position_config() -> tuple[int, str]:
-    return 50, "twelves"
-
-
-def _zuna_published_config() -> dict:
-    """Architecture config baked from the public ``Zyphra/ZUNA`` Hub repo.
-
-    Kept in-tree so model construction does not need a network call.
-    """
-    return {
-        "dim": 1024,
-        "n_layers": 16,
-        "head_dim": 64,
-        "encoder_input_dim": 32,
-        "encoder_output_dim": 32,
-        "encoder_latent_downsample_factor": 1,
-        "encoder_sliding_window": 65536,
-        "max_seqlen": 50,
-        "rope_dim": 4,
-        "rope_theta": 10000.0,
-        "tok_idx_type": "{x,y,z,tc}",
-        "dropout_type": "zeros",
-        "stft_global_sigma": 0.1,
-    }
-
-
-def _build_zuna_encoder_args(model_config: dict) -> _ZUNAEncoderArgs:
-    if model_config.get("encoder_latent_downsample_factor", 1) != 1:
-        raise ValueError("ZUNA currently requires encoder_latent_downsample_factor=1.")
-    if model_config.get("tok_idx_type", "{x,y,z,tc}") != "{x,y,z,tc}":
-        raise ValueError('ZUNA currently requires tok_idx_type="{x,y,z,tc}".')
-    if model_config.get("rope_dim", 4) != 4:
-        raise ValueError("ZUNA currently requires rope_dim=4.")
-
-    encoder_arg_names = _ZUNAEncoderArgs.__dataclass_fields__
-    encoder_config = {
-        key: value for key, value in model_config.items() if key in encoder_arg_names
-    }
-    return _ZUNAEncoderArgs(**encoder_config)
-
-
+# ---------------------------------------------------------------------------
+# Public model
+# ---------------------------------------------------------------------------
 class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     r"""ZUNA encoder with a Braindecode classification head.
 
     :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel` :bdg-info:`Attention/Transformer`
 
-    ZUNA tokenizes EEG into channel-by-coarse-time tokens and returns class
-    logits by default. The
-    encoder architecture is fixed to the public ``Zyphra/ZUNA`` Hugging Face
-    config (see :func:`_zuna_published_config`); the constructor only exposes
-    Braindecode signal metadata and channel-coordinate resolution options.
+    Ports the inference path of the public ``Zyphra/ZUNA`` encoder. The
+    architecture is locked to the published config; the constructor only
+    exposes Braindecode signal metadata. Call :meth:`load_pretrained_weights`
+    to download the upstream encoder checkpoint from Hugging Face.
 
-    ZUNA only accepts ``n_times=1280`` at
-    ``sfreq=256`` Hz (5 s windows). Other shapes raise exceptions at construction or
-    forward.
+    Inputs must be 5-second EEG windows sampled at 256 Hz
+    (``n_times=1280``). Channel coordinates are resolved by :meth:`forward`
+    in this order, and any of the three sources is sufficient:
 
-    Channel coordinates are resolved by :func:`forward` in this priority
-    order, and any of the three sources is sufficient:
-
-    1. ``channel_positions`` passed to :meth:`forward` (highest priority).
-    2. ``chs_info`` provided at construction (extracted via
-       :func:`braindecode.models.util.extract_channel_locations_from_chs_info`).
+    1. ``channel_positions`` passed to :meth:`forward`.
+    2. ``chs_info`` provided at construction (via
+       :func:`braindecode.models.util.extract_channel_locations_from_chs_info`,
+       cached at construction time).
     3. ``channel_names`` looked up in an MNE standard montage (defaults to
-       ``"standard_1005"``; pass ``montage=None`` in :meth:`forward` to
-       disable this fallback).
+       ``"standard_1005"``; pass ``montage=None`` to disable).
+
+    :meth:`forward` returns ``(batch, n_outputs)`` logits by default, or a
+    dict of intermediate latents when ``return_features=True``.
 
     Parameters
     ----------
     n_outputs : int | None
-        Number of output classes or regression targets.
+        Number of output classes / regression targets.
     n_chans : int | None
-        Number of EEG channels. Inferred from ``chs_info`` when not given.
+        Number of EEG channels. Inferred from ``chs_info`` if not given.
     chs_info : list of dict | None
-        MNE-style channel info. Used both to infer ``n_chans`` and to supply
-        ``loc`` coordinates when ``channel_positions`` is not passed to
-        :meth:`forward`.
+        MNE-style channel info; also used to extract coordinates.
     n_times : int | None
-        Number of samples per window. Must be ``1280`` (the only value the
-        encoder accepts, for now...); defaults to ``1280``.
+        Number of samples per window (must be ``1280``).
     input_window_seconds : float | None
-        Window length in seconds. Must be ``5.0``.
+        Window length in seconds (must be ``5.0``).
     sfreq : float | None
-        Sampling frequency in Hz. Must be ``256.0``.
+        Sampling frequency in Hz (must be ``256.0``).
     """
 
     def __init__(
@@ -560,26 +245,21 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         n_outputs: Optional[int] = None,
         n_chans: Optional[int] = None,
         chs_info: Optional[list[dict]] = None,
-        n_times: Optional[int] = 1280,
+        n_times: Optional[int] = ZUNA_N_TIMES,
         input_window_seconds: Optional[float] = None,
         sfreq: Optional[float] = None,
     ):
-        if not HAS_FLEX:
-            raise ImportError(
-                "ZUNA requires Pytorch with torch.nn.attention.flex_attention."
-            )
-        expected_n_times, expected_sfreq, expected_window = _zuna_expected_signal()
-        n_times = expected_n_times if n_times is None else n_times
+        n_times = ZUNA_N_TIMES if n_times is None else n_times
         input_window_seconds = (
-            expected_window if input_window_seconds is None else input_window_seconds
+            ZUNA_INPUT_WINDOW if input_window_seconds is None else input_window_seconds
         )
-        sfreq = expected_sfreq if sfreq is None else sfreq
-        if (
-            n_times != expected_n_times
-            or sfreq != expected_sfreq
-            or input_window_seconds != expected_window
+        sfreq = ZUNA_SFREQ if sfreq is None else sfreq
+        if (n_times, sfreq, input_window_seconds) != (
+            ZUNA_N_TIMES,
+            ZUNA_SFREQ,
+            ZUNA_INPUT_WINDOW,
         ):
-            raise ValueError(_zuna_signal_error_message())
+            raise ValueError(_SIGNAL_ERROR)
 
         super().__init__(
             n_outputs=n_outputs,
@@ -589,143 +269,72 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        model_config = _zuna_published_config()
-        self.num_fine_time_pts = model_config["encoder_input_dim"]
-        self.encoder_output_dim = model_config["encoder_output_dim"]
-        (
-            self.num_bins_discretize_xyz_chan_pos,
-            self.chan_pos_xyz_extremes_type,
-        ) = _zuna_channel_position_config()
-        self.encoder = _ZUNAEncoder(_build_zuna_encoder_args(model_config))
-        self._init_weights()
+        cfg = _encoder_config()
+        self.encoder = _ZUNAEncoder(**cfg)
+        self._latent_dim = cfg["output_dim"]
+        self._fine_time_pts = cfg["input_dim"]
         self.final_layer = self._make_final_layer(self.n_outputs)
+
+        # Cache positions resolved from chs_info, if any.
+        cached = extract_channel_locations_from_chs_info(self._chs_info)
+        self.register_buffer(
+            "_cached_positions",
+            torch.as_tensor(cached, dtype=torch.float32)
+            if cached is not None
+            else None,
+            persistent=False,
+        )
 
     def _make_final_layer(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(
             nn.Flatten(),
-            nn.Linear(self.n_chans * self.encoder_output_dim, n_outputs),
+            nn.Linear(self.n_chans * self._latent_dim, n_outputs),
         )
 
-    def _init_weights(self):
-        self.encoder.rope_embeddings.reset_parameters()
-        for depth, layer in enumerate(self.encoder.layers):
-            factor = {
-                InitStdFactor.CURRENT_DEPTH: (2 * (depth + 1)) ** 0.5,
-                InitStdFactor.GLOBAL_DEPTH: (2 * (len(self.encoder.layers) + 1)) ** 0.5,
-                InitStdFactor.DIM_RATIO: self.encoder.dim / 4096,
-                InitStdFactor.DISABLED: 1.0,
-            }[self.encoder.init_std_factor]
-            layer.init_weights(self.encoder.init_base_std, factor)
-
-    def load_pretrained_weights(self) -> None:
-        """Download and load the public ``Zyphra/ZUNA`` encoder weights.
-
-        Network call is deliberately *not* performed in ``__init__``; users
-        opt in by calling this method (or instantiate via
-        :meth:`from_pretrained` for a braindecode-format checkpoint).
-        """
-        if not bd_base.HAS_HF_HUB:
-            raise ImportError(
-                "load_pretrained_weights() requires huggingface_hub. "
-                "Install with: pip install 'braindecode[hub]'"
-            )
-        from safetensors.torch import load_file as safe_load
-
-        repo_id, weights_filename, _ = _zuna_hf_files()
-        weights_path = bd_base.huggingface_hub.hf_hub_download(
-            repo_id=repo_id, filename=weights_filename, token=False
-        )
-        state_dict = safe_load(weights_path, device="cpu")
-        encoder_state = {}
-        for key, value in state_dict.items():
-            key = key.removeprefix("model.")
-            if key.startswith("encoder."):
-                encoder_state[key.removeprefix("encoder.")] = value
-        self.encoder.load_state_dict(encoder_state, strict=True)
-
-    def _apply_channel_mask(
+    def _resolve_positions(
         self,
-        x: torch.Tensor,
-        channel_mask: Optional[torch.Tensor],
-        dropped_channels: Optional[list[Union[int, str]]],
+        channel_positions: Optional[torch.Tensor],
         channel_names: Optional[list[str]],
+        montage: Optional[str],
+        device: torch.device,
+        dtype: torch.dtype,
     ) -> torch.Tensor:
-        if channel_mask is not None and dropped_channels is not None:
-            raise ValueError("Pass either channel_mask or dropped_channels, not both.")
-        if channel_mask is None and dropped_channels is None:
-            return x
+        if channel_positions is not None:
+            pos = torch.as_tensor(channel_positions, dtype=dtype, device=device)
+            if pos.ndim != 2 or pos.shape[1] != 3:
+                raise ValueError("channel_positions must have shape (n_chans, 3).")
+            return pos
+        if self._cached_positions is not None:
+            return self._cached_positions.to(device=device, dtype=dtype)
+        if channel_names is None:
+            raise ValueError("ZUNA requires channel coordinates or names.")
+        if montage is None:
+            raise ValueError("ZUNA requires a montage to resolve channel names.")
+        import mne
 
-        if dropped_channels is not None:
-            mask = torch.ones(self.n_chans, dtype=torch.bool, device=x.device)
-            drop_indices = []
-            for channel in dropped_channels:
-                if isinstance(channel, str):
-                    if channel_names is None:
-                        raise ValueError(
-                            "String dropped_channels require channel_names."
-                        )
-                    if channel not in channel_names:
-                        raise ValueError(f"Unknown dropped channel {channel!r}.")
-                    drop_indices.append(channel_names.index(channel))
-                else:
-                    drop_indices.append(int(channel))
-            invalid = [
-                index for index in drop_indices if index < 0 or index >= self.n_chans
+        ch_pos = mne.channels.make_standard_montage(montage).get_positions()["ch_pos"]
+        missing = [n for n in channel_names if n not in ch_pos]
+        if missing:
+            raise ValueError(
+                f"Channel names {missing} not found in MNE montage {montage!r}."
+            )
+        return torch.stack(
+            [
+                torch.as_tensor(ch_pos[n], dtype=dtype, device=device)
+                for n in channel_names
             ]
-            if invalid:
-                raise ValueError(
-                    f"dropped_channels contains invalid indices {invalid}."
-                )
-            if drop_indices:
-                mask[drop_indices] = False
-            channel_mask = mask
-
-        mask = torch.as_tensor(channel_mask, dtype=torch.bool, device=x.device)
-        if mask.ndim == 1:
-            if mask.shape[0] != self.n_chans:
-                raise ValueError("channel_mask must have shape (n_chans,).")
-            mask = mask.view(1, self.n_chans, 1)
-        elif mask.ndim == 2:
-            if mask.shape != (x.shape[0], self.n_chans):
-                raise ValueError("channel_mask must have shape (batch, n_chans).")
-            mask = mask.unsqueeze(-1)
-        else:
-            raise ValueError(
-                "channel_mask must have shape (n_chans,) or (batch, n_chans)."
-            )
-        return x * mask.to(dtype=x.dtype)
-
-    def _tokenize(self, x: torch.Tensor) -> torch.Tensor:
-        if x.ndim != 3:
-            raise ValueError("ZUNA expects input shape (batch, n_chans, n_times).")
-        expected_n_times, _, _ = _zuna_expected_signal()
-        if x.shape[-1] != expected_n_times:
-            raise ValueError(_zuna_signal_error_message())
-        if x.shape[-1] % self.num_fine_time_pts != 0:
-            raise ValueError(
-                "n_times must be divisible by "
-                f"num_fine_time_pts={self.num_fine_time_pts}."
-            )
-        batch, n_chans, n_times = x.shape
-        if n_chans != self.n_chans:
-            raise ValueError(f"Expected {self.n_chans} channels, got {n_chans}.")
-        coarse_time = n_times // self.num_fine_time_pts
-        return x.reshape(batch, n_chans, coarse_time, self.num_fine_time_pts).reshape(
-            batch, n_chans * coarse_time, self.num_fine_time_pts
         )
 
-    def _make_tok_idx(
-        self, channel_positions: torch.Tensor, coarse_time: int
-    ) -> torch.Tensor:
-        channel_positions_discrete = _discretize_channel_positions(
-            channel_positions,
-            self.num_bins_discretize_xyz_chan_pos,
-            self.chan_pos_xyz_extremes_type,
-        )
-        chan_pos = channel_positions_discrete.repeat_interleave(coarse_time, dim=0)
-        t_coarse = torch.arange(coarse_time, device=channel_positions.device)
-        t_coarse = t_coarse.repeat(self.n_chans).unsqueeze(1)
-        return torch.cat((chan_pos, t_coarse), dim=1).unsqueeze(0)
+    def _make_tok_idx(self, positions: torch.Tensor, coarse_time: int) -> torch.Tensor:
+        # Discretise channel coords into [0, ZUNA_POS_BINS) per axis, then
+        # interleave with a per-token coarse-time index. Bucketing is run in
+        # fp32 so model dtype (e.g. fp16) does not perturb bucket boundaries.
+        positions = positions.float()
+        normalised = (positions + ZUNA_POS_HALF_RANGE) / (2 * ZUNA_POS_HALF_RANGE)
+        xyz = (normalised * ZUNA_POS_BINS).long().clamp_(0, ZUNA_POS_BINS - 1)
+        xyz = xyz.repeat_interleave(coarse_time, dim=0)
+        t = torch.arange(coarse_time, device=positions.device).repeat(self.n_chans)
+        return torch.cat((xyz, t.unsqueeze(1)), dim=1)
 
     def forward(
         self,
@@ -733,76 +342,42 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         channel_positions: Optional[torch.Tensor] = None,
         channel_names: Optional[list[str]] = None,
         montage: Optional[str] = "standard_1005",
-        channel_mask: Optional[torch.Tensor] = None,
-        dropped_channels: Optional[list[Union[int, str]]] = None,
         return_features: bool = False,
     ) -> Union[torch.Tensor, dict[str, torch.Tensor]]:
-        """
-        Parameters
-        ----------
-        x : torch.Tensor
-            EEG signal of shape ``(batch, n_chans, n_times)``.
-        channel_positions : torch.Tensor | None
-            Channel coordinates of shape ``(n_chans, 3)``.
-        channel_names : list[str] | None
-            Channel names used to resolve coordinates from a standard montage
-            when neither ``channel_positions`` nor ``chs_info`` coordinates are
-            available.
-        montage : str | None
-            MNE standard montage name used only as a forward-time fallback for
-            ``channel_names``. Set to ``None`` to disable name-based lookup.
-        channel_mask : torch.Tensor | None
-            Boolean mask of channels to keep, shaped ``(n_chans,)`` or
-            ``(batch, n_chans)``. Masked channels are zeroed before encoding.
-        dropped_channels : list[int | str] | None
-            Channel indices or names to zero before encoding.
-        return_features : bool
-            If ``True`` return a dict with ``"features"`` (time-pooled
-            per-channel latents, the canonical probe input), ``"cls_token"``
-            (``None``), and the ZUNA-specific ``"token_latents"`` /
-            ``"structured_latents"`` tensors. Default returns logits with
-            shape ``(batch, n_outputs)``.
-        """
-        x = self._apply_channel_mask(x, channel_mask, dropped_channels, channel_names)
-        tokens = self._tokenize(x)
-        batch, seq_len, _ = tokens.shape
-        coarse_time = x.shape[-1] // self.num_fine_time_pts
-        channel_positions = _resolve_channel_positions(
-            channel_positions,
-            channel_names,
-            self._chs_info,
-            device=x.device,
-            dtype=x.dtype,
-            montage=montage,
-        )
-        if channel_positions.shape[0] != self.n_chans:
+        if x.ndim != 3:
             raise ValueError(
-                f"Expected {self.n_chans} channel positions, "
-                f"got {channel_positions.shape[0]}."
+                f"Expected (batch, n_chans, n_times); got shape {tuple(x.shape)}."
             )
-        tok_idx = self._make_tok_idx(channel_positions, coarse_time)
+        if x.shape[1] != self.n_chans:
+            raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
+        if x.shape[2] != ZUNA_N_TIMES:
+            raise ValueError(_SIGNAL_ERROR)
 
-        # Pack the batch as ``batch`` independent documents so the encoder
-        # runs once. The document mask isolates each sample's attention.
-        packed_tokens = tokens.reshape(1, batch * seq_len, -1)
-        packed_tok_idx = tok_idx.repeat(1, batch, 1)
-        seq_lens = torch.full((batch,), seq_len, dtype=torch.long, device=x.device)
+        b, n_chans, n_times = x.shape
+        coarse_time = n_times // self._fine_time_pts
+        tokens = x.reshape(b, n_chans * coarse_time, self._fine_time_pts)
 
-        packed_latents = self.encoder(packed_tokens, seq_lens, packed_tok_idx)
-        token_latents = packed_latents.reshape(batch, seq_len, self.encoder_output_dim)
-        structured_latents = token_latents.reshape(
-            batch, self.n_chans, coarse_time, self.encoder_output_dim
+        positions = self._resolve_positions(
+            channel_positions, channel_names, montage, x.device, x.dtype
         )
-        time_pooled_latents = structured_latents.mean(dim=2)
+        if positions.shape[0] != n_chans:
+            raise ValueError(
+                f"Expected {n_chans} channel positions, got {positions.shape[0]}."
+            )
+
+        tok_idx = self._make_tok_idx(positions, coarse_time)
+        token_latents = self.encoder(tokens, tok_idx)
+        structured = token_latents.reshape(b, n_chans, coarse_time, self._latent_dim)
+        features = structured.mean(dim=2)
 
         if return_features:
             return {
-                "features": time_pooled_latents,
+                "features": features,
                 "cls_token": None,
                 "token_latents": token_latents,
-                "structured_latents": structured_latents,
+                "structured_latents": structured,
             }
-        return self.final_layer(time_pooled_latents)
+        return self.final_layer(features)
 
     def get_output_shape(self) -> tuple[int, int]:
         return (1, self.n_outputs)
@@ -810,8 +385,27 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     def reset_head(self, n_outputs):
         """Replace the classification head for a new number of outputs."""
         self._n_outputs = n_outputs
-        reference = next(self.parameters())
+        ref = next(self.parameters())
         self.final_layer = self._make_final_layer(n_outputs).to(
-            device=reference.device,
-            dtype=reference.dtype,
+            device=ref.device, dtype=ref.dtype
         )
+
+    def load_pretrained_weights(self) -> None:
+        """Download and load the public ``Zyphra/ZUNA`` encoder weights."""
+        if not bd_base.HAS_HF_HUB:
+            raise ImportError(
+                "load_pretrained_weights() requires huggingface_hub. "
+                "Install with: pip install 'braindecode[hub]'"
+            )
+        from safetensors.torch import load_file as safe_load
+
+        weights_path = bd_base.huggingface_hub.hf_hub_download(
+            repo_id=ZUNA_HF_REPO, filename=ZUNA_HF_WEIGHTS, token=False
+        )
+        state = safe_load(weights_path, device="cpu")
+        encoder_state = {
+            key.removeprefix("model.").removeprefix("encoder."): value
+            for key, value in state.items()
+            if key.removeprefix("model.").startswith("encoder.")
+        }
+        self.encoder.load_state_dict(encoder_state, strict=True)
