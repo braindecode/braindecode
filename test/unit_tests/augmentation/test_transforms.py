@@ -1,5 +1,6 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 import numpy as np
@@ -19,6 +20,7 @@ from braindecode.augmentation.functional import (
     sensors_rotation,
 )
 from braindecode.augmentation.transforms import (
+    AmplitudeScale,
     BandRotation,
     BandstopFilter,
     ChannelsDropout,
@@ -759,6 +761,23 @@ def test_mask_encoding_transform(
             assert np.sum(sample[0, :].detach().cpu().numpy() == 0) >= segment_length
 
 
+def test_amplitude_scale_transform_runs_with_default_random_state():
+    # class path used to crash in torch.Generator.manual_seed
+    X = torch.randn(4, 8, 50)
+    y = torch.zeros(4)
+
+    out_default, _ = AmplitudeScale(probability=1.0)(X, y)
+    assert out_default.shape == X.shape
+
+    out_seeded, _ = AmplitudeScale(probability=1.0, random_state=42)(X, y)
+    assert out_seeded.shape == X.shape
+
+    out_id, _ = AmplitudeScale(probability=1.0, interval=(1.0, 1.0), random_state=0)(
+        X, y
+    )
+    assert torch.equal(out_id, X)
+
+
 def test_band_rotation_transform_seed_reproducibility():
     """Two ``BandRotation`` instances built with the same seed produce
     bit-identical outputs on the same input."""
@@ -778,6 +797,7 @@ def test_band_rotation_transform_seed_reproducibility():
     "augmentation,kwargs",
     [
         (IdentityTransform, {"probability": 0.5}),
+        (AmplitudeScale, {"probability": 0.5}),
         (
             BandRotation,
             # random_batch is 22 channels → 2 bands × 11 electrodes

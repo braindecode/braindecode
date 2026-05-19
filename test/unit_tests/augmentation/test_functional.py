@@ -111,6 +111,25 @@ def test_amplitude_scale():
     assert torch.equal(transformed_X0, torch.zeros_like(X))
 
 
+def test_amplitude_scale_random_state_variants():
+    # regression for None default and numpy RandomState input
+    import numpy as np
+
+    X = torch.rand((3, 4, 50))
+    y = torch.zeros(3)
+    scale = (0.5, 2.0)
+
+    out_none, _ = amplitude_scale(X, y, scale, random_state=None)
+    assert out_none.shape == X.shape
+
+    out_rs, _ = amplitude_scale(X, y, scale, random_state=np.random.RandomState(7))
+    assert out_rs.shape == X.shape
+
+    out_a, _ = amplitude_scale(X, y, scale, random_state=123)
+    out_b, _ = amplitude_scale(X, y, scale, random_state=123)
+    assert torch.equal(out_a, out_b)
+
+
 def test_band_rotation_shape_and_seed_reproducibility():
     # 2 bands × 8 electrodes/band; small T for fast assertions.  Force
     # ``band_offsets=(2,)`` so we get a deterministic non-zero rotation
