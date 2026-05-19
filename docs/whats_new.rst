@@ -57,6 +57,23 @@ Enhancements
   (tuple) without changes to their call site. (:gh:`1015` by
   `Bruno Aristimunha`_)
 
+API and behavior changes
+========================
+
+- Restore the per-batch ``ch_names`` keyword argument on
+  :meth:`braindecode.models.Labram.forward` that was removed in 1.5.0
+  (:gh:`993`). ``ch_names`` is now keyword-only and, when provided,
+  case-insensitively matches each name to
+  :data:`braindecode.models.labram.LABRAM_CHANNEL_ORDER` and indexes into
+  the canonical position-embedding bank, so callers can forward an
+  arbitrary subset of canonical channels without going through
+  :class:`braindecode.models.InterpolatedLaBraM`. The strict ``ValueError``
+  raised in 1.5.0 when ``chs_info`` did not match
+  ``LABRAM_CHANNEL_ORDER`` is downgraded to a ``UserWarning`` so that
+  downstream wrappers (e.g. neuroai's ``_LabramChannelWrapper``) can
+  build the inner :class:`braindecode.models.Labram` with their union
+  channel set and resolve the subset per batch via ``ch_names``.
+
 Bug fixes
 ==========
 
@@ -192,12 +209,15 @@ API and behavior changes
   ``SCALE`` target has no physical position, so its interpolation row is a
   spatial spline of the user's EEG — not the dn3 amplitude statistic).
   (:gh:`992` by `Pierre Guetschel`_)
-- :class:`braindecode.models.Labram` now requires ``chs_info`` to match
-  ``LABRAM_CHANNEL_ORDER`` exactly (128 channels, canonical order). The
-  ``on_unknown_chs`` parameter and the forward-time ``ch_names`` argument are
-  removed. Users with arbitrary channel sets should migrate to
-  :class:`braindecode.models.InterpolatedLaBraM`. (:gh:`993`
-  by `Pierre Guetschel`_)
+- :class:`braindecode.models.Labram` is reworked around the
+  ``LABRAM_CHANNEL_ORDER`` canonical channel set. The
+  ``on_unknown_chs`` parameter is removed (its three-way ``raise`` /
+  ``warn`` / ``ignore`` policy is replaced by the always-warn behavior
+  of the canonical-channel check). Users with arbitrary channel sets
+  should migrate to :class:`braindecode.models.InterpolatedLaBraM`.
+  The forward-time ``ch_names`` argument was removed in 1.5.0 and
+  **restored as keyword-only in 1.5.1** for back-compat with downstream
+  wrappers — see the 1.5.1 entry. (:gh:`993` by `Pierre Guetschel`_)
 
 Bug fixes
 ==========
