@@ -94,21 +94,29 @@ print(f"Dataset has {len(chs_info)} channels:")
 print(user_ch_names)
 
 ######################################################################
-# The wall: the pretrained model refuses our channels
-# ----------------------------------------------------
+# The wall: the pretrained model expects a specific 128-channel layout
+# --------------------------------------------------------------------
 #
 # The ``Labram`` checkpoint on the Hugging Face Hub
 # (``braindecode/labram-pretrained``) was trained on a specific
 # 128-channel layout.  The vanilla :class:`~braindecode.models.Labram`
-# class enforces that layout strictly: passing any other ``chs_info``
-# raises an error at construction time.
+# class warns when ``chs_info`` does not match that canonical layout —
+# the model still builds (so callers that resolve channels per batch
+# via the ``ch_names`` argument to :meth:`~braindecode.models.Labram.forward`
+# keep working), but the default forward pass assumes canonical order
+# and will silently mis-align position embeddings against arbitrary
+# user data.
 #
 
-try:
+import warnings  # noqa: E402
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
     Labram(chs_info=chs_info, n_times=3000, n_outputs=4, patch_size=200)
-except ValueError as exc:
-    print("Labram refused our chs_info:")
-    print(f"  {exc}")
+
+if caught and issubclass(caught[-1].category, UserWarning):
+    print("Labram warned about our chs_info:")
+    print(f"  {caught[-1].message}")
 
 ######################################################################
 # Without the wrapper, you would have to surgically rebuild the
