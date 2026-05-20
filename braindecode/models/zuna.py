@@ -201,9 +201,17 @@ class _ZUNAEncoder(nn.Module):
 # Public model
 # ---------------------------------------------------------------------------
 class ZUNA(bd_base.EEGModuleMixin, nn.Module):
-    r"""ZUNA encoder with a Braindecode classification head.
+    r"""ZUNA from Warner et al (2026) [Warner2026]_.
 
     :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel` :bdg-info:`Attention/Transformer`
+
+    .. figure:: ../_static/model/zuna_arch.png
+       :align: center
+       :alt: ZUNA encoder-decoder architecture
+       :width: 1000px
+
+    ZUNA is a position-aware diffusion autoencoder for EEG superresolution,
+    wrapped here with a Braindecode classification head.
 
     Ports the inference path of the public ``Zyphra/ZUNA`` encoder. The
     architecture is locked to the published config; the constructor only
@@ -241,6 +249,12 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         Window length in seconds (must be ``5.0``).
     sfreq : float | None
         Sampling frequency in Hz (must be ``256.0``).
+
+    References
+    ----------
+    .. [Warner2026] Warner, C., Mago, J., Huml, J.R., Osman, M. and
+       Millidge, B., 2026. ZUNA: Flexible EEG Superresolution with
+       Position-Aware Diffusion Autoencoders. arXiv preprint arXiv:2602.18478.
     """
 
     def __init__(
