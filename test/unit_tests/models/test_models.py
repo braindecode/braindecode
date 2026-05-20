@@ -1543,21 +1543,12 @@ def test_zuna_reset_head_replaces_final_layer(small_zuna):
     assert out.shape == (2, 5)
 
 
-def test_zuna_load_pretrained_weights_strips_upstream_prefix(
-    monkeypatch, tmp_path, small_zuna
-):
-    safetensors_torch = pytest.importorskip("safetensors.torch")
-    huggingface_hub = pytest.importorskip("huggingface_hub")
-
+def test_zuna_load_state_dict_strips_upstream_prefix(small_zuna):
     randomized = {k: torch.randn_like(v) for k, v in small_zuna.encoder.state_dict().items()}
     upstream = {f"model.encoder.{k}": v for k, v in randomized.items()}
     upstream["model.decoder.dummy"] = torch.zeros(1)
 
-    weights_path = tmp_path / "zuna.safetensors"
-    safetensors_torch.save_file(upstream, str(weights_path))
-    monkeypatch.setattr(huggingface_hub, "hf_hub_download", lambda *a, **k: str(weights_path))
-
-    small_zuna.load_pretrained_weights()
+    small_zuna.load_state_dict(upstream)
 
     loaded = small_zuna.encoder.state_dict()
     for key, expected in randomized.items():

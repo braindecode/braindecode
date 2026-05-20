@@ -207,8 +207,11 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
 
     Ports the inference path of the public ``Zyphra/ZUNA`` encoder. The
     architecture is locked to the published config; the constructor only
-    exposes Braindecode signal metadata. Call :meth:`load_pretrained_weights`
-    to download the upstream encoder checkpoint from Hugging Face.
+    exposes Braindecode signal metadata. To download the upstream encoder
+    checkpoint from Hugging Face (requires ``pip install
+    'braindecode[hub]'``)::
+
+        ZUNA.from_pretrained("Zyphra/ZUNA", filename=ZUNA_HF_WEIGHTS)
 
     Inputs must be 5-second EEG windows sampled at 256 Hz
     (``n_times=1280``). Channel coordinates are resolved by :meth:`forward`
@@ -390,22 +393,14 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             device=ref.device, dtype=ref.dtype
         )
 
-    def load_pretrained_weights(self) -> None:
-        """Download and load the public ``Zyphra/ZUNA`` encoder weights."""
-        if not bd_base.HAS_HF_HUB:
-            raise ImportError(
-                "load_pretrained_weights() requires huggingface_hub. "
-                "Install with: pip install 'braindecode[hub]'"
-            )
-        from safetensors.torch import load_file as safe_load
-
-        weights_path = bd_base.huggingface_hub.hf_hub_download(
-            repo_id=ZUNA_HF_REPO, filename=ZUNA_HF_WEIGHTS, token=False
-        )
-        state = safe_load(weights_path, device="cpu")
-        encoder_state = {
-            key.removeprefix("model.").removeprefix("encoder."): value
-            for key, value in state.items()
-            if key.removeprefix("model.").startswith("encoder.")
-        }
-        self.encoder.load_state_dict(encoder_state, strict=True)
+    def load_state_dict(self, state_dict, strict=True, **kwargs):
+        # Upstream Zyphra/ZUNA nests encoder weights under
+        # ``model.encoder.*`` and bundles decoder weights we don't use.
+        if any(k.startswith("model.encoder.") for k in state_dict):
+            state_dict = {
+                k.removeprefix("model.").removeprefix("encoder."): v
+                for k, v in state_dict.items()
+                if k.removeprefix("model.").startswith("encoder.")
+            }
+            return self.encoder.load_state_dict(state_dict, strict=strict)
+        return super().load_state_dict(state_dict, strict=strict, **kwargs)
