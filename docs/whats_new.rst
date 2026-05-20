@@ -22,6 +22,33 @@
 .. _current:
 
 
+Current 1.6.0 (GitHub)
+===============================
+
+Enhancements
+============
+
+API and behavior changes
+========================
+
+- None yet
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- None yet
+
+Code health
+============
+
+- None yet
+
+
 Current 1.5.1 (stable)
 ===============================
 
