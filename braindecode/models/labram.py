@@ -191,6 +191,7 @@ _LABRAM_TARGET_CHS_INFO = [
     for ch, loc in _LABRAM_TARGET_CHS_TUPLES
 ]
 LABRAM_CHANNEL_ORDER = [ch for ch, _ in _LABRAM_TARGET_CHS_TUPLES]
+_LABRAM_CANONICAL_INDEX = {n.upper(): i for i, n in enumerate(LABRAM_CHANNEL_ORDER)}
 
 
 class Labram(EEGModuleMixin, nn.Module):
@@ -386,21 +387,21 @@ class Labram(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq
 
-        # Require chs_info to match LABRAM_CHANNEL_ORDER exactly (case-insensitive).
-        # Arbitrary channel sets should go through InterpolatedLaBraM.
+        # Non-canonical chs_info is accepted with a warning so callers can
+        # resolve channels per batch via forward(ch_names=...).
         try:
             _chs_info = self.chs_info
         except ValueError:
             _chs_info = None
         if _chs_info is not None:
             user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
-            canonical = LABRAM_CHANNEL_ORDER
-            if [n.lower() for n in user_names] != [n.lower() for n in canonical]:
-                raise ValueError(
-                    f"Labram requires chs_info to match LABRAM_CHANNEL_ORDER exactly "
-                    f"({len(canonical)} channels, specific order). Got {len(user_names)} "
-                    f"channels. For arbitrary channel sets, use InterpolatedLaBraM "
-                    f"(from braindecode.models import InterpolatedLaBraM)."
+            if [n.upper() for n in user_names] != list(_LABRAM_CANONICAL_INDEX):
+                warn(
+                    f"Labram chs_info does not match LABRAM_CHANNEL_ORDER "
+                    f"(got {len(user_names)} of {len(LABRAM_CHANNEL_ORDER)}). "
+                    f"Pass ch_names to forward() per batch, or use "
+                    f"InterpolatedLaBraM.",
+                    UserWarning,
                 )
 
         self.patch_size = patch_size
@@ -716,6 +717,8 @@ class Labram(EEGModuleMixin, nn.Module):
         return_patch_tokens=False,
         return_all_tokens=False,
         return_features=False,
+        *,
+        ch_names: list[str] | None = None,
     ):
         """
         Forward the input EEG data through the model.
@@ -725,24 +728,59 @@ class Labram(EEGModuleMixin, nn.Module):
         x: torch.Tensor
             The input data with shape (batch, n_chans, n_times)
             or (batch, n_chans, n_patches, patch size).
-        return_features : bool
-            If True, return a dict with ``"features"`` (patch tokens) and
-            ``"cls_token"`` instead of the classification output.
         return_patch_tokens: bool
             Return the patch tokens
         return_all_tokens: bool
             Return all the tokens
+        return_features : bool
+            If True, return a dict with ``"features"`` (patch tokens) and
+            ``"cls_token"`` instead of the classification output.
+        ch_names : list of str, optional
+            Keyword-only. Channel names matching the channel axis of ``x``.
+            Matched case-insensitively against :data:`LABRAM_CHANNEL_ORDER`
+            to select the corresponding position embeddings, so callers can
+            forward an arbitrary subset of canonical channels. If ``None``
+            (default), ``x`` must already be in :data:`LABRAM_CHANNEL_ORDER`
+            with exactly ``len(LABRAM_CHANNEL_ORDER)`` channels; otherwise
+            a :class:`ValueError` is raised. Only honored when
+            ``neural_tokenizer=True``; in decoder mode the position
+            embedding is sequential and ``ch_names`` has no effect.
 
         Returns
         -------
         torch.Tensor or dict
             The output of the model with dimensions (batch, n_outputs)
         """
-        # After __init__ validation, x already has chs_info == LABRAM_CHANNEL_ORDER,
-        # so input_chans is always arange(len(canonical) + 1) (CLS + all canonical).
-        input_chans = torch.arange(
-            len(LABRAM_CHANNEL_ORDER) + 1, device=x.device, dtype=torch.long
-        )
+        if ch_names is None:
+            if x.shape[1] != len(LABRAM_CHANNEL_ORDER):
+                raise ValueError(
+                    f"x has {x.shape[1]} channels but ch_names is None; "
+                    f"expected {len(LABRAM_CHANNEL_ORDER)} canonical channels "
+                    f"in LABRAM_CHANNEL_ORDER. Either pass "
+                    f"ch_names=<your channel names> matching x.shape[1], or "
+                    f"use InterpolatedLaBraM to project from an arbitrary "
+                    f"montage onto the canonical 128-channel layout."
+                )
+            input_chans = torch.arange(
+                len(LABRAM_CHANNEL_ORDER) + 1, device=x.device, dtype=torch.long
+            )
+        else:
+            if len(ch_names) != x.shape[1]:
+                raise ValueError(
+                    f"len(ch_names)={len(ch_names)} != x.shape[1]={x.shape[1]}"
+                )
+            try:
+                matched = [_LABRAM_CANONICAL_INDEX[n.upper()] for n in ch_names]
+            except KeyError as exc:
+                raise ValueError(
+                    f"ch_names contains a name not in LABRAM_CHANNEL_ORDER: "
+                    f"{exc.args[0]!r}. Filter unknown channels before calling "
+                    f"forward, or use InterpolatedLaBraM."
+                ) from exc
+            # CLS token at index 0; canonical channel indices are offset by 1.
+            input_chans = torch.tensor(
+                [0] + [i + 1 for i in matched], device=x.device, dtype=torch.long
+            )
 
         if return_features:
             x = self.forward_features(
