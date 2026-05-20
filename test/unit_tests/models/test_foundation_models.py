@@ -395,6 +395,110 @@ def test_labram_channel_order_constant_exported():
 
 
 # ==============================================================================
+# Tests for Labram.forward(ch_names=...) subset / case / error paths
+# ==============================================================================
+
+
+def _small_labram_for_ch_names(chs_info, n_outputs):
+    """Build a tiny tokenizer-mode Labram on the full canonical bank."""
+    return Labram(
+        n_times=400,
+        chs_info=chs_info,
+        n_outputs=n_outputs,
+        patch_size=200,
+        embed_dim=64,
+        num_layers=1,
+        num_heads=4,
+        neural_tokenizer=True,
+    )
+
+
+def test_labram_forward_with_ch_names_subset(chs_info, n_outputs):
+    """Forward an arbitrary subset of canonical channels via ch_names."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    model.eval()
+
+    # Pick 8 canonical channels in non-canonical order
+    subset = [LABRAM_CHANNEL_ORDER[i] for i in (10, 0, 30, 5, 60, 15, 90, 20)]
+    x = torch.randn(2, len(subset), 400)
+
+    with torch.no_grad():
+        out = model(x, ch_names=subset)
+
+    assert out.shape == (2, n_outputs)
+
+
+def test_labram_forward_ch_names_is_case_insensitive(chs_info, n_outputs):
+    """Mixed-case ch_names should match LABRAM_CHANNEL_ORDER case-insensitively."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    model.eval()
+
+    upper = [LABRAM_CHANNEL_ORDER[i] for i in (0, 10, 20)]
+    mixed = [name.title() for name in upper]  # e.g. "Fp1", "Fpz", ...
+    x = torch.randn(1, len(mixed), 400)
+
+    with torch.no_grad():
+        out_upper = model(x, ch_names=upper)
+        out_mixed = model(x, ch_names=mixed)
+
+    # Same channels under either casing -> identical outputs.
+    assert torch.allclose(out_upper, out_mixed)
+
+
+def test_labram_forward_ch_names_unknown_channel_raises(chs_info, n_outputs):
+    """Unknown channel names should produce a clear ValueError."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    bad_names = [LABRAM_CHANNEL_ORDER[0], "NOT_A_REAL_CHANNEL"]
+    x = torch.randn(1, len(bad_names), 400)
+
+    with pytest.raises(ValueError, match="LABRAM_CHANNEL_ORDER"):
+        model(x, ch_names=bad_names)
+
+
+def test_labram_forward_ch_names_length_mismatch_raises(chs_info, n_outputs):
+    """len(ch_names) must equal x.shape[1]."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    names = [LABRAM_CHANNEL_ORDER[i] for i in (0, 1, 2)]
+    x = torch.randn(1, 4, 400)  # 4 channels, 3 names
+
+    with pytest.raises(ValueError, match="len.ch_names"):
+        model(x, ch_names=names)
+
+
+def test_labram_forward_none_ch_names_wrong_count_raises(chs_info, n_outputs):
+    """ch_names=None with a non-canonical channel count must raise early."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    x = torch.randn(1, 22, 400)  # not 128
+
+    with pytest.raises(ValueError, match="ch_names is None"):
+        model(x)
+
+
+def test_labram_forward_return_flags_remain_positional(
+    chs_info, n_outputs, n_chans
+):
+    """Back-compat: return_* flags can still be passed positionally."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    model.eval()
+    x = torch.randn(1, n_chans, 400)
+
+    with torch.no_grad():
+        out_default = model(x)
+        # Positional: return_patch_tokens=False, return_all_tokens=True.
+        # ch_names is keyword-only, so this triggers the all-tokens path
+        # without forcing callers to switch to kwargs for the return flags.
+        out_all = model(x, False, True)
+
+    assert out_default.shape == (1, n_outputs)
+    # all_tokens returns one token per CLS + (n_chans * n_patches) patch
+    # tokens; only the trailing dim has to equal n_outputs.
+    assert out_all.dim() == 3
+    assert out_all.shape[0] == 1
+    assert out_all.shape[-1] == n_outputs
+    assert out_all.shape[1] > 1  # more than just the CLS token
+
+
+# ==============================================================================
 # Tests for LUNA Model Variants (Base, Large, Huge)
 # ==============================================================================
 

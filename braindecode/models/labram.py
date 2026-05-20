@@ -714,11 +714,11 @@ class Labram(EEGModuleMixin, nn.Module):
     def forward(
         self,
         x,
-        *,
-        ch_names: list[str] | None = None,
         return_patch_tokens=False,
         return_all_tokens=False,
         return_features=False,
+        *,
+        ch_names: list[str] | None = None,
     ):
         """
         Forward the input EEG data through the model.
@@ -728,20 +728,23 @@ class Labram(EEGModuleMixin, nn.Module):
         x: torch.Tensor
             The input data with shape (batch, n_chans, n_times)
             or (batch, n_chans, n_patches, patch size).
-        ch_names : list of str, optional
-            Channel names matching the channel axis of ``x``. Matched
-            case-insensitively against :data:`LABRAM_CHANNEL_ORDER` to
-            select the corresponding position embeddings, so callers can
-            forward an arbitrary subset of canonical channels. If
-            ``None`` (default), ``x`` is assumed to already be in
-            :data:`LABRAM_CHANNEL_ORDER`.
-        return_features : bool
-            If True, return a dict with ``"features"`` (patch tokens) and
-            ``"cls_token"`` instead of the classification output.
         return_patch_tokens: bool
             Return the patch tokens
         return_all_tokens: bool
             Return all the tokens
+        return_features : bool
+            If True, return a dict with ``"features"`` (patch tokens) and
+            ``"cls_token"`` instead of the classification output.
+        ch_names : list of str, optional
+            Keyword-only. Channel names matching the channel axis of ``x``.
+            Matched case-insensitively against :data:`LABRAM_CHANNEL_ORDER`
+            to select the corresponding position embeddings, so callers can
+            forward an arbitrary subset of canonical channels. If ``None``
+            (default), ``x`` must already be in :data:`LABRAM_CHANNEL_ORDER`
+            with exactly ``len(LABRAM_CHANNEL_ORDER)`` channels; otherwise
+            a :class:`ValueError` is raised. Only honored when
+            ``neural_tokenizer=True``; in decoder mode the position
+            embedding is sequential and ``ch_names`` has no effect.
 
         Returns
         -------
@@ -749,6 +752,15 @@ class Labram(EEGModuleMixin, nn.Module):
             The output of the model with dimensions (batch, n_outputs)
         """
         if ch_names is None:
+            if x.shape[1] != len(LABRAM_CHANNEL_ORDER):
+                raise ValueError(
+                    f"x has {x.shape[1]} channels but ch_names is None; "
+                    f"expected {len(LABRAM_CHANNEL_ORDER)} canonical channels "
+                    f"in LABRAM_CHANNEL_ORDER. Either pass "
+                    f"ch_names=<your channel names> matching x.shape[1], or "
+                    f"use InterpolatedLaBraM to project from an arbitrary "
+                    f"montage onto the canonical 128-channel layout."
+                )
             input_chans = torch.arange(
                 len(LABRAM_CHANNEL_ORDER) + 1, device=x.device, dtype=torch.long
             )

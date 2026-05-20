@@ -103,12 +103,14 @@ print(user_ch_names)
 # class warns when ``chs_info`` does not match that canonical layout —
 # the model still builds (so callers that resolve channels per batch
 # via the ``ch_names`` argument to :meth:`~braindecode.models.Labram.forward`
-# keep working), but the default forward pass assumes canonical order
-# and will silently mis-align position embeddings against arbitrary
-# user data.
+# keep working).  However, the default forward pass (without
+# ``ch_names``) assumes the input is already in canonical order *and*
+# has exactly 128 channels: passing a different channel count raises a
+# :class:`ValueError`, and passing 128 reordered channels would map
+# position embeddings to the wrong sensors.  Either pass ``ch_names``
+# explicitly on every call, or use :class:`InterpolatedLaBraM` for a
+# one-line fix.
 #
-
-import warnings  # noqa: E402
 
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
