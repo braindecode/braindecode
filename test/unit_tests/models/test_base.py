@@ -532,3 +532,109 @@ def test_hub_method_install_hint_no_hf():
         M.from_pretrained("any/repo")
     with pytest.raises(ImportError, match=r"M\.push_to_hub.*braindecode\[hub\]"):
         M().push_to_hub("any/repo")
+
+
+# -- Shape-mismatch-on-strict-false-load behaviour --------------------------
+
+
+class _ShapeMismatchModel(EEGModuleMixin, nn.Sequential):
+    """Tiny module used to exercise ``load_state_dict(strict=False)`` with a
+    shape-mismatched tensor.
+    """
+
+    def __init__(self, n_chans=4, n_outputs=2, n_times=10):
+        super().__init__(n_chans=n_chans, n_outputs=n_outputs, n_times=n_times)
+        self.add_module("linear", nn.Linear(n_times, n_outputs))
+
+
+def _make_shape_mismatched_state_dict(model, name="linear.weight"):
+    """Return a state-dict copy of ``model`` with ``name`` resized by -1 along dim -1."""
+    import torch
+
+    sd = dict(model.state_dict())
+    p = sd[name]
+    sd[name] = torch.zeros_like(p)[..., :-1]
+    return sd, name
+
+
+def test_load_state_dict_strict_false_drops_shape_mismatched(caplog):
+    """strict=False: mismatched tensors are dropped and the warning fires."""
+    import logging
+
+    model = _ShapeMismatchModel()
+    bad_state, mismatched_name = _make_shape_mismatched_state_dict(model)
+
+    with caplog.at_level(logging.WARNING, logger="braindecode.models.base"):
+        result = model.load_state_dict(bad_state, strict=False)
+
+    # The dropped key now appears in missing_keys (since the model parameter
+    # was never set), and the warning enumerates it.
+    assert mismatched_name in result.missing_keys
+    assert any(
+        mismatched_name in rec.message and "dropped" in rec.message
+        for rec in caplog.records
+    ), f"expected dropped-{mismatched_name} warning, got: {[r.message for r in caplog.records]}"
+
+
+def test_load_state_dict_strict_true_still_raises_on_shape_mismatch():
+    """strict=True must keep its existing RuntimeError contract."""
+    import torch
+
+    model = _ShapeMismatchModel()
+    bad_state, _ = _make_shape_mismatched_state_dict(model)
+
+    with pytest.raises(RuntimeError, match=r"size mismatch"):
+        model.load_state_dict(bad_state, strict=True)
+
+
+def test_load_state_dict_no_warning_when_shapes_match(caplog):
+    """If every checkpoint tensor matches, no warning is emitted."""
+    import logging
+
+    model = _ShapeMismatchModel()
+    clean_state = model.state_dict()
+
+    with caplog.at_level(logging.WARNING, logger="braindecode.models.base"):
+        result = model.load_state_dict(clean_state, strict=False)
+
+    assert result.missing_keys == []
+    assert result.unexpected_keys == []
+    assert not [r for r in caplog.records if "dropped" in r.message]
+
+
+def test_load_state_dict_strict_false_positional_arg(caplog):
+    """The positional form ``model.load_state_dict(sd, False)`` is handled like the kwarg form."""
+    import logging
+
+    model = _ShapeMismatchModel()
+    bad_state, mismatched_name = _make_shape_mismatched_state_dict(model)
+
+    with caplog.at_level(logging.WARNING, logger="braindecode.models.base"):
+        result = model.load_state_dict(bad_state, False)  # positional strict
+
+    assert mismatched_name in result.missing_keys
+    assert any("dropped" in rec.message for rec in caplog.records)
+
+
+def test_load_state_dict_preserves_mapping_then_drops(caplog):
+    """``mapping`` remapping still applies before the shape check."""
+    import logging
+
+    model = _ShapeMismatchModel()
+    # Pretend the checkpoint uses an old key name that the model wants to
+    # remap to ``linear.weight``.
+    model.__class__.mapping = {"old_linear.weight": "linear.weight"}
+    try:
+        sd = {
+            "old_linear.weight": model.state_dict()["linear.weight"][..., :-1],
+            "linear.bias": model.state_dict()["linear.bias"],
+        }
+        with caplog.at_level(logging.WARNING, logger="braindecode.models.base"):
+            result = model.load_state_dict(sd, strict=False)
+        # After remapping the offending key was "linear.weight"; it should
+        # land in missing_keys, and the warning should reference the
+        # post-remap name.
+        assert "linear.weight" in result.missing_keys
+        assert any("linear.weight" in rec.message for rec in caplog.records)
+    finally:
+        model.__class__.mapping = None
