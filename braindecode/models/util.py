@@ -38,6 +38,23 @@ def _is_jsonable(val):
 
 
 def _batch_norm_with_batch_size_one(batch_norm, x, training):
+    """Apply BatchNorm safely when training with a single sample.
+
+    Parameters
+    ----------
+    batch_norm : torch.nn.modules.batchnorm._BatchNorm
+        BatchNorm layer to apply.
+    x : torch.Tensor
+        Input tensor whose first dimension is the batch size.
+    training : bool
+        Whether the parent module is in training mode.
+
+    Returns
+    -------
+    torch.Tensor
+        Batch-normalized input. For ``batch_size == 1`` in training mode,
+        running statistics are used to avoid PyTorch's BatchNorm ValueError.
+    """
     if training and x.shape[0] == 1:
         return nn.functional.batch_norm(
             x,
@@ -46,6 +63,7 @@ def _batch_norm_with_batch_size_one(batch_norm, x, training):
             batch_norm.weight,
             batch_norm.bias,
             training=False,
+            momentum=batch_norm.momentum,
             eps=batch_norm.eps,
         )
     return batch_norm(x)
