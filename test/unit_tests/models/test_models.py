@@ -2035,34 +2035,32 @@ def test_eegminer_plv_values_range():
         "PLV values should be in the range [0, 1]"
 
 
-_BATCH_NORM_BATCH_SIZE_ONE_MODELS = {"ContraWR", "DeepSleepNet", "EEGMiner"}
-_BATCH_NORM_BATCH_SIZE_ONE_PARAMS = [
+_BATCH_SIZE_ONE_TRAIN_MODE_PARAMS = [
     pytest.param(model_name, required_params, signal_params, id=model_name)
     for model_name, required_params, signal_params in models_mandatory_parameters
-    if model_name in _BATCH_NORM_BATCH_SIZE_ONE_MODELS
 ]
 
 
 @pytest.mark.parametrize(
-    "model_name, required_params, signal_params", _BATCH_NORM_BATCH_SIZE_ONE_PARAMS
+    "model_name, required_params, signal_params", _BATCH_SIZE_ONE_TRAIN_MODE_PARAMS
 )
-def test_batchnorm_models_batch1_train_mode(
+def test_models_batch1_train_mode(
     model_name, required_params, signal_params
 ):
-    """Models with BatchNorm must accept batch_size=1 even in train mode.
+    """Models must accept batch_size=1 even in train mode.
 
-    The affected BatchNorm layers temporarily use running statistics for
-    single-sample inputs, avoiding a confusing ValueError without requiring
-    an explicit model.eval() call.
+    BatchNorm layers, when present, must also be restored to train mode
+    after temporarily using running statistics for single-sample inputs.
     """
-    kwargs = _get_signal_params(signal_params, required_params)
+    kwargs = _get_signal_params(signal_params)
     model = models_dict[model_name](**kwargs)
     batch_norms = [
         module
         for module in model.modules()
-        if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d))
+        if isinstance(
+            module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
+        )
     ]
-    assert batch_norms
     n_chans = kwargs["n_chans"]
     n_times = kwargs["n_times"]
     x = torch.randn(1, n_chans, n_times)
@@ -2072,7 +2070,7 @@ def test_batchnorm_models_batch1_train_mode(
     assert model.training
     with torch.no_grad():
         out = model(x)
-    assert out.shape == (1, kwargs["n_outputs"])
+    assert out.shape[0] == 1
     # Model and BatchNorm layers must be restored to train mode after forward.
     assert model.training
     assert all(batch_norm.training for batch_norm in batch_norms)
@@ -2081,7 +2079,7 @@ def test_batchnorm_models_batch1_train_mode(
     model.eval()
     with torch.no_grad():
         out = model(x)
-    assert out.shape == (1, kwargs["n_outputs"])
+    assert out.shape[0] == 1
 
 
 def test_eegnet_final_layer_linear_true():

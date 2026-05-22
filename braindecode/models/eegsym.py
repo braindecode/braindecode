@@ -11,6 +11,7 @@ from braindecode.datautil.channel_utils import (
     match_hemisphere_chans,
 )
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
 class EEGSym(EEGModuleMixin, nn.Module):
@@ -363,6 +364,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
         )
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):
         """Forward pass.
 
