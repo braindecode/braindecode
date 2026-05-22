@@ -571,6 +571,27 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             mismatches.  Mismatched tensors are dropped and reported via
             a single :func:`logging.warning`; the dropped keys are
             surfaced through ``missing_keys``.
+
+        Examples
+        --------
+        Load a pretrained checkpoint into a model whose head was
+        re-sized for a different downstream task -- mismatched tensors
+        are dropped and reported instead of raising:
+
+        >>> import logging, torch                            # doctest: +SKIP
+        >>> from braindecode.models import EEGNet            # doctest: +SKIP
+        >>> logging.basicConfig(level=logging.WARNING)       # doctest: +SKIP
+        >>> pretrained = EEGNet(n_chans=22, n_times=1000, n_outputs=4)
+        ...                                                  # doctest: +SKIP
+        >>> finetune = EEGNet(n_chans=22, n_times=1000, n_outputs=10)
+        ...                                                  # doctest: +SKIP
+        >>> missing = finetune.load_state_dict(              # doctest: +SKIP
+        ...     pretrained.state_dict(), strict=False
+        ... )
+        >>> # head weight/bias appear in missing_keys; the rest loaded.
+        >>> any("classifier" in k for k in missing.missing_keys)
+        ...                                                  # doctest: +SKIP
+        True
         """
         # Apply the legacy key remapping (unchanged behaviour).
         mapping = self.mapping if self.mapping else {}
