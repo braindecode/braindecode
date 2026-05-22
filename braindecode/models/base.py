@@ -524,7 +524,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         1. From PyTorch 2.1 onward, :pytorch:`torch.nn.Module.load_state_dict`
            raises ``RuntimeError`` on shape mismatch *even with*
-           ``strict=False`` — see pytorch/pytorch#92344.  Users who reach for
+           ``strict=False`` -- see pytorch/pytorch#92344.  Users who reach for
            ``strict=False`` to load partial pretrained weights (e.g. a
            backbone whose head will be re-initialised, or
            :class:`InterpolatedLaBraM` with a different fine-tune epoch
@@ -540,14 +540,37 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
         Behaviour summary:
 
-        * ``strict=True`` (the default) — unchanged: shape mismatches and
+        * ``strict=True`` (the default) -- unchanged: shape mismatches and
           missing/unexpected keys raise ``RuntimeError``.
-        * ``strict=False`` — shape-mismatched tensors are dropped (the
+        * ``strict=False`` -- shape-mismatched tensors are dropped (the
           corresponding model parameters keep their current values, i.e.
           stay at the freshly-initialised values) and a single
           ``logging.warning`` enumerates them.  Missing / unexpected keys
           continue to be returned via the standard ``_IncompatibleKeys``
           namedtuple.
+
+        Parameters
+        ----------
+        state_dict : Mapping[str, torch.Tensor]
+            The checkpoint state dict.  Entries whose value is not a tensor
+            (or otherwise has no ``.shape`` attribute) are left untouched and
+            passed through to PyTorch unchanged.
+        strict : bool, default True
+            Same semantics as :meth:`torch.nn.Module.load_state_dict`,
+            but with the relaxed shape-handling described above when set
+            to ``False``.  May be passed positionally.
+
+        Returns
+        -------
+        torch.nn.modules.module._IncompatibleKeys
+            Named tuple with ``missing_keys`` and ``unexpected_keys``.
+            Keys dropped by the shape check appear in ``missing_keys``.
+
+        .. versionchanged:: 1.6
+            ``strict=False`` no longer raises ``RuntimeError`` on shape
+            mismatches.  Mismatched tensors are dropped and reported via
+            a single :func:`logging.warning`; the dropped keys are
+            surfaced through ``missing_keys``.
         """
         # Apply the legacy key remapping (unchanged behaviour).
         mapping = self.mapping if self.mapping else {}
@@ -567,9 +590,19 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             own = self.state_dict()
             mismatched: list[tuple[str, tuple[int, ...], tuple[int, ...]]] = []
             for k in list(new_state_dict.keys()):
-                if k in own and new_state_dict[k].shape != own[k].shape:
+                if k not in own:
+                    # Unknown key -- let PyTorch surface it via unexpected_keys.
+                    continue
+                new_val = new_state_dict[k]
+                # Defensive: skip entries that are not tensor-like (e.g. some
+                # custom modules stash non-tensor metadata in state_dict).
+                # PyTorch's own type check will then handle them downstream.
+                new_shape = getattr(new_val, "shape", None)
+                if new_shape is None:
+                    continue
+                if tuple(new_shape) != tuple(own[k].shape):
                     mismatched.append(
-                        (k, tuple(new_state_dict[k].shape), tuple(own[k].shape))
+                        (k, tuple(new_shape), tuple(own[k].shape))
                     )
                     del new_state_dict[k]
             if mismatched:

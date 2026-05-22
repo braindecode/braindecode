@@ -578,8 +578,6 @@ def test_load_state_dict_strict_false_drops_shape_mismatched(caplog):
 
 def test_load_state_dict_strict_true_still_raises_on_shape_mismatch():
     """strict=True must keep its existing RuntimeError contract."""
-    import torch
-
     model = _ShapeMismatchModel()
     bad_state, _ = _make_shape_mismatched_state_dict(model)
 
@@ -638,3 +636,77 @@ def test_load_state_dict_preserves_mapping_then_drops(caplog):
         assert any("linear.weight" in rec.message for rec in caplog.records)
     finally:
         model.__class__.mapping = None
+
+
+def test_load_state_dict_strict_false_preserves_unexpected_keys(caplog):
+    """Keys present in the checkpoint but absent from the model are still
+    reported through ``unexpected_keys`` (PyTorch contract), not dropped by
+    the shape-check pass.
+    """
+    import logging
+    import torch
+
+    model = _ShapeMismatchModel()
+    sd = dict(model.state_dict())
+    sd["extra.unused.weight"] = torch.zeros(3, 3)
+
+    with caplog.at_level(logging.WARNING, logger="braindecode.models.base"):
+        result = model.load_state_dict(sd, strict=False)
+
+    assert "extra.unused.weight" in result.unexpected_keys
+    # No shape-mismatch warning should fire here.
+    assert not [r for r in caplog.records if "dropped" in r.message]
+
+
+def test_load_state_dict_strict_false_multiple_mismatches_in_one_warning(caplog):
+    """A single ``logging.warning`` enumerates every dropped tensor,
+    rather than emitting one warning per key.
+    """
+    import logging
+    import torch
+
+    model = _ShapeMismatchModel()
+    sd = dict(model.state_dict())
+    sd["linear.weight"] = torch.zeros_like(sd["linear.weight"])[..., :-1]
+    sd["linear.bias"] = torch.zeros_like(sd["linear.bias"])[:-1]
+
+    with caplog.at_level(logging.WARNING, logger="braindecode.models.base"):
+        model.load_state_dict(sd, strict=False)
+
+    drop_records = [r for r in caplog.records if "dropped" in r.message]
+    assert len(drop_records) == 1
+    msg = drop_records[0].message
+    assert "linear.weight" in msg
+    assert "linear.bias" in msg
+    assert "2 tensor(s)" in msg
+
+
+def test_load_state_dict_strict_false_drops_buffer_mismatch(caplog):
+    """Registered buffers (non-parameter tensors) follow the same
+    shape-mismatch drop semantics as parameters.
+    """
+    import logging
+    import torch
+
+    model = _ShapeMismatchModel()
+    model.register_buffer("position_table", torch.zeros(10, 4))
+
+    sd = dict(model.state_dict())
+    sd["position_table"] = torch.zeros(5, 4)  # wrong shape on the buffer
+
+    with caplog.at_level(logging.WARNING, logger="braindecode.models.base"):
+        result = model.load_state_dict(sd, strict=False)
+
+    assert "position_table" in result.missing_keys
+    assert any("position_table" in rec.message for rec in caplog.records)
+
+
+def test_load_state_dict_strict_false_default_strict_is_true(caplog):
+    """Sanity: omitting ``strict`` keeps the default True path -- a shape
+    mismatch must still raise instead of silently dropping.
+    """
+    model = _ShapeMismatchModel()
+    bad_state, _ = _make_shape_mismatched_state_dict(model)
+
+    with pytest.raises(RuntimeError, match=r"size mismatch"):
+        model.load_state_dict(bad_state)  # default strict=True

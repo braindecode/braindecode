@@ -31,7 +31,17 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- :meth:`braindecode.models.base.EEGModuleMixin.load_state_dict` now relaxes
+  PyTorch's ``strict=False`` semantics: tensors whose checkpoint shape does
+  not match the current model are dropped before being handed to PyTorch,
+  a single :func:`logging.warning` enumerates them, and the dropped keys
+  are surfaced via the standard ``missing_keys`` list.  ``strict=True``
+  (the default) is unchanged and still raises ``RuntimeError`` on any
+  mismatch.  This restores the pre-PyTorch-2.1 "load whatever pretrained
+  weights fit and re-init the rest" workflow as a one-liner -- in
+  particular it makes :class:`~braindecode.models.InterpolatedLaBraM`
+  fine-tunable across epoch lengths without a hand-written pre-filter
+  (see `pytorch/pytorch#92344`_) (by `Arsenii Boichenko`_).
 
 Requirements
 ============
@@ -1217,3 +1227,6 @@ Authors
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
 .. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
+.. _Arsenii Boichenko: https://github.com/ArseniiB-o
+
+.. _pytorch/pytorch#92344: https://github.com/pytorch/pytorch/issues/92344
