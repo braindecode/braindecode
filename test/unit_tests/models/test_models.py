@@ -2062,26 +2062,32 @@ def test_eegminer_plv_values_range():
 def test_batchnorm_models_batch1_train_mode(model_cls, kwargs):
     """Models with BatchNorm must accept batch_size=1 even in train mode.
 
-    The forward method temporarily switches to eval mode when batch_size==1
-    so that BatchNorm uses running statistics, avoiding a confusing
-    ValueError when performing single-sample inference without an explicit
-    model.eval() call.
+    The affected BatchNorm layers temporarily use running statistics for
+    single-sample inputs, avoiding a confusing ValueError without requiring
+    an explicit model.eval() call.
     """
     model = model_cls(**kwargs)
+    batch_norms = [
+        module
+        for module in model.modules()
+        if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d))
+    ]
+    assert batch_norms
     n_chans = kwargs["n_chans"]
     n_times = kwargs["n_times"]
     x = torch.randn(1, n_chans, n_times)
 
-    # In train mode with batch_size=1 — must not raise.
+    # In train mode with batch_size=1, this must not raise.
     model.train()
     assert model.training
     with torch.no_grad():
         out = model(x)
     assert out.shape == (1, kwargs["n_outputs"])
-    # Model must be restored to train mode after forward.
+    # Model and BatchNorm layers must be restored to train mode after forward.
     assert model.training
+    assert all(batch_norm.training for batch_norm in batch_norms)
 
-    # In eval mode with batch_size=1 — must also work.
+    # In eval mode with batch_size=1, this must also work.
     model.eval()
     with torch.no_grad():
         out = model(x)

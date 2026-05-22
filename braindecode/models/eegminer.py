@@ -13,7 +13,7 @@ from torch import nn
 
 import braindecode.functional as F
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _batch_norm_with_batch_size_one
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import GeneralizedGaussianFilter
 
 _eeg_miner_methods = ["mag", "corr", "plv"]
@@ -192,6 +192,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(self.n_features, self.n_outputs)
         nn.init.zeros_(self.final_layer.bias)
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):
         """x: (batch, electrodes, time)"""
         batch = x.shape[0]
@@ -205,7 +206,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         # Note that the order of dimensions before flattening the feature vector is important
         # for attributing feature weights during interpretation.
         x = x.reshape(batch, self.n_features)
-        x = _batch_norm_with_batch_size_one(self.batch_layer, x, self.training)
+        x = self.batch_layer(x)
         x = self.final_layer(x)
 
         return x

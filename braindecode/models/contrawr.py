@@ -5,10 +5,7 @@ import torch.nn as nn
 from mne.utils import warn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import (
-    _batch_norm_with_batch_size_one,
-    _sequential_with_batch_norm,
-)
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
 class ContraWR(EEGModuleMixin, nn.Module):
@@ -126,6 +123,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         self.activation_layer = activation()
         self.final_layer = nn.Linear(emb_size, self.n_outputs)
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
@@ -249,12 +247,12 @@ class _ResBlock(nn.Module):
             Output tensor of shape (batch_size, n_channels, n_freqs, n_times).
         """
         out = self.conv1(x)
-        out = _batch_norm_with_batch_size_one(self.bn1, out, self.training)
+        out = self.bn1(out)
         out = self.relu(out)
         out = self.conv2(out)
-        out = _batch_norm_with_batch_size_one(self.bn2, out, self.training)
+        out = self.bn2(out)
         if self.use_downsampling:
-            residual = _sequential_with_batch_norm(self.downsample, x, self.training)
+            residual = self.downsample(x)
             out += residual
         if self.pooling:
             out = self.maxpool(out)

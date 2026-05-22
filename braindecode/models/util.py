@@ -24,6 +24,35 @@ _EEG_PARAMS = frozenset(
 )
 
 _JSON_SAFE = (int, float, str, bool, type(None))
+_BATCH_NORM_MODULES = (
+    nn.BatchNorm1d,
+    nn.BatchNorm2d,
+    nn.BatchNorm3d,
+    nn.SyncBatchNorm,
+)
+
+
+def _disable_batch_norm_training_if_batch_size_one(forward):
+    """Temporarily set BatchNorm layers to train(False) for batch size one."""
+
+    @wraps(forward)
+    def wrapped(self, x, *args, **kwargs):
+        batch_norms = []
+        if self.training and x.shape[0] == 1:
+            batch_norms = [
+                layer
+                for layer in self.modules()
+                if isinstance(layer, _BATCH_NORM_MODULES) and layer.training
+            ]
+            for batch_norm in batch_norms:
+                batch_norm.train(False)
+        try:
+            return forward(self, x, *args, **kwargs)
+        finally:
+            for batch_norm in batch_norms:
+                batch_norm.train(True)
+
+    return wrapped
 
 
 def _is_jsonable(val):
@@ -35,66 +64,6 @@ def _is_jsonable(val):
     if isinstance(val, dict):
         return all(isinstance(k, str) and _is_jsonable(v) for k, v in val.items())
     return False
-
-
-def _batch_norm_with_batch_size_one(batch_norm, x, training):
-    """Apply BatchNorm safely when training with a single sample.
-
-    Parameters
-    ----------
-    batch_norm : torch.nn.modules.batchnorm._BatchNorm
-        BatchNorm layer to apply.
-    x : torch.Tensor
-        Input tensor whose first dimension is the batch size.
-    training : bool
-        Whether the parent module is in training mode.
-
-    Returns
-    -------
-    torch.Tensor
-        Batch-normalized input. For ``batch_size == 1`` in training mode,
-        running statistics are used to avoid PyTorch's BatchNorm ValueError.
-    """
-    if training and x.shape[0] == 1:
-        return nn.functional.batch_norm(
-            x,
-            batch_norm.running_mean,
-            batch_norm.running_var,
-            batch_norm.weight,
-            batch_norm.bias,
-            training=False,
-            momentum=batch_norm.momentum,
-            eps=batch_norm.eps,
-        )
-    return batch_norm(x)
-
-
-def _sequential_with_batch_norm(sequence, x, training):
-    """Apply a sequential module using safe BatchNorm for single samples.
-
-    Parameters
-    ----------
-    sequence : torch.nn.Sequential
-        Sequential module to apply.
-    x : torch.Tensor
-        Input tensor to pass through the sequence.
-    training : bool
-        Whether the parent module is in training mode.
-
-    Returns
-    -------
-    torch.Tensor
-        Output of the sequential module. Any BatchNorm layer inside the
-        sequence uses running statistics for ``batch_size == 1`` in train mode.
-    """
-    for layer in sequence:
-        if isinstance(
-            layer, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
-        ):
-            x = _batch_norm_with_batch_size_one(layer, x, training)
-        else:
-            x = layer(x)
-    return x
 
 
 def track_model_init_kwargs(cls) -> None:
