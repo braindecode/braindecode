@@ -69,6 +69,7 @@ from braindecode.models.eegpt import (
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
+    _get_possible_signal_params,
     _get_signal_params,
     models_dict,
     models_mandatory_parameters,
@@ -2052,8 +2053,9 @@ def test_models_batch1_train_mode(
     BatchNorm layers, when present, must also be restored to train mode
     after temporarily using running statistics for single-sample inputs.
     """
-    kwargs = _get_signal_params(signal_params)
-    model = models_dict[model_name](**kwargs)
+    sp = _get_signal_params(signal_params)
+    model_kwargs = _get_possible_signal_params(sp, required_params)[0]
+    model = models_dict[model_name](**model_kwargs)
     batch_norms = [
         module
         for module in model.modules()
@@ -2061,9 +2063,7 @@ def test_models_batch1_train_mode(
             module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
         )
     ]
-    n_chans = kwargs["n_chans"]
-    n_times = kwargs["n_times"]
-    x = torch.randn(1, n_chans, n_times)
+    x = torch.randn(1, sp["n_chans"], sp["n_times"])
 
     # In train mode with batch_size=1, this must not raise.
     model.train()

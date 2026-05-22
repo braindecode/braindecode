@@ -12,6 +12,7 @@ from typing import Any, Dict, Literal, Optional, Sequence
 import numpy as np
 import pandas as pd
 import pydantic
+import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
 from torch import nn
 
 models_dict = {}

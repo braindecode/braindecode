@@ -45,9 +45,9 @@ Bug fixes
   :class:`~braindecode.models.DeepSleepNet`, and
   :class:`~braindecode.models.EEGMiner` raising a confusing
   :class:`ValueError` on ``batch_size=1`` forward passes in train mode due to
-  :class:`~torch.nn.BatchNorm` requiring more than one sample per channel
-  during training.  The affected BatchNorm layers now use running statistics
-  when ``batch_size == 1`` in train mode.
+  :class:`~torch.nn.BatchNorm1d` (and its 2D/3D variants) requiring more than
+  one sample per channel during training.  The affected BatchNorm layers now
+  use running statistics when ``batch_size == 1`` in train mode.
   By `Bruno Aristimunha`_.
 
 Code health
