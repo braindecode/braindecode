@@ -37,7 +37,12 @@ def _is_jsonable(val):
 
 
 def track_model_init_kwargs(cls) -> None:
-    """Instrument a model class so constructor kwargs are tracked."""
+    """Instrument a model class so constructor kwargs are tracked.
+
+    Also switches the model to eval mode after the outermost ``__init__``
+    returns, matching the HuggingFace/Lightning convention.  Users who want
+    to train the model must call ``model.train()`` explicitly.
+    """
     init = cls.__init__
     if getattr(init, "_braindecode_tracks_init_kwargs", False):
         return
@@ -59,7 +64,21 @@ def track_model_init_kwargs(cls) -> None:
             elif param.kind != param.VAR_POSITIONAL:
                 captured_kwargs[name] = value
         self._braindecode_init_kwargs = captured_kwargs
-        return init(self, *args, **kwargs)
+
+        # Detect the outermost __init__ call so that intermediate base-class
+        # wrappers (e.g. _BaseSignalJEPA inside SignalJEPA) do not call
+        # self.eval() before the full model is assembled.
+        is_top_level = not self.__dict__.get("_braindecode_initializing", False)
+        if is_top_level:
+            self.__dict__["_braindecode_initializing"] = True
+        try:
+            result = init(self, *args, **kwargs)
+            if is_top_level:
+                self.eval()
+            return result
+        finally:
+            if is_top_level:
+                self.__dict__.pop("_braindecode_initializing", None)
 
     setattr(wrapped, "_braindecode_tracks_init_kwargs", True)
     cls.__init__ = wrapped

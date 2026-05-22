@@ -2030,6 +2030,55 @@ def test_eegminer_plv_values_range():
         "PLV values should be in the range [0, 1]"
 
 
+@pytest.mark.parametrize(
+    "model_cls, kwargs",
+    [
+        (
+            ContraWR,
+            dict(n_chans=22, n_outputs=4, n_times=1000, sfreq=200.0),
+        ),
+        (
+            DeepSleepNet,
+            dict(n_chans=1, n_outputs=5, n_times=3000),
+        ),
+        (
+            EEGMiner,
+            dict(n_chans=8, n_outputs=2, n_times=256, sfreq=100.0),
+        ),
+    ],
+)
+def test_batchnorm_models_batch1_default_mode(model_cls, kwargs):
+    """Models with BatchNorm must accept batch_size=1 in their default mode.
+
+    All braindecode models are switched to eval mode after construction so
+    that BatchNorm uses running statistics instead of batch statistics.
+    This avoids a confusing ValueError when performing a single-sample
+    forward pass without an explicit model.eval() call.
+    """
+    model = model_cls(**kwargs)
+    assert not model.training, (
+        f"{model_cls.__name__} should be in eval mode after construction"
+    )
+    n_chans = kwargs["n_chans"]
+    n_times = kwargs["n_times"]
+    x = torch.randn(1, n_chans, n_times)
+    with torch.no_grad():
+        out = model(x)
+    assert out.shape == (1, kwargs["n_outputs"])
+
+
+def test_eegmodule_starts_in_eval_mode():
+    """All braindecode models should start in eval mode after construction."""
+    model = EEGNet(n_chans=4, n_times=128, n_outputs=2)
+    assert not model.training, "EEGNet should be in eval mode after construction"
+    # Verify .train() puts it back in train mode
+    model.train()
+    assert model.training
+    # Verify .eval() puts it back in eval mode
+    model.eval()
+    assert not model.training
+
+
 def test_eegnet_final_layer_linear_true():
     """Test that final_layer_linear=True uses a conv-based classifier without warning."""
     model = EEGNet(

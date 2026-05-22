@@ -31,7 +31,16 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- All :class:`~braindecode.models.base.EEGModuleMixin` models now switch to
+  **eval mode** automatically after construction (matching the HuggingFace /
+  Lightning convention).  Call ``model.train()`` explicitly before training.
+  This fixes a confusing :class:`ValueError` that was raised by
+  :class:`~braindecode.models.ContraWR`,
+  :class:`~braindecode.models.DeepSleepNet`, and
+  :class:`~braindecode.models.EEGMiner` when performing a forward pass with
+  ``batch_size=1`` in the default (train) mode due to :class:`~torch.nn.BatchNorm`
+  requiring more than one sample per channel during training.
+  By `@copilot <https://github.com/apps/copilot>`_.
 
 Requirements
 ============
@@ -41,7 +50,13 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- Fix :class:`~braindecode.models.ContraWR`,
+  :class:`~braindecode.models.DeepSleepNet`, and
+  :class:`~braindecode.models.EEGMiner` raising a confusing
+  :class:`ValueError` on ``batch_size=1`` forward passes due to
+  :class:`~torch.nn.BatchNorm` in train mode.  All braindecode models now
+  start in eval mode after construction.
+  By `@copilot <https://github.com/apps/copilot>`_.
 
 Code health
 ============
