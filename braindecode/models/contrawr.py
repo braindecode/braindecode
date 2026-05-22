@@ -5,7 +5,10 @@ import torch.nn as nn
 from mne.utils import warn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _batch_norm_with_batch_size_one
+from braindecode.models.util import (
+    _batch_norm_with_batch_size_one,
+    _sequential_with_batch_norm,
+)
 
 
 class ContraWR(EEGModuleMixin, nn.Module):
@@ -251,10 +254,7 @@ class _ResBlock(nn.Module):
         out = self.conv2(out)
         out = _batch_norm_with_batch_size_one(self.bn2, out, self.training)
         if self.use_downsampling:
-            residual = self.downsample[0](x)
-            residual = _batch_norm_with_batch_size_one(
-                self.downsample[1], residual, self.training
-            )
+            residual = _sequential_with_batch_norm(self.downsample, x, self.training)
             out += residual
         if self.pooling:
             out = self.maxpool(out)

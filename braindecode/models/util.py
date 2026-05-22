@@ -69,6 +69,18 @@ def _batch_norm_with_batch_size_one(batch_norm, x, training):
     return batch_norm(x)
 
 
+def _sequential_with_batch_norm(sequence, x, training):
+    """Apply a sequential module using safe BatchNorm for single samples."""
+    for layer in sequence:
+        if isinstance(
+            layer, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
+        ):
+            x = _batch_norm_with_batch_size_one(layer, x, training)
+        else:
+            x = layer(x)
+    return x
+
+
 def track_model_init_kwargs(cls) -> None:
     """Instrument a model class so constructor kwargs are tracked."""
     init = cls.__init__

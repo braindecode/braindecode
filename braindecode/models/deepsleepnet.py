@@ -7,7 +7,7 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import _batch_norm_with_batch_size_one
+from braindecode.models.util import _sequential_with_batch_norm
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
@@ -298,11 +298,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         x2 = self.flatten_cnn(self.cnn2(x))
 
         x = self.dropout(torch.cat((x1, x2), dim=1))
-        residual = self.residual_shortcut[0](x)
-        residual = _batch_norm_with_batch_size_one(
-            self.residual_shortcut[1], residual, self.training
-        )
-        residual = self.residual_shortcut[2](residual)
+        residual = _sequential_with_batch_norm(self.residual_shortcut, x, self.training)
         x, _ = self.bilstm(self.add_seq_dim(x))
         x = self.remove_seq_dim(x)
         x = self.dropout(x + residual)
@@ -473,18 +469,10 @@ class _CNNPath(nn.Module):
         )
 
     def forward(self, x):
-        x = self.conv1[0](x)
-        x = _batch_norm_with_batch_size_one(self.conv1[1], x, self.training)
-        x = self.conv1[2](x)
+        x = _sequential_with_batch_norm(self.conv1, x, self.training)
         x = self.dropout(self.pool1(x))
-        x = self.conv2[0](x)
-        x = _batch_norm_with_batch_size_one(self.conv2[1], x, self.training)
-        x = self.conv2[2](x)
-        x = self.conv3[0](x)
-        x = _batch_norm_with_batch_size_one(self.conv3[1], x, self.training)
-        x = self.conv3[2](x)
-        x = self.conv4[0](x)
-        x = _batch_norm_with_batch_size_one(self.conv4[1], x, self.training)
-        x = self.conv4[2](x)
+        x = _sequential_with_batch_norm(self.conv2, x, self.training)
+        x = _sequential_with_batch_norm(self.conv3, x, self.training)
+        x = _sequential_with_batch_norm(self.conv4, x, self.training)
         x = self.pool2(x)
         return x
