@@ -46,9 +46,8 @@ Bug fixes
   :class:`~braindecode.models.EEGMiner` raising a confusing
   :class:`ValueError` on ``batch_size=1`` forward passes in train mode due to
   :class:`~torch.nn.BatchNorm` requiring more than one sample per channel
-  during training.  Each model's ``forward`` now temporarily switches to eval
-  mode when ``batch_size == 1`` so that BatchNorm uses running statistics,
-  restoring the original training mode afterwards.
+  during training.  The affected BatchNorm layers now use running statistics
+  when ``batch_size == 1`` in train mode.
   By `@copilot <https://github.com/apps/copilot>`_.
 
 Code health

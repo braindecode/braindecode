@@ -135,23 +135,16 @@ class ContraWR(EEGModuleMixin, nn.Module):
         Tensor
             Output tensor of shape (batch_size, n_outputs).
         """
-        temporarily_eval = self.training and X.shape[0] == 1
-        if temporarily_eval:
-            self.eval()
-        try:
-            X = self.torch_stft(X)
+        X = self.torch_stft(X)
 
-            for conv in self.convs:
-                X = conv.forward(X)
+        for conv in self.convs:
+            X = conv.forward(X)
 
-            emb = self.adaptative_pool(X)
-            emb = self.flatten_layer(emb)
-            emb = self.activation_layer(emb)
+        emb = self.adaptative_pool(X)
+        emb = self.flatten_layer(emb)
+        emb = self.activation_layer(emb)
 
-            return self.final_layer(emb)
-        finally:
-            if temporarily_eval:
-                self.train()
+        return self.final_layer(emb)
 
 
 class _ResBlock(nn.Module):
@@ -252,17 +245,31 @@ class _ResBlock(nn.Module):
             Output tensor of shape (batch_size, n_channels, n_freqs, n_times).
         """
         out = self.conv1(x)
-        out = self.bn1(out)
+        out = self._batch_norm(self.bn1, out)
         out = self.relu(out)
         out = self.conv2(out)
-        out = self.bn2(out)
+        out = self._batch_norm(self.bn2, out)
         if self.use_downsampling:
-            residual = self.downsample(x)
+            residual = self.downsample[0](x)
+            residual = self._batch_norm(self.downsample[1], residual)
             out += residual
         if self.pooling:
             out = self.maxpool(out)
         out = self.dropout(out)
         return out
+
+    def _batch_norm(self, batch_norm, x):
+        if self.training and x.shape[0] == 1:
+            return nn.functional.batch_norm(
+                x,
+                batch_norm.running_mean,
+                batch_norm.running_var,
+                batch_norm.weight,
+                batch_norm.bias,
+                training=False,
+                eps=batch_norm.eps,
+            )
+        return batch_norm(x)
 
 
 class _STFTModule(nn.Module):

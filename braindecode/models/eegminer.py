@@ -193,28 +193,32 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
     def forward(self, x):
         """x: (batch, electrodes, time)"""
-        temporarily_eval = self.training and x.shape[0] == 1
-        if temporarily_eval:
-            self.eval()
-        try:
-            batch = x.shape[0]
-            x = self.ensure_dim(x)
-            # Apply Gaussian filters in frequency domain
-            # x -> (batch, electrodes * filters, time)
-            x = self.filter(x)
+        batch = x.shape[0]
+        x = self.ensure_dim(x)
+        # Apply Gaussian filters in frequency domain
+        # x -> (batch, electrodes * filters, time)
+        x = self.filter(x)
 
-            x = self.method_forward(x=x, batch=batch)
-            # Classifier
-            # Note that the order of dimensions before flattening the feature vector is important
-            # for attributing feature weights during interpretation.
-            x = x.reshape(batch, self.n_features)
+        x = self.method_forward(x=x, batch=batch)
+        # Classifier
+        # Note that the order of dimensions before flattening the feature vector is important
+        # for attributing feature weights during interpretation.
+        x = x.reshape(batch, self.n_features)
+        if self.training and batch == 1:
+            x = nn.functional.batch_norm(
+                x,
+                self.batch_layer.running_mean,
+                self.batch_layer.running_var,
+                self.batch_layer.weight,
+                self.batch_layer.bias,
+                training=False,
+                eps=self.batch_layer.eps,
+            )
+        else:
             x = self.batch_layer(x)
-            x = self.final_layer(x)
+        x = self.final_layer(x)
 
-            return x
-        finally:
-            if temporarily_eval:
-                self.train()
+        return x
 
     @staticmethod
     def _apply_mag_forward(x, batch=None):
