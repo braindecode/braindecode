@@ -70,7 +70,23 @@ def _batch_norm_with_batch_size_one(batch_norm, x, training):
 
 
 def _sequential_with_batch_norm(sequence, x, training):
-    """Apply a sequential module using safe BatchNorm for single samples."""
+    """Apply a sequential module using safe BatchNorm for single samples.
+
+    Parameters
+    ----------
+    sequence : torch.nn.Sequential
+        Sequential module to apply.
+    x : torch.Tensor
+        Input tensor to pass through the sequence.
+    training : bool
+        Whether the parent module is in training mode.
+
+    Returns
+    -------
+    torch.Tensor
+        Output of the sequential module. Any BatchNorm layer inside the
+        sequence uses running statistics for ``batch_size == 1`` in train mode.
+    """
     for layer in sequence:
         if isinstance(
             layer, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
