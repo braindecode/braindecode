@@ -48,7 +48,7 @@ Bug fixes
   :class:`~torch.nn.BatchNorm` requiring more than one sample per channel
   during training.  The affected BatchNorm layers now use running statistics
   when ``batch_size == 1`` in train mode.
-  By `@copilot <https://github.com/apps/copilot>`_.
+  By `Bruno Aristimunha`_.
 
 Code health
 ============
