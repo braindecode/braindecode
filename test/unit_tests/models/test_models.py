@@ -68,6 +68,11 @@ from braindecode.models.eegpt import (
     _rotate_half,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.util import (
+    _get_signal_params,
+    models_dict,
+    models_mandatory_parameters,
+)
 from braindecode.util import set_random_seeds
 
 
@@ -2030,43 +2035,28 @@ def test_eegminer_plv_values_range():
         "PLV values should be in the range [0, 1]"
 
 
+_BATCH_NORM_BATCH_SIZE_ONE_MODELS = {"ContraWR", "DeepSleepNet", "EEGMiner"}
+_BATCH_NORM_BATCH_SIZE_ONE_PARAMS = [
+    pytest.param(model_name, required_params, signal_params, id=model_name)
+    for model_name, required_params, signal_params in models_mandatory_parameters
+    if model_name in _BATCH_NORM_BATCH_SIZE_ONE_MODELS
+]
+
+
 @pytest.mark.parametrize(
-    "model_cls, kwargs",
-    [
-        (
-            ContraWR,
-            dict(n_chans=22, n_outputs=4, n_times=1000, sfreq=200.0),
-        ),
-        (
-            ContraWR,
-            dict(n_chans=8, n_outputs=2, n_times=1000, sfreq=200.0),
-        ),
-        (
-            DeepSleepNet,
-            dict(n_chans=1, n_outputs=5, n_times=3000),
-        ),
-        (
-            DeepSleepNet,
-            dict(n_chans=1, n_outputs=2, n_times=3000),
-        ),
-        (
-            EEGMiner,
-            dict(n_chans=8, n_outputs=2, n_times=256, sfreq=100.0),
-        ),
-        (
-            EEGMiner,
-            dict(n_chans=4, n_outputs=3, n_times=256, sfreq=100.0),
-        ),
-    ],
+    "model_name, required_params, signal_params", _BATCH_NORM_BATCH_SIZE_ONE_PARAMS
 )
-def test_batchnorm_models_batch1_train_mode(model_cls, kwargs):
+def test_batchnorm_models_batch1_train_mode(
+    model_name, required_params, signal_params
+):
     """Models with BatchNorm must accept batch_size=1 even in train mode.
 
     The affected BatchNorm layers temporarily use running statistics for
     single-sample inputs, avoiding a confusing ValueError without requiring
     an explicit model.eval() call.
     """
-    model = model_cls(**kwargs)
+    kwargs = _get_signal_params(signal_params, required_params)
+    model = models_dict[model_name](**kwargs)
     batch_norms = [
         module
         for module in model.modules()
