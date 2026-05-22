@@ -135,16 +135,23 @@ class ContraWR(EEGModuleMixin, nn.Module):
         Tensor
             Output tensor of shape (batch_size, n_outputs).
         """
-        X = self.torch_stft(X)
+        switch_back = self.training and X.shape[0] == 1
+        if switch_back:
+            self.eval()
+        try:
+            X = self.torch_stft(X)
 
-        for conv in self.convs:
-            X = conv.forward(X)
+            for conv in self.convs:
+                X = conv.forward(X)
 
-        emb = self.adaptative_pool(X)
-        emb = self.flatten_layer(emb)
-        emb = self.activation_layer(emb)
+            emb = self.adaptative_pool(X)
+            emb = self.flatten_layer(emb)
+            emb = self.activation_layer(emb)
 
-        return self.final_layer(emb)
+            return self.final_layer(emb)
+        finally:
+            if switch_back:
+                self.train()
 
 
 class _ResBlock(nn.Module):

@@ -193,21 +193,28 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
     def forward(self, x):
         """x: (batch, electrodes, time)"""
-        batch = x.shape[0]
-        x = self.ensure_dim(x)
-        # Apply Gaussian filters in frequency domain
-        # x -> (batch, electrodes * filters, time)
-        x = self.filter(x)
+        switch_back = self.training and x.shape[0] == 1
+        if switch_back:
+            self.eval()
+        try:
+            batch = x.shape[0]
+            x = self.ensure_dim(x)
+            # Apply Gaussian filters in frequency domain
+            # x -> (batch, electrodes * filters, time)
+            x = self.filter(x)
 
-        x = self.method_forward(x=x, batch=batch)
-        # Classifier
-        # Note that the order of dimensions before flattening the feature vector is important
-        # for attributing feature weights during interpretation.
-        x = x.reshape(batch, self.n_features)
-        x = self.batch_layer(x)
-        x = self.final_layer(x)
+            x = self.method_forward(x=x, batch=batch)
+            # Classifier
+            # Note that the order of dimensions before flattening the feature vector is important
+            # for attributing feature weights during interpretation.
+            x = x.reshape(batch, self.n_features)
+            x = self.batch_layer(x)
+            x = self.final_layer(x)
 
-        return x
+            return x
+        finally:
+            if switch_back:
+                self.train()
 
     @staticmethod
     def _apply_mag_forward(x, batch=None):

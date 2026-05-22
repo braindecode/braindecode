@@ -290,19 +290,26 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         )
 
     def forward(self, x):
-        if x.ndim == 3:
-            x = x.unsqueeze(1)
+        switch_back = self.training and x.shape[0] == 1
+        if switch_back:
+            self.eval()
+        try:
+            if x.ndim == 3:
+                x = x.unsqueeze(1)
 
-        x1 = self.flatten_cnn(self.cnn1(x))
-        x2 = self.flatten_cnn(self.cnn2(x))
+            x1 = self.flatten_cnn(self.cnn1(x))
+            x2 = self.flatten_cnn(self.cnn2(x))
 
-        x = self.dropout(torch.cat((x1, x2), dim=1))
-        residual = self.residual_shortcut(x)
-        x, _ = self.bilstm(self.add_seq_dim(x))
-        x = self.remove_seq_dim(x)
-        x = self.dropout(x + residual)
+            x = self.dropout(torch.cat((x1, x2), dim=1))
+            residual = self.residual_shortcut(x)
+            x, _ = self.bilstm(self.add_seq_dim(x))
+            x = self.remove_seq_dim(x)
+            x = self.dropout(x + residual)
 
-        return self.final_layer(self.features_extractor(x))
+            return self.final_layer(self.features_extractor(x))
+        finally:
+            if switch_back:
+                self.train()
 
 
 def _conv_out(width, kernel_stride_padding):
