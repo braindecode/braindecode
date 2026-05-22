@@ -193,8 +193,8 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
     def forward(self, x):
         """x: (batch, electrodes, time)"""
-        switch_back = self.training and x.shape[0] == 1
-        if switch_back:
+        temporarily_eval = self.training and x.shape[0] == 1
+        if temporarily_eval:
             self.eval()
         try:
             batch = x.shape[0]
@@ -213,7 +213,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
             return x
         finally:
-            if switch_back:
+            if temporarily_eval:
                 self.train()
 
     @staticmethod

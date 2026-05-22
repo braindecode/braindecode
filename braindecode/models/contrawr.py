@@ -135,8 +135,8 @@ class ContraWR(EEGModuleMixin, nn.Module):
         Tensor
             Output tensor of shape (batch_size, n_outputs).
         """
-        switch_back = self.training and X.shape[0] == 1
-        if switch_back:
+        temporarily_eval = self.training and X.shape[0] == 1
+        if temporarily_eval:
             self.eval()
         try:
             X = self.torch_stft(X)
@@ -150,7 +150,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
             return self.final_layer(emb)
         finally:
-            if switch_back:
+            if temporarily_eval:
                 self.train()
 
 

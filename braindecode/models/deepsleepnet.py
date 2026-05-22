@@ -290,8 +290,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         )
 
     def forward(self, x):
-        switch_back = self.training and x.shape[0] == 1
-        if switch_back:
+        temporarily_eval = self.training and x.shape[0] == 1
+        if temporarily_eval:
             self.eval()
         try:
             if x.ndim == 3:
@@ -308,7 +308,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
             return self.final_layer(self.features_extractor(x))
         finally:
-            if switch_back:
+            if temporarily_eval:
                 self.train()
 
 
