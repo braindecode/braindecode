@@ -68,6 +68,12 @@ from braindecode.models.eegpt import (
     _rotate_half,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.util import (
+    _get_possible_signal_params,
+    _get_signal_params,
+    models_dict,
+    models_mandatory_parameters,
+)
 from braindecode.util import set_random_seeds
 
 
@@ -2028,6 +2034,63 @@ def test_eegminer_plv_values_range():
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
         "PLV values should be in the range [0, 1]"
+
+
+_BATCH_SIZE_ONE_TRAIN_MODE_PARAMS = [
+    pytest.param(model_name, required_params, signal_params, id=model_name)
+    for model_name, required_params, signal_params in models_mandatory_parameters
+]
+
+
+@pytest.mark.parametrize(
+    "model_name, required_params, signal_params", _BATCH_SIZE_ONE_TRAIN_MODE_PARAMS
+)
+def test_models_batch1_train_mode(
+    model_name, required_params, signal_params
+):
+    """Models must accept batch_size=1 even in train mode.
+
+    BatchNorm layers, when present, must also be restored to train mode
+    after temporarily using running statistics for single-sample inputs.
+    """
+    sp = _get_signal_params(signal_params)
+    model_kwargs = _get_possible_signal_params(sp, required_params)[0]
+    model = models_dict[model_name](**model_kwargs)
+    batch_norms = [
+        module
+        for module in model.modules()
+        if isinstance(
+            module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
+        )
+    ]
+    x = torch.randn(1, sp["n_chans"], sp["n_times"])
+
+    # In train mode with batch_size=1, this must not raise.
+    model.train()
+    assert model.training
+    with torch.no_grad():
+        out = model(x)
+    assert out.shape[0] == 1
+    # Model and BatchNorm layers must be restored to train mode after forward.
+    assert model.training
+    assert all(batch_norm.training for batch_norm in batch_norms)
+
+    # In eval mode with batch_size=1, this must also work.
+    model.eval()
+    with torch.no_grad():
+        out = model(x)
+    assert out.shape[0] == 1
+
+
+def test_batchnorm_decorator_preserves_forward_input_keyword():
+    model = ContraWR(n_chans=3, n_outputs=2, n_times=1000, sfreq=200.0)
+    x = torch.randn(1, model.n_chans, model.n_times)
+
+    model.train()
+    with torch.no_grad():
+        out = model(X=x)
+
+    assert out.shape == (1, model.n_outputs)
 
 
 def test_eegnet_final_layer_linear_true():

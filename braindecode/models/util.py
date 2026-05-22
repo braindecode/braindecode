@@ -12,6 +12,8 @@ from typing import Any, Dict, Literal, Optional, Sequence
 import numpy as np
 import pandas as pd
 import pydantic
+import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
+from torch import nn
 
 models_dict = {}
 
@@ -23,6 +25,38 @@ _EEG_PARAMS = frozenset(
 )
 
 _JSON_SAFE = (int, float, str, bool, type(None))
+_BATCH_NORM_MODULES = (
+    nn.BatchNorm1d,
+    nn.BatchNorm2d,
+    nn.BatchNorm3d,
+    nn.SyncBatchNorm,
+)
+
+
+def _disable_batch_norm_training_if_batch_size_one(forward):
+    """Temporarily set BatchNorm layers to train(False) for batch size one."""
+    forward_signature = inspect.signature(forward)
+
+    @wraps(forward)
+    def wrapped(self, *args, **kwargs):
+        bound = forward_signature.bind(self, *args, **kwargs)
+        x = next(value for name, value in bound.arguments.items() if name != "self")
+        batch_norms = []
+        if self.training and x.shape[0] == 1:
+            batch_norms = [
+                layer
+                for layer in self.modules()
+                if isinstance(layer, _BATCH_NORM_MODULES) and layer.training
+            ]
+            for batch_norm in batch_norms:
+                batch_norm.train(False)
+        try:
+            return forward(self, *args, **kwargs)
+        finally:
+            for batch_norm in batch_norms:
+                batch_norm.train(True)
+
+    return wrapped
 
 
 def _is_jsonable(val):
