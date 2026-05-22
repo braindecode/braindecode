@@ -7,6 +7,7 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _batch_norm_with_batch_size_one
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
@@ -298,26 +299,15 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
         x = self.dropout(torch.cat((x1, x2), dim=1))
         residual = self.residual_shortcut[0](x)
-        residual = self._batch_norm(self.residual_shortcut[1], residual)
+        residual = _batch_norm_with_batch_size_one(
+            self.residual_shortcut[1], residual, self.training
+        )
         residual = self.residual_shortcut[2](residual)
         x, _ = self.bilstm(self.add_seq_dim(x))
         x = self.remove_seq_dim(x)
         x = self.dropout(x + residual)
 
         return self.final_layer(self.features_extractor(x))
-
-    def _batch_norm(self, batch_norm, x):
-        if self.training and x.shape[0] == 1:
-            return nn.functional.batch_norm(
-                x,
-                batch_norm.running_mean,
-                batch_norm.running_var,
-                batch_norm.weight,
-                batch_norm.bias,
-                training=False,
-                eps=batch_norm.eps,
-            )
-        return batch_norm(x)
 
 
 def _conv_out(width, kernel_stride_padding):
@@ -484,30 +474,17 @@ class _CNNPath(nn.Module):
 
     def forward(self, x):
         x = self.conv1[0](x)
-        x = self._batch_norm(self.conv1[1], x)
+        x = _batch_norm_with_batch_size_one(self.conv1[1], x, self.training)
         x = self.conv1[2](x)
         x = self.dropout(self.pool1(x))
         x = self.conv2[0](x)
-        x = self._batch_norm(self.conv2[1], x)
+        x = _batch_norm_with_batch_size_one(self.conv2[1], x, self.training)
         x = self.conv2[2](x)
         x = self.conv3[0](x)
-        x = self._batch_norm(self.conv3[1], x)
+        x = _batch_norm_with_batch_size_one(self.conv3[1], x, self.training)
         x = self.conv3[2](x)
         x = self.conv4[0](x)
-        x = self._batch_norm(self.conv4[1], x)
+        x = _batch_norm_with_batch_size_one(self.conv4[1], x, self.training)
         x = self.conv4[2](x)
         x = self.pool2(x)
         return x
-
-    def _batch_norm(self, batch_norm, x):
-        if self.training and x.shape[0] == 1:
-            return nn.functional.batch_norm(
-                x,
-                batch_norm.running_mean,
-                batch_norm.running_var,
-                batch_norm.weight,
-                batch_norm.bias,
-                training=False,
-                eps=batch_norm.eps,
-            )
-        return batch_norm(x)

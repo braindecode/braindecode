@@ -12,6 +12,7 @@ from typing import Any, Dict, Literal, Optional, Sequence
 import numpy as np
 import pandas as pd
 import pydantic
+from torch import nn
 
 models_dict = {}
 
@@ -34,6 +35,20 @@ def _is_jsonable(val):
     if isinstance(val, dict):
         return all(isinstance(k, str) and _is_jsonable(v) for k, v in val.items())
     return False
+
+
+def _batch_norm_with_batch_size_one(batch_norm, x, training):
+    if training and x.shape[0] == 1:
+        return nn.functional.batch_norm(
+            x,
+            batch_norm.running_mean,
+            batch_norm.running_var,
+            batch_norm.weight,
+            batch_norm.bias,
+            training=False,
+            eps=batch_norm.eps,
+        )
+    return batch_norm(x)
 
 
 def track_model_init_kwargs(cls) -> None:
