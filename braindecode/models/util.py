@@ -34,9 +34,12 @@ _BATCH_NORM_MODULES = (
 
 def _disable_batch_norm_training_if_batch_size_one(forward):
     """Temporarily set BatchNorm layers to train(False) for batch size one."""
+    forward_signature = inspect.signature(forward)
 
     @wraps(forward)
-    def wrapped(self, x, *args, **kwargs):
+    def wrapped(self, *args, **kwargs):
+        bound = forward_signature.bind(self, *args, **kwargs)
+        x = next(value for name, value in bound.arguments.items() if name != "self")
         batch_norms = []
         if self.training and x.shape[0] == 1:
             batch_norms = [
@@ -47,7 +50,7 @@ def _disable_batch_norm_training_if_batch_size_one(forward):
             for batch_norm in batch_norms:
                 batch_norm.train(False)
         try:
-            return forward(self, x, *args, **kwargs)
+            return forward(self, *args, **kwargs)
         finally:
             for batch_norm in batch_norms:
                 batch_norm.train(True)

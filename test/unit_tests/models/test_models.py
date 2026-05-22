@@ -2082,6 +2082,17 @@ def test_models_batch1_train_mode(
     assert out.shape[0] == 1
 
 
+def test_batchnorm_decorator_preserves_forward_input_keyword():
+    model = ContraWR(n_chans=3, n_outputs=2, n_times=1000, sfreq=200.0)
+    x = torch.randn(1, model.n_chans, model.n_times)
+
+    model.train()
+    with torch.no_grad():
+        out = model(X=x)
+
+    assert out.shape == (1, model.n_outputs)
+
+
 def test_eegnet_final_layer_linear_true():
     """Test that final_layer_linear=True uses a conv-based classifier without warning."""
     model = EEGNet(
