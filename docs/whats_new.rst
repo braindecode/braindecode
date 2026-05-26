@@ -28,6 +28,11 @@ Current 1.6.0 (GitHub)
 Enhancements
 ============
 
+- Add a ``revision`` keyword argument to
+  :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
+  pin dataset downloads to a specific branch, tag, or commit on the Hugging
+  Face Hub.
+
 API and behavior changes
 ========================
 
