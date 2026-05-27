@@ -1,39 +1,19 @@
 name: Monthly stable release to PyPI
 
-# Cuts a stable braindecode release on the first of every month, in addition
-# to the per-push ``.devN`` releases produced by ``.github/workflows/release.yml``.
+# Cuts a stable braindecode release on the 1st of every month, alongside the
+# per-push ``.devN`` releases produced by ``.github/workflows/release.yml``.
+# Pushes commits + tag atomically BEFORE publishing to PyPI so a push failure
+# can never leave PyPI ahead of git.
 #
-# Flow on each run:
-#   1. Compute the planned release + next-dev versions from ``braindecode/version.py``.
-#   2. Bail out early if no commits landed on master since the last ``v*`` tag.
-#   3. Strip the ``dev0`` suffix, mark the ``whats_new.rst`` heading with today's
-#      date, commit ``release: vX.Y.0``, and create an annotated tag.
-#   4. Build sdist + wheel, ``twine check``, publish to PyPI.
-#   5. Bump ``version.py`` to the next ``dev0`` cycle and add a fresh
-#      ``Current X.Y.Z (GitHub)`` section to the changelog.
-#   6. Push both commits and the tag, then cut a GitHub Release.
-#
-# The companion dev-release workflow (``release.yml``) carries a defensive
-# guard that skips publishing ``X.Y.Z.devN`` when the head commit message
-# starts with ``release: v``. In the normal flow that guard is unreachable
-# because by GitHub Actions policy a push authenticated with the default
-# ``GITHUB_TOKEN`` does NOT trigger another workflow run (anti-recursion
-# safeguard) — so neither the release commit nor the bump commit will fire
-# ``release.yml`` at all. The first ``.devN`` of the new cycle will appear
-# the next time a human (or a PAT-authenticated bot) pushes to master.
-# If you want the bump commit to immediately seed the next dev cycle on PyPI,
-# replace ``token: ${{ secrets.GITHUB_TOKEN }}`` in the checkout step with a
-# PAT (``RELEASE_PUSH_TOKEN``), which DOES trigger downstream workflows.
-#
-# Requirements on the repository side:
-#   - ``PYPI_API_TOKEN`` secret (already used by the dev-release workflow). The
-#     long-term plan is to migrate to PyPI Trusted Publishing (OIDC) by adding
-#     a publisher on PyPI and removing the ``password`` argument below; the
-#     ``id-token: write`` permission is already declared for that day.
+# Requirements:
+#   - ``PYPI_API_TOKEN`` secret (shared with the dev-release workflow).
 #   - The default ``GITHUB_TOKEN`` must be allowed to push to ``master``. If
-#     branch protection blocks bot pushes, either add ``github-actions[bot]``
-#     to the bypass list or swap ``token`` in the checkout step for a PAT
+#     branch protection blocks bot pushes, add ``github-actions[bot]`` to the
+#     bypass list, or replace ``token:`` in the checkout step with a PAT
 #     stored as ``RELEASE_PUSH_TOKEN``.
+#   - Note: pushes authenticated with the default ``GITHUB_TOKEN`` do NOT
+#     trigger ``release.yml``, so the first ``.devN`` of the new cycle lands
+#     only on the next human push (use a PAT to opt in to immediate seeding).
 
 on:
   schedule:
@@ -109,15 +89,6 @@ jobs:
           python scripts/monthly_release.py compute --bump "$BUMP" \
             | tee -a "$GITHUB_OUTPUT"
 
-      - name: Print release plan
-        run: |
-          echo "Current dev:  ${{ steps.ver.outputs.current_version }}"
-          echo "Release:      ${{ steps.ver.outputs.release_version }}"
-          echo "Tag:          ${{ steps.ver.outputs.release_tag }}"
-          echo "Next dev:     ${{ steps.ver.outputs.next_dev_version }}"
-          echo "Bump:         ${BUMP}"
-          echo "Dry run:      ${DRY_RUN}"
-
       - name: Skip if no commits since last tag
         id: changes
         shell: bash
@@ -176,23 +147,16 @@ jobs:
           git add braindecode/version.py docs/whats_new.rst
           git commit -m "chore: bump version to ${{ steps.ver.outputs.next_dev_version }}"
 
-      # IMPORTANT — order matters: the push must succeed BEFORE we touch PyPI.
-      # PyPI uploads are irrevocable. If we published first and the push then
-      # failed (branch protection, concurrent master push, etc.), PyPI would
-      # be permanently ahead of git: next month would recompute the same
-      # release version and twine would reject with 'File already exists'.
-      # Pushing first means a push failure stops the workflow before any
-      # PyPI side effect, and a publish failure leaves git already in the
-      # finalized state so the publish can be retried from the uploaded
-      # ``dist-*`` artifact via ``twine upload`` without further git surgery.
+      # Push BEFORE PyPI publish: PyPI uploads are irrevocable, so any push
+      # rejection (branch protection, concurrent master push) must stop the
+      # workflow before PyPI is touched. A publish failure after a successful
+      # push leaves git already finalized and the dist artifact uploaded, so
+      # ``twine upload`` from the artifact recovers without git surgery.
       - name: Push commits and tag
         if: steps.changes.outputs.skip != 'true' && env.DRY_RUN != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          # Push the bump commit + the underlying release commit, then the tag.
-          # ``--atomic`` makes the branch update reject if it conflicts with
-          # someone else's master push, instead of leaving the tag detached.
           git push --atomic origin HEAD:master "${{ steps.ver.outputs.release_tag }}"
 
       - name: Publish to PyPI
