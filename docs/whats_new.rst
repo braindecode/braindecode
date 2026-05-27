@@ -58,7 +58,18 @@ Bug fixes
 Code health
 ============
 
-- None yet
+- Add a scheduled ``.github/workflows/monthly-release.yml`` that cuts a
+  stable PyPI release on the 1st of every month (and on
+  ``workflow_dispatch``) in addition to the per-push ``.devN`` pipeline.
+  The workflow finalizes ``braindecode/version.py``, dates the matching
+  ``Current X.Y.Z (GitHub)`` heading, commits, tags, pushes commits and
+  tag atomically before publishing to PyPI, then seeds the next
+  development cycle. A new ``scripts/monthly_release.py`` helper exposes
+  the ``compute``, ``finalize``, and ``next-dev`` subcommands and
+  hard-fails on missing changelog heading, already-stable
+  ``version.py``, or mismatched quote literals. The companion
+  ``release.yml`` gains a defensive guard against ``release: v*`` head
+  commits. (:gh:`1030` by `Bruno Aristimunha`_)
 
 
 Current 1.5.1 (stable)
