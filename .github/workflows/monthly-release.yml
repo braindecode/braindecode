@@ -73,8 +73,8 @@ jobs:
       cancel-in-progress: false
 
     env:
-      BUMP: ${{ inputs.bump || 'minor' }}
-      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      BUMP: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'minor' }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' && 'true' || 'false' }}
 
     steps:
       - name: Check out master
