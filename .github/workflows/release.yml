@@ -7,6 +7,13 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Skip the per-commit ``.devN`` publish when the head commit is the stable
+    # release commit produced by ``.github/workflows/monthly-release.yml``.
+    # At that commit, ``braindecode/version.py`` is ``X.Y.Z`` (no ``.dev``),
+    # and running this job would otherwise push ``X.Y.Z.devN`` to PyPI right
+    # after the stable ``X.Y.Z``. The companion ``chore: bump version`` commit
+    # is intentionally NOT excluded — it kicks off the next dev cycle.
+    if: "${{ !startsWith(github.event.head_commit.message, 'release: v') }}"
     concurrency:
       group: pypi-publish
       cancel-in-progress: false

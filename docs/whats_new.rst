@@ -22,7 +22,7 @@
 .. _current:
 
 
-Current 1.6.0 (GitHub)
+Current 1.6.1 (GitHub)
 ===============================
 
 Enhancements
@@ -58,7 +58,9 @@ Bug fixes
 Code health
 ============
 
-- None yet
+- Add a monthly scheduled workflow that cuts a stable PyPI release on
+  the 1st of every month, complementing the existing per-push ``.devN``
+  pipeline. (:gh:`1030` by `Bruno Aristimunha`_)
 
 
 Current 1.5.1 (stable)

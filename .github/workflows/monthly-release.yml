@@ -1,0 +1,193 @@
+name: Monthly stable release to PyPI
+
+# Cuts a stable braindecode release on the 1st of every month, alongside the
+# per-push ``.devN`` releases produced by ``.github/workflows/release.yml``.
+# Pushes commits + tag atomically BEFORE publishing to PyPI so a push failure
+# can never leave PyPI ahead of git.
+#
+# Requirements:
+#   - ``PYPI_API_TOKEN`` secret (shared with the dev-release workflow).
+#   - The default ``GITHUB_TOKEN`` must be allowed to push to ``master``. If
+#     branch protection blocks bot pushes, add ``github-actions[bot]`` to the
+#     bypass list, or replace ``token:`` in the checkout step with a PAT
+#     stored as ``RELEASE_PUSH_TOKEN``.
+#   - Note: pushes authenticated with the default ``GITHUB_TOKEN`` do NOT
+#     trigger ``release.yml``, so the first ``.devN`` of the new cycle lands
+#     only on the next human push (use a PAT to opt in to immediate seeding).
+
+on:
+  schedule:
+    # 09:00 UTC on the 1st of every month. Adjust freely; cron is in UTC.
+    - cron: "0 9 1 * *"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump for the next dev cycle"
+        required: true
+        type: choice
+        default: minor
+        options:
+          - minor
+          - patch
+          - major
+      dry_run:
+        description: "Build everything but do not publish, push, or tag"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # commit, tag, push, create GitHub Release
+  id-token: write   # reserved for future PyPI Trusted Publishing migration
+
+jobs:
+  release:
+    # Belt-and-suspenders so a fork running this on schedule does not try to
+    # publish to the official PyPI project.
+    if: github.repository == 'braindecode/braindecode'
+    runs-on: ubuntu-latest
+    # Share the lock with the dev-release workflow so the two cannot
+    # interleave a ``.devN`` publish in the middle of a stable cut.
+    concurrency:
+      group: pypi-publish
+      cancel-in-progress: false
+
+    env:
+      BUMP: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'minor' }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' && 'true' || 'false' }}
+
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          # Default GITHUB_TOKEN; replace with ``secrets.RELEASE_PUSH_TOKEN``
+          # if branch protection blocks the github-actions[bot] from pushing.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build packaging twine
+
+      - name: Compute planned versions
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/monthly_release.py compute --bump "$BUMP" \
+            | tee -a "$GITHUB_OUTPUT"
+
+      - name: Skip if no commits since last tag
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Match only ``vMAJOR.MINOR.PATCH`` style tags so that scratch
+          # tags (``v9.9.9-test``) and pre-releases (``v2.0.0rc1``) cannot
+          # become the comparison base and corrupt the skip decision.
+          LAST_TAG="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+          if [[ -z "$LAST_TAG" ]]; then
+            echo "no previous v* tag found; proceeding with first release"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          COMMITS_AHEAD="$(git rev-list "${LAST_TAG}..HEAD" --count)"
+          echo "${COMMITS_AHEAD} commits since ${LAST_TAG}"
+          if [[ "${COMMITS_AHEAD}" -eq 0 ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Finalize release in tree
+        if: steps.changes.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ``finalize`` does not take ``--bump``: the release version is
+          # derived from the current dev seed and is independent of bump kind.
+          python scripts/monthly_release.py finalize
+          git add braindecode/version.py docs/whats_new.rst
+          git commit -m "release: ${{ steps.ver.outputs.release_tag }}"
+          git tag -a "${{ steps.ver.outputs.release_tag }}" \
+            -m "braindecode ${{ steps.ver.outputs.release_version }}"
+
+      - name: Build sdist and wheel
+        if: steps.changes.outputs.skip != 'true'
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Upload built artifacts
+        if: steps.changes.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ steps.ver.outputs.release_version }}
+          path: dist/
+          if-no-files-found: error
+
+      - name: Bump to next dev version
+        if: steps.changes.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/monthly_release.py next-dev --bump "$BUMP"
+          git add braindecode/version.py docs/whats_new.rst
+          git commit -m "chore: bump version to ${{ steps.ver.outputs.next_dev_version }}"
+
+      # Push BEFORE PyPI publish: PyPI uploads are irrevocable, so any push
+      # rejection (branch protection, concurrent master push) must stop the
+      # workflow before PyPI is touched. A publish failure after a successful
+      # push leaves git already finalized and the dist artifact uploaded, so
+      # ``twine upload`` from the artifact recovers without git surgery.
+      - name: Push commits and tag
+        if: steps.changes.outputs.skip != 'true' && env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push --atomic origin HEAD:master "${{ steps.ver.outputs.release_tag }}"
+
+      - name: Publish to PyPI
+        if: steps.changes.outputs.skip != 'true' && env.DRY_RUN != 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Create GitHub Release
+        if: steps.changes.outputs.skip != 'true' && env.DRY_RUN != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.release_tag }}
+          name: braindecode ${{ steps.ver.outputs.release_version }}
+          generate_release_notes: true
+          files: dist/*
+
+      - name: Summarize run
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Monthly release summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| ----- | ----- |"
+            echo "| Current dev | \`${{ steps.ver.outputs.current_version || 'n/a' }}\` |"
+            echo "| Released    | \`${{ steps.ver.outputs.release_version || 'n/a' }}\` |"
+            echo "| Tag         | \`${{ steps.ver.outputs.release_tag || 'n/a' }}\` |"
+            echo "| Next dev    | \`${{ steps.ver.outputs.next_dev_version || 'n/a' }}\` |"
+            echo "| Bump        | \`${BUMP}\` |"
+            echo "| Dry run     | \`${DRY_RUN}\` |"
+            echo "| Skipped     | \`${{ steps.changes.outputs.skip || 'n/a' }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
