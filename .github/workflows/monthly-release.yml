@@ -2,18 +2,31 @@ name: Monthly stable release to PyPI
 
 # Cuts a stable braindecode release on the 1st of every month, alongside the
 # per-push ``.devN`` releases produced by ``.github/workflows/release.yml``.
-# Pushes commits + tag atomically BEFORE publishing to PyPI so a push failure
-# can never leave PyPI ahead of git.
+#
+# ``master`` is protected by a ruleset that requires all changes to go through
+# a pull request, and the GitHub Actions app cannot be granted a ruleset
+# bypass on this org-owned repo. So this workflow never pushes to ``master``.
+# Instead it:
+#   1. Finalizes the version in the runner's working tree (no master push).
+#   2. Pushes ONLY the annotated tag ``vX.Y.Z`` (tags are not covered by the
+#      branch ruleset) — this is the source-of-truth for the release.
+#   3. Builds + ``twine check`` + publishes the sdist/wheel to PyPI.
+#   4. Creates a GitHub Release on the tag.
+#   5. Opens a pull request that bumps ``version.py`` to the next ``dev0``
+#      cycle and dates the changelog heading, for a maintainer to merge.
+#
+# The tag is pushed BEFORE the PyPI publish: PyPI uploads are irrevocable, so
+# a tag-push failure must stop the run before any PyPI side effect. A publish
+# failure after a successful tag push is recoverable via ``twine upload`` from
+# the uploaded ``dist-*`` artifact.
 #
 # Requirements:
 #   - ``PYPI_API_TOKEN`` secret (shared with the dev-release workflow).
-#   - The default ``GITHUB_TOKEN`` must be allowed to push to ``master``. If
-#     branch protection blocks bot pushes, add ``github-actions[bot]`` to the
-#     bypass list, or replace ``token:`` in the checkout step with a PAT
-#     stored as ``RELEASE_PUSH_TOKEN``.
-#   - Note: pushes authenticated with the default ``GITHUB_TOKEN`` do NOT
-#     trigger ``release.yml``, so the first ``.devN`` of the new cycle lands
-#     only on the next human push (use a PAT to opt in to immediate seeding).
+#   - Note: the bump PR is opened with the default ``GITHUB_TOKEN``, so by
+#     GitHub policy its ``pull_request`` event does NOT trigger the PR CI
+#     workflows (tests, whats-new check). A maintainer can kick CI by pushing
+#     an empty commit to the PR branch (or just merge it — no status check is
+#     required by the ruleset).
 
 on:
   schedule:
@@ -31,14 +44,15 @@ on:
           - patch
           - major
       dry_run:
-        description: "Build everything but do not publish, push, or tag"
+        description: "Build everything but do not publish, tag, or open the bump PR"
         required: false
         type: boolean
         default: false
 
 permissions:
-  contents: write   # commit, tag, push, create GitHub Release
-  id-token: write   # reserved for future PyPI Trusted Publishing migration
+  contents: write        # push the tag, create the GitHub Release
+  pull-requests: write   # open the version-bump PR
+  id-token: write        # reserved for future PyPI Trusted Publishing migration
 
 jobs:
   release:
@@ -55,6 +69,7 @@ jobs:
     env:
       BUMP: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'minor' }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' && 'true' || 'false' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Check out master
@@ -62,8 +77,6 @@ jobs:
         with:
           ref: master
           fetch-depth: 0
-          # Default GITHUB_TOKEN; replace with ``secrets.RELEASE_PUSH_TOKEN``
-          # if branch protection blocks the github-actions[bot] from pushing.
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git identity
@@ -121,6 +134,9 @@ jobs:
           python scripts/monthly_release.py finalize
           git add braindecode/version.py docs/whats_new.rst
           git commit -m "release: ${{ steps.ver.outputs.release_tag }}"
+          # Annotated tag on the finalized commit. The commit lives only at the
+          # tag (it is never pushed to master); the version-bump PR carries the
+          # equivalent changelog/version housekeeping onto master separately.
           git tag -a "${{ steps.ver.outputs.release_tag }}" \
             -m "braindecode ${{ steps.ver.outputs.release_version }}"
 
@@ -138,26 +154,14 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-      - name: Bump to next dev version
-        if: steps.changes.outputs.skip != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/monthly_release.py next-dev --bump "$BUMP"
-          git add braindecode/version.py docs/whats_new.rst
-          git commit -m "chore: bump version to ${{ steps.ver.outputs.next_dev_version }}"
-
-      # Push BEFORE PyPI publish: PyPI uploads are irrevocable, so any push
-      # rejection (branch protection, concurrent master push) must stop the
-      # workflow before PyPI is touched. A publish failure after a successful
-      # push leaves git already finalized and the dist artifact uploaded, so
-      # ``twine upload`` from the artifact recovers without git surgery.
-      - name: Push commits and tag
+      # Push the tag BEFORE PyPI publish (see header). Tags are not covered by
+      # the branch ruleset, so this succeeds with the default GITHUB_TOKEN.
+      - name: Push release tag
         if: steps.changes.outputs.skip != 'true' && env.DRY_RUN != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          git push --atomic origin HEAD:master "${{ steps.ver.outputs.release_tag }}"
+          git push origin "refs/tags/${{ steps.ver.outputs.release_tag }}"
 
       - name: Publish to PyPI
         if: steps.changes.outputs.skip != 'true' && env.DRY_RUN != 'true'
@@ -173,6 +177,38 @@ jobs:
           name: braindecode ${{ steps.ver.outputs.release_version }}
           generate_release_notes: true
           files: dist/*
+
+      # master is PR-protected, so the version bump cannot be pushed directly.
+      # Open it as a PR branched fresh from master: date the just-released
+      # changelog heading (finalize) and seed the next dev cycle (next-dev).
+      - name: Open version-bump pull request
+        if: steps.changes.outputs.skip != 'true' && env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="chore/bump-after-${{ steps.ver.outputs.release_tag }}"
+          git checkout -B "$BRANCH" origin/master
+          python scripts/monthly_release.py finalize
+          python scripts/monthly_release.py next-dev --bump "$BUMP"
+          git add braindecode/version.py docs/whats_new.rst
+          git commit -m "chore: bump version to ${{ steps.ver.outputs.next_dev_version }} after ${{ steps.ver.outputs.release_tag }}"
+          git push -u origin "$BRANCH" --force-with-lease
+          # Body via a quoted heredoc so backticks stay literal and newlines
+          # render. The ${{ }} placeholders are substituted by Actions first.
+          cat > /tmp/pr_body.md <<'BODY'
+          Automated post-release housekeeping for ${{ steps.ver.outputs.release_tag }} (published to PyPI).
+
+          - Date the `Current ${{ steps.ver.outputs.release_version }} (GitHub)` changelog heading.
+          - Seed the next development cycle: `version.py` -> `${{ steps.ver.outputs.next_dev_version }}` plus a fresh `Current ${{ steps.ver.outputs.next_dev_base }} (GitHub)` section.
+
+          Note: opened by GITHUB_TOKEN, so PR CI does not auto-run. Push an empty commit to trigger it, or merge directly (no status check is required by the ruleset).
+          BODY
+          gh pr create \
+            --base master \
+            --head "$BRANCH" \
+            --title "chore: bump version to ${{ steps.ver.outputs.next_dev_version }} after ${{ steps.ver.outputs.release_tag }}" \
+            --body-file /tmp/pr_body.md \
+            || echo "gh pr create failed (a PR for $BRANCH may already exist); branch is pushed regardless."
 
       - name: Summarize run
         if: always()
