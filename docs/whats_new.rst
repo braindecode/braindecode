@@ -62,6 +62,10 @@ Code health
   the 1st of every month, complementing the existing per-push ``.devN``
   pipeline. (:gh:`1030` by `Bruno Aristimunha`_)
 
+- Make the monthly release workflow push only the release tag and open a
+  pull request for the version bump, so it never needs to push to the
+  protected ``master`` branch. (:gh:`1031` by `Bruno Aristimunha`_)
+
 
 Current 1.5.1 (stable)
 ===============================
