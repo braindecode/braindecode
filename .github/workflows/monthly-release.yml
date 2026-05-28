@@ -194,7 +194,9 @@ jobs:
           git commit -m "chore: bump version to ${{ steps.ver.outputs.next_dev_version }} after ${{ steps.ver.outputs.release_tag }}"
           git push -u origin "$BRANCH" --force-with-lease
           # Body via a quoted heredoc so backticks stay literal and newlines
-          # render. The ${{ }} placeholders are substituted by Actions first.
+          # render. The double-brace placeholders are substituted by Actions
+          # before bash runs (do not write an empty expression here -- Actions
+          # parses expressions even inside shell comments and heredocs).
           cat > /tmp/pr_body.md <<'BODY'
           Automated post-release housekeeping for ${{ steps.ver.outputs.release_tag }} (published to PyPI).
 
