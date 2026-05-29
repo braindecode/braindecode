@@ -316,7 +316,7 @@ Then, we add the following template to the file:
 
 ```python
 from torch import nn
-from braindecode.model.base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin
 
 
 class MyNewModel(EEGModuleMixin, nn.Module):
@@ -376,7 +376,7 @@ Explaining the template and internal convention:
    work with `EEGClassifier` or `EEGRegressor`.
 
    ```python
-   from braindecode.model.base import EEGModuleMixin
+   from braindecode.models.base import EEGModuleMixin
    class MyNewModel(EEGModuleMixin, nn.Module):
        # ... (model definition)
    ```
