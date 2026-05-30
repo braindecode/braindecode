@@ -66,6 +66,12 @@ Code health
   pull request for the version bump, so it never needs to push to the
   protected ``master`` branch. (:gh:`1031` by `Bruno Aristimunha`_)
 
+- Speed up the windower unit tests by generating small synthetic recordings
+  with :func:`braindecode.util.create_mne_dummy_raw` instead of downloading
+  the ``BNCI2014_001`` dataset, removing the network dependency from
+  ``test/unit_tests/preprocessing/test_windowers.py``. (:gh:`1036` by
+  `YihengLi-1`_)
+
 
 Current 1.5.1 (stable)
 ===============================
@@ -1235,3 +1241,4 @@ Authors
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
 .. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
+.. _YihengLi-1: https://github.com/YihengLi-1
