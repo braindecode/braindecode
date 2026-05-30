@@ -10,6 +10,7 @@ Test for samplers.
 import bisect
 import platform
 
+import mne
 import numpy as np
 import pandas as pd
 import pytest
@@ -17,7 +18,6 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from braindecode.datasets import BaseConcatDataset, RawDataset
-from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_fixed_length_windows,
     create_windows_from_events,
@@ -32,6 +32,7 @@ from braindecode.samplers.ssl import (
     DistributedRelativePositioningSampler,
     RelativePositioningSampler,
 )
+from braindecode.util import create_mne_dummy_raw
 
 
 def test_distributed_relative_positioning_sampler_n_examples_formula():
@@ -90,11 +91,54 @@ def test_distributed_relative_positioning_sampler_n_examples_formula():
     assert fixed == 18, "Fixed: 75 * 5 // 20 = 375 // 20 = 18"
 
 
+def _fake_concat_ds(n_recordings=3, *, with_events=False):
+    """Build a small synthetic ``BaseConcatDataset`` for the sampler tests.
+
+    The sampler tests only rely on the *structure* of the dataset (number of
+    recordings, number of windows, and the ``subject``/``session``/``run``/
+    ``target`` metadata columns), not on real EEG signals. Generating fake data
+    with :func:`braindecode.util.create_mne_dummy_raw` avoids downloading the
+    real ``BNCI2014_001`` dataset, so these tests run in well under a second
+    instead of fetching hundreds of MB over the network (see #545).
+    """
+    sfreq = 250.0
+    n_times = 13000  # 52 s: enough for many fixed-length windows and 48 events
+    raws = []
+    for i in range(n_recordings):
+        raw, _ = create_mne_dummy_raw(
+            n_channels=4,
+            n_times=n_times,
+            sfreq=sfreq,
+            include_anns=False,
+            random_state=i,
+        )
+        if with_events:
+            # 48 trials per recording (like a BNCI run), alternating between two
+            # classes, so BalancedSequenceSampler has enough consecutive windows
+            # and at least two target classes to work with.
+            n_events = 48
+            onset = 2.0 + np.arange(n_events)  # one event per second
+            duration = np.full(n_events, 0.5)
+            description = np.where(
+                np.arange(n_events) % 2 == 0, "left_hand", "right_hand"
+            )
+            raw.set_annotations(mne.Annotations(onset, duration, description))
+        raws.append(raw)
+
+    description = pd.DataFrame(
+        {
+            "subject": [1] * n_recordings,
+            "session": ["0train"] * n_recordings,
+            "run": [str(i) for i in range(n_recordings)],
+        }
+    )
+    datasets = [RawDataset(raws[i], description.iloc[i]) for i in range(n_recordings)]
+    return BaseConcatDataset(datasets)
+
+
 @pytest.fixture(scope="module")
 def windows_ds():
-    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014_001", subject_ids=4)
-    ds = [RawDataset(raws[i], description.iloc[i]) for i in range(3)]
-    concat_ds = BaseConcatDataset(ds)
+    concat_ds = _fake_concat_ds(n_recordings=3, with_events=False)
 
     windows_ds = create_fixed_length_windows(
         concat_ds=concat_ds,
@@ -111,9 +155,7 @@ def windows_ds():
 
 @pytest.fixture(scope="module")
 def target_windows_ds():
-    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014_001", subject_ids=4)
-    ds = [RawDataset(raws[i], description.iloc[i]) for i in range(3)]
-    concat_ds = BaseConcatDataset(ds)
+    concat_ds = _fake_concat_ds(n_recordings=3, with_events=True)
 
     windows_ds = create_windows_from_events(
         concat_ds,
