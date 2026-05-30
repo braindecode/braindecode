@@ -24,7 +24,6 @@ from braindecode.datasets.base import (
     RawDataset,
     WindowsDataset,
 )
-from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing import (
     create_fixed_length_windows,
     create_windows_from_events,
@@ -53,12 +52,40 @@ def _get_raw(tmpdir_factory, description=None):
 
 @pytest.fixture(scope="module")
 def concat_ds_targets():
-    raws, description = fetch_data_with_moabb(
-        dataset_name="BNCI2014_001", subject_ids=4
+    # Synthetic stand-in for one BNCI2014_001 run, so the windowing tests below
+    # run without downloading the real dataset (see #545). These tests only rely
+    # on the trial *geometry*, not on real EEG signals, so we reproduce the parts
+    # they depend on: 250 Hz sampling, four motor-imagery classes, and uniform
+    # 4 s (1000-sample) trials. The class names match BNCI so that
+    # ``mne.events_from_annotations`` assigns the same event ids (1..4) and the
+    # targets are ``events - 1`` exactly as before.
+    sfreq = 250.0
+    trial_len_s = 4.0  # -> 1000 samples per trial at 250 Hz
+    isi_s = 8.0  # onset spacing > trial length, so trials do not overlap
+    first_onset_s = 3.0  # like BNCI: leaves room before the first trial so that
+    # tests using negative trial_start_offset_samples do not hit sample 0
+    # All four classes are present, but "feet" is kept out of the first trials:
+    # test_single_sample_size_windows passes an explicit mapping that only matches
+    # the default event ids (events - 1) for tongue/left_hand/right_hand, so the
+    # first trials must avoid "feet" (as in the real BNCI subject used before).
+    classes = ["tongue", "left_hand", "right_hand", "feet"]
+    n_trials = 12  # 3 of each class; tests assert relative to len(targets)
+
+    rng = np.random.RandomState(87)
+    onset = first_onset_s + np.arange(n_trials) * isi_s
+    duration = np.full(n_trials, trial_len_s)
+    descriptions = [classes[i % len(classes)] for i in range(n_trials)]
+    n_times = int((onset[-1] + trial_len_s + 3.0) * sfreq)  # margin after last trial
+
+    data = rng.randn(2, n_times).astype(np.float32)
+    raw = mne.io.RawArray(data, mne.create_info(["ch0", "ch1"], sfreq=sfreq))
+    raw.set_annotations(
+        mne.Annotations(onset=onset, duration=duration, description=descriptions)
     )
-    events, _ = mne.events_from_annotations(raws[0])
+
+    events, _ = mne.events_from_annotations(raw)
     targets = events[:, -1] - 1
-    ds = RawDataset(raws[0], description.iloc[0])
+    ds = RawDataset(raw)
     concat_ds = BaseConcatDataset([ds])
     return concat_ds, targets
 
