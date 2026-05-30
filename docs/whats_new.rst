@@ -55,6 +55,16 @@ Bug fixes
   use running statistics when ``batch_size == 1`` in train mode.
   By `Bruno Aristimunha`_.
 
+- Fix the auto-generated standalone-function preprocessors
+  (:class:`braindecode.preprocessing.ComputeCurrentSourceDensity`,
+  :class:`braindecode.preprocessing.SetBipolarReference`, and
+  :class:`braindecode.preprocessing.OversampledTemporalProjection`) passing the
+  function name as a string instead of the callable, so they failed to apply.
+  These functions return the modified instance and are now wrapped as callables.
+  Standalone functions that return auxiliary data (e.g. annotations or bad
+  channels) are intentionally left on the existing path for now. (:gh:`885` by
+  `YihengLi-1`_)
+
 Code health
 ============
 
@@ -1235,3 +1245,4 @@ Authors
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
 .. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
+.. _YihengLi-1: https://github.com/YihengLi-1
