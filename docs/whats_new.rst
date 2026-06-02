@@ -32,6 +32,10 @@ Enhancements
   :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
   pin dataset downloads to a specific branch, tag, or commit on the Hugging
   Face Hub.
+- Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
+  variant of :class:`braindecode.models.EEGPT` built with
+  :func:`~braindecode.models.interpolated.InterpolatedModel`.
+  By `Pierre Guetschel`_.
 
 API and behavior changes
 ========================

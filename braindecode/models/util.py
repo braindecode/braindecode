@@ -309,6 +309,11 @@ models_mandatory_parameters: list[
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGPT", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    (
+        "InterpolatedEEGPT",
+        ["chs_info", "n_outputs", "n_times"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
     ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "SleepStagerBlanco2020",

@@ -31,6 +31,7 @@ from braindecode.models import (
     FBMSNet,
     InterpolatedBENDR,
     InterpolatedBIOT,
+    InterpolatedEEGPT,
     InterpolatedLaBraM,
     InterpolatedSignalJEPA,
     SyncNet,
@@ -311,6 +312,7 @@ def test_model_has_activation_parameter(model_class):
         EEGPT,
         InterpolatedBENDR,
         InterpolatedBIOT,
+        InterpolatedEEGPT,
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
     ]:
@@ -380,6 +382,7 @@ def test_model_has_drop_prob_parameter(model_class):
         REVE,
         InterpolatedBENDR,
         InterpolatedBIOT,
+        InterpolatedEEGPT,
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
     ]:
@@ -527,6 +530,7 @@ def test_model_torch_script(model):
         "SignalJEPA_PreLocal",
         "InterpolatedBENDR",
         "InterpolatedBIOT",
+        "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
     ]
