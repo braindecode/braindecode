@@ -32,6 +32,10 @@ Enhancements
   :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
   pin dataset downloads to a specific branch, tag, or commit on the Hugging
   Face Hub.
+- Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
+  variant of :class:`braindecode.models.EEGPT` built with
+  :func:`~braindecode.models.interpolated.InterpolatedModel`.
+  By `Pierre Guetschel`_.
 
 API and behavior changes
 ========================
@@ -54,6 +58,8 @@ Bug fixes
   one sample per channel during training.  The affected BatchNorm layers now
   use running statistics when ``batch_size == 1`` in train mode.
   By `Bruno Aristimunha`_.
+
+- Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
 
 Code health
 ============
@@ -1241,4 +1247,5 @@ Authors
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
 .. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
-.. _YihengLi-1: https://github.com/YihengLi-1
+.. _Adam Mounir: https://github.com/adammounir
+.. _Yiheng Li: https://github.com/YihengLi-1
