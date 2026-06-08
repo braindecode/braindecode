@@ -62,6 +62,19 @@ def test_make_model_config_json_serialization(model_name, required, signal_param
         )
 
 
+def test_make_model_config_json_serialization_as_any():
+    from braindecode.models.config import EEGNetConfig
+
+    cfg = EEGNetConfig(n_times=1000, n_chans=26, n_outputs=4)
+    serialized = cfg.model_dump(mode="json", serialize_as_any=True)
+    cfg_from_serialized = EEGNetConfig.model_validate(serialized)
+
+    assert serialized["activation"] == "torch.nn.modules.activation.ELU"
+    np.testing.assert_equal(
+        cfg_from_serialized.model_dump(mode="python"), cfg.model_dump(mode="python")
+    )
+
+
 @pytest.mark.parametrize(
     "n_times, input_window_seconds, sfreq",
     [

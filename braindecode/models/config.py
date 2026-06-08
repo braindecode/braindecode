@@ -1,6 +1,6 @@
 # Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
 from collections.abc import Callable
-from inspect import signature
+from inspect import isbuiltin, isfunction, signature
 from types import UnionType
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
@@ -63,6 +63,14 @@ SIGNAL_ARGS_TYPES = {
 
 class BaseBraindecodeModelConfig(pydantic.BaseModel):
     """Base class for braindecode model pydantic configs."""
+
+    @pydantic.field_serializer("*", mode="wrap", when_used="json", check_fields=False)
+    def _serialize_import_strings(
+        self, value: Any, handler: Callable[[Any], Any]
+    ) -> Any:
+        if isinstance(value, type) or isbuiltin(value) or isfunction(value):
+            return f"{value.__module__}.{value.__qualname__}"
+        return handler(value)
 
     def create_instance(self) -> EEGModuleMixin:
         if self.model_name_ not in models_dict:
