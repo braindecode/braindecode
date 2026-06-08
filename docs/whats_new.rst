@@ -1243,4 +1243,3 @@ Authors
 .. _Léo Burgund: https://github.com/leob000
 .. _Adam Mounir: https://github.com/adammounir
 .. _Yiheng Li: https://github.com/YihengLi-1
-
