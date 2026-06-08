@@ -59,6 +59,8 @@ Bug fixes
   use running statistics when ``batch_size == 1`` in train mode.
   By `Bruno Aristimunha`_.
 
+- Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
+
 Code health
 ============
 
@@ -1239,3 +1241,6 @@ Authors
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
 .. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
+.. _Adam Mounir: https://github.com/adammounir
+.. _Yiheng Li: https://github.com/YihengLi-1
+
