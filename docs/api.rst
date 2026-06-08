@@ -160,6 +160,7 @@ interface for all EEG models and can derive variable names when needed.
      IFNet
      InterpolatedBENDR
      InterpolatedBIOT
+     InterpolatedEEGPT
      InterpolatedLaBraM
      InterpolatedModel
      InterpolatedSignalJEPA
