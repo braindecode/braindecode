@@ -50,6 +50,11 @@ Requirements
 Bug fixes
 ==========
 
+- Fix JSON serialization of the braindecode model pydantic configs: type,
+  function, and builtin field values (such as ``activation``) are now dumped
+  as importable dotted paths (e.g. ``"torch.nn.modules.activation.ELU"``) so
+  that ``model_dump(mode="json", serialize_as_any=True)`` round-trips back
+  through ``model_validate`` (:gh:`1039` by `Sarthak Tayal`_)
 - Fix :class:`~braindecode.models.ContraWR`,
   :class:`~braindecode.models.DeepSleepNet`, and
   :class:`~braindecode.models.EEGMiner` raising a confusing
