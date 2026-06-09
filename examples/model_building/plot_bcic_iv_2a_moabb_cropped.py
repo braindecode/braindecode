@@ -246,7 +246,7 @@ valid_set = splitted["1test"]  # Session evaluation
 # Training
 # --------
 # In difference to trialwise decoding, we now should supply
-# ``cropped=True`` to the :class:`EEGClassifer
+# ``cropped=True`` to the :class:`EEGClassifier
 # <braindecode.classifier.EEGClassifier>`, and :class:`CroppedLoss
 # <braindecode.training.CroppedLoss>` as the criterion,
 # as well as ``criterion__loss_function`` as the loss function
