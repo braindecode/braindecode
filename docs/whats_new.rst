@@ -22,11 +22,20 @@
 .. _current:
 
 
-Current 1.6.0 (GitHub)
+Current 1.6.1 (GitHub)
 ===============================
 
 Enhancements
 ============
+
+- Add a ``revision`` keyword argument to
+  :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
+  pin dataset downloads to a specific branch, tag, or commit on the Hugging
+  Face Hub.
+- Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
+  variant of :class:`braindecode.models.EEGPT` built with
+  :func:`~braindecode.models.interpolated.InterpolatedModel`.
+  By `Pierre Guetschel`_.
 
 API and behavior changes
 ========================
@@ -51,12 +60,27 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- Fix :class:`~braindecode.models.ContraWR`,
+  :class:`~braindecode.models.DeepSleepNet`, and
+  :class:`~braindecode.models.EEGMiner` raising a confusing
+  :class:`ValueError` on ``batch_size=1`` forward passes in train mode due to
+  :class:`~torch.nn.BatchNorm1d` (and its 2D/3D variants) requiring more than
+  one sample per channel during training.  The affected BatchNorm layers now
+  use running statistics when ``batch_size == 1`` in train mode.
+  By `Bruno Aristimunha`_.
+
+- Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
 
 Code health
 ============
 
-- None yet
+- Add a monthly scheduled workflow that cuts a stable PyPI release on
+  the 1st of every month, complementing the existing per-push ``.devN``
+  pipeline. (:gh:`1030` by `Bruno Aristimunha`_)
+
+- Make the monthly release workflow push only the release tag and open a
+  pull request for the version bump, so it never needs to push to the
+  protected ``master`` branch. (:gh:`1031` by `Bruno Aristimunha`_)
 
 
 Current 1.5.1 (stable)
@@ -1230,3 +1254,5 @@ Authors
 .. _Arsenii Boichenko: https://github.com/ArseniiB-o
 
 .. _pytorch/pytorch#92344: https://github.com/pytorch/pytorch/issues/92344
+.. _Adam Mounir: https://github.com/adammounir
+.. _Yiheng Li: https://github.com/YihengLi-1
