@@ -112,9 +112,7 @@ def _geometry_from_chs_info(chs_info):
     return pos.astype(np.float32), np.asarray(sensor_type, dtype=np.int64)
 
 
-# ---------------------------------------------------------------------------
 # Attention / norm primitives
-# ---------------------------------------------------------------------------
 
 
 class _RMSNorm(nn.Module):
@@ -320,9 +318,7 @@ class _SpatialTemporalAttentionBlock(nn.Module):
         return torch.cat([xs, xt], dim=-1)
 
 
-# ---------------------------------------------------------------------------
 # SEANet conv helpers
-# ---------------------------------------------------------------------------
 
 
 class _SConv1d(nn.Module):
@@ -436,9 +432,7 @@ class _SConvTranspose1d(nn.Module):
         return y
 
 
-# ---------------------------------------------------------------------------
 # SLSTM
-# ---------------------------------------------------------------------------
 
 
 class _SLSTM(nn.Module):
@@ -469,39 +463,11 @@ class _SLSTM(nn.Module):
         return y
 
 
-# ---------------------------------------------------------------------------
 # SEANet residual block + encoder/decoder
-# ---------------------------------------------------------------------------
 
 
 class _SEANetResnetBlock(nn.Module):
-    """Residual block from the SEANet model.
-
-    Parameters
-    ----------
-    dim : int
-        Feature dimension.
-    kernel_sizes : list of int
-        Kernel sizes for each conv in the block.
-    dilations : list of int
-        Dilations for each conv in the block.
-    activation : str
-        ``nn`` activation class name (e.g. ``"ELU"``).
-    activation_params : dict or None
-        Keyword arguments for the activation constructor.
-    norm : str
-        ``"weight_norm"`` or ``"none"``.
-    norm_params : dict or None
-        Extra kwargs forwarded to the norm module constructor.
-    causal : bool
-        Whether to use causal convolutions.
-    pad_mode : str
-        Padding mode (``"reflect"`` or ``"zero"``).
-    compress : int
-        Channel compression factor in the hidden layers.
-    true_skip : bool
-        If ``True``, use identity skip; otherwise use a 1×1 conv skip.
-    """
+    """SEANet residual block (dilated convs + skip connection)."""
 
     def __init__(
         self,
@@ -567,49 +533,7 @@ class _SEANetResnetBlock(nn.Module):
 
 
 class _SEANetEncoder(nn.Module):
-    """SEANet encoder.
-
-    Parameters
-    ----------
-    channels : int
-        Input signal channels (1 for mono waveform).
-    dimension : int
-        Output latent dimension.
-    n_filters : int
-        Base channel width.
-    n_residual_layers : int
-        Number of residual blocks per downsampling stage.
-    ratios : list of int
-        Downsampling ratios (applied in *reverse* order internally).
-    activation : str
-        Activation class name in ``torch.nn``.
-    activation_params : dict or None
-        Keyword arguments for the activation constructor.
-    norm : str
-        ``"weight_norm"`` or ``"none"``.
-    norm_params : dict or None
-        Extra kwargs for the norm module.
-    kernel_size : int
-        Kernel size of the first convolution.
-    last_kernel_size : int
-        Kernel size of the final projection convolution.
-    residual_kernel_size : int
-        Kernel size used inside residual blocks.
-    dilation_base : int
-        Dilation base; residual block ``j`` uses ``dilation_base**j``.
-    causal : bool
-        Causal convolutions only.
-    pad_mode : str
-        Padding mode.
-    true_skip : bool
-        Identity vs. conv skip in residual blocks.
-    compress : int
-        Channel compression in residual blocks.
-    lstm : int
-        Number of LSTM layers after the convolutional stack (0 = none).
-    bidirectional : bool
-        Bidirectional LSTM.
-    """
+    """SEANet encoder: strided conv stack (``prod(ratios)`` downsampling) + LSTM."""
 
     def __init__(
         self,
@@ -716,55 +640,7 @@ class _SEANetEncoder(nn.Module):
 
 
 class _SEANetDecoder(nn.Module):
-    """SEANet decoder.
-
-    Parameters
-    ----------
-    channels : int
-        Output signal channels.
-    dimension : int
-        Latent input dimension.
-    n_filters : int
-        Base channel width.
-    n_residual_layers : int
-        Residual blocks per upsampling stage.
-    ratios : list of int
-        Upsampling ratios (applied in order).
-    activation : str
-        Activation class name in ``torch.nn``.
-    activation_params : dict or None
-        Keyword arguments for the activation constructor.
-    final_activation : str or None
-        Optional final activation after the output convolution.
-    final_activation_params : dict or None
-        Kwargs for the final activation constructor.
-    norm : str
-        ``"weight_norm"`` or ``"none"``.
-    norm_params : dict or None
-        Extra kwargs for the norm module.
-    kernel_size : int
-        Kernel size of the first convolution.
-    last_kernel_size : int
-        Kernel size of the final projection convolution.
-    residual_kernel_size : int
-        Kernel size inside residual blocks.
-    dilation_base : int
-        Dilation base.
-    causal : bool
-        Causal convolutions only.
-    pad_mode : str
-        Padding mode.
-    true_skip : bool
-        Identity vs. conv skip in residual blocks.
-    compress : int
-        Channel compression in residual blocks.
-    lstm : int
-        Number of LSTM layers before the upsampling stack (0 = none).
-    trim_right_ratio : float
-        Right-trim ratio for causal transposed convolutions.
-    bidirectional : bool
-        Bidirectional LSTM.
-    """
+    """SEANet decoder: mirror of the encoder (transposed-conv upsampling)."""
 
     def __init__(
         self,
@@ -877,9 +753,7 @@ class _SEANetDecoder(nn.Module):
         return self.model(z)
 
 
-# ---------------------------------------------------------------------------
 # Residual Vector Quantization
-# ---------------------------------------------------------------------------
 
 
 def _ema_inplace(moving_avg: torch.Tensor, new: torch.Tensor, decay: float):
@@ -1126,18 +1000,7 @@ class _ResidualVQ(nn.Module):
 
 
 class _BrainSensorModule(nn.Module):
-    """Map sensor positions + types to a per-channel embedding.
-
-    Args:
-        n_dim: Embedding dimensionality.
-
-    Inputs:
-        pos:         (B, C, 6) float — position + orientation.
-        sensor_type: (B, C)    long  — 0=EEG, 1=MAG, 2=GRAD.
-
-    Returns:
-        (B, C, n_dim) normalised sensor embedding.
-    """
+    """Embed per-channel position+orientation (B,C,6) and type (B,C) -> (B,C,n_dim)."""
 
     def __init__(self, n_dim: int) -> None:
         super().__init__()
@@ -1157,26 +1020,8 @@ class _BrainSensorModule(nn.Module):
         return self.norm(x)
 
 
-# ---------------------------------------------------------------------------
-# ForwardSolution — sensor_embedding (query) × neurons (key/value)
-# ---------------------------------------------------------------------------
-
-
 class _ForwardSolution(nn.Module):
-    """Cross-attention: sensor embeddings query neural token key/values.
-
-    Args:
-        n_dim:   Model dimensionality.
-        n_head:  Number of attention heads (must divide n_dim).
-        dropout: Attention dropout probability.
-
-    Inputs:
-        sensor_embedding: (B, C, n_dim)
-        neurons:          (B, T_kv, n_dim)
-
-    Returns:
-        (B, C, n_dim)
-    """
+    """Cross-attention: sensor embeddings query the neural-token key/values."""
 
     def __init__(self, n_dim: int, n_head: int, dropout: float) -> None:
         super().__init__()
@@ -1213,27 +1058,11 @@ class _ForwardSolution(nn.Module):
         return self.proj(output)
 
 
-# ---------------------------------------------------------------------------
 # _BackwardSolution: neuros (query) attend to sensor+feature keys / channel values
-# ---------------------------------------------------------------------------
 
 
 class _BackwardSolution(nn.Module):
-    """Cross-attention: neural queries × pre-projected sensor keys/values.
-
-    Args:
-        n_dim:   Model dimensionality.
-        n_head:  Number of attention heads.
-        dropout: Attention dropout probability.
-
-    Inputs:
-        neuros: (B, N_q, n_dim) — learned neural queries.
-        k:      (B, T_kv, n_dim) — pre-projected keys from sensor space.
-        x:      (B, T_kv, n_dim) — raw values projected by self.v.
-
-    Returns:
-        (B, N_q, n_dim)
-    """
+    """Cross-attention: neural queries attend to pre-projected sensor keys/values."""
 
     def __init__(self, n_dim: int, n_head: int, dropout: float) -> None:
         super().__init__()
@@ -1270,27 +1099,9 @@ class _BackwardSolution(nn.Module):
 
 
 class _BrainTokenizerEncoder(nn.Module):
-    """Encode multi-channel EEG/MEG windows into neural token sequences.
+    """SEANet conv-encode windows, then collapse channels to ``n_neuro`` queries.
 
-    Pipeline: SEANet conv encode → spatial collapse via BackwardSolution.
-
-    Args:
-        n_filters:        Base filter count for SEANet.
-        ratios:           Temporal downsampling ratios (list[int]).
-        kernel_size:      SEANet conv kernel size.
-        last_kernel_size: SEANet final conv kernel size.
-        n_dim:            Embedding dimensionality.
-        n_head:           Attention heads (must divide n_dim).
-        dropout:          Attention dropout.
-        n_neuro:          Number of learned neural queries (spatial collapse).
-
-    Inputs:
-        x:                (B, C, N, L) — batch, channel, n_splits, window.
-        sensor_embedding: (B, C, n_dim) — output of _BrainSensorModule.
-
-    Returns:
-        (B, n_neuro, N, T, n_dim) where T = L / prod(ratios).
-        Note: the second axis is n_neuro (channels collapse to neuro queries).
+    ``(B, C, N, L)`` -> ``(B, n_neuro, N, T, n_dim)`` with ``T = L / prod(ratios)``.
     """
 
     def __init__(
@@ -1347,25 +1158,9 @@ class _BrainTokenizerEncoder(nn.Module):
 
 
 class _BrainTokenizerDecoder(nn.Module):
-    """Decode neural token sequences back to per-channel waveforms.
+    """Expand ``n_neuro`` tokens back to channels, then SEANet conv-decode.
 
-    Pipeline: ForwardSolution spatial expansion → SEANet conv decode.
-
-    Args:
-        n_dim:            Embedding dimensionality.
-        n_head:           Attention heads.
-        n_filters:        Base filter count for SEANet.
-        ratios:           Temporal upsampling ratios (list[int]).
-        kernel_size:      SEANet conv kernel size.
-        last_kernel_size: SEANet final conv kernel size.
-        dropout:          Attention dropout.
-
-    Inputs:
-        x:                (B, C, N, T, n_dim) — encoder output (C=n_neuro).
-        sensor_embedding: (B, C_orig, n_dim)  — sensor embeddings.
-
-    Returns:
-        (B, C_orig, N, L) reconstructed waveforms.
+    ``(B, n_neuro, N, T, n_dim)`` -> ``(B, C, N, L)`` reconstructed waveforms.
     """
 
     def __init__(
@@ -1412,9 +1207,7 @@ class _BrainTokenizerDecoder(nn.Module):
         return rearrange(x, "(B C N) 1 L -> B C N L", B=B, N=N)
 
 
-# ---------------------------------------------------------------------------
 # Public BrainTokenizer model (VQ-VAE pretraining module)
-# ---------------------------------------------------------------------------
 
 
 class BrainTokenizer(EEGModuleMixin, nn.Module):
@@ -1657,9 +1450,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         return feat, indices
 
 
-# ---------------------------------------------------------------------------
 # Public BrainOmni classifier model
-# ---------------------------------------------------------------------------
 
 
 class BrainOmni(EEGModuleMixin, nn.Module):
