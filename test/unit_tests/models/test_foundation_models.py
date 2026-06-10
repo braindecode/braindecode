@@ -1264,7 +1264,7 @@ def test_geometry_bad_loc_raises(loc):
         (lambda: nn.RMSNorm(8, eps=1e-6), lambda: (torch.randn(2, 5, 8),), (2, 5, 8)),
         (
             lambda: _SpatialTemporalBlock(16, 4, 0.0, causal=False),
-            lambda: (torch.randn(2, 3, 7, 16),),  # (B, C, W, D)
+            lambda: (torch.randn(2, 3, 7, 16),),  # (batch, chans, tokens, dim)
             (2, 3, 7, 16),
         ),
         (
@@ -1366,7 +1366,7 @@ def test_braintokenizer_encode_decode_and_tokenize():
     assert indices.shape[-1] == 2  # num_quantizers
     model.eval()
     feat, idx = model.tokenize(x)
-    assert feat.shape[:2] == (2, 3) and feat.shape[-1] == 16  # (B, n_neuro, W, emb)
+    assert feat.shape[:2] == (2, 3) and feat.shape[-1] == 16  # (batch, n_neuro, tokens, emb_dim)
     assert idx.shape[-1] == 2
 
 

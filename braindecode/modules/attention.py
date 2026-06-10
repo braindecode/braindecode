@@ -1097,7 +1097,7 @@ class RotaryPositionalEmbedding(nn.Module):
         return result
 
     def reshape_for_broadcast(self, x: torch.Tensor):
-        """x: Batch seq n_head d_head  /  rotate: seq dim."""
+        """x: (batch, seq, n_heads, head_dim); rotate cache: (seq, dim)."""
         batch, seq, heads, head_dim = x.shape
         if seq > self.max_seq_len_cache:
             self._set_rotate_cache(seq)
