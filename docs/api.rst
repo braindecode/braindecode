@@ -240,6 +240,8 @@ squeeze and excitation layers.
     GatherExcite
     GSoP
     MultiHeadAttention
+    MultiHeadAttentionRoPE
+    RotaryPositionalEmbedding
     SqueezeAndExcitation
 
 Blocks

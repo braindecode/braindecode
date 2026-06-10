@@ -12,6 +12,8 @@ from .attention import (
     GatherExcite,
     GSoP,
     MultiHeadAttention,
+    MultiHeadAttentionRoPE,
+    RotaryPositionalEmbedding,
     SqueezeAndExcitation,
 )
 from .blocks import MLP, FeedForwardBlock, InceptionBlock
@@ -65,6 +67,8 @@ __all__ = [
     "GatherExcite",
     "GSoP",
     "MultiHeadAttention",
+    "MultiHeadAttentionRoPE",
+    "RotaryPositionalEmbedding",
     "SqueezeAndExcitation",
     "CrissCrossTransformerEncoderLayer",
     "MLP",

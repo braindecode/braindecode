@@ -1302,3 +1302,47 @@ def test_forward_pass_ifnet_output_shape():
     out = block(x)
     assert isinstance(out, torch.Tensor)
     assert out.shape[0] == 2  # batch_size preserved
+
+
+def test_rotary_positional_embedding_output_shape():
+    """RotaryPositionalEmbedding: output shapes match inputs and values are finite."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    n_dim = 16
+    n_heads = 4
+    init_seq_len = 64
+    batch, seq, head_dim = 2, 7, n_dim // n_heads
+
+    rope = RotaryPositionalEmbedding(n_dim=head_dim * n_heads, init_seq_len=init_seq_len)
+    q = torch.randn(batch, seq, n_heads, head_dim)
+    k = torch.randn(batch, seq, n_heads, head_dim)
+
+    q_out, k_out = rope(q, k)
+
+    assert q_out.shape == q.shape, f"q shape mismatch: {q_out.shape} != {q.shape}"
+    assert k_out.shape == k.shape, f"k shape mismatch: {k_out.shape} != {k.shape}"
+    assert torch.isfinite(q_out).all(), "q_out contains non-finite values"
+    assert torch.isfinite(k_out).all(), "k_out contains non-finite values"
+
+
+@pytest.mark.parametrize("rope", [True, False])
+def test_multi_head_attention_rope_output_shape(rope):
+    """MultiHeadAttentionRoPE: output shape (batch, seq, n_dim) and finite values."""
+    from braindecode.modules import MultiHeadAttentionRoPE
+
+    n_dim = 16
+    n_head = 4
+    batch, seq = 2, 7
+
+    module = MultiHeadAttentionRoPE(
+        n_dim=n_dim, n_head=n_head, dropout=0.0, causal=False, rope=rope
+    ).eval()
+    x = torch.randn(batch, seq, n_dim)
+
+    with torch.no_grad():
+        out = module(x)
+
+    assert out.shape == (batch, seq, n_dim), (
+        f"Expected ({batch}, {seq}, {n_dim}), got {out.shape}"
+    )
+    assert torch.isfinite(out).all(), "Output contains non-finite values"

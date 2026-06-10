@@ -20,7 +20,7 @@ from torch.nn.utils import weight_norm  # noqa: F401
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _geometry_from_chs_info
-from braindecode.modules import ResidualVQ
+from braindecode.modules import MultiHeadAttentionRoPE, ResidualVQ
 
 # Attention / norm primitives
 
@@ -39,133 +39,6 @@ class _FeedForward(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.layer(x)
-
-
-class _RotaryEmbedding(nn.Module):
-    """Complex-valued Rotary Position Embedding (RoPE)."""
-
-    def __init__(self, n_dim, init_seq_len, base=10000):
-        super().__init__()
-        self.register_buffer(
-            "freqs",
-            1.0 / (base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim)),
-        )
-        self._set_rotate_cache(init_seq_len)
-
-    def _set_rotate_cache(self, seq_len):
-        self.max_seq_len_cache = seq_len
-        t = torch.arange(seq_len, device=self.freqs.device).type_as(self.freqs)
-        rotate = torch.outer(t, self.freqs).float()
-        self.register_buffer("rotate", torch.polar(torch.ones_like(rotate), rotate))
-
-    def _apply(self, fn, recurse=True):
-        # Rotate cache is complex64; a real-dtype cast would drop imaginary part, so regenerate.
-        prev_dtype = self.rotate.dtype
-        result = super()._apply(fn, recurse=recurse)
-        if self.rotate.dtype != prev_dtype:
-            self._set_rotate_cache(self.max_seq_len_cache)
-        return result
-
-    def reshape_for_broadcast(self, x: torch.Tensor):
-        """x: Batch seq n_head d_head  /  rotate: seq dim."""
-        batch, seq, heads, head_dim = x.shape
-        if seq > self.max_seq_len_cache:
-            self._set_rotate_cache(seq)
-        rotate = self.rotate[:seq, :]
-        assert heads * head_dim == rotate.shape[1], (
-            f"RoPE cache shape mismatch: heads={heads}, head_dim={head_dim}, rotate.shape[1]={rotate.shape[1]}"
-        )
-        return rearrange(
-            rotate, "seq (heads head_dim) -> seq heads head_dim", heads=heads
-        ).unsqueeze(0)
-
-    def forward(self, q, k):
-        assert len(q.shape) == len(k.shape) == 4, (
-            f"Expected 4-D q and k, got q.ndim={len(q.shape)}, k.ndim={len(k.shape)}"
-        )
-        q_ = torch.view_as_complex(q.float().reshape(*q.shape[:-1], -1, 2))
-        k_ = torch.view_as_complex(k.float().reshape(*k.shape[:-1], -1, 2))
-        rotate = self.reshape_for_broadcast(q_)
-        q_out = torch.view_as_real(q_ * rotate).flatten(3)
-        k_out = torch.view_as_real(k_ * rotate).flatten(3)
-        return q_out.type_as(q), k_out.type_as(k)
-
-
-class _Attention(nn.Module):
-    """Multi-head self-attention with optional RoPE and causal masking."""
-
-    def __init__(
-        self,
-        n_dim,
-        n_head,
-        dropout,
-        causal: bool = False,
-        rope: bool = False,
-    ):
-        super().__init__()
-        assert n_dim % n_head == 0, (
-            f"n_dim ({n_dim}) must be divisible by n_head ({n_head})"
-        )
-        self.dropout = dropout
-        self.n_dim = n_dim
-        self.n_head = n_head
-        self.causal = causal
-        self.qkv = nn.Linear(n_dim, 3 * n_dim)
-        self.proj = nn.Linear(n_dim, n_dim)
-        self.rope = rope
-        self.rope_embedding_layer = (
-            _RotaryEmbedding(n_dim=n_dim, init_seq_len=240)
-            if self.rope
-            else nn.Identity()
-        )
-
-    def forward(self, x: torch.Tensor, mask=None):
-        batch, seq, dim = x.shape
-        x = self.qkv(x)
-        q, k, v = torch.split(x, split_size_or_sections=self.n_dim, dim=-1)
-
-        if self.rope:
-            q = q.view(batch, seq, self.n_head, -1)
-            k = k.view(batch, seq, self.n_head, -1)
-            q, k = self.rope_embedding_layer(q, k)
-            q = q.transpose(1, 2)
-            k = k.transpose(1, 2)
-        else:
-            q = rearrange(
-                q,
-                "batch seq (heads head_dim) -> batch heads seq head_dim",
-                heads=self.n_head,
-            )
-            k = rearrange(
-                k,
-                "batch seq (heads head_dim) -> batch heads seq head_dim",
-                heads=self.n_head,
-            )
-
-        v = rearrange(
-            v,
-            "batch seq (heads head_dim) -> batch heads seq head_dim",
-            heads=self.n_head,
-        )
-
-        if mask is not None:
-            mask = mask.unsqueeze(1)
-
-        # SDPA applies dropout regardless of train mode; gate it for deterministic eval.
-        output = (
-            F.scaled_dot_product_attention(
-                query=q,
-                key=k,
-                value=v,
-                attn_mask=mask,
-                dropout_p=self.dropout if self.training else 0.0,
-                is_causal=self.causal,
-            )
-            .transpose(1, 2)
-            .contiguous()
-        )
-        output = output.view(batch, seq, -1)
-        return self.proj(output)
 
 
 class _SpatialTemporalBlock(nn.Module):
@@ -194,10 +67,10 @@ class _SpatialTemporalBlock(nn.Module):
             "n_dim and n_head must be even (split into spatial/temporal halves)"
         )
         self.pre_attn_norm = nn.RMSNorm(n_dim, eps=1e-6)
-        self.time_attn = _Attention(
+        self.time_attn = MultiHeadAttentionRoPE(
             n_dim // 2, n_head // 2, dropout, causal=causal, rope=True
         )
-        self.spatial_attn = _Attention(
+        self.spatial_attn = MultiHeadAttentionRoPE(
             n_dim // 2, n_head // 2, dropout, causal=False, rope=False
         )
         self.pre_ff_norm = nn.RMSNorm(n_dim, eps=1e-6)
