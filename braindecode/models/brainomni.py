@@ -1060,6 +1060,7 @@ def _laplace_smoothing(x: torch.Tensor, epsilon: float = 1e-6) -> torch.Tensor:
 
 
 def _uniform_init(*shape: int) -> torch.Tensor:
+    # kaiming_uniform_ (scaled uniform); buffers are overwritten on checkpoint load
     t = torch.empty(shape)
     nn.init.kaiming_uniform_(t)
     return t
@@ -1117,8 +1118,10 @@ class _EuclideanCodebook(nn.Module):
     Buffer names/shapes intentionally match the upstream BrainOmni checkpoint
     so that ``load_state_dict`` works without remapping.
 
-    # kmeans warm-start from upstream omitted; uniform init + EMA
-    # (pretrained weights overwrite these buffers).
+    Notes
+    -----
+    The kmeans warm-start from upstream is omitted; uniform initialisation is
+    always used (pretrained weights overwrite these buffers on load).
     """
 
     def __init__(
@@ -1254,7 +1257,6 @@ class _VectorQuantization(nn.Module):
         )
         self.rotation_trick = rotation_trick
         self.codebook_size = codebook_size
-        self.epsilon = epsilon
 
     @property
     def codebook(self) -> torch.Tensor:
@@ -1337,13 +1339,11 @@ class _ResidualVQ(nn.Module):
         return quantized_out, all_indices_t, all_losses_t.mean()  # type: ignore[return-value]
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
-        quantized_out: torch.Tensor | float = 0.0
         residual = x
         all_indices: list[torch.Tensor] = []
         for vq in self.layers:
             quantized, indices, _ = vq(residual)
             residual = residual - quantized.detach()
-            quantized_out = quantized_out + quantized
             all_indices.append(indices)
         return torch.stack(all_indices, dim=-1)
 
