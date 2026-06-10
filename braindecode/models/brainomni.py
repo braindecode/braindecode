@@ -324,16 +324,6 @@ class _SpatialTemporalAttentionBlock(nn.Module):
 # ---------------------------------------------------------------------------
 
 
-def _get_extra_padding_for_conv1d(
-    x: torch.Tensor, kernel_size: int, stride: int, padding_total: int = 0
-) -> int:
-    """Compute extra right-padding so that the last conv window is full."""
-    length = x.shape[-1]
-    n_frames = (length - kernel_size + padding_total) / stride + 1
-    ideal_length = (math.ceil(n_frames) - 1) * stride + (kernel_size - padding_total)
-    return ideal_length - length
-
-
 class _NormConv1d(nn.Module):
     """Conv1d with classic weight_norm (state-dict keys: ``conv.conv.weight_g/v``)."""
 
@@ -397,9 +387,9 @@ class _SConv1d(nn.Module):
         stride = self.conv.conv.stride[0]
         dilation = self.conv.conv.dilation[0]
         padding_total = (kernel_size - 1) * dilation - (stride - 1)
-        extra_padding = _get_extra_padding_for_conv1d(
-            x, kernel_size, stride, padding_total
-        )
+        # Right-pad so the last strided window is full: round the effective
+        # length up to the next multiple of ``stride`` (EnCodec convention).
+        extra_padding = (kernel_size - padding_total - x.shape[-1]) % stride
         if self.causal:
             x = F.pad(x, (padding_total, extra_padding), mode=self.pad_mode)
         else:
