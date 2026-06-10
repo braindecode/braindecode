@@ -1492,7 +1492,7 @@ class _ForwardSolution(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# BackwardSolution — neuros (query) × sensor keys × raw values
+# _BackwardSolution: neuros (query) attend to sensor+feature keys / channel values
 # ---------------------------------------------------------------------------
 
 
@@ -1530,7 +1530,9 @@ class _BackwardSolution(nn.Module):
     ) -> torch.Tensor:
         B, N_q, _ = neuros.shape
         q = rearrange(neuros, "B T (H D) -> B H T D", H=self.n_head)
-        k = rearrange(k, "B T (H D) -> B H T D", H=self.n_head)
+        k = rearrange(
+            k, "B T (H D) -> B H T D", H=self.n_head
+        )  # reshape pre-projected keys for multi-head attention
         v = rearrange(self.v(x), "B T (H D) -> B H T D", H=self.n_head)
         output = (
             F.scaled_dot_product_attention(
@@ -1573,12 +1575,13 @@ class _BrainTokenizerEncoder(nn.Module):
 
     Returns:
         (B, n_neuro, N, T, n_dim) where T = L / prod(ratios).
+        Note: the second axis is n_neuro (channels collapse to neuro queries).
     """
 
     def __init__(
         self,
         n_filters: int,
-        ratios: list,
+        ratios: list[int],
         kernel_size: int,
         last_kernel_size: int,
         n_dim: int,
@@ -1656,7 +1659,7 @@ class _BrainTokenizerDecoder(nn.Module):
         n_dim: int,
         n_head: int,
         n_filters: int,
-        ratios: list,
+        ratios: list[int],
         kernel_size: int,
         last_kernel_size: int,
         dropout: float,
