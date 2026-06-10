@@ -701,7 +701,7 @@ def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
 
 
 def _geometry_from_chs_info(chs_info):
-    """Derive ``(pos (C, 6) float32, sensor_type (C,) int64)`` from ``chs_info``.
+    """Derive ``(pos (n_chans, 6) float32, sensor_type (n_chans,) int64)`` from ``chs_info``.
 
     Positions come from :func:`extract_channel_locations_from_chs_info` and the
     EEG/MAG/GRAD type from :func:`mne.channel_type`; the MEG coil orientation and
@@ -733,8 +733,10 @@ def _geometry_from_chs_info(chs_info):
 
     loc = np.stack(
         [np.asarray(ch["loc"], dtype=np.float64) for ch in chs_info]
-    )  # (C, 12)
-    coil_trans = _loc_to_coil_trans(loc)  # (C, 4, 4); 3x3 columns are the ex/ey/ez axes
+    )  # (n_chans, 12)
+    coil_trans = _loc_to_coil_trans(
+        loc
+    )  # (n_chans, 4, 4); 3x3 columns are the ex/ey/ez axes
     grad, mag = sensor_type == _SENSOR_CODE["grad"], sensor_type == _SENSOR_CODE["mag"]
     ori = np.zeros((len(chs_info), 3))  # EEG orientation stays zero
     ori[grad] = coil_trans[grad, :3, 0]  # gradiometer: in-plane (ex) axis

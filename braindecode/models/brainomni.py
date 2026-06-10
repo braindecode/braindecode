@@ -177,7 +177,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         )
 
     def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
-        """Slice ``x`` (B, C, T) into ``(B, C, N, window_length)`` windows."""
+        """Slice ``x`` (batch, n_chans, n_times) into ``(batch, n_chans, n_windows, window_length)`` windows."""
         step = round(self.window_length * (1 - overlap_ratio))
         pad = max(self.window_length - x.shape[-1], 0)  # ensure >= 1 window
         if step < self.window_length:  # overlapping: fill the trailing window
@@ -189,24 +189,28 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
 
     def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
         """Unfold -> sensor-embed -> encode -> RVQ -> (feat_q, indices, commit, se)."""
-        xu = self._unfold(x, overlap_ratio)  # (B, C, N, L)
+        xu = self._unfold(
+            x, overlap_ratio
+        )  # (batch, n_chans, n_windows, window_length)
         # Sensor embedding is batch-independent: compute once, broadcast to B.
-        se = self.sensor_embed(self.pos, self.sensor_type)  # (C, emb_dim)
-        se = se.unsqueeze(0).expand(xu.shape[0], -1, -1)  # (B, C, emb_dim)
-        feat = self.encoder(xu, se)  # (B, n_neuro, N, T, D)
+        se = self.sensor_embed(self.pos, self.sensor_type)  # (n_chans, emb_dim)
+        se = se.unsqueeze(0).expand(xu.shape[0], -1, -1)  # (batch, n_chans, emb_dim)
+        feat = self.encoder(xu, se)  # (batch, n_neuro, n_windows, n_tokens, emb_dim)
         feat_q, indices, commit = self.quantizer(feat)
         return feat_q, indices, commit, se
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """VQ-VAE reconstruction. ``x`` (B, C, T) -> reconstruction (B, C, T)."""
+        """VQ-VAE reconstruction. ``x`` (batch, n_chans, n_times) -> reconstruction (batch, n_chans, n_times)."""
         feat_q, _, _, se = self._encode_quantize(x)
-        recon = self.final_layer(feat_q, se)  # (B, C, N, L)
+        recon = self.final_layer(
+            feat_q, se
+        )  # (batch, n_chans, n_windows, window_length)
         # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
         recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
         return recon[..., : x.shape[-1]]
 
     def encode_decode(self, x: torch.Tensor):
-        """Reconstruction pass returning ``(recon (B,C,T), commitment_loss, indices)`` for training loops."""
+        """Reconstruction pass returning ``(recon (batch, n_chans, n_times), commitment_loss, indices)`` for training loops."""
         feat_q, indices, commit, se = self._encode_quantize(x)
         recon = self.final_layer(feat_q, se)
         # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
@@ -220,16 +224,16 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input signal, shape ``(B, C, T)``.
+            Input signal, shape ``(batch, n_chans, n_times)``.
         overlap_ratio : float
             Fraction of overlap between consecutive windows (0 = no overlap).
 
         Returns
         -------
         feat : torch.Tensor
-            Quantised features, shape ``(B, n_neuro, N*T_enc, emb_dim)``.
+            Quantised features, shape ``(batch, n_neuro, n_windows * n_tokens, emb_dim)``.
         indices : torch.Tensor
-            Codebook indices, shape ``(B, n_neuro, N*T_enc, num_quantizers)``.
+            Codebook indices, shape ``(batch, n_neuro, n_windows * n_tokens, num_quantizers)``.
 
         Notes
         -----
@@ -443,7 +447,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
     def _tokens(self, x: torch.Tensor) -> torch.Tensor:
         """Tokenize ``x`` and project to ``lm_dim``.
 
-        Returns ``(B, n_neuro, W, lm_dim)`` with gradients stopped at the
+        Returns ``(batch, n_neuro, n_windows * n_tokens, lm_dim)`` with gradients stopped at the
         tokenizer boundary.
         """
         feat, _ = self.tokenizer.tokenize(x, overlap_ratio=self.overlap_ratio)
@@ -454,7 +458,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         """Backbone embedding: blocks[:-1] then L2-normalize (parity w/ upstream).
 
-        Returns ``(B, n_neuro, W, lm_dim)``.
+        Returns ``(batch, n_neuro, n_windows * n_tokens, lm_dim)``.
         """
         h = self._tokens(x)
         for block in self.blocks[:-1]:
@@ -462,10 +466,10 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         return F.normalize(h, p=2.0, dim=-1, eps=1e-6)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Classify ``x`` (B, C, T) -> logits (B, n_outputs)."""
-        feat = self.encode(x)  # (B, n_neuro, W, lm_dim)
-        feat = feat.mean(dim=2)  # pool over tokens -> (B, n_neuro, lm_dim)
-        feat = feat.reshape(feat.shape[0], -1)  # (B, n_neuro * lm_dim)
+        """Classify ``x`` (batch, n_chans, n_times) -> logits (batch, n_outputs)."""
+        feat = self.encode(x)  # (batch, n_neuro, n_windows * n_tokens, lm_dim)
+        feat = feat.mean(dim=2)  # pool over tokens -> (batch, n_neuro, lm_dim)
+        feat = feat.reshape(feat.shape[0], -1)  # (batch, n_neuro * lm_dim)
         return self.final_layer(feat)
 
 
@@ -984,7 +988,7 @@ class _SEANetDecoder(nn.Module):
 
 
 class _SensorEmbedding(nn.Module):
-    """Embed per-channel position+orientation (B,C,6) and type (B,C) -> (B,C,n_dim)."""
+    """Embed per-channel position+orientation (n_chans, 6) and type (n_chans,) -> (n_chans, emb_dim)."""
 
     def __init__(self, n_dim: int) -> None:
         super().__init__()
@@ -1106,7 +1110,7 @@ class _BackwardSolution(nn.Module):
 class _TokenizerEncoder(nn.Module):
     """SEANet conv-encode windows, then collapse channels to ``n_neuro`` queries.
 
-    ``(B, C, N, L)`` -> ``(B, n_neuro, N, T, n_dim)`` with ``T = L / prod(ratios)``.
+    ``(batch, n_chans, n_windows, window_length)`` -> ``(batch, n_neuro, n_windows, n_tokens, emb_dim)`` with ``T = L / prod(ratios)``.
     """
 
     def __init__(
@@ -1178,7 +1182,7 @@ class _TokenizerEncoder(nn.Module):
 class _TokenizerDecoder(nn.Module):
     """Expand ``n_neuro`` tokens back to channels, then SEANet conv-decode.
 
-    ``(B, n_neuro, N, T, n_dim)`` -> ``(B, C, N, L)`` reconstructed waveforms.
+    ``(batch, n_neuro, n_windows, n_tokens, emb_dim)`` -> ``(batch, n_chans, n_windows, window_length)`` reconstructed waveforms.
     """
 
     def __init__(
