@@ -1166,3 +1166,33 @@ def test_geometry_absent_loc_raises():
     chs_info = [{"ch_name": "A", "kind": "eeg"}]  # no 'loc' key at all
     with pytest.raises(ValueError, match="set_montage"):
         _geometry_from_chs_info(chs_info)
+
+
+# ==============================================================================
+# Tests for BrainOmni attention/norm primitives
+# ==============================================================================
+
+
+from braindecode.models.brainomni import (  # noqa: E402
+    _RMSNorm,
+    _SpatialTemporalAttentionBlock,
+)
+
+
+def test_rmsnorm_shape_and_finite():
+    norm = _RMSNorm(8)
+    x = torch.randn(2, 5, 8)
+    out = norm(x)
+    assert out.shape == x.shape
+    assert torch.isfinite(out).all()
+
+
+def test_spatial_temporal_block_shape():
+    # input (B, C, W, D); D and num_heads both even (split in half internally)
+    block = _SpatialTemporalAttentionBlock(
+        n_dim=16, n_head=4, dropout=0.0, causal=False
+    )
+    x = torch.randn(2, 3, 7, 16)  # B C W D
+    out = block(x)
+    assert out.shape == x.shape
+    assert torch.isfinite(out).all()
