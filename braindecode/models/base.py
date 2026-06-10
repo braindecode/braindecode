@@ -6,10 +6,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import warnings
 from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Type, Union
+
+log = logging.getLogger(__name__)
 
 import numpy as np
 import torch
@@ -511,6 +514,86 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     mapping: Optional[Dict[str, str]] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
+        """Load a state dict, optionally applying :attr:`mapping`.
+
+        In addition to the key remapping the base class always performed,
+        this override adds **shape-mismatch reporting** when ``strict=False``:
+        any checkpoint tensor whose shape does not match the current model
+        is dropped *before* it is handed to PyTorch, and a single
+        :func:`logging.warning` lists what was dropped.  Two reasons:
+
+        1. From PyTorch 2.1 onward, :pytorch:`torch.nn.Module.load_state_dict`
+           raises ``RuntimeError`` on shape mismatch *even with*
+           ``strict=False`` -- see pytorch/pytorch#92344.  Users who reach for
+           ``strict=False`` to load partial pretrained weights (e.g. a
+           backbone whose head will be re-initialised, or
+           :class:`InterpolatedLaBraM` with a different fine-tune epoch
+           length than the pretraining) cannot do so as a one-liner without
+           this drop step.
+        2. PyTorch's error message does not tell the user *why* the shape
+           changed.  The motivating case is :class:`InterpolatedLaBraM`:
+           the ``temporal_embedding`` tensor is tied to the pretraining
+           sequence length, so any fine-tune with a different epoch length
+           changes its shape; without an explicit log line the user's first
+           downstream signal is "the fine-tune did not improve over a
+           random init", which is hard to diagnose.
+
+        Behaviour summary:
+
+        * ``strict=True`` (the default) -- unchanged: shape mismatches and
+          missing/unexpected keys raise ``RuntimeError``.
+        * ``strict=False`` -- shape-mismatched tensors are dropped (the
+          corresponding model parameters keep their current values, i.e.
+          stay at the freshly-initialised values) and a single
+          ``logging.warning`` enumerates them.  Missing / unexpected keys
+          continue to be returned via the standard ``_IncompatibleKeys``
+          namedtuple.
+
+        Parameters
+        ----------
+        state_dict : Mapping[str, torch.Tensor]
+            The checkpoint state dict.  Entries whose value is not a tensor
+            (or otherwise has no ``.shape`` attribute) are left untouched and
+            passed through to PyTorch unchanged.
+        strict : bool, default True
+            Same semantics as :meth:`torch.nn.Module.load_state_dict`,
+            but with the relaxed shape-handling described above when set
+            to ``False``.  May be passed positionally.
+
+        Returns
+        -------
+        torch.nn.modules.module._IncompatibleKeys
+            Named tuple with ``missing_keys`` and ``unexpected_keys``.
+            Keys dropped by the shape check appear in ``missing_keys``.
+
+        .. versionchanged:: 1.6
+            ``strict=False`` no longer raises ``RuntimeError`` on shape
+            mismatches.  Mismatched tensors are dropped and reported via
+            a single :func:`logging.warning`; the dropped keys are
+            surfaced through ``missing_keys``.
+
+        Examples
+        --------
+        Load a pretrained checkpoint into a model whose head was
+        re-sized for a different downstream task -- mismatched tensors
+        are dropped and reported instead of raising:
+
+        >>> import logging, torch                            # doctest: +SKIP
+        >>> from braindecode.models import EEGNet            # doctest: +SKIP
+        >>> logging.basicConfig(level=logging.WARNING)       # doctest: +SKIP
+        >>> pretrained = EEGNet(n_chans=22, n_times=1000, n_outputs=4)
+        ...                                                  # doctest: +SKIP
+        >>> finetune = EEGNet(n_chans=22, n_times=1000, n_outputs=10)
+        ...                                                  # doctest: +SKIP
+        >>> missing = finetune.load_state_dict(              # doctest: +SKIP
+        ...     pretrained.state_dict(), strict=False
+        ... )
+        >>> # head weight/bias appear in missing_keys; the rest loaded.
+        >>> any("classifier" in k for k in missing.missing_keys)
+        ...                                                  # doctest: +SKIP
+        True
+        """
+        # Apply the legacy key remapping (unchanged behaviour).
         mapping = self.mapping if self.mapping else {}
         new_state_dict = OrderedDict()
         for k, v in state_dict.items():
@@ -518,6 +601,47 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 new_state_dict[mapping[k]] = v
             else:
                 new_state_dict[k] = v
+
+        # ``strict`` may be passed positionally or by keyword.
+        # The signature is ``(state_dict, strict=True, assign=False)`` as of
+        # PyTorch 2.5, so positional arg 0 is the strict flag.
+        strict = bool(kwargs.get("strict", args[0] if args else True))
+
+        if not strict:
+            own = self.state_dict()
+            mismatched: list[tuple[str, tuple[int, ...], tuple[int, ...]]] = []
+            for k in list(new_state_dict.keys()):
+                if k not in own:
+                    # Unknown key -- let PyTorch surface it via unexpected_keys.
+                    continue
+                new_val = new_state_dict[k]
+                # Defensive: skip entries that are not tensor-like (e.g. some
+                # custom modules stash non-tensor metadata in state_dict).
+                # PyTorch's own type check will then handle them downstream.
+                new_shape = getattr(new_val, "shape", None)
+                if new_shape is None:
+                    continue
+                if tuple(new_shape) != tuple(own[k].shape):
+                    mismatched.append(
+                        (k, tuple(new_shape), tuple(own[k].shape))
+                    )
+                    del new_state_dict[k]
+            if mismatched:
+                log.warning(
+                    "%s.load_state_dict (strict=False): %d tensor(s) in the "
+                    "checkpoint have a shape that does not match the current "
+                    "model and were dropped.  The corresponding model "
+                    "parameters keep their freshly-initialised values.  Most "
+                    "common cause: a fine-tune epoch length that differs "
+                    "from the pretraining length (see ``temporal_embedding`` "
+                    "on LaBraM).  Affected keys:\n%s",
+                    type(self).__name__,
+                    len(mismatched),
+                    "\n".join(
+                        f"  - {k}: checkpoint shape {pre} vs model shape {own_shape}"
+                        for k, pre, own_shape in mismatched
+                    ),
+                )
 
         return super().load_state_dict(new_state_dict, *args, **kwargs)
 
