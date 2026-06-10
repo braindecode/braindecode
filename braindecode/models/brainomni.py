@@ -15,8 +15,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-
-# Private MNE helper (stable location since the _fiff reorg; mne>=1.11 is required).
 from mne._fiff.tag import _loc_to_coil_trans
 
 # Classic weight_norm keeps ``conv.weight_g``/``weight_v`` keys (checkpoint parity).
@@ -79,15 +77,14 @@ def _geometry_from_chs_info(chs_info):
         )
     sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
 
-    # MEG coil orientation via MNE's coil transform (columns of the 3x3 are the
-    # ex/ey/ez coil-frame axes). BrainOmni uses the in-plane axis (ex) for
-    # gradiometers and the normal (ez) for magnetometers.
-    loc = np.stack([np.asarray(ch["loc"], dtype=np.float64) for ch in chs_info])
-    coil_trans = _loc_to_coil_trans(loc)  # (C, 4, 4)
+    loc = np.stack(
+        [np.asarray(ch["loc"], dtype=np.float64) for ch in chs_info]
+    )  # (C, 12)
+    coil_trans = _loc_to_coil_trans(loc)  # (C, 4, 4); 3x3 columns are the ex/ey/ez axes
     grad, mag = sensor_type == _SENSOR_CODE["grad"], sensor_type == _SENSOR_CODE["mag"]
-    ori = np.zeros((len(chs_info), 3))
-    ori[grad] = coil_trans[grad, :3, 0]  # gradiometer: ex
-    ori[mag] = coil_trans[mag, :3, 2]  # magnetometer: ez
+    ori = np.zeros((len(chs_info), 3))  # EEG orientation stays zero
+    ori[grad] = coil_trans[grad, :3, 0]  # gradiometer: in-plane (ex) axis
+    ori[mag] = coil_trans[mag, :3, 2]  # magnetometer: coil normal (ez) axis
 
     pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
     return _normalize_pos(pos, sensor_type), sensor_type
