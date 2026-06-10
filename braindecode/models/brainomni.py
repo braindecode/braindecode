@@ -113,7 +113,7 @@ def _geometry_from_chs_info(chs_info):
 
 
 # ---------------------------------------------------------------------------
-# Attention / norm primitives (ported from BrainOmni/model_utils/attn.py)
+# Attention / norm primitives
 # ---------------------------------------------------------------------------
 
 
@@ -307,6 +307,7 @@ class _SpatialTemporalAttentionBlock(nn.Module):
 
     def _attn_operator(self, x):
         B, C, W, D = x.shape
+        # Upper half of feature dim attends over channels (spatial); lower half over windows (temporal).
         xs = rearrange(x[:, :, :, D // 2 :], "B C W D -> (B W) C D")
         xt = rearrange(x[:, :, :, : D // 2], "B C W D->(B C) W D")
         xs = self.spatial_attn(xs, None)
@@ -320,31 +321,8 @@ class _SpatialTemporalAttentionBlock(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# SEANet conv helpers (ported from Meta EnCodec / BrainOmni model_utils/conv.py)
+# SEANet conv helpers
 # ---------------------------------------------------------------------------
-
-
-class _NormConv1d(nn.Module):
-    """Conv1d with classic weight_norm (state-dict keys: ``conv.conv.weight_g/v``)."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-        # Classic weight_norm preserves checkpoint key parity with upstream.
-        self.conv = weight_norm(nn.Conv1d(*args, **kwargs))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.conv(x)
-
-
-class _NormConvTranspose1d(nn.Module):
-    """ConvTranspose1d with classic weight_norm."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-        self.convtr = weight_norm(nn.ConvTranspose1d(*args, **kwargs))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.convtr(x)
 
 
 class _SConv1d(nn.Module):
@@ -370,22 +348,25 @@ class _SConv1d(nn.Module):
                 "_SConv1d has been initialized with stride > 1 and dilation > 1"
                 f" (kernel_size={kernel_size} stride={stride}, dilation={dilation})."
             )
-        self.conv = _NormConv1d(
-            in_channels,
-            out_channels,
-            kernel_size,
-            stride,
-            dilation=dilation,
-            groups=groups,
-            bias=bias,
+        # Classic weight_norm preserves checkpoint key parity with upstream.
+        self.conv = weight_norm(
+            nn.Conv1d(
+                in_channels,
+                out_channels,
+                kernel_size,
+                stride,
+                dilation=dilation,
+                groups=groups,
+                bias=bias,
+            )
         )
         self.causal = causal
         self.pad_mode = pad_mode
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        kernel_size = self.conv.conv.kernel_size[0]
-        stride = self.conv.conv.stride[0]
-        dilation = self.conv.conv.dilation[0]
+        kernel_size = self.conv.kernel_size[0]
+        stride = self.conv.stride[0]
+        dilation = self.conv.dilation[0]
         padding_total = (kernel_size - 1) * dilation - (stride - 1)
         # Right-pad so the last strided window is full: round the effective
         # length up to the next multiple of ``stride`` (EnCodec convention).
@@ -425,8 +406,8 @@ class _SConvTranspose1d(nn.Module):
         padding_total = kernel_size - stride
         if causal:
             # Causal: no native padding; trimming is done in forward via inline slice.
-            self.convtr = _NormConvTranspose1d(
-                in_channels, out_channels, kernel_size, stride
+            self.convtr = weight_norm(
+                nn.ConvTranspose1d(in_channels, out_channels, kernel_size, stride)
             )
         else:
             # Non-causal: use native padding= to remove padding_total//2 per side.
@@ -435,12 +416,14 @@ class _SConvTranspose1d(nn.Module):
                 f"(kernel_size-stride={padding_total}); got kernel_size={kernel_size}, "
                 f"stride={stride}."
             )
-            self.convtr = _NormConvTranspose1d(
-                in_channels,
-                out_channels,
-                kernel_size,
-                stride,
-                padding=padding_total // 2,
+            self.convtr = weight_norm(
+                nn.ConvTranspose1d(
+                    in_channels,
+                    out_channels,
+                    kernel_size,
+                    stride,
+                    padding=padding_total // 2,
+                )
             )
         self._padding_total = padding_total
 
@@ -454,7 +437,7 @@ class _SConvTranspose1d(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# SLSTM (ported from Meta EnCodec / BrainOmni model_utils/lstm.py)
+# SLSTM
 # ---------------------------------------------------------------------------
 
 
@@ -488,7 +471,6 @@ class _SLSTM(nn.Module):
 
 # ---------------------------------------------------------------------------
 # SEANet residual block + encoder/decoder
-# (ported from Meta EnCodec / BrainOmni model_utils/seanet.py)
 # ---------------------------------------------------------------------------
 
 
@@ -895,13 +877,8 @@ class _SEANetDecoder(nn.Module):
         return self.model(z)
 
 
-# =============================================================================
-# Residual Vector Quantization (EMA path, single-process, no deepspeed/einx)
-# =============================================================================
-
-
 # ---------------------------------------------------------------------------
-# EMA / smoothing helpers
+# Residual Vector Quantization
 # ---------------------------------------------------------------------------
 
 
@@ -910,12 +887,10 @@ def _ema_inplace(moving_avg: torch.Tensor, new: torch.Tensor, decay: float):
 
 
 # Rotation-trick STE (Fifty et al. 2024, §4.2 https://arxiv.org/abs/2410.06424).
-# Local replacement for vector_quantize_pytorch.rotate_to.
 
 
 def _efficient_rotation_trick_transform(u, q, e):
-    # Householder reflection + rank-1 correction (Fifty et al. 2024, Sec. 4.2):
-    # e - 2<e,w>w + 2<e,u>q, with w = normalize(u + q).
+    # Householder reflection + rank-1 correction: e - 2<e,w>w + 2<e,u>q, w = normalize(u+q).
     w = F.normalize(u + q, p=2, dim=1, eps=1e-6).detach()
     ew = (e * w).sum(dim=1, keepdim=True)
     eu = (e * u.detach()).sum(dim=1, keepdim=True)
@@ -1094,7 +1069,7 @@ class _VectorQuantization(nn.Module):
 
 
 class _ResidualVQ(nn.Module):
-    """Residual vector quantisation (EMA path, no quantize-dropout)."""
+    """Residual vector quantisation with L2-normalisation (EMA path, no quantize-dropout)."""
 
     def __init__(
         self,
@@ -1124,6 +1099,7 @@ class _ResidualVQ(nn.Module):
     def forward(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        x = F.normalize(x, p=2.0, dim=-1)
         quantized_out: torch.Tensor | float = 0.0
         residual = x
         all_losses: list[torch.Tensor] = []
@@ -1139,6 +1115,7 @@ class _ResidualVQ(nn.Module):
         return quantized_out, all_indices_t, all_losses_t.mean()  # type: ignore[return-value]
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.normalize(x, p=2.0, dim=-1)
         residual = x
         all_indices: list[torch.Tensor] = []
         for vq in self.layers:
@@ -1146,39 +1123,6 @@ class _ResidualVQ(nn.Module):
             residual = residual - quantized.detach()
             all_indices.append(indices)
         return torch.stack(all_indices, dim=-1)
-
-
-class _BrainQuantizer(nn.Module):
-    """L2-normalise → RVQ wrapper used by BrainTokenizer."""
-
-    def __init__(
-        self,
-        n_dim: int,
-        codebook_dim: int,
-        codebook_size: int,
-        num_quantizers: int,
-        rotation_trick: bool,
-        quantize_optimize_method: str,
-    ):
-        super().__init__()
-        self.rvq = _ResidualVQ(
-            dim=n_dim,
-            codebook_dim=codebook_dim,
-            codebook_size=codebook_size,
-            num_quantizers=num_quantizers,
-            rotation_trick=rotation_trick,
-            quantize_optimize_method=quantize_optimize_method,
-        )
-
-    @torch.no_grad()
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
-        return self.rvq.encode(F.normalize(x, p=2.0, dim=-1))
-
-    def forward(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        x_q, indices, loss = self.rvq(F.normalize(x, p=2.0, dim=-1))
-        return x_q, indices, loss
 
 
 class _BrainSensorModule(nn.Module):
@@ -1383,10 +1327,13 @@ class _BrainTokenizerEncoder(nn.Module):
     ) -> torch.Tensor:
         assert sensor_embedding is not None, "sensor_embedding is required"
         B, C, N, L = x.shape
+        # Each (sample, channel, window) is an independent 1-D waveform for SEANet.
         x = rearrange(x, "B C N L -> (B C N) 1 L")
         x = self.seanet_encoder(x)
+        # Re-group encoded windows back so W = N*T is the joint time axis.
         x = rearrange(x, "(B C N) D T -> B C (N T) D", B=B, C=C, N=N)
         B, C, W, _ = x.shape
+        # Expand sensor embedding to match every time step, then flatten for cross-attention.
         sensor_embedding = rearrange(
             sensor_embedding.unsqueeze(2).repeat(1, 1, W, 1),
             "B C W D -> (B W) C D",
@@ -1394,6 +1341,7 @@ class _BrainTokenizerEncoder(nn.Module):
         x = rearrange(x, "B C W D -> (B W) C D")
         neuros = self.neuros.type_as(x).unsqueeze(0).repeat(x.shape[0], 1, 1)
         x = self.backwardsolution(neuros, self.k_proj(x + sensor_embedding), x)
+        # Collapse the n_neuro-channel axis back into the batch; split window from token dims.
         x = rearrange(x, "(B N T) C D -> B C (N T) D", B=B, N=N)
         return rearrange(x, "B C (N T) D -> B C N T D", N=N)
 
@@ -1448,17 +1396,19 @@ class _BrainTokenizerDecoder(nn.Module):
     ) -> torch.Tensor:
         assert sensor_embedding is not None, "sensor_embedding is required"
         B, C, N, T, D = x.shape
-        # Flatten batch, window-group (N) and per-window token (T) into one axis
-        # so the cross-attention treats every (sample, window, token) independently
-        # and attends across the C=n_neuro latent channels.
+        # Flatten batch × window × token into one axis so cross-attention sees
+        # each (sample, window, token) independently across n_neuro latent channels.
         x = rearrange(x, "B C N T D -> (B N T) C D")
+        # Match sensor embedding shape to the flattened batch axis.
         sensor_embedding = rearrange(
             sensor_embedding.view(B, -1, 1, 1, D).repeat(1, 1, N, T, 1),
             "B C N T D -> (B N T) C D",
         )
         x = self.forwardsolution(sensor_embedding, x)
+        # Regroup so each (sample, channel, window) is a separate 1-D sequence for SEANet.
         x = rearrange(x, "(B N T) C D -> (B C N) D T", B=B, N=N, T=T)
         x = self.seanet_decoder(x)
+        # Split the fused batch back into sample, channel, and window dimensions.
         return rearrange(x, "(B C N) 1 L -> B C N L", B=B, N=N)
 
 
@@ -1606,8 +1556,8 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
             dropout=drop_prob,
             n_neuro=n_neuro,
         )
-        self.quantizer = _BrainQuantizer(
-            n_dim=emb_dim,
+        self.quantizer = _ResidualVQ(
+            dim=emb_dim,
             codebook_dim=codebook_dim,
             codebook_size=codebook_size,
             num_quantizers=num_quantizers,
@@ -1701,6 +1651,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         finally:
             if was_training:
                 self.train()
+        # Merge windows (N) and per-window tokens (T) into a single token sequence.
         feat = rearrange(feat_q, "B C N T D -> B C (N T) D")
         indices = rearrange(indices, "B C N T Q -> B C (N T) Q")
         return feat, indices

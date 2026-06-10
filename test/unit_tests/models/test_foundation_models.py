@@ -1123,10 +1123,10 @@ def test_codebrain_return_features():
 from braindecode.models import BrainOmni, BrainTokenizer  # noqa: E402
 from braindecode.models.base import EEGModuleMixin  # noqa: E402
 from braindecode.models.brainomni import (  # noqa: E402
-    _BrainQuantizer,
     _BrainSensorModule,
     _BrainTokenizerEncoder,
     _geometry_from_chs_info,
+    _ResidualVQ,
     _RMSNorm,
     _SEANetDecoder,
     _SEANetEncoder,
@@ -1191,8 +1191,8 @@ def _small_brainomni(n_chans=4, n_outputs=3, n_times=512, sfreq=256.0, chs_info=
 
 
 def _quantizer(num_quantizers=2):
-    return _BrainQuantizer(
-        n_dim=16,
+    return _ResidualVQ(
+        dim=16,
         codebook_dim=16,
         codebook_size=32,
         num_quantizers=num_quantizers,
@@ -1326,7 +1326,7 @@ def test_brain_quantizer_codebook_ema(train, expect_change):
     torch.manual_seed(0)
     q = _quantizer(num_quantizers=2)
     q.train(train)
-    codebook = q.rvq.layers[0]._codebook
+    codebook = q.layers[0]._codebook
     before = codebook.embed.clone()
     for _ in range(3):
         q(torch.randn(8, 10, 16))
@@ -1402,7 +1402,7 @@ def test_brainomni_reset_head_changes_only_head():
 def test_brainomni_vq_frozen_during_train_step():
     torch.manual_seed(0)
     model = _small_brainomni().train()
-    codebook = model.tokenizer.quantizer.rvq.layers[0]._codebook
+    codebook = model.tokenizer.quantizer.layers[0]._codebook
     before = codebook.embed.clone()
     model(torch.randn(2, 4, 512)).sum().backward()
     assert torch.allclose(before, codebook.embed)  # frozen tokenizer
