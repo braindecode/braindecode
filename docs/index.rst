@@ -139,6 +139,7 @@
       <div class="container logo-strip-inner">
         <span class="logo-strip-label">Built &amp; maintained at</span>
         <div class="logo-strip-logos">
+          <img src="_static/institution_logos/yneuro.png" alt="Yneuro" style="height:28px"/>
           <img src="_static/institution_logos/ucsd.png" alt="UC San Diego" style="height:28px"/>
           <img src="_static/institution_logos/unifreiburg.png" alt="Uni Freiburg" style="height:38px"/>
           <img src="_static/institution_logos/inria.png" alt="Inria" style="height:22px"/>
