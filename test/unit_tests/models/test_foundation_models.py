@@ -1196,3 +1196,24 @@ def test_spatial_temporal_block_shape():
     out = block(x)
     assert out.shape == x.shape
     assert torch.isfinite(out).all()
+
+
+# ==============================================================================
+# Tests for BrainOmni SEANet encoder/decoder
+# ==============================================================================
+
+
+from braindecode.models.brainomni import _SEANetDecoder, _SEANetEncoder  # noqa: E402
+
+
+def test_seanet_roundtrip_downsampling():
+    enc = _SEANetEncoder(channels=1, dimension=32, n_filters=8,
+                         ratios=[8, 4, 2], kernel_size=5, last_kernel_size=5)
+    dec = _SEANetDecoder(channels=1, dimension=32, n_filters=8,
+                         ratios=[8, 4, 2], kernel_size=5, last_kernel_size=5)
+    x = torch.randn(4, 1, 512)  # (B*C*N, 1, L=window_length)
+    z = enc(x)                  # -> (4, 32, 512/64=8)
+    assert z.shape == (4, 32, 8)
+    x_rec = dec(z)
+    assert x_rec.shape == (4, 1, 512)
+    assert torch.isfinite(x_rec).all()

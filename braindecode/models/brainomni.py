@@ -6,11 +6,20 @@
 # SEANet/conv/LSTM submodules derive from Meta's EnCodec (MIT License).
 from __future__ import annotations
 
+import math
+import warnings
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+
+# Classic weight_norm is used (not torch.nn.utils.parametrizations.weight_norm)
+# to keep state-dict keys as ``conv.weight_g`` / ``conv.weight_v``, matching
+# the upstream EnCodec/BrainOmni checkpoint format.  torch >=2.0 emits a
+# deprecation warning for this API — that is expected and intentional.
+from torch.nn.utils import weight_norm  # noqa: F401
 
 # MNE FIFF constants (avoid importing mne at module load for a tiny lookup)
 _FIFF_MEG_CH = 1
@@ -330,3 +339,669 @@ class _SpatialTemporalAttentionBlock(nn.Module):
         # are intentionally swapped relative to the input split. Required for
         # pretrained-weight parity; see BrainOmni/model_utils/attn.py.
         return torch.cat([xs, xt], dim=-1)
+
+
+# ---------------------------------------------------------------------------
+# SEANet conv helpers (ported from Meta EnCodec / BrainOmni model_utils/conv.py)
+# ---------------------------------------------------------------------------
+
+# Supported parametrisation norms for this port (weight_norm path only).
+_CONV_NORMALIZATIONS = frozenset(["none", "weight_norm"])
+
+
+def _apply_parametrization_norm(module: nn.Module, norm: str = "none") -> nn.Module:
+    """Apply weight_norm or return module unchanged."""
+    assert norm in _CONV_NORMALIZATIONS, f"Unsupported norm: {norm!r}"
+    if norm == "weight_norm":
+        # Classic weight_norm keeps state-dict keys ``conv.weight_g`` /
+        # ``conv.weight_v``, required for checkpoint compatibility.
+        return weight_norm(module)  # type: ignore[arg-type]
+    return module
+
+
+def _get_norm_module(
+    module: nn.Module,  # noqa: ARG001 – unused but kept for API symmetry
+    causal: bool = False,  # noqa: ARG001
+    norm: str = "none",
+    **norm_kwargs,  # noqa: ARG002
+) -> nn.Module:
+    """Return a post-conv normalisation module (always Identity for our path)."""
+    assert norm in _CONV_NORMALIZATIONS, f"Unsupported norm: {norm!r}"
+    return nn.Identity()
+
+
+def get_extra_padding_for_conv1d(
+    x: torch.Tensor, kernel_size: int, stride: int, padding_total: int = 0
+) -> int:
+    """Compute extra right-padding so that the last convolution window is full."""
+    length = x.shape[-1]
+    n_frames = (length - kernel_size + padding_total) / stride + 1
+    ideal_length = (math.ceil(n_frames) - 1) * stride + (kernel_size - padding_total)
+    return ideal_length - length
+
+
+def pad1d(
+    x: torch.Tensor,
+    paddings: tuple[int, int],
+    mode: str = "zero",
+    value: float = 0.0,
+) -> torch.Tensor:
+    """Thin wrapper around F.pad that handles reflect padding on very short inputs."""
+    length = x.shape[-1]
+    padding_left, padding_right = paddings
+    assert padding_left >= 0 and padding_right >= 0, (padding_left, padding_right)
+    if mode == "reflect":
+        max_pad = max(padding_left, padding_right)
+        extra_pad = 0
+        if length <= max_pad:
+            extra_pad = max_pad - length + 1
+            x = F.pad(x, (0, extra_pad))
+        padded = F.pad(x, paddings, mode, value)
+        end = padded.shape[-1] - extra_pad
+        return padded[..., :end]
+    return F.pad(x, paddings, mode, value)
+
+
+def unpad1d(x: torch.Tensor, paddings: tuple[int, int]) -> torch.Tensor:
+    """Remove padding from both ends of a 1-D tensor."""
+    padding_left, padding_right = paddings
+    assert padding_left >= 0 and padding_right >= 0, (padding_left, padding_right)
+    assert (padding_left + padding_right) <= x.shape[-1]
+    end = x.shape[-1] - padding_right
+    return x[..., padding_left:end]
+
+
+class _NormConv1d(nn.Module):
+    """Conv1d with optional weight-norm and post-conv normalisation."""
+
+    def __init__(
+        self,
+        *args,
+        causal: bool = False,
+        norm: str = "none",
+        norm_kwargs: dict | None = None,
+        **kwargs,
+    ):
+        super().__init__()
+        norm_kwargs = norm_kwargs or {}
+        self.conv = _apply_parametrization_norm(nn.Conv1d(*args, **kwargs), norm)
+        self.norm = _get_norm_module(self.conv, causal, norm, **norm_kwargs)
+        self.norm_type = norm
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.conv(x)
+        x = self.norm(x)
+        return x
+
+
+class _NormConvTranspose1d(nn.Module):
+    """ConvTranspose1d with optional weight-norm and post-conv normalisation."""
+
+    def __init__(
+        self,
+        *args,
+        causal: bool = False,
+        norm: str = "none",
+        norm_kwargs: dict | None = None,
+        **kwargs,
+    ):
+        super().__init__()
+        norm_kwargs = norm_kwargs or {}
+        self.convtr = _apply_parametrization_norm(
+            nn.ConvTranspose1d(*args, **kwargs), norm
+        )
+        self.norm = _get_norm_module(self.convtr, causal, norm, **norm_kwargs)
+        self.norm_type = norm
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.convtr(x)
+        x = self.norm(x)
+        return x
+
+
+class _SConv1d(nn.Module):
+    """Conv1d with built-in asymmetric / causal padding and optional normalisation."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        dilation: int = 1,
+        groups: int = 1,
+        bias: bool = True,
+        causal: bool = False,
+        norm: str = "none",
+        norm_kwargs: dict | None = None,
+        pad_mode: str = "reflect",
+    ):
+        super().__init__()
+        if stride > 1 and dilation > 1:
+            warnings.warn(
+                "_SConv1d has been initialized with stride > 1 and dilation > 1"
+                f" (kernel_size={kernel_size} stride={stride}, dilation={dilation})."
+            )
+        norm_kwargs = norm_kwargs or {}
+        self.conv = _NormConv1d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            dilation=dilation,
+            groups=groups,
+            bias=bias,
+            causal=causal,
+            norm=norm,
+            norm_kwargs=norm_kwargs,
+        )
+        self.causal = causal
+        self.pad_mode = pad_mode
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        kernel_size = self.conv.conv.kernel_size[0]
+        stride = self.conv.conv.stride[0]
+        dilation = self.conv.conv.dilation[0]
+        padding_total = (kernel_size - 1) * dilation - (stride - 1)
+        extra_padding = get_extra_padding_for_conv1d(
+            x, kernel_size, stride, padding_total
+        )
+        if self.causal:
+            x = pad1d(x, (padding_total, extra_padding), mode=self.pad_mode)
+        else:
+            padding_right = padding_total // 2
+            padding_left = padding_total - padding_right
+            x = pad1d(
+                x, (padding_left, padding_right + extra_padding), mode=self.pad_mode
+            )
+        return self.conv(x)
+
+
+class _SConvTranspose1d(nn.Module):
+    """ConvTranspose1d with built-in asymmetric / causal padding trimming."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int = 1,
+        causal: bool = False,
+        norm: str = "none",
+        trim_right_ratio: float = 1.0,
+        norm_kwargs: dict | None = None,
+    ):
+        super().__init__()
+        norm_kwargs = norm_kwargs or {}
+        self.convtr = _NormConvTranspose1d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            causal=causal,
+            norm=norm,
+            norm_kwargs=norm_kwargs,
+        )
+        self.causal = causal
+        self.trim_right_ratio = trim_right_ratio
+        assert self.causal or self.trim_right_ratio == 1.0, (
+            "`trim_right_ratio` != 1.0 only makes sense for causal convolutions"
+        )
+        assert 0.0 <= self.trim_right_ratio <= 1.0
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        kernel_size = self.convtr.convtr.kernel_size[0]
+        stride = self.convtr.convtr.stride[0]
+        padding_total = kernel_size - stride
+        y = self.convtr(x)
+        if self.causal:
+            padding_right = math.ceil(padding_total * self.trim_right_ratio)
+            padding_left = padding_total - padding_right
+            y = unpad1d(y, (padding_left, padding_right))
+        else:
+            padding_right = padding_total // 2
+            padding_left = padding_total - padding_right
+            y = unpad1d(y, (padding_left, padding_right))
+        return y
+
+
+# ---------------------------------------------------------------------------
+# SLSTM (ported from Meta EnCodec / BrainOmni model_utils/lstm.py)
+# ---------------------------------------------------------------------------
+
+
+class _SLSTM(nn.Module):
+    """LSTM over convolutional layout (channels-last time axis)."""
+
+    def __init__(
+        self,
+        dimension: int,
+        num_layers: int = 2,
+        skip: bool = True,
+        bidirectional: bool = False,
+    ):
+        super().__init__()
+        self.bidirectional = bidirectional
+        self.skip = skip
+        self.lstm = nn.LSTM(
+            dimension, dimension, num_layers, bidirectional=bidirectional
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.permute(2, 0, 1)
+        y, _ = self.lstm(x)
+        if self.bidirectional:
+            x = x.repeat(1, 1, 2)
+        if self.skip:
+            y = y + x
+        y = y.permute(1, 2, 0)
+        return y
+
+
+# ---------------------------------------------------------------------------
+# SEANet residual block + encoder/decoder
+# (ported from Meta EnCodec / BrainOmni model_utils/seanet.py)
+# ---------------------------------------------------------------------------
+
+
+class _SEANetResnetBlock(nn.Module):
+    """Residual block from the SEANet model.
+
+    Parameters
+    ----------
+    dim : int
+        Feature dimension.
+    kernel_sizes : list of int
+        Kernel sizes for each conv in the block.
+    dilations : list of int
+        Dilations for each conv in the block.
+    activation : str
+        ``nn`` activation class name (e.g. ``"ELU"``).
+    activation_params : dict
+        Keyword arguments for the activation constructor.
+    norm : str
+        ``"weight_norm"`` or ``"none"``.
+    norm_params : dict
+        Extra kwargs forwarded to the norm module constructor.
+    causal : bool
+        Whether to use causal convolutions.
+    pad_mode : str
+        Padding mode (``"reflect"`` or ``"zero"``).
+    compress : int
+        Channel compression factor in the hidden layers.
+    true_skip : bool
+        If ``True``, use identity skip; otherwise use a 1×1 conv skip.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        kernel_sizes: list[int] | None = None,
+        dilations: list[int] | None = None,
+        activation: str = "ELU",
+        activation_params: dict | None = None,
+        norm: str = "weight_norm",
+        norm_params: dict | None = None,
+        causal: bool = False,
+        pad_mode: str = "reflect",
+        compress: int = 2,
+        true_skip: bool = True,
+    ):
+        super().__init__()
+        if kernel_sizes is None:
+            kernel_sizes = [3, 1]
+        if dilations is None:
+            dilations = [1, 1]
+        if activation_params is None:
+            activation_params = {"alpha": 1.0}
+        norm_params = norm_params or {}
+        assert len(kernel_sizes) == len(dilations), (
+            "Number of kernel sizes must match number of dilations"
+        )
+        act = getattr(nn, activation)
+        hidden = dim // compress
+        block: list[nn.Module] = []
+        for i, (kernel_size, dilation) in enumerate(zip(kernel_sizes, dilations)):
+            in_chs = dim if i == 0 else hidden
+            out_chs = dim if i == len(kernel_sizes) - 1 else hidden
+            block += [
+                act(**activation_params),
+                _SConv1d(
+                    in_chs,
+                    out_chs,
+                    kernel_size=kernel_size,
+                    dilation=dilation,
+                    norm=norm,
+                    norm_kwargs=norm_params,
+                    causal=causal,
+                    pad_mode=pad_mode,
+                ),
+            ]
+        self.block = nn.Sequential(*block)
+        self.shortcut: nn.Module
+        if true_skip:
+            self.shortcut = nn.Identity()
+        else:
+            self.shortcut = _SConv1d(
+                dim,
+                dim,
+                kernel_size=1,
+                norm=norm,
+                norm_kwargs=norm_params,
+                causal=causal,
+                pad_mode=pad_mode,
+            )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.shortcut(x) + self.block(x)
+
+
+class _SEANetEncoder(nn.Module):
+    """SEANet encoder.
+
+    Parameters
+    ----------
+    channels : int
+        Input signal channels (1 for mono waveform).
+    dimension : int
+        Output latent dimension.
+    n_filters : int
+        Base channel width.
+    n_residual_layers : int
+        Number of residual blocks per downsampling stage.
+    ratios : list of int
+        Downsampling ratios (applied in *reverse* order internally).
+    activation : str
+        Activation class name in ``torch.nn``.
+    activation_params : dict
+        Keyword arguments for the activation constructor.
+    norm : str
+        ``"weight_norm"`` or ``"none"``.
+    norm_params : dict
+        Extra kwargs for the norm module.
+    kernel_size : int
+        Kernel size of the first convolution.
+    last_kernel_size : int
+        Kernel size of the final projection convolution.
+    residual_kernel_size : int
+        Kernel size used inside residual blocks.
+    dilation_base : int
+        Dilation base; residual block ``j`` uses ``dilation_base**j``.
+    causal : bool
+        Causal convolutions only.
+    pad_mode : str
+        Padding mode.
+    true_skip : bool
+        Identity vs. conv skip in residual blocks.
+    compress : int
+        Channel compression in residual blocks.
+    lstm : int
+        Number of LSTM layers after the convolutional stack (0 = none).
+    bidirectional : bool
+        Bidirectional LSTM.
+    """
+
+    def __init__(
+        self,
+        channels: int = 1,
+        dimension: int = 128,
+        n_filters: int = 32,
+        n_residual_layers: int = 1,
+        ratios: list[int] | None = None,
+        activation: str = "ELU",
+        activation_params: dict | None = None,
+        norm: str = "weight_norm",
+        norm_params: dict | None = None,
+        kernel_size: int = 7,
+        last_kernel_size: int = 7,
+        residual_kernel_size: int = 3,
+        dilation_base: int = 2,
+        causal: bool = False,
+        pad_mode: str = "reflect",
+        true_skip: bool = False,
+        compress: int = 2,
+        lstm: int = 2,
+        bidirectional: bool = False,
+    ):
+        super().__init__()
+        if ratios is None:
+            ratios = [8, 5, 4, 2]
+        if activation_params is None:
+            activation_params = {"alpha": 1.0}
+        norm_params = norm_params or {}
+        self.channels = channels
+        self.dimension = dimension
+        self.n_filters = n_filters
+        self.ratios = list(reversed(ratios))
+        self.n_residual_layers = n_residual_layers
+        self.hop_length = int(np.prod(self.ratios))
+
+        act = getattr(nn, activation)
+        mult = 1
+        model: list[nn.Module] = [
+            _SConv1d(
+                channels,
+                mult * n_filters,
+                kernel_size,
+                norm=norm,
+                norm_kwargs=norm_params,
+                causal=causal,
+                pad_mode=pad_mode,
+            )
+        ]
+        for j_unused, ratio in enumerate(self.ratios):
+            for j in range(n_residual_layers):
+                model += [
+                    _SEANetResnetBlock(
+                        mult * n_filters,
+                        kernel_sizes=[residual_kernel_size, 1],
+                        dilations=[dilation_base**j, 1],
+                        norm=norm,
+                        norm_params=norm_params,
+                        activation=activation,
+                        activation_params=activation_params,
+                        causal=causal,
+                        pad_mode=pad_mode,
+                        compress=compress,
+                        true_skip=true_skip,
+                    )
+                ]
+            model += [
+                act(**activation_params),
+                _SConv1d(
+                    mult * n_filters,
+                    mult * n_filters * 2,
+                    kernel_size=ratio * 2,
+                    stride=ratio,
+                    norm=norm,
+                    norm_kwargs=norm_params,
+                    causal=causal,
+                    pad_mode=pad_mode,
+                ),
+            ]
+            mult *= 2
+
+        if lstm:
+            model += [
+                _SLSTM(mult * n_filters, num_layers=lstm, bidirectional=bidirectional)
+            ]
+
+        mult = mult * 2 if bidirectional else mult
+        model += [
+            act(**activation_params),
+            _SConv1d(
+                mult * n_filters,
+                dimension,
+                last_kernel_size,
+                norm=norm,
+                norm_kwargs=norm_params,
+                causal=causal,
+                pad_mode=pad_mode,
+            ),
+        ]
+        self.model = nn.Sequential(*model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model(x)
+
+
+class _SEANetDecoder(nn.Module):
+    """SEANet decoder.
+
+    Parameters
+    ----------
+    channels : int
+        Output signal channels.
+    dimension : int
+        Latent input dimension.
+    n_filters : int
+        Base channel width.
+    n_residual_layers : int
+        Residual blocks per upsampling stage.
+    ratios : list of int
+        Upsampling ratios (applied in order).
+    activation : str
+        Activation class name in ``torch.nn``.
+    activation_params : dict
+        Keyword arguments for the activation constructor.
+    final_activation : str or None
+        Optional final activation after the output convolution.
+    final_activation_params : dict or None
+        Kwargs for the final activation constructor.
+    norm : str
+        ``"weight_norm"`` or ``"none"``.
+    norm_params : dict
+        Extra kwargs for the norm module.
+    kernel_size : int
+        Kernel size of the first convolution.
+    last_kernel_size : int
+        Kernel size of the final projection convolution.
+    residual_kernel_size : int
+        Kernel size inside residual blocks.
+    dilation_base : int
+        Dilation base.
+    causal : bool
+        Causal convolutions only.
+    pad_mode : str
+        Padding mode.
+    true_skip : bool
+        Identity vs. conv skip in residual blocks.
+    compress : int
+        Channel compression in residual blocks.
+    lstm : int
+        Number of LSTM layers before the upsampling stack (0 = none).
+    trim_right_ratio : float
+        Right-trim ratio for causal transposed convolutions.
+    bidirectional : bool
+        Bidirectional LSTM.
+    """
+
+    def __init__(
+        self,
+        channels: int = 1,
+        dimension: int = 128,
+        n_filters: int = 32,
+        n_residual_layers: int = 1,
+        ratios: list[int] | None = None,
+        activation: str = "ELU",
+        activation_params: dict | None = None,
+        final_activation: str | None = None,
+        final_activation_params: dict | None = None,
+        norm: str = "weight_norm",
+        norm_params: dict | None = None,
+        kernel_size: int = 7,
+        last_kernel_size: int = 7,
+        residual_kernel_size: int = 3,
+        dilation_base: int = 2,
+        causal: bool = False,
+        pad_mode: str = "reflect",
+        true_skip: bool = False,
+        compress: int = 2,
+        lstm: int = 2,
+        trim_right_ratio: float = 1.0,
+        bidirectional: bool = False,
+    ):
+        super().__init__()
+        if ratios is None:
+            ratios = [8, 5, 4, 2]
+        if activation_params is None:
+            activation_params = {"alpha": 1.0}
+        norm_params = norm_params or {}
+        self.dimension = dimension
+        self.channels = channels
+        self.n_filters = n_filters
+        self.ratios = ratios
+        self.n_residual_layers = n_residual_layers
+        self.hop_length = int(np.prod(self.ratios))
+
+        act = getattr(nn, activation)
+        mult = int(2 ** len(self.ratios))
+        model: list[nn.Module] = [
+            _SConv1d(
+                dimension,
+                mult * n_filters,
+                kernel_size,
+                norm=norm,
+                norm_kwargs=norm_params,
+                causal=causal,
+                pad_mode=pad_mode,
+            )
+        ]
+
+        if lstm:
+            model += [
+                _SLSTM(mult * n_filters, num_layers=lstm, bidirectional=bidirectional)
+            ]
+
+        for i_unused, ratio in enumerate(self.ratios):
+            model += [
+                act(**activation_params),
+                _SConvTranspose1d(
+                    mult * n_filters,
+                    mult * n_filters // 2,
+                    kernel_size=ratio * 2,
+                    stride=ratio,
+                    norm=norm,
+                    norm_kwargs=norm_params,
+                    causal=causal,
+                    trim_right_ratio=trim_right_ratio,
+                ),
+            ]
+            for j in range(n_residual_layers):
+                model += [
+                    _SEANetResnetBlock(
+                        mult * n_filters // 2,
+                        kernel_sizes=[residual_kernel_size, 1],
+                        dilations=[dilation_base**j, 1],
+                        activation=activation,
+                        activation_params=activation_params,
+                        norm=norm,
+                        norm_params=norm_params,
+                        causal=causal,
+                        pad_mode=pad_mode,
+                        compress=compress,
+                        true_skip=true_skip,
+                    )
+                ]
+            mult //= 2
+
+        model += [
+            act(**activation_params),
+            _SConv1d(
+                n_filters,
+                channels,
+                last_kernel_size,
+                norm=norm,
+                norm_kwargs=norm_params,
+                causal=causal,
+                pad_mode=pad_mode,
+            ),
+        ]
+        if final_activation is not None:
+            final_act = getattr(nn, final_activation)
+            final_activation_params = final_activation_params or {}
+            model += [final_act(**final_activation_params)]
+        self.model = nn.Sequential(*model)
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        return self.model(z)
