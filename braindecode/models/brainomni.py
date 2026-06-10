@@ -735,10 +735,6 @@ class _SEANetDecoder(nn.Module):
 # Residual Vector Quantization
 
 
-def _ema_inplace(moving_avg: torch.Tensor, new: torch.Tensor, decay: float):
-    moving_avg.data.mul_(decay).add_(new, alpha=(1 - decay))
-
-
 # Rotation-trick STE (Fifty et al. 2024, §4.2 https://arxiv.org/abs/2410.06424).
 
 
@@ -845,10 +841,13 @@ class _Codebook(nn.Module):
 
         if self.training:
             self.expire_codes_(x)
+            # EMA update of the cluster sizes and code sums (.data detaches grad).
             one_hot_sum = embed_onehot.sum(0)
-            _ema_inplace(self.cluster_size, one_hot_sum, self.decay)
+            self.cluster_size.data.mul_(self.decay).add_(
+                one_hot_sum, alpha=1 - self.decay
+            )
             embed_sum = (embed_onehot.t() @ x).to(torch.float32)
-            _ema_inplace(self.embed_avg, embed_sum, self.decay)
+            self.embed_avg.data.mul_(self.decay).add_(embed_sum, alpha=1 - self.decay)
             smoothed = (self.cluster_size + self.epsilon) / (
                 self.cluster_size.sum() + self.epsilon * self.codebook_size
             )
