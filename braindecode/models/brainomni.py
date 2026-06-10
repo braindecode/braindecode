@@ -21,6 +21,8 @@ from einops import rearrange
 # deprecation warning for this API — that is expected and intentional.
 from torch.nn.utils import weight_norm  # noqa: F401
 
+from braindecode.models.base import EEGModuleMixin
+
 # MNE FIFF constants (avoid importing mne at module load for a tiny lookup)
 _FIFF_MEG_CH = 1
 _FIFF_EEG_CH = 2
@@ -1691,3 +1693,193 @@ class _BrainTokenizerDecoder(nn.Module):
         x = rearrange(x, "(B N T) C D -> (B C N) D T", B=B, N=N, T=T)
         x = self.seanet_decoder(x)
         return rearrange(x, "(B C N) 1 L -> B C N L", B=B, N=N)
+
+
+# ---------------------------------------------------------------------------
+# Public BrainTokenizer model (VQ-VAE pretraining module)
+# ---------------------------------------------------------------------------
+
+
+class BrainTokenizer(EEGModuleMixin, nn.Module):
+    """BrainOmni VQ-VAE tokenizer for EEG/MEG signals.
+
+    Encodes raw EEG/MEG windows into discrete neural tokens via a
+    SEANet-based encoder, residual vector quantization, and a
+    cross-attention decoder that reconstructs the original waveform.
+    Sensor geometry is derived from ``chs_info`` at initialisation.
+
+    Parameters
+    ----------
+    n_outputs : int, optional
+        Unused (kept for EEGModuleMixin API symmetry).
+    n_chans : int, optional
+        Number of input channels (inferred from ``chs_info`` when given).
+    chs_info : list of dict, optional
+        MNE-style channel info dicts; must contain ``'loc'`` (12-element
+        array) and ``'kind'`` keys.  Required for geometry-aware tokenisation.
+    n_times : int, optional
+        Length of the input time axis (samples).
+    input_window_seconds : float, optional
+        Unused; kept for API symmetry.
+    sfreq : float, optional
+        Sampling frequency.  A warning is emitted when this differs from
+        the 256 Hz expected by pretrained BrainOmni weights.
+    emb_dim : int
+        Embedding dimensionality throughout the model.
+    n_neuro : int
+        Number of virtual "neural source" tokens produced by the encoder.
+    window_length : int
+        Length (samples) of each analysis window fed to SEANet.
+    n_filters : int
+        Base number of filters in SEANet.
+    ratios : tuple of int
+        Downsampling ratios in SEANet (encoder) / upsampling ratios
+        (decoder).  Total compression = product of ratios.
+    kernel_size : int
+        Kernel size for SEANet convolutions.
+    last_kernel_size : int
+        Kernel size for the first/last SEANet conv layer.
+    tokenizer_num_heads : int
+        Number of attention heads in the cross-attention tokenizer blocks.
+    codebook_dim : int
+        Projected dimension inside each VQ codebook.
+    codebook_size : int
+        Number of entries per VQ codebook.
+    num_quantizers : int
+        Number of residual VQ stages.
+    rotation_trick : bool
+        Whether to use the rotation trick when updating codebook entries.
+    quantize_optimize_method : str
+        Codebook optimisation method: ``"ema"`` or ``"loss"``.
+    drop_prob : float
+        Dropout probability applied inside the tokenizer attention blocks.
+    activation : type[nn.Module]
+        Accepted for braindecode API symmetry; the VQ-VAE uses fixed
+        activations baked into the pretrained weights.
+    """
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        emb_dim: int = 256,
+        n_neuro: int = 16,
+        window_length: int = 512,
+        n_filters: int = 32,
+        ratios: tuple[int, ...] = (8, 4, 2),
+        kernel_size: int = 5,
+        last_kernel_size: int = 5,
+        tokenizer_num_heads: int = 4,
+        codebook_dim: int = 256,
+        codebook_size: int = 512,
+        num_quantizers: int = 4,
+        rotation_trick: bool = True,
+        quantize_optimize_method: str = "ema",
+        drop_prob: float = 0.0,
+        activation: type[nn.Module] = nn.SELU,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, input_window_seconds
+
+        if self.sfreq is not None and int(round(self.sfreq)) != 256:
+            warnings.warn(
+                f"BrainOmni pretrained weights expect sfreq=256 Hz, got "
+                f"{self.sfreq}. Use only for training from scratch.",
+                UserWarning,
+            )
+
+        pos, sensor_type = _geometry_from_chs_info(self.chs_info)
+        self.register_buffer("pos", torch.from_numpy(pos))
+        self.register_buffer("sensor_type", torch.from_numpy(sensor_type))
+
+        self.emb_dim = emb_dim
+        self.n_neuro = n_neuro
+        self.window_length = window_length
+        self.drop_prob = drop_prob
+        # activation is accepted for braindecode API symmetry; the VQ-VAE uses
+        # the fixed SELU/ELU activations baked into the pretrained weights.
+        self.activation = activation
+
+        self.sensor_embed = _BrainSensorModule(emb_dim)
+        self.encoder = _BrainTokenizerEncoder(
+            n_filters=n_filters,
+            ratios=list(ratios),
+            kernel_size=kernel_size,
+            last_kernel_size=last_kernel_size,
+            n_dim=emb_dim,
+            n_head=tokenizer_num_heads,
+            dropout=drop_prob,
+            n_neuro=n_neuro,
+        )
+        self.quantizer = _BrainQuantizer(
+            n_dim=emb_dim,
+            codebook_dim=codebook_dim,
+            codebook_size=codebook_size,
+            num_quantizers=num_quantizers,
+            rotation_trick=rotation_trick,
+            quantize_optimize_method=quantize_optimize_method,
+        )
+        # reconstruction decoder == the model's output head -> name final_layer
+        self.final_layer = _BrainTokenizerDecoder(
+            n_dim=emb_dim,
+            n_head=tokenizer_num_heads,
+            n_filters=n_filters,
+            ratios=list(ratios),
+            kernel_size=kernel_size,
+            last_kernel_size=last_kernel_size,
+            dropout=drop_prob,
+        )
+
+    def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
+        # faithful port of upstream BrainTokenizer.unfold
+        if x.shape[-1] < self.window_length:
+            x = F.pad(x, pad=(0, self.window_length - x.shape[-1]))
+        if overlap_ratio > 0.0:
+            stride = int(self.window_length * (1 - overlap_ratio))
+            right_remain = (x.shape[-1] - self.window_length) % stride
+            if right_remain > 0:
+                x = F.pad(x, pad=(0, stride - right_remain))
+        step = int(self.window_length * (1 - overlap_ratio))
+        return x.unfold(dimension=-1, size=self.window_length, step=step)
+
+    def _sensor_embedding(self, batch_size: int, device) -> torch.Tensor:
+        pos = self.pos.to(device).unsqueeze(0).expand(batch_size, -1, -1)
+        stype = self.sensor_type.to(device).unsqueeze(0).expand(batch_size, -1)
+        return self.sensor_embed(pos, stype)
+
+    def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
+        xu = self._unfold(x, overlap_ratio)  # (B, C, N, L)
+        se = self._sensor_embedding(xu.shape[0], xu.device)  # (B, C, emb_dim)
+        feat = self.encoder(xu, se)  # (B, n_neuro, N, T, D)
+        feat_q, indices, commit = self.quantizer(feat)
+        return feat_q, indices, commit, se
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        feat_q, _, _, se = self._encode_quantize(x)
+        recon = self.final_layer(feat_q, se)  # (B, C, N, L)
+        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
+        return recon[..., : x.shape[-1]]
+
+    def encode_decode(self, x: torch.Tensor):
+        feat_q, indices, commit, se = self._encode_quantize(x)
+        recon = self.final_layer(feat_q, se)
+        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)[..., : x.shape[-1]]
+        return recon, commit, indices
+
+    @torch.no_grad()
+    def tokenize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
+        feat_q, indices, _, _ = self._encode_quantize(x, overlap_ratio)
+        feat = rearrange(feat_q, "B C N T D -> B C (N T) D")
+        indices = rearrange(indices, "B C N T Q -> B C (N T) Q")
+        return feat, indices

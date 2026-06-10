@@ -1293,3 +1293,64 @@ def test_tokenizer_encoder_collapses_channels_to_neuro():
     out = enc(x, sensor_embedding)
     # (B, n_neuro, N, T, D) with T = L/64 = 8
     assert out.shape == (B, 3, N, 8, 16)
+
+
+# ==============================================================================
+# Tests for BrainTokenizer public model
+# ==============================================================================
+
+
+from braindecode.models.brainomni import BrainTokenizer  # noqa: E402
+
+
+def _eeg_chs_info(n):
+    rng = np.random.default_rng(0)
+    return [
+        {"ch_name": f"C{i}", "kind": "eeg", "loc": _loc(*rng.random(3))}
+        for i in range(n)
+    ]
+
+
+def _small_tokenizer(n_chans=4, n_times=512):
+    return BrainTokenizer(
+        chs_info=_eeg_chs_info(n_chans), n_times=n_times, sfreq=256.0,
+        emb_dim=16, n_neuro=3, n_filters=8, codebook_dim=16, codebook_size=32,
+        num_quantizers=2, tokenizer_num_heads=4,
+    )
+
+
+def test_braintokenizer_is_subclass():
+    from braindecode.models.base import EEGModuleMixin
+    assert issubclass(BrainTokenizer, EEGModuleMixin)
+
+
+def test_braintokenizer_forward_reconstruction_shape():
+    model = _small_tokenizer(n_chans=4, n_times=512)
+    model.eval()
+    x = torch.randn(2, 4, 512)
+    recon = model(x)
+    assert recon.shape == x.shape
+
+
+def test_braintokenizer_encode_decode_returns_finite_loss():
+    model = _small_tokenizer()
+    model.train()
+    x = torch.randn(2, 4, 512)
+    recon, commit_loss, indices = model.encode_decode(x)
+    assert recon.shape == x.shape
+    assert torch.isfinite(commit_loss)
+    assert indices.shape[-1] == 2  # num_quantizers
+
+
+def test_braintokenizer_tokenize_shapes():
+    model = _small_tokenizer()
+    model.eval()
+    feat, idx = model.tokenize(torch.randn(2, 4, 512))
+    assert feat.shape[0] == 2 and feat.shape[1] == 3 and feat.shape[-1] == 16
+    assert idx.shape[-1] == 2
+
+
+def test_braintokenizer_has_final_layer():
+    model = _small_tokenizer()
+    last_two = [name for name, _ in model.named_children()][-2:]
+    assert "final_layer" in last_two
