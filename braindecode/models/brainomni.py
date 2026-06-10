@@ -9,86 +9,17 @@ from __future__ import annotations
 import math
 import warnings
 
-import mne
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from mne._fiff.tag import _loc_to_coil_trans
 
 # Classic weight_norm keeps ``conv.weight_g``/``weight_v`` keys (checkpoint parity).
 from torch.nn.utils import weight_norm  # noqa: F401
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import extract_channel_locations_from_chs_info
-
-_SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
-
-
-def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
-    """Per-modality position normalization (upstream ``normalize_pos``).
-
-    EEG (code 0) and MEG (codes 1, 2) positions are each mean-centered then
-    divided by ``sqrt(3 * mean(squared_norm))``.
-    """
-    pos = pos.copy()
-    eeg = sensor_type == 0
-    meg = (sensor_type == 1) | (sensor_type == 2)
-    for mask in (eeg, meg):
-        if not mask.any():
-            continue
-        xyz = pos[mask, :3]
-        xyz = xyz - xyz.mean(axis=0, keepdims=True)
-        scale = np.sqrt(3 * np.mean(np.sum(xyz**2, axis=1)))
-        scale = scale if scale > 0 else 1.0
-        pos[mask, :3] = xyz / scale
-    return pos
-
-
-def _geometry_from_chs_info(chs_info):
-    """Derive ``(pos (C, 6) float32, sensor_type (C,) int64)`` from ``chs_info``.
-
-    Positions come from :func:`extract_channel_locations_from_chs_info` and the
-    EEG/MAG/GRAD type from :func:`mne.channel_type`; only the MEG coil orientation
-    pick (``loc[3:6]`` GRAD / ``loc[9:12]`` MAG) and the per-modality normalization
-    are model-specific. Raises if any channel lacks a finite position.
-    """
-    # mne.channel_type owns the FIFF kind/unit -> eeg/mag/grad logic (it only needs
-    # ``info["chs"][idx]``). Lightweight test dicts carry a resolved string ``kind``
-    # instead of FIFF integers, so use it directly for those.
-    types = [
-        str(ch.get("ch_type", ch["kind"])).lower()
-        if isinstance(ch.get("kind"), str)
-        else mne.channel_type({"chs": chs_info}, i)
-        for i, ch in enumerate(chs_info)
-    ]
-
-    xyz = extract_channel_locations_from_chs_info(chs_info)
-    if xyz is None or len(xyz) != len(chs_info) or not np.isfinite(xyz).all():
-        raise ValueError(
-            "chs_info lacks finite sensor positions; call raw.set_montage(...)."
-        )
-
-    unsupported = set(types) - set(_SENSOR_CODE)
-    if unsupported:
-        raise ValueError(
-            f"Unsupported channel type(s) {sorted(unsupported)}; pass only EEG/MEG."
-        )
-    sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
-
-    loc = np.stack(
-        [np.asarray(ch["loc"], dtype=np.float64) for ch in chs_info]
-    )  # (C, 12)
-    coil_trans = _loc_to_coil_trans(loc)  # (C, 4, 4); 3x3 columns are the ex/ey/ez axes
-    grad, mag = sensor_type == _SENSOR_CODE["grad"], sensor_type == _SENSOR_CODE["mag"]
-    ori = np.zeros((len(chs_info), 3))  # EEG orientation stays zero
-    ori[grad] = coil_trans[grad, :3, 0]  # gradiometer: in-plane (ex) axis
-    ori[mag] = coil_trans[mag, :3, 2]  # magnetometer: coil normal (ez) axis
-
-    pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
-    return _normalize_pos(pos, sensor_type), sensor_type
-
+from braindecode.models.util import _geometry_from_chs_info
 
 # Attention / norm primitives
 
