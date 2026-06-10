@@ -76,11 +76,15 @@ def _geometry_from_chs_info(chs_info):
         )
     sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
 
-    # MEG coil orientation: GRAD -> in-plane axis loc[3:6], MAG -> normal loc[9:12].
+    # MEG coil orientation from the MNE ``loc`` layout: position (0:3) then the
+    # coil-frame unit axes ex (3:6), ey (6:9), ez (9:12). BrainOmni uses the
+    # in-plane axis (ex) for gradiometers and the normal (ez) for magnetometers.
     loc = np.stack([np.asarray(ch["loc"], dtype=np.float64) for ch in chs_info])
+    coil_axes = loc[:, 3:12].reshape(len(chs_info), 3, 3)  # rows: ex, ey, ez
+    grad, mag = sensor_type == _SENSOR_CODE["grad"], sensor_type == _SENSOR_CODE["mag"]
     ori = np.zeros((len(chs_info), 3))
-    ori[sensor_type == 2] = loc[sensor_type == 2, 3:6]
-    ori[sensor_type == 1] = loc[sensor_type == 1, 9:12]
+    ori[grad] = coil_axes[grad, 0]  # gradiometer: ex
+    ori[mag] = coil_axes[mag, 2]  # magnetometer: ez
 
     pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
     return _normalize_pos(pos, sensor_type), sensor_type
