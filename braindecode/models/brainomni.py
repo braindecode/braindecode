@@ -1985,6 +1985,13 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         Dropout probability throughout the model.
     activation : type[nn.Module]
         Activation used in the classification head.
+
+    Notes
+    -----
+    The :class:`BrainTokenizer` backbone (including VQ codebooks) is always
+    kept in eval mode and its parameters receive no gradients during
+    fine-tuning. This is enforced by the :meth:`train` override. Only
+    ``blocks`` and ``final_layer`` are trainable.
     """
 
     def __init__(
@@ -2069,10 +2076,8 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         self.final_layer: nn.Module = nn.Identity()  # overwritten by reset_head
         self.reset_head(self.n_outputs)
 
-    def train(self, mode: bool = True):
-        # Backbone tokenizer (incl. VQ codebooks) is always frozen: keeping it
-        # in eval prevents EMA codebook updates and tokenizer dropout while the
-        # transformer blocks + head train normally.
+    def train(self, mode: bool = True) -> "BrainOmni":
+        """Set training mode, keeping the tokenizer permanently frozen in eval."""
         super().train(mode)
         self.tokenizer.eval()
         return self
@@ -2088,8 +2093,11 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         )
 
     def _tokens(self, x: torch.Tensor) -> torch.Tensor:
-        # frozen tokenizer -> tokens (B, n_neuro, W, emb_dim); add learned neuro
-        # bias (detached) then project to lm_dim.
+        """Tokenize ``x`` and project to ``lm_dim``.
+
+        Returns ``(B, n_neuro, W, lm_dim)`` with gradients stopped at the
+        tokenizer boundary.
+        """
         feat, _ = self.tokenizer.tokenize(x, overlap_ratio=self.overlap_ratio)
         neuro = self.tokenizer.encoder.neuros.detach().to(feat.dtype)
         feat = feat + neuro.view(1, feat.shape[1], 1, -1)
