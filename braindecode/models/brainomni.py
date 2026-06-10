@@ -176,14 +176,16 @@ class _RotaryEmbedding(nn.Module):
 
     def reshape_for_broadcast(self, x: torch.Tensor):
         """x: Batch seq n_head d_head  /  rotate: seq dim."""
-        B, T, H, D = x.shape
-        if T > self.max_seq_len_cache:
-            self._set_rotate_cache(T)
-        rotate = self.rotate[:T, :]
-        assert H * D == rotate.shape[1], (
-            f"RoPE cache shape mismatch: H={H}, D={D}, rotate.shape[1]={rotate.shape[1]}"
+        batch, seq, heads, head_dim = x.shape
+        if seq > self.max_seq_len_cache:
+            self._set_rotate_cache(seq)
+        rotate = self.rotate[:seq, :]
+        assert heads * head_dim == rotate.shape[1], (
+            f"RoPE cache shape mismatch: heads={heads}, head_dim={head_dim}, rotate.shape[1]={rotate.shape[1]}"
         )
-        return rearrange(rotate, "T (H D)-> T H D", H=H).unsqueeze(0)
+        return rearrange(
+            rotate, "seq (heads head_dim) -> seq heads head_dim", heads=heads
+        ).unsqueeze(0)
 
     def forward(self, q, k):
         assert len(q.shape) == len(k.shape) == 4, (
@@ -226,21 +228,33 @@ class _SelfAttention(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, mask=None):
-        B, T, C = x.shape
+        batch, seq, dim = x.shape
         x = self.qkv(x)
         q, k, v = torch.split(x, split_size_or_sections=self.n_dim, dim=-1)
 
         if self.rope:
-            q = q.view(B, T, self.n_head, -1)
-            k = k.view(B, T, self.n_head, -1)
+            q = q.view(batch, seq, self.n_head, -1)
+            k = k.view(batch, seq, self.n_head, -1)
             q, k = self.rope_embedding_layer(q, k)
             q = q.transpose(1, 2)
             k = k.transpose(1, 2)
         else:
-            q = rearrange(q, "B T (H D) -> B H T D", H=self.n_head)
-            k = rearrange(k, "B T (H D) -> B H T D", H=self.n_head)
+            q = rearrange(
+                q,
+                "batch seq (heads head_dim) -> batch heads seq head_dim",
+                heads=self.n_head,
+            )
+            k = rearrange(
+                k,
+                "batch seq (heads head_dim) -> batch heads seq head_dim",
+                heads=self.n_head,
+            )
 
-        v = rearrange(v, "B T (H D) -> B H T D", H=self.n_head)
+        v = rearrange(
+            v,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
 
         if mask is not None:
             mask = mask.unsqueeze(1)
@@ -259,7 +273,7 @@ class _SelfAttention(nn.Module):
             .transpose(1, 2)
             .contiguous()
         )
-        output = output.view(B, T, -1)
+        output = output.view(batch, seq, -1)
         return self.proj(output)
 
 
@@ -304,14 +318,22 @@ class _SpatialTemporalAttentionBlock(nn.Module):
         return x
 
     def _attn_operator(self, x):
-        B, C, W, D = x.shape
+        batch, chans, tokens, dim = x.shape
         # Upper half of feature dim attends over channels (spatial); lower half over windows (temporal).
-        xs = rearrange(x[:, :, :, D // 2 :], "B C W D -> (B W) C D")
-        xt = rearrange(x[:, :, :, : D // 2], "B C W D->(B C) W D")
+        xs = rearrange(
+            x[:, :, :, dim // 2 :], "batch chans tokens dim -> (batch tokens) chans dim"
+        )
+        xt = rearrange(
+            x[:, :, :, : dim // 2], "batch chans tokens dim -> (batch chans) tokens dim"
+        )
         xs = self.spatial_attn(xs, None)
         xt = self.time_attn(xt, None)
-        xs = rearrange(xs, "(B W) C D -> B C W D", B=B)
-        xt = rearrange(xt, "(B C) W D->B C W D", B=B)
+        xs = rearrange(
+            xs, "(batch tokens) chans dim -> batch chans tokens dim", batch=batch
+        )
+        xt = rearrange(
+            xt, "(batch chans) tokens dim -> batch chans tokens dim", batch=batch
+        )
         # Match upstream exactly (spatial first, temporal second) — the halves
         # are intentionally swapped relative to the input split. Required for
         # pretrained-weight parity; see BrainOmni/model_utils/attn.py.
@@ -830,7 +852,7 @@ class _EuclideanCodebook(nn.Module):
         expired = self.cluster_size < self.threshold_ema_dead_code
         if not torch.any(expired):
             return
-        batch_samples = rearrange(batch_samples, "... d -> (...) d")
+        batch_samples = rearrange(batch_samples, "... dim -> (...) dim")
         self.replace_(batch_samples, expired)
 
     @torch.no_grad()
@@ -849,7 +871,7 @@ class _EuclideanCodebook(nn.Module):
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         shape = x.shape
-        x = rearrange(x, "... d -> (...) d")
+        x = rearrange(x, "... dim -> (...) dim")
         embed_ind = self.quantize(x)
         return embed_ind.view(*shape[:-1])
 
@@ -858,7 +880,7 @@ class _EuclideanCodebook(nn.Module):
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         shape, dtype = x.shape, x.dtype
-        x = rearrange(x, "... d -> (...) d")
+        x = rearrange(x, "... dim -> (...) dim")
         embed_ind = self.quantize(x)
         embed_onehot = F.one_hot(embed_ind, self.codebook_size).type(dtype)
         embed_ind = embed_ind.view(*shape[:-1])
@@ -1037,12 +1059,24 @@ class _ForwardSolution(nn.Module):
         sensor_embedding: torch.Tensor,
         neurons: torch.Tensor,
     ) -> torch.Tensor:
-        B, C, _ = sensor_embedding.shape
+        batch, chans, _ = sensor_embedding.shape
         kv = self.kv(neurons)
         k, v = torch.split(kv, split_size_or_sections=self.n_dim, dim=-1)
-        q = rearrange(sensor_embedding, "B T (H D) -> B H T D", H=self.n_head)
-        k = rearrange(k, "B T (H D) -> B H T D", H=self.n_head)
-        v = rearrange(v, "B T (H D) -> B H T D", H=self.n_head)
+        q = rearrange(
+            sensor_embedding,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
+        k = rearrange(
+            k,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
+        v = rearrange(
+            v,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
         output = (
             F.scaled_dot_product_attention(
                 query=q,
@@ -1054,7 +1088,7 @@ class _ForwardSolution(nn.Module):
             .transpose(1, 2)
             .contiguous()
         )
-        output = output.view(B, C, -1)
+        output = output.view(batch, chans, -1)
         return self.proj(output)
 
 
@@ -1079,10 +1113,22 @@ class _BackwardSolution(nn.Module):
         k: torch.Tensor,
         x: torch.Tensor,
     ) -> torch.Tensor:
-        B, N_q, _ = neuros.shape
-        q = rearrange(neuros, "B T (H D) -> B H T D", H=self.n_head)
-        k = rearrange(k, "B T (H D) -> B H T D", H=self.n_head)
-        v = rearrange(self.v(x), "B T (H D) -> B H T D", H=self.n_head)
+        batch, n_queries, _ = neuros.shape
+        q = rearrange(
+            neuros,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
+        k = rearrange(
+            k,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
+        v = rearrange(
+            self.v(x),
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
         output = (
             F.scaled_dot_product_attention(
                 query=q,
@@ -1094,7 +1140,7 @@ class _BackwardSolution(nn.Module):
             .transpose(1, 2)
             .contiguous()
         )
-        output = output.view(B, N_q, -1)
+        output = output.view(batch, n_queries, -1)
         return self.proj(output)
 
 
@@ -1137,24 +1183,37 @@ class _BrainTokenizerEncoder(nn.Module):
         **kwargs,
     ) -> torch.Tensor:
         assert sensor_embedding is not None, "sensor_embedding is required"
-        B, C, N, L = x.shape
+        batch, chans, nwin, wlen = x.shape
         # Each (sample, channel, window) is an independent 1-D waveform for SEANet.
-        x = rearrange(x, "B C N L -> (B C N) 1 L")
+        x = rearrange(x, "batch chans nwin wlen -> (batch chans nwin) 1 wlen")
         x = self.seanet_encoder(x)
-        # Re-group encoded windows back so W = N*T is the joint time axis.
-        x = rearrange(x, "(B C N) D T -> B C (N T) D", B=B, C=C, N=N)
-        B, C, W, _ = x.shape
+        # Re-group encoded windows back so tokens = nwin*tok is the joint time axis.
+        x = rearrange(
+            x,
+            "(batch chans nwin) dim tok -> batch chans (nwin tok) dim",
+            batch=batch,
+            chans=chans,
+            nwin=nwin,
+        )
+        batch, chans, tokens, _ = x.shape
         # Expand sensor embedding to match every time step, then flatten for cross-attention.
         sensor_embedding = rearrange(
-            sensor_embedding.unsqueeze(2).repeat(1, 1, W, 1),
-            "B C W D -> (B W) C D",
+            sensor_embedding.unsqueeze(2).repeat(1, 1, tokens, 1),
+            "batch chans tokens dim -> (batch tokens) chans dim",
         )
-        x = rearrange(x, "B C W D -> (B W) C D")
+        x = rearrange(x, "batch chans tokens dim -> (batch tokens) chans dim")
         neuros = self.neuros.type_as(x).unsqueeze(0).repeat(x.shape[0], 1, 1)
         x = self.backwardsolution(neuros, self.k_proj(x + sensor_embedding), x)
         # Collapse the n_neuro-channel axis back into the batch; split window from token dims.
-        x = rearrange(x, "(B N T) C D -> B C (N T) D", B=B, N=N)
-        return rearrange(x, "B C (N T) D -> B C N T D", N=N)
+        x = rearrange(
+            x,
+            "(batch nwin tok) chans dim -> batch chans (nwin tok) dim",
+            batch=batch,
+            nwin=nwin,
+        )
+        return rearrange(
+            x, "batch chans (nwin tok) dim -> batch chans nwin tok dim", nwin=nwin
+        )
 
 
 class _BrainTokenizerDecoder(nn.Module):
@@ -1190,21 +1249,32 @@ class _BrainTokenizerDecoder(nn.Module):
         sensor_embedding: torch.Tensor | None = None,
     ) -> torch.Tensor:
         assert sensor_embedding is not None, "sensor_embedding is required"
-        B, C, N, T, D = x.shape
+        batch, chans, nwin, tok, dim = x.shape
         # Flatten batch × window × token into one axis so cross-attention sees
         # each (sample, window, token) independently across n_neuro latent channels.
-        x = rearrange(x, "B C N T D -> (B N T) C D")
+        x = rearrange(x, "batch chans nwin tok dim -> (batch nwin tok) chans dim")
         # Match sensor embedding shape to the flattened batch axis.
         sensor_embedding = rearrange(
-            sensor_embedding.view(B, -1, 1, 1, D).repeat(1, 1, N, T, 1),
-            "B C N T D -> (B N T) C D",
+            sensor_embedding.view(batch, -1, 1, 1, dim).repeat(1, 1, nwin, tok, 1),
+            "batch chans nwin tok dim -> (batch nwin tok) chans dim",
         )
         x = self.forwardsolution(sensor_embedding, x)
         # Regroup so each (sample, channel, window) is a separate 1-D sequence for SEANet.
-        x = rearrange(x, "(B N T) C D -> (B C N) D T", B=B, N=N, T=T)
+        x = rearrange(
+            x,
+            "(batch nwin tok) chans dim -> (batch chans nwin) dim tok",
+            batch=batch,
+            nwin=nwin,
+            tok=tok,
+        )
         x = self.seanet_decoder(x)
         # Split the fused batch back into sample, channel, and window dimensions.
-        return rearrange(x, "(B C N) 1 L -> B C N L", B=B, N=N)
+        return rearrange(
+            x,
+            "(batch chans nwin) 1 wlen -> batch chans nwin wlen",
+            batch=batch,
+            nwin=nwin,
+        )
 
 
 # Public BrainTokenizer model (VQ-VAE pretraining module)
@@ -1440,9 +1510,13 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         finally:
             if was_training:
                 self.train()
-        # Merge windows (N) and per-window tokens (T) into a single token sequence.
-        feat = rearrange(feat_q, "B C N T D -> B C (N T) D")
-        indices = rearrange(indices, "B C N T Q -> B C (N T) Q")
+        # Merge windows (nwin) and per-window tokens (tok) into a single token sequence.
+        feat = rearrange(
+            feat_q, "batch chans nwin tok dim -> batch chans (nwin tok) dim"
+        )
+        indices = rearrange(
+            indices, "batch chans nwin tok nquant -> batch chans (nwin tok) nquant"
+        )
         return feat, indices
 
 
