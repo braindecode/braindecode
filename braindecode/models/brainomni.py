@@ -9,87 +9,58 @@ from __future__ import annotations
 import math
 import warnings
 
+import mne
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-# Classic weight_norm is used (not torch.nn.utils.parametrizations.weight_norm)
-# to keep state-dict keys as ``conv.weight_g`` / ``conv.weight_v``, matching
+# Classic weight_norm (not torch.nn.utils.parametrizations.weight_norm) keeps
+# state-dict keys as ``conv.conv.weight_g`` / ``conv.conv.weight_v``, matching
 # the upstream EnCodec/BrainOmni checkpoint format.  torch >=2.0 emits a
 # deprecation warning for this API — that is expected and intentional.
 from torch.nn.utils import weight_norm  # noqa: F401
 
 from braindecode.models.base import EEGModuleMixin
 
-# MNE FIFF constants (avoid importing mne at module load for a tiny lookup)
-_FIFF_MEG_CH = 1
-_FIFF_EEG_CH = 2
-# sensor_type integer codes consumed by _BrainSensorModule
-_SENSOR_EEG, _SENSOR_MAG, _SENSOR_GRAD = 0, 1, 2
+_SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
 
 
-def _resolve_kind(kind) -> int:
-    """Return FIFF int kind from an MNE ``info['chs']`` ``kind`` field.
-
-    Accepts the harness/string form (``"eeg"``, ``"mag"``, ``"grad"``) and the
-    real MNE integer constants.
-    """
-    if isinstance(kind, str):
-        k = kind.lower()
-        if k == "eeg":
-            return _FIFF_EEG_CH
-        if k in ("mag", "grad", "meg"):
-            return _FIFF_MEG_CH
-        raise ValueError(f"Unsupported channel kind string: {kind!r}")
-    return int(kind)
-
-
-def _sensor_type_of(ch: dict) -> int:
-    kind = _resolve_kind(ch.get("kind", "eeg"))
-    if kind == _FIFF_EEG_CH:
-        return _SENSOR_EEG
-    # EEG already returned above; only MEG is valid here.
-    if kind != _FIFF_MEG_CH:
-        raise ValueError(
-            f"Unsupported channel kind {kind!r}; pass only EEG/MEG channels "
-            "(e.g. raw.pick(['eeg', 'meg']))."
+def _channel_types(chs_info) -> list[str]:
+    """Channel types ('eeg'/'mag'/'grad'/...) via MNE, with a fallback for the
+    simplified ``chs_info`` dicts used in tests (string ``kind``/``ch_type``)."""
+    try:
+        info = mne.Info(
+            chs=chs_info,
+            ch_names=[ch["ch_name"] for ch in chs_info],
+            sfreq=1.0,
+            nchan=len(chs_info),
+            bads=[],
         )
-    # MEG: distinguish MAG vs GRAD. Prefer the string kind when present,
-    # else use coil_type (planar/grad coils contain "GRAD"/"PLANAR").
-    raw_kind = ch.get("kind")
-    if isinstance(raw_kind, str) and raw_kind.lower() == "grad":
-        return _SENSOR_GRAD
-    coil = str(ch.get("coil_type", ""))
-    if "PLANAR" in coil or "GRAD" in coil:
-        return _SENSOR_GRAD
-    return _SENSOR_MAG
+        return info.get_channel_types()
+    except Exception:
+        return [
+            str(ch.get("ch_type", ch.get("kind", "eeg"))).lower() for ch in chs_info
+        ]
 
 
-def _orientation_of(ch: dict, sensor_type: int) -> np.ndarray:
-    """3-D orientation vector extracted from ``ch['loc']``.
-
-    EEG: zeros (3,).
-    GRAD: ``loc[3:6]`` (first direction triplet).
-    MAG: ``loc[9:12]`` (third direction triplet).
-    """
-    if sensor_type == _SENSOR_EEG:
-        return np.zeros(3, dtype=np.float64)
-    loc = np.asarray(ch["loc"], dtype=np.float64)
-    dir_idx = 1 if sensor_type == _SENSOR_GRAD else 3
-    return loc[3 * dir_idx : 3 * (dir_idx + 1)]
+def _coil_orientation(loc: np.ndarray, ch_type: str) -> np.ndarray:
+    """Coil orientation from the MNE ``loc`` rotation (cols 3-5/6-8/9-11 are the
+    coil x/y/z unit axes). BrainOmni uses the in-plane x-axis for planar
+    gradiometers and the z-axis (normal) for magnetometers, matching upstream."""
+    return np.asarray(loc[3:6] if ch_type == "grad" else loc[9:12], dtype=np.float64)
 
 
 def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
     """Per-modality position normalization (upstream ``normalize_pos``).
 
-    EEG positions and MEG positions are each mean-centered then divided by
-    ``sqrt(3 * mean(squared_norm))``.
+    EEG (code 0) and MEG (codes 1, 2) positions are each mean-centered then
+    divided by ``sqrt(3 * mean(squared_norm))``.
     """
     pos = pos.copy()
-    eeg = sensor_type == _SENSOR_EEG
-    meg = (sensor_type == _SENSOR_MAG) | (sensor_type == _SENSOR_GRAD)
+    eeg = sensor_type == 0
+    meg = (sensor_type == 1) | (sensor_type == 2)
     for mask in (eeg, meg):
         if not mask.any():
             continue
@@ -104,12 +75,18 @@ def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
 def _geometry_from_chs_info(chs_info):
     """Derive ``(pos (C, 6) float32, sensor_type (C,) int64)`` from ``chs_info``.
 
-    Raises ``ValueError`` if any channel has a missing/non-finite ``loc``.
+    Raises ``ValueError`` on empty input or missing/non-finite/wrong-shape ``loc``.
     """
     if not chs_info:
         raise ValueError("chs_info is empty; at least one channel is required.")
-    pos, stype = [], []
-    for ch in chs_info:
+    types = _channel_types(chs_info)
+    pos, sensor_type = [], []
+    for ch, ch_type in zip(chs_info, types):
+        if ch_type not in _SENSOR_CODE:
+            raise ValueError(
+                f"Unsupported channel type {ch_type!r} for {ch.get('ch_name', '?')!r}; "
+                "pass only EEG/MEG channels (e.g. raw.pick(['eeg', 'meg']))."
+            )
         if "loc" not in ch:
             raise ValueError(
                 f"Channel {ch.get('ch_name', '?')!r} has no 'loc'. "
@@ -118,11 +95,10 @@ def _geometry_from_chs_info(chs_info):
         loc = np.asarray(ch["loc"], dtype=np.float64)
         if loc.shape != (12,):
             raise ValueError(
-                f"Channel {ch.get('ch_name', '?')!r} has loc of shape "
-                f"{loc.shape}; expected (12,)."
+                f"Channel {ch.get('ch_name', '?')!r} has loc shape {loc.shape}; "
+                "expected (12,)."
             )
-        s = _sensor_type_of(ch)
-        ori = _orientation_of(ch, s)
+        ori = np.zeros(3) if ch_type == "eeg" else _coil_orientation(loc, ch_type)
         vec = np.concatenate([loc[:3], ori])
         if not np.all(np.isfinite(vec)):
             raise ValueError(
@@ -130,11 +106,11 @@ def _geometry_from_chs_info(chs_info):
                 "BrainOmni needs sensor positions; call raw.set_montage(...)."
             )
         pos.append(vec)
-        stype.append(s)
-    pos = np.stack(pos).astype(np.float32)
-    sensor_type = np.asarray(stype, dtype=np.int64)
-    pos = _normalize_pos(pos, sensor_type).astype(np.float32)
-    return pos, sensor_type
+        sensor_type.append(_SENSOR_CODE[ch_type])
+    pos = _normalize_pos(
+        np.stack(pos).astype(np.float32), np.asarray(sensor_type, dtype=np.int64)
+    )
+    return pos.astype(np.float32), np.asarray(sensor_type, dtype=np.int64)
 
 
 # ---------------------------------------------------------------------------
@@ -348,41 +324,11 @@ class _SpatialTemporalAttentionBlock(nn.Module):
 # SEANet conv helpers (ported from Meta EnCodec / BrainOmni model_utils/conv.py)
 # ---------------------------------------------------------------------------
 
-# Supported parametrisation norms for this port (weight_norm path only).
-_CONV_NORMALIZATIONS = frozenset(["none", "weight_norm"])
-
-
-def _apply_parametrization_norm(module: nn.Module, norm: str = "none") -> nn.Module:
-    """Apply weight_norm or return module unchanged."""
-    assert norm in _CONV_NORMALIZATIONS, f"Unsupported norm: {norm!r}"
-    if norm == "weight_norm":
-        # Classic weight_norm keeps state-dict keys ``conv.weight_g`` /
-        # ``conv.weight_v``, required for checkpoint compatibility.
-        return weight_norm(module)  # type: ignore[arg-type]
-    return module
-
-
-def _get_norm_module(
-    module: nn.Module,  # noqa: ARG001 – unused but kept for API symmetry
-    causal: bool = False,  # noqa: ARG001
-    norm: str = "none",
-    **norm_kwargs,  # noqa: ARG002
-) -> nn.Module:
-    """Return a post-conv normalisation module.
-
-    Always ``nn.Identity()`` for this port: ``_CONV_NORMALIZATIONS`` only
-    covers ``"none"`` and ``"weight_norm"`` (applied pre-conv via
-    ``_apply_parametrization_norm``). Parameters ``module`` and ``causal``
-    are retained for API symmetry with the full EnCodec implementation.
-    """
-    assert norm in _CONV_NORMALIZATIONS, f"Unsupported norm: {norm!r}"
-    return nn.Identity()
-
 
 def _get_extra_padding_for_conv1d(
     x: torch.Tensor, kernel_size: int, stride: int, padding_total: int = 0
 ) -> int:
-    """Compute extra right-padding so that the last convolution window is full."""
+    """Compute extra right-padding so that the last conv window is full."""
     length = x.shape[-1]
     n_frames = (length - kernel_size + padding_total) / stride + 1
     ideal_length = (math.ceil(n_frames) - 1) * stride + (kernel_size - padding_total)
@@ -395,7 +341,7 @@ def _pad1d(
     mode: str = "zero",
     value: float = 0.0,
 ) -> torch.Tensor:
-    """Thin wrapper around F.pad that handles reflect padding on very short inputs."""
+    """F.pad wrapper that handles reflect padding on very short inputs."""
     length = x.shape[-1]
     padding_left, padding_right = paddings
     assert padding_left >= 0 and padding_right >= 0, (padding_left, padding_right)
@@ -421,55 +367,30 @@ def _unpad1d(x: torch.Tensor, paddings: tuple[int, int]) -> torch.Tensor:
 
 
 class _NormConv1d(nn.Module):
-    """Conv1d with optional weight-norm and post-conv normalisation."""
+    """Conv1d with classic weight_norm (state-dict keys: ``conv.conv.weight_g/v``)."""
 
-    def __init__(
-        self,
-        *args,
-        causal: bool = False,
-        norm: str = "none",
-        norm_kwargs: dict | None = None,
-        **kwargs,
-    ):
+    def __init__(self, *args, **kwargs):
         super().__init__()
-        norm_kwargs = norm_kwargs or {}
-        self.conv = _apply_parametrization_norm(nn.Conv1d(*args, **kwargs), norm)
-        self.norm = _get_norm_module(self.conv, causal, norm, **norm_kwargs)
-        self.norm_type = norm
+        # Classic weight_norm preserves checkpoint key parity with upstream.
+        self.conv = weight_norm(nn.Conv1d(*args, **kwargs))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.conv(x)
-        x = self.norm(x)
-        return x
+        return self.conv(x)
 
 
 class _NormConvTranspose1d(nn.Module):
-    """ConvTranspose1d with optional weight-norm and post-conv normalisation."""
+    """ConvTranspose1d with classic weight_norm."""
 
-    def __init__(
-        self,
-        *args,
-        causal: bool = False,
-        norm: str = "none",
-        norm_kwargs: dict | None = None,
-        **kwargs,
-    ):
+    def __init__(self, *args, **kwargs):
         super().__init__()
-        norm_kwargs = norm_kwargs or {}
-        self.convtr = _apply_parametrization_norm(
-            nn.ConvTranspose1d(*args, **kwargs), norm
-        )
-        self.norm = _get_norm_module(self.convtr, causal, norm, **norm_kwargs)
-        self.norm_type = norm
+        self.convtr = weight_norm(nn.ConvTranspose1d(*args, **kwargs))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.convtr(x)
-        x = self.norm(x)
-        return x
+        return self.convtr(x)
 
 
 class _SConv1d(nn.Module):
-    """Conv1d with built-in asymmetric / causal padding and optional normalisation."""
+    """Conv1d with built-in asymmetric / causal padding."""
 
     def __init__(
         self,
@@ -481,8 +402,8 @@ class _SConv1d(nn.Module):
         groups: int = 1,
         bias: bool = True,
         causal: bool = False,
-        norm: str = "none",
-        norm_kwargs: dict | None = None,
+        norm: str = "none",  # kept for call-site compat; always weight_norm
+        norm_kwargs: dict | None = None,  # kept for call-site compat; unused
         pad_mode: str = "reflect",
     ):
         super().__init__()
@@ -491,7 +412,6 @@ class _SConv1d(nn.Module):
                 "_SConv1d has been initialized with stride > 1 and dilation > 1"
                 f" (kernel_size={kernel_size} stride={stride}, dilation={dilation})."
             )
-        norm_kwargs = norm_kwargs or {}
         self.conv = _NormConv1d(
             in_channels,
             out_channels,
@@ -500,9 +420,6 @@ class _SConv1d(nn.Module):
             dilation=dilation,
             groups=groups,
             bias=bias,
-            causal=causal,
-            norm=norm,
-            norm_kwargs=norm_kwargs,
         )
         self.causal = causal
         self.pad_mode = pad_mode
@@ -536,20 +453,13 @@ class _SConvTranspose1d(nn.Module):
         kernel_size: int,
         stride: int = 1,
         causal: bool = False,
-        norm: str = "none",
+        norm: str = "none",  # kept for call-site compat; always weight_norm
         trim_right_ratio: float = 1.0,
-        norm_kwargs: dict | None = None,
+        norm_kwargs: dict | None = None,  # kept for call-site compat; unused
     ):
         super().__init__()
-        norm_kwargs = norm_kwargs or {}
         self.convtr = _NormConvTranspose1d(
-            in_channels,
-            out_channels,
-            kernel_size,
-            stride,
-            causal=causal,
-            norm=norm,
-            norm_kwargs=norm_kwargs,
+            in_channels, out_channels, kernel_size, stride
         )
         self.causal = causal
         self.trim_right_ratio = trim_right_ratio
@@ -1017,31 +927,19 @@ class _SEANetDecoder(nn.Module):
 
 
 # =============================================================================
-# Residual Vector Quantization (EMA path only, no deepspeed / einx)
-#
-# Ported from BrainOmni/model_utils/vq.py (MIT License, 2025 OpenTSLab) and
-# BrainOmni/model_utils/module.py.
-#
-# Key changes vs upstream:
-#   - deepspeed.comm replaced by no-op stubs (single-process only).
-#   - einx / vector_quantize_pytorch.rotate_to replaced by local helpers.
-#   - kmeans warm-start omitted; uniform init always (safe because pretrained
-#     checkpoints overwrite all codebook buffers on load).
-#   - SimVQ class dropped entirely (not used in BrainTokenizer/BrainOmni).
+# Residual Vector Quantization (EMA path, single-process, no deepspeed/einx)
 # =============================================================================
 
 
-# ---------------------------------------------------------------------------
-# Distributed no-ops (deepspeed not imported)
-# ---------------------------------------------------------------------------
+# Distributed no-ops
 
 
 def _broadcast_tensors(tensors, src_rank=0):
-    return  # single-process: nothing to sync
+    return  # single-process no-op
 
 
 def _all_reduce_tensors(tensors, op=None):
-    return  # single-process: nothing to sync
+    return  # single-process no-op
 
 
 # ---------------------------------------------------------------------------
@@ -1057,23 +955,14 @@ def _laplace_smoothing(x: torch.Tensor, epsilon: float = 1e-6) -> torch.Tensor:
     return (x + epsilon) / (x.sum() + epsilon * len(x))
 
 
-# ---------------------------------------------------------------------------
-# Codebook initialisation
-# ---------------------------------------------------------------------------
-
-
 def _uniform_init(*shape: int) -> torch.Tensor:
-    # kaiming_uniform_ (scaled uniform); buffers are overwritten on checkpoint load
     t = torch.empty(shape)
     nn.init.kaiming_uniform_(t)
     return t
 
 
-# ---------------------------------------------------------------------------
-# Rotation-trick straight-through estimator (Fifty et al. 2024)
+# Rotation-trick STE (Fifty et al. 2024, §4.2 https://arxiv.org/abs/2410.06424).
 # Local replacement for vector_quantize_pytorch.rotate_to.
-# Reference: https://arxiv.org/abs/2410.06424 §4.2
-# ---------------------------------------------------------------------------
 
 
 def _safe_div(num: torch.Tensor, den: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
@@ -1083,21 +972,17 @@ def _safe_div(num: torch.Tensor, den: torch.Tensor, eps: float = 1e-6) -> torch.
 def _efficient_rotation_trick_transform(
     u: torch.Tensor, q: torch.Tensor, e: torch.Tensor
 ) -> torch.Tensor:
-    # Section 4.2 of https://arxiv.org/abs/2410.06424
-    e = e.unsqueeze(1)  # (b, 1, d)
-    w = F.normalize(u + q, p=2, dim=1, eps=1e-6).detach()  # (b, d)
+    e = e.unsqueeze(1)
+    w = F.normalize(u + q, p=2, dim=1, eps=1e-6).detach()
     out = (
         e
         - 2 * (e @ w.unsqueeze(2) @ w.unsqueeze(1))
         + 2 * (e @ u.unsqueeze(2).detach() @ q.unsqueeze(1).detach())
     )
-    return out.squeeze(1)  # (b, d)
+    return out.squeeze(1)
 
 
 def _rotate_to(src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
-    # Rotation-trick STE (Fifty et al. 2024): rotate src onto tgt direction,
-    # gradient flows as a (detached) rotation+scale. Local replacement for
-    # vector_quantize_pytorch.rotate_to.
     orig_shape = src.shape
     src = src.reshape(-1, orig_shape[-1])
     tgt = tgt.reshape(-1, orig_shape[-1])
@@ -1110,22 +995,8 @@ def _rotate_to(src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
     return rotated.reshape(orig_shape)
 
 
-# ---------------------------------------------------------------------------
-# EuclideanCodebook
-# ---------------------------------------------------------------------------
-
-
 class _EuclideanCodebook(nn.Module):
-    """EMA-updated Euclidean codebook.
-
-    Buffer names/shapes intentionally match the upstream BrainOmni checkpoint
-    so that ``load_state_dict`` works without remapping.
-
-    Notes
-    -----
-    The kmeans warm-start from upstream is omitted; uniform initialisation is
-    always used (pretrained weights overwrite these buffers on load).
-    """
+    """EMA-updated Euclidean codebook; buffer keys match upstream checkpoint."""
 
     def __init__(
         self,
@@ -1200,7 +1071,6 @@ class _EuclideanCodebook(nn.Module):
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         shape, dtype = x.shape, x.dtype
         x = rearrange(x, "... d -> (...) d")
-        # No init call (kmeans warm-start omitted; uniform init always).
         embed_ind = self.quantize(x)
         embed_onehot = F.one_hot(embed_ind, self.codebook_size).type(dtype)
         embed_ind = embed_ind.view(*shape[:-1])
@@ -1222,11 +1092,6 @@ class _EuclideanCodebook(nn.Module):
             self.embed.data.copy_(embed_normalized)
 
         return quantize, embed_ind
-
-
-# ---------------------------------------------------------------------------
-# VectorQuantization
-# ---------------------------------------------------------------------------
 
 
 class _VectorQuantization(nn.Module):
@@ -1291,11 +1156,6 @@ class _VectorQuantization(nn.Module):
         return quantize, embed_ind, loss
 
 
-# ---------------------------------------------------------------------------
-# ResidualVQ
-# ---------------------------------------------------------------------------
-
-
 class _ResidualVQ(nn.Module):
     """Residual vector quantisation (EMA path, no quantize-dropout)."""
 
@@ -1344,9 +1204,6 @@ class _ResidualVQ(nn.Module):
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
         all_indices: list[torch.Tensor] = []
-        # Intentionally calls each layer's forward (vq(residual)) rather than
-        # vq.encode, matching upstream RVQ.encode. The two diverge only when
-        # codebook_dim != emb_dim; using forward is upstream-faithful here.
         for vq in self.layers:
             quantized, indices, _ = vq(residual)
             residual = residual - quantized.detach()
@@ -1354,16 +1211,8 @@ class _ResidualVQ(nn.Module):
         return torch.stack(all_indices, dim=-1)
 
 
-# ---------------------------------------------------------------------------
-# BrainQuantizer
-# ---------------------------------------------------------------------------
-
-
 class _BrainQuantizer(nn.Module):
-    """Normalise → RVQ wrapper used by BrainTokenizer.
-
-    Input ``x`` is L2-normalised before quantisation, matching upstream.
-    """
+    """L2-normalise → RVQ wrapper used by BrainTokenizer."""
 
     def __init__(
         self,
@@ -1391,22 +1240,8 @@ class _BrainQuantizer(nn.Module):
     def forward(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            x: (B, W, D) token features.
-
-        Returns:
-            x_q:    (B, W, D) quantised features.
-            indices:(B, W, num_quantizers) codebook indices.
-            loss:   scalar commit loss.
-        """
         x_q, indices, loss = self.rvq(F.normalize(x, p=2.0, dim=-1))
         return x_q, indices, loss
-
-
-# ---------------------------------------------------------------------------
-# BrainSensorModule
-# ---------------------------------------------------------------------------
 
 
 class _BrainSensorModule(nn.Module):
@@ -1536,9 +1371,7 @@ class _BackwardSolution(nn.Module):
     ) -> torch.Tensor:
         B, N_q, _ = neuros.shape
         q = rearrange(neuros, "B T (H D) -> B H T D", H=self.n_head)
-        k = rearrange(
-            k, "B T (H D) -> B H T D", H=self.n_head
-        )  # reshape pre-projected keys for multi-head attention
+        k = rearrange(k, "B T (H D) -> B H T D", H=self.n_head)
         v = rearrange(self.v(x), "B T (H D) -> B H T D", H=self.n_head)
         output = (
             F.scaled_dot_product_attention(
@@ -1553,11 +1386,6 @@ class _BackwardSolution(nn.Module):
         )
         output = output.view(B, N_q, -1)
         return self.proj(output)
-
-
-# ---------------------------------------------------------------------------
-# BrainTokenizerEncoder
-# ---------------------------------------------------------------------------
 
 
 class _BrainTokenizerEncoder(nn.Module):
@@ -1633,11 +1461,6 @@ class _BrainTokenizerEncoder(nn.Module):
         return rearrange(x, "B C (N T) D -> B C N T D", N=N)
 
 
-# ---------------------------------------------------------------------------
-# BrainTokenizerDecoder
-# ---------------------------------------------------------------------------
-
-
 class _BrainTokenizerDecoder(nn.Module):
     """Decode neural token sequences back to per-channel waveforms.
 
@@ -1688,6 +1511,9 @@ class _BrainTokenizerDecoder(nn.Module):
     ) -> torch.Tensor:
         assert sensor_embedding is not None, "sensor_embedding is required"
         B, C, N, T, D = x.shape
+        # Flatten batch, window-group (N) and per-window token (T) into one axis
+        # so the cross-attention treats every (sample, window, token) independently
+        # and attends across the C=n_neuro latent channels.
         x = rearrange(x, "B C N T D -> (B N T) C D")
         sensor_embedding = rearrange(
             sensor_embedding.view(B, -1, 1, 1, D).repeat(1, 1, N, T, 1),
@@ -1830,8 +1656,6 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         self.n_neuro = n_neuro
         self.window_length = window_length
         self.drop_prob = drop_prob
-        # activation is accepted for braindecode API symmetry; the VQ-VAE uses
-        # the fixed SELU/ELU activations baked into the pretrained weights.
         self.activation = activation
 
         self.sensor_embed = _BrainSensorModule(emb_dim)
@@ -1853,7 +1677,6 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
             rotation_trick=rotation_trick,
             quantize_optimize_method=quantize_optimize_method,
         )
-        # reconstruction decoder == the model's output head -> name final_layer
         self.final_layer = _BrainTokenizerDecoder(
             n_dim=emb_dim,
             n_head=tokenizer_num_heads,
@@ -1865,16 +1688,14 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         )
 
     def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
-        """Segment ``x`` (B, C, T) into windows (B, C, N, window_length)."""
-        # faithful port of upstream BrainTokenizer.unfold
-        if x.shape[-1] < self.window_length:
-            x = F.pad(x, pad=(0, self.window_length - x.shape[-1]))
-        if overlap_ratio > 0.0:
-            stride = int(self.window_length * (1 - overlap_ratio))
-            right_remain = (x.shape[-1] - self.window_length) % stride
-            if right_remain > 0:
-                x = F.pad(x, pad=(0, stride - right_remain))
-        step = int(self.window_length * (1 - overlap_ratio))
+        """Slice ``x`` (B, C, T) into ``(B, C, N, window_length)`` windows."""
+        step = round(self.window_length * (1 - overlap_ratio))
+        pad = max(self.window_length - x.shape[-1], 0)  # ensure >= 1 window
+        if step < self.window_length:  # overlapping: fill the trailing window
+            remainder = (x.shape[-1] + pad - self.window_length) % step
+            pad += (step - remainder) % step
+        if pad:
+            x = F.pad(x, (0, pad))
         return x.unfold(dimension=-1, size=self.window_length, step=step)
 
     def _sensor_embedding(self, batch_size: int) -> torch.Tensor:
@@ -2089,9 +1910,6 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         self.drop_prob = drop_prob
         self.activation = activation
 
-        # backbone tokenizer (the public class, so state-dict keys match the
-        # converted checkpoint). It derives geometry from chs_info and emits the
-        # sfreq!=256 warning. The tokenizer is always frozen (see train()).
         try:
             eff_sfreq = self.sfreq
         except ValueError:
@@ -2130,12 +1948,6 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         self._head_in = n_neuro * lm_dim
         self.final_layer: nn.Module = nn.Identity()  # overwritten by reset_head
         self.reset_head(self.n_outputs)
-
-    def train(self, mode: bool = True) -> "BrainOmni":
-        """Set training mode, keeping the tokenizer permanently frozen in eval."""
-        super().train(mode)
-        self.tokenizer.eval()
-        return self
 
     def reset_head(self, n_outputs: int) -> None:
         """Re-create the classification head for ``n_outputs`` classes."""

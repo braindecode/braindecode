@@ -1204,19 +1204,28 @@ def _quantizer(num_quantizers=2):
 # ---- geometry derivation -----------------------------------------------------
 
 
+def _real_chs(ch_names, ch_types):
+    """Build MNE channel dicts with a minimal finite loc (identity rotation)."""
+    finite_loc = np.array([0.1, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
+    info = mne.create_info(ch_names, 256.0, ch_types)
+    for ch in info["chs"]:
+        ch["loc"] = finite_loc.copy()
+    return info["chs"]
+
+
 @pytest.mark.parametrize(
-    "ch, expected",
+    "chs_info, expected",
     [
-        ({"kind": "eeg", "loc": _loc(1.0)}, 0),  # EEG, string kind
-        ({"kind": 2, "loc": _loc(1.0)}, 0),  # EEG, FIFF int kind
-        ({"kind": 1, "coil_type": 3022, "loc": _loc(1.0)}, 1),  # MEG MAG
-        ({"kind": "grad", "coil_type": 3012, "loc": _loc(1.0)}, 2),  # MEG GRAD
+        ([{"ch_name": "C1", "kind": "eeg", "loc": _loc(1.0)}], [0]),  # simplified EEG dict
+        (_real_chs(["MEG0111"], ["grad"]), [2]),  # real GRAD
+        (_real_chs(["MEG0112"], ["mag"]), [1]),   # real MAG
+        (_real_chs(["E1"], ["eeg"]), [0]),         # real EEG
     ],
-    ids=["eeg_str", "eeg_int", "mag", "grad"],
+    ids=["eeg_simplified", "grad", "mag", "eeg_real"],
 )
-def test_geometry_sensor_type(ch, expected):
-    _, sensor_type = _geometry_from_chs_info([{"ch_name": "X", **ch}])
-    assert sensor_type.tolist() == [expected]
+def test_geometry_sensor_type(chs_info, expected):
+    _, sensor_type = _geometry_from_chs_info(chs_info)
+    assert sensor_type.tolist() == expected
 
 
 def test_geometry_eeg_orientation_and_centering():
