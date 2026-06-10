@@ -56,8 +56,8 @@ Then pass ``--reference-output reference_encode_output.pt`` to this script.
 Override note: braindecode ``BrainOmni.encode(x)`` uses self.pos/sensor_type
 buffers.  To match the upstream call signature, set::
 
-    model.tokenizer.pos = example["pos"][0]        # (C, 6)
-    model.tokenizer.sensor_type = example["sensor_type"][0].long()  # (C,)
+    model.tokenizer.pos.data = example["pos"][0].float()        # (C, 6)
+    model.tokenizer.sensor_type.data = example["sensor_type"][0].long()  # (C,)
 
 before calling ``encode(x)``.
 
@@ -388,6 +388,17 @@ def _discover_hf_files(variant: str) -> tuple[str, str]:
             f"Available files: {all_files}"
         )
 
+    if len(cfg_files) > 1:
+        print(
+            f"WARNING: multiple model_cfg.json files match variant={variant!r}: "
+            f"{cfg_files}. Using the first: {cfg_files[0]!r}"
+        )
+    if len(pt_files) > 1:
+        print(
+            f"WARNING: multiple .pt files match variant={variant!r}: "
+            f"{pt_files}. Using the first: {pt_files[0]!r}"
+        )
+
     return cfg_files[0], pt_files[0]
 
 
@@ -528,11 +539,11 @@ def _parity_check(
     example = torch.load(str(example_path), map_location="cpu", weights_only=True)
     ref = torch.load(reference_path, map_location="cpu", weights_only=True)
 
-    # Override model's geometry buffers with example's pos/sensor_type
-    # (braindecode derives geometry from chs_info at init; the example provides
-    # them directly).
-    model.tokenizer.pos = example["pos"][0].float()         # (C, 6)
-    model.tokenizer.sensor_type = example["sensor_type"][0].long()  # (C,)
+    # Override geometry buffers with the example's pos/sensor_type. Use
+    # in-place .copy_ to preserve buffer registration (plain assignment
+    # would drop them from state_dict / .to(device)).
+    model.tokenizer.pos.data = example["pos"][0].float()
+    model.tokenizer.sensor_type.data = example["sensor_type"][0].long()
 
     x = example["x"].unsqueeze(0)  # (1, C, T)
     model.eval()

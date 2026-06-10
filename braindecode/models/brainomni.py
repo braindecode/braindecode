@@ -50,7 +50,8 @@ def _sensor_type_of(ch: dict) -> int:
     kind = _resolve_kind(ch.get("kind", "eeg"))
     if kind == _FIFF_EEG_CH:
         return _SENSOR_EEG
-    if kind not in (_FIFF_EEG_CH, _FIFF_MEG_CH):
+    # EEG already returned above; only MEG is valid here.
+    if kind != _FIFF_MEG_CH:
         raise ValueError(
             f"Unsupported channel kind {kind!r}; pass only EEG/MEG channels "
             "(e.g. raw.pick(['eeg', 'meg']))."
@@ -1343,6 +1344,9 @@ class _ResidualVQ(nn.Module):
     def encode(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
         all_indices: list[torch.Tensor] = []
+        # Intentionally calls each layer's forward (vq(residual)) rather than
+        # vq.encode, matching upstream RVQ.encode. The two diverge only when
+        # codebook_dim != emb_dim; using forward is upstream-faithful here.
         for vq in self.layers:
             quantized, indices, _ = vq(residual)
             residual = residual - quantized.detach()
@@ -1923,15 +1927,22 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
 
         Notes
         -----
-        This method only disables gradients (``@torch.no_grad()``); it does
-        **not** switch the module to eval mode. The caller must call
-        ``model.eval()`` first, otherwise encoder/decoder dropout stays active
-        and the output is non-deterministic::
+        This method internally switches the tokenizer to eval mode before
+        encoding so that VQ codebooks are never EMA-updated (which would
+        corrupt them) and dropout is disabled for deterministic output.  The
+        prior training/eval mode is restored when the call returns, so calling
+        ``tokenize`` while the module is in train mode is safe::
 
-            model.eval()
-            feat, indices = model.tokenize(x)
+            model.train()
+            feat, indices = model.tokenize(x)  # codebooks frozen, mode restored
         """
-        feat_q, indices, _, _ = self._encode_quantize(x, overlap_ratio)
+        was_training = self.training
+        self.eval()  # freeze VQ codebooks (no EMA) and disable dropout
+        try:
+            feat_q, indices, _, _ = self._encode_quantize(x, overlap_ratio)
+        finally:
+            if was_training:
+                self.train()
         feat = rearrange(feat_q, "B C N T D -> B C (N T) D")
         indices = rearrange(indices, "B C N T Q -> B C (N T) Q")
         return feat, indices
@@ -1981,6 +1992,9 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         Analysis window length (samples) fed to the tokenizer.
     overlap_ratio : float
         Fractional overlap between consecutive tokenizer windows.
+        Note: ``BrainOmni`` defaults to ``0.25`` here, whereas
+        :meth:`BrainTokenizer.tokenize` defaults to ``0.0`` — features will
+        differ if the two are mixed manually without aligning this value.
     n_filters : int
         Base filter count for the SEANet encoder inside the tokenizer.
     ratios : tuple of int
