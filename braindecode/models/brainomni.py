@@ -308,4 +308,7 @@ class _SpatialTemporalAttentionBlock(nn.Module):
         xt = self.time_attn(xt, None)
         xs = rearrange(xs, "(B W) C D -> B C W D", B=B)
         xt = rearrange(xt, "(B C) W D->B C W D", B=B)
-        return torch.cat([xt, xs], dim=-1)
+        # Match upstream exactly (spatial first, temporal second) — the halves
+        # are intentionally swapped relative to the input split. Required for
+        # pretrained-weight parity; see BrainOmni/model_utils/attn.py.
+        return torch.cat([xs, xt], dim=-1)
