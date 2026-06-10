@@ -256,6 +256,32 @@ def test_interpolated_bendr_accepts_arbitrary_user_channels():
     assert y.shape == (1, 2)
 
 
+def test_interpolated_eegpt_is_shipped():
+    from braindecode.models import EEGPT, InterpolatedEEGPT
+
+    assert issubclass(InterpolatedEEGPT, EEGPT)
+    assert not hasattr(EEGPT, "_TARGET_CHS_INFO")
+    assert hasattr(InterpolatedEEGPT, "_TARGET_CHS_INFO")
+    assert len(InterpolatedEEGPT._TARGET_CHS_INFO) == 62
+
+
+def test_interpolated_eegpt_accepts_arbitrary_user_channels():
+    from braindecode.models import InterpolatedEEGPT
+
+    user = _target_5ch()  # 5 real EEG channels (Fz, Cz, Pz, C3, C4)
+    model = InterpolatedEEGPT(
+        chs_info=user,
+        n_outputs=2,
+        n_times=1024,
+        interpolation_mode="always",
+    )
+    assert model.n_chans == 5
+    # Backbone still sees the 62 canonical EEGPT channels.
+    assert model.interpolation_layer.matrix.shape == (62, 5)
+    y = model(torch.zeros(1, 5, 1024))
+    assert y.shape == (1, 2)
+
+
 def test_bendr_rejects_non_canonical_chs():
     from braindecode.models import BENDR
 

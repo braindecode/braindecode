@@ -32,6 +32,10 @@ Enhancements
   :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
   pin dataset downloads to a specific branch, tag, or commit on the Hugging
   Face Hub.
+- Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
+  variant of :class:`braindecode.models.EEGPT` built with
+  :func:`~braindecode.models.interpolated.InterpolatedModel`.
+  By `Pierre Guetschel`_.
 
 API and behavior changes
 ========================
@@ -63,7 +67,8 @@ Bug fixes
   These functions return the modified instance and are now wrapped as callables.
   Standalone functions that return auxiliary data (e.g. annotations or bad
   channels) are intentionally left on the existing path for now. (:gh:`885` by
-  `YihengLi-1`_)
+  `Yiheng Li`_)
+- Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
 
 Code health
 ============
@@ -1245,4 +1250,5 @@ Authors
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
 .. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
-.. _YihengLi-1: https://github.com/YihengLi-1
+.. _Adam Mounir: https://github.com/adammounir
+.. _Yiheng Li: https://github.com/YihengLi-1
