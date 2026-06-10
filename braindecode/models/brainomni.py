@@ -130,7 +130,7 @@ def _geometry_from_chs_info(chs_info):
 # ---------------------------------------------------------------------------
 
 
-class _RMSNorm(torch.nn.Module):
+class _RMSNorm(nn.Module):
     """Root Mean Square Layer Normalisation."""
 
     def __init__(self, n_dim, elementwise_affine=True, eps=1e-6):
@@ -158,7 +158,7 @@ class _FeedForward(nn.Module):
             nn.Dropout(dropout) if dropout != 0.0 else nn.Identity(),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.layer(x)
 
 
@@ -179,17 +179,31 @@ class _RotaryEmbedding(nn.Module):
         rotate = torch.outer(t, self.freqs).float()
         self.register_buffer("rotate", torch.polar(torch.ones_like(rotate), rotate))
 
+    def _apply(self, fn, recurse=True):
+        # The ``rotate`` cache is complex64; a real-dtype cast (e.g. .half())
+        # would silently discard its imaginary part. Regenerate it afterwards
+        # on the (possibly new) device of ``freqs``.
+        prev_dtype = self.rotate.dtype
+        result = super()._apply(fn, recurse=recurse)
+        if self.rotate.dtype != prev_dtype:
+            self._set_rotate_cache(self.max_seq_len_cache)
+        return result
+
     def reshape_for_broadcast(self, x: torch.Tensor):
         """x: Batch seq n_head d_head  /  rotate: seq dim."""
         B, T, H, D = x.shape
         if T > self.max_seq_len_cache:
             self._set_rotate_cache(T)
         rotate = self.rotate[:T, :]
-        assert H * D == rotate.shape[1]
+        assert H * D == rotate.shape[1], (
+            f"RoPE cache shape mismatch: H={H}, D={D}, rotate.shape[1]={rotate.shape[1]}"
+        )
         return rearrange(rotate, "T (H D)-> T H D", H=H).unsqueeze(0)
 
     def forward(self, q, k):
-        assert len(q.shape) == len(k.shape) == 4
+        assert len(q.shape) == len(k.shape) == 4, (
+            f"Expected 4-D q and k, got q.ndim={len(q.shape)}, k.ndim={len(k.shape)}"
+        )
         q_ = torch.view_as_complex(q.float().reshape(*q.shape[:-1], -1, 2))
         k_ = torch.view_as_complex(k.float().reshape(*k.shape[:-1], -1, 2))
         rotate = self.reshape_for_broadcast(q_)
@@ -210,7 +224,9 @@ class _SelfAttention(nn.Module):
         rope: bool = False,
     ):
         super().__init__()
-        assert n_dim % n_head == 0
+        assert n_dim % n_head == 0, (
+            f"n_dim ({n_dim}) must be divisible by n_head ({n_head})"
+        )
         self.dropout = dropout
         self.n_dim = n_dim
         self.n_head = n_head
@@ -244,6 +260,8 @@ class _SelfAttention(nn.Module):
         if mask is not None:
             mask = mask.unsqueeze(1)
 
+        # dropout_p is passed unconditionally (matches upstream); SDPA does not
+        # gate on self.training. Use model.eval() with dropout=0 for determinism.
         output = (
             F.scaled_dot_product_attention(
                 query=q,
@@ -295,7 +313,7 @@ class _SpatialTemporalAttentionBlock(nn.Module):
         self.pre_ff_norm = _RMSNorm(n_dim)
         self.ff = _FeedForward(n_dim, dropout)
 
-    def forward(self, x, mask=None):
+    def forward(self, x: torch.Tensor, mask=None) -> torch.Tensor:
         x = x + self._attn_operator(self.pre_attn_norm(x))
         x = x + self.ff(self.pre_ff_norm(x))
         return x
