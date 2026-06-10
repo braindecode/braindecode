@@ -48,26 +48,20 @@ def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
 def _geometry_from_chs_info(chs_info):
     """Derive ``(pos (C, 6) float32, sensor_type (C,) int64)`` from ``chs_info``.
 
-    Positions come from :func:`extract_channel_locations_from_chs_info`; MEG coil
-    orientation (``loc[3:6]`` GRAD / ``loc[9:12]`` MAG) and the EEG/MAG/GRAD type
-    split (via :meth:`mne.Info.get_channel_types`) are model-specific. Raises if
-    any channel lacks a finite position.
+    Positions come from :func:`extract_channel_locations_from_chs_info` and the
+    EEG/MAG/GRAD type from :func:`mne.channel_type`; only the MEG coil orientation
+    pick (``loc[3:6]`` GRAD / ``loc[9:12]`` MAG) and the per-modality normalization
+    are model-specific. Raises if any channel lacks a finite position.
     """
-    if not chs_info:
-        raise ValueError("chs_info is empty; at least one channel is required.")
-    try:
-        info = mne.Info(
-            chs=chs_info,
-            ch_names=[ch["ch_name"] for ch in chs_info],
-            sfreq=1.0,
-            nchan=len(chs_info),
-            bads=[],
-        )
-        types = info.get_channel_types()
-    except Exception:
-        types = [
-            str(ch.get("ch_type", ch.get("kind", "eeg"))).lower() for ch in chs_info
-        ]
+    # mne.channel_type owns the FIFF kind/unit -> eeg/mag/grad logic (it only needs
+    # ``info["chs"][idx]``). Lightweight test dicts carry a resolved string ``kind``
+    # instead of FIFF integers, so use it directly for those.
+    types = [
+        str(ch.get("ch_type", ch["kind"])).lower()
+        if isinstance(ch.get("kind"), str)
+        else mne.channel_type({"chs": chs_info}, i)
+        for i, ch in enumerate(chs_info)
+    ]
 
     xyz = extract_channel_locations_from_chs_info(chs_info)
     if xyz is None or len(xyz) != len(chs_info) or not np.isfinite(xyz).all():
