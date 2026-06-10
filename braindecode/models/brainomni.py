@@ -22,6 +22,11 @@ from torch.nn.utils import weight_norm  # noqa: F401
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 
+try:  # private MNE helper; it has migrated modules across versions
+    from mne._fiff.tag import _loc_to_coil_trans
+except ImportError:  # pragma: no cover - older MNE
+    from mne.transforms import _loc_to_coil_trans
+
 _SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
 
 
@@ -76,15 +81,15 @@ def _geometry_from_chs_info(chs_info):
         )
     sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
 
-    # MEG coil orientation from the MNE ``loc`` layout: position (0:3) then the
-    # coil-frame unit axes ex (3:6), ey (6:9), ez (9:12). BrainOmni uses the
-    # in-plane axis (ex) for gradiometers and the normal (ez) for magnetometers.
+    # MEG coil orientation via MNE's coil transform (columns of the 3x3 are the
+    # ex/ey/ez coil-frame axes). BrainOmni uses the in-plane axis (ex) for
+    # gradiometers and the normal (ez) for magnetometers.
     loc = np.stack([np.asarray(ch["loc"], dtype=np.float64) for ch in chs_info])
-    coil_axes = loc[:, 3:12].reshape(len(chs_info), 3, 3)  # rows: ex, ey, ez
+    coil_trans = _loc_to_coil_trans(loc)  # (C, 4, 4)
     grad, mag = sensor_type == _SENSOR_CODE["grad"], sensor_type == _SENSOR_CODE["mag"]
     ori = np.zeros((len(chs_info), 3))
-    ori[grad] = coil_axes[grad, 0]  # gradiometer: ex
-    ori[mag] = coil_axes[mag, 2]  # magnetometer: ez
+    ori[grad] = coil_trans[grad, :3, 0]  # gradiometer: ex
+    ori[mag] = coil_trans[mag, :3, 2]  # magnetometer: ez
 
     pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
     return _normalize_pos(pos, sensor_type), sensor_type
