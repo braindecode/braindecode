@@ -1842,6 +1842,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         )
 
     def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
+        """Segment ``x`` (B, C, T) into windows (B, C, N, window_length)."""
         # faithful port of upstream BrainTokenizer.unfold
         if x.shape[-1] < self.window_length:
             x = F.pad(x, pad=(0, self.window_length - x.shape[-1]))
@@ -1853,32 +1854,64 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         step = int(self.window_length * (1 - overlap_ratio))
         return x.unfold(dimension=-1, size=self.window_length, step=step)
 
-    def _sensor_embedding(self, batch_size: int, device) -> torch.Tensor:
-        pos = self.pos.to(device).unsqueeze(0).expand(batch_size, -1, -1)
-        stype = self.sensor_type.to(device).unsqueeze(0).expand(batch_size, -1)
+    def _sensor_embedding(self, batch_size: int) -> torch.Tensor:
+        # pos/sensor_type are registered buffers -> already on the model device
+        pos = self.pos.unsqueeze(0).expand(batch_size, -1, -1)
+        stype = self.sensor_type.unsqueeze(0).expand(batch_size, -1)
         return self.sensor_embed(pos, stype)
 
     def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
+        """Unfold -> sensor-embed -> encode -> RVQ. Returns (feat_q, indices, commit, sensor_embedding)."""
         xu = self._unfold(x, overlap_ratio)  # (B, C, N, L)
-        se = self._sensor_embedding(xu.shape[0], xu.device)  # (B, C, emb_dim)
+        se = self._sensor_embedding(xu.shape[0])  # (B, C, emb_dim)
         feat = self.encoder(xu, se)  # (B, n_neuro, N, T, D)
         feat_q, indices, commit = self.quantizer(feat)
         return feat_q, indices, commit, se
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """VQ-VAE reconstruction. ``x`` (B, C, T) -> reconstruction (B, C, T)."""
         feat_q, _, _, se = self._encode_quantize(x)
         recon = self.final_layer(feat_q, se)  # (B, C, N, L)
+        # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
         recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
         return recon[..., : x.shape[-1]]
 
     def encode_decode(self, x: torch.Tensor):
+        """Reconstruction pass returning ``(recon (B,C,T), commitment_loss, indices)`` for training loops."""
         feat_q, indices, commit, se = self._encode_quantize(x)
         recon = self.final_layer(feat_q, se)
+        # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
         recon = recon.reshape(recon.shape[0], recon.shape[1], -1)[..., : x.shape[-1]]
         return recon, commit, indices
 
     @torch.no_grad()
     def tokenize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
+        """Encode ``x`` into quantised features and discrete codebook indices.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input signal, shape ``(B, C, T)``.
+        overlap_ratio : float
+            Fraction of overlap between consecutive windows (0 = no overlap).
+
+        Returns
+        -------
+        feat : torch.Tensor
+            Quantised features, shape ``(B, n_neuro, N*T_enc, emb_dim)``.
+        indices : torch.Tensor
+            Codebook indices, shape ``(B, n_neuro, N*T_enc, num_quantizers)``.
+
+        Notes
+        -----
+        This method only disables gradients (``@torch.no_grad()``); it does
+        **not** switch the module to eval mode. The caller must call
+        ``model.eval()`` first, otherwise encoder/decoder dropout stays active
+        and the output is non-deterministic::
+
+            model.eval()
+            feat, indices = model.tokenize(x)
+        """
         feat_q, indices, _, _ = self._encode_quantize(x, overlap_ratio)
         feat = rearrange(feat_q, "B C N T D -> B C (N T) D")
         indices = rearrange(indices, "B C N T Q -> B C (N T) Q")
