@@ -1317,10 +1317,10 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, input_window_seconds
 
-        if self._sfreq is not None and int(round(self._sfreq)) != 256:
+        if int(round(self.sfreq)) != 256:
             warnings.warn(
                 f"BrainOmni pretrained weights expect sfreq=256 Hz, got "
-                f"{self._sfreq}. Use only for training from scratch.",
+                f"{self.sfreq}. Use only for training from scratch.",
                 UserWarning,
             )
 
@@ -1588,7 +1588,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         self.tokenizer = BrainTokenizer(
             chs_info=self.chs_info,
             n_times=self.n_times,
-            sfreq=self._sfreq,
+            sfreq=self.sfreq,
             emb_dim=emb_dim,
             n_neuro=n_neuro,
             window_length=window_length,
