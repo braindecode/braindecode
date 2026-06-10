@@ -1217,3 +1217,48 @@ def test_seanet_roundtrip_downsampling():
     x_rec = dec(z)
     assert x_rec.shape == (4, 1, 512)
     assert torch.isfinite(x_rec).all()
+
+
+# ==============================================================================
+# Tests for BrainOmni VQ (residual vector quantization, no deepspeed/einx)
+# ==============================================================================
+
+
+from braindecode.models.brainomni import _BrainQuantizer  # noqa: E402
+
+
+def test_brain_quantizer_shapes_and_loss():
+    q = _BrainQuantizer(n_dim=16, codebook_dim=16, codebook_size=32,
+                        num_quantizers=4, rotation_trick=True,
+                        quantize_optimize_method="ema")
+    q.eval()
+    x = torch.randn(2, 5, 16)  # (B, W, D) flattened tokens
+    x_q, indices, loss = q(x)
+    assert x_q.shape == x.shape
+    assert indices.shape == (2, 5, 4)  # num_quantizers
+    assert torch.isfinite(loss)
+
+
+def test_brain_quantizer_ema_updates_in_train_mode():
+    torch.manual_seed(0)
+    q = _BrainQuantizer(n_dim=16, codebook_dim=16, codebook_size=32,
+                        num_quantizers=2, rotation_trick=True,
+                        quantize_optimize_method="ema")
+    q.train()
+    before = q.rvq.layers[0]._codebook.embed.clone()
+    for _ in range(3):
+        q(torch.randn(8, 10, 16))
+    after = q.rvq.layers[0]._codebook.embed
+    assert not torch.allclose(before, after)
+
+
+def test_brain_quantizer_frozen_in_eval():
+    torch.manual_seed(0)
+    q = _BrainQuantizer(n_dim=16, codebook_dim=16, codebook_size=32,
+                        num_quantizers=2, rotation_trick=True,
+                        quantize_optimize_method="ema")
+    q.eval()
+    before = q.rvq.layers[0]._codebook.embed.clone()
+    q(torch.randn(8, 10, 16))
+    after = q.rvq.layers[0]._codebook.embed
+    assert torch.allclose(before, after)
