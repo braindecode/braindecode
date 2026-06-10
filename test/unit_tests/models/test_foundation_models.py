@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.error import URLError
 
 import mne
+import numpy as np
 import pytest
 import torch
 
@@ -1112,3 +1113,50 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+# ==============================================================================
+# Tests for BrainOmni geometry helper
+# ==============================================================================
+
+
+from braindecode.models.brainomni import _geometry_from_chs_info  # noqa: E402
+
+
+def _loc(x, y, z, *rest):
+    arr = np.zeros(12, dtype=np.float64)
+    arr[:3] = (x, y, z)
+    for i, v in enumerate(rest):
+        arr[3 + i] = v
+    return arr
+
+
+def test_geometry_eeg_string_kind():
+    chs_info = [
+        {"ch_name": "A", "kind": "eeg", "loc": _loc(1.0, 0.0, 0.0)},
+        {"ch_name": "B", "kind": "eeg", "loc": _loc(-1.0, 0.0, 0.0)},
+    ]
+    pos, sensor_type = _geometry_from_chs_info(chs_info)
+    assert pos.shape == (2, 6)
+    assert sensor_type.tolist() == [0, 0]
+    # EEG orientation columns are zero
+    assert np.allclose(pos[:, 3:], 0.0)
+    # positions are mean-centered then scaled (mean ~ 0)
+    assert np.allclose(pos[:, :3].mean(axis=0), 0.0, atol=1e-6)
+
+
+def test_geometry_fiff_int_kind():
+    # FIFFV_EEG_CH == 2, FIFFV_MEG_CH == 1
+    chs_info = [
+        {"ch_name": "A", "kind": 2, "loc": _loc(1.0, 0.0, 0.0)},
+        {"ch_name": "M", "kind": 1, "coil_type": 3022,  # VV_MAG -> MAG
+         "loc": _loc(0.0, 1.0, 0.0, 0.0, 0.0, 1.0)},
+    ]
+    pos, sensor_type = _geometry_from_chs_info(chs_info)
+    assert sensor_type.tolist() == [0, 1]  # EEG=0, MAG=1
+
+
+def test_geometry_missing_loc_raises():
+    chs_info = [{"ch_name": "A", "kind": "eeg", "loc": np.full(12, np.nan)}]
+    with pytest.raises(ValueError, match="set_montage"):
+        _geometry_from_chs_info(chs_info)
