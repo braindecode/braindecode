@@ -1750,7 +1750,8 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
     rotation_trick : bool
         Whether to use the rotation trick when updating codebook entries.
     quantize_optimize_method : str
-        Codebook optimisation method: ``"ema"`` or ``"loss"``.
+        Codebook optimisation method (``"ema"``; the only currently
+        supported option).
     drop_prob : float
         Dropout probability applied inside the tokenizer attention blocks.
     activation : type[nn.Module]
@@ -1948,7 +1949,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
 
     ``BrainOmni`` is the downstream classifier described in [brainomni]_.
     It wraps a frozen :class:`BrainTokenizer` backbone with a stack of
-    spatial-temporal factored attention blocks (``_STBlock``) and a linear
+    spatial-temporal factored attention blocks (``_SpatialTemporalAttentionBlock``) and a linear
     classification head, matching the ``DownstreamModel`` architecture from
     the published BrainOmni codebase.
 
