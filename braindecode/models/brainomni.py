@@ -241,7 +241,7 @@ class _Attention(nn.Module):
         return self.proj(output)
 
 
-class _STBlock(nn.Module):
+class _SpatialTemporalBlock(nn.Module):
     """Spatial-temporal factored attention block from BrainOmni.
 
     Splits the feature dimension in half: one half is attended over the
@@ -864,7 +864,7 @@ class _Codebook(nn.Module):
         return quantize, embed_ind
 
 
-class _VQ(nn.Module):
+class _VectorQuantizer(nn.Module):
     """Single-layer vector quantisation with optional rotation-trick STE."""
 
     def __init__(
@@ -944,7 +944,7 @@ class _ResidualVQ(nn.Module):
         self.num_quantizers = num_quantizers
         self.layers = nn.ModuleList(
             [
-                _VQ(
+                _VectorQuantizer(
                     dim=dim,
                     codebook_size=codebook_size,
                     codebook_dim=codebook_dim,
@@ -1492,7 +1492,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
 
     ``BrainOmni`` is the downstream classifier described in [brainomni]_.
     It wraps a frozen :class:`BrainTokenizer` backbone with a stack of
-    spatial-temporal factored attention blocks (``_STBlock``) and a linear
+    spatial-temporal factored attention blocks (``_SpatialTemporalBlock``) and a linear
     classification head, matching the ``DownstreamModel`` architecture from
     the published BrainOmni codebase.
 
@@ -1645,7 +1645,10 @@ class BrainOmni(EEGModuleMixin, nn.Module):
             nn.Linear(emb_dim, lm_dim) if emb_dim != lm_dim else nn.Identity()
         )
         self.blocks = nn.ModuleList(
-            [_STBlock(lm_dim, num_heads, drop_prob, causal=False) for _ in range(depth)]
+            [
+                _SpatialTemporalBlock(lm_dim, num_heads, drop_prob, causal=False)
+                for _ in range(depth)
+            ]
         )
         self._head_in = n_neuro * lm_dim
         self.final_layer: nn.Module = nn.Identity()  # overwritten by reset_head

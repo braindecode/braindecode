@@ -1129,7 +1129,7 @@ from braindecode.models.brainomni import (  # noqa: E402
     _SEANetDecoder,
     _SEANetEncoder,
     _SensorEmbedding,
-    _STBlock,
+    _SpatialTemporalBlock,
     _TokenizerEncoder,
 )
 
@@ -1257,7 +1257,7 @@ def test_geometry_bad_loc_raises(loc):
     [
         (lambda: nn.RMSNorm(8, eps=1e-6), lambda: (torch.randn(2, 5, 8),), (2, 5, 8)),
         (
-            lambda: _STBlock(16, 4, 0.0, causal=False),
+            lambda: _SpatialTemporalBlock(16, 4, 0.0, causal=False),
             lambda: (torch.randn(2, 3, 7, 16),),  # (B, C, W, D)
             (2, 3, 7, 16),
         ),
