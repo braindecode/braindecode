@@ -16,16 +16,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
+# Private MNE helper (stable location since the _fiff reorg; mne>=1.11 is required).
+from mne._fiff.tag import _loc_to_coil_trans
+
 # Classic weight_norm keeps ``conv.weight_g``/``weight_v`` keys (checkpoint parity).
 from torch.nn.utils import weight_norm  # noqa: F401
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
-
-try:  # private MNE helper; it has migrated modules across versions
-    from mne._fiff.tag import _loc_to_coil_trans
-except ImportError:  # pragma: no cover - older MNE
-    from mne.transforms import _loc_to_coil_trans
 
 _SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
 
