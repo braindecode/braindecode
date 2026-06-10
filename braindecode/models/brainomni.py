@@ -27,31 +27,6 @@ from braindecode.models.base import EEGModuleMixin
 _SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
 
 
-def _channel_types(chs_info) -> list[str]:
-    """Channel types ('eeg'/'mag'/'grad'/...) via MNE, with a fallback for the
-    simplified ``chs_info`` dicts used in tests (string ``kind``/``ch_type``)."""
-    try:
-        info = mne.Info(
-            chs=chs_info,
-            ch_names=[ch["ch_name"] for ch in chs_info],
-            sfreq=1.0,
-            nchan=len(chs_info),
-            bads=[],
-        )
-        return info.get_channel_types()
-    except Exception:
-        return [
-            str(ch.get("ch_type", ch.get("kind", "eeg"))).lower() for ch in chs_info
-        ]
-
-
-def _coil_orientation(loc: np.ndarray, ch_type: str) -> np.ndarray:
-    """Coil orientation from the MNE ``loc`` rotation (cols 3-5/6-8/9-11 are the
-    coil x/y/z unit axes). BrainOmni uses the in-plane x-axis for planar
-    gradiometers and the z-axis (normal) for magnetometers, matching upstream."""
-    return np.asarray(loc[3:6] if ch_type == "grad" else loc[9:12], dtype=np.float64)
-
-
 def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
     """Per-modality position normalization (upstream ``normalize_pos``).
 
@@ -75,17 +50,34 @@ def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
 def _geometry_from_chs_info(chs_info):
     """Derive ``(pos (C, 6) float32, sensor_type (C,) int64)`` from ``chs_info``.
 
-    Raises ``ValueError`` on empty input or missing/non-finite/wrong-shape ``loc``.
+    Channel types come from :meth:`mne.Info.get_channel_types` (authoritative
+    EEG/MAG/GRAD split); a string fallback supports simplified test dicts.
+    Raises ``ValueError`` on empty input, unsupported types, or missing/
+    non-finite/wrong-shape ``loc`` (the model needs real sensor positions).
     """
     if not chs_info:
         raise ValueError("chs_info is empty; at least one channel is required.")
-    types = _channel_types(chs_info)
+    try:
+        info = mne.Info(
+            chs=chs_info,
+            ch_names=[ch["ch_name"] for ch in chs_info],
+            sfreq=1.0,
+            nchan=len(chs_info),
+            bads=[],
+        )
+        types = info.get_channel_types()
+    except Exception:
+        types = [
+            str(ch.get("ch_type", ch.get("kind", "eeg"))).lower() for ch in chs_info
+        ]
+
     pos, sensor_type = [], []
     for ch, ch_type in zip(chs_info, types):
         if ch_type not in _SENSOR_CODE:
             raise ValueError(
-                f"Unsupported channel type {ch_type!r} for {ch.get('ch_name', '?')!r}; "
-                "pass only EEG/MEG channels (e.g. raw.pick(['eeg', 'meg']))."
+                f"Unsupported channel type {ch_type!r} for "
+                f"{ch.get('ch_name', '?')!r}; pass only EEG/MEG channels "
+                "(e.g. raw.pick(['eeg', 'meg']))."
             )
         if "loc" not in ch:
             raise ValueError(
@@ -98,15 +90,20 @@ def _geometry_from_chs_info(chs_info):
                 f"Channel {ch.get('ch_name', '?')!r} has loc shape {loc.shape}; "
                 "expected (12,)."
             )
-        ori = np.zeros(3) if ch_type == "eeg" else _coil_orientation(loc, ch_type)
-        vec = np.concatenate([loc[:3], ori])
-        if not np.all(np.isfinite(vec)):
+        if not np.isfinite(loc[:3]).all():
             raise ValueError(
                 f"Channel {ch.get('ch_name', '?')!r} has non-finite position. "
                 "BrainOmni needs sensor positions; call raw.set_montage(...)."
             )
-        pos.append(vec)
+        # MNE 'loc' packs the coil rotation as x/y/z axis columns at 3:6/6:9/9:12.
+        # GRAD uses the in-plane x-axis, MAG the z-axis (normal); EEG has none.
+        if ch_type == "eeg":
+            ori = np.zeros(3)
+        else:
+            ori = loc[3:6] if ch_type == "grad" else loc[9:12]
+        pos.append(np.concatenate([loc[:3], ori]))
         sensor_type.append(_SENSOR_CODE[ch_type])
+
     pos = _normalize_pos(
         np.stack(pos).astype(np.float32), np.asarray(sensor_type, dtype=np.int64)
     )
@@ -335,37 +332,6 @@ def _get_extra_padding_for_conv1d(
     return ideal_length - length
 
 
-def _pad1d(
-    x: torch.Tensor,
-    paddings: tuple[int, int],
-    mode: str = "zero",
-    value: float = 0.0,
-) -> torch.Tensor:
-    """F.pad wrapper that handles reflect padding on very short inputs."""
-    length = x.shape[-1]
-    padding_left, padding_right = paddings
-    assert padding_left >= 0 and padding_right >= 0, (padding_left, padding_right)
-    if mode == "reflect":
-        max_pad = max(padding_left, padding_right)
-        extra_pad = 0
-        if length <= max_pad:
-            extra_pad = max_pad - length + 1
-            x = F.pad(x, (0, extra_pad))
-        padded = F.pad(x, paddings, mode, value)
-        end = padded.shape[-1] - extra_pad
-        return padded[..., :end]
-    return F.pad(x, paddings, mode, value)
-
-
-def _unpad1d(x: torch.Tensor, paddings: tuple[int, int]) -> torch.Tensor:
-    """Remove padding from both ends of a 1-D tensor."""
-    padding_left, padding_right = paddings
-    assert padding_left >= 0 and padding_right >= 0, (padding_left, padding_right)
-    assert (padding_left + padding_right) <= x.shape[-1]
-    end = x.shape[-1] - padding_right
-    return x[..., padding_left:end]
-
-
 class _NormConv1d(nn.Module):
     """Conv1d with classic weight_norm (state-dict keys: ``conv.conv.weight_g/v``)."""
 
@@ -433,11 +399,11 @@ class _SConv1d(nn.Module):
             x, kernel_size, stride, padding_total
         )
         if self.causal:
-            x = _pad1d(x, (padding_total, extra_padding), mode=self.pad_mode)
+            x = F.pad(x, (padding_total, extra_padding), mode=self.pad_mode)
         else:
             padding_right = padding_total // 2
             padding_left = padding_total - padding_right
-            x = _pad1d(
+            x = F.pad(
                 x, (padding_left, padding_right + extra_padding), mode=self.pad_mode
             )
         return self.conv(x)
@@ -458,29 +424,46 @@ class _SConvTranspose1d(nn.Module):
         norm_kwargs: dict | None = None,  # kept for call-site compat; unused
     ):
         super().__init__()
-        self.convtr = _NormConvTranspose1d(
-            in_channels, out_channels, kernel_size, stride
-        )
         self.causal = causal
         self.trim_right_ratio = trim_right_ratio
         assert self.causal or self.trim_right_ratio == 1.0, (
             "`trim_right_ratio` != 1.0 only makes sense for causal convolutions"
         )
         assert 0.0 <= self.trim_right_ratio <= 1.0
+        padding_total = kernel_size - stride
+        if causal:
+            # Causal: no native padding; trimming is done in forward via inline slice.
+            self.convtr = _NormConvTranspose1d(
+                in_channels, out_channels, kernel_size, stride
+            )
+        else:
+            # Non-causal: use native padding= to remove padding_total//2 per side.
+            assert padding_total % 2 == 0, (
+                f"Non-causal _SConvTranspose1d requires even padding_total "
+                f"(kernel_size-stride={padding_total}); got kernel_size={kernel_size}, "
+                f"stride={stride}."
+            )
+            self.convtr = _NormConvTranspose1d(
+                in_channels,
+                out_channels,
+                kernel_size,
+                stride,
+                padding=padding_total // 2,
+            )
+        self._padding_total = padding_total
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        kernel_size = self.convtr.convtr.kernel_size[0]
-        stride = self.convtr.convtr.stride[0]
-        padding_total = kernel_size - stride
         y = self.convtr(x)
         if self.causal:
+            padding_total = self._padding_total
             padding_right = math.ceil(padding_total * self.trim_right_ratio)
             padding_left = padding_total - padding_right
-            y = _unpad1d(y, (padding_left, padding_right))
-        else:
-            padding_right = padding_total // 2
-            padding_left = padding_total - padding_right
-            y = _unpad1d(y, (padding_left, padding_right))
+            y = y[
+                ...,
+                padding_left : y.shape[-1] - padding_right
+                if padding_right > 0
+                else y.shape[-1],
+            ]
         return y
 
 
@@ -931,17 +914,6 @@ class _SEANetDecoder(nn.Module):
 # =============================================================================
 
 
-# Distributed no-ops
-
-
-def _broadcast_tensors(tensors, src_rank=0):
-    return  # single-process no-op
-
-
-def _all_reduce_tensors(tensors, op=None):
-    return  # single-process no-op
-
-
 # ---------------------------------------------------------------------------
 # EMA / smoothing helpers
 # ---------------------------------------------------------------------------
@@ -951,47 +923,28 @@ def _ema_inplace(moving_avg: torch.Tensor, new: torch.Tensor, decay: float):
     moving_avg.data.mul_(decay).add_(new, alpha=(1 - decay))
 
 
-def _laplace_smoothing(x: torch.Tensor, epsilon: float = 1e-6) -> torch.Tensor:
-    return (x + epsilon) / (x.sum() + epsilon * len(x))
-
-
-def _uniform_init(*shape: int) -> torch.Tensor:
-    t = torch.empty(shape)
-    nn.init.kaiming_uniform_(t)
-    return t
-
-
 # Rotation-trick STE (Fifty et al. 2024, §4.2 https://arxiv.org/abs/2410.06424).
 # Local replacement for vector_quantize_pytorch.rotate_to.
 
 
-def _safe_div(num: torch.Tensor, den: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
-    return num / den.clamp(min=eps)
-
-
-def _efficient_rotation_trick_transform(
-    u: torch.Tensor, q: torch.Tensor, e: torch.Tensor
-) -> torch.Tensor:
-    e = e.unsqueeze(1)
+def _efficient_rotation_trick_transform(u, q, e):
+    # Householder reflection + rank-1 correction (Fifty et al. 2024, Sec. 4.2):
+    # e - 2<e,w>w + 2<e,u>q, with w = normalize(u + q).
     w = F.normalize(u + q, p=2, dim=1, eps=1e-6).detach()
-    out = (
-        e
-        - 2 * (e @ w.unsqueeze(2) @ w.unsqueeze(1))
-        + 2 * (e @ u.unsqueeze(2).detach() @ q.unsqueeze(1).detach())
-    )
-    return out.squeeze(1)
+    ew = (e * w).sum(dim=1, keepdim=True)
+    eu = (e * u.detach()).sum(dim=1, keepdim=True)
+    return e - 2 * ew * w + 2 * eu * q.detach()
 
 
 def _rotate_to(src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
+    """Rotation-trick straight-through estimator (Fifty et al. 2024)."""
     orig_shape = src.shape
     src = src.reshape(-1, orig_shape[-1])
     tgt = tgt.reshape(-1, orig_shape[-1])
-    norm_src = src.norm(dim=-1, keepdim=True)
-    norm_tgt = tgt.norm(dim=-1, keepdim=True)
-    rotated_tgt = _efficient_rotation_trick_transform(
-        _safe_div(src, norm_src), _safe_div(tgt, norm_tgt), src
-    )
-    rotated = rotated_tgt * _safe_div(norm_tgt, norm_src).detach()
+    norm_src = src.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+    norm_tgt = tgt.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+    rotated = _efficient_rotation_trick_transform(src / norm_src, tgt / norm_tgt, src)
+    rotated = rotated * (norm_tgt / norm_src).detach()
     return rotated.reshape(orig_shape)
 
 
@@ -1012,7 +965,8 @@ class _EuclideanCodebook(nn.Module):
         self.threshold_ema_dead_code = threshold_ema_dead_code
         self.codebook_size = codebook_size
 
-        embed = _uniform_init(codebook_size, dim)
+        embed = torch.empty(codebook_size, dim)
+        nn.init.kaiming_uniform_(embed)
         # 'inited' buffer kept so state-dict keys match upstream checkpoint.
         self.register_buffer("inited", torch.tensor([True]))
         self.register_buffer("cluster_size", torch.zeros(codebook_size))
@@ -1043,7 +997,6 @@ class _EuclideanCodebook(nn.Module):
             return
         batch_samples = rearrange(batch_samples, "... d -> (...) d")
         self.replace_(batch_samples, expired)
-        _broadcast_tensors(list(self.buffers()))
 
     @torch.no_grad()
     def quantize(self, x: torch.Tensor) -> torch.Tensor:
@@ -1079,15 +1032,13 @@ class _EuclideanCodebook(nn.Module):
         if self.training:
             self.expire_codes_(x)
             one_hot_sum = embed_onehot.sum(0)
-            _all_reduce_tensors([one_hot_sum])
             _ema_inplace(self.cluster_size, one_hot_sum, self.decay)
             embed_sum = (embed_onehot.t() @ x).to(torch.float32)
-            _all_reduce_tensors([embed_sum])
             _ema_inplace(self.embed_avg, embed_sum, self.decay)
-            cluster_size = (
-                _laplace_smoothing(self.cluster_size, self.epsilon)
-                * self.cluster_size.sum()
+            smoothed = (self.cluster_size + self.epsilon) / (
+                self.cluster_size.sum() + self.epsilon * self.codebook_size
             )
+            cluster_size = smoothed * self.cluster_size.sum()
             embed_normalized = self.embed_avg / cluster_size.unsqueeze(1)
             self.embed.data.copy_(embed_normalized)
 
