@@ -1354,3 +1354,88 @@ def test_braintokenizer_has_final_layer():
     model = _small_tokenizer()
     last_two = [name for name, _ in model.named_children()][-2:]
     assert "final_layer" in last_two
+
+
+# ==============================================================================
+# Tests for BrainOmni public classifier model
+# ==============================================================================
+
+
+from braindecode.models.brainomni import BrainOmni  # noqa: E402
+
+
+def _small_brainomni(n_chans=4, n_outputs=3, n_times=512):
+    return BrainOmni(
+        chs_info=_eeg_chs_info(n_chans), n_outputs=n_outputs, n_times=n_times,
+        sfreq=256.0, emb_dim=16, n_neuro=3, n_filters=8, codebook_dim=16,
+        codebook_size=32, num_quantizers=2, tokenizer_num_heads=4,
+        lm_dim=16, num_heads=4, depth=2,
+    )
+
+
+def test_brainomni_forward_classification_shape():
+    model = _small_brainomni(n_chans=4, n_outputs=3)
+    model.eval()
+    out = model(torch.randn(2, 4, 512))
+    assert out.shape == (2, 3)
+
+
+def test_brainomni_encode_shape_and_normalized():
+    model = _small_brainomni()
+    model.eval()
+    feat = model.encode(torch.randn(2, 4, 512))
+    assert feat.ndim == 4 and feat.shape[1] == 3 and feat.shape[-1] == 16
+    norms = feat.norm(dim=-1)
+    assert torch.allclose(norms, torch.ones_like(norms), atol=1e-4)
+
+
+def test_brainomni_reset_head_changes_only_head():
+    model = _small_brainomni(n_outputs=3)
+    enc_id = id(model.tokenizer)
+    model.reset_head(5)
+    out = model(torch.randn(2, 4, 512))
+    assert out.shape == (2, 5)
+    assert id(model.tokenizer) == enc_id  # backbone untouched
+
+
+def test_brainomni_mixed_eeg_meg_channels():
+    rng = np.random.default_rng(1)
+    chs_info = [
+        {"ch_name": "E1", "kind": "eeg", "loc": _loc(*rng.random(3))},
+        {"ch_name": "E2", "kind": "eeg", "loc": _loc(*rng.random(3))},
+        {"ch_name": "M1", "kind": "mag", "coil_type": 3022,
+         "loc": _loc(*rng.random(6))},
+        {"ch_name": "G1", "kind": "grad", "coil_type": 3012,
+         "loc": _loc(*rng.random(6))},
+    ]
+    model = BrainOmni(chs_info=chs_info, n_outputs=2, n_times=512, sfreq=256.0,
+                      emb_dim=16, n_neuro=3, n_filters=8, codebook_dim=16,
+                      codebook_size=32, num_quantizers=2, tokenizer_num_heads=4,
+                      lm_dim=16, num_heads=4, depth=2)
+    model.eval()
+    assert model(torch.randn(2, 4, 512)).shape == (2, 2)
+
+
+def test_brainomni_short_input_is_padded():
+    model = _small_brainomni(n_times=300)  # < window_length 512
+    model.eval()
+    assert model(torch.randn(2, 4, 300)).shape == (2, 3)
+
+
+def test_brainomni_vq_frozen_during_train_step():
+    torch.manual_seed(0)
+    model = _small_brainomni()
+    model.train()
+    before = model.tokenizer.quantizer.rvq.layers[0]._codebook.embed.clone()
+    out = model(torch.randn(2, 4, 512))
+    out.sum().backward()
+    after = model.tokenizer.quantizer.rvq.layers[0]._codebook.embed
+    assert torch.allclose(before, after)
+
+
+def test_brainomni_sfreq_warning():
+    with pytest.warns(UserWarning, match="256"):
+        BrainOmni(chs_info=_eeg_chs_info(4), n_outputs=2, n_times=512,
+                  sfreq=128.0, emb_dim=16, n_neuro=3, n_filters=8,
+                  codebook_dim=16, codebook_size=32, num_quantizers=2,
+                  tokenizer_num_heads=4, lm_dim=16, num_heads=4, depth=2)
