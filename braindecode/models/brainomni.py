@@ -16,13 +16,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-# Classic weight_norm (not torch.nn.utils.parametrizations.weight_norm) keeps
-# state-dict keys as ``conv.conv.weight_g`` / ``conv.conv.weight_v``, matching
-# the upstream EnCodec/BrainOmni checkpoint format.  torch >=2.0 emits a
-# deprecation warning for this API — that is expected and intentional.
+# Classic weight_norm keeps ``conv.weight_g``/``weight_v`` keys (checkpoint parity).
 from torch.nn.utils import weight_norm  # noqa: F401
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import extract_channel_locations_from_chs_info
 
 _SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
 
@@ -50,10 +48,10 @@ def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
 def _geometry_from_chs_info(chs_info):
     """Derive ``(pos (C, 6) float32, sensor_type (C,) int64)`` from ``chs_info``.
 
-    Channel types come from :meth:`mne.Info.get_channel_types` (authoritative
-    EEG/MAG/GRAD split); a string fallback supports simplified test dicts.
-    Raises ``ValueError`` on empty input, unsupported types, or missing/
-    non-finite/wrong-shape ``loc`` (the model needs real sensor positions).
+    Positions come from :func:`extract_channel_locations_from_chs_info`; MEG coil
+    orientation (``loc[3:6]`` GRAD / ``loc[9:12]`` MAG) and the EEG/MAG/GRAD type
+    split (via :meth:`mne.Info.get_channel_types`) are model-specific. Raises if
+    any channel lacks a finite position.
     """
     if not chs_info:
         raise ValueError("chs_info is empty; at least one channel is required.")
@@ -71,39 +69,24 @@ def _geometry_from_chs_info(chs_info):
             str(ch.get("ch_type", ch.get("kind", "eeg"))).lower() for ch in chs_info
         ]
 
+    xyz = extract_channel_locations_from_chs_info(chs_info)
+    if xyz is None or len(xyz) != len(chs_info) or not np.isfinite(xyz).all():
+        raise ValueError(
+            "chs_info lacks finite sensor positions; call raw.set_montage(...)."
+        )
+
     pos, sensor_type = [], []
-    for ch, ch_type in zip(chs_info, types):
+    for i, ch_type in enumerate(types):
         if ch_type not in _SENSOR_CODE:
             raise ValueError(
-                f"Unsupported channel type {ch_type!r} for "
-                f"{ch.get('ch_name', '?')!r}; pass only EEG/MEG channels "
-                "(e.g. raw.pick(['eeg', 'meg']))."
+                f"Unsupported channel type {ch_type!r}; pass only EEG/MEG channels."
             )
-        if "loc" not in ch:
-            raise ValueError(
-                f"Channel {ch.get('ch_name', '?')!r} has no 'loc'. "
-                "BrainOmni needs sensor positions; call raw.set_montage(...)."
-            )
-        loc = np.asarray(ch["loc"], dtype=np.float64)
-        if loc.shape != (12,):
-            raise ValueError(
-                f"Channel {ch.get('ch_name', '?')!r} has loc shape {loc.shape}; "
-                "expected (12,)."
-            )
-        # MNE 'loc' packs the coil rotation as x/y/z axis columns at 3:6/6:9/9:12.
-        # GRAD uses the in-plane x-axis, MAG the z-axis (normal); EEG has none.
         if ch_type == "eeg":
             ori = np.zeros(3)
         else:
+            loc = np.asarray(chs_info[i]["loc"], dtype=np.float64)
             ori = loc[3:6] if ch_type == "grad" else loc[9:12]
-        vec = np.concatenate([loc[:3], ori])
-        if not np.isfinite(vec).all():
-            raise ValueError(
-                f"Channel {ch.get('ch_name', '?')!r} has non-finite position or "
-                "orientation. BrainOmni needs sensor positions; "
-                "call raw.set_montage(...)."
-            )
-        pos.append(vec)
+        pos.append(np.concatenate([xyz[i].astype(np.float64), ori]))
         sensor_type.append(_SENSOR_CODE[ch_type])
 
     pos = _normalize_pos(
@@ -113,22 +96,6 @@ def _geometry_from_chs_info(chs_info):
 
 
 # Attention / norm primitives
-
-
-class _RMSNorm(nn.Module):
-    """Root Mean Square Layer Normalisation."""
-
-    def __init__(self, n_dim, elementwise_affine=True, eps=1e-6):
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(n_dim)) if elementwise_affine else 1.0
-        self.eps = eps
-
-    def forward(self, x: torch.Tensor):
-        weight = self.weight
-        input_dtype = x.dtype
-        x = x.to(torch.float32)
-        x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-        return (weight * x).to(input_dtype)
 
 
 class _FeedForward(nn.Module):
@@ -165,9 +132,7 @@ class _RotaryEmbedding(nn.Module):
         self.register_buffer("rotate", torch.polar(torch.ones_like(rotate), rotate))
 
     def _apply(self, fn, recurse=True):
-        # The ``rotate`` cache is complex64; a real-dtype cast (e.g. .half())
-        # would silently discard its imaginary part. Regenerate it afterwards
-        # on the (possibly new) device of ``freqs``.
+        # Rotate cache is complex64; a real-dtype cast would drop imaginary part, so regenerate.
         prev_dtype = self.rotate.dtype
         result = super()._apply(fn, recurse=recurse)
         if self.rotate.dtype != prev_dtype:
@@ -199,7 +164,7 @@ class _RotaryEmbedding(nn.Module):
         return q_out.type_as(q), k_out.type_as(k)
 
 
-class _SelfAttention(nn.Module):
+class _Attention(nn.Module):
     """Multi-head self-attention with optional RoPE and causal masking."""
 
     def __init__(
@@ -259,8 +224,7 @@ class _SelfAttention(nn.Module):
         if mask is not None:
             mask = mask.unsqueeze(1)
 
-        # SDPA does not gate dropout on training mode, so gate it explicitly here;
-        # dropout is disabled in eval for deterministic inference.
+        # SDPA applies dropout regardless of train mode; gate it for deterministic eval.
         output = (
             F.scaled_dot_product_attention(
                 query=q,
@@ -277,7 +241,7 @@ class _SelfAttention(nn.Module):
         return self.proj(output)
 
 
-class _SpatialTemporalAttentionBlock(nn.Module):
+class _STBlock(nn.Module):
     """Spatial-temporal factored attention block from BrainOmni.
 
     Splits the feature dimension in half: one half is attended over the
@@ -302,14 +266,14 @@ class _SpatialTemporalAttentionBlock(nn.Module):
         assert n_dim % 2 == 0 and n_head % 2 == 0, (
             "n_dim and n_head must be even (split into spatial/temporal halves)"
         )
-        self.pre_attn_norm = _RMSNorm(n_dim)
-        self.time_attn = _SelfAttention(
+        self.pre_attn_norm = nn.RMSNorm(n_dim, eps=1e-6)
+        self.time_attn = _Attention(
             n_dim // 2, n_head // 2, dropout, causal=causal, rope=True
         )
-        self.spatial_attn = _SelfAttention(
+        self.spatial_attn = _Attention(
             n_dim // 2, n_head // 2, dropout, causal=False, rope=False
         )
-        self.pre_ff_norm = _RMSNorm(n_dim)
+        self.pre_ff_norm = nn.RMSNorm(n_dim, eps=1e-6)
         self.ff = _FeedForward(n_dim, dropout)
 
     def forward(self, x: torch.Tensor, mask=None) -> torch.Tensor:
@@ -334,9 +298,7 @@ class _SpatialTemporalAttentionBlock(nn.Module):
         xt = rearrange(
             xt, "(batch chans) tokens dim -> batch chans tokens dim", batch=batch
         )
-        # Match upstream exactly (spatial first, temporal second) — the halves
-        # are intentionally swapped relative to the input split. Required for
-        # pretrained-weight parity; see BrainOmni/model_utils/attn.py.
+        # Spatial first, temporal second: halves are swapped vs. input split (upstream parity).
         return torch.cat([xs, xt], dim=-1)
 
 
@@ -488,7 +450,7 @@ class _SLSTM(nn.Module):
 # SEANet residual block + encoder/decoder
 
 
-class _SEANetResnetBlock(nn.Module):
+class _SEANetResBlock(nn.Module):
     """SEANet residual block (dilated convs + skip connection)."""
 
     def __init__(
@@ -608,7 +570,7 @@ class _SEANetEncoder(nn.Module):
         for ratio in self.ratios:
             for j in range(n_residual_layers):
                 model += [
-                    _SEANetResnetBlock(
+                    _SEANetResBlock(
                         mult * n_filters,
                         kernel_sizes=[residual_kernel_size, 1],
                         dilations=[dilation_base**j, 1],
@@ -737,7 +699,7 @@ class _SEANetDecoder(nn.Module):
             ]
             for j in range(n_residual_layers):
                 model += [
-                    _SEANetResnetBlock(
+                    _SEANetResBlock(
                         mult * n_filters // 2,
                         kernel_sizes=[residual_kernel_size, 1],
                         dilations=[dilation_base**j, 1],
@@ -805,7 +767,7 @@ def _rotate_to(src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
     return rotated.reshape(orig_shape)
 
 
-class _EuclideanCodebook(nn.Module):
+class _Codebook(nn.Module):
     """EMA-updated Euclidean codebook; buffer keys match upstream checkpoint."""
 
     def __init__(
@@ -902,7 +864,7 @@ class _EuclideanCodebook(nn.Module):
         return quantize, embed_ind
 
 
-class _VectorQuantization(nn.Module):
+class _VQ(nn.Module):
     """Single-layer vector quantisation with optional rotation-trick STE."""
 
     def __init__(
@@ -924,7 +886,7 @@ class _VectorQuantization(nn.Module):
         self.project_out = (
             nn.Linear(_codebook_dim, dim) if requires_projection else nn.Identity()
         )
-        self._codebook = _EuclideanCodebook(
+        self._codebook = _Codebook(
             dim=_codebook_dim,
             codebook_size=codebook_size,
             decay=decay,
@@ -982,7 +944,7 @@ class _ResidualVQ(nn.Module):
         self.num_quantizers = num_quantizers
         self.layers = nn.ModuleList(
             [
-                _VectorQuantization(
+                _VQ(
                     dim=dim,
                     codebook_size=codebook_size,
                     codebook_dim=codebook_dim,
@@ -1021,7 +983,7 @@ class _ResidualVQ(nn.Module):
         return torch.stack(all_indices, dim=-1)
 
 
-class _BrainSensorModule(nn.Module):
+class _SensorEmbedding(nn.Module):
     """Embed per-channel position+orientation (B,C,6) and type (B,C) -> (B,C,n_dim)."""
 
     def __init__(self, n_dim: int) -> None:
@@ -1033,7 +995,7 @@ class _BrainSensorModule(nn.Module):
             nn.Linear(n_dim // 2, n_dim),
         )
         self.aggregate_mlp = _FeedForward(n_dim, 0.0)
-        self.norm = _RMSNorm(n_dim)
+        self.norm = nn.RMSNorm(n_dim, eps=1e-6)
 
     def forward(self, pos: torch.Tensor, sensor_type: torch.Tensor) -> torch.Tensor:
         x = self.pos_embedding_layer(pos)
@@ -1144,7 +1106,7 @@ class _BackwardSolution(nn.Module):
         return self.proj(output)
 
 
-class _BrainTokenizerEncoder(nn.Module):
+class _TokenizerEncoder(nn.Module):
     """SEANet conv-encode windows, then collapse channels to ``n_neuro`` queries.
 
     ``(B, C, N, L)`` -> ``(B, n_neuro, N, T, n_dim)`` with ``T = L / prod(ratios)``.
@@ -1216,7 +1178,7 @@ class _BrainTokenizerEncoder(nn.Module):
         )
 
 
-class _BrainTokenizerDecoder(nn.Module):
+class _TokenizerDecoder(nn.Module):
     """Expand ``n_neuro`` tokens back to channels, then SEANet conv-decode.
 
     ``(B, n_neuro, N, T, n_dim)`` -> ``(B, C, N, L)`` reconstructed waveforms.
@@ -1290,7 +1252,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
     neural tokens via a SEANet-based convolutional encoder, residual vector
     quantization (RVQ), and a cross-attention decoder that reconstructs the
     original waveform.  Sensor geometry (position + orientation) is derived
-    from ``chs_info`` at initialisation and used by the ``_BrainSensorModule``
+    from ``chs_info`` at initialisation and used by the ``_SensorEmbedding``
     to build geometry-aware channel embeddings.
 
     .. rubric:: Pretrained Weights
@@ -1404,8 +1366,8 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         self.drop_prob = drop_prob
         self.activation = activation
 
-        self.sensor_embed = _BrainSensorModule(emb_dim)
-        self.encoder = _BrainTokenizerEncoder(
+        self.sensor_embed = _SensorEmbedding(emb_dim)
+        self.encoder = _TokenizerEncoder(
             n_filters=n_filters,
             ratios=list(ratios),
             kernel_size=kernel_size,
@@ -1423,7 +1385,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
             rotation_trick=rotation_trick,
             quantize_optimize_method=quantize_optimize_method,
         )
-        self.final_layer = _BrainTokenizerDecoder(
+        self.final_layer = _TokenizerDecoder(
             n_dim=emb_dim,
             n_head=tokenizer_num_heads,
             n_filters=n_filters,
@@ -1530,7 +1492,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
 
     ``BrainOmni`` is the downstream classifier described in [brainomni]_.
     It wraps a frozen :class:`BrainTokenizer` backbone with a stack of
-    spatial-temporal factored attention blocks (``_SpatialTemporalAttentionBlock``) and a linear
+    spatial-temporal factored attention blocks (``_STBlock``) and a linear
     classification head, matching the ``DownstreamModel`` architecture from
     the published BrainOmni codebase.
 
@@ -1683,12 +1645,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
             nn.Linear(emb_dim, lm_dim) if emb_dim != lm_dim else nn.Identity()
         )
         self.blocks = nn.ModuleList(
-            [
-                _SpatialTemporalAttentionBlock(
-                    lm_dim, num_heads, drop_prob, causal=False
-                )
-                for _ in range(depth)
-            ]
+            [_STBlock(lm_dim, num_heads, drop_prob, causal=False) for _ in range(depth)]
         )
         self._head_in = n_neuro * lm_dim
         self.final_layer: nn.Module = nn.Identity()  # overwritten by reset_head

@@ -10,6 +10,7 @@ import mne
 import numpy as np
 import pytest
 import torch
+import torch.nn as nn
 
 try:
     from huggingface_hub import hf_hub_download
@@ -1123,14 +1124,13 @@ def test_codebrain_return_features():
 from braindecode.models import BrainOmni, BrainTokenizer  # noqa: E402
 from braindecode.models.base import EEGModuleMixin  # noqa: E402
 from braindecode.models.brainomni import (  # noqa: E402
-    _BrainSensorModule,
-    _BrainTokenizerEncoder,
     _geometry_from_chs_info,
     _ResidualVQ,
-    _RMSNorm,
     _SEANetDecoder,
     _SEANetEncoder,
-    _SpatialTemporalAttentionBlock,
+    _SensorEmbedding,
+    _STBlock,
+    _TokenizerEncoder,
 )
 
 # Shared small-model config (keeps every BrainOmni/BrainTokenizer build fast).
@@ -1255,19 +1255,19 @@ def test_geometry_bad_loc_raises(loc):
 @pytest.mark.parametrize(
     "build, make_inputs, exp_shape",
     [
-        (lambda: _RMSNorm(8), lambda: (torch.randn(2, 5, 8),), (2, 5, 8)),
+        (lambda: nn.RMSNorm(8, eps=1e-6), lambda: (torch.randn(2, 5, 8),), (2, 5, 8)),
         (
-            lambda: _SpatialTemporalAttentionBlock(16, 4, 0.0, causal=False),
+            lambda: _STBlock(16, 4, 0.0, causal=False),
             lambda: (torch.randn(2, 3, 7, 16),),  # (B, C, W, D)
             (2, 3, 7, 16),
         ),
         (
-            lambda: _BrainSensorModule(n_dim=16),
+            lambda: _SensorEmbedding(n_dim=16),
             lambda: (torch.randn(2, 5, 6), torch.zeros(2, 5, dtype=torch.long)),
             (2, 5, 16),
         ),
         (
-            lambda: _BrainTokenizerEncoder(
+            lambda: _TokenizerEncoder(
                 n_filters=8,
                 ratios=[8, 4, 2],
                 kernel_size=5,
