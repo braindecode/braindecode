@@ -1156,7 +1156,13 @@ def test_geometry_fiff_int_kind():
     assert sensor_type.tolist() == [0, 1]  # EEG=0, MAG=1
 
 
-def test_geometry_missing_loc_raises():
+def test_geometry_nan_loc_raises():
     chs_info = [{"ch_name": "A", "kind": "eeg", "loc": np.full(12, np.nan)}]
+    with pytest.raises(ValueError, match="set_montage"):
+        _geometry_from_chs_info(chs_info)
+
+
+def test_geometry_absent_loc_raises():
+    chs_info = [{"ch_name": "A", "kind": "eeg"}]  # no 'loc' key at all
     with pytest.raises(ValueError, match="set_montage"):
         _geometry_from_chs_info(chs_info)

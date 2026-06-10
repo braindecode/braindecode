@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import numpy as np
-import torch  # noqa: F401  # used by later tasks
 
 # MNE FIFF constants (avoid importing mne at module load for a tiny lookup)
 _FIFF_MEG_CH = 1
@@ -36,6 +35,11 @@ def _sensor_type_of(ch: dict) -> int:
     kind = _resolve_kind(ch.get("kind", "eeg"))
     if kind == _FIFF_EEG_CH:
         return _SENSOR_EEG
+    if kind not in (_FIFF_EEG_CH, _FIFF_MEG_CH):
+        raise ValueError(
+            f"Unsupported channel kind {kind!r}; pass only EEG/MEG channels "
+            "(e.g. raw.pick(['eeg', 'meg']))."
+        )
     # MEG: distinguish MAG vs GRAD. Prefer the string kind when present,
     # else use coil_type (planar/grad coils contain "GRAD"/"PLANAR").
     raw_kind = ch.get("kind")
@@ -48,7 +52,12 @@ def _sensor_type_of(ch: dict) -> int:
 
 
 def _orientation_of(ch: dict, sensor_type: int) -> np.ndarray:
-    """3-D orientation. EEG -> zeros; MAG -> loc axis 0; GRAD -> loc axis 1."""
+    """3-D orientation vector extracted from ``ch['loc']``.
+
+    EEG: zeros (3,).
+    GRAD: ``loc[3:6]`` (first direction triplet).
+    MAG: ``loc[9:12]`` (third direction triplet).
+    """
     if sensor_type == _SENSOR_EEG:
         return np.zeros(3, dtype=np.float64)
     loc = np.asarray(ch["loc"], dtype=np.float64)
@@ -81,6 +90,8 @@ def _geometry_from_chs_info(chs_info):
 
     Raises ``ValueError`` if any channel has a missing/non-finite ``loc``.
     """
+    if not chs_info:
+        raise ValueError("chs_info is empty; at least one channel is required.")
     pos, stype = [], []
     for ch in chs_info:
         if "loc" not in ch:
@@ -89,6 +100,11 @@ def _geometry_from_chs_info(chs_info):
                 "BrainOmni needs sensor positions; call raw.set_montage(...)."
             )
         loc = np.asarray(ch["loc"], dtype=np.float64)
+        if loc.shape != (12,):
+            raise ValueError(
+                f"Channel {ch.get('ch_name', '?')!r} has loc of shape "
+                f"{loc.shape}; expected (12,)."
+            )
         s = _sensor_type_of(ch)
         ori = _orientation_of(ch, s)
         vec = np.concatenate([loc[:3], ori])
