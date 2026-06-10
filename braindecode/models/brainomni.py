@@ -365,12 +365,18 @@ def _get_norm_module(
     norm: str = "none",
     **norm_kwargs,  # noqa: ARG002
 ) -> nn.Module:
-    """Return a post-conv normalisation module (always Identity for our path)."""
+    """Return a post-conv normalisation module.
+
+    Always ``nn.Identity()`` for this port: ``_CONV_NORMALIZATIONS`` only
+    covers ``"none"`` and ``"weight_norm"`` (applied pre-conv via
+    ``_apply_parametrization_norm``). Parameters ``module`` and ``causal``
+    are retained for API symmetry with the full EnCodec implementation.
+    """
     assert norm in _CONV_NORMALIZATIONS, f"Unsupported norm: {norm!r}"
     return nn.Identity()
 
 
-def get_extra_padding_for_conv1d(
+def _get_extra_padding_for_conv1d(
     x: torch.Tensor, kernel_size: int, stride: int, padding_total: int = 0
 ) -> int:
     """Compute extra right-padding so that the last convolution window is full."""
@@ -380,7 +386,7 @@ def get_extra_padding_for_conv1d(
     return ideal_length - length
 
 
-def pad1d(
+def _pad1d(
     x: torch.Tensor,
     paddings: tuple[int, int],
     mode: str = "zero",
@@ -402,7 +408,7 @@ def pad1d(
     return F.pad(x, paddings, mode, value)
 
 
-def unpad1d(x: torch.Tensor, paddings: tuple[int, int]) -> torch.Tensor:
+def _unpad1d(x: torch.Tensor, paddings: tuple[int, int]) -> torch.Tensor:
     """Remove padding from both ends of a 1-D tensor."""
     padding_left, padding_right = paddings
     assert padding_left >= 0 and padding_right >= 0, (padding_left, padding_right)
@@ -503,15 +509,15 @@ class _SConv1d(nn.Module):
         stride = self.conv.conv.stride[0]
         dilation = self.conv.conv.dilation[0]
         padding_total = (kernel_size - 1) * dilation - (stride - 1)
-        extra_padding = get_extra_padding_for_conv1d(
+        extra_padding = _get_extra_padding_for_conv1d(
             x, kernel_size, stride, padding_total
         )
         if self.causal:
-            x = pad1d(x, (padding_total, extra_padding), mode=self.pad_mode)
+            x = _pad1d(x, (padding_total, extra_padding), mode=self.pad_mode)
         else:
             padding_right = padding_total // 2
             padding_left = padding_total - padding_right
-            x = pad1d(
+            x = _pad1d(
                 x, (padding_left, padding_right + extra_padding), mode=self.pad_mode
             )
         return self.conv(x)
@@ -557,11 +563,11 @@ class _SConvTranspose1d(nn.Module):
         if self.causal:
             padding_right = math.ceil(padding_total * self.trim_right_ratio)
             padding_left = padding_total - padding_right
-            y = unpad1d(y, (padding_left, padding_right))
+            y = _unpad1d(y, (padding_left, padding_right))
         else:
             padding_right = padding_total // 2
             padding_left = padding_total - padding_right
-            y = unpad1d(y, (padding_left, padding_right))
+            y = _unpad1d(y, (padding_left, padding_right))
         return y
 
 
@@ -617,11 +623,11 @@ class _SEANetResnetBlock(nn.Module):
         Dilations for each conv in the block.
     activation : str
         ``nn`` activation class name (e.g. ``"ELU"``).
-    activation_params : dict
+    activation_params : dict or None
         Keyword arguments for the activation constructor.
     norm : str
         ``"weight_norm"`` or ``"none"``.
-    norm_params : dict
+    norm_params : dict or None
         Extra kwargs forwarded to the norm module constructor.
     causal : bool
         Whether to use causal convolutions.
@@ -713,11 +719,11 @@ class _SEANetEncoder(nn.Module):
         Downsampling ratios (applied in *reverse* order internally).
     activation : str
         Activation class name in ``torch.nn``.
-    activation_params : dict
+    activation_params : dict or None
         Keyword arguments for the activation constructor.
     norm : str
         ``"weight_norm"`` or ``"none"``.
-    norm_params : dict
+    norm_params : dict or None
         Extra kwargs for the norm module.
     kernel_size : int
         Kernel size of the first convolution.
@@ -789,7 +795,7 @@ class _SEANetEncoder(nn.Module):
                 pad_mode=pad_mode,
             )
         ]
-        for j_unused, ratio in enumerate(self.ratios):
+        for ratio in self.ratios:
             for j in range(n_residual_layers):
                 model += [
                     _SEANetResnetBlock(
@@ -862,7 +868,7 @@ class _SEANetDecoder(nn.Module):
         Upsampling ratios (applied in order).
     activation : str
         Activation class name in ``torch.nn``.
-    activation_params : dict
+    activation_params : dict or None
         Keyword arguments for the activation constructor.
     final_activation : str or None
         Optional final activation after the output convolution.
@@ -870,7 +876,7 @@ class _SEANetDecoder(nn.Module):
         Kwargs for the final activation constructor.
     norm : str
         ``"weight_norm"`` or ``"none"``.
-    norm_params : dict
+    norm_params : dict or None
         Extra kwargs for the norm module.
     kernel_size : int
         Kernel size of the first convolution.
@@ -953,7 +959,7 @@ class _SEANetDecoder(nn.Module):
                 _SLSTM(mult * n_filters, num_layers=lstm, bidirectional=bidirectional)
             ]
 
-        for i_unused, ratio in enumerate(self.ratios):
+        for ratio in self.ratios:
             model += [
                 act(**activation_params),
                 _SConvTranspose1d(
