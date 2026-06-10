@@ -32,6 +32,10 @@ from braindecode.datasets import (
     RawDataset,
     WindowsDataset,
 )
+from braindecode.datasets.bids.hub import (
+    _generate_readme_content,
+    _infer_license_from_descriptions,
+)
 from braindecode.datasets.bids.hub_io import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
 from braindecode.preprocessing import create_windows_from_events
@@ -66,6 +70,50 @@ def test_hub_mixin_methods_exist(setup_concat_windows_dataset):
     assert hasattr(dataset, "pull_from_hub")
     assert callable(dataset.push_to_hub)
     assert callable(dataset.pull_from_hub)
+
+
+def test_infer_license_from_descriptions_detects_single_license():
+    """Infer a concrete license when all descriptions agree."""
+    descriptions = [
+        pd.Series({"subject": "1", "license": "cc-by-4.0"}),
+        pd.Series({"subject": "2", "license": "cc-by-4.0"}),
+    ]
+
+    license_value, needs_update = _infer_license_from_descriptions(descriptions)
+
+    assert license_value == "cc-by-4.0"
+    assert needs_update is False
+
+
+def test_infer_license_from_descriptions_falls_back_to_placeholder():
+    """Use placeholder when license is missing or inconsistent."""
+    descriptions = [
+        pd.Series({"subject": "1", "license": "cc-by-4.0"}),
+        pd.Series({"subject": "2", "license": "mit"}),
+    ]
+
+    license_value, needs_update = _infer_license_from_descriptions(descriptions)
+
+    assert license_value == "please-specify"
+    assert needs_update is True
+
+
+def test_generate_readme_content_license_placeholder_comment():
+    """README front matter includes a guidance comment for placeholder license."""
+    content = _generate_readme_content(
+        format_info={"total_size_mb": 1.0},
+        n_recordings=1,
+        n_channels=2,
+        sfreq=100,
+        data_type="Continuous (Raw)",
+        n_windows=100,
+        total_duration=10,
+        license="please-specify",
+        license_needs_update=True,
+    )
+
+    assert "license: please-specify" in content
+    assert "Please update this field to reflect your dataset's license" in content
 
 
 def test_dataset_card_generation(setup_concat_windows_dataset, tmp_path):
