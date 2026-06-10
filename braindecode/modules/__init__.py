@@ -35,6 +35,7 @@ from .layers import (
 )
 from .linear import LinearWithConstraint, MaxNormLinear
 from .parametrization import MaxNorm, MaxNormParametrize
+from .quantization import Codebook, ResidualVQ, VectorQuantizer
 from .stats import (
     LogPowerLayer,
     LogVarLayer,
@@ -54,6 +55,7 @@ __all__ = [
     "CAT",
     "CBAM",
     "ChannelInterpolationLayer",
+    "Codebook",
     "ECA",
     "FCA",
     "GCT",
@@ -86,6 +88,7 @@ __all__ = [
     "MaxNormLinear",
     "MaxNorm",
     "MaxNormParametrize",
+    "ResidualVQ",
     "LogPowerLayer",
     "LogVarLayer",
     "MaxLayer",
@@ -93,6 +96,7 @@ __all__ = [
     "StatLayer",
     "StdLayer",
     "VarLayer",
+    "VectorQuantizer",
     "aggregate_probas",
     "Expression",
     "IntermediateOutputWrapper",

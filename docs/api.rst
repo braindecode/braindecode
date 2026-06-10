@@ -374,6 +374,24 @@ model.
 
     aggregate_probas
 
+Quantization
+============
+
+These modules implement vector quantisation building blocks used by the BrainOmni
+foundation model, including an EMA-updated codebook, a single-layer vector quantiser
+with optional rotation-trick straight-through estimator, and a residual VQ stack.
+
+:py:mod:`braindecode.modules.quantization`:
+
+.. autosummary::
+    :toctree: generated/quantization
+    :template: class_in_subdir
+    :recursive:
+
+    Codebook
+    ResidualVQ
+    VectorQuantizer
+
 Wrappers
 ========
 

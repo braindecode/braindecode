@@ -1124,7 +1124,6 @@ def test_codebrain_return_features():
 from braindecode.models import BrainOmni, BrainTokenizer  # noqa: E402
 from braindecode.models.base import EEGModuleMixin  # noqa: E402
 from braindecode.models.brainomni import (  # noqa: E402
-    _ResidualVQ,
     _SEANetDecoder,
     _SEANetEncoder,
     _SensorEmbedding,
@@ -1132,6 +1131,7 @@ from braindecode.models.brainomni import (  # noqa: E402
     _TokenizerEncoder,
 )
 from braindecode.models.util import _geometry_from_chs_info  # noqa: E402
+from braindecode.modules import ResidualVQ  # noqa: E402
 
 # Shared small-model config (keeps every BrainOmni/BrainTokenizer build fast).
 _BRAINOMNI_KW = dict(
@@ -1191,7 +1191,7 @@ def _small_brainomni(n_chans=4, n_outputs=3, n_times=512, sfreq=256.0, chs_info=
 
 
 def _quantizer(num_quantizers=2):
-    return _ResidualVQ(
+    return ResidualVQ(
         dim=16,
         codebook_dim=16,
         codebook_size=32,
