@@ -69,24 +69,21 @@ def _geometry_from_chs_info(chs_info):
             "chs_info lacks finite sensor positions; call raw.set_montage(...)."
         )
 
-    pos, sensor_type = [], []
-    for i, ch_type in enumerate(types):
-        if ch_type not in _SENSOR_CODE:
-            raise ValueError(
-                f"Unsupported channel type {ch_type!r}; pass only EEG/MEG channels."
-            )
-        if ch_type == "eeg":
-            ori = np.zeros(3)
-        else:
-            loc = np.asarray(chs_info[i]["loc"], dtype=np.float64)
-            ori = loc[3:6] if ch_type == "grad" else loc[9:12]
-        pos.append(np.concatenate([xyz[i].astype(np.float64), ori]))
-        sensor_type.append(_SENSOR_CODE[ch_type])
+    unsupported = set(types) - set(_SENSOR_CODE)
+    if unsupported:
+        raise ValueError(
+            f"Unsupported channel type(s) {sorted(unsupported)}; pass only EEG/MEG."
+        )
+    sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
 
-    pos = _normalize_pos(
-        np.stack(pos).astype(np.float32), np.asarray(sensor_type, dtype=np.int64)
-    )
-    return pos.astype(np.float32), np.asarray(sensor_type, dtype=np.int64)
+    # MEG coil orientation: GRAD -> in-plane axis loc[3:6], MAG -> normal loc[9:12].
+    loc = np.stack([np.asarray(ch["loc"], dtype=np.float64) for ch in chs_info])
+    ori = np.zeros((len(chs_info), 3))
+    ori[sensor_type == 2] = loc[sensor_type == 2, 3:6]
+    ori[sensor_type == 1] = loc[sensor_type == 1, 9:12]
+
+    pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
+    return _normalize_pos(pos, sensor_type), sensor_type
 
 
 # Attention / norm primitives
@@ -1400,16 +1397,12 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
             x = F.pad(x, (0, pad))
         return x.unfold(dimension=-1, size=self.window_length, step=step)
 
-    def _sensor_embedding(self, batch_size: int) -> torch.Tensor:
-        # pos/sensor_type are registered buffers -> already on the model device
-        pos = self.pos.unsqueeze(0).expand(batch_size, -1, -1)
-        stype = self.sensor_type.unsqueeze(0).expand(batch_size, -1)
-        return self.sensor_embed(pos, stype)
-
     def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
-        """Unfold -> sensor-embed -> encode -> RVQ. Returns (feat_q, indices, commit, sensor_embedding)."""
+        """Unfold -> sensor-embed -> encode -> RVQ -> (feat_q, indices, commit, se)."""
         xu = self._unfold(x, overlap_ratio)  # (B, C, N, L)
-        se = self._sensor_embedding(xu.shape[0])  # (B, C, emb_dim)
+        # Sensor embedding is batch-independent: compute once, broadcast to B.
+        se = self.sensor_embed(self.pos, self.sensor_type)  # (C, emb_dim)
+        se = se.unsqueeze(0).expand(xu.shape[0], -1, -1)  # (B, C, emb_dim)
         feat = self.encoder(xu, se)  # (B, n_neuro, N, T, D)
         feat_q, indices, commit = self.quantizer(feat)
         return feat_q, indices, commit, se
