@@ -90,6 +90,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,22 @@ def _cfg_to_kwargs(cfg: dict[str, Any], *, is_omni: bool) -> dict[str, Any]:
         kwargs["lm_dim"] = cfg["lm_dim"]
         kwargs["num_heads"] = cfg["lm_head"]
         kwargs["depth"] = cfg["lm_depth"]
+        # Warn when tokenizer dropout and LM dropout differ.  braindecode
+        # BrainOmni uses a single drop_prob (set to lm_dropout) for both
+        # components.  Dropout has no learned parameters, so this does NOT
+        # affect the loaded weights, but the tokenizer's stored drop_prob will
+        # differ from the upstream tokenizer dropout value.
+        if cfg.get("dropout") != cfg.get("lm_dropout"):
+            warnings.warn(
+                f"drop_prob mismatch: upstream tokenizer dropout={cfg.get('dropout')!r} "
+                f"!= lm_dropout={cfg.get('lm_dropout')!r}.  "
+                "braindecode BrainOmni uses a single drop_prob parameter (set to "
+                "lm_dropout).  This does NOT affect loaded weights — dropout layers "
+                "have no trainable parameters — but the tokenizer's stored drop_prob "
+                "will differ from the upstream tokenizer dropout value.",
+                UserWarning,
+                stacklevel=2,
+            )
         kwargs["drop_prob"] = cfg["lm_dropout"]  # overwrite with LM dropout
         # DROP: mask_ratio, num_quantizers_used (pretraining-only)
 
@@ -445,8 +462,6 @@ def _build_model(
 
 def _validate_round_trip(model: Any, out_dir: Path, label: str) -> None:
     """Save and reload model; assert state-dicts match."""
-    import torch
-
     model.save_pretrained(str(out_dir))
     reloaded = type(model).from_pretrained(str(out_dir))
 
@@ -472,11 +487,17 @@ def _validate_round_trip(model: Any, out_dir: Path, label: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+_DEFAULT_EXAMPLE_DATA = (
+    Path(__file__).parent.parent / "BrainOmni" / "assets" / "example_data.pt"
+)
+
+
 def _parity_check(
     model: Any,
     reference_path: str,
     *,
     label: str,
+    example_data_path: Path | None = None,
 ) -> None:
     """Numerical parity check against upstream ``encode()`` output.
 
@@ -488,18 +509,21 @@ def _parity_check(
         Path to ``reference_encode_output.pt`` saved in the upstream env.
     label : str
         Descriptive label for messages.
+    example_data_path : Path or None
+        Path to ``example_data.pt``.  Defaults to the bundled asset at
+        ``BrainOmni/assets/example_data.pt`` relative to the repo root.
+        Pass ``--example-data`` on the CLI to override.
     """
-    import torch
+    if example_data_path is None:
+        example_path = _DEFAULT_EXAMPLE_DATA
+    else:
+        example_path = Path(example_data_path)
 
-    example_path = (
-        Path(__file__).parent.parent / "BrainOmni" / "assets" / "example_data.pt"
-    )
     if not example_path.exists():
-        print(
-            f"[{label}] WARNING: example_data.pt not found at {example_path}. "
-            "Skipping parity check."
+        raise FileNotFoundError(
+            f"[{label}] example_data.pt not found at {example_path}.\n"
+            "Pass the correct path via --example-data /path/to/example_data.pt."
         )
-        return
 
     example = torch.load(str(example_path), map_location="cpu", weights_only=True)
     ref = torch.load(reference_path, map_location="cpu", weights_only=True)
@@ -530,19 +554,22 @@ def _parity_check(
 
 def convert(
     *,
-    variant: str | None = None,
+    variant: str,
     ckpt_path: str | None = None,
     cfg_path: str | None = None,
     out_dir: str,
     reference_output: str | None = None,
+    example_data: str | None = None,
 ) -> None:
     """Download, remap, validate, and save a BrainOmni checkpoint.
 
     Parameters
     ----------
-    variant : str or None
-        ``"tiny"``, ``"base"``, or ``"tokenizer"``.  Required unless both
-        ``ckpt_path`` and ``cfg_path`` are provided.
+    variant : str
+        ``"tiny"``, ``"base"``, or ``"tokenizer"``.  Always required — when
+        using local ``--ckpt``/``--cfg`` it disambiguates BrainTokenizer from
+        BrainOmni (BrainTokenizer has no learned dropout parameters so they are
+        architecturally indistinguishable from ``ckpt_path`` alone).
     ckpt_path : str or None
         Local path to ``.pt`` checkpoint (bypasses HF discovery).
     cfg_path : str or None
@@ -551,13 +578,15 @@ def convert(
         Output directory for the converted checkpoint.
     reference_output : str or None
         Path to upstream reference output for parity check (optional).
+    example_data : str or None
+        Path to ``example_data.pt`` for parity check (optional, overrides
+        default bundled asset).
     """
-    is_omni = variant in ("tiny", "base") if variant else (ckpt_path is not None)
+    # is_omni is always derived from variant, never from ckpt_path presence.
+    is_omni = variant in ("tiny", "base")
 
     # Determine source files
     if ckpt_path is None or cfg_path is None:
-        if variant is None:
-            raise ValueError("Either --variant or both --ckpt/--cfg must be provided.")
         print(f"Discovering files for variant={variant!r} on OpenTSLab/BrainOmni...")
         remote_cfg, remote_ckpt = _discover_hf_files(variant)
         print(f"  cfg : {remote_cfg}")
@@ -567,12 +596,6 @@ def convert(
         print("Downloading...")
         cfg_path = _hf_download(repo_id, remote_cfg)
         ckpt_path = _hf_download(repo_id, remote_ckpt)
-
-        # Re-determine is_omni after discovery (tokenizer variant files may be
-        # in a directory named "braintokenizer" or similar)
-        is_omni = "brainomni" in remote_ckpt.lower() or variant in ("tiny", "base")
-        if variant == "tokenizer":
-            is_omni = False
 
     print(f"\nLoading cfg from: {cfg_path}")
     with open(cfg_path) as f:
@@ -623,7 +646,12 @@ def convert(
     # Optional parity
     if reference_output is not None:
         print(f"\nRunning parity check against: {reference_output}")
-        _parity_check(model, reference_output, label=label)
+        _parity_check(
+            model,
+            reference_output,
+            label=label,
+            example_data_path=Path(example_data) if example_data else None,
+        )
     else:
         print(
             "\nParity check skipped (no --reference-output provided).\n"
@@ -811,6 +839,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--example-data",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Path to example_data.pt used in parity check.  "
+            "Defaults to BrainOmni/assets/example_data.pt relative to repo root.  "
+            "Required when --reference-output is given and the default path does "
+            "not exist."
+        ),
+    )
+    parser.add_argument(
         "--self-test",
         action="store_true",
         help="Run offline self-test (no network required) and exit.",
@@ -832,6 +871,17 @@ def main(argv: list[str] | None = None) -> None:
         )
         sys.exit(1)
 
+    # Require --variant when local --ckpt/--cfg are given so that BrainTokenizer
+    # is never misidentified as BrainOmni (they are architecturally
+    # indistinguishable from ckpt_path presence alone).
+    if (args.ckpt is not None or args.cfg is not None) and args.variant is None:
+        print(
+            "ERROR: --variant {tiny,base,tokenizer} must be provided alongside "
+            "--ckpt/--cfg to distinguish BrainTokenizer from BrainOmni.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     if args.out is None:
         print("ERROR: --out is required.", file=sys.stderr)
         sys.exit(1)
@@ -842,6 +892,7 @@ def main(argv: list[str] | None = None) -> None:
         cfg_path=args.cfg,
         out_dir=args.out,
         reference_output=args.reference_output,
+        example_data=args.example_data,
     )
 
 
