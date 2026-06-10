@@ -231,7 +231,7 @@ class _SpatialTemporalBlock(nn.Module):
 # SEANet conv helpers
 
 
-class _SConv1d(nn.Module):
+class _SEANetConv1d(nn.Module):
     """Conv1d with built-in asymmetric / causal padding."""
 
     def __init__(
@@ -251,7 +251,7 @@ class _SConv1d(nn.Module):
         super().__init__()
         if stride > 1 and dilation > 1:
             warnings.warn(
-                "_SConv1d has been initialized with stride > 1 and dilation > 1"
+                "_SEANetConv1d has been initialized with stride > 1 and dilation > 1"
                 f" (kernel_size={kernel_size} stride={stride}, dilation={dilation})."
             )
         # Classic weight_norm preserves checkpoint key parity with upstream.
@@ -288,7 +288,7 @@ class _SConv1d(nn.Module):
         return self.conv(x)
 
 
-class _SConvTranspose1d(nn.Module):
+class _SEANetConvTranspose1d(nn.Module):
     """ConvTranspose1d with built-in asymmetric / causal padding trimming."""
 
     def __init__(
@@ -318,7 +318,7 @@ class _SConvTranspose1d(nn.Module):
         else:
             # Non-causal: use native padding= to remove padding_total//2 per side.
             assert padding_total % 2 == 0, (
-                f"Non-causal _SConvTranspose1d requires even padding_total "
+                f"Non-causal _SEANetConvTranspose1d requires even padding_total "
                 f"(kernel_size-stride={padding_total}); got kernel_size={kernel_size}, "
                 f"stride={stride}."
             )
@@ -345,7 +345,7 @@ class _SConvTranspose1d(nn.Module):
 # SLSTM
 
 
-class _SLSTM(nn.Module):
+class _SEANetLSTM(nn.Module):
     """LSTM over convolutional layout (channels-last time axis)."""
 
     def __init__(
@@ -412,7 +412,7 @@ class _SEANetResBlock(nn.Module):
             out_chs = dim if i == len(kernel_sizes) - 1 else hidden
             block += [
                 act(**activation_params),
-                _SConv1d(
+                _SEANetConv1d(
                     in_chs,
                     out_chs,
                     kernel_size=kernel_size,
@@ -428,7 +428,7 @@ class _SEANetResBlock(nn.Module):
         if true_skip:
             self.shortcut = nn.Identity()
         else:
-            self.shortcut = _SConv1d(
+            self.shortcut = _SEANetConv1d(
                 dim,
                 dim,
                 kernel_size=1,
@@ -483,7 +483,7 @@ class _SEANetEncoder(nn.Module):
         act = getattr(nn, activation)
         mult = 1
         model: list[nn.Module] = [
-            _SConv1d(
+            _SEANetConv1d(
                 channels,
                 mult * n_filters,
                 kernel_size,
@@ -512,7 +512,7 @@ class _SEANetEncoder(nn.Module):
                 ]
             model += [
                 act(**activation_params),
-                _SConv1d(
+                _SEANetConv1d(
                     mult * n_filters,
                     mult * n_filters * 2,
                     kernel_size=ratio * 2,
@@ -527,13 +527,15 @@ class _SEANetEncoder(nn.Module):
 
         if lstm:
             model += [
-                _SLSTM(mult * n_filters, num_layers=lstm, bidirectional=bidirectional)
+                _SEANetLSTM(
+                    mult * n_filters, num_layers=lstm, bidirectional=bidirectional
+                )
             ]
 
         mult = mult * 2 if bidirectional else mult
         model += [
             act(**activation_params),
-            _SConv1d(
+            _SEANetConv1d(
                 mult * n_filters,
                 dimension,
                 last_kernel_size,
@@ -593,7 +595,7 @@ class _SEANetDecoder(nn.Module):
         act = getattr(nn, activation)
         mult = int(2 ** len(self.ratios))
         model: list[nn.Module] = [
-            _SConv1d(
+            _SEANetConv1d(
                 dimension,
                 mult * n_filters,
                 kernel_size,
@@ -606,13 +608,15 @@ class _SEANetDecoder(nn.Module):
 
         if lstm:
             model += [
-                _SLSTM(mult * n_filters, num_layers=lstm, bidirectional=bidirectional)
+                _SEANetLSTM(
+                    mult * n_filters, num_layers=lstm, bidirectional=bidirectional
+                )
             ]
 
         for ratio in self.ratios:
             model += [
                 act(**activation_params),
-                _SConvTranspose1d(
+                _SEANetConvTranspose1d(
                     mult * n_filters,
                     mult * n_filters // 2,
                     kernel_size=ratio * 2,
@@ -643,7 +647,7 @@ class _SEANetDecoder(nn.Module):
 
         model += [
             act(**activation_params),
-            _SConv1d(
+            _SEANetConv1d(
                 n_filters,
                 channels,
                 last_kernel_size,
