@@ -11,6 +11,7 @@
 
 from collections import OrderedDict
 from functools import partial
+from unittest import mock
 
 import mne
 import numpy as np
@@ -67,6 +68,12 @@ from braindecode.models.eegpt import (
     _rotate_half,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.util import (
+    _get_possible_signal_params,
+    _get_signal_params,
+    models_dict,
+    models_mandatory_parameters,
+)
 from braindecode.util import set_random_seeds
 
 
@@ -2029,6 +2036,63 @@ def test_eegminer_plv_values_range():
         "PLV values should be in the range [0, 1]"
 
 
+_BATCH_SIZE_ONE_TRAIN_MODE_PARAMS = [
+    pytest.param(model_name, required_params, signal_params, id=model_name)
+    for model_name, required_params, signal_params in models_mandatory_parameters
+]
+
+
+@pytest.mark.parametrize(
+    "model_name, required_params, signal_params", _BATCH_SIZE_ONE_TRAIN_MODE_PARAMS
+)
+def test_models_batch1_train_mode(
+    model_name, required_params, signal_params
+):
+    """Models must accept batch_size=1 even in train mode.
+
+    BatchNorm layers, when present, must also be restored to train mode
+    after temporarily using running statistics for single-sample inputs.
+    """
+    sp = _get_signal_params(signal_params)
+    model_kwargs = _get_possible_signal_params(sp, required_params)[0]
+    model = models_dict[model_name](**model_kwargs)
+    batch_norms = [
+        module
+        for module in model.modules()
+        if isinstance(
+            module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
+        )
+    ]
+    x = torch.randn(1, sp["n_chans"], sp["n_times"])
+
+    # In train mode with batch_size=1, this must not raise.
+    model.train()
+    assert model.training
+    with torch.no_grad():
+        out = model(x)
+    assert out.shape[0] == 1
+    # Model and BatchNorm layers must be restored to train mode after forward.
+    assert model.training
+    assert all(batch_norm.training for batch_norm in batch_norms)
+
+    # In eval mode with batch_size=1, this must also work.
+    model.eval()
+    with torch.no_grad():
+        out = model(x)
+    assert out.shape[0] == 1
+
+
+def test_batchnorm_decorator_preserves_forward_input_keyword():
+    model = ContraWR(n_chans=3, n_outputs=2, n_times=1000, sfreq=200.0)
+    x = torch.randn(1, model.n_chans, model.n_times)
+
+    model.train()
+    with torch.no_grad():
+        out = model(X=x)
+
+    assert out.shape == (1, model.n_outputs)
+
+
 def test_eegnet_final_layer_linear_true():
     """Test that final_layer_linear=True uses a conv-based classifier without warning."""
     model = EEGNet(
@@ -3519,3 +3583,122 @@ def test_emg2qwerty_input_validation():
     # by ``floor((T - n_fft) / hop_length) + 1``.
     out = m_floor.compute_output_lengths(torch.tensor([10, 0, 50, 64, 80]))
     assert out.tolist() == [0, 0, 0, 1, 2]
+
+
+def _force_two_randint():
+    """Monkeypatch helper: force every size-`()` ``torch.randint`` to draw 2.
+
+    ``_SpecAugment.forward`` samples its mask counts via two
+    ``torch.randint(n+1, ())`` calls (time then frequency); freezing
+    them at 2 makes the augmentation deterministic without depending
+    on the global RNG or torchaudio's internal RNG sequence (which
+    can shift across versions and silently turn the test into a flake).
+
+    Returns a ``mock.patch`` context manager rebinding ``torch.randint``;
+    captures the real ``torch.randint`` in a closure so the patched
+    function can still delegate non-`()` calls.
+    """
+    real = torch.randint
+
+    def patched(*args, **kwargs):
+        size = kwargs.get("size", args[1] if len(args) >= 2 else None)
+        if size == ():
+            return torch.tensor(2, dtype=torch.long)
+        return real(*args, **kwargs)
+
+    return mock.patch("torch.randint", side_effect=patched)
+
+
+def test_emg2qwerty_spec_augment_contract():
+    """Built-in SpecAugment: train-only, per-electrode iid, parameter-free, round-trips."""
+    # ``spec_augment=False`` is the back-compat default and must wire an
+    # ``nn.Identity`` so existing checkpoints keep loading bit-for-bit.
+    assert isinstance(_small_emg2qwerty().spec_augment, torch.nn.Identity)
+
+    # Bad knobs rejected at construction time.
+    for bad in (
+        {"n_time_masks": -1},
+        {"time_mask_param": -1},
+        {"spec_augment_prob": 1.5},
+    ):
+        with pytest.raises(ValueError):
+            _small_emg2qwerty(spec_augment=True, **bad)
+
+    torch.manual_seed(0)
+    m = _small_emg2qwerty(
+        spec_augment=True, n_time_masks=3, time_mask_param=8,
+        n_freq_masks=2, freq_mask_param=4, spec_augment_prob=1.0,
+    )
+    x = torch.randn(2, 32, 500)
+
+    # Eval is deterministic (no SpecAugment sampling).
+    m.eval()
+    with torch.no_grad():
+        assert torch.equal(m(x), m(x))
+
+    # Train mutates the spectrogram and is stochastic between calls.
+    m.train()
+    spec = m.spectrogram(x)
+    with _force_two_randint():
+        aug_a, aug_b = m.spec_augment(spec), m.spec_augment(spec)
+    assert not torch.equal(aug_a, spec) and not torch.equal(aug_a, aug_b)
+
+    # Per-(B, band, electrode) iid masking: on a uniquely-valued tensor
+    # at least one (B, band) row must show distinct mask patterns across
+    # its electrodes — pinning the upstream ``emg2qwerty.transforms``
+    # recipe and guarding against any future band-shared regression.
+    distinct = torch.arange(spec.numel(), dtype=spec.dtype).reshape(spec.shape)
+    with _force_two_randint():
+        aug = m.spec_augment(distinct)
+    # ``changed`` shape: (B, num_bands, electrodes, freq*T_spec) after
+    # moving time-axis to the trailing flatten. Compare each electrode's
+    # bool grid against electrode-0 within the same (B, band) row.
+    changed = (aug != distinct).movedim(0, -1).flatten(start_dim=3)
+    same_as_e0 = (changed == changed[:, :, :1]).all(dim=-1)
+    assert not same_as_e0.all(), "SpecAugment masking must not be band-shared"
+
+    # Parameter-free (no new state-dict keys) and round-trips via
+    # ``from_config`` so reloaded models reproduce the augmentation recipe.
+    allowed = ("model.0.", "model.1.", "model.3.", "final_layer.")
+    assert all(k.startswith(allowed) for k in m.state_dict())
+    cfg = m.get_config()
+    assert cfg["spec_augment"] and cfg["time_mask_param"] == 8
+    assert isinstance(
+        EMG2QwertyNet.from_config(cfg).spec_augment, type(m.spec_augment)
+    )
+
+
+def test_emg2qwerty_feature_flags():
+    """Three forward paths: default emissions tensor, runtime dict, init tuple."""
+    mlp_features = (48,)
+    num_features = 2 * mlp_features[-1]  # num_bands × mlp_features[-1]
+    x = torch.randn(2, 32, 500)
+
+    # Default: emissions tensor, ``(B, T_out, n_outputs)``.
+    m = _small_emg2qwerty(mlp_features=mlp_features).eval()
+    with torch.no_grad():
+        emissions = m(x)
+        bundle = m(x, return_features=True)
+    assert isinstance(emissions, torch.Tensor) and emissions.shape[2] == 99
+
+    # Runtime ``return_features=True`` → dict (BIOT / signal-JEPA convention).
+    # ``features`` must be the pre-classifier representation, so applying
+    # ``final_layer`` to it reproduces the emissions tensor.
+    assert set(bundle) == {"features", "cls_token"} and bundle["cls_token"] is None
+    feats = bundle["features"]
+    assert feats.shape == (2, emissions.shape[1], num_features)
+    assert torch.allclose(m.final_layer(feats), emissions, atol=1e-5)
+
+    # Init ``return_feature=True`` → ``(emissions, features)`` tuple — the
+    # config-driven path neuroai's ``DownstreamWrapperModel`` uses with
+    # ``model_output_key=1``. Runtime dict flag still wins, ``get_config``
+    # round-trips, and ``get_output_shape`` keeps reporting the emissions
+    # shape regardless of the flag.
+    m_t = _small_emg2qwerty(mlp_features=mlp_features, return_feature=True).eval()
+    with torch.no_grad():
+        out_t = m_t(x)
+        bundle_t = m_t(x, return_features=True)
+    assert isinstance(out_t, tuple) and out_t[1].shape == feats.shape
+    assert isinstance(bundle_t, dict) and torch.equal(bundle_t["features"], out_t[1])
+    assert m_t.get_config()["return_feature"] is True
+    assert m_t.get_output_shape() == (1, emissions.shape[1], 99)

@@ -22,7 +22,58 @@
 .. _current:
 
 
-Current 1.5.0 (stable)
+Current 1.6.1 (GitHub)
+===============================
+
+Enhancements
+============
+
+- Add a ``revision`` keyword argument to
+  :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
+  pin dataset downloads to a specific branch, tag, or commit on the Hugging
+  Face Hub.
+- Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
+  variant of :class:`braindecode.models.EEGPT` built with
+  :func:`~braindecode.models.interpolated.InterpolatedModel`.
+  By `Pierre Guetschel`_.
+
+API and behavior changes
+========================
+
+- None yet
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- Fix :class:`~braindecode.models.ContraWR`,
+  :class:`~braindecode.models.DeepSleepNet`, and
+  :class:`~braindecode.models.EEGMiner` raising a confusing
+  :class:`ValueError` on ``batch_size=1`` forward passes in train mode due to
+  :class:`~torch.nn.BatchNorm1d` (and its 2D/3D variants) requiring more than
+  one sample per channel during training.  The affected BatchNorm layers now
+  use running statistics when ``batch_size == 1`` in train mode.
+  By `Bruno Aristimunha`_.
+
+- Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
+
+Code health
+============
+
+- Add a monthly scheduled workflow that cuts a stable PyPI release on
+  the 1st of every month, complementing the existing per-push ``.devN``
+  pipeline. (:gh:`1030` by `Bruno Aristimunha`_)
+
+- Make the monthly release workflow push only the release tag and open a
+  pull request for the version bump, so it never needs to push to the
+  protected ``master`` branch. (:gh:`1031` by `Bruno Aristimunha`_)
+
+
+Current 1.5.1 (stable)
 ===============================
 
 Enhancements
@@ -34,7 +85,65 @@ Enhancements
   for surface-EMG inputs shaped ``(B, num_bands * electrodes_per_band, T)``.
   Models small wristband rotation between sessions and relative timing
   noise between two arms, from the emg2qwerty paper (Sivakumar et al.,
-  NeurIPS 2024).  By `Bruno Aristimunha`_.
+  NeurIPS 2024). (:gh:`1013` by `Bruno Aristimunha`_)
+
+- Build SpecAugment (Park et al., Interspeech 2019) into
+  :class:`braindecode.models.EMG2QwertyNet` as a parameter-free submodule
+  gated by a new ``spec_augment`` constructor flag (default ``False``).
+  When enabled, applies up to ``n_time_masks`` × ``time_mask_param``
+  time bands and ``n_freq_masks`` × ``freq_mask_param`` frequency bands
+  on the log-spectrogram during ``train()`` only, with masks sampled
+  IID per ``(sample × band × electrode)`` triple — same recipe as the
+  upstream ``emg2qwerty.transforms.SpecAugment`` dataset transform. The
+  mask fill value stays a 0-D on-device tensor (``spec.mean()``) so the
+  forward pass adds no host round-trip on GPU. Also adds a
+  ``return_features`` runtime flag to
+  :meth:`braindecode.models.EMG2QwertyNet.forward` (returns
+  ``{"features": (B, T_out, num_features), "cls_token": None}``,
+  BIOT / signal-JEPA convention) and a matching ``return_feature``
+  constructor flag (returns ``(emissions, features)`` tuple, BIOT-style
+  legacy path) so downstream wrappers — such as neuroai's
+  ``DownstreamWrapperModel`` — can pick up the encoder representation
+  via ``model_output_key="features"`` (dict) or ``model_output_key=1``
+  (tuple) without changes to their call site. (:gh:`1015` by
+  `Bruno Aristimunha`_)
+
+API and behavior changes
+========================
+
+- Restore the per-batch ``ch_names`` keyword argument on
+  :meth:`braindecode.models.Labram.forward` that was removed in 1.5.0
+  (:gh:`993`). ``ch_names`` is now keyword-only and, when provided,
+  case-insensitively matches each name to
+  :data:`braindecode.models.labram.LABRAM_CHANNEL_ORDER` and indexes into
+  the canonical position-embedding bank, so callers can forward an
+  arbitrary subset of canonical channels without going through
+  :class:`braindecode.models.InterpolatedLaBraM`. The strict ``ValueError``
+  raised in 1.5.0 when ``chs_info`` did not match
+  ``LABRAM_CHANNEL_ORDER`` is downgraded to a ``UserWarning`` so that
+  downstream wrappers (e.g. neuroai's ``_LabramChannelWrapper``) can
+  build the inner :class:`braindecode.models.Labram` with their union
+  channel set and resolve the subset per batch via ``ch_names``.
+
+Bug fixes
+==========
+
+- Fix :class:`braindecode.augmentation.AmplitudeScale` crashing on the
+  default ``random_state=None`` and on the ``numpy.random.RandomState``
+  instance that :class:`braindecode.augmentation.Transform` passes in via
+  ``self.rng``. The previous ``torch.Generator().manual_seed(...)`` path
+  was incompatible with both; the implementation now routes through
+  ``check_random_state`` like the rest of the augmentation module.
+  (:gh:`1021` by `Sarthak Tayal`_)
+- Fix 404 author link for `Jonathan Dan`_ in the changelog
+  (:gh:`1022`)
+
+
+Current 1.5.0 (stable)
+===============================
+
+Enhancements
+============
 
 - Add :meth:`braindecode.datasets.BaseConcatDataset.set_target` to swap
   any per-window metadata column or per-record description field
@@ -1123,7 +1232,7 @@ Authors
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _GalAshkenazi1: https://github.com/GalAshkenazi1
 .. _Matthew Chen: https://github.com/MatthewChen37
-.. _Jonathan Dan: https://github.com/danjjl
+.. _Jonathan Dan: https://github.com/jon-dan
 .. _Jonathan Lys: https://github.com/jonathanlys01
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: https://github.com/AryaDro
@@ -1132,3 +1241,5 @@ Authors
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
 .. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
+.. _Adam Mounir: https://github.com/adammounir
+.. _Yiheng Li: https://github.com/YihengLi-1

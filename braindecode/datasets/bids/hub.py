@@ -472,6 +472,7 @@ class HubDatasetMixin:
         token: Optional[str] = None,
         cache_dir: Optional[Union[str, Path]] = None,
         force_download: bool = False,
+        revision: str | None = None,
         **kwargs,
     ):
         """
@@ -491,6 +492,9 @@ class HubDatasetMixin:
             cache directory (~/.cache/huggingface/datasets).
         force_download : bool, default=False
             Whether to force re-download even if cached.
+        revision : str | None, default=None
+            Specific branch, tag, or commit to download. If None, uses the
+            repository's default revision.
         **kwargs
             Additional arguments (currently unused).
 
@@ -532,6 +536,7 @@ class HubDatasetMixin:
                 token=token,
                 cache_dir=cache_dir,
                 force_download=force_download,
+                revision=revision,
             )
 
             # Load format info

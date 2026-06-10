@@ -2,6 +2,7 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #          Bruna Lopes <brunajaflopes@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -1265,10 +1266,11 @@ def amplitude_scale(
     y : torch.Tensor
         EEG labels for the example or batch.
     scale : tuple of floats
-        Interval from which ypu sample the scaling value
-    random_state : int | numpy.random.Generator, optional
-        Seed to be used to instantiate numpy random number generator instance.
-        Defaults to None.
+        Interval ``(low, high)`` from which the per (sample, channel)
+        scaling value is uniformly sampled.
+    random_state : int | numpy.random.RandomState | None, optional
+        Seed used to instantiate the numpy random number generator that
+        draws the scaling values. Defaults to None.
 
     Returns
     -------
@@ -1285,14 +1287,17 @@ def amplitude_scale(
         Learning Research 136:238-253
     """
 
-    rng = torch.Generator()
-    rng.manual_seed(random_state)
+    # use the same numpy rng path as the rest of this module. the previous
+    # torch.Generator + manual_seed path crashed on None and on the
+    # numpy RandomState that Transform passes in via self.rng.
+    rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
 
-    # Parameter for scaling amplitude / channel / trial
     l, h = scale
-    s = l + (h - l) * torch.rand(
-        batch_size, n_channels, 1, generator=rng, device=X.device, dtype=X.dtype
+    s = torch.as_tensor(
+        rng.uniform(low=l, high=h, size=(batch_size, n_channels, 1)),
+        device=X.device,
+        dtype=X.dtype,
     )
 
     X = s * X
