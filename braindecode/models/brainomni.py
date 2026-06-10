@@ -90,18 +90,20 @@ def _geometry_from_chs_info(chs_info):
                 f"Channel {ch.get('ch_name', '?')!r} has loc shape {loc.shape}; "
                 "expected (12,)."
             )
-        if not np.isfinite(loc[:3]).all():
-            raise ValueError(
-                f"Channel {ch.get('ch_name', '?')!r} has non-finite position. "
-                "BrainOmni needs sensor positions; call raw.set_montage(...)."
-            )
         # MNE 'loc' packs the coil rotation as x/y/z axis columns at 3:6/6:9/9:12.
         # GRAD uses the in-plane x-axis, MAG the z-axis (normal); EEG has none.
         if ch_type == "eeg":
             ori = np.zeros(3)
         else:
             ori = loc[3:6] if ch_type == "grad" else loc[9:12]
-        pos.append(np.concatenate([loc[:3], ori]))
+        vec = np.concatenate([loc[:3], ori])
+        if not np.isfinite(vec).all():
+            raise ValueError(
+                f"Channel {ch.get('ch_name', '?')!r} has non-finite position or "
+                "orientation. BrainOmni needs sensor positions; "
+                "call raw.set_montage(...)."
+            )
+        pos.append(vec)
         sensor_type.append(_SENSOR_CODE[ch_type])
 
     pos = _normalize_pos(
@@ -455,15 +457,9 @@ class _SConvTranspose1d(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         y = self.convtr(x)
         if self.causal:
-            padding_total = self._padding_total
-            padding_right = math.ceil(padding_total * self.trim_right_ratio)
-            padding_left = padding_total - padding_right
-            y = y[
-                ...,
-                padding_left : y.shape[-1] - padding_right
-                if padding_right > 0
-                else y.shape[-1],
-            ]
+            padding_right = math.ceil(self._padding_total * self.trim_right_ratio)
+            padding_left = self._padding_total - padding_right
+            y = y[..., padding_left : y.shape[-1] - padding_right]
         return y
 
 
