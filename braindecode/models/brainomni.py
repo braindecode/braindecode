@@ -259,9 +259,6 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         return feat, indices
 
 
-# Public BrainOmni classifier model
-
-
 class BrainOmni(EEGModuleMixin, nn.Module):
     r"""BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
 
@@ -428,18 +425,20 @@ class BrainOmni(EEGModuleMixin, nn.Module):
             ]
         )
         self._head_in = n_neuro * lm_dim
-        self.final_layer: nn.Module = nn.Identity()  # overwritten by reset_head
-        self.reset_head(self.n_outputs)
+        self.final_layer = self._make_head(self.n_outputs)
 
-    def reset_head(self, n_outputs: int) -> None:
-        """Re-create the classification head for ``n_outputs`` classes."""
-        self._n_outputs = n_outputs
-        self.final_layer = nn.Sequential(
+    def _make_head(self, n_outputs: int) -> nn.Module:
+        return nn.Sequential(
             nn.Dropout(self.drop_prob),
             nn.Linear(self._head_in, self.lm_dim),
             self.activation(),
             nn.Linear(self.lm_dim, n_outputs),
         )
+
+    def reset_head(self, n_outputs: int) -> None:
+        """Re-create the classification head for ``n_outputs`` classes."""
+        self._n_outputs = n_outputs
+        self.final_layer = self._make_head(n_outputs)
 
     def _tokens(self, x: torch.Tensor) -> torch.Tensor:
         """Tokenize ``x`` and project to ``lm_dim``.
@@ -470,18 +469,22 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         return self.final_layer(feat)
 
 
-# Attention / norm primitives
-
-
 class _FeedForward(nn.Module):
-    """Two-layer feed-forward block with SELU activation."""
+    """Two-layer feed-forward block (``Linear -> activation -> Linear -> dropout``)."""
 
-    def __init__(self, n_dim, dropout):
+    def __init__(
+        self,
+        n_dim: int,
+        dropout: float,
+        expansion: int = 4,
+        activation: type[nn.Module] = nn.SELU,
+    ):
         super().__init__()
+        hidden = expansion * n_dim
         self.layer = nn.Sequential(
-            nn.Linear(n_dim, int(4 * n_dim)),
-            nn.SELU(),
-            nn.Linear(int(4 * n_dim), n_dim),
+            nn.Linear(n_dim, hidden),
+            activation(),
+            nn.Linear(hidden, n_dim),
             nn.Dropout(dropout) if dropout != 0.0 else nn.Identity(),
         )
 
@@ -548,9 +551,6 @@ class _SpatialTemporalBlock(nn.Module):
         )
         # Spatial first, temporal second: halves are swapped vs. input split (upstream parity).
         return torch.cat([xs, xt], dim=-1)
-
-
-# SEANet conv helpers
 
 
 class _SEANetConv1d(nn.Module):
@@ -664,9 +664,6 @@ class _SEANetConvTranspose1d(nn.Module):
         return y
 
 
-# SLSTM
-
-
 class _SEANetLSTM(nn.Module):
     """LSTM over convolutional layout (channels-last time axis)."""
 
@@ -693,9 +690,6 @@ class _SEANetLSTM(nn.Module):
             y = y + x
         y = y.permute(1, 2, 0)
         return y
-
-
-# SEANet residual block + encoder/decoder
 
 
 class _SEANetResBlock(nn.Module):
@@ -1060,9 +1054,6 @@ class _ForwardSolution(nn.Module):
         return self.proj(output)
 
 
-# _BackwardSolution: neuros (query) attend to sensor+feature keys / channel values
-
-
 class _BackwardSolution(nn.Module):
     """Cross-attention: neural queries attend to pre-projected sensor keys/values."""
 
@@ -1243,6 +1234,3 @@ class _TokenizerDecoder(nn.Module):
             batch=batch,
             nwin=nwin,
         )
-
-
-# Public BrainTokenizer model (VQ-VAE pretraining module)
