@@ -1262,3 +1262,34 @@ def test_brain_quantizer_frozen_in_eval():
     q(torch.randn(8, 10, 16))
     after = q.rvq.layers[0]._codebook.embed
     assert torch.allclose(before, after)
+
+
+# ==============================================================================
+# Tests for BrainOmni sensor module + tokenizer cross-attention
+# ==============================================================================
+
+
+from braindecode.models.brainomni import (  # noqa: E402
+    _BrainSensorModule,
+    _BrainTokenizerEncoder,
+)
+
+
+def test_sensor_module_shape():
+    mod = _BrainSensorModule(n_dim=16)
+    pos = torch.randn(2, 5, 6)       # B C 6
+    stype = torch.zeros(2, 5, dtype=torch.long)  # B C
+    out = mod(pos, stype)
+    assert out.shape == (2, 5, 16)
+
+
+def test_tokenizer_encoder_collapses_channels_to_neuro():
+    enc = _BrainTokenizerEncoder(n_filters=8, ratios=[8, 4, 2], kernel_size=5,
+                                 last_kernel_size=5, n_dim=16, n_head=4,
+                                 dropout=0.0, n_neuro=3)
+    B, C, N, L = 2, 5, 1, 512
+    x = torch.randn(B, C, N, L)
+    sensor_embedding = torch.randn(B, C, 16)
+    out = enc(x, sensor_embedding)
+    # (B, n_neuro, N, T, D) with T = L/64 = 8
+    assert out.shape == (B, 3, N, 8, 16)

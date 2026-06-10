@@ -1396,3 +1396,295 @@ class _BrainQuantizer(nn.Module):
         """
         x_q, indices, loss = self.rvq(F.normalize(x, p=2.0, dim=-1))
         return x_q, indices, loss
+
+
+# ---------------------------------------------------------------------------
+# BrainSensorModule
+# ---------------------------------------------------------------------------
+
+
+class _BrainSensorModule(nn.Module):
+    """Map sensor positions + types to a per-channel embedding.
+
+    Args:
+        n_dim: Embedding dimensionality.
+
+    Inputs:
+        pos:         (B, C, 6) float — position + orientation.
+        sensor_type: (B, C)    long  — 0=EEG, 1=MAG, 2=GRAD.
+
+    Returns:
+        (B, C, n_dim) normalised sensor embedding.
+    """
+
+    def __init__(self, n_dim: int) -> None:
+        super().__init__()
+        self.sensor_embedding_layer = nn.Embedding(3, n_dim)
+        self.pos_embedding_layer = nn.Sequential(
+            nn.Linear(6, n_dim // 2),
+            nn.SELU(),
+            nn.Linear(n_dim // 2, n_dim),
+        )
+        self.aggregate_mlp = _FeedForward(n_dim, 0.0)
+        self.norm = _RMSNorm(n_dim)
+
+    def forward(self, pos: torch.Tensor, sensor_type: torch.Tensor) -> torch.Tensor:
+        x = self.pos_embedding_layer(pos)
+        x = x + self.sensor_embedding_layer(sensor_type).type_as(x)
+        x = x + self.aggregate_mlp(x)
+        return self.norm(x)
+
+
+# ---------------------------------------------------------------------------
+# ForwardSolution — sensor_embedding (query) × neurons (key/value)
+# ---------------------------------------------------------------------------
+
+
+class _ForwardSolution(nn.Module):
+    """Cross-attention: sensor embeddings query neural token key/values.
+
+    Args:
+        n_dim:   Model dimensionality.
+        n_head:  Number of attention heads (must divide n_dim).
+        dropout: Attention dropout probability.
+
+    Inputs:
+        sensor_embedding: (B, C, n_dim)
+        neurons:          (B, T_kv, n_dim)
+
+    Returns:
+        (B, C, n_dim)
+    """
+
+    def __init__(self, n_dim: int, n_head: int, dropout: float) -> None:
+        super().__init__()
+        assert n_dim % n_head == 0
+        self.n_dim = n_dim
+        self.n_head = n_head
+        self.dropout = dropout
+        self.kv = nn.Linear(n_dim, 2 * n_dim)
+        self.proj = nn.Linear(n_dim, n_dim)
+
+    def forward(
+        self,
+        sensor_embedding: torch.Tensor,
+        neurons: torch.Tensor,
+    ) -> torch.Tensor:
+        B, C, _ = sensor_embedding.shape
+        kv = self.kv(neurons)
+        k, v = torch.split(kv, split_size_or_sections=self.n_dim, dim=-1)
+        q = rearrange(sensor_embedding, "B T (H D) -> B H T D", H=self.n_head)
+        k = rearrange(k, "B T (H D) -> B H T D", H=self.n_head)
+        v = rearrange(v, "B T (H D) -> B H T D", H=self.n_head)
+        output = (
+            F.scaled_dot_product_attention(
+                query=q,
+                key=k,
+                value=v,
+                dropout_p=self.dropout,
+                is_causal=False,
+            )
+            .transpose(1, 2)
+            .contiguous()
+        )
+        output = output.view(B, C, -1)
+        return self.proj(output)
+
+
+# ---------------------------------------------------------------------------
+# BackwardSolution — neuros (query) × sensor keys × raw values
+# ---------------------------------------------------------------------------
+
+
+class _BackwardSolution(nn.Module):
+    """Cross-attention: neural queries × pre-projected sensor keys/values.
+
+    Args:
+        n_dim:   Model dimensionality.
+        n_head:  Number of attention heads.
+        dropout: Attention dropout probability.
+
+    Inputs:
+        neuros: (B, N_q, n_dim) — learned neural queries.
+        k:      (B, T_kv, n_dim) — pre-projected keys from sensor space.
+        x:      (B, T_kv, n_dim) — raw values projected by self.v.
+
+    Returns:
+        (B, N_q, n_dim)
+    """
+
+    def __init__(self, n_dim: int, n_head: int, dropout: float) -> None:
+        super().__init__()
+        assert n_dim % n_head == 0
+        self.n_dim = n_dim
+        self.n_head = n_head
+        self.dropout = dropout
+        self.v = nn.Linear(n_dim, n_dim)
+        self.proj = nn.Linear(n_dim, n_dim)
+
+    def forward(
+        self,
+        neuros: torch.Tensor,
+        k: torch.Tensor,
+        x: torch.Tensor,
+    ) -> torch.Tensor:
+        B, N_q, _ = neuros.shape
+        q = rearrange(neuros, "B T (H D) -> B H T D", H=self.n_head)
+        k = rearrange(k, "B T (H D) -> B H T D", H=self.n_head)
+        v = rearrange(self.v(x), "B T (H D) -> B H T D", H=self.n_head)
+        output = (
+            F.scaled_dot_product_attention(
+                query=q,
+                key=k,
+                value=v,
+                dropout_p=self.dropout,
+                is_causal=False,
+            )
+            .transpose(1, 2)
+            .contiguous()
+        )
+        output = output.view(B, N_q, -1)
+        return self.proj(output)
+
+
+# ---------------------------------------------------------------------------
+# BrainTokenizerEncoder
+# ---------------------------------------------------------------------------
+
+
+class _BrainTokenizerEncoder(nn.Module):
+    """Encode multi-channel EEG/MEG windows into neural token sequences.
+
+    Pipeline: SEANet conv encode → spatial collapse via BackwardSolution.
+
+    Args:
+        n_filters:        Base filter count for SEANet.
+        ratios:           Temporal downsampling ratios (list[int]).
+        kernel_size:      SEANet conv kernel size.
+        last_kernel_size: SEANet final conv kernel size.
+        n_dim:            Embedding dimensionality.
+        n_head:           Attention heads (must divide n_dim).
+        dropout:          Attention dropout.
+        n_neuro:          Number of learned neural queries (spatial collapse).
+
+    Inputs:
+        x:                (B, C, N, L) — batch, channel, n_splits, window.
+        sensor_embedding: (B, C, n_dim) — output of _BrainSensorModule.
+
+    Returns:
+        (B, n_neuro, N, T, n_dim) where T = L / prod(ratios).
+    """
+
+    def __init__(
+        self,
+        n_filters: int,
+        ratios: list,
+        kernel_size: int,
+        last_kernel_size: int,
+        n_dim: int,
+        n_head: int,
+        dropout: float,
+        n_neuro: int,
+    ) -> None:
+        super().__init__()
+        self.seanet_encoder = _SEANetEncoder(
+            channels=1,
+            dimension=n_dim,
+            n_filters=n_filters,
+            ratios=ratios,
+            kernel_size=kernel_size,
+            last_kernel_size=last_kernel_size,
+        )
+        self.neuros = nn.Parameter(torch.randn(n_neuro, n_dim))
+        self.backwardsolution = _BackwardSolution(
+            n_dim=n_dim, n_head=n_head, dropout=dropout
+        )
+        self.k_proj = nn.Linear(n_dim, n_dim)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        sensor_embedding: torch.Tensor | None = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        assert sensor_embedding is not None, "sensor_embedding is required"
+        B, C, N, L = x.shape
+        x = rearrange(x, "B C N L -> (B C N) 1 L")
+        x = self.seanet_encoder(x)
+        x = rearrange(x, "(B C N) D T -> B C (N T) D", B=B, C=C, N=N)
+        B, C, W, _ = x.shape
+        sensor_embedding = rearrange(
+            sensor_embedding.unsqueeze(2).repeat(1, 1, W, 1),
+            "B C W D -> (B W) C D",
+        )
+        x = rearrange(x, "B C W D -> (B W) C D")
+        neuros = self.neuros.type_as(x).unsqueeze(0).repeat(x.shape[0], 1, 1)
+        x = self.backwardsolution(neuros, self.k_proj(x + sensor_embedding), x)
+        x = rearrange(x, "(B N T) C D -> B C (N T) D", B=B, N=N)
+        return rearrange(x, "B C (N T) D -> B C N T D", N=N)
+
+
+# ---------------------------------------------------------------------------
+# BrainTokenizerDecoder
+# ---------------------------------------------------------------------------
+
+
+class _BrainTokenizerDecoder(nn.Module):
+    """Decode neural token sequences back to per-channel waveforms.
+
+    Pipeline: ForwardSolution spatial expansion → SEANet conv decode.
+
+    Args:
+        n_dim:            Embedding dimensionality.
+        n_head:           Attention heads.
+        n_filters:        Base filter count for SEANet.
+        ratios:           Temporal upsampling ratios (list[int]).
+        kernel_size:      SEANet conv kernel size.
+        last_kernel_size: SEANet final conv kernel size.
+        dropout:          Attention dropout.
+
+    Inputs:
+        x:                (B, C, N, T, n_dim) — encoder output (C=n_neuro).
+        sensor_embedding: (B, C_orig, n_dim)  — sensor embeddings.
+
+    Returns:
+        (B, C_orig, N, L) reconstructed waveforms.
+    """
+
+    def __init__(
+        self,
+        n_dim: int,
+        n_head: int,
+        n_filters: int,
+        ratios: list,
+        kernel_size: int,
+        last_kernel_size: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        self.forwardsolution = _ForwardSolution(n_dim, n_head, dropout)
+        self.seanet_decoder = _SEANetDecoder(
+            channels=1,
+            dimension=n_dim,
+            n_filters=n_filters,
+            ratios=ratios,
+            kernel_size=kernel_size,
+            last_kernel_size=last_kernel_size,
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        sensor_embedding: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        assert sensor_embedding is not None, "sensor_embedding is required"
+        B, C, N, T, D = x.shape
+        x = rearrange(x, "B C N T D -> (B N T) C D")
+        sensor_embedding = rearrange(
+            sensor_embedding.view(B, -1, 1, 1, D).repeat(1, 1, N, T, 1),
+            "B C N T D -> (B N T) C D",
+        )
+        x = self.forwardsolution(sensor_embedding, x)
+        x = rearrange(x, "(B N T) C D -> (B C N) D T", B=B, N=N, T=T)
+        x = self.seanet_decoder(x)
+        return rearrange(x, "(B C N) 1 L -> B C N L", B=B, N=N)
