@@ -22,6 +22,454 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _geometry_from_chs_info
 from braindecode.modules import MultiHeadAttentionRoPE, ResidualVQ
 
+
+class BrainTokenizer(EEGModuleMixin, nn.Module):
+    r"""BrainOmni VQ-VAE tokenizer for EEG and MEG signals.
+
+    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
+
+    ``BrainTokenizer`` is the pretrainable tokenizer backbone described in
+    [brainomni]_.  It encodes raw multi-channel EEG/MEG windows into discrete
+    neural tokens via a SEANet-based convolutional encoder, residual vector
+    quantization (RVQ), and a cross-attention decoder that reconstructs the
+    original waveform.  Sensor geometry (position + orientation) is derived
+    from ``chs_info`` at initialisation and used by the ``_SensorEmbedding``
+    to build geometry-aware channel embeddings.
+
+    .. rubric:: Pretrained Weights
+
+    .. important::
+
+        Pre-trained weights for ``BrainTokenizer`` are available on
+        `HuggingFace <https://huggingface.co/OpenTSLab/BrainOmni>`_
+        (see the repository for the *tiny* and *base* tokenizer checkpoints).
+        Load with ``BrainTokenizer.from_pretrained("OpenTSLab/BrainOmni")``.
+
+    Parameters
+    ----------
+    emb_dim : int
+        Embedding dimensionality throughout the model.
+    n_neuro : int
+        Number of virtual "neural source" tokens produced by the encoder.
+    window_length : int
+        Length (samples) of each analysis window fed to SEANet.
+    n_filters : int
+        Base number of filters in SEANet.
+    ratios : tuple of int
+        Downsampling ratios in SEANet (encoder) / upsampling ratios
+        (decoder).  Total compression equals the product of ratios.
+    kernel_size : int
+        Kernel size for SEANet convolutions.
+    last_kernel_size : int
+        Kernel size for the first and last SEANet conv layer.
+    tokenizer_num_heads : int
+        Number of attention heads in the cross-attention tokenizer blocks.
+    codebook_dim : int
+        Projected dimension inside each VQ codebook.
+    codebook_size : int
+        Number of entries per VQ codebook.
+    num_quantizers : int
+        Number of residual VQ stages.
+    rotation_trick : bool
+        Whether to use the rotation trick when updating codebook entries.
+    quantize_optimize_method : str
+        Codebook optimisation method (``"ema"``; the only currently
+        supported option).
+    drop_prob : float
+        Dropout probability applied inside the tokenizer attention blocks.
+    activation : type[nn.Module]
+        Accepted for braindecode API symmetry; the VQ-VAE uses fixed
+        activations baked into the pretrained weights.
+
+    Notes
+    -----
+    Input is expected at 256 Hz.  When using pretrained weights, apply
+    sensor-type-wise group z-score normalisation (separately for EEG, MAG,
+    and GRAD channels) before forwarding.
+
+    References
+    ----------
+    .. [brainomni] Xiao, Q., Cui, Z., Zhang, C., Chen, S., Wu, W.,
+       Thwaites, A., Woolgar, A., Zhou, B., Zhang, C. (2025).
+       BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
+       NeurIPS 2025.
+       Online: https://arxiv.org/abs/2505.18185
+    """
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        emb_dim: int = 256,
+        n_neuro: int = 16,
+        window_length: int = 512,
+        n_filters: int = 32,
+        ratios: tuple[int, ...] = (8, 4, 2),
+        kernel_size: int = 5,
+        last_kernel_size: int = 5,
+        tokenizer_num_heads: int = 4,
+        codebook_dim: int = 256,
+        codebook_size: int = 512,
+        num_quantizers: int = 4,
+        rotation_trick: bool = True,
+        quantize_optimize_method: str = "ema",
+        drop_prob: float = 0.0,
+        activation: type[nn.Module] = nn.SELU,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, input_window_seconds
+
+        if int(round(self.sfreq)) != 256:
+            warnings.warn(
+                f"BrainOmni pretrained weights expect sfreq=256 Hz, got "
+                f"{self.sfreq}. Use only for training from scratch.",
+                UserWarning,
+            )
+
+        pos, sensor_type = _geometry_from_chs_info(self.chs_info)
+        self.register_buffer("pos", torch.from_numpy(pos))
+        self.register_buffer("sensor_type", torch.from_numpy(sensor_type))
+
+        self.emb_dim = emb_dim
+        self.n_neuro = n_neuro
+        self.window_length = window_length
+        self.drop_prob = drop_prob
+        self.activation = activation
+
+        self.sensor_embed = _SensorEmbedding(emb_dim)
+        self.encoder = _TokenizerEncoder(
+            n_filters=n_filters,
+            ratios=list(ratios),
+            kernel_size=kernel_size,
+            last_kernel_size=last_kernel_size,
+            n_dim=emb_dim,
+            n_head=tokenizer_num_heads,
+            dropout=drop_prob,
+            n_neuro=n_neuro,
+        )
+        self.quantizer = ResidualVQ(
+            dim=emb_dim,
+            codebook_dim=codebook_dim,
+            codebook_size=codebook_size,
+            num_quantizers=num_quantizers,
+            rotation_trick=rotation_trick,
+            quantize_optimize_method=quantize_optimize_method,
+        )
+        self.final_layer = _TokenizerDecoder(
+            n_dim=emb_dim,
+            n_head=tokenizer_num_heads,
+            n_filters=n_filters,
+            ratios=list(ratios),
+            kernel_size=kernel_size,
+            last_kernel_size=last_kernel_size,
+            dropout=drop_prob,
+        )
+
+    def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
+        """Slice ``x`` (B, C, T) into ``(B, C, N, window_length)`` windows."""
+        step = round(self.window_length * (1 - overlap_ratio))
+        pad = max(self.window_length - x.shape[-1], 0)  # ensure >= 1 window
+        if step < self.window_length:  # overlapping: fill the trailing window
+            remainder = (x.shape[-1] + pad - self.window_length) % step
+            pad += (step - remainder) % step
+        if pad:
+            x = F.pad(x, (0, pad))
+        return x.unfold(dimension=-1, size=self.window_length, step=step)
+
+    def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
+        """Unfold -> sensor-embed -> encode -> RVQ -> (feat_q, indices, commit, se)."""
+        xu = self._unfold(x, overlap_ratio)  # (B, C, N, L)
+        # Sensor embedding is batch-independent: compute once, broadcast to B.
+        se = self.sensor_embed(self.pos, self.sensor_type)  # (C, emb_dim)
+        se = se.unsqueeze(0).expand(xu.shape[0], -1, -1)  # (B, C, emb_dim)
+        feat = self.encoder(xu, se)  # (B, n_neuro, N, T, D)
+        feat_q, indices, commit = self.quantizer(feat)
+        return feat_q, indices, commit, se
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """VQ-VAE reconstruction. ``x`` (B, C, T) -> reconstruction (B, C, T)."""
+        feat_q, _, _, se = self._encode_quantize(x)
+        recon = self.final_layer(feat_q, se)  # (B, C, N, L)
+        # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
+        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
+        return recon[..., : x.shape[-1]]
+
+    def encode_decode(self, x: torch.Tensor):
+        """Reconstruction pass returning ``(recon (B,C,T), commitment_loss, indices)`` for training loops."""
+        feat_q, indices, commit, se = self._encode_quantize(x)
+        recon = self.final_layer(feat_q, se)
+        # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
+        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)[..., : x.shape[-1]]
+        return recon, commit, indices
+
+    @torch.no_grad()
+    def tokenize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
+        """Encode ``x`` into quantised features and discrete codebook indices.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input signal, shape ``(B, C, T)``.
+        overlap_ratio : float
+            Fraction of overlap between consecutive windows (0 = no overlap).
+
+        Returns
+        -------
+        feat : torch.Tensor
+            Quantised features, shape ``(B, n_neuro, N*T_enc, emb_dim)``.
+        indices : torch.Tensor
+            Codebook indices, shape ``(B, n_neuro, N*T_enc, num_quantizers)``.
+
+        Notes
+        -----
+        This method internally switches the tokenizer to eval mode before
+        encoding so that VQ codebooks are never EMA-updated (which would
+        corrupt them) and dropout is disabled for deterministic output.  The
+        prior training/eval mode is restored when the call returns, so calling
+        ``tokenize`` while the module is in train mode is safe::
+
+            model.train()
+            feat, indices = model.tokenize(x)  # codebooks frozen, mode restored
+        """
+        was_training = self.training
+        self.eval()  # freeze VQ codebooks (no EMA) and disable dropout
+        try:
+            feat_q, indices, _, _ = self._encode_quantize(x, overlap_ratio)
+        finally:
+            if was_training:
+                self.train()
+        # Merge windows (nwin) and per-window tokens (tok) into a single token sequence.
+        feat = rearrange(
+            feat_q, "batch chans nwin tok dim -> batch chans (nwin tok) dim"
+        )
+        indices = rearrange(
+            indices, "batch chans nwin tok nquant -> batch chans (nwin tok) nquant"
+        )
+        return feat, indices
+
+
+# Public BrainOmni classifier model
+
+
+class BrainOmni(EEGModuleMixin, nn.Module):
+    r"""BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
+
+    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
+
+    ``BrainOmni`` is the downstream classifier described in [brainomni]_.
+    It wraps a frozen :class:`BrainTokenizer` backbone with a stack of
+    spatial-temporal factored attention blocks (``_SpatialTemporalBlock``) and a linear
+    classification head, matching the ``DownstreamModel`` architecture from
+    the published BrainOmni codebase.
+
+    The tokenizer slides over the input with stride
+    ``window_length * (1 - overlap_ratio)`` to produce a temporal sequence
+    of neural-source embeddings, which the transformer then processes.
+    During fine-tuning only the transformer ``blocks`` and the final
+    classification head are trainable; the :class:`BrainTokenizer` backbone
+    (VQ codebooks and all convolutional layers) is frozen in eval mode via
+    a :meth:`train` override.
+
+    .. rubric:: Pretrained Weights
+
+    .. important::
+
+        Pre-trained weights for both the tokenizer backbone and the full
+        downstream model are available on
+        `HuggingFace <https://huggingface.co/OpenTSLab/BrainOmni>`_
+        (*tiny* and *base* variants).  Load with
+        ``BrainOmni.from_pretrained("OpenTSLab/BrainOmni")``.
+
+    Parameters
+    ----------
+    emb_dim : int
+        Tokenizer embedding dimension.
+    n_neuro : int
+        Number of virtual neural-source tokens (spatial dimension).
+    window_length : int
+        Analysis window length (samples) fed to the tokenizer.
+    overlap_ratio : float
+        Fractional overlap between consecutive tokenizer windows.
+        Note: ``BrainOmni`` defaults to ``0.25`` here, whereas
+        :meth:`BrainTokenizer.tokenize` defaults to ``0.0`` — features will
+        differ if the two are mixed manually without aligning this value.
+    n_filters : int
+        Base filter count for the SEANet encoder inside the tokenizer.
+    ratios : tuple of int
+        Downsampling ratios for the SEANet encoder.
+    kernel_size : int
+        Conv kernel size in the SEANet encoder.
+    last_kernel_size : int
+        Kernel size for the first and last SEANet conv layer.
+    tokenizer_num_heads : int
+        Attention heads in the tokenizer cross-attention blocks.
+    codebook_dim : int
+        Projected dimension inside each VQ codebook.
+    codebook_size : int
+        Number of entries per VQ codebook.
+    num_quantizers : int
+        Number of residual VQ stages.
+    rotation_trick : bool
+        Whether to use the rotation-trick STE for codebook updates.
+    quantize_optimize_method : str
+        Codebook optimisation strategy (``"ema"``).
+    lm_dim : int
+        Transformer hidden dimension.
+    num_heads : int
+        Number of attention heads in the transformer blocks.
+    depth : int
+        Total number of transformer blocks.  Note: the last block is
+        excluded from ``encode`` / ``forward`` (kept for checkpoint parity).
+    drop_prob : float
+        Dropout probability throughout the model.
+    activation : type[nn.Module]
+        Activation used in the classification head.
+
+    Notes
+    -----
+    Input is expected at 256 Hz.  When using pretrained weights, apply
+    sensor-type-wise group z-score normalisation (separately for EEG, MAG,
+    and GRAD channels) before forwarding.  The :class:`BrainTokenizer`
+    backbone (including VQ codebooks) is always kept in eval mode and its
+    parameters receive no gradients during fine-tuning; only ``blocks`` and
+    ``final_layer`` are trainable.
+
+    References
+    ----------
+    .. [brainomni] Xiao, Q., Cui, Z., Zhang, C., Chen, S., Wu, W.,
+       Thwaites, A., Woolgar, A., Zhou, B., Zhang, C. (2025).
+       BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
+       NeurIPS 2025.
+       Online: https://arxiv.org/abs/2505.18185
+    """
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        emb_dim: int = 256,
+        n_neuro: int = 16,
+        window_length: int = 512,
+        overlap_ratio: float = 0.25,
+        n_filters: int = 32,
+        ratios: tuple[int, ...] = (8, 4, 2),
+        kernel_size: int = 5,
+        last_kernel_size: int = 5,
+        tokenizer_num_heads: int = 4,
+        codebook_dim: int = 256,
+        codebook_size: int = 512,
+        num_quantizers: int = 4,
+        rotation_trick: bool = True,
+        quantize_optimize_method: str = "ema",
+        lm_dim: int = 256,
+        num_heads: int = 8,
+        depth: int = 12,
+        drop_prob: float = 0.1,
+        activation: type[nn.Module] = nn.SELU,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, input_window_seconds
+
+        self.lm_dim = lm_dim
+        self.n_neuro = n_neuro
+        self.overlap_ratio = overlap_ratio
+        self.drop_prob = drop_prob
+        self.activation = activation
+
+        self.tokenizer = BrainTokenizer(
+            chs_info=self.chs_info,
+            n_times=self.n_times,
+            sfreq=self.sfreq,
+            emb_dim=emb_dim,
+            n_neuro=n_neuro,
+            window_length=window_length,
+            n_filters=n_filters,
+            ratios=ratios,
+            kernel_size=kernel_size,
+            last_kernel_size=last_kernel_size,
+            tokenizer_num_heads=tokenizer_num_heads,
+            codebook_dim=codebook_dim,
+            codebook_size=codebook_size,
+            num_quantizers=num_quantizers,
+            rotation_trick=rotation_trick,
+            quantize_optimize_method=quantize_optimize_method,
+            drop_prob=drop_prob,
+            activation=activation,
+        )
+        self.projection: nn.Module = (
+            nn.Linear(emb_dim, lm_dim) if emb_dim != lm_dim else nn.Identity()
+        )
+        self.blocks = nn.ModuleList(
+            [
+                _SpatialTemporalBlock(lm_dim, num_heads, drop_prob, causal=False)
+                for _ in range(depth)
+            ]
+        )
+        self._head_in = n_neuro * lm_dim
+        self.final_layer: nn.Module = nn.Identity()  # overwritten by reset_head
+        self.reset_head(self.n_outputs)
+
+    def reset_head(self, n_outputs: int) -> None:
+        """Re-create the classification head for ``n_outputs`` classes."""
+        self._n_outputs = n_outputs
+        self.final_layer = nn.Sequential(
+            nn.Dropout(self.drop_prob),
+            nn.Linear(self._head_in, self.lm_dim),
+            self.activation(),
+            nn.Linear(self.lm_dim, n_outputs),
+        )
+
+    def _tokens(self, x: torch.Tensor) -> torch.Tensor:
+        """Tokenize ``x`` and project to ``lm_dim``.
+
+        Returns ``(B, n_neuro, W, lm_dim)`` with gradients stopped at the
+        tokenizer boundary.
+        """
+        feat, _ = self.tokenizer.tokenize(x, overlap_ratio=self.overlap_ratio)
+        neuro = self.tokenizer.encoder.neuros.detach().to(feat.dtype)
+        feat = feat + neuro.view(1, feat.shape[1], 1, -1)
+        return self.projection(feat)
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Backbone embedding: blocks[:-1] then L2-normalize (parity w/ upstream).
+
+        Returns ``(B, n_neuro, W, lm_dim)``.
+        """
+        h = self._tokens(x)
+        for block in self.blocks[:-1]:
+            h = block(h)
+        return F.normalize(h, p=2.0, dim=-1, eps=1e-6)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Classify ``x`` (B, C, T) -> logits (B, n_outputs)."""
+        feat = self.encode(x)  # (B, n_neuro, W, lm_dim)
+        feat = feat.mean(dim=2)  # pool over tokens -> (B, n_neuro, lm_dim)
+        feat = feat.reshape(feat.shape[0], -1)  # (B, n_neuro * lm_dim)
+        return self.final_layer(feat)
+
+
 # Attention / norm primitives
 
 
@@ -798,450 +1246,3 @@ class _TokenizerDecoder(nn.Module):
 
 
 # Public BrainTokenizer model (VQ-VAE pretraining module)
-
-
-class BrainTokenizer(EEGModuleMixin, nn.Module):
-    r"""BrainOmni VQ-VAE tokenizer for EEG and MEG signals.
-
-    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
-
-    ``BrainTokenizer`` is the pretrainable tokenizer backbone described in
-    [brainomni]_.  It encodes raw multi-channel EEG/MEG windows into discrete
-    neural tokens via a SEANet-based convolutional encoder, residual vector
-    quantization (RVQ), and a cross-attention decoder that reconstructs the
-    original waveform.  Sensor geometry (position + orientation) is derived
-    from ``chs_info`` at initialisation and used by the ``_SensorEmbedding``
-    to build geometry-aware channel embeddings.
-
-    .. rubric:: Pretrained Weights
-
-    .. important::
-
-        Pre-trained weights for ``BrainTokenizer`` are available on
-        `HuggingFace <https://huggingface.co/OpenTSLab/BrainOmni>`_
-        (see the repository for the *tiny* and *base* tokenizer checkpoints).
-        Load with ``BrainTokenizer.from_pretrained("OpenTSLab/BrainOmni")``.
-
-    Parameters
-    ----------
-    emb_dim : int
-        Embedding dimensionality throughout the model.
-    n_neuro : int
-        Number of virtual "neural source" tokens produced by the encoder.
-    window_length : int
-        Length (samples) of each analysis window fed to SEANet.
-    n_filters : int
-        Base number of filters in SEANet.
-    ratios : tuple of int
-        Downsampling ratios in SEANet (encoder) / upsampling ratios
-        (decoder).  Total compression equals the product of ratios.
-    kernel_size : int
-        Kernel size for SEANet convolutions.
-    last_kernel_size : int
-        Kernel size for the first and last SEANet conv layer.
-    tokenizer_num_heads : int
-        Number of attention heads in the cross-attention tokenizer blocks.
-    codebook_dim : int
-        Projected dimension inside each VQ codebook.
-    codebook_size : int
-        Number of entries per VQ codebook.
-    num_quantizers : int
-        Number of residual VQ stages.
-    rotation_trick : bool
-        Whether to use the rotation trick when updating codebook entries.
-    quantize_optimize_method : str
-        Codebook optimisation method (``"ema"``; the only currently
-        supported option).
-    drop_prob : float
-        Dropout probability applied inside the tokenizer attention blocks.
-    activation : type[nn.Module]
-        Accepted for braindecode API symmetry; the VQ-VAE uses fixed
-        activations baked into the pretrained weights.
-
-    Notes
-    -----
-    Input is expected at 256 Hz.  When using pretrained weights, apply
-    sensor-type-wise group z-score normalisation (separately for EEG, MAG,
-    and GRAD channels) before forwarding.
-
-    References
-    ----------
-    .. [brainomni] Xiao, Q., Cui, Z., Zhang, C., Chen, S., Wu, W.,
-       Thwaites, A., Woolgar, A., Zhou, B., Zhang, C. (2025).
-       BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
-       NeurIPS 2025.
-       Online: https://arxiv.org/abs/2505.18185
-    """
-
-    def __init__(
-        self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        emb_dim: int = 256,
-        n_neuro: int = 16,
-        window_length: int = 512,
-        n_filters: int = 32,
-        ratios: tuple[int, ...] = (8, 4, 2),
-        kernel_size: int = 5,
-        last_kernel_size: int = 5,
-        tokenizer_num_heads: int = 4,
-        codebook_dim: int = 256,
-        codebook_size: int = 512,
-        num_quantizers: int = 4,
-        rotation_trick: bool = True,
-        quantize_optimize_method: str = "ema",
-        drop_prob: float = 0.0,
-        activation: type[nn.Module] = nn.SELU,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, input_window_seconds
-
-        if int(round(self.sfreq)) != 256:
-            warnings.warn(
-                f"BrainOmni pretrained weights expect sfreq=256 Hz, got "
-                f"{self.sfreq}. Use only for training from scratch.",
-                UserWarning,
-            )
-
-        pos, sensor_type = _geometry_from_chs_info(self.chs_info)
-        self.register_buffer("pos", torch.from_numpy(pos))
-        self.register_buffer("sensor_type", torch.from_numpy(sensor_type))
-
-        self.emb_dim = emb_dim
-        self.n_neuro = n_neuro
-        self.window_length = window_length
-        self.drop_prob = drop_prob
-        self.activation = activation
-
-        self.sensor_embed = _SensorEmbedding(emb_dim)
-        self.encoder = _TokenizerEncoder(
-            n_filters=n_filters,
-            ratios=list(ratios),
-            kernel_size=kernel_size,
-            last_kernel_size=last_kernel_size,
-            n_dim=emb_dim,
-            n_head=tokenizer_num_heads,
-            dropout=drop_prob,
-            n_neuro=n_neuro,
-        )
-        self.quantizer = ResidualVQ(
-            dim=emb_dim,
-            codebook_dim=codebook_dim,
-            codebook_size=codebook_size,
-            num_quantizers=num_quantizers,
-            rotation_trick=rotation_trick,
-            quantize_optimize_method=quantize_optimize_method,
-        )
-        self.final_layer = _TokenizerDecoder(
-            n_dim=emb_dim,
-            n_head=tokenizer_num_heads,
-            n_filters=n_filters,
-            ratios=list(ratios),
-            kernel_size=kernel_size,
-            last_kernel_size=last_kernel_size,
-            dropout=drop_prob,
-        )
-
-    def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
-        """Slice ``x`` (B, C, T) into ``(B, C, N, window_length)`` windows."""
-        step = round(self.window_length * (1 - overlap_ratio))
-        pad = max(self.window_length - x.shape[-1], 0)  # ensure >= 1 window
-        if step < self.window_length:  # overlapping: fill the trailing window
-            remainder = (x.shape[-1] + pad - self.window_length) % step
-            pad += (step - remainder) % step
-        if pad:
-            x = F.pad(x, (0, pad))
-        return x.unfold(dimension=-1, size=self.window_length, step=step)
-
-    def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
-        """Unfold -> sensor-embed -> encode -> RVQ -> (feat_q, indices, commit, se)."""
-        xu = self._unfold(x, overlap_ratio)  # (B, C, N, L)
-        # Sensor embedding is batch-independent: compute once, broadcast to B.
-        se = self.sensor_embed(self.pos, self.sensor_type)  # (C, emb_dim)
-        se = se.unsqueeze(0).expand(xu.shape[0], -1, -1)  # (B, C, emb_dim)
-        feat = self.encoder(xu, se)  # (B, n_neuro, N, T, D)
-        feat_q, indices, commit = self.quantizer(feat)
-        return feat_q, indices, commit, se
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """VQ-VAE reconstruction. ``x`` (B, C, T) -> reconstruction (B, C, T)."""
-        feat_q, _, _, se = self._encode_quantize(x)
-        recon = self.final_layer(feat_q, se)  # (B, C, N, L)
-        # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
-        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
-        return recon[..., : x.shape[-1]]
-
-    def encode_decode(self, x: torch.Tensor):
-        """Reconstruction pass returning ``(recon (B,C,T), commitment_loss, indices)`` for training loops."""
-        feat_q, indices, commit, se = self._encode_quantize(x)
-        recon = self.final_layer(feat_q, se)
-        # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
-        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)[..., : x.shape[-1]]
-        return recon, commit, indices
-
-    @torch.no_grad()
-    def tokenize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
-        """Encode ``x`` into quantised features and discrete codebook indices.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input signal, shape ``(B, C, T)``.
-        overlap_ratio : float
-            Fraction of overlap between consecutive windows (0 = no overlap).
-
-        Returns
-        -------
-        feat : torch.Tensor
-            Quantised features, shape ``(B, n_neuro, N*T_enc, emb_dim)``.
-        indices : torch.Tensor
-            Codebook indices, shape ``(B, n_neuro, N*T_enc, num_quantizers)``.
-
-        Notes
-        -----
-        This method internally switches the tokenizer to eval mode before
-        encoding so that VQ codebooks are never EMA-updated (which would
-        corrupt them) and dropout is disabled for deterministic output.  The
-        prior training/eval mode is restored when the call returns, so calling
-        ``tokenize`` while the module is in train mode is safe::
-
-            model.train()
-            feat, indices = model.tokenize(x)  # codebooks frozen, mode restored
-        """
-        was_training = self.training
-        self.eval()  # freeze VQ codebooks (no EMA) and disable dropout
-        try:
-            feat_q, indices, _, _ = self._encode_quantize(x, overlap_ratio)
-        finally:
-            if was_training:
-                self.train()
-        # Merge windows (nwin) and per-window tokens (tok) into a single token sequence.
-        feat = rearrange(
-            feat_q, "batch chans nwin tok dim -> batch chans (nwin tok) dim"
-        )
-        indices = rearrange(
-            indices, "batch chans nwin tok nquant -> batch chans (nwin tok) nquant"
-        )
-        return feat, indices
-
-
-# Public BrainOmni classifier model
-
-
-class BrainOmni(EEGModuleMixin, nn.Module):
-    r"""BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
-
-    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
-
-    ``BrainOmni`` is the downstream classifier described in [brainomni]_.
-    It wraps a frozen :class:`BrainTokenizer` backbone with a stack of
-    spatial-temporal factored attention blocks (``_SpatialTemporalBlock``) and a linear
-    classification head, matching the ``DownstreamModel`` architecture from
-    the published BrainOmni codebase.
-
-    The tokenizer slides over the input with stride
-    ``window_length * (1 - overlap_ratio)`` to produce a temporal sequence
-    of neural-source embeddings, which the transformer then processes.
-    During fine-tuning only the transformer ``blocks`` and the final
-    classification head are trainable; the :class:`BrainTokenizer` backbone
-    (VQ codebooks and all convolutional layers) is frozen in eval mode via
-    a :meth:`train` override.
-
-    .. rubric:: Pretrained Weights
-
-    .. important::
-
-        Pre-trained weights for both the tokenizer backbone and the full
-        downstream model are available on
-        `HuggingFace <https://huggingface.co/OpenTSLab/BrainOmni>`_
-        (*tiny* and *base* variants).  Load with
-        ``BrainOmni.from_pretrained("OpenTSLab/BrainOmni")``.
-
-    Parameters
-    ----------
-    emb_dim : int
-        Tokenizer embedding dimension.
-    n_neuro : int
-        Number of virtual neural-source tokens (spatial dimension).
-    window_length : int
-        Analysis window length (samples) fed to the tokenizer.
-    overlap_ratio : float
-        Fractional overlap between consecutive tokenizer windows.
-        Note: ``BrainOmni`` defaults to ``0.25`` here, whereas
-        :meth:`BrainTokenizer.tokenize` defaults to ``0.0`` — features will
-        differ if the two are mixed manually without aligning this value.
-    n_filters : int
-        Base filter count for the SEANet encoder inside the tokenizer.
-    ratios : tuple of int
-        Downsampling ratios for the SEANet encoder.
-    kernel_size : int
-        Conv kernel size in the SEANet encoder.
-    last_kernel_size : int
-        Kernel size for the first and last SEANet conv layer.
-    tokenizer_num_heads : int
-        Attention heads in the tokenizer cross-attention blocks.
-    codebook_dim : int
-        Projected dimension inside each VQ codebook.
-    codebook_size : int
-        Number of entries per VQ codebook.
-    num_quantizers : int
-        Number of residual VQ stages.
-    rotation_trick : bool
-        Whether to use the rotation-trick STE for codebook updates.
-    quantize_optimize_method : str
-        Codebook optimisation strategy (``"ema"``).
-    lm_dim : int
-        Transformer hidden dimension.
-    num_heads : int
-        Number of attention heads in the transformer blocks.
-    depth : int
-        Total number of transformer blocks.  Note: the last block is
-        excluded from ``encode`` / ``forward`` (kept for checkpoint parity).
-    drop_prob : float
-        Dropout probability throughout the model.
-    activation : type[nn.Module]
-        Activation used in the classification head.
-
-    Notes
-    -----
-    Input is expected at 256 Hz.  When using pretrained weights, apply
-    sensor-type-wise group z-score normalisation (separately for EEG, MAG,
-    and GRAD channels) before forwarding.  The :class:`BrainTokenizer`
-    backbone (including VQ codebooks) is always kept in eval mode and its
-    parameters receive no gradients during fine-tuning; only ``blocks`` and
-    ``final_layer`` are trainable.
-
-    References
-    ----------
-    .. [brainomni] Xiao, Q., Cui, Z., Zhang, C., Chen, S., Wu, W.,
-       Thwaites, A., Woolgar, A., Zhou, B., Zhang, C. (2025).
-       BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
-       NeurIPS 2025.
-       Online: https://arxiv.org/abs/2505.18185
-    """
-
-    def __init__(
-        self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        emb_dim: int = 256,
-        n_neuro: int = 16,
-        window_length: int = 512,
-        overlap_ratio: float = 0.25,
-        n_filters: int = 32,
-        ratios: tuple[int, ...] = (8, 4, 2),
-        kernel_size: int = 5,
-        last_kernel_size: int = 5,
-        tokenizer_num_heads: int = 4,
-        codebook_dim: int = 256,
-        codebook_size: int = 512,
-        num_quantizers: int = 4,
-        rotation_trick: bool = True,
-        quantize_optimize_method: str = "ema",
-        lm_dim: int = 256,
-        num_heads: int = 8,
-        depth: int = 12,
-        drop_prob: float = 0.1,
-        activation: type[nn.Module] = nn.SELU,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, input_window_seconds
-
-        self.lm_dim = lm_dim
-        self.n_neuro = n_neuro
-        self.overlap_ratio = overlap_ratio
-        self.drop_prob = drop_prob
-        self.activation = activation
-
-        self.tokenizer = BrainTokenizer(
-            chs_info=self.chs_info,
-            n_times=self.n_times,
-            sfreq=self.sfreq,
-            emb_dim=emb_dim,
-            n_neuro=n_neuro,
-            window_length=window_length,
-            n_filters=n_filters,
-            ratios=ratios,
-            kernel_size=kernel_size,
-            last_kernel_size=last_kernel_size,
-            tokenizer_num_heads=tokenizer_num_heads,
-            codebook_dim=codebook_dim,
-            codebook_size=codebook_size,
-            num_quantizers=num_quantizers,
-            rotation_trick=rotation_trick,
-            quantize_optimize_method=quantize_optimize_method,
-            drop_prob=drop_prob,
-            activation=activation,
-        )
-        self.projection: nn.Module = (
-            nn.Linear(emb_dim, lm_dim) if emb_dim != lm_dim else nn.Identity()
-        )
-        self.blocks = nn.ModuleList(
-            [
-                _SpatialTemporalBlock(lm_dim, num_heads, drop_prob, causal=False)
-                for _ in range(depth)
-            ]
-        )
-        self._head_in = n_neuro * lm_dim
-        self.final_layer: nn.Module = nn.Identity()  # overwritten by reset_head
-        self.reset_head(self.n_outputs)
-
-    def reset_head(self, n_outputs: int) -> None:
-        """Re-create the classification head for ``n_outputs`` classes."""
-        self._n_outputs = n_outputs
-        self.final_layer = nn.Sequential(
-            nn.Dropout(self.drop_prob),
-            nn.Linear(self._head_in, self.lm_dim),
-            self.activation(),
-            nn.Linear(self.lm_dim, n_outputs),
-        )
-
-    def _tokens(self, x: torch.Tensor) -> torch.Tensor:
-        """Tokenize ``x`` and project to ``lm_dim``.
-
-        Returns ``(B, n_neuro, W, lm_dim)`` with gradients stopped at the
-        tokenizer boundary.
-        """
-        feat, _ = self.tokenizer.tokenize(x, overlap_ratio=self.overlap_ratio)
-        neuro = self.tokenizer.encoder.neuros.detach().to(feat.dtype)
-        feat = feat + neuro.view(1, feat.shape[1], 1, -1)
-        return self.projection(feat)
-
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
-        """Backbone embedding: blocks[:-1] then L2-normalize (parity w/ upstream).
-
-        Returns ``(B, n_neuro, W, lm_dim)``.
-        """
-        h = self._tokens(x)
-        for block in self.blocks[:-1]:
-            h = block(h)
-        return F.normalize(h, p=2.0, dim=-1, eps=1e-6)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Classify ``x`` (B, C, T) -> logits (B, n_outputs)."""
-        feat = self.encode(x)  # (B, n_neuro, W, lm_dim)
-        feat = feat.mean(dim=2)  # pool over tokens -> (B, n_neuro, lm_dim)
-        feat = feat.reshape(feat.shape[0], -1)  # (B, n_neuro * lm_dim)
-        return self.final_layer(feat)
