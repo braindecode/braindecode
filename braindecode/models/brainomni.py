@@ -271,15 +271,15 @@ class _SelfAttention(nn.Module):
         if mask is not None:
             mask = mask.unsqueeze(1)
 
-        # dropout_p is passed unconditionally (matches upstream); SDPA does not
-        # gate on self.training. Use model.eval() with dropout=0 for determinism.
+        # SDPA does not gate dropout on training mode, so gate it explicitly here;
+        # dropout is disabled in eval for deterministic inference.
         output = (
             F.scaled_dot_product_attention(
                 query=q,
                 key=k,
                 value=v,
                 attn_mask=mask,
-                dropout_p=self.dropout,
+                dropout_p=self.dropout if self.training else 0.0,
                 is_causal=self.causal,
             )
             .transpose(1, 2)
@@ -1483,7 +1483,7 @@ class _ForwardSolution(nn.Module):
                 query=q,
                 key=k,
                 value=v,
-                dropout_p=self.dropout,
+                dropout_p=self.dropout if self.training else 0.0,
                 is_causal=False,
             )
             .transpose(1, 2)
@@ -1541,7 +1541,7 @@ class _BackwardSolution(nn.Module):
                 query=q,
                 key=k,
                 value=v,
-                dropout_p=self.dropout,
+                dropout_p=self.dropout if self.training else 0.0,
                 is_causal=False,
             )
             .transpose(1, 2)
