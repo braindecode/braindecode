@@ -1701,29 +1701,29 @@ class _BrainTokenizerDecoder(nn.Module):
 
 
 class BrainTokenizer(EEGModuleMixin, nn.Module):
-    """BrainOmni VQ-VAE tokenizer for EEG/MEG signals.
+    r"""BrainOmni VQ-VAE tokenizer for EEG and MEG signals.
 
-    Encodes raw EEG/MEG windows into discrete neural tokens via a
-    SEANet-based encoder, residual vector quantization, and a
-    cross-attention decoder that reconstructs the original waveform.
-    Sensor geometry is derived from ``chs_info`` at initialisation.
+    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
+
+    ``BrainTokenizer`` is the pretrainable tokenizer backbone described in
+    [brainomni]_.  It encodes raw multi-channel EEG/MEG windows into discrete
+    neural tokens via a SEANet-based convolutional encoder, residual vector
+    quantization (RVQ), and a cross-attention decoder that reconstructs the
+    original waveform.  Sensor geometry (position + orientation) is derived
+    from ``chs_info`` at initialisation and used by the ``_BrainSensorModule``
+    to build geometry-aware channel embeddings.
+
+    .. rubric:: Pretrained Weights
+
+    .. important::
+
+        Pre-trained weights for ``BrainTokenizer`` are available on
+        `HuggingFace <https://huggingface.co/OpenTSLab/BrainOmni>`_
+        (see the repository for the *tiny* and *base* tokenizer checkpoints).
+        Load with ``BrainTokenizer.from_pretrained("OpenTSLab/BrainOmni")``.
 
     Parameters
     ----------
-    n_outputs : int, optional
-        Unused (kept for EEGModuleMixin API symmetry).
-    n_chans : int, optional
-        Number of input channels (inferred from ``chs_info`` when given).
-    chs_info : list of dict, optional
-        MNE-style channel info dicts; must contain ``'loc'`` (12-element
-        array) and ``'kind'`` keys.  Required for geometry-aware tokenisation.
-    n_times : int, optional
-        Length of the input time axis (samples).
-    input_window_seconds : float, optional
-        Unused; kept for API symmetry.
-    sfreq : float, optional
-        Sampling frequency.  A warning is emitted when this differs from
-        the 256 Hz expected by pretrained BrainOmni weights.
     emb_dim : int
         Embedding dimensionality throughout the model.
     n_neuro : int
@@ -1734,11 +1734,11 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         Base number of filters in SEANet.
     ratios : tuple of int
         Downsampling ratios in SEANet (encoder) / upsampling ratios
-        (decoder).  Total compression = product of ratios.
+        (decoder).  Total compression equals the product of ratios.
     kernel_size : int
         Kernel size for SEANet convolutions.
     last_kernel_size : int
-        Kernel size for the first/last SEANet conv layer.
+        Kernel size for the first and last SEANet conv layer.
     tokenizer_num_heads : int
         Number of attention heads in the cross-attention tokenizer blocks.
     codebook_dim : int
@@ -1756,6 +1756,20 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
     activation : type[nn.Module]
         Accepted for braindecode API symmetry; the VQ-VAE uses fixed
         activations baked into the pretrained weights.
+
+    Notes
+    -----
+    Input is expected at 256 Hz.  When using pretrained weights, apply
+    sensor-type-wise group z-score normalisation (separately for EEG, MAG,
+    and GRAD channels) before forwarding.
+
+    References
+    ----------
+    .. [brainomni] Xiao, Q., Cui, Z., Zhang, C., Chen, S., Wu, W.,
+       Thwaites, A., Woolgar, A., Zhou, B., Zhang, C. (2025).
+       BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
+       NeurIPS 2025.
+       Online: https://arxiv.org/abs/2505.18185
     """
 
     def __init__(
@@ -1924,28 +1938,36 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
 
 
 class BrainOmni(EEGModuleMixin, nn.Module):
-    """BrainOmni downstream classifier for EEG/MEG signals.
+    r"""BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
 
-    Wraps a frozen :class:`BrainTokenizer` backbone with a stack of
-    spatial-temporal transformer blocks and a linear classification head,
-    matching the ``DownstreamModel`` architecture from the published
-    BrainOmni codebase.
+    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
+
+    ``BrainOmni`` is the downstream classifier described in [brainomni]_.
+    It wraps a frozen :class:`BrainTokenizer` backbone with a stack of
+    spatial-temporal factored attention blocks (``_STBlock``) and a linear
+    classification head, matching the ``DownstreamModel`` architecture from
+    the published BrainOmni codebase.
+
+    The tokenizer slides over the input with stride
+    ``window_length * (1 - overlap_ratio)`` to produce a temporal sequence
+    of neural-source embeddings, which the transformer then processes.
+    During fine-tuning only the transformer ``blocks`` and the final
+    classification head are trainable; the :class:`BrainTokenizer` backbone
+    (VQ codebooks and all convolutional layers) is frozen in eval mode via
+    a :meth:`train` override.
+
+    .. rubric:: Pretrained Weights
+
+    .. important::
+
+        Pre-trained weights for both the tokenizer backbone and the full
+        downstream model are available on
+        `HuggingFace <https://huggingface.co/OpenTSLab/BrainOmni>`_
+        (*tiny* and *base* variants).  Load with
+        ``BrainOmni.from_pretrained("OpenTSLab/BrainOmni")``.
 
     Parameters
     ----------
-    n_outputs : int
-        Number of output classes.
-    n_chans : int, optional
-        Number of input channels (inferred from ``chs_info`` when given).
-    chs_info : list of dict, optional
-        MNE-style channel info dicts; must contain ``'loc'`` and ``'kind'``.
-    n_times : int, optional
-        Length of the input time axis (samples).
-    input_window_seconds : float, optional
-        Duration of the input window in seconds (alternative to ``n_times``).
-    sfreq : float, optional
-        Sampling frequency. A warning is emitted when this differs from
-        256 Hz (expected by pretrained BrainOmni weights).
     emb_dim : int
         Tokenizer embedding dimension.
     n_neuro : int
@@ -1961,7 +1983,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
     kernel_size : int
         Conv kernel size in the SEANet encoder.
     last_kernel_size : int
-        Kernel size for the first/last SEANet conv layer.
+        Kernel size for the first and last SEANet conv layer.
     tokenizer_num_heads : int
         Attention heads in the tokenizer cross-attention blocks.
     codebook_dim : int
@@ -1979,8 +2001,8 @@ class BrainOmni(EEGModuleMixin, nn.Module):
     num_heads : int
         Number of attention heads in the transformer blocks.
     depth : int
-        Total number of transformer blocks (``blocks[:-1]`` are used in
-        ``encode``; the last block is kept for checkpoint-key parity only).
+        Total number of transformer blocks.  Note: the last block is
+        excluded from ``encode`` / ``forward`` (kept for checkpoint parity).
     drop_prob : float
         Dropout probability throughout the model.
     activation : type[nn.Module]
@@ -1988,10 +2010,20 @@ class BrainOmni(EEGModuleMixin, nn.Module):
 
     Notes
     -----
-    The :class:`BrainTokenizer` backbone (including VQ codebooks) is always
-    kept in eval mode and its parameters receive no gradients during
-    fine-tuning. This is enforced by the :meth:`train` override. Only
-    ``blocks`` and ``final_layer`` are trainable.
+    Input is expected at 256 Hz.  When using pretrained weights, apply
+    sensor-type-wise group z-score normalisation (separately for EEG, MAG,
+    and GRAD channels) before forwarding.  The :class:`BrainTokenizer`
+    backbone (including VQ codebooks) is always kept in eval mode and its
+    parameters receive no gradients during fine-tuning; only ``blocks`` and
+    ``final_layer`` are trainable.
+
+    References
+    ----------
+    .. [brainomni] Xiao, Q., Cui, Z., Zhang, C., Chen, S., Wu, W.,
+       Thwaites, A., Woolgar, A., Zhou, B., Zhang, C. (2025).
+       BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
+       NeurIPS 2025.
+       Online: https://arxiv.org/abs/2505.18185
     """
 
     def __init__(

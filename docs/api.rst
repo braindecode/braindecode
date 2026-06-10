@@ -66,6 +66,7 @@ interface for all EEG models and can derive variable names when needed.
     .. currentmodule:: braindecode.models
 
     - :class:`BIOT` - Foundation model with pre-trained weights
+    - :class:`BrainOmni` - Unified EEG/MEG foundation model with pre-trained weights
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
@@ -135,6 +136,8 @@ interface for all EEG models and can derive variable names when needed.
      BENDR
      BIOT
      BrainModule
+     BrainOmni
+     BrainTokenizer
      CBraMod
      CodeBrain
      ContraWR
