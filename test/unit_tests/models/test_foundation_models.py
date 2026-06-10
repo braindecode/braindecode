@@ -20,9 +20,27 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
+from braindecode.models import (
+    LUNA,
+    REVE,
+    BrainOmni,
+    BrainTokenizer,
+    CBraMod,
+    CodeBrain,
+    Labram,
+)
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.brainomni import (
+    _SEANetDecoder,
+    _SEANetEncoder,
+    _SensorEmbedding,
+    _SpatialTemporalBlock,
+    _TokenizerEncoder,
+)
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.reve import RevePositionBank
+from braindecode.models.util import _geometry_from_chs_info
+from braindecode.modules import ResidualVQ
 
 
 @pytest.fixture
@@ -1120,18 +1138,6 @@ def test_codebrain_return_features():
 # Tests for BrainOmni / BrainTokenizer (unified EEG/MEG foundation model)
 # ==============================================================================
 
-
-from braindecode.models import BrainOmni, BrainTokenizer  # noqa: E402
-from braindecode.models.base import EEGModuleMixin  # noqa: E402
-from braindecode.models.brainomni import (  # noqa: E402
-    _SEANetDecoder,
-    _SEANetEncoder,
-    _SensorEmbedding,
-    _SpatialTemporalBlock,
-    _TokenizerEncoder,
-)
-from braindecode.models.util import _geometry_from_chs_info  # noqa: E402
-from braindecode.modules import ResidualVQ  # noqa: E402
 
 # Shared small-model config (keeps every BrainOmni/BrainTokenizer build fast).
 _BRAINOMNI_KW = dict(
