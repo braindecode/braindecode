@@ -64,6 +64,7 @@ from .util import (
     extract_channel_locations_from_chs_info,
     models_mandatory_parameters,
 )
+from .zuna import ZUNA
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
@@ -133,6 +134,7 @@ __all__ = [
     "TIDNet",
     "TSception",
     "USleep",
+    "ZUNA",
     "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",
