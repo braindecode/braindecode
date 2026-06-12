@@ -13,6 +13,7 @@ from torch import nn
 
 import braindecode.functional as F
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import GeneralizedGaussianFilter
 
 _eeg_miner_methods = ["mag", "corr", "plv"]
@@ -191,6 +192,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(self.n_features, self.n_outputs)
         nn.init.zeros_(self.final_layer.bias)
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):
         """x: (batch, electrodes, time)"""
         batch = x.shape[0]

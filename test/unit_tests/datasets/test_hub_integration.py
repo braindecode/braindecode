@@ -1018,6 +1018,38 @@ def test_pull_from_hub_404_error(tmp_path):
 
 
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_pull_from_hub_passes_revision(tmp_path):
+    """Test that pull_from_hub forwards revision to snapshot_download."""
+    hf_hub = pytest.importorskip("huggingface_hub")
+
+    repo_id = "test-user/test-dataset"
+    revision = "main"
+    mock_dataset = mock.MagicMock()
+    mock_dataset.datasets = []
+
+    (tmp_path / "dataset.zarr").mkdir()
+
+    with mock.patch.object(hf_hub, "snapshot_download", return_value=str(tmp_path)) as m:
+        with mock.patch.object(
+            BaseConcatDataset, "_load_from_zarr_inline", return_value=mock_dataset
+        ):
+            with mock.patch.object(BaseConcatDataset, "_load_bids_metadata"):
+                dataset = BaseConcatDataset.pull_from_hub(
+                    repo_id=repo_id, cache_dir=tmp_path, revision=revision
+                )
+
+    m.assert_called_once_with(
+        repo_id=repo_id,
+        repo_type="dataset",
+        token=None,
+        cache_dir=tmp_path,
+        force_download=False,
+        revision=revision,
+    )
+    assert dataset is mock_dataset
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_create_compressor_zarr_not_available():
     """Test that _create_compressor raises ImportError when zarr not available."""
     with mock.patch("braindecode.datasets.bids.hub_io.zarr", False):

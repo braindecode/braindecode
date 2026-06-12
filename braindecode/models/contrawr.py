@@ -5,6 +5,7 @@ import torch.nn as nn
 from mne.utils import warn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
 class ContraWR(EEGModuleMixin, nn.Module):
@@ -122,6 +123,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         self.activation_layer = activation()
         self.final_layer = nn.Linear(emb_size, self.n_outputs)
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
