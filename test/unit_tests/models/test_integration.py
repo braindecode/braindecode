@@ -23,7 +23,6 @@ from braindecode.models import (
     EEGPT,
     REVE,
     SSTDPN,
-    ZUNA,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -316,7 +315,6 @@ def test_model_has_activation_parameter(model_class):
         InterpolatedEEGPT,
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
-        ZUNA,
     ]:
         pytest.skip(f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
@@ -387,7 +385,6 @@ def test_model_has_drop_prob_parameter(model_class):
         InterpolatedEEGPT,
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
-        ZUNA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -424,7 +421,8 @@ def test_model_compiled(model):
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
         "MetaNeuromotorHand",
-        # flex_attention's BlockMask construction is not compile-stable here.
+        # Data-dependent channel-position bucketing in _make_tok_idx
+        # (long().clamp_ + repeat_interleave) is not compile-stable here.
         "ZUNA",
     ]
     if model.__class__.__name__ in not_compilable_models:
@@ -467,8 +465,6 @@ def test_model_exported(model):
         "SSTDPN",  # We found a fake tensor in the exported program constant's list.
         "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
         "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
-        # flex_attention's BlockMask construction uses data-dependent ops.
-        "ZUNA",
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
@@ -540,7 +536,8 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
-        # flex_attention is not scriptable.
+        # Starred-unpack reshape (x.reshape(*x.shape[:-1], -1, 1, 2)) in the
+        # rotary embedding cannot be statically sized by TorchScript.
         "ZUNA",
     ]
 

@@ -1,9 +1,12 @@
-# Authors: Chris Warner, Jonas Mago, Jon Huml
+# Original authors (Zyphra/ZUNA): Chris Warner, Jonas Mago, Jon Huml
+# Braindecode adaptation: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
-# License: BSD (3-clause)
+# Ports the encoder-side inference path from https://github.com/Zyphra/zuna.
+# The upstream repository is released under the Apache License 2.0; this file
+# therefore inherits Apache-2.0 and is NOT covered by braindecode's BSD-3
+# license.
 #
-# Ports the encoder-side inference path from:
-# https://github.com/Zyphra/zuna
+# License: Apache-2.0
 
 from __future__ import annotations
 
@@ -17,54 +20,12 @@ from torch.nn import functional as F
 import braindecode.models.base as bd_base
 from braindecode.models.util import extract_channel_locations_from_chs_info
 
-# ---------------------------------------------------------------------------
-# Published architecture constants (Zyphra/ZUNA config_infer.yaml).
-# Update together with the upstream checkpoint, or pretrained weights will
-# silently produce non-comparable embeddings.
-# ---------------------------------------------------------------------------
-ZUNA_N_TIMES = 1280
-ZUNA_SFREQ = 256.0
-ZUNA_INPUT_WINDOW = 5.0
-
-ZUNA_DIM = 1024
-ZUNA_N_LAYERS = 16
-ZUNA_N_HEADS = 8
-ZUNA_HEAD_DIM = 64
-ZUNA_FINE_TIME_PTS = 32  # encoder_input_dim
-ZUNA_LATENT_DIM = 32  # encoder_output_dim
-ZUNA_MAX_SEQLEN = 50
-ZUNA_ROPE_THETA = 10000.0
-ZUNA_ROPE_DIM = 4  # 4D RoPE over (x, y, z, coarse_time)
-
-ZUNA_POS_BINS = 50
-ZUNA_POS_HALF_RANGE = 0.12  # head/scalp radius normalisation
-
-ZUNA_HF_REPO = "Zyphra/ZUNA"
-ZUNA_HF_WEIGHTS = "model-00001-of-00001.safetensors"
-
+# All ``__init__`` defaults below reproduce the published Zyphra/ZUNA
+# ``config_infer.yaml``. Change them together with the upstream checkpoint, or
+# pretrained weights will silently produce non-comparable embeddings.
 _SIGNAL_ERROR = (
-    f"ZUNA requires inputs with {ZUNA_N_TIMES} time steps: "
-    f"{ZUNA_INPUT_WINDOW:g} seconds sampled at {ZUNA_SFREQ:g} Hz."
+    "ZUNA requires inputs with 1280 time steps: 5 seconds sampled at 256 Hz."
 )
-
-
-def _encoder_config() -> dict:
-    """Encoder kwargs baked from Zyphra/ZUNA config_infer.yaml.
-
-    Kept as a function so unit tests can monkey-patch it with a small
-    config without touching the public constants.
-    """
-    return {
-        "dim": ZUNA_DIM,
-        "n_layers": ZUNA_N_LAYERS,
-        "n_heads": ZUNA_N_HEADS,
-        "head_dim": ZUNA_HEAD_DIM,
-        "input_dim": ZUNA_FINE_TIME_PTS,
-        "output_dim": ZUNA_LATENT_DIM,
-        "max_seqlen": ZUNA_MAX_SEQLEN,
-        "rope_theta": ZUNA_ROPE_THETA,
-        "rope_dim": ZUNA_ROPE_DIM,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +51,28 @@ def _apply_rotary(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
 # ---------------------------------------------------------------------------
 # Transformer block
 # ---------------------------------------------------------------------------
+class _RMSNorm(nn.Module):
+    """Root-mean-square layer normalisation.
+
+    ``torch.nn.RMSNorm`` is only available from PyTorch 2.4, but braindecode
+    supports ``torch>=2.0``; this shippable equivalent (same approach as
+    :class:`~braindecode.models.REVE` and ``CodeBrain``) keeps the model
+    importable on older PyTorch while preserving the ``.weight`` parameter
+    name so upstream ZUNA checkpoints still load.
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self._norm(x.float()).type_as(x) * self.weight
+
+
 class _Attention(nn.Module):
     def __init__(self, dim: int, n_heads: int, head_dim: int):
         super().__init__()
@@ -132,8 +115,8 @@ class _TransformerBlock(nn.Module):
         super().__init__()
         self.attention = _Attention(dim, n_heads, head_dim)
         self.feed_forward = _FeedForward(dim)
-        self.attention_norm = nn.RMSNorm(dim, eps=norm_eps)
-        self.ffn_norm = nn.RMSNorm(dim, eps=norm_eps)
+        self.attention_norm = _RMSNorm(dim, eps=norm_eps)
+        self.ffn_norm = _RMSNorm(dim, eps=norm_eps)
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
         x = x + self.attention(self.attention_norm(x), freqs_cis)
@@ -146,15 +129,15 @@ class _TransformerBlock(nn.Module):
 class _ZUNAEncoder(nn.Module):
     def __init__(
         self,
-        dim: int = ZUNA_DIM,
-        n_layers: int = ZUNA_N_LAYERS,
-        n_heads: int = ZUNA_N_HEADS,
-        head_dim: int = ZUNA_HEAD_DIM,
-        input_dim: int = ZUNA_FINE_TIME_PTS,
-        output_dim: int = ZUNA_LATENT_DIM,
-        max_seqlen: int = ZUNA_MAX_SEQLEN,
-        rope_theta: float = ZUNA_ROPE_THETA,
-        rope_dim: int = ZUNA_ROPE_DIM,
+        dim: int = 1024,
+        n_layers: int = 16,
+        n_heads: int = 8,
+        head_dim: int = 64,
+        input_dim: int = 32,
+        output_dim: int = 32,
+        max_seqlen: int = 50,
+        rope_theta: float = 10000.0,
+        rope_dim: int = 4,
         norm_eps: float = 1e-5,
     ):
         super().__init__()
@@ -165,7 +148,7 @@ class _ZUNAEncoder(nn.Module):
         self.layers = nn.ModuleList(
             _TransformerBlock(dim, n_heads, head_dim, norm_eps) for _ in range(n_layers)
         )
-        self.norm = nn.RMSNorm(dim, eps=norm_eps)
+        self.norm = _RMSNorm(dim, eps=norm_eps)
         self.output = nn.Linear(dim, output_dim, bias=False)
         self.register_buffer(
             "freqs_cis",
@@ -213,13 +196,16 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     ZUNA is a position-aware diffusion autoencoder for EEG superresolution,
     wrapped here with a Braindecode classification head.
 
-    Ports the inference path of the public ``Zyphra/ZUNA`` encoder. The
-    architecture is locked to the published config; the constructor only
-    exposes Braindecode signal metadata. To download the upstream encoder
-    checkpoint from Hugging Face (requires ``pip install
-    'braindecode[hub]'``)::
+    Ports the inference path of the public ``Zyphra/ZUNA`` encoder. Every
+    architecture hyperparameter is a constructor argument and defaults to the
+    published ``Zyphra/ZUNA`` config, so the defaults reproduce the pretrained
+    encoder while smaller configurations can be built for training from
+    scratch or research. To download the upstream encoder checkpoint from
+    Hugging Face (requires ``pip install 'braindecode[hub]'``)::
 
-        ZUNA.from_pretrained("Zyphra/ZUNA", filename=ZUNA_HF_WEIGHTS)
+        ZUNA.from_pretrained(
+            "Zyphra/ZUNA", filename="model-00001-of-00001.safetensors"
+        )
 
     Inputs must be 5-second EEG windows sampled at 256 Hz
     (``n_times=1280``). Channel coordinates are resolved by :meth:`forward`
@@ -235,6 +221,8 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     :meth:`forward` returns ``(batch, n_outputs)`` logits by default, or a
     dict of intermediate latents when ``return_features=True``.
 
+    .. versionadded:: 1.6
+
     Parameters
     ----------
     n_outputs : int | None
@@ -249,6 +237,41 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         Window length in seconds (must be ``5.0``).
     sfreq : float | None
         Sampling frequency in Hz (must be ``256.0``).
+    dim : int
+        Transformer embedding dimension of the encoder.
+    n_layers : int
+        Number of transformer blocks in the encoder.
+    n_heads : int
+        Number of attention heads per block.
+    head_dim : int
+        Dimension of each attention head. Must be divisible by ``rope_dim``.
+    fine_time_pts : int
+        Number of fine time points per token (the encoder input dimension).
+        ``n_times`` must be divisible by this value.
+    latent_dim : int
+        Per-token latent dimension produced by the encoder (the encoder
+        output dimension).
+    max_seqlen : int
+        Size of the precomputed rotary table; must cover both ``pos_bins``
+        and ``n_times // fine_time_pts``.
+    rope_theta : float
+        Base period of the rotary positional embedding.
+    rope_dim : int
+        Number of rotary axes (4D RoPE over ``x, y, z, coarse_time``).
+    pos_bins : int
+        Number of discretisation bins per spatial axis for channel
+        coordinates.
+    pos_half_range : float
+        Half-range (in metres) used to normalise channel coordinates before
+        bucketing (scalp-radius normalisation).
+    norm_eps : float
+        Epsilon of the RMS normalisation layers.
+    drop_prob : float
+        Accepted for braindecode API symmetry; the published encoder has no
+        dropout, so the value is not wired into the pretrained architecture.
+    activation : type[nn.Module]
+        Accepted for braindecode API symmetry; the encoder uses the fixed
+        SiLU feed-forward activation baked into the pretrained weights.
 
     References
     ----------
@@ -262,21 +285,36 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         n_outputs: Optional[int] = None,
         n_chans: Optional[int] = None,
         chs_info: Optional[list[dict]] = None,
-        n_times: Optional[int] = ZUNA_N_TIMES,
+        n_times: Optional[int] = 1280,
         input_window_seconds: Optional[float] = None,
         sfreq: Optional[float] = None,
+        dim: int = 1024,
+        n_layers: int = 16,
+        n_heads: int = 8,
+        head_dim: int = 64,
+        fine_time_pts: int = 32,
+        latent_dim: int = 32,
+        max_seqlen: int = 50,
+        rope_theta: float = 10000.0,
+        rope_dim: int = 4,
+        pos_bins: int = 50,
+        pos_half_range: float = 0.12,
+        norm_eps: float = 1e-5,
+        drop_prob: float = 0.0,
+        activation: type[nn.Module] = nn.GELU,
     ):
-        n_times = ZUNA_N_TIMES if n_times is None else n_times
+        n_times = 1280 if n_times is None else n_times
         input_window_seconds = (
-            ZUNA_INPUT_WINDOW if input_window_seconds is None else input_window_seconds
+            5.0 if input_window_seconds is None else input_window_seconds
         )
-        sfreq = ZUNA_SFREQ if sfreq is None else sfreq
-        if (n_times, sfreq, input_window_seconds) != (
-            ZUNA_N_TIMES,
-            ZUNA_SFREQ,
-            ZUNA_INPUT_WINDOW,
-        ):
+        sfreq = 256.0 if sfreq is None else sfreq
+        if (n_times, sfreq, input_window_seconds) != (1280, 256.0, 5.0):
             raise ValueError(_SIGNAL_ERROR)
+        if n_times % fine_time_pts != 0:
+            raise ValueError(
+                f"n_times ({n_times}) must be divisible by fine_time_pts "
+                f"({fine_time_pts})."
+            )
 
         super().__init__(
             n_outputs=n_outputs,
@@ -286,10 +324,27 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        cfg = _encoder_config()
-        self.encoder = _ZUNAEncoder(**cfg)
-        self._latent_dim = cfg["output_dim"]
-        self._fine_time_pts = cfg["input_dim"]
+        del n_outputs, n_chans, input_window_seconds
+
+        self._latent_dim = latent_dim
+        self._fine_time_pts = fine_time_pts
+        self._pos_bins = pos_bins
+        self._pos_half_range = pos_half_range
+        self.drop_prob = drop_prob
+        self.activation = activation
+
+        self.encoder = _ZUNAEncoder(
+            dim=dim,
+            n_layers=n_layers,
+            n_heads=n_heads,
+            head_dim=head_dim,
+            input_dim=fine_time_pts,
+            output_dim=latent_dim,
+            max_seqlen=max_seqlen,
+            rope_theta=rope_theta,
+            rope_dim=rope_dim,
+            norm_eps=norm_eps,
+        )
         self.final_layer = self._make_final_layer(self.n_outputs)
 
         # Cache positions resolved from chs_info, if any.
@@ -343,12 +398,12 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         )
 
     def _make_tok_idx(self, positions: torch.Tensor, coarse_time: int) -> torch.Tensor:
-        # Discretise channel coords into [0, ZUNA_POS_BINS) per axis, then
+        # Discretise channel coords into [0, pos_bins) per axis, then
         # interleave with a per-token coarse-time index. Bucketing is run in
         # fp32 so model dtype (e.g. fp16) does not perturb bucket boundaries.
         positions = positions.float()
-        normalised = (positions + ZUNA_POS_HALF_RANGE) / (2 * ZUNA_POS_HALF_RANGE)
-        xyz = (normalised * ZUNA_POS_BINS).long().clamp_(0, ZUNA_POS_BINS - 1)
+        normalised = (positions + self._pos_half_range) / (2 * self._pos_half_range)
+        xyz = (normalised * self._pos_bins).long().clamp_(0, self._pos_bins - 1)
         xyz = xyz.repeat_interleave(coarse_time, dim=0)
         t = torch.arange(coarse_time, device=positions.device).repeat(self.n_chans)
         return torch.cat((xyz, t.unsqueeze(1)), dim=1)
@@ -367,7 +422,7 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             )
         if x.shape[1] != self.n_chans:
             raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
-        if x.shape[2] != ZUNA_N_TIMES:
+        if x.shape[2] != self.n_times:
             raise ValueError(_SIGNAL_ERROR)
 
         b, n_chans, n_times = x.shape
@@ -406,6 +461,15 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         self.final_layer = self._make_final_layer(n_outputs).to(
             device=ref.device, dtype=ref.dtype
         )
+        # Keep the captured init config in sync so get_config()/from_config()
+        # and push_to_hub() round-trips rebuild the head with the new size
+        # instead of the value frozen at construction time.
+        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
+        if init_kwargs is not None and "n_outputs" in init_kwargs:
+            init_kwargs["n_outputs"] = n_outputs
+        hub_config = getattr(self, "_hub_mixin_config", None)
+        if hub_config is not None and "n_outputs" in hub_config:
+            hub_config["n_outputs"] = n_outputs
 
     def load_state_dict(self, state_dict, strict=True, **kwargs):
         # Upstream Zyphra/ZUNA nests encoder weights under

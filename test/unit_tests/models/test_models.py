@@ -21,7 +21,6 @@ import torch
 from sklearn.utils import check_random_state
 from torch import nn
 
-import braindecode.models.zuna as zuna
 from braindecode.models import (
     BENDR,
     BIOT,
@@ -1427,24 +1426,32 @@ _ZUNA_POSITIONS = torch.tensor(
 )
 
 
-def _small_zuna_encoder_config():
-    return {
-        "dim": 16,
-        "n_layers": 1,
-        "n_heads": 2,
-        "head_dim": 8,
-        "input_dim": 32,
-        "output_dim": 12,
-        "max_seqlen": 50,
-        "rope_theta": 10000.0,
-        "rope_dim": 4,
-    }
+# Small ZUNA architecture override (plain constructor kwargs) for fast tests.
+_SMALL_ZUNA_KWARGS = dict(
+    dim=16,
+    n_layers=1,
+    n_heads=2,
+    head_dim=8,
+    fine_time_pts=32,
+    latent_dim=12,
+    max_seqlen=50,
+    rope_theta=10000.0,
+    rope_dim=4,
+)
 
 
 @pytest.fixture
-def small_zuna(monkeypatch):
-    monkeypatch.setattr(zuna, "_encoder_config", _small_zuna_encoder_config)
-    return ZUNA(n_chans=3, n_outputs=2, n_times=1280)
+def small_zuna():
+    return ZUNA(n_chans=3, n_outputs=2, n_times=1280, **_SMALL_ZUNA_KWARGS)
+
+
+def test_zuna_exposes_architecture_parameters():
+    params = set(inspect.signature(ZUNA.__init__).parameters)
+    assert {
+        "dim", "n_layers", "n_heads", "head_dim", "fine_time_pts",
+        "latent_dim", "max_seqlen", "rope_theta", "rope_dim",
+        "pos_bins", "pos_half_range", "norm_eps", "drop_prob", "activation",
+    } <= params
 
 
 def test_zuna_declares_braindecode_mandatory_parameters():
@@ -1500,14 +1507,13 @@ def test_zuna_resolves_standard_montage_channel_names(small_zuna):
     assert out["structured_latents"].shape == (1, 3, 40, 12)
 
 
-def test_zuna_uses_chs_info_positions(monkeypatch):
-    monkeypatch.setattr(zuna, "_encoder_config", _small_zuna_encoder_config)
+def test_zuna_uses_chs_info_positions():
     chs_info = [
         {"ch_name": "A", "loc": np.array([0.0, 0.0, 0.0])},
         {"ch_name": "B", "loc": np.array([0.01, 0.02, 0.03])},
         {"ch_name": "C", "loc": np.array([-0.01, 0.02, 0.03])},
     ]
-    model = ZUNA(n_outputs=2, n_times=1280, chs_info=chs_info)
+    model = ZUNA(n_outputs=2, n_times=1280, chs_info=chs_info, **_SMALL_ZUNA_KWARGS)
     out = model(torch.randn(1, 3, 1280), return_features=True)
     assert out["structured_latents"].shape == (1, 3, 40, 12)
 
