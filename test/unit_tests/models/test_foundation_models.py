@@ -7,8 +7,10 @@ from pathlib import Path
 from urllib.error import URLError
 
 import mne
+import numpy as np
 import pytest
 import torch
+import torch.nn as nn
 
 try:
     from huggingface_hub import hf_hub_download
@@ -18,9 +20,27 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
+from braindecode.models import (
+    LUNA,
+    REVE,
+    BrainOmni,
+    BrainTokenizer,
+    CBraMod,
+    CodeBrain,
+    Labram,
+)
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.brainomni import (
+    _SEANetDecoder,
+    _SEANetEncoder,
+    _SensorEmbedding,
+    _SpatialTemporalBlock,
+    _TokenizerEncoder,
+)
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.reve import RevePositionBank
+from braindecode.models.util import _geometry_from_chs_info
+from braindecode.modules import ResidualVQ
 
 
 @pytest.fixture
@@ -1112,3 +1132,288 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+# ==============================================================================
+# Tests for BrainOmni / BrainTokenizer (unified EEG/MEG foundation model)
+# ==============================================================================
+
+
+# Shared small-model config (keeps every BrainOmni/BrainTokenizer build fast).
+_BRAINOMNI_KW = dict(
+    emb_dim=16,
+    n_neuro=3,
+    n_filters=8,
+    codebook_dim=16,
+    codebook_size=32,
+    num_quantizers=2,
+    tokenizer_num_heads=4,
+)
+
+
+def _loc(x=0.0, y=0.0, z=0.0, *rest):
+    arr = np.zeros(12, dtype=np.float64)
+    arr[:3] = (x, y, z)
+    for i, v in enumerate(rest):
+        arr[3 + i] = v
+    return arr
+
+
+def _eeg_chs_info(n):
+    rng = np.random.default_rng(0)
+    return [
+        {"ch_name": f"C{i}", "kind": "eeg", "loc": _loc(*rng.random(3))}
+        for i in range(n)
+    ]
+
+
+def _mixed_chs_info():
+    rng = np.random.default_rng(1)
+    return [
+        {"ch_name": "E1", "kind": "eeg", "loc": _loc(*rng.random(3))},
+        {"ch_name": "E2", "kind": "eeg", "loc": _loc(*rng.random(3))},
+        {"ch_name": "M1", "kind": "mag", "coil_type": 3022, "loc": _loc(*rng.random(6))},
+        {"ch_name": "G1", "kind": "grad", "coil_type": 3012, "loc": _loc(*rng.random(6))},
+    ]
+
+
+def _small_tokenizer(n_chans=4, n_times=512):
+    return BrainTokenizer(
+        chs_info=_eeg_chs_info(n_chans), n_times=n_times, sfreq=256.0, **_BRAINOMNI_KW
+    )
+
+
+def _small_brainomni(n_chans=4, n_outputs=3, n_times=512, sfreq=256.0, chs_info=None):
+    return BrainOmni(
+        chs_info=chs_info if chs_info is not None else _eeg_chs_info(n_chans),
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+        lm_dim=16,
+        num_heads=4,
+        depth=2,
+        **_BRAINOMNI_KW,
+    )
+
+
+def _quantizer(num_quantizers=2):
+    return ResidualVQ(
+        dim=16,
+        codebook_dim=16,
+        codebook_size=32,
+        num_quantizers=num_quantizers,
+        rotation_trick=True,
+        quantize_optimize_method="ema",
+    )
+
+
+# ---- geometry derivation -----------------------------------------------------
+
+
+def _real_chs(ch_names, ch_types):
+    """Build MNE channel dicts with a minimal finite loc (identity rotation)."""
+    finite_loc = np.array([0.1, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
+    info = mne.create_info(ch_names, 256.0, ch_types)
+    for ch in info["chs"]:
+        ch["loc"] = finite_loc.copy()
+    return info["chs"]
+
+
+@pytest.mark.parametrize(
+    "chs_info, expected",
+    [
+        ([{"ch_name": "C1", "kind": "eeg", "loc": _loc(1.0)}], [0]),  # simplified EEG dict
+        (_real_chs(["MEG0111"], ["grad"]), [2]),  # real GRAD
+        (_real_chs(["MEG0112"], ["mag"]), [1]),   # real MAG
+        (_real_chs(["E1"], ["eeg"]), [0]),         # real EEG
+    ],
+    ids=["eeg_simplified", "grad", "mag", "eeg_real"],
+)
+def test_geometry_sensor_type(chs_info, expected):
+    _, sensor_type = _geometry_from_chs_info(chs_info)
+    assert sensor_type.tolist() == expected
+
+
+def test_geometry_eeg_orientation_and_centering():
+    pos, _ = _geometry_from_chs_info(
+        [
+            {"ch_name": "A", "kind": "eeg", "loc": _loc(1.0, 0.0, 0.0)},
+            {"ch_name": "B", "kind": "eeg", "loc": _loc(-1.0, 0.0, 0.0)},
+        ]
+    )
+    assert pos.shape == (2, 6)
+    assert np.allclose(pos[:, 3:], 0.0)  # EEG orientation columns are zero
+    assert np.allclose(pos[:, :3].mean(axis=0), 0.0, atol=1e-6)  # mean-centered
+
+
+@pytest.mark.parametrize("loc", [np.full(12, np.nan), None], ids=["nan", "absent"])
+def test_geometry_bad_loc_raises(loc):
+    ch = {"ch_name": "A", "kind": "eeg"}
+    if loc is not None:
+        ch["loc"] = loc
+    with pytest.raises(ValueError, match="set_montage"):
+        _geometry_from_chs_info([ch])
+
+
+# ---- submodule shape contracts -----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "build, make_inputs, exp_shape",
+    [
+        (lambda: nn.RMSNorm(8, eps=1e-6), lambda: (torch.randn(2, 5, 8),), (2, 5, 8)),
+        (
+            lambda: _SpatialTemporalBlock(16, 4, 0.0, causal=False),
+            lambda: (torch.randn(2, 3, 7, 16),),  # (batch, chans, tokens, dim)
+            (2, 3, 7, 16),
+        ),
+        (
+            lambda: _SensorEmbedding(n_dim=16),
+            lambda: (torch.randn(2, 5, 6), torch.zeros(2, 5, dtype=torch.long)),
+            (2, 5, 16),
+        ),
+        (
+            lambda: _TokenizerEncoder(
+                n_filters=8,
+                ratios=[8, 4, 2],
+                kernel_size=5,
+                last_kernel_size=5,
+                n_dim=16,
+                n_head=4,
+                dropout=0.0,
+                n_neuro=3,
+            ),
+            lambda: (torch.randn(2, 5, 1, 512), torch.randn(2, 5, 16)),
+            (2, 3, 1, 8, 16),  # channels (5) collapse to n_neuro (3); T = 512/64
+        ),
+    ],
+    ids=["rmsnorm", "st_block", "sensor_module", "tokenizer_encoder"],
+)
+def test_brainomni_submodule_shapes(build, make_inputs, exp_shape):
+    out = build()(*make_inputs())
+    assert out.shape == exp_shape
+    assert torch.isfinite(out).all()
+
+
+def test_seanet_roundtrip_downsampling():
+    kw = dict(
+        channels=1,
+        dimension=32,
+        n_filters=8,
+        ratios=[8, 4, 2],
+        kernel_size=5,
+        last_kernel_size=5,
+    )
+    enc, dec = _SEANetEncoder(**kw), _SEANetDecoder(**kw)
+    z = enc(torch.randn(4, 1, 512))  # 512 / (8*4*2) = 8
+    assert z.shape == (4, 32, 8)
+    x_rec = dec(z)
+    assert x_rec.shape == (4, 1, 512)
+    assert torch.isfinite(x_rec).all()
+
+
+# ---- residual vector quantization --------------------------------------------
+
+
+def test_brain_quantizer_shapes_and_loss():
+    q = _quantizer(num_quantizers=4).eval()
+    x_q, indices, loss = q(torch.randn(2, 5, 16))
+    assert x_q.shape == (2, 5, 16)
+    assert indices.shape == (2, 5, 4)  # num_quantizers
+    assert torch.isfinite(loss)
+
+
+@pytest.mark.parametrize(
+    "train, expect_change",
+    [(True, True), (False, False)],
+    ids=["train_updates", "eval_frozen"],
+)
+def test_brain_quantizer_codebook_ema(train, expect_change):
+    torch.manual_seed(0)
+    q = _quantizer(num_quantizers=2)
+    q.train(train)
+    codebook = q.layers[0]._codebook
+    before = codebook.embed.clone()
+    for _ in range(3):
+        q(torch.randn(8, 10, 16))
+    assert (not torch.allclose(before, codebook.embed)) is expect_change
+
+
+# ---- public BrainTokenizer ---------------------------------------------------
+
+
+def test_braintokenizer_is_subclass():
+    assert issubclass(BrainTokenizer, EEGModuleMixin)
+
+
+def test_braintokenizer_has_final_layer():
+    last_two = [name for name, _ in _small_tokenizer().named_children()][-2:]
+    assert "final_layer" in last_two
+
+
+def test_braintokenizer_forward_reconstruction_shape():
+    model = _small_tokenizer().eval()
+    x = torch.randn(2, 4, 512)
+    assert model(x).shape == x.shape
+
+
+def test_braintokenizer_encode_decode_and_tokenize():
+    model = _small_tokenizer()
+    x = torch.randn(2, 4, 512)
+    recon, commit_loss, indices = model.encode_decode(x)
+    assert recon.shape == x.shape
+    assert torch.isfinite(commit_loss)
+    assert indices.shape[-1] == 2  # num_quantizers
+    model.eval()
+    feat, idx = model.tokenize(x)
+    assert feat.shape[:2] == (2, 3) and feat.shape[-1] == 16  # (batch, n_neuro, tokens, emb_dim)
+    assert idx.shape[-1] == 2
+
+
+# ---- public BrainOmni classifier ---------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "chs_info, n_times, n_outputs",
+    [
+        (_eeg_chs_info(4), 512, 3),  # standard EEG
+        (_eeg_chs_info(4), 300, 3),  # input shorter than window_length -> padded
+        (_mixed_chs_info(), 512, 2),  # mixed EEG + MAG + GRAD
+    ],
+    ids=["standard", "short_input", "mixed_eeg_meg"],
+)
+def test_brainomni_forward_shape(chs_info, n_times, n_outputs):
+    model = _small_brainomni(
+        chs_info=chs_info, n_outputs=n_outputs, n_times=n_times
+    ).eval()
+    out = model(torch.randn(2, len(chs_info), n_times))
+    assert out.shape == (2, n_outputs)
+
+
+def test_brainomni_encode_shape_and_normalized():
+    feat = _small_brainomni().eval().encode(torch.randn(2, 4, 512))
+    assert feat.ndim == 4 and feat.shape[1] == 3 and feat.shape[-1] == 16
+    norms = feat.norm(dim=-1)
+    assert torch.allclose(norms, torch.ones_like(norms), atol=1e-4)
+
+
+def test_brainomni_reset_head_changes_only_head():
+    model = _small_brainomni(n_outputs=3)
+    tokenizer_id = id(model.tokenizer)
+    model.reset_head(5)
+    assert model(torch.randn(2, 4, 512)).shape == (2, 5)
+    assert id(model.tokenizer) == tokenizer_id  # backbone untouched
+
+
+def test_brainomni_vq_frozen_during_train_step():
+    torch.manual_seed(0)
+    model = _small_brainomni().train()
+    codebook = model.tokenizer.quantizer.layers[0]._codebook
+    before = codebook.embed.clone()
+    model(torch.randn(2, 4, 512)).sum().backward()
+    assert torch.allclose(before, codebook.embed)  # frozen tokenizer
+
+
+def test_brainomni_sfreq_warning():
+    with pytest.warns(UserWarning, match="256"):
+        _small_brainomni(sfreq=128.0)

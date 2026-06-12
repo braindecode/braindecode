@@ -1045,3 +1045,214 @@ class CrissCrossTransformerEncoderLayer(nn.Module):
     def _ff_block(self, x: Tensor) -> Tensor:
         x = self.linear2(self.dropout(self.activation(self.linear1(x))))
         return self.dropout2(x)
+
+
+class RotaryPositionalEmbedding(nn.Module):
+    """Complex-valued Rotary Position Embedding (RoPE) for transformer attention.
+
+    Implements the RoPE scheme from Su et al. (2021) [rope2021]_, which encodes
+    position information by rotating query and key vectors in the complex plane.
+    Rotation frequencies are pre-computed and cached as buffers, and the cache
+    is regenerated when the module is cast to a different dtype (e.g. via
+    ``.half()`` or ``.bfloat16()``) because ``torch.polar`` only supports
+    ``float32/float64``.
+
+    Parameters
+    ----------
+    n_dim : int
+        Head dimension (i.e. ``embed_dim // n_heads``).  Must be even.
+    init_seq_len : int
+        Initial sequence length for which the rotation cache is pre-computed.
+        The cache grows automatically when longer sequences are seen.
+    base : int, optional
+        Base for the inverse-frequency schedule.  Default: 10000.
+
+    References
+    ----------
+    .. [rope2021] Su, J., Lu, Y., Pan, S., Murtadha, A., Wen, B., & Liu, Y. (2021).
+       RoFormer: Enhanced Transformer with Rotary Position Embedding.
+       arXiv: https://arxiv.org/abs/2104.09864
+    """
+
+    def __init__(self, n_dim, init_seq_len, base=10000):
+        super().__init__()
+        self.register_buffer(
+            "freqs",
+            1.0 / (base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim)),
+        )
+        self._set_rotate_cache(init_seq_len)
+
+    def _set_rotate_cache(self, seq_len):
+        self.max_seq_len_cache = seq_len
+        t = torch.arange(seq_len, device=self.freqs.device).type_as(self.freqs)
+        rotate = torch.outer(t, self.freqs).float()
+        self.register_buffer("rotate", torch.polar(torch.ones_like(rotate), rotate))
+
+    def _apply(self, fn, recurse=True):
+        # Rotate cache is complex64; a real-dtype cast would drop imaginary part, so regenerate.
+        prev_dtype = self.rotate.dtype
+        result = super()._apply(fn, recurse=recurse)
+        if self.rotate.dtype != prev_dtype:
+            self._set_rotate_cache(self.max_seq_len_cache)
+        return result
+
+    def reshape_for_broadcast(self, x: torch.Tensor):
+        """x: (batch, seq, n_heads, head_dim); rotate cache: (seq, dim)."""
+        batch, seq, heads, head_dim = x.shape
+        if seq > self.max_seq_len_cache:
+            self._set_rotate_cache(seq)
+        rotate = self.rotate[:seq, :]
+        assert heads * head_dim == rotate.shape[1], (
+            f"RoPE cache shape mismatch: heads={heads}, head_dim={head_dim}, rotate.shape[1]={rotate.shape[1]}"
+        )
+        return rearrange(
+            rotate, "seq (heads head_dim) -> seq heads head_dim", heads=heads
+        ).unsqueeze(0)
+
+    def forward(self, q, k):
+        """Apply rotary embeddings to query and key tensors.
+
+        Parameters
+        ----------
+        q : torch.Tensor
+            Query tensor of shape ``(batch, seq, n_heads, head_dim)``.
+        k : torch.Tensor
+            Key tensor of shape ``(batch, seq, n_heads, head_dim)``.
+
+        Returns
+        -------
+        q_out : torch.Tensor
+            Rotated query, same shape as ``q``.
+        k_out : torch.Tensor
+            Rotated key, same shape as ``k``.
+        """
+        assert len(q.shape) == len(k.shape) == 4, (
+            f"Expected 4-D q and k, got q.ndim={len(q.shape)}, k.ndim={len(k.shape)}"
+        )
+        q_ = torch.view_as_complex(q.float().reshape(*q.shape[:-1], -1, 2))
+        k_ = torch.view_as_complex(k.float().reshape(*k.shape[:-1], -1, 2))
+        rotate = self.reshape_for_broadcast(q_)
+        q_out = torch.view_as_real(q_ * rotate).flatten(3)
+        k_out = torch.view_as_real(k_ * rotate).flatten(3)
+        return q_out.type_as(q), k_out.type_as(k)
+
+
+class MultiHeadAttentionRoPE(nn.Module):
+    """Multi-head self-attention with fused QKV projection, optional RoPE, and causal masking.
+
+    Unlike :class:`MultiHeadAttention`, which uses three separate ``q``, ``k``,
+    ``v`` linear projections and has no positional encoding, this module uses a
+    single fused ``qkv`` projection and optionally applies
+    :class:`RotaryPositionalEmbedding` to the query and key tensors before
+    computing attention via ``F.scaled_dot_product_attention``.  Dropout is
+    gated by the training flag so that evaluation is fully deterministic.
+
+    Parameters
+    ----------
+    n_dim : int
+        Model / embedding dimension.  Must be divisible by ``n_head``.
+    n_head : int
+        Number of attention heads.
+    dropout : float
+        Dropout probability applied inside SDPA during training.
+    causal : bool, optional
+        Whether to apply causal (autoregressive) masking.  Default: ``False``.
+    rope : bool, optional
+        Whether to apply :class:`RotaryPositionalEmbedding` to queries and
+        keys.  When ``False`` the ``rope_embedding_layer`` is an
+        ``nn.Identity`` and positional information is not injected.
+        Default: ``False``.
+
+    References
+    ----------
+    .. [rope2021] Su, J., Lu, Y., Pan, S., Murtadha, A., Wen, B., & Liu, Y. (2021).
+       RoFormer: Enhanced Transformer with Rotary Position Embedding.
+       arXiv: https://arxiv.org/abs/2104.09864
+    """
+
+    def __init__(
+        self,
+        n_dim,
+        n_head,
+        dropout,
+        causal: bool = False,
+        rope: bool = False,
+    ):
+        super().__init__()
+        assert n_dim % n_head == 0, (
+            f"n_dim ({n_dim}) must be divisible by n_head ({n_head})"
+        )
+        self.dropout = dropout
+        self.n_dim = n_dim
+        self.n_head = n_head
+        self.causal = causal
+        self.qkv = nn.Linear(n_dim, 3 * n_dim)
+        self.proj = nn.Linear(n_dim, n_dim)
+        self.rope = rope
+        self.rope_embedding_layer = (
+            RotaryPositionalEmbedding(n_dim=n_dim, init_seq_len=240)
+            if self.rope
+            else nn.Identity()
+        )
+
+    def forward(self, x: torch.Tensor, mask=None):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape ``(batch, seq, n_dim)``.
+        mask : torch.Tensor, optional
+            Attention mask broadcast-compatible with ``(batch, 1, seq, seq)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Output of shape ``(batch, seq, n_dim)``.
+        """
+        batch, seq, dim = x.shape
+        x = self.qkv(x)
+        q, k, v = torch.split(x, split_size_or_sections=self.n_dim, dim=-1)
+
+        if self.rope:
+            q = q.view(batch, seq, self.n_head, -1)
+            k = k.view(batch, seq, self.n_head, -1)
+            q, k = self.rope_embedding_layer(q, k)
+            q = q.transpose(1, 2)
+            k = k.transpose(1, 2)
+        else:
+            q = rearrange(
+                q,
+                "batch seq (heads head_dim) -> batch heads seq head_dim",
+                heads=self.n_head,
+            )
+            k = rearrange(
+                k,
+                "batch seq (heads head_dim) -> batch heads seq head_dim",
+                heads=self.n_head,
+            )
+
+        v = rearrange(
+            v,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=self.n_head,
+        )
+
+        if mask is not None:
+            mask = mask.unsqueeze(1)
+
+        # SDPA applies dropout regardless of train mode; gate it for deterministic eval.
+        output = (
+            F.scaled_dot_product_attention(
+                query=q,
+                key=k,
+                value=v,
+                attn_mask=mask,
+                dropout_p=self.dropout if self.training else 0.0,
+                is_causal=self.causal,
+            )
+            .transpose(1, 2)
+            .contiguous()
+        )
+        output = output.view(batch, seq, -1)
+        return self.proj(output)
