@@ -45,7 +45,11 @@ API and behavior changes
 Requirements
 ============
 
-- None yet
+- Cap the test dependency to ``pytest<9.1`` in the ``tests`` extra. ``pytest``
+  9.1.0 changed the ``IdMaker`` constructor signature, which breaks
+  ``pytest_cases`` 3.10.1 and makes the whole test suite crash at collection
+  time. The cap can be lifted once ``pytest_cases`` supports ``pytest>=9.1``.
+  By `Adam Mounir`_.
 
 Bug fixes
 ==========

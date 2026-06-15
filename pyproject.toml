@@ -80,7 +80,7 @@ eegprep = ["eegprep[eeglabio]>=0.2.23"]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
 viz = ["captum>=0.7.0"]
 tests = [
-    'pytest',
+    'pytest<9.1',  # pytest 9.1.0 changed IdMaker's signature, which breaks pytest_cases 3.10.1 (crash at collection time). Remove the cap once pytest_cases supports pytest >=9.1.
     'pytest-cov',
     'codecov',
     'pytest_cases',
