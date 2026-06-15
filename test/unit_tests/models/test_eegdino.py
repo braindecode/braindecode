@@ -1,7 +1,12 @@
 import torch
 import torch.nn as nn
 
-from braindecode.models.eegdino import _PatchEmbedding, _TransformerEncoderLayer
+from braindecode.models.eegdino import (
+    EEGDINO,
+    EEGDINO_CONFIGS,
+    _PatchEmbedding,
+    _TransformerEncoderLayer,
+)
 
 
 def test_transformer_layer_preserves_shape_and_bias_keys():
@@ -36,3 +41,17 @@ def test_patch_embedding_shapes_and_keys_cpu():
         assert k in keys
     assert pe.state_dict()["spectral_proj.0.weight"].shape == (200, 101)  # rfft(200)->101
     assert pe.state_dict()["channel_embedding.weight"].shape == (200, 19)
+
+
+def test_eegdino_instantiates_small_and_has_final_layer_last():
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000)  # defaults = Small
+    children = list(model.named_children())
+    last_two = [name for name, _ in children][-2:]
+    assert "final_layer" in last_two
+    assert model.get_output_shape() == (1, 4)
+
+
+def test_eegdino_medium_preset_dims():
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000, **EEGDINO_CONFIGS["medium"])
+    assert model.feature_size == 512
+    assert len(model.encoder_layers) == 16
