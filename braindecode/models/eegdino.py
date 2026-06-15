@@ -226,6 +226,20 @@ class EEGDINO(EEGModuleMixin, nn.Module):
     MLP head (``final_layer``). Only the encoder is integrated here; the
     self-distillation pre-training is out of scope.
 
+    .. rubric:: Pretrained Weights
+
+    Pretrained Small and Medium encoders (converted from the released
+    checkpoints) are loadable from the Hugging Face Hub::
+
+        model = EEGDINO.from_pretrained(
+            "braindecode/eegdino-pretrained",
+            filename="eegdino_small.safetensors",  # or eegdino_medium.safetensors
+            n_outputs=6,
+        )
+
+    The classification ``final_layer`` is always freshly initialized, so the
+    model must be fine-tuned (or linear-probed) before use.
+
     .. versionadded:: 1.7
 
     Parameters
