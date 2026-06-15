@@ -210,6 +210,10 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
+    .. figure:: https://braindecode.org/dev/_static/model/eegdino.png
+        :align: center
+        :alt: EEG-DINO Architecture
+
     .. rubric:: Architectural Overview
 
     EEG-DINO is a ViT-style encoder pre-trained with DINO-v2 hierarchical

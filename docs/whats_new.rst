@@ -36,6 +36,8 @@ Enhancements
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.
   By `Pierre Guetschel`_.
+- Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
+  foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
 
 API and behavior changes
 ========================
