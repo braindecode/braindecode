@@ -384,7 +384,70 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             nn.Linear(hidden2, self.n_outputs),
         )
 
-    def forward(self, x):  # replaced in Task 4
-        return self.final_layer(
-            torch.zeros(x.shape[0], self.feature_size, device=x.device)
-        )
+    def _patchify(self, x):
+        batch_size, n_chans, n_times = x.shape
+        patch_size = self.patch_size
+        if n_times % patch_size != 0:
+            pad = patch_size - (n_times % patch_size)
+            x = F.pad(x, (0, pad))
+            warn(
+                f"n_times={n_times} is not a multiple of patch_size={patch_size}; "
+                f"zero-padded by {pad} samples.",
+                UserWarning,
+            )
+        x = x / 100.0  # amplitude scaling used during EEG-DINO training
+        n_patches = x.shape[-1] // patch_size
+        return x.reshape(batch_size, n_chans, n_patches, patch_size)
+
+    def _encode(self, x):
+        # x: (B, C, P, patch_size)
+        z = self.patch_embedding(x)  # (B, C, P, D)
+        batch_size, n_chans, n_patches, dim = z.shape
+        z = z.reshape(batch_size, n_chans * n_patches, dim)  # (B, C*P, D)
+        global_tokens = self.global_tokens.expand(batch_size, -1, -1)
+        for i, layer in enumerate(self.encoder_layers):
+            z = layer(z)
+            if i + 1 == self.global_token_layer:
+                z = torch.cat([global_tokens, z], dim=1)  # (B, n_g + C*P, D)
+        return z, n_chans, n_patches
+
+    def _pool_head(self, patch_tokens, n_chans, n_patches):
+        batch_size = patch_tokens.shape[0]
+        z = self.head_token_mlp(patch_tokens)  # (B, C*P, D)
+        z = z.reshape(batch_size, n_chans, n_patches, self.feature_size)
+        z = z.mean(dim=1)  # channel pooling -> (B, P, D)
+        z = self.head_time_mlp(z)
+        z = z.mean(dim=1)  # time pooling -> (B, D)
+        return z
+
+    def forward(self, x, return_features: bool | None = None):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape ``(batch_size, n_chans, n_times)`` or pre-patchified
+            ``(batch_size, n_chans, n_patches, patch_size)``.
+        return_features : bool, optional
+            Overrides the ``return_features`` attribute for this call.
+
+        Returns
+        -------
+        torch.Tensor or dict
+            Logits ``(batch_size, n_outputs)``; or, when returning features,
+            ``{"features": (batch_size, n_chans * n_patches, feature_size),
+            "cls_token": (batch_size, feature_size)}``.
+        """
+        if return_features is None:
+            return_features = self.return_features
+        if x.ndim == 3:
+            x = self._patchify(x)
+        z, n_chans, n_patches = self._encode(x)
+        n_g = self.num_global_tokens
+        global_out, patch_out = z[:, :n_g, :], z[:, n_g:, :]
+        if return_features:
+            return {"features": patch_out, "cls_token": global_out.mean(dim=1)}
+        pooled = self._pool_head(patch_out, n_chans, n_patches)
+        if self.return_encoder_output:
+            return pooled
+        return self.final_layer(pooled)

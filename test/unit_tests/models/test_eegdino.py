@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch.nn as nn
 
@@ -55,3 +56,23 @@ def test_eegdino_medium_preset_dims():
     model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000, **EEGDINO_CONFIGS["medium"])
     assert model.feature_size == 512
     assert len(model.encoder_layers) == 16
+
+
+@pytest.mark.parametrize("n_times", [1000, 600])  # 600 % 200 == 0
+def test_forward_divisible(n_times):
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=n_times)
+    out = model(torch.randn(2, 16, n_times))
+    assert out.shape == (2, 4)
+
+
+def test_forward_pads_non_divisible_with_warning():
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=950)  # not a multiple of 200
+    with pytest.warns(UserWarning, match="zero-padded"):
+        out = model(torch.randn(2, 16, 950))
+    assert out.shape == (2, 4)
+
+
+def test_forward_accepts_prepatched_4d_input():
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000)
+    out = model(torch.randn(2, 16, 5, 200))  # (B, C, P, patch_size)
+    assert out.shape == (2, 4)
