@@ -7,6 +7,7 @@ import torch
 from braindecode.models import (
     BENDR,
     BIOT,
+    EEGDINO,
     EEGPT,
     REVE,
     CBraMod,
@@ -77,6 +78,7 @@ _MODELS = [
     ),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
+    pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
     pytest.param(SignalJEPA, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA"),
     pytest.param(
         SignalJEPA_Contextual,

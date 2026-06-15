@@ -521,6 +521,9 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # torch.jit.script cannot scriptify the FFT-based patch embedding and the
+        # helper-method forward (torch.fft.rfft + _patchify/_encode dispatch).
+        "EEGDINO",
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
