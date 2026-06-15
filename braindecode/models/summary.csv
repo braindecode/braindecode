@@ -56,3 +56,4 @@ InterpolatedBIOT,"Sleep Staging, Epilepsy",Classification,200,"chs_info, n_outpu
 InterpolatedEEGPT,General,Classification,256,"chs_info, n_outputs, n_times",25323137,"InterpolatedEEGPT(chs_info=<user>, n_outputs=4, n_times=1024)","Foundation Model,Attention/Transformer,Channel"
 InterpolatedLaBraM,General,"Classification, Embedding",200,"chs_info, n_outputs, n_times",5866196,"InterpolatedLaBraM(chs_info=<user>, n_outputs=4, n_times=1000)","Convolution,Foundation Model,Channel"
 InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info",3456882,"InterpolatedSignalJEPA(chs_info=<user>)","Convolution,Channel,Foundation Model"
+EEGDINO,General,Self-Supervised,200,"n_chans, n_outputs, n_times",4539698,"EEGDINO(n_chans=19, n_outputs=4, n_times=1000)","Foundation Model,Attention/Transformer"
