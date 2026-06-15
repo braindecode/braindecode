@@ -45,7 +45,7 @@ API and behavior changes
   :class:`braindecode.models.EEGNet`), ``SleepStagerEldele2021`` (use
   :class:`braindecode.models.AttnSleep`), ``TSceptionV1`` (use
   :class:`braindecode.models.TSception`), and ``BNCI2014001`` (use
-  :class:`braindecode.datasets.BNCI2014_001`).
+  :class:`braindecode.datasets.BNCI2014_001`). (:gh:`1045` by `Bhargav Kowshik`_)
 
 Requirements
 ============
@@ -1248,3 +1248,4 @@ Authors
 .. _Léo Burgund: https://github.com/leob000
 .. _Adam Mounir: https://github.com/adammounir
 .. _Yiheng Li: https://github.com/YihengLi-1
+.. _Bhargav Kowshik: https://github.com/bkowshik
