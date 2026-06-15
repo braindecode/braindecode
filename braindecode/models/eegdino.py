@@ -384,6 +384,11 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             nn.Linear(hidden2, self.n_outputs),
         )
 
+    def reset_head(self, n_outputs):
+        """Replace the classification head to output ``n_outputs`` classes."""
+        self._n_outputs = n_outputs
+        self._build_final_layer()
+
     def _patchify(self, x):
         batch_size, n_chans, n_times = x.shape
         patch_size = self.patch_size

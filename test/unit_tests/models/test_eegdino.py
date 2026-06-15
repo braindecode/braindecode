@@ -76,3 +76,26 @@ def test_forward_accepts_prepatched_4d_input():
     model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000)
     out = model(torch.randn(2, 16, 5, 200))  # (B, C, P, patch_size)
     assert out.shape == (2, 4)
+
+
+def test_return_features_dict_contract():
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000)
+    out = model(torch.randn(2, 16, 1000), return_features=True)
+    assert isinstance(out, dict)
+    assert set(out) == {"features", "cls_token"}
+    assert out["features"].shape[0] == 2
+    assert out["features"].shape[-1] == model.feature_size
+    assert isinstance(out["cls_token"], torch.Tensor)
+    assert out["cls_token"].shape == (2, model.feature_size)
+
+
+def test_default_forward_returns_tensor():
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000)
+    assert isinstance(model(torch.randn(2, 16, 1000)), torch.Tensor)
+
+
+def test_reset_head_changes_output_dim():
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000)
+    model.reset_head(7)
+    assert model.n_outputs == 7
+    assert model(torch.randn(2, 16, 1000)).shape == (2, 7)
