@@ -61,6 +61,13 @@ Bug fixes
 
 - Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
 
+- Fix the broken EEGNeX quickstart snippet on the documentation landing page,
+  which kept non-EEG channels (including the STIM trigger), hardcoded a
+  mismatched ``n_times``, and failed at the default stratified validation split
+  with ``y=None``; it now restricts to EEG channels and lets
+  :class:`~braindecode.EEGClassifier` infer the signal dimensions from the data.
+  By `Bhargav Kowshik`_
+
 Code health
 ============
 
@@ -1243,3 +1250,4 @@ Authors
 .. _Léo Burgund: https://github.com/leob000
 .. _Adam Mounir: https://github.com/adammounir
 .. _Yiheng Li: https://github.com/YihengLi-1
+.. _Bhargav Kowshik: https://github.com/bkowshik
