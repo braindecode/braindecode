@@ -124,3 +124,29 @@ def test_attention_small_medium_checkpoint_shapes_unchanged():
     assert medium["q_bias"].shape == (512,)
     assert medium["v_bias"].shape == (512,)
     assert medium["proj.weight"].shape == (512, 512)
+
+
+def test_encoder_state_dict_keys_are_loadable(tmp_path):
+    """The encoder submodules must accept a state_dict whose keys are the
+    EEG-DINO encoder keys (patch_embedding.*, encoder_layers.*, global_tokens)."""
+    model = EEGDINO(n_chans=19, n_outputs=4, n_times=1000)
+    encoder_prefixes = ("patch_embedding.", "encoder_layers.", "global_tokens")
+    enc_keys = {
+        k for k in model.state_dict()
+        if k.startswith(encoder_prefixes)
+    }
+    # Simulate a released checkpoint: same keys under module.teacher.
+    fake_ckpt = {
+        "global_step": 1,
+        "state_dict": {
+            f"module.teacher.{k}": model.state_dict()[k].clone() for k in enc_keys
+        },
+    }
+    from scripts.convert_eegdino_checkpoints import extract_encoder_state_dict
+
+    sd = extract_encoder_state_dict(fake_ckpt, source="teacher")
+    missing, unexpected = model.load_state_dict(sd, strict=False)
+    # every extracted key must exist in the model (no unexpected encoder keys)
+    assert not unexpected
+    # all extracted keys are exactly the encoder keys
+    assert set(sd) == enc_keys
