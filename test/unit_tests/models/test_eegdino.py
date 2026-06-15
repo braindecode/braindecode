@@ -150,3 +150,18 @@ def test_encoder_state_dict_keys_are_loadable(tmp_path):
     assert not unexpected
     # all extracted keys are exactly the encoder keys
     assert set(sd) == enc_keys
+
+
+def test_from_pretrained_local_roundtrip(tmp_path):
+    pytest.importorskip("huggingface_hub")
+    model = EEGDINO(n_chans=19, n_outputs=2, n_times=1000)
+    save_dir = tmp_path / "eegdino-small"
+    model.save_pretrained(save_dir)
+    reloaded = EEGDINO.from_pretrained(save_dir)
+    x = torch.randn(1, 19, 1000)
+    model.eval()
+    reloaded.eval()
+    assert torch.allclose(model(x), reloaded(x), atol=1e-5)
+    # head resize on load
+    resized = EEGDINO.from_pretrained(save_dir, n_outputs=6)
+    assert resized(x).shape == (1, 6)
