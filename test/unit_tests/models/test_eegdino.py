@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from braindecode.models.eegdino import _TransformerEncoderLayer
+from braindecode.models.eegdino import _PatchEmbedding, _TransformerEncoderLayer
 
 
 def test_transformer_layer_preserves_shape_and_bias_keys():
@@ -18,3 +18,21 @@ def test_transformer_layer_preserves_shape_and_bias_keys():
     assert {"attn.q_bias", "attn.v_bias"}.issubset(keys)
     assert layer.state_dict()["attn.qkv.weight"].shape == (600, 200)
     assert {"mlp.fc1.weight", "mlp.fc2.weight"}.issubset(keys)
+
+
+def test_patch_embedding_shapes_and_keys_cpu():
+    pe = _PatchEmbedding(
+        feature_size=200, num_channels=19, patch_size=200,
+        conv_channels=(25, 25, 25), groups=5, drop_prob=0.0,
+    )
+    x = torch.randn(3, 16, 5, 200)  # (B, C<=19, P, patch_size); runs on CPU (no .cuda())
+    out = pe(x)
+    assert out.shape == (3, 16, 5, 200)  # (B, C, P, D)
+    keys = set(pe.state_dict().keys())
+    for k in [
+        "time_encoding.0.weight", "proj_in.0.weight", "proj_in.3.weight",
+        "proj_in.6.weight", "spectral_proj.0.weight", "channel_embedding.weight",
+    ]:
+        assert k in keys
+    assert pe.state_dict()["spectral_proj.0.weight"].shape == (200, 101)  # rfft(200)->101
+    assert pe.state_dict()["channel_embedding.weight"].shape == (200, 19)
