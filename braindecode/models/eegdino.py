@@ -1,212 +1,24 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
+# Code adapted from https://huggingface.co/eegdino/EEG-DINO
+#
 # License: BSD (3-clause)
 from __future__ import annotations
 
+from typing import Sequence
 from warnings import warn
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
+from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
 
 
-class _PatchEmbedding(nn.Module):
-    """Conv + FFT + channel one-hot + depthwise time encoding (sum of 4 branches).
-
-    Faithful to the released EEG-DINO PatchEmbedding, made device-agnostic and
-    parametrized by ``num_channels`` and the ``proj_in`` conv widths.
-    """
-
-    def __init__(
-        self,
-        feature_size,
-        num_channels,
-        patch_size=200,
-        conv_channels=(25, 25, 25),
-        groups=5,
-        drop_prob=0.1,
-    ):
-        super().__init__()
-        self.feature_size = feature_size
-        self.num_channels = num_channels
-        self.patch_size = patch_size
-        c0, c1, c2 = conv_channels
-        if c2 * 8 != feature_size:
-            raise ValueError(
-                f"conv_channels[-1] * 8 ({c2 * 8}) must equal feature_size "
-                f"({feature_size}); the temporal conv reshape requires it."
-            )
-        self.time_encoding = nn.Sequential(
-            nn.Conv2d(
-                feature_size,
-                feature_size,
-                kernel_size=(1, 5),
-                stride=(1, 1),
-                padding=(0, 2),
-                groups=feature_size,
-            ),
-        )
-        self.proj_in = nn.Sequential(
-            nn.Conv2d(1, c0, (1, 49), (1, 25), (0, 24)),
-            nn.GroupNorm(groups, c0),
-            nn.GELU(),
-            nn.Conv2d(c0, c1, (1, 3), (1, 1), (0, 1)),
-            nn.GroupNorm(groups, c1),
-            nn.GELU(),
-            nn.Conv2d(c1, c2, (1, 3), (1, 1), (0, 1)),
-            nn.GroupNorm(groups, c2),
-            nn.GELU(),
-        )
-        n_freq = patch_size // 2 + 1
-        self.spectral_proj = nn.Sequential(
-            nn.Linear(n_freq, feature_size), nn.Dropout(drop_prob)
-        )
-        self.channel_embedding = nn.Linear(num_channels, feature_size)
-
-    def forward(self, x):
-        batch_size, n_chans, n_patches, patch_size = x.shape
-
-        x_time = x.contiguous().view(batch_size, 1, n_chans * n_patches, patch_size)
-        patch_emb = self.proj_in(x_time)
-        patch_emb = (
-            patch_emb.permute(0, 2, 1, 3)
-            .contiguous()
-            .view(batch_size, n_chans, n_patches, self.feature_size)
-        )
-
-        x_freq = x.contiguous().view(batch_size * n_chans * n_patches, patch_size)
-        spectral = torch.abs(torch.fft.rfft(x_freq, dim=-1, norm="forward"))
-        spectral = spectral.contiguous().view(batch_size, n_chans, n_patches, -1)
-        patch_emb = patch_emb + self.spectral_proj(spectral)
-
-        chan_idx = torch.arange(n_chans, device=x.device)
-        one_hot = F.one_hot(chan_idx, num_classes=self.num_channels).float()
-        chan_emb = self.channel_embedding(one_hot)  # (n_chans, D)
-        chan_emb = chan_emb.unsqueeze(0).unsqueeze(2)  # (1, n_chans, 1, D)
-        patch_emb = patch_emb + chan_emb
-
-        time_emb = self.time_encoding(patch_emb.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-        patch_emb = patch_emb + time_emb
-        return patch_emb
-
-
-class _Mlp(nn.Module):
-    """Feed-forward block (fc1 -> act -> fc2 -> drop); names match released keys."""
-
-    def __init__(self, in_features, hidden_features, activation=nn.GELU, drop=0.0):
-        super().__init__()
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = activation()
-        self.fc2 = nn.Linear(hidden_features, in_features)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.fc2(x)
-        x = self.drop(x)
-        return x
-
-
-class _Attention(nn.Module):
-    """BEiT-style attention: fused qkv (bias=False) + separate q/v bias."""
-
-    def __init__(self, dim, num_heads=8, attn_drop=0.0, proj_drop=0.0, qkv_bias=True):
-        super().__init__()
-        self.num_heads = num_heads
-        head_dim = dim // num_heads
-        all_head_dim = head_dim * num_heads
-        self.scale = head_dim**-0.5
-        self.qkv = nn.Linear(dim, all_head_dim * 3, bias=False)
-        if qkv_bias:
-            self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
-            self.v_bias = nn.Parameter(torch.zeros(all_head_dim))
-        else:
-            self.q_bias = None
-            self.v_bias = None
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(all_head_dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x):
-        batch_size, n_tokens, dim = x.shape
-        qkv_bias = None
-        if self.q_bias is not None:
-            qkv_bias = torch.cat(
-                (
-                    self.q_bias,
-                    torch.zeros_like(self.v_bias, requires_grad=False),
-                    self.v_bias,
-                )
-            )
-        qkv = F.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
-        qkv = qkv.reshape(batch_size, n_tokens, 3, self.num_heads, -1).permute(
-            2, 0, 3, 1, 4
-        )
-        query, key, value = qkv[0], qkv[1], qkv[2]
-        attn = (query * self.scale) @ key.transpose(-2, -1)
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-        x = (attn @ value).transpose(1, 2).reshape(batch_size, n_tokens, -1)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
-
-
-class _TransformerEncoderLayer(nn.Module):
-    """Pre-norm transformer block (LayerScale disabled, matching released config)."""
-
-    def __init__(
-        self, d_model, num_heads, dim_feedforward, activation=nn.GELU, drop_prob=0.1
-    ):
-        super().__init__()
-        self.norm1 = nn.LayerNorm(d_model)
-        self.attn = _Attention(
-            d_model, num_heads=num_heads, attn_drop=drop_prob, proj_drop=drop_prob
-        )
-        self.drop_path = DropPath(drop_prob) if drop_prob > 0.0 else nn.Identity()
-        self.norm2 = nn.LayerNorm(d_model)
-        self.mlp = _Mlp(d_model, dim_feedforward, activation=activation, drop=drop_prob)
-
-    def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
-
-
-EEGDINO_CONFIGS = {
-    "small": dict(
-        feature_size=200,
-        num_layers=12,
-        num_heads=8,
-        dim_feedforward=512,
-        patch_conv_channels=(25, 25, 25),
-        patch_conv_groups=5,
-    ),
-    "medium": dict(
-        feature_size=512,
-        num_layers=16,
-        num_heads=16,
-        dim_feedforward=1024,
-        patch_conv_channels=(64, 128, 64),
-        patch_conv_groups=8,
-    ),
-    "large": dict(
-        feature_size=1024,
-        num_layers=24,
-        num_heads=24,
-        dim_feedforward=2048,
-        patch_conv_channels=(128, 256, 128),
-        patch_conv_groups=16,
-    ),
-}
-
-
 class EEGDINO(EEGModuleMixin, nn.Module):
-    r"""EEG-DINO model from Wang et al. (2025) [eegdino]_.
+    r"""EEG-DINO from Wang et al. (2025) [eegdino]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
@@ -214,100 +26,145 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         :align: center
         :alt: EEG-DINO Architecture
 
-    .. rubric:: Architectural Overview
+    EEG-DINO is a ViT-style EEG foundation model pre-trained with DINO-v2
+    hierarchical self-distillation. Only the *encoder* (plus a classification
+    head) is integrated here; the self-distillation pre-training is out of scope.
+    The forward path is, end to end:
 
-    EEG-DINO is a ViT-style encoder pre-trained with DINO-v2 hierarchical
-    self-distillation. A time-frequency patch embedding turns 1-second EEG
-    segments into tokens (convolutional temporal projection + FFT magnitude
-    branch + learnable one-hot channel embedding + depthwise temporal encoding),
-    which a stack of pre-norm transformer layers contextualizes. A learnable
-    global token is inserted after the first layer. For classification, the
-    patch tokens are pooled across channels then across time and passed to an
-    MLP head (``final_layer``). Only the encoder is integrated here; the
-    self-distillation pre-training is out of scope.
+    ``(batch, n_chans, n_times)`` → patchify → time-frequency embedding →
+    decoupled positional embedding → transformer encoder (+ global token) →
+    pooling head → ``(batch, n_outputs)``.
 
-    .. rubric:: Pretrained Weights
+    .. rubric:: Step 1 -- Patchify
 
-    Pretrained Small and Medium encoders (converted from the released
-    checkpoints) are loadable from the Hugging Face Hub::
+    The signal is divided by 100 (the amplitude scaling used during
+    pre-training) and split along time into non-overlapping patches of
+    ``patch_size`` samples (200 samples = 1 second at 200 Hz), giving one
+    *token* per (channel, patch). Inputs whose length is not a multiple of
+    ``patch_size`` are zero-padded with a warning.
 
-        model = EEGDINO.from_pretrained(
-            "braindecode/eegdino-pretrained",
-            filename="eegdino_small.safetensors",  # or eegdino_medium.safetensors
-            n_outputs=6,
-        )
+    .. rubric:: Step 2 -- Time-Frequency Embedding (TFE)
 
-    The classification ``final_layer`` is always freshly initialized, so the
-    model must be fine-tuned (or linear-probed) before use.
+    Each patch is embedded by summing two branches, exactly as in
+    :class:`~braindecode.models.CBraMod` (the EEG-DINO paper reuses CBraMod's
+    TFE): a **time-domain** branch of stacked grouped convolutions
+    (``proj_in``), and a **frequency-domain** branch projecting the magnitude
+    of the patch's real FFT (``spectral_proj``). The embedding dimension
+    ``emb_dim`` is therefore *derived* from the convolution configuration, not
+    set independently.
+
+    .. rubric:: Step 3 -- Decoupled Positional Embedding (DPE)
+
+    Where CBraMod uses a single convolutional positional encoding (ACPE),
+    EEG-DINO *decouples* space and time and adds both to every token: a
+    learnable **one-hot channel embedding** (``channel_embedding``, so input
+    channel ``i`` maps to slot ``i``) and a **depthwise temporal convolution**
+    over the patch axis (``time_encoding``).
+
+    .. rubric:: Step 4 -- Transformer Encoder & Global Token
+
+    Tokens are flattened to a single sequence and processed by ``n_layer``
+    pre-norm transformer blocks (BEiT-style attention with separate query/value
+    biases). A learnable ``global_tokens`` summary token is prepended after the
+    ``global_token_layer``-th block and attends jointly with the patch tokens.
+
+    .. rubric:: Step 5 -- Classification Head (``final_layer``)
+
+    The patch tokens (global token excluded) are pooled across channels, then
+    across time, with a small MLP at each stage, and mapped to ``n_outputs`` by
+    ``final_layer``. With ``return_encoder_output=True`` the pooled
+    representation is returned instead (linear probing).
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       Small and Medium encoders converted from the released checkpoints are
+       loadable from the Hugging Face Hub (the head is always re-initialized, so
+       fine-tune or linear-probe before use)::
+
+           from braindecode.models import EEGDINO
+
+           model = EEGDINO.from_pretrained(
+               "braindecode/eegdino-pretrained",
+               filename="eegdino_small.safetensors",  # or eegdino_medium
+               n_outputs=6,
+           )
+
+       The Small/Medium/Large configurations are available in
+       :data:`EEGDINO_CONFIGS`. Requires ``braindecode[hug]``.
 
     .. versionadded:: 1.7
 
     Parameters
     ----------
-    feature_size : int, optional
-        Transformer embedding dimension ``D``. Default 200 (Small). Tied to the
-        patch convolutions: ``patch_conv_channels[-1] * 8`` must equal it.
-    num_layers : int, optional
-        Number of transformer encoder layers. Default 12.
-    num_heads : int, optional
-        Number of attention heads. Default 8.
-    dim_feedforward : int, optional
-        Hidden size of the feed-forward block. Default 512.
-    num_global_tokens : int, optional
-        Number of learnable global tokens. Default 1.
-    global_token_layer : int, optional
+    patch_size : int, default=200
+        Temporal patch size in samples (200 = 1 second at 200 Hz). Fixed at 200
+        for the released weights (the FFT branch uses ``patch_size // 2 + 1`` bins).
+    n_layer : int, default=12
+        Number of transformer encoder layers.
+    nhead : int, default=8
+        Number of attention heads.
+    dim_feedforward : int, default=512
+        Hidden size of the transformer feed-forward block.
+    channels_kernel_stride_padding_norm : sequence of tuple, optional
+        Configuration of the time-domain convolutions in the patch embedding,
+        as ``(out_channels, kernel, stride, padding, (groups, group_channels))``
+        per layer. The embedding dimension is derived from this (see
+        :class:`~braindecode.models.CBraMod`). Default is the EEG-DINO-Small /
+        CBraMod configuration.
+    num_channels : int, default=19
+        Size of the one-hot channel embedding, i.e. the maximum number of input
+        channels. Default 19 (the released configuration); ``n_chans`` must not
+        exceed it.
+    n_global_tokens : int, default=1
+        Number of learnable global summary tokens.
+    global_token_layer : int, default=1
         1-based index of the encoder layer after which the global tokens are
-        inserted. Default 1.
-    patch_size : int, optional
-        Samples per patch. Default 200 (1 s at 200 Hz). Locked to 200 for the
-        released weights (the FFT branch uses ``patch_size // 2 + 1`` bins).
-    num_channels : int, optional
-        Size of the one-hot channel embedding (max supported channels).
-        Default 19 (the released configuration).
-    patch_conv_channels : tuple of int, optional
-        Output widths of the three temporal convolutions in the patch
-        embedding. Default ``(25, 25, 25)``.
-    patch_conv_groups : int, optional
-        GroupNorm groups in the patch convolutions. Default 5.
-    head_hidden_divisors : tuple of int, optional
-        The MLP head hidden sizes are ``D // d`` for each ``d``. Default ``(2, 4)``.
-    head_drop_probs : tuple of float, optional
-        Dropout after each MLP head hidden layer. Default ``(0.5, 0.3)``.
-    activation : nn.Module, optional
-        Activation class used throughout. Default ``nn.GELU``.
-    drop_prob : float, optional
-        Dropout / stochastic-depth probability in the encoder. Default 0.1.
-    return_features : bool, optional
-        If True, ``forward`` returns ``{"features", "cls_token"}``. Default False.
-    return_encoder_output : bool, optional
-        If True, ``final_layer`` is ``nn.Identity`` and ``forward`` returns the
-        pooled encoder representation (for linear probing). Default False.
+        inserted.
+    head_hidden_divisors : tuple of int, default=(2, 4)
+        Hidden sizes of the classification MLP are ``emb_dim // d`` for each ``d``.
+    head_drop_probs : tuple of float, default=(0.5, 0.3)
+        Dropout after each classification-MLP hidden layer.
+    activation : type[nn.Module], default=nn.GELU
+        Activation used throughout.
+    drop_prob : float, default=0.1
+        Dropout / stochastic-depth probability in the encoder.
+    return_features : bool, default=False
+        If True, ``forward`` returns ``{"features", "cls_token"}``.
+    return_encoder_output : bool, default=False
+        If True, ``final_layer`` is :class:`~torch.nn.Identity` and ``forward``
+        returns the pooled encoder representation (linear probing).
 
     References
     ----------
     .. [eegdino] Wang, X., Liu, X., Liu, X., Si, Q., Xu, Z., Li, Y., & Zhen, X.
        (2025). EEG-DINO: Learning EEG Foundation Models via Hierarchical
-       Self-Distillation. MICCAI 2025.
+       Self-Distillation. In Medical Image Computing and Computer Assisted
+       Intervention (MICCAI 2025).
     """
 
     def __init__(
         self,
-        n_chans=None,
         n_outputs=None,
-        n_times=None,
+        n_chans=None,
         chs_info=None,
+        n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        feature_size: int = 200,
-        num_layers: int = 12,
-        num_heads: int = 8,
-        dim_feedforward: int = 512,
-        num_global_tokens: int = 1,
-        global_token_layer: int = 1,
         patch_size: int = 200,
+        n_layer: int = 12,
+        nhead: int = 8,
+        dim_feedforward: int = 512,
+        channels_kernel_stride_padding_norm: Sequence[
+            tuple[int, int, int, int, tuple[int, int]]
+        ] = (
+            (25, 49, 25, 24, (5, 25)),
+            (25, 3, 1, 1, (5, 25)),
+            (25, 3, 1, 1, (5, 25)),
+        ),
         num_channels: int = 19,
-        patch_conv_channels: tuple[int, int, int] = (25, 25, 25),
-        patch_conv_groups: int = 5,
+        n_global_tokens: int = 1,
+        global_token_layer: int = 1,
         head_hidden_divisors: tuple[int, int] = (2, 4),
         head_drop_probs: tuple[float, float] = (0.5, 0.3),
         activation: type[nn.Module] = nn.GELU,
@@ -327,62 +184,48 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
         if self._sfreq is not None and self.sfreq != 200:
             warn(
-                f"EEG-DINO was trained at 200 Hz but sfreq={self.sfreq}. "
-                "Inputs are not resampled; results may be unreliable.",
+                f"EEG-DINO was trained at 200 Hz but sfreq={self.sfreq}. Inputs "
+                "are not resampled internally; results may be unreliable.",
                 UserWarning,
             )
         if self.n_chans > num_channels:
             raise ValueError(
-                f"n_chans={self.n_chans} exceeds num_channels={num_channels}. "
-                "Increase num_channels (incompatible with released weights) or "
-                "reduce the channel set."
+                f"n_chans={self.n_chans} exceeds num_channels={num_channels}; "
+                "raise num_channels (breaks released-weight compatibility) or "
+                "use fewer channels."
             )
 
-        self.feature_size = feature_size
-        self.num_layers = num_layers
-        self.num_heads = num_heads
-        self.dim_feedforward = dim_feedforward
-        self.num_global_tokens = num_global_tokens
-        self.global_token_layer = global_token_layer
         self.patch_size = patch_size
-        self.num_channels = num_channels
-        self.patch_conv_channels = patch_conv_channels
-        self.patch_conv_groups = patch_conv_groups
+        self.n_global_tokens = n_global_tokens
+        self.global_token_layer = global_token_layer
         self.head_hidden_divisors = head_hidden_divisors
         self.head_drop_probs = head_drop_probs
         self.activation = activation
-        self.drop_prob = drop_prob
         self.return_features = return_features
         self.return_encoder_output = return_encoder_output
 
         self.patch_embedding = _PatchEmbedding(
-            feature_size=feature_size,
-            num_channels=num_channels,
             patch_size=patch_size,
-            conv_channels=patch_conv_channels,
-            groups=patch_conv_groups,
+            channels_kernel_stride_padding_norm=channels_kernel_stride_padding_norm,
+            num_channels=num_channels,
             drop_prob=drop_prob,
         )
+        self.emb_dim = self.patch_embedding.emb_dim
+
         self.encoder_layers = nn.ModuleList(
             _TransformerEncoderLayer(
-                d_model=feature_size,
-                num_heads=num_heads,
-                dim_feedforward=dim_feedforward,
-                activation=activation,
-                drop_prob=drop_prob,
+                self.emb_dim, nhead, dim_feedforward, activation, drop_prob
             )
-            for _ in range(num_layers)
+            for _ in range(n_layer)
         )
-        self.global_tokens = nn.Parameter(
-            torch.zeros(1, num_global_tokens, feature_size)
-        )
+        self.global_tokens = nn.Parameter(torch.zeros(1, n_global_tokens, self.emb_dim))
         nn.init.trunc_normal_(self.global_tokens, std=0.02)
 
         self.head_token_mlp = nn.Sequential(
-            nn.Linear(feature_size, feature_size), activation()
+            nn.Linear(self.emb_dim, self.emb_dim), activation()
         )
         self.head_time_mlp = nn.Sequential(
-            nn.Linear(feature_size, feature_size), activation()
+            nn.Linear(self.emb_dim, self.emb_dim), activation()
         )
         self._build_final_layer()
 
@@ -390,59 +233,42 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         if self.return_encoder_output:
             self.final_layer = nn.Identity()
             return
-        dim = self.feature_size
-        hidden1 = dim // self.head_hidden_divisors[0]
-        hidden2 = dim // self.head_hidden_divisors[1]
+        hidden = [self.emb_dim // d for d in self.head_hidden_divisors]
         self.final_layer = nn.Sequential(
-            nn.Linear(dim, hidden1),
+            nn.Linear(self.emb_dim, hidden[0]),
             self.activation(),
             nn.Dropout(self.head_drop_probs[0]),
-            nn.Linear(hidden1, hidden2),
+            nn.Linear(hidden[0], hidden[1]),
             self.activation(),
             nn.Dropout(self.head_drop_probs[1]),
-            nn.Linear(hidden2, self.n_outputs),
+            nn.Linear(hidden[1], self.n_outputs),
         )
 
     def reset_head(self, n_outputs):
-        """Replace the classification head to output ``n_outputs`` classes."""
+        """Replace ``final_layer`` to output ``n_outputs`` classes."""
         self._n_outputs = n_outputs
         self._build_final_layer()
 
     def _patchify(self, x):
-        batch_size, n_chans, n_times = x.shape
-        patch_size = self.patch_size
-        if n_times % patch_size != 0:
-            pad = patch_size - (n_times % patch_size)
+        """``(batch, n_chans, n_times)`` -> scaled ``(batch, n_chans, n_patches, patch_size)``."""
+        n_times = x.shape[-1]
+        if n_times % self.patch_size:
+            pad = self.patch_size - n_times % self.patch_size
             x = F.pad(x, (0, pad))
             warn(
-                f"n_times={n_times} is not a multiple of patch_size={patch_size}; "
-                f"zero-padded by {pad} samples.",
+                f"n_times={n_times} is not a multiple of patch_size="
+                f"{self.patch_size}; zero-padded by {pad} samples.",
                 UserWarning,
             )
-        x = x / 100.0  # amplitude scaling used during EEG-DINO training
-        n_patches = x.shape[-1] // patch_size
-        return x.reshape(batch_size, n_chans, n_patches, patch_size)
+        x = x / 100.0  # amplitude scaling used during EEG-DINO pre-training
+        return rearrange(x, "b c (n p) -> b c n p", p=self.patch_size)
 
-    def _encode(self, x):
-        # x: (B, C, P, patch_size)
-        z = self.patch_embedding(x)  # (B, C, P, D)
-        batch_size, n_chans, n_patches, dim = z.shape
-        z = z.reshape(batch_size, n_chans * n_patches, dim)  # (B, C*P, D)
-        global_tokens = self.global_tokens.expand(batch_size, -1, -1)
-        for i, layer in enumerate(self.encoder_layers):
-            z = layer(z)
-            if i + 1 == self.global_token_layer:
-                z = torch.cat([global_tokens, z], dim=1)  # (B, n_g + C*P, D)
-        return z, n_chans, n_patches
-
-    def _pool_head(self, patch_tokens, n_chans, n_patches):
-        batch_size = patch_tokens.shape[0]
-        z = self.head_token_mlp(patch_tokens)  # (B, C*P, D)
-        z = z.reshape(batch_size, n_chans, n_patches, self.feature_size)
-        z = z.mean(dim=1)  # channel pooling -> (B, P, D)
-        z = self.head_time_mlp(z)
-        z = z.mean(dim=1)  # time pooling -> (B, D)
-        return z
+    def _pool_head(self, patch_tokens, n_chans):
+        """Pool patch tokens across channels then time -> ``(batch, emb_dim)``."""
+        x = self.head_token_mlp(patch_tokens)
+        x = rearrange(x, "b (c n) d -> b c n d", c=n_chans).mean(dim=1)
+        x = self.head_time_mlp(x).mean(dim=1)
+        return x
 
     def forward(self, x, return_features: bool | None = None):
         """Forward pass.
@@ -450,28 +276,217 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input of shape ``(batch_size, n_chans, n_times)`` or pre-patchified
-            ``(batch_size, n_chans, n_patches, patch_size)``.
+            ``(batch, n_chans, n_times)`` or pre-patchified
+            ``(batch, n_chans, n_patches, patch_size)``.
         return_features : bool, optional
-            Overrides the ``return_features`` attribute for this call.
+            Overrides ``self.return_features`` for this call.
 
         Returns
         -------
         torch.Tensor or dict
-            Logits ``(batch_size, n_outputs)``; or, when returning features,
-            ``{"features": (batch_size, n_chans * n_patches, feature_size),
-            "cls_token": (batch_size, feature_size)}``.
+            Logits ``(batch, n_outputs)``; or, with features,
+            ``{"features": (batch, n_chans * n_patches, emb_dim),
+            "cls_token": (batch, emb_dim)}``.
         """
         if return_features is None:
             return_features = self.return_features
         if x.ndim == 3:
             x = self._patchify(x)
-        z, n_chans, n_patches = self._encode(x)
-        n_g = self.num_global_tokens
-        global_out, patch_out = z[:, :n_g, :], z[:, n_g:, :]
+
+        patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
+        n_chans = patch_emb.shape[1]
+        tokens = rearrange(patch_emb, "b c n d -> b (c n) d")
+
+        global_tokens = self.global_tokens.expand(tokens.shape[0], -1, -1)
+        for i, layer in enumerate(self.encoder_layers):
+            tokens = layer(tokens)
+            if i + 1 == self.global_token_layer:
+                tokens = torch.cat([global_tokens, tokens], dim=1)
+
+        global_out = tokens[:, : self.n_global_tokens]
+        patch_out = tokens[:, self.n_global_tokens :]
         if return_features:
             return {"features": patch_out, "cls_token": global_out.mean(dim=1)}
-        pooled = self._pool_head(patch_out, n_chans, n_patches)
+
+        pooled = self._pool_head(patch_out, n_chans)
         if self.return_encoder_output:
             return pooled
         return self.final_layer(pooled)
+
+
+#: Architecture presets. Small and Medium have released weights; Large does not.
+EEGDINO_CONFIGS = {
+    "small": dict(
+        n_layer=12,
+        nhead=8,
+        dim_feedforward=512,
+        channels_kernel_stride_padding_norm=(
+            (25, 49, 25, 24, (5, 25)),
+            (25, 3, 1, 1, (5, 25)),
+            (25, 3, 1, 1, (5, 25)),
+        ),
+    ),
+    "medium": dict(
+        n_layer=16,
+        nhead=16,
+        dim_feedforward=1024,
+        channels_kernel_stride_padding_norm=(
+            (64, 49, 25, 24, (8, 64)),
+            (128, 3, 1, 1, (8, 128)),
+            (64, 3, 1, 1, (8, 64)),
+        ),
+    ),
+    "large": dict(
+        n_layer=24,
+        nhead=24,
+        dim_feedforward=2048,
+        channels_kernel_stride_padding_norm=(
+            (128, 49, 25, 24, (16, 128)),
+            (256, 3, 1, 1, (16, 256)),
+            (128, 3, 1, 1, (16, 128)),
+        ),
+    ),
+}
+
+
+class _PatchEmbedding(nn.Module):
+    """Time-frequency patch embedding with a decoupled positional embedding.
+
+    The time-domain (``proj_in``) and frequency-domain (``spectral_proj``)
+    branches are CBraMod's TFE (see :class:`~braindecode.models.CBraMod`); the
+    one-hot ``channel_embedding`` and depthwise ``time_encoding`` are EEG-DINO's
+    decoupled positional embedding.
+    """
+
+    def __init__(
+        self,
+        patch_size,
+        channels_kernel_stride_padding_norm,
+        num_channels,
+        drop_prob=0.1,
+    ):
+        super().__init__()
+        self.patch_size = patch_size
+        self.channels_kernel_stride_padding_norm = channels_kernel_stride_padding_norm
+        self.num_channels = num_channels
+
+        in_channels, conv_layers = 1, []
+        for (
+            out_channels,
+            kernel,
+            stride,
+            padding,
+            norm,
+        ) in channels_kernel_stride_padding_norm:
+            conv_layers += [
+                nn.Conv2d(
+                    in_channels, out_channels, (1, kernel), (1, stride), (0, padding)
+                ),
+                nn.GroupNorm(*norm),
+                nn.GELU(),
+            ]
+            in_channels = out_channels
+        self.proj_in = nn.Sequential(*conv_layers)
+
+        self.spectral_proj = nn.Sequential(
+            nn.Linear(patch_size // 2 + 1, self.emb_dim), nn.Dropout(drop_prob)
+        )
+        self.channel_embedding = nn.Linear(num_channels, self.emb_dim)
+        # Sequential wrapper keeps the released-checkpoint key ``time_encoding.0.*``.
+        self.time_encoding = nn.Sequential(
+            nn.Conv2d(
+                self.emb_dim, self.emb_dim, (1, 5), (1, 1), (0, 2), groups=self.emb_dim
+            )
+        )
+
+    @property
+    def emb_dim(self):
+        """Embedding dimension implied by the convolution configuration."""
+        reduced = self.patch_size
+        for _, kernel, stride, padding, _ in self.channels_kernel_stride_padding_norm:
+            reduced = (reduced + 2 * padding - kernel) // stride + 1
+        return self.channels_kernel_stride_padding_norm[-1][0] * reduced
+
+    def forward(self, x):
+        # x: (batch, n_chans, n_patches, patch_size)
+        n_chans = x.shape[1]
+
+        # Time-frequency embedding (CBraMod TFE): conv branch + FFT-magnitude branch.
+        time_tokens = self.proj_in(rearrange(x, "b c n p -> b 1 (c n) p"))
+        time_tokens = rearrange(time_tokens, "b d (c n) q -> b c n (d q)", c=n_chans)
+        spectrum = torch.fft.rfft(x, dim=-1, norm="forward").abs()
+        patch_emb = time_tokens + self.spectral_proj(spectrum)
+
+        # Decoupled positional embedding: one-hot channel + depthwise temporal conv.
+        channel_ids = torch.arange(n_chans, device=x.device)
+        channel_emb = self.channel_embedding(
+            F.one_hot(channel_ids, self.num_channels).float()
+        )
+        patch_emb = patch_emb + rearrange(channel_emb, "c d -> 1 c 1 d")
+        temporal_emb = self.time_encoding(rearrange(patch_emb, "b c n d -> b d c n"))
+        return patch_emb + rearrange(temporal_emb, "b d c n -> b c n d")
+
+
+class _TransformerEncoderLayer(nn.Module):
+    """Pre-norm transformer block (no LayerScale, matching the released config)."""
+
+    def __init__(
+        self, emb_dim, nhead, dim_feedforward, activation=nn.GELU, drop_prob=0.1
+    ):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(emb_dim)
+        self.attn = _Attention(emb_dim, nhead, attn_drop=drop_prob, proj_drop=drop_prob)
+        self.drop_path = DropPath(drop_prob) if drop_prob > 0.0 else nn.Identity()
+        self.norm2 = nn.LayerNorm(emb_dim)
+        self.mlp = _MLP(emb_dim, dim_feedforward, activation=activation, drop=drop_prob)
+
+    def forward(self, x):
+        x = x + self.drop_path(self.attn(self.norm1(x)))
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        return x
+
+
+class _Attention(nn.Module):
+    """BEiT-style attention: fused ``qkv`` without bias plus separate q/v biases.
+
+    ``head_dim`` is decoupled from ``emb_dim`` so the embedding dimension need
+    not be divisible by ``nhead`` (required by the Large preset, 1024/24).
+    """
+
+    def __init__(self, emb_dim, nhead=8, attn_drop=0.0, proj_drop=0.0):
+        super().__init__()
+        self.nhead = nhead
+        head_dim = emb_dim // nhead
+        all_head_dim = head_dim * nhead
+        self.scale = head_dim**-0.5
+        self.qkv = nn.Linear(emb_dim, all_head_dim * 3, bias=False)
+        self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
+        self.v_bias = nn.Parameter(torch.zeros(all_head_dim))
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(all_head_dim, emb_dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+    def forward(self, x):
+        bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias), self.v_bias))
+        qkv = F.linear(x, self.qkv.weight, bias)
+        query, key, value = rearrange(
+            qkv, "b n (three h d) -> three b h n d", three=3, h=self.nhead
+        )
+        attn = (query * self.scale @ key.transpose(-2, -1)).softmax(dim=-1)
+        attn = self.attn_drop(attn)
+        out = rearrange(attn @ value, "b h n d -> b n (h d)")
+        return self.proj_drop(self.proj(out))
+
+
+class _MLP(nn.Module):
+    """Feed-forward block; ``fc1``/``fc2`` names match the released checkpoint."""
+
+    def __init__(self, emb_dim, hidden_dim, activation=nn.GELU, drop=0.0):
+        super().__init__()
+        self.fc1 = nn.Linear(emb_dim, hidden_dim)
+        self.act = activation()
+        self.fc2 = nn.Linear(hidden_dim, emb_dim)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        return self.drop(self.fc2(self.act(self.fc1(x))))
