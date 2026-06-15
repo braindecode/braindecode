@@ -421,6 +421,9 @@ def test_model_compiled(model):
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
         "MetaNeuromotorHand",
+        # Data-dependent channel-position bucketing in _make_tok_idx
+        # (long().clamp_ + repeat_interleave) is not compile-stable here.
+        "ZUNA",
     ]
     if model.__class__.__name__ in not_compilable_models:
         pytest.skip(
@@ -533,6 +536,9 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
+        # Starred-unpack reshape (x.reshape(*x.shape[:-1], -1, 1, 2)) in the
+        # rotary embedding cannot be statically sized by TorchScript.
+        "ZUNA",
     ]
 
     if model.__class__.__name__ in not_working_models:

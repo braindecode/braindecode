@@ -9,6 +9,7 @@
 #
 # License: BSD-3
 
+import inspect
 from collections import OrderedDict
 from functools import partial
 from unittest import mock
@@ -26,6 +27,7 @@ from braindecode.models import (
     DGCNN,
     EEGPT,
     TCN,
+    ZUNA,
     ATCNet,
     AttentionBaseNet,
     AttnSleep,
@@ -1417,6 +1419,152 @@ def _make_chs_info(n_chans):
     info = mne.create_info(ch_names=ch_names, sfreq=256, ch_types="eeg")
     info.set_montage(montage)
     return info["chs"]
+
+
+_ZUNA_POSITIONS = torch.tensor(
+    [[0.0, 0.0, 0.0], [0.01, 0.02, 0.03], [-0.01, 0.02, 0.03]]
+)
+
+
+# Small ZUNA architecture override (plain constructor kwargs) for fast tests.
+_SMALL_ZUNA_KWARGS = dict(
+    dim=16,
+    n_layers=1,
+    n_heads=2,
+    head_dim=8,
+    fine_time_pts=32,
+    latent_dim=12,
+    max_seqlen=50,
+    rope_theta=10000.0,
+    rope_dim=4,
+)
+
+
+@pytest.fixture
+def small_zuna():
+    return ZUNA(n_chans=3, n_outputs=2, n_times=1280, **_SMALL_ZUNA_KWARGS)
+
+
+def test_zuna_exposes_architecture_parameters():
+    params = set(inspect.signature(ZUNA.__init__).parameters)
+    assert {
+        "dim", "n_layers", "n_heads", "head_dim", "fine_time_pts",
+        "latent_dim", "max_seqlen", "rope_theta", "rope_dim",
+        "pos_bins", "pos_half_range", "norm_eps", "drop_prob", "activation",
+    } <= params
+
+
+def test_zuna_declares_braindecode_mandatory_parameters():
+    params = inspect.signature(ZUNA.__init__).parameters
+    assert {
+        "n_outputs", "n_chans", "chs_info", "n_times",
+        "input_window_seconds", "sfreq",
+    } <= set(params)
+
+
+def test_zuna_importable_from_models_package():
+    from braindecode.models import ZUNA as ImportedZUNA
+    assert ImportedZUNA is ZUNA
+
+
+def test_zuna_forward_default_returns_logits(small_zuna):
+    out = small_zuna(torch.randn(2, 3, 1280), channel_positions=_ZUNA_POSITIONS)
+    assert out.shape == (2, 2)
+
+
+def test_zuna_forward_return_features_dict(small_zuna):
+    out = small_zuna(
+        torch.randn(2, 3, 1280),
+        channel_positions=_ZUNA_POSITIONS,
+        return_features=True,
+    )
+    assert set(out) == {"features", "cls_token", "token_latents", "structured_latents"}
+    assert out["cls_token"] is None
+    assert out["features"].shape == (2, 3, 12)
+    assert out["token_latents"].shape == (2, 120, 12)
+    assert out["structured_latents"].shape == (2, 3, 40, 12)
+    torch.testing.assert_close(out["features"], out["structured_latents"].mean(dim=2))
+
+
+def test_zuna_batched_forward_matches_per_sample(small_zuna):
+    model = small_zuna.eval()
+    x = torch.randn(3, 3, 1280)
+    with torch.no_grad():
+        batched = model(x, channel_positions=_ZUNA_POSITIONS)
+        per_sample = torch.cat(
+            [model(x[i : i + 1], channel_positions=_ZUNA_POSITIONS) for i in range(3)],
+            dim=0,
+        )
+    torch.testing.assert_close(batched, per_sample)
+
+
+def test_zuna_resolves_standard_montage_channel_names(small_zuna):
+    out = small_zuna(
+        torch.randn(1, 3, 1280),
+        channel_names=["Fz", "Cz", "Pz"],
+        return_features=True,
+    )
+    assert out["structured_latents"].shape == (1, 3, 40, 12)
+
+
+def test_zuna_uses_chs_info_positions():
+    chs_info = [
+        {"ch_name": "A", "loc": np.array([0.0, 0.0, 0.0])},
+        {"ch_name": "B", "loc": np.array([0.01, 0.02, 0.03])},
+        {"ch_name": "C", "loc": np.array([-0.01, 0.02, 0.03])},
+    ]
+    model = ZUNA(n_outputs=2, n_times=1280, chs_info=chs_info, **_SMALL_ZUNA_KWARGS)
+    out = model(torch.randn(1, 3, 1280), return_features=True)
+    assert out["structured_latents"].shape == (1, 3, 40, 12)
+
+
+def test_zuna_get_output_shape(small_zuna):
+    assert small_zuna.get_output_shape() == (1, 2)
+
+
+def test_zuna_exposes_sfreq_and_input_window(small_zuna):
+    assert small_zuna.sfreq == 256.0
+    assert small_zuna.input_window_seconds == 5.0
+
+
+def test_zuna_requires_channel_positions_or_names(small_zuna):
+    with pytest.raises(ValueError, match="ZUNA requires channel coordinates or names"):
+        small_zuna(torch.randn(1, 3, 1280))
+
+
+def test_zuna_requires_montage_when_names_only(small_zuna):
+    with pytest.raises(ValueError, match="ZUNA requires a montage"):
+        small_zuna(torch.randn(1, 3, 1280), channel_names=["Fz", "Cz", "Pz"], montage=None)
+
+
+@pytest.mark.parametrize("bad_n_times", [1279, 1281])
+def test_zuna_rejects_non_zuna_n_times(bad_n_times):
+    with pytest.raises(ValueError, match="5 seconds sampled at 256 Hz"):
+        ZUNA(n_chans=3, n_outputs=2, n_times=bad_n_times)
+
+
+def test_zuna_rejects_non_zuna_forward_length(small_zuna):
+    with pytest.raises(ValueError, match="5 seconds sampled at 256 Hz"):
+        small_zuna(torch.randn(1, 3, 1279), channel_positions=_ZUNA_POSITIONS)
+
+
+def test_zuna_reset_head_replaces_final_layer(small_zuna):
+    small_zuna.reset_head(5)
+    out = small_zuna(torch.randn(2, 3, 1280), channel_positions=_ZUNA_POSITIONS)
+    assert small_zuna.n_outputs == 5
+    assert out.shape == (2, 5)
+
+
+def test_zuna_load_state_dict_strips_upstream_prefix(small_zuna):
+    randomized = {k: torch.randn_like(v) for k, v in small_zuna.encoder.state_dict().items()}
+    upstream = {f"model.encoder.{k}": v for k, v in randomized.items()}
+    upstream["model.decoder.dummy"] = torch.zeros(1)
+
+    small_zuna.load_state_dict(upstream)
+
+    loaded = small_zuna.encoder.state_dict()
+    for key, expected in randomized.items():
+        torch.testing.assert_close(loaded[key], expected)
 
 
 @pytest.mark.parametrize(
