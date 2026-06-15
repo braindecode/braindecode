@@ -118,16 +118,17 @@ class _Attention(nn.Module):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
+        all_head_dim = head_dim * num_heads
         self.scale = head_dim**-0.5
-        self.qkv = nn.Linear(dim, dim * 3, bias=False)
+        self.qkv = nn.Linear(dim, all_head_dim * 3, bias=False)
         if qkv_bias:
-            self.q_bias = nn.Parameter(torch.zeros(dim))
-            self.v_bias = nn.Parameter(torch.zeros(dim))
+            self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
+            self.v_bias = nn.Parameter(torch.zeros(all_head_dim))
         else:
             self.q_bias = None
             self.v_bias = None
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
+        self.proj = nn.Linear(all_head_dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(self, x):
@@ -149,7 +150,7 @@ class _Attention(nn.Module):
         attn = (query * self.scale) @ key.transpose(-2, -1)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
-        x = (attn @ value).transpose(1, 2).reshape(batch_size, n_tokens, dim)
+        x = (attn @ value).transpose(1, 2).reshape(batch_size, n_tokens, -1)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x

@@ -5,6 +5,7 @@ import torch.nn as nn
 from braindecode.models.eegdino import (
     EEGDINO,
     EEGDINO_CONFIGS,
+    _Attention,
     _PatchEmbedding,
     _TransformerEncoderLayer,
 )
@@ -99,3 +100,27 @@ def test_reset_head_changes_output_dim():
     model.reset_head(7)
     assert model.n_outputs == 7
     assert model(torch.randn(2, 16, 1000)).shape == (2, 7)
+
+
+def test_attention_large_preset_indivisible_dims_forward():
+    # Large preset: dim=1024, heads=24 -> 1024 % 24 != 0. Decoupling head_dim
+    # from model dim must let the forward pass run without raising.
+    attn = _Attention(dim=1024, num_heads=24)
+    out = attn(torch.randn(2, 5, 1024))
+    assert out.shape == (2, 5, 1024)
+
+
+def test_attention_small_medium_checkpoint_shapes_unchanged():
+    # For S (dim=200, heads=8) and M (dim=512, heads=16), all_head_dim == dim,
+    # so released-checkpoint key shapes must remain identical.
+    small = _Attention(dim=200, num_heads=8).state_dict()
+    assert small["qkv.weight"].shape == (600, 200)
+    assert small["q_bias"].shape == (200,)
+    assert small["v_bias"].shape == (200,)
+    assert small["proj.weight"].shape == (200, 200)
+
+    medium = _Attention(dim=512, num_heads=16).state_dict()
+    assert medium["qkv.weight"].shape == (1536, 512)
+    assert medium["q_bias"].shape == (512,)
+    assert medium["v_bias"].shape == (512,)
+    assert medium["proj.weight"].shape == (512, 512)
