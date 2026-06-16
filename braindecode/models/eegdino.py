@@ -70,28 +70,30 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
     .. rubric:: Step 5 -- Classification Head (``final_layer``)
 
-    The patch tokens (global token excluded) are pooled across channels, then
-    across time, with a small MLP at each stage, and mapped to ``n_outputs`` by
-    ``final_layer``. With ``return_encoder_output=True`` the pooled
-    representation is returned instead (linear probing).
+    The patch tokens (global token excluded) are mean-pooled into a single
+    ``emb_dim`` vector and mapped to ``n_outputs`` by a linear ``final_layer``
+    (:class:`~braindecode.EEGClassifier` applies the softmax). With
+    ``return_encoder_output=True`` the pooled representation is returned instead
+    (linear probing).
 
     .. important::
        **Pre-trained Weights Available**
 
        Small and Medium encoders converted from the released checkpoints are
-       loadable from the Hugging Face Hub (the head is always re-initialized, so
-       fine-tune or linear-probe before use)::
+       hosted on the Hugging Face Hub, one repository per size (the head is
+       re-initialized, so fine-tune or linear-probe before use)::
 
            from braindecode.models import EEGDINO
 
            model = EEGDINO.from_pretrained(
-               "braindecode/eegdino-pretrained",
-               filename="eegdino_small.safetensors",  # or eegdino_medium
+               "braindecode/eegdino-small-pretrained",  # or -medium-pretrained
                n_outputs=6,
+               n_chans=19,
+               sfreq=200,
            )
 
-       The Small/Medium/Large configurations are available in
-       :data:`EEGDINO_CONFIGS`. Requires ``braindecode[hug]``.
+       The Small/Medium/Large architectures are also available in
+       :data:`EEGDINO_CONFIGS`. Requires ``braindecode[hub]``.
 
     .. versionadded:: 1.7
 
@@ -121,10 +123,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
     global_token_layer : int, default=1
         1-based index of the encoder layer after which the global tokens are
         inserted.
-    head_hidden_divisors : tuple of int, default=(2, 4)
-        Hidden sizes of the classification MLP are ``emb_dim // d`` for each ``d``.
-    head_drop_probs : tuple of float, default=(0.5, 0.3)
-        Dropout after each classification-MLP hidden layer.
     activation : type[nn.Module], default=nn.GELU
         Activation used throughout.
     drop_prob : float, default=0.1
@@ -165,8 +163,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         num_channels: int = 19,
         n_global_tokens: int = 1,
         global_token_layer: int = 1,
-        head_hidden_divisors: tuple[int, int] = (2, 4),
-        head_drop_probs: tuple[float, float] = (0.5, 0.3),
         activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
         return_features: bool = False,
@@ -198,8 +194,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.patch_size = patch_size
         self.n_global_tokens = n_global_tokens
         self.global_token_layer = global_token_layer
-        self.head_hidden_divisors = head_hidden_divisors
-        self.head_drop_probs = head_drop_probs
         self.activation = activation
         self.return_features = return_features
         self.return_encoder_output = return_encoder_output
@@ -221,33 +215,17 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.global_tokens = nn.Parameter(torch.zeros(1, n_global_tokens, self.emb_dim))
         nn.init.trunc_normal_(self.global_tokens, std=0.02)
 
-        self.head_token_mlp = nn.Sequential(
-            nn.Linear(self.emb_dim, self.emb_dim), activation()
-        )
-        self.head_time_mlp = nn.Sequential(
-            nn.Linear(self.emb_dim, self.emb_dim), activation()
-        )
-        self._build_final_layer()
+        self.final_layer = self._make_head(self.n_outputs)
 
-    def _build_final_layer(self):
+    def _make_head(self, n_outputs):
         if self.return_encoder_output:
-            self.final_layer = nn.Identity()
-            return
-        hidden = [self.emb_dim // d for d in self.head_hidden_divisors]
-        self.final_layer = nn.Sequential(
-            nn.Linear(self.emb_dim, hidden[0]),
-            self.activation(),
-            nn.Dropout(self.head_drop_probs[0]),
-            nn.Linear(hidden[0], hidden[1]),
-            self.activation(),
-            nn.Dropout(self.head_drop_probs[1]),
-            nn.Linear(hidden[1], self.n_outputs),
-        )
+            return nn.Identity()
+        return nn.Linear(self.emb_dim, n_outputs)
 
     def reset_head(self, n_outputs):
         """Replace ``final_layer`` to output ``n_outputs`` classes."""
         self._n_outputs = n_outputs
-        self._build_final_layer()
+        self.final_layer = self._make_head(n_outputs)
 
     def _patchify(self, x):
         """``(batch, n_chans, n_times)`` -> scaled ``(batch, n_chans, n_patches, patch_size)``."""
@@ -262,13 +240,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             )
         x = x / 100.0  # amplitude scaling used during EEG-DINO pre-training
         return rearrange(x, "b c (n p) -> b c n p", p=self.patch_size)
-
-    def _pool_head(self, patch_tokens, n_chans):
-        """Pool patch tokens across channels then time -> ``(batch, emb_dim)``."""
-        x = self.head_token_mlp(patch_tokens)
-        x = rearrange(x, "b (c n) d -> b c n d", c=n_chans).mean(dim=1)
-        x = self.head_time_mlp(x).mean(dim=1)
-        return x
 
     def forward(self, x, return_features: bool | None = None):
         """Forward pass.
@@ -294,7 +265,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             x = self._patchify(x)
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
-        n_chans = patch_emb.shape[1]
         tokens = rearrange(patch_emb, "b c n d -> b (c n) d")
 
         global_tokens = self.global_tokens.expand(tokens.shape[0], -1, -1)
@@ -308,7 +278,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         if return_features:
             return {"features": patch_out, "cls_token": global_out.mean(dim=1)}
 
-        pooled = self._pool_head(patch_out, n_chans)
+        pooled = patch_out.mean(dim=1)  # average over channel-patch tokens
         if self.return_encoder_output:
             return pooled
         return self.final_layer(pooled)

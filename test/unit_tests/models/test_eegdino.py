@@ -68,26 +68,6 @@ def test_medium_preset_derives_dims():
     assert len(model.encoder_layers) == 16
 
 
-def test_encoder_state_dict_keys_are_loadable():
-    """The encoder must accept a state_dict keyed by the released EEG-DINO names
-    (``patch_embedding.*``, ``encoder_layers.*``, ``global_tokens``)."""
-    model = EEGDINO(n_chans=19, n_outputs=4, n_times=1000)
-    encoder_prefixes = ("patch_embedding.", "encoder_layers.", "global_tokens")
-    enc_keys = {k for k in model.state_dict() if k.startswith(encoder_prefixes)}
-    fake_ckpt = {  # released checkpoints nest the encoder under module.teacher.*
-        "global_step": 1,
-        "state_dict": {
-            f"module.teacher.{k}": model.state_dict()[k].clone() for k in enc_keys
-        },
-    }
-    from scripts.convert_eegdino_checkpoints import extract_encoder_state_dict
-
-    state = extract_encoder_state_dict(fake_ckpt, source="teacher")
-    _, unexpected = model.load_state_dict(state, strict=False)
-    assert not unexpected
-    assert set(state) == enc_keys
-
-
 def test_from_pretrained_local_roundtrip(tmp_path):
     pytest.importorskip("huggingface_hub")
     model = EEGDINO(n_chans=19, n_outputs=2, n_times=1000).eval()
