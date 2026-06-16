@@ -62,6 +62,21 @@ def test_forward_accepts_prepatched_4d_input():
     assert out.shape == (2, 4)
 
 
+def test_3d_and_prepatched_4d_inputs_match():
+    # The /100 scaling must apply to both layouts, so equivalent 3D and 4D
+    # inputs produce identical outputs.
+    model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000).eval()
+    x = torch.randn(2, 16, 1000)
+    with torch.no_grad():
+        assert torch.allclose(model(x), model(x.reshape(2, 16, 5, 200)), atol=1e-6)
+
+
+@pytest.mark.parametrize("kwargs", [{"global_token_layer": 0}, {"n_global_tokens": 0}])
+def test_invalid_global_token_config_raises(kwargs):
+    with pytest.raises(ValueError):
+        EEGDINO(n_chans=16, n_outputs=4, n_times=1000, **kwargs)
+
+
 def test_medium_preset_derives_dims():
     model = EEGDINO(n_chans=16, n_outputs=4, n_times=1000, **EEGDINO_CONFIGS["medium"])
     assert model.emb_dim == 512

@@ -52,7 +52,10 @@ def extract_encoder_state_dict(ckpt: dict, source: str = "teacher") -> dict:
 
 def convert(src: Path, size: str, out: Path, n_outputs: int = 2, source: str = "teacher"):
     """Convert one released ``.pt`` into a braindecode pretrained folder."""
-    ckpt = torch.load(src, map_location="cpu", weights_only=False)
+    try:
+        ckpt = torch.load(src, map_location="cpu", weights_only=True)
+    except Exception:  # older PyTorch or non-tensor objects in the checkpoint
+        ckpt = torch.load(src, map_location="cpu", weights_only=False)
     encoder_state = extract_encoder_state_dict(ckpt, source=source)
     config: dict[str, Any] = {} if size == "small" else EEGDINO_CONFIGS[size]
     model = EEGDINO(n_chans=19, n_outputs=n_outputs, n_times=1000, **config)

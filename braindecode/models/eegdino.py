@@ -82,8 +82,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
        **Pre-trained Weights Available**
 
        Small and Medium encoders converted from the released checkpoints are
-       hosted on the Hugging Face Hub, one repository per size (the head is
-       re-initialized, so fine-tune or linear-probe before use)::
+       hosted on the Hugging Face Hub, one repository per size. Only the encoder
+       is pretrained; the classification head is randomly initialized, so
+       fine-tune or linear-probe before use::
 
            from braindecode.models import EEGDINO
 
@@ -97,7 +98,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
        The Small/Medium/Large architectures are also available in
        :data:`EEGDINO_CONFIGS`. Requires ``braindecode[hub]``.
 
-    .. versionadded:: 1.7
+    .. versionadded:: 1.6.1
 
     Parameters
     ----------
@@ -122,7 +123,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         1-based index of the encoder layer after which the global tokens are
         inserted.
     activation : type[nn.Module], default=nn.GELU
-        Activation used throughout.
+        Activation function used in the transformer feed-forward blocks and the
+        classification head. The patch-embedding convolutions use GELU to match
+        the released weights.
     drop_prob : float, default=0.1
         Dropout / stochastic-depth probability in the encoder.
     return_features : bool, default=False
@@ -175,10 +178,22 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        if self._sfreq is not None and self.sfreq != 200:
+        if not 1 <= global_token_layer <= n_layer:
+            raise ValueError(
+                f"global_token_layer must be in [1, n_layer={n_layer}], "
+                f"got {global_token_layer}."
+            )
+        if n_global_tokens < 1:
+            raise ValueError(f"n_global_tokens must be >= 1, got {n_global_tokens}.")
+
+        try:
+            sfreq = self.sfreq
+        except ValueError:
+            sfreq = None  # not resolvable from the given signal parameters
+        if sfreq is not None and sfreq != 200:
             warn(
-                f"EEG-DINO was trained at 200 Hz but sfreq={self.sfreq}. Inputs "
-                "are not resampled internally; results may be unreliable.",
+                f"EEG-DINO was trained at 200 Hz but sfreq={sfreq}. Inputs are "
+                "not resampled internally; results may be unreliable.",
                 UserWarning,
             )
 
@@ -206,20 +221,20 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.global_tokens = nn.Parameter(torch.zeros(1, n_global_tokens, self.emb_dim))
         nn.init.trunc_normal_(self.global_tokens, std=0.02)
 
-        self.final_layer = self._make_head(self.n_outputs)
+        self.final_layer = self._make_head()
 
-    def _make_head(self, n_outputs):
+    def _make_head(self):
         if self.return_encoder_output:
-            return nn.Identity()
-        return _ClassificationHead(self.emb_dim, n_outputs, self.activation)
+            return nn.Identity()  # ``n_outputs`` not needed for linear probing
+        return _ClassificationHead(self.emb_dim, self.n_outputs, self.activation)
 
     def reset_head(self, n_outputs):
         """Replace ``final_layer`` to output ``n_outputs`` classes."""
         self._n_outputs = n_outputs
-        self.final_layer = self._make_head(n_outputs)
+        self.final_layer = self._make_head()
 
     def _patchify(self, x):
-        """``(batch, n_chans, n_times)`` -> scaled ``(batch, n_chans, n_patches, patch_size)``."""
+        """``(batch, n_chans, n_times)`` -> ``(batch, n_chans, n_patches, patch_size)``."""
         n_times = x.shape[-1]
         if n_times % self.patch_size:
             pad = self.patch_size - n_times % self.patch_size
@@ -229,7 +244,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
                 f"{self.patch_size}; zero-padded by {pad} samples.",
                 UserWarning,
             )
-        x = x / 100.0  # amplitude scaling used during EEG-DINO pre-training
         return rearrange(
             x,
             "batch chans (patches patch_size) -> batch chans patches patch_size",
@@ -258,6 +272,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             return_features = self.return_features
         if x.ndim == 3:
             x = self._patchify(x)
+        x = x / 100.0  # amplitude scaling (applied to both 3D and pre-patchified 4D)
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
         n_chans = patch_emb.shape[1]
@@ -394,7 +409,10 @@ class _PatchEmbedding(nn.Module):
 
         # Decoupled positional embedding: one-hot channel + depthwise temporal conv.
         channel_ids = torch.arange(n_chans, device=x.device)
-        channel_emb = self.channel_embedding(F.one_hot(channel_ids, n_chans).float())
+        one_hot = F.one_hot(channel_ids, n_chans).to(
+            self.channel_embedding.weight.dtype
+        )
+        channel_emb = self.channel_embedding(one_hot)
         patch_emb = patch_emb + rearrange(channel_emb, "chans emb -> 1 chans 1 emb")
         temporal_emb = self.time_encoding(
             rearrange(patch_emb, "batch chans patches emb -> batch emb chans patches")
