@@ -162,3 +162,9 @@ testpaths = ["test"]
 python_files = ["test_*.py", "*_test.py"]
 # which functions inside them count as tests
 python_functions = ["test_*"]
+markers = [
+    "integration: integration tests",
+    "network: tests that require network access",
+    "huggingface: tests that access Hugging Face Hub",
+    "slow: slow tests",
+]
