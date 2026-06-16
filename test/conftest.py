@@ -28,6 +28,7 @@ def pytest_collection_modifyitems(config, items):
 
 
 def _is_reve_param(param):
+    """Return whether a parametrized value identifies the REVE model."""
     if isinstance(param, str):
         return param == "REVE"
 
