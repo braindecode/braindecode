@@ -70,11 +70,13 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
     .. rubric:: Step 5 -- Classification Head (``final_layer``)
 
-    The patch tokens (global token excluded) are mean-pooled into a single
-    ``emb_dim`` vector and mapped to ``n_outputs`` by a linear ``final_layer``
+    Following EEG-DINO's finetuning head, the patch tokens (global token
+    excluded) pass through a per-token projection, are mean-pooled over channels
+    then over patches (with an intermediate projection), and a three-layer MLP
+    (``final_layer``) maps them to ``n_outputs``
     (:class:`~braindecode.EEGClassifier` applies the softmax). With
-    ``return_encoder_output=True`` the pooled representation is returned instead
-    (linear probing).
+    ``return_encoder_output=True`` the mean-pooled encoder representation is
+    returned instead (linear probing).
 
     .. important::
        **Pre-trained Weights Available**
@@ -220,7 +222,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
     def _make_head(self, n_outputs):
         if self.return_encoder_output:
             return nn.Identity()
-        return nn.Linear(self.emb_dim, n_outputs)
+        return _ClassificationHead(self.emb_dim, n_outputs, self.activation)
 
     def reset_head(self, n_outputs):
         """Replace ``final_layer`` to output ``n_outputs`` classes."""
@@ -265,6 +267,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             x = self._patchify(x)
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
+        n_chans = patch_emb.shape[1]
         tokens = rearrange(patch_emb, "b c n d -> b (c n) d")
 
         global_tokens = self.global_tokens.expand(tokens.shape[0], -1, -1)
@@ -278,10 +281,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         if return_features:
             return {"features": patch_out, "cls_token": global_out.mean(dim=1)}
 
-        pooled = patch_out.mean(dim=1)  # average over channel-patch tokens
         if self.return_encoder_output:
-            return pooled
-        return self.final_layer(pooled)
+            return patch_out.mean(dim=1)  # pooled encoder features (linear probing)
+        return self.final_layer(patch_out, n_chans)
 
 
 #: Architecture presets. Small and Medium have released weights; Large does not.
@@ -460,3 +462,32 @@ class _MLP(nn.Module):
 
     def forward(self, x):
         return self.drop(self.fc2(self.act(self.fc1(x))))
+
+
+class _ClassificationHead(nn.Module):
+    """EEG-DINO finetuning head (Wang et al., 2025).
+
+    Applies a per-token projection, mean-pools the patch tokens over channels
+    then over patches (with an intermediate projection), and maps the pooled
+    ``emb_dim`` vector to ``n_outputs`` with a three-layer MLP.
+    """
+
+    def __init__(self, emb_dim, n_outputs, activation=nn.GELU):
+        super().__init__()
+        self.token_proj = nn.Sequential(nn.Linear(emb_dim, emb_dim), activation())
+        self.time_proj = nn.Sequential(nn.Linear(emb_dim, emb_dim), activation())
+        self.classifier = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim // 2),
+            activation(),
+            nn.Dropout(0.5),
+            nn.Linear(emb_dim // 2, emb_dim // 4),
+            activation(),
+            nn.Dropout(0.3),
+            nn.Linear(emb_dim // 4, n_outputs),
+        )
+
+    def forward(self, patch_tokens, n_chans):
+        x = self.token_proj(patch_tokens)
+        x = rearrange(x, "b (c n) d -> b c n d", c=n_chans).mean(dim=1)
+        x = self.time_proj(x).mean(dim=1)
+        return self.classifier(x)
