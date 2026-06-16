@@ -1,16 +1,27 @@
-"""Convert released EEG-DINO checkpoints to braindecode HF format.
+"""Convert and re-host EEG-DINO checkpoints on the Hugging Face Hub.
 
-Released `.pt` files contain a DINO training graph under
-`state_dict["module.teacher.*"]` / `["module.student.*"]`. This script keeps the
-teacher encoder, strips the prefix, loads it into an `EEGDINO` instance (head is
-freshly initialized), and saves a braindecode-style folder (config.json +
-safetensors) ready for `huggingface-cli upload`.
+The released EEG-DINO ``.pt`` files contain a full DINO training graph; the
+encoder lives under ``state_dict["module.teacher.*"]``. This script keeps the
+teacher encoder, strips the prefix, loads it into an
+:class:`~braindecode.models.EEGDINO` (the classification head is
+re-initialized), and writes a braindecode-style folder (``config.json`` +
+``model.safetensors``). With ``--push`` it uploads that folder to a per-size
+braindecode Hub repo, matching the one-repo-per-checkpoint convention used by
+the other foundation models (see ``generate_cards.py``):
 
-Usage:
-    python scripts/convert_eegdino_checkpoints.py \
-        --src EEG-DINO/pre-trained-models/model_EEG_DINO_S.pt \
-        --size small --out hf_export/eegdino-small
+    braindecode/eegdino-small-pretrained
+    braindecode/eegdino-medium-pretrained
+
+Run from the repo root (the released checkpoints must be available locally)::
+
+    python hf_assets/model_cards/convert_eegdino_checkpoints.py \
+        --src EEG-DINO/pre-trained-models/model_EEG_DINO_S.pt --size small
+    python hf_assets/model_cards/convert_eegdino_checkpoints.py \
+        --src EEG-DINO/pre-trained-models/model_EEG_DINO_M.pt --size medium
+
+Add ``--push`` (needs write access to the ``braindecode`` HF org) to upload.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,45 +39,67 @@ _DROP_SUFFIXES = ("relative_position_index",)
 
 def extract_encoder_state_dict(ckpt: dict, source: str = "teacher") -> dict:
     """Return the encoder state_dict with the ``module.<source>.`` prefix stripped."""
-    state = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+    state = ckpt.get("state_dict", ckpt)
     prefix = f"module.{source}."
-    out = {}
-    for key, value in state.items():
-        if not key.startswith(prefix):
-            continue
-        stripped = key[len(prefix):]
-        if stripped.endswith(_DROP_SUFFIXES):
-            continue
-        if stripped.startswith(_ENCODER_PREFIXES):
-            out[stripped] = value
-    return out
+    return {
+        key[len(prefix) :]: value
+        for key, value in state.items()
+        if key.startswith(prefix)
+        and key[len(prefix) :].startswith(_ENCODER_PREFIXES)
+        and not key.endswith(_DROP_SUFFIXES)
+    }
 
 
 def convert(src: Path, size: str, out: Path, n_outputs: int = 2, source: str = "teacher"):
+    """Convert one released ``.pt`` into a braindecode pretrained folder."""
     ckpt = torch.load(src, map_location="cpu", weights_only=False)
-    enc_sd = extract_encoder_state_dict(ckpt, source=source)
-    cfg: dict[str, Any] = {} if size == "small" else EEGDINO_CONFIGS[size]
-    model = EEGDINO(n_chans=19, n_outputs=n_outputs, n_times=1000, num_channels=19, **cfg)
-    missing, unexpected = model.load_state_dict(enc_sd, strict=False)
-    enc_missing = [m for m in missing if m.startswith(_ENCODER_PREFIXES)]
-    if enc_missing or unexpected:
+    encoder_state = extract_encoder_state_dict(ckpt, source=source)
+    config: dict[str, Any] = {} if size == "small" else EEGDINO_CONFIGS[size]
+    model = EEGDINO(n_chans=19, n_outputs=n_outputs, n_times=1000, **config)
+    missing, unexpected = model.load_state_dict(encoder_state, strict=False)
+    encoder_missing = [k for k in missing if k.startswith(_ENCODER_PREFIXES)]
+    if encoder_missing or unexpected:
         raise RuntimeError(
-            f"Encoder mismatch. missing={enc_missing} unexpected={unexpected}"
+            f"Encoder mismatch: missing={encoder_missing} unexpected={unexpected}"
         )
     out.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(out)  # writes config.json + safetensors via EEGModuleMixin
-    print(f"Saved {size} to {out} (loaded {len(enc_sd)} encoder tensors)")
+    model.save_pretrained(out)  # config.json + model.safetensors via EEGModuleMixin
+    print(f"Saved {size} to {out} ({len(encoder_state)} encoder tensors loaded)")
+
+
+def push(out: Path, size: str):
+    """Upload a converted folder to ``braindecode/eegdino-<size>-pretrained``."""
+    from huggingface_hub import HfApi
+
+    repo_id = f"braindecode/eegdino-{size}-pretrained"
+    api = HfApi()
+    api.create_repo(repo_id, repo_type="model", exist_ok=True)
+    api.upload_folder(repo_id=repo_id, folder_path=str(out))
+    print(f"Pushed {out} -> {repo_id}")
 
 
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--src", type=Path, required=True)
-    p.add_argument("--size", choices=["small", "medium", "large"], required=True)
-    p.add_argument("--out", type=Path, required=True)
-    p.add_argument("--source", choices=["teacher", "student"], default="teacher")
-    p.add_argument("--n-outputs", type=int, default=2)
-    args = p.parse_args()
-    convert(args.src, args.size, args.out, n_outputs=args.n_outputs, source=args.source)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--src", type=Path, required=True)
+    parser.add_argument("--size", choices=["small", "medium", "large"], required=True)
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="output folder (default: hf_export/eegdino-<size>-pretrained)",
+    )
+    parser.add_argument("--source", choices=["teacher", "student"], default="teacher")
+    parser.add_argument("--n-outputs", type=int, default=2)
+    parser.add_argument(
+        "--push",
+        action="store_true",
+        help="upload to braindecode/eegdino-<size>-pretrained (needs org write access)",
+    )
+    args = parser.parse_args()
+    out = args.out or Path("hf_export") / f"eegdino-{args.size}-pretrained"
+    convert(args.src, args.size, out, n_outputs=args.n_outputs, source=args.source)
+    if args.push:
+        push(out, args.size)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ def test_patch_embedding_cpu_shapes_keys_and_emb_dim():
         channels_kernel_stride_padding_norm=EEGDINO_CONFIGS["small"][
             "channels_kernel_stride_padding_norm"
         ],
-        num_channels=19,
+        n_chans=16,
         drop_prob=0.0,
     )
     assert patch_embed.emb_dim == 200  # derived from the conv configuration
@@ -36,7 +36,7 @@ def test_patch_embedding_cpu_shapes_keys_and_emb_dim():
         "time_encoding.0.weight",
     } <= keys
     assert patch_embed.state_dict()["spectral_proj.0.weight"].shape == (200, 101)
-    assert patch_embed.state_dict()["channel_embedding.weight"].shape == (200, 19)
+    assert patch_embed.state_dict()["channel_embedding.weight"].shape == (200, 16)
 
 
 def test_attention_indivisible_heads_and_beit_keys():

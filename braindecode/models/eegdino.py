@@ -116,10 +116,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         per layer. The embedding dimension is derived from this (see
         :class:`~braindecode.models.CBraMod`). Default is the EEG-DINO-Small /
         CBraMod configuration.
-    num_channels : int, default=19
-        Size of the one-hot channel embedding, i.e. the maximum number of input
-        channels. Default 19 (the released configuration); ``n_chans`` must not
-        exceed it.
     n_global_tokens : int, default=1
         Number of learnable global summary tokens.
     global_token_layer : int, default=1
@@ -162,7 +158,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             (25, 3, 1, 1, (5, 25)),
             (25, 3, 1, 1, (5, 25)),
         ),
-        num_channels: int = 19,
         n_global_tokens: int = 1,
         global_token_layer: int = 1,
         activation: type[nn.Module] = nn.GELU,
@@ -186,12 +181,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
                 "are not resampled internally; results may be unreliable.",
                 UserWarning,
             )
-        if self.n_chans > num_channels:
-            raise ValueError(
-                f"n_chans={self.n_chans} exceeds num_channels={num_channels}; "
-                "raise num_channels (breaks released-weight compatibility) or "
-                "use fewer channels."
-            )
 
         self.patch_size = patch_size
         self.n_global_tokens = n_global_tokens
@@ -203,7 +192,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.patch_embedding = _PatchEmbedding(
             patch_size=patch_size,
             channels_kernel_stride_padding_norm=channels_kernel_stride_padding_norm,
-            num_channels=num_channels,
+            n_chans=self.n_chans,
             drop_prob=drop_prob,
         )
         self.emb_dim = self.patch_embedding.emb_dim
@@ -241,7 +230,11 @@ class EEGDINO(EEGModuleMixin, nn.Module):
                 UserWarning,
             )
         x = x / 100.0  # amplitude scaling used during EEG-DINO pre-training
-        return rearrange(x, "b c (n p) -> b c n p", p=self.patch_size)
+        return rearrange(
+            x,
+            "batch chans (patches patch_size) -> batch chans patches patch_size",
+            patch_size=self.patch_size,
+        )
 
     def forward(self, x, return_features: bool | None = None):
         """Forward pass.
@@ -268,7 +261,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
         n_chans = patch_emb.shape[1]
-        tokens = rearrange(patch_emb, "b c n d -> b (c n) d")
+        tokens = rearrange(
+            patch_emb, "batch chans patches emb -> batch (chans patches) emb"
+        )
 
         global_tokens = self.global_tokens.expand(tokens.shape[0], -1, -1)
         for i, layer in enumerate(self.encoder_layers):
@@ -334,13 +329,12 @@ class _PatchEmbedding(nn.Module):
         self,
         patch_size,
         channels_kernel_stride_padding_norm,
-        num_channels,
+        n_chans,
         drop_prob=0.1,
     ):
         super().__init__()
         self.patch_size = patch_size
         self.channels_kernel_stride_padding_norm = channels_kernel_stride_padding_norm
-        self.num_channels = num_channels
 
         in_channels, conv_layers = 1, []
         for (
@@ -363,7 +357,7 @@ class _PatchEmbedding(nn.Module):
         self.spectral_proj = nn.Sequential(
             nn.Linear(patch_size // 2 + 1, self.emb_dim), nn.Dropout(drop_prob)
         )
-        self.channel_embedding = nn.Linear(num_channels, self.emb_dim)
+        self.channel_embedding = nn.Linear(n_chans, self.emb_dim)
         # Sequential wrapper keeps the released-checkpoint key ``time_encoding.0.*``.
         self.time_encoding = nn.Sequential(
             nn.Conv2d(
@@ -384,19 +378,30 @@ class _PatchEmbedding(nn.Module):
         n_chans = x.shape[1]
 
         # Time-frequency embedding (CBraMod TFE): conv branch + FFT-magnitude branch.
-        time_tokens = self.proj_in(rearrange(x, "b c n p -> b 1 (c n) p"))
-        time_tokens = rearrange(time_tokens, "b d (c n) q -> b c n (d q)", c=n_chans)
+        time_tokens = self.proj_in(
+            rearrange(
+                x,
+                "batch chans patches patch_size -> batch 1 (chans patches) patch_size",
+            )
+        )
+        time_tokens = rearrange(
+            time_tokens,
+            "batch conv_dim (chans patches) conv_len -> batch chans patches (conv_dim conv_len)",
+            chans=n_chans,
+        )
         spectrum = torch.fft.rfft(x, dim=-1, norm="forward").abs()
         patch_emb = time_tokens + self.spectral_proj(spectrum)
 
         # Decoupled positional embedding: one-hot channel + depthwise temporal conv.
         channel_ids = torch.arange(n_chans, device=x.device)
-        channel_emb = self.channel_embedding(
-            F.one_hot(channel_ids, self.num_channels).float()
+        channel_emb = self.channel_embedding(F.one_hot(channel_ids, n_chans).float())
+        patch_emb = patch_emb + rearrange(channel_emb, "chans emb -> 1 chans 1 emb")
+        temporal_emb = self.time_encoding(
+            rearrange(patch_emb, "batch chans patches emb -> batch emb chans patches")
         )
-        patch_emb = patch_emb + rearrange(channel_emb, "c d -> 1 c 1 d")
-        temporal_emb = self.time_encoding(rearrange(patch_emb, "b c n d -> b d c n"))
-        return patch_emb + rearrange(temporal_emb, "b d c n -> b c n d")
+        return patch_emb + rearrange(
+            temporal_emb, "batch emb chans patches -> batch chans patches emb"
+        )
 
 
 class _TransformerEncoderLayer(nn.Module):
@@ -442,11 +447,16 @@ class _Attention(nn.Module):
         bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias), self.v_bias))
         qkv = F.linear(x, self.qkv.weight, bias)
         query, key, value = rearrange(
-            qkv, "b n (three h d) -> three b h n d", three=3, h=self.nhead
+            qkv,
+            "batch tokens (three heads head_dim) -> three batch heads tokens head_dim",
+            three=3,
+            heads=self.nhead,
         )
         attn = (query * self.scale @ key.transpose(-2, -1)).softmax(dim=-1)
         attn = self.attn_drop(attn)
-        out = rearrange(attn @ value, "b h n d -> b n (h d)")
+        out = rearrange(
+            attn @ value, "batch heads tokens head_dim -> batch tokens (heads head_dim)"
+        )
         return self.proj_drop(self.proj(out))
 
 
@@ -472,22 +482,26 @@ class _ClassificationHead(nn.Module):
     ``emb_dim`` vector to ``n_outputs`` with a three-layer MLP.
     """
 
-    def __init__(self, emb_dim, n_outputs, activation=nn.GELU):
+    def __init__(
+        self, emb_dim, n_outputs, activation=nn.GELU, drop_prob_1=0.5, drop_prob_2=0.3
+    ):
         super().__init__()
         self.token_proj = nn.Sequential(nn.Linear(emb_dim, emb_dim), activation())
         self.time_proj = nn.Sequential(nn.Linear(emb_dim, emb_dim), activation())
         self.classifier = nn.Sequential(
             nn.Linear(emb_dim, emb_dim // 2),
             activation(),
-            nn.Dropout(0.5),
+            nn.Dropout(drop_prob_1),
             nn.Linear(emb_dim // 2, emb_dim // 4),
             activation(),
-            nn.Dropout(0.3),
+            nn.Dropout(drop_prob_2),
             nn.Linear(emb_dim // 4, n_outputs),
         )
 
     def forward(self, patch_tokens, n_chans):
         x = self.token_proj(patch_tokens)
-        x = rearrange(x, "b (c n) d -> b c n d", c=n_chans).mean(dim=1)
+        x = rearrange(
+            x, "batch (chans patches) emb -> batch chans patches emb", chans=n_chans
+        ).mean(dim=1)
         x = self.time_proj(x).mean(dim=1)
         return self.classifier(x)
