@@ -309,6 +309,9 @@ def create_windows_from_events(
     -------
     windows_datasets: BaseConcatDataset[WindowsDataset | EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
+        Each window metadata row contains ``i_trial_in_dataset``, the index of the
+        source event in the original ``mne.Annotations`` for that recording, and
+        any extra columns stored on the source annotations.
     """
     _check_windowing_arguments(
         trial_start_offset_samples,
@@ -618,6 +621,9 @@ def _create_windows_from_events(
     events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
     onsets = events[:, 0]
     ann = ds.raw.annotations
+    i_trials_in_dataset = np.array(
+        [i for i, a in enumerate(ann) if a["description"] in events_id]
+    )
     # Onsets are relative to the beginning of the recording
     filtered_durations = np.array(
         [a["duration"] for a in ann if a["description"] in events_id]
@@ -743,6 +749,7 @@ def _create_windows_from_events(
                 events = events[checker_trials_size]
                 onsets = onsets[checker_trials_size]
                 stops = stops[checker_trials_size]
+                i_trials_in_dataset = i_trials_in_dataset[checker_trials_size]
                 if extras is not None:
                     extras = [e for i, e in enumerate(extras) if checker_trials_size[i]]
         description = events[:, -1]
@@ -782,6 +789,7 @@ def _create_windows_from_events(
     metadata = pd.DataFrame(
         {
             "i_window_in_trial": i_window_in_trials,
+            "i_trial_in_dataset": [i_trials_in_dataset[i] for i in i_trials],
             "i_start_in_trial": starts,
             "i_stop_in_trial": stops,
             "target": description,
