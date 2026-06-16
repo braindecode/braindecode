@@ -788,7 +788,7 @@ def _create_windows_from_events(
     metadata = pd.DataFrame(
         {
             "i_window_in_trial": i_window_in_trials,
-            "i_trial_in_dataset": [i_trials_in_dataset[i] for i in i_trials],
+            "i_trial_in_dataset": i_trials_in_dataset[np.asarray(i_trials, dtype=int)],
             "i_start_in_trial": starts,
             "i_stop_in_trial": stops,
             "target": description,
