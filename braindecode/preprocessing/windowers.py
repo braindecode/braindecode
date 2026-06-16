@@ -621,17 +621,16 @@ def _create_windows_from_events(
     events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
     onsets = events[:, 0]
     ann = ds.raw.annotations
-    i_trials_in_dataset = np.array(
-        [i for i, a in enumerate(ann) if a["description"] in events_id]
-    )
+    filtered_annotations = [
+        (i, a) for i, a in enumerate(ann) if a["description"] in events_id
+    ]
+    i_trials_in_dataset = np.array([i for i, _ in filtered_annotations])
     # Onsets are relative to the beginning of the recording
-    filtered_durations = np.array(
-        [a["duration"] for a in ann if a["description"] in events_id]
-    )
+    filtered_durations = np.array([a["duration"] for _, a in filtered_annotations])
 
     extras = None
     if hasattr(ann, "extras"):
-        extras = [a["extras"] for a in ann if a["description"] in events_id]
+        extras = [a["extras"] for _, a in filtered_annotations]
         if not any(extras):
             extras = None
 

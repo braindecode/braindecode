@@ -617,11 +617,11 @@ def test_metadata_extras(lazy_loadable_dataset, use_mne_epochs):
     )
 
     for ds in windows.datasets:
-        metadata = windows.get_metadata()
+        metadata = ds.metadata
         assert "extra_col" in metadata.columns
         assert "i_trial_in_dataset" in metadata.columns
         np.testing.assert_array_equal(
-            metadata["i_trial_in_dataset"].to_numpy(), np.arange(len(windows))
+            metadata["i_trial_in_dataset"].to_numpy(), np.arange(len(ds))
         )
         np.testing.assert_array_equal(
             metadata["extra_col"].to_numpy(),
