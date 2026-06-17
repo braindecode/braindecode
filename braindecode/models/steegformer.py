@@ -189,8 +189,12 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     and read out by an average-pooling classification head.
 
     .. note::
-        Work in progress (draft). Only the public signature is defined for now;
-        the architecture is not implemented yet. See #1040.
+        Work in progress (draft, see #1040). The architecture is implemented
+        from scratch with braindecode building blocks. Two simplifications vs
+        the reference: the per-channel embedding is a plain
+        :class:`~torch.nn.Embedding` over the model's own channels (not the
+        shared 145-channel montage vocabulary), and loading the official
+        pre-trained (MAE) weights is not supported yet.
 
     Parameters
     ----------
@@ -227,11 +231,11 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        # --- model hyperparameters ---
+        # --- model hyperparameters (defaults: "small" variant) ---
         patch_size: int = 16,
-        embed_dim: int = 768,
-        depth: int = 12,
-        num_heads: int = 12,
+        embed_dim: int = 512,
+        depth: int = 8,
+        num_heads: int = 8,
         mlp_ratio: float = 4.0,
         drop_rate: float = 0.0,
         global_pool: str = "avg",
@@ -246,6 +250,16 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        if global_pool not in ("avg", "cls"):
+            raise ValueError(
+                f"global_pool must be 'avg' or 'cls', got {global_pool!r}."
+            )
+        if embed_dim % 2 != 0:
+            raise ValueError(
+                f"embed_dim must be even for the sinusoidal temporal encoding, "
+                f"got {embed_dim}."
+            )
+
         self.patch_size = patch_size
         self.embed_dim = embed_dim
         self.depth = depth
@@ -254,9 +268,52 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.drop_rate = drop_rate
         self.global_pool = global_pool
 
-        # TODO(#1040): patch embedding, positional embeddings + CLS token,
-        # Transformer encoder, and the avg-pool classification head.
+        # Patch embedding + positional embeddings + CLS token.
+        self.patch_embed = _PatchEmbedEEG(patch_size, embed_dim)
+        self.temporal_pos = _TemporalPositionalEncoding(embed_dim)
+        self.channel_pos = _ChannelPositionalEmbed(self.n_chans, embed_dim)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
+        self.pos_drop = nn.Dropout(drop_rate)
+
+        # Transformer encoder (reuses braindecode's attention/FFN blocks).
+        self.encoder = nn.Sequential(
+            *[
+                _TransformerEncoderBlock(
+                    embed_dim, num_heads, drop_rate, int(mlp_ratio)
+                )
+                for _ in range(depth)
+            ]
+        )
+
+        # Classification head.
+        self.norm = nn.LayerNorm(embed_dim)
+        self.final_layer = nn.Linear(embed_dim, self.n_outputs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (batch, n_chans, n_times)
-        raise NotImplementedError("STEEGFormer is a WIP draft — see #1040.")
+        seq = x.shape[-1] // self.patch_size
+        # Crop the tail so n_times is an exact multiple of patch_size
+        # (mirrors the non-overlapping patching of the reference).
+        x = x[..., : seq * self.patch_size]
+
+        # Tokens + positional embeddings, kept on the (seq, channel) grid.
+        tokens = self.patch_embed(x)  # (batch, seq, n_chans, embed_dim)
+        tokens = tokens + self.temporal_pos(seq) + self.channel_pos()
+        tokens = rearrange(tokens, "b seq c d -> b (seq c) d")
+
+        # Prepend the CLS token (combined with the temporal encoding at pos. 0).
+        cls = self.cls_token + self.temporal_pos.cls_token_encoding()
+        cls = cls.expand(tokens.shape[0], -1, -1)
+        x = torch.cat([cls, tokens], dim=1)
+        x = self.pos_drop(x)
+
+        x = self.encoder(x)
+
+        # Aggregate tokens, then classify.
+        if self.global_pool == "avg":
+            x = x[:, 1:].mean(dim=1)  # mean over tokens, excluding CLS
+        else:  # "cls"
+            x = x[:, 0]
+        x = self.norm(x)
+        return self.final_layer(x)
