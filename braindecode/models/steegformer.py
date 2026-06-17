@@ -148,7 +148,7 @@ class _TransformerEncoderBlock(nn.Sequential):
         self,
         embed_dim: int,
         num_heads: int,
-        drop_rate: float,
+        drop_prob: float,
         mlp_ratio: int,
         activation: type[nn.Module] = nn.GELU,
     ):
@@ -156,8 +156,8 @@ class _TransformerEncoderBlock(nn.Sequential):
             _ResidualAdd(
                 nn.Sequential(
                     nn.LayerNorm(embed_dim),
-                    MultiHeadAttention(embed_dim, num_heads, drop_rate),
-                    nn.Dropout(drop_rate),
+                    MultiHeadAttention(embed_dim, num_heads, drop_prob),
+                    nn.Dropout(drop_prob),
                 )
             ),
             _ResidualAdd(
@@ -166,10 +166,10 @@ class _TransformerEncoderBlock(nn.Sequential):
                     FeedForwardBlock(
                         embed_dim,
                         expansion=mlp_ratio,
-                        drop_p=drop_rate,
+                        drop_p=drop_prob,
                         activation=activation,
                     ),
-                    nn.Dropout(drop_rate),
+                    nn.Dropout(drop_prob),
                 )
             ),
         )
@@ -178,7 +178,7 @@ class _TransformerEncoderBlock(nn.Sequential):
 class STEEGFormer(EEGModuleMixin, nn.Module):
     r"""STEEGFormer from Yang et al. (2026) [Yang2026]_.
 
-    :bdg-info:`Attention/Transformer` :bdg-warning:`Foundation / Self-supervised`
+    :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
 
     .. rubric:: Architectural Overview
 
@@ -208,8 +208,11 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         Number of attention heads.
     mlp_ratio : float
         Hidden-to-embedding ratio of the MLP blocks.
-    drop_rate : float
+    drop_prob : float
         Dropout rate.
+    activation : type[nn.Module]
+        Activation layer class used in the feed-forward blocks, default
+        :class:`~torch.nn.GELU`.
     global_pool : str
         Token aggregation before the head (``"avg"`` or ``"cls"``).
 
@@ -237,7 +240,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         depth: int = 8,
         num_heads: int = 8,
         mlp_ratio: float = 4.0,
-        drop_rate: float = 0.0,
+        drop_prob: float = 0.0,
+        activation: type[nn.Module] = nn.GELU,
         global_pool: str = "avg",
     ):
         super().__init__(
@@ -265,7 +269,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.depth = depth
         self.num_heads = num_heads
         self.mlp_ratio = mlp_ratio
-        self.drop_rate = drop_rate
+        self.drop_prob = drop_prob
+        self.activation = activation
         self.global_pool = global_pool
 
         # Patch embedding + positional embeddings + CLS token.
@@ -274,13 +279,13 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.channel_pos = _ChannelPositionalEmbed(self.n_chans, embed_dim)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         nn.init.trunc_normal_(self.cls_token, std=0.02)
-        self.pos_drop = nn.Dropout(drop_rate)
+        self.pos_drop = nn.Dropout(drop_prob)
 
         # Transformer encoder (reuses braindecode's attention/FFN blocks).
         self.encoder = nn.Sequential(
             *[
                 _TransformerEncoderBlock(
-                    embed_dim, num_heads, drop_rate, int(mlp_ratio)
+                    embed_dim, num_heads, drop_prob, int(mlp_ratio), activation
                 )
                 for _ in range(depth)
             ]
