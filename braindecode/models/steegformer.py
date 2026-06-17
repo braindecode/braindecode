@@ -15,6 +15,7 @@ from einops import rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
 class _PatchEmbedEEG(nn.Module):
@@ -120,6 +121,58 @@ class _ChannelPositionalEmbed(nn.Module):
         emb = self.embedding(self.channel_indices)  # (n_chans, embed_dim)
         # -> (1, 1, n_chans, embed_dim) to broadcast over batch and patches.
         return rearrange(emb, "c d -> 1 1 c d")
+
+
+class _ResidualAdd(nn.Module):
+    """Wrap a module in a residual connection (``x + fn(x)``)."""
+
+    def __init__(self, fn: nn.Module):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.fn(x)
+
+
+class _TransformerEncoderBlock(nn.Sequential):
+    """Pre-norm Transformer encoder block (ViT-style).
+
+    Same layout as the block of :class:`~braindecode.models.EEGConformer`: a
+    residual multi-head self-attention sub-block followed by a residual
+    feed-forward sub-block, each with pre-LayerNorm. Reuses braindecode's
+    :class:`~braindecode.modules.MultiHeadAttention` and
+    :class:`~braindecode.modules.FeedForwardBlock`.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        drop_rate: float,
+        mlp_ratio: int,
+        activation: type[nn.Module] = nn.GELU,
+    ):
+        super().__init__(
+            _ResidualAdd(
+                nn.Sequential(
+                    nn.LayerNorm(embed_dim),
+                    MultiHeadAttention(embed_dim, num_heads, drop_rate),
+                    nn.Dropout(drop_rate),
+                )
+            ),
+            _ResidualAdd(
+                nn.Sequential(
+                    nn.LayerNorm(embed_dim),
+                    FeedForwardBlock(
+                        embed_dim,
+                        expansion=mlp_ratio,
+                        drop_p=drop_rate,
+                        activation=activation,
+                    ),
+                    nn.Dropout(drop_rate),
+                )
+            ),
+        )
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
