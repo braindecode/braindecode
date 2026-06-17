@@ -9,9 +9,46 @@ Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 from __future__ import annotations
 
 import torch
+from einops import rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+
+
+class _PatchEmbedEEG(nn.Module):
+    """Split each channel into temporal patches and embed them as tokens.
+
+    The input EEG is cut, **per channel**, into contiguous non-overlapping
+    temporal patches of ``patch_size`` samples; each patch is linearly
+    projected to ``embed_dim``. This is the EEG counterpart of the patch
+    embedding of a Vision Transformer: one token per (temporal patch, channel)
+    pair.
+
+    Parameters
+    ----------
+    patch_size : int
+        Number of time samples per temporal patch.
+    embed_dim : int
+        Token embedding dimension.
+
+    Notes
+    -----
+    ``n_times`` must be an exact multiple of ``patch_size``; the number of
+    temporal patches is ``seq = n_times // patch_size``. The (temporal,
+    channel) structure is kept in the output so that temporal and channel
+    positional embeddings can be added before the tokens are flattened.
+    """
+
+    def __init__(self, patch_size: int, embed_dim: int):
+        super().__init__()
+        self.patch_size = patch_size
+        self.proj = nn.Linear(patch_size, embed_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # (batch, n_chans, n_times) -> (batch, seq, n_chans, patch_size)
+        patches = rearrange(x, "b c (seq p) -> b seq c p", p=self.patch_size)
+        # -> (batch, seq, n_chans, embed_dim)
+        return self.proj(patches)
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
