@@ -131,8 +131,11 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         1-based index of the encoder layer after which the global tokens are
         inserted.
     activation : type[nn.Module], default=nn.GELU
-        Activation function used throughout the model (patch-embedding
-        convolutions, transformer feed-forward blocks, and classification head).
+        Activation function used in the transformer feed-forward blocks and the
+        classification head.
+    patch_activation : type[nn.Module], default=nn.GELU
+        Activation function used in the patch-embedding convolutions. Defaults to
+        ``nn.GELU`` to match the released pretrained weights.
     drop_prob : float, default=0.1
         Dropout / stochastic-depth probability in the encoder.
     return_features : bool, default=False
@@ -171,6 +174,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         n_global_tokens: int = 1,
         global_token_layer: int = 1,
         activation: type[nn.Module] = nn.GELU,
+        patch_activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
         return_features: bool = False,
         return_encoder_output: bool = False,
@@ -214,7 +218,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             patch_size=patch_size,
             channels_kernel_stride_padding_norm=channels_kernel_stride_padding_norm,
             n_chans=self.n_chans,
-            activation=activation,
+            activation=patch_activation,
             drop_prob=drop_prob,
         )
         self.emb_dim = self.patch_embedding.emb_dim
