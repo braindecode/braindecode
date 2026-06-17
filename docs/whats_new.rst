@@ -43,12 +43,21 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- Removed the deprecated aliases that were scheduled for removal after their
+  deprecation in v1.2/v1.3: ``EEGNetv4`` (use
+  :class:`braindecode.models.EEGNet`), ``SleepStagerEldele2021`` (use
+  :class:`braindecode.models.AttnSleep`), ``TSceptionV1`` (use
+  :class:`braindecode.models.TSception`), and ``BNCI2014001`` (use
+  :class:`braindecode.datasets.BNCI2014_001`). (:gh:`1045` by `Bhargav Kowshik`_)
 
 Requirements
 ============
 
-- None yet
+- Cap the test dependency to ``pytest<9.1`` in the ``tests`` extra. ``pytest``
+  9.1.0 changed the ``IdMaker`` constructor signature, which breaks
+  ``pytest_cases`` 3.10.1 and makes the whole test suite crash at collection
+  time. The cap can be lifted once ``pytest_cases`` supports ``pytest>=9.1``.
+  By `Adam Mounir`_.
 
 Bug fixes
 ==========
@@ -63,6 +72,13 @@ Bug fixes
   By `Bruno Aristimunha`_.
 
 - Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
+
+- Fix the broken EEGNeX quickstart snippet on the documentation landing page,
+  which kept non-EEG channels (including the STIM trigger), hardcoded a
+  mismatched ``n_times``, and failed at the default stratified validation split
+  with ``y=None``; it now restricts to EEG channels and lets
+  :class:`~braindecode.EEGClassifier` infer the signal dimensions from the data.
+  By `Bhargav Kowshik`_
 
 Code health
 ============
@@ -1246,3 +1262,4 @@ Authors
 .. _Léo Burgund: https://github.com/leob000
 .. _Adam Mounir: https://github.com/adammounir
 .. _Yiheng Li: https://github.com/YihengLi-1
+.. _Bhargav Kowshik: https://github.com/bkowshik
