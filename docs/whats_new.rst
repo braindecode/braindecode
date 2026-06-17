@@ -83,7 +83,8 @@ Bug fixes
   ``iterator_train__drop_last=True``). Previously every batch was dropped and
   the model was left untrained without any message; a :class:`UserWarning` is
   now raised telling the user to lower ``batch_size`` or set
-  ``iterator_train__drop_last=False``. By `Bhargav Kowshik`_.
+  ``iterator_train__drop_last=False``.
+  (:gh:`1053` by `Bhargav Kowshik`_)
 
 Code health
 ============
