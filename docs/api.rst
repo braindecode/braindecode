@@ -256,6 +256,7 @@ perceptrons (MLPs) and inception blocks.
     MLP
     FeedForwardBlock
     InceptionBlock
+    PatchTokenizer
 
 Convolution
 ===========
