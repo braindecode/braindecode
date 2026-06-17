@@ -14,7 +14,7 @@ from einops import rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import DropPath
+from braindecode.modules import DropPath, PatchTokenizer
 
 
 class EEGDINO(EEGModuleMixin, nn.Module):
@@ -28,7 +28,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
     EEG-DINO is a ViT-style EEG foundation model pre-trained with DINO-v2
     hierarchical self-distillation. Only the *encoder* (plus a classification
-    head) is integrated here; the self-distillation pre-training is out of scope.
+    head) is integrated here; the self-distillation pre-training is out of scope
+    and it was not released by the authors.
+
     The forward path is, end to end:
 
     ``(batch, n_chans, n_times)`` → patchify → time-frequency embedding →
@@ -42,6 +44,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
     ``patch_size`` samples (200 samples = 1 second at 200 Hz), giving one
     *token* per (channel, patch). Inputs whose length is not a multiple of
     ``patch_size`` are zero-padded with a warning.
+    This is analogous to the patchification in ViT, BEiT (LaBram), and CBraMod.
 
     .. rubric:: Step 2 -- Time-Frequency Embedding (TFE)
 
@@ -186,18 +189,15 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         if n_global_tokens < 1:
             raise ValueError(f"n_global_tokens must be >= 1, got {n_global_tokens}.")
 
-        try:
-            sfreq = self.sfreq
-        except ValueError:
-            sfreq = None  # not resolvable from the given signal parameters
-        if sfreq is not None and sfreq != 200:
+        if self._sfreq is not None and self.sfreq != 200:
             warn(
-                f"EEG-DINO was trained at 200 Hz but sfreq={sfreq}. Inputs are "
+                f"EEG-DINO was trained at 200 Hz but sfreq={self.sfreq}. Inputs are "
                 "not resampled internally; results may be unreliable.",
                 UserWarning,
             )
 
         self.patch_size = patch_size
+        self.tokenizer = PatchTokenizer(patch_size, learnable=False, pad=True)
         self.n_global_tokens = n_global_tokens
         self.global_token_layer = global_token_layer
         self.activation = activation
@@ -219,9 +219,13 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             for _ in range(n_layer)
         )
         self.global_tokens = nn.Parameter(torch.zeros(1, n_global_tokens, self.emb_dim))
-        nn.init.trunc_normal_(self.global_tokens, std=0.02)
 
         self.final_layer = self._make_head()
+
+        self._init_weights()
+
+    def _init_weights(self):
+        nn.init.trunc_normal_(self.global_tokens, std=0.02)
 
     def _make_head(self):
         if self.return_encoder_output:
@@ -233,31 +237,15 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self._n_outputs = n_outputs
         self.final_layer = self._make_head()
 
-    def _patchify(self, x):
-        """``(batch, n_chans, n_times)`` -> ``(batch, n_chans, n_patches, patch_size)``."""
-        n_times = x.shape[-1]
-        if n_times % self.patch_size:
-            pad = self.patch_size - n_times % self.patch_size
-            x = F.pad(x, (0, pad))
-            warn(
-                f"n_times={n_times} is not a multiple of patch_size="
-                f"{self.patch_size}; zero-padded by {pad} samples.",
-                UserWarning,
-            )
-        return rearrange(
-            x,
-            "batch chans (patches patch_size) -> batch chans patches patch_size",
-            patch_size=self.patch_size,
-        )
-
     def forward(self, x, return_features: bool | None = None):
         """Forward pass.
 
         Parameters
         ----------
         x : torch.Tensor
-            ``(batch, n_chans, n_times)`` or pre-patchified **and amplitude-scaled**
-            (divided by 100) ``(batch, n_chans, n_patches, patch_size)``.
+            ``(batch, n_chans, n_times)`` or pre-patchified
+            ``(batch, n_chans, n_patches, patch_size)``. Either layout is passed
+            with raw amplitudes; the ``/100`` scaling is applied internally to both.
         return_features : bool, optional
             Overrides ``self.return_features`` for this call.
 
@@ -271,7 +259,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         if return_features is None:
             return_features = self.return_features
         if x.ndim == 3:
-            x = self._patchify(x)
+            x = self.tokenizer(x)
+
         x = x / 100.0  # amplitude scaling (applied to both 3D and pre-patchified 4D)
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
@@ -288,6 +277,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
         global_out = tokens[:, : self.n_global_tokens]
         patch_out = tokens[:, self.n_global_tokens :]
+
         if return_features:
             return {"features": patch_out, "cls_token": global_out.mean(dim=1)}
 

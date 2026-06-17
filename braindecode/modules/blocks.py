@@ -1,5 +1,90 @@
+from warnings import warn
+
 import torch
+import torch.nn.functional as F
+from einops import rearrange
 from torch import nn
+
+
+class PatchTokenizer(nn.Module):
+    r"""Tokenize an EEG signal into non-overlapping temporal patches.
+
+    Transforms ``(batch, n_chans, n_times)`` into
+    ``(batch, n_chans, n_patches, patch_dim)`` by splitting the time axis into
+    non-overlapping patches of ``patch_size`` samples. This is the shared
+    patch / "tokenization" step used by transformer EEG foundation models
+    (e.g. LaBraM, CBraMod, EEG-DINO).
+
+    Two modes:
+
+    - **non-learnable** (``learnable=False``, default): a pure reshape, so
+      ``patch_dim == patch_size`` and the raw samples of each patch are kept
+      (the patch embedding, if any, lives in the model).
+    - **learnable** (``learnable=True``): a strided ``Conv1d`` (kernel and
+      stride equal to ``patch_size``, applied per channel) maps each patch to
+      ``emb_dim`` features, so ``patch_dim == emb_dim``.
+
+    Parameters
+    ----------
+    patch_size : int
+        Number of time samples per patch.
+    emb_dim : int, optional
+        Output features per patch in learnable mode. Defaults to ``patch_size``.
+        Ignored when ``learnable=False``.
+    learnable : bool, default=False
+        Whether the tokenizer is a learned convolution or a fixed reshape.
+    pad : bool, default=False
+        If True, zero-pad the time axis up to a multiple of ``patch_size``
+        (with a warning) when ``n_times`` is not already divisible; if False, a
+        non-divisible ``n_times`` raises ``ValueError``.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import PatchTokenizer
+    >>> tokenizer = PatchTokenizer(patch_size=200)
+    >>> tokenizer(torch.randn(2, 19, 1000)).shape
+    torch.Size([2, 19, 5, 200])
+    """
+
+    def __init__(self, patch_size, emb_dim=None, learnable=False, pad=False):
+        super().__init__()
+        self.patch_size = patch_size
+        self.learnable = learnable
+        self.pad = pad
+        self.emb_dim = (emb_dim or patch_size) if learnable else patch_size
+        if learnable:
+            self.patcher = nn.Conv1d(1, self.emb_dim, patch_size, stride=patch_size)
+
+    def forward(self, x):
+        batch_size, n_chans, n_times = x.shape
+        if n_times % self.patch_size:
+            if not self.pad:
+                raise ValueError(
+                    f"n_times ({n_times}) must be a multiple of patch_size "
+                    f"({self.patch_size}); pass pad=True to zero-pad instead."
+                )
+            n_pad = self.patch_size - n_times % self.patch_size
+            x = F.pad(x, (0, n_pad))
+            warn(
+                f"n_times={n_times} is not a multiple of patch_size="
+                f"{self.patch_size}; zero-padded by {n_pad} samples.",
+                UserWarning,
+            )
+        if self.learnable:
+            x = rearrange(x, "batch chans time -> (batch chans) 1 time")
+            x = self.patcher(x)
+            return rearrange(
+                x,
+                "(batch chans) emb patches -> batch chans patches emb",
+                batch=batch_size,
+                chans=n_chans,
+            )
+        return rearrange(
+            x,
+            "batch chans (patches patch_size) -> batch chans patches patch_size",
+            patch_size=self.patch_size,
+        )
 
 
 class InceptionBlock(nn.Module):

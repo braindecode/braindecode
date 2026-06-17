@@ -1302,3 +1302,30 @@ def test_forward_pass_ifnet_output_shape():
     out = block(x)
     assert isinstance(out, torch.Tensor)
     assert out.shape[0] == 2  # batch_size preserved
+
+
+def test_patch_tokenizer():
+    from braindecode.modules import PatchTokenizer
+
+    # non-learnable: pure reshape, no parameters
+    tok = PatchTokenizer(patch_size=200)
+    assert tok(torch.randn(2, 19, 1000)).shape == (2, 19, 5, 200)
+    assert sum(p.numel() for p in tok.parameters()) == 0
+
+    # learnable: strided conv maps each patch to emb_dim
+    tok_l = PatchTokenizer(patch_size=200, emb_dim=64, learnable=True)
+    assert tok_l(torch.randn(2, 19, 1000)).shape == (2, 19, 5, 64)
+    assert sum(p.numel() for p in tok_l.parameters()) > 0
+
+    # pad=True zero-pads non-divisible n_times (with a warning)
+    with pytest.warns(UserWarning, match="zero-padded"):
+        assert PatchTokenizer(200, pad=True)(torch.randn(2, 19, 950)).shape == (
+            2,
+            19,
+            5,
+            200,
+        )
+
+    # pad=False raises on non-divisible n_times
+    with pytest.raises(ValueError):
+        PatchTokenizer(200)(torch.randn(2, 19, 950))
