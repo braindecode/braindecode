@@ -16,7 +16,7 @@ from .attention import (
     RotaryPositionalEmbedding,
     SqueezeAndExcitation,
 )
-from .blocks import MLP, FeedForwardBlock, InceptionBlock
+from .blocks import MLP, FeedForwardBlock, InceptionBlock, PatchTokenizer
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
@@ -74,6 +74,7 @@ __all__ = [
     "MLP",
     "FeedForwardBlock",
     "InceptionBlock",
+    "PatchTokenizer",
     "AvgPool2dWithConv",
     "CausalConv1d",
     "CombinedConv",

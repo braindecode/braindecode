@@ -11,6 +11,8 @@ from braindecode.datasets.sleep_physio_challe_18 import (
 )
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
+pytestmark = pytest.mark.network
+
 
 @pytest.fixture(params=[SleepPhysionet])
 def sleep_class(request):

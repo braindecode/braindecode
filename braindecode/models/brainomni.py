@@ -20,7 +20,7 @@ from torch.nn.utils import weight_norm  # noqa: F401
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _geometry_from_chs_info
-from braindecode.modules import MultiHeadAttentionRoPE, ResidualVQ
+from braindecode.modules import MultiHeadAttentionRoPE, PatchTokenizer, ResidualVQ
 
 
 class BrainTokenizer(EEGModuleMixin, nn.Module):
@@ -147,6 +147,9 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         self.drop_prob = drop_prob
         self.activation = activation
 
+        self.patcher = PatchTokenizer(
+            patch_size=window_length, n_times=self.n_times, learnable=False
+        )
         self.sensor_embed = _SensorEmbedding(emb_dim)
         self.encoder = _TokenizerEncoder(
             n_filters=n_filters,
@@ -179,13 +182,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
     def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
         """Slice ``x`` (batch, n_chans, n_times) into ``(batch, n_chans, n_windows, window_length)`` windows."""
         step = round(self.window_length * (1 - overlap_ratio))
-        pad = max(self.window_length - x.shape[-1], 0)  # ensure >= 1 window
-        if step < self.window_length:  # overlapping: fill the trailing window
-            remainder = (x.shape[-1] + pad - self.window_length) % step
-            pad += (step - remainder) % step
-        if pad:
-            x = F.pad(x, (0, pad))
-        return x.unfold(dimension=-1, size=self.window_length, step=step)
+        return self.patcher(x, stride=step)
 
     def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
         """Unfold -> sensor-embed -> encode -> RVQ -> (feat_q, indices, commit, se)."""

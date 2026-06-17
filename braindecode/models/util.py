@@ -191,8 +191,6 @@ def _init_models_dict():
             issubclass(m[1], models.base.EEGModuleMixin)
             and m[1] != models.base.EEGModuleMixin
         ):
-            if m[1].__name__ == "EEGNetv4":
-                continue
             models_dict[m[0]] = m[1]
 
 
@@ -438,6 +436,7 @@ models_mandatory_parameters: list[
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
     ("BrainOmni", ["chs_info", "n_outputs", "n_times", "sfreq"], None),
     ("BrainTokenizer", ["chs_info", "n_times", "sfreq"], None),
+    ("EEGDINO", ["n_chans", "n_outputs", "n_times"], None),
 ]
 
 ################################################################

@@ -1313,7 +1313,9 @@ def test_rotary_positional_embedding_output_shape():
     init_seq_len = 64
     batch, seq, head_dim = 2, 7, n_dim // n_heads
 
-    rope = RotaryPositionalEmbedding(n_dim=head_dim * n_heads, init_seq_len=init_seq_len)
+    rope = RotaryPositionalEmbedding(
+        n_dim=head_dim * n_heads, init_seq_len=init_seq_len
+    )
     q = torch.randn(batch, seq, n_heads, head_dim)
     k = torch.randn(batch, seq, n_heads, head_dim)
 
@@ -1346,3 +1348,42 @@ def test_multi_head_attention_rope_output_shape(rope):
         f"Expected ({batch}, {seq}, {n_dim}), got {out.shape}"
     )
     assert torch.isfinite(out).all(), "Output contains non-finite values"
+
+
+def test_patch_tokenizer():
+    from braindecode.modules import PatchTokenizer
+
+    # non-learnable: pure windowing, no parameters
+    tok = PatchTokenizer(patch_size=200, n_times=1000)
+    x = torch.randn(2, 19, 1000)
+    assert tok(x).shape == (2, 19, 5, 200)
+    assert sum(p.numel() for p in tok.parameters()) == 0
+    # non-overlapping windowing equals the contiguous reshape it replaces
+    assert torch.equal(tok(x), x.reshape(2, 19, 5, 200))
+
+    # learnable: strided conv maps each patch to emb_dim
+    tok_l = PatchTokenizer(patch_size=200, n_times=1000, emb_dim=64, learnable=True)
+    assert tok_l(torch.randn(2, 19, 1000)).shape == (2, 19, 5, 64)
+    assert sum(p.numel() for p in tok_l.parameters()) > 0
+
+    # non-divisible n_times is right-padded (warning at construction, never raises)
+    with pytest.warns(UserWarning, match="padded"):
+        tok_pad = PatchTokenizer(patch_size=200, n_times=950)
+    assert tok_pad(torch.randn(2, 19, 950)).shape == (2, 19, 5, 200)
+
+    # overlapping patches via construction-time stride (50% overlap -> 9 windows)
+    tok_ov = PatchTokenizer(patch_size=200, n_times=1000, stride=100)
+    assert tok_ov(torch.randn(2, 19, 1000)).shape == (2, 19, 9, 200)
+
+    # one non-learnable tokenizer reused at several overlaps via call-time stride
+    assert tok(torch.randn(2, 19, 1000), stride=100).shape == (2, 19, 9, 200)
+
+    # learnable supports overlap too (stride fixed at construction)
+    tok_lo = PatchTokenizer(
+        patch_size=200, n_times=1000, emb_dim=64, learnable=True, stride=100
+    )
+    assert tok_lo(torch.randn(2, 19, 1000)).shape == (2, 19, 9, 64)
+
+    # learnable rejects a conflicting call-time stride override
+    with pytest.raises(ValueError, match="non-learnable"):
+        tok_l(torch.randn(2, 19, 1000), stride=100)

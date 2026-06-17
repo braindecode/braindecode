@@ -146,6 +146,7 @@ interface for all EEG models and can derive variable names when needed.
      Deep4Net
      DeepSleepNet
      EEGConformer
+     EEGDINO
      EEGInceptionERP
      EEGInceptionMI
      EEGITNet
@@ -260,6 +261,7 @@ perceptrons (MLPs) and inception blocks.
     MLP
     FeedForwardBlock
     InceptionBlock
+    PatchTokenizer
 
 Convolution
 ===========

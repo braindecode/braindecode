@@ -1,5 +1,120 @@
+from typing import Optional
+from warnings import warn
+
 import torch
 from torch import nn
+
+
+class PatchTokenizer(nn.Module):
+    r"""Tokenize an EEG signal into temporal patches (optionally overlapping).
+
+    Transforms ``(batch, n_chans, n_times)`` into
+    ``(batch, n_chans, n_patches, patch_dim)`` by sliding a window of
+    ``patch_size`` samples along the time axis with a step of ``stride``
+    samples. The default ``stride = patch_size`` gives non-overlapping patches;
+    a smaller ``stride`` gives overlapping ones. This is the shared patch /
+    "tokenization" step used by transformer EEG foundation models (e.g. LaBraM,
+    CBraMod, EEG-DINO, BrainOmni).
+
+    As in the filter-bank models (:class:`~braindecode.models.FBCNet`,
+    :class:`~braindecode.models.FBMSNet`), the time axis is always right
+    zero-padded so the windows tile it fully (no samples are dropped) and at
+    least one window is produced; it is never an error. Padding is recomputed
+    from the actual input length at every forward, so inputs whose length
+    differs from ``n_times`` are handled too. A warning is emitted at
+    construction when the configured ``n_times`` does not tile cleanly.
+
+    Two modes:
+
+    - **non-learnable** (``learnable=False``, default): a pure windowing view,
+      so ``patch_dim == patch_size`` and the raw samples of each patch are kept
+      (the patch embedding, if any, lives in the model). The ``stride`` may be
+      overridden per call (see :meth:`forward`), so one tokenizer can be reused
+      at several overlaps.
+    - **learnable** (``learnable=True``): a strided ``Conv1d`` (kernel
+      ``patch_size``, stride ``stride``, applied per channel) maps each patch to
+      ``emb_dim`` features, so ``patch_dim == emb_dim``. The stride is fixed at
+      construction.
+
+    Parameters
+    ----------
+    patch_size : int
+        Number of time samples per patch (the window length).
+    n_times : int
+        Number of time samples of the input, used to emit the construction
+        warning when ``n_times`` does not tile cleanly into patches.
+    emb_dim : int, optional
+        Output features per patch in learnable mode. Defaults to ``patch_size``.
+        Ignored when ``learnable=False``.
+    learnable : bool, default=False
+        Whether the tokenizer is a learned convolution or a fixed windowing.
+    stride : int, optional
+        Step between consecutive patches, in samples. Defaults to ``patch_size``
+        (non-overlapping). Use ``stride < patch_size`` for overlapping patches.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import PatchTokenizer
+    >>> tokenizer = PatchTokenizer(patch_size=200, n_times=1000)
+    >>> tokenizer(torch.randn(2, 19, 1000)).shape
+    torch.Size([2, 19, 5, 200])
+    >>> tokenizer(torch.randn(2, 19, 1000), stride=100).shape  # 50% overlap
+    torch.Size([2, 19, 9, 200])
+    """
+
+    def __init__(self, patch_size, n_times, emb_dim=None, learnable=False, stride=None):
+        super().__init__()
+        self.patch_size = patch_size
+        self.stride = patch_size if stride is None else stride
+        self.learnable = learnable
+        self.emb_dim = (emb_dim or patch_size) if learnable else patch_size
+        if self._pad_to_tile(n_times, self.stride):
+            warn(
+                f"Time dimension ({n_times}) does not tile into patches of size "
+                f"{patch_size} at stride {self.stride}. Input will be padded.",
+                UserWarning,
+            )
+        # Defined unconditionally (Identity when not learnable) so the attribute
+        # always exists for torch.jit.script, which type-checks both branches.
+        if learnable:
+            self.patcher = nn.Conv1d(1, self.emb_dim, patch_size, stride=self.stride)
+        else:
+            self.patcher = nn.Identity()
+
+    def _pad_to_tile(self, n_times: int, stride: int) -> int:
+        """Right-pad needed so ``patch_size`` windows tile ``n_times`` at ``stride`` (>= 1 window)."""
+        n_eff = max(n_times, self.patch_size)
+        remainder = (n_eff - self.patch_size) % stride
+        return (n_eff - n_times) + (stride - remainder) % stride
+
+    def forward(self, x: torch.Tensor, stride: Optional[int] = None) -> torch.Tensor:
+        """Patchify ``(batch, n_chans, n_times)`` -> ``(batch, n_chans, n_patches, patch_dim)``.
+
+        ``stride`` overrides the patch step for this call (non-learnable mode
+        only), so a single tokenizer can be reused at several overlaps; it
+        defaults to the ``stride`` set at construction.
+        """
+        step = self.stride if stride is None else stride
+        pad = self._pad_to_tile(x.shape[-1], step)
+        if pad:
+            x = nn.functional.pad(x, (0, pad))
+        batch_size, n_chans, _ = x.shape
+        if self.learnable:
+            if step != self.stride:
+                raise ValueError(
+                    "stride override is only supported for non-learnable "
+                    f"PatchTokenizer (got stride={step}, built with "
+                    f"stride={self.stride})."
+                )
+            x = x.flatten(0, 1).unsqueeze(1)  # (batch * chans, 1, time)
+            x = self.patcher(x)  # (batch * chans, emb, patches)
+            return x.reshape(batch_size, n_chans, x.shape[-2], x.shape[-1]).permute(
+                0, 1, 3, 2
+            )
+        # Non-overlapping unfold is contiguous and equals the former reshape;
+        # overlapping unfold returns a strided view.
+        return x.unfold(dimension=-1, size=self.patch_size, step=step)
 
 
 class InceptionBlock(nn.Module):
