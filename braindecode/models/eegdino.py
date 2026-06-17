@@ -256,8 +256,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            ``(batch, n_chans, n_times)`` or pre-patchified
-            ``(batch, n_chans, n_patches, patch_size)``.
+            ``(batch, n_chans, n_times)`` or pre-patchified **and amplitude-scaled**
+            (divided by 100) ``(batch, n_chans, n_patches, patch_size)``.
         return_features : bool, optional
             Overrides ``self.return_features`` for this call.
 
