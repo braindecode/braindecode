@@ -5,6 +5,7 @@
 
 Port of Yang et al. (2025), https://github.com/LiuyinYang1101/STEEGFormer
 """
+
 from __future__ import annotations
 
 import torch
@@ -32,7 +33,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    %(EEGModuleMixin)s
     patch_size : int
         Temporal patch size (unfold), default 16.
     embed_dim : int
@@ -52,7 +52,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     ----------
     .. [steegformer2025] Yang, L. et al. (2025). STEEGFormer.
        OpenReview, https://openreview.net/pdf?id=5Xwm8e6vbh
-    """   
+    """
 
     def __init__(
         self,
@@ -62,12 +62,12 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         n_times=None,
         chs_info=None,
         input_window_seconds=None,
-        sfreq=None, 
+        sfreq=None,
         # --- model hyperparameters ---
         patch_size: int = 16,
         embed_dim: int = 768,
         depth: int = 12,
-        num_heads: int = 12,  
+        num_heads: int = 12,
         mlp_ratio: float = 4.0,
         drop_rate: float = 0.0,
         global_pool: str = "avg",
