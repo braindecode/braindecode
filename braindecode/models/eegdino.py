@@ -58,9 +58,10 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
     Where CBraMod uses a single convolutional positional encoding (ACPE),
     EEG-DINO *decouples* space and time and adds both to every token: a
-    learnable **one-hot channel embedding** (``channel_embedding``, so input
-    channel ``i`` maps to slot ``i``) and a **depthwise temporal convolution**
-    over the patch axis (``time_encoding``).
+    learnable **one-hot channel embedding** over a fixed vocabulary of
+    ``n_channel_embeddings`` slots (input channel ``i`` maps to slot ``i``, so a
+    19-slot embedding serves any ``n_chans <= 19``) and a **depthwise temporal
+    convolution** over the patch axis (``time_encoding``).
 
     .. rubric:: Step 4 -- Transformer Encoder & Global Token
 
@@ -124,6 +125,10 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         per layer. The embedding dimension is derived from this (see
         :class:`~braindecode.models.CBraMod`). Default is the EEG-DINO-Small /
         CBraMod configuration.
+    n_channel_embeddings : int, default=19
+        Size of the one-hot channel-embedding vocabulary. ``n_chans`` must not
+        exceed it; the first ``n_chans`` slots are used. Default 19 (the released
+        montage), so the pretrained weights load for any ``n_chans <= 19``.
     n_global_tokens : int, default=1
         Number of learnable global summary tokens.
     global_token_layer : int, default=1
@@ -170,6 +175,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             (25, 3, 1, 1, (5, 25)),
             (25, 3, 1, 1, (5, 25)),
         ),
+        n_channel_embeddings: int = 19,
         n_global_tokens: int = 1,
         global_token_layer: int = 1,
         activation: type[nn.Module] = nn.GELU,
@@ -195,6 +201,11 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             )
         if n_global_tokens < 1:
             raise ValueError(f"n_global_tokens must be >= 1, got {n_global_tokens}.")
+        if self.n_chans > n_channel_embeddings:
+            raise ValueError(
+                f"n_chans ({self.n_chans}) must not exceed n_channel_embeddings "
+                f"({n_channel_embeddings}); the released weights use 19."
+            )
 
         if self._sfreq is not None and self.sfreq != 200:
             warn(
@@ -203,7 +214,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
                 UserWarning,
             )
 
-        self.patch_size = patch_size
         self.tokenizer = PatchTokenizer(
             patch_size, n_times=self.n_times, learnable=False
         )
@@ -216,7 +226,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         self.patch_embedding = _PatchEmbedding(
             patch_size=patch_size,
             channels_kernel_stride_padding_norm=channels_kernel_stride_padding_norm,
-            n_chans=self.n_chans,
+            n_channel_embeddings=n_channel_embeddings,
             activation=patch_activation,
             drop_prob=drop_prob,
         )
@@ -243,8 +253,14 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         return _ClassificationHead(self.emb_dim, self.n_outputs, self.activation)
 
     def reset_head(self, n_outputs):
-        """Replace ``final_layer`` to output ``n_outputs`` classes."""
+        """Replace ``final_layer`` with a fresh classification head for ``n_outputs``.
+
+        Asking for a head implies a classification model, so this also clears
+        ``return_encoder_output`` (a linear-probe model thereby gains a real head),
+        mirroring :meth:`braindecode.models.CBraMod.reset_head`.
+        """
         self._n_outputs = n_outputs
+        self.return_encoder_output = False
         self.final_layer = self._make_head()
 
     def forward(self, x, return_features: bool | None = None):
@@ -253,8 +269,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            ``(batch, n_chans, n_times)`` or pre-patchified
-            ``(batch, n_chans, n_patches, patch_size)``. The model does not
+            Input of shape ``(batch, n_chans, n_times)``. The model does not
             rescale ``x`` (see the amplitude-scale warning in the class docstring).
         return_features : bool, optional
             Overrides ``self.return_features`` for this call.
@@ -268,8 +283,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         """
         if return_features is None:
             return_features = self.return_features
-        if x.ndim == 3:
-            x = self.tokenizer(x)
+        x = self.tokenizer(x)  # (batch, n_chans, n_patches, patch_size)
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
         n_chans = patch_emb.shape[1]
@@ -340,13 +354,14 @@ class _PatchEmbedding(nn.Module):
         self,
         patch_size,
         channels_kernel_stride_padding_norm,
-        n_chans,
+        n_channel_embeddings,
         activation=nn.GELU,
         drop_prob=0.1,
     ):
         super().__init__()
         self.patch_size = patch_size
         self.channels_kernel_stride_padding_norm = channels_kernel_stride_padding_norm
+        self.n_channel_embeddings = n_channel_embeddings
 
         in_channels, conv_layers = 1, []
         for (
@@ -369,7 +384,7 @@ class _PatchEmbedding(nn.Module):
         self.spectral_proj = nn.Sequential(
             nn.Linear(patch_size // 2 + 1, self.emb_dim), nn.Dropout(drop_prob)
         )
-        self.channel_embedding = nn.Linear(n_chans, self.emb_dim)
+        self.channel_embedding = nn.Linear(n_channel_embeddings, self.emb_dim)
         # Sequential wrapper keeps the released-checkpoint key ``time_encoding.0.*``.
         self.time_encoding = nn.Sequential(
             nn.Conv2d(
@@ -401,8 +416,10 @@ class _PatchEmbedding(nn.Module):
         patch_emb = time_tokens + self.spectral_proj(spectrum)
 
         # Decoupled positional embedding: one-hot channel + depthwise temporal conv.
+        # The one-hot uses the first ``n_chans`` of the ``n_channel_embeddings``
+        # slots, so the released 19-slot embedding serves any n_chans <= 19.
         channel_ids = torch.arange(n_chans, device=x.device)
-        one_hot = F.one_hot(channel_ids, n_chans).to(
+        one_hot = F.one_hot(channel_ids, self.n_channel_embeddings).to(
             self.channel_embedding.weight.dtype
         )
         channel_emb = self.channel_embedding(one_hot)
