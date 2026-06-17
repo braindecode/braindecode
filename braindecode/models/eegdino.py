@@ -197,7 +197,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             )
 
         self.patch_size = patch_size
-        self.tokenizer = PatchTokenizer(patch_size, learnable=False, pad=True)
+        self.tokenizer = PatchTokenizer(
+            patch_size, n_times=self.n_times, learnable=False
+        )
         self.n_global_tokens = n_global_tokens
         self.global_token_layer = global_token_layer
         self.activation = activation

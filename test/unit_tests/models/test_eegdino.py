@@ -50,10 +50,10 @@ def test_attention_indivisible_heads_and_beit_keys():
 
 
 def test_forward_pads_non_divisible_with_warning():
-    model = EEGDINO(n_chans=16, n_outputs=4, n_times=950)  # 950 % 200 != 0
-    with pytest.warns(UserWarning, match="zero-padded"):
-        out = model(torch.randn(2, 16, 950))
-    assert out.shape == (2, 4)
+    # n_times not a multiple of patch_size -> right-padded (warning at construction)
+    with pytest.warns(UserWarning, match="padded"):
+        model = EEGDINO(n_chans=16, n_outputs=4, n_times=950)
+    assert model(torch.randn(2, 16, 950)).shape == (2, 4)
 
 
 def test_forward_accepts_prepatched_4d_input():

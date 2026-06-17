@@ -1,7 +1,6 @@
 from warnings import warn
 
 import torch
-import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
 
@@ -14,6 +13,11 @@ class PatchTokenizer(nn.Module):
     non-overlapping patches of ``patch_size`` samples. This is the shared
     patch / "tokenization" step used by transformer EEG foundation models
     (e.g. LaBraM, CBraMod, EEG-DINO).
+
+    As in the filter-bank models (:class:`~braindecode.models.FBCNet`,
+    :class:`~braindecode.models.FBMSNet`), when ``n_times`` is not a multiple of
+    ``patch_size`` the input is right zero-padded (a warning is emitted at
+    construction); it is never an error.
 
     Two modes:
 
@@ -28,49 +32,46 @@ class PatchTokenizer(nn.Module):
     ----------
     patch_size : int
         Number of time samples per patch.
+    n_times : int
+        Number of time samples of the input, used to set up the right-padding
+        when ``n_times`` is not a multiple of ``patch_size``.
     emb_dim : int, optional
         Output features per patch in learnable mode. Defaults to ``patch_size``.
         Ignored when ``learnable=False``.
     learnable : bool, default=False
         Whether the tokenizer is a learned convolution or a fixed reshape.
-    pad : bool, default=False
-        If True, zero-pad the time axis up to a multiple of ``patch_size``
-        (with a warning) when ``n_times`` is not already divisible; if False, a
-        non-divisible ``n_times`` raises ``ValueError``.
 
     Examples
     --------
     >>> import torch
     >>> from braindecode.modules import PatchTokenizer
-    >>> tokenizer = PatchTokenizer(patch_size=200)
+    >>> tokenizer = PatchTokenizer(patch_size=200, n_times=1000)
     >>> tokenizer(torch.randn(2, 19, 1000)).shape
     torch.Size([2, 19, 5, 200])
     """
 
-    def __init__(self, patch_size, emb_dim=None, learnable=False, pad=False):
+    def __init__(self, patch_size, n_times, emb_dim=None, learnable=False):
         super().__init__()
         self.patch_size = patch_size
         self.learnable = learnable
-        self.pad = pad
         self.emb_dim = (emb_dim or patch_size) if learnable else patch_size
+        if n_times % patch_size:
+            warn(
+                f"Time dimension ({n_times}) is not divisible by patch_size "
+                f"({patch_size}). Input will be padded.",
+                UserWarning,
+            )
+            self.padding_layer = nn.ConstantPad1d(
+                (0, patch_size - n_times % patch_size), 0.0
+            )
+        else:
+            self.padding_layer = nn.Identity()
         if learnable:
             self.patcher = nn.Conv1d(1, self.emb_dim, patch_size, stride=patch_size)
 
     def forward(self, x):
-        batch_size, n_chans, n_times = x.shape
-        if n_times % self.patch_size:
-            if not self.pad:
-                raise ValueError(
-                    f"n_times ({n_times}) must be a multiple of patch_size "
-                    f"({self.patch_size}); pass pad=True to zero-pad instead."
-                )
-            n_pad = self.patch_size - n_times % self.patch_size
-            x = F.pad(x, (0, n_pad))
-            warn(
-                f"n_times={n_times} is not a multiple of patch_size="
-                f"{self.patch_size}; zero-padded by {n_pad} samples.",
-                UserWarning,
-            )
+        x = self.padding_layer(x)
+        batch_size, n_chans, _ = x.shape
         if self.learnable:
             x = rearrange(x, "batch chans time -> (batch chans) 1 time")
             x = self.patcher(x)
