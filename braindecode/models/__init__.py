@@ -20,7 +20,7 @@ from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
 from .eegitnet import EEGITNet
 from .eegminer import EEGMiner
-from .eegnet import EEGNet, EEGNetv4
+from .eegnet import EEGNet
 from .eegnex import EEGNeX
 from .eegpt import EEGPT, InterpolatedEEGPT
 from .eegsimpleconv import EEGSimpleConv
@@ -93,7 +93,6 @@ __all__ = [
     "EEGITNet",
     "EEGMiner",
     "EEGNet",
-    "EEGNetv4",
     "EEGNeX",
     "EEGSym",
     "EEGSimpleConv",
