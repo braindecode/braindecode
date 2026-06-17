@@ -36,6 +36,9 @@ Enhancements
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.
   By `Pierre Guetschel`_.
+- Add :class:`braindecode.models.STEEGFormer`, a ViT-based EEG foundation
+  model pre-trained with a masked-autoencoder objective, from Yang et al.
+  (ICLR 2026). By `Adam Mounir`_.
 
 API and behavior changes
 ========================
