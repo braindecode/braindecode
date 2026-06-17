@@ -3,7 +3,7 @@
 # License: BSD (3-clause)
 """STEEGFormer — WIP draft (see #1040).
 
-Port of Yang et al. (2025), https://github.com/LiuyinYang1101/STEEGFormer
+Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
-    r"""STEEGFormer from Yang et al. (2025) [steegformer2025]_.
+    r"""STEEGFormer from Yang et al. (2026) [Yang2026]_.
 
     :bdg-info:`Attention/Transformer` :bdg-warning:`Foundation / Self-supervised`
 
@@ -50,8 +50,11 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [steegformer2025] Yang, L. et al. (2025). STEEGFormer.
-       OpenReview, https://openreview.net/pdf?id=5Xwm8e6vbh
+    .. [Yang2026] Yang, L., Sun, Q., Li, A. & Van Hulle, M. M. (2026). Are EEG
+       foundation models worth it? Comparative evaluation with traditional
+       decoders in diverse BCI tasks. The Fourteenth International Conference
+       on Learning Representations (ICLR 2026).
+       https://openreview.net/forum?id=5Xwm8e6vbh
     """
 
     def __init__(
