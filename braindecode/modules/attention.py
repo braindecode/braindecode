@@ -1060,7 +1060,14 @@ class RotaryPositionalEmbedding(nn.Module):
     Parameters
     ----------
     n_dim : int
-        Head dimension (i.e. ``embed_dim // n_heads``).  Must be even.
+        Full attention dimension (``n_heads * head_dim``), **not** the per-head
+        dimension. One inverse-frequency ladder is built over ``n_dim`` and then
+        split across heads (see :meth:`reshape_for_broadcast`), so each head gets a
+        different frequency band. This is load-bearing for checkpoint parity:
+        because this module has no learned parameters, changing ``n_dim`` to the
+        per-head size would silently alter pretrained numerics without tripping
+        ``from_pretrained(strict=True)``. The per-head size (``n_dim // n_heads``)
+        must be even.
     init_seq_len : int
         Initial sequence length for which the rotation cache is pre-computed.
         The cache grows automatically when longer sequences are seen.

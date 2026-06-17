@@ -1,6 +1,12 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD-3
+#
+# The vector quantization below is adapted from lucidrains' vector-quantize-pytorch
+# (MIT License, https://github.com/lucidrains/vector-quantize-pytorch). Buffer and
+# parameter names are deliberately kept aligned with the published BrainOmni
+# checkpoint (OpenTSLab/BrainOmni) so that ``from_pretrained(strict=True)`` loads
+# the upstream weights; see the per-class "state-dict parity" notes.
 
 import torch
 import torch.nn as nn

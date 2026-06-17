@@ -54,6 +54,40 @@ _BaseHubMixin: Type = (
 )
 
 
+# Model-card template rendered by ``generate_model_card`` on ``save_pretrained`` /
+# ``push_to_hub``. ``model_name`` is injected per instance (see
+# ``EEGModuleMixin.generate_model_card``); ``card_data``/``repo_url``/``docs_url``/
+# ``paper_url`` are filled by ``huggingface_hub`` from the subclass metadata.
+_BRAINDECODE_MODEL_CARD_TEMPLATE = """---
+{{ card_data }}
+---
+
+# {{ model_name | default("braindecode model", true) }}
+
+A pretrained EEG/MEG decoding model from the [braindecode](https://braindecode.org) library{% if model_name %} (`braindecode.models.{{ model_name }}`){% endif %}.
+
+## Usage
+
+```python
+from braindecode.models import {{ model_name | default("Model", true) }}
+
+# replace "<owner>/<repo>" with this repository's id
+model = {{ model_name | default("Model", true) }}.from_pretrained("<owner>/<repo>")
+```
+
+## Links
+
+- Code: {{ repo_url | default("https://github.com/braindecode/braindecode", true) }}
+- Docs: {{ docs_url | default("https://braindecode.org", true) }}
+- Paper: {{ paper_url | default("[More Information Needed]", true) }}
+
+## Citation
+
+Please cite the model's reference paper (see *Paper* above) and the braindecode
+library (https://braindecode.org, https://doi.org/10.5281/zenodo.17699192).
+"""
+
+
 def deprecated_args(obj, *old_new_args):
     out_args = []
     for old_name, new_name, old_val, new_val in old_new_args:
@@ -227,6 +261,9 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         repo_url = kwargs.pop("repo_url", "https://braindecode.org")
         library_name = kwargs.pop("library_name", "braindecode")
         license = kwargs.pop("license", "bsd-3-clause")
+        model_card_template = kwargs.pop(
+            "model_card_template", _BRAINDECODE_MODEL_CARD_TEMPLATE
+        )
 
         # Register a coder so that type[nn.Module] parameters
         # (e.g. activation=nn.ELU) are serialized as importable
@@ -240,13 +277,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             ),
         )
 
-        # TODO: model_card_template can be added in the future for custom model cards
         super().__init_subclass__(
             tags=tags,
             docs_url=docs_url,
             repo_url=repo_url,
             library_name=library_name,
             license=license,
+            model_card_template=model_card_template,
             coders=coders,
             **kwargs,
         )
@@ -508,6 +545,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             "loading pretrained weights."
         )
 
+    def generate_model_card(self, *args, **kwargs):
+        """Render the Hub model card, injecting the model class name."""
+        kwargs.setdefault("model_name", type(self).__name__)
+        return super().generate_model_card(*args, **kwargs)
+
     mapping: Optional[Dict[str, str]] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
@@ -519,7 +561,25 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             else:
                 new_state_dict[k] = v
 
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
+        result = super().load_state_dict(new_state_dict, *args, **kwargs)
+        # ``from_pretrained`` loads with ``strict=False`` (see ``_from_pretrained``),
+        # so a key mismatch is silent: the affected parameters keep their random
+        # init instead of raising. Warn so a bad checkpoint/architecture pairing is
+        # visible. (With the default ``strict=True``, ``super()`` already raises.)
+        strict = kwargs.get("strict", args[0] if args else True)
+        if not strict and result is not None:
+            missing = list(getattr(result, "missing_keys", []))
+            unexpected = list(getattr(result, "unexpected_keys", []))
+            if missing or unexpected:
+                warnings.warn(
+                    f"{type(self).__name__}.load_state_dict(strict=False): "
+                    f"{len(missing)} missing and {len(unexpected)} unexpected keys; "
+                    "the affected parameters keep their initial (untrained) values. "
+                    f"First missing: {missing[:5]}; first unexpected: {unexpected[:5]}.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        return result
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """
