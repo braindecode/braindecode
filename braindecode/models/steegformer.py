@@ -8,6 +8,8 @@ Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 
 from __future__ import annotations
 
+import math
+
 import torch
 from einops import rearrange
 from torch import nn
@@ -49,6 +51,75 @@ class _PatchEmbedEEG(nn.Module):
         patches = rearrange(x, "b c (seq p) -> b seq c p", p=self.patch_size)
         # -> (batch, seq, n_chans, embed_dim)
         return self.proj(patches)
+
+
+class _TemporalPositionalEncoding(nn.Module):
+    """Fixed sinusoidal positional encoding over temporal patches.
+
+    Standard sine/cosine encoding (Vaswani et al., 2017). Position ``0`` is
+    reserved for the CLS token, so the ``seq`` temporal patches use positions
+    ``1..seq``.
+
+    Parameters
+    ----------
+    embed_dim : int
+        Token embedding dimension (must be even).
+    max_len : int
+        Maximum number of positions (CLS token included).
+    """
+
+    def __init__(self, embed_dim: int, max_len: int = 2048):
+        super().__init__()
+        self.max_len = max_len
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, embed_dim, 2) * (-math.log(10000.0) / embed_dim)
+        )
+        pe = torch.zeros(max_len, embed_dim)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe)
+
+    def cls_token_encoding(self) -> torch.Tensor:
+        # Encoding at position 0, shape (embed_dim,).
+        return self.pe[0]
+
+    def forward(self, seq: int) -> torch.Tensor:
+        if seq + 1 > self.max_len:
+            raise ValueError(
+                f"Too many temporal patches ({seq}) for max_len={self.max_len}; "
+                "increase max_len."
+            )
+        # Positions 1..seq -> (1, seq, 1, embed_dim) to broadcast over
+        # batch and channels.
+        return rearrange(self.pe[1 : seq + 1], "seq d -> 1 seq 1 d")
+
+
+class _ChannelPositionalEmbed(nn.Module):
+    """Learned per-channel positional embedding, zero-initialised.
+
+    One learned vector per EEG channel, added to every temporal patch of that
+    channel. Zero initialisation means the model starts as if there were no
+    channel embedding and learns it from data.
+
+    Parameters
+    ----------
+    n_chans : int
+        Number of EEG channels.
+    embed_dim : int
+        Token embedding dimension.
+    """
+
+    def __init__(self, n_chans: int, embed_dim: int):
+        super().__init__()
+        self.embedding = nn.Embedding(n_chans, embed_dim)
+        nn.init.zeros_(self.embedding.weight)
+        self.register_buffer("channel_indices", torch.arange(n_chans))
+
+    def forward(self) -> torch.Tensor:
+        emb = self.embedding(self.channel_indices)  # (n_chans, embed_dim)
+        # -> (1, 1, n_chans, embed_dim) to broadcast over batch and patches.
+        return rearrange(emb, "c d -> 1 1 c d")
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
