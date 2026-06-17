@@ -40,7 +40,12 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- Removed the deprecated aliases that were scheduled for removal after their
+  deprecation in v1.2/v1.3: ``EEGNetv4`` (use
+  :class:`braindecode.models.EEGNet`), ``SleepStagerEldele2021`` (use
+  :class:`braindecode.models.AttnSleep`), ``TSceptionV1`` (use
+  :class:`braindecode.models.TSception`), and ``BNCI2014001`` (use
+  :class:`braindecode.datasets.BNCI2014_001`). (:gh:`1045` by `Bhargav Kowshik`_)
 
 Requirements
 ============
