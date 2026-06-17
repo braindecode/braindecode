@@ -1,7 +1,6 @@
 from warnings import warn
 
 import torch
-from einops import rearrange
 from torch import nn
 
 
@@ -66,26 +65,23 @@ class PatchTokenizer(nn.Module):
             )
         else:
             self.padding_layer = nn.Identity()
+        # Defined unconditionally (Identity when not learnable) so the attribute
+        # always exists for torch.jit.script, which type-checks both branches.
         if learnable:
             self.patcher = nn.Conv1d(1, self.emb_dim, patch_size, stride=patch_size)
+        else:
+            self.patcher = nn.Identity()
 
     def forward(self, x):
         x = self.padding_layer(x)
         batch_size, n_chans, _ = x.shape
         if self.learnable:
-            x = rearrange(x, "batch chans time -> (batch chans) 1 time")
-            x = self.patcher(x)
-            return rearrange(
-                x,
-                "(batch chans) emb patches -> batch chans patches emb",
-                batch=batch_size,
-                chans=n_chans,
+            x = x.flatten(0, 1).unsqueeze(1)  # (batch * chans, 1, time)
+            x = self.patcher(x)  # (batch * chans, emb, patches)
+            return x.reshape(batch_size, n_chans, x.shape[-2], x.shape[-1]).permute(
+                0, 1, 3, 2
             )
-        return rearrange(
-            x,
-            "batch chans (patches patch_size) -> batch chans patches patch_size",
-            patch_size=self.patch_size,
-        )
+        return x.reshape(batch_size, n_chans, -1, self.patch_size)
 
 
 class InceptionBlock(nn.Module):

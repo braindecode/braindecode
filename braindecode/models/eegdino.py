@@ -10,7 +10,6 @@ from warnings import warn
 
 import torch
 import torch.nn.functional as F
-from einops import rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -274,9 +273,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
         n_chans = patch_emb.shape[1]
-        tokens = rearrange(
-            patch_emb, "batch chans patches emb -> batch (chans patches) emb"
-        )
+        tokens = patch_emb.flatten(1, 2)  # (batch, chans * patches, emb)
 
         global_tokens = self.global_tokens.expand(tokens.shape[0], -1, -1)
         for i, layer in enumerate(self.encoder_layers):
@@ -309,7 +306,7 @@ EEGDINO_CONFIGS = {
     ),
     "medium": dict(
         n_layer=16,
-        nhead=16,
+        nhead=8,
         dim_feedforward=1024,
         channels_kernel_stride_padding_norm=(
             (64, 49, 25, 24, (8, 64)),
@@ -319,7 +316,7 @@ EEGDINO_CONFIGS = {
     ),
     "large": dict(
         n_layer=24,
-        nhead=24,
+        nhead=8,
         dim_feedforward=2048,
         channels_kernel_stride_padding_norm=(
             (128, 49, 25, 24, (16, 128)),
@@ -393,16 +390,12 @@ class _PatchEmbedding(nn.Module):
         n_chans = x.shape[1]
 
         # Time-frequency embedding (CBraMod TFE): conv branch + FFT-magnitude branch.
-        time_tokens = self.proj_in(
-            rearrange(
-                x,
-                "batch chans patches patch_size -> batch 1 (chans patches) patch_size",
-            )
-        )
-        time_tokens = rearrange(
-            time_tokens,
-            "batch conv_dim (chans patches) conv_len -> batch chans patches (conv_dim conv_len)",
-            chans=n_chans,
+        time_tokens = self.proj_in(x.flatten(1, 2).unsqueeze(1))
+        batch, conv_dim, _, conv_len = time_tokens.shape
+        time_tokens = (
+            time_tokens.reshape(batch, conv_dim, n_chans, -1, conv_len)
+            .permute(0, 2, 3, 1, 4)
+            .flatten(3, 4)
         )
         spectrum = torch.fft.rfft(x, dim=-1, norm="forward").abs()
         patch_emb = time_tokens + self.spectral_proj(spectrum)
@@ -413,13 +406,9 @@ class _PatchEmbedding(nn.Module):
             self.channel_embedding.weight.dtype
         )
         channel_emb = self.channel_embedding(one_hot)
-        patch_emb = patch_emb + rearrange(channel_emb, "chans emb -> 1 chans 1 emb")
-        temporal_emb = self.time_encoding(
-            rearrange(patch_emb, "batch chans patches emb -> batch emb chans patches")
-        )
-        return patch_emb + rearrange(
-            temporal_emb, "batch emb chans patches -> batch chans patches emb"
-        )
+        patch_emb = patch_emb + channel_emb.unsqueeze(0).unsqueeze(2)
+        temporal_emb = self.time_encoding(patch_emb.permute(0, 3, 1, 2))
+        return patch_emb + temporal_emb.permute(0, 2, 3, 1)
 
 
 class _TransformerEncoderLayer(nn.Module):
@@ -444,8 +433,10 @@ class _TransformerEncoderLayer(nn.Module):
 class _Attention(nn.Module):
     """BEiT-style attention: fused ``qkv`` without bias plus separate q/v biases.
 
-    ``head_dim`` is decoupled from ``emb_dim`` so the embedding dimension need
-    not be divisible by ``nhead`` (required by the Large preset, 1024/24).
+    ``head_dim`` is decoupled from ``emb_dim`` (``all_head_dim = head_dim *
+    nhead``) so a custom ``nhead`` need not divide ``emb_dim``. For the released
+    presets ``nhead=8`` divides every ``emb_dim`` (200/512/1024), so this is a
+    no-op there and the released ``qkv``/``proj`` shapes are preserved.
     """
 
     def __init__(self, emb_dim, nhead=8, attn_drop=0.0, proj_drop=0.0):
@@ -464,17 +455,15 @@ class _Attention(nn.Module):
     def forward(self, x):
         bias = torch.cat((self.q_bias, torch.zeros_like(self.v_bias), self.v_bias))
         qkv = F.linear(x, self.qkv.weight, bias)
-        query, key, value = rearrange(
-            qkv,
-            "batch tokens (three heads head_dim) -> three batch heads tokens head_dim",
-            three=3,
-            heads=self.nhead,
+        batch, tokens, _ = qkv.shape
+        query, key, value = (
+            qkv.reshape(batch, tokens, 3, self.nhead, -1)
+            .permute(2, 0, 3, 1, 4)
+            .unbind(0)
         )
         attn = (query * self.scale @ key.transpose(-2, -1)).softmax(dim=-1)
         attn = self.attn_drop(attn)
-        out = rearrange(
-            attn @ value, "batch heads tokens head_dim -> batch tokens (heads head_dim)"
-        )
+        out = (attn @ value).transpose(1, 2).flatten(2)
         return self.proj_drop(self.proj(out))
 
 
@@ -518,8 +507,6 @@ class _ClassificationHead(nn.Module):
 
     def forward(self, patch_tokens, n_chans):
         x = self.token_proj(patch_tokens)
-        x = rearrange(
-            x, "batch (chans patches) emb -> batch chans patches emb", chans=n_chans
-        ).mean(dim=1)
+        x = x.reshape(x.shape[0], n_chans, -1, x.shape[2]).mean(dim=1)
         x = self.time_proj(x).mean(dim=1)
         return self.classifier(x)
