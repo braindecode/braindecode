@@ -39,12 +39,11 @@ class EEGDINO(EEGModuleMixin, nn.Module):
 
     .. rubric:: Step 1 -- Patchify
 
-    The signal is divided by 100 (the amplitude scaling used during
-    pre-training) and split along time into non-overlapping patches of
+    The signal is split along time into non-overlapping patches of
     ``patch_size`` samples (200 samples = 1 second at 200 Hz), giving one
     *token* per (channel, patch). Inputs whose length is not a multiple of
     ``patch_size`` are zero-padded with a warning.
-    This is analogous to the patchification in ViT, BEiT (LaBram), and CBraMod.
+    This is analogous to the patchification in ViT, BEiT (LaBraM), and CBraMod.
 
     .. rubric:: Step 2 -- Time-Frequency Embedding (TFE)
 
@@ -80,6 +79,12 @@ class EEGDINO(EEGModuleMixin, nn.Module):
     (:class:`~braindecode.EEGClassifier` applies the softmax). With
     ``return_encoder_output=True`` the mean-pooled encoder representation is
     returned instead (linear probing).
+
+    .. warning::
+       EEG-DINO was pre-trained on EEG in microvolts scaled by ``1 / 100``. The
+       model does **not** rescale its input, so for the released weights to
+       behave as intended provide data on the same scale (e.g. microvolts
+       divided by 100) or normalize your signals consistently.
 
     .. important::
        **Pre-trained Weights Available**
@@ -126,9 +131,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         1-based index of the encoder layer after which the global tokens are
         inserted.
     activation : type[nn.Module], default=nn.GELU
-        Activation function used in the transformer feed-forward blocks and the
-        classification head. The patch-embedding convolutions use GELU to match
-        the released weights.
+        Activation function used throughout the model (patch-embedding
+        convolutions, transformer feed-forward blocks, and classification head).
     drop_prob : float, default=0.1
         Dropout / stochastic-depth probability in the encoder.
     return_features : bool, default=False
@@ -210,6 +214,7 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             patch_size=patch_size,
             channels_kernel_stride_padding_norm=channels_kernel_stride_padding_norm,
             n_chans=self.n_chans,
+            activation=activation,
             drop_prob=drop_prob,
         )
         self.emb_dim = self.patch_embedding.emb_dim
@@ -246,8 +251,8 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             ``(batch, n_chans, n_times)`` or pre-patchified
-            ``(batch, n_chans, n_patches, patch_size)``. Either layout is passed
-            with raw amplitudes; the ``/100`` scaling is applied internally to both.
+            ``(batch, n_chans, n_patches, patch_size)``. The model does not
+            rescale ``x`` (see the amplitude-scale warning in the class docstring).
         return_features : bool, optional
             Overrides ``self.return_features`` for this call.
 
@@ -262,8 +267,6 @@ class EEGDINO(EEGModuleMixin, nn.Module):
             return_features = self.return_features
         if x.ndim == 3:
             x = self.tokenizer(x)
-
-        x = x / 100.0  # amplitude scaling (applied to both 3D and pre-patchified 4D)
 
         patch_emb = self.patch_embedding(x)  # (batch, n_chans, n_patches, emb_dim)
         n_chans = patch_emb.shape[1]
@@ -337,6 +340,7 @@ class _PatchEmbedding(nn.Module):
         patch_size,
         channels_kernel_stride_padding_norm,
         n_chans,
+        activation=nn.GELU,
         drop_prob=0.1,
     ):
         super().__init__()
@@ -356,7 +360,7 @@ class _PatchEmbedding(nn.Module):
                     in_channels, out_channels, (1, kernel), (1, stride), (0, padding)
                 ),
                 nn.GroupNorm(*norm),
-                nn.GELU(),
+                activation(),
             ]
             in_channels = out_channels
         self.proj_in = nn.Sequential(*conv_layers)
