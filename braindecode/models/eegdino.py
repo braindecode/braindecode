@@ -458,6 +458,10 @@ class _Attention(nn.Module):
 
     def __init__(self, emb_dim, nhead=8, attn_drop=0.0, proj_drop=0.0):
         super().__init__()
+        if not 1 <= nhead <= emb_dim:
+            raise ValueError(
+                f"nhead ({nhead}) must be in [1, emb_dim={emb_dim}] so head_dim >= 1."
+            )
         self.nhead = nhead
         head_dim = emb_dim // nhead
         all_head_dim = head_dim * nhead
