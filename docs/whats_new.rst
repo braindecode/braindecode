@@ -88,6 +88,15 @@ Bug fixes
   :class:`~braindecode.EEGClassifier` infer the signal dimensions from the data.
   By `Bhargav Kowshik`_
 
+- Fix :class:`~braindecode.EEGClassifier` and
+  :class:`~braindecode.EEGRegressor` silently skipping all training when the
+  training set is smaller than ``batch_size`` (with the default
+  ``iterator_train__drop_last=True``). Previously every batch was dropped and
+  the model was left untrained without any message; a :class:`UserWarning` is
+  now raised telling the user to lower ``batch_size`` or set
+  ``iterator_train__drop_last=False``.
+  (:gh:`1053` by `Bhargav Kowshik`_)
+
 Code health
 ============
 
