@@ -73,6 +73,15 @@ Bug fixes
   use running statistics when ``batch_size == 1`` in train mode.
   By `Bruno Aristimunha`_.
 
+- Fix the auto-generated standalone-function preprocessors
+  (:class:`braindecode.preprocessing.ComputeCurrentSourceDensity`,
+  :class:`braindecode.preprocessing.SetBipolarReference`, and
+  :class:`braindecode.preprocessing.OversampledTemporalProjection`) passing the
+  function name as a string instead of the callable, so they failed to apply.
+  These functions return the modified instance and are now wrapped as callables.
+  Standalone functions that return auxiliary data (e.g. annotations or bad
+  channels) are intentionally left on the existing path for now. (:gh:`885` by
+  `Yiheng Li`_)
 - Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
 
 - Fix the broken EEGNeX quickstart snippet on the documentation landing page,
@@ -82,8 +91,22 @@ Bug fixes
   :class:`~braindecode.EEGClassifier` infer the signal dimensions from the data.
   By `Bhargav Kowshik`_
 
+- Fix :class:`~braindecode.EEGClassifier` and
+  :class:`~braindecode.EEGRegressor` silently skipping all training when the
+  training set is smaller than ``batch_size`` (with the default
+  ``iterator_train__drop_last=True``). Previously every batch was dropped and
+  the model was left untrained without any message; a :class:`UserWarning` is
+  now raised telling the user to lower ``batch_size`` or set
+  ``iterator_train__drop_last=False``.
+  (:gh:`1053` by `Bhargav Kowshik`_)
+
 Code health
 ============
+
+- Install CPU-only PyTorch wheels in the ``tests`` and ``docs`` CI
+  workflows via ``UV_TORCH_BACKEND=cpu``. GitHub runners have no GPU, so
+  the default CUDA build pulled ~1.8 GiB of unused ``nvidia-*`` wheels and
+  contributed to a disk-exhaustion crash. (:gh:`1054` by `Bhargav Kowshik`_)
 
 - Add a monthly scheduled workflow that cuts a stable PyPI release on
   the 1st of every month, complementing the existing per-push ``.devN``
