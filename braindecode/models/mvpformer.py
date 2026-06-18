@@ -353,7 +353,8 @@ class _WaveletPatchEmbed(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         feats = wavelet_decomposition(x.float(), self._filters)
         feats = self.ln(feats)
-        return self.proj(feats.type(x.dtype))
+        # Match the projection weight dtype (robust across AMP / float16 inputs).
+        return self.proj(feats.to(self.proj.weight.dtype))
 
 
 class _MVPAttention(nn.Module):
@@ -480,25 +481,30 @@ class _MVPAttention(nn.Module):
 
     @staticmethod
     def _rel_shift_chan(x):
-        # Relative shift along the channel axis (symmetric distance).
+        # Relative shift along the channel axis (symmetric distance). Index
+        # tensors are built on x.device with long dtype for GPU-safe indexing.
+        device = x.device
         chan_size = x.shape[-1]
         if chan_size > 1:
             upper_val = torch.cat(
                 [
-                    torch.arange(1, chan_size - i, dtype=torch.int32)
+                    torch.arange(1, chan_size - i, dtype=torch.long, device=device)
                     for i in range(chan_size - 1)
                 ]
             )
         else:
-            upper_val = torch.tensor([], dtype=torch.int32)
-        idxes = torch.triu_indices(chan_size, chan_size, offset=1)
-        shifting_idxes = torch.zeros(chan_size, chan_size, dtype=torch.int32)
+            upper_val = torch.tensor([], dtype=torch.long, device=device)
+        idxes = torch.triu_indices(chan_size, chan_size, offset=1, device=device)
+        shifting_idxes = torch.zeros(
+            chan_size, chan_size, dtype=torch.long, device=device
+        )
         shifting_idxes[..., idxes[0], idxes[1]] = upper_val
         shifting_idxes.transpose(-2, -1)[..., idxes[0], idxes[1]] = upper_val
         shifting_idxes = (chan_size - 1 - shifting_idxes).repeat(
             x.shape[-2] // chan_size, 1
         )
-        return x[..., torch.arange(x.size(-2)).unsqueeze(1), shifting_idxes]
+        rows = torch.arange(x.size(-2), device=device).unsqueeze(1)
+        return x[..., rows, shifting_idxes]
 
     def _split_heads(self, tensor, num_heads):
         return rearrange(

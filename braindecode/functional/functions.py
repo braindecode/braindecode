@@ -358,7 +358,7 @@ def wavelet_decomposition(
     leading = x.shape[:-1]
     approx = x.reshape(-1, x.shape[-1])
     # Flip the taps so conv1d (cross-correlation) realises the wavelet convolution.
-    weight = filters.flip(-1).unsqueeze(1).to(approx.dtype)
+    weight = filters.flip(-1).unsqueeze(1).to(device=approx.device, dtype=approx.dtype)
     details = []
     for _ in range(n_levels):
         pad = (2 * filter_len - 3) // 2

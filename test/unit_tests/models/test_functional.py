@@ -69,9 +69,8 @@ def test_plv_time_perfect_synchronization():
 
 def test_daubechies_filters_match_pywt():
     """daubechies_filters reproduces pywt's db-N decomposition filters to
-    machine precision (skipped if PyWavelets/ptwt is unavailable)."""
-    pytest.importorskip("ptwt")
-    import pywt
+    machine precision (skipped if PyWavelets is unavailable)."""
+    pywt = pytest.importorskip("pywt")
 
     from braindecode.functional import daubechies_filters
 
