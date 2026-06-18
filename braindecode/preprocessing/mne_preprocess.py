@@ -13,6 +13,28 @@ import mne.preprocessing
 from braindecode.preprocessing.preprocess import Preprocessor
 from braindecode.util import _clean_docstring_sections
 
+# Standalone MNE functions that are safe to wrap as a *callable* preprocessor.
+#
+# When ``fn`` is a callable and ``apply_on_array=False``, ``Preprocessor`` calls
+# ``fn(raw, **kwargs)`` and reassigns the dataset to whatever ``fn`` returns. That
+# is only correct for functions that return the modified ``Raw``/``Epochs``
+# instance. Many standalone MNE functions instead return auxiliary data
+# (annotations, a list of bad channels, a ``(inst, ...)`` tuple, ...), so passing
+# them as callables would silently replace the recording with that auxiliary
+# object. We therefore restrict the callable path to functions verified to return
+# the modified instance; every other standalone function keeps the existing
+# (string-name) behaviour. See :gh:`885`.
+_SAFE_STANDALONE_FUNCTIONS = frozenset(
+    {
+        # returns the Raw with the CSD-transformed data
+        mne.preprocessing.compute_current_source_density,
+        # returns the Raw with the new bipolar reference channel
+        mne.set_bipolar_reference,
+        # returns the Raw with the OTP-cleaned data
+        mne.preprocessing.oversampled_temporal_projection,
+    }
+)
+
 
 def _is_standalone_function(func):
     """
@@ -79,7 +101,12 @@ def _generate_init_method(func, force_copy_false=False):
             raise TypeError(
                 f"{func_name}() missing required arguments: {', '.join(mandatory)}"
             )
-        Preprocessor.__init__(self, fn=func_name, apply_on_array=False, **init_kwargs)
+        # For standalone functions verified to return the modified instance,
+        # pass the callable itself so it is actually applied. Every other
+        # function keeps the legacy string-name behaviour (see #885 and
+        # ``_SAFE_STANDALONE_FUNCTIONS`` above).
+        fn = func if func in _SAFE_STANDALONE_FUNCTIONS else func_name
+        Preprocessor.__init__(self, fn=fn, apply_on_array=False, **init_kwargs)
 
     init_method.__signature__ = inspect.signature(func)
     return init_method
