@@ -1,15 +1,18 @@
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#
+# License: Apache-2.0
 """MVPFormer: a foundation model with multi-variate parallel attention.
 
 Reimplementation of MVPFormer (Carzaniga et al., 2025, arXiv:2506.20354),
 "A foundation model with multi-variate parallel attention to generate
 neuronal activity". The architecture is transcribed from the authors'
-reference implementation, Copyright IBM Corp. 2024-2025. The braindecode
+reference implementation (Copyright IBM Corp. 2024-2025), released under the
+Apache License, Version 2.0; this file is therefore distributed under
+Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0). The braindecode
 reimplementation is pure-PyTorch and CPU-runnable (no Triton / DeepSpeed).
 
 Original Authors: Carzaniga et al., IBM Corp.
 Braindecode Adaptation: Bruno Aristimunha
-
-the LICENSE Of this file is APACHE-2.0.
 """
 
 from __future__ import annotations
@@ -126,11 +129,14 @@ class MVPFormer(EEGModuleMixin, nn.Module):
 
     - **Grouped-query attention.** ``n_head_kv`` key/value heads are shared across
       ``n_heads`` query heads to reduce memory and compute.
-    - **Efficient relative terms.** The time- and channel-relative terms are
-      quadratic in one axis and constant in the other (computed once and
-      broadcast), and a relative-shift trick yields all relative offsets in one
-      pass; with the local content window this keeps the cost sub-quadratic in
-      the full context length.
+    - **Relative terms and content window.** The time- and channel-relative
+      terms are quadratic in one axis and constant in the other (computed once
+      and broadcast), and a relative-shift trick yields all relative offsets in
+      one pass. The local content window bounds each query's *effective*
+      context, but this reference implementation still materialises the full
+      ``(segment*channel)``-squared content-attention matrix before masking; the
+      Triton ``FlashMVPA`` kernel that avoids that cost is not ported, so memory
+      scales quadratically with the total number of tokens.
     - **Generative pre-training (reference only).** Upstream, MVPFormer is
       pre-trained to predict the next-in-time embedding with a contrastive loss
       and fine-tuned with LoRA. This braindecode implementation provides the
@@ -287,6 +293,8 @@ class MVPFormer(EEGModuleMixin, nn.Module):
             self.d_model if self.pooling == "mean" else self.n_chans * self.d_model
         )
         self.final_layer = nn.Linear(head_in, n_outputs, bias=False)
+        # Match fresh construction (std=0.02), not the default Linear init.
+        self._init_weights(self.final_layer)
 
     def forward(self, x, return_features: bool = False):
         # x: (batch, n_chans, n_times)

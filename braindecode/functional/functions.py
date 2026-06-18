@@ -299,7 +299,9 @@ def daubechies_filters(n_vanishing: int) -> torch.Tensor:
     low *= math.sqrt(2.0) / low.sum()
     dec_lo = low[::-1]  # pywt stores the time-reversed decomposition low-pass
     length = len(dec_lo)
-    dec_hi = np.array([(-1.0) ** (k + 1) * dec_lo[length - 1 - k] for k in range(length)])
+    dec_hi = np.array(
+        [(-1.0) ** (k + 1) * dec_lo[length - 1 - k] for k in range(length)]
+    )
     return torch.tensor(np.stack([dec_lo, dec_hi]), dtype=torch.float32)
 
 

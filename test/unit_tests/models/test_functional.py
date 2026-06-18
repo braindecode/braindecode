@@ -86,7 +86,7 @@ def test_wavelet_decomposition_matches_pywt():
     """wavelet_decomposition is bit-identical to pywt/ptwt wavedec(mode='periodic')
     across sizes (skipped if the reference library is unavailable)."""
     ptwt = pytest.importorskip("ptwt")
-    import pywt
+    pywt = pytest.importorskip("pywt")
 
     from braindecode.functional import daubechies_filters, wavelet_decomposition
 
