@@ -104,7 +104,7 @@ Code health
   (:gh:`1053`) in the ``test_eegneuralnet`` signal-argument tests, which
   intentionally fit tiny mock data to check argument propagation rather than
   to train. Keeps the warning meaningful by not emitting it on every CI run.
-  (:gh:`PLACEHOLDER_PR` by `Adam Mounir`_)
+  (:gh:`1056` by `Adam Mounir`_)
 
 - Install CPU-only PyTorch wheels in the ``tests`` and ``docs`` CI
   workflows via ``UV_TORCH_BACKEND=cpu``. GitHub runners have no GPU, so
