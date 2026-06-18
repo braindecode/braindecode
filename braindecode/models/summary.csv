@@ -57,3 +57,4 @@ InterpolatedEEGPT,General,Classification,256,"chs_info, n_outputs, n_times",2532
 InterpolatedLaBraM,General,"Classification, Embedding",200,"chs_info, n_outputs, n_times",5866196,"InterpolatedLaBraM(chs_info=<user>, n_outputs=4, n_times=1000)","Convolution,Foundation Model,Channel"
 InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info",3456882,"InterpolatedSignalJEPA(chs_info=<user>)","Convolution,Channel,Foundation Model"
 EEGDINO,General,Classification,200,"n_chans, n_outputs, n_times",4539698,"EEGDINO(n_chans=19, n_outputs=4, n_times=1000)","Foundation Model,Attention/Transformer"
+MVPFormer,General,"Classification,Embedding",512,"n_chans, n_outputs, n_times, sfreq",2824474,"MVPFormer(n_chans=22, n_outputs=4, n_times=2000, sfreq=100)","Foundation Model,Attention/Transformer"

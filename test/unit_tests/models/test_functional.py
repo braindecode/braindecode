@@ -65,3 +65,39 @@ def test_plv_time_perfect_synchronization():
     expected = torch.ones(batch, channels, channels)
     assert torch.allclose(plv_matrix, expected, atol=1e-5), \
         "PLV should be 1 for perfectly synchronized signals"
+
+
+def test_daubechies_filters_match_pywt():
+    """daubechies_filters reproduces pywt's db-N decomposition filters to
+    machine precision (skipped if PyWavelets/ptwt is unavailable)."""
+    pytest.importorskip("ptwt")
+    import pywt
+
+    from braindecode.functional import daubechies_filters
+
+    for n in (2, 3, 4, 6):
+        filt = daubechies_filters(n)
+        w = pywt.Wavelet(f"db{n}")
+        assert filt.shape == (2, 2 * n)
+        assert torch.allclose(filt[0], torch.tensor(w.dec_lo, dtype=torch.float32))
+        assert torch.allclose(filt[1], torch.tensor(w.dec_hi, dtype=torch.float32))
+
+
+def test_wavelet_decomposition_matches_pywt():
+    """wavelet_decomposition is bit-identical to pywt/ptwt wavedec(mode='periodic')
+    across sizes (skipped if the reference library is unavailable)."""
+    ptwt = pytest.importorskip("ptwt")
+    import pywt
+
+    from braindecode.functional import daubechies_filters, wavelet_decomposition
+
+    w = pywt.Wavelet("db4")
+    filt = daubechies_filters(4)
+    for n in (64, 500, 2560, 5000):
+        x = torch.randn(4, n)
+        ref = torch.cat(
+            ptwt.wavedec(x.unsqueeze(1), w, mode="periodic"), dim=-1
+        ).squeeze(1)
+        out = wavelet_decomposition(x, filt)
+        assert out.shape == ref.shape
+        assert torch.allclose(out, ref, atol=1e-5)

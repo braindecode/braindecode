@@ -38,6 +38,7 @@ from .luna import LUNA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
+from .mvpformer import MVPFormer
 from .patchedtransformer import PBT
 from .reve import REVE
 from .sccnet import SCCNet
@@ -115,6 +116,7 @@ __all__ = [
     "extract_channel_locations_from_chs_info",
     "MEDFormer",
     "MSVTNet",
+    "MVPFormer",
     "PBT",
     "REVE",
     "SCCNet",
