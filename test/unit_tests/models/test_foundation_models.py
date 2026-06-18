@@ -205,6 +205,8 @@ def test_labram_neural_decoder_forward_pass_single_sample(
     assert output.shape == (1, n_outputs)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_labram_can_load_pretrained_weights():
     """Ensure that Labram can load pre-trained weights from HuggingFace Hub."""
     mne_data_dir = mne.get_config("MNE_DATA")
@@ -892,12 +894,16 @@ def test_luna_variants_output_consistency(
 # ==============================================================================
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_loads(luna_base_pretrained_model):
     """Test that LUNA base pretrained model loads successfully from HuggingFace."""
     assert luna_base_pretrained_model is not None
     assert isinstance(luna_base_pretrained_model, LUNA)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_forward_pass(luna_base_pretrained_model):
     """Test pretrained base model forward pass."""
     model = luna_base_pretrained_model
@@ -910,6 +916,8 @@ def test_luna_base_pretrained_forward_pass(luna_base_pretrained_model):
     assert output.shape == (2, 2)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_parameter_count(luna_base_pretrained_model):
     """Test pretrained base model has expected parameter count."""
     total_params = sum(p.numel() for p in luna_base_pretrained_model.parameters())
@@ -917,6 +925,8 @@ def test_luna_base_pretrained_parameter_count(luna_base_pretrained_model):
     assert 5_000_000 < total_params < 10_000_000
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_different_batch_sizes(luna_base_pretrained_model):
     """Test pretrained base model with different batch sizes."""
     model = luna_base_pretrained_model
@@ -929,6 +939,8 @@ def test_luna_base_pretrained_different_batch_sizes(luna_base_pretrained_model):
         assert output.shape == (batch_size, 2)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_caching(luna_base_pretrained_model):
     """Test that pretrained model weights are cached in mne_data."""
 
@@ -970,6 +982,8 @@ def _get_reve_cache_dir():
     return str(Path(mne_data_dir) / "reve_pretrained")
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_reve_positions_match():
     """Test that the positions from both implementations match."""
     pytest.skip(
@@ -1000,6 +1014,8 @@ def test_reve_positions_match():
 
 
 @pytest.mark.skipif(HF_TOKEN_REVE_MISSING, reason="HF token for REVE is missing")
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_reve_model_outputs_match():
     """Test that the outputs from both implementations match."""
     try:
@@ -1062,6 +1078,8 @@ def test_reve_model_outputs_match():
 # ==============================================================================
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_cbramod_load_weights():
     model = CBraMod(return_encoder_output=True)
     state_dict = torch.hub.load_state_dict_from_url(

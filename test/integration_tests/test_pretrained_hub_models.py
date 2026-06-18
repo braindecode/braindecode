@@ -49,6 +49,8 @@ def hub_cache_dir():
 # Mark all tests in this module as integration tests (slow, require network)
 pytestmark = [
     pytest.mark.integration,
+    pytest.mark.network,
+    pytest.mark.huggingface,
     pytest.mark.slow,
 ]
 
