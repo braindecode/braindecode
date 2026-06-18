@@ -100,6 +100,12 @@ Bug fixes
 Code health
 ============
 
+- Silence the new "training set smaller than ``batch_size``" warning
+  (:gh:`1053`) in the ``test_eegneuralnet`` signal-argument tests, which
+  intentionally fit tiny mock data to check argument propagation rather than
+  to train. Keeps the warning meaningful by not emitting it on every CI run.
+  (:gh:`PLACEHOLDER_PR` by `Adam Mounir`_)
+
 - Install CPU-only PyTorch wheels in the ``tests`` and ``docs`` CI
   workflows via ``UV_TORCH_BACKEND=cpu``. GitHub runners have no GPU, so
   the default CUDA build pulled ~1.8 GiB of unused ``nvidia-*`` wheels and
