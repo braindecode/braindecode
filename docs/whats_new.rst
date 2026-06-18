@@ -36,6 +36,8 @@ Enhancements
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.
   By `Pierre Guetschel`_.
+- Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
+  foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
 - Add :class:`braindecode.models.STEEGFormer`, a ViT-based EEG foundation
   model pre-trained with a masked-autoencoder objective, from Yang et al.
   (ICLR 2026). By `Adam Mounir`_.
@@ -43,7 +45,12 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- Removed the deprecated aliases that were scheduled for removal after their
+  deprecation in v1.2/v1.3: ``EEGNetv4`` (use
+  :class:`braindecode.models.EEGNet`), ``SleepStagerEldele2021`` (use
+  :class:`braindecode.models.AttnSleep`), ``TSceptionV1`` (use
+  :class:`braindecode.models.TSception`), and ``BNCI2014001`` (use
+  :class:`braindecode.datasets.BNCI2014_001`). (:gh:`1045` by `Bhargav Kowshik`_)
 
 Requirements
 ============
