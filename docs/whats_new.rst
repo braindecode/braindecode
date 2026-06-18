@@ -80,6 +80,11 @@ Bug fixes
 Code health
 ============
 
+- Install CPU-only PyTorch wheels in the ``tests`` and ``docs`` CI
+  workflows via ``UV_TORCH_BACKEND=cpu``. GitHub runners have no GPU, so
+  the default CUDA build pulled ~1.8 GiB of unused ``nvidia-*`` wheels and
+  contributed to a disk-exhaustion crash. (:gh:`1054` by `Bhargav Kowshik`_)
+
 - Add a monthly scheduled workflow that cuts a stable PyPI release on
   the 1st of every month, complementing the existing per-push ``.devN``
   pipeline. (:gh:`1030` by `Bruno Aristimunha`_)
