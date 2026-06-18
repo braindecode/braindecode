@@ -1,12 +1,16 @@
-# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
-#
-# License: BSD-3
-#
-# Reimplementation of MVPFormer (Carzaniga et al., 2025, arXiv:2506.20354),
-# "A foundation model with multi-variate parallel attention to generate
-# neuronal activity". Architecture transcribed from the authors' reference
-# implementation (Apache-2.0, Copyright IBM Corp. 2024-2025); braindecode
-# reimplementation is pure-PyTorch and CPU-runnable (no Triton / DeepSpeed).
+"""MVPFormer: a foundation model with multi-variate parallel attention.
+
+Reimplementation of MVPFormer (Carzaniga et al., 2025, arXiv:2506.20354),
+"A foundation model with multi-variate parallel attention to generate
+neuronal activity". The architecture is transcribed from the authors'
+reference implementation, Copyright IBM Corp. 2024-2025. The braindecode
+reimplementation is pure-PyTorch and CPU-runnable (no Triton / DeepSpeed).
+
+Original Authors: Carzaniga et al., IBM Corp.
+Braindecode Adaptation: Bruno Aristimunha
+
+the LICENSE Of this file is APACHE-2.0.
+"""
 
 from __future__ import annotations
 
@@ -130,8 +134,8 @@ class MVPFormer(EEGModuleMixin, nn.Module):
     - **Generative pre-training (reference only).** Upstream, MVPFormer is
       pre-trained to predict the next-in-time embedding with a contrastive loss
       and fine-tuned with LoRA. This braindecode implementation provides the
-      architecture and released-weight loading; the Triton ``FlashMVPA`` kernel
-      and the contrastive pre-training loop are not included.
+      architecture; the Triton ``FlashMVPA`` kernel and the contrastive
+      pre-training loop are not included.
 
     Parameters
     ----------

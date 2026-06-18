@@ -41,8 +41,7 @@ Enhancements
 - Add :class:`braindecode.models.MVPFormer`, the multi-variate parallel
   attention (MVPA) foundation model for heterogeneous multi-variate iEEG, with
   a db4-wavelet signal encoder computed from first principles (no new
-  dependency) and loading support for the authors' released SWEC checkpoints.
-  By `Bruno Aristimunha`_.
+  dependency). By `Bruno Aristimunha`_.
 
 API and behavior changes
 ========================
