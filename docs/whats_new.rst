@@ -36,6 +36,8 @@ Enhancements
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.
   By `Pierre Guetschel`_.
+- Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
+  foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
 
 API and behavior changes
 ========================
@@ -68,6 +70,15 @@ Bug fixes
   use running statistics when ``batch_size == 1`` in train mode.
   By `Bruno Aristimunha`_.
 
+- Fix the auto-generated standalone-function preprocessors
+  (:class:`braindecode.preprocessing.ComputeCurrentSourceDensity`,
+  :class:`braindecode.preprocessing.SetBipolarReference`, and
+  :class:`braindecode.preprocessing.OversampledTemporalProjection`) passing the
+  function name as a string instead of the callable, so they failed to apply.
+  These functions return the modified instance and are now wrapped as callables.
+  Standalone functions that return auxiliary data (e.g. annotations or bad
+  channels) are intentionally left on the existing path for now. (:gh:`885` by
+  `Yiheng Li`_)
 - Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
 
 - Fix the broken EEGNeX quickstart snippet on the documentation landing page,
@@ -88,6 +99,11 @@ Bug fixes
 
 Code health
 ============
+
+- Install CPU-only PyTorch wheels in the ``tests`` and ``docs`` CI
+  workflows via ``UV_TORCH_BACKEND=cpu``. GitHub runners have no GPU, so
+  the default CUDA build pulled ~1.8 GiB of unused ``nvidia-*`` wheels and
+  contributed to a disk-exhaustion crash. (:gh:`1054` by `Bhargav Kowshik`_)
 
 - Add a monthly scheduled workflow that cuts a stable PyPI release on
   the 1st of every month, complementing the existing per-push ``.devN``
