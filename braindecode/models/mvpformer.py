@@ -598,7 +598,7 @@ class _MVPAttention(nn.Module):
                 "-> (query_segment query_channel) (key_segment key_channel)",
                 query_channel=n_channels,
                 key_channel=n_channels,
-            )
+            ).clone()  # repeat() returns a memory-sharing view; clone before in-place write
             window_mask[-n_channels:] = 1
             attn_weights = attn_weights + global_att.masked_fill(~window_mask, 0.0)
 
