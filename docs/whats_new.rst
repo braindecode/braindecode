@@ -139,6 +139,14 @@ API and behavior changes
   removed. Users with arbitrary channel sets should migrate to
   :class:`braindecode.models.InterpolatedLaBraM`. (:gh:`993`
   by `Pierre Guetschel`_)
+- Deprecate ``drop_last_window`` in
+  :func:`braindecode.preprocessing.create_windows_from_events` and
+  :func:`braindecode.preprocessing.create_fixed_length_windows` in favour of the new
+  ``on_last_window`` parameter (``'overlap'``, ``'drop'``, or ``'keep'``), which
+  makes the handling of incomplete trailing windows explicit. ``drop_last_window=False``
+  maps to ``on_last_window='overlap'`` and ``drop_last_window=True`` maps to
+  ``on_last_window='drop'``. Using ``drop_last_window`` now raises a
+  ``FutureWarning``. By `Michele Romani`_.
 
 Requirements
 ============
@@ -1107,3 +1115,4 @@ Authors
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
 .. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
+.. _Michele Romani: https://github.com/BRomans
