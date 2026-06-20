@@ -24,26 +24,99 @@ from braindecode.modules import MultiHeadAttentionRoPE, PatchTokenizer, Residual
 
 
 class BrainTokenizer(EEGModuleMixin, nn.Module):
-    r"""BrainOmni VQ-VAE tokenizer for EEG and MEG signals.
+    r"""BrainTokenizer from Xiao et al. (2025) [brainomni]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
-    ``BrainTokenizer`` is the pretrainable tokenizer backbone described in
-    [brainomni]_.  It encodes raw multi-channel EEG/MEG windows into discrete
-    neural tokens via a SEANet-based convolutional encoder, residual vector
+    ``BrainTokenizer`` is the pretrainable VQ-VAE tokenizer backbone of BrainOmni
+    [brainomni]_. It encodes raw multi-channel EEG/MEG windows into discrete
+    neural tokens via a SEANet convolutional encoder, residual vector
     quantization (RVQ), and a cross-attention decoder that reconstructs the
-    original waveform.  Sensor geometry (position + orientation) is derived
-    from ``chs_info`` at initialisation and used by the ``_SensorEmbedding``
-    to build geometry-aware channel embeddings.
+    original waveform. Sensor geometry (position + orientation) is derived from
+    ``chs_info`` at initialisation and used by ``_SensorEmbedding`` to build
+    geometry-aware channel embeddings, which makes the tokenizer agnostic to the
+    channel montage.
+
+    .. rubric:: Architecture Overview
+
+    The tokenizer is a geometry-conditioned VQ-VAE. The end-to-end path is::
+
+        (batch, n_chans, n_times) -> window -> SEANet encode -> collapse channels
+        into n_neuro latent sources -> residual VQ -> expand back to channels ->
+        SEANet decode -> (batch, n_chans, n_times)
+
+    1. **Sensor-geometry conditioning.** Per-channel position/orientation
+       (from ``chs_info``) and sensor type (EEG/MAG/GRAD) are embedded once and
+       injected into both cross-attention bridges, decoupling the model from any
+       fixed montage.
+    2. **Convolutional waveform codec.** A SEANet (EnCodec-style) encoder/decoder
+       compresses each window by ``prod(ratios)`` and reconstructs it.
+    3. **Discrete bottleneck.** Residual vector quantization turns the continuous
+       latent into a stack of ``num_quantizers`` discrete codebook indices.
+
+    .. rubric:: Macro Components
+
+    ``BrainTokenizer.patcher`` (:class:`~braindecode.modules.PatchTokenizer`)
+        **Operations.** Slices ``(batch, n_chans, n_times)`` into non-overlapping
+        windows of ``window_length`` samples, zero-padding the tail when the
+        signal does not tile evenly. **Role.** Defines the analysis window that
+        SEANet encodes.
+
+    ``BrainTokenizer.sensor_embed`` (``_SensorEmbedding``)
+        **Operations.** Maps each channel's ``(position, orientation)`` 6-vector
+        and integer sensor type to an ``emb_dim`` embedding (MLP + type embedding,
+        RMSNorm). **Role.** Geometry-aware, montage-agnostic channel identity.
+
+    ``BrainTokenizer.encoder`` (``_TokenizerEncoder``)
+        **Operations.** Runs each ``(channel, window)`` waveform through the
+        SEANet encoder, then a cross-attention (``_BackwardSolution``) in which
+        ``n_neuro`` learnable queries attend to the sensor-conditioned channel
+        features, collapsing ``n_chans`` into ``n_neuro`` virtual sources.
+        **Role.** Produces ``(batch, n_neuro, n_windows, n_tokens, emb_dim)``
+        latent tokens.
+
+    ``BrainTokenizer.quantizer`` (:class:`~braindecode.modules.ResidualVQ`)
+        **Operations.** Residual vector quantization with EMA codebooks; each
+        stage quantizes the residual of the previous one. **Role.** The discrete
+        bottleneck, emitting ``num_quantizers`` codebook indices per token.
+
+    ``BrainTokenizer.final_layer`` (``_TokenizerDecoder``)
+        **Operations.** Cross-attention (``_ForwardSolution``) lets the sensor
+        embeddings query the quantized neural tokens, expanding ``n_neuro`` back
+        to ``n_chans``, then the SEANet decoder reconstructs each window.
+        **Role.** The output layer; reconstructs ``(batch, n_chans, n_times)``.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** SEANet's strided convolutions and LSTM compress each window
+      along time by ``prod(ratios)``; ``n_windows * n_tokens`` is the resulting
+      time axis.
+    - **Spatial:** ``_SensorEmbedding`` and the two cross-attention bridges map
+      physical sensors to and from ``n_neuro`` montage-independent virtual
+      sources using sensor geometry.
+    - **Spectral:** No explicit transform; frequency selectivity is learned
+      implicitly by the SEANet convolutional filterbank.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Residual VQ with the rotation trick.** Codebooks are EMA-updated only in
+      ``train`` mode; :meth:`tokenize` runs under :func:`torch.no_grad` in
+      ``eval`` mode so the codebooks are never corrupted when extracting tokens.
+    - **Weight-normed convolutions.** SEANet uses classic ``weight_norm`` so the
+      ``weight_g``/``weight_v`` keys stay aligned with the upstream release.
 
     .. rubric:: Pretrained Weights
 
     .. important::
 
-        Pre-trained weights for ``BrainTokenizer`` are available on
-        `HuggingFace <https://huggingface.co/OpenTSLab/BrainOmni>`_
-        (see the repository for the *tiny* and *base* tokenizer checkpoints).
-        Load with ``BrainTokenizer.from_pretrained("OpenTSLab/BrainOmni")``.
+        Converted *tiny* and *base* tokenizer checkpoints are hosted on the
+        Hugging Face Hub. Load with
+        ``BrainTokenizer.from_pretrained("braindecode/braintokenizer-pretrained")``
+        (requires ``braindecode[hub]``). Input is expected at 256 Hz; apply
+        sensor-type-wise group z-score normalisation (separately for EEG, MAG and
+        GRAD channels) before forwarding.
+
+    .. versionadded:: 1.6.1
 
     Parameters
     ----------
@@ -98,12 +171,15 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
+        # braindecode parameters
         n_outputs=None,
         n_chans=None,
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
+        # model-specific parameters
+        *,
         emb_dim: int = 256,
         n_neuro: int = 16,
         window_length: int = 512,
@@ -128,7 +204,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, input_window_seconds
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         if int(round(self.sfreq)) != 256:
             warnings.warn(
@@ -178,6 +254,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
             last_kernel_size=last_kernel_size,
             dropout=drop_prob,
         )
+        self.apply(_init_weights)
 
     def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
         """Slice ``x`` (batch, n_chans, n_times) into ``(batch, n_chans, n_windows, window_length)`` windows."""
@@ -261,33 +338,88 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
 
 
 class BrainOmni(EEGModuleMixin, nn.Module):
-    r"""BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals.
+    r"""BrainOmni from Xiao et al. (2025) [brainomni]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
-    ``BrainOmni`` is the downstream classifier described in [brainomni]_.
-    It wraps a frozen :class:`BrainTokenizer` backbone with a stack of
-    spatial-temporal factored attention blocks (``_SpatialTemporalBlock``) and a linear
-    classification head, matching the ``DownstreamModel`` architecture from
+    ``BrainOmni`` is the downstream classifier of BrainOmni [brainomni]_. It
+    wraps a frozen :class:`BrainTokenizer` backbone with a stack of
+    spatial-temporal factored attention blocks (``_SpatialTemporalBlock``) and a
+    linear classification head, matching the ``DownstreamModel`` architecture of
     the published BrainOmni codebase.
 
+    .. rubric:: Architecture Overview
+
+    The end-to-end path is::
+
+        (batch, n_chans, n_times) -> frozen BrainTokenizer -> projection ->
+        spatial-temporal blocks -> pool over time -> flatten sources ->
+        (batch, n_outputs)
+
     The tokenizer slides over the input with stride
-    ``window_length * (1 - overlap_ratio)`` to produce a temporal sequence
-    of neural-source embeddings, which the transformer then processes.
-    During fine-tuning only the transformer ``blocks`` and the final
-    classification head are trainable; the :class:`BrainTokenizer` backbone
-    (VQ codebooks and all convolutional layers) is frozen in eval mode via
-    a :meth:`train` override.
+    ``window_length * (1 - overlap_ratio)`` to produce a temporal sequence of
+    ``n_neuro`` neural-source embeddings per window, which the transformer then
+    processes. During fine-tuning only ``blocks`` and ``final_layer`` are
+    trainable: :meth:`encode` reads the backbone through
+    :meth:`BrainTokenizer.tokenize`, which runs under :func:`torch.no_grad` in
+    ``eval`` mode, so the tokenizer's convolutions and VQ codebooks receive no
+    gradients and are never EMA-updated (no ``train`` override is needed).
+
+    .. rubric:: Macro Components
+
+    ``BrainOmni.tokenizer`` (:class:`BrainTokenizer`)
+        **Operations.** Frozen VQ-VAE backbone; :meth:`encode` calls
+        :meth:`BrainTokenizer.tokenize` to map the raw signal to quantized neural
+        tokens ``(batch, n_neuro, tokens, emb_dim)`` and adds the learned source
+        embeddings. **Role.** Montage-agnostic, fixed feature extractor.
+
+    ``BrainOmni.projection`` (:class:`~torch.nn.Linear` / :class:`~torch.nn.Identity`)
+        **Operations.** Projects ``emb_dim`` to ``lm_dim`` (identity when equal).
+        **Role.** Adapts token width to the transformer.
+
+    ``BrainOmni.blocks`` (``_SpatialTemporalBlock`` x ``depth``)
+        **Operations.** Each block splits the feature dimension in half and
+        applies temporal attention (RoPE, over windows/tokens) to one half and
+        spatial attention (no RoPE, over the ``n_neuro`` sources) to the other,
+        then a pre-norm feed-forward. The last block is held out for checkpoint
+        parity and skipped by :meth:`encode`. **Role.** Factored space-time
+        contextualization of the neural tokens.
+
+    ``BrainOmni.final_layer`` (:class:`~torch.nn.Sequential`)
+        **Operations.** ``Dropout -> Linear -> activation -> Linear`` over the
+        flattened ``n_neuro * lm_dim`` pooled representation. **Role.** The output
+        layer mapping to ``n_outputs`` (rebuilt by :meth:`reset_head`).
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** RoPE temporal attention over the window/token axis; the
+      tokenizer's overlapping windows form the temporal sequence.
+    - **Spatial:** spatial attention over the ``n_neuro`` virtual-source axis,
+      inheriting the tokenizer's geometry-aware sensor mapping.
+    - **Spectral:** inherited implicitly from the tokenizer's SEANet
+      convolutional filterbank; no explicit spectral transform.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Frozen backbone.** The tokenizer is hard-frozen via :func:`torch.no_grad`
+      inside :meth:`BrainTokenizer.tokenize`; only ``blocks`` and ``final_layer``
+      train.
+    - **L2-normalized embedding.** :meth:`encode` L2-normalizes the backbone
+      output, matching the upstream representation used for classification.
 
     .. rubric:: Pretrained Weights
 
     .. important::
 
-        Pre-trained weights for both the tokenizer backbone and the full
-        downstream model are available on
-        `HuggingFace <https://huggingface.co/OpenTSLab/BrainOmni>`_
-        (*tiny* and *base* variants).  Load with
-        ``BrainOmni.from_pretrained("OpenTSLab/BrainOmni")``.
+        Converted *tiny* and *base* checkpoints are hosted on the Hugging Face
+        Hub. Load with
+        ``BrainOmni.from_pretrained("braindecode/brainomni-pretrained")``
+        (requires ``braindecode[hub]``); the classification ``final_layer`` is
+        freshly initialised, so fine-tune or linear-probe before use. Input is
+        expected at 256 Hz; apply sensor-type-wise group z-score normalisation
+        (separately for EEG, MAG and GRAD channels) before forwarding.
+
+    .. versionadded:: 1.6.1
 
     Parameters
     ----------
@@ -336,11 +468,10 @@ class BrainOmni(EEGModuleMixin, nn.Module):
 
     Notes
     -----
-    Input is expected at 256 Hz.  When using pretrained weights, apply
-    sensor-type-wise group z-score normalisation (separately for EEG, MAG,
-    and GRAD channels) before forwarding.  The :class:`BrainTokenizer`
-    backbone (including VQ codebooks) is always kept in eval mode and its
-    parameters receive no gradients during fine-tuning; only ``blocks`` and
+    The :class:`BrainTokenizer` backbone (convolutions and VQ codebooks) is
+    hard-frozen: :meth:`BrainTokenizer.tokenize` runs it under
+    :func:`torch.no_grad` in ``eval`` mode, so it receives no gradients and its
+    codebooks are never EMA-updated during fine-tuning. Only ``blocks`` and
     ``final_layer`` are trainable.
 
     References
@@ -354,12 +485,15 @@ class BrainOmni(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
+        # braindecode parameters
         n_outputs=None,
         n_chans=None,
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
+        # model-specific parameters
+        *,
         emb_dim: int = 256,
         n_neuro: int = 16,
         window_length: int = 512,
@@ -388,7 +522,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, input_window_seconds
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.lm_dim = lm_dim
         self.n_neuro = n_neuro
@@ -427,6 +561,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         )
         self._head_in = n_neuro * lm_dim
         self.final_layer = self._make_head(self.n_outputs)
+        self.apply(_init_weights)
 
     def _make_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(
@@ -468,6 +603,24 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         feat = feat.mean(dim=2)  # pool over tokens -> (batch, n_neuro, lm_dim)
         feat = feat.reshape(feat.shape[0], -1)  # (batch, n_neuro * lm_dim)
         return self.final_layer(feat)
+
+
+def _init_weights(module: nn.Module) -> None:
+    r"""BrainOmni weight init, faithful to the upstream ``_init_weights``.
+
+    Linear and embedding weights ~ ``trunc_normal_(std=0.02)`` (biases zeroed),
+    affine ``RMSNorm`` weights set to 1. Applied via ``self.apply`` at the end of
+    ``__init__``; ``weight_norm`` convolutions are deliberately left untouched so
+    their ``weight_g``/``weight_v`` parametrization stays intact.
+    """
+    if isinstance(module, nn.Linear):
+        nn.init.trunc_normal_(module.weight, std=0.02)
+        if module.bias is not None:
+            nn.init.constant_(module.bias, 0.0)
+    elif isinstance(module, nn.Embedding):
+        nn.init.trunc_normal_(module.weight, std=0.02)
+    elif isinstance(module, nn.RMSNorm) and module.weight is not None:
+        nn.init.constant_(module.weight, 1.0)
 
 
 class _FeedForward(nn.Module):
