@@ -354,7 +354,11 @@ def create_windows_from_events(
 
     if on_last_window is None:
         on_last_window = "overlap"
-
+    if on_last_window not in ("overlap", "drop", "keep"):
+        raise ValueError(
+            "on_last_window must be one of 'overlap', 'drop', 'keep', "
+            f"got {on_last_window!r}."
+        )
     # Validate per-event-type dict parameters
     has_dict_params = any(
         isinstance(p, dict)
