@@ -8,7 +8,6 @@ from copy import deepcopy
 
 import torch
 import torch.nn.functional as F
-from mne.utils import deprecated
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -538,12 +537,3 @@ class _PositionwiseFeedForward(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Implements FFN equation."""
         return self.w_2(self.dropout(self.activate(self.w_1(x))))
-
-
-@deprecated(
-    "`SleepStagerEldele2021` was renamed to `AttnSleep` in v1.12 to follow original author's name; this alias will be removed in v1.14."
-)
-class SleepStagerEldele2021(AttnSleep):
-    r"""Deprecated alias for SleepStagerEldele2021."""
-
-    pass

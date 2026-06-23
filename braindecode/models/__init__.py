@@ -15,11 +15,12 @@ from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .dgcnn import DGCNN
 from .eegconformer import EEGConformer
+from .eegdino import EEGDINO
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
 from .eegitnet import EEGITNet
 from .eegminer import EEGMiner
-from .eegnet import EEGNet, EEGNetv4
+from .eegnet import EEGNet
 from .eegnex import EEGNeX
 from .eegpt import EEGPT, InterpolatedEEGPT
 from .eegsimpleconv import EEGSimpleConv
@@ -85,6 +86,7 @@ __all__ = [
     "DeepSleepNet",
     "BrainModule",
     "EEGConformer",
+    "EEGDINO",
     "EEGPT",
     "InterpolatedEEGPT",
     "EEGInceptionERP",
@@ -92,7 +94,6 @@ __all__ = [
     "EEGITNet",
     "EEGMiner",
     "EEGNet",
-    "EEGNetv4",
     "EEGNeX",
     "EEGSym",
     "EEGSimpleConv",

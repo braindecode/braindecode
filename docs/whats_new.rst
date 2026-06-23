@@ -36,19 +36,56 @@ Enhancements
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.
   By `Pierre Guetschel`_.
+- Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
+  foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
+- Add separate EEGNet and TCN dropout rates to
+  :class:`braindecode.models.EEGTCNet` via the new ``drop_prob_eeg`` and
+  ``drop_prob_tcn`` arguments, enabling the source/paper configuration
+  (``p_eeg=0.2``, ``p_tcn=0.3``). Both default to ``drop_prob``, so existing
+  behavior is unchanged. (:gh:`1060` by `Bruno Aristimunha`_)
+- Add an opt-in ``conv_max_norm_const`` argument and a
+  :meth:`~braindecode.models.ATCNet.source_optimizer_param_groups` helper to
+  :class:`braindecode.models.ATCNet`, exposing the official implementation's
+  convolution/TCN max-norm constraint (``0.6``) and ``L2`` weight-decay groups
+  (conv/TCN ``0.009``, dense ``0.5``). Defaults preserve current behavior.
+  (:gh:`1061` by `Bruno Aristimunha`_)
 
 API and behavior changes
 ========================
 
-- None yet
+- Removed the deprecated aliases that were scheduled for removal after their
+  deprecation in v1.2/v1.3: ``EEGNetv4`` (use
+  :class:`braindecode.models.EEGNet`), ``SleepStagerEldele2021`` (use
+  :class:`braindecode.models.AttnSleep`), ``TSceptionV1`` (use
+  :class:`braindecode.models.TSception`), and ``BNCI2014001`` (use
+  :class:`braindecode.datasets.BNCI2014_001`). (:gh:`1045` by `Bhargav Kowshik`_)
+- :class:`braindecode.models.EEGTCNet` now inserts a
+  :class:`~torch.nn.BatchNorm1d` after each TCN convolution (and uses a bias in
+  the residual downsample), matching the original Keras implementation. This
+  closes a documented replicability gap but changes the default architecture and
+  parameter count; pass ``tcn_batch_norm=False`` to recover the previous
+  behavior (e.g. to load checkpoints trained before this change). By
+  `Bruno Aristimunha`_.
+- Change the default ``proto_cpt_std`` of :class:`braindecode.models.SSTDPN`
+  from ``0.01`` to ``1.0``, matching the source ``torch.randn`` initialization
+  of the intra-class compactness prototypes. By `Bruno Aristimunha`_.
 
 Requirements
 ============
 
-- None yet
+- Cap the test dependency to ``pytest<9.1`` in the ``tests`` extra. ``pytest``
+  9.1.0 changed the ``IdMaker`` constructor signature, which breaks
+  ``pytest_cases`` 3.10.1 and makes the whole test suite crash at collection
+  time. The cap can be lifted once ``pytest_cases`` supports ``pytest>=9.1``.
+  By `Adam Mounir`_.
 
 Bug fixes
 ==========
+
+- Fix :class:`braindecode.models.SSTDPN` renormalizing ``proto_sep`` along the
+  wrong axis: the inter-class separation prototypes are now constrained per
+  class-row (``dim=0``) as in the paper/source (``||s_i|| <= S``), instead of
+  across classes (``dim=1``). (:gh:`1059` by `Bruno Aristimunha`_)
 
 - Fix :class:`~braindecode.models.ContraWR`,
   :class:`~braindecode.models.DeepSleepNet`, and
@@ -59,10 +96,46 @@ Bug fixes
   use running statistics when ``batch_size == 1`` in train mode.
   By `Bruno Aristimunha`_.
 
+- Fix the auto-generated standalone-function preprocessors
+  (:class:`braindecode.preprocessing.ComputeCurrentSourceDensity`,
+  :class:`braindecode.preprocessing.SetBipolarReference`, and
+  :class:`braindecode.preprocessing.OversampledTemporalProjection`) passing the
+  function name as a string instead of the callable, so they failed to apply.
+  These functions return the modified instance and are now wrapped as callables.
+  Standalone functions that return auxiliary data (e.g. annotations or bad
+  channels) are intentionally left on the existing path for now. (:gh:`885` by
+  `Yiheng Li`_)
 - Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
+
+- Fix the broken EEGNeX quickstart snippet on the documentation landing page,
+  which kept non-EEG channels (including the STIM trigger), hardcoded a
+  mismatched ``n_times``, and failed at the default stratified validation split
+  with ``y=None``; it now restricts to EEG channels and lets
+  :class:`~braindecode.EEGClassifier` infer the signal dimensions from the data.
+  By `Bhargav Kowshik`_
+
+- Fix :class:`~braindecode.EEGClassifier` and
+  :class:`~braindecode.EEGRegressor` silently skipping all training when the
+  training set is smaller than ``batch_size`` (with the default
+  ``iterator_train__drop_last=True``). Previously every batch was dropped and
+  the model was left untrained without any message; a :class:`UserWarning` is
+  now raised telling the user to lower ``batch_size`` or set
+  ``iterator_train__drop_last=False``.
+  (:gh:`1053` by `Bhargav Kowshik`_)
 
 Code health
 ============
+
+- Silence the new "training set smaller than ``batch_size``" warning
+  (:gh:`1053`) in the ``test_eegneuralnet`` signal-argument tests, which
+  intentionally fit tiny mock data to check argument propagation rather than
+  to train. Keeps the warning meaningful by not emitting it on every CI run.
+  (:gh:`1056` by `Adam Mounir`_)
+
+- Install CPU-only PyTorch wheels in the ``tests`` and ``docs`` CI
+  workflows via ``UV_TORCH_BACKEND=cpu``. GitHub runners have no GPU, so
+  the default CUDA build pulled ~1.8 GiB of unused ``nvidia-*`` wheels and
+  contributed to a disk-exhaustion crash. (:gh:`1054` by `Bhargav Kowshik`_)
 
 - Add a monthly scheduled workflow that cuts a stable PyPI release on
   the 1st of every month, complementing the existing per-push ``.devN``
@@ -1243,3 +1316,4 @@ Authors
 .. _Léo Burgund: https://github.com/leob000
 .. _Adam Mounir: https://github.com/adammounir
 .. _Yiheng Li: https://github.com/YihengLi-1
+.. _Bhargav Kowshik: https://github.com/bkowshik
