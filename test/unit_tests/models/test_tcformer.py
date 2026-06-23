@@ -68,3 +68,26 @@ def test_transformer_block_droppath_is_identity_in_eval():
     # in eval mode DropPath and Dropout are no-ops -> deterministic, finite
     out_a, out_b = blk(x, cos, sin), blk(x, cos, sin)
     assert torch.allclose(out_a, out_b)
+
+
+from braindecode.models.tcformer import _ChannelGroupAttention
+
+
+def test_group_attention_shape_and_per_group_gate():
+    sa = _ChannelGroupAttention(in_channels=48, num_groups=3, reduction=4)
+    # two grouped 1x1 convs: 48 -> 48//4=12 -> num_groups=3
+    assert sa.att_fc1.out_channels == 12
+    assert sa.att_fc2.out_channels == 3
+    x = torch.randn(2, 48, 1, 17)
+    out = sa(x)
+    assert out.shape == x.shape
+
+
+def test_group_attention_gates_are_constant_within_group():
+    sa = _ChannelGroupAttention(48, 3, 4).eval()
+    x = torch.ones(1, 48, 1, 5)
+    ratio = (sa(x) / x)[0, :, 0, 0]  # per-channel gate
+    g = 48 // 3
+    for grp in range(3):
+        block = ratio[grp * g:(grp + 1) * g]
+        assert torch.allclose(block, block[0].expand_as(block), atol=1e-6)

@@ -121,3 +121,31 @@ class _TransformerBlock(nn.Module):
         x = x + self.drop_path(self.attn(self.norm1(x), cos, sin))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
+
+
+# ----------------------------------------------------------------------------- #
+class _ChannelGroupAttention(nn.Module):
+    """Grouped Squeeze-and-Excitation: one sigmoid gate per channel group."""
+
+    def __init__(self, in_channels: int, num_groups: int, reduction: int = 4):
+        super().__init__()
+        assert in_channels % num_groups == 0
+        self.in_channels = in_channels
+        self.num_groups = num_groups
+        self.group_size = in_channels // num_groups
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.att_fc1 = nn.Conv2d(
+            in_channels, in_channels // reduction, 1, groups=num_groups, bias=False
+        )
+        self.att_fc2 = nn.Conv2d(
+            in_channels // reduction, num_groups, 1, groups=num_groups, bias=False
+        )
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x: Tensor) -> Tensor:
+        b, c, h, w = x.shape
+        gate = self.sigmoid(self.att_fc2(self.relu(self.att_fc1(self.pool(x)))))
+        x = x.view(b, self.num_groups, self.group_size, h, w)
+        gate = gate.view(b, self.num_groups, 1, 1, 1)
+        return (x * gate).view(b, c, h, w)
