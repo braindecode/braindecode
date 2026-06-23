@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import torch
+from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
@@ -17,6 +18,10 @@ class TCFormer(EEGModuleMixin, nn.Module):
     r"""TCFormer from Altaheri et al (2025) [tcformer]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
+
+    .. figure:: https://braindecode.org/dev/_static/model/tcformer.png
+        :align: center
+        :alt: TCFormer Architecture
 
     Temporal Convolutional Transformer for EEG-based motor-imagery decoding. It
     couples a multi-kernel convolutional front-end, a grouped-query Transformer
@@ -215,7 +220,7 @@ class TCFormer(EEGModuleMixin, nn.Module):
             nn.BatchNorm1d(d_model),
             nn.SiLU(),
         )
-        self.to_tokens = Rearrange("b c t -> b t c")
+        self.to_tokens = Rearrange("batch feat time -> batch time feat")
 
         drop_rates = torch.linspace(0, 1, n_transformer_layers) ** 2 * drop_path_max
         self.transformer = nn.ModuleList(
@@ -241,7 +246,7 @@ class TCFormer(EEGModuleMixin, nn.Module):
         self.register_buffer("rope_sin", sin, persistent=False)
 
         self.reduce = nn.Sequential(
-            Rearrange("b t c -> b c t"),
+            Rearrange("batch time feat -> batch feat time"),
             nn.Conv1d(d_model, group_dim, 1, bias=False),
             nn.BatchNorm1d(group_dim),
             nn.SiLU(),
@@ -270,20 +275,21 @@ class TCFormer(EEGModuleMixin, nn.Module):
                 nn.init.constant_(module.bias, 0.0)
 
     def forward(self, x: Tensor) -> Tensor:
-        conv_features = self.conv_block(x)  # (B, d_model, Tc)
-        tokens = self.to_tokens(self.mix(conv_features))  # (B, Tc, d_model)
-        t = tokens.size(1)
-        cos, sin = self.rope_cos[:t], self.rope_sin[:t]
-        for blk in self.transformer:
-            tokens = blk(tokens, cos, sin)
-        tran_features = self.reduce(tokens)  # (B, group_dim, Tc)
-        features = torch.cat((conv_features, tran_features), dim=1)  # (B, d_fused, Tc)
-        out = self.tcn(features)
-        out = out[:, :, -1:]  # last causal step (B, d_fused, 1)
-        return self.final_layer(out)  # (B, n_outputs)
+        conv_features = self.conv_block(x)  # (batch, d_model, n_tokens)
+        tokens = self.to_tokens(self.mix(conv_features))  # (batch, n_tokens, d_model)
+        seq_len = tokens.shape[1]
+        cos, sin = self.rope_cos[:seq_len], self.rope_sin[:seq_len]
+        for block in self.transformer:
+            tokens = block(tokens, cos, sin)
+        transformer_features = self.reduce(tokens)  # (batch, group_dim, n_tokens)
+        fused = torch.cat(
+            (conv_features, transformer_features), dim=1
+        )  # (batch, d_fused, n_tokens)
+        decoded = self.tcn(fused)
+        last_step = decoded[:, :, -1:]  # (batch, d_fused, 1)
+        return self.final_layer(last_step)  # (batch, n_outputs)
 
 
-# ----------------------------------------------------------------------------- #
 # ----------------------------------------------------------------------------- #
 # Rotary positional embedding (verbatim port of the reference; see plan note on
 # the deliberate NeoX-cache / interleaved-rotate mismatch).
@@ -297,17 +303,22 @@ def _build_rotary_cache(head_dim: int, seq_len: int) -> tuple[Tensor, Tensor]:
 
 
 def _apply_rope(
-    q: Tensor, k: Tensor, cos: Tensor, sin: Tensor
+    query: Tensor, key: Tensor, cos: Tensor, sin: Tensor
 ) -> tuple[Tensor, Tensor]:
-    """Apply rotary embedding to ``q`` and ``k`` (shape ``(B, heads, T, d)``)."""
+    """Apply rotary embedding to ``query`` and ``key``.
 
-    def _rotate(x: Tensor) -> Tensor:
-        x1, x2 = x[..., ::2], x[..., 1::2]
-        return torch.stack((-x2, x1), dim=-1).flatten(-2)
+    Both have shape ``(batch, n_heads, seq_len, head_dim)``.
+    """
 
-    q_out = (q * cos) + (_rotate(q) * sin)
-    k_out = (k * cos) + (_rotate(k) * sin)
-    return q_out, k_out
+    def rotate(tensor: Tensor) -> Tensor:
+        even = tensor[..., 0::2]
+        odd = tensor[..., 1::2]
+        pairs = torch.stack((-odd, even), dim=-1)
+        return rearrange(pairs, "... half two -> ... (half two)")
+
+    query_rotated = (query * cos) + (rotate(query) * sin)
+    key_rotated = (key * cos) + (rotate(key) * sin)
+    return query_rotated, key_rotated
 
 
 # ----------------------------------------------------------------------------- #
@@ -320,30 +331,50 @@ class _GroupedQueryAttention(nn.Module):
         super().__init__()
         assert d_model % q_heads == 0, "d_model must be divisible by q_heads"
         assert q_heads % kv_heads == 0, "q_heads must be a multiple of kv_heads"
-        self.q_heads = q_heads
-        self.kv_heads = kv_heads
+        self.n_query_heads = q_heads
+        self.n_kv_heads = kv_heads
         self.head_dim = d_model // q_heads
         self.scale = self.head_dim**-0.5
-        self.q_proj = nn.Linear(d_model, d_model, bias=False)
-        self.kv_proj = nn.Linear(d_model, 2 * kv_heads * self.head_dim, bias=False)
-        self.o_proj = nn.Linear(d_model, d_model, bias=False)
+        self.query_proj = nn.Linear(d_model, d_model, bias=False)
+        self.key_value_proj = nn.Linear(
+            d_model, 2 * kv_heads * self.head_dim, bias=False
+        )
+        self.out_proj = nn.Linear(d_model, d_model, bias=False)
         self.drop = nn.Dropout(drop_prob)
 
     def forward(self, x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
-        b, t, c = x.shape
-        q = self.q_proj(x).view(b, t, self.q_heads, self.head_dim).transpose(1, 2)
-        kv = self.kv_proj(x).view(b, t, self.kv_heads, 2, self.head_dim)
-        k = kv[..., 0, :].transpose(1, 2)
-        v = kv[..., 1, :].transpose(1, 2)
-        repeat = self.q_heads // self.kv_heads
-        k = k.repeat_interleave(repeat, dim=1)
-        v = v.repeat_interleave(repeat, dim=1)
-        q, k = _apply_rope(q, k, cos[:t], sin[:t])
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
-        attn = self.drop(attn)
-        out = (attn @ v).transpose(1, 2).contiguous().view(b, t, c)
-        return self.o_proj(out)
+        seq_len = x.shape[1]
+        query = rearrange(
+            self.query_proj(x),
+            "batch seq (heads dim) -> batch heads seq dim",
+            heads=self.n_query_heads,
+        )
+        key, value = rearrange(
+            self.key_value_proj(x),
+            "batch seq (heads two dim) -> two batch heads seq dim",
+            two=2,
+            heads=self.n_kv_heads,
+        )
+        # share each key/value group across its query heads
+        groups_per_kv = self.n_query_heads // self.n_kv_heads
+        key = repeat(
+            key,
+            "batch heads seq dim -> batch (heads repeats) seq dim",
+            repeats=groups_per_kv,
+        )
+        value = repeat(
+            value,
+            "batch heads seq dim -> batch (heads repeats) seq dim",
+            repeats=groups_per_kv,
+        )
+        query, key = _apply_rope(query, key, cos[:seq_len], sin[:seq_len])
+        key_t = rearrange(key, "batch heads seq dim -> batch heads dim seq")
+        attention = ((query @ key_t) * self.scale).softmax(dim=-1)
+        attention = self.drop(attention)
+        context = rearrange(
+            attention @ value, "batch heads seq dim -> batch seq (heads dim)"
+        )
+        return self.out_proj(context)
 
 
 # ----------------------------------------------------------------------------- #
@@ -399,11 +430,20 @@ class _ChannelGroupAttention(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x: Tensor) -> Tensor:
-        b, c, h, w = x.shape
-        gate = self.sigmoid(self.att_fc2(self.relu(self.att_fc1(self.pool(x)))))
-        x = x.view(b, self.num_groups, self.group_size, h, w)
-        gate = gate.view(b, self.num_groups, 1, 1, 1)
-        return (x * gate).view(b, c, h, w)
+        descriptor = self.pool(x)
+        gate = self.sigmoid(self.att_fc2(self.relu(self.att_fc1(descriptor))))
+        grouped = rearrange(
+            x,
+            "batch (groups chans) height width -> batch groups chans height width",
+            groups=self.num_groups,
+        )
+        gate = rearrange(
+            gate, "batch groups height width -> batch groups 1 height width"
+        )
+        return rearrange(
+            grouped * gate,
+            "batch groups chans height width -> batch (groups chans) height width",
+        )
 
 
 # ----------------------------------------------------------------------------- #
@@ -427,7 +467,7 @@ class _MultiKernelConvBlock(nn.Module):
         super().__init__()
         n_groups = len(temp_kernel_lengths)
         self.d_model = group_dim * n_groups
-        self.rearrange = Rearrange("b c t -> b 1 c t")
+        self.rearrange = Rearrange("batch nchans time -> batch 1 nchans time")
 
         # one temporal conv per kernel ('same' time padding via ConstantPad2d),
         # BN only -- NO activation here (matches reference).
@@ -498,7 +538,8 @@ class _MultiKernelConvBlock(nn.Module):
         if self.use_group_attn:
             x = x + self.group_attn(x)
         x = self.drop2(self.pool2(x))
-        return x.squeeze(2)  # (B, d_model, Tc)
+        # drop the singleton spatial axis -> (batch, d_model, n_tokens)
+        return rearrange(x, "batch feat 1 time -> batch feat time")
 
 
 # ----------------------------------------------------------------------------- #
