@@ -162,3 +162,41 @@ def test_classification_head_shape_and_group_mean():
     assert head.conv.groups == 4
     out = head(torch.randn(5, 64, 1))
     assert out.shape == (5, 4)
+
+
+# from braindecode.models import TCFormer  # noqa: E402  (registered in Task 8)
+# Until Task 8, import directly:
+from braindecode.models.tcformer import TCFormer as _TCFormerDirect
+
+
+def test_tcformer_forward_shape():
+    model = _TCFormerDirect(n_chans=22, n_outputs=4, n_times=1000).eval()
+    out = model(torch.randn(2, 22, 1000))
+    assert out.shape == (2, 4)
+
+
+def test_tcformer_param_count_checksum():
+    # Paper Table 1 / Tables 2 & 4 headline config (N=2) == 77,820 params.
+    model = _TCFormerDirect(n_chans=22, n_outputs=4, n_times=1000)
+    assert sum(p.numel() for p in model.parameters()) == 77_820
+
+
+def test_tcformer_final_layer_named_and_last():
+    model = _TCFormerDirect(n_chans=3, n_outputs=2, n_times=1000)
+    names = [n for n, _ in model.named_children()]
+    assert "final_layer" in names
+    assert names[-1] == "final_layer"
+
+
+def test_tcformer_n5_variant_param_count():
+    model = _TCFormerDirect(n_chans=22, n_outputs=4, n_times=1000,
+                            n_transformer_layers=5)
+    assert sum(p.numel() for p in model.parameters()) == 127_212
+
+
+def test_tcformer_handles_other_input_sizes():
+    # 3-channel IV-2b-like and 44-channel HGD-like inputs
+    assert _TCFormerDirect(n_chans=3, n_outputs=2, n_times=1000).eval()(
+        torch.randn(1, 3, 1000)).shape == (1, 2)
+    assert _TCFormerDirect(n_chans=44, n_outputs=4, n_times=1000).eval()(
+        torch.randn(1, 44, 1000)).shape == (1, 4)
