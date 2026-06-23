@@ -54,6 +54,7 @@ from .sleep_stager_chambon_2018 import SleepStagerChambon2018
 from .sparcnet import SPARCNet
 from .sstdpn import SSTDPN
 from .syncnet import SyncNet
+from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
 from .tsinception import TSception
@@ -129,6 +130,7 @@ __all__ = [
     "SPARCNet",
     "SyncNet",
     "BDTCN",
+    "TCFormer",
     "TCN",
     "TIDNet",
     "TSception",

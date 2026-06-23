@@ -362,6 +362,7 @@ models_mandatory_parameters: list[
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("TCFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("SignalJEPA", ["chs_info"], None),

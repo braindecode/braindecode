@@ -164,9 +164,9 @@ def test_classification_head_shape_and_group_mean():
     assert out.shape == (5, 4)
 
 
-# from braindecode.models import TCFormer  # noqa: E402  (registered in Task 8)
-# Until Task 8, import directly:
-from braindecode.models.tcformer import TCFormer as _TCFormerDirect
+# Registered in braindecode.models (Task 8); import from the package to
+# exercise registration.
+from braindecode.models import TCFormer as _TCFormerDirect
 
 
 def test_tcformer_forward_shape():
