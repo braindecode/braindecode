@@ -13,21 +13,277 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CausalConv1d, Conv1dWithConstraint, DropPath
 
 
-def _glorot_weight_zero_bias(module: nn.Module) -> None:
-    """Xavier-uniform init on non-norm weights, zero bias (reference init).
+class TCFormer(EEGModuleMixin, nn.Module):
+    r"""TCFormer from Altaheri et al (2025) [tcformer]_.
 
-    Replicates ``utils.weight_initialization.glorot_weight_zero_bias`` from the
-    original TCFormer code.
+    :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
+
+    Temporal Convolutional Transformer for EEG-based motor-imagery decoding. It
+    couples a multi-kernel convolutional front-end, a grouped-query Transformer
+    encoder with rotary positional embeddings, and a grouped temporal
+    convolutional network head, reaching state-of-the-art accuracy on BCIC IV-2a,
+    IV-2b and the High-Gamma Dataset while remaining compact (~78k parameters)
+    [tcformer]_.
+
+    .. rubric:: Architecture Overview
+
+    The raw trial ``(batch, n_chans, n_times)`` flows through three stages:
+    (1) :class:`_MultiKernelConvBlock` extracts multi-scale spatiotemporal
+    features and emits a short sequence of ``d_model`` tokens; (2) a stack of
+    :class:`_TransformerBlock` layers models global temporal context with
+    grouped-query attention and rotary embeddings; (3) the Transformer output is
+    reduced and concatenated with the convolutional tokens, then a grouped
+    :class:`_TCN` head with a per-group :class:`_ClassificationHead`
+    (``final_layer``) produces class logits.
+
+    .. rubric:: Macro Components
+
+    ``TCFormer.conv_block`` (Multi-Kernel Convolutional Embedding)
+        **Operations.** Parallel temporal convolutions with kernels
+        ``temp_kernel_lengths`` (each ``n_filters_time`` filters, batch-normed),
+        concatenated, then a depthwise spatial convolution over electrodes
+        (``depth_multiplier``), average pooling, grouped 1x1 channel reduction to
+        ``d_model = group_dim * n_groups``, a grouped temporal convolution, a
+        grouped squeeze-and-excitation gate, and a second pooling.
+        **Role.** Turns the raw montage into ``Tc`` compact feature tokens, one
+        group per temporal kernel, encoding band-specific rhythms.
+
+    ``TCFormer.transformer`` (Grouped-Query Transformer Encoder)
+        **Operations.** ``n_transformer_layers`` pre-norm blocks, each applying
+        grouped-query self-attention (``q_heads`` queries sharing ``kv_heads``
+        key/value groups) with rotary positional embedding, then a position-wise
+        MLP (expansion ``mlp_ratio``); residual connections use a quadratic
+        DropPath schedule up to ``drop_path_max``.
+        **Role.** Adds global temporal context efficiently (fewer K/V projections
+        than full multi-head attention).
+
+    ``TCFormer.tcn`` + ``TCFormer.final_layer`` (Grouped TCN Head)
+        **Operations.** The reduced Transformer output is concatenated with the
+        convolutional tokens (``d_fused = group_dim * (n_groups + 1)`` channels,
+        ``n_groups + 1`` groups), processed by ``tcn_depth`` dilated causal
+        residual blocks (kernel ``tcn_kernel_length``, dilations ``2**i``), the
+        last timestep is taken, and a grouped 1x1 conv produces per-group logits
+        averaged across groups.
+        **Role.** Long-range causal temporal decoding and read-out.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** multi-kernel and dilated-causal convolutions plus rotary
+      self-attention capture short- and long-range temporal dependencies.
+    - **Spatial:** a depthwise convolution spanning all electrodes mixes channels
+      per feature map.
+    - **Spectral:** the three temporal kernel sizes target distinct EEG bands
+      (short kernels -> high frequencies, long kernels -> low frequencies).
+
+    .. rubric:: Additional Mechanisms
+
+    - Grouped-query attention and rotary embeddings reduce attention cost while
+      preserving relative-position information.
+    - Group structure is preserved end-to-end: each temporal kernel forms a
+      channel group that stays separated through the grouped reductions, grouped
+      TCN, and per-group classifier.
+
+    Parameters
+    ----------
+    n_filters_time : int, optional
+        Number of temporal filters per kernel (``F1``). Default ``32``.
+    temp_kernel_lengths : tuple of int, optional
+        Temporal kernel lengths; their count is the number of feature groups.
+        Default ``(20, 32, 64)``.
+    depth_multiplier : int, optional
+        Depthwise spatial expansion factor (``D``). Default ``2``.
+    pool_length_1, pool_length_2 : int, optional
+        Average-pool factors after the depthwise and the second temporal conv.
+        Defaults ``8`` and ``7``.
+    temp_kernel_length_2 : int, optional
+        Kernel length of the grouped second temporal convolution. Default ``16``.
+    group_dim : int, optional
+        Channels per group (``d_group``); ``d_model = group_dim * n_groups``.
+        Default ``16``.
+    se_reduction : int, optional
+        Reduction ratio of the grouped squeeze-and-excitation block. Default ``4``.
+    n_transformer_layers : int, optional
+        Number of encoder layers (``N``). Default ``2`` (the 77.8k-parameter
+        headline configuration). Use ``5`` for the deeper ~131k variant.
+    q_heads, kv_heads : int, optional
+        Number of query heads and key/value groups for grouped-query attention
+        (``q_heads`` must be divisible by ``kv_heads``). Defaults ``4`` and ``2``.
+    mlp_ratio : int, optional
+        Feed-forward expansion ratio in each encoder block. Default ``2``.
+    drop_path_max : float, optional
+        Maximum stochastic-depth rate (quadratic schedule over depth). Default
+        ``0.25``.
+    tcn_depth : int, optional
+        Number of TCN residual blocks (``L``). Default ``2``.
+    tcn_kernel_length : int, optional
+        Kernel length of the TCN causal convolutions (``KT``). Default ``4``.
+    classifier_max_norm : float, optional
+        Max-norm constraint on the classifier convolution weights. Default
+        ``0.25``.
+    drop_prob_conv, drop_prob_trans, drop_prob_tcn : float, optional
+        Dropout probabilities of the conv front-end, the Transformer, and the TCN
+        head. Defaults ``0.4``, ``0.4``, ``0.3``.
+    activation : nn.Module, optional
+        Activation class for the convolutional and TCN blocks. Default
+        :class:`torch.nn.ELU`.
+    activation_ffn : nn.Module, optional
+        Activation class for the Transformer feed-forward sublayer. Default
+        :class:`torch.nn.GELU`.
+
+    Notes
+    -----
+    This implementation is adapted from the original source code [tcformercode]_
+    to comply with braindecode's model conventions. The default configuration
+    reproduces the paper's headline (Table 1) setup; the released training config
+    additionally uses Adam (lr 0.0009, weight_decay 1e-3), linear warm-up + cosine
+    decay, per-channel z-scoring, and segmentation-and-reconstruction augmentation
+    (handled outside the model, in the training pipeline).
+
+    .. versionadded:: 1.6.1
+
+    References
+    ----------
+    .. [tcformer] Altaheri, H., Karray, F., & Karimi, A.-H. (2025). Temporal
+       convolutional transformer for EEG based motor imagery decoding. Scientific
+       Reports, 15, 32959. https://doi.org/10.1038/s41598-025-16219-7
+    .. [tcformercode] Altaheri, H. (2025). TCFormer source code.
+       https://github.com/Altaheri/TCFormer
     """
-    for mod in module.modules():
-        weight = getattr(mod, "weight", None)
-        if weight is not None and "norm" not in mod.__class__.__name__.lower():
-            nn.init.xavier_uniform_(weight)
-        bias = getattr(mod, "bias", None)
-        if bias is not None:
-            nn.init.constant_(bias, 0)
+
+    def __init__(
+        self,
+        # Signal related parameters
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        # Model parameters
+        n_filters_time: int = 32,
+        temp_kernel_lengths: tuple[int, ...] = (20, 32, 64),
+        depth_multiplier: int = 2,
+        pool_length_1: int = 8,
+        pool_length_2: int = 7,
+        temp_kernel_length_2: int = 16,
+        group_dim: int = 16,
+        se_reduction: int = 4,
+        n_transformer_layers: int = 2,
+        q_heads: int = 4,
+        kv_heads: int = 2,
+        mlp_ratio: int = 2,
+        drop_path_max: float = 0.25,
+        tcn_depth: int = 2,
+        tcn_kernel_length: int = 4,
+        classifier_max_norm: float = 0.25,
+        drop_prob_conv: float = 0.4,
+        drop_prob_trans: float = 0.4,
+        drop_prob_tcn: float = 0.3,
+        activation: type[nn.Module] = nn.ELU,
+        activation_ffn: type[nn.Module] = nn.GELU,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        n_groups = len(temp_kernel_lengths)
+        d_model = group_dim * n_groups
+        d_fused = group_dim * (n_groups + 1)
+
+        self.conv_block = _MultiKernelConvBlock(
+            self.n_chans,
+            temp_kernel_lengths,
+            n_filters_time,
+            depth_multiplier,
+            pool_length_1,
+            pool_length_2,
+            temp_kernel_length_2,
+            drop_prob_conv,
+            group_dim,
+            se_reduction,
+            activation,
+        )
+
+        self.mix = nn.Sequential(
+            nn.Conv1d(d_model, d_model, 1, bias=False),
+            nn.BatchNorm1d(d_model),
+            nn.SiLU(),
+        )
+        self.to_tokens = Rearrange("b c t -> b t c")
+
+        drop_rates = torch.linspace(0, 1, n_transformer_layers) ** 2 * drop_path_max
+        self.transformer = nn.ModuleList(
+            [
+                _TransformerBlock(
+                    d_model,
+                    q_heads,
+                    kv_heads,
+                    mlp_ratio,
+                    drop_prob_trans,
+                    float(drop_rates[i]),
+                    activation_ffn,
+                )
+                for i in range(n_transformer_layers)
+            ]
+        )
+
+        # Static RoPE cache sized to the token length Tc (export/script friendly).
+        n_tokens = max((self.n_times // pool_length_1) // pool_length_2, 1)
+        head_dim = d_model // q_heads
+        cos, sin = _build_rotary_cache(head_dim, n_tokens)
+        self.register_buffer("rope_cos", cos, persistent=False)
+        self.register_buffer("rope_sin", sin, persistent=False)
+
+        self.reduce = nn.Sequential(
+            Rearrange("b t c -> b c t"),
+            nn.Conv1d(d_model, group_dim, 1, bias=False),
+            nn.BatchNorm1d(group_dim),
+            nn.SiLU(),
+        )
+
+        self.tcn = _TCN(
+            tcn_depth,
+            tcn_kernel_length,
+            d_fused,
+            n_groups + 1,
+            drop_prob_tcn,
+            activation,
+        )
+        self.final_layer = _ClassificationHead(
+            d_fused, n_groups + 1, self.n_outputs, classifier_max_norm
+        )
+        self.apply(self._init_weights)
+
+    @staticmethod
+    def _init_weights(module: nn.Module) -> None:
+        if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear)):
+            weight = getattr(module, "weight", None)
+            if isinstance(weight, nn.Parameter):
+                nn.init.xavier_uniform_(weight)
+            if getattr(module, "bias", None) is not None:
+                nn.init.constant_(module.bias, 0.0)
+
+    def forward(self, x: Tensor) -> Tensor:
+        conv_features = self.conv_block(x)  # (B, d_model, Tc)
+        tokens = self.to_tokens(self.mix(conv_features))  # (B, Tc, d_model)
+        t = tokens.size(1)
+        cos, sin = self.rope_cos[:t], self.rope_sin[:t]
+        for blk in self.transformer:
+            tokens = blk(tokens, cos, sin)
+        tran_features = self.reduce(tokens)  # (B, group_dim, Tc)
+        features = torch.cat((conv_features, tran_features), dim=1)  # (B, d_fused, Tc)
+        out = self.tcn(features)
+        out = out[:, :, -1:]  # last causal step (B, d_fused, 1)
+        return self.final_layer(out)  # (B, n_outputs)
 
 
+# ----------------------------------------------------------------------------- #
 # ----------------------------------------------------------------------------- #
 # Rotary positional embedding (verbatim port of the reference; see plan note on
 # the deliberate NeoX-cache / interleaved-rotate mismatch).
@@ -72,7 +328,6 @@ class _GroupedQueryAttention(nn.Module):
         self.kv_proj = nn.Linear(d_model, 2 * kv_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(d_model, d_model, bias=False)
         self.drop = nn.Dropout(drop_prob)
-        _glorot_weight_zero_bias(self)
 
     def forward(self, x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
         b, t, c = x.shape
@@ -232,8 +487,6 @@ class _MultiKernelConvBlock(nn.Module):
         self.pool2 = nn.AvgPool2d((1, pool_length_2))
         self.drop2 = nn.Dropout(drop_prob)
 
-        _glorot_weight_zero_bias(self)
-
     def forward(self, x: Tensor) -> Tensor:
         x = self.rearrange(x)
         x = torch.cat([conv(x) for conv in self.temporal_convs], dim=1)
@@ -275,8 +528,6 @@ class _TCNResidualBlock(nn.Module):
         self.act2 = activation()
         self.drop2 = nn.Dropout(drop_prob)
         self.act3 = activation()
-        nn.init.constant_(self.conv1.bias, 0.0)
-        nn.init.constant_(self.conv2.bias, 0.0)
 
     def forward(self, x: Tensor) -> Tensor:
         out = self.drop1(self.act1(self.bn1(self.conv1(x))))
@@ -333,264 +584,3 @@ class _ClassificationHead(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         x = self.conv(x).squeeze(-1)  # (B, n_outputs*n_groups)
         return x.view(x.size(0), self.n_groups, self.n_outputs).mean(dim=1)
-
-
-# ----------------------------------------------------------------------------- #
-class TCFormer(EEGModuleMixin, nn.Module):
-    r"""TCFormer from Altaheri et al (2025) [tcformer]_.
-
-    :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
-
-    Temporal Convolutional Transformer for EEG-based motor-imagery decoding. It
-    couples a multi-kernel convolutional front-end, a grouped-query Transformer
-    encoder with rotary positional embeddings, and a grouped temporal
-    convolutional network head, reaching state-of-the-art accuracy on BCIC IV-2a,
-    IV-2b and the High-Gamma Dataset while remaining compact (~78k parameters)
-    [tcformer]_.
-
-    .. rubric:: Architecture Overview
-
-    The raw trial ``(batch, n_chans, n_times)`` flows through three stages:
-    (1) :class:`_MultiKernelConvBlock` extracts multi-scale spatiotemporal
-    features and emits a short sequence of ``d_model`` tokens; (2) a stack of
-    :class:`_TransformerBlock` layers models global temporal context with
-    grouped-query attention and rotary embeddings; (3) the Transformer output is
-    reduced and concatenated with the convolutional tokens, then a grouped
-    :class:`_TCN` head with a per-group :class:`_ClassificationHead`
-    (``final_layer``) produces class logits.
-
-    .. rubric:: Macro Components
-
-    ``TCFormer.conv_block`` (Multi-Kernel Convolutional Embedding)
-        **Operations.** Parallel temporal convolutions with kernels
-        ``temp_kernel_lengths`` (each ``n_filters_time`` filters, batch-normed),
-        concatenated, then a depthwise spatial convolution over electrodes
-        (``depth_multiplier``), average pooling, grouped 1x1 channel reduction to
-        ``d_model = group_dim * n_groups``, a grouped temporal convolution, a
-        grouped squeeze-and-excitation gate, and a second pooling.
-        **Role.** Turns the raw montage into ``Tc`` compact feature tokens, one
-        group per temporal kernel, encoding band-specific rhythms.
-
-    ``TCFormer.transformer`` (Grouped-Query Transformer Encoder)
-        **Operations.** ``n_transformer_layers`` pre-norm blocks, each applying
-        grouped-query self-attention (``q_heads`` queries sharing ``kv_heads``
-        key/value groups) with rotary positional embedding, then a position-wise
-        MLP (expansion ``mlp_ratio``); residual connections use a quadratic
-        DropPath schedule up to ``drop_path_max``.
-        **Role.** Adds global temporal context efficiently (fewer K/V projections
-        than full multi-head attention).
-
-    ``TCFormer.tcn`` + ``TCFormer.final_layer`` (Grouped TCN Head)
-        **Operations.** The reduced Transformer output is concatenated with the
-        convolutional tokens (``d_fused = group_dim * (n_groups + 1)`` channels,
-        ``n_groups + 1`` groups), processed by ``tcn_depth`` dilated causal
-        residual blocks (kernel ``tcn_kernel_length``, dilations ``2**i``), the
-        last timestep is taken, and a grouped 1x1 conv produces per-group logits
-        averaged across groups.
-        **Role.** Long-range causal temporal decoding and read-out.
-
-    .. rubric:: Temporal, Spatial, and Spectral Encoding
-
-    - **Temporal:** multi-kernel and dilated-causal convolutions plus rotary
-      self-attention capture short- and long-range temporal dependencies.
-    - **Spatial:** a depthwise convolution spanning all electrodes mixes channels
-      per feature map.
-    - **Spectral:** the three temporal kernel sizes target distinct EEG bands
-      (short kernels -> high frequencies, long kernels -> low frequencies).
-
-    .. rubric:: Additional Mechanisms
-
-    - Grouped-query attention and rotary embeddings reduce attention cost while
-      preserving relative-position information.
-    - Group structure is preserved end-to-end: each temporal kernel forms a
-      channel group that stays separated through the grouped reductions, grouped
-      TCN, and per-group classifier.
-
-    Parameters
-    ----------
-    n_filters_time : int, optional
-        Number of temporal filters per kernel (``F1``). Default ``32``.
-    temp_kernel_lengths : tuple of int, optional
-        Temporal kernel lengths; their count is the number of feature groups.
-        Default ``(20, 32, 64)``.
-    depth_multiplier : int, optional
-        Depthwise spatial expansion factor (``D``). Default ``2``.
-    pool_length_1, pool_length_2 : int, optional
-        Average-pool factors after the depthwise and the second temporal conv.
-        Defaults ``8`` and ``7``.
-    temp_kernel_length_2 : int, optional
-        Kernel length of the grouped second temporal convolution. Default ``16``.
-    group_dim : int, optional
-        Channels per group (``d_group``); ``d_model = group_dim * n_groups``.
-        Default ``16``.
-    se_reduction : int, optional
-        Reduction ratio of the grouped squeeze-and-excitation block. Default ``4``.
-    n_transformer_layers : int, optional
-        Number of encoder layers (``N``). Default ``2`` (the 77.8k-parameter
-        headline configuration). Use ``5`` for the deeper ~131k variant.
-    q_heads, kv_heads : int, optional
-        Number of query heads and key/value groups for grouped-query attention
-        (``q_heads`` must be divisible by ``kv_heads``). Defaults ``4`` and ``2``.
-    mlp_ratio : int, optional
-        Feed-forward expansion ratio in each encoder block. Default ``2``.
-    drop_path_max : float, optional
-        Maximum stochastic-depth rate (quadratic schedule over depth). Default
-        ``0.25``.
-    tcn_depth : int, optional
-        Number of TCN residual blocks (``L``). Default ``2``.
-    tcn_kernel_length : int, optional
-        Kernel length of the TCN causal convolutions (``KT``). Default ``4``.
-    classifier_max_norm : float, optional
-        Max-norm constraint on the classifier convolution weights. Default
-        ``0.25``.
-    drop_prob_conv, drop_prob_trans, drop_prob_tcn : float, optional
-        Dropout probabilities of the conv front-end, the Transformer, and the TCN
-        head. Defaults ``0.4``, ``0.4``, ``0.3``.
-    activation : nn.Module, optional
-        Activation class for the convolutional and TCN blocks. Default
-        :class:`torch.nn.ELU`.
-    activation_ffn : nn.Module, optional
-        Activation class for the Transformer feed-forward sublayer. Default
-        :class:`torch.nn.GELU`.
-
-    Notes
-    -----
-    This implementation is adapted from the original source code [tcformercode]_
-    to comply with braindecode's model conventions. The default configuration
-    reproduces the paper's headline (Table 1) setup; the released training config
-    additionally uses Adam (lr 0.0009, weight_decay 1e-3), linear warm-up + cosine
-    decay, per-channel z-scoring, and segmentation-and-reconstruction augmentation
-    (handled outside the model, in the training pipeline).
-
-    .. versionadded:: 1.7
-
-    References
-    ----------
-    .. [tcformer] Altaheri, H., Karray, F., & Karimi, A.-H. (2025). Temporal
-       convolutional transformer for EEG based motor imagery decoding. Scientific
-       Reports, 15, 32959. https://doi.org/10.1038/s41598-025-16219-7
-    .. [tcformercode] Altaheri, H. (2025). TCFormer source code.
-       https://github.com/Altaheri/TCFormer
-    """
-
-    def __init__(
-        self,
-        # Signal related parameters
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        # Model parameters
-        n_filters_time: int = 32,
-        temp_kernel_lengths: tuple[int, ...] = (20, 32, 64),
-        depth_multiplier: int = 2,
-        pool_length_1: int = 8,
-        pool_length_2: int = 7,
-        temp_kernel_length_2: int = 16,
-        group_dim: int = 16,
-        se_reduction: int = 4,
-        n_transformer_layers: int = 2,
-        q_heads: int = 4,
-        kv_heads: int = 2,
-        mlp_ratio: int = 2,
-        drop_path_max: float = 0.25,
-        tcn_depth: int = 2,
-        tcn_kernel_length: int = 4,
-        classifier_max_norm: float = 0.25,
-        drop_prob_conv: float = 0.4,
-        drop_prob_trans: float = 0.4,
-        drop_prob_tcn: float = 0.3,
-        activation: type[nn.Module] = nn.ELU,
-        activation_ffn: type[nn.Module] = nn.GELU,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
-        n_groups = len(temp_kernel_lengths)
-        d_model = group_dim * n_groups
-        d_fused = group_dim * (n_groups + 1)
-
-        self.conv_block = _MultiKernelConvBlock(
-            self.n_chans,
-            temp_kernel_lengths,
-            n_filters_time,
-            depth_multiplier,
-            pool_length_1,
-            pool_length_2,
-            temp_kernel_length_2,
-            drop_prob_conv,
-            group_dim,
-            se_reduction,
-            activation,
-        )
-
-        self.mix = nn.Sequential(
-            nn.Conv1d(d_model, d_model, 1, bias=False),
-            nn.BatchNorm1d(d_model),
-            nn.SiLU(),
-        )
-        self.to_tokens = Rearrange("b c t -> b t c")
-
-        drop_rates = torch.linspace(0, 1, n_transformer_layers) ** 2 * drop_path_max
-        self.transformer = nn.ModuleList(
-            [
-                _TransformerBlock(
-                    d_model,
-                    q_heads,
-                    kv_heads,
-                    mlp_ratio,
-                    drop_prob_trans,
-                    float(drop_rates[i]),
-                    activation_ffn,
-                )
-                for i in range(n_transformer_layers)
-            ]
-        )
-
-        # Static RoPE cache sized to the token length Tc (export/script friendly).
-        n_tokens = max((self.n_times // pool_length_1) // pool_length_2, 1)
-        head_dim = d_model // q_heads
-        cos, sin = _build_rotary_cache(head_dim, n_tokens)
-        self.register_buffer("rope_cos", cos, persistent=False)
-        self.register_buffer("rope_sin", sin, persistent=False)
-
-        self.reduce = nn.Sequential(
-            Rearrange("b t c -> b c t"),
-            nn.Conv1d(d_model, group_dim, 1, bias=False),
-            nn.BatchNorm1d(group_dim),
-            nn.SiLU(),
-        )
-
-        self.tcn = _TCN(
-            tcn_depth,
-            tcn_kernel_length,
-            d_fused,
-            n_groups + 1,
-            drop_prob_tcn,
-            activation,
-        )
-        self.final_layer = _ClassificationHead(
-            d_fused, n_groups + 1, self.n_outputs, classifier_max_norm
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        conv_features = self.conv_block(x)  # (B, d_model, Tc)
-        tokens = self.to_tokens(self.mix(conv_features))  # (B, Tc, d_model)
-        t = tokens.size(1)
-        cos, sin = self.rope_cos[:t], self.rope_sin[:t]
-        for blk in self.transformer:
-            tokens = blk(tokens, cos, sin)
-        tran_features = self.reduce(tokens)  # (B, group_dim, Tc)
-        features = torch.cat((conv_features, tran_features), dim=1)  # (B, d_fused, Tc)
-        out = self.tcn(features)
-        out = out[:, :, -1:]  # last causal step (B, d_fused, 1)
-        return self.final_layer(out)  # (B, n_outputs)
