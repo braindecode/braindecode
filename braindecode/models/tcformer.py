@@ -35,8 +35,8 @@ def _build_rotary_cache(head_dim: int, seq_len: int) -> tuple[Tensor, Tensor]:
     """Return ``(cos, sin)`` each of shape ``(seq_len, head_dim)``."""
     theta = 1.0 / (10000 ** (torch.arange(0, head_dim, 2).float() / head_dim))
     seq_idx = torch.arange(seq_len).float()
-    freqs = torch.outer(seq_idx, theta)          # (seq_len, head_dim/2)
-    emb = torch.cat((freqs, freqs), dim=-1)      # (seq_len, head_dim)
+    freqs = torch.outer(seq_idx, theta)  # (seq_len, head_dim/2)
+    emb = torch.cat((freqs, freqs), dim=-1)  # (seq_len, head_dim)
     return emb.cos(), emb.sin()
 
 

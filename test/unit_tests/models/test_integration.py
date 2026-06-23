@@ -521,6 +521,9 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # einops Rearrange layers and the interleaved-RoPE slicing in the
+        # grouped-query attention are not torch.jit.script-able.
+        "TCFormer",
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
