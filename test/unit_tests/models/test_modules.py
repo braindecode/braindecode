@@ -1304,13 +1304,62 @@ def test_forward_pass_ifnet_output_shape():
     assert out.shape[0] == 2  # batch_size preserved
 
 
+def test_rotary_positional_embedding_output_shape():
+    """RotaryPositionalEmbedding: output shapes match inputs and values are finite."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    n_dim = 16
+    n_heads = 4
+    init_seq_len = 64
+    batch, seq, head_dim = 2, 7, n_dim // n_heads
+
+    rope = RotaryPositionalEmbedding(
+        n_dim=head_dim * n_heads, init_seq_len=init_seq_len
+    )
+    q = torch.randn(batch, seq, n_heads, head_dim)
+    k = torch.randn(batch, seq, n_heads, head_dim)
+
+    q_out, k_out = rope(q, k)
+
+    assert q_out.shape == q.shape, f"q shape mismatch: {q_out.shape} != {q.shape}"
+    assert k_out.shape == k.shape, f"k shape mismatch: {k_out.shape} != {k.shape}"
+    assert torch.isfinite(q_out).all(), "q_out contains non-finite values"
+    assert torch.isfinite(k_out).all(), "k_out contains non-finite values"
+
+
+@pytest.mark.parametrize("rope", [True, False])
+def test_multi_head_attention_rope_output_shape(rope):
+    """MultiHeadAttentionRoPE: output shape (batch, seq, n_dim) and finite values."""
+    from braindecode.modules import MultiHeadAttentionRoPE
+
+    n_dim = 16
+    n_head = 4
+    batch, seq = 2, 7
+
+    module = MultiHeadAttentionRoPE(
+        n_dim=n_dim, n_head=n_head, dropout=0.0, causal=False, rope=rope
+    ).eval()
+    x = torch.randn(batch, seq, n_dim)
+
+    with torch.no_grad():
+        out = module(x)
+
+    assert out.shape == (batch, seq, n_dim), (
+        f"Expected ({batch}, {seq}, {n_dim}), got {out.shape}"
+    )
+    assert torch.isfinite(out).all(), "Output contains non-finite values"
+
+
 def test_patch_tokenizer():
     from braindecode.modules import PatchTokenizer
 
-    # non-learnable: pure reshape, no parameters
+    # non-learnable: pure windowing, no parameters
     tok = PatchTokenizer(patch_size=200, n_times=1000)
-    assert tok(torch.randn(2, 19, 1000)).shape == (2, 19, 5, 200)
+    x = torch.randn(2, 19, 1000)
+    assert tok(x).shape == (2, 19, 5, 200)
     assert sum(p.numel() for p in tok.parameters()) == 0
+    # non-overlapping windowing equals the contiguous reshape it replaces
+    assert torch.equal(tok(x), x.reshape(2, 19, 5, 200))
 
     # learnable: strided conv maps each patch to emb_dim
     tok_l = PatchTokenizer(patch_size=200, n_times=1000, emb_dim=64, learnable=True)
@@ -1321,3 +1370,20 @@ def test_patch_tokenizer():
     with pytest.warns(UserWarning, match="padded"):
         tok_pad = PatchTokenizer(patch_size=200, n_times=950)
     assert tok_pad(torch.randn(2, 19, 950)).shape == (2, 19, 5, 200)
+
+    # overlapping patches via construction-time stride (50% overlap -> 9 windows)
+    tok_ov = PatchTokenizer(patch_size=200, n_times=1000, stride=100)
+    assert tok_ov(torch.randn(2, 19, 1000)).shape == (2, 19, 9, 200)
+
+    # one non-learnable tokenizer reused at several overlaps via call-time stride
+    assert tok(torch.randn(2, 19, 1000), stride=100).shape == (2, 19, 9, 200)
+
+    # learnable supports overlap too (stride fixed at construction)
+    tok_lo = PatchTokenizer(
+        patch_size=200, n_times=1000, emb_dim=64, learnable=True, stride=100
+    )
+    assert tok_lo(torch.randn(2, 19, 1000)).shape == (2, 19, 9, 64)
+
+    # learnable rejects a conflicting call-time stride override
+    with pytest.raises(ValueError, match="non-learnable"):
+        tok_l(torch.randn(2, 19, 1000), stride=100)

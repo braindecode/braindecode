@@ -7,6 +7,7 @@ from .base import EEGModuleMixin
 from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
 from .brainmodule import BrainModule
+from .brainomni import BrainOmni, BrainTokenizer
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
@@ -77,6 +78,8 @@ __all__ = [
     "EEGModuleMixin",
     "BIOT",
     "BENDR",
+    "BrainOmni",
+    "BrainTokenizer",
     "CBraMod",
     "CodeBrain",
     "ContraWR",

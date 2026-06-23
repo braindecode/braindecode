@@ -36,6 +36,10 @@ Enhancements
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.
   By `Pierre Guetschel`_.
+- Add :class:`braindecode.models.BrainOmni` and
+  :class:`braindecode.models.BrainTokenizer`, a unified EEG/MEG brain foundation
+  model and its pretrainable VQ-VAE tokenizer (NeurIPS 2025).
+  By `Bruno Aristimunha`_.
 - Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
   foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
 - Add separate EEGNet and TCN dropout rates to

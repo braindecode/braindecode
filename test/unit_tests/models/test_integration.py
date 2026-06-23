@@ -421,6 +421,9 @@ def test_model_compiled(model):
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
         "MetaNeuromotorHand",
+        # Complex-valued RoPE (torch.polar) causes numerical divergence under
+        # reduce-overhead compilation.
+        "BrainOmni",
     ]
     if model.__class__.__name__ in not_compilable_models:
         pytest.skip(
@@ -536,6 +539,9 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
+        # VQ argmin dispatch and _encode_quantize method not scriptable.
+        "BrainOmni",
+        "BrainTokenizer",
     ]
 
     if model.__class__.__name__ in not_working_models:
