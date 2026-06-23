@@ -9,6 +9,7 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 from braindecode.modules import Chomp1d, MaxNormLinear
 
 
@@ -152,6 +153,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             max_norm_val=self.max_norm_const,
         )
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the EEGTCNet model.

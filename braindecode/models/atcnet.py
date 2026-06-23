@@ -489,9 +489,12 @@ class ATCNet(EEGModuleMixin, nn.Module):
         The official Keras implementation applies ``L2`` weight decay only to the
         convolution / TCN kernels (``conv_weightDecay = 0.009``) and to the final
         dense layer (``dense_weightDecay = 0.5``); biases, BatchNorm and attention
-        weights are left undecayed. PyTorch's ``weight_decay`` plays the role of
-        Keras' ``L2`` penalty, so passing these groups to an optimizer reproduces
-        the source regularization.
+        weights are left undecayed. This reproduces the Keras ``L2`` kernel penalty
+        only for optimizers that implement ``weight_decay`` as a coupled L2 term,
+        e.g. :class:`torch.optim.SGD` or :class:`torch.optim.Adam` (as used by the
+        official code). For decoupled-weight-decay optimizers such as
+        :class:`torch.optim.AdamW`, ``weight_decay`` is *not* equivalent to a Keras
+        ``L2`` penalty.
 
         Parameters
         ----------

@@ -1937,6 +1937,17 @@ def test_eegtcnet_separate_dropout():
     )
 
 
+def test_eegtcnet_batch_size_one_train_mode():
+    """Batch-size-1 forward in train mode must not raise even when the TCN
+    sequence collapses to length 1 (small n_times), now that BatchNorm is on by
+    default. With n_times=64 the EEGNet front-end reduces time to a single TCN
+    step, so the (1, filters, 1) tensor would break BatchNorm1d without the
+    batch-size-one guard."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=64).train()
+    out = model(torch.randn(1, 22, 64))
+    assert out.shape == (1, 4)
+
+
 def test_sstdpn_proto_sep_constrains_class_rows():
     """``proto_sep`` is renormalized per class-row (dim=0), so each prototype
     vector has L2 norm <= ``proto_sep_maxnorm`` after a forward pass."""
