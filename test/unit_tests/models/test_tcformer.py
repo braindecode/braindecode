@@ -149,3 +149,16 @@ def test_tcn_block_is_causal():
     x2[..., -1] += 5.0
     y2 = blk(x2)
     assert torch.allclose(y1[..., :-1], y2[..., :-1], atol=1e-5)
+
+
+from braindecode.models.tcformer import _ClassificationHead
+
+
+def test_classification_head_shape_and_group_mean():
+    head = _ClassificationHead(d_features=64, n_groups=4, n_outputs=4,
+                               max_norm=0.25)
+    # grouped conv emits n_outputs * n_groups = 16 channels
+    assert head.conv.out_channels == 16
+    assert head.conv.groups == 4
+    out = head(torch.randn(5, 64, 1))
+    assert out.shape == (5, 4)

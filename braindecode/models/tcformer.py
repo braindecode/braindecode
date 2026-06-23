@@ -310,3 +310,26 @@ class _TCN(nn.Module):
         for blk in self.blocks:
             x = blk(x)
         return x
+
+
+# ----------------------------------------------------------------------------- #
+class _ClassificationHead(nn.Module):
+    """Grouped 1x1 conv producing per-group logits, averaged across groups."""
+
+    def __init__(
+        self, d_features: int, n_groups: int, n_outputs: int, max_norm: float = 0.25
+    ):
+        super().__init__()
+        self.n_groups = n_groups
+        self.n_outputs = n_outputs
+        self.conv = Conv1dWithConstraint(
+            d_features,
+            n_outputs * n_groups,
+            kernel_size=1,
+            groups=n_groups,
+            max_norm=max_norm,
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.conv(x).squeeze(-1)  # (B, n_outputs*n_groups)
+        return x.view(x.size(0), self.n_groups, self.n_outputs).mean(dim=1)
