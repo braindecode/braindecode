@@ -238,12 +238,8 @@ class TCFormer(EEGModuleMixin, nn.Module):
             ]
         )
 
-        # Static RoPE cache sized to the token length Tc (export/script friendly).
-        n_tokens = max((self.n_times // pool_length_1) // pool_length_2, 1)
-        head_dim = d_model // q_heads
-        cos, sin = _build_rotary_cache(head_dim, n_tokens)
-        self.register_buffer("rope_cos", cos, persistent=False)
-        self.register_buffer("rope_sin", sin, persistent=False)
+        # RoPE tables are built per forward from the actual token length.
+        self.head_dim = d_model // q_heads
 
         self.reduce = nn.Sequential(
             Rearrange("batch time feat -> batch feat time"),
@@ -268,9 +264,12 @@ class TCFormer(EEGModuleMixin, nn.Module):
     @staticmethod
     def _init_weights(module: nn.Module) -> None:
         if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear)):
-            weight = getattr(module, "weight", None)
-            if isinstance(weight, nn.Parameter):
-                nn.init.xavier_uniform_(weight)
+            params = getattr(module, "parametrizations", None)
+            if params is not None and "weight" in params:
+                # max-norm layers expose a computed .weight; init the leaf
+                nn.init.xavier_uniform_(params.weight.original)
+            elif isinstance(getattr(module, "weight", None), nn.Parameter):
+                nn.init.xavier_uniform_(module.weight)
             if getattr(module, "bias", None) is not None:
                 nn.init.constant_(module.bias, 0.0)
 
@@ -278,7 +277,9 @@ class TCFormer(EEGModuleMixin, nn.Module):
         conv_features = self.conv_block(x)  # (batch, d_model, n_tokens)
         tokens = self.to_tokens(self.mix(conv_features))  # (batch, n_tokens, d_model)
         seq_len = tokens.shape[1]
-        cos, sin = self.rope_cos[:seq_len], self.rope_sin[:seq_len]
+        cos, sin = _build_rotary_cache(
+            self.head_dim, seq_len, device=tokens.device, dtype=tokens.dtype
+        )
         for block in self.transformer:
             tokens = block(tokens, cos, sin)
         transformer_features = self.reduce(tokens)  # (batch, group_dim, n_tokens)
@@ -293,13 +294,25 @@ class TCFormer(EEGModuleMixin, nn.Module):
 # ----------------------------------------------------------------------------- #
 # Rotary positional embedding (verbatim port of the reference; see plan note on
 # the deliberate NeoX-cache / interleaved-rotate mismatch).
-def _build_rotary_cache(head_dim: int, seq_len: int) -> tuple[Tensor, Tensor]:
-    """Return ``(cos, sin)`` each of shape ``(seq_len, head_dim)``."""
-    theta = 1.0 / (10000 ** (torch.arange(0, head_dim, 2).float() / head_dim))
-    seq_idx = torch.arange(seq_len).float()
+def _build_rotary_cache(
+    head_dim: int, seq_len: int, device=None, dtype=None
+) -> tuple[Tensor, Tensor]:
+    """Return ``(cos, sin)`` each of shape ``(seq_len, head_dim)``.
+
+    Angles are computed in float32 for precision; the returned cos/sin are
+    cast to ``dtype`` (the token dtype) so attention stays in the working
+    precision under autocast.
+    """
+    theta = 1.0 / (
+        10000 ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim)
+    )
+    seq_idx = torch.arange(seq_len, device=device).float()
     freqs = torch.outer(seq_idx, theta)  # (seq_len, head_dim/2)
     emb = torch.cat((freqs, freqs), dim=-1)  # (seq_len, head_dim)
-    return emb.cos(), emb.sin()
+    cos, sin = emb.cos(), emb.sin()
+    if dtype is not None:
+        cos, sin = cos.to(dtype), sin.to(dtype)
+    return cos, sin
 
 
 def _apply_rope(
@@ -334,6 +347,9 @@ class _GroupedQueryAttention(nn.Module):
         self.n_query_heads = q_heads
         self.n_kv_heads = kv_heads
         self.head_dim = d_model // q_heads
+        assert self.head_dim % 2 == 0, (
+            "head_dim (d_model // q_heads) must be even for rotary embeddings"
+        )
         self.scale = self.head_dim**-0.5
         self.query_proj = nn.Linear(d_model, d_model, bias=False)
         self.key_value_proj = nn.Linear(

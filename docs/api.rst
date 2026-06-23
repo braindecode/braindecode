@@ -158,7 +158,6 @@ interface for all EEG models and can derive variable names when needed.
      FBCNet
      FBLightConvNet
      FBMSNet
-     HybridNet
      IFNet
      InterpolatedBENDR
      InterpolatedBIOT
@@ -186,7 +185,6 @@ interface for all EEG models and can derive variable names when needed.
      SSTDPN
      SyncNet
      TCFormer
-     TCN
      TIDNet
      TSception
      USleep
