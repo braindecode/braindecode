@@ -25,6 +25,7 @@ from braindecode.models import (
     BIOT,
     DGCNN,
     EEGPT,
+    SSTDPN,
     TCN,
     ATCNet,
     AttentionBaseNet,
@@ -1880,8 +1881,123 @@ def test_parameters_EEGTCNet():
 
     model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1000)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    # 4.27 K according to the Table V from the original paper.
-    assert np.round(n_params / 1e3, 1) == 4.2
+    # 4.27 K according to Table V from the original paper. With the
+    # source-faithful TCN BatchNorm (default), braindecode reports 4.3 K, which
+    # is closer to the paper than the 4.2 K of the previous (BN-less) variant.
+    assert np.round(n_params / 1e3, 1) == 4.3
+
+
+def test_eegtcnet_tcn_batchnorm():
+    """TCN residual blocks carry source-faithful BatchNorm by default, and the
+    legacy (BN-less) architecture is recoverable with ``tcn_batch_norm=False``."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125)
+    n_bn = sum(
+        isinstance(m, nn.BatchNorm1d) for m in model.tcn_block.modules()
+    )
+    # one BatchNorm per conv, two convs per residual block.
+    assert n_bn == 2 * model.depth
+    # the source uses a bias on the residual 1x1 downsample.
+    assert model.tcn_block.downsample.bias is not None
+
+    legacy = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125, tcn_batch_norm=False)
+    assert not any(
+        isinstance(m, nn.BatchNorm1d) for m in legacy.tcn_block.modules()
+    )
+    assert legacy.tcn_block.downsample.bias is None
+    # both variants still produce valid logits.
+    x = torch.randn(2, 22, 1125)
+    assert model(x).shape == (2, 4)
+    assert legacy(x).shape == (2, 4)
+
+
+def test_eegtcnet_separate_dropout():
+    """EEGNet and TCN dropout rates can be set independently (source uses
+    p_eeg=0.2, p_tcn=0.3)."""
+    model = EEGTCNet(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1125,
+        drop_prob_eeg=0.2,
+        drop_prob_tcn=0.3,
+    )
+    assert model.eegnet_tc.drop1.p == 0.2
+    assert model.eegnet_tc.drop2.p == 0.2
+    tcn_drops = [
+        m.p for m in model.tcn_block.modules() if isinstance(m, nn.Dropout)
+    ]
+    assert tcn_drops == [0.3] * (2 * model.depth)
+
+    # When unset, both fall back to the single ``drop_prob``.
+    default = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125, drop_prob=0.4)
+    assert default.eegnet_tc.drop1.p == 0.4
+    assert all(
+        m.p == 0.4
+        for m in default.tcn_block.modules()
+        if isinstance(m, nn.Dropout)
+    )
+
+
+def test_sstdpn_proto_sep_constrains_class_rows():
+    """``proto_sep`` is renormalized per class-row (dim=0), so each prototype
+    vector has L2 norm <= ``proto_sep_maxnorm`` after a forward pass."""
+    model = SSTDPN(n_outputs=4, n_chans=22, n_times=1000)
+    model.proto_sep.data.fill_(10.0)
+    model(torch.randn(2, 22, 1000))
+    row_norms = model.proto_sep.detach().norm(p=2, dim=1)
+    # float32 renorm leaves a ~1e-6 residual; use a 1e-5 tolerance.
+    assert torch.all(row_norms <= model.proto_sep_maxnorm + 1e-5)
+
+
+def test_sstdpn_proto_cpt_std_default():
+    """ICP prototypes default to the source ``torch.randn`` std (1.0)."""
+    assert SSTDPN(n_outputs=4, n_chans=22, n_times=1000).proto_cpt_std == 1.0
+
+
+def test_atcnet_conv_max_norm():
+    """``conv_max_norm_const`` clamps the conv/TCN kernels per output filter,
+    while the default (``None``) adds no parameters and no constraint."""
+    max_norm = 0.6
+    model = ATCNet(n_chans=22, n_outputs=4, n_times=1125, conv_max_norm_const=max_norm)
+    model(torch.randn(2, 22, 1125))  # apply the parametrization
+
+    def max_filter_norm(weight):
+        return weight.reshape(weight.shape[0], -1).norm(p=2, dim=1).max().item()
+
+    assert max_filter_norm(model.conv_block.conv1.weight) <= max_norm + 1e-5
+    assert max_filter_norm(model.conv_block.conv2.weight) <= max_norm + 1e-5
+    assert (
+        max_filter_norm(model.temporal_conv_nets[0][0].conv1.weight)
+        <= max_norm + 1e-5
+    )
+
+    # Default leaves the architecture (and parameter count) untouched.
+    default = ATCNet(n_chans=22, n_outputs=4, n_times=1125)
+    assert sum(p.numel() for p in default.parameters()) == sum(
+        p.numel() for p in model.parameters()
+    )
+
+
+@pytest.mark.parametrize("conv_max_norm", [None, 0.6])
+def test_atcnet_source_optimizer_param_groups(conv_max_norm):
+    """The helper returns conv/dense/other groups with the source weight
+    decays, covering every parameter exactly once -- including when the conv
+    kernels are max-norm parametrized (``conv_max_norm_const`` set), in which
+    case the grouped entries must be the leaf ``.original`` parameters."""
+    model = ATCNet(
+        n_chans=22, n_outputs=4, n_times=1125, conv_max_norm_const=conv_max_norm
+    )
+    groups = model.source_optimizer_param_groups()
+
+    assert [g["weight_decay"] for g in groups] == [0.009, 0.5, 0.0]
+    grouped = [p for g in groups for p in g["params"]]
+    # every parameter is covered exactly once (compare by identity)...
+    assert {id(p) for p in grouped} == {id(p) for p in model.parameters()}
+    assert len(grouped) == len(list(model.parameters()))
+    # ...and each entry is a real trainable leaf (not a computed parametrized weight).
+    assert all(p.is_leaf and p.requires_grad for p in grouped)
+    assert all(len(g["params"]) > 0 for g in groups)
+    # groups are accepted by a real optimizer.
+    torch.optim.Adam(groups, lr=1e-3)
 
 
 @pytest.mark.parametrize("method", ["plv", "mag", "corr"])

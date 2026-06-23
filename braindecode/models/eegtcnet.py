@@ -33,8 +33,10 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         Number of temporal filters in the first convolutional layer. Default is 8.
     kern_length : int, optional
         Length of the temporal kernel in the first convolutional layer. Default is 64.
-    dropout : float, optional
-        Dropout rate. Default is 0.5.
+    drop_prob : float, optional
+        Default dropout rate, used for both the EEGNet front-end and the TCN
+        block unless overridden by ``drop_prob_eeg`` / ``drop_prob_tcn``.
+        Default is 0.5.
     depth : int, optional
         Number of residual blocks in the TCN. Default is 2.
     kernel_size : int, optional
@@ -44,6 +46,20 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
     max_norm_const : float
         Maximum L2-norm constraint imposed on weights of the last
         fully-connected layer. Defaults to 0.25.
+    drop_prob_eeg : float | None, optional
+        Dropout rate for the EEGNet front-end. If ``None`` (default), falls back
+        to ``drop_prob``. The source/paper uses ``0.2`` for BCI IV 2a.
+    drop_prob_tcn : float | None, optional
+        Dropout rate for the TCN block. If ``None`` (default), falls back to
+        ``drop_prob``. The source/paper uses ``0.3`` for BCI IV 2a.
+    tcn_batch_norm : bool, optional
+        If ``True`` (default), insert a :class:`~torch.nn.BatchNorm1d` after each
+        TCN convolution and use a bias in the residual ``1x1`` downsample, matching
+        the original Keras source. Set to ``False`` to recover the previous
+        braindecode architecture (e.g. to load checkpoints trained before this
+        change). Default is ``True``.
+
+        .. versionadded:: 1.6.1
 
     References
     ----------
@@ -72,6 +88,9 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         kernel_size: int = 4,
         filters: int = 12,
         max_norm_const: float = 0.25,
+        drop_prob_eeg: float | None = None,
+        drop_prob_tcn: float | None = None,
+        tcn_batch_norm: bool = True,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -85,6 +104,11 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
 
         self.activation = activation
         self.drop_prob = drop_prob
+        # Separate dropout rates for the EEGNet front-end and the TCN block;
+        # fall back to ``drop_prob`` when not explicitly set.
+        self.drop_prob_eeg = drop_prob if drop_prob_eeg is None else drop_prob_eeg
+        self.drop_prob_tcn = drop_prob if drop_prob_tcn is None else drop_prob_tcn
+        self.tcn_batch_norm = tcn_batch_norm
         self.depth_multiplier = depth_multiplier
         self.filter_1 = filter_1
         self.kern_length = kern_length
@@ -103,7 +127,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             filter_1=self.filter_1,
             kern_length=self.kern_length,
             depth_multiplier=self.depth_multiplier,
-            drop_prob=self.drop_prob,
+            drop_prob=self.drop_prob_eeg,
             activation=self.activation,
         )
         self.arrange_dim_eegnet = Rearrange(
@@ -116,8 +140,9 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             depth=self.depth,
             kernel_size=self.kernel_size,
             filters=self.filters,
-            drop_prob=self.drop_prob,
+            drop_prob=self.drop_prob_tcn,
             activation=self.activation,
+            batch_norm=self.tcn_batch_norm,
         )
 
         # Classification Block
@@ -277,6 +302,7 @@ class _TCNBlock(nn.Module):
         filters: int,
         drop_prob: float,
         activation: type[nn.Module] = nn.ELU,
+        batch_norm: bool = True,
     ):
         super().__init__()
         self.activation = activation()
@@ -284,10 +310,15 @@ class _TCNBlock(nn.Module):
         self.depth = depth
         self.filters = filters
         self.kernel_size = kernel_size
+        self.batch_norm = batch_norm
 
         self.layers = nn.ModuleList()
+        # The Keras source uses a bias on the residual 1x1 downsample, paired
+        # with the per-conv BatchNorm; the previous braindecode default omitted
+        # both. Keeping them on the same flag makes ``batch_norm=False`` reproduce
+        # the legacy architecture exactly.
         self.downsample = (
-            nn.Conv1d(input_dimension, filters, kernel_size=1, bias=False)
+            nn.Conv1d(input_dimension, filters, kernel_size=1, bias=batch_norm)
             if input_dimension != filters
             else None
         )
@@ -295,31 +326,33 @@ class _TCNBlock(nn.Module):
         for i in range(depth):
             dilation = 2**i
             padding = (kernel_size - 1) * dilation
+            in_dim = input_dimension if i == 0 else filters
             conv_block = nn.Sequential(
-                nn.Conv1d(
-                    in_channels=input_dimension if i == 0 else filters,
-                    out_channels=filters,
-                    kernel_size=kernel_size,
-                    dilation=dilation,
-                    padding=padding,
-                    bias=False,
-                ),
-                Chomp1d(padding),
-                self.activation,
-                nn.Dropout(self.drop_prob),
-                nn.Conv1d(
-                    in_channels=filters,
-                    out_channels=filters,
-                    kernel_size=kernel_size,
-                    dilation=dilation,
-                    padding=padding,
-                    bias=False,
-                ),
-                Chomp1d(padding),
-                self.activation,
-                nn.Dropout(self.drop_prob),
+                *self._conv_unit(in_dim, dilation, padding),
+                *self._conv_unit(filters, dilation, padding),
             )
             self.layers.append(conv_block)
+
+    def _conv_unit(self, in_channels: int, dilation: int, padding: int):
+        # Conv -> Chomp -> [BatchNorm] -> activation -> Dropout, as in the
+        # original EEG-TCNet Keras implementation.
+        unit = [
+            nn.Conv1d(
+                in_channels=in_channels,
+                out_channels=self.filters,
+                kernel_size=self.kernel_size,
+                dilation=dilation,
+                padding=padding,
+                bias=False,
+            ),
+            Chomp1d(padding),
+        ]
+        if self.batch_norm:
+            # Keras BatchNormalization defaults: momentum=0.99 (-> 0.01 in
+            # PyTorch convention) and epsilon=1e-3.
+            unit.append(nn.BatchNorm1d(self.filters, momentum=0.01, eps=1e-3))
+        unit += [self.activation, nn.Dropout(self.drop_prob)]
+        return unit
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x shape: (batch_size, time_steps, input_dimension)
