@@ -246,3 +246,67 @@ class _MultiKernelConvBlock(nn.Module):
             x = x + self.group_attn(x)
         x = self.drop2(self.pool2(x))
         return x.squeeze(2)  # (B, d_model, Tc)
+
+
+# ----------------------------------------------------------------------------- #
+class _TCNResidualBlock(nn.Module):
+    """Two grouped dilated-causal convs (BN + activation + dropout) + residual."""
+
+    def __init__(
+        self,
+        n_filters: int,
+        kernel_length: int,
+        dilation: int,
+        n_groups: int,
+        drop_prob: float,
+        activation: type[nn.Module],
+    ):
+        super().__init__()
+        self.conv1 = CausalConv1d(
+            n_filters, n_filters, kernel_length, dilation=dilation, groups=n_groups
+        )
+        self.bn1 = nn.BatchNorm1d(n_filters)
+        self.act1 = activation()
+        self.drop1 = nn.Dropout(drop_prob)
+        self.conv2 = CausalConv1d(
+            n_filters, n_filters, kernel_length, dilation=dilation, groups=n_groups
+        )
+        self.bn2 = nn.BatchNorm1d(n_filters)
+        self.act2 = activation()
+        self.drop2 = nn.Dropout(drop_prob)
+        self.act3 = activation()
+        nn.init.constant_(self.conv1.bias, 0.0)
+        nn.init.constant_(self.conv2.bias, 0.0)
+
+    def forward(self, x: Tensor) -> Tensor:
+        out = self.drop1(self.act1(self.bn1(self.conv1(x))))
+        out = self.drop2(self.act2(self.bn2(self.conv2(out))))
+        return self.act3(x + out)
+
+
+class _TCN(nn.Module):
+    """Stack of ``depth`` residual blocks with exponentially growing dilation."""
+
+    def __init__(
+        self,
+        depth: int,
+        kernel_length: int,
+        n_filters: int,
+        n_groups: int,
+        drop_prob: float,
+        activation: type[nn.Module],
+    ):
+        super().__init__()
+        self.blocks = nn.ModuleList(
+            [
+                _TCNResidualBlock(
+                    n_filters, kernel_length, 2**i, n_groups, drop_prob, activation
+                )
+                for i in range(depth)
+            ]
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        for blk in self.blocks:
+            x = blk(x)
+        return x

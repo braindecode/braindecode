@@ -119,3 +119,33 @@ def test_mkcnn_same_padding_preserves_time_before_pooling():
     block = _make_conv_block().eval()
     out = block(torch.randn(1, 22, 1125))  # 1125 -> 140 -> 20
     assert out.shape == (1, 48, 20)
+
+
+from braindecode.models.tcformer import _TCN, _TCNResidualBlock
+
+
+def test_tcn_block_shape_and_groups():
+    blk = _TCNResidualBlock(n_filters=64, kernel_length=4, dilation=1,
+                            n_groups=4, drop_prob=0.0, activation=nn.ELU)
+    assert blk.conv1.groups == 4
+    x = torch.randn(2, 64, 17)
+    assert blk(x).shape == (2, 64, 17)
+
+
+def test_tcn_stacks_dilations():
+    tcn = _TCN(depth=2, kernel_length=4, n_filters=64, n_groups=4,
+               drop_prob=0.0, activation=nn.ELU)
+    assert [b.conv1.dilation[0] for b in tcn.blocks] == [1, 2]
+    assert tcn(torch.randn(2, 64, 17)).shape == (2, 64, 17)
+
+
+def test_tcn_block_is_causal():
+    # changing the LAST timestep must not change earlier outputs (causality)
+    blk = _TCNResidualBlock(8, 4, 1, n_groups=1, drop_prob=0.0,
+                            activation=nn.ELU).eval()
+    x = torch.randn(1, 8, 12)
+    y1 = blk(x)
+    x2 = x.clone()
+    x2[..., -1] += 5.0
+    y2 = blk(x2)
+    assert torch.allclose(y1[..., :-1], y2[..., :-1], atol=1e-5)
