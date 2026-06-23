@@ -223,7 +223,9 @@ def test_tcformer_handles_other_input_sizes():
 # Dev-only parity check: prove the braindecode port is numerically identical to
 # the official reference implementation when given the same weights. Skipped in
 # CI (the upstream clone is not vendored).
-_REF_DIR = "/Users/bruaristimunha/Projects/braindecode-v2/TCFormer"
+_REF_DIR = os.environ.get(
+    "TCFORMER_REF_DIR", "/Users/bruaristimunha/Projects/braindecode-v2/TCFormer"
+)
 
 
 def _load_reference_module():
