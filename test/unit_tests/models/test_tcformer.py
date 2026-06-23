@@ -45,3 +45,26 @@ def test_gqa_requires_divisibility():
         _GroupedQueryAttention(d_model=48, q_heads=5, kv_heads=2)  # 48 % 5 != 0
     with pytest.raises(AssertionError):
         _GroupedQueryAttention(d_model=48, q_heads=4, kv_heads=3)  # 4 % 3 != 0
+
+
+from braindecode.models.tcformer import _TransformerBlock
+
+
+def test_transformer_block_shape_and_residual():
+    blk = _TransformerBlock(d_model=48, q_heads=4, kv_heads=2, mlp_ratio=2,
+                            drop_prob=0.0, drop_path_rate=0.0)
+    # MLP hidden dim = mlp_ratio * d_model = 96
+    assert blk.mlp[0].out_features == 96
+    cos, sin = _build_rotary_cache(12, 17)
+    x = torch.randn(2, 17, 48)
+    out = blk(x, cos, sin)
+    assert out.shape == (2, 17, 48)
+
+
+def test_transformer_block_droppath_is_identity_in_eval():
+    blk = _TransformerBlock(48, 4, 2, drop_prob=0.0, drop_path_rate=0.9).eval()
+    cos, sin = _build_rotary_cache(12, 17)
+    x = torch.randn(2, 17, 48)
+    # in eval mode DropPath and Dropout are no-ops -> deterministic, finite
+    out_a, out_b = blk(x, cos, sin), blk(x, cos, sin)
+    assert torch.allclose(out_a, out_b)

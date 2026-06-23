@@ -89,3 +89,35 @@ class _GroupedQueryAttention(nn.Module):
         attn = self.drop(attn)
         out = (attn @ v).transpose(1, 2).contiguous().view(b, t, c)
         return self.o_proj(out)
+
+
+# ----------------------------------------------------------------------------- #
+class _TransformerBlock(nn.Module):
+    """Pre-norm encoder block: GQA + position-wise MLP, both with DropPath."""
+
+    def __init__(
+        self,
+        d_model: int,
+        q_heads: int,
+        kv_heads: int,
+        mlp_ratio: int = 2,
+        drop_prob: float = 0.4,
+        drop_path_rate: float = 0.0,
+        activation: type[nn.Module] = nn.GELU,
+    ):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d_model)
+        self.attn = _GroupedQueryAttention(d_model, q_heads, kv_heads, drop_prob)
+        self.drop_path = DropPath(drop_path_rate)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.mlp = nn.Sequential(
+            nn.Linear(d_model, mlp_ratio * d_model),
+            activation(),
+            nn.Linear(mlp_ratio * d_model, d_model),
+            nn.Dropout(drop_prob),
+        )
+
+    def forward(self, x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
+        x = x + self.drop_path(self.attn(self.norm1(x), cos, sin))
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        return x
