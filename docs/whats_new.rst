@@ -49,6 +49,11 @@ Enhancements
   convolution/TCN max-norm constraint (``0.6``) and ``L2`` weight-decay groups
   (conv/TCN ``0.009``, dense ``0.5``). Defaults preserve current behavior.
   (:gh:`1061` by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.TCFormer`, the Temporal Convolutional
+  Transformer for EEG motor-imagery decoding: a multi-kernel CNN front-end, a
+  grouped-query attention Transformer with rotary positional embeddings, and a
+  grouped temporal convolutional network head. (:gh:`1065` by `Bruno
+  Aristimunha`_)
 
 API and behavior changes
 ========================
