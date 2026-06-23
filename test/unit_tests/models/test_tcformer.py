@@ -91,3 +91,31 @@ def test_group_attention_gates_are_constant_within_group():
     for grp in range(3):
         block = ratio[grp * g:(grp + 1) * g]
         assert torch.allclose(block, block[0].expand_as(block), atol=1e-6)
+
+
+from braindecode.models.tcformer import _MultiKernelConvBlock
+
+
+def _make_conv_block():
+    return _MultiKernelConvBlock(
+        n_chans=22, temp_kernel_lengths=(20, 32, 64), n_filters_time=32,
+        depth_multiplier=2, pool_length_1=8, pool_length_2=7,
+        temp_kernel_length_2=16, drop_prob=0.4, group_dim=16,
+        se_reduction=4, activation=nn.ELU,
+    )
+
+
+def test_mkcnn_output_shape_and_tokens():
+    block = _make_conv_block().eval()
+    assert block.d_model == 48  # group_dim(16) * n_groups(3)
+    x = torch.randn(2, 22, 1000)
+    out = block(x)
+    # Tc = floor(floor(1000/8)/7) = floor(125/7) = 17
+    assert out.shape == (2, 48, 17)
+
+
+def test_mkcnn_same_padding_preserves_time_before_pooling():
+    # different n_times -> Tc scales as floor(floor(T/8)/7)
+    block = _make_conv_block().eval()
+    out = block(torch.randn(1, 22, 1125))  # 1125 -> 140 -> 20
+    assert out.shape == (1, 48, 20)

@@ -149,3 +149,100 @@ class _ChannelGroupAttention(nn.Module):
         x = x.view(b, self.num_groups, self.group_size, h, w)
         gate = gate.view(b, self.num_groups, 1, 1, 1)
         return (x * gate).view(b, c, h, w)
+
+
+# ----------------------------------------------------------------------------- #
+class _MultiKernelConvBlock(nn.Module):
+    """Multi-kernel temporal + depthwise spatial CNN producing feature tokens."""
+
+    def __init__(
+        self,
+        n_chans: int,
+        temp_kernel_lengths: tuple[int, ...],
+        n_filters_time: int,
+        depth_multiplier: int,
+        pool_length_1: int,
+        pool_length_2: int,
+        temp_kernel_length_2: int,
+        drop_prob: float,
+        group_dim: int,
+        se_reduction: int,
+        activation: type[nn.Module],
+    ):
+        super().__init__()
+        n_groups = len(temp_kernel_lengths)
+        self.d_model = group_dim * n_groups
+        self.rearrange = Rearrange("b c t -> b 1 c t")
+
+        # one temporal conv per kernel ('same' time padding via ConstantPad2d),
+        # BN only -- NO activation here (matches reference).
+        self.temporal_convs = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.ConstantPad2d(
+                        (k // 2 - 1, k // 2, 0, 0)
+                        if k % 2 == 0
+                        else (k // 2, k // 2, 0, 0),
+                        0,
+                    ),
+                    nn.Conv2d(1, n_filters_time, (1, k), bias=False),
+                    nn.BatchNorm2d(n_filters_time),
+                )
+                for k in temp_kernel_lengths
+            ]
+        )
+
+        in_dw = n_filters_time * n_groups
+        f2 = in_dw * depth_multiplier
+        self.channel_dw_conv = nn.Sequential(
+            nn.Conv2d(in_dw, f2, (n_chans, 1), bias=False, groups=in_dw),
+            nn.BatchNorm2d(f2),
+            activation(),
+        )
+        self.pool1 = nn.AvgPool2d((1, pool_length_1))
+        self.drop1 = nn.Dropout(drop_prob)
+
+        # grouped 1x1 channel reduction f2 -> d_model (one group per kernel)
+        self.use_channel_reduction = self.d_model != f2
+        if self.use_channel_reduction:
+            self.channel_reduction = nn.Sequential(
+                nn.Conv2d(f2, self.d_model, (1, 1), bias=False, groups=n_groups),
+                nn.BatchNorm2d(self.d_model),
+            )
+
+        self.temporal_conv_2 = nn.Sequential(
+            nn.Conv2d(
+                self.d_model,
+                self.d_model,
+                (1, temp_kernel_length_2),
+                padding="same",
+                bias=False,
+                groups=n_groups,
+            ),
+            nn.BatchNorm2d(self.d_model),
+            activation(),
+        )
+
+        self.use_group_attn = n_groups > 1
+        if self.use_group_attn:
+            self.group_attn = _ChannelGroupAttention(
+                self.d_model, n_groups, se_reduction
+            )
+
+        self.pool2 = nn.AvgPool2d((1, pool_length_2))
+        self.drop2 = nn.Dropout(drop_prob)
+
+        _glorot_weight_zero_bias(self)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.rearrange(x)
+        x = torch.cat([conv(x) for conv in self.temporal_convs], dim=1)
+        x = self.channel_dw_conv(x)
+        x = self.drop1(self.pool1(x))
+        if self.use_channel_reduction:
+            x = self.channel_reduction(x)
+        x = self.temporal_conv_2(x)
+        if self.use_group_attn:
+            x = x + self.group_attn(x)
+        x = self.drop2(self.pool2(x))
+        return x.squeeze(2)  # (B, d_model, Tc)
