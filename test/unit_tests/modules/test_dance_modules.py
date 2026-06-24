@@ -8,7 +8,7 @@ import importlib.util
 import pytest
 import torch
 
-from braindecode.modules import ChannelMerger, FourierEmb
+from braindecode.modules import ChannelMerger, FourierEmb, SimpleConv
 
 _HAS_NEURALTRAIN = importlib.util.find_spec("neuraltrain") is not None
 
@@ -69,3 +69,60 @@ def test_channel_merger_parity():
     mine_out = mine(x, positions)
     up_out = up(x, subject_ids, positions)  # upstream forward(meg, subject_ids, positions)
     torch.testing.assert_close(mine_out, up_out, rtol=1e-4, atol=1e-5)
+
+
+def test_simpleconv_shape_and_length_preserved():
+    conv = SimpleConv(in_channels=270, out_channels=128, depth=10)
+    x = torch.randn(2, 270, 2000)
+    out = conv(x)
+    assert out.shape == (2, 128, 2000)  # T preserved
+
+
+def test_simpleconv_dilation_growth():
+    conv = SimpleConv(
+        in_channels=270, out_channels=128, depth=10,
+        kernel_size=9, dilation_growth=2.5,
+    )
+    dilations = [
+        m.dilation[0] for m in conv.modules()
+        if isinstance(m, torch.nn.Conv1d) and m.kernel_size[0] == 9
+    ]
+    # Upstream ConvSequence accumulates `dilation = dilation * dilation_growth`
+    # and applies `int(dilation)` at each block (NOT round(growth**i)):
+    # block0=int(1)=1, block1=int(2.5)=2, block2=int(6.25)=6, block3=int(15.625)=15,
+    # ... block9=int(2.5**9)=int(3814.69..)=3814.
+    assert len(dilations) == 10
+    assert dilations[:4] == [1, 2, 6, 15]
+    assert dilations[-1] == 3814
+    # Same value exposed for the model's min-length guard.
+    assert conv.max_dilation == dilations[-1]
+
+
+@pytest.mark.skipif(not _HAS_NEURALTRAIN, reason="upstream neuraltrain not installed")
+def test_simpleconv_parity():
+    """Gate: SimpleConv conv stack must match upstream SimpleConvModel."""
+    from neuraltrain.models.simpleconv import SimpleConv as UpSimpleConvConfig
+
+    torch.manual_seed(0)
+    # merger=None on both sides isolates the conv stack (initial_linear + blocks).
+    up = UpSimpleConvConfig(
+        hidden=512, depth=10, kernel_size=9, dilation_growth=2.5,
+        initial_linear=256, initial_depth=1, merger_config=None,
+    ).build(n_in_channels=256, n_outputs=128).eval()
+    mine = SimpleConv(
+        in_channels=256, out_channels=128, hidden=512, depth=10,
+        kernel_size=9, dilation_growth=2.5, initial_linear=256, initial_depth=1,
+        merger=None,
+    ).eval()
+    # Copy conv weights: upstream initial_linear.0 -> mine.initial_linear.0;
+    # upstream encoder.sequence.{k}.0 (Conv1d) -> mine.sequence.{k}.conv.
+    sd = mine.state_dict()
+    up_sd = up.state_dict()
+    sd["initial_linear.0.weight"] = up_sd["initial_linear.0.weight"].clone()
+    sd["initial_linear.0.bias"] = up_sd["initial_linear.0.bias"].clone()
+    for k in range(10):
+        sd[f"sequence.{k}.conv.weight"] = up_sd[f"encoder.sequence.{k}.0.weight"].clone()
+        sd[f"sequence.{k}.conv.bias"] = up_sd[f"encoder.sequence.{k}.0.bias"].clone()
+    mine.load_state_dict(sd)
+    x = torch.randn(2, 256, 2000)
+    torch.testing.assert_close(mine(x), up(x), rtol=1e-4, atol=1e-5)

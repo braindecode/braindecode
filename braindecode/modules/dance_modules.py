@@ -127,3 +127,95 @@ class ChannelMerger(nn.Module):
         weights = torch.softmax(scores, dim=2).nan_to_num()  # over n_chans
         out = weights @ x  # (B, out, n_chans) @ (B, n_chans, T) -> (B, out, T)
         return out  # (B, out_channels, T)
+
+
+class _ConvBlock(nn.Module):
+    def __init__(self, in_ch, out_ch, kernel_size, dilation, activation, last):
+        super().__init__()
+        pad = (kernel_size // 2) * dilation
+        self.conv = nn.Conv1d(
+            in_ch, out_ch, kernel_size, stride=1, padding=pad, dilation=dilation
+        )
+        self.act = None if last else activation()
+
+    def forward(self, x):
+        x = self.conv(x)
+        if self.act is not None:
+            x = self.act(x)
+        return x
+
+
+class SimpleConv(nn.Module):
+    """Dilated conv front-end (Defossez lineage), parity-gated.
+
+    No BatchNorm, no input/conv dropout, no skip in the DANCE config
+    (verified from upstream ``_default_encoder_config``). ``activation``
+    defaults to ``nn.ReLU`` to match upstream. Owns an OPTIONAL nested
+    ``ChannelMerger`` (``self.merger``) applied first, mirroring
+    ``neuraltrain.models.simpleconv.SimpleConvModel`` so the call path and
+    state_dict keys (``merger.*``, ``initial_linear.*``, ``sequence.{k}.*``)
+    align with upstream for parity.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int = 128,
+        hidden: int = 512,
+        depth: int = 10,
+        kernel_size: int = 9,
+        dilation_growth: float = 2.5,
+        initial_linear: int = 256,
+        initial_depth: int = 1,
+        drop_prob: float = 0.2,
+        activation: type[nn.Module] = nn.ReLU,
+        merger: "ChannelMerger | None" = None,
+    ):
+        super().__init__()
+        if dilation_growth > 1 and kernel_size % 2 == 0:
+            raise ValueError("Odd kernel required with dilation.")
+        # Optional nested merger; when present the conv blocks consume its
+        # out_channels (upstream sets in_channels = merger.n_virtual_channels).
+        self.merger = merger
+        conv_in = merger.heads.shape[0] if merger is not None else in_channels
+        layers: list[nn.Module] = []
+        for _ in range(initial_depth):
+            layers.append(nn.Conv1d(conv_in, initial_linear, 1))
+            conv_in = initial_linear
+        self.initial_linear = nn.Sequential(*layers)
+        sizes = [initial_linear] + [hidden] * (depth - 1) + [out_channels]
+        blocks = []
+        # Match ConvSequence: dilation starts at 1.0, int() per block, then
+        # multiply by dilation_growth AFTER each block (no dilation_period reset).
+        dilation = 1.0
+        for i in range(depth):
+            d = int(dilation)
+            last = i == depth - 1
+            blocks.append(
+                _ConvBlock(sizes[i], sizes[i + 1], kernel_size, d,
+                           activation, last)
+            )
+            dilation = dilation * dilation_growth
+        self.sequence = nn.ModuleList(blocks)
+        # Dilation of the LAST block, for the model's min-length guard.
+        self.max_dilation = int(dilation_growth ** (depth - 1))
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        positions: "torch.Tensor | None" = None,
+    ) -> torch.Tensor:
+        # x: (B, in_channels, T); positions: (B, in_channels, 2) when merger set.
+        length = x.shape[-1]
+        if self.merger is not None:
+            if positions is None:
+                raise ValueError("SimpleConv with a merger requires positions.")
+            x = self.merger(x, positions)  # (B, merger.out_channels, T)
+        x = self.initial_linear(x)
+        for block in self.sequence:
+            x = block(x)
+        if x.shape[-1] < length:
+            raise ValueError(
+                f"Expected output time dim >= {length}, got {x.shape[-1]}"
+            )
+        return x[..., :length]
