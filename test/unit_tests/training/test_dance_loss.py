@@ -12,6 +12,8 @@ from braindecode.functional import (
     iou_1d,
     pairwise_iou_1d,
 )
+from braindecode.training import DanceLoss
+from braindecode.training.losses import HungarianMatcher
 
 
 def test_iou_1d_elementwise_overlap():
@@ -105,3 +107,54 @@ def test_extract_events_skips_background_argmax():
     torch.testing.assert_close(torch.tensor(s), torch.tensor(2.0), atol=1e-5, rtol=0)
     torch.testing.assert_close(torch.tensor(e), torch.tensor(4.0), atol=1e-5, rtol=0)
     assert 0.0 <= conf <= 1.0
+
+
+def _targets(b=2, max_events=3, n_classes=4):
+    return {
+        "start": torch.tensor([[0.1, 0.5, 0.0]] * b),
+        "end": torch.tensor([[0.2, 0.7, 0.0]] * b),
+        "class": torch.tensor([[1, 2, 0]] * b),  # 0 = padding
+    }
+
+
+def _preds(b=2, q=100, n_classes=4, num_latents=256):
+    # ``dense`` time dim MUST equal the loss's ``num_latents`` (the fixed latent
+    # grid); the real DANCE dense head always emits ``num_latents`` tokens.
+    return {
+        "class": torch.randn(b, q, n_classes, requires_grad=True),
+        "start": torch.rand(b, q, requires_grad=True),
+        "end": torch.rand(b, q, requires_grad=True),
+        "dense": torch.randn(b, num_latents, n_classes, requires_grad=True),
+    }
+
+
+def test_matcher_returns_matched_structures():
+    matcher = HungarianMatcher(weight_class=1.0, weight_iou=5.0)
+    mp, mt, matches = matcher(_preds(), _targets())
+    assert "class" in mp and "start" in mp
+    assert mt["start"].shape == mp["start"].shape
+
+
+def test_dance_loss_finite():
+    loss_fn = DanceLoss(num_latents=256)
+    loss, details = loss_fn(_preds(), _targets(), duration=32.0)
+    assert torch.isfinite(loss)
+    assert {"class_loss", "iou_loss", "dense_loss", "consistency_loss"} <= set(details)
+
+
+def test_dance_loss_decreases_on_overfit():
+    torch.manual_seed(0)
+    loss_fn = DanceLoss(num_latents=64)
+    preds = _preds(num_latents=64)
+    targets = _targets()
+    params = [preds["class"], preds["start"], preds["end"], preds["dense"]]
+    opt = torch.optim.Adam(params, lr=0.05)
+    first = None
+    for step in range(40):
+        opt.zero_grad()
+        loss, _ = loss_fn(preds, targets, duration=32.0)
+        loss.backward()
+        opt.step()
+        if step == 0:
+            first = float(loss)
+    assert float(loss) < first  # overfit batch -> loss goes down

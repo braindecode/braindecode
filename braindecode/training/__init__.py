@@ -2,7 +2,7 @@
 Functionality for skorch-based training.
 """
 
-from .losses import CroppedLoss, TimeSeriesLoss, mixup_criterion
+from .losses import CroppedLoss, DanceLoss, TimeSeriesLoss, mixup_criterion
 from .scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
@@ -13,6 +13,7 @@ from .scoring import (
 
 __all__ = [
     "CroppedLoss",
+    "DanceLoss",
     "mixup_criterion",
     "TimeSeriesLoss",
     "CroppedTrialEpochScoring",
