@@ -23,7 +23,7 @@ from .convolution import (
     Conv2dWithConstraint,
     DepthwiseConv2d,
 )
-from .dance_modules import ChannelMerger, FourierEmb, SimpleConv
+from .dance_modules import ChannelMerger, FourierEmb, Perceiver, SimpleConv
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
 from .interpolation import ChannelInterpolationLayer
 from .layers import (
@@ -78,6 +78,7 @@ __all__ = [
     "DepthwiseConv2d",
     "ChannelMerger",
     "FourierEmb",
+    "Perceiver",
     "SimpleConv",
     "FilterBankLayer",
     "GeneralizedGaussianFilter",

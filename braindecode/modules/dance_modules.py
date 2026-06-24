@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 
 import torch
+from einops import rearrange, repeat
 from torch import nn
 
 
@@ -219,3 +220,172 @@ class SimpleConv(nn.Module):
                 f"Expected output time dim >= {length}, got {x.shape[-1]}"
             )
         return x[..., :length]
+
+
+def _fourier_encode(x, max_freq, num_bands):
+    # Transcribed verbatim from dance/dance/models/perceiver.py:14-21
+    # (== perceiver_pytorch.fourier_encode). x: (...); returns
+    # (..., 2*num_bands + 1): [sin(num_bands), cos(num_bands), original_position].
+    x = x.unsqueeze(-1)
+    orig = x  # keep the raw position; appended as the final channel
+    scales = torch.linspace(
+        1.0, max_freq / 2, num_bands, device=x.device, dtype=x.dtype
+    )
+    scales = scales[(*((None,) * (x.ndim - 1)), Ellipsis)]
+    x = x * scales * math.pi
+    x = torch.cat([x.sin(), x.cos()], dim=-1)
+    return torch.cat((x, orig), dim=-1)
+
+
+def _sinusoidal_latents(num_latents, dim):
+    pe = torch.zeros(num_latents, dim)
+    position = torch.arange(0, num_latents).unsqueeze(1).float()
+    div_term = torch.exp(
+        torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim)
+    )
+    pe[:, 0::2] = torch.sin(position * div_term)
+    pe[:, 1::2] = torch.cos(position * div_term)
+    return pe
+
+
+class _GEGLU(nn.Module):
+    def forward(self, x):
+        x, gates = x.chunk(2, dim=-1)
+        return x * nn.functional.gelu(gates)
+
+
+class _FeedForward(nn.Module):
+    def __init__(self, dim, mult=4):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, dim * mult * 2), _GEGLU(), nn.Linear(dim * mult, dim)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class _PreNorm(nn.Module):
+    def __init__(self, dim, fn, context_dim=None):
+        super().__init__()
+        self.fn = fn
+        self.norm = nn.LayerNorm(dim)
+        self.norm_context = (
+            nn.LayerNorm(context_dim) if context_dim is not None else None
+        )
+
+    def forward(self, x, **kwargs):
+        x = self.norm(x)
+        if self.norm_context is not None and "context" in kwargs:
+            kwargs["context"] = self.norm_context(kwargs["context"])
+        return self.fn(x, **kwargs)
+
+
+class _Attention(nn.Module):
+    def __init__(self, query_dim, context_dim=None, heads=2, dim_head=64):
+        super().__init__()
+        inner = dim_head * heads
+        context_dim = context_dim or query_dim
+        self.scale = dim_head**-0.5
+        self.heads = heads
+        self.to_q = nn.Linear(query_dim, inner, bias=False)
+        self.to_kv = nn.Linear(context_dim, inner * 2, bias=False)
+        self.to_out = nn.Linear(inner, query_dim)
+
+    def forward(self, x, context=None):
+        h = self.heads
+        context = context if context is not None else x
+        q = self.to_q(x)
+        k, v = self.to_kv(context).chunk(2, dim=-1)
+        q, k, v = (rearrange(t, "b n (h d) -> (b h) n d", h=h) for t in (q, k, v))
+        attn = (q @ k.transpose(-1, -2) * self.scale).softmax(dim=-1)
+        out = attn @ v
+        out = rearrange(out, "(b h) n d -> b n (h d)", h=h)
+        return self.to_out(out)
+
+
+class Perceiver(nn.Module):
+    """Perceiver cross-attention bottleneck to a fixed latent grid.
+
+    Re-implemented from ``perceiver_pytorch`` 0.9.0 (parity-gated). Latents are
+    sinusoidally initialized; inputs are fourier-encoded along the time axis.
+    """
+
+    def __init__(
+        self,
+        input_dim: int = 128,
+        num_latents: int = 256,
+        latent_dim: int = 128,
+        depth: int = 6,
+        cross_heads: int = 2,
+        latent_heads: int = 2,
+        cross_dim_head: int = 64,
+        latent_dim_head: int = 64,
+        max_freq: float = 10.0,
+        num_freq_bands: int = 6,
+        self_per_cross_attn: int = 1,
+    ):
+        super().__init__()
+        self.max_freq = max_freq
+        self.num_freq_bands = num_freq_bands
+        fourier_dim = num_freq_bands * 2 + 1  # = 13
+        context_dim = input_dim + fourier_dim  # = 141
+        self.latents = nn.Parameter(torch.randn(num_latents, latent_dim))
+        with torch.no_grad():
+            self.latents.copy_(_sinusoidal_latents(num_latents, latent_dim))
+        self.layers = nn.ModuleList([])
+        for _ in range(depth):
+            self.layers.append(
+                nn.ModuleList(
+                    [
+                        _PreNorm(
+                            latent_dim,
+                            _Attention(latent_dim, context_dim, cross_heads,
+                                       cross_dim_head),
+                            context_dim=context_dim,
+                        ),
+                        _PreNorm(latent_dim, _FeedForward(latent_dim)),
+                        nn.ModuleList(
+                            [
+                                nn.ModuleList(
+                                    [
+                                        _PreNorm(
+                                            latent_dim,
+                                            _Attention(latent_dim, None,
+                                                       latent_heads,
+                                                       latent_dim_head),
+                                        ),
+                                        _PreNorm(latent_dim,
+                                                 _FeedForward(latent_dim)),
+                                    ]
+                                )
+                                for _ in range(self_per_cross_attn)
+                            ]
+                        ),
+                    ]
+                )
+            )
+        self.to_logits = nn.Identity()
+
+    def forward(self, data: torch.Tensor) -> torch.Tensor:
+        # data: (B, T, input_dim). input_axis=1 -> single time axis.
+        # Transcribed from dance _Perceiver.forward (perceiver.py:50-79):
+        # meshgrid over the 1 axis, fourier-encode, rearrange "... n d -> ... (n d)".
+        b, t, _ = data.shape
+        axis_pos = [
+            torch.linspace(-1.0, 1.0, steps=t, device=data.device, dtype=data.dtype)
+        ]
+        pos = torch.stack(torch.meshgrid(*axis_pos, indexing="ij"), dim=-1)  # (T, 1)
+        enc_pos = _fourier_encode(pos, self.max_freq, self.num_freq_bands)  # (T,1,13)
+        enc_pos = rearrange(enc_pos, "... n d -> ... (n d)")  # (T, 13)
+        enc_pos = repeat(enc_pos, "... -> b ...", b=b)  # (B, T, 13)
+        data = torch.cat((data, enc_pos), dim=-1)  # (B, T, 141)
+        data = rearrange(data, "b ... d -> b (...) d")  # (B, T, 141)
+        x = repeat(self.latents, "n d -> b n d", b=b)
+        for cross_attn, cross_ff, self_attns in self.layers:
+            x = cross_attn(x, context=data) + x
+            x = cross_ff(x) + x
+            for self_attn, self_ff in self_attns:
+                x = self_attn(x) + x
+                x = self_ff(x) + x
+        return self.to_logits(x)
