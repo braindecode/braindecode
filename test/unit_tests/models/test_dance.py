@@ -108,3 +108,23 @@ def test_dance_forward_min_length_guard():
     m = _model().eval()
     with pytest.raises(ValueError, match="receptive field|shorter"):
         m(torch.randn(2, 19, 4))
+
+
+def test_dance_detect_dict_shapes():
+    m = _model().eval()
+    out = m.detect(torch.randn(2, 19, 6400))
+    assert out["class"].shape == (2, 100, 4)
+    assert out["start"].shape == (2, 100)
+    assert out["end"].shape == (2, 100)
+    assert out["dense"].shape == (2, 256, 4)
+
+
+def test_dance_reset_head_rebuilds_both_heads():
+    m = _model()
+    m.reset_head(7)
+    assert m.final_layer.out_features == 7
+    assert m.decoder.class_head.out_features == 7
+    assert m.n_outputs == 7
+    out = m.eval().detect(torch.randn(1, 19, 6400))
+    assert out["class"].shape == (1, 100, 7)
+    assert out["dense"].shape == (1, 256, 7)
