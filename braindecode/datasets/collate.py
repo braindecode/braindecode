@@ -93,13 +93,13 @@ def pad_channels_collate(batch, pad_value: float = 0.0, pos_pad_value: float = 0
         c = x.shape[0]
         X_out[i, :c] = torch.as_tensor(x, dtype=torch.float32)
         ch_mask[i, :c] = True
-        if has_pos:
+        if pos_out is not None:
             pos_out[i, :c] = torch.as_tensor(np.asarray(item[3]), dtype=torch.float32)
 
     # y and crop_inds carry no channel axis -> standard collation.
     y = default_collate([item[1] for item in batch])
     crop_inds = default_collate([item[2] for item in batch])
 
-    if has_pos:
+    if pos_out is not None:
         return X_out, y, crop_inds, pos_out, ch_mask
     return X_out, y, crop_inds, ch_mask

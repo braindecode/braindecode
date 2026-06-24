@@ -134,7 +134,10 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         i_window_in_trials = []
         i_window_stops = []
         window_ys = []
-        for X, y, i in self.get_iterator(dataset, drop_index=False):
+        for batch in self.get_iterator(dataset, drop_index=False):
+            # Tolerate extended batches (e.g. with channel positions): the
+            # window indices are always the third element.
+            X, y, i = batch[0], batch[1], batch[2]
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
             with torch.no_grad():

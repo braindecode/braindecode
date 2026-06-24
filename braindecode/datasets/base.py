@@ -779,6 +779,7 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
     @raw.setter
     def raw(self, value):
         self._raw = value
+        self._ch_pos = None  # invalidate cached positions
 
     @property
     def ch_pos(self):
@@ -1060,6 +1061,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
     @windows.setter
     def windows(self, value):
         self._windows = value
+        self._ch_pos = None  # invalidate cached positions
 
     @property
     def ch_pos(self):
@@ -1556,7 +1558,14 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         """
         if not self.datasets:
             raise ValueError("Empty BaseConcatDataset has no channel positions.")
-        return self.datasets[0].ch_pos
+        first = self.datasets[0]
+        if not hasattr(first, "ch_pos"):
+            raise AttributeError(
+                f"{type(first).__name__} does not expose channel positions; "
+                "ch_pos is available on windowed datasets (EEGWindowsDataset / "
+                "WindowsDataset)."
+            )
+        return first.ch_pos
 
     def _outdated_save(self, path, overwrite=False):
         """This is a copy of the old saving function, that had inconsistent.

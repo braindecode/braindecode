@@ -338,14 +338,13 @@ def create_mne_dummy_raw(
 
 
 def _looks_like_channel_mask(tensor):
-    """Heuristic: a channel mask is 2D (batch, n_ch) or boolean.
+    """Tell the channel mask from channel positions in an extended batch.
 
-    Used to tell the channel mask (2D bool) from channel positions (3D float)
-    among the trailing elements of an extended batch.
+    ``pad_channels_collate`` emits the mask as a boolean tensor and the
+    positions as float; keying on dtype avoids misclassifying a 2D position
+    array as a mask.
     """
-    return (
-        getattr(tensor, "dtype", None) == torch.bool or getattr(tensor, "ndim", 0) == 2
-    )
+    return getattr(tensor, "dtype", None) == torch.bool
 
 
 class ThrowAwayIndexLoader(object):

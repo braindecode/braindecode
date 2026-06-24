@@ -448,7 +448,10 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
     device = next(module.parameters()).device
     all_preds, all_ys, all_inds = [], [], []
     with torch.no_grad():
-        for X, y, ind in loader:
+        for batch in loader:
+            # Tolerate extended batches (e.g. with channel positions): the
+            # window indices are always the third element.
+            X, y, ind = batch[0], batch[1], batch[2]
             X = X.to(device)
             preds = module(X)
             all_preds.extend(preds.cpu().numpy().astype(np.float32))

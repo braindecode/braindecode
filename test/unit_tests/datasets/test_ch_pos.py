@@ -96,6 +96,22 @@ def test_ch_pos_cached():
     assert ds.ch_pos is ds.ch_pos  # same cached array object
 
 
+def test_ch_pos_cache_invalidated_on_raw_setter():
+    win = _windows([_raw_ds(CHS_A)])
+    ds = win.datasets[0]
+    assert ds.ch_pos.shape == (len(CHS_A), 3)  # populate cache
+    # Reassign raw with a different channel set; cache must be recomputed.
+    other = _windows([_raw_ds(CHS_B)]).datasets[0].raw
+    ds.raw = other
+    assert ds.ch_pos.shape == (len(CHS_B), 3)
+
+
+def test_concat_ch_pos_raises_clear_error_on_rawdataset():
+    concat = BaseConcatDataset([_raw_ds(CHS_A)])  # RawDataset, not windowed
+    with pytest.raises(AttributeError, match="does not expose channel positions"):
+        _ = concat.ch_pos
+
+
 def test_ch_pos_misc_alignment():
     # targets_from="channels": the misc channel is dropped from X, so the
     # matching position row must be dropped too.
