@@ -16,7 +16,12 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import DropPath, FeedForwardBlock, MultiHeadAttention
+from braindecode.modules import (
+    DropPath,
+    FeedForwardBlock,
+    MultiHeadAttention,
+    PatchTokenizer,
+)
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
@@ -285,7 +290,15 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.register_buffer("channel_indices", chan_pos_idx, persistent=False)
 
         # Patch embedding + positional embeddings + CLS token.
-        self.patch_embed = _PatchEmbedEEG(patch_size, embed_dim)
+        self.patch_embed = PatchTokenizer(
+            patch_size=patch_size,
+            n_times=self.n_times,
+            emb_dim=embed_dim,
+            learnable=True,
+            on_non_divisible="crop",
+            projection="linear",
+            output_order="patch_channel",
+        )
         self.temporal_pos = _TemporalPositionalEncoding(embed_dim)
         self.channel_pos = _ChannelPositionalEmbed(n_chans_pos, embed_dim)
         self.flatten_tokens = Rearrange(
@@ -360,10 +373,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 f"STEEGFormer requires at least one full temporal patch of "
                 f"{self.patch_size} samples, got input with {x.shape[-1]} samples."
             )
-        # Crop the tail so n_times is an exact multiple of patch_size
-        # (mirrors the non-overlapping patching of the reference).
-        x = x[..., : seq * self.patch_size]
-
         # Tokens + positional embeddings, kept on the (seq, channel) grid.
         tokens = self.patch_embed(x)  # (batch, seq, n_chans, embed_dim)
         tokens = (
@@ -390,25 +399,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         else:  # "cls"
             x = x[:, 0]
         return self.final_layer(x)
-
-
-class _PatchEmbedEEG(nn.Module):
-    """Per-channel non-overlapping temporal patch embedding."""
-
-    def __init__(self, patch_size: int, embed_dim: int):
-        super().__init__()
-        self.patch_size = patch_size
-        self.proj = nn.Linear(patch_size, embed_dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # (batch, n_chans, n_times) -> (batch, seq, n_chans, patch_size)
-        patches = rearrange(
-            x,
-            "batch n_chans (seq patch_size) -> batch seq n_chans patch_size",
-            patch_size=self.patch_size,
-        )
-        # -> (batch, seq, n_chans, embed_dim)
-        return self.proj(patches)
 
 
 class _TemporalPositionalEncoding(nn.Module):
