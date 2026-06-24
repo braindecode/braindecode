@@ -54,6 +54,7 @@ from .sleep_stager_blanco_2020 import SleepStagerBlanco2020
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
 from .sparcnet import SPARCNet
 from .sstdpn import SSTDPN
+from .steegformer import STEEGFormer
 from .syncnet import SyncNet
 from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
@@ -129,6 +130,7 @@ __all__ = [
     "SleepStagerBlanco2020",
     "SleepStagerChambon2018",
     "SPARCNet",
+    "STEEGFormer",
     "SyncNet",
     "BDTCN",
     "TCFormer",

@@ -41,6 +41,9 @@ Enhancements
   By `Pierre Guetschel`_.
 - Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
   foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
+- Add :class:`braindecode.models.STEEGFormer`, a ViT-based EEG foundation
+  model pre-trained with a masked-autoencoder objective, from Yang et al.
+  (ICLR 2026). By `Adam Mounir`_.
 - Add separate EEGNet and TCN dropout rates to
   :class:`braindecode.models.EEGTCNet` via the new ``drop_prob_eeg`` and
   ``drop_prob_tcn`` arguments, enabling the source/paper configuration

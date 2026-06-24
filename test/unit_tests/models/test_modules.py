@@ -1241,7 +1241,7 @@ def test_gradients_match_casual_conv(batch, in_ch, out_ch, length, kernel, dilat
 def test_warning_conditions(n_bands, kernel_sizes, expected_warning):
     with catch_warnings(record=True) as w:
         simplefilter("always")
-        block = _SpatioTemporalFeatureBlock(
+        _SpatioTemporalFeatureBlock(
             n_times=130,  # not divisible by 16
             in_channels=4,
             out_channels=8,
@@ -1321,3 +1321,29 @@ def test_patch_tokenizer():
     with pytest.warns(UserWarning, match="padded"):
         tok_pad = PatchTokenizer(patch_size=200, n_times=950)
     assert tok_pad(torch.randn(2, 19, 950)).shape == (2, 19, 5, 200)
+
+    # crop mode hard-drops the trailing samples instead of padding them
+    x = torch.arange(2 * 3 * 950, dtype=torch.float32).reshape(2, 3, 950)
+    tok_crop = PatchTokenizer(patch_size=200, n_times=950, on_non_divisible="crop")
+    expected = x[..., :800].reshape(2, 3, 4, 200)
+    assert torch.equal(tok_crop(x), expected)
+
+    # error mode rejects non-divisible windows
+    with pytest.raises(ValueError, match="not divisible"):
+        PatchTokenizer(patch_size=200, n_times=950, on_non_divisible="error")
+
+    # linear projection matches explicit per-patch Linear(patch_size, emb_dim)
+    tok_linear = PatchTokenizer(
+        patch_size=5,
+        n_times=12,
+        emb_dim=7,
+        learnable=True,
+        on_non_divisible="crop",
+        projection="linear",
+        output_order="patch_channel",
+    )
+    x = torch.randn(2, 3, 12)
+    patches = x[..., :10].reshape(2, 3, 2, 5).transpose(1, 2)
+    expected = tok_linear.proj(patches)
+    assert torch.allclose(tok_linear(x), expected)
+    assert set(tok_linear.state_dict()) == {"proj.weight", "proj.bias"}

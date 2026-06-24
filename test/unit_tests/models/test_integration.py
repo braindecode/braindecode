@@ -539,6 +539,8 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
+        # TorchScript cannot script einops.rearrange (it uses **axes_lengths).
+        "STEEGFormer",
     ]
 
     if model.__class__.__name__ in not_working_models:

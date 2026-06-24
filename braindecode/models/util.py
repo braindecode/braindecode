@@ -416,6 +416,7 @@ models_mandatory_parameters: list[
     ),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
     (
         "REVE",
         ["n_times", "n_outputs", "n_chans", "chs_info"],
