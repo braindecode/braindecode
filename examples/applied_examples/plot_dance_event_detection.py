@@ -116,7 +116,13 @@ def build_synthetic_event_dataset(
     rng = np.random.default_rng(seed)
     n_samples = int(n_seconds * sfreq)
     data = rng.standard_normal((n_chans, n_samples)) * 1e-6  # ~uV scale
-    ch_names = [f"E{i + 1}" for i in range(n_chans)]
+    # Real 10-20 labels (they exist in the standard_1020 montage, unlike
+    # "E1".."E19"), so set_montage actually assigns finite locations and DANCE
+    # can derive non-degenerate positions to drive the ChannelMerger.
+    ch_names = [
+        "Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T7", "C3", "Cz",
+        "C4", "T8", "P7", "P3", "Pz", "P4", "P8", "O1", "O2",
+    ][:n_chans]
     info = mne.create_info(ch_names, sfreq, ch_types="eeg")
     raw = mne.io.RawArray(data, info, verbose="error")
     # Real 10-20-ish locations so DANCE derives non-degenerate positions.
