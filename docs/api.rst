@@ -183,6 +183,7 @@ interface for all EEG models and can derive variable names when needed.
      SleepStagerChambon2018
      SPARCNet
      SSTDPN
+     STEEGFormer
      SyncNet
      TCFormer
      TIDNet
