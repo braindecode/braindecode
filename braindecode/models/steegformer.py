@@ -438,9 +438,10 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             EEG input of shape ``(batch, n_chans, n_times)``.
         return_features : bool
-            If ``True``, return the encoder tokens as
+            If ``True``, return the layer-normalised encoder tokens as
             ``{"features": patch_tokens, "cls_token": cls_token}`` instead of
-            the class logits (the unified braindecode foundation-model API).
+            the class logits (the unified braindecode foundation-model API). The
+            ``cls_token`` then matches the feature the ``"cls"`` head consumes.
 
         Returns
         -------
@@ -470,8 +471,11 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         x = self.encoder(x)
 
         if return_features:
-            # Unified foundation-model API: CLS at index 0, patch tokens after.
-            return {"features": x[:, 1:, :], "cls_token": x[:, 0, :]}
+            # Layer-normalise before exposing the encoder representation, as the
+            # reference MAE encoder and the ``cls`` read-out do (and matching the
+            # braindecode convention, e.g. LaBraM). CLS at index 0, patches after.
+            normed = self.norm(x)
+            return {"features": normed[:, 1:, :], "cls_token": normed[:, 0, :]}
 
         # Aggregate tokens, then classify. Mirrors the reference: average
         # pooling discards the CLS token and applies no final norm, whereas the
