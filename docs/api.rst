@@ -75,6 +75,8 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
     - :class:`EEGPT` - Pretrained transformer for universal EEG
+    - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
+      re-hosted weights
 
     **Example - Loading a pre-trained model:**
 

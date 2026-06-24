@@ -238,8 +238,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
 
     .. rubric:: Variants
 
-    The three released variants differ only in width/depth (``patch_size=16``,
-    ``mlp_ratio=4`` throughout):
+    The released variants differ in width/depth and, for ``largeV2``, the
+    channel-vocabulary size (``patch_size=16``, ``mlp_ratio=4`` throughout):
 
     .. list-table::
        :header-rows: 1
@@ -248,36 +248,73 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
          - ``embed_dim``
          - ``depth``
          - ``num_heads``
+         - ``n_chans_pos``
        * - small
          - 512
          - 8
          - 8
+         - 145
        * - base
          - 768
          - 12
          - 12
+         - 145
        * - large
          - 1024
          - 24
          - 16
+         - 145
+       * - largeV2
+         - 1024
+         - 24
+         - 16
+         - 256
 
     .. rubric:: Pre-trained weights
 
-    Ready-to-use braindecode checkpoints are published per variant on the Hub
-    (``braindecode/STEEGFormer-{small,base,large,largeV2}``)::
+    Ready-to-use checkpoints are re-hosted on the Hugging Face Hub under the
+    braindecode organization. These repos convert the official MAE encoder
+    checkpoints to braindecode's key names and include ``config.json`` plus
+    ``model.safetensors``/``pytorch_model.bin``:
+
+    .. list-table::
+       :header-rows: 1
+
+       * - Variant
+         - Hub repo
+         - Notes
+       * - small
+         - ``braindecode/STEEGFormer-small``
+         - 145-slot channel vocabulary
+       * - base
+         - ``braindecode/STEEGFormer-base``
+         - 145-slot channel vocabulary
+       * - large
+         - ``braindecode/STEEGFormer-large``
+         - 145-slot channel vocabulary
+       * - largeV2
+         - ``braindecode/STEEGFormer-largeV2``
+         - 256-slot HBN channel vocabulary
+
+    Use the regular Hub API to load a re-hosted checkpoint::
 
         model = STEEGFormer.from_pretrained(
             "braindecode/STEEGFormer-small", n_outputs=4, chs_info=chs_info
         )
+
+    The re-hosted repos save complete braindecode model files, so they include a
+    classification head tensor for serialization. Only the encoder weights are
+    from the official MAE pretraining; pass ``n_outputs`` for the downstream
+    task so the head is rebuilt as needed.
 
     Alternatively, the official MAE checkpoints (GitHub releases of
     ``LiuyinYang1101/STEEGFormer``) can be loaded directly:
     :meth:`load_state_dict` detects the upstream ``timm`` format, keeps the
     encoder, and remaps it to this module (see that method). The pre-trained
     checkpoint carries **no classification head** (it is re-initialised), so it
-    provides a feature extractor to be fine-tuned downstream. The montage
-    vocabulary size depends on the checkpoint (145 for small/base/large, 256
-    for the HBN ``largeV2`` model): set ``n_chans_pos`` accordingly.
+    provides a feature extractor to be fine-tuned downstream. When loading from
+    the braindecode re-hosted repos, the saved config sets ``n_chans_pos`` to
+    the correct value for the selected variant.
 
     .. note::
         Numerical equivalence of the encoder features with the reference

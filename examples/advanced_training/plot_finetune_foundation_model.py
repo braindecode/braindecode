@@ -116,8 +116,10 @@ print(metadata.head(10))
 # already bundles the SSL backbone together with the downstream
 # classification layers, so a single call is all that is needed.
 #
-# For other foundation models (BENDR, BIOT, Labram, etc.) the same
-# one-line pattern applies — see :ref:`load-pretrained-models`.
+# For other foundation models (BENDR, BIOT, Labram, STEEGFormer, etc.) the
+# same one-line pattern applies — see :ref:`load-pretrained-models`. For
+# example, the braindecode re-host of the STEEGFormer small checkpoint can be
+# loaded as ``STEEGFormer.from_pretrained("braindecode/STEEGFormer-small")``.
 #
 
 model = SignalJEPA_PreLocal.from_pretrained(
