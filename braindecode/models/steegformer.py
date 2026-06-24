@@ -1,7 +1,7 @@
 # Authors: Adam Mounir <am91ris@gmail.com>
 #
 # License: BSD (3-clause)
-"""STEEGFormer — WIP draft (see #1040).
+"""STEEGFormer — ViT-MAE EEG foundation model.
 
 Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 """
@@ -405,9 +405,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     for the HBN ``largeV2`` model): set ``n_chans_pos`` accordingly.
 
     .. note::
-        Work in progress (draft, see #1040). Numerical equivalence of the
-        encoder features with the reference implementation has been verified on
-        the released checkpoints. The channel-to-vocabulary mapping is resolved
+        Numerical equivalence of the encoder features with the reference
+        implementation has been verified on the released checkpoints. The
+        channel-to-vocabulary mapping is resolved
         from the electrode names in ``chs_info`` (looked up in
         :data:`STEEGFORMER_CHANNEL_ORDER`, the BENDR/LaBraM convention); when
         ``chs_info`` is absent or a name is unknown, it falls back to the
@@ -655,7 +655,18 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         return super().load_state_dict(remapped, *args, **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch, n_chans, n_times)
+        """Encode an EEG batch into class logits.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            EEG input of shape ``(batch, n_chans, n_times)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Output of shape ``(batch, n_outputs)``.
+        """
         seq = x.shape[-1] // self.patch_size
         # Crop the tail so n_times is an exact multiple of patch_size
         # (mirrors the non-overlapping patching of the reference).
