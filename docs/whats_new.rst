@@ -61,7 +61,7 @@ Enhancements
   :func:`braindecode.preprocessing.create_windows_from_events` metadata so
   windows expose a stable source annotation index for trial-level alignment,
   including annotation ``extras`` after mapping, filtering, or dropped trials.
-  By `Bruno Aristimunha`_.
+  (:gh:`1051` by `Bruno Aristimunha`_)
 
 API and behavior changes
 ========================
