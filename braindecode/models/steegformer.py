@@ -8,9 +8,10 @@ Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 
 from __future__ import annotations
 
+import json
 import math
 import warnings
-from collections import OrderedDict
+from pathlib import Path
 
 import torch
 from einops import rearrange
@@ -27,154 +28,12 @@ from braindecode.modules import (
 
 # Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
 # learned channel embedding has one slot per entry, in this order (the slot
-# index of an electrode is its position in this list). Taken from the authors'
-# ``channels_mapping`` (``pretrain/senloc_file/sen_chan_idx.pkl``,
+# index of an electrode is its position in this list). Loaded from
+# ``steegformer_channels.json`` (the authors' ``channels_mapping`` in
 # ``LiuyinYang1101/STEEGFormer``, MIT). Used by small/base/large (vocab 145);
 # the HBN ``largeV2`` model uses a different, larger vocabulary.
-STEEGFORMER_CHANNEL_ORDER: list[str] = [
-    "C1",
-    "Pz",
-    "C4",
-    "F6",
-    "FTT8h",
-    "Oz",
-    "Fp1",
-    "FCC5h",
-    "TPP8h",
-    "CPP6h",
-    "C2",
-    "F4",
-    "OI2h",
-    "AF4",
-    "FCz",
-    "CCP6h",
-    "TP8",
-    "POO10h",
-    "FC1",
-    "FC6",
-    "C5",
-    "P8",
-    "FT8",
-    "P6",
-    "P9",
-    "Fz",
-    "AFF1",
-    "TPP10h",
-    "AFF2",
-    "P10",
-    "CPP2h",
-    "M1",
-    "FCC6h",
-    "FTT7h",
-    "FC2",
-    "PPO2",
-    "AFp3h",
-    "AF7",
-    "PO10",
-    "AF8",
-    "CPP1h",
-    "P7",
-    "F1",
-    "AFp4h",
-    "PO9",
-    "FT9",
-    "CP2",
-    "Iz",
-    "FCC1h",
-    "FC5",
-    "T5",
-    "CP5",
-    "CP6",
-    "FFC5h",
-    "F2",
-    "M2",
-    "POO9h",
-    "AFF5h",
-    "PO4",
-    "POO3h",
-    "Fp2",
-    "T3",
-    "CP4",
-    "POz",
-    "TTP7h",
-    "T7",
-    "A2",
-    "CCP4h",
-    "T8",
-    "PPO10h",
-    "FC3",
-    "F3",
-    "F5",
-    "A1",
-    "P3",
-    "FC4",
-    "FCC2h",
-    "FFC6h",
-    "FFT8h",
-    "CCP2h",
-    "CPP4h",
-    "T6",
-    "FTT9h",
-    "PPO6h",
-    "CP3",
-    "CP1",
-    "AF3",
-    "FT10",
-    "OI1h",
-    "TPP9h",
-    "P5",
-    "I2",
-    "CCP1h",
-    "T4",
-    "CCP3h",
-    "O1",
-    "PO5",
-    "PPO9h",
-    "PPO5h",
-    "P1",
-    "AFz",
-    "PO6",
-    "PO3",
-    "O2",
-    "CPP5h",
-    "FFC1h",
-    "FCC4h",
-    "FFT7h",
-    "FFC2h",
-    "FFC4h",
-    "Cz",
-    "TP7",
-    "Fpz",
-    "FTT10h",
-    "PO7",
-    "CPP3h",
-    "P4",
-    "P2",
-    "F8",
-    "CPz",
-    "FCC3h",
-    "FFC3h",
-    "FT7",
-    "I1",
-    "TTP8h",
-    "AFF6h",
-    "CCP5h",
-    "C6",
-    "PPO1",
-    "PO8",
-    "C3",
-    "POO4h",
-    "TPP7h",
-    "F7",
-    "T9",
-    "TP9",
-    "T10",
-    "TP10",
-    "POO1",
-    "POO2",
-    "PPO1h",
-    "PPO2h",
-]
+with (Path(__file__).parent / "steegformer_channels.json").open() as _f:
+    STEEGFORMER_CHANNEL_ORDER: list[str] = json.load(_f)
 _STEEGFORMER_CHANNEL_INDEX = {
     name.upper(): i for i, name in enumerate(STEEGFORMER_CHANNEL_ORDER)
 }
@@ -313,10 +172,10 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     from the official MAE pretraining; pass ``n_outputs`` for the downstream
     task so the head is rebuilt as needed.
 
-    The official MAE checkpoints (GitHub releases of
-    ``LiuyinYang1101/STEEGFormer``) can also be loaded directly:
-    :meth:`load_state_dict` detects the upstream ``timm`` format, keeps the
-    encoder, and remaps it to this module (see that method).
+    To regenerate the re-hosted files from the official GitHub checkpoints,
+    run the standalone ``convert_checkpoint.py`` archived in each Hub repo; the
+    model itself loads braindecode-format state dicts, so ``from_pretrained``
+    needs no conversion.
 
     .. note::
         Numerical equivalence of the encoder features with the reference
@@ -536,69 +395,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             )
             return torch.arange(self.n_chans)
         return torch.tensor(idx, dtype=torch.long)
-
-    # timm key (inside a block) -> this module's encoder-block key. The fused
-    # ``attn.qkv`` is the only non-1:1 mapping and is split out separately.
-    _TIMM_BLOCK_RENAMES = {
-        "norm1": "0.fn.0",
-        "attn.proj": "0.fn.1.projection",
-        "norm2": "1.fn.0",
-        "mlp.fc1": "1.fn.1.0",
-        "mlp.fc2": "1.fn.1.3",
-    }
-    # Dropped: the MAE decoder, the regenerated sinusoidal buffer, and the
-    # downstream-only keys absent from this encoder.
-    _TIMM_DROP_PREFIXES = ("decoder_", "dec_", "mask_token", "enc_temporal_emd")
-    _TIMM_DROP_EXACT = frozenset(
-        {"pos_embed", "fc_norm.weight", "fc_norm.bias", "head.weight", "head.bias"}
-    )
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Load weights, remapping the official checkpoint if needed.
-
-        The official ST-EEGFormer checkpoints (GitHub releases of
-        ``LiuyinYang1101/STEEGFormer``) are MAE pre-training checkpoints built on
-        ``timm``: encoder weights wrapped under a top-level ``"model"`` key,
-        named in the ``timm`` convention, alongside decoder weights. This
-        override unwraps that format, drops the MAE-decoder and downstream-only
-        keys, renames the ``timm`` blocks to this module's ``encoder`` blocks,
-        and splits the fused ``attn.qkv`` into the separate queries/keys/values
-        of braindecode's :class:`~braindecode.modules.MultiHeadAttention`. A
-        checkpoint already in this module's format is loaded unchanged.
-        """
-        if isinstance(state_dict.get("model"), dict):
-            state_dict = state_dict["model"]
-        if not any("attn.qkv" in k for k in state_dict):
-            return super().load_state_dict(state_dict, *args, **kwargs)
-
-        e = self.embed_dim
-        remapped: "OrderedDict[str, torch.Tensor]" = OrderedDict()
-        for key, value in state_dict.items():
-            if key.startswith(self._TIMM_DROP_PREFIXES) or key in self._TIMM_DROP_EXACT:
-                continue
-            if key == "enc_channel_emd.channel_transformation.weight":
-                remapped["channel_pos.embedding.weight"] = value
-            elif key.startswith("blocks."):
-                _, idx, rest = key.split(".", 2)
-                dst = f"encoder.{idx}."
-                if rest in ("attn.qkv.weight", "attn.qkv.bias"):
-                    suffix = rest.rsplit(".", 1)[1]  # "weight" or "bias"
-                    remapped[f"{dst}0.fn.1.queries.{suffix}"] = value[:e]
-                    remapped[f"{dst}0.fn.1.keys.{suffix}"] = value[e : 2 * e]
-                    remapped[f"{dst}0.fn.1.values.{suffix}"] = value[2 * e :]
-                else:
-                    for src_k, new_k in self._TIMM_BLOCK_RENAMES.items():
-                        if rest.startswith(src_k + "."):
-                            remapped[dst + new_k + rest[len(src_k) :]] = value
-                            break
-            else:
-                # cls_token, patch_embed.proj.*, norm.* share the same name.
-                remapped[key] = value
-
-        # The encoder has no head and the temporal/channel buffers are
-        # regenerated at init, so a non-strict load is required.
-        kwargs.setdefault("strict", False)
-        return super().load_state_dict(remapped, *args, **kwargs)
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Encode an EEG batch into class logits (or encoder features).
