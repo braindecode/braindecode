@@ -9,7 +9,6 @@ Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 from __future__ import annotations
 
 import math
-from collections import OrderedDict
 
 import torch
 from einops import rearrange
@@ -17,157 +16,6 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath, FeedForwardBlock, MultiHeadAttention
-
-# Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
-# learned channel embedding has one slot per entry, in this order (the slot
-# index of an electrode is its position in this list). Taken from the authors'
-# ``channels_mapping`` (``pretrain/senloc_file/sen_chan_idx.pkl``,
-# ``LiuyinYang1101/STEEGFormer``, MIT). Used by small/base/large (vocab 145);
-# the HBN ``largeV2`` model uses a different, larger vocabulary.
-STEEGFORMER_CHANNEL_ORDER: list[str] = [
-    "C1",
-    "Pz",
-    "C4",
-    "F6",
-    "FTT8h",
-    "Oz",
-    "Fp1",
-    "FCC5h",
-    "TPP8h",
-    "CPP6h",
-    "C2",
-    "F4",
-    "OI2h",
-    "AF4",
-    "FCz",
-    "CCP6h",
-    "TP8",
-    "POO10h",
-    "FC1",
-    "FC6",
-    "C5",
-    "P8",
-    "FT8",
-    "P6",
-    "P9",
-    "Fz",
-    "AFF1",
-    "TPP10h",
-    "AFF2",
-    "P10",
-    "CPP2h",
-    "M1",
-    "FCC6h",
-    "FTT7h",
-    "FC2",
-    "PPO2",
-    "AFp3h",
-    "AF7",
-    "PO10",
-    "AF8",
-    "CPP1h",
-    "P7",
-    "F1",
-    "AFp4h",
-    "PO9",
-    "FT9",
-    "CP2",
-    "Iz",
-    "FCC1h",
-    "FC5",
-    "T5",
-    "CP5",
-    "CP6",
-    "FFC5h",
-    "F2",
-    "M2",
-    "POO9h",
-    "AFF5h",
-    "PO4",
-    "POO3h",
-    "Fp2",
-    "T3",
-    "CP4",
-    "POz",
-    "TTP7h",
-    "T7",
-    "A2",
-    "CCP4h",
-    "T8",
-    "PPO10h",
-    "FC3",
-    "F3",
-    "F5",
-    "A1",
-    "P3",
-    "FC4",
-    "FCC2h",
-    "FFC6h",
-    "FFT8h",
-    "CCP2h",
-    "CPP4h",
-    "T6",
-    "FTT9h",
-    "PPO6h",
-    "CP3",
-    "CP1",
-    "AF3",
-    "FT10",
-    "OI1h",
-    "TPP9h",
-    "P5",
-    "I2",
-    "CCP1h",
-    "T4",
-    "CCP3h",
-    "O1",
-    "PO5",
-    "PPO9h",
-    "PPO5h",
-    "P1",
-    "AFz",
-    "PO6",
-    "PO3",
-    "O2",
-    "CPP5h",
-    "FFC1h",
-    "FCC4h",
-    "FFT7h",
-    "FFC2h",
-    "FFC4h",
-    "Cz",
-    "TP7",
-    "Fpz",
-    "FTT10h",
-    "PO7",
-    "CPP3h",
-    "P4",
-    "P2",
-    "F8",
-    "CPz",
-    "FCC3h",
-    "FFC3h",
-    "FT7",
-    "I1",
-    "TTP8h",
-    "AFF6h",
-    "CCP5h",
-    "C6",
-    "PPO1",
-    "PO8",
-    "C3",
-    "POO4h",
-    "TPP7h",
-    "F7",
-    "T9",
-    "TP9",
-    "T10",
-    "TP10",
-    "POO1",
-    "POO2",
-    "PPO1h",
-    "PPO2h",
-]
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
@@ -303,14 +151,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     from the official MAE pretraining; pass ``n_outputs`` for the downstream
     task so the head is rebuilt as needed.
 
-    Alternatively, the official MAE checkpoints (GitHub releases of
-    ``LiuyinYang1101/STEEGFormer``) can be loaded directly:
-    :meth:`load_state_dict` detects the upstream ``timm`` format, keeps the
-    encoder, and remaps it to this module (see that method). The pre-trained
-    checkpoint carries **no classification head** (it is re-initialised), so it
-    provides a feature extractor to be fine-tuned downstream. When loading from
-    the braindecode re-hosted repos, the saved config sets ``n_chans_pos`` to
-    the correct value for the selected variant.
+    To regenerate the re-hosted files from the official GitHub checkpoints, use
+    the standalone conversion script archived with the Hugging Face model repos.
+    The model itself expects braindecode-format state dicts.
 
     .. note::
         Numerical equivalence of the encoder features with the reference
@@ -318,7 +161,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         channel-to-vocabulary mapping defaults to the identity mapping
         (input channel ``i`` -> slot ``i``), as in the reference downstream
         examples. For a non-identity mapping, pass ``chan_pos_idx`` explicitly
-        using indices from :data:`STEEGFORMER_CHANNEL_ORDER`.
+        with the channel-embedding indices used by the selected checkpoint.
 
     Parameters
     ----------
@@ -489,70 +332,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self._n_outputs = n_outputs
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
 
-    # timm key (inside a block) -> this module's encoder-block key. The fused
-    # ``attn.qkv`` is the only non-1:1 mapping and is split out separately.
-    _TIMM_BLOCK_RENAMES = {
-        "norm1": "0.fn.0",
-        "attn.proj": "0.fn.1.projection",
-        "norm2": "1.fn.0",
-        "mlp.fc1": "1.fn.1.0",
-        "mlp.fc2": "1.fn.1.3",
-    }
-    # Dropped: the MAE decoder, the regenerated sinusoidal buffer, and the
-    # downstream-only keys absent from this encoder.
-    _TIMM_DROP_PREFIXES = ("decoder_", "dec_", "mask_token", "enc_temporal_emd")
-    _TIMM_DROP_EXACT = frozenset(
-        {"pos_embed", "fc_norm.weight", "fc_norm.bias", "head.weight", "head.bias"}
-    )
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Load weights, remapping the official checkpoint if needed.
-
-        The official ST-EEGFormer checkpoints (GitHub releases of
-        ``LiuyinYang1101/STEEGFormer``) are MAE pre-training checkpoints built
-        on ``timm``: the encoder weights are wrapped under a top-level
-        ``"model"`` key, named in the ``timm`` convention, and shipped alongside
-        decoder weights used only for the pre-training objective. This override
-        unwraps that format, drops the MAE-decoder and downstream-only keys,
-        renames the ``timm`` blocks to this module's ``encoder`` blocks, and
-        splits the fused ``attn.qkv`` into the separate queries/keys/values of
-        braindecode's :class:`~braindecode.modules.MultiHeadAttention`. A
-        checkpoint already in this module's format is loaded unchanged.
-        """
-        if isinstance(state_dict.get("model"), dict):
-            state_dict = state_dict["model"]
-        if not any("attn.qkv" in k for k in state_dict):
-            return super().load_state_dict(state_dict, *args, **kwargs)
-
-        e = self.embed_dim
-        remapped: "OrderedDict[str, torch.Tensor]" = OrderedDict()
-        for key, value in state_dict.items():
-            if key.startswith(self._TIMM_DROP_PREFIXES) or key in self._TIMM_DROP_EXACT:
-                continue
-            if key == "enc_channel_emd.channel_transformation.weight":
-                remapped["channel_pos.embedding.weight"] = value
-            elif key.startswith("blocks."):
-                _, idx, rest = key.split(".", 2)
-                dst = f"encoder.{idx}."
-                if rest in ("attn.qkv.weight", "attn.qkv.bias"):
-                    suffix = rest.rsplit(".", 1)[1]  # "weight" or "bias"
-                    remapped[f"{dst}0.fn.1.queries.{suffix}"] = value[:e]
-                    remapped[f"{dst}0.fn.1.keys.{suffix}"] = value[e : 2 * e]
-                    remapped[f"{dst}0.fn.1.values.{suffix}"] = value[2 * e :]
-                else:
-                    for src, new in self._TIMM_BLOCK_RENAMES.items():
-                        if rest.startswith(src + "."):
-                            remapped[dst + new + rest[len(src) :]] = value
-                            break
-            else:
-                # cls_token, patch_embed.proj.*, norm.* share the same name.
-                remapped[key] = value
-
-        # The encoder has no head and the temporal/channel buffers are
-        # regenerated at init, so a non-strict load is required.
-        kwargs.setdefault("strict", False)
-        return super().load_state_dict(remapped, *args, **kwargs)
-
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Encode an EEG batch into class logits (or encoder features).
 
@@ -610,28 +389,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
 
 
 class _PatchEmbedEEG(nn.Module):
-    """Split each channel into temporal patches and embed them as tokens.
-
-    The input EEG is cut, **per channel**, into contiguous non-overlapping
-    temporal patches of ``patch_size`` samples; each patch is linearly
-    projected to ``embed_dim``. This is the EEG counterpart of the patch
-    embedding of a Vision Transformer: one token per (temporal patch, channel)
-    pair.
-
-    Parameters
-    ----------
-    patch_size : int
-        Number of time samples per temporal patch.
-    embed_dim : int
-        Token embedding dimension.
-
-    Notes
-    -----
-    ``n_times`` must be an exact multiple of ``patch_size``; the number of
-    temporal patches is ``seq = n_times // patch_size``. The (temporal,
-    channel) structure is kept in the output so that temporal and channel
-    positional embeddings can be added before the tokens are flattened.
-    """
+    """Per-channel non-overlapping temporal patch embedding."""
 
     def __init__(self, patch_size: int, embed_dim: int):
         super().__init__()
