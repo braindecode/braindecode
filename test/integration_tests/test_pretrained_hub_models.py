@@ -294,6 +294,7 @@ class TestSTEEGFormerPretrained:
         return STEEGFormer.from_pretrained(
             "braindecode/STEEGFormer-small",
             n_outputs=2,
+            chan_pos_idx=list(range(22)),  # explicit identity: this test checks load, not montage
             cache_dir=hub_cache_dir,
         )
 

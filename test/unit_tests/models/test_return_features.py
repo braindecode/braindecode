@@ -87,6 +87,7 @@ _MODELS = [
             "embed_dim": 64,
             "depth": 2,
             "num_heads": 2,
+            "chan_pos_idx": list(range(N_CHANS)),
         },
         True,
         id="STEEGFormer",
