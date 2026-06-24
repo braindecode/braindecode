@@ -15,7 +15,7 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
-    _disable_batch_norm_training_if_batch_size_one,  # noqa: F401  # decorates ``forward`` (added in the forward task)
+    _disable_batch_norm_training_if_batch_size_one,  # decorates ``forward``
 )
 from braindecode.modules import ChannelMerger, Perceiver, SimpleConv
 from braindecode.modules.dance_modules import DanceDetrDecoder
@@ -309,10 +309,21 @@ class DANCE(EEGModuleMixin, nn.Module):
             activation=nn.ReLU,
             merger=merger,
         )
-        # Minimum input length: with same-padding the conv preserves length as
-        # long as the last (largest-dilation) kernel's receptive field fits.
-        # Use the SAME int-cumulative max_dilation the conv computed.
-        self._min_n_times = (conv_kernel_size - 1) * self.conv.max_dilation + 1
+        # Minimum input length. The conv stack is SAME-padded
+        # (``_ConvBlock`` pads ``(kernel // 2) * int(dilation)`` per block), so
+        # it mechanically preserves length for any ``T >= 1`` and the dilated
+        # receptive field ``(kernel - 1) * max_dilation + 1`` (here ~30513 with
+        # the default depth=10, dilation_growth=2.5 stack, exposing
+        # ``self.conv.max_dilation``) is NOT an input-length requirement -- it
+        # only describes how far each output token can "see". The guard below
+        # therefore rejects only inputs too short for a single dilated kernel of
+        # the FIRST block to apply (``kernel_size`` samples, dilation 1), which
+        # is the genuine minimum; the larger receptive field is documented for
+        # reference but must not gate realistic windows (a 6400-sample / 32 s @
+        # 200 Hz window is valid). See Task-5 report's flag on the previous
+        # over-conservative ``(kernel - 1) * self.conv.max_dilation + 1``
+        # formula.
+        self._min_n_times = conv_kernel_size
         self.perceiver = Perceiver(
             input_dim=embed_dim,
             num_latents=num_latents,
@@ -348,3 +359,30 @@ class DANCE(EEGModuleMixin, nn.Module):
         elif isinstance(module, nn.LayerNorm):
             nn.init.ones_(module.weight)
             nn.init.zeros_(module.bias)
+
+    def _encode(self, x: torch.Tensor) -> torch.Tensor:
+        if x.ndim != 3 or x.shape[-2] != self.n_chans:
+            raise ValueError(
+                f"expected (batch, {self.n_chans}, T) input; got {tuple(x.shape)}."
+            )
+        if x.shape[-1] < self._min_n_times:
+            raise ValueError(
+                f"n_times={x.shape[-1]} is shorter than the conv stack's "
+                f"receptive field ({self._min_n_times} samples)."
+            )
+        x = self.input_drop(x)
+        # The merger is nested inside self.conv; pass positions through it.
+        # subject_ids is always None (braindecode has no subjects).
+        if self.conv.merger is not None:
+            pos = self.channel_positions.unsqueeze(0).expand(x.size(0), -1, -1)
+            x = self.conv(x, positions=pos)  # merger -> initial_linear -> blocks
+        else:
+            x = self.conv(x)  # (B, embed_dim, T)
+        x = x.transpose(2, 1)  # (B, T, embed_dim)
+        x = self.perceiver(x)  # (B, num_latents, embed_dim)
+        return x
+
+    @_disable_batch_norm_training_if_batch_size_one
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        latents = self._encode(x)  # (B, num_latents, embed_dim)
+        return self.final_layer(latents)  # (B, num_latents, n_outputs)

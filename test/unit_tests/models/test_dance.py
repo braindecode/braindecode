@@ -82,3 +82,29 @@ def test_dance_no_merger_consumes_raw_channels():
     assert not hasattr(m, "channel_positions")
     out = m.eval()(torch.randn(2, 19, 6400))
     assert out.shape == (2, 256, 4)
+
+
+def test_dance_forward_dense_shape():
+    m = _model().eval()
+    x = torch.randn(2, 19, 6400)
+    out = m(x)
+    assert out.shape == (2, 256, 4)  # (B, num_latents, n_outputs)
+
+
+def test_dance_forward_length_agnostic():
+    m = _model().eval()
+    out_a = m(torch.randn(1, 19, 6400))
+    out_b = m(torch.randn(1, 19, 9000))
+    assert out_a.shape == out_b.shape == (1, 256, 4)
+
+
+def test_dance_forward_batch_one_train_mode():
+    m = _model().train()
+    out = m(torch.randn(1, 19, 6400))  # must not crash at batch=1
+    assert out.shape == (1, 256, 4)
+
+
+def test_dance_forward_min_length_guard():
+    m = _model().eval()
+    with pytest.raises(ValueError, match="receptive field|shorter"):
+        m(torch.randn(2, 19, 4))
