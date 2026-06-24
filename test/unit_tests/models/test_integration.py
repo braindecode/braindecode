@@ -527,6 +527,9 @@ def test_model_torch_script(model):
         # forward() returns Dict[str, Tensor] (features) or Tensor (logits);
         # torch.jit.script rejects this polymorphic return type.
         "EEGDINO",
+        # forward() returns Tensor (logits) or Tuple[Tensor, Tensor] (main +
+        # branch logits) when return_features=True; polymorphic return type.
+        "MSVTNet",
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
