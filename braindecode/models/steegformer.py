@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import math
 import warnings
-from pathlib import Path
+from functools import lru_cache
 
 import torch
 from einops import rearrange
@@ -28,15 +28,36 @@ from braindecode.modules import (
 
 # Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
 # learned channel embedding has one slot per entry, in this order (the slot
-# index of an electrode is its position in this list). Loaded from
-# ``steegformer_channels.json`` (the authors' ``channels_mapping`` in
-# ``LiuyinYang1101/STEEGFormer``, MIT). Used by small/base/large (vocab 145);
-# the HBN ``largeV2`` model uses a different, larger vocabulary.
-with (Path(__file__).parent / "steegformer_channels.json").open() as _f:
-    STEEGFORMER_CHANNEL_ORDER: list[str] = json.load(_f)
-_STEEGFORMER_CHANNEL_INDEX = {
-    name.upper(): i for i, name in enumerate(STEEGFORMER_CHANNEL_ORDER)
-}
+# index of an electrode is its position in this list). It is the authors'
+# ``channels_mapping`` (``LiuyinYang1101/STEEGFormer``, MIT), used by
+# small/base/large (vocab 145); the HBN ``largeV2`` model uses a different,
+# larger vocabulary. Like REVE's position bank, it is downloaded from the Hub
+# on first use (and cached) rather than shipped with the package -- and only
+# when a ``chs_info`` montage actually needs name-based slot resolution.
+_CHANNELS_REPO = "braindecode/STEEGFormer-small"
+_CHANNELS_FILE = "steegformer_channels.json"
+
+
+@lru_cache(maxsize=1)
+def _channel_order() -> list[str]:
+    """Download (and cache) the shared montage vocabulary from the Hub."""
+    from huggingface_hub import hf_hub_download
+
+    with open(hf_hub_download(_CHANNELS_REPO, _CHANNELS_FILE)) as f:
+        return json.load(f)
+
+
+@lru_cache(maxsize=1)
+def _channel_index() -> dict[str, int]:
+    return {name.upper(): i for i, name in enumerate(_channel_order())}
+
+
+def __getattr__(name: str):
+    # PEP 562: expose STEEGFORMER_CHANNEL_ORDER lazily so importing this module
+    # never triggers a network call; the vocabulary is fetched on first access.
+    if name == "STEEGFORMER_CHANNEL_ORDER":
+        return _channel_order()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
@@ -371,8 +392,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.
 
         Looks each electrode name up in :data:`STEEGFORMER_CHANNEL_ORDER`
-        (case-insensitive). Falls back to the identity mapping -- and warns --
-        when ``chs_info`` is absent or carries names outside the vocabulary.
+        (case-insensitive), which is downloaded from the Hub on first use.
+        Falls back to the identity mapping -- and warns -- when ``chs_info`` is
+        absent, the vocabulary cannot be fetched, or a name is outside it.
         """
         try:
             chs_info = self.chs_info
@@ -380,8 +402,20 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             chs_info = None
         if not chs_info:
             return torch.arange(self.n_chans)
+        try:
+            index = _channel_index()  # downloaded from the Hub on first use
+        except Exception as exc:  # noqa: BLE001 - any download/parse failure
+            warnings.warn(
+                f"STEEGFormer: could not fetch the channel vocabulary ({exc}); "
+                f"falling back to the identity channel mapping. Pass "
+                f"`chan_pos_idx` explicitly to align an arbitrary montage with "
+                f"the pre-trained channel embedding.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return torch.arange(self.n_chans)
         names = [ch["ch_name"] for ch in chs_info]  # type: ignore[index]
-        idx = [_STEEGFORMER_CHANNEL_INDEX.get(n.upper()) for n in names]
+        idx = [index.get(n.upper()) for n in names]
         missing = [n for n, j in zip(names, idx) if j is None]
         if missing:
             shown = ", ".join(missing[:8]) + ("..." if len(missing) > 8 else "")

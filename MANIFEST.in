@@ -3,7 +3,6 @@ include LICENSE.txt
 include NOTICE.txt
 
 include braindecode/models/summary.csv
-include braindecode/models/steegformer_channels.json
 
 recursive-include docs *.ipynb *.rst conf.py Makefile
 recursive-exclude docs *checkpoint.ipynb
