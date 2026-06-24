@@ -9,7 +9,6 @@ Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 from __future__ import annotations
 
 import math
-import warnings
 from collections import OrderedDict
 
 import torch
@@ -169,9 +168,6 @@ STEEGFORMER_CHANNEL_ORDER: list[str] = [
     "PPO1h",
     "PPO2h",
 ]
-_STEEGFORMER_CHANNEL_INDEX = {
-    name.upper(): i for i, name in enumerate(STEEGFORMER_CHANNEL_ORDER)
-}
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
@@ -299,7 +295,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     Use the regular Hub API to load a re-hosted checkpoint::
 
         model = STEEGFormer.from_pretrained(
-            "braindecode/STEEGFormer-small", n_outputs=4, chs_info=chs_info
+            "braindecode/STEEGFormer-small", n_outputs=4, n_chans=22
         )
 
     The re-hosted repos save complete braindecode model files, so they include a
@@ -319,12 +315,10 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     .. note::
         Numerical equivalence of the encoder features with the reference
         implementation has been verified on the released checkpoints. The
-        channel-to-vocabulary mapping is resolved from the electrode names in
-        ``chs_info`` (looked up in :data:`STEEGFORMER_CHANNEL_ORDER`, the
-        BENDR/LaBraM convention). When ``chs_info`` is absent, it silently uses
-        the identity mapping (channel ``i`` -> slot ``i``); when a provided name
-        is unknown, it warns before using that same fallback. Pass
-        ``chan_pos_idx`` to override the mapping explicitly.
+        channel-to-vocabulary mapping defaults to the identity mapping
+        (input channel ``i`` -> slot ``i``), as in the reference downstream
+        examples. For a non-identity mapping, pass ``chan_pos_idx`` explicitly
+        using indices from :data:`STEEGFORMER_CHANNEL_ORDER`.
 
     Parameters
     ----------
@@ -353,8 +347,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         from (145 for small/base/large, 256 for ``largeV2``), default 145.
     chan_pos_idx : array-like of int, optional
         Montage-vocabulary slot of each input channel, shape ``(n_chans,)``.
-        If omitted, it is resolved from ``chs_info`` electrode names (falling
-        back to ``range(n_chans)``).
+        If omitted, defaults to ``range(n_chans)``.
 
     References
     ----------
@@ -424,14 +417,13 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.n_chans_pos = n_chans_pos
 
         # Map each input channel to its slot in the shared montage vocabulary.
-        # Priority: an explicit ``chan_pos_idx`` wins; otherwise the mapping is
-        # resolved from the electrode names in ``chs_info`` (the BENDR/LaBraM
-        # convention); if neither is usable, fall back to the identity mapping
-        # (channel i -> slot i), as in the reference example.
+        # By default, keep the identity mapping (channel i -> slot i), as in
+        # the reference downstream example. Pass chan_pos_idx for any
+        # non-identity channel order.
         if chan_pos_idx is not None:
             chan_pos_idx = torch.as_tensor(chan_pos_idx, dtype=torch.long)
         else:
-            chan_pos_idx = self._chan_pos_idx_from_chs_info()
+            chan_pos_idx = torch.arange(self.n_chans, dtype=torch.long)
         if chan_pos_idx.shape != (self.n_chans,):
             raise ValueError(
                 f"chan_pos_idx must have shape ({self.n_chans},), got "
@@ -443,9 +435,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 f"[{int(chan_pos_idx.min())}, {int(chan_pos_idx.max())}]."
             )
         # Non-persistent: the channel->vocab-slot selection is montage-specific
-        # and is recomputed from chs_info/chan_pos_idx at construction, so it
-        # must NOT be baked into a pushed checkpoint (it would clobber or
-        # shape-mismatch a different montage on from_pretrained).
+        # and is recomputed from chan_pos_idx at construction, so it must NOT be
+        # baked into a pushed checkpoint (it would clobber or shape-mismatch a
+        # different montage on from_pretrained).
         self.register_buffer("channel_indices", chan_pos_idx, persistent=False)
 
         # Patch embedding + positional embeddings + CLS token.
@@ -487,36 +479,6 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         elif isinstance(module, nn.LayerNorm):
             nn.init.ones_(module.weight)
             nn.init.zeros_(module.bias)
-
-    def _chan_pos_idx_from_chs_info(self) -> torch.Tensor:
-        """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.
-
-        Looks each electrode name up in :data:`STEEGFORMER_CHANNEL_ORDER`
-        (case-insensitive), the BENDR/LaBraM convention. Falls back to the
-        identity mapping silently when ``chs_info`` is absent and with a warning
-        when names are outside the montage vocabulary.
-        """
-        try:
-            chs_info = self.chs_info
-        except ValueError:
-            chs_info = None
-        if not chs_info:
-            return torch.arange(self.n_chans)
-        names = [ch["ch_name"] for ch in chs_info]  # type: ignore[index]
-        idx = [_STEEGFORMER_CHANNEL_INDEX.get(n.upper()) for n in names]
-        missing = [n for n, j in zip(names, idx) if j is None]
-        if missing:
-            shown = ", ".join(missing[:8]) + ("..." if len(missing) > 8 else "")
-            warnings.warn(
-                f"STEEGFormer: {len(missing)} channel name(s) absent from the "
-                f"montage vocabulary ({shown}); falling back to the identity "
-                f"channel mapping. Pass `chan_pos_idx` explicitly to align an "
-                f"arbitrary montage with the pre-trained channel embedding.",
-                UserWarning,
-                stacklevel=2,
-            )
-            return torch.arange(self.n_chans)
-        return torch.tensor(idx, dtype=torch.long)
 
     def reset_head(self, n_outputs):
         """Replace the linear classification head for a new ``n_outputs``.
