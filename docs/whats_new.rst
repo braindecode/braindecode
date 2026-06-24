@@ -41,6 +41,22 @@ Enhancements
 - Add :class:`braindecode.models.STEEGFormer`, a ViT-based EEG foundation
   model pre-trained with a masked-autoencoder objective, from Yang et al.
   (ICLR 2026). By `Adam Mounir`_.
+- Add separate EEGNet and TCN dropout rates to
+  :class:`braindecode.models.EEGTCNet` via the new ``drop_prob_eeg`` and
+  ``drop_prob_tcn`` arguments, enabling the source/paper configuration
+  (``p_eeg=0.2``, ``p_tcn=0.3``). Both default to ``drop_prob``, so existing
+  behavior is unchanged. (:gh:`1060` by `Bruno Aristimunha`_)
+- Add an opt-in ``conv_max_norm_const`` argument and a
+  :meth:`~braindecode.models.ATCNet.source_optimizer_param_groups` helper to
+  :class:`braindecode.models.ATCNet`, exposing the official implementation's
+  convolution/TCN max-norm constraint (``0.6``) and ``L2`` weight-decay groups
+  (conv/TCN ``0.009``, dense ``0.5``). Defaults preserve current behavior.
+  (:gh:`1061` by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.TCFormer`, the Temporal Convolutional
+  Transformer for EEG motor-imagery decoding: a multi-kernel CNN front-end, a
+  grouped-query attention Transformer with rotary positional embeddings, and a
+  grouped temporal convolutional network head. (:gh:`1065` by `Bruno
+  Aristimunha`_)
 
 API and behavior changes
 ========================
@@ -51,6 +67,16 @@ API and behavior changes
   :class:`braindecode.models.AttnSleep`), ``TSceptionV1`` (use
   :class:`braindecode.models.TSception`), and ``BNCI2014001`` (use
   :class:`braindecode.datasets.BNCI2014_001`). (:gh:`1045` by `Bhargav Kowshik`_)
+- :class:`braindecode.models.EEGTCNet` now inserts a
+  :class:`~torch.nn.BatchNorm1d` after each TCN convolution (and uses a bias in
+  the residual downsample), matching the original Keras implementation. This
+  closes a documented replicability gap but changes the default architecture and
+  parameter count; pass ``tcn_batch_norm=False`` to recover the previous
+  behavior (e.g. to load checkpoints trained before this change). By
+  `Bruno Aristimunha`_.
+- Change the default ``proto_cpt_std`` of :class:`braindecode.models.SSTDPN`
+  from ``0.01`` to ``1.0``, matching the source ``torch.randn`` initialization
+  of the intra-class compactness prototypes. By `Bruno Aristimunha`_.
 
 Requirements
 ============
@@ -63,6 +89,11 @@ Requirements
 
 Bug fixes
 ==========
+
+- Fix :class:`braindecode.models.SSTDPN` renormalizing ``proto_sep`` along the
+  wrong axis: the inter-class separation prototypes are now constrained per
+  class-row (``dim=0``) as in the paper/source (``||s_i|| <= S``), instead of
+  across classes (``dim=1``). (:gh:`1059` by `Bruno Aristimunha`_)
 
 - Fix :class:`~braindecode.models.ContraWR`,
   :class:`~braindecode.models.DeepSleepNet`, and
@@ -102,6 +133,12 @@ Bug fixes
 
 Code health
 ============
+
+- Silence the new "training set smaller than ``batch_size``" warning
+  (:gh:`1053`) in the ``test_eegneuralnet`` signal-argument tests, which
+  intentionally fit tiny mock data to check argument propagation rather than
+  to train. Keeps the warning meaningful by not emitting it on every CI run.
+  (:gh:`1056` by `Adam Mounir`_)
 
 - Install CPU-only PyTorch wheels in the ``tests`` and ``docs`` CI
   workflows via ``UV_TORCH_BACKEND=cpu``. GitHub runners have no GPU, so

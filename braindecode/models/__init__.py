@@ -56,6 +56,7 @@ from .sparcnet import SPARCNet
 from .sstdpn import SSTDPN
 from .steegformer import STEEGFormer
 from .syncnet import SyncNet
+from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
 from .tsinception import TSception
@@ -132,6 +133,7 @@ __all__ = [
     "STEEGFormer",
     "SyncNet",
     "BDTCN",
+    "TCFormer",
     "TCN",
     "TIDNet",
     "TSception",

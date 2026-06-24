@@ -184,6 +184,7 @@ interface for all EEG models and can derive variable names when needed.
      SPARCNet
      SSTDPN
      SyncNet
+     TCFormer
      TIDNet
      TSception
      USleep

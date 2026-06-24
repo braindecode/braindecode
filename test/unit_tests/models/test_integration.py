@@ -521,6 +521,9 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # einops Rearrange layers and the interleaved-RoPE slicing in the
+        # grouped-query attention are not torch.jit.script-able.
+        "TCFormer",
         # forward() returns Dict[str, Tensor] (features) or Tensor (logits);
         # torch.jit.script rejects this polymorphic return type.
         "EEGDINO",
