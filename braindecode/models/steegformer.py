@@ -12,7 +12,6 @@ import math
 
 import torch
 from einops import rearrange
-from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -288,9 +287,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.patch_embed = _PatchEmbedEEG(patch_size, embed_dim)
         self.temporal_pos = _TemporalPositionalEncoding(embed_dim)
         self.channel_pos = _ChannelPositionalEmbed(n_chans_pos, embed_dim)
-        self.flatten_tokens = Rearrange(
-            "batch seq n_chans embed_dim -> batch (seq n_chans) embed_dim"
-        )
+        self.flatten_tokens = nn.Flatten(start_dim=1, end_dim=2)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_drop = nn.Dropout(drop_prob)
 
