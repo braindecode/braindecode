@@ -367,8 +367,8 @@ class DANCE(EEGModuleMixin, nn.Module):
             )
         if x.shape[-1] < self._min_n_times:
             raise ValueError(
-                f"n_times={x.shape[-1]} is shorter than the conv stack's "
-                f"receptive field ({self._min_n_times} samples)."
+                f"n_times={x.shape[-1]} is shorter than the minimum input "
+                f"length ({self._min_n_times} samples = one conv kernel)."
             )
         x = self.input_drop(x)
         # The merger is nested inside self.conv; pass positions through it.

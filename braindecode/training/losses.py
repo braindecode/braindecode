@@ -219,6 +219,9 @@ class DanceLoss(nn.Module):
         cls_term = self.weight_class * self.ce(logits, labels)
         # ELEMENTWISE IoU over the matched (B, Q) spans.
         iou = iou_1d(mp["start"], mp["end"], mt["start"], mt["end"])
+        # Averages over ALL Q queries: unmatched/no-object slots contribute
+        # (1 - 0) = 1. Documented loose-port choice (not upstream's
+        # matched-only normalization); kept for parity with the dense head.
         iou_term = self.weight_iou * (1.0 - iou).mean()
 
         # Dense head time dim MUST equal num_latents (defensive guard).

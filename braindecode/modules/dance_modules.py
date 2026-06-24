@@ -198,8 +198,10 @@ class SimpleConv(nn.Module):
             )
             dilation = dilation * dilation_growth
         self.sequence = nn.ModuleList(blocks)
-        # Dilation of the LAST block, for the model's min-length guard.
-        self.max_dilation = int(dilation_growth ** (depth - 1))
+        # Dilation of the LAST block, read from the built conv stack so it
+        # reflects the int-cumulative ConvSequence schedule (Global Constraint
+        # line 22) rather than the power-form ``int(growth ** (depth - 1))``.
+        self.max_dilation = self.sequence[-1].conv.dilation[0]
 
     def forward(
         self,
@@ -392,6 +394,7 @@ class Perceiver(nn.Module):
 
 
 def _sinusoidal_embeddings(length, dim):
+    # (duplicate of _sinusoidal_latents; kept separate intentionally)
     pe = torch.zeros(length, dim)
     position = torch.arange(0, length).unsqueeze(1).float()
     div_term = torch.exp(
@@ -426,9 +429,12 @@ class _DecoderLayer(nn.Module):
 class DanceDetrDecoder(nn.Module):
     """DETR cross-attention decoder emitting per-query event spans.
 
-    Re-implemented with standard pre-norm MultiHeadAttention; bit-exact parity
+    Re-implemented with inline pre-norm self-/cross-attention; bit-exact parity
     with x_transformers' ScaleNorm/rotary/scale_residual block is NOT a goal
     (see plan Global Constraints). ``center``/``duration`` heads are dropped.
+
+    Note: ``activation`` is accepted for interface symmetry but the feed-forward
+    hardwires GEGLU (see :class:`_FeedForward`); changing it has no effect.
     """
 
     def __init__(
