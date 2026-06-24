@@ -172,10 +172,10 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     from the official MAE pretraining; pass ``n_outputs`` for the downstream
     task so the head is rebuilt as needed.
 
-    To regenerate the re-hosted files from the official GitHub checkpoints,
-    run the standalone ``convert_checkpoint.py`` archived in each Hub repo; the
-    model itself loads braindecode-format state dicts, so ``from_pretrained``
-    needs no conversion.
+    To regenerate the re-hosted files from the official GitHub checkpoints, run
+    the standalone ``convert_steegformer_checkpoints.py`` archived in each Hub
+    repo; the model itself loads braindecode-format state dicts, so
+    ``from_pretrained`` needs no conversion.
 
     .. note::
         Numerical equivalence of the encoder features with the reference
