@@ -404,6 +404,15 @@ def test_throwaway_index_loader_backward_compat():
     assert net._last_window_inds_ is crop  # index stashed for scoring
 
 
+def test_looks_like_channel_mask_dtypes():
+    from braindecode.util import _looks_like_channel_mask
+
+    assert _looks_like_channel_mask(torch.ones(4, 10, dtype=torch.bool))
+    assert _looks_like_channel_mask(np.ones((4, 10), dtype=bool))  # numpy bool
+    assert not _looks_like_channel_mask(torch.randn(4, 10, 3))  # float positions
+    assert not _looks_like_channel_mask(np.zeros((4, 10, 3), dtype="float32"))
+
+
 def test_throwaway_index_loader_routes_pos_and_mask():
     """Extended batches route signal/pos/mask into a dict for skorch splat."""
     B, C, T = 4, 10, 200

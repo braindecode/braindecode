@@ -341,10 +341,11 @@ def _looks_like_channel_mask(tensor):
     """Tell the channel mask from channel positions in an extended batch.
 
     ``pad_channels_collate`` emits the mask as a boolean tensor and the
-    positions as float; keying on dtype avoids misclassifying a 2D position
-    array as a mask.
+    positions as float; keying on the boolean dtype avoids misclassifying a 2D
+    position array as a mask. Accepts both torch and NumPy boolean dtypes.
     """
-    return getattr(tensor, "dtype", None) == torch.bool
+    dtype = getattr(tensor, "dtype", None)
+    return dtype == torch.bool or getattr(dtype, "kind", None) == "b"
 
 
 class ThrowAwayIndexLoader(object):

@@ -449,8 +449,12 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
     all_preds, all_ys, all_inds = [], [], []
     with torch.no_grad():
         for batch in loader:
-            # Tolerate extended batches (e.g. with channel positions): the
-            # window indices are always the third element.
+            if len(batch) > 3:
+                raise ValueError(
+                    "Cropped trial prediction does not support channel positions; "
+                    "disable return_ch_pos (set_return_ch_pos(False)) for cropped "
+                    "evaluation."
+                )
             X, y, ind = batch[0], batch[1], batch[2]
             X = X.to(device)
             preds = module(X)
