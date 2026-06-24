@@ -32,6 +32,9 @@ Enhancements
   :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
   pin dataset downloads to a specific branch, tag, or commit on the Hugging
   Face Hub.
+- Clarify the model summary table's ``Type`` column by using ``Prediction`` for
+  supervised heads instead of describing them as classification-only.
+  By `Sarthak Tayal`_.
 - Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.
