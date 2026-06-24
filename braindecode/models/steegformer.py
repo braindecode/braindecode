@@ -375,17 +375,17 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
         self.head_drop = nn.Dropout(drop_prob)
 
-        # Generic trunc-normal init for every Linear/LayerNorm, then the
-        # faithful-port special: a trunc-normal CLS token (the channel
-        # embedding keeps its zero init from _ChannelPositionalEmbed).
+        # Upstream MAE init (xavier-uniform Linears, unit/zero LayerNorm) on every
+        # submodule, then the faithful-port specials: a normal(std=0.02) CLS token
+        # (the channel embedding keeps its zero init from _ChannelPositionalEmbed).
         self.apply(self._init_weights)
-        nn.init.trunc_normal_(self.cls_token, std=0.02)
+        nn.init.normal_(self.cls_token, std=0.02)
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:
-        """Trunc-normal init for ``Linear`` weights, unit/zero for ``LayerNorm``."""
+        """Upstream MAE init: xavier-uniform ``Linear``, unit/zero ``LayerNorm``."""
         if isinstance(module, nn.Linear):
-            nn.init.trunc_normal_(module.weight, std=0.02)
+            nn.init.xavier_uniform_(module.weight)
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
         elif isinstance(module, nn.LayerNorm):

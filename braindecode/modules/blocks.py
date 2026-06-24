@@ -107,18 +107,9 @@ class PatchTokenizer(nn.Module):
                     f"Time dimension ({n_times}) is not divisible by patch_size "
                     f"({patch_size})."
                 )
-        if on_non_divisible == "pad" and n_times % patch_size:
-            n_times_effective = n_times + patch_size - n_times % patch_size
-            self.padding_layer = nn.ConstantPad1d(
-                (0, patch_size - n_times % patch_size), 0.0
-            )
-        elif on_non_divisible == "crop":
-            n_times_effective = n_times - n_times % patch_size
-            self.padding_layer = nn.Identity()
-        else:
-            n_times_effective = n_times
-            self.padding_layer = nn.Identity()
-        self.n_patches = n_times_effective // patch_size
+        # Padding/cropping for a non-divisible time axis is applied at runtime in
+        # _prepare_input (which works for any input length, not just the
+        # construction-time n_times), so no padding submodule is stored here.
         # Defined unconditionally (Identity when not learnable) so the attribute
         # always exists for torch.jit.script, which type-checks both branches.
         self.patcher = nn.Identity()
