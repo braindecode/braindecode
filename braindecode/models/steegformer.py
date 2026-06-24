@@ -12,6 +12,7 @@ import math
 
 import torch
 from einops import rearrange
+from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -287,6 +288,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.patch_embed = _PatchEmbedEEG(patch_size, embed_dim)
         self.temporal_pos = _TemporalPositionalEncoding(embed_dim)
         self.channel_pos = _ChannelPositionalEmbed(n_chans_pos, embed_dim)
+        self.flatten_tokens = Rearrange(
+            "batch seq n_chans embed_dim -> batch (seq n_chans) embed_dim"
+        )
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_drop = nn.Dropout(drop_prob)
 
@@ -365,7 +369,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         tokens = (
             tokens + self.temporal_pos(seq) + self.channel_pos(self.channel_indices)
         )
-        tokens = rearrange(tokens, "b seq c d -> b (seq c) d")
+        tokens = self.flatten_tokens(tokens)
 
         # Prepend the CLS token (combined with the temporal encoding at pos. 0).
         cls = self.cls_token + self.temporal_pos.cls_token_encoding()
@@ -398,7 +402,11 @@ class _PatchEmbedEEG(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # (batch, n_chans, n_times) -> (batch, seq, n_chans, patch_size)
-        patches = rearrange(x, "b c (seq p) -> b seq c p", p=self.patch_size)
+        patches = rearrange(
+            x,
+            "batch n_chans (seq patch_size) -> batch seq n_chans patch_size",
+            patch_size=self.patch_size,
+        )
         # -> (batch, seq, n_chans, embed_dim)
         return self.proj(patches)
 
@@ -443,7 +451,7 @@ class _TemporalPositionalEncoding(nn.Module):
             )
         # Positions 0..seq-1 -> (1, seq, 1, embed_dim) to broadcast over
         # batch and channels.
-        return rearrange(self.pe[:seq], "seq d -> 1 seq 1 d")
+        return rearrange(self.pe[:seq], "seq embed_dim -> 1 seq 1 embed_dim")
 
 
 class _ChannelPositionalEmbed(nn.Module):
@@ -472,7 +480,7 @@ class _ChannelPositionalEmbed(nn.Module):
     def forward(self, channel_indices: torch.Tensor) -> torch.Tensor:
         emb = self.embedding(channel_indices)  # (n_chans, embed_dim)
         # -> (1, 1, n_chans, embed_dim) to broadcast over batch and patches.
-        return rearrange(emb, "c d -> 1 1 c d")
+        return rearrange(emb, "n_chans embed_dim -> 1 1 n_chans embed_dim")
 
 
 class _ResidualAdd(nn.Module):
