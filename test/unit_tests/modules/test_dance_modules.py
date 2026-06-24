@@ -202,3 +202,19 @@ def test_perceiver_full_block_parity():
     mine.load_state_dict(mine_sd, strict=False)
     data = torch.randn(2, 500, 128)
     torch.testing.assert_close(mine(data), up(data), rtol=1e-4, atol=1e-5)
+
+
+from braindecode.modules.dance_modules import DanceDetrDecoder
+
+
+def test_detr_decoder_event_dict_shapes():
+    dec = DanceDetrDecoder(
+        input_dim=128, dim=256, depth=4, heads=4, n_queries=100, n_outputs=4
+    )
+    memory = torch.randn(2, 256, 128)  # (B, num_latents, embed_dim)
+    out = dec(memory)
+    assert out["class"].shape == (2, 100, 4)
+    assert out["start"].shape == (2, 100)
+    assert out["end"].shape == (2, 100)
+    assert (out["start"] >= 0).all() and (out["start"] <= 1).all()  # sigmoid
+    assert (out["end"] >= 0).all() and (out["end"] <= 1).all()

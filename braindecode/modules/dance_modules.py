@@ -389,3 +389,79 @@ class Perceiver(nn.Module):
                 x = self_attn(x) + x
                 x = self_ff(x) + x
         return self.to_logits(x)
+
+
+def _sinusoidal_embeddings(length, dim):
+    pe = torch.zeros(length, dim)
+    position = torch.arange(0, length).unsqueeze(1).float()
+    div_term = torch.exp(
+        torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim)
+    )
+    pe[:, 0::2] = torch.sin(position * div_term)
+    pe[:, 1::2] = torch.cos(position * div_term)
+    return pe
+
+
+class _DecoderLayer(nn.Module):
+    def __init__(self, dim, heads, drop_prob, activation):
+        super().__init__()
+        self.self_attn = _Attention(dim, None, heads, dim // heads)
+        self.cross_attn = _Attention(dim, dim, heads, dim // heads)
+        self.ff = _FeedForward(dim)
+        self.norm1 = nn.LayerNorm(dim)
+        self.norm2 = nn.LayerNorm(dim)
+        self.norm3 = nn.LayerNorm(dim)
+        self.drop = nn.Dropout(drop_prob)
+
+    def forward(self, queries, memory):
+        q = self.norm1(queries)
+        queries = queries + self.drop(self.self_attn(q))
+        q = self.norm2(queries)
+        queries = queries + self.drop(self.cross_attn(q, context=memory))
+        q = self.norm3(queries)
+        queries = queries + self.drop(self.ff(q))
+        return queries
+
+
+class DanceDetrDecoder(nn.Module):
+    """DETR cross-attention decoder emitting per-query event spans.
+
+    Re-implemented with standard pre-norm MultiHeadAttention; bit-exact parity
+    with x_transformers' ScaleNorm/rotary/scale_residual block is NOT a goal
+    (see plan Global Constraints). ``center``/``duration`` heads are dropped.
+    """
+
+    def __init__(
+        self,
+        input_dim: int = 128,
+        dim: int = 256,
+        depth: int = 4,
+        heads: int = 4,
+        n_queries: int = 100,
+        n_outputs: int = 4,
+        drop_prob: float = 0.1,
+        activation: type[nn.Module] = nn.GELU,
+    ):
+        super().__init__()
+        self.input_proj = nn.Linear(input_dim, dim)
+        self.query_embed = nn.Parameter(torch.randn(1, n_queries, dim))
+        self.layers = nn.ModuleList(
+            [_DecoderLayer(dim, heads, drop_prob, activation) for _ in range(depth)]
+        )
+        self.class_head = nn.Linear(dim, n_outputs)
+        self.start_head = nn.Linear(dim, 1)
+        self.end_head = nn.Linear(dim, 1)
+
+    def forward(self, memory: torch.Tensor) -> dict:
+        b, t, _ = memory.shape
+        memory = self.input_proj(memory)  # (B, T, dim)
+        pe = _sinusoidal_embeddings(t, memory.shape[-1]).to(memory)
+        memory = memory + pe.unsqueeze(0).expand(b, -1, -1)
+        x = self.query_embed.expand(b, -1, -1)
+        for layer in self.layers:
+            x = layer(x, memory)
+        return {
+            "class": self.class_head(x),
+            "start": torch.sigmoid(self.start_head(x)).squeeze(-1),
+            "end": torch.sigmoid(self.end_head(x)).squeeze(-1),
+        }
