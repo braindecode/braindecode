@@ -45,10 +45,10 @@ Columns definitions:
     - **Application**: The application(s) the model is typically used for (e.g., Motor
       Imagery, P300, Sleep Staging). 'General' indicates applicability across multiple
       applications or no specific application focus.
-    - **Type**: The model's output interface. ``Prediction`` indicates a
-      supervised head that can be used for classification or regression, depending
-      on the wrapper, loss, and target. ``Embedding`` indicates a model that exposes
-      an embedding representation through its documented public interface.
+    - **Type**: The model's output interface. ``Prediction`` indicates a supervised head
+      that can be used for classification or regression, depending on the wrapper, loss,
+      and target. ``Embedding`` indicates a model that exposes an embedding
+      representation through its documented public interface.
     - **Sampling Frequency**: The data sampling rate (in Hertz) the model is designed
       for. Note that this might be adaptable depending on the specific dataset and
       application.
