@@ -342,7 +342,7 @@ def test_all_pretrained_models_load(
     cls = getattr(models, model_cls)
     cache_dir = hub_cache_dir
 
-    # BENDR requires n_outputs parameter
+    # BENDR and STEEGFormer require n_outputs to build the classification head
     if model_cls in ("BENDR", "STEEGFormer"):
         model = cls.from_pretrained(repo_id, n_outputs=2, cache_dir=cache_dir)
     else:

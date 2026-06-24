@@ -119,7 +119,10 @@ print(metadata.head(10))
 # For other foundation models (BENDR, BIOT, Labram, STEEGFormer, etc.) the
 # same one-line pattern applies — see :ref:`load-pretrained-models`. For
 # example, the braindecode re-host of the STEEGFormer small checkpoint can be
-# loaded as ``STEEGFormer.from_pretrained("braindecode/STEEGFormer-small")``.
+# loaded as ``STEEGFormer.from_pretrained("braindecode/STEEGFormer-small",
+# n_outputs=len(classes), chs_info=chs_info)`` -- pass ``n_outputs`` to size the
+# classification head and ``chs_info`` to align your montage with the channel
+# vocabulary.
 #
 
 model = SignalJEPA_PreLocal.from_pretrained(

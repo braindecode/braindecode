@@ -36,6 +36,10 @@ from braindecode.modules import (
 # when a ``chs_info`` montage actually needs name-based slot resolution.
 _CHANNELS_REPO = "braindecode/STEEGFormer-small"
 _CHANNELS_FILE = "steegformer_channels.json"
+# Embedding size (n_chans_pos) the published vocabulary is valid for. Name-based
+# chs_info resolution only applies to the small/base/large variants; largeV2's
+# 256-slot HBN vocabulary has no published electrode names.
+_CHANNELS_VOCAB_SIZE = 145
 
 
 @lru_cache(maxsize=1)
@@ -406,9 +410,12 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.
 
         Looks each electrode name up in :data:`STEEGFORMER_CHANNEL_ORDER`
-        (case-insensitive), which is downloaded from the Hub on first use.
-        Falls back to the identity mapping -- and warns -- when ``chs_info`` is
-        absent, the vocabulary cannot be fetched, or a name is outside it.
+        (case-insensitive), which is downloaded from the Hub on first use. Only
+        valid for the 145-slot variants (small/base/large); for other
+        ``n_chans_pos`` (e.g. largeV2's 256-slot HBN vocabulary, whose names are
+        not published) pass ``chan_pos_idx`` explicitly. Falls back to the
+        identity mapping -- and warns -- when ``chs_info`` is absent, the
+        vocabulary does not apply or cannot be fetched, or a name is outside it.
         """
         try:
             chs_info = self.chs_info
@@ -420,6 +427,17 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 "mapping (input channel i -> vocab slot i), which rarely matches "
                 "the pretrained electrode layout. Pass chs_info or chan_pos_idx "
                 "to align your montage with the pre-trained channel embedding.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return torch.arange(self.n_chans)
+        if self.n_chans_pos != _CHANNELS_VOCAB_SIZE:
+            warnings.warn(
+                f"STEEGFormer: name-based channel resolution uses the published "
+                f"{_CHANNELS_VOCAB_SIZE}-slot vocabulary (small/base/large), but "
+                f"this model has n_chans_pos={self.n_chans_pos} (e.g. largeV2's "
+                f"HBN vocabulary, whose electrode names are not published). Pass "
+                f"chan_pos_idx explicitly; using the identity mapping for now.",
                 UserWarning,
                 stacklevel=2,
             )

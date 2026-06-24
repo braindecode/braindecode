@@ -18,7 +18,9 @@ class PatchTokenizer(nn.Module):
     when ``n_times`` is not a multiple of ``patch_size`` the input is right
     zero-padded (a warning is emitted at construction). Set
     ``on_non_divisible="crop"`` to hard-crop the trailing samples instead, or
-    ``"error"`` to reject non-divisible inputs.
+    ``"error"`` to reject non-divisible inputs. Padding/cropping is applied at
+    ``forward`` time to the actual input length (not the construction-time
+    ``n_times``), so the module also accepts inputs of a different length.
 
     Two modes:
 
