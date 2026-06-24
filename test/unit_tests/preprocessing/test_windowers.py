@@ -159,6 +159,9 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
         (raw.time_as_index(raw.annotations.onset[1::2], use_rounding=True)),
         crop_start_inds,
     )
+    np.testing.assert_array_equal(
+        windows.get_metadata()["i_trial_in_dataset"].to_numpy(), np.arange(1, 10, 2)
+    )
 
 
 def test_windows_from_events_different_events(tmpdir_factory):
@@ -601,7 +604,7 @@ def test_metadata_extras(lazy_loadable_dataset, use_mne_epochs):
     # set extras
     for ds in dataset.datasets:
         ann = ds.raw.annotations
-        ann.extras = [{"extra_col": 0} for _ in range(len(ann))]
+        ann.extras = [{"extra_col": i} for i in range(len(ann))]
 
     windows = create_windows_from_events(
         concat_ds=dataset,
@@ -613,12 +616,17 @@ def test_metadata_extras(lazy_loadable_dataset, use_mne_epochs):
         use_mne_epochs=use_mne_epochs,
     )
 
-    for ds in windows.datasets:
-        metadata = windows.get_metadata()
-        assert "extra_col" in metadata.columns
-        np.testing.assert_array_equal(
-            metadata["extra_col"].to_numpy(), np.zeros(len(windows))
-        )
+    metadata = windows.get_metadata()
+    assert len(metadata) == len(windows)
+    assert "extra_col" in metadata.columns
+    assert "i_trial_in_dataset" in metadata.columns
+    np.testing.assert_array_equal(
+        metadata["i_trial_in_dataset"].to_numpy(), np.arange(len(windows))
+    )
+    np.testing.assert_array_equal(
+        metadata["extra_col"].to_numpy(),
+        metadata["i_trial_in_dataset"].to_numpy(),
+    )
 
 
 @pytest.mark.parametrize(
@@ -1521,6 +1529,7 @@ def test_dict_params_bad_trial_dropped_extras_not_misassigned():
     assert (t0_meta["trial_id"] == 30).all(), (
         f"Expected trial_id=30 for surviving T0 windows, got {t0_meta['trial_id'].tolist()}"
     )
+    assert (t0_meta["i_trial_in_dataset"] == 2).all()
 
 
 def _make_small_eeg_windows_dataset(lazy_loadable_dataset):

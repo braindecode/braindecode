@@ -60,6 +60,11 @@ Enhancements
   grouped-query attention Transformer with rotary positional embeddings, and a
   grouped temporal convolutional network head. (:gh:`1065` by `Bruno
   Aristimunha`_)
+- Add ``i_trial_in_dataset`` to
+  :func:`braindecode.preprocessing.create_windows_from_events` metadata so
+  windows expose a stable source annotation index for trial-level alignment,
+  including annotation ``extras`` after mapping, filtering, or dropped trials.
+  (:gh:`1051` by `Bruno Aristimunha`_)
 
 API and behavior changes
 ========================
