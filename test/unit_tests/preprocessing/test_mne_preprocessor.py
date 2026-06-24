@@ -698,7 +698,7 @@ def test_safe_standalone_preprocessor_runs_in_pipeline():
 
 
 def test_unsafe_standalone_preprocessor_uses_wrapper():
-    """Fixed for #1055: functions returning auxiliary data now use a wrapper callable.
+    """Fix for #1055: functions returning auxiliary data now use a wrapper callable.
 
     ``annotate_amplitude`` returns a ``(annotations, bads)`` tuple. Previously
     it kept the function name as a string and therefore failed at apply-time.
