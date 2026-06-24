@@ -183,7 +183,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         This constraint acts as an implicit force to push features away from the origin. Default is 1.0.
 
     proto_cpt_std : float, optional
-        Standard deviation for Intra-class Compactness Prototype initialization. Default is 0.01.
+        Standard deviation for Intra-class Compactness Prototype initialization. Default is 1.0,
+        matching the source ``torch.randn`` initialization.
+
+        .. versionchanged:: 1.6.1
+            Default changed from ``0.01`` to ``1.0`` to match the original implementation.
 
     spt_attn_global_context_kernel : int, optional
         Kernel size for global context embedding in Spatial-Spectral Attention module.
@@ -231,7 +235,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         mvp_kernel_sizes: Optional[List[int]] = None,
         return_features: bool = False,
         proto_sep_maxnorm: float = 1.0,
-        proto_cpt_std: float = 0.01,
+        proto_cpt_std: float = 1.0,
         spt_attn_global_context_kernel: int = 250,
         spt_attn_epsilon: float = 1e-5,
         spt_attn_mode: str = "var",
@@ -327,9 +331,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         """
 
         features = self.encoder(x)  # (b, feat_dim)
-        # Renormalize inter-class separation prototypes
+        # Renormalize inter-class separation prototypes. ``proto_sep`` has shape
+        # (n_outputs, feat_dim); the source constrains each class-row prototype
+        # vector (``||s_i|| <= S``), i.e. renorm along dim=0.
         self.proto_sep.data = torch.renorm(
-            self.proto_sep.data, p=2, dim=1, maxnorm=self.proto_sep_maxnorm
+            self.proto_sep.data, p=2, dim=0, maxnorm=self.proto_sep_maxnorm
         )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
