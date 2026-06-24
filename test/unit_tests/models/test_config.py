@@ -77,9 +77,9 @@ def test_fractional_input_window_seconds_config(n_times, input_window_seconds, s
     This test validates the fix for the bug where int() truncation rejected
     valid configurations in the pydantic validator.
     """
-    from braindecode.models import EEGNetv4
+    from braindecode.models import EEGNet
 
-    ModelConfig = make_model_config(EEGNetv4, ["n_chans", "n_outputs", "n_times"])
+    ModelConfig = make_model_config(EEGNet, ["n_chans", "n_outputs", "n_times"])
 
     # Should not raise ValueError
     cfg = ModelConfig(
@@ -111,9 +111,9 @@ def test_fractional_input_window_seconds_inference_config(
     This test validates that the pydantic validator uses round() instead of int()
     when inferring n_times.
     """
-    from braindecode.models import EEGNetv4
+    from braindecode.models import EEGNet
 
-    ModelConfig = make_model_config(EEGNetv4, ["n_chans", "n_outputs", "n_times"])
+    ModelConfig = make_model_config(EEGNet, ["n_chans", "n_outputs", "n_times"])
 
     cfg = ModelConfig(
         n_chans=22,

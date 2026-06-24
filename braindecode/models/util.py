@@ -189,8 +189,6 @@ def _init_models_dict():
             issubclass(m[1], models.base.EEGModuleMixin)
             and m[1] != models.base.EEGModuleMixin
         ):
-            if m[1].__name__ == "EEGNetv4":
-                continue
             models_dict[m[0]] = m[1]
 
 
@@ -362,6 +360,7 @@ models_mandatory_parameters: list[
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("TCFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("SignalJEPA", ["chs_info"], None),
@@ -434,6 +433,7 @@ models_mandatory_parameters: list[
         {"n_chans": 19, "n_times": 6000},
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    ("EEGDINO", ["n_chans", "n_outputs", "n_times"], None),
 ]
 
 ################################################################
