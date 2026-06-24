@@ -191,3 +191,76 @@ def test_target_builder_synthetic():
     # dense target: tokens for [0.1875*256, 0.4375*256] = [48, 112] set to 2
     assert int(tgt["dense"][48]) == 2 and int(tgt["dense"][111]) == 2
     assert int(tgt["dense"][0]) == 0
+
+
+def test_dance_tutorial_pipeline_runs_end_to_end():
+    """Execute the tutorial's data path + one train/eval step on the synthetic
+    recording. Guards against the gallery never running under html-noplot."""
+    import numpy as np
+    import torch
+    from torch.utils.data import DataLoader
+
+    from braindecode.models import DANCE
+    from braindecode.preprocessing import create_fixed_length_windows
+    from braindecode.training import DanceLoss, f1_event
+    from braindecode.functional import extract_events_from_detr_batch
+
+    ex = _load_example()  # defined in Task 10's test section
+    sfreq, window_s, n_classes, num_latents = 200.0, 32.0, 4, 256
+    win = int(window_s * sfreq)  # 6400
+    concat_ds = ex.build_synthetic_event_dataset(
+        n_chans=19, sfreq=sfreq, n_seconds=128.0, n_classes=n_classes, seed=1
+    )
+    raw = concat_ds.datasets[0].raw
+    events = ex.annotations_to_events(raw, n_classes)
+    assert len(events) > 0  # synthetic recording really has events
+
+    windows_ds = create_fixed_length_windows(
+        concat_ds, window_size_samples=win, window_stride_samples=win,
+        drop_last_window=True, preload=True, use_mne_epochs=False,
+    )
+    assert len(windows_ds) >= 2  # 128 s / 32 s -> 4 windows
+
+    samples = []
+    for i in range(len(windows_ds)):
+        x, _, crop = windows_ds[i]
+        eeg = torch.as_tensor(np.asarray(x), dtype=torch.float32)
+        tgt = ex.dance_target_builder(
+            events, float(crop[1]) / sfreq, window_s,
+            max_events=16, num_latents=num_latents,
+        )
+        assert eeg.shape == (19, win)
+        assert tgt["dense"].shape == (num_latents,)
+        samples.append((eeg, tgt))
+    # at least one window must contain a real (non-padding) event
+    assert any(int((s[1]["class"] != 0).sum()) > 0 for s in samples)
+
+    loader = DataLoader(samples, batch_size=2, collate_fn=ex.dance_collate)
+    model = DANCE(
+        n_outputs=n_classes, n_chans=19, chs_info=raw.info["chs"],
+        n_times=win, sfreq=sfreq, input_window_seconds=window_s,
+    )
+    criterion = DanceLoss(num_latents=num_latents)
+    opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+    model.train()
+    batch = next(iter(loader))
+    out = model.detect(batch["eeg"])
+    assert out["class"].shape == (2, 100, n_classes)
+    assert out["dense"].shape == (2, num_latents, n_classes)
+    loss, details = criterion(out, batch, duration=window_s)
+    assert torch.isfinite(loss)
+    loss.backward()
+    opt.step()
+
+    model.eval()
+    with torch.no_grad():
+        ev = extract_events_from_detr_batch(model.detect(batch["eeg"]), window_s)
+    assert len(ev) == 2  # one event-list per window in the batch
+    gt = [
+        (float(s) * window_s, float(e) * window_s, int(c))
+        for s, e, c in zip(batch["start"][0], batch["end"][0], batch["class"][0])
+        if int(c) != 0
+    ]
+    preds = [(s, e, c) for (s, e, c, _conf) in ev[0]]
+    f1 = f1_event(preds, gt, iou_threshold=0.5)  # finite, in [0, 1]
+    assert 0.0 <= f1 <= 1.0
