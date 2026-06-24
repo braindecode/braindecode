@@ -158,3 +158,36 @@ def test_dance_loss_decreases_on_overfit():
         if step == 0:
             first = float(loss)
     assert float(loss) < first  # overfit batch -> loss goes down
+
+
+import importlib.util
+from pathlib import Path
+
+_EX = Path(__file__).resolve().parents[3] / "examples" / "applied_examples" / \
+    "plot_dance_event_detection.py"
+
+
+def _load_example():
+    spec = importlib.util.spec_from_file_location("_dance_ex", _EX)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_target_builder_synthetic():
+    ex = _load_example()
+    # window [10s, 42s] (32 s); one event 16-24 s, class 2
+    ann = [(16.0, 24.0, 2), (100.0, 110.0, 3)]  # 2nd is outside the window
+    tgt = ex.dance_target_builder(
+        ann, window_onset=10.0, window_duration=32.0,
+        max_events=5, num_latents=256,
+    )
+    assert tgt["start"].shape == (5,)
+    assert tgt["class"].tolist().count(0) == 4  # only one in-window event
+    # event maps to [ (16-10)/32, (24-10)/32 ] = [0.1875, 0.4375]
+    torch.testing.assert_close(tgt["start"][0], torch.tensor(0.1875), atol=1e-4, rtol=0)
+    torch.testing.assert_close(tgt["end"][0], torch.tensor(0.4375), atol=1e-4, rtol=0)
+    assert int(tgt["class"][0]) == 2
+    # dense target: tokens for [0.1875*256, 0.4375*256] = [48, 112] set to 2
+    assert int(tgt["dense"][48]) == 2 and int(tgt["dense"][111]) == 2
+    assert int(tgt["dense"][0]) == 0
