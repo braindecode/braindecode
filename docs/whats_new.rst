@@ -32,6 +32,9 @@ Enhancements
   :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
   pin dataset downloads to a specific branch, tag, or commit on the Hugging
   Face Hub.
+- Clarify the model summary table's ``Type`` column by using ``Prediction`` for
+  supervised heads instead of describing them as classification-only.
+  By `Sarthak Tayal`_.
 - Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.
@@ -496,6 +499,11 @@ Bugs
   Users now get a clear :class:`ImportError` with installation instructions
   (``pip install 'braindecode[hub]'``) instead of an ``AttributeError``.
   (:gh:`1024` by `@copilot`_)
+- Replace the vague ``license: unknown`` field in the auto-generated Hugging
+  Face Hub dataset card with an inferred license (when consistent across all
+  recordings' descriptions) or a ``please-specify`` placeholder with a
+  reminder comment for the user to fill in the dataset's license.
+  (:gh:`1014` by `Fashad Ahmed`_)
 - Fix the documentation header "Cite Braindecode" announcement link: it used a bare
   ``cite.html`` URL, which browsers resolve relative to the current page path and led
   to 404s (for example from ``install/install.html``). The link is now built with
@@ -1324,4 +1332,5 @@ Authors
 .. _Léo Burgund: https://github.com/leob000
 .. _Adam Mounir: https://github.com/adammounir
 .. _Yiheng Li: https://github.com/YihengLi-1
+.. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
