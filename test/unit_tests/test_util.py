@@ -373,3 +373,61 @@ def test_read_all_files_not_extension():
     with pytest.raises(AssertionError):
         # Call the read_all_file_names function with a non-existent directory
         read_all_file_names('non_existent_dir', 'txt')
+
+
+class _FakeNet:
+    """Minimal stand-in for a skorch net used by ThrowAwayIndexLoader."""
+
+
+def _route(batch, is_regression=False):
+    from braindecode.util import ThrowAwayIndexLoader
+
+    net = _FakeNet()
+    loader = ThrowAwayIndexLoader(net, iter([batch]), is_regression=is_regression)
+    (x, y), = list(loader)
+    return x, y, net
+
+
+def test_throwaway_index_loader_backward_compat():
+    """2- and 3-tuple batches keep yielding a plain tensor x (no dict)."""
+    B, C, T = 4, 10, 200
+    X = torch.randn(B, C, T)
+    y = torch.randint(0, 2, (B,))
+    crop = [torch.zeros(B), torch.zeros(B), torch.full((B,), T)]
+
+    x, yy, net = _route((X, y))
+    assert torch.is_tensor(x) and x.dtype == torch.float32
+    assert yy.dtype == torch.int64
+
+    x, yy, net = _route((X, y, crop))
+    assert torch.is_tensor(x)
+    assert net._last_window_inds_ is crop  # index stashed for scoring
+
+
+def test_throwaway_index_loader_routes_pos_and_mask():
+    """Extended batches route signal/pos/mask into a dict for skorch splat."""
+    B, C, T = 4, 10, 200
+    X = torch.randn(B, C, T)
+    y = torch.randint(0, 2, (B,))
+    crop = [torch.zeros(B), torch.zeros(B), torch.full((B,), T)]
+    pos = torch.randn(B, C, 3)
+    mask = torch.ones(B, C, dtype=torch.bool)
+
+    # positions only (uniform + return_ch_pos via default_collate)
+    x, _, _ = _route((X, y, crop, pos))
+    assert isinstance(x, dict) and set(x) == {"x", "pos"}
+    assert x["x"].dtype == torch.float32
+
+    # mask only (pad_channels_collate without positions)
+    x, _, _ = _route((X, y, crop, mask))
+    assert isinstance(x, dict) and set(x) == {"x", "ch_mask"}
+
+    # positions + mask (pad_channels_collate with positions)
+    x, yy, net = _route((X, y, crop, pos, mask))
+    assert set(x) == {"x", "pos", "ch_mask"}
+    assert x["pos"].shape == (B, C, 3) and x["ch_mask"].dtype == torch.bool
+    assert net._last_window_inds_ is crop
+
+    # regression casts y to float even on the dict path
+    _, yy, _ = _route((X, torch.randn(B), crop, pos, mask), is_regression=True)
+    assert yy.dtype == torch.float32

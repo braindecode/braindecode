@@ -28,6 +28,14 @@ Current 1.6.1 (GitHub)
 Enhancements
 ============
 
+- Add opt-in electrode positions in the batch via
+  :meth:`braindecode.datasets.BaseConcatDataset.set_return_ch_pos` and a cached
+  ``ch_pos`` accessor on windowed datasets, plus
+  :func:`braindecode.datasets.pad_channels_collate` to make collections with
+  **heterogeneous montages** (different channel sets) batchable. Positions and a
+  channel mask are routed into the model's ``forward`` under
+  :class:`braindecode.EEGClassifier`. Default-off, so the ``(X, y, crop_inds)``
+  contract is unchanged. (:gh:`1066` by `Bruno Aristimunha`_)
 - Add a ``revision`` keyword argument to
   :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
   pin dataset downloads to a specific branch, tag, or commit on the Hugging

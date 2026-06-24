@@ -192,6 +192,31 @@ def _channel_info(mne_obj):
     return n_ch, type_str, sfreq
 
 
+def _compute_ch_pos(info, targets_from):
+    """Return ``(n_ch, 3)`` float32 electrode positions aligned to ``X``'s rows.
+
+    Positions are the MNE head-frame coordinates ``info["chs"][i]["loc"][:3]``
+    (meters) -- the same representation braindecode models already consume (see
+    e.g. ``signal_jepa``/``REVE``). When ``targets_from != "metadata"`` the
+    window's misc channels are dropped from ``X`` in ``__getitem__``, so the
+    matching misc rows are dropped here too. Emits a one-time ``UserWarning`` if
+    no channel carries a real position (no montage set).
+    """
+    pos = np.asarray([ch["loc"][:3] for ch in info["chs"]], dtype="float32")
+    if targets_from != "metadata":
+        misc_mask = np.asarray(info.get_channel_types()) == "misc"
+        pos = pos[~misc_mask]
+    has_pos = np.isfinite(pos).all(axis=1) & np.any(pos != 0, axis=1)
+    if pos.size and not has_pos.any():
+        warnings.warn(
+            "Returning channel positions but no montage is set: all positions "
+            "are zero/non-finite. Call ``raw.set_montage(...)`` (or set a "
+            "montage during preprocessing) before enabling ``return_ch_pos``.",
+            UserWarning,
+        )
+    return pos
+
+
 def _window_info(crop_inds, sfreq):
     """Extract window size from crop indices.
 
@@ -448,6 +473,10 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
     ):
         self._description = _create_description(description)
         self.transform = transform
+        # Opt-in: when True, ``__getitem__`` appends channel positions (n_ch, 3).
+        # Default off keeps the public ``(X, y, crop_inds)`` contract intact.
+        self.return_ch_pos = False
+        self._ch_pos = None
 
     @abstractmethod
     def __len__(self) -> int:
@@ -751,6 +780,19 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
     def raw(self, value):
         self._raw = value
 
+    @property
+    def ch_pos(self):
+        """Electrode positions ``(n_ch, 3)`` (x, y, z) aligned to ``X``'s channels.
+
+        Cached MNE head-frame coordinates in meters. Rows match the channels
+        returned by :meth:`__getitem__` (misc target channels excluded when
+        ``targets_from="channels"``). All-zero/NaN when no montage is set.
+        """
+        if self._ch_pos is None:
+            info = self._raw.info if self._raw is not None else self._make_mne_info()
+            self._ch_pos = _compute_ch_pos(info, self.targets_from)
+        return self._ch_pos
+
     def __getitem__(self, index: int):
         """Get a window and its target.
 
@@ -793,6 +835,8 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
                 y = X[misc_mask, :]
             y = y.copy()
             X = X[~misc_mask, :]
+        if self.return_ch_pos:
+            return X, y, crop_inds, self.ch_pos
         return X, y, crop_inds
 
     def __len__(self):
@@ -1017,6 +1061,23 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
     def windows(self, value):
         self._windows = value
 
+    @property
+    def ch_pos(self):
+        """Electrode positions ``(n_ch, 3)`` (x, y, z) aligned to ``X``'s channels.
+
+        Cached MNE head-frame coordinates in meters. Rows match the channels
+        returned by :meth:`__getitem__` (misc target channels excluded when
+        ``targets_from="channels"``). All-zero/NaN when no montage is set.
+        """
+        if self._ch_pos is None:
+            info = (
+                self._windows.info
+                if self._windows is not None
+                else self._make_mne_info()
+            )
+            self._ch_pos = _compute_ch_pos(info, self.targets_from)
+        return self._ch_pos
+
     @staticmethod
     def _can_use_fast_get_epoch_from_raw(epochs: mne.BaseEpochs) -> bool:
         """Check if we can use the fast _get_epoch_from_raw method,
@@ -1068,6 +1129,8 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.crop_inds[index].tolist()
+        if self.return_ch_pos:
+            return X, y, crop_inds, self.ch_pos
         return X, y, crop_inds
 
     def __len__(self) -> int:
@@ -1457,6 +1520,43 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                     f"or RawDataset; datasets[{i}] is {type(ds).__name__}."
                 )
         return self
+
+    def set_return_ch_pos(self, value: bool = True) -> "BaseConcatDataset":
+        """Toggle returning electrode positions from every subdataset.
+
+        When enabled, each windowed subdataset's ``__getitem__`` appends a
+        ``(n_ch, 3)`` array of electrode positions (x, y, z), so a batch yields
+        ``(X, y, crop_inds, ch_pos)``. Heterogeneous (variable-channel)
+        collections additionally need
+        :func:`braindecode.datasets.pad_channels_collate` as the DataLoader
+        ``collate_fn``. Default-off: leaves the ``(X, y, crop_inds)`` contract
+        untouched.
+
+        Parameters
+        ----------
+        value : bool
+            Whether to return channel positions (default ``True``).
+
+        Returns
+        -------
+        self : BaseConcatDataset
+        """
+        for ds in self.datasets:
+            ds.return_ch_pos = value
+        return self
+
+    @property
+    def ch_pos(self):
+        """Electrode positions ``(n_ch, 3)`` from the first recording.
+
+        Convenience accessor mirroring how the repr reports channel info "from
+        first recording". For per-sample positions in a heterogeneous
+        collection, enable :meth:`set_return_ch_pos` and read them from the
+        batch instead.
+        """
+        if not self.datasets:
+            raise ValueError("Empty BaseConcatDataset has no channel positions.")
+        return self.datasets[0].ch_pos
 
     def _outdated_save(self, path, overwrite=False):
         """This is a copy of the old saving function, that had inconsistent.

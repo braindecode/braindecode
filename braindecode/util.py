@@ -337,6 +337,17 @@ def create_mne_dummy_raw(
     return raw, save_fname
 
 
+def _looks_like_channel_mask(tensor):
+    """Heuristic: a channel mask is 2D (batch, n_ch) or boolean.
+
+    Used to tell the channel mask (2D bool) from channel positions (3D float)
+    among the trailing elements of an extended batch.
+    """
+    return (
+        getattr(tensor, "dtype", None) == torch.bool or getattr(tensor, "ndim", 0) == 2
+    )
+
+
 class ThrowAwayIndexLoader(object):
     def __init__(self, net, loader, is_regression):
         self.net = net
@@ -353,11 +364,35 @@ class ThrowAwayIndexLoader(object):
                 x, y, i = batch
                 # Store for scoring callbacks
                 self.net._last_window_inds_ = i
+            elif len(batch) > 3:
+                # Extended batch produced by ``return_ch_pos`` /
+                # ``pad_channels_collate``:
+                #   (X, y, crop_inds, [ch_pos], [ch_mask]).
+                # Route the signal + extras to the module via a dict input;
+                # skorch then calls ``module_(**x)``. The forward must accept
+                # ``forward(self, x, pos=None, ch_mask=None, ...)``.
+                signal, y, i = batch[0], batch[1], batch[2]
+                self.net._last_window_inds_ = i
+                x = {"x": signal}
+                for extra in batch[3:]:
+                    if _looks_like_channel_mask(extra):
+                        x["ch_mask"] = extra
+                    else:
+                        x["pos"] = extra
             else:
                 x, y = batch
 
             # TODO: should be on dataset side
-            if hasattr(x, "type"):
+            if isinstance(x, dict):
+                if hasattr(x["x"], "type"):
+                    x["x"] = x["x"].type(torch.float32)
+                if hasattr(y, "type"):
+                    y = (
+                        y.type(torch.float32)
+                        if self.is_regression
+                        else y.type(torch.int64)
+                    )
+            elif hasattr(x, "type"):
                 x = x.type(torch.float32)
                 if self.is_regression:
                     y = y.type(torch.float32)
