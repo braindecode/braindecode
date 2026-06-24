@@ -56,7 +56,7 @@ def __getattr__(name: str):
     # PEP 562: expose STEEGFORMER_CHANNEL_ORDER lazily so importing this module
     # never triggers a network call; the vocabulary is fetched on first access.
     if name == "STEEGFORMER_CHANNEL_ORDER":
-        return _channel_order()
+        return list(_channel_order())
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -287,10 +287,10 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 f"embed_dim must be even for the sinusoidal temporal encoding, "
                 f"got {embed_dim}."
             )
-        if mlp_ratio != int(mlp_ratio):
+        if isinstance(mlp_ratio, bool) or mlp_ratio != int(mlp_ratio):
             # FeedForwardBlock expands by an integer factor; reject non-integer
-            # ratios rather than silently truncating them.
-            raise ValueError(f"mlp_ratio must be a whole number, got {mlp_ratio}.")
+            # (and bool) ratios rather than silently truncating them.
+            raise ValueError(f"mlp_ratio must be a whole number, got {mlp_ratio!r}.")
         mlp_ratio = int(mlp_ratio)
 
         self.patch_size = patch_size
@@ -308,7 +308,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # Priority: explicit ``chan_pos_idx`` wins; otherwise resolve from the
         # electrode names in ``chs_info`` (BENDR/LaBraM convention); if neither
         # is usable, fall back to the identity mapping (channel i -> slot i).
-        if chan_pos_idx is not None:
+        explicit_chan_pos = chan_pos_idx is not None
+        if explicit_chan_pos:
             chan_pos_idx = torch.as_tensor(chan_pos_idx, dtype=torch.long)
         else:
             chan_pos_idx = self._chan_pos_idx_from_chs_info()
@@ -317,7 +318,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 f"chan_pos_idx must have shape ({self.n_chans},), got "
                 f"{tuple(chan_pos_idx.shape)}."
             )
-        if int(chan_pos_idx.max()) >= n_chans_pos or int(chan_pos_idx.min()) < 0:
+        if chan_pos_idx.numel() and (
+            int(chan_pos_idx.max()) >= n_chans_pos or int(chan_pos_idx.min()) < 0
+        ):
             raise ValueError(
                 f"chan_pos_idx values must be in [0, {n_chans_pos}), got range "
                 f"[{int(chan_pos_idx.min())}, {int(chan_pos_idx.max())}]."
@@ -327,6 +330,15 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # baked into a pushed checkpoint (it would clobber or shape-mismatch a
         # different montage on from_pretrained).
         self.register_buffer("channel_indices", chan_pos_idx, persistent=False)
+        # An EXPLICIT chan_pos_idx must survive the (JSON) config round-trip: the
+        # Hub config layer drops numpy/tensor values, silently reverting to the
+        # identity mapping. Store the resolved slots as a JSON-able list. An
+        # auto-resolved mapping is left untouched (None) so chs_info re-resolves
+        # per montage on reload.
+        if explicit_chan_pos:
+            cfg = getattr(self, "_hub_mixin_config", None)
+            if isinstance(cfg, dict):
+                cfg["chan_pos_idx"] = chan_pos_idx.tolist()
 
         # Patch embedding + positional embeddings + CLS token.
         self.patch_embed = PatchTokenizer(
@@ -361,6 +373,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         # Classification head.
         self.norm = nn.LayerNorm(embed_dim, eps=1e-6)
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self.head_drop = nn.Dropout(drop_prob)
 
         # Generic trunc-normal init for every Linear/LayerNorm, then the
         # faithful-port special: a trunc-normal CLS token (the channel
@@ -387,6 +400,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         """
         self._n_outputs = n_outputs
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
+        self._init_weights(self.final_layer)  # match the constructor's head init
 
     def _chan_pos_idx_from_chs_info(self) -> torch.Tensor:
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.
@@ -401,6 +415,14 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         except ValueError:
             chs_info = None
         if not chs_info:
+            warnings.warn(
+                "STEEGFormer: no chs_info provided; using the identity channel "
+                "mapping (input channel i -> vocab slot i), which rarely matches "
+                "the pretrained electrode layout. Pass chs_info or chan_pos_idx "
+                "to align your montage with the pre-trained channel embedding.",
+                UserWarning,
+                stacklevel=2,
+            )
             return torch.arange(self.n_chans)
         try:
             index = _channel_index()  # downloaded from the Hub on first use
@@ -414,7 +436,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 stacklevel=2,
             )
             return torch.arange(self.n_chans)
-        names = [ch["ch_name"] for ch in chs_info]  # type: ignore[index]
+        names = [ch.get("ch_name", "") for ch in chs_info]  # type: ignore[attr-defined]
         idx = [index.get(n.upper()) for n in names]
         missing = [n for n, j in zip(names, idx) if j is None]
         if missing:
@@ -455,6 +477,11 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 f"STEEGFormer requires at least one full temporal patch of "
                 f"{self.patch_size} samples, got input with {x.shape[-1]} samples."
             )
+        if x.shape[1] != self.n_chans:
+            raise ValueError(
+                f"STEEGFormer was built for {self.n_chans} channels but got input "
+                f"with {x.shape[1]}; rebuild the model for this montage."
+            )
         # Tokens + positional embeddings, kept on the (seq, channel) grid.
         tokens = self.patch_embed(x)  # (batch, seq, n_chans, embed_dim)
         tokens = (
@@ -484,7 +511,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             x = x[:, 1:].mean(dim=1)  # mean over tokens, excluding CLS
         else:  # "cls"
             x = self.norm(x)[:, 0]
-        return self.final_layer(x)
+        return self.final_layer(self.head_drop(x))
 
 
 class _TemporalPositionalEncoding(nn.Module):
