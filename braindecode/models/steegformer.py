@@ -9,6 +9,8 @@ Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 from __future__ import annotations
 
 import math
+import warnings
+from collections import OrderedDict
 
 import torch
 from einops import rearrange
@@ -22,6 +24,160 @@ from braindecode.modules import (
     MultiHeadAttention,
     PatchTokenizer,
 )
+
+# Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
+# learned channel embedding has one slot per entry, in this order (the slot
+# index of an electrode is its position in this list). Taken from the authors'
+# ``channels_mapping`` (``pretrain/senloc_file/sen_chan_idx.pkl``,
+# ``LiuyinYang1101/STEEGFormer``, MIT). Used by small/base/large (vocab 145);
+# the HBN ``largeV2`` model uses a different, larger vocabulary.
+STEEGFORMER_CHANNEL_ORDER: list[str] = [
+    "C1",
+    "Pz",
+    "C4",
+    "F6",
+    "FTT8h",
+    "Oz",
+    "Fp1",
+    "FCC5h",
+    "TPP8h",
+    "CPP6h",
+    "C2",
+    "F4",
+    "OI2h",
+    "AF4",
+    "FCz",
+    "CCP6h",
+    "TP8",
+    "POO10h",
+    "FC1",
+    "FC6",
+    "C5",
+    "P8",
+    "FT8",
+    "P6",
+    "P9",
+    "Fz",
+    "AFF1",
+    "TPP10h",
+    "AFF2",
+    "P10",
+    "CPP2h",
+    "M1",
+    "FCC6h",
+    "FTT7h",
+    "FC2",
+    "PPO2",
+    "AFp3h",
+    "AF7",
+    "PO10",
+    "AF8",
+    "CPP1h",
+    "P7",
+    "F1",
+    "AFp4h",
+    "PO9",
+    "FT9",
+    "CP2",
+    "Iz",
+    "FCC1h",
+    "FC5",
+    "T5",
+    "CP5",
+    "CP6",
+    "FFC5h",
+    "F2",
+    "M2",
+    "POO9h",
+    "AFF5h",
+    "PO4",
+    "POO3h",
+    "Fp2",
+    "T3",
+    "CP4",
+    "POz",
+    "TTP7h",
+    "T7",
+    "A2",
+    "CCP4h",
+    "T8",
+    "PPO10h",
+    "FC3",
+    "F3",
+    "F5",
+    "A1",
+    "P3",
+    "FC4",
+    "FCC2h",
+    "FFC6h",
+    "FFT8h",
+    "CCP2h",
+    "CPP4h",
+    "T6",
+    "FTT9h",
+    "PPO6h",
+    "CP3",
+    "CP1",
+    "AF3",
+    "FT10",
+    "OI1h",
+    "TPP9h",
+    "P5",
+    "I2",
+    "CCP1h",
+    "T4",
+    "CCP3h",
+    "O1",
+    "PO5",
+    "PPO9h",
+    "PPO5h",
+    "P1",
+    "AFz",
+    "PO6",
+    "PO3",
+    "O2",
+    "CPP5h",
+    "FFC1h",
+    "FCC4h",
+    "FFT7h",
+    "FFC2h",
+    "FFC4h",
+    "Cz",
+    "TP7",
+    "Fpz",
+    "FTT10h",
+    "PO7",
+    "CPP3h",
+    "P4",
+    "P2",
+    "F8",
+    "CPz",
+    "FCC3h",
+    "FFC3h",
+    "FT7",
+    "I1",
+    "TTP8h",
+    "AFF6h",
+    "CCP5h",
+    "C6",
+    "PPO1",
+    "PO8",
+    "C3",
+    "POO4h",
+    "TPP7h",
+    "F7",
+    "T9",
+    "TP9",
+    "T10",
+    "TP10",
+    "POO1",
+    "POO2",
+    "PPO1h",
+    "PPO2h",
+]
+_STEEGFORMER_CHANNEL_INDEX = {
+    name.upper(): i for i, name in enumerate(STEEGFORMER_CHANNEL_ORDER)
+}
 
 
 class STEEGFormer(EEGModuleMixin, nn.Module):
@@ -66,9 +222,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
       :class:`~braindecode.modules.FeedForwardBlock`. *Role:* mix information
       across all (channel, time-patch) tokens.
     - **Read-out + head** (``STEEGFormer.norm``, ``STEEGFormer.final_layer``).
-      *Operations:* layer-normalise the encoded sequence; ``"avg"`` mean-pools
-      the patch tokens (CLS excluded), while ``"cls"`` takes the CLS token; a
-      linear layer maps to ``n_outputs``. *Role:* produce the class logits.
+      *Operations:* ``"avg"`` mean-pools the patch tokens (CLS excluded);
+      ``"cls"`` layer-normalises the sequence and takes the CLS token; a linear
+      layer maps to ``n_outputs``. *Role:* produce the class logits.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -157,17 +313,19 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
     from the official MAE pretraining; pass ``n_outputs`` for the downstream
     task so the head is rebuilt as needed.
 
-    To regenerate the re-hosted files from the official GitHub checkpoints, use
-    the standalone conversion script archived with the Hugging Face model repos.
-    The model itself expects braindecode-format state dicts.
+    The official MAE checkpoints (GitHub releases of
+    ``LiuyinYang1101/STEEGFormer``) can also be loaded directly:
+    :meth:`load_state_dict` detects the upstream ``timm`` format, keeps the
+    encoder, and remaps it to this module (see that method).
 
     .. note::
         Numerical equivalence of the encoder features with the reference
         implementation has been verified on the released checkpoints. The
-        channel-to-vocabulary mapping defaults to the identity mapping
-        (input channel ``i`` -> slot ``i``), as in the reference downstream
-        examples. For a non-identity mapping, pass ``chan_pos_idx`` explicitly
-        with the channel-embedding indices used by the selected checkpoint.
+        channel-to-vocabulary mapping is resolved from the electrode names
+        in ``chs_info`` (looked up in :data:`STEEGFORMER_CHANNEL_ORDER`, the
+        BENDR/LaBraM convention); when ``chs_info`` is absent or a name is
+        unknown, it falls back to the identity mapping (channel ``i`` -> slot
+        ``i``) with a warning. Pass ``chan_pos_idx`` to override explicitly.
 
     Parameters
     ----------
@@ -196,7 +354,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         from (145 for small/base/large, 256 for ``largeV2``), default 145.
     chan_pos_idx : array-like of int, optional
         Montage-vocabulary slot of each input channel, shape ``(n_chans,)``.
-        If omitted, defaults to ``range(n_chans)``.
+        If omitted, it is resolved from ``chs_info`` electrode names (falling
+        back to ``range(n_chans)``).
 
     References
     ----------
@@ -266,13 +425,13 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self.n_chans_pos = n_chans_pos
 
         # Map each input channel to its slot in the shared montage vocabulary.
-        # By default, keep the identity mapping (channel i -> slot i), as in
-        # the reference downstream example. Pass chan_pos_idx for any
-        # non-identity channel order.
+        # Priority: explicit ``chan_pos_idx`` wins; otherwise resolve from the
+        # electrode names in ``chs_info`` (BENDR/LaBraM convention); if neither
+        # is usable, fall back to the identity mapping (channel i -> slot i).
         if chan_pos_idx is not None:
             chan_pos_idx = torch.as_tensor(chan_pos_idx, dtype=torch.long)
         else:
-            chan_pos_idx = torch.arange(self.n_chans, dtype=torch.long)
+            chan_pos_idx = self._chan_pos_idx_from_chs_info()
         if chan_pos_idx.shape != (self.n_chans,):
             raise ValueError(
                 f"chan_pos_idx must have shape ({self.n_chans},), got "
@@ -349,6 +508,98 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         self._n_outputs = n_outputs
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
 
+    def _chan_pos_idx_from_chs_info(self) -> torch.Tensor:
+        """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.
+
+        Looks each electrode name up in :data:`STEEGFORMER_CHANNEL_ORDER`
+        (case-insensitive). Falls back to the identity mapping -- and warns --
+        when ``chs_info`` is absent or carries names outside the vocabulary.
+        """
+        try:
+            chs_info = self.chs_info
+        except ValueError:
+            chs_info = None
+        if not chs_info:
+            return torch.arange(self.n_chans)
+        names = [ch["ch_name"] for ch in chs_info]  # type: ignore[index]
+        idx = [_STEEGFORMER_CHANNEL_INDEX.get(n.upper()) for n in names]
+        missing = [n for n, j in zip(names, idx) if j is None]
+        if missing:
+            shown = ", ".join(missing[:8]) + ("..." if len(missing) > 8 else "")
+            warnings.warn(
+                f"STEEGFormer: {len(missing)} channel name(s) absent from the "
+                f"montage vocabulary ({shown}); falling back to the identity "
+                f"channel mapping. Pass `chan_pos_idx` explicitly to align an "
+                f"arbitrary montage with the pre-trained channel embedding.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return torch.arange(self.n_chans)
+        return torch.tensor(idx, dtype=torch.long)
+
+    # timm key (inside a block) -> this module's encoder-block key. The fused
+    # ``attn.qkv`` is the only non-1:1 mapping and is split out separately.
+    _TIMM_BLOCK_RENAMES = {
+        "norm1": "0.fn.0",
+        "attn.proj": "0.fn.1.projection",
+        "norm2": "1.fn.0",
+        "mlp.fc1": "1.fn.1.0",
+        "mlp.fc2": "1.fn.1.3",
+    }
+    # Dropped: the MAE decoder, the regenerated sinusoidal buffer, and the
+    # downstream-only keys absent from this encoder.
+    _TIMM_DROP_PREFIXES = ("decoder_", "dec_", "mask_token", "enc_temporal_emd")
+    _TIMM_DROP_EXACT = frozenset(
+        {"pos_embed", "fc_norm.weight", "fc_norm.bias", "head.weight", "head.bias"}
+    )
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Load weights, remapping the official checkpoint if needed.
+
+        The official ST-EEGFormer checkpoints (GitHub releases of
+        ``LiuyinYang1101/STEEGFormer``) are MAE pre-training checkpoints built on
+        ``timm``: encoder weights wrapped under a top-level ``"model"`` key,
+        named in the ``timm`` convention, alongside decoder weights. This
+        override unwraps that format, drops the MAE-decoder and downstream-only
+        keys, renames the ``timm`` blocks to this module's ``encoder`` blocks,
+        and splits the fused ``attn.qkv`` into the separate queries/keys/values
+        of braindecode's :class:`~braindecode.modules.MultiHeadAttention`. A
+        checkpoint already in this module's format is loaded unchanged.
+        """
+        if isinstance(state_dict.get("model"), dict):
+            state_dict = state_dict["model"]
+        if not any("attn.qkv" in k for k in state_dict):
+            return super().load_state_dict(state_dict, *args, **kwargs)
+
+        e = self.embed_dim
+        remapped: "OrderedDict[str, torch.Tensor]" = OrderedDict()
+        for key, value in state_dict.items():
+            if key.startswith(self._TIMM_DROP_PREFIXES) or key in self._TIMM_DROP_EXACT:
+                continue
+            if key == "enc_channel_emd.channel_transformation.weight":
+                remapped["channel_pos.embedding.weight"] = value
+            elif key.startswith("blocks."):
+                _, idx, rest = key.split(".", 2)
+                dst = f"encoder.{idx}."
+                if rest in ("attn.qkv.weight", "attn.qkv.bias"):
+                    suffix = rest.rsplit(".", 1)[1]  # "weight" or "bias"
+                    remapped[f"{dst}0.fn.1.queries.{suffix}"] = value[:e]
+                    remapped[f"{dst}0.fn.1.keys.{suffix}"] = value[e : 2 * e]
+                    remapped[f"{dst}0.fn.1.values.{suffix}"] = value[2 * e :]
+                else:
+                    for src_k, new_k in self._TIMM_BLOCK_RENAMES.items():
+                        if rest.startswith(src_k + "."):
+                            remapped[dst + new_k + rest[len(src_k) :]] = value
+                            break
+            else:
+                # cls_token, patch_embed.proj.*, norm.* share the same name.
+                remapped[key] = value
+
+        # The encoder has no head and the temporal/channel buffers are
+        # regenerated at init, so a non-strict load is required.
+        kwargs.setdefault("strict", False)
+        return super().load_state_dict(remapped, *args, **kwargs)
+
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Encode an EEG batch into class logits (or encoder features).
 
@@ -387,26 +638,27 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         x = self.pos_drop(x)
 
         x = self.encoder(x)
-        x = self.norm(x)
 
         if return_features:
             # Unified foundation-model API: CLS at index 0, patch tokens after.
             return {"features": x[:, 1:, :], "cls_token": x[:, 0, :]}
 
-        # Aggregate normalized tokens, then classify.
+        # Aggregate tokens, then classify. Mirrors the reference: average
+        # pooling discards the CLS token and applies no final norm, whereas the
+        # CLS read-out normalises the sequence first and then takes the CLS token.
         if self.global_pool == "avg":
             x = x[:, 1:].mean(dim=1)  # mean over tokens, excluding CLS
         else:  # "cls"
-            x = x[:, 0]
+            x = self.norm(x)[:, 0]
         return self.final_layer(x)
 
 
 class _TemporalPositionalEncoding(nn.Module):
     """Fixed sinusoidal positional encoding over temporal patches.
 
-    Standard sine/cosine encoding (Vaswani et al., 2017). To match the released
-    checkpoints, both the CLS token and the first temporal patch use position
-    ``0``; the ``seq`` temporal patches therefore use positions ``0..seq-1``.
+    Standard sine/cosine encoding (Vaswani et al., 2017). Position ``0`` is
+    reserved for the CLS token, so the ``seq`` temporal patches use positions
+    ``1..seq`` (matching the released checkpoints).
 
     Parameters
     ----------
@@ -434,14 +686,14 @@ class _TemporalPositionalEncoding(nn.Module):
         return self.pe[0]
 
     def forward(self, seq: int) -> torch.Tensor:
-        if seq > self.max_len:
+        if seq + 1 > self.max_len:
             raise ValueError(
                 f"Too many temporal patches ({seq}) for max_len={self.max_len}; "
                 "increase max_len."
             )
-        # Positions 0..seq-1 -> (1, seq, 1, embed_dim) to broadcast over
-        # batch and channels.
-        return rearrange(self.pe[:seq], "seq embed_dim -> 1 seq 1 embed_dim")
+        # Positions 1..seq (position 0 is reserved for the CLS token) ->
+        # (1, seq, 1, embed_dim) to broadcast over batch and channels.
+        return rearrange(self.pe[1 : seq + 1], "seq embed_dim -> 1 seq 1 embed_dim")
 
 
 class _ChannelPositionalEmbed(nn.Module):
