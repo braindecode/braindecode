@@ -60,6 +60,14 @@ Enhancements
   grouped-query attention Transformer with rotary positional embeddings, and a
   grouped temporal convolutional network head. (:gh:`1065` by `Bruno
   Aristimunha`_)
+- Add an ``n_augmentation`` argument to
+  :class:`braindecode.augmentation.AugmentedDataLoader` for fixed set-expansion:
+  each batch keeps its clean originals and appends ``n_augmentation``
+  independently transformed copies (e.g. the EEG-Inception 6x training set with
+  ``n_augmentation=5``); the default ``0`` preserves the current in-place
+  behavior. The collate is now a picklable callable, so the loader supports
+  ``num_workers > 0``, and several augmentation transforms were vectorized for
+  speed. (:gh:`1070` by `Bruno Aristimunha`_)
 
 API and behavior changes
 ========================
@@ -133,6 +141,31 @@ Bug fixes
   now raised telling the user to lower ``batch_size`` or set
   ``iterator_train__drop_last=False``.
   (:gh:`1053` by `Bhargav Kowshik`_)
+
+- Fix :class:`braindecode.modules.FilterBankLayer` producing ``NaN`` in
+  ``float32``: the IIR path downcast the float64 filter coefficients to the
+  input dtype before :func:`~torchaudio.functional.filtfilt`, so band-pass banks
+  with poles near the unit circle (e.g. the Chebyshev-II banks used by
+  :class:`~braindecode.models.FBMSNet` and :class:`~braindecode.models.FBCNet`)
+  diverged. The recursion now runs in ``float64`` and is cast back.
+  (:gh:`1067` by `Bruno Aristimunha`_)
+
+- Fix :class:`braindecode.models.EEGITNet` diverging from the reference
+  implementation: the inception spatial depthwise convolutions and the final
+  dense layer now carry the authors' max-norm constraints (``1.0`` and
+  ``0.25``), and the dimensionality-reduction convolution uses ``14`` filters
+  instead of ``28``. (:gh:`1068` by `Bruno Aristimunha`_)
+
+- Fix :class:`braindecode.models.MSVTNet` dropping the main classification head
+  when ``return_features=True`` (it returned only the branch predictions, making
+  the paper's joint deep-supervision loss unreproducible). It now returns
+  ``(main_logits, stacked_branch_logits)``, matching the source.
+  (:gh:`1069` by `Bruno Aristimunha`_)
+
+- Fix the spatial convolutions in :class:`braindecode.models.EEGSym` being dense
+  (``groups=1``) with a bias: the authors' ``unit_dconv`` uses grouped/depthwise
+  convolutions without bias, so they now use ``groups=out_channels`` and
+  ``bias=False``. (:gh:`1071` by `Bruno Aristimunha`_)
 
 Code health
 ============

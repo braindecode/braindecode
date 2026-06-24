@@ -504,6 +504,11 @@ class _InceptionBlock(nn.Module):
                             out_channels=filters_per_branch * len(scales_samples),
                             kernel_size=(1, 1, ncha),
                             padding=(0, 0, 0),
+                            # depthwise/grouped spatial conv with no bias, as in
+                            # the authors' ``unit_dconv`` (per-filter spatial
+                            # filtering, not dense mixing across filters).
+                            groups=filters_per_branch * len(scales_samples),
+                            bias=False,
                         ),
                         nn.BatchNorm3d(filters_per_branch * len(scales_samples)),
                         activation,
@@ -621,6 +626,10 @@ class _ResidualBlock(nn.Module):
                             out_channels=filters,
                             kernel_size=(1, 1, ncha),  # Spatial convolution
                             padding=(0, 0, 0),
+                            # depthwise/grouped spatial conv with no bias, as in
+                            # the authors' ``unit_dconv``.
+                            groups=filters,
+                            bias=False,
                         ),
                         nn.BatchNorm3d(filters),
                         activation,

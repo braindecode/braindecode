@@ -338,15 +338,18 @@ class FilterBankLayer(nn.Module):
         Tensor
             Filtered tensor of shape (batch_size, 1, n_chans, n_times).
         """
-        # Apply filtering using torchaudio's filtfilt
+        # Run the recursion in float64 and cast back: IIR band-passes with poles
+        # near the unit circle (e.g. cheby2 banks used by FBMSNet/FBCNet) diverge
+        # to NaN in float32. The coefficient buffers are already float64.
+        orig_dtype = x.dtype
         filtered = filtfilt(
-            x,
-            a_coeffs=a_coeffs.type_as(x).to(x.device),
-            b_coeffs=b_coeffs.type_as(x).to(x.device),
+            x.double(),
+            a_coeffs=a_coeffs.double().to(x.device),
+            b_coeffs=b_coeffs.double().to(x.device),
             clamp=False,
         )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
-        return filtered.unsqueeze(1)
+        return filtered.to(orig_dtype).unsqueeze(1)
 
 
 class GeneralizedGaussianFilter(nn.Module):
