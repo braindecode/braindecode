@@ -27,7 +27,9 @@ from braindecode.datasets import (
 from braindecode.datasets.bids.hub_io import _restore_nan_from_json
 from braindecode.preprocessing import create_fixed_length_windows
 
-mne.set_log_level("ERROR")
+# NB: do not call ``mne.set_log_level`` at module level here -- under pytest it
+# perturbs warning capture for the rest of the session, making later
+# ``pytest.warns`` checks in other test modules spuriously fail (#1072).
 
 CHS_A = ["Fp1", "Fp2", "F3", "F4", "C3", "C4", "P3", "P4"]  # 8 channels
 CHS_B = ["Fz", "Cz", "Pz", "Oz", "T7", "T8", "O1", "O2", "F7", "F8"]  # 10
