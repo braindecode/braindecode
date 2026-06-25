@@ -132,6 +132,19 @@ Bug fixes
   Standalone functions that return auxiliary data (e.g. annotations or bad
   channels) are intentionally left on the existing path for now. (:gh:`885` by
   `Yiheng Li`_)
+
+- Fix :class:`braindecode.preprocessing.AnnotateAmplitude`,
+  :class:`braindecode.preprocessing.AnnotateNan`,
+  :class:`braindecode.preprocessing.AnnotateBreak`,
+  :class:`braindecode.preprocessing.AnnotateMovement`,
+  :class:`braindecode.preprocessing.AnnotateMuscleZscore`,
+  :class:`braindecode.preprocessing.FindBadChannelsLof`, and
+  :class:`braindecode.preprocessing.ComputeBridgedElectrodes` failing at
+  apply-time because the underlying MNE functions return auxiliary data (annotations
+  or bad-channel lists) rather than the modified recording.  Each preprocessor
+  now stores a wrapper callable that applies the returned side effects
+  (``raw.set_annotations`` / ``raw.info['bads']``) and returns the recording.
+  (:gh:`1055` by `Bruno Aristimunha`_)
 - Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
 
 - Fix the broken EEGNeX quickstart snippet on the documentation landing page,
