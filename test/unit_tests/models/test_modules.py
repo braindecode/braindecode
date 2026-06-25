@@ -1347,3 +1347,15 @@ def test_patch_tokenizer():
     expected = tok_linear.proj(patches)
     assert torch.allclose(tok_linear(x), expected)
     assert set(tok_linear.state_dict()) == {"proj.weight", "proj.bias"}
+
+
+def test_gated_linear_unit_geglu_semantics():
+    """GatedLinearUnit halves the last dim and gates with the given activation."""
+    from braindecode.modules import GatedLinearUnit
+
+    glu = GatedLinearUnit()  # default GELU -> GEGLU
+    x = torch.randn(2, 4, 10)
+    value, gate = x.chunk(2, dim=-1)
+    out = glu(x)
+    assert out.shape == (2, 4, 5)
+    assert torch.equal(out, value * torch.nn.functional.gelu(gate))

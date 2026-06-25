@@ -28,6 +28,15 @@ Current 1.6.1 (GitHub)
 Enhancements
 ============
 
+- Add :func:`braindecode.functional.sinusoidal_positional_encoding`, a shared
+  sine/cosine positional-encoding primitive (handling odd dimensions), and reuse
+  it in :class:`braindecode.models.BIOT`, :class:`braindecode.models.MEDFormer`,
+  and :class:`braindecode.models.STEEGFormer` instead of re-deriving the table in
+  each. Encodings are bit-identical, so model behavior is unchanged. Also add
+  :class:`braindecode.modules.GatedLinearUnit`, a configurable GLU-family gate
+  (GEGLU with the default ``nn.GELU``, SwiGLU with ``nn.SiLU``; ``torch.nn.GLU``
+  is hard-wired to the sigmoid) for building gated transformer feed-forwards.
+  (:gh:`1078` by `Bruno Aristimunha`_)
 - Add :class:`braindecode.models.DANCE`, an event detection-and-classification
   model (CNN encoder + Perceiver bottleneck + DETR-style decoder) that detects a
   *set* of ``(start, end, class)`` events from long, unaligned EEG windows, with a

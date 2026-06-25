@@ -9,7 +9,6 @@ Port of Yang et al. (2026), https://github.com/LiuyinYang1101/STEEGFormer
 from __future__ import annotations
 
 import json
-import math
 import warnings
 from functools import lru_cache
 
@@ -18,6 +17,7 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (
     DropPath,
@@ -550,13 +550,7 @@ class _TemporalPositionalEncoding(nn.Module):
     def __init__(self, embed_dim: int, max_len: int = 2048):
         super().__init__()
         self.max_len = max_len
-        position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, embed_dim, 2) * (-math.log(10000.0) / embed_dim)
-        )
-        pe = torch.zeros(max_len, embed_dim)
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = sinusoidal_positional_encoding(max_len, embed_dim)
         # Non-persistent: deterministic, regenerated identically at init.
         self.register_buffer("pe", pe, persistent=False)
 

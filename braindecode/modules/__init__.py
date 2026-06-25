@@ -1,4 +1,4 @@
-from .activation import LogActivation, SafeLog, Square
+from .activation import GatedLinearUnit, LogActivation, SafeLog, Square
 from .attention import (
     CAT,
     CBAM,
@@ -51,6 +51,7 @@ from .util import aggregate_probas
 from .wrapper import Expression, IntermediateOutputWrapper
 
 __all__ = [
+    "GatedLinearUnit",
     "LogActivation",
     "SafeLog",
     "Square",
