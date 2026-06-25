@@ -20,6 +20,17 @@ def test_f1_event_class_mismatch_is_fp():
     assert f1_event(pred, gt, iou_threshold=0.5) == 0.0
 
 
+def test_f1_event_empty_pred_and_empty_gt_is_perfect():
+    # Nothing to detect, nothing predicted -> trivially perfect (F1=1.0).
+    assert f1_event([], [], iou_threshold=0.5) == 1.0
+
+
+def test_f1_event_empty_one_side_is_zero():
+    # Events on only one side -> all FP or all FN -> F1=0.0.
+    assert f1_event([(0.0, 0.5, 1)], [], iou_threshold=0.5) == 0.0
+    assert f1_event([], [(0.0, 0.5, 1)], iou_threshold=0.5) == 0.0
+
+
 def test_f1_event_half_precision():
     gt = [(0.0, 0.5, 1)]
     pred = [(0.0, 0.5, 1), (0.0, 0.01, 1)]  # 1 TP, 1 FP -> P=0.5,R=1 -> F1=2/3

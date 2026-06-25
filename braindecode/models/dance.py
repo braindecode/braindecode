@@ -93,7 +93,7 @@ class DANCE(EEGModuleMixin, nn.Module):
     logits plus sigmoid start/end spans. The dense head provides per-token
     class logits used as ``forward``'s output and for the consistency loss.
 
-    .. versionadded:: 1.5
+    .. versionadded:: 1.6.1
 
     Parameters
     ----------
@@ -152,10 +152,11 @@ class DANCE(EEGModuleMixin, nn.Module):
     decoder_heads : int, optional
         DETR decoder heads. The default is ``4``.
     activation : type[nn.Module], optional
-        Activation class for the DETR decoder ONLY (``self.decoder``). The
-        ``SimpleConv`` front-end hardcodes ``nn.ReLU`` to match upstream (so
-        this knob does NOT change the conv stack, by design). The default is
-        ``nn.GELU``.
+        Accepted for interface symmetry but currently INERT: it is forwarded to
+        ``self.decoder`` yet the decoder feed-forward hardwires GEGLU
+        (:class:`~braindecode.modules.dance_modules._FeedForward`), and the
+        ``SimpleConv`` front-end hardcodes ``nn.ReLU`` to match upstream. No
+        submodule reads it today. The default is ``nn.GELU``.
     drop_prob : float, optional
         Dropout applied to the raw input (``self.input_drop``) and inside the
         DETR decoder (``self.decoder``). Does NOT touch the merger (use
@@ -174,14 +175,9 @@ class DANCE(EEGModuleMixin, nn.Module):
        transformers.
     """
 
-    # NOTE on `self.mapping` (B10): braindecode's `self.mapping` is for renaming
-    # keys inside a *braindecode-published* checkpoint when the class layout
-    # changes between releases (old_braindecode_key -> new_braindecode_key). DANCE
-    # has NO prior braindecode checkpoint, so there are no genuine internal
-    # renames -> we DO NOT define `self.mapping` (no no-op self->self entries).
-    # The UPSTREAM(neuraltrain)->local PARITY weight map is a SEPARATE concern
-    # and lives as a LOCAL dict inside scripts/dance_parity_check.py (Task 13),
-    # NOT here. Do not conflate the two.
+    # No `self.mapping` (B10): it renames keys across braindecode-published
+    # checkpoints, and DANCE has none. The upstream(neuraltrain)->local parity
+    # weight map is a separate concern living in scripts/dance_parity_check.py.
 
     def __init__(
         self,
@@ -277,20 +273,10 @@ class DANCE(EEGModuleMixin, nn.Module):
             activation=nn.ReLU,
             merger=merger,
         )
-        # Minimum input length. The conv stack is SAME-padded
-        # (``_ConvBlock`` pads ``(kernel // 2) * int(dilation)`` per block), so
-        # it mechanically preserves length for any ``T >= 1`` and the dilated
-        # receptive field ``(kernel - 1) * max_dilation + 1`` (here ~30513 with
-        # the default depth=10, dilation_growth=2.5 stack, exposing
-        # ``self.conv.max_dilation``) is NOT an input-length requirement -- it
-        # only describes how far each output token can "see". The guard below
-        # therefore rejects only inputs too short for a single dilated kernel of
-        # the FIRST block to apply (``kernel_size`` samples, dilation 1), which
-        # is the genuine minimum; the larger receptive field is documented for
-        # reference but must not gate realistic windows (a 6400-sample / 32 s @
-        # 200 Hz window is valid). See Task-5 report's flag on the previous
-        # over-conservative ``(kernel - 1) * self.conv.max_dilation + 1``
-        # formula.
+        # The conv stack is SAME-padded, so it preserves length for any T >= 1;
+        # the dilated receptive field is not an input-length requirement. The
+        # genuine minimum is one first-block kernel (dilation 1), so the guard
+        # uses ``conv_kernel_size`` rather than the full receptive field.
         self._min_n_times = conv_kernel_size
         self.perceiver = Perceiver(
             input_dim=embed_dim,
@@ -314,9 +300,10 @@ class DANCE(EEGModuleMixin, nn.Module):
             drop_prob=drop_prob,
             activation=activation,
         )
-        self.apply(self._init_weights)
-        # final_layer LAST so it lands in the last two named_children()
+        # final_layer LAST so it lands in the last two named_children(); init
+        # weights AFTER it exists so the dense head gets the custom init too.
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
+        self.apply(self._init_weights)
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:

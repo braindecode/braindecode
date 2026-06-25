@@ -126,12 +126,13 @@ class HungarianMatcher(nn.Module):
         self.weight_iou = weight_iou
 
     @torch.no_grad()
-    def __call__(self, outputs, targets):
+    def forward(self, outputs, targets):
         cls = outputs["class"]  # (B, Q, n_classes)
         b, q, _ = cls.shape
-        ms = torch.zeros(b, q)
-        me = torch.zeros(b, q)
-        mc = torch.zeros(b, q, dtype=torch.long)
+        # Buffers on the preds' device so GPU targets assign cleanly.
+        ms = torch.zeros(b, q, device=cls.device)
+        me = torch.zeros(b, q, device=cls.device)
+        mc = torch.zeros(b, q, dtype=torch.long, device=cls.device)
         matches = []
         for bi in range(b):
             tgt_cls = targets["class"][bi]
@@ -148,8 +149,11 @@ class HungarianMatcher(nn.Module):
             iou = pairwise_iou_1d(outputs["start"][bi], outputs["end"][bi], ts, te)
             loc_cost = 1.0 - iou  # (Q, n_targets)
             total = cls_cost + loc_cost  # IoU NOT weighted here
+            # detach() is defensive: the assignment is non-differentiable and
+            # the method is already under @torch.no_grad(), but detach keeps
+            # .numpy() safe if a caller ever drops the no_grad context.
             cost_np = np.nan_to_num(
-                total.cpu().numpy(), nan=1e6, posinf=1e6, neginf=1e6
+                total.detach().cpu().numpy(), nan=1e6, posinf=1e6, neginf=1e6
             )
             q_idx, t_idx = linear_sum_assignment(cost_np)
             for qi, ti in zip(q_idx, t_idx):
@@ -212,8 +216,7 @@ class DanceLoss(nn.Module):
 
     def forward(self, detect_output, targets, duration=None):
         # `duration` kept for API symmetry but UNUSED: the consistency KL is
-        # built on the num_latents token grid directly, so it can never
-        # silently shape-mismatch the dense head (see detr_to_dense_probs).
+        # built on the num_latents token grid directly (see detr_to_dense_probs).
         n_classes = detect_output["class"].shape[-1]
         device = detect_output["class"].device
         # CLASS-0 CONTRACT: matcher keeps tgt_class != 0; unmatched slots = 0.
@@ -228,11 +231,13 @@ class DanceLoss(nn.Module):
         # matched-only normalization); kept for parity with the dense head.
         iou_term = self.weight_iou * (1.0 - iou).mean()
 
-        # Dense head time dim MUST equal num_latents (defensive guard).
-        assert detect_output["dense"].shape[1] == self.num_latents, (
-            f"dense time dim {detect_output['dense'].shape[1]} != "
-            f"num_latents {self.num_latents}"
-        )
+        # Dense head time dim MUST equal num_latents (defensive guard; raise
+        # rather than assert so it survives ``python -O``).
+        if detect_output["dense"].shape[1] != self.num_latents:
+            raise ValueError(
+                f"dense time dim {detect_output['dense'].shape[1]} != "
+                f"num_latents {self.num_latents}"
+            )
         dense_logits = detect_output["dense"].reshape(-1, n_classes)
         if "dense" in targets and targets["dense"] is not None:
             dense_t = targets["dense"].reshape(-1).long().to(device)

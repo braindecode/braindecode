@@ -514,6 +514,10 @@ def f1_event(pred_events, gt_events, iou_threshold: float = 0.5) -> float:
     fp = len(pred_events) - tp
     fn = len(gt_events) - tp
     if tp == 0:
+        # Nothing to detect and nothing predicted is trivially perfect (F1=1.0);
+        # 0.0 only when one side has events the other does not.
+        if not pred_events and not gt_events:
+            return 1.0
         return 0.0
     precision = tp / (tp + fp)
     recall = tp / (tp + fn)
