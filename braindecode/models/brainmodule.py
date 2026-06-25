@@ -174,7 +174,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
         Values > 1.0 grow channels deeper; < 1.0 shrink them.
         Note: growth != 1.0 disables residual connections between layers
         with different channel sizes.
-    dilation_growth : int, default=2
+    dilation_growth : float, default=2
         Dilation multiplier per layer (e.g., 2 means dilation doubles each layer).
         Improves receptive field exponentially. Requires odd kernel_size.
     dilation_period : int, default=5
@@ -264,8 +264,8 @@ class BrainModule(EEGModuleMixin, nn.Module):
         the following verified ways:
 
         1. The default ``kernel_size`` is ``3`` here versus ``9`` upstream.
-        2. The default ``dilation_growth`` is ``2`` (int) here versus ``2.5``
-           (float) upstream; float values are now supported after the
+        2. The default ``dilation_growth`` is ``2`` here versus ``2.5``
+           upstream; non-integer values (e.g. ``2.5``) are supported via the
            internal int-cast of the per-layer dilation.
         3. ``dilation_period=5`` applies a periodic dilation reset here, which
            the upstream DANCE configuration does not use.
@@ -301,7 +301,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
         depth: int = 10,
         kernel_size: int = 3,
         growth: float = 1.0,
-        dilation_growth: int = 2,
+        dilation_growth: float = 2,
         dilation_period: int = 5,
         # Spatial channel merger (optional)
         use_merger: bool = False,
@@ -589,7 +589,7 @@ class _ConvSequence(nn.Module):
         a 3-layer network with 320 hidden dims.
     kernel_size : int, default=3
         Convolutional kernel size. Must be odd for proper padding with dilation.
-    dilation_growth : int, default=2
+    dilation_growth : float, default=2
         Dilation multiplier per layer. Improves receptive field exponentially.
     dilation_period : int, default=5
         Reset dilation to 1 every N layers.
@@ -611,7 +611,7 @@ class _ConvSequence(nn.Module):
         self,
         channels: tp.Sequence[int],
         kernel_size: int = 3,
-        dilation_growth: int = 2,
+        dilation_growth: float = 2,
         dilation_period: int = 5,
         dropout: float = 0.0,
         dropout_input: float = 0.0,
@@ -648,10 +648,11 @@ class _ConvSequence(nn.Module):
             if dilation_period and (k % dilation_period) == 0:
                 dilation = 1
 
-            # Cast to int at use so a float dilation_growth (e.g. 2.5) still
-            # yields integer dilation/padding for nn.Conv1d, while the float
-            # accumulation below stays exact (matches upstream neuraltrain's
-            # int-cumulative dilation rule).
+            # Cast to int at use so a float dilation_growth (e.g. 2.5) yields an
+            # integer Conv1d dilation/padding while the accumulator stays float.
+            # The per-block dilation therefore grows as int(dilation_growth**k)
+            # (1, 2, 6, 15, 39, ... for growth=2.5), matching the upstream
+            # brainmagick / neuraltrain SimpleConv conv stack.
             int_dilation = int(dilation)
 
             # Dilated convolution with proper padding to maintain temporal size
@@ -893,7 +894,7 @@ def _validate_brainmodule_params(
     depth: int,
     kernel_size: int,
     growth: float,
-    dilation_growth: int,
+    dilation_growth: float,
     channel_dropout_prob: float,
     channel_dropout_type: str | None,
     glu: int,
@@ -913,7 +914,7 @@ def _validate_brainmodule_params(
         Convolutional kernel size.
     growth : float
         Channel size multiplier per layer.
-    dilation_growth : int
+    dilation_growth : float
         Dilation multiplier per layer.
     channel_dropout_prob : float
         Channel dropout probability.

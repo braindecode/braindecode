@@ -3037,17 +3037,24 @@ def test_brainmodule_merger_shape():
     assert not torch.isnan(out).any()
 
 
-def test_brainmodule_merger_autodisable():
+@pytest.mark.parametrize(
+    "chs_info",
+    [
+        # All-zero loc -> no usable electrode locations.
+        pytest.param(_chs_info_with_loc(np.zeros((8, 12))), id="all_zero_loc"),
+        # chs_info absent -> the guard must read the raw ``self._chs_info``
+        # (None when unset), not the ``chs_info`` property, which raises
+        # ``ValueError`` if never specified.
+        pytest.param(None, id="no_chs_info"),
+    ],
+)
+def test_brainmodule_merger_autodisable(chs_info):
     """use_merger auto-disables (with warning) when chs_info lacks locations."""
     set_random_seeds(0, False)
-    # All-zero loc -> no usable electrode locations.
-    loc = np.zeros((19, 12))
-    chs_info = _chs_info_with_loc(loc)
-
     with pytest.warns(UserWarning):
         m = BrainModule(
-            n_chans=19,
-            n_outputs=4,
+            n_chans=8,
+            n_outputs=2,
             n_times=512,
             sfreq=128,
             chs_info=chs_info,
@@ -3058,31 +3065,9 @@ def test_brainmodule_merger_autodisable():
     assert m.merger is None
     assert m.use_merger is False
 
-    out = m(torch.randn(2, 19, 512))
-    assert out.shape == (2, 4)
-    assert not torch.isnan(out).any()
-
-
-def test_brainmodule_merger_autodisable_no_chs_info():
-    """use_merger auto-disables (with warning) when chs_info is absent.
-
-    Regression: the guard must read the raw ``self._chs_info`` (None when unset),
-    not the ``chs_info`` property, which raises ``ValueError`` if never specified.
-    """
-    set_random_seeds(0, False)
-    with pytest.warns(UserWarning):
-        m = BrainModule(
-            n_chans=8,
-            n_outputs=2,
-            n_times=512,
-            sfreq=128,
-            use_merger=True,  # no chs_info passed
-        )
-    m.eval()
-    assert m.merger is None
-    assert m.use_merger is False
     out = m(torch.randn(2, 8, 512))
     assert out.shape == (2, 2)
+    assert not torch.isnan(out).any()
 
 
 def test_brainmodule_float_dilation_growth():
