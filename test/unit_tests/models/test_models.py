@@ -3070,6 +3070,65 @@ def test_brainmodule_merger_autodisable(chs_info):
     assert not torch.isnan(out).any()
 
 
+def test_brainmodule_merger_with_subject_layers():
+    """Merger + subject_layers: base_channels sizes SubjectLayers to the merged
+    virtual channels (not raw n_chans), so the combined path runs."""
+    set_random_seeds(0, False)
+    loc = np.random.default_rng(0).random((19, 12))
+    chs_info = _chs_info_with_loc(loc)
+
+    m = BrainModule(
+        n_chans=19,
+        n_outputs=4,
+        n_times=512,
+        sfreq=128,
+        chs_info=chs_info,
+        use_merger=True,
+        n_virtual_channels=32,
+        subject_layers=True,
+        subject_dim=8,
+        n_subjects=5,
+    )
+    m.eval()
+    # SubjectLayers is sized to the merged (32) channels, not n_chans (19).
+    assert m.subject_layers_module is not None
+    subject_index = torch.zeros(2, dtype=torch.long)
+    out = m(torch.randn(2, 19, 512), subject_index=subject_index)
+    assert out.shape == (2, 4)
+    assert not torch.isnan(out).any()
+
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_brainmodule_merger_invalid_n_virtual_channels(bad):
+    """n_virtual_channels <= 0 is rejected up front with a clear error."""
+    loc = np.random.default_rng(0).random((4, 12))
+    with pytest.raises(ValueError, match="n_virtual_channels"):
+        BrainModule(
+            n_chans=4,
+            n_outputs=2,
+            n_times=256,
+            sfreq=128,
+            chs_info=_chs_info_with_loc(loc),
+            use_merger=True,
+            n_virtual_channels=bad,
+        )
+
+
+def test_brainmodule_merger_invalid_drop_prob():
+    """merger_drop_prob >= 1 (a radius, not a probability) is rejected."""
+    loc = np.random.default_rng(0).random((4, 12))
+    with pytest.raises(ValueError, match="merger_drop_prob"):
+        BrainModule(
+            n_chans=4,
+            n_outputs=2,
+            n_times=256,
+            sfreq=128,
+            chs_info=_chs_info_with_loc(loc),
+            use_merger=True,
+            merger_drop_prob=1.0,
+        )
+
+
 def test_brainmodule_float_dilation_growth():
     """Float dilation_growth builds and runs (latent int-cast bug fix)."""
     set_random_seeds(0, False)

@@ -195,8 +195,12 @@ class BrainModule(EEGModuleMixin, nn.Module):
         used when ``use_merger=True``; it becomes the effective channel count
         seen by all downstream layers (subject layers, STFT, projection).
     merger_drop_prob : float, default=0.2
-        Spatial attention dropout for the merger (non-parametric, training
-        only). Only used when ``use_merger=True``.
+        Spatial-attention dropout *radius* of the merger (non-parametric,
+        training only) -- NOT a Bernoulli probability. On each training step a
+        random center is drawn in the normalized ``[0, 1]^2`` electrode-position
+        space and every channel within this radius is banned from the attention.
+        Must be in ``[0, 1)``; values ``>= 1`` ban all channels and zero the
+        merger output. Only used when ``use_merger=True``.
     conv_drop_prob : float, default=0.0
         Dropout probability for convolutional layers.
     dropout_input : float, default=0.0
@@ -363,6 +367,19 @@ class BrainModule(EEGModuleMixin, nn.Module):
         self.use_merger = use_merger
         self.merger = None
         if use_merger:
+            if n_virtual_channels <= 0:
+                raise ValueError(
+                    f"n_virtual_channels must be >= 1, got {n_virtual_channels}."
+                )
+            # merger_drop_prob is a spatial-attention *radius* in normalized
+            # [0, 1) electrode-position space (NOT a Bernoulli probability):
+            # values >= 1 ban every channel and zero the merger output.
+            if not 0.0 <= merger_drop_prob < 1.0:
+                raise ValueError(
+                    "merger_drop_prob is a spatial dropout radius in [0, 1), got "
+                    f"{merger_drop_prob}; values >= 1 ban all channels and zero "
+                    "the merger output."
+                )
             self.merger = ChannelMerger(
                 out_channels=n_virtual_channels, dropout=merger_drop_prob
             )
@@ -650,9 +667,11 @@ class _ConvSequence(nn.Module):
 
             # Cast to int at use so a float dilation_growth (e.g. 2.5) yields an
             # integer Conv1d dilation/padding while the accumulator stays float.
-            # The per-block dilation therefore grows as int(dilation_growth**k)
-            # (1, 2, 6, 15, 39, ... for growth=2.5), matching the upstream
-            # brainmagick / neuraltrain SimpleConv conv stack.
+            # Between resets the per-block dilation grows as int(dilation_growth**k)
+            # (e.g. 1, 2, 6, 15, 39, ... for growth=2.5); the dilation_period reset
+            # above restarts it at 1 every ``dilation_period`` blocks. With
+            # dilation_period=None (no reset) this matches the upstream brainmagick
+            # / neuraltrain SimpleConv conv stack.
             int_dilation = int(dilation)
 
             # Dilated convolution with proper padding to maintain temporal size
