@@ -121,9 +121,13 @@ def _fourier_encode(x, max_freq, num_bands):
     return torch.cat((x, orig), dim=-1)
 
 
-def _sinusoidal_latents(num_latents, dim):
-    pe = torch.zeros(num_latents, dim)
-    position = torch.arange(0, num_latents).unsqueeze(1).float()
+def _sinusoidal_pe(length, dim):
+    """Standard transformer sinusoidal positional encoding -> ``(length, dim)``.
+
+    Shared by the Perceiver latent init and the DETR-decoder memory PE.
+    """
+    pe = torch.zeros(length, dim)
+    position = torch.arange(0, length).unsqueeze(1).float()
     div_term = torch.exp(torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim))
     pe[:, 0::2] = torch.sin(position * div_term)
     pe[:, 1::2] = torch.cos(position * div_term)
@@ -214,7 +218,7 @@ class Perceiver(nn.Module):
         context_dim = input_dim + fourier_dim  # = 141
         self.latents = nn.Parameter(torch.randn(num_latents, latent_dim))
         with torch.no_grad():
-            self.latents.copy_(_sinusoidal_latents(num_latents, latent_dim))
+            self.latents.copy_(_sinusoidal_pe(num_latents, latent_dim))
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(
@@ -276,16 +280,6 @@ class Perceiver(nn.Module):
         return self.to_logits(x)
 
 
-def _sinusoidal_embeddings(length, dim):
-    # (duplicate of _sinusoidal_latents; kept separate intentionally)
-    pe = torch.zeros(length, dim)
-    position = torch.arange(0, length).unsqueeze(1).float()
-    div_term = torch.exp(torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim))
-    pe[:, 0::2] = torch.sin(position * div_term)
-    pe[:, 1::2] = torch.cos(position * div_term)
-    return pe
-
-
 class _DecoderLayer(nn.Module):
     def __init__(self, dim, heads, drop_prob, activation):
         super().__init__()
@@ -342,7 +336,7 @@ class DanceDetrDecoder(nn.Module):
     def forward(self, memory: torch.Tensor) -> dict:
         b, t, _ = memory.shape
         memory = self.input_proj(memory)  # (B, T, dim)
-        pe = _sinusoidal_embeddings(t, memory.shape[-1]).to(memory)
+        pe = _sinusoidal_pe(t, memory.shape[-1]).to(memory)
         memory = memory + pe.unsqueeze(0).expand(b, -1, -1)
         x = self.query_embed.expand(b, -1, -1)
         for layer in self.layers:
