@@ -3129,6 +3129,37 @@ def test_brainmodule_merger_invalid_drop_prob():
         )
 
 
+def test_brainmodule_subject_layers_stft_unsupported():
+    """subject_layers + n_fft (STFT) is rejected up front (channel-axis mismatch)."""
+    with pytest.raises(ValueError, match="subject_layers"):
+        BrainModule(
+            n_chans=8,
+            n_outputs=2,
+            n_times=512,
+            sfreq=128,
+            subject_layers=True,
+            subject_dim=4,
+            n_subjects=5,
+            n_fft=64,
+        )
+
+
+def test_brainmodule_merger_stft_warns():
+    """use_merger + n_fft warns about the large input_projection (memory)."""
+    loc = np.random.default_rng(0).random((8, 12))
+    with pytest.warns(UserWarning, match="STFT"):
+        BrainModule(
+            n_chans=8,
+            n_outputs=2,
+            n_times=512,
+            sfreq=128,
+            chs_info=_chs_info_with_loc(loc),
+            use_merger=True,
+            n_virtual_channels=16,
+            n_fft=64,
+        )
+
+
 def test_brainmodule_float_dilation_growth():
     """Float dilation_growth builds and runs (latent int-cast bug fix)."""
     set_random_seeds(0, False)

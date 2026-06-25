@@ -189,7 +189,13 @@ class BrainModule(EEGModuleMixin, nn.Module):
         False, which preserves the plain channel-projection behavior. If
         ``chs_info`` carries no usable electrode locations (``loc`` missing or
         all-zero), ``use_merger`` is automatically disabled and a ``UserWarning``
-        is emitted.
+        is emitted (``get_config()`` still reports the *requested* value, not the
+        effective one). Because the merger weights only exist when it is active,
+        a saved ``state_dict`` can only be reloaded into a model built with the
+        same ``chs_info``; the canonical :meth:`get_config`/:meth:`from_config`
+        (and Hugging Face) paths serialize ``chs_info`` and round-trip correctly,
+        but a manual ``state_dict`` copy that drops ``chs_info`` would silently
+        disable the merger and fail a strict load.
     n_virtual_channels : int, default=270
         Number of virtual output channels produced by the spatial merger. Only
         used when ``use_merger=True``; it becomes the effective channel count
@@ -394,6 +400,29 @@ class BrainModule(EEGModuleMixin, nn.Module):
         # merger runs first in forward(), every later stage operates on the
         # merged virtual channels rather than the raw n_chans.
         base_channels = n_virtual_channels if self.use_merger else self.n_chans
+
+        # The STFT (n_fft) expands the channel axis (channels * 2*freq_bins for
+        # complex, channels * freq_bins otherwise) BEFORE SubjectLayers runs in
+        # forward(), but SubjectLayers is sized to the pre-STFT channel count, so
+        # the combination cannot run. Reject it up front with a clear message
+        # rather than crashing deep in the SubjectLayers einsum.
+        if subject_layers and n_fft is not None:
+            raise ValueError(
+                "subject_layers=True is not supported together with n_fft "
+                "(STFT): the STFT expands the channel axis before SubjectLayers, "
+                "which is sized to the pre-STFT channel count."
+            )
+        # use_merger + STFT applies the STFT to n_virtual_channels (default 270)
+        # virtual channels, so input_projection becomes Conv1d(n_virtual_channels
+        # * freq_bins, hidden_dim) and the STFT intermediate is huge. Warn rather
+        # than forbid (it is valid, just memory-heavy).
+        if self.use_merger and n_fft is not None:
+            warnings.warn(
+                "Combining use_merger with n_fft (STFT) applies the STFT to "
+                f"{n_virtual_channels} virtual channels, producing a very large "
+                "input_projection and STFT intermediate tensor (memory-heavy).",
+                UserWarning,
+            )
 
         # Validate inputs
         _validate_brainmodule_params(
