@@ -67,6 +67,7 @@ from .util import (
     build_model_config,
     extract_channel_locations_from_chs_info,
     models_mandatory_parameters,
+    positions_from_chs_info,
 )
 
 # Call this last in order to make sure the dataset list is populated with
@@ -117,6 +118,7 @@ __all__ = [
     "Labram",
     "LUNA",
     "extract_channel_locations_from_chs_info",
+    "positions_from_chs_info",
     "MEDFormer",
     "MSVTNet",
     "PBT",

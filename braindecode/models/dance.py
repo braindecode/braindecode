@@ -16,12 +16,12 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     _disable_batch_norm_training_if_batch_size_one,  # decorates ``forward``
 )
-from braindecode.modules import ChannelMerger, Perceiver, SimpleConv
-from braindecode.modules.dance_modules import DanceDetrDecoder
-from braindecode.modules.merger import has_valid_locations as _has_valid_locations
-from braindecode.modules.merger import (
+from braindecode.models.util import (
+    has_valid_locations as _has_valid_locations,
     positions_from_chs_info as _positions_from_chs_info,
 )
+from braindecode.modules import ChannelMerger, Perceiver, SimpleConv
+from braindecode.modules.dance_modules import DanceDetrDecoder
 
 
 class DANCE(EEGModuleMixin, nn.Module):

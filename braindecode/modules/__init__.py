@@ -35,7 +35,7 @@ from .layers import (
     TimeDistributed,
 )
 from .linear import LinearWithConstraint, MaxNormLinear
-from .merger import ChannelMerger, FourierEmb, positions_from_chs_info
+from .merger import ChannelMerger, FourierEmb
 from .parametrization import MaxNorm, MaxNormParametrize
 from .stats import (
     LogPowerLayer,
@@ -79,7 +79,6 @@ __all__ = [
     "DepthwiseConv2d",
     "ChannelMerger",
     "FourierEmb",
-    "positions_from_chs_info",
     "Perceiver",
     "SimpleConv",
     "FilterBankLayer",
