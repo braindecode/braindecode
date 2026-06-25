@@ -104,3 +104,37 @@ class LogActivation(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
+
+
+class GatedLinearUnit(nn.Module):
+    r"""Generalized gated linear unit (GLU family).
+
+    Splits the last dimension in half into a ``value`` and a ``gate`` and
+    returns :math:`\text{value} \otimes \text{activation}(\text{gate})`. With the
+    default ``activation=nn.GELU`` this is **GEGLU** (Shazeer, 2020); ``nn.SiLU``
+    gives SwiGLU and ``nn.Sigmoid`` the original GLU. Unlike
+    :class:`torch.nn.GLU`, the gate nonlinearity is configurable (``torch.nn.GLU``
+    is hard-wired to the sigmoid).
+
+    Parameters
+    ----------
+    activation : type[nn.Module], default=nn.GELU
+        Constructor of the gate activation. The default yields GEGLU.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import GatedLinearUnit
+    >>> module = GatedLinearUnit()
+    >>> outputs = module(torch.randn(2, 10, 16))
+    >>> outputs.shape
+    torch.Size([2, 10, 8])
+    """
+
+    def __init__(self, activation: type[nn.Module] = nn.GELU):
+        super().__init__()
+        self.activation = activation()
+
+    def forward(self, x: Tensor) -> Tensor:
+        value, gate = x.chunk(2, dim=-1)
+        return value * self.activation(gate)

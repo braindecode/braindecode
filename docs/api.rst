@@ -215,6 +215,7 @@ stability.
     :template: class_in_subdir
     :recursive:
 
+    GatedLinearUnit
     LogActivation
     SafeLog
 

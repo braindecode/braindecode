@@ -3,6 +3,8 @@ from warnings import warn
 import torch
 from torch import nn
 
+from braindecode.modules.activation import GatedLinearUnit
+
 
 class PatchTokenizer(nn.Module):
     r"""Tokenize an EEG signal into non-overlapping temporal patches.
@@ -293,7 +295,13 @@ class FeedForwardBlock(nn.Sequential):
     drop_p : float
         Dropout probability.
     activation : type[nn.Module], default=nn.GELU
-        Activation function constructor.
+        Activation function constructor. When ``gated=True`` this is the gate
+        nonlinearity of the :class:`~braindecode.modules.GatedLinearUnit`.
+    gated : bool, default=False
+        If ``True``, use a GLU-family feed-forward: the first projection is
+        doubled and split into value/gate (GEGLU with the default ``nn.GELU``).
+        The default ``False`` keeps the classic ``Linear -> activation -> Linear``
+        block, so existing models are unchanged.
 
     Examples
     --------
@@ -307,11 +315,28 @@ class FeedForwardBlock(nn.Sequential):
     """
 
     def __init__(
-        self, emb_size, expansion, drop_p, activation: type[nn.Module] = nn.GELU
+        self,
+        emb_size,
+        expansion,
+        drop_p,
+        activation: type[nn.Module] = nn.GELU,
+        gated: bool = False,
     ):
-        super().__init__(
-            nn.Linear(emb_size, expansion * emb_size),
-            activation(),
-            nn.Dropout(drop_p),
-            nn.Linear(expansion * emb_size, emb_size),
-        )
+        hidden = expansion * emb_size
+        if gated:
+            # GLU-family FFN (GEGLU with the default GELU): the first projection
+            # is doubled so GatedLinearUnit can split it into value/gate.
+            layers = (
+                nn.Linear(emb_size, hidden * 2),
+                GatedLinearUnit(activation),
+                nn.Dropout(drop_p),
+                nn.Linear(hidden, emb_size),
+            )
+        else:
+            layers = (
+                nn.Linear(emb_size, hidden),
+                activation(),
+                nn.Dropout(drop_p),
+                nn.Linear(hidden, emb_size),
+            )
+        super().__init__(*layers)

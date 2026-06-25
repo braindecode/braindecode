@@ -32,8 +32,11 @@ Enhancements
   sine/cosine positional-encoding primitive (handling odd dimensions), and reuse
   it in :class:`braindecode.models.BIOT`, :class:`braindecode.models.MEDFormer`,
   and :class:`braindecode.models.STEEGFormer` instead of re-deriving the table in
-  each. Encodings are bit-identical, so model behavior is unchanged.
-  (:gh:`1078` by `Bruno Aristimunha`_)
+  each. Encodings are bit-identical, so model behavior is unchanged. Also add
+  :class:`braindecode.modules.GatedLinearUnit` and a ``gated`` option on
+  :class:`braindecode.modules.FeedForwardBlock` for GLU-family feed-forwards
+  (GEGLU with the default ``nn.GELU``); default-off, so existing models are
+  unchanged. (:gh:`1078` by `Bruno Aristimunha`_)
 - Add an optional spatial Fourier :class:`braindecode.modules.ChannelMerger`
   (with :class:`braindecode.modules.FourierEmb`) to
   :class:`braindecode.models.BrainModule` via ``use_merger=True``, implementing
