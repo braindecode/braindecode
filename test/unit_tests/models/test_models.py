@@ -3011,40 +3011,90 @@ def _chs_info_with_loc(loc_array):
     return chs_info
 
 
-def test_brainmodule_merger_shape():
-    """Optional spatial merger remaps n_chans -> n_virtual_channels."""
-    set_random_seeds(0, False)
-    # Distinct loc per channel so positions span [0, 1] after min-max.
-    loc = np.random.default_rng(0).random((19, 12))
-    chs_info = _chs_info_with_loc(loc)
+def _rng_chs_info(n_chans, seed=0):
+    """chs_info with distinct random loc per channel (positions span [0, 1])."""
+    return _chs_info_with_loc(np.random.default_rng(seed).random((n_chans, 12)))
 
-    m = BrainModule(
-        n_chans=19,
-        n_outputs=4,
-        n_times=512,
-        sfreq=128,
-        chs_info=chs_info,
-        use_merger=True,
+
+def _run_forward(model, n_chans, n_outputs, n_times=512, batch=2, with_subject=False):
+    """Eval, forward a random batch, assert output shape and no NaNs."""
+    model.eval()
+    kwargs = (
+        {"subject_index": torch.zeros(batch, dtype=torch.long)} if with_subject else {}
     )
-    m.eval()
-
-    assert m.merger is not None
-    assert m.use_merger is True
-    assert m.channel_positions.shape == (19, 2)
-
-    out = m(torch.randn(2, 19, 512))
-    assert out.shape == (2, 4)
+    out = model(torch.randn(batch, n_chans, n_times), **kwargs)
+    assert out.shape == (batch, n_outputs)
     assert not torch.isnan(out).any()
+
+
+@pytest.mark.parametrize(
+    "kwargs, n_chans, n_outputs, with_subject, check",
+    [
+        pytest.param(
+            dict(n_chans=19, chs_info=_rng_chs_info(19), use_merger=True),
+            19,
+            4,
+            False,
+            lambda m: m.merger is not None
+            and m.use_merger
+            and tuple(m.channel_positions.shape) == (19, 2),
+            id="merger",
+        ),
+        pytest.param(
+            dict(
+                n_chans=19,
+                chs_info=_rng_chs_info(19),
+                use_merger=True,
+                n_virtual_channels=32,
+                subject_layers=True,
+                subject_dim=8,
+                n_subjects=5,
+            ),
+            19,
+            4,
+            True,
+            lambda m: m.subject_layers_module is not None,
+            id="merger_subject_layers",
+        ),
+        pytest.param(
+            dict(n_chans=8, subject_layers=True, subject_dim=4, n_subjects=5, n_fft=64),
+            8,
+            2,
+            True,
+            None,
+            id="subject_layers_stft",
+        ),
+        pytest.param(
+            dict(n_chans=8, subject_dim=4, n_subjects=5, n_fft=64),
+            8,
+            2,
+            True,
+            None,
+            id="stft_subject_embedding",
+        ),
+        pytest.param(
+            dict(n_chans=8, dilation_growth=2.5),
+            8,
+            2,
+            False,
+            None,
+            id="float_dilation_growth",
+        ),
+    ],
+)
+def test_brainmodule_forward_runs(kwargs, n_chans, n_outputs, with_subject, check):
+    """Each config constructs, forwards, and yields a clean (B, n_outputs)."""
+    set_random_seeds(0, False)
+    m = BrainModule(n_outputs=n_outputs, n_times=512, sfreq=128, **kwargs)
+    if check is not None:
+        assert check(m)
+    _run_forward(m, n_chans, n_outputs, with_subject=with_subject)
 
 
 @pytest.mark.parametrize(
     "chs_info",
     [
-        # All-zero loc -> no usable electrode locations.
         pytest.param(_chs_info_with_loc(np.zeros((8, 12))), id="all_zero_loc"),
-        # chs_info absent -> the guard must read the raw ``self._chs_info``
-        # (None when unset), not the ``chs_info`` property, which raises
-        # ``ValueError`` if never specified.
         pytest.param(None, id="no_chs_info"),
     ],
 )
@@ -3060,161 +3110,52 @@ def test_brainmodule_merger_autodisable(chs_info):
             chs_info=chs_info,
             use_merger=True,
         )
-    m.eval()
-
     assert m.merger is None
     assert m.use_merger is False
-
-    out = m(torch.randn(2, 8, 512))
-    assert out.shape == (2, 2)
-    assert not torch.isnan(out).any()
+    _run_forward(m, 8, 2)
 
 
-def test_brainmodule_merger_with_subject_layers():
-    """Merger + subject_layers: base_channels sizes SubjectLayers to the merged
-    virtual channels (not raw n_chans), so the combined path runs."""
-    set_random_seeds(0, False)
-    loc = np.random.default_rng(0).random((19, 12))
-    chs_info = _chs_info_with_loc(loc)
-
-    m = BrainModule(
-        n_chans=19,
-        n_outputs=4,
-        n_times=512,
-        sfreq=128,
-        chs_info=chs_info,
-        use_merger=True,
-        n_virtual_channels=32,
-        subject_layers=True,
-        subject_dim=8,
-        n_subjects=5,
-    )
-    m.eval()
-    # SubjectLayers is sized to the merged (32) channels, not n_chans (19).
-    assert m.subject_layers_module is not None
-    subject_index = torch.zeros(2, dtype=torch.long)
-    out = m(torch.randn(2, 19, 512), subject_index=subject_index)
-    assert out.shape == (2, 4)
-    assert not torch.isnan(out).any()
-
-
-@pytest.mark.parametrize("bad", [0, -1])
-def test_brainmodule_merger_invalid_n_virtual_channels(bad):
-    """n_virtual_channels <= 0 is rejected up front with a clear error."""
-    loc = np.random.default_rng(0).random((4, 12))
-    with pytest.raises(ValueError, match="n_virtual_channels"):
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        pytest.param(dict(n_virtual_channels=0), "n_virtual_channels", id="nvc_0"),
+        pytest.param(dict(n_virtual_channels=-1), "n_virtual_channels", id="nvc_neg"),
+        pytest.param(dict(merger_drop_prob=1.0), "merger_drop_prob", id="drop_prob"),
+    ],
+)
+def test_brainmodule_merger_invalid_params(kwargs, match):
+    """Invalid merger params are rejected up front with a clear error."""
+    with pytest.raises(ValueError, match=match):
         BrainModule(
             n_chans=4,
             n_outputs=2,
             n_times=256,
             sfreq=128,
-            chs_info=_chs_info_with_loc(loc),
+            chs_info=_rng_chs_info(4),
             use_merger=True,
-            n_virtual_channels=bad,
+            **kwargs,
         )
-
-
-def test_brainmodule_merger_invalid_drop_prob():
-    """merger_drop_prob >= 1 (a radius, not a probability) is rejected."""
-    loc = np.random.default_rng(0).random((4, 12))
-    with pytest.raises(ValueError, match="merger_drop_prob"):
-        BrainModule(
-            n_chans=4,
-            n_outputs=2,
-            n_times=256,
-            sfreq=128,
-            chs_info=_chs_info_with_loc(loc),
-            use_merger=True,
-            merger_drop_prob=1.0,
-        )
-
-
-def test_brainmodule_subject_layers_stft_runs():
-    """subject_layers + n_fft (STFT) is sized correctly and runs end to end.
-
-    The channel accounting follows the forward order (STFT expands the axis
-    before SubjectLayers), so the combined config no longer crashes.
-    """
-    set_random_seeds(0, False)
-    m = BrainModule(
-        n_chans=8,
-        n_outputs=2,
-        n_times=512,
-        sfreq=128,
-        subject_layers=True,
-        subject_dim=4,
-        n_subjects=5,
-        n_fft=64,
-    )
-    m.eval()
-    subject_index = torch.zeros(2, dtype=torch.long)
-    out = m(torch.randn(2, 8, 512), subject_index=subject_index)
-    assert out.shape == (2, 2)
-    assert not torch.isnan(out).any()
-
-
-def test_brainmodule_stft_with_subject_embedding_runs():
-    """STFT + subject_embedding (no subject_layers) sizes input_projection
-    correctly (latent accounting bug fixed by following the forward order)."""
-    set_random_seeds(0, False)
-    m = BrainModule(
-        n_chans=8,
-        n_outputs=2,
-        n_times=512,
-        sfreq=128,
-        subject_dim=4,
-        n_subjects=5,
-        n_fft=64,
-    )
-    m.eval()
-    subject_index = torch.zeros(2, dtype=torch.long)
-    out = m(torch.randn(2, 8, 512), subject_index=subject_index)
-    assert out.shape == (2, 2)
-    assert not torch.isnan(out).any()
 
 
 def test_brainmodule_merger_stft_warns():
     """use_merger + n_fft warns about the large input_projection (memory)."""
-    loc = np.random.default_rng(0).random((8, 12))
     with pytest.warns(UserWarning, match="STFT"):
         BrainModule(
             n_chans=8,
             n_outputs=2,
             n_times=512,
             sfreq=128,
-            chs_info=_chs_info_with_loc(loc),
+            chs_info=_rng_chs_info(8),
             use_merger=True,
             n_virtual_channels=16,
             n_fft=64,
         )
 
 
-def test_brainmodule_float_dilation_growth():
-    """Float dilation_growth builds and runs (latent int-cast bug fix)."""
-    set_random_seeds(0, False)
-    m = BrainModule(
-        n_chans=8,
-        n_outputs=2,
-        n_times=512,
-        sfreq=128,
-        dilation_growth=2.5,
-    )
-    m.eval()
-
-    out = m(torch.randn(2, 8, 512))
-    assert out.shape == (2, 2)
-    assert not torch.isnan(out).any()
-
-
 def test_brainmodule_default_unchanged():
     """Default behavior is preserved: no merger unless opted in."""
     set_random_seeds(0, False)
-    m = BrainModule(
-        n_chans=8,
-        n_outputs=2,
-        n_times=512,
-        sfreq=128,
-    )
+    m = BrainModule(n_chans=8, n_outputs=2, n_times=512, sfreq=128)
     assert m.merger is None
     assert m.use_merger is False
 
