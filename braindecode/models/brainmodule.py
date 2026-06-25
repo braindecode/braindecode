@@ -401,17 +401,6 @@ class BrainModule(EEGModuleMixin, nn.Module):
         # merged virtual channels rather than the raw n_chans.
         base_channels = n_virtual_channels if self.use_merger else self.n_chans
 
-        # The STFT (n_fft) expands the channel axis (channels * 2*freq_bins for
-        # complex, channels * freq_bins otherwise) BEFORE SubjectLayers runs in
-        # forward(), but SubjectLayers is sized to the pre-STFT channel count, so
-        # the combination cannot run. Reject it up front with a clear message
-        # rather than crashing deep in the SubjectLayers einsum.
-        if subject_layers and n_fft is not None:
-            raise ValueError(
-                "subject_layers=True is not supported together with n_fft "
-                "(STFT): the STFT expands the channel axis before SubjectLayers, "
-                "which is sized to the pre-STFT channel count."
-            )
         # use_merger + STFT applies the STFT to n_virtual_channels (default 270)
         # virtual channels, so input_projection becomes Conv1d(n_virtual_channels
         # * freq_bins, hidden_dim) and the STFT intermediate is huge. Warn rather
@@ -459,32 +448,15 @@ class BrainModule(EEGModuleMixin, nn.Module):
                 channel_type=channel_dropout_type,
             )
 
-        # Initialize subject-specific modules (optional)
-        self.subject_embedding = None
-        self.subject_layers_module = None
-        input_channels = base_channels
+        # Channel accounting MUST follow the forward() order so every combination
+        # is sized correctly: merger (-> base_channels) -> STFT -> subject_layers
+        # -> subject_embedding -> input_projection. (Sizing in a different order
+        # than forward mis-shapes input_projection / SubjectLayers for combined
+        # configs such as subject_layers + STFT.)
+        channels = base_channels
 
-        if subject_dim > 0:
-            self.subject_embedding = _ScaledEmbedding(
-                n_subjects, subject_dim, embedding_scale
-            )
-            input_channels += subject_dim
-
-        if subject_layers:
-            assert subject_dim > 0, "subject_layers requires subject_dim > 0"
-            # Use the effective base channel count (merged virtual channels when
-            # use_merger, else n_chans): the merger runs first in forward(), so
-            # SubjectLayers sees the merged channels. subject_layers is applied
-            # before subject embeddings are concatenated in forward().
-            meg_dim = base_channels
-            dim = hidden_dim if subject_layers_dim == "hidden" else meg_dim
-            self.subject_layers_module = SubjectLayers(
-                meg_dim, dim, n_subjects, subject_layers_id
-            )
-            # After subject_layers, we have 'dim' channels, then add subject_dim
-            input_channels = dim + subject_dim
-
-        # Initialize STFT module (optional)
+        # STFT (optional) expands the channel axis: complex -> 2*freq_bins,
+        # magnitude -> freq_bins. It runs before the subject modules in forward().
         self.stft = None
         if n_fft is not None:
             self.stft = ta.transforms.Spectrogram(
@@ -494,12 +466,29 @@ class BrainModule(EEGModuleMixin, nn.Module):
                 power=None if fft_complex else 1,
                 return_complex=True,
             )
-            # Update input channels for spectrogram
             freq_bins = n_fft // 2 + 1
-            if fft_complex:
-                input_channels *= 2 * freq_bins
-            else:
-                input_channels *= freq_bins
+            channels *= 2 * freq_bins if fft_complex else freq_bins
+
+        # Subject-specific modules (optional). In forward(), subject_layers (a
+        # per-subject 1x1 map channels -> dim) runs first, then subject_embedding
+        # concatenates ``subject_dim`` channels.
+        self.subject_embedding = None
+        self.subject_layers_module = None
+        if subject_layers:
+            assert subject_dim > 0, "subject_layers requires subject_dim > 0"
+            meg_dim = channels
+            dim = hidden_dim if subject_layers_dim == "hidden" else meg_dim
+            self.subject_layers_module = SubjectLayers(
+                meg_dim, dim, n_subjects, subject_layers_id
+            )
+            channels = dim
+        if subject_dim > 0:
+            self.subject_embedding = _ScaledEmbedding(
+                n_subjects, subject_dim, embedding_scale
+            )
+            channels += subject_dim
+
+        input_channels = channels
 
         # Initial projection layer: project input channels to hidden_dim
         # This is crucial for residual connections to work properly

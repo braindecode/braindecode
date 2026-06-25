@@ -3129,19 +3129,48 @@ def test_brainmodule_merger_invalid_drop_prob():
         )
 
 
-def test_brainmodule_subject_layers_stft_unsupported():
-    """subject_layers + n_fft (STFT) is rejected up front (channel-axis mismatch)."""
-    with pytest.raises(ValueError, match="subject_layers"):
-        BrainModule(
-            n_chans=8,
-            n_outputs=2,
-            n_times=512,
-            sfreq=128,
-            subject_layers=True,
-            subject_dim=4,
-            n_subjects=5,
-            n_fft=64,
-        )
+def test_brainmodule_subject_layers_stft_runs():
+    """subject_layers + n_fft (STFT) is sized correctly and runs end to end.
+
+    The channel accounting follows the forward order (STFT expands the axis
+    before SubjectLayers), so the combined config no longer crashes.
+    """
+    set_random_seeds(0, False)
+    m = BrainModule(
+        n_chans=8,
+        n_outputs=2,
+        n_times=512,
+        sfreq=128,
+        subject_layers=True,
+        subject_dim=4,
+        n_subjects=5,
+        n_fft=64,
+    )
+    m.eval()
+    subject_index = torch.zeros(2, dtype=torch.long)
+    out = m(torch.randn(2, 8, 512), subject_index=subject_index)
+    assert out.shape == (2, 2)
+    assert not torch.isnan(out).any()
+
+
+def test_brainmodule_stft_with_subject_embedding_runs():
+    """STFT + subject_embedding (no subject_layers) sizes input_projection
+    correctly (latent accounting bug fixed by following the forward order)."""
+    set_random_seeds(0, False)
+    m = BrainModule(
+        n_chans=8,
+        n_outputs=2,
+        n_times=512,
+        sfreq=128,
+        subject_dim=4,
+        n_subjects=5,
+        n_fft=64,
+    )
+    m.eval()
+    subject_index = torch.zeros(2, dtype=torch.long)
+    out = m(torch.randn(2, 8, 512), subject_index=subject_index)
+    assert out.shape == (2, 2)
+    assert not torch.isnan(out).any()
 
 
 def test_brainmodule_merger_stft_warns():
