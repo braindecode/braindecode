@@ -238,6 +238,8 @@ class DANCE(EEGModuleMixin, nn.Module):
                 UserWarning,
             )
             use_channel_merger = False
+        # Public flag mirroring the fallback decision (``self.conv.merger`` is the
+        # source of truth in forward); kept for introspection/tests.
         self.use_channel_merger = use_channel_merger
 
         # The merger is NESTED INSIDE SimpleConv (self.conv.merger), matching

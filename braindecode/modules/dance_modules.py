@@ -337,7 +337,7 @@ class DanceDetrDecoder(nn.Module):
         b, t, _ = memory.shape
         memory = self.input_proj(memory)  # (B, T, dim)
         pe = _sinusoidal_pe(t, memory.shape[-1]).to(memory)
-        memory = memory + pe.unsqueeze(0).expand(b, -1, -1)
+        memory = memory + pe.unsqueeze(0)  # (t, d) broadcasts over the batch
         x = self.query_embed.expand(b, -1, -1)
         for layer in self.layers:
             x = layer(x, memory)

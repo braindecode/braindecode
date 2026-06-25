@@ -133,12 +133,10 @@ class HungarianMatcher(nn.Module):
         ms = torch.zeros(b, q, device=cls.device)
         me = torch.zeros(b, q, device=cls.device)
         mc = torch.zeros(b, q, dtype=torch.long, device=cls.device)
-        matches = []
         for bi in range(b):
             tgt_cls = targets["class"][bi]
             keep = (tgt_cls != 0).nonzero(as_tuple=True)[0]
             if keep.numel() == 0:
-                matches.append(([], []))
                 continue
             ts = targets["start"][bi][keep]
             te = targets["end"][bi][keep]
@@ -160,18 +158,10 @@ class HungarianMatcher(nn.Module):
                 ms[bi, qi] = ts[ti]
                 me[bi, qi] = te[ti]
                 mc[bi, qi] = tc[ti]
-            matches.append((list(q_idx), list(t_idx)))
-        matched_preds = {
-            "class": outputs["class"],
-            "start": outputs["start"],
-            "end": outputs["end"],
-        }
-        matched_targets = {
-            "class": mc.to(cls.device),
-            "start": ms.to(cls.device),
-            "end": me.to(cls.device),
-        }
-        return matched_preds, matched_targets, matches
+        # mc/ms/me are already on cls.device; unmatched slots stay class 0. The
+        # caller reads preds straight from ``outputs`` (the matcher only sorts
+        # targets onto query slots), so only the matched targets are returned.
+        return {"class": mc, "start": ms, "end": me}
 
 
 class DanceLoss(nn.Module):
@@ -220,12 +210,14 @@ class DanceLoss(nn.Module):
         n_classes = detect_output["class"].shape[-1]
         device = detect_output["class"].device
         # CLASS-0 CONTRACT: matcher keeps tgt_class != 0; unmatched slots = 0.
-        mp, mt, _ = self.matcher(detect_output, targets)
-        logits = mp["class"].reshape(-1, n_classes)
+        mt = self.matcher(detect_output, targets)
+        logits = detect_output["class"].reshape(-1, n_classes)
         labels = mt["class"].reshape(-1).long()
         cls_term = self.weight_class * self.ce(logits, labels)
         # ELEMENTWISE IoU over the matched (B, Q) spans.
-        iou = iou_1d(mp["start"], mp["end"], mt["start"], mt["end"])
+        iou = iou_1d(
+            detect_output["start"], detect_output["end"], mt["start"], mt["end"]
+        )
         # Averages over ALL Q queries: unmatched/no-object slots contribute
         # (1 - 0) = 1. Documented loose-port choice (not upstream's
         # matched-only normalization); kept for parity with the dense head.
@@ -246,11 +238,9 @@ class DanceLoss(nn.Module):
         dense_term = self.weight_dense * self.ce(dense_logits, dense_t)
 
         dense_probs = torch.softmax(detect_output["dense"], -1).clamp(min=1e-8)
-        detr_probs = (
-            detr_to_dense_probs(detect_output, self.num_latents, n_classes)
-            .clamp(min=1e-8)
-            .to(device)
-        )  # (B, num_latents, n_classes) == dense_probs
+        detr_probs = detr_to_dense_probs(
+            detect_output, self.num_latents, n_classes
+        ).clamp(min=1e-8)  # (B, num_latents, n_classes) == dense_probs
         cons_term = self.weight_consistency * (
             self.kl(detr_probs.log(), dense_probs).sum(dim=-1).mean()
         )
