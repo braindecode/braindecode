@@ -349,7 +349,11 @@ class BrainModule(EEGModuleMixin, nn.Module):
         # Spatial channel merger (optional). The merger remaps the channel axis
         # n_chans -> n_virtual_channels BEFORE everything else, so all downstream
         # input-channel accounting uses the merged count when enabled.
-        if use_merger and not has_valid_locations(self.chs_info):
+        # Use the raw ``self._chs_info`` (None when unset) -- the ``chs_info``
+        # property raises if it was never specified, which would turn a graceful
+        # auto-disable into a confusing error for ``use_merger=True`` callers who
+        # passed only ``n_chans``.
+        if use_merger and not has_valid_locations(self._chs_info):
             warnings.warn(
                 "BrainModule: chs_info has no usable electrode locations "
                 "('loc' missing or all-zero); disabling use_merger.",
@@ -362,7 +366,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
             self.merger = ChannelMerger(
                 out_channels=n_virtual_channels, dropout=merger_drop_prob
             )
-            pos = positions_from_chs_info(self.chs_info)  # (n_chans, 2) in [0,1]
+            pos = positions_from_chs_info(self._chs_info)  # (n_chans, 2) in [0,1]
             self.register_buffer(
                 "channel_positions",
                 torch.as_tensor(pos, dtype=torch.float32),
