@@ -2,7 +2,11 @@ import numpy as np
 import pytest
 import torch
 
-from braindecode.functional import hilbert_freq, plv_time
+from braindecode.functional import (
+    hilbert_freq,
+    plv_time,
+    sinusoidal_positional_encoding,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -65,3 +69,21 @@ def test_plv_time_perfect_synchronization():
     expected = torch.ones(batch, channels, channels)
     assert torch.allclose(plv_matrix, expected, atol=1e-5), \
         "PLV should be 1 for perfectly synchronized signals"
+
+
+def test_sinusoidal_positional_encoding_even_dim():
+    """Shape, contiguity, and the defining sin/cos values at position 0."""
+    pe = sinusoidal_positional_encoding(50, 16)
+    assert pe.shape == (50, 16)
+    assert pe.is_contiguous()
+    # position 0: sin(0)=0 on even channels, cos(0)=1 on odd channels.
+    assert torch.allclose(pe[0], torch.tensor([0.0, 1.0] * 8))
+
+
+def test_sinusoidal_positional_encoding_odd_dim_truncates_contiguously():
+    """Odd dim is computed on the next even width, truncated, and contiguous
+    (a non-contiguous view would break safetensors buffer saving)."""
+    pe_odd = sinusoidal_positional_encoding(50, 15)
+    assert pe_odd.shape == (50, 15)
+    assert pe_odd.is_contiguous()
+    assert torch.equal(pe_odd, sinusoidal_positional_encoding(50, 16)[:, :15])

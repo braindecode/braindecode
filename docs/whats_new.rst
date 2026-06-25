@@ -28,6 +28,12 @@ Current 1.6.1 (GitHub)
 Enhancements
 ============
 
+- Add :func:`braindecode.functional.sinusoidal_positional_encoding`, a shared
+  sine/cosine positional-encoding primitive (handling odd dimensions), and reuse
+  it in :class:`braindecode.models.BIOT`, :class:`braindecode.models.MEDFormer`,
+  and :class:`braindecode.models.STEEGFormer` instead of re-deriving the table in
+  each. Encodings are bit-identical, so model behavior is unchanged.
+  (:gh:`1078` by `Bruno Aristimunha`_)
 - Add an optional spatial Fourier :class:`braindecode.modules.ChannelMerger`
   (with :class:`braindecode.modules.FourierEmb`) to
   :class:`braindecode.models.BrainModule` via ``use_merger=True``, implementing
