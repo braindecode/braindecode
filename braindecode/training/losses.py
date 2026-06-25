@@ -145,9 +145,7 @@ class HungarianMatcher(nn.Module):
             log_p = torch.log_softmax(cls[bi], dim=-1)  # (Q, n_classes)
             cls_cost = self.weight_class * (-log_p[:, tc])  # (Q, n_targets)
             # PAIRWISE IoU: (Q,) preds x (n_targets,) targets -> (Q, n_targets).
-            iou = pairwise_iou_1d(
-                outputs["start"][bi], outputs["end"][bi], ts, te
-            )
+            iou = pairwise_iou_1d(outputs["start"][bi], outputs["end"][bi], ts, te)
             loc_cost = 1.0 - iou  # (Q, n_targets)
             total = cls_cost + loc_cost  # IoU NOT weighted here
             cost_np = np.nan_to_num(
@@ -160,11 +158,15 @@ class HungarianMatcher(nn.Module):
                 mc[bi, qi] = tc[ti]
             matches.append((list(q_idx), list(t_idx)))
         matched_preds = {
-            "class": outputs["class"], "start": outputs["start"],
+            "class": outputs["class"],
+            "start": outputs["start"],
             "end": outputs["end"],
         }
-        matched_targets = {"class": mc.to(cls.device), "start": ms.to(cls.device),
-                           "end": me.to(cls.device)}
+        matched_targets = {
+            "class": mc.to(cls.device),
+            "start": ms.to(cls.device),
+            "end": me.to(cls.device),
+        }
         return matched_preds, matched_targets, matches
 
 
@@ -190,7 +192,9 @@ class DanceLoss(nn.Module):
         self.kl = nn.KLDivLoss(reduction="none")
 
     def _dense_target(self, targets, n_classes, device):
-        start = targets["start"]; end = targets["end"]; cls = targets["class"]
+        start = targets["start"]
+        end = targets["end"]
+        cls = targets["class"]
         b, max_e = cls.shape
         t = self.num_latents
         dense = torch.zeros(b, t, dtype=torch.long, device=device)
@@ -237,15 +241,19 @@ class DanceLoss(nn.Module):
         dense_term = self.weight_dense * self.ce(dense_logits, dense_t)
 
         dense_probs = torch.softmax(detect_output["dense"], -1).clamp(min=1e-8)
-        detr_probs = detr_to_dense_probs(
-            detect_output, self.num_latents, n_classes
-        ).clamp(min=1e-8).to(device)  # (B, num_latents, n_classes) == dense_probs
+        detr_probs = (
+            detr_to_dense_probs(detect_output, self.num_latents, n_classes)
+            .clamp(min=1e-8)
+            .to(device)
+        )  # (B, num_latents, n_classes) == dense_probs
         cons_term = self.weight_consistency * (
             self.kl(detr_probs.log(), dense_probs).sum(dim=-1).mean()
         )
         loss = cls_term + iou_term + dense_term + cons_term
         details = {
-            "class_loss": float(cls_term), "iou_loss": float(iou_term),
-            "dense_loss": float(dense_term), "consistency_loss": float(cons_term),
+            "class_loss": float(cls_term),
+            "iou_loss": float(iou_term),
+            "dense_loss": float(dense_term),
+            "consistency_loss": float(cons_term),
         }
         return loss, details

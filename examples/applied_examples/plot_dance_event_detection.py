@@ -1,8 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: MIT
-"""
-DANCE: event detection on long EEG windows
+"""DANCE: event detection on long EEG windows
 ===========================================
 
 This tutorial shows how to use the :class:`~braindecode.models.DANCE` model for
@@ -43,6 +42,7 @@ The pipeline is:
     for "no event". The target builder and both F1 metrics honour this
     convention automatically.
 """  # noqa: D205, E501
+
 from __future__ import annotations
 
 import torch
@@ -100,7 +100,7 @@ def dance_collate(batch):
 def build_synthetic_event_dataset(
     n_chans=19, sfreq=200.0, n_seconds=192.0, n_classes=4, seed=0
 ):
-    """A self-contained long EEG recording with onset/duration class events.
+    """Build a self-contained long EEG recording with onset/duration class events.
 
     Returns a ``BaseConcatDataset`` of one ``BaseDataset`` wrapping an
     ``mne.io.RawArray`` (montaged so ``chs_info`` carries real locations for
@@ -120,16 +120,31 @@ def build_synthetic_event_dataset(
     # "E1".."E19"), so set_montage actually assigns finite locations and DANCE
     # can derive non-degenerate positions to drive the ChannelMerger.
     ch_names = [
-        "Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T7", "C3", "Cz",
-        "C4", "T8", "P7", "P3", "Pz", "P4", "P8", "O1", "O2",
+        "Fp1",
+        "Fp2",
+        "F7",
+        "F3",
+        "Fz",
+        "F4",
+        "F8",
+        "T7",
+        "C3",
+        "Cz",
+        "C4",
+        "T8",
+        "P7",
+        "P3",
+        "Pz",
+        "P4",
+        "P8",
+        "O1",
+        "O2",
     ][:n_chans]
     info = mne.create_info(ch_names, sfreq, ch_types="eeg")
     raw = mne.io.RawArray(data, info, verbose="error")
     # Real 10-20-ish locations so DANCE derives non-degenerate positions.
     montage = mne.channels.make_standard_montage("standard_1020")
-    raw.set_montage(
-        montage, match_case=False, on_missing="ignore", verbose="error"
-    )
+    raw.set_montage(montage, match_case=False, on_missing="ignore", verbose="error")
     # Scatter events across the recording: ~1 event / 6 s, duration 0.5-2 s,
     # class in 1..n_classes-1. Inject signal so the model has something to learn.
     onsets, durations, descriptions = [], [], []
@@ -152,13 +167,14 @@ def build_synthetic_event_dataset(
 
 def annotations_to_events(raw, n_classes):
     """Read absolute-time ``(start_s, end_s, class_int)`` events from a raw's
-    annotations (``"classK"`` -> K). Class 0 is never produced."""
+    annotations (``"classK"`` -> K). Class 0 is never produced.
+    """
     events = []
     for ann in raw.annotations:
         desc = str(ann["description"])
         if not desc.startswith("class"):
             continue
-        cls = int(desc[len("class"):])
+        cls = int(desc[len("class") :])
         if cls <= 0 or cls >= n_classes:
             continue
         events.append((float(ann["onset"]), float(ann["onset"] + ann["duration"]), cls))
@@ -206,8 +222,11 @@ for i in range(len(windows_ds)):
     eeg = torch.as_tensor(np.asarray(x), dtype=torch.float32)
     window_onset = float(crop_inds[1]) / SFREQ  # i_start_in_trial / sfreq
     target = dance_target_builder(
-        all_events, window_onset=window_onset, window_duration=WINDOW_S,
-        max_events=MAX_EVENTS, num_latents=NUM_LATENTS,
+        all_events,
+        window_onset=window_onset,
+        window_duration=WINDOW_S,
+        max_events=MAX_EVENTS,
+        num_latents=NUM_LATENTS,
     )
     samples.append((eeg, target))
 loader = DataLoader(samples, batch_size=4, shuffle=True, collate_fn=dance_collate)
@@ -216,8 +235,12 @@ loader = DataLoader(samples, batch_size=4, shuffle=True, collate_fn=dance_collat
 # Build the model and the criterion
 # ----------------------------------
 model = DANCE(
-    n_outputs=N_CLASSES, n_chans=len(chs_info), chs_info=chs_info,
-    n_times=WINDOW_SAMPLES, sfreq=SFREQ, input_window_seconds=WINDOW_S,
+    n_outputs=N_CLASSES,
+    n_chans=len(chs_info),
+    chs_info=chs_info,
+    n_times=WINDOW_SAMPLES,
+    sfreq=SFREQ,
+    input_window_seconds=WINDOW_S,
 )
 criterion = DanceLoss(num_latents=NUM_LATENTS)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -249,20 +272,36 @@ with torch.no_grad():
             # ground-truth events of this window, in seconds within the window
             gt = [
                 (float(s) * WINDOW_S, float(e) * WINDOW_S, int(c))
-                for s, e, c in zip(batch["start"][bi], batch["end"][bi], batch["class"][bi])
+                for s, e, c in zip(
+                    batch["start"][bi], batch["end"][bi], batch["class"][bi]
+                )
                 if int(c) != 0
             ]
             preds = [(s, e, c) for (s, e, c, _conf) in pred_events[bi]]
             ev_f1s.append(f1_event(preds, gt, iou_threshold=0.5))
             pred_mask = events_to_mask(
-                [(int(s / WINDOW_S * NUM_LATENTS), int(e / WINDOW_S * NUM_LATENTS), c)
-                 for s, e, c in preds],
-                N_CLASSES, NUM_LATENTS,
+                [
+                    (
+                        int(s / WINDOW_S * NUM_LATENTS),
+                        int(e / WINDOW_S * NUM_LATENTS),
+                        c,
+                    )
+                    for s, e, c in preds
+                ],
+                N_CLASSES,
+                NUM_LATENTS,
             )
             gt_mask = events_to_mask(
-                [(int(s / WINDOW_S * NUM_LATENTS), int(e / WINDOW_S * NUM_LATENTS), c)
-                 for s, e, c in gt],
-                N_CLASSES, NUM_LATENTS,
+                [
+                    (
+                        int(s / WINDOW_S * NUM_LATENTS),
+                        int(e / WINDOW_S * NUM_LATENTS),
+                        c,
+                    )
+                    for s, e, c in gt
+                ],
+                N_CLASSES,
+                NUM_LATENTS,
             )
             samp_f1s.append(f1_sample(pred_mask, gt_mask))
 print(f"F1-event={np.mean(ev_f1s):.3f}  F1-sample={np.mean(samp_f1s):.3f}")

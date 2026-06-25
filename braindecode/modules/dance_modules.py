@@ -12,7 +12,7 @@ import torch
 from einops import rearrange, repeat
 from torch import nn
 
-from braindecode.modules.merger import ChannelMerger, FourierEmb
+from braindecode.modules.merger import ChannelMerger
 
 
 class _ConvBlock(nn.Module):
@@ -78,8 +78,7 @@ class SimpleConv(nn.Module):
             d = int(dilation)
             last = i == depth - 1
             blocks.append(
-                _ConvBlock(sizes[i], sizes[i + 1], kernel_size, d,
-                           activation, last)
+                _ConvBlock(sizes[i], sizes[i + 1], kernel_size, d, activation, last)
             )
             dilation = dilation * dilation_growth
         self.sequence = nn.ModuleList(blocks)
@@ -103,9 +102,7 @@ class SimpleConv(nn.Module):
         for block in self.sequence:
             x = block(x)
         if x.shape[-1] < length:
-            raise ValueError(
-                f"Expected output time dim >= {length}, got {x.shape[-1]}"
-            )
+            raise ValueError(f"Expected output time dim >= {length}, got {x.shape[-1]}")
         return x[..., :length]
 
 
@@ -127,9 +124,7 @@ def _fourier_encode(x, max_freq, num_bands):
 def _sinusoidal_latents(num_latents, dim):
     pe = torch.zeros(num_latents, dim)
     position = torch.arange(0, num_latents).unsqueeze(1).float()
-    div_term = torch.exp(
-        torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim)
-    )
+    div_term = torch.exp(torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim))
     pe[:, 0::2] = torch.sin(position * div_term)
     pe[:, 1::2] = torch.cos(position * div_term)
     return pe
@@ -227,8 +222,9 @@ class Perceiver(nn.Module):
                     [
                         _PreNorm(
                             latent_dim,
-                            _Attention(latent_dim, context_dim, cross_heads,
-                                       cross_dim_head),
+                            _Attention(
+                                latent_dim, context_dim, cross_heads, cross_dim_head
+                            ),
                             context_dim=context_dim,
                         ),
                         _PreNorm(latent_dim, _FeedForward(latent_dim)),
@@ -238,12 +234,14 @@ class Perceiver(nn.Module):
                                     [
                                         _PreNorm(
                                             latent_dim,
-                                            _Attention(latent_dim, None,
-                                                       latent_heads,
-                                                       latent_dim_head),
+                                            _Attention(
+                                                latent_dim,
+                                                None,
+                                                latent_heads,
+                                                latent_dim_head,
+                                            ),
                                         ),
-                                        _PreNorm(latent_dim,
-                                                 _FeedForward(latent_dim)),
+                                        _PreNorm(latent_dim, _FeedForward(latent_dim)),
                                     ]
                                 )
                                 for _ in range(self_per_cross_attn)
@@ -282,9 +280,7 @@ def _sinusoidal_embeddings(length, dim):
     # (duplicate of _sinusoidal_latents; kept separate intentionally)
     pe = torch.zeros(length, dim)
     position = torch.arange(0, length).unsqueeze(1).float()
-    div_term = torch.exp(
-        torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim)
-    )
+    div_term = torch.exp(torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim))
     pe[:, 0::2] = torch.sin(position * div_term)
     pe[:, 1::2] = torch.cos(position * div_term)
     return pe

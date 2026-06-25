@@ -18,8 +18,8 @@ from braindecode.models.util import (
 )
 from braindecode.modules import ChannelMerger, Perceiver, SimpleConv
 from braindecode.modules.dance_modules import DanceDetrDecoder
+from braindecode.modules.merger import has_valid_locations as _has_valid_locations
 from braindecode.modules.merger import (
-    has_valid_locations as _has_valid_locations,
     positions_from_chs_info as _positions_from_chs_info,
 )
 

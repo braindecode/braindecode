@@ -200,10 +200,10 @@ def test_dance_tutorial_pipeline_runs_end_to_end():
     import torch
     from torch.utils.data import DataLoader
 
+    from braindecode.functional import extract_events_from_detr_batch
     from braindecode.models import DANCE
     from braindecode.preprocessing import create_fixed_length_windows
     from braindecode.training import DanceLoss, f1_event
-    from braindecode.functional import extract_events_from_detr_batch
 
     ex = _load_example()  # defined in Task 10's test section
     sfreq, window_s, n_classes, num_latents = 200.0, 32.0, 4, 256
