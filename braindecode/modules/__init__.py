@@ -27,15 +27,16 @@ from .dance_modules import Perceiver, SimpleConv
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
 from .interpolation import ChannelInterpolationLayer
 from .layers import (
+    ChannelMerger,
     Chomp1d,
     DropPath,
     Ensure4d,
+    FourierEmb,
     SqueezeFinalOutput,
     SubjectLayers,
     TimeDistributed,
 )
 from .linear import LinearWithConstraint, MaxNormLinear
-from .merger import ChannelMerger, FourierEmb
 from .parametrization import MaxNorm, MaxNormParametrize
 from .stats import (
     LogPowerLayer,

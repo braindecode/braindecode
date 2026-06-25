@@ -12,7 +12,7 @@ import torch
 from einops import rearrange, repeat
 from torch import nn
 
-from braindecode.modules.merger import ChannelMerger
+from braindecode.modules.layers import ChannelMerger
 
 
 class _ConvBlock(nn.Module):
