@@ -335,6 +335,24 @@ initializations.
     LinearWithConstraint
     MaxNormLinear
 
+Merger
+======
+
+These modules implement the montage-agnostic spatial Fourier channel merger: a learned
+softmax attention over a Fourier embedding of the electrode ``(x, y)`` positions that
+remaps the input sensors onto a fixed set of virtual channels. Shared by the
+:class:`braindecode.models.BrainModule` and DANCE models.
+
+:py:mod:`braindecode.modules.merger`:
+
+.. autosummary::
+    :toctree: generated/merger
+    :template: class_in_subdir
+    :recursive:
+
+    ChannelMerger
+    FourierEmb
+
 Stats
 =====
 
