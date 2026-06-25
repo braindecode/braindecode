@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import warnings
 
-import numpy as np
 import torch
 from torch import nn
 
@@ -19,39 +18,10 @@ from braindecode.models.util import (
 )
 from braindecode.modules import ChannelMerger, Perceiver, SimpleConv
 from braindecode.modules.dance_modules import DanceDetrDecoder
-
-
-def _positions_from_chs_info(chs_info) -> np.ndarray:
-    """(n_chans, 2) electrode xy normalized to [0, 1] per-axis.
-
-    Matches upstream DANCE EXACTLY (``dance/example/data.py:46-52``): take the
-    raw 3D sensor coordinates ``ch["loc"][:3]``, keep ``xy``, and min-max
-    normalize each axis to ``[0, 1]``. This is the parity-load-bearing
-    convention -- it is NOT MNE's ``_find_topomap_coords`` / the
-    ``visualization/topology.py`` projection (which returns an interpolated
-    scalp grid, not per-channel coords, and would change the merger softmax
-    and break parity). The ``1e-9`` floor avoids divide-by-zero on a
-    degenerate axis. Full-model parity (Task 13) feeds positions derived this
-    same way into BOTH models.
-    """
-    xyz = np.array([ch["loc"][:3] for ch in chs_info])
-    xy = xyz[:, :2]
-    mn, mx = xy.min(axis=0), xy.max(axis=0)
-    return (xy - mn) / np.maximum(mx - mn, 1e-9)
-
-
-def _has_valid_locations(chs_info) -> bool:
-    if chs_info is None:
-        return False
-    try:
-        xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
-    except (KeyError, TypeError, ValueError):
-        return False
-    if not np.isfinite(xyz).all():
-        return False
-    if np.allclose(xyz, 0.0):
-        return False
-    return True
+from braindecode.modules.merger import (
+    has_valid_locations as _has_valid_locations,
+    positions_from_chs_info as _positions_from_chs_info,
+)
 
 
 class DANCE(EEGModuleMixin, nn.Module):

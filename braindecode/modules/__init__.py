@@ -23,7 +23,7 @@ from .convolution import (
     Conv2dWithConstraint,
     DepthwiseConv2d,
 )
-from .dance_modules import ChannelMerger, FourierEmb, Perceiver, SimpleConv
+from .dance_modules import Perceiver, SimpleConv
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
 from .interpolation import ChannelInterpolationLayer
 from .layers import (
@@ -35,6 +35,7 @@ from .layers import (
     TimeDistributed,
 )
 from .linear import LinearWithConstraint, MaxNormLinear
+from .merger import ChannelMerger, FourierEmb, positions_from_chs_info
 from .parametrization import MaxNorm, MaxNormParametrize
 from .stats import (
     LogPowerLayer,
@@ -78,6 +79,7 @@ __all__ = [
     "DepthwiseConv2d",
     "ChannelMerger",
     "FourierEmb",
+    "positions_from_chs_info",
     "Perceiver",
     "SimpleConv",
     "FilterBankLayer",
