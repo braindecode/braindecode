@@ -312,9 +312,11 @@ input shapes and dimensions.
     :template: class_in_subdir
     :recursive:
 
+    ChannelMerger
     Chomp1d
     DropPath
     Ensure4d
+    FourierEmb
     SubjectLayers
     TimeDistributed
 

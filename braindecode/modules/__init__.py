@@ -26,9 +26,11 @@ from .convolution import (
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
 from .interpolation import ChannelInterpolationLayer
 from .layers import (
+    ChannelMerger,
     Chomp1d,
     DropPath,
     Ensure4d,
+    FourierEmb,
     SqueezeFinalOutput,
     SubjectLayers,
     TimeDistributed,
@@ -85,6 +87,8 @@ __all__ = [
     "TimeDistributed",
     "LinearWithConstraint",
     "MaxNormLinear",
+    "ChannelMerger",
+    "FourierEmb",
     "MaxNorm",
     "MaxNormParametrize",
     "LogPowerLayer",
