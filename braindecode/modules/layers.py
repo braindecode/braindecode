@@ -329,7 +329,7 @@ class ChannelMerger(nn.Module):
         invalid_mask = (positions == self.invalid_value).all(dim=-1)
         score_offset = score_offset.masked_fill(invalid_mask, float("-inf"))
         if self.training and self.dropout:
-            center = torch.rand(self.n_dims, device=x.device)
+            center = torch.rand(self.n_dims, device=positions.device)
             banned = (positions[:, :, : self.n_dims] - center).norm(
                 dim=-1
             ) <= self.dropout

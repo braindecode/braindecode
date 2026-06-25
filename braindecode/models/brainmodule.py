@@ -240,6 +240,9 @@ class BrainModule(EEGModuleMixin, nn.Module):
     channel_dropout_type : str, optional
         If specified with chs_info, only drop channels of this type
         (e.g., 'eeg', 'ref', 'eog'). If None with dropout_prob > 0, drops any channel.
+        Not supported together with ``use_merger=True`` (the merger remaps the raw
+        sensors to virtual channels, so the ``chs_info`` channel types no longer
+        match the tensor) -- raises ``ValueError`` if both are set.
     glu : int, default=2
         If > 0, applies Gated Linear Units (GLU) every N convolutional layers.
         GLUs gate intermediate representations for more expressivity.
