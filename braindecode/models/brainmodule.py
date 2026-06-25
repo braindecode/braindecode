@@ -366,7 +366,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
         if use_merger and not has_valid_locations(self._chs_info):
             warnings.warn(
                 "BrainModule: chs_info has no usable electrode locations "
-                "('loc' missing or all-zero); disabling use_merger.",
+                "('loc' missing, non-finite, or all-zero); disabling use_merger.",
                 UserWarning,
             )
             use_merger = False
@@ -669,7 +669,7 @@ class _ConvSequence(nn.Module):
         self.glus = nn.ModuleList()
         self.skip_projections = nn.ModuleList()  # For when chin != chout
 
-        dilation = 1
+        dilation = 1.0  # float accumulator (dilation_growth may be non-integer)
         channels = tuple(channels)
 
         for k, (chin, chout) in enumerate(zip(channels[:-1], channels[1:])):
@@ -681,7 +681,7 @@ class _ConvSequence(nn.Module):
 
             # Reset dilation periodically
             if dilation_period and (k % dilation_period) == 0:
-                dilation = 1
+                dilation = 1.0
 
             # Cast to int at use so a float dilation_growth (e.g. 2.5) yields an
             # integer Conv1d dilation/padding while the accumulator stays float.
