@@ -230,6 +230,11 @@ print(f"Reconstructed: n_outputs={model_copy.n_outputs}")
 #      - |check|
 #      - |check|
 #      - |check|
+#    * - :class:`~braindecode.models.STEEGFormer`
+#      - |check|
+#      - |check|
+#      - |check| (+ ``cls_token``)
+#      - |check|
 #
 # .. |check| unicode:: 0x2714
 #
@@ -265,6 +270,7 @@ from braindecode.models import (
     CodeBrain,
     Labram,
     SignalJEPA,
+    STEEGFormer,
 )
 
 # (display_name, model_class, from_pretrained kwargs, org)
@@ -334,6 +340,15 @@ checkpoints = [
         "SignalJEPA",
         SignalJEPA,
         dict(pretrained_model_name_or_path="braindecode/signal-jepa"),
+        "braindecode",
+    ),
+    (
+        "STEEGFormer (small)",
+        STEEGFormer,
+        dict(
+            pretrained_model_name_or_path="braindecode/STEEGFormer-small",
+            n_outputs=2,
+        ),
         "braindecode",
     ),
     (
@@ -600,6 +615,32 @@ plt.show()
 #    * - :class:`~braindecode.models.SignalJEPA` and downstream variants
 #      - ``braindecode/signal-jepa_without-chans``
 #      - arbitrary channel set (embedding stripped)
+#    * - :class:`~braindecode.models.STEEGFormer`
+#      - ``braindecode/STEEGFormer-small``
+#      - 25M params, 145-slot channel vocabulary
+#    * - :class:`~braindecode.models.STEEGFormer`
+#      - ``braindecode/STEEGFormer-base``
+#      - 85M params, 145-slot channel vocabulary
+#    * - :class:`~braindecode.models.STEEGFormer`
+#      - ``braindecode/STEEGFormer-large``
+#      - 302M params, 145-slot channel vocabulary
+#    * - :class:`~braindecode.models.STEEGFormer`
+#      - ``braindecode/STEEGFormer-largeV2``
+#      - 302M params, 256-slot HBN channel vocabulary
+#
+# The STEEGFormer checkpoints above are braindecode-format re-hosts of the
+# official MAE encoder weights. The saved ``config.json`` selects the correct
+# width/depth and channel-vocabulary size, so the usual one-line loading pattern
+# is enough:
+#
+# .. code-block:: python
+#
+#    from braindecode.models import STEEGFormer
+#
+#    model = STEEGFormer.from_pretrained(
+#        "braindecode/STEEGFormer-small",
+#        n_outputs=4,
+#    )
 #
 # External organizations
 # ~~~~~~~~~~~~~~~~~~~~~~

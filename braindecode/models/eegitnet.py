@@ -4,9 +4,16 @@
 # License: BSD-3
 from einops.layers.torch import Rearrange
 from torch import nn
+from torch.nn.utils.parametrize import register_parametrization
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import DepthwiseConv2d, Ensure4d, InceptionBlock
+from braindecode.modules import (
+    DepthwiseConv2d,
+    Ensure4d,
+    InceptionBlock,
+    LinearWithConstraint,
+    MaxNormParametrize,
+)
 
 
 class EEGITNet(EEGModuleMixin, nn.Sequential):
@@ -95,7 +102,9 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             sfreq=sfreq,
         )
         self.mapping = {
-            "classification.1.weight": "final_layer.weight",
+            # final_layer is max-norm constrained, so its weight lives under the
+            # parametrization buffer rather than ``final_layer.weight``.
+            "classification.1.weight": "final_layer.parametrizations.weight.original",
             "classification.1.bias": "final_layer.bias",
         }
 
@@ -185,8 +194,10 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "dim_reduction",
             nn.Sequential(
-                nn.Conv2d(tcn_in_channel, tcn_in_channel * 2, kernel_size=(1, 1)),
-                nn.BatchNorm2d(tcn_in_channel * 2),
+                # The authors' DR layer keeps the width (14 filters, paper III-C),
+                # it does not double it.
+                nn.Conv2d(tcn_in_channel, tcn_in_channel, kernel_size=(1, 1)),
+                nn.BatchNorm2d(tcn_in_channel),
                 activation(),
                 nn.AvgPool2d((1, tcn_kernel_size)),
                 nn.Dropout(drop_prob),
@@ -198,7 +209,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
 
         num_features = self.get_output_shape()[-1]
 
-        self.add_module("final_layer", nn.Linear(num_features, self.n_outputs))
+        # The authors constrain the final dense with ``max_norm(0.25)``.
+        self.add_module(
+            "final_layer",
+            LinearWithConstraint(num_features, self.n_outputs, max_norm=0.25),
+        )
 
     @staticmethod
     def _get_inception_branch(
@@ -208,6 +223,18 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         depth_multiplier=1,
         activation: type[nn.Module] = nn.ELU,
     ):
+        # The authors constrain the spatial depthwise conv with
+        # ``depthwise_constraint = MaxNorm(max_value=1)``.
+        spatial_depthwise = DepthwiseConv2d(
+            out_channels,
+            kernel_size=(in_channels, 1),
+            depth_multiplier=depth_multiplier,
+            bias=False,
+            padding="valid",
+        )
+        register_parametrization(
+            spatial_depthwise, "weight", MaxNormParametrize(max_norm=1.0)
+        )
         return nn.Sequential(
             nn.Conv2d(
                 1,
@@ -217,13 +244,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
                 bias=False,
             ),
             nn.BatchNorm2d(out_channels),
-            DepthwiseConv2d(
-                out_channels,
-                kernel_size=(in_channels, 1),
-                depth_multiplier=depth_multiplier,
-                bias=False,
-                padding="valid",
-            ),
+            spatial_depthwise,
             nn.BatchNorm2d(out_channels),
             activation(),
         )

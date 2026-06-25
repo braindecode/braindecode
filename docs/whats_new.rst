@@ -28,6 +28,14 @@ Current 1.6.1 (GitHub)
 Enhancements
 ============
 
+- Add opt-in electrode positions in the batch via
+  :meth:`braindecode.datasets.BaseConcatDataset.set_return_ch_pos` and a cached
+  ``ch_pos`` accessor on windowed datasets, plus
+  :func:`braindecode.datasets.pad_channels_collate` to make collections with
+  **heterogeneous montages** (different channel sets) batchable. Positions and a
+  channel mask are routed into the model's ``forward`` under
+  :class:`braindecode.EEGClassifier`. Default-off, so the ``(X, y, crop_inds)``
+  contract is unchanged. (:gh:`1066` by `Bruno Aristimunha`_)
 - Add a ``revision`` keyword argument to
   :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
   pin dataset downloads to a specific branch, tag, or commit on the Hugging
@@ -41,6 +49,9 @@ Enhancements
   By `Pierre Guetschel`_.
 - Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
   foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
+- Add :class:`braindecode.models.STEEGFormer`, a ViT-based EEG foundation
+  model pre-trained with a masked-autoencoder objective, from Yang et al.
+  (ICLR 2026). By `Adam Mounir`_.
 - Add separate EEGNet and TCN dropout rates to
   :class:`braindecode.models.EEGTCNet` via the new ``drop_prob_eeg`` and
   ``drop_prob_tcn`` arguments, enabling the source/paper configuration
@@ -57,6 +68,14 @@ Enhancements
   grouped-query attention Transformer with rotary positional embeddings, and a
   grouped temporal convolutional network head. (:gh:`1065` by `Bruno
   Aristimunha`_)
+- Add an ``n_augmentation`` argument to
+  :class:`braindecode.augmentation.AugmentedDataLoader` for fixed set-expansion:
+  each batch keeps its clean originals and appends ``n_augmentation``
+  independently transformed copies (e.g. the EEG-Inception 6x training set with
+  ``n_augmentation=5``); the default ``0`` preserves the current in-place
+  behavior. The collate is now a picklable callable, so the loader supports
+  ``num_workers > 0``, and several augmentation transforms were vectorized for
+  speed. (:gh:`1070` by `Bruno Aristimunha`_)
 
 API and behavior changes
 ========================
@@ -113,6 +132,19 @@ Bug fixes
   Standalone functions that return auxiliary data (e.g. annotations or bad
   channels) are intentionally left on the existing path for now. (:gh:`885` by
   `Yiheng Li`_)
+
+- Fix :class:`braindecode.preprocessing.AnnotateAmplitude`,
+  :class:`braindecode.preprocessing.AnnotateNan`,
+  :class:`braindecode.preprocessing.AnnotateBreak`,
+  :class:`braindecode.preprocessing.AnnotateMovement`,
+  :class:`braindecode.preprocessing.AnnotateMuscleZscore`,
+  :class:`braindecode.preprocessing.FindBadChannelsLof`, and
+  :class:`braindecode.preprocessing.ComputeBridgedElectrodes` failing at
+  apply-time because the underlying MNE functions return auxiliary data (annotations
+  or bad-channel lists) rather than the modified recording.  Each preprocessor
+  now stores a wrapper callable that applies the returned side effects
+  (``raw.set_annotations`` / ``raw.info['bads']``) and returns the recording.
+  (:gh:`1055` by `Bruno Aristimunha`_)
 - Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
 
 - Fix the broken EEGNeX quickstart snippet on the documentation landing page,
@@ -130,6 +162,31 @@ Bug fixes
   now raised telling the user to lower ``batch_size`` or set
   ``iterator_train__drop_last=False``.
   (:gh:`1053` by `Bhargav Kowshik`_)
+
+- Fix :class:`braindecode.modules.FilterBankLayer` producing ``NaN`` in
+  ``float32``: the IIR path downcast the float64 filter coefficients to the
+  input dtype before :func:`~torchaudio.functional.filtfilt`, so band-pass banks
+  with poles near the unit circle (e.g. the Chebyshev-II banks used by
+  :class:`~braindecode.models.FBMSNet` and :class:`~braindecode.models.FBCNet`)
+  diverged. The recursion now runs in ``float64`` and is cast back.
+  (:gh:`1067` by `Bruno Aristimunha`_)
+
+- Fix :class:`braindecode.models.EEGITNet` diverging from the reference
+  implementation: the inception spatial depthwise convolutions and the final
+  dense layer now carry the authors' max-norm constraints (``1.0`` and
+  ``0.25``), and the dimensionality-reduction convolution uses ``14`` filters
+  instead of ``28``. (:gh:`1068` by `Bruno Aristimunha`_)
+
+- Fix :class:`braindecode.models.MSVTNet` dropping the main classification head
+  when ``return_features=True`` (it returned only the branch predictions, making
+  the paper's joint deep-supervision loss unreproducible). It now returns
+  ``(main_logits, stacked_branch_logits)``, matching the source.
+  (:gh:`1069` by `Bruno Aristimunha`_)
+
+- Fix the spatial convolutions in :class:`braindecode.models.EEGSym` being dense
+  (``groups=1``) with a bias: the authors' ``unit_dconv`` uses grouped/depthwise
+  convolutions without bias, so they now use ``groups=out_channels`` and
+  ``bias=False``. (:gh:`1071` by `Bruno Aristimunha`_)
 
 Code health
 ============

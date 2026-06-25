@@ -186,9 +186,13 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
         x = self.final_layer(x)
         if self.return_features:
-            # x shape after final layer: [batch_size, num_classes]
-            # branch_preds shape: [batch_size, num_classes]
-            return torch.stack(branch_preds)
+            # Return BOTH the main-head logits and the stacked branch logits, as
+            # in the authors' implementation (``return x, bx``). This is required
+            # for the paper's joint deep-supervision loss
+            # ``lambda * CE(main) + (1 - lambda) * sum_i CE(branch_i)`` and lets
+            # callers score on the main head.
+            # x: [batch_size, n_classes]; branches: [n_branches, batch_size, n_classes]
+            return x, torch.stack(branch_preds)
         return x
 
 
