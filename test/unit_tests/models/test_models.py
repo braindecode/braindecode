@@ -2990,6 +2990,109 @@ def test_brain_module_glu_combined_features(brain_module_params):
     assert output.shape == (4, params["n_outputs"])
     assert not torch.isnan(output).any()
 
+
+# ============================================================================
+# BrainModule Spatial ChannelMerger Tests
+# ============================================================================
+
+
+def _chs_info_with_loc(loc_array):
+    """Build chs_info dicts with a 12-entry ``loc`` per channel."""
+    chs_info = []
+    for i, loc in enumerate(loc_array):
+        chs_info.append(
+            {
+                "ch_name": f"ch{i}",
+                "ch_type": "eeg",
+                "kind": 2,  # FIFFV_EEG_CH
+                "loc": np.asarray(loc, dtype=float),
+            }
+        )
+    return chs_info
+
+
+def test_brainmodule_merger_shape():
+    """Optional spatial merger remaps n_chans -> n_virtual_channels."""
+    set_random_seeds(0, False)
+    # Distinct loc per channel so positions span [0, 1] after min-max.
+    loc = np.random.default_rng(0).random((19, 12))
+    chs_info = _chs_info_with_loc(loc)
+
+    m = BrainModule(
+        n_chans=19,
+        n_outputs=4,
+        n_times=512,
+        sfreq=128,
+        chs_info=chs_info,
+        use_merger=True,
+    )
+    m.eval()
+
+    assert m.merger is not None
+    assert m.use_merger is True
+    assert m.channel_positions.shape == (19, 2)
+
+    out = m(torch.randn(2, 19, 512))
+    assert out.shape == (2, 4)
+    assert not torch.isnan(out).any()
+
+
+def test_brainmodule_merger_autodisable():
+    """use_merger auto-disables (with warning) when chs_info lacks locations."""
+    set_random_seeds(0, False)
+    # All-zero loc -> no usable electrode locations.
+    loc = np.zeros((19, 12))
+    chs_info = _chs_info_with_loc(loc)
+
+    with pytest.warns(UserWarning):
+        m = BrainModule(
+            n_chans=19,
+            n_outputs=4,
+            n_times=512,
+            sfreq=128,
+            chs_info=chs_info,
+            use_merger=True,
+        )
+    m.eval()
+
+    assert m.merger is None
+    assert m.use_merger is False
+
+    out = m(torch.randn(2, 19, 512))
+    assert out.shape == (2, 4)
+    assert not torch.isnan(out).any()
+
+
+def test_brainmodule_float_dilation_growth():
+    """Float dilation_growth builds and runs (latent int-cast bug fix)."""
+    set_random_seeds(0, False)
+    m = BrainModule(
+        n_chans=8,
+        n_outputs=2,
+        n_times=512,
+        sfreq=128,
+        dilation_growth=2.5,
+    )
+    m.eval()
+
+    out = m(torch.randn(2, 8, 512))
+    assert out.shape == (2, 2)
+    assert not torch.isnan(out).any()
+
+
+def test_brainmodule_default_unchanged():
+    """Default behavior is preserved: no merger unless opted in."""
+    set_random_seeds(0, False)
+    m = BrainModule(
+        n_chans=8,
+        n_outputs=2,
+        n_times=512,
+        sfreq=128,
+    )
+    assert m.merger is None
+    assert m.use_merger is False
+
+
 def test_bendr():
     """
     Test BENDR model forward pass with 3D inputs.
