@@ -35,6 +35,13 @@ Enhancements
   detection metrics, and a runnable tutorial. The re-implemented spatial merger /
   Perceiver / conv stack are numerically parity-verified against the upstream
   reference. (:gh:`1075` by `Bruno Aristimunha`_)
+- Add an optional spatial Fourier :class:`braindecode.modules.ChannelMerger`
+  (with :class:`braindecode.modules.FourierEmb`) to
+  :class:`braindecode.models.BrainModule` via ``use_merger=True``, implementing
+  the montage-agnostic spatial attention its docstring described. Also fixes a
+  latent crash for non-integer ``dilation_growth`` and sizes the channel
+  accounting in forward order so ``subject_layers``/STFT combinations work.
+  Default-off, so existing behavior is unchanged. (:gh:`1076` by `Bruno Aristimunha`_)
 - Add opt-in electrode positions in the batch via
   :meth:`braindecode.datasets.BaseConcatDataset.set_return_ch_pos` and a cached
   ``ch_pos`` accessor on windowed datasets, plus

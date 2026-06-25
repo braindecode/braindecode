@@ -2990,6 +2990,176 @@ def test_brain_module_glu_combined_features(brain_module_params):
     assert output.shape == (4, params["n_outputs"])
     assert not torch.isnan(output).any()
 
+
+# ============================================================================
+# BrainModule Spatial ChannelMerger Tests
+# ============================================================================
+
+
+def _chs_info_with_loc(loc_array):
+    """Build chs_info dicts with a 12-entry ``loc`` per channel."""
+    chs_info = []
+    for i, loc in enumerate(loc_array):
+        chs_info.append(
+            {
+                "ch_name": f"ch{i}",
+                "ch_type": "eeg",
+                "kind": 2,  # FIFFV_EEG_CH
+                "loc": np.asarray(loc, dtype=float),
+            }
+        )
+    return chs_info
+
+
+def _rng_chs_info(n_chans, seed=0):
+    """chs_info with distinct random loc per channel (positions span [0, 1])."""
+    return _chs_info_with_loc(np.random.default_rng(seed).random((n_chans, 12)))
+
+
+def _run_forward(model, n_chans, n_outputs, n_times=512, batch=2, with_subject=False):
+    """Eval, forward a random batch, assert output shape and no NaNs."""
+    model.eval()
+    kwargs = (
+        {"subject_index": torch.zeros(batch, dtype=torch.long)} if with_subject else {}
+    )
+    out = model(torch.randn(batch, n_chans, n_times), **kwargs)
+    assert out.shape == (batch, n_outputs)
+    assert not torch.isnan(out).any()
+
+
+@pytest.mark.parametrize(
+    "kwargs, n_chans, n_outputs, with_subject, check",
+    [
+        pytest.param(
+            dict(n_chans=19, chs_info=_rng_chs_info(19), use_merger=True),
+            19,
+            4,
+            False,
+            lambda m: m.merger is not None
+            and m.use_merger
+            and tuple(m.channel_positions.shape) == (19, 2),
+            id="merger",
+        ),
+        pytest.param(
+            dict(
+                n_chans=19,
+                chs_info=_rng_chs_info(19),
+                use_merger=True,
+                n_virtual_channels=32,
+                subject_layers=True,
+                subject_dim=8,
+                n_subjects=5,
+            ),
+            19,
+            4,
+            True,
+            lambda m: m.subject_layers_module is not None,
+            id="merger_subject_layers",
+        ),
+        pytest.param(
+            dict(n_chans=8, subject_layers=True, subject_dim=4, n_subjects=5, n_fft=64),
+            8,
+            2,
+            True,
+            None,
+            id="subject_layers_stft",
+        ),
+        pytest.param(
+            dict(n_chans=8, subject_dim=4, n_subjects=5, n_fft=64),
+            8,
+            2,
+            True,
+            None,
+            id="stft_subject_embedding",
+        ),
+        pytest.param(
+            dict(n_chans=8, dilation_growth=2.5),
+            8,
+            2,
+            False,
+            None,
+            id="float_dilation_growth",
+        ),
+    ],
+)
+def test_brainmodule_forward_runs(kwargs, n_chans, n_outputs, with_subject, check):
+    """Each config constructs, forwards, and yields a clean (B, n_outputs)."""
+    set_random_seeds(0, False)
+    m = BrainModule(n_outputs=n_outputs, n_times=512, sfreq=128, **kwargs)
+    if check is not None:
+        assert check(m)
+    _run_forward(m, n_chans, n_outputs, with_subject=with_subject)
+
+
+@pytest.mark.parametrize(
+    "chs_info",
+    [
+        pytest.param(_chs_info_with_loc(np.zeros((8, 12))), id="all_zero_loc"),
+        pytest.param(None, id="no_chs_info"),
+    ],
+)
+def test_brainmodule_merger_autodisable(chs_info):
+    """use_merger auto-disables (with warning) when chs_info lacks locations."""
+    set_random_seeds(0, False)
+    with pytest.warns(UserWarning):
+        m = BrainModule(
+            n_chans=8,
+            n_outputs=2,
+            n_times=512,
+            sfreq=128,
+            chs_info=chs_info,
+            use_merger=True,
+        )
+    assert m.merger is None
+    assert m.use_merger is False
+    _run_forward(m, 8, 2)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        pytest.param(dict(n_virtual_channels=0), "n_virtual_channels", id="nvc_0"),
+        pytest.param(dict(n_virtual_channels=-1), "n_virtual_channels", id="nvc_neg"),
+        pytest.param(dict(merger_drop_prob=1.0), "merger_drop_prob", id="drop_prob"),
+    ],
+)
+def test_brainmodule_merger_invalid_params(kwargs, match):
+    """Invalid merger params are rejected up front with a clear error."""
+    with pytest.raises(ValueError, match=match):
+        BrainModule(
+            n_chans=4,
+            n_outputs=2,
+            n_times=256,
+            sfreq=128,
+            chs_info=_rng_chs_info(4),
+            use_merger=True,
+            **kwargs,
+        )
+
+
+def test_brainmodule_merger_stft_warns():
+    """use_merger + n_fft warns about the large input_projection (memory)."""
+    with pytest.warns(UserWarning, match="STFT"):
+        BrainModule(
+            n_chans=8,
+            n_outputs=2,
+            n_times=512,
+            sfreq=128,
+            chs_info=_rng_chs_info(8),
+            use_merger=True,
+            n_virtual_channels=16,
+            n_fft=64,
+        )
+
+
+def test_brainmodule_default_unchanged():
+    """Default behavior is preserved: no merger unless opted in."""
+    set_random_seeds(0, False)
+    m = BrainModule(n_chans=8, n_outputs=2, n_times=512, sfreq=128)
+    assert m.merger is None
+    assert m.use_merger is False
+
+
 def test_bendr():
     """
     Test BENDR model forward pass with 3D inputs.
