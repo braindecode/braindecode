@@ -279,8 +279,7 @@ class BrainModule(EEGModuleMixin, nn.Module):
         :class:`~braindecode.modules.layers.SubjectLayers`, STFT, and
         channel-dropout extras are added; and the spatial
         :class:`~braindecode.modules.ChannelMerger` (opt-in via
-        ``use_merger=True``) is shared with DANCE through
-        :mod:`braindecode.modules.merger`.
+        ``use_merger=True``) is shared with DANCE.
 
     .. versionadded:: 1.2
 
