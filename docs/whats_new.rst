@@ -33,10 +33,10 @@ Enhancements
   it in :class:`braindecode.models.BIOT`, :class:`braindecode.models.MEDFormer`,
   and :class:`braindecode.models.STEEGFormer` instead of re-deriving the table in
   each. Encodings are bit-identical, so model behavior is unchanged. Also add
-  :class:`braindecode.modules.GatedLinearUnit` and a ``gated`` option on
-  :class:`braindecode.modules.FeedForwardBlock` for GLU-family feed-forwards
-  (GEGLU with the default ``nn.GELU``); default-off, so existing models are
-  unchanged. (:gh:`1078` by `Bruno Aristimunha`_)
+  :class:`braindecode.modules.GatedLinearUnit`, a configurable GLU-family gate
+  (GEGLU with the default ``nn.GELU``, SwiGLU with ``nn.SiLU``; ``torch.nn.GLU``
+  is hard-wired to the sigmoid) for building gated transformer feed-forwards.
+  (:gh:`1078` by `Bruno Aristimunha`_)
 - Add an optional spatial Fourier :class:`braindecode.modules.ChannelMerger`
   (with :class:`braindecode.modules.FourierEmb`) to
   :class:`braindecode.models.BrainModule` via ``use_merger=True``, implementing

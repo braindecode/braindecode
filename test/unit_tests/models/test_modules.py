@@ -1359,22 +1359,3 @@ def test_gated_linear_unit_geglu_semantics():
     out = glu(x)
     assert out.shape == (2, 4, 5)
     assert torch.equal(out, value * torch.nn.functional.gelu(gate))
-
-
-def test_feedforwardblock_default_unchanged():
-    """gated=False keeps the classic Linear -> act -> Dropout -> Linear block."""
-    from braindecode.modules import FeedForwardBlock
-
-    ff = FeedForwardBlock(emb_size=16, expansion=4, drop_p=0.1)
-    assert [type(m).__name__ for m in ff] == ["Linear", "GELU", "Dropout", "Linear"]
-    assert ff[0].out_features == 64  # not doubled
-
-
-def test_feedforwardblock_gated_shapes():
-    """gated=True doubles the first projection and preserves emb_size end-to-end."""
-    from braindecode.modules import FeedForwardBlock, GatedLinearUnit
-
-    ff = FeedForwardBlock(emb_size=16, expansion=4, drop_p=0.0, gated=True)
-    assert ff[0].out_features == 128  # doubled for the value/gate split
-    assert isinstance(ff[1], GatedLinearUnit)
-    assert ff(torch.randn(2, 7, 16)).shape == (2, 7, 16)
