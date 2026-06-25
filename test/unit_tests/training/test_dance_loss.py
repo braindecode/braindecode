@@ -3,6 +3,9 @@
 # License: MIT
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+
 import torch
 
 from braindecode.functional import (
@@ -17,40 +20,37 @@ from braindecode.training.losses import HungarianMatcher
 
 
 def test_iou_1d_elementwise_overlap():
-    # ELEMENTWISE: all inputs share shape (1,).
-    s1 = torch.tensor([0.0]); e1 = torch.tensor([0.5])
-    s2 = torch.tensor([0.25]); e2 = torch.tensor([0.75])
-    iou = iou_1d(s1, e1, s2, e2)
+    # ELEMENTWISE: all inputs share shape (1,). inter=0.25, union=0.75 -> 1/3.
+    iou = iou_1d(*(torch.tensor([v]) for v in (0.0, 0.5, 0.25, 0.75)))
     assert iou.shape == (1,)
-    # inter=0.25, union=0.75 -> 1/3
     torch.testing.assert_close(iou, torch.tensor([1.0 / 3.0]), atol=1e-5, rtol=0)
 
 
 def test_iou_1d_disjoint_is_zero():
-    iou = iou_1d(
-        torch.tensor([0.0]), torch.tensor([0.1]),
-        torch.tensor([0.5]), torch.tensor([0.6]),
-    )
+    iou = iou_1d(*(torch.tensor([v]) for v in (0.0, 0.1, 0.5, 0.6)))
     torch.testing.assert_close(iou, torch.zeros(1), atol=1e-6, rtol=0)
 
 
 def test_pairwise_iou_1d_shape_and_values():
     # PAIRWISE: (Q,) x (T,) -> (Q, T).
-    s1 = torch.tensor([0.0, 0.5]); e1 = torch.tensor([0.5, 1.0])
-    s2 = torch.tensor([0.25]); e2 = torch.tensor([0.75])
-    iou = pairwise_iou_1d(s1, e1, s2, e2)
+    iou = pairwise_iou_1d(
+        torch.tensor([0.0, 0.5]),
+        torch.tensor([0.5, 1.0]),
+        torch.tensor([0.25]),
+        torch.tensor([0.75]),
+    )
     assert iou.shape == (2, 1)
     torch.testing.assert_close(iou[0, 0], torch.tensor(1.0 / 3.0), atol=1e-5, rtol=0)
 
 
 def test_detr_to_dense_probs_shape_and_normalized():
     # Queries span the full [0, 1) window so every timestep is covered.
+    # num_latents passed DIRECTLY -> T == num_latents (no frequency ambiguity).
     preds = {
         "class": torch.randn(2, 5, 4),
         "start": torch.zeros(2, 5),
         "end": torch.ones(2, 5),
     }
-    # num_latents passed DIRECTLY -> T == num_latents (no frequency ambiguity).
     out = detr_to_dense_probs(preds, num_latents=256, n_classes=4)
     assert out.shape == (2, 256, 4)
     assert torch.all(out >= 0)  # accumulated softmax probabilities are non-negative
@@ -66,8 +66,7 @@ def test_detr_to_dense_probs_uncovered_timesteps_are_zero():
         "start": torch.tensor([[0.0]]),
         "end": torch.tensor([[0.5]]),
     }
-    out = detr_to_dense_probs(preds, num_latents=10, n_classes=3)
-    sums = out.sum(dim=-1)
+    sums = detr_to_dense_probs(preds, num_latents=10, n_classes=3).sum(dim=-1)
     # Covered first half normalizes to 1; idle second half stays exactly 0.
     torch.testing.assert_close(sums[0, :5], torch.ones(5), atol=1e-5, rtol=0)
     torch.testing.assert_close(sums[0, 5:], torch.zeros(5), atol=1e-6, rtol=0)
@@ -92,16 +91,13 @@ def test_events_to_mask_background_and_class_rows():
 def test_extract_events_skips_background_argmax():
     # n_classes=3; query 0 argmaxes to class 2, query 1 argmaxes to class 0 (bg).
     outputs = {
-        "class": torch.tensor(
-            [[[0.0, 0.0, 5.0], [5.0, 0.0, 0.0]]]  # (B=1, Q=2, n_classes=3)
-        ),
+        "class": torch.tensor([[[0.0, 0.0, 5.0], [5.0, 0.0, 0.0]]]),  # (B=1, Q=2, 3)
         "start": torch.tensor([[0.25, 0.10]]),
         "end": torch.tensor([[0.50, 0.90]]),
     }
     events = extract_events_from_detr_batch(outputs, duration=8.0)
     assert len(events) == 1  # one window
-    # only the class-2 query survives (class-0 query is dropped as no-object)
-    assert len(events[0]) == 1
+    assert len(events[0]) == 1  # only class-2 survives (class-0 dropped as no-object)
     s, e, label, conf = events[0][0]
     assert label == 2
     torch.testing.assert_close(torch.tensor(s), torch.tensor(2.0), atol=1e-5, rtol=0)
@@ -109,7 +105,7 @@ def test_extract_events_skips_background_argmax():
     assert 0.0 <= conf <= 1.0
 
 
-def _targets(b=2, max_events=3, n_classes=4):
+def _targets(b=2):
     return {
         "start": torch.tensor([[0.1, 0.5, 0.0]] * b),
         "end": torch.tensor([[0.2, 0.7, 0.0]] * b),
@@ -118,8 +114,7 @@ def _targets(b=2, max_events=3, n_classes=4):
 
 
 def _preds(b=2, q=100, n_classes=4, num_latents=256):
-    # ``dense`` time dim MUST equal the loss's ``num_latents`` (the fixed latent
-    # grid); the real DANCE dense head always emits ``num_latents`` tokens.
+    # ``dense`` time dim MUST equal the loss's ``num_latents`` (the fixed latent grid).
     return {
         "class": torch.randn(b, q, n_classes, requires_grad=True),
         "start": torch.rand(b, q, requires_grad=True),
@@ -129,15 +124,13 @@ def _preds(b=2, q=100, n_classes=4, num_latents=256):
 
 
 def test_matcher_returns_matched_structures():
-    matcher = HungarianMatcher(weight_class=1.0, weight_iou=5.0)
-    mp, mt, matches = matcher(_preds(), _targets())
+    mp, mt, _ = HungarianMatcher(weight_class=1.0, weight_iou=5.0)(_preds(), _targets())
     assert "class" in mp and "start" in mp
     assert mt["start"].shape == mp["start"].shape
 
 
 def test_dance_loss_finite():
-    loss_fn = DanceLoss(num_latents=256)
-    loss, details = loss_fn(_preds(), _targets(), duration=32.0)
+    loss, details = DanceLoss(num_latents=256)(_preds(), _targets(), duration=32.0)
     assert torch.isfinite(loss)
     assert {"class_loss", "iou_loss", "dense_loss", "consistency_loss"} <= set(details)
 
@@ -145,10 +138,10 @@ def test_dance_loss_finite():
 def test_dance_loss_decreases_on_overfit():
     torch.manual_seed(0)
     loss_fn = DanceLoss(num_latents=64)
-    preds = _preds(num_latents=64)
-    targets = _targets()
-    params = [preds["class"], preds["start"], preds["end"], preds["dense"]]
-    opt = torch.optim.Adam(params, lr=0.05)
+    preds, targets = _preds(num_latents=64), _targets()
+    opt = torch.optim.Adam(
+        [preds["class"], preds["start"], preds["end"], preds["dense"]], lr=0.05
+    )
     first = None
     for step in range(40):
         opt.zero_grad()
@@ -160,11 +153,12 @@ def test_dance_loss_decreases_on_overfit():
     assert float(loss) < first  # overfit batch -> loss goes down
 
 
-import importlib.util
-from pathlib import Path
-
-_EX = Path(__file__).resolve().parents[3] / "examples" / "applied_examples" / \
-    "plot_dance_event_detection.py"
+_EX = (
+    Path(__file__).resolve().parents[3]
+    / "examples"
+    / "applied_examples"
+    / "plot_dance_event_detection.py"
+)
 
 
 def _load_example():
@@ -176,11 +170,13 @@ def _load_example():
 
 def test_target_builder_synthetic():
     ex = _load_example()
-    # window [10s, 42s] (32 s); one event 16-24 s, class 2
-    ann = [(16.0, 24.0, 2), (100.0, 110.0, 3)]  # 2nd is outside the window
+    # window [10s, 42s] (32 s); one event 16-24 s class 2, second is outside.
     tgt = ex.dance_target_builder(
-        ann, window_onset=10.0, window_duration=32.0,
-        max_events=5, num_latents=256,
+        [(16.0, 24.0, 2), (100.0, 110.0, 3)],
+        window_onset=10.0,
+        window_duration=32.0,
+        max_events=5,
+        num_latents=256,
     )
     assert tgt["start"].shape == (5,)
     assert tgt["class"].tolist().count(0) == 4  # only one in-window event
@@ -194,18 +190,15 @@ def test_target_builder_synthetic():
 
 
 def test_dance_tutorial_pipeline_runs_end_to_end():
-    """Execute the tutorial's data path + one train/eval step on the synthetic
-    recording. Guards against the gallery never running under html-noplot."""
+    """Tutorial data path + one train/eval step; guards the gallery under html-noplot."""
     import numpy as np
-    import torch
     from torch.utils.data import DataLoader
 
-    from braindecode.functional import extract_events_from_detr_batch
     from braindecode.models import DANCE
     from braindecode.preprocessing import create_fixed_length_windows
     from braindecode.training import DanceLoss, f1_event
 
-    ex = _load_example()  # defined in Task 10's test section
+    ex = _load_example()
     sfreq, window_s, n_classes, num_latents = 200.0, 32.0, 4, 256
     win = int(window_s * sfreq)  # 6400
     concat_ds = ex.build_synthetic_event_dataset(
@@ -216,8 +209,12 @@ def test_dance_tutorial_pipeline_runs_end_to_end():
     assert len(events) > 0  # synthetic recording really has events
 
     windows_ds = create_fixed_length_windows(
-        concat_ds, window_size_samples=win, window_stride_samples=win,
-        drop_last_window=True, preload=True, use_mne_epochs=False,
+        concat_ds,
+        window_size_samples=win,
+        window_stride_samples=win,
+        drop_last_window=True,
+        preload=True,
+        use_mne_epochs=False,
     )
     assert len(windows_ds) >= 2  # 128 s / 32 s -> 4 windows
 
@@ -226,8 +223,11 @@ def test_dance_tutorial_pipeline_runs_end_to_end():
         x, _, crop = windows_ds[i]
         eeg = torch.as_tensor(np.asarray(x), dtype=torch.float32)
         tgt = ex.dance_target_builder(
-            events, float(crop[1]) / sfreq, window_s,
-            max_events=16, num_latents=num_latents,
+            events,
+            float(crop[1]) / sfreq,
+            window_s,
+            max_events=16,
+            num_latents=num_latents,
         )
         assert eeg.shape == (19, win)
         assert tgt["dense"].shape == (num_latents,)
@@ -237,8 +237,12 @@ def test_dance_tutorial_pipeline_runs_end_to_end():
 
     loader = DataLoader(samples, batch_size=2, collate_fn=ex.dance_collate)
     model = DANCE(
-        n_outputs=n_classes, n_chans=19, chs_info=raw.info["chs"],
-        n_times=win, sfreq=sfreq, input_window_seconds=window_s,
+        n_outputs=n_classes,
+        n_chans=19,
+        chs_info=raw.info["chs"],
+        n_times=win,
+        sfreq=sfreq,
+        input_window_seconds=window_s,
     )
     criterion = DanceLoss(num_latents=num_latents)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -247,7 +251,7 @@ def test_dance_tutorial_pipeline_runs_end_to_end():
     out = model.detect(batch["eeg"])
     assert out["class"].shape == (2, 100, n_classes)
     assert out["dense"].shape == (2, num_latents, n_classes)
-    loss, details = criterion(out, batch, duration=window_s)
+    loss, _ = criterion(out, batch, duration=window_s)
     assert torch.isfinite(loss)
     loss.backward()
     opt.step()
@@ -262,5 +266,5 @@ def test_dance_tutorial_pipeline_runs_end_to_end():
         if int(c) != 0
     ]
     preds = [(s, e, c) for (s, e, c, _conf) in ev[0]]
-    f1 = f1_event(preds, gt, iou_threshold=0.5)  # finite, in [0, 1]
-    assert 0.0 <= f1 <= 1.0
+    f1 = f1_event(preds, gt, iou_threshold=0.5)
+    assert 0.0 <= f1 <= 1.0  # finite, in [0, 1]

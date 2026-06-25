@@ -3,6 +3,8 @@
 # License: MIT
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 import pytest
 import torch
@@ -24,13 +26,13 @@ def _chs_info(n=19, with_loc=True):
     ]
 
 
+_DEFAULTS = dict(
+    n_outputs=4, n_chans=19, n_times=6400, sfreq=200.0, input_window_seconds=32.0
+)
+
+
 def _model(**kw):
-    defaults = dict(
-        n_outputs=4, n_chans=19, chs_info=_chs_info(), n_times=6400,
-        sfreq=200.0, input_window_seconds=32.0,
-    )
-    defaults.update(kw)
-    return DANCE(**defaults)
+    return DANCE(**{**_DEFAULTS, "chs_info": _chs_info(), **kw})
 
 
 def test_dance_init_builds():
@@ -41,14 +43,10 @@ def test_dance_init_builds():
 
 
 def test_dance_final_layer_is_last_child():
-    m = _model()
-    last_two = [name for name, _ in m.named_children()][-2:]
-    assert "final_layer" in last_two
+    assert "final_layer" in [n for n, _ in _model().named_children()][-2:]
 
 
 def test_dance_activation_default_is_class():
-    import inspect
-
     sig = inspect.signature(DANCE.__init__)
     assert sig.parameters["activation"].default is nn.GELU
     assert sig.parameters["drop_prob"].default == 0.1
@@ -61,8 +59,7 @@ def test_dance_positions_buffer_registered():
     # normalized to [0, 1] per-axis
     assert m.channel_positions.min() >= 0.0
     assert m.channel_positions.max() <= 1.0 + 1e-6
-    # buffer is non-persistent -> not in state_dict
-    assert "channel_positions" not in m.state_dict()
+    assert "channel_positions" not in m.state_dict()  # non-persistent buffer
     # merger is NESTED inside the conv, not a top-level attribute
     assert not hasattr(m, "channel_merger")
     assert m.conv.merger is not None
@@ -80,42 +77,34 @@ def test_dance_no_merger_consumes_raw_channels():
     m = _model(use_channel_merger=False)
     assert m.conv.merger is None
     assert not hasattr(m, "channel_positions")
-    out = m.eval()(torch.randn(2, 19, 6400))
-    assert out.shape == (2, 256, 4)
+    assert m.eval()(torch.randn(2, 19, 6400)).shape == (2, 256, 4)
 
 
-def test_dance_forward_dense_shape():
-    m = _model().eval()
-    x = torch.randn(2, 19, 6400)
-    out = m(x)
-    assert out.shape == (2, 256, 4)  # (B, num_latents, n_outputs)
-
-
-def test_dance_forward_length_agnostic():
-    m = _model().eval()
-    out_a = m(torch.randn(1, 19, 6400))
-    out_b = m(torch.randn(1, 19, 9000))
-    assert out_a.shape == out_b.shape == (1, 256, 4)
+@pytest.mark.parametrize(
+    "shape",
+    [(2, 19, 6400), (1, 19, 6400), (1, 19, 9000)],
+    ids=["dense", "len6400", "len9000-agnostic"],
+)
+def test_dance_forward_shape(shape):
+    # (B, num_latents, n_outputs); output length is agnostic to input n_times.
+    out = _model().eval()(torch.randn(*shape))
+    assert out.shape == (shape[0], 256, 4)
 
 
 def test_dance_forward_batch_one_train_mode():
-    m = _model().train()
-    out = m(torch.randn(1, 19, 6400))  # must not crash at batch=1
-    assert out.shape == (1, 256, 4)
+    # BN at batch=1 must not crash in train mode.
+    assert _model().train()(torch.randn(1, 19, 6400)).shape == (1, 256, 4)
 
 
 def test_dance_forward_min_length_guard():
-    m = _model().eval()
     with pytest.raises(ValueError, match="receptive field|shorter"):
-        m(torch.randn(2, 19, 4))
+        _model().eval()(torch.randn(2, 19, 4))
 
 
 def test_dance_detect_dict_shapes():
-    m = _model().eval()
-    out = m.detect(torch.randn(2, 19, 6400))
+    out = _model().eval().detect(torch.randn(2, 19, 6400))
     assert out["class"].shape == (2, 100, 4)
-    assert out["start"].shape == (2, 100)
-    assert out["end"].shape == (2, 100)
+    assert out["start"].shape == out["end"].shape == (2, 100)
     assert out["dense"].shape == (2, 256, 4)
 
 
