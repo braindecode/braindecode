@@ -138,8 +138,11 @@ class ChannelMerger(nn.Module):
     pos_dim : int
         Fourier embedding dimension. The default is ``2048``.
     dropout : float
-        Spatial attention dropout (non-parametric, training only). The default
-        is ``0.2``.
+        Spatial-attention dropout *radius* (non-parametric, training only) -- NOT
+        a Bernoulli probability. On each training step a random center is drawn
+        in the normalized ``[0, 1]^2`` position space and every channel within
+        this radius is banned from the softmax. Values ``>= 1`` ban all channels
+        and zero the output. The default is ``0.2``.
     invalid_value : float
         Position value marking padded/invalid channels (masked out of the
         softmax). The default is ``-0.1``.
@@ -166,7 +169,10 @@ class ChannelMerger(nn.Module):
         # unmerge=False; subject_ids unused -- braindecode has no subjects).
         B, C, _ = positions.shape
         embedding = self.embedding(positions)  # (B, n_chans, pos_dim)
-        score_offset = torch.zeros(B, C, device=x.device)
+        # dtype=x.dtype keeps the score offset in x's precision so the final
+        # ``weights @ x`` matmul does not crash under half precision (the upstream
+        # copy omits this; it is a numerics-neutral dtype-safety fix in fp32).
+        score_offset = torch.zeros(B, C, device=x.device, dtype=x.dtype)
         invalid_mask = (positions == self.invalid_value).all(dim=-1)
         score_offset = score_offset.masked_fill(invalid_mask, float("-inf"))
         if self.training and self.dropout:
