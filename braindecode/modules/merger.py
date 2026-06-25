@@ -5,12 +5,11 @@
 # Spatial Fourier channel-attention merger, shared by the brainmagick
 # ``BrainModule`` (a.k.a. SimpleConv) and the DANCE model. Re-implemented to
 # match the upstream ``neuraltrain.models.common`` (FourierEmbModel /
-# ChannelMergerModel), so the attention scores are numerically identical
-# (parity-gated by ``scripts/dance_parity_check.py``).
+# ChannelMergerModel), so the attention scores are numerically identical to
+# upstream (verified weight-for-weight with ``torch.allclose``).
 from __future__ import annotations
 
 import math
-import warnings
 
 import numpy as np
 import torch
@@ -169,10 +168,12 @@ class ChannelMerger(nn.Module):
         # unmerge=False; subject_ids unused -- braindecode has no subjects).
         B, C, _ = positions.shape
         embedding = self.embedding(positions)  # (B, n_chans, pos_dim)
-        # dtype=x.dtype keeps the score offset in x's precision so the final
-        # ``weights @ x`` matmul does not crash under half precision (the upstream
-        # copy omits this; it is a numerics-neutral dtype-safety fix in fp32).
-        score_offset = torch.zeros(B, C, device=x.device, dtype=x.dtype)
+        # Build the score offset on ``positions``' device (so the masked_fill with
+        # ``invalid_mask`` -- derived from ``positions`` -- never hits a device
+        # mismatch) and in ``x``'s dtype (so the final ``weights @ x`` matmul works
+        # under half precision). Both are numerics-neutral in the usual fp32,
+        # same-device case (the upstream copy omits the dtype).
+        score_offset = torch.zeros(B, C, device=positions.device, dtype=x.dtype)
         invalid_mask = (positions == self.invalid_value).all(dim=-1)
         score_offset = score_offset.masked_fill(invalid_mask, float("-inf"))
         if self.training and self.dropout:
