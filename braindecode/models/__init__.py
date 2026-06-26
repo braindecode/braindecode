@@ -11,6 +11,7 @@ from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
 from .ctnet import CTNet
+from .dance import DANCE
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .dgcnn import DGCNN
@@ -84,6 +85,7 @@ __all__ = [
     "CodeBrain",
     "ContraWR",
     "CTNet",
+    "DANCE",
     "Deep4Net",
     "DeepSleepNet",
     "BrainModule",

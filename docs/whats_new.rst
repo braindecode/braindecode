@@ -42,6 +42,13 @@ Enhancements
   (GEGLU with the default ``nn.GELU``, SwiGLU with ``nn.SiLU``; ``torch.nn.GLU``
   is hard-wired to the sigmoid) for building gated transformer feed-forwards.
   (:gh:`1078` by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.DANCE`, an event detection-and-classification
+  model (CNN encoder + Perceiver bottleneck + DETR-style decoder) that detects a
+  *set* of ``(start, end, class)`` events from long, unaligned EEG windows, with a
+  :class:`braindecode.training.DanceLoss` criterion, ``f1_event``/``f1_sample``
+  detection metrics, and a runnable tutorial. The re-implemented spatial merger /
+  Perceiver / conv stack are numerically parity-verified against the upstream
+  reference. (:gh:`1075` by `Bruno Aristimunha`_)
 - Add an optional spatial Fourier :class:`braindecode.modules.ChannelMerger`
   (with :class:`braindecode.modules.FourierEmb`) to
   :class:`braindecode.models.BrainModule` via ``use_merger=True``, implementing

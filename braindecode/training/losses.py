@@ -4,8 +4,12 @@
 #
 # License: BSD (3-clause)
 
+import numpy as np
 import torch
+from scipy.optimize import linear_sum_assignment
 from torch import nn
+
+from braindecode.functional import detr_to_dense_probs, iou_1d, pairwise_iou_1d
 
 
 class CroppedLoss(nn.Module):
@@ -103,3 +107,148 @@ def mixup_criterion(preds, target):
         return ret.mean()
     else:
         return torch.nn.functional.nll_loss(preds, target)
+
+
+class HungarianMatcher(nn.Module):
+    """Hungarian one-to-one matching between queries and ground-truth events.
+
+    Class id 0 = no-object/padding (CLASS-0 CONTRACT): targets are kept via
+    ``(tgt_class != 0)`` and unmatched query slots stay class 0.
+
+    Cost = ``weight_class * CE + 1 * (1 - IoU)``. NOTE: ``weight_iou`` is stored
+    but NOT applied inside the matcher cost (matches upstream exactly); it scales
+    only the DETR IoU loss term in :class:`DanceLoss`.
+    """
+
+    def __init__(self, weight_class: float = 1.0, weight_iou: float = 5.0):
+        super().__init__()
+        self.weight_class = weight_class
+        self.weight_iou = weight_iou
+
+    @torch.no_grad()
+    def forward(self, outputs, targets):
+        cls = outputs["class"]  # (B, Q, n_classes)
+        b, q, _ = cls.shape
+        # Buffers on the preds' device so GPU targets assign cleanly.
+        ms = torch.zeros(b, q, device=cls.device)
+        me = torch.zeros(b, q, device=cls.device)
+        mc = torch.zeros(b, q, dtype=torch.long, device=cls.device)
+        for bi in range(b):
+            tgt_cls = targets["class"][bi]
+            keep = (tgt_cls != 0).nonzero(as_tuple=True)[0]
+            if keep.numel() == 0:
+                continue
+            ts = targets["start"][bi][keep]
+            te = targets["end"][bi][keep]
+            tc = tgt_cls[keep]
+            log_p = torch.log_softmax(cls[bi], dim=-1)  # (Q, n_classes)
+            cls_cost = self.weight_class * (-log_p[:, tc])  # (Q, n_targets)
+            # PAIRWISE IoU: (Q,) preds x (n_targets,) targets -> (Q, n_targets).
+            iou = pairwise_iou_1d(outputs["start"][bi], outputs["end"][bi], ts, te)
+            loc_cost = 1.0 - iou  # (Q, n_targets)
+            total = cls_cost + loc_cost  # IoU NOT weighted here
+            # detach() is defensive: the assignment is non-differentiable and
+            # the method is already under @torch.no_grad(), but detach keeps
+            # .numpy() safe if a caller ever drops the no_grad context.
+            cost_np = np.nan_to_num(
+                total.detach().cpu().numpy(), nan=1e6, posinf=1e6, neginf=1e6
+            )
+            q_idx, t_idx = linear_sum_assignment(cost_np)
+            for qi, ti in zip(q_idx, t_idx):
+                ms[bi, qi] = ts[ti]
+                me[bi, qi] = te[ti]
+                mc[bi, qi] = tc[ti]
+        # mc/ms/me are already on cls.device; unmatched slots stay class 0. The
+        # caller reads preds straight from ``outputs`` (the matcher only sorts
+        # targets onto query slots), so only the matched targets are returned.
+        return {"class": mc, "start": ms, "end": me}
+
+
+class DanceLoss(nn.Module):
+    """DANCE criterion: matched DETR (CE + IoU) + dense CE + consistency KL."""
+
+    def __init__(
+        self,
+        weight_class: float = 1.0,
+        weight_iou: float = 5.0,
+        weight_dense: float = 1.0,
+        weight_consistency: float = 0.5,
+        num_latents: int = 256,
+    ):
+        super().__init__()
+        self.matcher = HungarianMatcher(weight_class, weight_iou)
+        self.weight_class = weight_class
+        self.weight_iou = weight_iou
+        self.weight_dense = weight_dense
+        self.weight_consistency = weight_consistency
+        self.num_latents = num_latents
+        self.ce = nn.CrossEntropyLoss()
+        self.kl = nn.KLDivLoss(reduction="none")
+
+    def _dense_target(self, targets, n_classes, device):
+        start = targets["start"]
+        end = targets["end"]
+        cls = targets["class"]
+        b, max_e = cls.shape
+        t = self.num_latents
+        dense = torch.zeros(b, t, dtype=torch.long, device=device)
+        s_tok = (start * t).clamp(0, t).long()
+        e_tok = (end * t).clamp(0, t).long()
+        for bi in range(b):
+            for i in range(max_e):
+                c = int(cls[bi, i])
+                if c == 0:
+                    continue
+                s, e = int(s_tok[bi, i]), int(e_tok[bi, i])
+                if s < e:
+                    dense[bi, s:e] = c
+        return dense
+
+    def forward(self, detect_output, targets, duration=None):
+        # `duration` kept for API symmetry but UNUSED: the consistency KL is
+        # built on the num_latents token grid directly (see detr_to_dense_probs).
+        n_classes = detect_output["class"].shape[-1]
+        device = detect_output["class"].device
+        # CLASS-0 CONTRACT: matcher keeps tgt_class != 0; unmatched slots = 0.
+        mt = self.matcher(detect_output, targets)
+        logits = detect_output["class"].reshape(-1, n_classes)
+        labels = mt["class"].reshape(-1).long()
+        cls_term = self.weight_class * self.ce(logits, labels)
+        # ELEMENTWISE IoU over the matched (B, Q) spans.
+        iou = iou_1d(
+            detect_output["start"], detect_output["end"], mt["start"], mt["end"]
+        )
+        # Averages over ALL Q queries: unmatched/no-object slots contribute
+        # (1 - 0) = 1. Documented loose-port choice (not upstream's
+        # matched-only normalization); kept for parity with the dense head.
+        iou_term = self.weight_iou * (1.0 - iou).mean()
+
+        # Dense head time dim MUST equal num_latents (defensive guard; raise
+        # rather than assert so it survives ``python -O``).
+        if detect_output["dense"].shape[1] != self.num_latents:
+            raise ValueError(
+                f"dense time dim {detect_output['dense'].shape[1]} != "
+                f"num_latents {self.num_latents}"
+            )
+        dense_logits = detect_output["dense"].reshape(-1, n_classes)
+        if "dense" in targets and targets["dense"] is not None:
+            dense_t = targets["dense"].reshape(-1).long().to(device)
+        else:
+            dense_t = self._dense_target(targets, n_classes, device).reshape(-1)
+        dense_term = self.weight_dense * self.ce(dense_logits, dense_t)
+
+        dense_probs = torch.softmax(detect_output["dense"], -1).clamp(min=1e-8)
+        detr_probs = detr_to_dense_probs(
+            detect_output, self.num_latents, n_classes
+        ).clamp(min=1e-8)  # (B, num_latents, n_classes) == dense_probs
+        cons_term = self.weight_consistency * (
+            self.kl(detr_probs.log(), dense_probs).sum(dim=-1).mean()
+        )
+        loss = cls_term + iou_term + dense_term + cons_term
+        details = {
+            "class_loss": float(cls_term),
+            "iou_loss": float(iou_term),
+            "dense_loss": float(dense_term),
+            "consistency_loss": float(cons_term),
+        }
+        return loss, details
