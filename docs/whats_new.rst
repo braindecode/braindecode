@@ -28,6 +28,11 @@ Current 1.6.1 (GitHub)
 Enhancements
 ============
 
+- Pin the ``%pip install braindecode`` cell in generated notebooks to the
+  version used to build them (``braindecode==X.Y.Z`` for stable releases,
+  ``git+https://github.com/braindecode/braindecode.git`` for dev builds),
+  so notebooks can be reproduced with a matching installation.
+  (:gh:`1080` by `Fashad Ahmed`_)
 - Add :func:`braindecode.functional.sinusoidal_positional_encoding`, a shared
   sine/cosine positional-encoding primitive (handling odd dimensions), and reuse
   it in :class:`braindecode.models.BIOT`, :class:`braindecode.models.MEDFormer`,
