@@ -59,6 +59,9 @@ Enhancements
 - Clarify the model summary table's ``Type`` column by using ``Prediction`` for
   supervised heads instead of describing them as classification-only.
   By `Sarthak Tayal`_.
+- Add a ``Modality`` column (EEG, MEG, sEMG, ...) to the model summary table so
+  models can be filtered by the bio-signal they target, and validate it against a
+  controlled vocabulary. By `Bhargav Kowshik`_.
 - Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.

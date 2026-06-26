@@ -275,11 +275,13 @@ def main(source_dir: str, target_dir: str):
         df["Categorization"] = df["Categorization"].str.replace(",", ", ")
         df["Categorization"] = df["Categorization"].apply(wrap_tags)
         df["Type"] = df["Type"].apply(wrap_tags)
+        df["Modality"] = df["Modality"].apply(wrap_tags)
 
         df = df[
             [
                 "Model",
                 "Application",
+                "Modality",
                 "Type",
                 "Categorization",
                 "Sampling Frequency (Hz)",
