@@ -2452,6 +2452,9 @@ def test_fbmsnet_return_features():
     n_times = 1000
     n_outputs = 4
     batch_size = 2
+    default_n_filters_spat = 36
+    default_dilatability = 8
+    default_stride_factor = 4
 
     model = FBMSNet(
         n_chans=n_chans,
@@ -2468,7 +2471,9 @@ def test_fbmsnet_return_features():
     expected_feature_dim = model.out_channels_spatial * model.stride_factor
     assert logits.shape == (batch_size, n_outputs)
     assert features.shape == (batch_size, expected_feature_dim)
-    assert expected_feature_dim == 1152
+    assert expected_feature_dim == (
+        default_n_filters_spat * default_dilatability * default_stride_factor
+    )
 
 
 def test_fbmsnet_specified_filter_parameters():
