@@ -226,7 +226,7 @@ class FilterBankLayer(nn.Module):
         filter_phase = phase
         if phase == "causal" and self.method_iir:
             filter_phase = "forward"
-        elif self.forward_filter and not self.method_iir:
+        elif phase in ("forward", "causal") and not self.method_iir:
             filter_phase = "zero"
 
         for l_freq, h_freq in band_filters:
@@ -328,15 +328,9 @@ class FilterBankLayer(nn.Module):
         if forward_filter:
             orig_dtype = x.dtype
             b_coeffs = filt.double().to(x.device)
-            a_coeffs = torch.cat(
-                [
-                    torch.ones(1, device=b_coeffs.device, dtype=b_coeffs.dtype),
-                    torch.zeros(
-                        b_coeffs.shape[0] - 1,
-                        device=b_coeffs.device,
-                        dtype=b_coeffs.dtype,
-                    ),
-                ]
+            a_coeffs = torch.nn.functional.pad(
+                torch.ones(1, device=b_coeffs.device, dtype=b_coeffs.dtype),
+                (0, b_coeffs.shape[0] - 1),
             )
             filtered = lfilter(
                 x.double(), a_coeffs=a_coeffs, b_coeffs=b_coeffs, clamp=False
