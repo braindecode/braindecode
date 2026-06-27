@@ -267,7 +267,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         logits = self.final_layer(features)
         # shape: (batch, n_outputs)
-        if torch.jit.is_scripting():
+        if torch.jit.is_scripting() or torch.jit.is_tracing():
             return logits
         if self.return_features:
             return logits, features
