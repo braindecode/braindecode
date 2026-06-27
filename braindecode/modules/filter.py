@@ -328,8 +328,16 @@ class FilterBankLayer(nn.Module):
         if forward_filter:
             orig_dtype = x.dtype
             b_coeffs = filt.double().to(x.device)
-            a_coeffs = torch.zeros_like(b_coeffs)
-            a_coeffs[0] = 1.0
+            a_coeffs = torch.cat(
+                [
+                    torch.ones(1, device=b_coeffs.device, dtype=b_coeffs.dtype),
+                    torch.zeros(
+                        b_coeffs.shape[0] - 1,
+                        device=b_coeffs.device,
+                        dtype=b_coeffs.dtype,
+                    ),
+                ]
+            )
             filtered = lfilter(
                 x.double(), a_coeffs=a_coeffs, b_coeffs=b_coeffs, clamp=False
             )
