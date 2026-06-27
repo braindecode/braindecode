@@ -2447,6 +2447,30 @@ def test_fbmsnet_forward_pass(temporal_layer):
     assert output.shape == (batch_size, n_outputs)
 
 
+def test_fbmsnet_return_features():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 4
+    batch_size = 2
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=250,
+        return_features=True,
+    )
+    model.eval()
+
+    with torch.no_grad():
+        logits, features = model(torch.randn(batch_size, n_chans, n_times))
+
+    expected_feature_dim = model.out_channels_spatial * model.stride_factor
+    assert logits.shape == (batch_size, n_outputs)
+    assert features.shape == (batch_size, expected_feature_dim)
+    assert expected_feature_dim == 1152
+
+
 def test_fbmsnet_specified_filter_parameters():
     n_chans = 22
     n_times = 1000
