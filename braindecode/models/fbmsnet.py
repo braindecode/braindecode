@@ -233,6 +233,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             ``return_features`` is True, a tuple containing the output tensor
             and flattened features with shape
             (batch_size, out_channels_spatial * stride_factor) is returned.
+            In TorchScript mode, only the output tensor is returned.
         """
         batch, _, _ = x.shape
 
