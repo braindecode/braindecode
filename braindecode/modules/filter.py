@@ -208,6 +208,7 @@ class FilterBankLayer(nn.Module):
 
         # Prepare ParameterLists
         self.fir_list = nn.ParameterList()
+        self.fir_a_list = nn.ParameterList()
         self.b_list = nn.ParameterList()
         self.a_list = nn.ParameterList()
 
@@ -227,6 +228,8 @@ class FilterBankLayer(nn.Module):
         if phase == "causal" and self.method_iir:
             filter_phase = "forward"
         elif phase in ("forward", "causal") and not self.method_iir:
+            # MNE designs symmetric FIR coefficients with phase="zero"; the
+            # one-pass causal application is handled in forward().
             filter_phase = "zero"
 
         for l_freq, h_freq in band_filters:
@@ -249,6 +252,10 @@ class FilterBankLayer(nn.Module):
                 # FIR filter
                 filt = from_numpy(filt).float()
                 self.fir_list.append(nn.Parameter(filt, requires_grad=False))
+                fir_a = torch.nn.functional.pad(
+                    torch.ones(1, dtype=filt.dtype), (0, filt.shape[0] - 1)
+                )
+                self.fir_a_list.append(nn.Parameter(fir_a, requires_grad=False))
             else:
                 a_coeffs = filt["a"]
                 b_coeffs = filt["b"]
@@ -288,12 +295,13 @@ class FilterBankLayer(nn.Module):
                     )
                 )
         else:
-            for fir in self.fir_list:
+            for fir, fir_a in zip(self.fir_list, self.fir_a_list):
                 # Pass FIR filter directly
                 outs.append(
                     self._apply_fir(
                         x=x,
                         filt=fir,
+                        a_coeffs=fir_a,
                         n_chans=self.n_chans,
                         forward_filter=self.forward_filter,
                     )
@@ -303,7 +311,11 @@ class FilterBankLayer(nn.Module):
 
     @staticmethod
     def _apply_fir(
-        x, filt: Tensor, n_chans: int, forward_filter: bool = False
+        x,
+        filt: Tensor,
+        a_coeffs: Tensor,
+        n_chans: int,
+        forward_filter: bool = False,
     ) -> Tensor:
         """
         Apply an FIR filter to the input tensor.
@@ -315,6 +327,8 @@ class FilterBankLayer(nn.Module):
         filter : dict
             Dictionary containing IIR filter coefficients.
             - "b": Tensor of numerator coefficients.
+        a_coeffs: Tensor
+            FIR denominator coefficients for one-pass filtering.
         n_chans: int
             Number of channels
         forward_filter : bool
@@ -328,12 +342,11 @@ class FilterBankLayer(nn.Module):
         if forward_filter:
             orig_dtype = x.dtype
             b_coeffs = filt.double().to(x.device)
-            a_coeffs = torch.nn.functional.pad(
-                torch.ones(1, device=b_coeffs.device, dtype=b_coeffs.dtype),
-                (0, b_coeffs.shape[0] - 1),
-            )
             filtered = lfilter(
-                x.double(), a_coeffs=a_coeffs, b_coeffs=b_coeffs, clamp=False
+                x.double(),
+                a_coeffs=a_coeffs.double().to(x.device),
+                b_coeffs=b_coeffs,
+                clamp=False,
             )
             return filtered.to(orig_dtype).unsqueeze(1)
 
