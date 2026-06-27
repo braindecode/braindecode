@@ -117,9 +117,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         kernels_weights: Sequence[int] = (15, 31, 63, 125),
         cnn_max_norm: float = 2,
         linear_max_norm: float = 0.5,
-        return_features: bool = False,
         verbose: bool = False,
         filter_parameters: dict[Any, Any] | None = None,
+        return_features: bool = False,
     ):
         super().__init__(
             n_chans=n_chans,

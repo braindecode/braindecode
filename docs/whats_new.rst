@@ -92,6 +92,11 @@ Enhancements
   grouped-query attention Transformer with rotary positional embeddings, and a
   grouped temporal convolutional network head. (:gh:`1065` by `Bruno
   Aristimunha`_)
+- Add a ``return_features`` option to :class:`braindecode.models.FBMSNet`: when
+  enabled, ``forward()`` returns ``(logits, features)`` where ``features`` is
+  the flattened pre-classifier vector (shape ``(batch, out_channels_spatial *
+  stride_factor)``), enabling center-loss training without subclassing.
+  (:gh:`1083` by `Bruno Aristimunha`_)
 - Add an ``n_augmentation`` argument to
   :class:`braindecode.augmentation.AugmentedDataLoader` for fixed set-expansion:
   each batch keeps its clean originals and appends ``n_augmentation``
