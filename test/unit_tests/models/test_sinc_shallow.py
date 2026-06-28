@@ -14,7 +14,7 @@ def test_sinc_shallow_depthwise_batch_norm_input_is_contiguous():
     def check_input_contiguous(_module, inputs):
         batch_norm_inputs_are_contiguous.append(inputs[0].is_contiguous())
 
-    handle = model.depthwiseconv[1].register_forward_pre_hook(check_input_contiguous)
+    handle = model.depthwiseconv[0].register_forward_pre_hook(check_input_contiguous)
     try:
         x = torch.randn(2, 22, 500, requires_grad=True)
         model(x).sum().backward()
