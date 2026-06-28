@@ -158,8 +158,6 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         )
 
         self.depthwiseconv = nn.Sequential(
-            # Matching dim to depth wise conv!
-            Rearrange("batch timefil time nfilter -> batch nfilter timefil time"),
             nn.BatchNorm2d(
                 self.n_filters, momentum=0.99
             ),  # To match keras implementation
@@ -203,6 +201,8 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         """
         x = self.ensuredims(x)
         x = self.sinc_filter_layer(x)
+        # batch timefil time nfilter -> batch nfilter timefil time
+        x = x.permute(0, 3, 1, 2).contiguous()
         x = self.depthwiseconv(x)
         x = self.temporal_aggregation(x)
 
