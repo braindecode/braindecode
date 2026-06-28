@@ -8,6 +8,11 @@ from einops.layers.torch import Rearrange
 from braindecode.models.base import EEGModuleMixin
 
 
+class _ContiguousRearrange(Rearrange):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return super().forward(x).contiguous()
+
+
 class SincShallowNet(EEGModuleMixin, nn.Module):
     r"""Sinc-ShallowNet from Borra, D et al (2020) [borra2020]_.
 
@@ -159,7 +164,9 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
         self.depthwiseconv = nn.Sequential(
             # Matching dim to depth wise conv!
-            Rearrange("batch timefil time nfilter -> batch nfilter timefil time"),
+            _ContiguousRearrange(
+                "batch timefil time nfilter -> batch nfilter timefil time"
+            ),
             nn.BatchNorm2d(
                 self.n_filters, momentum=0.99
             ),  # To match keras implementation
