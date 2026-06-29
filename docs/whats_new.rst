@@ -216,10 +216,17 @@ Bug fixes
   ``(main_logits, stacked_branch_logits)``, matching the source.
   (:gh:`1069` by `Bruno Aristimunha`_)
 
-- Fix the spatial convolutions in :class:`braindecode.models.EEGSym` being dense
-  (``groups=1``) with a bias: the authors' ``unit_dconv`` uses grouped/depthwise
-  convolutions without bias, so they now use ``groups=out_channels`` and
-  ``bias=False``. (:gh:`1071` by `Bruno Aristimunha`_)
+- Fix the multi-scale spatial convolutions in :class:`braindecode.models.EEGSym`
+  being dense (``groups=1``) with a bias: the authors' ``unit_dconv`` uses
+  grouped/depthwise convolutions without bias, so they now use
+  ``groups=out_channels`` and ``bias=False``. (:gh:`1071` by `Bruno Aristimunha`_)
+
+- Align :class:`braindecode.models.EEGSym` with the reference implementation:
+  use the authors' even temporal kernels with ``padding="same"``, ascending
+  scale order, residual filter progression, residual projection blocks, dense
+  single-scale spatial convolutions, channel-merging groups, Keras batch
+  normalization settings, and default ``spatial_resnet_repetitions=1``.
+  (:gh:`1088` by `Bruno Aristimunha`_)
 
 Code health
 ============
