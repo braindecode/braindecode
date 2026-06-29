@@ -1,10 +1,8 @@
+import pytest
 import torch
 from torch import nn
 
-import pytest
-
 from braindecode.models import EEGSym
-
 
 _EEGSYM_8CH_CHS = [
     {"ch_name": ch} for ch in ["F3", "C3", "P3", "Cz", "Pz", "F4", "C4", "P4"]

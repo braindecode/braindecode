@@ -14,16 +14,6 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
-_BATCH_NORM_EPS = 1e-3
-_BATCH_NORM_MOMENTUM = 0.01
-
-
-def _batch_norm_3d(num_features: int) -> nn.BatchNorm3d:
-    return nn.BatchNorm3d(
-        num_features, eps=_BATCH_NORM_EPS, momentum=_BATCH_NORM_MOMENTUM
-    )
-
-
 class EEGSym(EEGModuleMixin, nn.Module):
     r"""EEGSym from Pérez-Velasco et al (2022) [eegsym2022]_.
 
@@ -484,7 +474,7 @@ class _InceptionBlock(nn.Module):
                         kernel_size=(1, scale, 1),
                         padding="same",
                     ),
-                    _batch_norm_3d(filters_per_branch),
+                    nn.BatchNorm3d(filters_per_branch, eps=1e-3, momentum=0.01),
                     activation,
                     nn.Dropout(drop_prob),
                 )
@@ -507,7 +497,11 @@ class _InceptionBlock(nn.Module):
                             groups=filters_per_branch * len(scales_samples),
                             bias=False,
                         ),
-                        _batch_norm_3d(filters_per_branch * len(scales_samples)),
+                        nn.BatchNorm3d(
+                            filters_per_branch * len(scales_samples),
+                            eps=1e-3,
+                            momentum=0.01,
+                        ),
                         activation,
                         nn.Dropout(drop_prob),
                     )
@@ -584,7 +578,7 @@ class _ResidualBlock(nn.Module):
                 kernel_size=(1, kernel_size, 1),
                 padding="same",
             ),
-            _batch_norm_3d(filters),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -598,7 +592,7 @@ class _ResidualBlock(nn.Module):
                 kernel_size=(1, 1, 1),
                 bias=False,
             ),
-            _batch_norm_3d(filters),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -622,7 +616,7 @@ class _ResidualBlock(nn.Module):
                             groups=1,
                             bias=False,
                         ),
-                        _batch_norm_3d(filters),
+                        nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
                         activation,
                         nn.Dropout(drop_prob),
                     )
@@ -681,7 +675,7 @@ class _TemporalBlock(nn.Module):
                 padding="same",
                 bias=False,
             ),
-            _batch_norm_3d(filters),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -742,7 +736,7 @@ class _ChannelMergingBlock(nn.Module):
                         padding=(0, 0, 0),  # Valid padding
                         bias=False,
                     ),
-                    _batch_norm_3d(filters),
+                    nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
                     activation,
                     nn.Dropout(drop_prob),
                 )
@@ -759,7 +753,7 @@ class _ChannelMergingBlock(nn.Module):
                 padding=(0, 0, 0),
                 bias=False,
             ),
-            _batch_norm_3d(filters),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -824,7 +818,7 @@ class _TemporalMergingBlock(nn.Module):
                 padding=(0, 0, 0),  # Valid padding - reduces time to 1
                 bias=False,
             ),
-            _batch_norm_3d(in_channels),
+            nn.BatchNorm3d(in_channels, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -839,7 +833,7 @@ class _TemporalMergingBlock(nn.Module):
                 padding=(0, 0, 0),
                 bias=False,
             ),
-            _batch_norm_3d(filters),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -888,7 +882,7 @@ class _OutputBlock(nn.Module):
                         padding=(0, 0, 0),
                         bias=False,
                     ),
-                    _batch_norm_3d(in_channels),
+                    nn.BatchNorm3d(in_channels, eps=1e-3, momentum=0.01),
                     activation,
                     nn.Dropout(drop_prob),
                 )
