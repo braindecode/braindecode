@@ -184,8 +184,8 @@ class EEGSym(EEGModuleMixin, nn.Module):
             raise ValueError(
                 "Either both or none of left_right_chs and middle_chs must be provided."
             )
-        if filters_per_branch % 8 != 0:
-            raise ValueError("filters_per_branch must be a multiple of 8.")
+        if filters_per_branch <= 0 or filters_per_branch % 8 != 0:
+            raise ValueError("filters_per_branch must be a positive multiple of 8.")
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

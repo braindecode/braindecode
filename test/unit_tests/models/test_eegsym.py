@@ -85,14 +85,17 @@ def test_eegsym_reference_8ch_forward_is_finite():
     assert torch.isfinite(out).all()
 
 
-def test_eegsym_filters_per_branch_must_be_multiple_of_8():
-    with pytest.raises(ValueError, match="filters_per_branch must be a multiple of 8"):
+@pytest.mark.parametrize("filters_per_branch", [0, -8, 12])
+def test_eegsym_filters_per_branch_must_be_positive_multiple_of_8(filters_per_branch):
+    with pytest.raises(
+        ValueError, match="filters_per_branch must be a positive multiple of 8"
+    ):
         EEGSym(
             n_outputs=2,
             n_times=384,
             sfreq=128,
             chs_info=_EEGSYM_8CH_CHS,
-            filters_per_branch=12,
+            filters_per_branch=filters_per_branch,
             left_right_chs=_EEGSYM_8CH_LEFT_RIGHT_CHS,
             middle_chs=_EEGSYM_8CH_MIDDLE_CHS,
         )
