@@ -26,10 +26,12 @@ from braindecode.preprocessing import (
     AddReferenceChannels,
     AnnotateAmplitude,
     AnnotateMovement,
+    AnnotateNan,
     Anonymize,
     ApplyGradientCompensation,
     ApplyHilbert,
     ApplyProj,
+    ComputeBridgedElectrodes,
     ComputeCurrentSourceDensity,
     Crop,
     CropByAnnotations,
@@ -695,13 +697,90 @@ def test_safe_standalone_preprocessor_runs_in_pipeline():
     assert all(isinstance(ds.raw, mne.io.BaseRaw) for ds in concat_ds.datasets)
 
 
-def test_unsafe_standalone_preprocessor_keeps_string_fn():
-    """Guard for #885: functions returning auxiliary data keep the string path.
+def test_unsafe_standalone_preprocessor_uses_wrapper():
+    """Fix for #1055: functions returning auxiliary data now use a wrapper callable.
 
-    ``annotate_amplitude`` returns a ``(annotations, bads)`` tuple. If it were
-    wrapped as a callable, ``Preprocessor.apply`` would replace the recording
-    with that tuple. It must therefore stay on the legacy string-name path.
+    ``annotate_amplitude`` returns a ``(annotations, bads)`` tuple. Previously
+    it kept the function name as a string and therefore failed at apply-time.
+    It now stores a wrapper callable that applies the side effects and returns
+    the recording.
     """
     preprocessor = AnnotateAmplitude(peak=1e-4)
-    assert isinstance(preprocessor.fn, str)
-    assert preprocessor.fn == "annotate_amplitude"
+    # Must carry a callable, not the function name string.
+    assert callable(preprocessor.fn)
+    assert not isinstance(preprocessor.fn, str)
+
+    # Applying must return a Raw (not the tuple).
+    result = preprocessor.apply(_montage_raw())
+    assert isinstance(result, mne.io.BaseRaw)
+
+
+@pytest.mark.parametrize(
+    "prep_class,init_kwargs",
+    [
+        (AnnotateAmplitude, {"peak": 1e-4}),
+        (AnnotateNan, {}),
+        (FindBadChannelsLof, {}),
+        (ComputeBridgedElectrodes, {}),
+    ],
+)
+def test_aux_return_standalone_preprocessor_uses_callable(prep_class, init_kwargs):
+    """Aux-return standalone functions (#1055) are wrapped as callables.
+
+    These MNE functions return auxiliary data (Annotations, bad-channel lists,
+    etc.) rather than the modified Raw.  The generated preprocessor must store a
+    wrapper callable, and ``apply`` must return a Raw—not the auxiliary data.
+    """
+    preprocessor = prep_class(**init_kwargs)
+
+    assert callable(preprocessor.fn)
+    assert not isinstance(preprocessor.fn, str)
+
+    result = preprocessor.apply(_montage_raw())
+    assert isinstance(result, mne.io.BaseRaw)
+
+
+def test_annotate_amplitude_applies_annotations_and_bads():
+    """AnnotateAmplitude wrapper adds annotations and bads to the recording."""
+    # Create raw with guaranteed amplitude violations
+    ch_names = ["Fp1", "Fp2", "F3", "C3"]
+    info = mne.create_info(ch_names, sfreq=200.0, ch_types="eeg")
+    data = np.zeros((len(ch_names), 2000))
+    # Insert a spike well above the threshold
+    data[0, 500:520] = 1e-2
+    raw = mne.io.RawArray(data, info, verbose=False)
+
+    prep = AnnotateAmplitude(peak=1e-4)
+    result = prep.apply(raw)
+
+    assert isinstance(result, mne.io.BaseRaw)
+    # The spike should have generated at least one annotation
+    assert len(result.annotations) > 0
+
+
+def test_annotate_nan_applies_annotations():
+    """AnnotateNan wrapper adds NaN annotations to the recording."""
+    ch_names = ["Fp1", "Fp2"]
+    info = mne.create_info(ch_names, sfreq=200.0, ch_types="eeg")
+    data = np.zeros((len(ch_names), 400))
+    data[0, 50:60] = np.nan
+    raw = mne.io.RawArray(data, info, verbose=False)
+
+    prep = AnnotateNan()
+    result = prep.apply(raw)
+
+    assert isinstance(result, mne.io.BaseRaw)
+    assert len(result.annotations) > 0
+
+
+def test_find_bad_channels_lof_extends_bads():
+    """FindBadChannelsLof wrapper extends raw.info['bads']."""
+    raw = _montage_raw()
+    raw.info["bads"] = ["Fp1"]
+
+    prep = FindBadChannelsLof()
+    result = prep.apply(raw)
+
+    assert isinstance(result, mne.io.BaseRaw)
+    # Original bad channel must still be present
+    assert "Fp1" in result.info["bads"]

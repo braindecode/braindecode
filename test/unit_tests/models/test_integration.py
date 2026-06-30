@@ -521,12 +521,18 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # einops Rearrange layers and the interleaved-RoPE slicing in the
+        # grouped-query attention are not torch.jit.script-able.
+        "TCFormer",
         # forward() returns Dict[str, Tensor] (features) or Tensor (logits);
         # torch.jit.script rejects this polymorphic return type.
         "EEGDINO",
         # wavelet encoder (conv1d + circular padding) + Dict/Tensor polymorphic
         # return; torch.jit.script rejects the polymorphic return type.
         "MVPFormer",
+        # forward() returns Tensor (logits) or Tuple[Tensor, Tensor] (main +
+        # branch logits) when return_features=True; polymorphic return type.
+        "MSVTNet",
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
@@ -539,6 +545,8 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
+        # TorchScript cannot script einops.rearrange (it uses **axes_lengths).
+        "STEEGFormer",
     ]
 
     if model.__class__.__name__ in not_working_models:

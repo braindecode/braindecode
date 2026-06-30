@@ -123,7 +123,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
     ----------
     filters_per_branch : int, optional
         Number of filters in each inception branch. Should be a multiple of 8.
-        Default is 12 [eegsym2022]_.
+        Default is 8 [eegsym2022code]_.
     scales_time : tuple of int, optional
         Temporal scales (in milliseconds) for the temporal convolutions in the first
         inception module. Default is (500, 250, 125) [eegsym2022]_.
@@ -133,7 +133,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         Activation function class to use. Default is :class:`nn.ELU` [eegsym2022]_.
     spatial_resnet_repetitions : int, optional
         Number of repetitions of the spatial analysis operations at each step.
-        Default is 5 [eegsym2022]_.
+        Default is 1 [eegsym2022code]_.
     left_right_chs : list of tuple of str, optional
         List of tuples pairing left and right hemisphere channel names,
         e.g., ``[('C3', 'C4'), ('FC5', 'FC6')]``. If not provided, channels
@@ -172,11 +172,11 @@ class EEGSym(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # Model parameters
-        filters_per_branch: int = 12,
+        filters_per_branch: int = 8,
         scales_time: Tuple[int, int, int] = (500, 250, 125),
         drop_prob: float = 0.25,
         activation: type[nn.Module] = nn.ELU,
-        spatial_resnet_repetitions: int = 5,
+        spatial_resnet_repetitions: int = 1,
         left_right_chs: list[tuple[str, str]] | None = None,
         middle_chs: list[str] | None = None,
     ):
@@ -184,6 +184,8 @@ class EEGSym(EEGModuleMixin, nn.Module):
             raise ValueError(
                 "Either both or none of left_right_chs and middle_chs must be provided."
             )
+        if filters_per_branch <= 0 or filters_per_branch % 8 != 0:
+            raise ValueError("filters_per_branch must be a positive multiple of 8.")
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -201,7 +203,10 @@ class EEGSym(EEGModuleMixin, nn.Module):
         self.spatial_resnet_repetitions = spatial_resnet_repetitions
 
         # Calculate scales in samples
-        self.scales_samples = [int(s * self.sfreq / 2000) * 2 + 1 for s in scales_time]
+        self.scales_samples = sorted(int(s * self.sfreq / 1000) for s in scales_time)
+        total_inception_filters = self.filters_per_branch * len(self.scales_samples)
+        residual_filters = total_inception_filters // 2
+        reduced_filters = total_inception_filters // 4
 
         # Note: chs_info is actually list[dict] despite base class type hint
         # saying list[str]
@@ -255,10 +260,9 @@ class EEGSym(EEGModuleMixin, nn.Module):
             drop_prob=self.drop_prob,
             average_pool=2,
             spatial_resnet_repetitions=self.spatial_resnet_repetitions,
-            init=True,
         )
         self.inception_block2 = _InceptionBlock(
-            in_channels=self.filters_per_branch * len(self.scales_samples),
+            in_channels=total_inception_filters,
             scales_samples=[max(1, s // 4) for s in self.scales_samples],
             filters_per_branch=self.filters_per_branch,
             ncha=self.n_channels_per_hemi,
@@ -266,15 +270,13 @@ class EEGSym(EEGModuleMixin, nn.Module):
             drop_prob=self.drop_prob,
             average_pool=2,
             spatial_resnet_repetitions=self.spatial_resnet_repetitions,
-            init=False,
         )
 
         # Residual blocks (spatial dim is still n_channels_per_hemi through the network)
         self.residual_blocks = nn.Sequential(
             _ResidualBlock(
-                in_channels=self.filters_per_branch * len(self.scales_samples),
-                filters=self.filters_per_branch
-                * len(self.scales_samples),  # No reduction
+                in_channels=total_inception_filters,
+                filters=residual_filters,
                 kernel_size=16,
                 ncha=self.n_channels_per_hemi,
                 activation=self.activation,
@@ -283,10 +285,8 @@ class EEGSym(EEGModuleMixin, nn.Module):
                 spatial_resnet_repetitions=self.spatial_resnet_repetitions,
             ),
             _ResidualBlock(
-                in_channels=self.filters_per_branch * len(self.scales_samples),
-                filters=int(
-                    self.filters_per_branch * len(self.scales_samples) / 2
-                ),  # Reduce by /2
+                in_channels=residual_filters,
+                filters=residual_filters,
                 kernel_size=8,
                 ncha=self.n_channels_per_hemi,
                 activation=self.activation,
@@ -295,10 +295,8 @@ class EEGSym(EEGModuleMixin, nn.Module):
                 spatial_resnet_repetitions=self.spatial_resnet_repetitions,
             ),
             _ResidualBlock(
-                in_channels=int(self.filters_per_branch * len(self.scales_samples) / 2),
-                filters=int(
-                    self.filters_per_branch * len(self.scales_samples) / 4
-                ),  # Reduce by /2
+                in_channels=residual_filters,
+                filters=reduced_filters,
                 kernel_size=4,
                 ncha=self.n_channels_per_hemi,
                 activation=self.activation,
@@ -311,8 +309,8 @@ class EEGSym(EEGModuleMixin, nn.Module):
         # Temporal reduction
         self.temporal_reduction = nn.Sequential(
             _TemporalBlock(
-                in_channels=int(self.filters_per_branch * len(self.scales_samples) / 4),
-                filters=int(self.filters_per_branch * len(self.scales_samples) / 4),
+                in_channels=reduced_filters,
+                filters=reduced_filters,
                 kernel_size=4,
                 activation=self.activation,
                 drop_prob=self.drop_prob,
@@ -322,11 +320,9 @@ class EEGSym(EEGModuleMixin, nn.Module):
 
         # Channel merging
         self.channel_merging = _ChannelMergingBlock(
-            in_channels=int(self.filters_per_branch * len(self.scales_samples) / 4),
-            filters=int(self.filters_per_branch * len(self.scales_samples) / 4),
-            groups=int(
-                self.filters_per_branch * len(self.scales_samples) / 12
-            ),  # 36/12=3 groups
+            in_channels=reduced_filters,
+            filters=reduced_filters,
+            groups=total_inception_filters // 8,
             ncha=self.n_channels_per_hemi,
             division=2,
             activation=self.activation,
@@ -340,9 +336,9 @@ class EEGSym(EEGModuleMixin, nn.Module):
         temporal_dim_at_merging = self.n_times // 64
 
         self.temporal_merging = _TemporalMergingBlock(
-            in_channels=int(self.filters_per_branch * len(self.scales_samples) / 4),
-            filters=int(self.filters_per_branch * len(self.scales_samples) / 2),
-            groups=int(self.filters_per_branch * len(self.scales_samples) / 4),
+            in_channels=reduced_filters,
+            filters=residual_filters,
+            groups=reduced_filters,
             n_times=temporal_dim_at_merging,
             activation=self.activation,
             drop_prob=self.drop_prob,
@@ -351,7 +347,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         # Output layers
         self.output_blocks = nn.Sequential(
             _OutputBlock(
-                in_channels=int(self.filters_per_branch * len(self.scales_samples) / 2),
+                in_channels=residual_filters,
                 activation=self.activation,
                 drop_prob=self.drop_prob,
             ),
@@ -360,7 +356,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
 
         # Final fully connected layer
         self.final_layer = nn.Linear(
-            in_features=int(self.filters_per_branch * len(self.scales_samples) / 2),
+            in_features=residual_filters,
             out_features=self.n_outputs,
         )
 
@@ -452,10 +448,6 @@ class _InceptionBlock(nn.Module):
         Kernel size for average pooling.
     spatial_resnet_repetitions : int
         Number of repetitions of the spatial analysis operations.
-    residual : bool
-        If True, includes residual connections.
-    init : bool
-        If True, applies channel merging operation if residual is False.
     """
 
     def __init__(
@@ -468,13 +460,8 @@ class _InceptionBlock(nn.Module):
         drop_prob: float,
         average_pool: int,
         spatial_resnet_repetitions: int,
-        init: bool = False,
     ):
         super().__init__()
-        self.activation = activation
-        self.drop_prob = drop_prob
-        self.average_pool = average_pool
-        self.init = init
 
         # Temporal convolutions
         self.temporal_convs = nn.ModuleList()
@@ -485,9 +472,9 @@ class _InceptionBlock(nn.Module):
                         in_channels=in_channels,
                         out_channels=filters_per_branch,
                         kernel_size=(1, scale, 1),
-                        padding=(0, scale // 2, 0),
+                        padding="same",
                     ),
-                    nn.BatchNorm3d(filters_per_branch),
+                    nn.BatchNorm3d(filters_per_branch, eps=1e-3, momentum=0.01),
                     activation,
                     nn.Dropout(drop_prob),
                 )
@@ -504,8 +491,17 @@ class _InceptionBlock(nn.Module):
                             out_channels=filters_per_branch * len(scales_samples),
                             kernel_size=(1, 1, ncha),
                             padding=(0, 0, 0),
+                            # depthwise/grouped spatial conv with no bias, as in
+                            # the authors' ``unit_dconv`` (per-filter spatial
+                            # filtering, not dense mixing across filters).
+                            groups=filters_per_branch * len(scales_samples),
+                            bias=False,
                         ),
-                        nn.BatchNorm3d(filters_per_branch * len(scales_samples)),
+                        nn.BatchNorm3d(
+                            filters_per_branch * len(scales_samples),
+                            eps=1e-3,
+                            momentum=0.01,
+                        ),
                         activation,
                         nn.Dropout(drop_prob),
                     )
@@ -523,10 +519,6 @@ class _InceptionBlock(nn.Module):
             # Apply temporal convolutions
             temp_outputs = [conv(x) for conv in self.temporal_convs]
             x_out = torch.cat(temp_outputs, dim=1)
-
-            # Trim temporal dimension if needed (due to even kernel sizes with padding)
-            if x_out.shape[3] > x.shape[3]:
-                x_out = x_out[:, :, :, : x.shape[3], :]
 
             # Residual connection
             x_out = x_out + x
@@ -563,8 +555,6 @@ class _ResidualBlock(nn.Module):
         Kernel size for average pooling.
     spatial_resnet_repetitions : int
         Number of repetitions of the spatial analysis operations.
-    residual : bool
-        If True, includes residual connections.
     """
 
     def __init__(
@@ -576,11 +566,9 @@ class _ResidualBlock(nn.Module):
         activation: nn.Module,
         drop_prob: float,
         average_pool: int,
-        spatial_resnet_repetitions: int = 5,
+        spatial_resnet_repetitions: int = 1,
     ):
         super().__init__()
-        self.activation = activation
-        self.drop_prob = drop_prob
 
         # Temporal convolution
         self.temporal_conv = nn.Sequential(
@@ -588,27 +576,29 @@ class _ResidualBlock(nn.Module):
                 in_channels=in_channels,
                 out_channels=filters,
                 kernel_size=(1, kernel_size, 1),
-                padding=(0, kernel_size // 2, 0),
+                padding="same",
             ),
-            nn.BatchNorm3d(filters),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
 
-        # Projection layer for dimension matching if needed
-        if in_channels != filters:
-            self.projection = nn.Conv3d(
+        # The reference applies this 1x1x1 residual branch for every
+        # single-scale residual unit, even when the channel count is unchanged.
+        self.projection = nn.Sequential(
+            nn.Conv3d(
                 in_channels=in_channels,
                 out_channels=filters,
                 kernel_size=(1, 1, 1),
-            )
-        else:
-            self.projection = None
+                bias=False,
+            ),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
+            activation,
+            nn.Dropout(drop_prob),
+        )
 
         # Average pooling
-        self.avg_pool = nn.AvgPool3d(
-            kernel_size=(1, average_pool, 1)
-        )  # FIXED: pool Time
+        self.avg_pool = nn.AvgPool3d(kernel_size=(1, average_pool, 1))
 
         # Spatial convolutions (multiple repetitions like in InceptionBlock)
         if ncha != 1:
@@ -621,8 +611,12 @@ class _ResidualBlock(nn.Module):
                             out_channels=filters,
                             kernel_size=(1, 1, ncha),  # Spatial convolution
                             padding=(0, 0, 0),
+                            # The single-scale residual branch uses the authors'
+                            # dense ``unit_conv_s``, not ``unit_dconv``.
+                            groups=1,
+                            bias=False,
                         ),
-                        nn.BatchNorm3d(filters),
+                        nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
                         activation,
                         nn.Dropout(drop_prob),
                     )
@@ -632,14 +626,7 @@ class _ResidualBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_res = self.temporal_conv(x)
-
-        # Trim temporal dimension if needed (due to even kernel sizes with padding)
-        if x_res.shape[3] > x.shape[3]:
-            x_res = x_res[:, :, :, : x.shape[3], :]
-
-        # Handle channel dimension mismatch if needed
-        if self.projection is not None:
-            x = self.projection(x)
+        x = self.projection(x)
 
         x_out = x_res + x  # Residual connection
         x_out = self.avg_pool(x_out)
@@ -668,8 +655,6 @@ class _TemporalBlock(nn.Module):
         Activation function to use.
     drop_prob : float
         Dropout probability.
-    residual : bool
-        If True, includes residual connections.
     """
 
     def __init__(
@@ -681,28 +666,22 @@ class _TemporalBlock(nn.Module):
         drop_prob: float,
     ):
         super().__init__()
-        self.activation = activation
-        self.drop_prob = drop_prob
 
         self.conv = nn.Sequential(
             nn.Conv3d(
                 in_channels=in_channels,
                 out_channels=filters,
                 kernel_size=(1, kernel_size, 1),
-                padding=(0, kernel_size // 2, 0),
+                padding="same",
+                bias=False,
             ),
-            nn.BatchNorm3d(filters),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_res = self.conv(x)
-
-        # Trim temporal dimension if needed (due to even kernel sizes with padding)
-        if x_res.shape[3] > x.shape[3]:
-            x_res = x_res[:, :, :, : x.shape[3], :]
-
         x_res = x_res + x
         return x_res
 
@@ -743,8 +722,6 @@ class _ChannelMergingBlock(nn.Module):
         drop_prob: float,
     ):
         super().__init__()
-        self.activation = activation
-        self.drop_prob = drop_prob
 
         # TWO residual convolution iterations
         # Each reduces spatial dimension: ncha → 1
@@ -757,8 +734,9 @@ class _ChannelMergingBlock(nn.Module):
                         out_channels=filters,
                         kernel_size=(division, 1, ncha),  # (Z, Time, Space)
                         padding=(0, 0, 0),  # Valid padding
+                        bias=False,
                     ),
-                    nn.BatchNorm3d(filters),
+                    nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
                     activation,
                     nn.Dropout(drop_prob),
                 )
@@ -773,8 +751,9 @@ class _ChannelMergingBlock(nn.Module):
                 kernel_size=(division, 1, ncha),  # (Z, Time, Space)
                 groups=groups,
                 padding=(0, 0, 0),
+                bias=False,
             ),
-            nn.BatchNorm3d(filters),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -825,8 +804,6 @@ class _TemporalMergingBlock(nn.Module):
         drop_prob: float,
     ):
         super().__init__()
-        self.activation = activation
-        self.drop_prob = drop_prob
 
         # Calculate temporal kernel size
         # At this point in network, temporal dim has been reduced by pooling
@@ -839,8 +816,9 @@ class _TemporalMergingBlock(nn.Module):
                 out_channels=in_channels,  # Same channels for residual
                 kernel_size=(1, self.temporal_kernel, 1),  # (Z, Time, Space)
                 padding=(0, 0, 0),  # Valid padding - reduces time to 1
+                bias=False,
             ),
-            nn.BatchNorm3d(in_channels),
+            nn.BatchNorm3d(in_channels, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -853,8 +831,9 @@ class _TemporalMergingBlock(nn.Module):
                 kernel_size=(1, self.temporal_kernel, 1),  # (Z, Time, Space)
                 groups=groups,
                 padding=(0, 0, 0),
+                bias=False,
             ),
-            nn.BatchNorm3d(filters),
+            nn.BatchNorm3d(filters, eps=1e-3, momentum=0.01),
             activation,
             nn.Dropout(drop_prob),
         )
@@ -881,8 +860,6 @@ class _OutputBlock(nn.Module):
         Activation function to use.
     drop_prob : float
         Dropout probability.
-    residual : bool
-        If True, includes residual connections.
     """
 
     def __init__(
@@ -893,8 +870,6 @@ class _OutputBlock(nn.Module):
         n_residual: int = 4,
     ):
         super().__init__()
-        self.activation = activation
-        self.drop_prob = drop_prob
 
         self.conv_blocks = nn.ModuleList()
         for _ in range(n_residual):
@@ -905,8 +880,9 @@ class _OutputBlock(nn.Module):
                         out_channels=in_channels,
                         kernel_size=(1, 1, 1),
                         padding=(0, 0, 0),
+                        bias=False,
                     ),
-                    nn.BatchNorm3d(in_channels),
+                    nn.BatchNorm3d(in_channels, eps=1e-3, momentum=0.01),
                     activation,
                     nn.Dropout(drop_prob),
                 )

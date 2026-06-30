@@ -55,7 +55,9 @@ from .sleep_stager_blanco_2020 import SleepStagerBlanco2020
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
 from .sparcnet import SPARCNet
 from .sstdpn import SSTDPN
+from .steegformer import STEEGFormer
 from .syncnet import SyncNet
+from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
 from .tsinception import TSception
@@ -65,6 +67,7 @@ from .util import (
     build_model_config,
     extract_channel_locations_from_chs_info,
     models_mandatory_parameters,
+    positions_from_chs_info,
 )
 
 # Call this last in order to make sure the dataset list is populated with
@@ -114,6 +117,7 @@ __all__ = [
     "Labram",
     "LUNA",
     "extract_channel_locations_from_chs_info",
+    "positions_from_chs_info",
     "MEDFormer",
     "MSVTNet",
     "MVPFormer",
@@ -130,8 +134,10 @@ __all__ = [
     "SleepStagerBlanco2020",
     "SleepStagerChambon2018",
     "SPARCNet",
+    "STEEGFormer",
     "SyncNet",
     "BDTCN",
+    "TCFormer",
     "TCN",
     "TIDNet",
     "TSception",

@@ -36,6 +36,120 @@ _SAFE_STANDALONE_FUNCTIONS = frozenset(
 )
 
 
+# ---------------------------------------------------------------------------
+# Wrapper factories for standalone functions that return auxiliary data.
+#
+# These functions cannot be passed as callables directly because
+# ``Preprocessor.apply`` would replace the recording with the auxiliary return
+# value (e.g. an Annotations object or a list of bad channels).  Each factory
+# returns a new callable that calls the original function, applies its side
+# effects onto the recording, and returns the (still-valid) recording.
+# See :gh:`1055`.
+# ---------------------------------------------------------------------------
+
+
+def _wrap_annotation_return(func, also_bads=False):
+    """Wrap a function that returns Annotations (or ``(Annotations, bads)``).
+
+    The wrapper calls *func*, adds the returned annotations to the recording
+    with :meth:`mne.io.Raw.set_annotations`, and—when *also_bads* is
+    ``True``—extends ``raw.info['bads']`` with the bad-channel list returned
+    as the second tuple element.  The recording is returned unchanged otherwise.
+    """
+
+    def wrapper(raw, **kwargs):
+        result = func(raw, **kwargs)
+        if isinstance(result, tuple):
+            annot = result[0]
+            bads = list(result[1]) if also_bads else []
+        else:
+            annot = result
+            bads = []
+        raw.set_annotations(raw.annotations + annot)
+        if bads:
+            raw.info["bads"] = list(set(raw.info["bads"] + bads))
+        return raw
+
+    wrapper.__name__ = func.__name__
+    wrapper.__qualname__ = func.__qualname__
+    wrapper.__module__ = func.__module__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
+
+
+def _wrap_bad_channels_return(func):
+    """Wrap a function that returns a list of bad channel names.
+
+    The wrapper calls *func*, extends ``raw.info['bads']`` with the returned
+    channel names (deduplicating), and returns the recording.  If the function
+    was called with ``return_scores=True`` (so it returns a ``(bads, scores)``
+    tuple), only the first element is used.
+    """
+
+    def wrapper(raw, **kwargs):
+        result = func(raw, **kwargs)
+        bads = result[0] if isinstance(result, tuple) else result
+        raw.info["bads"] = list(set(raw.info["bads"] + list(bads)))
+        return raw
+
+    wrapper.__name__ = func.__name__
+    wrapper.__qualname__ = func.__qualname__
+    wrapper.__module__ = func.__module__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
+
+
+def _wrap_bridged_electrodes(func):
+    """Wrap :func:`mne.preprocessing.compute_bridged_electrodes`.
+
+    The function returns ``(bridged_idx, ed_matrix)``.  The wrapper marks
+    every channel that appears in a bridged pair as bad by extending
+    ``raw.info['bads']``, then returns the recording.
+    """
+
+    def wrapper(raw, **kwargs):
+        bridged_idx, _ = func(raw, **kwargs)
+        ch_names = raw.ch_names
+        new_bads = [ch_names[idx] for pair in bridged_idx for idx in pair]
+        raw.info["bads"] = list(set(raw.info["bads"] + new_bads))
+        return raw
+
+    wrapper.__name__ = func.__name__
+    wrapper.__qualname__ = func.__qualname__
+    wrapper.__module__ = func.__module__
+    wrapper.__doc__ = func.__doc__
+    return wrapper
+
+
+# Map each "aux-return" standalone function to its safe wrapper callable.
+# These wrappers apply the function's side effects to the recording and return
+# the recording itself, so they can be used with the callable path in
+# ``Preprocessor`` without corrupting the dataset.
+_AUX_RETURN_WRAPPERS = {
+    mne.preprocessing.annotate_amplitude: _wrap_annotation_return(
+        mne.preprocessing.annotate_amplitude, also_bads=True
+    ),
+    mne.preprocessing.annotate_nan: _wrap_annotation_return(
+        mne.preprocessing.annotate_nan
+    ),
+    mne.preprocessing.annotate_break: _wrap_annotation_return(
+        mne.preprocessing.annotate_break
+    ),
+    mne.preprocessing.annotate_movement: _wrap_annotation_return(
+        mne.preprocessing.annotate_movement
+    ),
+    mne.preprocessing.annotate_muscle_zscore: _wrap_annotation_return(
+        mne.preprocessing.annotate_muscle_zscore
+    ),
+    mne.preprocessing.compute_bridged_electrodes: _wrap_bridged_electrodes(
+        mne.preprocessing.compute_bridged_electrodes
+    ),
+    mne.preprocessing.find_bad_channels_lof: _wrap_bad_channels_return(
+        mne.preprocessing.find_bad_channels_lof
+    ),
+}
+
+
 def _is_standalone_function(func):
     """
     Determine if a function is standalone based on its module.
@@ -101,11 +215,21 @@ def _generate_init_method(func, force_copy_false=False):
             raise TypeError(
                 f"{func_name}() missing required arguments: {', '.join(mandatory)}"
             )
-        # For standalone functions verified to return the modified instance,
-        # pass the callable itself so it is actually applied. Every other
-        # function keeps the legacy string-name behaviour (see #885 and
-        # ``_SAFE_STANDALONE_FUNCTIONS`` above).
-        fn = func if func in _SAFE_STANDALONE_FUNCTIONS else func_name
+        # Choose the callable to store in this Preprocessor instance.
+        #
+        # - Functions in ``_SAFE_STANDALONE_FUNCTIONS`` return the modified
+        #   Raw/Epochs directly and are passed as-is.
+        # - Functions in ``_AUX_RETURN_WRAPPERS`` return auxiliary data; we
+        #   use a pre-built wrapper that applies the side effects and returns
+        #   the recording.  See :gh:`1055`.
+        # - Every other standalone function keeps the legacy string-name
+        #   behaviour (``_apply_str``).
+        if func in _SAFE_STANDALONE_FUNCTIONS:
+            fn = func
+        elif func in _AUX_RETURN_WRAPPERS:
+            fn = _AUX_RETURN_WRAPPERS[func]
+        else:
+            fn = func_name
         Preprocessor.__init__(self, fn=fn, apply_on_array=False, **init_kwargs)
 
     init_method.__signature__ = inspect.signature(func)
@@ -163,13 +287,6 @@ def _generate_mne_pre_processor(function):
     )
 
     base_classes = (Preprocessor,)
-
-    # Check if function has a 'copy' parameter
-    sig = inspect.signature(function)
-    has_copy_param = "copy" in sig.parameters
-    force_copy_false = is_standalone and has_copy_param
-    # Automatically determine if function is standalone
-    is_standalone = _is_standalone_function(function)
 
     # Check if function has a 'copy' parameter
     sig = inspect.signature(function)

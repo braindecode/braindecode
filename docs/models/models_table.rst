@@ -45,8 +45,13 @@ Columns definitions:
     - **Application**: The application(s) the model is typically used for (e.g., Motor
       Imagery, P300, Sleep Staging). 'General' indicates applicability across multiple
       applications or no specific application focus.
-    - **Type**: The model's primary function (e.g., Classification, Regression,
-      Embedding).
+    - **Modality**: The recording modality (bio-signal type) the model is designed and
+      validated for, e.g. EEG, MEG, or sEMG. Most Braindecode models target EEG; a few
+      support more than one modality (e.g. EEG, MEG).
+    - **Type**: The model's output interface. ``Prediction`` indicates a supervised head
+      that can be used for classification or regression, depending on the wrapper, loss,
+      and target. ``Embedding`` indicates a model that exposes an embedding
+      representation through its documented public interface.
     - **Sampling Frequency**: The data sampling rate (in Hertz) the model is designed
       for. Note that this might be adaptable depending on the specific dataset and
       application.
@@ -151,7 +156,7 @@ Braindecode.
       }
 
       /* --- DataTable: panes hidden until button click ---------------------- */
-      var FILTER_COLS = [1,2,3,4]; // Paradigm, Type, Categorization, Hyperparameters
+      var FILTER_COLS = [1,2,3,4]; // Application, Modality, Type, Categorization
       var table = $('.sortable').DataTable({
         dom: 'Blfrtip',                           // B = Buttons (no 'P' here)
         paging: false,

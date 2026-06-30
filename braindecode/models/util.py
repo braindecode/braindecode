@@ -360,6 +360,7 @@ models_mandatory_parameters: list[
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("TCFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("SignalJEPA", ["chs_info"], None),
@@ -415,6 +416,7 @@ models_mandatory_parameters: list[
     ),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
     (
         "MVPFormer",
         ["n_chans", "n_outputs", "n_times", "sfreq"],
@@ -673,6 +675,48 @@ def extract_channel_locations_from_chs_info(
         return None
 
     return result
+
+
+def positions_from_chs_info(chs_info) -> np.ndarray:
+    """``(n_chans, 2)`` electrode xy normalized to ``[0, 1]`` per axis.
+
+    Takes the raw 3D sensor coordinates ``ch["loc"][:3]``, keeps ``xy`` and
+    min-max normalizes each axis to ``[0, 1]`` -- the upstream brainmagick/DANCE
+    convention (``dance/example/data.py``). This is **not** MNE's
+    ``_find_topomap_coords`` projection (which returns an interpolated scalp grid
+    and would change the merger softmax). The ``1e-9`` floor avoids a
+    divide-by-zero on a degenerate (constant) axis.
+
+    Parameters
+    ----------
+    chs_info : list of dict
+        MNE-style channel info dicts, each with a ``"loc"`` array whose first
+        three entries are the head-frame ``x, y, z`` coordinates.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(n_chans, 2)`` float positions in ``[0, 1]``.
+    """
+    xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
+    xy = xyz[:, :2]
+    mn, mx = xy.min(axis=0), xy.max(axis=0)
+    return (xy - mn) / np.maximum(mx - mn, 1e-9)
+
+
+def has_valid_locations(chs_info) -> bool:
+    """``True`` if ``chs_info`` carries finite, non-all-zero electrode locations."""
+    if chs_info is None:
+        return False
+    try:
+        xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
+    except (KeyError, TypeError, ValueError):
+        return False
+    if xyz.size == 0 or not np.isfinite(xyz).all():
+        return False
+    if np.allclose(xyz, 0.0):
+        return False
+    return True
 
 
 _summary_table = get_summary_table()

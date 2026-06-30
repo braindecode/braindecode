@@ -7,6 +7,7 @@ from .functions import (
     identity,
     plv_time,
     safe_log,
+    sinusoidal_positional_encoding,
     square,
     wavelet_decomposition,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "identity",
     "plv_time",
     "safe_log",
+    "sinusoidal_positional_encoding",
     "square",
     "wavelet_decomposition",
     "glorot_weight_zero_bias",

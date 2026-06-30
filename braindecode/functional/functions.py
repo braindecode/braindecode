@@ -371,3 +371,40 @@ def wavelet_decomposition(
         details.append(detail)
     out = torch.cat([approx, *reversed(details)], dim=-1)
     return out.reshape(*leading, -1)
+
+
+def sinusoidal_positional_encoding(n_positions: int, dim: int) -> torch.Tensor:
+    r"""Fixed sine/cosine positional-encoding table of shape ``(n_positions, dim)``.
+
+    The standard encoding of Vaswani et al. (2017): for position :math:`p` and
+    channel :math:`i`, :math:`pe[p, 2i] = \sin(p / 10000^{2i/d})` and
+    :math:`pe[p, 2i+1] = \cos(p / 10000^{2i/d})`. PyTorch ships no sinusoidal
+    encoding (``nn.Embedding`` is a *learned* lookup), so braindecode models that
+    need one share this primitive instead of re-deriving it. An odd ``dim`` is
+    computed on the next even width and truncated, reproducing the per-model
+    wrappers (e.g. :class:`~braindecode.models.medformer` odd-``d_model``).
+
+    Parameters
+    ----------
+    n_positions : int
+        Number of positions (sequence length) to encode.
+    dim : int
+        Embedding dimension of each position.
+
+    Returns
+    -------
+    torch.Tensor
+        ``(n_positions, dim)`` float table; callers add their own batch axis,
+        dropout, or offset.
+    """
+    dim_even = dim + (dim % 2)
+    position = torch.arange(n_positions).unsqueeze(1).float()
+    div_term = torch.exp(
+        torch.arange(0, dim_even, 2).float() * (-math.log(10000.0) / dim_even)
+    )
+    pe = torch.zeros(n_positions, dim_even)
+    pe[:, 0::2] = torch.sin(position * div_term)
+    pe[:, 1::2] = torch.cos(position * div_term)
+    # ``.contiguous()`` so an odd-``dim`` truncation owns tight storage -- a
+    # non-contiguous view over the padded width breaks safetensors buffer saving.
+    return pe[:, :dim].contiguous()
