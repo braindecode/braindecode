@@ -31,6 +31,20 @@ class MVPFormer(EEGModuleMixin, nn.Module):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
+    .. figure:: https://ar5iv.labs.arxiv.org/html/2506.20354/assets/x2.png
+        :align: center
+        :alt: MVPFormer model overview
+        :width: 1000px
+
+        MVPFormer model overview from [Carzaniga2026]_.
+
+    .. figure:: https://ar5iv.labs.arxiv.org/html/2506.20354/assets/x1.png
+        :align: center
+        :alt: Multi-variate parallel attention mechanism
+        :width: 1000px
+
+        Multi-variate parallel attention (MVPA) from [Carzaniga2026]_.
+
     .. versionadded:: 1.6.1
 
     A foundation model with multi-variate parallel attention for heterogeneous
@@ -55,13 +69,6 @@ class MVPFormer(EEGModuleMixin, nn.Module):
     3. **Llama2-style decoder.** Parallel attention and MLP blocks, grouped-query
        attention and causal masking in time, trained to predict the next-in-time
        embedding (generative pre-training).
-
-    .. rubric:: Original Figures
-
-    For visual context, see the original paper's `MVPA attention figure
-    <https://ar5iv.labs.arxiv.org/html/2506.20354/assets/x1.png>`_ and
-    `model overview figure
-    <https://ar5iv.labs.arxiv.org/html/2506.20354/assets/x2.png>`_.
 
     .. rubric:: Macro Components
 
