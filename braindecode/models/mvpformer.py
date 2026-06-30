@@ -3,13 +3,13 @@
 # License: Apache-2.0
 """MVPFormer: a foundation model with multi-variate parallel attention.
 
-Reimplementation of MVPFormer (Carzaniga et al., 2025, arXiv:2506.20354),
-"A foundation model with multi-variate parallel attention to generate
-neuronal activity". The architecture is transcribed from the authors'
-reference implementation (Copyright IBM Corp. 2024-2025), released under the
-Apache License, Version 2.0; this file is therefore distributed under
-Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0). The braindecode
-reimplementation is pure-PyTorch and CPU-runnable (no Triton / DeepSpeed).
+Reimplementation of MVPFormer (Carzaniga et al., 2026), "A foundation model
+with multi-variate parallel attention to generate neuronal activity". The
+architecture is transcribed from the authors' reference implementation
+(Copyright IBM Corp. 2024-2025), released under the Apache License,
+Version 2.0; this file is therefore distributed under Apache-2.0
+(https://www.apache.org/licenses/LICENSE-2.0). The braindecode reimplementation
+is pure-PyTorch and CPU-runnable (no Triton / DeepSpeed).
 
 Original Authors: Carzaniga et al., IBM Corp.
 Braindecode Adaptation: Bruno Aristimunha
@@ -27,7 +27,7 @@ from braindecode.modules import PatchTokenizer
 
 
 class MVPFormer(EEGModuleMixin, nn.Module):
-    r"""MVPFormer from Carzaniga et al. (2025) [Carzaniga2025]_.
+    r"""MVPFormer from Carzaniga et al. (2026) [Carzaniga2026]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
@@ -38,12 +38,12 @@ class MVPFormer(EEGModuleMixin, nn.Module):
     wavelet embeddings and processed by a decoder-only (Llama2-style) transformer
     whose self-attention is decomposed into content, time-relative and
     channel-relative terms over a ``(segment, channel)`` token grid
-    [Carzaniga2025]_.
+    [Carzaniga2026]_.
 
     .. rubric:: Architecture Overview
 
     MVPFormer combines three ideas to model heterogeneous multi-variate iEEG
-    [Carzaniga2025]_:
+    [Carzaniga2026]_:
 
     1. **Continuous wavelet tokenization.** A db4 wavelet encoder maps each
        fixed-length signal segment (per channel) to a continuous embedding,
@@ -55,6 +55,13 @@ class MVPFormer(EEGModuleMixin, nn.Module):
     3. **Llama2-style decoder.** Parallel attention and MLP blocks, grouped-query
        attention and causal masking in time, trained to predict the next-in-time
        embedding (generative pre-training).
+
+    .. rubric:: Original Figures
+
+    For visual context, see the original paper's `MVPA attention figure
+    <https://ar5iv.labs.arxiv.org/html/2506.20354/assets/x1.png>`_ and
+    `model overview figure
+    <https://ar5iv.labs.arxiv.org/html/2506.20354/assets/x2.png>`_.
 
     .. rubric:: Macro Components
 
@@ -145,9 +152,8 @@ class MVPFormer(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    segment_seconds : float
-        Length of each temporal segment in seconds. With ``sfreq`` this sets the
-        segment length in samples (``round(sfreq * segment_seconds)``).
+    segment_len : int
+        Length of each temporal segment in samples.
     d_model : int
         Token embedding dimension.
     n_layers : int
@@ -159,7 +165,7 @@ class MVPFormer(EEGModuleMixin, nn.Module):
     d_inner : int
         Hidden dimension of the SwiGLU MLP.
     local_window : int
-        Half-width (in segments) of the local content-attention window.
+        Size, in segments, of the causal local content-attention lookback window.
     global_att : bool
         Whether to use the global content-attention term.
     max_segments : int
@@ -181,14 +187,16 @@ class MVPFormer(EEGModuleMixin, nn.Module):
     The defaults are a small, CI-friendly configuration. The published model
     sizes are **MVPFormer-S** (75M, ``d_model=768, n_layers=12, n_heads=12,
     n_head_kv=4, d_inner=1728``) and **MVPFormer-M** (1.2B, ``d_model=2048,
-    n_layers=24, n_heads=16, n_head_kv=8, d_inner=5632``); both use
-    ``sfreq=512`` and ``segment_seconds=5.0`` (segment length 2560).
+    n_layers=24, n_heads=16, n_head_kv=8, d_inner=5632``); both use 5-second
+    segments at 512 Hz, i.e. ``segment_len=2560``.
 
     References
     ----------
-    .. [Carzaniga2025] Carzaniga, F., Hersche, M., Sebastian, A., Schindler, K.,
-       & Rahimi, A. (2025). A foundation model with multi-variate parallel
-       attention to generate neuronal activity. arXiv:2506.20354.
+    .. [Carzaniga2026] Carzaniga, F. S., Hersche, M., Sebastian, A.,
+       Schindler, K., & Rahimi, A. (2026). A foundation model with
+       multi-variate parallel attention to generate neuronal activity. In
+       The Fourteenth International Conference on Learning Representations.
+       https://openreview.net/forum?id=5M1YOW3bRq
     """
 
     def __init__(
@@ -202,7 +210,7 @@ class MVPFormer(EEGModuleMixin, nn.Module):
         sfreq=None,
         # model-specific parameters
         *,
-        segment_seconds: float = 5.0,
+        segment_len: int = 2560,
         d_model: int = 256,
         n_layers: int = 4,
         n_heads: int = 8,
@@ -216,6 +224,12 @@ class MVPFormer(EEGModuleMixin, nn.Module):
         activation: type[nn.Module] = nn.SiLU,
         pooling: str = "mean",
     ):
+        if not isinstance(segment_len, int) or segment_len < 1:
+            raise ValueError(
+                f"segment_len must be a positive integer number of samples, "
+                f"got {segment_len!r}."
+            )
+
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -229,20 +243,15 @@ class MVPFormer(EEGModuleMixin, nn.Module):
         if pooling not in ("mean", "concat"):
             raise ValueError(f"pooling must be 'mean' or 'concat', got {pooling!r}.")
 
-        self.segment_seconds = segment_seconds
+        self.segment_len = segment_len
         self.d_model = d_model
         self.pooling = pooling
-        self.segment_len = round(self.sfreq * segment_seconds)
-        if self.segment_len < 1:
+        # Ceil division because PatchTokenizer pads the last partial segment.
+        self.n_segments = -(-self.n_times // self.segment_len)
+        if self.n_segments > max_segments:
             raise ValueError(
-                f"segment_seconds ({segment_seconds}) * sfreq ({self.sfreq}) "
-                "must be >= 1 sample."
-            )
-        n_segments = -(-self.n_times // self.segment_len)  # ceil (PatchTokenizer pads)
-        if n_segments > max_segments:
-            raise ValueError(
-                f"{n_segments} segments exceed max_segments ({max_segments}); "
-                "increase max_segments or reduce n_times / segment_seconds."
+                f"{self.n_segments} segments exceed max_segments ({max_segments}); "
+                "increase max_segments or reduce n_times / segment_len."
             )
         if self.n_chans > max_channels:
             raise ValueError(
@@ -369,7 +378,7 @@ class _MVPAttention(nn.Module):
     r"""Multi-variate parallel attention (MVPA).
 
     Attention over a 2D ``(segment, channel)`` token grid, decomposed into three
-    additive terms (Carzaniga et al., 2025, eqs. 2-4):
+    additive terms (Carzaniga et al., 2026, eqs. 2-4):
 
     - **content** — query/key, restricted to a local window of ``local_window``
       segments, plus an optional **global** term over the whole context;
@@ -393,7 +402,7 @@ class _MVPAttention(nn.Module):
     global_att : bool
         Whether to add the global content-attention term.
     local_window : int
-        Half-width (in segments) of the local content-attention window.
+        Size, in segments, of the causal local content-attention lookback window.
     attn_drop, resid_drop : float
         Dropout on attention weights and on the output projection.
     scale_attn : bool
