@@ -418,6 +418,11 @@ models_mandatory_parameters: list[
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
     (
+        "MVPFormer",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"sfreq": 100.0, "n_times": 2000},
+    ),
+    (
         "REVE",
         ["n_times", "n_outputs", "n_chans", "chs_info"],
         {

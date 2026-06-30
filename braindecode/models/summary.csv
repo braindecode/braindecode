@@ -59,3 +59,4 @@ InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info",3456
 TCFormer,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times",77820,"TCFormer(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 EEGDINO,General,Classification,200,"n_chans, n_outputs, n_times",4539698,"EEGDINO(n_chans=19, n_outputs=4, n_times=1000)","Foundation Model,Attention/Transformer",EEG
 STEEGFormer,General,Classification,250,"n_chans, n_outputs, n_times",25305604,"STEEGFormer(n_chans=22, n_outputs=4, n_times=1000)","Attention/Transformer,Foundation Model",EEG
+MVPFormer,General,"Prediction, Embedding",512,"n_chans, n_outputs, n_times, sfreq",3356978,"MVPFormer(n_chans=22, n_outputs=4, n_times=2000, sfreq=100)","Foundation Model,Attention/Transformer",EEG

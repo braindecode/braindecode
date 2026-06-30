@@ -73,6 +73,10 @@ Enhancements
   By `Pierre Guetschel`_.
 - Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
   foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
+- Add :class:`braindecode.models.MVPFormer`, the multi-variate parallel
+  attention (MVPA) foundation model for heterogeneous multi-variate iEEG, with
+  a db4-wavelet signal encoder computed from first principles (no new
+  dependency). By `Bruno Aristimunha`_.
 - Add :class:`braindecode.models.STEEGFormer`, a ViT-based EEG foundation
   model pre-trained with a masked-autoencoder objective, from Yang et al.
   (ICLR 2026). By `Adam Mounir`_.
