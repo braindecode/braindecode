@@ -211,12 +211,29 @@ def _get_model_class(model_name: str):
     Searches both the standard :data:`models_dict` and the
     :data:`interpolated_models_dict` so that interpolated models remain
     resolvable by name (e.g. for skorch wrappers and pydantic configs).
+
+    Parameters
+    ----------
+    model_name : str
+        Name of the model class to retrieve.
+
+    Returns
+    -------
+    type
+        The model class registered under ``model_name``.
+
+    Raises
+    ------
+    ValueError
+        If ``model_name`` is not found in either registry.
     """
     if not models_dict and not interpolated_models_dict:
         _init_models_dict()
     if model_name in models_dict:
         return models_dict[model_name]
-    return interpolated_models_dict[model_name]
+    if model_name in interpolated_models_dict:
+        return interpolated_models_dict[model_name]
+    raise ValueError(f"Unknown model name {model_name!r}.")
 
 
 # Keep in sync with _EEG_PARAMS above.

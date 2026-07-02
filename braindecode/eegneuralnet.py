@@ -20,7 +20,7 @@ from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
 from braindecode.datautil import infer_signal_properties
 
-from .models.util import interpolated_models_dict, models_dict
+from .models.util import _get_model_class
 from .training.scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
@@ -33,12 +33,7 @@ log = logging.getLogger(__name__)
 def _get_model(model: str):
     """Returns the corresponding class in case the model passed is a string."""
     if isinstance(model, str):
-        if model in models_dict:
-            model = models_dict[model]
-        elif model in interpolated_models_dict:
-            model = interpolated_models_dict[model]
-        else:
-            raise ValueError(f"Unknown model name {model!r}.")
+        model = _get_model_class(model)
     return model
 
 
