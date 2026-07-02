@@ -8,7 +8,7 @@ import abc
 import inspect
 import logging
 import warnings
-from typing import Literal
+from typing import Any, Literal
 
 import mne
 import numpy as np
@@ -30,7 +30,7 @@ from .training.scoring import (
 log = logging.getLogger(__name__)
 
 
-def _get_model(model: str):
+def _get_model(model: Any) -> Any:
     """Returns the corresponding class in case the model passed is a string."""
     if isinstance(model, str):
         model = _get_model_class(model)
