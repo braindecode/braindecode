@@ -67,11 +67,6 @@ class BaseBraindecodeModelConfig(pydantic.BaseModel):
     """Base class for braindecode model pydantic configs."""
 
     def create_instance(self) -> EEGModuleMixin:
-        if (
-            self.model_name_ not in models_dict
-            and self.model_name_ not in interpolated_models_dict
-        ):
-            _init_models_dict()
         model_cls = _get_model_class(self.model_name_)
         kwargs = self.model_dump(mode="python", exclude={"model_name_"})
         if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
