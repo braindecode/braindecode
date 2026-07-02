@@ -191,6 +191,15 @@ Braindecode.
       // Initial color pass
       applyTagPalette(document);
 
+      function applyInitialModelFilter() {
+        var model = new URLSearchParams(window.location.search).get('model');
+        if (!model) return;
+        table.search(model).draw();
+        $(table.table().container()).find('div.dataTables_filter input').val(model);
+      }
+
+      applyInitialModelFilter();
+
       /* --- Bonus UX: click a column header to open panes focused there ----- */
       $('.sortable thead th').each(function (i) {
         if (!FILTER_COLS.includes(i)) return;

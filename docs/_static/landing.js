@@ -164,8 +164,13 @@
     function makeMetaSpan(text) {
       return makeChild("span", null, text);
     }
+    function modelTableUrl(name) {
+      return "models/models_table.html?model=" + encodeURIComponent(name);
+    }
     function makeCard(m) {
-      var card = makeChild("article", "zoo-card");
+      var card = makeChild("a", "zoo-card");
+      card.href = modelTableUrl(m.name);
+      card.setAttribute("aria-label", "Open " + m.name + " in the models table");
       var head = makeChild("div", "zoo-card-head");
       head.appendChild(makeChild("span", "zoo-card-name", m.name));
       head.appendChild(makeChild("span", "zoo-card-cat " + catColor(m.cat), catLabel(m.cat)));

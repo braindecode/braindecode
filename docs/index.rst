@@ -161,7 +161,7 @@
       <div class="container bd-facts-inner">
         <span class="bd-facts-label">By the numbers</span>
         <div class="bd-facts-row">
-          <a href="models/models.html"><b>65+</b> models</a>
+          <a href="models/models_table.html"><b>65+</b> models</a>
           <a href="api.html#augmentation"><b>20+</b> augmentations</a>
           <a href="https://moabb.neurotechx.com/" target="_blank" rel="noopener"><b>150+</b> datasets <span style="color:var(--bd-muted)">via MOABB</span></a>
           <a href="https://eegdash.org/" target="_blank" rel="noopener"><b>700+</b> datasets <span style="color:var(--bd-muted)">via EEGDash</span></a>
@@ -224,7 +224,7 @@
           <p class="section-sub">Built to <strong>plug into the EEG ecosystem you already use</strong>: every <a href="https://moabb.neurotechx.com/" target="_blank" rel="noopener">MOABB</a> dataset, every <a href="https://mne.tools/" target="_blank" rel="noopener">MNE-Python</a> preprocessing function, every <a href="https://scikit-learn.org/" target="_blank" rel="noopener">scikit-learn</a> training loop, plus 700+ BIDS datasets via <a href="https://eegdash.org/" target="_blank" rel="noopener">EEGDash</a>. One library, no lock-in.</p>
         </div>
         <div class="feature-grid">
-          <a href="models/models.html" class="feature-card">
+          <a href="models/models_table.html" class="feature-card">
             <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2-4 4-4 6 0s4 4 6 0 4-4 6 0 4 4 2 0"/></svg></span>
             <h3>Decode raw electrophysiology</h3>
             <p>End-to-end models go straight from raw EEG/ECoG/MEG to predictions. No hand-crafted features required.</p>
@@ -248,7 +248,7 @@
             <p>Fully compatible with every <a class="feature-inline-link" href="https://mne.tools/" target="_blank" rel="noopener">MNE</a> preprocessing function and with <a class="feature-inline-link" href="https://eegprep.org/" target="_blank" rel="noopener">EEGPrep</a>, plus exponential standardization and 20+ EEG augmentations.</p>
             <a href="api.html#augmentation" class="feature-link">Augmentation <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></a>
           </div>
-          <a href="models/models.html" class="feature-card">
+          <a href="models/models_table.html" class="feature-card">
             <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M8 6h2a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3M8 18h2a3 3 0 0 0 3-3v0a3 3 0 0 1 3-3"/></svg></span>
             <h3>Curated model zoo</h3>
             <p>EEGNeX, ConvNets, ATCNet, EEGConformer, foundation models. 60+ architectures reproduced from the original papers.</p>
@@ -359,7 +359,7 @@
         <div class="zoo-grid"><!-- populated by landing.js --></div>
         <div class="zoo-foot">
           <span class="zoo-foot-count">Loading…</span>
-          <a href="models/models.html">Browse the full zoo on the Models page <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></a>
+          <a href="models/models_table.html">Browse the full zoo on the Models table <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></a>
         </div>
       </div>
     </section>
@@ -521,7 +521,7 @@
               <span class="pipeline-col-name">Modeling</span>
             </div>
             <div class="pipeline-col-cards">
-              <a class="pipeline-card" href="models/models.html">
+              <a class="pipeline-card" href="models/models_table.html">
                 <span class="pipeline-card-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M8 6h2a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3M8 18h2a3 3 0 0 0 3-3v0a3 3 0 0 1 3-3"/></svg></span>
                 <span class="pipeline-card-text">
                   <span class="pipeline-card-name">braindecode.models</span>
@@ -679,7 +679,7 @@
             <ul>
               <li><a href="install/install.html">Install</a></li>
               <li><a href="auto_examples/index.html">Tutorials</a></li>
-              <li><a href="models/models.html">Models</a></li>
+              <li><a href="models/models_table.html">Models</a></li>
               <li><a href="api.html">API reference</a></li>
             </ul>
           </div>
