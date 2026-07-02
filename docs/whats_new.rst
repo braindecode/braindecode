@@ -28,12 +28,18 @@ Current 1.7.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- Add :data:`braindecode.models.interpolated_models_dict`, a dedicated registry
+  for the interpolated (channel-adapting) models, keeping them separate from
+  :data:`braindecode.models.util.models_dict` (:gh:`1093` by `Bruno Aristimunha`_)
 
 API and behavior changes
 ========================
 
-- None yet
+- Interpolated models (e.g. ``InterpolatedBIOT``, ``InterpolatedLaBraM``) are no
+  longer included in :data:`braindecode.models.util.models_dict`; they now live
+  in the separate :data:`braindecode.models.interpolated_models_dict` registry.
+  They remain fully usable and resolvable by name in the skorch wrappers and
+  pydantic configs (:gh:`1093` by `Bruno Aristimunha`_)
 
 Requirements
 ============

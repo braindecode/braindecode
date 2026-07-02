@@ -9,7 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from braindecode.models.util import models_dict
+from braindecode.models.util import interpolated_models_dict, models_dict
+
+# Interpolated models live in a separate registry; combine so their
+# modality entries are still validated.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 # Controlled vocabulary for the "Modality" column of summary.csv. Keep this in
 # sync with the column definition in docs/models/models_table.rst. Add a new
@@ -35,7 +39,7 @@ def load_model_modalities():
 MODEL_MODALITIES = load_model_modalities()
 
 
-@pytest.mark.parametrize("model_name", sorted(models_dict.keys()))
+@pytest.mark.parametrize("model_name", sorted(all_models_dict.keys()))
 def test_model_has_valid_modality(model_name):
     """Every model has at least one modality, all from the allowed vocabulary."""
     modalities = MODEL_MODALITIES.get(model_name, [])

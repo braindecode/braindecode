@@ -72,10 +72,14 @@ from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
+    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
 from braindecode.util import set_random_seeds
+
+# Interpolated models are stored in a separate registry from ``models_dict``.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 
 @pytest.fixture(scope="module")
@@ -2182,7 +2186,7 @@ def test_models_batch1_train_mode(
     """
     sp = _get_signal_params(signal_params)
     model_kwargs = _get_possible_signal_params(sp, required_params)[0]
-    model = models_dict[model_name](**model_kwargs)
+    model = all_models_dict[model_name](**model_kwargs)
     batch_norms = [
         module
         for module in model.modules()

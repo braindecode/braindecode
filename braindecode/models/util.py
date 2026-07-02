@@ -16,6 +16,12 @@ import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` throu
 from torch import nn
 
 models_dict = {}
+# Interpolated models are channel-interpolating wrappers around existing
+# braindecode backbones (see :func:`braindecode.models.InterpolatedModel`).
+# They are derivatives of existing models rather than standalone
+# architectures, so they are kept in a separate registry to avoid polluting
+# ``models_dict`` (e.g. for benchmarking that iterates over all "real" models).
+interpolated_models_dict = {}
 
 _IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
 
@@ -189,7 +195,28 @@ def _init_models_dict():
             issubclass(m[1], models.base.EEGModuleMixin)
             and m[1] != models.base.EEGModuleMixin
         ):
-            models_dict[m[0]] = m[1]
+            # Interpolated models are wrappers around existing backbones
+            # (identified by the ``_TARGET_CHS_INFO`` class attribute set by
+            # :func:`braindecode.models.InterpolatedModel`). Keep them in a
+            # dedicated registry instead of ``models_dict``.
+            if getattr(m[1], "_TARGET_CHS_INFO", None) is not None:
+                interpolated_models_dict[m[0]] = m[1]
+            else:
+                models_dict[m[0]] = m[1]
+
+
+def _get_model_class(model_name: str):
+    """Return the model class registered under ``model_name``.
+
+    Searches both the standard :data:`models_dict` and the
+    :data:`interpolated_models_dict` so that interpolated models remain
+    resolvable by name (e.g. for skorch wrappers and pydantic configs).
+    """
+    if not models_dict and not interpolated_models_dict:
+        _init_models_dict()
+    if model_name in models_dict:
+        return models_dict[model_name]
+    return interpolated_models_dict[model_name]
 
 
 # Keep in sync with _EEG_PARAMS above.
