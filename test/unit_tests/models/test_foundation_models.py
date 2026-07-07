@@ -1101,7 +1101,7 @@ def _forbid_network(monkeypatch):
 
     monkeypatch.setattr(requests, "get", _boom)
     monkeypatch.setattr(
-        RevePositionBank, "_load_from_hf_hub", staticmethod(lambda *a, **k: None)
+        RevePositionBank, "_load_from_hf_hub", classmethod(lambda cls, **k: None)
     )
 
 
@@ -1163,7 +1163,7 @@ def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
         RevePositionBank, "_candidate_cache_files", classmethod(lambda cls, cd: [])
     )
     monkeypatch.setattr(
-        RevePositionBank, "_load_from_hf_hub", staticmethod(lambda *a, **k: None)
+        RevePositionBank, "_load_from_hf_hub", classmethod(lambda cls, **k: None)
     )
 
     def _fail(*args, **kwargs):
@@ -1183,7 +1183,7 @@ def test_reve_position_bank_downloaded_config_is_cached(tmp_path, monkeypatch):
         RevePositionBank, "_candidate_cache_files", classmethod(lambda cls, cd: [])
     )
     monkeypatch.setattr(
-        RevePositionBank, "_load_from_hf_hub", staticmethod(lambda *a, **k: None)
+        RevePositionBank, "_load_from_hf_hub", classmethod(lambda cls, **k: None)
     )
 
     class _Resp:
