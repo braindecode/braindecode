@@ -1093,12 +1093,6 @@ def _write_positions(path):
     return config
 
 
-@pytest.fixture
-def _no_reve_positions_env(monkeypatch):
-    """Ensure the override env var does not leak into a test."""
-    monkeypatch.delenv("BRAINDECODE_REVE_POSITIONS", raising=False)
-
-
 def _forbid_network(monkeypatch):
     """Patch the network entry points so any access raises loudly."""
 
