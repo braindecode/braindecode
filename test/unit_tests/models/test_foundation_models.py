@@ -1102,14 +1102,13 @@ def _forbid_network(monkeypatch):
     monkeypatch.setattr(requests, "get", _boom)
 
 
-def test_reve_position_bank_env_var(tmp_path, monkeypatch):
-    """The BRAINDECODE_REVE_POSITIONS env var is used before any network access."""
-    pos_file = tmp_path / "custom_positions.json"
-    config = _write_positions(str(pos_file))
-    monkeypatch.setenv("BRAINDECODE_REVE_POSITIONS", str(pos_file))
+def test_reve_position_bank_mne_cache(tmp_path, monkeypatch):
+    """A prefetched file in the MNE data directory is used without any download."""
+    config = _write_positions(str(tmp_path / "reve_positions.json"))
+    monkeypatch.setattr(mne, "get_config", lambda *a, **k: str(tmp_path))
     _forbid_network(monkeypatch)
 
-    bank = RevePositionBank(cache_dir=str(tmp_path))
+    bank = RevePositionBank()
 
     assert bank.get_all_positions() == list(config.keys())
     assert bank.forward(["Cz", "Pz"]).shape == (2, 3)
@@ -1117,8 +1116,7 @@ def test_reve_position_bank_env_var(tmp_path, monkeypatch):
 
 def test_reve_position_bank_cache_dir(tmp_path, monkeypatch):
     """An explicit cache_dir is discovered without hitting the network."""
-    cache_file = tmp_path / ".cache" / "reve_positions.json"
-    config = _write_positions(str(cache_file))
+    config = _write_positions(str(tmp_path / "reve_positions.json"))
     _forbid_network(monkeypatch)
 
     bank = RevePositionBank(cache_dir=str(tmp_path))
@@ -1153,7 +1151,7 @@ def test_reve_position_bank_downloaded_config_is_cached(tmp_path, monkeypatch):
     bank = RevePositionBank(cache_dir=str(tmp_path))
     assert bank.get_all_positions() == list(config.keys())
 
-    cached = tmp_path / ".cache" / "reve_positions.json"
+    cached = tmp_path / "reve_positions.json"
     assert cached.exists()
     with open(cached) as f:
         assert json.load(f) == config

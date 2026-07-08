@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from typing import Optional, Union
 
+import mne
 import requests
 import torch
 import torch.nn.functional as F
@@ -787,10 +788,10 @@ class RevePositionBank(torch.nn.Module):
 
     The coordinates come from the 92 datasets used during REVE pretraining.
 
-    The bank is cached locally after the first download. For offline / restricted
-    nodes (e.g. HPC compute nodes without a proxy), point the
-    ``BRAINDECODE_REVE_POSITIONS`` environment variable at a prefetched
-    ``positions.json`` and no download is attempted.
+    The bank is cached in the MNE data directory after the first download, so it
+    works offline afterwards. On restricted nodes (e.g. HPC compute nodes without
+    a proxy), drop a prefetched ``reve_positions.json`` in that directory and no
+    download is attempted.
 
     Parameters
     ----------
@@ -799,8 +800,8 @@ class RevePositionBank(torch.nn.Module):
     timeout : int, optional
         Timeout in seconds for the HTTP request. Default is 5 seconds.
     cache_dir : str, optional
-        Directory to cache the position bank. Default is the models folder within
-        the library. A ``.cache`` sub-directory is used inside it.
+        Directory to cache the position bank. Default is the MNE data directory
+        (``mne.get_config("MNE_DATA")``, usually ``~/mne_data``).
     """
 
     def __init__(
@@ -812,13 +813,11 @@ class RevePositionBank(torch.nn.Module):
         super().__init__()
 
         if cache_dir is None:
-            cache_dir = str(Path(__file__).parent)
-        cache_file = os.path.join(cache_dir, ".cache", "reve_positions.json")
+            cache_dir = mne.get_config("MNE_DATA", str(Path.home() / "mne_data"))
+        cache_file = os.path.join(cache_dir, "reve_positions.json")
 
-        # Offline escape hatch, then local cache, then download as a last resort.
-        config = self._load_json(os.environ.get("BRAINDECODE_REVE_POSITIONS"))
-        if config is None:
-            config = self._load_json(cache_file)
+        # Use the local cache, then download as a last resort.
+        config = self._load_json(cache_file)
         if config is None:
             try:
                 response = requests.get(url, timeout=timeout)
