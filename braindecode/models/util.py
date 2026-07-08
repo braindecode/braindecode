@@ -445,6 +445,7 @@ models_mandatory_parameters: list[
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BrainModule", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("Brant", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
         "BENDR",
         ["n_chans", "n_outputs", "n_times"],

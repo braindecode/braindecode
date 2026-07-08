@@ -517,6 +517,7 @@ def test_model_torch_script(model):
 
     not_working_models = [
         "BIOT",
+        "Brant",
         "Labram",
         "EEGMiner",
         "EEGPT",

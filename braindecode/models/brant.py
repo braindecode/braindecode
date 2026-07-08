@@ -44,7 +44,7 @@ BRANT_FREQ_BANDS: tuple[tuple[float, float], ...] = (
 class Brant(EEGModuleMixin, nn.Module):
     r"""Brant from Zhang et al. (2023) [Brant2023]_.
 
-    :bdg-danger:`Foundation Model`
+    :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
     Brant is a foundation model for intracranial neural signals (sEEG/iEEG).
     The raw signal is cut into fixed-length **patches**; two Transformer
@@ -63,9 +63,11 @@ class Brant(EEGModuleMixin, nn.Module):
     frequency computation is performed **inside** ``forward`` so the model keeps
     the standard ``(batch, n_chans, n_times)`` input signature.
 
-    The upstream model operates on signals down-sampled to **250 Hz**; the
-    default ``patch_size`` (1500 samples) corresponds to the 6 s patches used in
-    the paper. Encoder sizes below are the paper's configuration (§3.2).
+    The upstream model operates on signals down-sampled to **250 Hz**. The
+    defaults below are a modest, ready-to-run configuration; the **released
+    pretrained model** (paper §3.2, ~500M parameters) uses ``patch_size=1500``
+    (6 s at 250 Hz), ``embed_dim=2048``, ``ffn_dim=3072``, ``temporal_n_layers=12``,
+    ``spatial_n_layers=5`` and ``n_heads=16`` — pass these to reproduce it.
 
     .. important::
        **Pre-trained weights available.** The upstream checkpoint (>500M
@@ -78,23 +80,25 @@ class Brant(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     patch_size : int, optional
-        Number of time samples per patch fed to the encoders. Default 1500
-        (~6 s at 250 Hz), matching the upstream patching.
+        Number of time samples per patch fed to the encoders. Default 250
+        (1 s at 250 Hz). The pretrained model uses 1500 (see above).
     embed_dim : int, optional
-        Model width ``D`` (patch embedding size). Default 2048 (paper §3.2).
+        Model width ``D`` (patch embedding size). Default 256.
     ffn_dim : int, optional
-        Inner dimension of the Transformer feed-forward blocks. Default 3072.
+        Inner dimension of the Transformer feed-forward blocks. Default 384.
     temporal_n_layers : int, optional
-        Number of layers in the temporal Transformer encoder. Default 12.
+        Number of layers in the temporal Transformer encoder. Default 4.
     spatial_n_layers : int, optional
-        Number of layers in the spatial Transformer encoder. Default 5.
+        Number of layers in the spatial Transformer encoder. Default 2.
     n_heads : int, optional
-        Number of attention heads in both encoders. Default 16.
+        Number of attention heads in both encoders. Default 8.
     n_freq_bands : int, optional
         Number of frequency bands used by the frequency encoding. Default 8
         (must match ``len(BRANT_FREQ_BANDS)``).
     drop_prob : float, optional
         Dropout probability. Default 0.1.
+    activation : type[nn.Module], optional
+        Activation used in the classification head. Default ``nn.ReLU``.
 
     References
     ----------
@@ -106,15 +110,16 @@ class Brant(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        # --- Brant hyper-parameters (paper §3.2; cross-check with Brant_src) ---
-        patch_size: int = 1500,
-        embed_dim: int = 2048,
-        ffn_dim: int = 3072,
-        temporal_n_layers: int = 12,
-        spatial_n_layers: int = 5,
-        n_heads: int = 16,
+        # --- Brant hyper-parameters (modest defaults; paper config in docstring) ---
+        patch_size: int = 250,
+        embed_dim: int = 256,
+        ffn_dim: int = 384,
+        temporal_n_layers: int = 4,
+        spatial_n_layers: int = 2,
+        n_heads: int = 8,
         n_freq_bands: int = 8,
         drop_prob: float = 0.1,
+        activation: type[nn.Module] = nn.ReLU,
         # --- braindecode mandatory signal parameters ---
         n_outputs=None,
         n_chans=None,
@@ -141,6 +146,7 @@ class Brant(EEGModuleMixin, nn.Module):
         self.n_heads = n_heads
         self.n_freq_bands = n_freq_bands
         self.drop_prob = drop_prob
+        self._head_activation = activation
 
         if n_freq_bands != len(BRANT_FREQ_BANDS):
             raise ValueError(
@@ -176,12 +182,12 @@ class Brant(EEGModuleMixin, nn.Module):
             n_heads=n_heads,
             drop_prob=drop_prob,
         )
-        self.final_layer = _BrantHead(embed_dim, self.n_outputs)
+        self.final_layer = _BrantHead(embed_dim, self.n_outputs, activation)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
         self._n_outputs = n_outputs
-        self.final_layer = _BrantHead(self.embed_dim, n_outputs)
+        self.final_layer = _BrantHead(self.embed_dim, n_outputs, self._head_activation)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Decode a batch of signals.

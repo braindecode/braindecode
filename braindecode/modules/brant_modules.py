@@ -190,13 +190,15 @@ class _BrantSpatialEncoder(nn.Module):
 class _BrantHead(nn.Module):
     """Downstream classification head (upstream ``model.MLP``): a 3-layer MLP."""
 
-    def __init__(self, in_dim: int, out_dim: int):
+    def __init__(
+        self, in_dim: int, out_dim: int, activation: type[nn.Module] = nn.ReLU
+    ):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(in_dim, in_dim // 2),
-            nn.ReLU(inplace=True),
+            activation(),
             nn.Linear(in_dim // 2, in_dim // 4),
-            nn.ReLU(inplace=True),
+            activation(),
             nn.Linear(in_dim // 4, out_dim),
         )
 

@@ -44,6 +44,7 @@ EMG2QwertyNet,Touch typing (sEMG),CTC Sequence,2000,"n_chans, n_outputs, n_times
 FBLightConvNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6596,"FBLightConvNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 IFNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",9860,"IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 BrainModule,Speech Decoding,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6186909,"BrainModule(n_chans=64, n_outputs=29, n_times=160, sfreq=1000)","Convolution","EEG, MEG"
+Brant,Epilepsy,Prediction,250,"n_chans, n_outputs, n_times, sfreq",2943548,"Brant(n_chans=16, n_outputs=2, n_times=3000, sfreq=250)","Foundation Model,Attention/Transformer",iEEG
 PBT,General,Prediction,250,"n_chans, n_outputs, n_times",818948,"PBT(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Foundation Model",EEG
 SSTDPN,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",19502,"SSTDPN(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 BENDR,General,"Prediction, Embedding",250,"n_chans, n_times, n_outputs",157141049,"BENDR(n_chans=22, n_outputs=4, n_times=1000)","Foundation Model,Convolution",EEG
