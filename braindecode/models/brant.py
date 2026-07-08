@@ -7,11 +7,11 @@ Upstream code and pretrained weights are released under Apache-2.0:
 * code: https://github.com/yzz673/Brant
 * weights: https://huggingface.co/Daoze/Brant
 
-This module is a work-in-progress skeleton (see the tracking issue
-braindecode/braindecode#1097). The public contract (class name, mandatory
-parameters, ``forward`` / ``reset_head`` signatures) is fixed here; the faithful
-architecture and the numerical-parity check against the upstream checkpoint land
-in follow-up commits on this branch.
+The two Transformer encoders are ported weight-for-weight from the upstream
+reference (bit-exact, see ``scripts/brant_parity_check``); the classification
+head and channel/patch pooling are a braindecode-native adaptation. Registration
+in the model registry and loading of the upstream pretrained checkpoint are
+tracked in braindecode/braindecode#1097.
 """
 
 from __future__ import annotations
@@ -20,6 +20,12 @@ import torch
 import torch.nn as nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules.brant_modules import (
+    _BandPowerFeatures,
+    _BrantHead,
+    _BrantSpatialEncoder,
+    _BrantTemporalEncoder,
+)
 
 # Standard rhythmic-activity bands (Hz) used by Brant's frequency encoding,
 # from the paper (§ Frequency encoding): theta, alpha, beta, gamma1-5.
@@ -136,25 +142,46 @@ class Brant(EEGModuleMixin, nn.Module):
         self.n_freq_bands = n_freq_bands
         self.drop_prob = drop_prob
 
-        # ------------------------------------------------------------------ #
-        # Architecture scaffold. Each submodule is a placeholder to be replaced
-        # by a faithful, weight-for-weight port of the upstream reference
-        # (Brant_src on Hugging Face). Kept as attributes so the intended data
-        # flow in ``forward`` is already wired.
-        # ------------------------------------------------------------------ #
-        # TODO(brant): patch + band-power embedding (time & frequency domains).
-        self.patch_embed = nn.Identity()
-        # TODO(brant): temporal Transformer encoder over consecutive patches.
-        self.temporal_encoder = nn.Identity()
-        # TODO(brant): spatial Transformer encoder over channels.
-        self.spatial_encoder = nn.Identity()
-        # TODO(brant): final classification head (replaces the pretrain head).
-        self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
+        if n_freq_bands != len(BRANT_FREQ_BANDS):
+            raise ValueError(
+                f"n_freq_bands ({n_freq_bands}) must equal "
+                f"len(BRANT_FREQ_BANDS) ({len(BRANT_FREQ_BANDS)})."
+            )
+        # Number of patches per channel, fixed by the input length. The learnable
+        # temporal positional encoding is sized to it, hence n_times is required.
+        self.seq_len = self.n_times // self.patch_size
+        if self.seq_len < 1:
+            raise ValueError(
+                f"n_times ({self.n_times}) must be >= patch_size "
+                f"({self.patch_size}) to form at least one patch."
+            )
+
+        # braindecode-native: band-power computed inside forward (see module).
+        self.band_power = _BandPowerFeatures(self.sfreq, BRANT_FREQ_BANDS)
+        self.temporal_encoder = _BrantTemporalEncoder(
+            patch_size=patch_size,
+            d_model=embed_dim,
+            seq_len=self.seq_len,
+            n_bands=n_freq_bands,
+            dim_feedforward=ffn_dim,
+            n_layers=temporal_n_layers,
+            n_heads=n_heads,
+            drop_prob=drop_prob,
+        )
+        self.spatial_encoder = _BrantSpatialEncoder(
+            d_model=embed_dim,
+            out_dim=patch_size,
+            dim_feedforward=ffn_dim,
+            n_layers=spatial_n_layers,
+            n_heads=n_heads,
+            drop_prob=drop_prob,
+        )
+        self.final_layer = _BrantHead(embed_dim, self.n_outputs)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
         self._n_outputs = n_outputs
-        self.final_layer = nn.Linear(self.embed_dim, n_outputs)
+        self.final_layer = _BrantHead(self.embed_dim, n_outputs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Decode a batch of signals.
@@ -169,17 +196,26 @@ class Brant(EEGModuleMixin, nn.Module):
         torch.Tensor
             Class logits of shape ``(batch, n_outputs)``.
         """
-        # Intended data flow (to be implemented):
-        #   1. cut ``x`` into (L, C) patches of ``self.patch_size`` samples;
-        #   2. input encoding = linear projection of the patch + learnable
-        #      temporal positional encoding + frequency encoding (softmax over
-        #      log band-power across ``BRANT_FREQ_BANDS``) -> ``self.patch_embed``;
-        #   3. temporal encoder over the L consecutive patches, per channel;
-        #   4. spatial encoder over the C channels at each time index;
-        #   5. pool the (L, C, D) representation and apply ``self.final_layer``.
-        raise NotImplementedError(
-            "Brant.forward is not implemented yet — skeleton only. "
-            "The faithful port and its parity check against the upstream "
-            "Apache-2.0 checkpoint land in follow-up commits "
-            "(braindecode/braindecode#1097)."
-        )
+        batch_size, n_chans, _ = x.shape
+        seq_len = self.seq_len
+        d_model = self.embed_dim
+
+        # 1. patch: drop the tail that does not fill a whole patch.
+        x = x[..., : seq_len * self.patch_size]
+        patches = x.reshape(batch_size, n_chans, seq_len, self.patch_size)
+
+        # 2. log band-power features (computed here, not fed in as upstream).
+        power = self.band_power(patches)
+
+        # 3. temporal encoder over the seq_len consecutive patches, per channel.
+        time_z = self.temporal_encoder(patches, power)
+        time_z = time_z.reshape(batch_size, n_chans, seq_len, d_model)
+        time_z = time_z.transpose(1, 2).reshape(batch_size * seq_len, n_chans, d_model)
+
+        # 4. spatial encoder over the n_chans channels at each time index.
+        ch_z, _ = self.spatial_encoder(time_z)
+        emb = ch_z.reshape(batch_size, seq_len, n_chans, d_model).transpose(1, 2)
+
+        # 5. pool over channels and patches, then classify.
+        pooled = emb.mean(dim=(1, 2))
+        return self.final_layer(pooled)
