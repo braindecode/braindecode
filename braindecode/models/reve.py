@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Optional, Union
 
-import requests
+import pooch
 import torch
 import torch.nn.functional as F
 from einops import rearrange
@@ -816,18 +816,24 @@ class RevePositionBank(torch.nn.Module):
         cache_dir = _get_path(cache_dir, "REVE_POSITIONS_PATH", "REVE positions")
         cache_file = os.path.join(cache_dir, "reve_positions.json")
 
-        # Use the local cache, then download as a last resort.
+        # Use the local cache (offline path); only download on a cache miss.
         config = self._load_json(cache_file)
         if config is None:
             try:
-                response = requests.get(url, timeout=timeout)
-                response.raise_for_status()
-                config = json.loads(response.text)
-            except (requests.RequestException, json.JSONDecodeError) as e:
+                # pooch ships with mne and writes straight into the cache dir.
+                pooch.retrieve(
+                    url,
+                    known_hash=None,
+                    fname="reve_positions.json",
+                    path=cache_dir,
+                    downloader=pooch.HTTPDownloader(timeout=timeout),
+                )
+            except Exception as e:
                 raise RuntimeError(
-                    f"Failed to download or parse the position bank from {url}: {e}"
+                    f"Failed to download the position bank from {url}. On an "
+                    f"offline node, prefetch it to {cache_file} first: {e}"
                 ) from e
-            self._write_cache(cache_file, config)
+            config = self._load_json(cache_file)
 
         try:
             self.position_names = list(config.keys())
@@ -862,16 +868,6 @@ class RevePositionBank(torch.nn.Module):
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"Failed to load REVE position cache {path}: {e}")
             return None
-
-    @staticmethod
-    def _write_cache(cache_file: str, config: dict) -> None:
-        """Persist the position bank locally; failures (e.g. read-only) are non-fatal."""
-        try:
-            os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-            with open(cache_file, "w") as f:
-                json.dump(config, f)
-        except OSError as e:
-            logger.warning(f"Could not cache REVE position bank to {cache_file}: {e}")
 
     def forward(self, channel_names: list[str]):
         indices = [self.mapping[q] for q in channel_names if q in self.mapping]

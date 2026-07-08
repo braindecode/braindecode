@@ -9,7 +9,7 @@ from urllib.error import URLError
 
 import mne
 import pytest
-import requests
+import pooch
 import torch
 
 try:
@@ -1094,12 +1094,12 @@ def _write_positions(path):
 
 
 def _forbid_network(monkeypatch):
-    """Patch requests.get so any network access raises loudly."""
+    """Patch the downloader so any network access raises loudly."""
 
     def _boom(*args, **kwargs):
         raise AssertionError("Unexpected network access")
 
-    monkeypatch.setattr(requests, "get", _boom)
+    monkeypatch.setattr(pooch, "retrieve", _boom)
 
 
 def test_reve_position_bank_mne_cache(tmp_path, monkeypatch):
@@ -1125,36 +1125,34 @@ def test_reve_position_bank_cache_dir(tmp_path, monkeypatch):
 
 
 def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
-    """A clear RuntimeError is raised when nothing is cached and download fails."""
+    """A clear RuntimeError (pointing at offline prefetch) is raised on failure."""
 
     def _fail(*args, **kwargs):
-        raise requests.RequestException("no network")
+        raise OSError("no network")
 
-    monkeypatch.setattr(requests, "get", _fail)
+    monkeypatch.setattr(pooch, "retrieve", _fail)
 
-    with pytest.raises(RuntimeError, match="Failed to download or parse"):
+    with pytest.raises(RuntimeError, match="prefetch it to"):
         RevePositionBank(cache_dir=str(tmp_path))
 
 
 def test_reve_position_bank_downloaded_config_is_cached(tmp_path, monkeypatch):
-    """A downloaded position bank is written to the local cache for offline reuse."""
+    """A downloaded position bank is read from the cache dir pooch writes to."""
     config = {"Cz": [0.0, 0.0, 1.0]}
 
-    class _Resp:
-        text = json.dumps(config)
+    def _fake_retrieve(url, known_hash, fname, path, **kwargs):
+        dest = os.path.join(path, fname)
+        with open(dest, "w") as f:
+            json.dump(config, f)
+        return dest
 
-        def raise_for_status(self):
-            pass
-
-    monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(pooch, "retrieve", _fake_retrieve)
 
     bank = RevePositionBank(cache_dir=str(tmp_path))
     assert bank.get_all_positions() == list(config.keys())
 
     cached = tmp_path / "reve_positions.json"
     assert cached.exists()
-    with open(cached) as f:
-        assert json.load(f) == config
 
 
 # ==============================================================================
