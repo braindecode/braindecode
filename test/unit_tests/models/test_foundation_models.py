@@ -8,8 +8,8 @@ from pathlib import Path
 from urllib.error import URLError
 
 import mne
-import pytest
 import pooch
+import pytest
 import torch
 
 try:
