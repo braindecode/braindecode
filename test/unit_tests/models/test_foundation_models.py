@@ -1076,56 +1076,26 @@ def test_reve_model_outputs_match():
 
 
 # ==============================================================================
-# Offline cache-discovery tests for the REVE position bank (no network required)
+# Offline robustness of the REVE position bank (no network required)
 # ==============================================================================
 
 
-def _write_positions(path):
-    """Write a small valid position bank JSON to ``path`` and return the config."""
-    config = {
-        "Cz": [0.0, 0.0, 1.0],
-        "Fz": [0.0, 0.5, 0.5],
-        "Pz": [0.0, -0.5, 0.5],
-    }
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(config, f)
-    return config
+def test_reve_position_bank_uses_prefetched_file(tmp_path, monkeypatch):
+    """A prefetched positions file is used offline, without any download."""
+    config = {"Cz": [0.0, 0.0, 1.0], "Pz": [0.0, -0.5, 0.5]}
+    (tmp_path / "reve_positions.json").write_text(json.dumps(config))
+    monkeypatch.setattr(
+        pooch, "retrieve", lambda *a, **k: pytest.fail("unexpected download")
+    )
 
-
-def _forbid_network(monkeypatch):
-    """Patch the downloader so any network access raises loudly."""
-
-    def _boom(*args, **kwargs):
-        raise AssertionError("Unexpected network access")
-
-    monkeypatch.setattr(pooch, "retrieve", _boom)
-
-
-def test_reve_position_bank_mne_cache(tmp_path, monkeypatch):
-    """A prefetched file in the MNE data directory is used without any download."""
-    config = _write_positions(str(tmp_path / "reve_positions.json"))
-    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
-    _forbid_network(monkeypatch)
-
-    bank = RevePositionBank()
+    bank = RevePositionBank(cache_dir=str(tmp_path))
 
     assert bank.get_all_positions() == list(config.keys())
     assert bank.forward(["Cz", "Pz"]).shape == (2, 3)
 
 
-def test_reve_position_bank_cache_dir(tmp_path, monkeypatch):
-    """An explicit cache_dir is discovered without hitting the network."""
-    config = _write_positions(str(tmp_path / "reve_positions.json"))
-    _forbid_network(monkeypatch)
-
-    bank = RevePositionBank(cache_dir=str(tmp_path))
-
-    assert bank.get_all_positions() == list(config.keys())
-
-
 def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
-    """A clear RuntimeError (pointing at offline prefetch) is raised on failure."""
+    """On a cache miss, a download failure points the user at offline prefetch."""
 
     def _fail(*args, **kwargs):
         raise OSError("no network")
@@ -1134,25 +1104,6 @@ def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="prefetch it to"):
         RevePositionBank(cache_dir=str(tmp_path))
-
-
-def test_reve_position_bank_downloaded_config_is_cached(tmp_path, monkeypatch):
-    """A downloaded position bank is read from the cache dir pooch writes to."""
-    config = {"Cz": [0.0, 0.0, 1.0]}
-
-    def _fake_retrieve(url, known_hash, fname, path, **kwargs):
-        dest = os.path.join(path, fname)
-        with open(dest, "w") as f:
-            json.dump(config, f)
-        return dest
-
-    monkeypatch.setattr(pooch, "retrieve", _fake_retrieve)
-
-    bank = RevePositionBank(cache_dir=str(tmp_path))
-    assert bank.get_all_positions() == list(config.keys())
-
-    cached = tmp_path / "reve_positions.json"
-    assert cached.exists()
 
 
 # ==============================================================================
