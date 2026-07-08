@@ -816,9 +816,8 @@ class RevePositionBank(torch.nn.Module):
         cache_dir = _get_path(cache_dir, "REVE_POSITIONS_PATH", "REVE positions")
         cache_file = os.path.join(cache_dir, "reve_positions.json")
 
-        # Use the local cache (offline path); only download on a cache miss.
-        config = self._load_json(cache_file)
-        if config is None:
+        # Offline path: use the cached/prefetched file; only download on a miss.
+        if not os.path.exists(cache_file):
             try:
                 # pooch ships with mne and writes straight into the cache dir.
                 pooch.retrieve(
@@ -833,7 +832,9 @@ class RevePositionBank(torch.nn.Module):
                     f"Failed to download the position bank from {url}. On an "
                     f"offline node, prefetch it to {cache_file} first: {e}"
                 ) from e
-            config = self._load_json(cache_file)
+
+        with open(cache_file) as f:
+            config = json.load(f)
 
         try:
             self.position_names = list(config.keys())
@@ -856,18 +857,6 @@ class RevePositionBank(torch.nn.Module):
             raise RuntimeError(
                 f"Invalid position data format in the downloaded config: {e}"
             ) from e
-
-    @staticmethod
-    def _load_json(path: Optional[str]) -> Optional[dict]:
-        """Load a JSON config from ``path`` if it exists and is valid, else None."""
-        if not path or not os.path.exists(path):
-            return None
-        try:
-            with open(path) as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"Failed to load REVE position cache {path}: {e}")
-            return None
 
     def forward(self, channel_names: list[str]):
         indices = [self.mapping[q] for q in channel_names if q in self.mapping]
