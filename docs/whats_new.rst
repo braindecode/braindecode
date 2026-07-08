@@ -51,7 +51,8 @@ Bug fixes
 
 - Make the :class:`braindecode.models.REVE` position bank robust on offline /
   limited-network nodes: it is now cached in the writable MNE data directory
-  (``~/mne_data``) instead of the package folder, so a prefetched
+  (resolved via the ``REVE_POSITIONS_PATH`` config key, defaulting under
+  ``~/mne_data``) instead of the package folder, so a prefetched
   ``reve_positions.json`` there is used without any download (:gh:`1098` by
   `Bruno Aristimunha`_)
 

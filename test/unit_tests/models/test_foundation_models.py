@@ -1106,6 +1106,22 @@ def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
         RevePositionBank(cache_dir=str(tmp_path))
 
 
+def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
+    """A corrupt/partial cached file triggers a re-download instead of crashing."""
+    cache_file = tmp_path / "reve_positions.json"
+    cache_file.write_text("{ this is not valid json")
+    config = {"Cz": [0.0, 0.0, 1.0]}
+
+    def _fake_retrieve(url, known_hash, fname, path, **kwargs):
+        (tmp_path / fname).write_text(json.dumps(config))
+
+    monkeypatch.setattr(pooch, "retrieve", _fake_retrieve)
+
+    bank = RevePositionBank(cache_dir=str(tmp_path))
+
+    assert bank.get_all_positions() == list(config.keys())
+
+
 # ==============================================================================
 # Tests for CBraMod Model
 # ==============================================================================

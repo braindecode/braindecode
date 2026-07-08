@@ -815,9 +815,15 @@ class RevePositionBank(torch.nn.Module):
         cache_dir = _get_path(cache_dir, "REVE_POSITIONS_PATH", "REVE positions")
         cache_file = os.path.join(cache_dir, "reve_positions.json")
 
-        # Offline path: use the cached/prefetched file; only download on a miss.
-        if not os.path.exists(cache_file):
+        # Offline path: reuse the cached/prefetched file. Download only on a miss
+        # or if the cached copy is unreadable (e.g. an interrupted download).
+        try:
+            with open(cache_file) as f:
+                config = json.load(f)
+        except (OSError, json.JSONDecodeError):
             try:
+                if os.path.exists(cache_file):
+                    os.remove(cache_file)  # corrupt/partial; force a fresh copy
                 # pooch ships with mne and writes straight into the cache dir.
                 pooch.retrieve(
                     url,
@@ -826,14 +832,13 @@ class RevePositionBank(torch.nn.Module):
                     path=cache_dir,
                     downloader=pooch.HTTPDownloader(timeout=timeout),
                 )
+                with open(cache_file) as f:
+                    config = json.load(f)
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to download the position bank from {url}. On an "
                     f"offline node, prefetch it to {cache_file} first: {e}"
                 ) from e
-
-        with open(cache_file) as f:
-            config = json.load(f)
 
         try:
             self.position_names = list(config.keys())
