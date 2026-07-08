@@ -1105,7 +1105,7 @@ def _forbid_network(monkeypatch):
 def test_reve_position_bank_mne_cache(tmp_path, monkeypatch):
     """A prefetched file in the MNE data directory is used without any download."""
     config = _write_positions(str(tmp_path / "reve_positions.json"))
-    monkeypatch.setattr(mne, "get_config", lambda *a, **k: str(tmp_path))
+    monkeypatch.setenv("REVE_POSITIONS_PATH", str(tmp_path))
     _forbid_network(monkeypatch)
 
     bank = RevePositionBank()

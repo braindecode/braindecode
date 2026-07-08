@@ -11,11 +11,11 @@ import os
 from pathlib import Path
 from typing import Optional, Union
 
-import mne
 import requests
 import torch
 import torch.nn.functional as F
 from einops import rearrange
+from mne.datasets.utils import _get_path
 from torch import nn
 
 # Safe import for older PyTorch versions (Support for Intel-based Macs)
@@ -800,8 +800,9 @@ class RevePositionBank(torch.nn.Module):
     timeout : int, optional
         Timeout in seconds for the HTTP request. Default is 5 seconds.
     cache_dir : str, optional
-        Directory to cache the position bank. Default is the MNE data directory
-        (``mne.get_config("MNE_DATA")``, usually ``~/mne_data``).
+        Directory to cache the position bank. If ``None``, resolved like other
+        braindecode datasets via the ``REVE_POSITIONS_PATH`` config key, falling
+        back to the MNE data directory (usually ``~/mne_data``).
     """
 
     def __init__(
@@ -812,8 +813,7 @@ class RevePositionBank(torch.nn.Module):
     ):
         super().__init__()
 
-        if cache_dir is None:
-            cache_dir = mne.get_config("MNE_DATA", str(Path.home() / "mne_data"))
+        cache_dir = _get_path(cache_dir, "REVE_POSITIONS_PATH", "REVE positions")
         cache_file = os.path.join(cache_dir, "reve_positions.json")
 
         # Use the local cache, then download as a last resort.
