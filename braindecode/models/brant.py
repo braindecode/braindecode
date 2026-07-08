@@ -21,6 +21,19 @@ import torch.nn as nn
 
 from braindecode.models.base import EEGModuleMixin
 
+# Standard rhythmic-activity bands (Hz) used by Brant's frequency encoding,
+# from the paper (§ Frequency encoding): theta, alpha, beta, gamma1-5.
+BRANT_FREQ_BANDS: tuple[tuple[float, float], ...] = (
+    (4.0, 8.0),  # theta
+    (8.0, 13.0),  # alpha
+    (13.0, 30.0),  # beta
+    (30.0, 50.0),  # gamma1
+    (50.0, 70.0),  # gamma2
+    (70.0, 90.0),  # gamma3
+    (90.0, 110.0),  # gamma4
+    (110.0, 128.0),  # gamma5
+)
+
 
 class Brant(EEGModuleMixin, nn.Module):
     r"""Brant from Zhang et al. (2023) [Brant2023]_.
@@ -36,11 +49,17 @@ class Brant(EEGModuleMixin, nn.Module):
     2. a **spatial encoder** over the patches sharing the same time index across
        channels, capturing spatial correlation.
 
-    Time- and frequency-domain information are combined: alongside the raw
-    patch, band-power features are computed and injected into the input
-    encoding. Following the braindecode convention, that frequency computation
-    is performed **inside** ``forward`` so the model keeps the standard
-    ``(batch, n_chans, n_times)`` input signature.
+    Time- and frequency-domain information are combined: alongside a linear
+    projection of the raw patch and a learnable temporal positional encoding,
+    a **frequency encoding** is added — the log spectral power of the patch in
+    each of :data:`BRANT_FREQ_BANDS` (8 rhythmic bands) softmax-weights 8
+    learnable per-band embeddings. Following the braindecode convention, that
+    frequency computation is performed **inside** ``forward`` so the model keeps
+    the standard ``(batch, n_chans, n_times)`` input signature.
+
+    The upstream model operates on signals down-sampled to **250 Hz**; the
+    default ``patch_size`` (1500 samples) corresponds to the 6 s patches used in
+    the paper. Encoder sizes below are the paper's configuration (§3.2).
 
     .. important::
        **Pre-trained weights available.** The upstream checkpoint (>500M
@@ -56,15 +75,18 @@ class Brant(EEGModuleMixin, nn.Module):
         Number of time samples per patch fed to the encoders. Default 1500
         (~6 s at 250 Hz), matching the upstream patching.
     embed_dim : int, optional
-        Size of the patch embedding / model width. Default 512.
+        Model width ``D`` (patch embedding size). Default 2048 (paper §3.2).
+    ffn_dim : int, optional
+        Inner dimension of the Transformer feed-forward blocks. Default 3072.
     temporal_n_layers : int, optional
-        Number of layers in the temporal Transformer encoder. Default 8.
+        Number of layers in the temporal Transformer encoder. Default 12.
     spatial_n_layers : int, optional
-        Number of layers in the spatial Transformer encoder. Default 4.
+        Number of layers in the spatial Transformer encoder. Default 5.
     n_heads : int, optional
-        Number of attention heads in both encoders. Default 8.
-    ffn_ratio : int, optional
-        Feed-forward expansion ratio inside the Transformer blocks. Default 4.
+        Number of attention heads in both encoders. Default 16.
+    n_freq_bands : int, optional
+        Number of frequency bands used by the frequency encoding. Default 8
+        (must match ``len(BRANT_FREQ_BANDS)``).
     drop_prob : float, optional
         Dropout probability. Default 0.1.
 
@@ -78,13 +100,14 @@ class Brant(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        # --- Brant hyper-parameters (defaults to be pinned from Brant_src) ---
+        # --- Brant hyper-parameters (paper §3.2; cross-check with Brant_src) ---
         patch_size: int = 1500,
-        embed_dim: int = 512,
-        temporal_n_layers: int = 8,
-        spatial_n_layers: int = 4,
-        n_heads: int = 8,
-        ffn_ratio: int = 4,
+        embed_dim: int = 2048,
+        ffn_dim: int = 3072,
+        temporal_n_layers: int = 12,
+        spatial_n_layers: int = 5,
+        n_heads: int = 16,
+        n_freq_bands: int = 8,
         drop_prob: float = 0.1,
         # --- braindecode mandatory signal parameters ---
         n_outputs=None,
@@ -106,10 +129,11 @@ class Brant(EEGModuleMixin, nn.Module):
 
         self.patch_size = patch_size
         self.embed_dim = embed_dim
+        self.ffn_dim = ffn_dim
         self.temporal_n_layers = temporal_n_layers
         self.spatial_n_layers = spatial_n_layers
         self.n_heads = n_heads
-        self.ffn_ratio = ffn_ratio
+        self.n_freq_bands = n_freq_bands
         self.drop_prob = drop_prob
 
         # ------------------------------------------------------------------ #
@@ -146,11 +170,13 @@ class Brant(EEGModuleMixin, nn.Module):
             Class logits of shape ``(batch, n_outputs)``.
         """
         # Intended data flow (to be implemented):
-        #   1. cut ``x`` into patches of ``self.patch_size`` samples;
-        #   2. embed each patch (raw + band-power) -> ``self.patch_embed``;
-        #   3. temporal encoder over consecutive patches per channel;
-        #   4. spatial encoder over channels at each time index;
-        #   5. pool the representation and apply ``self.final_layer``.
+        #   1. cut ``x`` into (L, C) patches of ``self.patch_size`` samples;
+        #   2. input encoding = linear projection of the patch + learnable
+        #      temporal positional encoding + frequency encoding (softmax over
+        #      log band-power across ``BRANT_FREQ_BANDS``) -> ``self.patch_embed``;
+        #   3. temporal encoder over the L consecutive patches, per channel;
+        #   4. spatial encoder over the C channels at each time index;
+        #   5. pool the (L, C, D) representation and apply ``self.final_layer``.
         raise NotImplementedError(
             "Brant.forward is not implemented yet — skeleton only. "
             "The faithful port and its parity check against the upstream "
