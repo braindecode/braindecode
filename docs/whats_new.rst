@@ -50,10 +50,9 @@ Bug fixes
 ==========
 
 - Make the :class:`braindecode.models.REVE` position bank robust on offline /
-  limited-network nodes: it now discovers ``reve_positions.json`` from several
-  local caches (the ``BRAINDECODE_REVE_POSITIONS`` env var, an explicit
-  ``cache_dir``, the package-local ``.cache``, the MNE data cache, and the
-  Hugging Face hub cache) before attempting any download (:gh:`1098` by
+  limited-network nodes: set the ``BRAINDECODE_REVE_POSITIONS`` env var to a
+  prefetched ``positions.json`` to skip the download, and cache-write failures
+  (e.g. read-only install dirs) are no longer fatal (:gh:`1098` by
   `Bruno Aristimunha`_)
 
 Code health

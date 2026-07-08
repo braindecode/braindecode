@@ -1094,15 +1094,12 @@ def _write_positions(path):
 
 
 def _forbid_network(monkeypatch):
-    """Patch the network entry points so any access raises loudly."""
+    """Patch requests.get so any network access raises loudly."""
 
     def _boom(*args, **kwargs):
         raise AssertionError("Unexpected network access")
 
     monkeypatch.setattr(requests, "get", _boom)
-    monkeypatch.setattr(
-        RevePositionBank, "_load_from_hf_hub", classmethod(lambda cls, **k: None)
-    )
 
 
 def test_reve_position_bank_env_var(tmp_path, monkeypatch):
@@ -1112,7 +1109,7 @@ def test_reve_position_bank_env_var(tmp_path, monkeypatch):
     monkeypatch.setenv("BRAINDECODE_REVE_POSITIONS", str(pos_file))
     _forbid_network(monkeypatch)
 
-    bank = RevePositionBank()
+    bank = RevePositionBank(cache_dir=str(tmp_path))
 
     assert bank.get_all_positions() == list(config.keys())
     assert bank.forward(["Cz", "Pz"]).shape == (2, 3)
@@ -1129,42 +1126,8 @@ def test_reve_position_bank_cache_dir(tmp_path, monkeypatch):
     assert bank.get_all_positions() == list(config.keys())
 
 
-def test_reve_position_bank_hf_cache(tmp_path, monkeypatch):
-    """The HuggingFace cache is used (offline) when no local cache file exists."""
-    hf_file = tmp_path / "positions.json"
-    config = _write_positions(str(hf_file))
-
-    monkeypatch.setattr(requests, "get", lambda *a, **k: pytest.fail("network used"))
-    # No local candidate files, but the file exists in the HF cache.
-    monkeypatch.setattr(
-        RevePositionBank, "_candidate_cache_files", classmethod(lambda cls, cd: [])
-    )
-    monkeypatch.setattr(
-        RevePositionBank,
-        "_load_from_hf_hub",
-        classmethod(
-            lambda cls, local_files_only: (
-                cls._read_config_file(str(hf_file)) if local_files_only else None
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        RevePositionBank, "_write_cache", classmethod(lambda cls, config, cd: None)
-    )
-
-    bank = RevePositionBank(cache_dir=str(tmp_path / "empty"))
-
-    assert bank.get_all_positions() == list(config.keys())
-
-
 def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
     """A clear RuntimeError is raised when nothing is cached and download fails."""
-    monkeypatch.setattr(
-        RevePositionBank, "_candidate_cache_files", classmethod(lambda cls, cd: [])
-    )
-    monkeypatch.setattr(
-        RevePositionBank, "_load_from_hf_hub", classmethod(lambda cls, **k: None)
-    )
 
     def _fail(*args, **kwargs):
         raise requests.RequestException("no network")
@@ -1178,13 +1141,6 @@ def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
 def test_reve_position_bank_downloaded_config_is_cached(tmp_path, monkeypatch):
     """A downloaded position bank is written to the local cache for offline reuse."""
     config = {"Cz": [0.0, 0.0, 1.0]}
-
-    monkeypatch.setattr(
-        RevePositionBank, "_candidate_cache_files", classmethod(lambda cls, cd: [])
-    )
-    monkeypatch.setattr(
-        RevePositionBank, "_load_from_hf_hub", classmethod(lambda cls, **k: None)
-    )
 
     class _Resp:
         text = json.dumps(config)

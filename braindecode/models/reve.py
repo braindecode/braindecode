@@ -31,19 +31,6 @@ from braindecode.models.base import EEGModuleMixin
 
 logger = logging.getLogger(__name__)
 
-#: Hugging Face repository and file that host the REVE position bank.
-REVE_POSITIONS_REPO_ID = "brain-bzh/reve-positions"
-REVE_POSITIONS_FILENAME = "positions.json"
-#: Default HuggingFace URL used as a direct-download fallback.
-REVE_POSITIONS_URL = (
-    "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json"
-)
-#: File name used for the package-local / user cache copy of the position bank.
-REVE_POSITIONS_CACHE_FILENAME = "reve_positions.json"
-#: Environment variable pointing to an explicit ``reve_positions.json`` file.
-#: Useful on offline HPC nodes where the file is prefetched on a login node.
-REVE_POSITIONS_ENV_VAR = "BRAINDECODE_REVE_POSITIONS"
-
 
 class REVE(EEGModuleMixin, nn.Module):
     r"""
@@ -258,13 +245,6 @@ class REVE(EEGModuleMixin, nn.Module):
     standard 10-20/10-10/10-05 electrode names to 3D coordinates. This enables the
     4D positional encoding to generalize across electrode configurations without
     requiring matched layouts between pretraining and downstream tasks.
-
-    To stay usable on offline / limited-network environments (for example HPC
-    compute nodes without a working proxy), the position bank is first looked up
-    in several local caches before any download is attempted. The lookup order is
-    the ``BRAINDECODE_REVE_POSITIONS`` environment variable, an explicit
-    ``cache_dir``, the package-local ``.cache`` directory, the MNE data cache, and
-    the Hugging Face hub cache. See :class:`RevePositionBank` for details.
     """
 
     def __init__(
@@ -807,23 +787,10 @@ class RevePositionBank(torch.nn.Module):
 
     The coordinates come from the 92 datasets used during REVE pretraining.
 
-    To be robust on offline / limited-network environments (for example HPC
-    compute nodes without a working proxy), the position bank is discovered from
-    several local cache locations before any network access is attempted, in the
-    following order:
-
-    1. the file pointed to by the ``BRAINDECODE_REVE_POSITIONS`` environment
-       variable, if set;
-    2. ``<cache_dir>/.cache/reve_positions.json`` when ``cache_dir`` is given;
-    3. the package-local cache ``braindecode/models/.cache/reve_positions.json``
-       (kept for backward compatibility);
-    4. the MNE data cache ``<MNE_DATA>/reve_pretrained/reve_positions.json``;
-    5. the Hugging Face hub cache (``local_files_only``), which is populated when
-       REVE weights were fetched via :meth:`~braindecode.models.REVE.from_pretrained`.
-
-    Only if none of these are available and the network is reachable, the file is
-    downloaded (via ``huggingface_hub`` when installed, otherwise via a direct
-    HTTP request) and cached locally for subsequent offline use.
+    The bank is cached locally after the first download. For offline / restricted
+    nodes (e.g. HPC compute nodes without a proxy), point the
+    ``BRAINDECODE_REVE_POSITIONS`` environment variable at a prefetched
+    ``positions.json`` and no download is attempted.
 
     Parameters
     ----------
@@ -838,13 +805,30 @@ class RevePositionBank(torch.nn.Module):
 
     def __init__(
         self,
-        url: str = REVE_POSITIONS_URL,
+        url: str = "https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json",
         timeout: int = 5,
         cache_dir: Optional[str] = None,
     ):
         super().__init__()
 
-        config = self._resolve_config(url=url, timeout=timeout, cache_dir=cache_dir)
+        if cache_dir is None:
+            cache_dir = str(Path(__file__).parent)
+        cache_file = os.path.join(cache_dir, ".cache", "reve_positions.json")
+
+        # Offline escape hatch, then local cache, then download as a last resort.
+        config = self._load_json(os.environ.get("BRAINDECODE_REVE_POSITIONS"))
+        if config is None:
+            config = self._load_json(cache_file)
+        if config is None:
+            try:
+                response = requests.get(url, timeout=timeout)
+                response.raise_for_status()
+                config = json.loads(response.text)
+            except (requests.RequestException, json.JSONDecodeError) as e:
+                raise RuntimeError(
+                    f"Failed to download or parse the position bank from {url}: {e}"
+                ) from e
+            self._write_cache(cache_file, config)
 
         try:
             self.position_names = list(config.keys())
@@ -868,134 +852,25 @@ class RevePositionBank(torch.nn.Module):
                 f"Invalid position data format in the downloaded config: {e}"
             ) from e
 
-    @classmethod
-    def _resolve_config(cls, url: str, timeout: int, cache_dir: Optional[str]) -> dict:
-        """Locate the position bank, preferring local caches over the network."""
-        # 1. Local cache locations (no network access).
-        for path in cls._candidate_cache_files(cache_dir):
-            config = cls._read_config_file(path)
-            if config is not None:
-                logger.info(f"Loaded REVE position bank from cache: {path}")
-                return config
-
-        # 2. Hugging Face hub cache without network access. This succeeds on
-        # offline nodes when the file was prefetched (e.g. via from_pretrained).
-        config = cls._load_from_hf_hub(local_files_only=True)
-        if config is not None:
-            logger.info("Loaded REVE position bank from the Hugging Face cache.")
-            cls._write_cache(config, cache_dir)
-            return config
-
-        # 3. Download as a last resort and cache it for future offline use.
-        config = cls._download_config(url=url, timeout=timeout)
-        cls._write_cache(config, cache_dir)
-        return config
-
     @staticmethod
-    def _default_cache_file(cache_dir: Optional[str]) -> str:
-        """Return the writable cache path (package-local by default)."""
-        if cache_dir is None:
-            cache_dir = str(Path(__file__).parent)
-        return os.path.join(cache_dir, ".cache", REVE_POSITIONS_CACHE_FILENAME)
-
-    @classmethod
-    def _candidate_cache_files(cls, cache_dir: Optional[str]) -> list[str]:
-        """Return, in priority order, local files that may hold the position bank."""
-        candidates: list[str] = []
-
-        env_path = os.environ.get(REVE_POSITIONS_ENV_VAR)
-        if env_path:
-            candidates.append(env_path)
-
-        if cache_dir is not None:
-            candidates.append(
-                os.path.join(cache_dir, ".cache", REVE_POSITIONS_CACHE_FILENAME)
-            )
-
-        # Package-local default (backward compatible).
-        candidates.append(
-            os.path.join(
-                str(Path(__file__).parent), ".cache", REVE_POSITIONS_CACHE_FILENAME
-            )
-        )
-
-        # MNE data cache, shared with the pretrained REVE weights.
-        try:
-            import mne
-
-            mne_data = mne.get_config("MNE_DATA") or str(Path.home() / "mne_data")
-            candidates.append(
-                os.path.join(mne_data, "reve_pretrained", REVE_POSITIONS_CACHE_FILENAME)
-            )
-        except Exception:  # pragma: no cover - mne always available in practice
-            pass
-
-        # De-duplicate while preserving order.
-        seen: set[str] = set()
-        unique: list[str] = []
-        for path in candidates:
-            if path and path not in seen:
-                seen.add(path)
-                unique.append(path)
-        return unique
-
-    @staticmethod
-    def _read_config_file(path: Optional[str]) -> Optional[dict]:
-        """Load a JSON config from ``path`` if it exists and is valid."""
+    def _load_json(path: Optional[str]) -> Optional[dict]:
+        """Load a JSON config from ``path`` if it exists and is valid, else None."""
         if not path or not os.path.exists(path):
             return None
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
+        except (json.JSONDecodeError, OSError) as e:
             logger.warning(f"Failed to load REVE position cache {path}: {e}")
             return None
 
-    @classmethod
-    def _load_from_hf_hub(cls, local_files_only: bool) -> Optional[dict]:
-        """Fetch the position bank through ``huggingface_hub`` if available."""
-        try:
-            from huggingface_hub import hf_hub_download
-        except ImportError:
-            return None
-        try:
-            path = hf_hub_download(
-                repo_id=REVE_POSITIONS_REPO_ID,
-                filename=REVE_POSITIONS_FILENAME,
-                local_files_only=local_files_only,
-            )
-        except Exception as e:
-            logger.debug(f"huggingface_hub lookup for REVE positions failed: {e}")
-            return None
-        return cls._read_config_file(path)
-
-    @classmethod
-    def _download_config(cls, url: str, timeout: int) -> dict:
-        """Download the position bank, preferring ``huggingface_hub``."""
-        # huggingface_hub honours HF_HOME, proxies and offline fallbacks.
-        config = cls._load_from_hf_hub(local_files_only=False)
-        if config is not None:
-            logger.info("Downloaded REVE position bank via huggingface_hub.")
-            return config
-
-        try:
-            response = requests.get(url, timeout=timeout)
-            response.raise_for_status()
-            return json.loads(response.text)
-        except (requests.RequestException, json.JSONDecodeError) as e:
-            raise RuntimeError(
-                f"Failed to download or parse the position bank from {url}: {e}"
-            ) from e
-
-    @classmethod
-    def _write_cache(cls, config: dict, cache_dir: Optional[str]) -> None:
-        """Persist the position bank locally; failures are non-fatal."""
-        cache_file = cls._default_cache_file(cache_dir)
+    @staticmethod
+    def _write_cache(cache_file: str, config: dict) -> None:
+        """Persist the position bank locally; failures (e.g. read-only) are non-fatal."""
         try:
             os.makedirs(os.path.dirname(cache_file), exist_ok=True)
             with open(cache_file, "w") as f:
                 json.dump(config, f)
-            logger.info(f"Cached REVE position bank to: {cache_file}")
         except OSError as e:
             logger.warning(f"Could not cache REVE position bank to {cache_file}: {e}")
 
