@@ -28,6 +28,12 @@ Current 1.7.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
+  foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
+  2023), with the official pretrained weights available via
+  ``Brant.from_pretrained("braindecode/brant-pretrained")`` (:gh:`1100` by
+  `Adam Mounir`_)
+
 - Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
   registry for the interpolated (channel-adapting) models, keeping them separate
   from :data:`braindecode.models.util.models_dict` (:gh:`1093` by `Bruno Aristimunha`_)

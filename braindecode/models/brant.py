@@ -70,10 +70,16 @@ class Brant(EEGModuleMixin, nn.Module):
     ``spatial_n_layers=5`` and ``n_heads=16`` — pass these to reproduce it.
 
     .. important::
-       **Pre-trained weights available.** The upstream checkpoint (>500M
-       parameters, pre-trained on ~1 TB of 1000 Hz sEEG) is published on the
-       Hugging Face Hub at ``Daoze/Brant`` under the Apache-2.0 license.
-       Loading it into this port is tracked in braindecode/braindecode#1097.
+       **Pre-trained weights available.** The official checkpoint (~508M
+       parameters, pre-trained on ~1 TB of intracranial recordings) is hosted on
+       the Hugging Face Hub under the Apache-2.0 license and loads directly::
+
+           model = Brant.from_pretrained("braindecode/brant-pretrained", n_outputs=2)
+
+       It uses the paper configuration above (``patch_size=1500``,
+       ``n_times=22500``); ``n_chans`` and ``n_outputs`` may be changed freely,
+       as channels are pooled and the classification head is task-specific. These
+       weights are released for medical or research use only.
 
     .. versionadded:: 1.7
 
