@@ -9,9 +9,9 @@ Upstream code and pretrained weights are released under Apache-2.0:
 
 The two Transformer encoders are ported weight-for-weight from the upstream
 reference (bit-exact, see ``scripts/brant_parity_check``); the classification
-head and channel/patch pooling are a braindecode-native adaptation. Registration
-in the model registry and loading of the upstream pretrained checkpoint are
-tracked in braindecode/braindecode#1097.
+head and channel/patch pooling are a braindecode-native adaptation. The official
+pretrained checkpoint is hosted on the Hugging Face Hub and loads directly via
+``Brant.from_pretrained("braindecode/brant-pretrained")``.
 """
 
 from __future__ import annotations
