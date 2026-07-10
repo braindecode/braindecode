@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import PatchTokenizer
 from braindecode.modules.brant_modules import (
     _BandPowerFeatures,
     _BrantHead,
@@ -168,6 +169,16 @@ class Brant(EEGModuleMixin, nn.Module):
                 f"({self.patch_size}) to form at least one patch."
             )
 
+        # Shared non-overlapping patching (same tokenizer as the other
+        # transformer foundation models); non-learnable, so it is a pure reshape
+        # that keeps the raw samples the band-power and the temporal input
+        # embedding both consume, and adds no parameters.
+        self.patch_tokenizer = PatchTokenizer(
+            patch_size=patch_size,
+            n_times=self.n_times,
+            learnable=False,
+            on_non_divisible="crop",
+        )
         # braindecode-native: band-power computed inside forward (see module).
         self.band_power = _BandPowerFeatures(self.sfreq, BRANT_FREQ_BANDS)
         self.temporal_encoder = _BrantTemporalEncoder(
@@ -218,9 +229,9 @@ class Brant(EEGModuleMixin, nn.Module):
         seq_len = self.seq_len
         d_model = self.embed_dim
 
-        # 1. patch: drop the tail that does not fill a whole patch.
-        x = x[..., : seq_len * self.patch_size]
-        patches = x.reshape(batch_size, n_chans, seq_len, self.patch_size)
+        # 1. patch: split into non-overlapping patches (shared PatchTokenizer);
+        #    trailing samples that do not fill a whole patch are cropped.
+        patches = self.patch_tokenizer(x)
 
         # 2. log band-power features (computed here, not fed in as upstream).
         power = self.band_power(patches)
