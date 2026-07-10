@@ -47,6 +47,17 @@ def test_forward_shape():
     assert torch.isfinite(out).all()
 
 
+def test_return_features():
+    model = _model().eval()
+    with torch.no_grad():
+        out = model(torch.randn(2, N_CHANS, N_TIMES), return_features=True)
+    assert isinstance(out, dict)
+    assert set(out) == {"features", "cls_token"}
+    assert out["features"].shape == (2, model.embed_dim)
+    assert out["cls_token"] is None
+    assert torch.isfinite(out["features"]).all()
+
+
 def test_reset_head_changes_n_outputs():
     model = _model().eval()
     model.reset_head(7)

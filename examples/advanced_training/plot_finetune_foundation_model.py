@@ -116,8 +116,10 @@ print(metadata.head(10))
 # already bundles the SSL backbone together with the downstream
 # classification layers, so a single call is all that is needed.
 #
-# For other foundation models (BENDR, BIOT, Labram, STEEGFormer, etc.) the
-# same one-line pattern applies — see :ref:`load-pretrained-models`. For
+# For other foundation models (BENDR, BIOT, Brant, Labram, STEEGFormer, etc.)
+# the same one-line pattern applies — see :ref:`load-pretrained-models`. Brant
+# is the intracranial (sEEG/iEEG) foundation model of the collection and loads
+# as ``Brant.from_pretrained("braindecode/brant-pretrained", n_outputs=2)``. For
 # example, the braindecode re-host of the STEEGFormer small checkpoint can be
 # loaded as ``STEEGFormer.from_pretrained("braindecode/STEEGFormer-small",
 # n_outputs=len(classes), chs_info=chs_info)`` -- pass ``n_outputs`` to size the

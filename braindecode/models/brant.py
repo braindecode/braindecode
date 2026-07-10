@@ -195,18 +195,24 @@ class Brant(EEGModuleMixin, nn.Module):
         self._n_outputs = n_outputs
         self.final_layer = _BrantHead(self.embed_dim, n_outputs, self._head_activation)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_features: bool = False):
         """Decode a batch of signals.
 
         Parameters
         ----------
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``.
+        return_features : bool
+            If ``True``, return the pooled encoder embedding instead of the
+            class logits, as ``{"features": pooled, "cls_token": None}``
+            (braindecode foundation-model convention). Brant pools over channels
+            and patches and has no class token, hence ``cls_token`` is ``None``.
 
         Returns
         -------
-        torch.Tensor
-            Class logits of shape ``(batch, n_outputs)``.
+        torch.Tensor or dict
+            Class logits of shape ``(batch, n_outputs)``, or the feature
+            dict ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
         batch_size, n_chans, _ = x.shape
         seq_len = self.seq_len
@@ -230,4 +236,6 @@ class Brant(EEGModuleMixin, nn.Module):
 
         # 5. pool over channels and patches, then classify.
         pooled = emb.mean(dim=(1, 2))
+        if return_features:
+            return {"features": pooled, "cls_token": None}
         return self.final_layer(pooled)
