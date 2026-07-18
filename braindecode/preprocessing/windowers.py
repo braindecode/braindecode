@@ -635,7 +635,8 @@ def _create_windows_from_events(
     trial_stop_offset_samples,
     window_size_samples=None,
     window_stride_samples=None,
-    on_last_window="overlap",    mapping=None,
+    on_last_window="overlap",
+    mapping=None,
     preload=False,
     drop_bad_windows=True,
     picks=None,
@@ -1333,11 +1334,6 @@ def _check_and_set_fixed_length_window_arguments(
     """Raises warnings for incorrect input arguments and will set correct
     default values for stop_offset_samples, window_stride_samples & on_last_window, if necessary.
     """
-    # default stride to window size for non-overlapping windows
-    if window_size_samples is not None and window_stride_samples is None:
-        window_stride_samples = window_size_samples
-        if drop_last_window is None:
-            drop_last_window = True
 
     _check_windowing_arguments(
         start_offset_samples,

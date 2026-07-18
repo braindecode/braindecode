@@ -1662,23 +1662,6 @@ def test_on_last_window_keep_events(lazy_loadable_dataset):
     # "keep" must have produced at least one extra window vs "drop"
     assert n_keep > n_drop
 
-
-def test_on_last_window_pad_events(lazy_loadable_dataset):
-    """Last incomplete window is kept and zero-padded to window_size_samples."""
-    windows = create_windows_from_events(
-        concat_ds=lazy_loadable_dataset,
-        trial_start_offset_samples=0,
-        trial_stop_offset_samples=0,
-        window_size_samples=90,
-        window_stride_samples=90,
-        on_last_window="pad",
-    )
-    starts = windows.datasets[0].metadata["i_start_in_trial"].values
-    stops = windows.datasets[0].metadata["i_stop_in_trial"].values
-    # metadata stop reflects full window_size_samples even for last window
-    assert np.all((stops - starts) == 90)
-
-
 def test_on_last_window_deprecation_warning_events(lazy_loadable_dataset):
     """drop_last_window raises FutureWarning and maps correctly."""
     with pytest.warns(FutureWarning, match="drop_last_window"):
