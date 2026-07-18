@@ -18,7 +18,7 @@ import shutil
 import warnings
 from abc import abstractmethod
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from glob import glob
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
@@ -190,6 +190,31 @@ def _channel_info(mne_obj):
     type_counts = Counter(ch_types)
     type_str = ", ".join(f"{cnt} {t.upper()}" for t, cnt in sorted(type_counts.items()))
     return n_ch, type_str, sfreq
+
+
+def _compute_ch_pos(info, targets_from):
+    """Return ``(n_ch, 3)`` float32 electrode positions aligned to ``X``'s rows.
+
+    Positions are the MNE head-frame coordinates ``info["chs"][i]["loc"][:3]``
+    (meters) -- the same representation braindecode models already consume (see
+    e.g. ``signal_jepa``/``REVE``). When ``targets_from != "metadata"`` the
+    window's misc channels are dropped from ``X`` in ``__getitem__``, so the
+    matching misc rows are dropped here too. Emits a one-time ``UserWarning`` if
+    no channel carries a real position (no montage set).
+    """
+    pos = np.asarray([ch["loc"][:3] for ch in info["chs"]], dtype="float32")
+    if targets_from != "metadata":
+        misc_mask = np.asarray(info.get_channel_types()) == "misc"
+        pos = pos[~misc_mask]
+    has_pos = np.isfinite(pos).all(axis=1) & np.any(pos != 0, axis=1)
+    if pos.size and not has_pos.any():
+        warnings.warn(
+            "Returning channel positions but no montage is set: all positions "
+            "are zero/non-finite. Call ``raw.set_montage(...)`` (or set a "
+            "montage during preprocessing) before enabling ``return_ch_pos``.",
+            UserWarning,
+        )
+    return pos
 
 
 def _window_info(crop_inds, sfreq):
@@ -448,6 +473,10 @@ class RecordDataset(Dataset[tuple[np.ndarray, int | str, tuple[int, int, int]]])
     ):
         self._description = _create_description(description)
         self.transform = transform
+        # Opt-in: when True, ``__getitem__`` appends channel positions (n_ch, 3).
+        # Default off keeps the public ``(X, y, crop_inds)`` contract intact.
+        self.return_ch_pos = False
+        self._ch_pos = None
 
     @abstractmethod
     def __len__(self) -> int:
@@ -750,6 +779,20 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
     @raw.setter
     def raw(self, value):
         self._raw = value
+        self._ch_pos = None  # invalidate cached positions
+
+    @property
+    def ch_pos(self):
+        """Electrode positions ``(n_ch, 3)`` (x, y, z) aligned to ``X``'s channels.
+
+        Cached MNE head-frame coordinates in meters. Rows match the channels
+        returned by :meth:`__getitem__` (misc target channels excluded when
+        ``targets_from="channels"``). All-zero/NaN when no montage is set.
+        """
+        if self._ch_pos is None:
+            info = self._raw.info if self._raw is not None else self._make_mne_info()
+            self._ch_pos = _compute_ch_pos(info, self.targets_from)
+        return self._ch_pos
 
     def __getitem__(self, index: int):
         """Get a window and its target.
@@ -793,6 +836,8 @@ class EEGWindowsDataset(_ZarrMixin, RecordDataset):
                 y = X[misc_mask, :]
             y = y.copy()
             X = X[~misc_mask, :]
+        if self.return_ch_pos:
+            return X, y, crop_inds, self.ch_pos
         return X, y, crop_inds
 
     def __len__(self):
@@ -1016,6 +1061,24 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
     @windows.setter
     def windows(self, value):
         self._windows = value
+        self._ch_pos = None  # invalidate cached positions
+
+    @property
+    def ch_pos(self):
+        """Electrode positions ``(n_ch, 3)`` (x, y, z) aligned to ``X``'s channels.
+
+        Cached MNE head-frame coordinates in meters. Rows match the channels
+        returned by :meth:`__getitem__` (misc target channels excluded when
+        ``targets_from="channels"``). All-zero/NaN when no montage is set.
+        """
+        if self._ch_pos is None:
+            info = (
+                self._windows.info
+                if self._windows is not None
+                else self._make_mne_info()
+            )
+            self._ch_pos = _compute_ch_pos(info, self.targets_from)
+        return self._ch_pos
 
     @staticmethod
     def _can_use_fast_get_epoch_from_raw(epochs: mne.BaseEpochs) -> bool:
@@ -1068,6 +1131,8 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.crop_inds[index].tolist()
+        if self.return_ch_pos:
+            return X, y, crop_inds, self.ch_pos
         return X, y, crop_inds
 
     def __len__(self) -> int:
@@ -1339,6 +1404,168 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         if not (callable(fn) or fn is None):
             raise TypeError("target_transform must be a callable.")
         self._target_transform = fn
+
+    def set_target(self, column: Hashable) -> "BaseConcatDataset":
+        """Use ``column`` as the target ``y`` for every subdataset.
+
+        Dispatches on the subdataset type:
+
+        * For :class:`WindowsDataset` / :class:`EEGWindowsDataset`,
+          ``column`` is looked up in per-window ``metadata`` first, then in
+          the per-record ``description`` (broadcast to every window). The
+          resolved values overwrite ``ds.metadata['target']`` and ``ds.y``.
+          For :class:`WindowsDataset`, the underlying ``ds.windows.metadata``
+          is kept in sync so ``get_metadata()`` and the repr reflect the
+          new target.
+        * For :class:`RawDataset`, ``column`` must exist on the
+          ``description``. ``ds.target_name`` is set to ``column`` so
+          ``__getitem__`` reads ``description[column]`` as ``y`` on every
+          access — no rebuild needed.
+
+        Parameters
+        ----------
+        column : Hashable
+            Name of a metadata column or description field (BIDS entity,
+            participants.tsv extra, ...). Typically a string, but any
+            hashable that pandas accepts as a column label is allowed.
+
+        Returns
+        -------
+        self : BaseConcatDataset
+
+        Raises
+        ------
+        TypeError
+            If any subdataset is not a :class:`WindowsDataset`,
+            :class:`EEGWindowsDataset`, or :class:`RawDataset`, or if a
+            windowed subdataset has lazy (non-DataFrame) metadata.
+        ValueError
+            If ``column`` is not present on a subdataset's metadata or
+            description, or if a windowed subdataset has
+            ``targets_from='channels'`` (which would make this a silent
+            no-op since ``__getitem__`` reads y from misc channels, not
+            from ``metadata['target']``).
+        """
+        for i, ds in enumerate(self.datasets):
+            if isinstance(ds, (WindowsDataset, EEGWindowsDataset)):
+                if not isinstance(ds.metadata, pd.DataFrame):
+                    # _LazyDataFrame (lazy_metadata=True) does not implement
+                    # .copy()/__setitem__, so the in-place write below would
+                    # raise AttributeError. Surface the precondition cleanly.
+                    raise TypeError(
+                        "set_target requires a materialized metadata "
+                        f"DataFrame; datasets[{i}].metadata is "
+                        f"{type(ds.metadata).__name__}. Re-window with "
+                        "lazy_metadata=False to use set_target."
+                    )
+                if getattr(ds, "targets_from", "metadata") != "metadata":
+                    # __getitem__ would read y from misc channels; writing
+                    # metadata['target']/ds.y would be a silent no-op.
+                    raise ValueError(
+                        f"datasets[{i}] has targets_from="
+                        f"{ds.targets_from!r}; set_target only applies when "
+                        "targets_from='metadata' (otherwise __getitem__ "
+                        "derives y from misc channels and would ignore the "
+                        "rewritten target column)."
+                    )
+                n = len(ds)
+                md = ds.metadata
+                if column in md.columns:
+                    values = md[column].iloc[:n].to_list()
+                elif (
+                    isinstance(ds.description, pd.Series)
+                    and column in ds.description.index
+                ):
+                    values = [ds.description[column]] * n
+                else:
+                    desc_keys = (
+                        list(ds.description.index)
+                        if isinstance(ds.description, pd.Series)
+                        else []
+                    )
+                    raise ValueError(
+                        f"Column {column!r} not found on datasets[{i}]: "
+                        f"metadata cols={list(md.columns)}, "
+                        f"description keys={desc_keys}."
+                    )
+                # In-place write so the WindowsDataset's metadata and the
+                # underlying mne.Epochs.metadata (which start as the same
+                # object reference) both reflect the new target. Defensive
+                # second write covers the case where they got de-aliased
+                # earlier by a caller-side reassignment.
+                md["target"] = values
+                windows_obj = getattr(ds, "_windows", None)
+                if windows_obj is not None and windows_obj.metadata is not md:
+                    windows_obj.metadata["target"] = values
+                # values is already a fresh list (Series.to_list() / [x] * n);
+                # no defensive copy needed — pandas keeps its own representation
+                # for md["target"] so mutating ds.y won't reach back into it.
+                ds.y = values
+            elif isinstance(ds, RawDataset):
+                if (
+                    not isinstance(ds.description, pd.Series)
+                    or column not in ds.description.index
+                ):
+                    desc_keys = (
+                        list(ds.description.index)
+                        if isinstance(ds.description, pd.Series)
+                        else []
+                    )
+                    raise ValueError(
+                        f"Column {column!r} not found on datasets[{i}] "
+                        f"description (keys={desc_keys})."
+                    )
+                ds.target_name = column
+            else:
+                raise TypeError(
+                    "set_target requires WindowsDataset, EEGWindowsDataset, "
+                    f"or RawDataset; datasets[{i}] is {type(ds).__name__}."
+                )
+        return self
+
+    def set_return_ch_pos(self, value: bool = True) -> "BaseConcatDataset":
+        """Toggle returning electrode positions from every subdataset.
+
+        When enabled, each windowed subdataset's ``__getitem__`` appends a
+        ``(n_ch, 3)`` array of electrode positions (x, y, z), so a batch yields
+        ``(X, y, crop_inds, ch_pos)``. Heterogeneous (variable-channel)
+        collections additionally need
+        :func:`braindecode.datasets.pad_channels_collate` as the DataLoader
+        ``collate_fn``. Default-off: leaves the ``(X, y, crop_inds)`` contract
+        untouched.
+
+        Parameters
+        ----------
+        value : bool
+            Whether to return channel positions (default ``True``).
+
+        Returns
+        -------
+        self : BaseConcatDataset
+        """
+        for ds in self.datasets:
+            ds.return_ch_pos = value
+        return self
+
+    @property
+    def ch_pos(self):
+        """Electrode positions ``(n_ch, 3)`` from the first recording.
+
+        Convenience accessor mirroring how the repr reports channel info "from
+        first recording". For per-sample positions in a heterogeneous
+        collection, enable :meth:`set_return_ch_pos` and read them from the
+        batch instead.
+        """
+        if not self.datasets:
+            raise ValueError("Empty BaseConcatDataset has no channel positions.")
+        first = self.datasets[0]
+        if not hasattr(first, "ch_pos"):
+            raise AttributeError(
+                f"{type(first).__name__} does not expose channel positions; "
+                "ch_pos is available on windowed datasets (EEGWindowsDataset / "
+                "WindowsDataset)."
+            )
+        return first.ch_pos
 
     def _outdated_save(self, path, overwrite=False):
         """This is a copy of the old saving function, that had inconsistent.

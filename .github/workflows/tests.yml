@@ -47,6 +47,10 @@ jobs:
     - name: Show Python Version
       run: python --version
     - name: Install Braindecode from Current Checkout
+      env:
+        # CI runners have no GPU; pull the CPU-only torch wheels instead of the
+        # ~1.8 GiB CUDA stack. Avoids disk exhaustion and speeds up install.
+        UV_TORCH_BACKEND: cpu
       run: uv pip install --system -e .[all]
     # Show Braindecode Version
     - run: python -c "import braindecode; print(braindecode.__version__)"

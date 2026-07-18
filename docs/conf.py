@@ -1,3 +1,5 @@
+# Authors: Fashad Ahmed <fashad.ahmed20@gmail.com>
+#
 """Our local Sphinx configuration file."""
 
 #!/usr/bin/env python3
@@ -282,6 +284,17 @@ intersphinx_mapping = {
     "spd_learn": ("https://spdlearn.org/", None),
 }
 
+if release.endswith("dev0"):
+    _pip_install_cell = (
+        "# Install the development version of braindecode\n"
+        "%pip install git+https://github.com/braindecode/braindecode.git"
+    )
+else:
+    _pip_install_cell = (
+        f"# Install braindecode (pinned to the version used to build this notebook)\n"
+        f"%pip install braindecode=={release}"
+    )
+
 sphinx_gallery_conf = {
     "examples_dirs": ["../examples"],
     "gallery_dirs": ["auto_examples"],
@@ -289,6 +302,7 @@ sphinx_gallery_conf = {
     "backreferences_dir": "generated",
     "show_memory": True,
     "reference_url": dict(braindecode=None),
+    "first_notebook_cell": _pip_install_cell,
     "subsection_order": ExplicitOrder(
         [
             "../examples/model_building",

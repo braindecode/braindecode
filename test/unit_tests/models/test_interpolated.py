@@ -190,11 +190,15 @@ def test_interpolated_labram_accepts_arbitrary_user_channels():
     assert y.shape == (1, 2)
 
 
-def test_labram_rejects_non_canonical_chs():
+def test_labram_warns_on_non_canonical_chs():
+    """Non-canonical ``chs_info`` is accepted with a warning (1.5.1+); the
+    forward path uses ``ch_names`` to select canonical position embeddings
+    on a per-call basis, and arbitrary channel sets still get a clean path
+    through :class:`InterpolatedLaBraM`."""
     from braindecode.models.labram import Labram
 
     user = _target_5ch()  # 5 non-canonical (for Labram) channels
-    with pytest.raises(ValueError, match="InterpolatedLaBraM"):
+    with pytest.warns(UserWarning, match="InterpolatedLaBraM"):
         Labram(chs_info=user, n_outputs=2, n_times=200)
 
 
@@ -249,6 +253,32 @@ def test_interpolated_bendr_accepts_arbitrary_user_channels():
     # Backbone still sees the 20 canonical BENDR channels.
     assert model.interpolation_layer.matrix.shape == (20, 5)
     y = model(torch.zeros(1, 5, 1000))
+    assert y.shape == (1, 2)
+
+
+def test_interpolated_eegpt_is_shipped():
+    from braindecode.models import EEGPT, InterpolatedEEGPT
+
+    assert issubclass(InterpolatedEEGPT, EEGPT)
+    assert not hasattr(EEGPT, "_TARGET_CHS_INFO")
+    assert hasattr(InterpolatedEEGPT, "_TARGET_CHS_INFO")
+    assert len(InterpolatedEEGPT._TARGET_CHS_INFO) == 62
+
+
+def test_interpolated_eegpt_accepts_arbitrary_user_channels():
+    from braindecode.models import InterpolatedEEGPT
+
+    user = _target_5ch()  # 5 real EEG channels (Fz, Cz, Pz, C3, C4)
+    model = InterpolatedEEGPT(
+        chs_info=user,
+        n_outputs=2,
+        n_times=1024,
+        interpolation_mode="always",
+    )
+    assert model.n_chans == 5
+    # Backbone still sees the 62 canonical EEGPT channels.
+    assert model.interpolation_layer.matrix.shape == (62, 5)
+    y = model(torch.zeros(1, 5, 1024))
     assert y.shape == (1, 2)
 
 

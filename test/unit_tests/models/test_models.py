@@ -11,6 +11,7 @@
 
 from collections import OrderedDict
 from functools import partial
+from unittest import mock
 
 import mne
 import numpy as np
@@ -24,6 +25,7 @@ from braindecode.models import (
     BIOT,
     DGCNN,
     EEGPT,
+    SSTDPN,
     TCN,
     ATCNet,
     AttentionBaseNet,
@@ -67,7 +69,17 @@ from braindecode.models.eegpt import (
     _rotate_half,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.util import (
+    _get_possible_signal_params,
+    _get_signal_params,
+    interpolated_models_dict,
+    models_dict,
+    models_mandatory_parameters,
+)
 from braindecode.util import set_random_seeds
+
+# Interpolated models are stored in a separate registry from ``models_dict``.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 
 @pytest.fixture(scope="module")
@@ -1873,8 +1885,134 @@ def test_parameters_EEGTCNet():
 
     model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1000)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    # 4.27 K according to the Table V from the original paper.
-    assert np.round(n_params / 1e3, 1) == 4.2
+    # 4.27 K according to Table V from the original paper. With the
+    # source-faithful TCN BatchNorm (default), braindecode reports 4.3 K, which
+    # is closer to the paper than the 4.2 K of the previous (BN-less) variant.
+    assert np.round(n_params / 1e3, 1) == 4.3
+
+
+def test_eegtcnet_tcn_batchnorm():
+    """TCN residual blocks carry source-faithful BatchNorm by default, and the
+    legacy (BN-less) architecture is recoverable with ``tcn_batch_norm=False``."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125)
+    n_bn = sum(
+        isinstance(m, nn.BatchNorm1d) for m in model.tcn_block.modules()
+    )
+    # one BatchNorm per conv, two convs per residual block.
+    assert n_bn == 2 * model.depth
+    # the source uses a bias on the residual 1x1 downsample.
+    assert model.tcn_block.downsample.bias is not None
+
+    legacy = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125, tcn_batch_norm=False)
+    assert not any(
+        isinstance(m, nn.BatchNorm1d) for m in legacy.tcn_block.modules()
+    )
+    assert legacy.tcn_block.downsample.bias is None
+    # both variants still produce valid logits.
+    x = torch.randn(2, 22, 1125)
+    assert model(x).shape == (2, 4)
+    assert legacy(x).shape == (2, 4)
+
+
+def test_eegtcnet_separate_dropout():
+    """EEGNet and TCN dropout rates can be set independently (source uses
+    p_eeg=0.2, p_tcn=0.3)."""
+    model = EEGTCNet(
+        n_outputs=4,
+        n_chans=22,
+        n_times=1125,
+        drop_prob_eeg=0.2,
+        drop_prob_tcn=0.3,
+    )
+    assert model.eegnet_tc.drop1.p == 0.2
+    assert model.eegnet_tc.drop2.p == 0.2
+    tcn_drops = [
+        m.p for m in model.tcn_block.modules() if isinstance(m, nn.Dropout)
+    ]
+    assert tcn_drops == [0.3] * (2 * model.depth)
+
+    # When unset, both fall back to the single ``drop_prob``.
+    default = EEGTCNet(n_outputs=4, n_chans=22, n_times=1125, drop_prob=0.4)
+    assert default.eegnet_tc.drop1.p == 0.4
+    assert all(
+        m.p == 0.4
+        for m in default.tcn_block.modules()
+        if isinstance(m, nn.Dropout)
+    )
+
+
+def test_eegtcnet_batch_size_one_train_mode():
+    """Batch-size-1 forward in train mode must not raise even when the TCN
+    sequence collapses to length 1 (small n_times), now that BatchNorm is on by
+    default. With n_times=64 the EEGNet front-end reduces time to a single TCN
+    step, so the (1, filters, 1) tensor would break BatchNorm1d without the
+    batch-size-one guard."""
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=64).train()
+    out = model(torch.randn(1, 22, 64))
+    assert out.shape == (1, 4)
+
+
+def test_sstdpn_proto_sep_constrains_class_rows():
+    """``proto_sep`` is renormalized per class-row (dim=0), so each prototype
+    vector has L2 norm <= ``proto_sep_maxnorm`` after a forward pass."""
+    model = SSTDPN(n_outputs=4, n_chans=22, n_times=1000)
+    model.proto_sep.data.fill_(10.0)
+    model(torch.randn(2, 22, 1000))
+    row_norms = model.proto_sep.detach().norm(p=2, dim=1)
+    # float32 renorm leaves a ~1e-6 residual; use a 1e-5 tolerance.
+    assert torch.all(row_norms <= model.proto_sep_maxnorm + 1e-5)
+
+
+def test_sstdpn_proto_cpt_std_default():
+    """ICP prototypes default to the source ``torch.randn`` std (1.0)."""
+    assert SSTDPN(n_outputs=4, n_chans=22, n_times=1000).proto_cpt_std == 1.0
+
+
+def test_atcnet_conv_max_norm():
+    """``conv_max_norm_const`` clamps the conv/TCN kernels per output filter,
+    while the default (``None``) adds no parameters and no constraint."""
+    max_norm = 0.6
+    model = ATCNet(n_chans=22, n_outputs=4, n_times=1125, conv_max_norm_const=max_norm)
+    model(torch.randn(2, 22, 1125))  # apply the parametrization
+
+    def max_filter_norm(weight):
+        return weight.reshape(weight.shape[0], -1).norm(p=2, dim=1).max().item()
+
+    assert max_filter_norm(model.conv_block.conv1.weight) <= max_norm + 1e-5
+    assert max_filter_norm(model.conv_block.conv2.weight) <= max_norm + 1e-5
+    assert (
+        max_filter_norm(model.temporal_conv_nets[0][0].conv1.weight)
+        <= max_norm + 1e-5
+    )
+
+    # Default leaves the architecture (and parameter count) untouched.
+    default = ATCNet(n_chans=22, n_outputs=4, n_times=1125)
+    assert sum(p.numel() for p in default.parameters()) == sum(
+        p.numel() for p in model.parameters()
+    )
+
+
+@pytest.mark.parametrize("conv_max_norm", [None, 0.6])
+def test_atcnet_source_optimizer_param_groups(conv_max_norm):
+    """The helper returns conv/dense/other groups with the source weight
+    decays, covering every parameter exactly once -- including when the conv
+    kernels are max-norm parametrized (``conv_max_norm_const`` set), in which
+    case the grouped entries must be the leaf ``.original`` parameters."""
+    model = ATCNet(
+        n_chans=22, n_outputs=4, n_times=1125, conv_max_norm_const=conv_max_norm
+    )
+    groups = model.source_optimizer_param_groups()
+
+    assert [g["weight_decay"] for g in groups] == [0.009, 0.5, 0.0]
+    grouped = [p for g in groups for p in g["params"]]
+    # every parameter is covered exactly once (compare by identity)...
+    assert {id(p) for p in grouped} == {id(p) for p in model.parameters()}
+    assert len(grouped) == len(list(model.parameters()))
+    # ...and each entry is a real trainable leaf (not a computed parametrized weight).
+    assert all(p.is_leaf and p.requires_grad for p in grouped)
+    assert all(len(g["params"]) > 0 for g in groups)
+    # groups are accepted by a real optimizer.
+    torch.optim.Adam(groups, lr=1e-3)
 
 
 @pytest.mark.parametrize("method", ["plv", "mag", "corr"])
@@ -2027,6 +2165,63 @@ def test_eegminer_plv_values_range():
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
         "PLV values should be in the range [0, 1]"
+
+
+_BATCH_SIZE_ONE_TRAIN_MODE_PARAMS = [
+    pytest.param(model_name, required_params, signal_params, id=model_name)
+    for model_name, required_params, signal_params in models_mandatory_parameters
+]
+
+
+@pytest.mark.parametrize(
+    "model_name, required_params, signal_params", _BATCH_SIZE_ONE_TRAIN_MODE_PARAMS
+)
+def test_models_batch1_train_mode(
+    model_name, required_params, signal_params
+):
+    """Models must accept batch_size=1 even in train mode.
+
+    BatchNorm layers, when present, must also be restored to train mode
+    after temporarily using running statistics for single-sample inputs.
+    """
+    sp = _get_signal_params(signal_params)
+    model_kwargs = _get_possible_signal_params(sp, required_params)[0]
+    model = all_models_dict[model_name](**model_kwargs)
+    batch_norms = [
+        module
+        for module in model.modules()
+        if isinstance(
+            module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.SyncBatchNorm)
+        )
+    ]
+    x = torch.randn(1, sp["n_chans"], sp["n_times"])
+
+    # In train mode with batch_size=1, this must not raise.
+    model.train()
+    assert model.training
+    with torch.no_grad():
+        out = model(x)
+    assert out.shape[0] == 1
+    # Model and BatchNorm layers must be restored to train mode after forward.
+    assert model.training
+    assert all(batch_norm.training for batch_norm in batch_norms)
+
+    # In eval mode with batch_size=1, this must also work.
+    model.eval()
+    with torch.no_grad():
+        out = model(x)
+    assert out.shape[0] == 1
+
+
+def test_batchnorm_decorator_preserves_forward_input_keyword():
+    model = ContraWR(n_chans=3, n_outputs=2, n_times=1000, sfreq=200.0)
+    x = torch.randn(1, model.n_chans, model.n_times)
+
+    model.train()
+    with torch.no_grad():
+        out = model(X=x)
+
+    assert out.shape == (1, model.n_outputs)
 
 
 def test_eegnet_final_layer_linear_true():
@@ -2254,6 +2449,35 @@ def test_fbmsnet_forward_pass(temporal_layer):
     output = model(x)
 
     assert output.shape == (batch_size, n_outputs)
+
+
+def test_fbmsnet_return_features():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 4
+    batch_size = 2
+    default_n_filters_spat = 36
+    default_dilatability = 8
+    default_stride_factor = 4
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=250,
+        return_features=True,
+    )
+    model.eval()
+
+    with torch.no_grad():
+        logits, features = model(torch.randn(batch_size, n_chans, n_times))
+
+    expected_feature_dim = model.out_channels_spatial * model.stride_factor
+    assert logits.shape == (batch_size, n_outputs)
+    assert features.shape == (batch_size, expected_feature_dim)
+    assert expected_feature_dim == (
+        default_n_filters_spat * default_dilatability * default_stride_factor
+    )
 
 
 def test_fbmsnet_specified_filter_parameters():
@@ -2798,6 +3022,176 @@ def test_brain_module_glu_combined_features(brain_module_params):
 
     assert output.shape == (4, params["n_outputs"])
     assert not torch.isnan(output).any()
+
+
+# ============================================================================
+# BrainModule Spatial ChannelMerger Tests
+# ============================================================================
+
+
+def _chs_info_with_loc(loc_array):
+    """Build chs_info dicts with a 12-entry ``loc`` per channel."""
+    chs_info = []
+    for i, loc in enumerate(loc_array):
+        chs_info.append(
+            {
+                "ch_name": f"ch{i}",
+                "ch_type": "eeg",
+                "kind": 2,  # FIFFV_EEG_CH
+                "loc": np.asarray(loc, dtype=float),
+            }
+        )
+    return chs_info
+
+
+def _rng_chs_info(n_chans, seed=0):
+    """chs_info with distinct random loc per channel (positions span [0, 1])."""
+    return _chs_info_with_loc(np.random.default_rng(seed).random((n_chans, 12)))
+
+
+def _run_forward(model, n_chans, n_outputs, n_times=512, batch=2, with_subject=False):
+    """Eval, forward a random batch, assert output shape and no NaNs."""
+    model.eval()
+    kwargs = (
+        {"subject_index": torch.zeros(batch, dtype=torch.long)} if with_subject else {}
+    )
+    out = model(torch.randn(batch, n_chans, n_times), **kwargs)
+    assert out.shape == (batch, n_outputs)
+    assert not torch.isnan(out).any()
+
+
+@pytest.mark.parametrize(
+    "kwargs, n_chans, n_outputs, with_subject, check",
+    [
+        pytest.param(
+            dict(n_chans=19, chs_info=_rng_chs_info(19), use_merger=True),
+            19,
+            4,
+            False,
+            lambda m: m.merger is not None
+            and m.use_merger
+            and tuple(m.channel_positions.shape) == (19, 2),
+            id="merger",
+        ),
+        pytest.param(
+            dict(
+                n_chans=19,
+                chs_info=_rng_chs_info(19),
+                use_merger=True,
+                n_virtual_channels=32,
+                subject_layers=True,
+                subject_dim=8,
+                n_subjects=5,
+            ),
+            19,
+            4,
+            True,
+            lambda m: m.subject_layers_module is not None,
+            id="merger_subject_layers",
+        ),
+        pytest.param(
+            dict(n_chans=8, subject_layers=True, subject_dim=4, n_subjects=5, n_fft=64),
+            8,
+            2,
+            True,
+            None,
+            id="subject_layers_stft",
+        ),
+        pytest.param(
+            dict(n_chans=8, subject_dim=4, n_subjects=5, n_fft=64),
+            8,
+            2,
+            True,
+            None,
+            id="stft_subject_embedding",
+        ),
+        pytest.param(
+            dict(n_chans=8, dilation_growth=2.5),
+            8,
+            2,
+            False,
+            None,
+            id="float_dilation_growth",
+        ),
+    ],
+)
+def test_brainmodule_forward_runs(kwargs, n_chans, n_outputs, with_subject, check):
+    """Each config constructs, forwards, and yields a clean (B, n_outputs)."""
+    set_random_seeds(0, False)
+    m = BrainModule(n_outputs=n_outputs, n_times=512, sfreq=128, **kwargs)
+    if check is not None:
+        assert check(m)
+    _run_forward(m, n_chans, n_outputs, with_subject=with_subject)
+
+
+@pytest.mark.parametrize(
+    "chs_info",
+    [
+        pytest.param(_chs_info_with_loc(np.zeros((8, 12))), id="all_zero_loc"),
+        pytest.param(None, id="no_chs_info"),
+    ],
+)
+def test_brainmodule_merger_autodisable(chs_info):
+    """use_merger auto-disables (with warning) when chs_info lacks locations."""
+    set_random_seeds(0, False)
+    with pytest.warns(UserWarning):
+        m = BrainModule(
+            n_chans=8,
+            n_outputs=2,
+            n_times=512,
+            sfreq=128,
+            chs_info=chs_info,
+            use_merger=True,
+        )
+    assert m.merger is None
+    assert m.use_merger is False
+    _run_forward(m, 8, 2)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        pytest.param(dict(n_virtual_channels=0), "n_virtual_channels", id="nvc_0"),
+        pytest.param(dict(n_virtual_channels=-1), "n_virtual_channels", id="nvc_neg"),
+        pytest.param(dict(merger_drop_prob=1.0), "merger_drop_prob", id="drop_prob"),
+    ],
+)
+def test_brainmodule_merger_invalid_params(kwargs, match):
+    """Invalid merger params are rejected up front with a clear error."""
+    with pytest.raises(ValueError, match=match):
+        BrainModule(
+            n_chans=4,
+            n_outputs=2,
+            n_times=256,
+            sfreq=128,
+            chs_info=_rng_chs_info(4),
+            use_merger=True,
+            **kwargs,
+        )
+
+
+def test_brainmodule_merger_stft_warns():
+    """use_merger + n_fft warns about the large input_projection (memory)."""
+    with pytest.warns(UserWarning, match="STFT"):
+        BrainModule(
+            n_chans=8,
+            n_outputs=2,
+            n_times=512,
+            sfreq=128,
+            chs_info=_rng_chs_info(8),
+            use_merger=True,
+            n_virtual_channels=16,
+            n_fft=64,
+        )
+
+
+def test_brainmodule_default_unchanged():
+    """Default behavior is preserved: no merger unless opted in."""
+    set_random_seeds(0, False)
+    m = BrainModule(n_chans=8, n_outputs=2, n_times=512, sfreq=128)
+    assert m.merger is None
+    assert m.use_merger is False
+
 
 def test_bendr():
     """
@@ -3519,3 +3913,122 @@ def test_emg2qwerty_input_validation():
     # by ``floor((T - n_fft) / hop_length) + 1``.
     out = m_floor.compute_output_lengths(torch.tensor([10, 0, 50, 64, 80]))
     assert out.tolist() == [0, 0, 0, 1, 2]
+
+
+def _force_two_randint():
+    """Monkeypatch helper: force every size-`()` ``torch.randint`` to draw 2.
+
+    ``_SpecAugment.forward`` samples its mask counts via two
+    ``torch.randint(n+1, ())`` calls (time then frequency); freezing
+    them at 2 makes the augmentation deterministic without depending
+    on the global RNG or torchaudio's internal RNG sequence (which
+    can shift across versions and silently turn the test into a flake).
+
+    Returns a ``mock.patch`` context manager rebinding ``torch.randint``;
+    captures the real ``torch.randint`` in a closure so the patched
+    function can still delegate non-`()` calls.
+    """
+    real = torch.randint
+
+    def patched(*args, **kwargs):
+        size = kwargs.get("size", args[1] if len(args) >= 2 else None)
+        if size == ():
+            return torch.tensor(2, dtype=torch.long)
+        return real(*args, **kwargs)
+
+    return mock.patch("torch.randint", side_effect=patched)
+
+
+def test_emg2qwerty_spec_augment_contract():
+    """Built-in SpecAugment: train-only, per-electrode iid, parameter-free, round-trips."""
+    # ``spec_augment=False`` is the back-compat default and must wire an
+    # ``nn.Identity`` so existing checkpoints keep loading bit-for-bit.
+    assert isinstance(_small_emg2qwerty().spec_augment, torch.nn.Identity)
+
+    # Bad knobs rejected at construction time.
+    for bad in (
+        {"n_time_masks": -1},
+        {"time_mask_param": -1},
+        {"spec_augment_prob": 1.5},
+    ):
+        with pytest.raises(ValueError):
+            _small_emg2qwerty(spec_augment=True, **bad)
+
+    torch.manual_seed(0)
+    m = _small_emg2qwerty(
+        spec_augment=True, n_time_masks=3, time_mask_param=8,
+        n_freq_masks=2, freq_mask_param=4, spec_augment_prob=1.0,
+    )
+    x = torch.randn(2, 32, 500)
+
+    # Eval is deterministic (no SpecAugment sampling).
+    m.eval()
+    with torch.no_grad():
+        assert torch.equal(m(x), m(x))
+
+    # Train mutates the spectrogram and is stochastic between calls.
+    m.train()
+    spec = m.spectrogram(x)
+    with _force_two_randint():
+        aug_a, aug_b = m.spec_augment(spec), m.spec_augment(spec)
+    assert not torch.equal(aug_a, spec) and not torch.equal(aug_a, aug_b)
+
+    # Per-(B, band, electrode) iid masking: on a uniquely-valued tensor
+    # at least one (B, band) row must show distinct mask patterns across
+    # its electrodes — pinning the upstream ``emg2qwerty.transforms``
+    # recipe and guarding against any future band-shared regression.
+    distinct = torch.arange(spec.numel(), dtype=spec.dtype).reshape(spec.shape)
+    with _force_two_randint():
+        aug = m.spec_augment(distinct)
+    # ``changed`` shape: (B, num_bands, electrodes, freq*T_spec) after
+    # moving time-axis to the trailing flatten. Compare each electrode's
+    # bool grid against electrode-0 within the same (B, band) row.
+    changed = (aug != distinct).movedim(0, -1).flatten(start_dim=3)
+    same_as_e0 = (changed == changed[:, :, :1]).all(dim=-1)
+    assert not same_as_e0.all(), "SpecAugment masking must not be band-shared"
+
+    # Parameter-free (no new state-dict keys) and round-trips via
+    # ``from_config`` so reloaded models reproduce the augmentation recipe.
+    allowed = ("model.0.", "model.1.", "model.3.", "final_layer.")
+    assert all(k.startswith(allowed) for k in m.state_dict())
+    cfg = m.get_config()
+    assert cfg["spec_augment"] and cfg["time_mask_param"] == 8
+    assert isinstance(
+        EMG2QwertyNet.from_config(cfg).spec_augment, type(m.spec_augment)
+    )
+
+
+def test_emg2qwerty_feature_flags():
+    """Three forward paths: default emissions tensor, runtime dict, init tuple."""
+    mlp_features = (48,)
+    num_features = 2 * mlp_features[-1]  # num_bands × mlp_features[-1]
+    x = torch.randn(2, 32, 500)
+
+    # Default: emissions tensor, ``(B, T_out, n_outputs)``.
+    m = _small_emg2qwerty(mlp_features=mlp_features).eval()
+    with torch.no_grad():
+        emissions = m(x)
+        bundle = m(x, return_features=True)
+    assert isinstance(emissions, torch.Tensor) and emissions.shape[2] == 99
+
+    # Runtime ``return_features=True`` → dict (BIOT / signal-JEPA convention).
+    # ``features`` must be the pre-classifier representation, so applying
+    # ``final_layer`` to it reproduces the emissions tensor.
+    assert set(bundle) == {"features", "cls_token"} and bundle["cls_token"] is None
+    feats = bundle["features"]
+    assert feats.shape == (2, emissions.shape[1], num_features)
+    assert torch.allclose(m.final_layer(feats), emissions, atol=1e-5)
+
+    # Init ``return_feature=True`` → ``(emissions, features)`` tuple — the
+    # config-driven path neuroai's ``DownstreamWrapperModel`` uses with
+    # ``model_output_key=1``. Runtime dict flag still wins, ``get_config``
+    # round-trips, and ``get_output_shape`` keeps reporting the emissions
+    # shape regardless of the flag.
+    m_t = _small_emg2qwerty(mlp_features=mlp_features, return_feature=True).eval()
+    with torch.no_grad():
+        out_t = m_t(x)
+        bundle_t = m_t(x, return_features=True)
+    assert isinstance(out_t, tuple) and out_t[1].shape == feats.shape
+    assert isinstance(bundle_t, dict) and torch.equal(bundle_t["features"], out_t[1])
+    assert m_t.get_config()["return_feature"] is True
+    assert m_t.get_output_shape() == (1, emissions.shape[1], 99)

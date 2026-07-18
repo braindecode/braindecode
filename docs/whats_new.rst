@@ -22,11 +22,360 @@
 .. _current:
 
 
-Current 1.5.0 (GitHub)
+Current 1.7.0 (GitHub)
 ===============================
 
 Enhancements
 ============
+
+- Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
+  registry for the interpolated (channel-adapting) models, keeping them separate
+  from :data:`braindecode.models.util.models_dict` (:gh:`1093` by `Bruno Aristimunha`_)
+
+API and behavior changes
+========================
+
+- Interpolated models (e.g. ``InterpolatedBIOT``, ``InterpolatedLaBraM``) are no
+  longer included in :data:`braindecode.models.util.models_dict`; they now live
+  in the separate :data:`braindecode.models.util.interpolated_models_dict`
+  registry. They remain fully usable and resolvable by name in the skorch
+  wrappers and pydantic configs (:gh:`1093` by `Bruno Aristimunha`_)
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- Make the :class:`braindecode.models.REVE` position bank robust on offline /
+  limited-network nodes: it is now cached in the writable MNE data directory
+  (resolved via the ``REVE_POSITIONS_PATH`` config key, defaulting under
+  ``~/mne_data``) instead of the package folder, so a prefetched
+  ``reve_positions.json`` there is used without any download (:gh:`1098` by
+  `Bruno Aristimunha`_)
+
+Code health
+============
+
+- None yet
+
+
+Current 1.6.1 (2026-07-01)
+===============================
+
+Enhancements
+============
+
+- Pin the ``%pip install braindecode`` cell in generated notebooks to the
+  version used to build them (``braindecode==X.Y.Z`` for stable releases,
+  ``git+https://github.com/braindecode/braindecode.git`` for dev builds),
+  so notebooks can be reproduced with a matching installation.
+  (:gh:`1080` by `Fashad Ahmed`_)
+- Add :func:`braindecode.functional.sinusoidal_positional_encoding`, a shared
+  sine/cosine positional-encoding primitive (handling odd dimensions), and reuse
+  it in :class:`braindecode.models.BIOT`, :class:`braindecode.models.MEDFormer`,
+  and :class:`braindecode.models.STEEGFormer` instead of re-deriving the table in
+  each. Encodings are bit-identical, so model behavior is unchanged. Also add
+  :class:`braindecode.modules.GatedLinearUnit`, a configurable GLU-family gate
+  (GEGLU with the default ``nn.GELU``, SwiGLU with ``nn.SiLU``; ``torch.nn.GLU``
+  is hard-wired to the sigmoid) for building gated transformer feed-forwards.
+  (:gh:`1078` by `Bruno Aristimunha`_)
+- Add an optional spatial Fourier :class:`braindecode.modules.ChannelMerger`
+  (with :class:`braindecode.modules.FourierEmb`) to
+  :class:`braindecode.models.BrainModule` via ``use_merger=True``, implementing
+  the montage-agnostic spatial attention its docstring described. Also fixes a
+  latent crash for non-integer ``dilation_growth`` and sizes the channel
+  accounting in forward order so ``subject_layers``/STFT combinations work.
+  Default-off, so existing behavior is unchanged. (:gh:`1076` by `Bruno Aristimunha`_)
+- Add opt-in electrode positions in the batch via
+  :meth:`braindecode.datasets.BaseConcatDataset.set_return_ch_pos` and a cached
+  ``ch_pos`` accessor on windowed datasets, plus
+  :func:`braindecode.datasets.pad_channels_collate` to make collections with
+  **heterogeneous montages** (different channel sets) batchable. Positions and a
+  channel mask are routed into the model's ``forward`` under
+  :class:`braindecode.EEGClassifier`. Default-off, so the ``(X, y, crop_inds)``
+  contract is unchanged. (:gh:`1066` by `Bruno Aristimunha`_)
+- Add a ``revision`` keyword argument to
+  :meth:`braindecode.datasets.BaseConcatDataset.pull_from_hub` so callers can
+  pin dataset downloads to a specific branch, tag, or commit on the Hugging
+  Face Hub.
+- Clarify the model summary table's ``Type`` column by using ``Prediction`` for
+  supervised heads instead of describing them as classification-only.
+  By `Sarthak Tayal`_.
+- Add a ``Modality`` column (EEG, MEG, sEMG, ...) to the model summary table so
+  models can be filtered by the bio-signal they target, and validate it against a
+  controlled vocabulary. By `Bhargav Kowshik`_.
+- Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
+  variant of :class:`braindecode.models.EEGPT` built with
+  :func:`~braindecode.models.interpolated.InterpolatedModel`.
+  By `Pierre Guetschel`_.
+- Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
+  foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
+- Add :class:`braindecode.models.MVPFormer`, the multi-variate parallel
+  attention (MVPA) foundation model for heterogeneous multi-variate iEEG, with
+  a db4-wavelet signal encoder computed from first principles (no new
+  dependency). By `Bruno Aristimunha`_.
+- Add :class:`braindecode.models.STEEGFormer`, a ViT-based EEG foundation
+  model pre-trained with a masked-autoencoder objective, from Yang et al.
+  (ICLR 2026). By `Adam Mounir`_.
+- Add separate EEGNet and TCN dropout rates to
+  :class:`braindecode.models.EEGTCNet` via the new ``drop_prob_eeg`` and
+  ``drop_prob_tcn`` arguments, enabling the source/paper configuration
+  (``p_eeg=0.2``, ``p_tcn=0.3``). Both default to ``drop_prob``, so existing
+  behavior is unchanged. (:gh:`1060` by `Bruno Aristimunha`_)
+- Add an opt-in ``conv_max_norm_const`` argument and a
+  :meth:`~braindecode.models.ATCNet.source_optimizer_param_groups` helper to
+  :class:`braindecode.models.ATCNet`, exposing the official implementation's
+  convolution/TCN max-norm constraint (``0.6``) and ``L2`` weight-decay groups
+  (conv/TCN ``0.009``, dense ``0.5``). Defaults preserve current behavior.
+  (:gh:`1061` by `Bruno Aristimunha`_)
+- Add causal forward filtering support to
+  :class:`braindecode.modules.FilterBankLayer` for IIR and FIR filter banks via
+  ``phase="forward"``/``phase="causal"``. Existing zero-phase filtering remains
+  the default. By `Bruno Aristimunha`_.
+- Add :class:`braindecode.models.TCFormer`, the Temporal Convolutional
+  Transformer for EEG motor-imagery decoding: a multi-kernel CNN front-end, a
+  grouped-query attention Transformer with rotary positional embeddings, and a
+  grouped temporal convolutional network head. (:gh:`1065` by `Bruno
+  Aristimunha`_)
+- Add a ``return_features`` option to :class:`braindecode.models.FBMSNet`: when
+  enabled, ``forward()`` returns ``(logits, features)`` where ``features`` is
+  the flattened pre-classifier vector (shape ``(batch, out_channels_spatial *
+  stride_factor)``), enabling center-loss training without subclassing.
+  (:gh:`1083` by `Bruno Aristimunha`_)
+- Add an ``n_augmentation`` argument to
+  :class:`braindecode.augmentation.AugmentedDataLoader` for fixed set-expansion:
+  each batch keeps its clean originals and appends ``n_augmentation``
+  independently transformed copies (e.g. the EEG-Inception 6x training set with
+  ``n_augmentation=5``); the default ``0`` preserves the current in-place
+  behavior. The collate is now a picklable callable, so the loader supports
+  ``num_workers > 0``, and several augmentation transforms were vectorized for
+  speed. (:gh:`1070` by `Bruno Aristimunha`_)
+
+API and behavior changes
+========================
+
+- Removed the deprecated aliases that were scheduled for removal after their
+  deprecation in v1.2/v1.3: ``EEGNetv4`` (use
+  :class:`braindecode.models.EEGNet`), ``SleepStagerEldele2021`` (use
+  :class:`braindecode.models.AttnSleep`), ``TSceptionV1`` (use
+  :class:`braindecode.models.TSception`), and ``BNCI2014001`` (use
+  :class:`braindecode.datasets.BNCI2014_001`). (:gh:`1045` by `Bhargav Kowshik`_)
+- :class:`braindecode.models.EEGTCNet` now inserts a
+  :class:`~torch.nn.BatchNorm1d` after each TCN convolution (and uses a bias in
+  the residual downsample), matching the original Keras implementation. This
+  closes a documented replicability gap but changes the default architecture and
+  parameter count; pass ``tcn_batch_norm=False`` to recover the previous
+  behavior (e.g. to load checkpoints trained before this change). By
+  `Bruno Aristimunha`_.
+- Change the default ``proto_cpt_std`` of :class:`braindecode.models.SSTDPN`
+  from ``0.01`` to ``1.0``, matching the source ``torch.randn`` initialization
+  of the intra-class compactness prototypes. By `Bruno Aristimunha`_.
+
+Requirements
+============
+
+- Cap the test dependency to ``pytest<9.1`` in the ``tests`` extra. ``pytest``
+  9.1.0 changed the ``IdMaker`` constructor signature, which breaks
+  ``pytest_cases`` 3.10.1 and makes the whole test suite crash at collection
+  time. The cap can be lifted once ``pytest_cases`` supports ``pytest>=9.1``.
+  By `Adam Mounir`_.
+
+Bug fixes
+==========
+
+- Fix :class:`braindecode.models.SSTDPN` renormalizing ``proto_sep`` along the
+  wrong axis: the inter-class separation prototypes are now constrained per
+  class-row (``dim=0``) as in the paper/source (``||s_i|| <= S``), instead of
+  across classes (``dim=1``). (:gh:`1059` by `Bruno Aristimunha`_)
+
+- Fix :class:`~braindecode.models.ContraWR`,
+  :class:`~braindecode.models.DeepSleepNet`, and
+  :class:`~braindecode.models.EEGMiner` raising a confusing
+  :class:`ValueError` on ``batch_size=1`` forward passes in train mode due to
+  :class:`~torch.nn.BatchNorm1d` (and its 2D/3D variants) requiring more than
+  one sample per channel during training.  The affected BatchNorm layers now
+  use running statistics when ``batch_size == 1`` in train mode.
+  By `Bruno Aristimunha`_.
+
+- Fix the auto-generated standalone-function preprocessors
+  (:class:`braindecode.preprocessing.ComputeCurrentSourceDensity`,
+  :class:`braindecode.preprocessing.SetBipolarReference`, and
+  :class:`braindecode.preprocessing.OversampledTemporalProjection`) passing the
+  function name as a string instead of the callable, so they failed to apply.
+  These functions return the modified instance and are now wrapped as callables.
+  Standalone functions that return auxiliary data (e.g. annotations or bad
+  channels) are intentionally left on the existing path for now. (:gh:`885` by
+  `Yiheng Li`_)
+
+- Fix :class:`braindecode.preprocessing.AnnotateAmplitude`,
+  :class:`braindecode.preprocessing.AnnotateNan`,
+  :class:`braindecode.preprocessing.AnnotateBreak`,
+  :class:`braindecode.preprocessing.AnnotateMovement`,
+  :class:`braindecode.preprocessing.AnnotateMuscleZscore`,
+  :class:`braindecode.preprocessing.FindBadChannelsLof`, and
+  :class:`braindecode.preprocessing.ComputeBridgedElectrodes` failing at
+  apply-time because the underlying MNE functions return auxiliary data (annotations
+  or bad-channel lists) rather than the modified recording.  Each preprocessor
+  now stores a wrapper callable that applies the returned side effects
+  (``raw.set_annotations`` / ``raw.info['bads']``) and returns the recording.
+  (:gh:`1055` by `Bruno Aristimunha`_)
+- Fix incorrect import path in CONTRIBUTING.md by `Yiheng Li`_
+
+- Fix the broken EEGNeX quickstart snippet on the documentation landing page,
+  which kept non-EEG channels (including the STIM trigger), hardcoded a
+  mismatched ``n_times``, and failed at the default stratified validation split
+  with ``y=None``; it now restricts to EEG channels and lets
+  :class:`~braindecode.EEGClassifier` infer the signal dimensions from the data.
+  By `Bhargav Kowshik`_
+
+- Fix :class:`~braindecode.EEGClassifier` and
+  :class:`~braindecode.EEGRegressor` silently skipping all training when the
+  training set is smaller than ``batch_size`` (with the default
+  ``iterator_train__drop_last=True``). Previously every batch was dropped and
+  the model was left untrained without any message; a :class:`UserWarning` is
+  now raised telling the user to lower ``batch_size`` or set
+  ``iterator_train__drop_last=False``.
+  (:gh:`1053` by `Bhargav Kowshik`_)
+
+- Fix :class:`braindecode.modules.FilterBankLayer` producing ``NaN`` in
+  ``float32``: the IIR path downcast the float64 filter coefficients to the
+  input dtype before :func:`~torchaudio.functional.filtfilt`, so band-pass banks
+  with poles near the unit circle (e.g. the Chebyshev-II banks used by
+  :class:`~braindecode.models.FBMSNet` and :class:`~braindecode.models.FBCNet`)
+  diverged. The recursion now runs in ``float64`` and is cast back.
+  (:gh:`1067` by `Bruno Aristimunha`_)
+
+- Fix :class:`braindecode.models.EEGITNet` diverging from the reference
+  implementation: the inception spatial depthwise convolutions and the final
+  dense layer now carry the authors' max-norm constraints (``1.0`` and
+  ``0.25``), and the dimensionality-reduction convolution uses ``14`` filters
+  instead of ``28``. (:gh:`1068` by `Bruno Aristimunha`_)
+
+- Fix :class:`braindecode.models.MSVTNet` dropping the main classification head
+  when ``return_features=True`` (it returned only the branch predictions, making
+  the paper's joint deep-supervision loss unreproducible). It now returns
+  ``(main_logits, stacked_branch_logits)``, matching the source.
+  (:gh:`1069` by `Bruno Aristimunha`_)
+
+- Fix the multi-scale spatial convolutions in :class:`braindecode.models.EEGSym`
+  being dense (``groups=1``) with a bias: the authors' ``unit_dconv`` uses
+  grouped/depthwise convolutions without bias, so they now use
+  ``groups=out_channels`` and ``bias=False``. (:gh:`1071` by `Bruno Aristimunha`_)
+
+- Align :class:`braindecode.models.EEGSym` with the reference implementation:
+  use the authors' even temporal kernels with ``padding="same"``, ascending
+  scale order, residual filter progression, residual projection blocks, dense
+  single-scale spatial convolutions, channel-merging groups, Keras batch
+  normalization settings, and default ``spatial_resnet_repetitions=1``.
+  (:gh:`1088` by `Bruno Aristimunha`_)
+
+Code health
+============
+
+- Silence the new "training set smaller than ``batch_size``" warning
+  (:gh:`1053`) in the ``test_eegneuralnet`` signal-argument tests, which
+  intentionally fit tiny mock data to check argument propagation rather than
+  to train. Keeps the warning meaningful by not emitting it on every CI run.
+  (:gh:`1056` by `Adam Mounir`_)
+
+- Install CPU-only PyTorch wheels in the ``tests`` and ``docs`` CI
+  workflows via ``UV_TORCH_BACKEND=cpu``. GitHub runners have no GPU, so
+  the default CUDA build pulled ~1.8 GiB of unused ``nvidia-*`` wheels and
+  contributed to a disk-exhaustion crash. (:gh:`1054` by `Bhargav Kowshik`_)
+
+- Add a monthly scheduled workflow that cuts a stable PyPI release on
+  the 1st of every month, complementing the existing per-push ``.devN``
+  pipeline. (:gh:`1030` by `Bruno Aristimunha`_)
+
+- Make the monthly release workflow push only the release tag and open a
+  pull request for the version bump, so it never needs to push to the
+  protected ``master`` branch. (:gh:`1031` by `Bruno Aristimunha`_)
+
+
+Current 1.5.1 (stable)
+===============================
+
+Enhancements
+============
+
+- Add :class:`braindecode.augmentation.BandRotation` and
+  :func:`braindecode.augmentation.functional.band_rotation`: per-band
+  circular roll along the channel axis plus inter-band temporal jitter,
+  for surface-EMG inputs shaped ``(B, num_bands * electrodes_per_band, T)``.
+  Models small wristband rotation between sessions and relative timing
+  noise between two arms, from the emg2qwerty paper (Sivakumar et al.,
+  NeurIPS 2024). (:gh:`1013` by `Bruno Aristimunha`_)
+
+- Build SpecAugment (Park et al., Interspeech 2019) into
+  :class:`braindecode.models.EMG2QwertyNet` as a parameter-free submodule
+  gated by a new ``spec_augment`` constructor flag (default ``False``).
+  When enabled, applies up to ``n_time_masks`` × ``time_mask_param``
+  time bands and ``n_freq_masks`` × ``freq_mask_param`` frequency bands
+  on the log-spectrogram during ``train()`` only, with masks sampled
+  IID per ``(sample × band × electrode)`` triple — same recipe as the
+  upstream ``emg2qwerty.transforms.SpecAugment`` dataset transform. The
+  mask fill value stays a 0-D on-device tensor (``spec.mean()``) so the
+  forward pass adds no host round-trip on GPU. Also adds a
+  ``return_features`` runtime flag to
+  :meth:`braindecode.models.EMG2QwertyNet.forward` (returns
+  ``{"features": (B, T_out, num_features), "cls_token": None}``,
+  BIOT / signal-JEPA convention) and a matching ``return_feature``
+  constructor flag (returns ``(emissions, features)`` tuple, BIOT-style
+  legacy path) so downstream wrappers — such as neuroai's
+  ``DownstreamWrapperModel`` — can pick up the encoder representation
+  via ``model_output_key="features"`` (dict) or ``model_output_key=1``
+  (tuple) without changes to their call site. (:gh:`1015` by
+  `Bruno Aristimunha`_)
+
+API and behavior changes
+========================
+
+- Restore the per-batch ``ch_names`` keyword argument on
+  :meth:`braindecode.models.Labram.forward` that was removed in 1.5.0
+  (:gh:`993`). ``ch_names`` is now keyword-only and, when provided,
+  case-insensitively matches each name to
+  :data:`braindecode.models.labram.LABRAM_CHANNEL_ORDER` and indexes into
+  the canonical position-embedding bank, so callers can forward an
+  arbitrary subset of canonical channels without going through
+  :class:`braindecode.models.InterpolatedLaBraM`. The strict ``ValueError``
+  raised in 1.5.0 when ``chs_info`` did not match
+  ``LABRAM_CHANNEL_ORDER`` is downgraded to a ``UserWarning`` so that
+  downstream wrappers (e.g. neuroai's ``_LabramChannelWrapper``) can
+  build the inner :class:`braindecode.models.Labram` with their union
+  channel set and resolve the subset per batch via ``ch_names``.
+
+Bug fixes
+==========
+
+- Fix :class:`braindecode.augmentation.AmplitudeScale` crashing on the
+  default ``random_state=None`` and on the ``numpy.random.RandomState``
+  instance that :class:`braindecode.augmentation.Transform` passes in via
+  ``self.rng``. The previous ``torch.Generator().manual_seed(...)`` path
+  was incompatible with both; the implementation now routes through
+  ``check_random_state`` like the rest of the augmentation module.
+  (:gh:`1021` by `Sarthak Tayal`_)
+- Fix 404 author link for `Jonathan Dan`_ in the changelog
+  (:gh:`1022`)
+
+
+Current 1.5.0 (stable)
+===============================
+
+Enhancements
+============
+
+- Add :meth:`braindecode.datasets.BaseConcatDataset.set_target` to swap
+  any per-window metadata column or per-record description field
+  (e.g. a BIDS entity, a participants.tsv extra) into the dataset's
+  target ``y`` in one call, replacing the manual
+  ``for ds in concat.datasets: ds.metadata.loc[:, 'target'] = ...; ds.y = ...``
+  loop. Dispatches on the subdataset type: writes
+  ``metadata['target']`` / ``ds.y`` for windowed records, and points
+  ``target_name`` at the chosen description field for raw records.
+  By `Bruno Aristimunha`_.
 
 - Redesign the documentation landing page (``docs/index.rst``) in a
   pyhealth.dev-style layout: animated brain → EEG → net hero, fact strip
@@ -148,11 +497,6 @@ API and behavior changes
   ``on_last_window='drop'``. Using ``drop_last_window`` now raises a
   ``FutureWarning``. By `Michele Romani`_.
 
-Requirements
-============
-
-- None yet
-
 Bug fixes
 ==========
 
@@ -181,6 +525,10 @@ Bug fixes
 - Fix ``TypeError: type 'Any' is not subscriptable`` when importing
   ``braindecode.models.config`` without ``numpydantic`` installed on
   Python 3.12+ (:gh:`871` by `Sarthak Tayal`_)
+- Fix :func:`braindecode.preprocessing.create_fixed_length_windows` crashing
+  when only ``window_size_samples`` is provided without ``window_stride_samples``,
+  stride now defaults to window size as documented
+  (:gh:`990` by `Sarthak Tayal`_)
 - Add ``channel_embedding`` parameter to :class:`braindecode.models.SignalJEPA` and
   :class:`braindecode.models.SignalJEPA_Contextual` to load pre-trained channel
   embedding weights when fine-tuning on a subset of the pre-training channels.
@@ -194,11 +542,6 @@ Bug fixes
   "DatasetFile"``) (:gh:`1002` by `Bruno Aristimunha`_)
 - Retry transient TLS failures from ``physionet.org`` when fetching
   :class:`braindecode.datasets.SleepPhysionet` (by `Bruno Aristimunha`_)
-
-Code health
-============
-
-- None yet
 
 
 Current 1.4.0 (stable)
@@ -297,6 +640,16 @@ Requirements
 
 Bugs
 =====
+- Improve the error message when :meth:`from_pretrained` or :meth:`push_to_hub`
+  are called without the optional ``huggingface_hub`` dependency installed.
+  Users now get a clear :class:`ImportError` with installation instructions
+  (``pip install 'braindecode[hub]'``) instead of an ``AttributeError``.
+  (:gh:`1024` by `@copilot`_)
+- Replace the vague ``license: unknown`` field in the auto-generated Hugging
+  Face Hub dataset card with an inferred license (when consistent across all
+  recordings' descriptions) or a ``please-specify`` placeholder with a
+  reminder comment for the user to fill in the dataset's license.
+  (:gh:`1014` by `Fashad Ahmed`_)
 - Fix the documentation header "Cite Braindecode" announcement link: it used a bare
   ``cite.html`` URL, which browsers resolve relative to the current page path and led
   to 404s (for example from ``install/install.html``). The link is now built with
@@ -349,6 +702,14 @@ Bugs
   marked all model-specific parameters as "The description is missing"
   when ``DOCSTRING_INHERITANCE_ENABLE=1`` was set during documentation
   builds (:gh:`971` by `Bruno Aristimunha`_)
+- Expose ``max_nbytes`` directly on
+  :func:`braindecode.preprocessing.preprocess.preprocess` and turn the
+  cryptic ``mmap can't resize a readonly`` failure (raised when joblib
+  memory-maps a preloaded array that a preprocessor later tries to
+  resize) into an actionable error explaining how to fix it: pass
+  ``max_nbytes=None`` to disable memory mapping, or supply a ``save_dir``
+  so data is reloaded with ``preload=False``
+  (:gh:`325` by `Sarthak Tayal`_)
 
 Code health
 ============
@@ -1106,7 +1467,7 @@ Authors
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _GalAshkenazi1: https://github.com/GalAshkenazi1
 .. _Matthew Chen: https://github.com/MatthewChen37
-.. _Jonathan Dan: https://github.com/danjjl
+.. _Jonathan Dan: https://github.com/jon-dan
 .. _Jonathan Lys: https://github.com/jonathanlys01
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
 .. _Aniela Bulicz: https://github.com/AryaDro
@@ -1115,4 +1476,8 @@ Authors
 .. _Sarthak Tayal: https://github.com/tayal-sarthak
 .. _Vandit Shah: https://github.com/ShahVandit
 .. _Léo Burgund: https://github.com/leob000
+.. _Adam Mounir: https://github.com/adammounir
+.. _Yiheng Li: https://github.com/YihengLi-1
+.. _Fashad Ahmed: https://github.com/Fashad-Ahmed
+.. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Michele Romani: https://github.com/BRomans

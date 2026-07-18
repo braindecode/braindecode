@@ -7,7 +7,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
-from mne.utils import deprecated, warn
+from mne.utils import warn
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -283,13 +283,3 @@ class TSception(EEGModuleMixin, nn.Module):
             activation(),
             nn.AvgPool2d(kernel_size=(1, pool_size), stride=(1, pool_size)),
         )
-
-
-@deprecated(
-    "`TSceptionV1` was renamed to `TSception` in v1.12; "
-    "this alias will be removed in v1.14."
-)
-class TSceptionV1(TSception):
-    r"""Deprecated alias for TSception."""
-
-    pass

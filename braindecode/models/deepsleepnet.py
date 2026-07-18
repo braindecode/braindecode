@@ -7,6 +7,7 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
@@ -289,6 +290,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             else nn.Linear(fc_out_features, self.n_outputs)
         )
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):
         if x.ndim == 3:
             x = x.unsqueeze(1)

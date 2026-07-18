@@ -519,3 +519,16 @@ def test_init_kwargs_tracked_for_subclass():
     assert kwargs["n_chans"] == 8
     assert kwargs["n_outputs"] == 2
     assert kwargs["n_times"] == 100
+
+
+def test_hub_method_install_hint_no_hf():
+    """Stubs raise ImportError with install hint when huggingface_hub is absent."""
+    from braindecode.models.base import _BaseHubMixinStub
+
+    class M(_BaseHubMixinStub):
+        pass
+
+    with pytest.raises(ImportError, match=r"M\.from_pretrained.*braindecode\[hub\]"):
+        M.from_pretrained("any/repo")
+    with pytest.raises(ImportError, match=r"M\.push_to_hub.*braindecode\[hub\]"):
+        M().push_to_hub("any/repo")

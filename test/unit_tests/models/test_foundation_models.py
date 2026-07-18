@@ -2,11 +2,13 @@
 #
 # License: BSD-3
 
+import json
 import os
 from pathlib import Path
 from urllib.error import URLError
 
 import mne
+import pooch
 import pytest
 import torch
 
@@ -205,6 +207,8 @@ def test_labram_neural_decoder_forward_pass_single_sample(
     assert output.shape == (1, n_outputs)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_labram_can_load_pretrained_weights():
     """Ensure that Labram can load pre-trained weights from HuggingFace Hub."""
     mne_data_dir = mne.get_config("MNE_DATA")
@@ -392,6 +396,110 @@ def test_labram_channel_order_constant_exported():
     assert "FP1" in LABRAM_CHANNEL_ORDER
     assert "CZ" in LABRAM_CHANNEL_ORDER
     assert "O2" in LABRAM_CHANNEL_ORDER
+
+
+# ==============================================================================
+# Tests for Labram.forward(ch_names=...) subset / case / error paths
+# ==============================================================================
+
+
+def _small_labram_for_ch_names(chs_info, n_outputs):
+    """Build a tiny tokenizer-mode Labram on the full canonical bank."""
+    return Labram(
+        n_times=400,
+        chs_info=chs_info,
+        n_outputs=n_outputs,
+        patch_size=200,
+        embed_dim=64,
+        num_layers=1,
+        num_heads=4,
+        neural_tokenizer=True,
+    )
+
+
+def test_labram_forward_with_ch_names_subset(chs_info, n_outputs):
+    """Forward an arbitrary subset of canonical channels via ch_names."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    model.eval()
+
+    # Pick 8 canonical channels in non-canonical order
+    subset = [LABRAM_CHANNEL_ORDER[i] for i in (10, 0, 30, 5, 60, 15, 90, 20)]
+    x = torch.randn(2, len(subset), 400)
+
+    with torch.no_grad():
+        out = model(x, ch_names=subset)
+
+    assert out.shape == (2, n_outputs)
+
+
+def test_labram_forward_ch_names_is_case_insensitive(chs_info, n_outputs):
+    """Mixed-case ch_names should match LABRAM_CHANNEL_ORDER case-insensitively."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    model.eval()
+
+    upper = [LABRAM_CHANNEL_ORDER[i] for i in (0, 10, 20)]
+    mixed = [name.title() for name in upper]  # e.g. "Fp1", "Fpz", ...
+    x = torch.randn(1, len(mixed), 400)
+
+    with torch.no_grad():
+        out_upper = model(x, ch_names=upper)
+        out_mixed = model(x, ch_names=mixed)
+
+    # Same channels under either casing -> identical outputs.
+    assert torch.allclose(out_upper, out_mixed)
+
+
+def test_labram_forward_ch_names_unknown_channel_raises(chs_info, n_outputs):
+    """Unknown channel names should produce a clear ValueError."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    bad_names = [LABRAM_CHANNEL_ORDER[0], "NOT_A_REAL_CHANNEL"]
+    x = torch.randn(1, len(bad_names), 400)
+
+    with pytest.raises(ValueError, match="LABRAM_CHANNEL_ORDER"):
+        model(x, ch_names=bad_names)
+
+
+def test_labram_forward_ch_names_length_mismatch_raises(chs_info, n_outputs):
+    """len(ch_names) must equal x.shape[1]."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    names = [LABRAM_CHANNEL_ORDER[i] for i in (0, 1, 2)]
+    x = torch.randn(1, 4, 400)  # 4 channels, 3 names
+
+    with pytest.raises(ValueError, match="len.ch_names"):
+        model(x, ch_names=names)
+
+
+def test_labram_forward_none_ch_names_wrong_count_raises(chs_info, n_outputs):
+    """ch_names=None with a non-canonical channel count must raise early."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    x = torch.randn(1, 22, 400)  # not 128
+
+    with pytest.raises(ValueError, match="ch_names is None"):
+        model(x)
+
+
+def test_labram_forward_return_flags_remain_positional(
+    chs_info, n_outputs, n_chans
+):
+    """Back-compat: return_* flags can still be passed positionally."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    model.eval()
+    x = torch.randn(1, n_chans, 400)
+
+    with torch.no_grad():
+        out_default = model(x)
+        # Positional: return_patch_tokens=False, return_all_tokens=True.
+        # ch_names is keyword-only, so this triggers the all-tokens path
+        # without forcing callers to switch to kwargs for the return flags.
+        out_all = model(x, False, True)
+
+    assert out_default.shape == (1, n_outputs)
+    # all_tokens returns one token per CLS + (n_chans * n_patches) patch
+    # tokens; only the trailing dim has to equal n_outputs.
+    assert out_all.dim() == 3
+    assert out_all.shape[0] == 1
+    assert out_all.shape[-1] == n_outputs
+    assert out_all.shape[1] > 1  # more than just the CLS token
 
 
 # ==============================================================================
@@ -788,12 +896,16 @@ def test_luna_variants_output_consistency(
 # ==============================================================================
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_loads(luna_base_pretrained_model):
     """Test that LUNA base pretrained model loads successfully from HuggingFace."""
     assert luna_base_pretrained_model is not None
     assert isinstance(luna_base_pretrained_model, LUNA)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_forward_pass(luna_base_pretrained_model):
     """Test pretrained base model forward pass."""
     model = luna_base_pretrained_model
@@ -806,6 +918,8 @@ def test_luna_base_pretrained_forward_pass(luna_base_pretrained_model):
     assert output.shape == (2, 2)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_parameter_count(luna_base_pretrained_model):
     """Test pretrained base model has expected parameter count."""
     total_params = sum(p.numel() for p in luna_base_pretrained_model.parameters())
@@ -813,6 +927,8 @@ def test_luna_base_pretrained_parameter_count(luna_base_pretrained_model):
     assert 5_000_000 < total_params < 10_000_000
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_different_batch_sizes(luna_base_pretrained_model):
     """Test pretrained base model with different batch sizes."""
     model = luna_base_pretrained_model
@@ -825,6 +941,8 @@ def test_luna_base_pretrained_different_batch_sizes(luna_base_pretrained_model):
         assert output.shape == (batch_size, 2)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_caching(luna_base_pretrained_model):
     """Test that pretrained model weights are cached in mne_data."""
 
@@ -866,6 +984,8 @@ def _get_reve_cache_dir():
     return str(Path(mne_data_dir) / "reve_pretrained")
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_reve_positions_match():
     """Test that the positions from both implementations match."""
     pytest.skip(
@@ -896,6 +1016,8 @@ def test_reve_positions_match():
 
 
 @pytest.mark.skipif(HF_TOKEN_REVE_MISSING, reason="HF token for REVE is missing")
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_reve_model_outputs_match():
     """Test that the outputs from both implementations match."""
     try:
@@ -954,10 +1076,59 @@ def test_reve_model_outputs_match():
 
 
 # ==============================================================================
+# Offline robustness of the REVE position bank (no network required)
+# ==============================================================================
+
+
+def test_reve_position_bank_uses_prefetched_file(tmp_path, monkeypatch):
+    """A prefetched positions file is used offline, without any download."""
+    config = {"Cz": [0.0, 0.0, 1.0], "Pz": [0.0, -0.5, 0.5]}
+    (tmp_path / "reve_positions.json").write_text(json.dumps(config))
+    monkeypatch.setattr(
+        pooch, "retrieve", lambda *a, **k: pytest.fail("unexpected download")
+    )
+
+    bank = RevePositionBank(cache_dir=str(tmp_path))
+
+    assert bank.get_all_positions() == list(config.keys())
+    assert bank.forward(["Cz", "Pz"]).shape == (2, 3)
+
+
+def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
+    """On a cache miss, a download failure points the user at offline prefetch."""
+
+    def _fail(*args, **kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(pooch, "retrieve", _fail)
+
+    with pytest.raises(RuntimeError, match="prefetch it to"):
+        RevePositionBank(cache_dir=str(tmp_path))
+
+
+def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
+    """A corrupt/partial cached file triggers a re-download instead of crashing."""
+    cache_file = tmp_path / "reve_positions.json"
+    cache_file.write_text("{ this is not valid json")
+    config = {"Cz": [0.0, 0.0, 1.0]}
+
+    def _fake_retrieve(url, known_hash, fname, path, **kwargs):
+        (tmp_path / fname).write_text(json.dumps(config))
+
+    monkeypatch.setattr(pooch, "retrieve", _fake_retrieve)
+
+    bank = RevePositionBank(cache_dir=str(tmp_path))
+
+    assert bank.get_all_positions() == list(config.keys())
+
+
+# ==============================================================================
 # Tests for CBraMod Model
 # ==============================================================================
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_cbramod_load_weights():
     model = CBraMod(return_encoder_output=True)
     state_dict = torch.hub.load_state_dict_from_url(

@@ -19,9 +19,13 @@ from braindecode.models.config import make_model_config
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
+    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
+
+# Interpolated models are stored in a separate registry from ``models_dict``.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 
 @pytest.mark.parametrize(
@@ -29,7 +33,7 @@ from braindecode.models.util import (
 )
 def test_make_model_config_instantiation(model_name, required, signal_params):
     """Test the make_model_config function for instance creation."""
-    model_class = models_dict[model_name]
+    model_class = all_models_dict[model_name]
     ModelConfig = make_model_config(model_class, required)
 
     sp = _get_signal_params(signal_params)
@@ -48,7 +52,7 @@ def test_make_model_config_json_serialization(model_name, required, signal_param
 
     If this test fails, this is probably due to a bad typing of the corresponding model's arguments.
     """
-    model_class = models_dict[model_name]
+    model_class = all_models_dict[model_name]
     ModelConfig = make_model_config(model_class, required)
 
     sp = _get_signal_params(signal_params)
@@ -77,9 +81,9 @@ def test_fractional_input_window_seconds_config(n_times, input_window_seconds, s
     This test validates the fix for the bug where int() truncation rejected
     valid configurations in the pydantic validator.
     """
-    from braindecode.models import EEGNetv4
+    from braindecode.models import EEGNet
 
-    ModelConfig = make_model_config(EEGNetv4, ["n_chans", "n_outputs", "n_times"])
+    ModelConfig = make_model_config(EEGNet, ["n_chans", "n_outputs", "n_times"])
 
     # Should not raise ValueError
     cfg = ModelConfig(
@@ -111,9 +115,9 @@ def test_fractional_input_window_seconds_inference_config(
     This test validates that the pydantic validator uses round() instead of int()
     when inferring n_times.
     """
-    from braindecode.models import EEGNetv4
+    from braindecode.models import EEGNet
 
-    ModelConfig = make_model_config(EEGNetv4, ["n_chans", "n_outputs", "n_times"])
+    ModelConfig = make_model_config(EEGNet, ["n_chans", "n_outputs", "n_times"])
 
     cfg = ModelConfig(
         n_chans=22,

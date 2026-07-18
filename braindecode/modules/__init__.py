@@ -1,4 +1,4 @@
-from .activation import LogActivation, SafeLog, Square
+from .activation import GatedLinearUnit, LogActivation, SafeLog, Square
 from .attention import (
     CAT,
     CBAM,
@@ -14,7 +14,7 @@ from .attention import (
     MultiHeadAttention,
     SqueezeAndExcitation,
 )
-from .blocks import MLP, FeedForwardBlock, InceptionBlock
+from .blocks import MLP, FeedForwardBlock, InceptionBlock, PatchTokenizer
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
@@ -26,9 +26,11 @@ from .convolution import (
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
 from .interpolation import ChannelInterpolationLayer
 from .layers import (
+    ChannelMerger,
     Chomp1d,
     DropPath,
     Ensure4d,
+    FourierEmb,
     SqueezeFinalOutput,
     SubjectLayers,
     TimeDistributed,
@@ -48,6 +50,7 @@ from .util import aggregate_probas
 from .wrapper import Expression, IntermediateOutputWrapper
 
 __all__ = [
+    "GatedLinearUnit",
     "LogActivation",
     "SafeLog",
     "Square",
@@ -68,6 +71,7 @@ __all__ = [
     "MLP",
     "FeedForwardBlock",
     "InceptionBlock",
+    "PatchTokenizer",
     "AvgPool2dWithConv",
     "CausalConv1d",
     "CombinedConv",
@@ -84,6 +88,8 @@ __all__ = [
     "TimeDistributed",
     "LinearWithConstraint",
     "MaxNormLinear",
+    "ChannelMerger",
+    "FourierEmb",
     "MaxNorm",
     "MaxNormParametrize",
     "LogPowerLayer",

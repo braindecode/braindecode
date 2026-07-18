@@ -9,6 +9,7 @@ import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
 class USleep(EEGModuleMixin, nn.Module):
@@ -295,6 +296,7 @@ class USleep(EEGModuleMixin, nn.Module):
             # output is (B, n_classes, S)
         )
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
         If input x has shape (B, C, T), return y_pred of shape (B, n_classes).

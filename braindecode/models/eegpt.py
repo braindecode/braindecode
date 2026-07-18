@@ -1435,3 +1435,32 @@ class _EEGTransformer(nn.Module):
         )
 
         return x
+
+
+# -----------------------------------------------------------------------------
+# InterpolatedEEGPT — experimental channel-interpolation variant of EEGPT
+# -----------------------------------------------------------------------------
+# A :func:`~braindecode.models.interpolated.InterpolatedModel` wrapper around
+# :class:`EEGPT` whose target channel set is the canonical ``EEGPT_CHANNELS``.
+# Accepts arbitrary user ``chs_info``; projects to the canonical channels via an
+# MNE-backed (frozen by default) interpolation matrix.
+
+from mne.channels import make_standard_montage  # noqa: E402
+
+from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
+
+montage = make_standard_montage("standard_1020")
+ch_pos = {
+    ch.upper(): (ch, loc) for ch, loc in montage.get_positions()["ch_pos"].items()
+}
+_EEGPT_TARGET_CHS_INFO = [
+    {
+        "ch_name": ch_pos[ch.upper()][0],
+        "kind": "eeg",
+        "loc": ch_pos[ch.upper()][1],
+    }
+    for ch in EEGPT_CHANNELS
+]
+InterpolatedEEGPT = InterpolatedModel(
+    EEGPT, _EEGPT_TARGET_CHS_INFO, name="InterpolatedEEGPT"
+)

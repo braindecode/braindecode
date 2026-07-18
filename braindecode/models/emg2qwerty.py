@@ -56,7 +56,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
     Returns ``(batch, T_out, n_outputs)``. With ``n_times=8000`` and
     defaults, ``T_out=373``. For :class:`~torch.nn.CTCLoss`, transpose
     to ``(T_out, batch, n_outputs)``; use :meth:`compute_output_lengths`
-    for emission lengths.
+    for emission lengths. Pass ``return_features=True`` to return the
+    pre-classifier encoder representation as a
+    ``{"features": (batch, T_out, num_features), "cls_token": None}``
+    dict, matching the BIOT / signal-JEPA convention used by downstream
+    wrappers (e.g. neuroai's ``DownstreamWrapperModel``).
 
     .. rubric:: Paper training recipe
 
@@ -69,7 +73,9 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
       local minimum).
     - **Augmentation**: per-band electrode rotations by -1/0/+1 positions,
       ±60-sample temporal jitter, and SpecAugment [park2019specaug]_ on
-      the log-spectrogram.
+      the log-spectrogram. SpecAugment is built into the model
+      (``spec_augment=True``) and only fires in training mode; the
+      time/frequency-jitter pieces are dataset-side augmentations.
     - **Decoding**: greedy CTC. Upstream also reports a 6-gram KenLM
       beam decoder, not ported here.
 
@@ -145,6 +151,37 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         layers and again after the second :class:`~torch.nn.Linear`.
         Default ``0.0`` matches the upstream paper recipe (no dropout).
         Set ``> 0`` for regularized training.
+    spec_augment : bool
+        If ``True``, apply SpecAugment [park2019specaug]_ time/frequency
+        masking on the log-spectrogram during training only. Disabled in
+        ``eval`` mode and absent from the parameter / state-dict count.
+        Defaults to ``False``; set to ``True`` to match the upstream
+        emg2qwerty paper recipe.
+    n_time_masks : int
+        Maximum number of time masks applied per call. Each forward pass
+        samples a uniform integer in ``[0, n_time_masks]``. Defaults to
+        ``3`` (Sivakumar et al. Sec 5.2).
+    time_mask_param : int
+        Maximum time-mask width in spectrogram frames. Defaults to ``25``.
+    n_freq_masks : int
+        Maximum number of frequency masks applied per call. Each forward
+        pass samples a uniform integer in ``[0, n_freq_masks]``. Defaults
+        to ``2``.
+    freq_mask_param : int
+        Maximum frequency-mask width in STFT bins. Defaults to ``4``.
+    spec_augment_prob : float
+        Probability of running SpecAugment on a given training batch
+        (Bernoulli gate before sampling mask counts). Defaults to ``1.0``.
+    return_feature : bool
+        If ``True``, ``forward`` returns a tuple
+        ``(emissions, features)`` instead of just ``emissions`` —
+        :class:`braindecode.models.BIOT`-style legacy feature path. Lets
+        configuration-driven downstream wrappers (e.g. neuroai's
+        ``DownstreamWrapperModel`` with ``model_output_key=1``) pick up
+        the encoder representation without passing a runtime kwarg.
+        Defaults to ``False``. Mutually compatible with the runtime
+        ``return_features`` (plural) flag, which still wins when set
+        to ``True``.
 
     Examples
     --------
@@ -216,6 +253,13 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         log_softmax: bool = False,
         activation: type[nn.Module] = nn.ReLU,
         drop_prob: float = 0.0,
+        spec_augment: bool = False,
+        n_time_masks: int = 3,
+        time_mask_param: int = 25,
+        n_freq_masks: int = 2,
+        freq_mask_param: int = 4,
+        spec_augment_prob: float = 1.0,
+        return_feature: bool = False,
         # Standard braindecode args
         n_times: int | None = None,
         input_window_seconds: float | None = None,
@@ -256,6 +300,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
         self.hop_length = hop_length
         self.kernel_width = kernel_width
         self.log_softmax = log_softmax
+        self.return_feature = return_feature
 
         n_freq_bins = n_fft // 2 + 1
         in_features = electrodes_per_band * n_freq_bins
@@ -268,6 +313,23 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             electrodes_per_band=electrodes_per_band,
             log_eps=log_eps,
         )
+
+        # Built-in SpecAugment lives between the spectrogram and the BatchNorm
+        # so it operates on the log-power tensor (matches upstream emg2qwerty
+        # and the previous neuralbench callback). ``nn.Identity`` keeps the
+        # forward path symmetrical without contributing parameters or
+        # state-dict keys when SpecAugment is disabled.
+        self.spec_augment: nn.Module
+        if spec_augment:
+            self.spec_augment = _SpecAugment(
+                n_time_masks=n_time_masks,
+                time_mask_param=time_mask_param,
+                n_freq_masks=n_freq_masks,
+                freq_mask_param=freq_mask_param,
+                prob=spec_augment_prob,
+            )
+        else:
+            self.spec_augment = nn.Identity()
 
         # Indices 0/1/3 match upstream's ``TDSConvCTCModule.model``;
         # index 2 is a parameter-free Flatten; upstream's index 4 (head)
@@ -298,7 +360,13 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             isinstance(m, _TDSConv2dBlock) for m in self.model[3].tds_conv_blocks
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, return_features: bool = False
+    ) -> (
+        torch.Tensor
+        | dict[str, torch.Tensor | None]
+        | tuple[torch.Tensor, torch.Tensor]
+    ):
         """Run the full pipeline.
 
         Parameters
@@ -307,12 +375,37 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             Raw EMG of shape ``(batch, n_chans=32, n_times)``. ``n_times``
             must be at least the encoder's receptive field, ``n_fft +
             n_conv_blocks * (kernel_width - 1) * hop_length``.
+        return_features : bool
+            If ``True``, return a ``dict`` with the encoder representation
+            instead of the classification emissions. The encoder is the
+            full TDS-Conv stack up to (but not including)
+            ``self.final_layer`` — i.e. what downstream wrappers want
+            when they apply their own probe/aggregation. Matches the
+            BIOT / signal-JEPA convention so the same neuroai
+            ``DownstreamWrapperModel(model_output_key="features")``
+            can consume it. Wins over the constructor-time
+            ``return_feature`` flag when set.
 
         Returns
         -------
-        emissions : torch.Tensor
-            Shape ``(batch, T_out, n_outputs)``. Log-probabilities if
+        torch.Tensor or dict or tuple
+            Default (``return_features=False``, init
+            ``return_feature=False``): ``torch.Tensor`` of shape
+            ``(batch, T_out, n_outputs)``. Log-probabilities if
             ``log_softmax=True``, otherwise logits.
+
+            If runtime ``return_features=True``: ``dict`` with
+            ``"features"`` (shape ``(batch, T_out, num_features)``,
+            where ``num_features = num_bands * mlp_features[-1]``) and
+            ``"cls_token"`` (always ``None`` — TDS-Conv has no
+            ``[CLS]``).
+
+            If init ``return_feature=True`` and runtime
+            ``return_features=False``: tuple ``(emissions, features)``
+            where ``features`` has shape ``(batch, T_out,
+            num_features)``. Same layout BIOT exposes for
+            configuration-driven feature extraction (e.g. neuroai's
+            ``model_output_key=1``).
         """
         if x.ndim != 3 or x.shape[-2] != self.n_chans:
             raise ValueError(
@@ -331,11 +424,24 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
                 f"kernel_width={self.kernel_width})."
             )
         spectrogram = self.spectrogram(x)
+        spectrogram = self.spec_augment(spectrogram)
         encoded = self.model(spectrogram)
+        # ``encoded`` is (T_out, B, num_features); only materialise the
+        # batch-first features tensor in the branches that actually return
+        # it, so the default emissions-only path skips the extra transpose
+        # + contiguous copy on every forward.
+        if return_features:
+            return {
+                "features": encoded.transpose(0, 1).contiguous(),
+                "cls_token": None,
+            }
         emissions = self.final_layer(encoded)
         if self.log_softmax:
             emissions = F.log_softmax(emissions, dim=-1)
-        return emissions.transpose(0, 1).contiguous()
+        emissions = emissions.transpose(0, 1).contiguous()
+        if self.return_feature:
+            return emissions, encoded.transpose(0, 1).contiguous()
+        return emissions
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new vocabulary size.
@@ -411,7 +517,13 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
             dummy_input = torch.zeros(
                 1, self.n_chans, n_times, dtype=dtype, device=device
             )
-            return tuple(self.forward(dummy_input).shape)
+            # ``return_features=False`` keeps the dict path off; the init
+            # ``return_feature`` flag may still produce a tuple, so unpack
+            # the emissions explicitly to report the public output shape.
+            out = self.forward(dummy_input, return_features=False)
+            emissions = out[0] if isinstance(out, tuple) else out
+            assert isinstance(emissions, torch.Tensor)
+            return tuple(emissions.shape)
 
 
 class _LogSpectrogram(nn.Module):
@@ -481,6 +593,94 @@ class _LogSpectrogram(nn.Module):
             n_freq_bins,
             n_frames,
         ).movedim(-1, 0)
+
+
+class _SpecAugment(nn.Module):
+    r"""SpecAugment masking on the log-spectrogram during training.
+
+    Applies up to ``n_time_masks`` × ``time_mask_param``-frame time
+    bands and ``n_freq_masks`` × ``freq_mask_param``-bin frequency
+    bands. Masks are independent per ``(sample × band × electrode)``
+    triple — same recipe as the upstream emg2qwerty
+    :class:`emg2qwerty.transforms.SpecAugment` dataset transform
+    (Sivakumar et al. Sec 5.2 / NeurIPS 2024), which is
+    :func:`torchaudio.functional.mask_along_axis_iid`-style masking
+    sampled per leading dim of a spectrogram with shape
+    ``(..., freq, time)``. No-op outside ``training``.
+
+    The mask fill value is the on-device mean of the spectrogram —
+    ``log(power=1)=0`` would sit well above the typical log-power
+    distribution and inject artificial spikes — and stays a 0-D
+    tensor so the forward pass adds no host round-trip on GPU.
+    """
+
+    def __init__(
+        self,
+        n_time_masks: int = 3,
+        time_mask_param: int = 25,
+        n_freq_masks: int = 2,
+        freq_mask_param: int = 4,
+        prob: float = 1.0,
+    ) -> None:
+        super().__init__()
+        if n_time_masks < 0 or n_freq_masks < 0:
+            raise ValueError(
+                f"n_time_masks and n_freq_masks must be >= 0; got "
+                f"n_time_masks={n_time_masks}, n_freq_masks={n_freq_masks}."
+            )
+        if time_mask_param < 0 or freq_mask_param < 0:
+            raise ValueError(
+                f"time_mask_param and freq_mask_param must be >= 0; got "
+                f"time_mask_param={time_mask_param}, "
+                f"freq_mask_param={freq_mask_param}."
+            )
+        if not 0.0 <= prob <= 1.0:
+            raise ValueError(f"prob must be in [0, 1]; got {prob}.")
+        self.n_time_masks = n_time_masks
+        self.time_mask_param = time_mask_param
+        self.n_freq_masks = n_freq_masks
+        self.freq_mask_param = freq_mask_param
+        self.prob = prob
+        # ``iid_masks=True`` so masking is sampled over every leading dim
+        # except the trailing ``(freq, time)`` pair — i.e. one mask per
+        # ``(sample × band × electrode)`` on a 5-D
+        # ``(B, num_bands, electrodes, freq, T)`` input. Matches upstream
+        # emg2qwerty's per-``(band × electrode)`` dataset-time recipe.
+        self.time_mask = ta_transforms.TimeMasking(time_mask_param, iid_masks=True)
+        self.freq_mask = ta_transforms.FrequencyMasking(freq_mask_param, iid_masks=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # ``x``: (T_spec, B, num_bands, electrodes, freq).
+        if (
+            not self.training
+            or self.prob <= 0.0
+            or (self.n_time_masks == 0 and self.n_freq_masks == 0)
+        ):
+            return x
+        # All RNG draws use ``x.device`` so reproducibility seeds the same
+        # stream regardless of whether the user calls ``torch.manual_seed``
+        # or ``torch.cuda.manual_seed`` — and so torchaudio's internal
+        # device-side RNG and our Python-level gate stay in sync. ``.item()``
+        # still forces a host sync for the Python ``if``/loop bound, but
+        # that is unavoidable for control flow.
+        if self.prob < 1.0 and torch.rand((), device=x.device).item() >= self.prob:
+            return x
+        # ``torchaudio`` masking expects ``(..., freq, time)``; here that means
+        # ``(B, num_bands, electrodes, freq, T_spec)``. Move time to the end
+        # rather than reshaping into 4D, because ``mask_along_axis_iid`` draws
+        # one mask per leading-axis index, so the 5-D layout already gives the
+        # desired per-``(B × num_bands × electrodes)`` independence.
+        spec = x.movedim(0, -1).contiguous()
+        # 0-D on-device tensor — ``masked_fill`` / ``torch.where`` accept it
+        # without a host sync.
+        mask_value = spec.mean()
+        n_t = int(torch.randint(self.n_time_masks + 1, (), device=x.device).item())
+        for _ in range(n_t):
+            spec = self.time_mask(spec, mask_value=mask_value)
+        n_f = int(torch.randint(self.n_freq_masks + 1, (), device=x.device).item())
+        for _ in range(n_f):
+            spec = self.freq_mask(spec, mask_value=mask_value)
+        return spec.movedim(-1, 0)
 
 
 class _SpectrogramNorm(nn.Module):

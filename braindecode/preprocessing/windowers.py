@@ -567,7 +567,7 @@ def create_fixed_length_windows(
     if on_last_window is None:
         on_last_window = "overlap"
 
-    stop_offset_samples, drop_last_window = (
+    stop_offset_samples, window_stride_samples, drop_last_window = (
         _check_and_set_fixed_length_window_arguments(
             start_offset_samples,
             stop_offset_samples,
@@ -954,7 +954,10 @@ def _create_fixed_length_windows(
     if mapping is not None:
         # in case of multiple targets
         if isinstance(target, pd.Series):
-            target = target.replace(mapping).to_list()
+            # Plain comprehension instead of Series.replace(mapping):
+            # replace() emits a pandas FutureWarning about silent downcasting
+            # and the result is immediately list-ified anyway.
+            target = [mapping.get(v, v) for v in target]
         # in case of single value target
         else:
             target = mapping[target]
@@ -1328,8 +1331,14 @@ def _check_and_set_fixed_length_window_arguments(
     lazy_metadata,
 ):
     """Raises warnings for incorrect input arguments and will set correct
-    default values for stop_offset_samples & on_last_window, if necessary.
+    default values for stop_offset_samples, window_stride_samples & on_last_window, if necessary.
     """
+    # default stride to window size for non-overlapping windows
+    if window_size_samples is not None and window_stride_samples is None:
+        window_stride_samples = window_size_samples
+        if drop_last_window is None:
+            drop_last_window = True
+
     _check_windowing_arguments(
         start_offset_samples,
         stop_offset_samples,
@@ -1389,7 +1398,7 @@ def _check_and_set_fixed_length_window_arguments(
             "Only on_last_window='drop' is supported with lazy_metadata."
         )
 
-    return stop_offset_samples, on_last_window
+    return stop_offset_samples, window_stride_samples, on_last_window
 
 
 def _get_windowing_kwargs(windowing_func_locals):

@@ -1,4 +1,3 @@
-import math
 from warnings import warn
 
 import numpy as np
@@ -6,6 +5,7 @@ import torch
 import torch.nn as nn
 from linear_attention_transformer import LinearAttentionTransformer
 
+from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 
 # -----------------------------------------------------------------------------
@@ -388,15 +388,8 @@ class _PositionalEncoding(nn.Module):
     def __init__(self, emb_size: int, drop_prob: float = 0.1, max_len: int = 1000):
         super(_PositionalEncoding, self).__init__()
 
-        # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, emb_size)
-        position = torch.arange(0, max_len).unsqueeze(1).float()
-        div_term = torch.exp(
-            torch.arange(0, emb_size, 2).float() * -(math.log(10000.0) / emb_size)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
+        # Compute the positional encodings once (shared sinusoidal primitive).
+        pe = sinusoidal_positional_encoding(max_len, emb_size).unsqueeze(0)
         self.register_buffer("pe", pe)
         self.dropout = nn.Dropout(p=drop_prob)
 

@@ -8,13 +8,13 @@ import json
 import logging
 import math
 import os
-from pathlib import Path
 from typing import Optional, Union
 
-import requests
+import pooch
 import torch
 import torch.nn.functional as F
 from einops import rearrange
+from mne.datasets.utils import _get_path
 from torch import nn
 
 # Safe import for older PyTorch versions (Support for Intel-based Macs)
@@ -785,9 +785,12 @@ class FourierEmb4D(nn.Module):
 class RevePositionBank(torch.nn.Module):
     """Position bank for REVE model that maps standard EEG channel names to 3D coordinates.
 
-    The position bank is cached locally in the library root to avoid repeated downloads.
-
     The coordinates come from the 92 datasets used during REVE pretraining.
+
+    The bank is cached in the MNE data directory after the first download, so it
+    works offline afterwards. On restricted nodes (e.g. HPC compute nodes without
+    a proxy), drop a prefetched ``reve_positions.json`` in that directory and no
+    download is attempted.
 
     Parameters
     ----------
@@ -796,7 +799,9 @@ class RevePositionBank(torch.nn.Module):
     timeout : int, optional
         Timeout in seconds for the HTTP request. Default is 5 seconds.
     cache_dir : str, optional
-        Directory to cache the position bank. Default is the models folder within the library.
+        Directory to cache the position bank. If ``None``, resolved like other
+        braindecode datasets via the ``REVE_POSITIONS_PATH`` config key, falling
+        back to the MNE data directory (usually ``~/mne_data``).
     """
 
     def __init__(
@@ -807,38 +812,32 @@ class RevePositionBank(torch.nn.Module):
     ):
         super().__init__()
 
-        if cache_dir is None:
-            # Use the model root directory
-            cache_dir = str(Path(__file__).parent)
+        cache_dir = _get_path(cache_dir, "REVE_POSITIONS_PATH", "REVE positions")
+        cache_file = os.path.join(cache_dir, "reve_positions.json")
 
-        cache_file = os.path.join(cache_dir, ".cache", "reve_positions.json")
-        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-
-        config = None
-
-        # Try to load from cache first
-        if os.path.exists(cache_file):
+        # Offline path: reuse the cached/prefetched file. Download only on a miss
+        # or if the cached copy is unreadable (e.g. an interrupted download).
+        try:
+            with open(cache_file) as f:
+                config = json.load(f)
+        except (OSError, json.JSONDecodeError):
             try:
-                with open(cache_file, "r") as f:
+                if os.path.exists(cache_file):
+                    os.remove(cache_file)  # corrupt/partial; force a fresh copy
+                # pooch ships with mne and writes straight into the cache dir.
+                pooch.retrieve(
+                    url,
+                    known_hash=None,
+                    fname="reve_positions.json",
+                    path=cache_dir,
+                    downloader=pooch.HTTPDownloader(timeout=timeout),
+                )
+                with open(cache_file) as f:
                     config = json.load(f)
-                logger.info(f"Loaded position bank from cache: {cache_file}")
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning(f"Failed to load cache, downloading: {e}")
-
-        # Download if cache miss or failed to load
-        if config is None:
-            try:
-                response = requests.get(url, timeout=timeout)
-                response.raise_for_status()
-                config = json.loads(response.text)
-
-                # Save to cache
-                with open(cache_file, "w") as f:
-                    json.dump(config, f)
-                logger.info(f"Downloaded and cached position bank to: {cache_file}")
-            except (requests.RequestException, json.JSONDecodeError) as e:
+            except Exception as e:
                 raise RuntimeError(
-                    f"Failed to download or parse the position bank from {url}: {e}"
+                    f"Failed to download the position bank from {url}. On an "
+                    f"offline node, prefetch it to {cache_file} first: {e}"
                 ) from e
 
         try:

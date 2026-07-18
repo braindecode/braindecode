@@ -72,3 +72,6 @@ thesis/
 
 # zoo-data.js is auto-generated into the build outdir by docs/sphinxext/zoo_data_gen.py
 docs/_static/zoo-data.js
+
+# Converted EEG-DINO pretrained weight exports (large, re-hosted on HF)
+hf_export/

@@ -24,11 +24,14 @@ from braindecode.preprocessing import (
     AddEvents,
     AddProj,
     AddReferenceChannels,
+    AnnotateAmplitude,
     AnnotateMovement,
+    AnnotateNan,
     Anonymize,
     ApplyGradientCompensation,
     ApplyHilbert,
     ApplyProj,
+    ComputeBridgedElectrodes,
     ComputeCurrentSourceDensity,
     Crop,
     CropByAnnotations,
@@ -43,6 +46,7 @@ from braindecode.preprocessing import (
     FixStimArtifact,
     InterpolateBads,
     NotchFilter,
+    OversampledTemporalProjection,
     Pick,
     RenameChannels,
     ReorderChannels,
@@ -503,12 +507,17 @@ def test_set_montage(base_concat_ds):
 
 
 def test_compute_csd(base_concat_ds_with_montage):
-    """Test ComputeCurrentSourceDensity preprocessor."""
-    pytest.skip("ComputeCurrentSourceDensity requires montage setup - skipping for now")
+    """Test ComputeCurrentSourceDensity preprocessor.
+
+    Now that the safe standalone functions are wrapped as callables (#885),
+    CSD (which returns the modified Raw) runs end-to-end through ``preprocess``.
+    """
     preprocessors = [ComputeCurrentSourceDensity()]
-    # CSD returns a new instance, so we need to handle it differently
-    # For now, just test that it doesn't raise an error
     preprocess(base_concat_ds_with_montage, preprocessors)
+    assert all(
+        isinstance(ds.raw, mne.io.BaseRaw)
+        for ds in base_concat_ds_with_montage.datasets
+    )
 
 
 def test_all_preprocessing_functions_importable():
@@ -579,3 +588,199 @@ def test_preprocessing_function_on_raw(base_concat_ds, prep_class_name, init_kwa
         preprocess(base_concat_ds, [preprocessor], n_jobs=1)
     except Exception as e:
         pytest.fail(f"{prep_class_name} failed with {type(e).__name__}: {str(e)}")
+
+
+def test_preprocess_raises_actionable_error_on_mmap_resize_failure(
+    base_concat_ds, monkeypatch
+):
+    """The mmap-readonly failure is converted into an actionable RuntimeError."""
+    import importlib
+
+    preprocess_module = importlib.import_module(
+        "braindecode.preprocessing.preprocess"
+    )
+    n_calls = {"count": 0}
+
+    class FailingParallel:
+        def __init__(self, *args, **kwargs):
+            n_calls["count"] += 1
+
+        def __call__(self, iterable):
+            raise BufferError("mmap can't resize a readonly memory map.")
+
+    monkeypatch.setattr(preprocess_module, "Parallel", FailingParallel)
+
+    preprocessors = [Crop(tmax=10, include_tmax=False)]
+    with pytest.raises(RuntimeError, match=r"max_nbytes=None.*save_dir") as excinfo:
+        preprocess(base_concat_ds, preprocessors, n_jobs=2)
+
+    assert n_calls["count"] == 1, "preprocess must not retry; it should raise once"
+    assert isinstance(excinfo.value.__cause__, BufferError)
+
+
+def test_preprocess_propagates_unrelated_buffer_error(base_concat_ds, monkeypatch):
+    """A BufferError that is not an mmap-resize failure must propagate unchanged."""
+    import importlib
+
+    preprocess_module = importlib.import_module(
+        "braindecode.preprocessing.preprocess"
+    )
+
+    class FailingWithUnrelatedError:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __call__(self, iterable):
+            raise BufferError("some unrelated buffer error")
+
+    monkeypatch.setattr(preprocess_module, "Parallel", FailingWithUnrelatedError)
+
+    preprocessors = [Crop(tmax=10, include_tmax=False)]
+    with pytest.raises(BufferError, match="unrelated"):
+        preprocess(base_concat_ds, preprocessors, n_jobs=2)
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for #885: standalone MNE functions that return the modified
+# instance must be wrapped as callables (so they actually run), while standalone
+# functions that return auxiliary data must stay on the string path (so they do
+# not silently replace the recording with that auxiliary object).
+# ---------------------------------------------------------------------------
+
+
+def _montage_raw():
+    """Small synthetic Raw with a standard montage, for standalone-function tests."""
+    ch_names = ["Fp1", "Fp2", "F3", "F4", "C3", "C4", "P3", "P4", "O1", "O2"]
+    info = mne.create_info(ch_names, sfreq=200.0, ch_types="eeg")
+    rng = np.random.RandomState(0)
+    raw = mne.io.RawArray(rng.randn(len(ch_names), 4000) * 1e-5, info, verbose=False)
+    raw.set_montage("standard_1020", verbose=False)
+    return raw
+
+
+def _concat_ds_with_montage():
+    raw = _montage_raw()
+    return BaseConcatDataset([RawDataset(raw)])
+
+
+@pytest.mark.parametrize(
+    "prep_class,init_kwargs",
+    [
+        (ComputeCurrentSourceDensity, {}),
+        (SetBipolarReference, {"anode": "F3", "cathode": "C3"}),
+        (OversampledTemporalProjection, {}),
+    ],
+)
+def test_safe_standalone_preprocessor_uses_callable(prep_class, init_kwargs):
+    """Safe standalone functions (#885) are wrapped as callables and applied.
+
+    These MNE functions return the modified ``Raw`` instance, so the generated
+    preprocessor must store the callable (not its name) and ``apply`` must return
+    a ``Raw`` rather than the function name string failing to run.
+    """
+    preprocessor = prep_class(**init_kwargs)
+
+    # The instance must carry the actual callable, not the function name string.
+    assert callable(preprocessor.fn)
+    assert not isinstance(preprocessor.fn, str)
+
+    # And it must actually run on a recording, returning a Raw.
+    result = preprocessor.apply(_montage_raw())
+    assert isinstance(result, mne.io.BaseRaw)
+
+
+def test_safe_standalone_preprocessor_runs_in_pipeline():
+    """A safe standalone function works end-to-end through ``preprocess``."""
+    concat_ds = _concat_ds_with_montage()
+    preprocess(concat_ds, [ComputeCurrentSourceDensity()], n_jobs=1)
+    # CSD transforms the data in place on the dataset's raw.
+    assert all(isinstance(ds.raw, mne.io.BaseRaw) for ds in concat_ds.datasets)
+
+
+def test_unsafe_standalone_preprocessor_uses_wrapper():
+    """Fix for #1055: functions returning auxiliary data now use a wrapper callable.
+
+    ``annotate_amplitude`` returns a ``(annotations, bads)`` tuple. Previously
+    it kept the function name as a string and therefore failed at apply-time.
+    It now stores a wrapper callable that applies the side effects and returns
+    the recording.
+    """
+    preprocessor = AnnotateAmplitude(peak=1e-4)
+    # Must carry a callable, not the function name string.
+    assert callable(preprocessor.fn)
+    assert not isinstance(preprocessor.fn, str)
+
+    # Applying must return a Raw (not the tuple).
+    result = preprocessor.apply(_montage_raw())
+    assert isinstance(result, mne.io.BaseRaw)
+
+
+@pytest.mark.parametrize(
+    "prep_class,init_kwargs",
+    [
+        (AnnotateAmplitude, {"peak": 1e-4}),
+        (AnnotateNan, {}),
+        (FindBadChannelsLof, {}),
+        (ComputeBridgedElectrodes, {}),
+    ],
+)
+def test_aux_return_standalone_preprocessor_uses_callable(prep_class, init_kwargs):
+    """Aux-return standalone functions (#1055) are wrapped as callables.
+
+    These MNE functions return auxiliary data (Annotations, bad-channel lists,
+    etc.) rather than the modified Raw.  The generated preprocessor must store a
+    wrapper callable, and ``apply`` must return a Raw—not the auxiliary data.
+    """
+    preprocessor = prep_class(**init_kwargs)
+
+    assert callable(preprocessor.fn)
+    assert not isinstance(preprocessor.fn, str)
+
+    result = preprocessor.apply(_montage_raw())
+    assert isinstance(result, mne.io.BaseRaw)
+
+
+def test_annotate_amplitude_applies_annotations_and_bads():
+    """AnnotateAmplitude wrapper adds annotations and bads to the recording."""
+    # Create raw with guaranteed amplitude violations
+    ch_names = ["Fp1", "Fp2", "F3", "C3"]
+    info = mne.create_info(ch_names, sfreq=200.0, ch_types="eeg")
+    data = np.zeros((len(ch_names), 2000))
+    # Insert a spike well above the threshold
+    data[0, 500:520] = 1e-2
+    raw = mne.io.RawArray(data, info, verbose=False)
+
+    prep = AnnotateAmplitude(peak=1e-4)
+    result = prep.apply(raw)
+
+    assert isinstance(result, mne.io.BaseRaw)
+    # The spike should have generated at least one annotation
+    assert len(result.annotations) > 0
+
+
+def test_annotate_nan_applies_annotations():
+    """AnnotateNan wrapper adds NaN annotations to the recording."""
+    ch_names = ["Fp1", "Fp2"]
+    info = mne.create_info(ch_names, sfreq=200.0, ch_types="eeg")
+    data = np.zeros((len(ch_names), 400))
+    data[0, 50:60] = np.nan
+    raw = mne.io.RawArray(data, info, verbose=False)
+
+    prep = AnnotateNan()
+    result = prep.apply(raw)
+
+    assert isinstance(result, mne.io.BaseRaw)
+    assert len(result.annotations) > 0
+
+
+def test_find_bad_channels_lof_extends_bads():
+    """FindBadChannelsLof wrapper extends raw.info['bads']."""
+    raw = _montage_raw()
+    raw.info["bads"] = ["Fp1"]
+
+    prep = FindBadChannelsLof()
+    result = prep.apply(raw)
+
+    assert isinstance(result, mne.io.BaseRaw)
+    # Original bad channel must still be present
+    assert "Fp1" in result.info["bads"]

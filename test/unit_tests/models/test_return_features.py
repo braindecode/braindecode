@@ -7,6 +7,7 @@ import torch
 from braindecode.models import (
     BENDR,
     BIOT,
+    EEGDINO,
     EEGPT,
     REVE,
     CBraMod,
@@ -17,6 +18,7 @@ from braindecode.models import (
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
     SignalJEPA_PreLocal,
+    STEEGFormer,
 )
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
 
@@ -77,6 +79,19 @@ _MODELS = [
     ),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
+    pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
+    pytest.param(
+        STEEGFormer,
+        N_CHANS,
+        {
+            "embed_dim": 64,
+            "depth": 2,
+            "num_heads": 2,
+            "chan_pos_idx": list(range(N_CHANS)),
+        },
+        True,
+        id="STEEGFormer",
+    ),
     pytest.param(SignalJEPA, N_CHANS, {"chs_info": _chs()}, False, id="SignalJEPA"),
     pytest.param(
         SignalJEPA_Contextual,
