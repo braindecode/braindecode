@@ -1261,34 +1261,40 @@ def _compute_window_inds(
         # If the last window start + window size is not the same as
         # stop + stop_offset, create another window that overlaps and stops
         # at onset + stop_offset
-        trial_window_starts = [s for s, t in zip(window_starts, i_trials) if t == start_i]
-        if on_last_window != "drop":
-            last_start = trial_window_starts[-1] if trial_window_starts else start
-            if last_start + size != stop:
-                if on_last_window == "overlap":
-                    window_starts.append(stop - size)
-                    i_window_in_trials.append(i_window_in_trials[-1] + 1)
+        i_window_in_trials, i_trials, window_starts = [], [], []
+        for start_i, (start, stop) in enumerate(zip(starts, stops)):
+            possible_starts = np.arange(start, stop, stride)
+
+            last_complete_start = None
+            for i_window, s in enumerate(possible_starts):
+                if (s + size) <= stop:
+                    window_starts.append(s)
+                    i_window_in_trials.append(i_window)
                     i_trials.append(start_i)
-                elif on_last_window == "keep":
-                    next_start = last_start + stride
-                    if next_start < stop:
-                        window_starts.append(next_start)
+                    last_complete_start = s
+
+            if on_last_window != "drop":
+                last_start = last_complete_start if last_complete_start is not None else start
+                if last_start + size != stop:
+                    if on_last_window == "overlap":
+                        window_starts.append(stop - size)
                         i_window_in_trials.append(i_window_in_trials[-1] + 1)
                         i_trials.append(start_i)
+                    elif on_last_window == "keep":
+                        next_start = last_start + stride
+                        if next_start < stop:
+                            window_starts.append(next_start)
+                            i_window_in_trials.append(i_window_in_trials[-1] + 1)
+                            i_trials.append(start_i)
 
     # Set window stops to be event stops (rather than trial stops)
     window_stops = np.array(window_starts) + size
     if on_last_window == "keep":
-        for trial_idx, (_, trial_stop) in enumerate(zip(starts, stops)):
-            # find the last window belonging to this trial
-            last_window_idx = None
-            for i, t in enumerate(i_trials):
-                if t == trial_idx:
-                    last_window_idx = i
-            if last_window_idx is not None:
-                window_stops[last_window_idx] = min(
-                    window_stops[last_window_idx], trial_stop
-                )
+        last_idx_by_trial: dict[int, int] = {}
+        for i, t in enumerate(i_trials):
+            last_idx_by_trial[t] = i
+        for trial_idx, last_window_idx in last_idx_by_trial.items():
+            window_stops[last_window_idx] = min(window_stops[last_window_idx], stops[trial_idx])
     if not (len(i_window_in_trials) == len(window_starts) == len(window_stops)):
         raise ValueError(
             f"{len(i_window_in_trials)} == {len(window_starts)} == {len(window_stops)}"
