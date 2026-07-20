@@ -375,6 +375,7 @@ models_mandatory_parameters: list[
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 128.0}),
     ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
+    ("BrainBERT", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
         "InterpolatedBIOT",
         ["chs_info", "n_outputs", "sfreq", "n_times"],
