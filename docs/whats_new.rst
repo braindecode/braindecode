@@ -28,6 +28,13 @@ Current 1.7.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.PopulationTransformer`, a self-supervised
+  population model for intracranial (sEEG/iEEG) signals from Chau et al. (2024).
+  It aggregates across electrodes from per-electrode features (e.g. frozen
+  BrainBERT embeddings) plus their anatomical coordinates; the input embedding,
+  spatial position encoding and Transformer encoder are ported bit-exact from the
+  upstream reference (:gh:`1109` by `Adam Mounir`_)
+
 - Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
   registry for the interpolated (channel-adapting) models, keeping them separate
   from :data:`braindecode.models.util.models_dict` (:gh:`1093` by `Bruno Aristimunha`_)
