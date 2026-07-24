@@ -33,7 +33,7 @@ Enhancements
   It aggregates across electrodes from per-electrode features (e.g. frozen
   BrainBERT embeddings) plus their anatomical coordinates; the input embedding,
   spatial position encoding and Transformer encoder are ported bit-exact from the
-  upstream reference (:gh:`1109` by `Adam Mounir`_)
+  upstream reference (:gh:`1105` by `Adam Mounir`_)
 
 - Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
   registry for the interpolated (channel-adapting) models, keeping them separate
