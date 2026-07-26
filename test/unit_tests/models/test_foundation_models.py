@@ -18,7 +18,15 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
+from braindecode.models import (
+    LUNA,
+    REVE,
+    CBraMod,
+    CodeBrain,
+    Labram,
+    SleepFM,
+    SleepFMStager,
+)
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.reve import RevePositionBank
 
@@ -1130,3 +1138,50 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+@pytest.mark.network
+def test_sleepfm_official_base_checkpoint():
+    checkpoint = torch.hub.load_state_dict_from_url(
+        "https://github.com/zou-group/sleepfm-clinical/raw/refs/heads/main/"
+        "sleepfm/checkpoints/model_base/best.pt",
+        map_location="cpu",
+        check_hash=False,
+    )
+    model = SleepFM(
+        n_chans=3,
+        n_times=1280,
+        n_outputs=2,
+        sfreq=128.0,
+    ).eval()
+    model.load_pretrained_backbone(checkpoint)
+    with torch.no_grad():
+        result = model(torch.randn(2, 3, 1280), return_features=True)
+    assert result["features"].shape == (2, 128)
+
+
+@pytest.mark.network
+def test_sleepfm_official_staging_checkpoint():
+    base_checkpoint = torch.hub.load_state_dict_from_url(
+        "https://github.com/zou-group/sleepfm-clinical/raw/refs/heads/main/"
+        "sleepfm/checkpoints/model_base/best.pt",
+        map_location="cpu",
+        check_hash=False,
+    )
+    staging_checkpoint = torch.hub.load_state_dict_from_url(
+        "https://github.com/zou-group/sleepfm-clinical/raw/refs/heads/main/"
+        "sleepfm/checkpoints/model_sleep_staging/best.pth",
+        map_location="cpu",
+        check_hash=False,
+    )
+    model = SleepFMStager(
+        n_chans=3,
+        n_times=1280,
+        n_outputs=5,
+        sfreq=128.0,
+    ).eval()
+    model.load_pretrained_backbone(base_checkpoint)
+    model.load_pretrained_staging_head(staging_checkpoint)
+    with torch.no_grad():
+        output = model(torch.randn(2, 3, 1280))
+    assert output.shape == (2, 5, 2)
