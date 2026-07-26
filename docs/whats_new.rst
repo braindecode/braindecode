@@ -28,6 +28,18 @@ Current 1.6.1 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.SleepFM`, a channel-agnostic multimodal PSG
+  foundation encoder, and :class:`braindecode.models.SleepFMStager`, its
+  token-wise bidirectional-LSTM sleep-staging model. Both support the authors'
+  released base and staging checkpoints, variable channel masks, unified
+  ``return_features`` and ``reset_head`` APIs, and exact 128-Hz/5-second patch
+  validation. The paper's End-to-End PSG baseline instead trains a raw-signal
+  tokenizer, channel pooling, and bidirectional LSTM from scratch and combines
+  the result with age and sex. Its demographics baseline is a separate
+  ``4 -> 32 -> output`` MLP over age, sex, BMI, and race/ethnicity. These
+  covariate-dependent disease baselines remain outside the electrophysiological
+  model API. The implementation is distributed under CC BY-NC 4.0 to match the
+  official SleepFM release. By `Fashad Ahmed`_.
 - Add :func:`braindecode.functional.sinusoidal_positional_encoding`, a shared
   sine/cosine positional-encoding primitive (handling odd dimensions), and reuse
   it in :class:`braindecode.models.BIOT`, :class:`braindecode.models.MEDFormer`,

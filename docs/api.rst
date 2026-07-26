@@ -77,6 +77,9 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`EEGPT` - Pretrained transformer for universal EEG
     - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
       re-hosted weights
+    - :class:`SleepFM` and :class:`SleepFMStager` - Multimodal PSG foundation encoder
+      and token-wise sleep-staging model compatible with the authors' CC BY-NC
+      checkpoints
 
     **Example - Loading a pre-trained model:**
 
@@ -181,6 +184,8 @@ interface for all EEG models and can derive variable names when needed.
      SignalJEPA_PostLocal
      SignalJEPA_PreLocal
      SincShallowNet
+     SleepFM
+     SleepFMStager
      SleepStagerBlanco2020
      SleepStagerChambon2018
      SPARCNet
