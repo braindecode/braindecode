@@ -29,6 +29,8 @@ SignalJEPA_PostLocal,"Motor Imagery, ERP, SSVEP",Prediction,128,"n_chans, n_outp
 SignalJEPA_PreLocal,"Motor Imagery, ERP, SSVEP",Prediction,128,"n_outputs, n_times, chs_info",16142,"SignalJEPA_PreLocal(n_chans=62, n_outputs=2, input_window_seconds=4.19, sfreq=128)","Convolution,Channel,Foundation Model"
 SincShallowNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",21892,"SincShallowNet(n_chans=22,  n_outputs=4,  n_times=1000, sfreq=250)","Convolution,Interpretability"
 ShallowFBCSPNet,General,Prediction,250,"n_chans, n_outputs, n_times",46084,"ShallowFBCSPNet(n_chans=22,  n_outputs=4,  n_times=1000, sfreq=250)","Convolution"
+SleepFM,"Sleep Staging, Disease Prediction",Prediction,128,"n_chans, n_outputs, n_times, sfreq",4832301,"SleepFM(n_chans=4, n_outputs=5, n_times=3840, sfreq=128)","Convolution,Attention/Transformer,Foundation Model"
+SleepFMStager,Sleep Staging,Prediction,128,"n_chans, n_outputs, n_times, sfreq",1373485,"SleepFMStager(n_chans=4, n_outputs=5, n_times=3840, sfreq=128)","Convolution,Recurrent,Attention/Transformer,Foundation Model"
 SleepStagerBlanco2020,Sleep Staging,Prediction,100,"n_chans, n_outputs, n_times",2845,"SleepStagerBlanco2020(n_chans=2, n_outputs=5, n_times=3000, sfreq=100)","Convolution"
 SleepStagerChambon2018,Sleep Staging,Prediction,128,"n_chans, n_outputs, n_times, sfreq",5835,"SleepStagerChambon2018(n_chans=2, n_outputs=5, n_times=3840, sfreq=128)","Convolution"
 AttnSleep,Sleep Staging,Prediction,100,"n_chans, n_outputs, n_times, sfreq",719925,"AttnSleep(n_chans=2, n_outputs=5, n_times=3000, sfreq=100)","Convolution, Attention/Transformer"
