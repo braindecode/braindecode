@@ -52,6 +52,7 @@ from .signal_jepa import (
 from .sinc_shallow import SincShallowNet
 from .sleep_stager_blanco_2020 import SleepStagerBlanco2020
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
+from .sleepfm import SleepFM, SleepFMStager
 from .sparcnet import SPARCNet
 from .sstdpn import SSTDPN
 from .steegformer import STEEGFormer
@@ -129,6 +130,8 @@ __all__ = [
     "SignalJEPA_PreLocal",
     "SincShallowNet",
     "SSTDPN",
+    "SleepFM",
+    "SleepFMStager",
     "SleepStagerBlanco2020",
     "SleepStagerChambon2018",
     "SPARCNet",
