@@ -49,6 +49,10 @@ Requirements
 Bug fixes
 ==========
 
+- Clarify that :func:`braindecode.training.scoring.predict_trials`,
+  :meth:`braindecode.EEGClassifier.predict_trials`, and
+  :meth:`braindecode.EEGRegressor.predict_trials` return ground-truth dataset
+  targets alongside predictions. By `Sarthak Tayal`_.
 - Make the :class:`braindecode.models.REVE` position bank robust on offline /
   limited-network nodes: it is now cached in the writable MNE data directory
   (resolved via the ``REVE_POSITIONS_PATH`` config key, defaulting under
