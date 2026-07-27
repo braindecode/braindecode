@@ -1001,6 +1001,11 @@ def _create_fixed_length_windows(
             start_offset_samples, last_potential_start + 1, window_stride_samples
         )
 
+        if len(starts) == 0:
+            raise ValueError(
+                "No windows can be created: window_size_samples is larger than the available samples after applying offsets."
+            )
+
         if on_last_window == "overlap" and starts[-1] < last_potential_start:
             starts = np.append(starts, last_potential_start)
         elif on_last_window == "keep" and starts[-1] < last_potential_start:
