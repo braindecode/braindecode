@@ -7,7 +7,7 @@
     .faint     { fill: #9aa1ab; }
     .trace     { stroke: #4b5158; stroke-width: 1; fill: none; stroke-linejoin: round; }
     .blue      { fill: #0072B2; stroke: #0072B2; }
-    .vermillion{ fill: #D55E00; stroke: #D55E00; }
+    .vermilion { fill: #D55E00; stroke: #D55E00; }
     .teal      { fill: #009E73; stroke: #009E73; }
     .pink      { fill: #CC79A7; stroke: #CC79A7; }
     .amber     { fill: #E69F00; stroke: #E69F00; }
@@ -72,19 +72,19 @@
 
     <g transform="translate(0,38)">
       <rect x="28"  y="8" width="64" height="112" class="blue" opacity="0.09" />
-      <rect x="138" y="8" width="34" height="112" class="vermillion" opacity="0.09" />
+      <rect x="138" y="8" width="34" height="112" class="vermilion" opacity="0.09" />
       <rect x="200" y="8" width="60" height="112" class="blue" opacity="0.09" />
       <rect x="270" y="8" width="70" height="112" class="bgwash" opacity="0.14" />
       <rect x="368" y="8" width="44" height="112" class="pink" opacity="0.09" />
 
       <rect x="28"  y="8" width="64" height="4" class="blue" opacity="0.55" />
-      <rect x="138" y="8" width="34" height="4" class="vermillion" opacity="0.55" />
+      <rect x="138" y="8" width="34" height="4" class="vermilion" opacity="0.55" />
       <rect x="200" y="8" width="60" height="4" class="blue" opacity="0.55" />
       <rect x="270" y="8" width="70" height="4" class="bgwash" opacity="0.55" />
       <rect x="368" y="8" width="44" height="4" class="pink" opacity="0.55" />
 
       <text x="60"  y="4" text-anchor="middle" font-size="10" class="mono blue" font-weight="600">c&#8321;</text>
-      <text x="155" y="4" text-anchor="middle" font-size="10" class="mono vermillion" font-weight="600">c&#8322;</text>
+      <text x="155" y="4" text-anchor="middle" font-size="10" class="mono vermilion" font-weight="600">c&#8322;</text>
       <text x="230" y="4" text-anchor="middle" font-size="10" class="mono blue" font-weight="600">c&#8321;</text>
       <text x="305" y="4" text-anchor="middle" font-size="9"  class="mono muted">background</text>
       <text x="390" y="4" text-anchor="middle" font-size="10" class="mono pink" font-weight="600">c&#8323;</text>
@@ -111,7 +111,7 @@
     <rect x="-230" y="-9" width="9" height="9" class="blue" />
     <text x="-217" y="0">class c&#8321; (occurs twice)</text>
 
-    <rect x="-60" y="-9" width="9" height="9" class="vermillion" />
+    <rect x="-60" y="-9" width="9" height="9" class="vermilion" />
     <text x="-47" y="0">class c&#8322;</text>
 
     <rect x="20" y="-9" width="9" height="9" class="pink" />

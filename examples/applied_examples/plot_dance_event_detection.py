@@ -262,7 +262,8 @@ def dance_target_builder(
 
 def dance_collate(batch):
     """Stack ``[(eeg, target_dict), ...]`` into the batched dict schema
-    :class:`~braindecode.training.DanceLoss` expects."""
+    :class:`~braindecode.training.DanceLoss` expects.
+    """
     eeg = torch.stack([b[0] for b in batch])
     out = {"eeg": eeg}
     for key in ("start", "end", "class", "dense"):
