@@ -260,6 +260,40 @@ def plv_time(
     return plv_matrix
 
 
+# -----------------------------------------------------------------------------
+# DANCE functional helpers
+#
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#
+# License: MIT
+#
+# Ported from the DANCE event-detection model (facebookresearch/dance, MIT).
+# -----------------------------------------------------------------------------
+
+
+def iou_1d(s1, e1, s2, e2, eps: float = 1e-7):
+    """ELEMENTWISE 1-D temporal IoU. All four inputs share the same shape S
+    (e.g. ``(B, Q)``); returns IoU of shape S. Used by ``DanceLoss`` on the
+    matched ``(B, Q)`` spans. For (Q,)x(T,) pairwise IoU use ``pairwise_iou_1d``.
+    """
+    inter = (torch.minimum(e1, e2) - torch.maximum(s1, s2)).clamp(min=0)
+    union = (e1 - s1) + (e2 - s2) - inter
+    return inter / (union + eps)
+
+
+def pairwise_iou_1d(s1, e1, s2, e2, eps: float = 1e-7):
+    """PAIRWISE 1-D temporal IoU. ``s1,e1`` shape ``(Q,)``, ``s2,e2`` shape
+    ``(T,)``; returns ``(Q, T)`` (broadcast ``[:, None]`` x ``[None, :]``).
+    Transcribed from ``dance/matcher.py:33-39`` (``_pairwise_iou``). Used by
+    ``HungarianMatcher`` to build the ``(Q, n_targets)`` cost matrix.
+    """
+    inter_start = torch.maximum(s1[:, None], s2[None, :])
+    inter_end = torch.minimum(e1[:, None], e2[None, :])
+    inter = (inter_end - inter_start).clamp(min=0)
+    union = (e1 - s1)[:, None] + (e2 - s2)[None, :] - inter
+    return inter / (union + eps)
+
+
 def daubechies_filters(n_vanishing: int) -> torch.Tensor:
     r"""Daubechies ``db<n_vanishing>`` wavelet decomposition filters.
 
