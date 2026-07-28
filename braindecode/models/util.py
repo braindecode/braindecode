@@ -16,6 +16,12 @@ import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` throu
 from torch import nn
 
 models_dict = {}
+# Interpolated models are channel-interpolating wrappers around existing
+# braindecode backbones (see :func:`braindecode.models.InterpolatedModel`).
+# They are derivatives of existing models rather than standalone
+# architectures, so they are kept in a separate registry to avoid polluting
+# ``models_dict`` (e.g. for benchmarking that iterates over all "real" models).
+interpolated_models_dict = {}
 
 _IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
 
@@ -189,7 +195,45 @@ def _init_models_dict():
             issubclass(m[1], models.base.EEGModuleMixin)
             and m[1] != models.base.EEGModuleMixin
         ):
-            models_dict[m[0]] = m[1]
+            # Interpolated models are wrappers around existing backbones
+            # (identified by the ``_TARGET_CHS_INFO`` class attribute set by
+            # :func:`braindecode.models.InterpolatedModel`). Keep them in a
+            # dedicated registry instead of ``models_dict``.
+            if getattr(m[1], "_TARGET_CHS_INFO", None) is not None:
+                interpolated_models_dict[m[0]] = m[1]
+            else:
+                models_dict[m[0]] = m[1]
+
+
+def _get_model_class(model_name: str):
+    """Return the model class registered under ``model_name``.
+
+    Searches both the standard :data:`models_dict` and the
+    :data:`interpolated_models_dict` so that interpolated models remain
+    resolvable by name (e.g. for skorch wrappers and pydantic configs).
+
+    Parameters
+    ----------
+    model_name : str
+        Name of the model class to retrieve.
+
+    Returns
+    -------
+    type
+        The model class registered under ``model_name``.
+
+    Raises
+    ------
+    ValueError
+        If ``model_name`` is not found in either registry.
+    """
+    if not models_dict:
+        _init_models_dict()
+    if model_name in models_dict:
+        return models_dict[model_name]
+    if model_name in interpolated_models_dict:
+        return interpolated_models_dict[model_name]
+    raise ValueError(f"Unknown model name {model_name!r}.")
 
 
 # Keep in sync with _EEG_PARAMS above.
@@ -417,6 +461,11 @@ models_mandatory_parameters: list[
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "MVPFormer",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"sfreq": 100.0, "n_times": 2000},
+    ),
     (
         "REVE",
         ["n_times", "n_outputs", "n_chans", "chs_info"],

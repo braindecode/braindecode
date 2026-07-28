@@ -72,10 +72,14 @@ from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
+    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
 from braindecode.util import set_random_seeds
+
+# Interpolated models are stored in a separate registry from ``models_dict``.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 
 @pytest.fixture(scope="module")
@@ -2182,7 +2186,7 @@ def test_models_batch1_train_mode(
     """
     sp = _get_signal_params(signal_params)
     model_kwargs = _get_possible_signal_params(sp, required_params)[0]
-    model = models_dict[model_name](**model_kwargs)
+    model = all_models_dict[model_name](**model_kwargs)
     batch_norms = [
         module
         for module in model.modules()
@@ -2445,6 +2449,35 @@ def test_fbmsnet_forward_pass(temporal_layer):
     output = model(x)
 
     assert output.shape == (batch_size, n_outputs)
+
+
+def test_fbmsnet_return_features():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 4
+    batch_size = 2
+    default_n_filters_spat = 36
+    default_dilatability = 8
+    default_stride_factor = 4
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=250,
+        return_features=True,
+    )
+    model.eval()
+
+    with torch.no_grad():
+        logits, features = model(torch.randn(batch_size, n_chans, n_times))
+
+    expected_feature_dim = model.out_channels_spatial * model.stride_factor
+    assert logits.shape == (batch_size, n_outputs)
+    assert features.shape == (batch_size, expected_feature_dim)
+    assert expected_feature_dim == (
+        default_n_filters_spat * default_dilatability * default_stride_factor
+    )
 
 
 def test_fbmsnet_specified_filter_parameters():

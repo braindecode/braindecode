@@ -22,12 +22,61 @@
 .. _current:
 
 
-Current 1.6.1 (GitHub)
+Current 1.7.0 (GitHub)
 ===============================
 
 Enhancements
 ============
 
+- Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
+  registry for the interpolated (channel-adapting) models, keeping them separate
+  from :data:`braindecode.models.util.models_dict` (:gh:`1093` by `Bruno Aristimunha`_)
+
+API and behavior changes
+========================
+
+- Interpolated models (e.g. ``InterpolatedBIOT``, ``InterpolatedLaBraM``) are no
+  longer included in :data:`braindecode.models.util.models_dict`; they now live
+  in the separate :data:`braindecode.models.util.interpolated_models_dict`
+  registry. They remain fully usable and resolvable by name in the skorch
+  wrappers and pydantic configs (:gh:`1093` by `Bruno Aristimunha`_)
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- Clarify that :func:`braindecode.training.scoring.predict_trials`,
+  :meth:`braindecode.EEGClassifier.predict_trials`, and
+  :meth:`braindecode.EEGRegressor.predict_trials` return ground-truth dataset
+  targets alongside predictions. By `Sarthak Tayal`_.
+- Make the :class:`braindecode.models.REVE` position bank robust on offline /
+  limited-network nodes: it is now cached in the writable MNE data directory
+  (resolved via the ``REVE_POSITIONS_PATH`` config key, defaulting under
+  ``~/mne_data``) instead of the package folder, so a prefetched
+  ``reve_positions.json`` there is used without any download (:gh:`1098` by
+  `Bruno Aristimunha`_)
+
+Code health
+============
+
+- None yet
+
+
+Current 1.6.1 (2026-07-01)
+===============================
+
+Enhancements
+============
+
+- Pin the ``%pip install braindecode`` cell in generated notebooks to the
+  version used to build them (``braindecode==X.Y.Z`` for stable releases,
+  ``git+https://github.com/braindecode/braindecode.git`` for dev builds),
+  so notebooks can be reproduced with a matching installation.
+  (:gh:`1080` by `Fashad Ahmed`_)
 - Add :func:`braindecode.functional.sinusoidal_positional_encoding`, a shared
   sine/cosine positional-encoding primitive (handling odd dimensions), and reuse
   it in :class:`braindecode.models.BIOT`, :class:`braindecode.models.MEDFormer`,
@@ -66,12 +115,19 @@ Enhancements
 - Clarify the model summary table's ``Type`` column by using ``Prediction`` for
   supervised heads instead of describing them as classification-only.
   By `Sarthak Tayal`_.
+- Add a ``Modality`` column (EEG, MEG, sEMG, ...) to the model summary table so
+  models can be filtered by the bio-signal they target, and validate it against a
+  controlled vocabulary. By `Bhargav Kowshik`_.
 - Add :class:`braindecode.models.InterpolatedEEGPT`, a channel-interpolation
   variant of :class:`braindecode.models.EEGPT` built with
   :func:`~braindecode.models.interpolated.InterpolatedModel`.
   By `Pierre Guetschel`_.
 - Add :class:`braindecode.models.EEGDINO`, the EEG-DINO self-distillation
   foundation model (Small/Medium/Large) with pretrained S/M weights. By `Bruno Aristimunha`_.
+- Add :class:`braindecode.models.MVPFormer`, the multi-variate parallel
+  attention (MVPA) foundation model for heterogeneous multi-variate iEEG, with
+  a db4-wavelet signal encoder computed from first principles (no new
+  dependency). By `Bruno Aristimunha`_.
 - Add :class:`braindecode.models.STEEGFormer`, a ViT-based EEG foundation
   model pre-trained with a masked-autoencoder objective, from Yang et al.
   (ICLR 2026). By `Adam Mounir`_.
@@ -86,11 +142,20 @@ Enhancements
   convolution/TCN max-norm constraint (``0.6``) and ``L2`` weight-decay groups
   (conv/TCN ``0.009``, dense ``0.5``). Defaults preserve current behavior.
   (:gh:`1061` by `Bruno Aristimunha`_)
+- Add causal forward filtering support to
+  :class:`braindecode.modules.FilterBankLayer` for IIR and FIR filter banks via
+  ``phase="forward"``/``phase="causal"``. Existing zero-phase filtering remains
+  the default. By `Bruno Aristimunha`_.
 - Add :class:`braindecode.models.TCFormer`, the Temporal Convolutional
   Transformer for EEG motor-imagery decoding: a multi-kernel CNN front-end, a
   grouped-query attention Transformer with rotary positional embeddings, and a
   grouped temporal convolutional network head. (:gh:`1065` by `Bruno
   Aristimunha`_)
+- Add a ``return_features`` option to :class:`braindecode.models.FBMSNet`: when
+  enabled, ``forward()`` returns ``(logits, features)`` where ``features`` is
+  the flattened pre-classifier vector (shape ``(batch, out_channels_spatial *
+  stride_factor)``), enabling center-loss training without subclassing.
+  (:gh:`1083` by `Bruno Aristimunha`_)
 - Add an ``n_augmentation`` argument to
   :class:`braindecode.augmentation.AugmentedDataLoader` for fixed set-expansion:
   each batch keeps its clean originals and appends ``n_augmentation``
@@ -206,10 +271,17 @@ Bug fixes
   ``(main_logits, stacked_branch_logits)``, matching the source.
   (:gh:`1069` by `Bruno Aristimunha`_)
 
-- Fix the spatial convolutions in :class:`braindecode.models.EEGSym` being dense
-  (``groups=1``) with a bias: the authors' ``unit_dconv`` uses grouped/depthwise
-  convolutions without bias, so they now use ``groups=out_channels`` and
-  ``bias=False``. (:gh:`1071` by `Bruno Aristimunha`_)
+- Fix the multi-scale spatial convolutions in :class:`braindecode.models.EEGSym`
+  being dense (``groups=1``) with a bias: the authors' ``unit_dconv`` uses
+  grouped/depthwise convolutions without bias, so they now use
+  ``groups=out_channels`` and ``bias=False``. (:gh:`1071` by `Bruno Aristimunha`_)
+
+- Align :class:`braindecode.models.EEGSym` with the reference implementation:
+  use the authors' even temporal kernels with ``padding="same"``, ascending
+  scale order, residual filter progression, residual projection blocks, dense
+  single-scale spatial convolutions, channel-merging groups, Keras batch
+  normalization settings, and default ``spatial_resnet_repetitions=1``.
+  (:gh:`1088` by `Bruno Aristimunha`_)
 
 Code health
 ============

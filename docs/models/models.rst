@@ -68,12 +68,12 @@ With this, in this model's sub-pages, we provide:
     - 4. :doc:`A visualization of the common important information from the models
          <models_visualization>`.
 
-.. button-ref:: models_categorization
+.. button-ref:: models_table
     :ref-type: doc
     :color: primary
     :expand:
 
-    Next: Models categorization →
+    Browse the models table →
 
 .. rubric:: References
 

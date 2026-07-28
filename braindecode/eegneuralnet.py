@@ -8,7 +8,7 @@ import abc
 import inspect
 import logging
 import warnings
-from typing import Literal
+from typing import Any, Literal
 
 import mne
 import numpy as np
@@ -20,7 +20,7 @@ from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
 from braindecode.datautil import infer_signal_properties
 
-from .models.util import models_dict
+from .models.util import _get_model_class
 from .training.scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
@@ -30,13 +30,10 @@ from .training.scoring import (
 log = logging.getLogger(__name__)
 
 
-def _get_model(model: str):
+def _get_model(model: Any) -> Any:
     """Returns the corresponding class in case the model passed is a string."""
     if isinstance(model, str):
-        if model in models_dict:
-            model = models_dict[model]
-        else:
-            raise ValueError(f"Unknown model name {model!r}.")
+        model = _get_model_class(model)
     return model
 
 

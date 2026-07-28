@@ -39,6 +39,7 @@ from .luna import LUNA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
+from .mvpformer import MVPFormer
 from .patchedtransformer import PBT
 from .reve import REVE
 from .sccnet import SCCNet
@@ -66,6 +67,7 @@ from .util import (
     _init_models_dict,
     build_model_config,
     extract_channel_locations_from_chs_info,
+    interpolated_models_dict,
     models_mandatory_parameters,
     positions_from_chs_info,
 )
@@ -121,6 +123,7 @@ __all__ = [
     "positions_from_chs_info",
     "MEDFormer",
     "MSVTNet",
+    "MVPFormer",
     "PBT",
     "REVE",
     "SCCNet",
@@ -145,4 +148,5 @@ __all__ = [
     "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",
+    "interpolated_models_dict",
 ]

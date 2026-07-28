@@ -567,7 +567,7 @@ def test_forward_pass_filter_bank(method, sample_input):
 @pytest.mark.parametrize(
     "ftype", ["butterworth", "cheby1", "cheby1", "cheby2", "butter"]
 )
-@pytest.mark.parametrize("phase", ["forward", "zero", "zero-double"])
+@pytest.mark.parametrize("phase", ["forward", "causal", "zero", "zero-double"])
 @pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
 def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
     # Set random seeds for reproducibility
@@ -588,8 +588,11 @@ def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
         sfreq=256, method="iir", iir_params=iir_params, phase=phase, verbose=False
     )
 
+    mne_filter_parameters = filter_parameters.copy()
+    if phase == "causal":
+        mne_filter_parameters["phase"] = "forward"
     filts = create_filter(
-        data=None, l_freq=l_freq, h_freq=h_freq, **filter_parameters
+        data=None, l_freq=l_freq, h_freq=h_freq, **mne_filter_parameters
     )  # creating iir filter
 
     # Initialize your FilterBankLayer
@@ -598,15 +601,58 @@ def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
     )
     filtered_signal_torch = filter_bank_layer(x)
 
-    # Simulating filtfilt from torch with scipy
     x_np = x.numpy().astype(np.float64)
-    filtered_scipy = _filfilt_in_torch_sytle(b=filts["b"], a=filts["a"], x_np=x_np)
+    if phase in ("forward", "causal"):
+        filtered_scipy = lfilter_scipy(
+            b=filts["b"].astype(np.double),
+            a=filts["a"].astype(np.double),
+            x=x_np,
+            axis=-1,
+        )
+    else:
+        filtered_scipy = _filfilt_in_torch_sytle(
+            b=filts["b"], a=filts["a"], x_np=x_np
+        )
     # Compare the outputs
     np.testing.assert_array_almost_equal(
         filtered_signal_torch.numpy().flatten(),
         filtered_scipy.flatten(),
         err_msg=f"Filtered outputs do not match between FilterBankLayer "
         f"and MNE-Python for and band=({l_freq}-{h_freq})Hz",
+    )
+
+
+@pytest.mark.parametrize("phase", ["forward", "causal"])
+def test_filter_bank_layer_matches_scipy_causal_fir(phase):
+    """Test that causal FIR filtering matches scipy.signal.lfilter."""
+    torch.manual_seed(0)
+    np.random.seed(0)
+
+    n_chans = 4
+    batch_size = 2
+    n_times = 512
+    x = torch.randn(batch_size, n_chans, n_times, dtype=torch.float64)
+
+    filter_bank_layer = FilterBankLayer(
+        n_chans=n_chans,
+        sfreq=128,
+        band_filters=[(8, 30)],
+        method="fir",
+        phase=phase,
+        filter_length=257,
+        verbose=False,
+    )
+
+    filtered_signal_torch = filter_bank_layer(x)
+    filt = filter_bank_layer.fir_list[0].detach().numpy().astype(np.double)
+    filtered_scipy = lfilter_scipy(
+        b=filt, a=np.array([1.0], dtype=np.double), x=x.numpy(), axis=-1
+    )
+
+    np.testing.assert_array_almost_equal(
+        filtered_signal_torch.numpy().flatten(),
+        filtered_scipy.flatten(),
+        err_msg="Causal FIR outputs do not match scipy.signal.lfilter",
     )
 
 

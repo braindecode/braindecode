@@ -2,11 +2,13 @@
 #
 # License: BSD-3
 
+import json
 import os
 from pathlib import Path
 from urllib.error import URLError
 
 import mne
+import pooch
 import pytest
 import torch
 
@@ -1071,6 +1073,53 @@ def test_reve_model_outputs_match():
     output_hf = model_hf(eeg_input, pos_hf, return_output=True)[-1]
 
     assert torch.allclose(output_hf, output_bd)
+
+
+# ==============================================================================
+# Offline robustness of the REVE position bank (no network required)
+# ==============================================================================
+
+
+def test_reve_position_bank_uses_prefetched_file(tmp_path, monkeypatch):
+    """A prefetched positions file is used offline, without any download."""
+    config = {"Cz": [0.0, 0.0, 1.0], "Pz": [0.0, -0.5, 0.5]}
+    (tmp_path / "reve_positions.json").write_text(json.dumps(config))
+    monkeypatch.setattr(
+        pooch, "retrieve", lambda *a, **k: pytest.fail("unexpected download")
+    )
+
+    bank = RevePositionBank(cache_dir=str(tmp_path))
+
+    assert bank.get_all_positions() == list(config.keys())
+    assert bank.forward(["Cz", "Pz"]).shape == (2, 3)
+
+
+def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
+    """On a cache miss, a download failure points the user at offline prefetch."""
+
+    def _fail(*args, **kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(pooch, "retrieve", _fail)
+
+    with pytest.raises(RuntimeError, match="prefetch it to"):
+        RevePositionBank(cache_dir=str(tmp_path))
+
+
+def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
+    """A corrupt/partial cached file triggers a re-download instead of crashing."""
+    cache_file = tmp_path / "reve_positions.json"
+    cache_file.write_text("{ this is not valid json")
+    config = {"Cz": [0.0, 0.0, 1.0]}
+
+    def _fake_retrieve(url, known_hash, fname, path, **kwargs):
+        (tmp_path / fname).write_text(json.dumps(config))
+
+    monkeypatch.setattr(pooch, "retrieve", _fake_retrieve)
+
+    bank = RevePositionBank(cache_dir=str(tmp_path))
+
+    assert bank.get_all_positions() == list(config.keys())
 
 
 # ==============================================================================
