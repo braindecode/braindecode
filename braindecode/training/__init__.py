@@ -8,7 +8,6 @@ from .scoring import (
     CroppedTrialEpochScoring,
     PostEpochTrainScoring,
     f1_event,
-    f1_sample,
     predict_trials,
     trial_preds_from_window_preds,
 )
@@ -24,5 +23,4 @@ __all__ = [
     "trial_preds_from_window_preds",
     "predict_trials",
     "f1_event",
-    "f1_sample",
 ]
