@@ -150,6 +150,7 @@ def concat_windows_dataset():
         (1, False, False),
     ],
 )
+@pytest.mark.network
 def test_data_loader(
         dummy_transform, concat_windows_dataset, nb_transforms, no_list, dummy
 ):
@@ -166,11 +167,13 @@ def test_data_loader(
             break
 
 
+@pytest.mark.network
 def test_data_loader_exception(concat_windows_dataset):
     with pytest.raises(TypeError):
         AugmentedDataLoader(concat_windows_dataset, transforms="a", batch_size=128)
 
 
+@pytest.mark.network
 def test_dataset_with_transform(concat_windows_dataset):
     factor = 10
     transform = DummyTransform(k=factor)
@@ -235,6 +238,7 @@ def test_augmented_data_loader_negative_n_augmentation():
         AugmentedDataLoader(dataset, n_augmentation=-1, batch_size=4)
 
 
+@pytest.mark.network
 def test_single_input_aug(concat_windows_dataset):
     # Create single input without the batch dimension, just (channels, time)
     X, y, _ = concat_windows_dataset[0]
