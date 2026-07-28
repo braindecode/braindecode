@@ -2064,6 +2064,34 @@ def test_eegminer_invalid_parameters():
         )
 
 
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_legacy_state_dict_compatibility(method):
+    model_kwargs = {
+        "method": method,
+        "n_chans": 4,
+        "n_outputs": 2,
+        "n_times": 128,
+        "sfreq": 100.0,
+    }
+    model = EEGMiner(**model_kwargs)
+    state_dict = model.state_dict()
+    legacy_keys = {
+        "filter.n_range",
+        "filter.f_mean",
+        "filter.bandwidth",
+        "filter.shape",
+        "filter.group_delay",
+        "batch_layer.running_mean",
+        "batch_layer.running_var",
+        "batch_layer.num_batches_tracked",
+        "final_layer.weight",
+        "final_layer.bias",
+    }
+
+    assert set(state_dict) == legacy_keys
+    EEGMiner(**model_kwargs).load_state_dict(state_dict, strict=True)
+
+
 def test_eegminer_filter_clamping():
     """
     Test that EEGMiner's filters are constructed correctly and parameters are clamped.
@@ -2160,7 +2188,7 @@ def test_eegminer_plv_values_range():
     # Forward pass up to PLV computation
     x = eegminer.ensure_dim(input_tensor)
     x = eegminer.filter(x)
-    x = eegminer._apply_plv(x, n_chans=n_chans)
+    x = eegminer.feature_layer(x)
 
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \

@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Alexandre Gramfort
 #          Pierre Guetschel
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 from __future__ import annotations
@@ -518,7 +519,6 @@ def test_model_torch_script(model):
     not_working_models = [
         "BIOT",
         "Labram",
-        "EEGMiner",
         "EEGPT",
         "SSTDPN",
         "BENDR",
@@ -594,6 +594,24 @@ def test_model_torch_script(model):
     # output_script = scripted_model(input_tensor)
     # assert output_script.shape == output_model.shape
     # torch.testing.assert_close(output_script, output_model)
+
+
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_torch_script_methods(method):
+    model = EEGMiner(
+        method=method,
+        n_chans=4,
+        n_outputs=2,
+        n_times=128,
+        sfreq=100.0,
+    ).eval()
+    plain_model = convert_model_to_plain(model).eval()
+    input_tensor = torch.randn(2, 4, 128)
+
+    expected = plain_model(input_tensor)
+    scripted_model = torch.jit.script(plain_model)
+
+    torch.testing.assert_close(scripted_model(input_tensor), expected)
 
 
 @pytest.mark.parametrize("model_class", all_models_dict.values())
