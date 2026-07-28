@@ -5,9 +5,7 @@
 import mne
 import numpy as np
 import pytest
-import requests
 import torch
-from mne.datasets.eegbci.eegbci import EEGMI_URL
 from mne.io import concatenate_raws
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
@@ -16,20 +14,6 @@ from braindecode.classifier import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models.biot import BIOT
 from braindecode.util import set_random_seeds
-
-
-def check_http_issue():
-    """Check if the EEGMI_URL is available."""
-    try:
-        response = requests.get(EEGMI_URL)
-        response.raise_for_status()
-        return False
-    except requests.HTTPError as http_err:
-        print(f'HTTP error occurred: {http_err}')
-        return True
-    except Exception as err:
-        print(f'Other error occurred: {err}')
-        return True
 
 
 @pytest.fixture()
@@ -83,9 +67,7 @@ def real_data():
 
 
 # TODO: adding this test for all the models when the issue #571 is closed
-@pytest.mark.skipif(check_http_issue(),
-                    reason="HTTP issue occurred, skipping test.")
-
+@pytest.mark.network
 def test_correctness_biot(real_data):
     seed = 20200220
     set_random_seeds(seed=seed, cuda=False)

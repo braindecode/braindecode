@@ -1,5 +1,6 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -109,7 +110,7 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     return kernel1d
 
 
-def hilbert_freq(x, forward_fourier=True):
+def hilbert_freq(x: torch.Tensor, forward_fourier: bool = True) -> torch.Tensor:
     r"""
     Compute the Hilbert transform using PyTorch, separating the real and
     imaginary parts.
@@ -178,7 +179,9 @@ def hilbert_freq(x, forward_fourier=True):
     return x
 
 
-def plv_time(x, forward_fourier=True, epsilon: float = 1e-6):
+def plv_time(
+    x: torch.Tensor, forward_fourier: bool = True, epsilon: float = 1e-6
+) -> torch.Tensor:
     """Compute the Phase Locking Value (PLV) metric in the time domain.
 
     The Phase Locking Value (PLV) is a measure of the synchronization between
