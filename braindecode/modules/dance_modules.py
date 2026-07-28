@@ -12,6 +12,8 @@ import torch
 from einops import rearrange, repeat
 from torch import nn
 
+from braindecode.functional import sinusoidal_positional_encoding
+from braindecode.modules.activation import GatedLinearUnit
 from braindecode.modules.layers import ChannelMerger
 
 
@@ -121,30 +123,13 @@ def _fourier_encode(x, max_freq, num_bands):
     return torch.cat((x, orig), dim=-1)
 
 
-def _sinusoidal_pe(length, dim):
-    """Standard transformer sinusoidal positional encoding -> ``(length, dim)``.
-
-    Shared by the Perceiver latent init and the DETR-decoder memory PE.
-    """
-    pe = torch.zeros(length, dim)
-    position = torch.arange(0, length).unsqueeze(1).float()
-    div_term = torch.exp(torch.arange(0, dim, 2).float() * (-math.log(10000.0) / dim))
-    pe[:, 0::2] = torch.sin(position * div_term)
-    pe[:, 1::2] = torch.cos(position * div_term)
-    return pe
-
-
-class _GEGLU(nn.Module):
-    def forward(self, x):
-        x, gates = x.chunk(2, dim=-1)
-        return x * nn.functional.gelu(gates)
-
-
 class _FeedForward(nn.Module):
     def __init__(self, dim, mult=4):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(dim, dim * mult * 2), _GEGLU(), nn.Linear(dim * mult, dim)
+            nn.Linear(dim, dim * mult * 2),
+            GatedLinearUnit(),
+            nn.Linear(dim * mult, dim),
         )
 
     def forward(self, x):
@@ -218,7 +203,7 @@ class Perceiver(nn.Module):
         context_dim = input_dim + fourier_dim  # = 141
         self.latents = nn.Parameter(torch.randn(num_latents, latent_dim))
         with torch.no_grad():
-            self.latents.copy_(_sinusoidal_pe(num_latents, latent_dim))
+            self.latents.copy_(sinusoidal_positional_encoding(num_latents, latent_dim))
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(
@@ -336,7 +321,7 @@ class DanceDetrDecoder(nn.Module):
     def forward(self, memory: torch.Tensor) -> dict:
         b, t, _ = memory.shape
         memory = self.input_proj(memory)  # (B, T, dim)
-        pe = _sinusoidal_pe(t, memory.shape[-1]).to(memory)
+        pe = sinusoidal_positional_encoding(t, memory.shape[-1]).to(memory)
         memory = memory + pe.unsqueeze(0)  # (t, d) broadcasts over the batch
         x = self.query_embed.expand(b, -1, -1)
         for layer in self.layers:

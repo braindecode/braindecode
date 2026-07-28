@@ -78,3 +78,5 @@ hf_export/
 
 # downloaded dataset cache (kept under ../experiments/data-cache)
 braindecode/datasets/data/
+
+uv.lock

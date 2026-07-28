@@ -208,7 +208,7 @@ def make_model_config(
 # and define __all__ based on generated classes
 __all__ = ["make_model_config"]
 
-if not models_dict:
+if not models_dict and not interpolated_models_dict:
     _init_models_dict()
 
 models_configs: list[type[BaseBraindecodeModelConfig]] = []

@@ -227,7 +227,7 @@ def _get_model_class(model_name: str):
     ValueError
         If ``model_name`` is not found in either registry.
     """
-    if not models_dict:
+    if not models_dict and not interpolated_models_dict:
         _init_models_dict()
     if model_name in models_dict:
         return models_dict[model_name]
