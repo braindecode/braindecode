@@ -13,7 +13,8 @@ channel-level foundation model such as BrainBERT) plus each electrode's integer
 anatomical coordinates. A ``CLS`` token summarises the population after a stack
 of Transformer encoder layers. The input embedding, spatial position encoding and
 Transformer are ported weight-for-weight from the upstream reference (bit-exact,
-see ``scripts/popt_parity_check``); the classification head is a
+verified by the ``test_encoder_is_bit_exact_with_upstream`` parity gate in
+``test/unit_tests/models/test_popt.py``); the classification head is a
 braindecode-native addition. The official checkpoint loads directly via
 ``PopulationTransformer.from_pretrained("braindecode/popt-pretrained")``.
 """

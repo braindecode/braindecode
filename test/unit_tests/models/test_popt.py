@@ -98,22 +98,34 @@ def test_coords_fallback_without_positions():
 
 
 # --------------------------------------------------------------- parity gate
-def _import_upstream_or_skip():
+@pytest.fixture
+def upstream_pt_model():
+    """Yield the upstream ``PtModelCustom`` class (skip if ``POPT_SRC`` unset).
+
+    ``POPT_SRC`` is inserted at the front of ``sys.path`` for the duration of the
+    test and restored on teardown, so the upstream clone never leaks onto the
+    import path of subsequent tests.
+    """
     src = os.environ.get("POPT_SRC")
     if not src or not os.path.isdir(src):
         pytest.skip("set POPT_SRC=/path/to/PopulationTransformer for the parity gate")
+    original_path = list(sys.path)
     sys.path.insert(0, src)
     try:
         import models as upstream_models  # noqa: F401 (populates registry)
         from models.pt_model_custom import PtModelCustom
     except ImportError as exc:  # pragma: no cover - depends on external code
+        sys.path[:] = original_path
         pytest.skip(f"upstream PopulationTransformer not importable: {exc}")
-    return PtModelCustom
+    try:
+        yield PtModelCustom
+    finally:
+        sys.path[:] = original_path
 
 
-def test_encoder_is_bit_exact_with_upstream():
+def test_encoder_is_bit_exact_with_upstream(upstream_pt_model):
     """Input embedding + Transformer reproduce upstream once weights are copied."""
-    PtModelCustom = _import_upstream_or_skip()
+    PtModelCustom = upstream_pt_model
     from omegaconf import OmegaConf
 
     torch.manual_seed(0)

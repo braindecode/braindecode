@@ -17,7 +17,8 @@ pooled population representation.
 
 Every module here maps its parameters 1:1 to the upstream
 ``TransformerEncoderInput`` / ``SpecPredictionHead`` so the released checkpoint
-loads weight-for-weight (see ``scripts/popt_parity_check``). The only
+loads weight-for-weight (verified by the ``test_encoder_is_bit_exact_with_upstream``
+parity gate in ``test/unit_tests/models/test_popt.py``). The only
 braindecode-native changes are (i) the ``CLS`` feature row and the electrode
 coordinates are materialised **inside** the model so it keeps a standard
 ``forward(x)`` signature, and (ii) the classification head.
