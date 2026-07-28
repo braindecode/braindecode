@@ -1,38 +1,38 @@
 r""".. _dance-event-detection:
 
-DANCE: asynchronous event detection on real P300 EEG
-=======================================================
+From window labels to events: asynchronous EEG decoding with DANCE
+=====================================================================
 
 braindecode defines brain decoding as :math:`f_\theta: X \to y` (see
-:ref:`the brain decode problem <models>`), and is explicit that **the definition of** :math:`y`
-**is broad**. Most tutorials in this repository instantiate that mapping at a
-single point in the space it allows: :math:`X` is a window already cut and
-aligned to a known onset (a motor-imagery cue, a sleep-epoch boundary, a P300
-flash), and :math:`y` is one categorical label for the whole window.
+:ref:`the brain decode problem <models>`), and is explicit that the definition
+of :math:`y` is broad. Most tutorials in this repository instantiate that
+mapping at a single point in the space it allows: :math:`X` is a window
+already cut and aligned to a known onset (a motor-imagery cue, a sleep-epoch
+boundary, a P300 flash), and :math:`y` is one categorical label for the whole
+window.
 
-DANCE (this tutorial) instantiates the same :math:`f_\theta: X \to y` at a
-different point: :math:`X` is one long, unaligned recording, and :math:`y` is
-the set of ``(start, end, class)`` events :math:`f_\theta` must locate and
-classify itself. The definition did not change -- only the shape of :math:`y`
-did.
+DANCE instantiates the same :math:`f_\theta: X \to y` at a different point:
+:math:`X` is one long, unaligned recording, and :math:`y` is the set of
+``(start, end, class)`` events :math:`f_\theta` must locate and classify
+itself. The definition did not change. Only the shape of :math:`y` did.
 
 .. image:: /_static/dance/xy_shape_of_y.svg
-   :alt: Same f theta of X arrow y, different shape of y -- onset-informed
+   :alt: Same f theta of X arrow y, different shape of y. Onset-informed
        decoding gives one label per aligned window; DANCE gives a set of
        (start, end, class) events on a continuous recording.
 
-This tutorial shows how to use the :class:`~braindecode.models.DANCE` model for
-**event detection** on continuous, real EEG recordings, with plain PyTorch (no
-skorch, no Lightning). We reproduce (at reduced scale) the P300 setting from
+This tutorial shows how to use the :class:`~braindecode.models.DANCE` model
+for event detection on continuous, real EEG recordings, with plain PyTorch (no
+skorch, no Lightning). We reproduce, at reduced scale, the P300 setting from
 the original paper [1]_, using the Brain Invaders BI2014a dataset [2]_ loaded
 through :class:`~braindecode.datasets.MOABBDataset`.
 
-.. topic:: A new decoding paradigm: asynchronous event detection
+.. topic:: Asynchronous decoding: a different shape for y
 
     The dominant practice in EEG decoding benchmarks is to classify windows
     that are already time-locked to a known event onset (e.g. "this 1 s window,
     which we know starts exactly at a flash, is a target or non-target"). This
-    *onset-informed* paradigm is convenient, but unrealistic outside controlled
+    *onset-informed* approach is convenient, but unrealistic outside controlled
     experiments: in real-world or naturalistic monitoring, the precise onset of
     an event is generally not known in advance.
 
@@ -60,7 +60,8 @@ The pipeline is:
    dense per-token class map),
 5. train :class:`~braindecode.models.DANCE` with
    :class:`~braindecode.training.DanceLoss` on a cross-subject split (train on
-   some subjects, evaluate on held-out ones -- the paper's protocol), and
+   some subjects, evaluate on held-out ones, following the paper's protocol),
+   and
 6. evaluate with the event-level :func:`~braindecode.training.f1_event` metric
    and a per-token macro F1 on the dense head
    (:func:`sklearn.metrics.f1_score`).
@@ -81,7 +82,7 @@ wants a per-token prediction can call ``forward`` directly.
 .. note::
     To keep the docs build fast, this tutorial uses only 3 subjects and 2
     training epochs, far short of the paper's full protocol (all subjects,
-    100 epochs with early stopping). Expect **low** F1 scores below; see the
+    100 epochs with early stopping). Expect low F1 scores below; see the
     :ref:`Conclusion <dance-event-detection-conclusion>` for what changes at
     full scale.
 
@@ -107,7 +108,7 @@ random_state = 0
 # BI2014a is a Brain Invaders P300 (oddball) dataset: subjects watch a
 # stream of flashes, most of which are "non-target" and a few "target". We
 # load 3 subjects: 2 for training, 1 held out for evaluation, following the
-# paper's **cross-subject** splitting protocol.
+# paper's cross-subject splitting protocol.
 
 from braindecode.datasets import MOABBDataset
 
@@ -123,7 +124,7 @@ dataset = MOABBDataset(dataset_name="BI2014a", subject_ids=subject_ids)
 # 128 Hz, then a per-channel, per-session robust scaling (subtract the
 # median, divide by the interquartile range) clamped to ``[-16, 16]``. We
 # reach for :func:`sklearn.preprocessing.robust_scale` rather than
-# hand-rolling the median/IQR arithmetic -- ``axis=1`` scales each channel
+# hand-rolling the median/IQR arithmetic. ``axis=1`` scales each channel
 # (row) using its own median and interquartile range computed across time
 # (columns), which is exactly the per-channel recipe above.
 
@@ -201,32 +202,29 @@ def bi_annotations_to_events(raw):
 #     y = \{e_i\}_{i=1}^N, \qquad e_i = (b_i, c_i),
 #
 # where :math:`b_i = (t_{\mathrm{start}}, t_{\mathrm{end}}) \in [0, 1]^2` are
-# the event's boundaries normalized to the window duration -- exactly the
-# colored spans in the figure -- and :math:`c_i \in \{0, \dots, K\}` is its
-# class: :math:`c_i = 0` is the shared **background / no-object** class (the
-# unlabeled gray span in the figure), and real classes are :math:`1, \dots,
-# K` (here :math:`K = 2`: non-target and target flashes).
+# the event's boundaries normalized to the window duration (exactly the
+# colored spans in the figure), and :math:`c_i \in \{0, \dots, K\}` is its
+# class. :math:`c_i = 0` is the shared background/no-object class (the
+# unlabeled gray span in the figure); real classes are :math:`1, \dots, K`
+# (here :math:`K = 2`: non-target and target flashes).
 #
-# Two consequences of this definition matter for ``dance_target_builder``
-# below:
+# Two consequences follow, and both matter for ``dance_target_builder``
+# below. Padding is indistinguishable from background:
+# :class:`~braindecode.training.DanceLoss`'s matcher expects a fixed-size set
+# of ``max_events`` slots per window, so any slot with no real event defaults
+# to :math:`c_i = 0`, the same value that also denotes "no object". There is
+# only one id for both, by design, and it never collides because a real
+# annotation is never given class ``0``. The dense head also needs a
+# per-token version of the same set: DANCE trains a per-timestep classifier
+# over ``num_latents`` latent tokens, so we rasterize each event's
+# :math:`[t_{\mathrm{start}}, t_{\mathrm{end}})` span onto that token grid,
+# and every idle token defaults to the same background class ``0``.
 #
-# 1. **Padding is indistinguishable from background.**
-#    :class:`~braindecode.training.DanceLoss`'s matcher expects a fixed-size
-#    set of ``max_events`` slots per window; any slot with no real event
-#    defaults to :math:`c_i = 0`, the same value that also denotes
-#    "no object" -- there is only one id for both, by design, and it never
-#    collides because a real annotation is never given class ``0``.
-# 2. **The dense head needs a per-token version of the same set.** DANCE
-#    also trains a per-timestep classifier over ``num_latents`` latent
-#    tokens; we rasterize each event's :math:`[t_{\mathrm{start}},
-#    t_{\mathrm{end}})` span onto that token grid, so every idle token
-#    defaults to the same background class ``0``.
-#
-# This is exactly the recipe braindecode's own upstream reference -- the
+# This matches braindecode's own upstream reference: the
 # ``dance/example/data.py`` MOABB bridge in `facebookresearch/dance
-# <https://github.com/facebookresearch/dance>`_ -- uses for this dataset:
-# class ``0`` for padding/background, ``1`` for non-target, ``2`` for
-# target, and events zero-padded to ``max_events = 150``.
+# <https://github.com/facebookresearch/dance>`_ uses class ``0`` for
+# padding/background, ``1`` for non-target, and ``2`` for target on this
+# exact dataset, with events zero-padded to ``max_events = 150``.
 
 import torch
 
@@ -357,9 +355,9 @@ optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
 # needs; ``forward()`` alone would only give the dense per-token logits.
 #
 # .. warning::
-#    Kept at 2 epochs, 3 subjects so the docs build stays fast -- this is
-#    **not** a converged model. The paper trains on the full dataset (71
-#    subjects) for up to 100 epochs with early stopping; see the
+#    Kept at 2 epochs and 3 subjects so the docs build stays fast. This is
+#    **not** a converged model: the paper trains on the full dataset
+#    (71 subjects) for up to 100 epochs with early stopping. See the
 #    :ref:`Conclusion <dance-event-detection-conclusion>`.
 
 n_epochs = 2
@@ -452,17 +450,16 @@ print(
 # --------------------------------------------------
 #
 # .. note::
-#    As of this writing, braindecode has **not yet published an official
-#    pretrained checkpoint** for DANCE on the `Hugging Face Hub
-#    <https://huggingface.co/braindecode>`_ (unlike, e.g., the sleep-staging
-#    tutorials). The cell below follows the same loading pattern used
-#    elsewhere in the gallery so it starts working automatically once a
-#    checkpoint is released; until then it falls back to the model trained
-#    above and predicts on one held-out window so the cell still runs
-#    end-to-end. As with any deep model, **training for longer closes the
-#    gap**: the 2-epoch, 3-subject model above is far from converged, while
-#    the paper's full protocol (all subjects, up to 100 epochs with early
-#    stopping) is what a released checkpoint would reflect.
+#    braindecode has not yet published an official pretrained checkpoint for
+#    DANCE on the `Hugging Face Hub <https://huggingface.co/braindecode>`_,
+#    unlike the sleep-staging tutorials. The cell below uses the same loading
+#    pattern as the rest of the gallery, so it starts working automatically
+#    once a checkpoint is released. Until then it falls back to the model
+#    trained above and predicts on one held-out window, so the cell still
+#    runs end-to-end. Training longer closes most of that gap: the 2-epoch,
+#    3-subject model above is far from converged, and the paper's full
+#    protocol (all subjects, up to 100 epochs with early stopping) is what a
+#    released checkpoint would reflect.
 
 import warnings
 
@@ -498,19 +495,17 @@ for s, e, label, conf in sorted(predicted, key=lambda ev: ev[0])[:10]:
 #
 # This tutorial trained :class:`~braindecode.models.DANCE` on real,
 # continuous P300 EEG, detecting target and non-target flashes directly from
-# unaligned windows -- without ever being told where a flash starts. At this
-# reduced scale (3 subjects, 2 epochs) the reported F1 scores are low and
-# should **not** be compared to the paper's numbers.
+# unaligned windows, without ever being told where a flash starts. At this
+# reduced scale (3 subjects, 2 epochs), the reported F1 scores are low and
+# should not be compared to the paper's numbers.
 #
-# At full scale (BI2014a, all subjects, up to 100 epochs with early stopping
-# and a OneCycle learning rate schedule, following the paper's protocol),
-# DANCE matches the accuracy of onset-informed models on this dataset --
-# *without* ever using the flash onset -- and establishes a new state of the
-# art on the harder task of seizure monitoring (Temple University Seizure
-# corpus), where onsets are unknown by construction. This is the core claim
-# of the asynchronous decoding paradigm: a single architecture that performs
-# on par with onset-informed baselines while requiring no onset information
-# at all.
+# At full scale, following the paper's protocol (BI2014a, all subjects, up to
+# 100 epochs with early stopping and a OneCycle learning rate schedule),
+# DANCE matches onset-informed models on this dataset without ever using the
+# flash onset, and sets a new state of the art on the harder task of seizure
+# monitoring (Temple University Seizure corpus), where onsets are unknown by
+# construction. That is the core claim: one architecture performing on par
+# with onset-informed baselines while requiring no onset information at all.
 #
 # References
 # ----------
