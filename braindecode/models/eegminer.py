@@ -25,15 +25,17 @@ class _EEGMinerFeatures(nn.Module):
         self.n_chans = n_chans
         self.n_filters = n_filters
         self.n_times = n_times
+        triu = torch.triu_indices(n_chans, n_chans, 1)
+        self.register_buffer("triu_row", triu[0], persistent=False)
+        self.register_buffer("triu_col", triu[1], persistent=False)
 
     def forward(self, x):
-        batch = x.shape[0]
         if self.method == "mag":
             return torch.sqrt((x * x).mean(dim=-1))
         if self.method == "corr":
-            x = x.reshape(batch, self.n_chans, self.n_filters, self.n_times).transpose(
-                -3, -2
-            )
+            x = x.reshape(
+                x.shape[0], self.n_chans, self.n_filters, self.n_times
+            ).transpose(-3, -2)
             x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
                 x.var(dim=-1, keepdim=True) + 1e-6
             )
@@ -43,8 +45,7 @@ class _EEGMinerFeatures(nn.Module):
             x = x.transpose(-4, -3)
             x = F.plv_time(x, forward_fourier=False)
             x = x.permute(0, 2, 3, 1)
-        triu = torch.triu_indices(self.n_chans, self.n_chans, 1)
-        return x[:, triu[0], triu[1], :]
+        return x[:, self.triu_row, self.triu_col, :]
 
 
 class EEGMiner(EEGModuleMixin, nn.Module):
@@ -196,12 +197,11 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         )
 
         # Forward method
+        self.ensure_dim = nn.Identity()
         if self.method == "mag":
             self.n_features = self.n_chans * self.n_filters
-            self.ensure_dim = nn.Identity()
         elif self.method == "corr":
             self.n_features = self.n_filters * self.n_chans * (self.n_chans - 1) // 2
-            self.ensure_dim = nn.Identity()
         elif self.method == "plv":
             self.ensure_dim = nn.Unflatten(-1, (1, self.n_times))
             self.n_features = (self.n_filters * self.n_chans * (self.n_chans - 1)) // 2
