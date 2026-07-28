@@ -283,10 +283,12 @@ optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
 # %%
 # Train the model
 # ---------------
-# A short run on this small synthetic set is enough to see the event F1 climb off
-# zero; real recordings need a full training schedule.
+# Kept at 2 epochs so the docs build stays fast; set ``n_epochs = 120`` to watch
+# the event F1 climb off zero on this synthetic set (real recordings need a full
+# training schedule anyway).
+n_epochs = 2
 model.train()
-for epoch in range(120):
+for epoch in range(n_epochs):
     for batch in loader:
         batch = {k: v.to(device) for k, v in batch.items()}
         optimizer.zero_grad()
