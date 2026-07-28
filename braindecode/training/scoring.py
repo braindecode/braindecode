@@ -488,9 +488,8 @@ def f1_event(pred_events, gt_events, iou_threshold: float = 0.5) -> float:
     """COCO-style greedy event F1: TP requires IoU > threshold AND class match.
 
     Inputs are lists of ``(start, end, class[, conf])`` tuples with class in
-    ``1..n_classes-1`` (CLASS-0 CONTRACT: callers never pass class 0 -- events
-    come from ``extract_events_from_detr_batch`` (skips ``argmax==0``) and
-    ``dance_target_builder`` (never stores class 0)).
+    ``1..n_classes-1`` (CLASS-0 CONTRACT: callers never pass class 0 -- decoded
+    detections skip ``argmax == 0`` and the target builder never stores class 0).
     """
     matched_gt = set()
     tp = 0
@@ -522,31 +521,3 @@ def f1_event(pred_events, gt_events, iou_threshold: float = 0.5) -> float:
     precision = tp / (tp + fp)
     recall = tp / (tp + fn)
     return 2 * precision * recall / (precision + recall)
-
-
-def f1_sample(pred_mask, gt_mask) -> float:
-    """Per-token macro F1 over a ``(n_classes, T)`` multilabel mask pair.
-
-    CLASS-0 CONTRACT: row 0 is background and is EXCLUDED from the macro mean;
-    the average is taken over the real-class rows ``1..n_classes-1`` only. The
-    empty-class convention is fixed by the contract (not tuned to a test): a
-    real-class row with no predicted AND no true positives contributes F1=1.0
-    (perfectly trivially correct); a row with positives only on one side
-    contributes F1=0.0.
-    """
-    pred = (pred_mask > 0).float()
-    gt = (gt_mask > 0).float()
-    f1s = []
-    for c in range(1, pred.shape[0]):  # skip row 0 (background)
-        tp = float((pred[c] * gt[c]).sum())
-        fp = float((pred[c] * (1 - gt[c])).sum())
-        fn = float(((1 - pred[c]) * gt[c]).sum())
-        if tp == 0 and (fp > 0 or fn > 0):
-            f1s.append(0.0)
-        elif tp == 0:
-            f1s.append(1.0)  # no positives predicted or present in this row
-        else:
-            p = tp / (tp + fp)
-            r = tp / (tp + fn)
-            f1s.append(2 * p * r / (p + r))
-    return sum(f1s) / len(f1s) if f1s else 1.0

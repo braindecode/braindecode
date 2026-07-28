@@ -287,64 +287,6 @@ def pairwise_iou_1d(s1, e1, s2, e2, eps: float = 1e-7):
     return inter / (union + eps)
 
 
-def detr_to_dense_probs(preds, num_latents, n_classes):
-    """Project DETR query predictions onto a dense per-token distribution.
-
-    ``T == num_latents`` (passed directly; NOT derived from duration*frequency),
-    so the output ``(B, num_latents, n_classes)`` can never silently mismatch
-    the dense head. Training-side only (Python loop; scipy already breaks the
-    graph upstream -- never on the export path).
-    """
-    # ponytail: per-query Python loop kept; training-only, never on export path.
-    cls = preds["class"]
-    b, q, _ = cls.shape
-    t = int(num_latents)
-    out = []
-    for bi in range(b):
-        mask = torch.zeros(t, n_classes, device=cls.device, dtype=cls.dtype)
-        for qi in range(q):
-            probs = torch.softmax(cls[bi, qi], dim=-1)
-            s = float(preds["start"][bi, qi])
-            e = float(preds["end"][bi, qi])
-            start = int(max(0, s * t))
-            end = int(min(t, e * t))
-            if start < end:
-                mask[start:end] += probs
-        out.append(mask / (mask.sum(-1, keepdim=True) + 1e-8))
-    return torch.stack(out)
-
-
-def events_to_mask(events, n_classes, n_times):
-    """(n_classes, n_times) multilabel mask; row 0 = background where idle."""
-    mask = torch.zeros(n_classes, n_times)
-    mask[0] = 1.0
-    for s, e, c in events:
-        s_i, e_i = int(s), int(e)
-        if s_i < e_i and int(c) != 0:
-            mask[int(c), s_i:e_i] = 1.0
-            mask[0, s_i:e_i] = 0.0
-    return mask
-
-
-def extract_events_from_detr_batch(outputs, duration):
-    """Decode a DETR batch dict into per-window ``(start_s, end_s, class, conf)``."""
-    cls = outputs["class"]
-    b, q, _ = cls.shape
-    results = []
-    for bi in range(b):
-        events = []
-        for qi in range(q):
-            probs = torch.softmax(cls[bi, qi], dim=-1)
-            label = int(probs.argmax())
-            if label == 0:
-                continue
-            s = float(outputs["start"][bi, qi]) * duration
-            e = float(outputs["end"][bi, qi]) * duration
-            events.append((s, e, label, float(probs[label])))
-        results.append(events)
-    return results
-
-
 def sinusoidal_positional_encoding(n_positions: int, dim: int) -> torch.Tensor:
     r"""Fixed sine/cosine positional-encoding table of shape ``(n_positions, dim)``.
 

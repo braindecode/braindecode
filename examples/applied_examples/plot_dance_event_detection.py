@@ -14,14 +14,21 @@ The pipeline is:
 
 1. take a long, continuous EEG recording carrying onset/duration class
    annotations,
-2. cut it into fixed-length (32 s) windows with
+2. cut it into fixed-length (8 s) windows with
    :func:`~braindecode.preprocessing.create_fixed_length_windows`,
 3. turn each window's annotations into a DANCE target dict (normalized
    ``start``/``end`` in ``[0, 1]`` plus a dense per-token class map),
 4. train :class:`~braindecode.models.DANCE` with
    :class:`~braindecode.training.DanceLoss`, and
-5. evaluate with the event-level :func:`~braindecode.training.f1_event` and the
-   per-token :func:`~braindecode.training.f1_sample` metrics.
+5. evaluate with the event-level :func:`~braindecode.training.f1_event` metric
+   and a per-token macro F1 on the dense head
+   (``torchmetrics.classification.MultilabelF1Score``).
+
+DANCE exposes two entry points: ``model.forward(x)`` returns the dense
+per-token logits ``(B, num_latents, n_outputs)``, while ``model.detect(x)``
+returns the event set ``{class, start, end, dense}``. Training and evaluation
+below use ``detect`` (the loss needs the query set); a downstream user who only
+wants a per-token prediction can call ``forward`` directly.
 
 .. note::
     To keep this example fully self-contained and runnable offline (it executes
@@ -97,8 +104,31 @@ def dance_collate(batch):
     return out
 
 
+def detections_to_events(detections, duration):
+    """Decode a DANCE ``detect()`` output into per-window event tuples.
+
+    Each query becomes ``(start_s, end_s, class, confidence)`` in seconds within
+    the window; queries whose argmax class is ``0`` (background/no-object) are
+    dropped, following the CLASS-0 CONTRACT.
+    """
+    cls = detections["class"]
+    events = []
+    for bi in range(cls.shape[0]):
+        window = []
+        for qi in range(cls.shape[1]):
+            probs = torch.softmax(cls[bi, qi], dim=-1)
+            label = int(probs.argmax())
+            if label == 0:
+                continue
+            s = float(detections["start"][bi, qi]) * duration
+            e = float(detections["end"][bi, qi]) * duration
+            window.append((s, e, label, float(probs[label])))
+        events.append(window)
+    return events
+
+
 def build_synthetic_event_dataset(
-    n_chans=19, sfreq=200.0, n_seconds=192.0, n_classes=4, seed=0
+    n_chans=19, sfreq=128.0, n_seconds=160.0, n_classes=3, seed=0
 ):
     """Build a self-contained long EEG recording with onset/duration class events.
 
@@ -145,19 +175,20 @@ def build_synthetic_event_dataset(
     # Real 10-20-ish locations so DANCE derives non-degenerate positions.
     montage = mne.channels.make_standard_montage("standard_1020")
     raw.set_montage(montage, match_case=False, on_missing="ignore", verbose="error")
-    # Scatter events across the recording: ~1 event / 6 s, duration 0.5-2 s,
-    # class in 1..n_classes-1. Inject signal so the model has something to learn.
+    # Scatter well-separated events across the recording: duration 2-4 s (large
+    # relative to the window, so the set-prediction head can localize them),
+    # class in 1..n_classes-1, with a class-dependent bump the model can learn.
     onsets, durations, descriptions = [], [], []
-    t = 3.0
-    while t < n_seconds - 3.0:
-        dur = float(rng.uniform(0.5, 2.0))
+    t = 1.0
+    while t < n_seconds - 4.0:
+        dur = float(rng.uniform(2.0, 4.0))
         cls = int(rng.integers(1, n_classes))
         s0, s1 = int(t * sfreq), int((t + dur) * sfreq)
-        data[:, s0:s1] += cls * 5e-6  # class-dependent bump
+        data[:, s0:s1] += cls * 8e-6  # class-dependent bump
         onsets.append(t)
         durations.append(dur)
         descriptions.append(f"class{cls}")
-        t += float(rng.uniform(4.0, 8.0))
+        t += dur + float(rng.uniform(1.0, 2.0))
     raw.set_annotations(
         mne.Annotations(onsets, durations, descriptions), verbose="error"
     )
@@ -182,21 +213,20 @@ def annotations_to_events(raw, n_classes):
 
 
 # %%
-# Build a long-window recording and cut 32 s windows
-# ----------------------------------------------------
+# Build a long-window recording and cut 8 s windows
+# --------------------------------------------------
 import numpy as np
 from torch.utils.data import DataLoader
 
-from braindecode.functional import extract_events_from_detr_batch
 from braindecode.models import DANCE
 from braindecode.preprocessing import create_fixed_length_windows
-from braindecode.training import DanceLoss, f1_event, f1_sample
+from braindecode.training import DanceLoss, f1_event
 
-SFREQ, WINDOW_S, N_CLASSES, NUM_LATENTS, MAX_EVENTS = 200.0, 32.0, 4, 256, 16
-WINDOW_SAMPLES = int(WINDOW_S * SFREQ)  # 6400
+SFREQ, WINDOW_S, N_CLASSES, NUM_LATENTS, MAX_EVENTS = 128.0, 8.0, 3, 256, 8
+WINDOW_SAMPLES = int(WINDOW_S * SFREQ)  # 1024
 
 concat_ds = build_synthetic_event_dataset(
-    n_chans=19, sfreq=SFREQ, n_seconds=192.0, n_classes=N_CLASSES
+    n_chans=19, sfreq=SFREQ, n_seconds=160.0, n_classes=N_CLASSES
 )
 raw = concat_ds.datasets[0].raw
 chs_info = raw.info["chs"]
@@ -229,11 +259,16 @@ for i in range(len(windows_ds)):
         num_latents=NUM_LATENTS,
     )
     samples.append((eeg, target))
-loader = DataLoader(samples, batch_size=4, shuffle=True, collate_fn=dance_collate)
+# Full-batch on this small synthetic set keeps the set-matching gradient stable.
+loader = DataLoader(
+    samples, batch_size=len(samples), shuffle=True, collate_fn=dance_collate
+)
 
 # %%
 # Build the model and the criterion
 # ----------------------------------
+torch.manual_seed(0)
+device = "cuda" if torch.cuda.is_available() else "cpu"
 model = DANCE(
     n_outputs=N_CLASSES,
     n_chans=len(chs_info),
@@ -241,33 +276,43 @@ model = DANCE(
     n_times=WINDOW_SAMPLES,
     sfreq=SFREQ,
     input_window_seconds=WINDOW_S,
-)
+).to(device)
 criterion = DanceLoss(num_latents=NUM_LATENTS)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
 
 # %%
-# Train a few steps
-# -----------------
+# Train the model
+# ---------------
+# A short run on this small synthetic set is enough to see the event F1 climb off
+# zero; real recordings need a full training schedule.
 model.train()
-for epoch in range(2):
+for epoch in range(120):
     for batch in loader:
+        batch = {k: v.to(device) for k, v in batch.items()}
         optimizer.zero_grad()
+        # detect() returns the query set + dense map that DanceLoss needs;
+        # forward() alone would only give the dense per-token logits.
         out = model.detect(batch["eeg"])
         loss, details = criterion(out, batch, duration=WINDOW_S)
         loss.backward()
         optimizer.step()
 
 # %%
-# Evaluate with F1-event and F1-sample
-# ------------------------------------
-from braindecode.functional import events_to_mask
+# Evaluate with F1-event and a per-token F1
+# -----------------------------------------
+# ``f1_event`` scores the decoded event set (IoU > 0.5 + class match); the
+# per-token macro F1 scores the dense head against the dense target with
+# torchmetrics, so no custom sample metric is needed.
+from torchmetrics.classification import MultilabelF1Score
 
 model.eval()
-ev_f1s, samp_f1s = [], []
+ev_f1s = []
+sample_f1 = MultilabelF1Score(num_labels=N_CLASSES, average="macro")
 with torch.no_grad():
     for batch in loader:
+        batch = {k: v.to(device) for k, v in batch.items()}
         out = model.detect(batch["eeg"])
-        pred_events = extract_events_from_detr_batch(out, duration=WINDOW_S)
+        pred_events = detections_to_events(out, duration=WINDOW_S)
         for bi in range(batch["eeg"].shape[0]):
             # ground-truth events of this window, in seconds within the window
             gt = [
@@ -279,29 +324,11 @@ with torch.no_grad():
             ]
             preds = [(s, e, c) for (s, e, c, _conf) in pred_events[bi]]
             ev_f1s.append(f1_event(preds, gt, iou_threshold=0.5))
-            pred_mask = events_to_mask(
-                [
-                    (
-                        int(s / WINDOW_S * NUM_LATENTS),
-                        int(e / WINDOW_S * NUM_LATENTS),
-                        c,
-                    )
-                    for s, e, c in preds
-                ],
-                N_CLASSES,
-                NUM_LATENTS,
-            )
-            gt_mask = events_to_mask(
-                [
-                    (
-                        int(s / WINDOW_S * NUM_LATENTS),
-                        int(e / WINDOW_S * NUM_LATENTS),
-                        c,
-                    )
-                    for s, e, c in gt
-                ],
-                N_CLASSES,
-                NUM_LATENTS,
-            )
-            samp_f1s.append(f1_sample(pred_mask, gt_mask))
-print(f"F1-event={np.mean(ev_f1s):.3f}  F1-sample={np.mean(samp_f1s):.3f}")
+        # dense head (B, T, n_outputs) vs dense target (B, T), one-hot per token
+        pred_lbl = out["dense"].argmax(-1).reshape(-1).cpu()
+        gt_lbl = batch["dense"].reshape(-1).cpu()
+        sample_f1.update(
+            torch.nn.functional.one_hot(pred_lbl, N_CLASSES),
+            torch.nn.functional.one_hot(gt_lbl, N_CLASSES),
+        )
+print(f"F1-event={np.mean(ev_f1s):.3f}  F1-sample={float(sample_f1.compute()):.3f}")

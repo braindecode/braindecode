@@ -9,7 +9,7 @@ import torch
 from scipy.optimize import linear_sum_assignment
 from torch import nn
 
-from braindecode.functional import detr_to_dense_probs, iou_1d, pairwise_iou_1d
+from braindecode.functional import iou_1d, pairwise_iou_1d
 
 
 class CroppedLoss(nn.Module):
@@ -204,9 +204,36 @@ class DanceLoss(nn.Module):
                     dense[bi, s:e] = c
         return dense
 
+    @staticmethod
+    def _detr_to_dense_probs(preds, num_latents, n_classes):
+        """Project DETR query predictions onto a dense per-token distribution.
+
+        ``T == num_latents`` (passed directly, NOT derived from
+        duration*frequency), so the output ``(B, num_latents, n_classes)`` can
+        never silently mismatch the dense head. Training-side only (Python loop;
+        the matcher already breaks the graph, so this is never on the export
+        path).
+        """
+        cls = preds["class"]
+        b, q, _ = cls.shape
+        t = int(num_latents)
+        out = []
+        for bi in range(b):
+            mask = torch.zeros(t, n_classes, device=cls.device, dtype=cls.dtype)
+            for qi in range(q):
+                probs = torch.softmax(cls[bi, qi], dim=-1)
+                s = float(preds["start"][bi, qi])
+                e = float(preds["end"][bi, qi])
+                start = int(max(0, s * t))
+                end = int(min(t, e * t))
+                if start < end:
+                    mask[start:end] += probs
+            out.append(mask / (mask.sum(-1, keepdim=True) + 1e-8))
+        return torch.stack(out)
+
     def forward(self, detect_output, targets, duration=None):
         # `duration` kept for API symmetry but UNUSED: the consistency KL is
-        # built on the num_latents token grid directly (see detr_to_dense_probs).
+        # built on the num_latents token grid directly (see _detr_to_dense_probs).
         n_classes = detect_output["class"].shape[-1]
         device = detect_output["class"].device
         # CLASS-0 CONTRACT: matcher keeps tgt_class != 0; unmatched slots = 0.
@@ -214,14 +241,17 @@ class DanceLoss(nn.Module):
         logits = detect_output["class"].reshape(-1, n_classes)
         labels = mt["class"].reshape(-1).long()
         cls_term = self.weight_class * self.ce(logits, labels)
-        # ELEMENTWISE IoU over the matched (B, Q) spans.
+        # IoU loss over the Hungarian-matched spans ONLY. Unmatched/no-object
+        # queries carry a (0, 0) target, so averaging over all Q would let them
+        # each contribute (1 - 0) = 1 and flatten the localization signal; we
+        # normalize by the number of matches instead (matches dance/losses.py).
+        matched = (mt["class"] != 0).float()
         iou = iou_1d(
             detect_output["start"], detect_output["end"], mt["start"], mt["end"]
         )
-        # Averages over ALL Q queries: unmatched/no-object slots contribute
-        # (1 - 0) = 1. Documented loose-port choice (not upstream's
-        # matched-only normalization); kept for parity with the dense head.
-        iou_term = self.weight_iou * (1.0 - iou).mean()
+        iou_term = self.weight_iou * (
+            ((1.0 - iou) * matched).sum() / matched.sum().clamp(min=1.0)
+        )
 
         # Dense head time dim MUST equal num_latents (defensive guard; raise
         # rather than assert so it survives ``python -O``).
@@ -238,7 +268,7 @@ class DanceLoss(nn.Module):
         dense_term = self.weight_dense * self.ce(dense_logits, dense_t)
 
         dense_probs = torch.softmax(detect_output["dense"], -1).clamp(min=1e-8)
-        detr_probs = detr_to_dense_probs(
+        detr_probs = self._detr_to_dense_probs(
             detect_output, self.num_latents, n_classes
         ).clamp(min=1e-8)  # (B, num_latents, n_classes) == dense_probs
         cons_term = self.weight_consistency * (
