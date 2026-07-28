@@ -175,10 +175,6 @@ class DANCE(EEGModuleMixin, nn.Module):
        transformers.
     """
 
-    # No `self.mapping` (B10): it renames keys across braindecode-published
-    # checkpoints, and DANCE has none. The upstream(neuraltrain)->local parity
-    # weight map is a separate concern living in scripts/dance_parity_check.py.
-
     def __init__(
         self,
         n_outputs=None,
