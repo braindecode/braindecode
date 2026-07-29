@@ -1,3 +1,8 @@
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
+#
+# License: BSD (3-clause)
+
 import copy
 
 import numpy as np
@@ -435,7 +440,9 @@ class _ConvEncoderBENDR(nn.Module):
                         padding=width
                         // 2,  # Correct padding for 'same' output length before stride
                     ),
-                    nn.Dropout2d(dropout),  # 2D dropout (matches paper specification)
+                    # channel-wise dropout (matches paper specification), on
+                    # (batch, channels, times) activations
+                    nn.Dropout1d(dropout),
                     nn.GroupNorm(
                         encoder_h // 2, encoder_h
                     ),  # Consider making num_groups configurable or ensure encoder_h is divisible by 2
