@@ -49,6 +49,14 @@ Requirements
 Bug fixes
 ==========
 
+- Use ``nn.Dropout1d`` instead of ``nn.Dropout2d`` for the channel-wise dropout
+  inside :class:`braindecode.models.BDTCN`, ``braindecode.models.TCN`` and
+  :class:`braindecode.models.BENDR`. Those layers receive
+  ``(batch, channels, times)`` activations, which ``nn.Dropout2d`` only handles
+  through a deprecated fallback that warns on every forward pass and is
+  scheduled to be reinterpreted as unbatched input, masking batch items rather
+  than channels. The masking behaviour is unchanged. By `Sarthak Tayal`_.
+
 - Clarify that :func:`braindecode.training.scoring.predict_trials`,
   :meth:`braindecode.EEGClassifier.predict_trials`, and
   :meth:`braindecode.EEGRegressor.predict_trials` return ground-truth dataset
