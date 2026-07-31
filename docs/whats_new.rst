@@ -50,11 +50,12 @@ Bug fixes
 ==========
 
 - Fix :meth:`braindecode.EEGClassifier.predict_trials`,
-  :meth:`braindecode.EEGRegressor.predict_trials` and the cropped train-side
-  scoring callbacks raising ``AttributeError`` or ``TypeError`` when the module
-  was passed as a model name or as an uninstantiated class. Those code paths
-  used the ``module`` constructor argument instead of the built ``module_``
-  attribute, so they only worked with an already instantiated module, which the
+  :meth:`braindecode.EEGRegressor.predict_trials` and
+  :class:`braindecode.training.scoring.CroppedTrialEpochScoring` on the training
+  set raising ``AttributeError`` or ``TypeError`` when the module was passed as a
+  model name or as an uninstantiated class. Those paths read the ``module``
+  constructor argument instead of the initialized ``module_`` attribute, so they
+  only worked when an already instantiated module was passed, which the
   documentation discourages. By `Sarthak Tayal`_.
 
 - Use ``nn.Dropout1d`` instead of ``nn.Dropout2d`` for the channel-wise dropout
