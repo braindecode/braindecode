@@ -219,10 +219,12 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the FBLightConvNet model.
+
         Parameters
         ----------
         x : torch.Tensor
             Input tensor with shape (batch_size, n_chans, n_times).
+
         Returns
         -------
         torch.Tensor
