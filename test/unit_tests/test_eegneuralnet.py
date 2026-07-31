@@ -328,11 +328,14 @@ def test_predict_trials_module_not_instantiated(
     assert trial_preds.shape[0] == 2
     assert trial_preds.shape[1] == 2
     assert trial_targets.shape[0] == 2
-    # same thing the functional helper gives for the built module
+    # same thing the functional helper gives for the built module, same batching
     expected_preds, expected_targets = predict_trials(
-        eegneuralnet.module_, cropped_windows_dataset
+        eegneuralnet.module_,
+        cropped_windows_dataset,
+        batch_size=eegneuralnet.batch_size,
     )
-    np.testing.assert_allclose(trial_preds, expected_preds)
+    # float32 convolutions wobble a bit between backends, keep this loose
+    np.testing.assert_allclose(trial_preds, expected_preds, rtol=1e-4, atol=1e-5)
     np.testing.assert_array_equal(trial_targets, expected_targets)
 
 
