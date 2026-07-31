@@ -563,7 +563,7 @@ def test_module_name(eegneuralnet_cls):
         "ShallowFBCSPNet",
         module__n_outputs=4,
         module__n_chans=3,
-        module__n_times=250,
+        module__n_times=100,
         cropped=False,
     )
     net.initialize()
