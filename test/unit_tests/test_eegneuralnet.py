@@ -167,6 +167,28 @@ def slice_dataset(windows_dataset_channels):
 
 
 @pytest.fixture
+def cropped_windows_dataset():
+    # two trials of two overlapping windows each, what predict_trials expects
+    X = np.random.RandomState(20200101).rand(4, 3, 10).astype(np.float32)
+    metadata = pd.DataFrame(
+        [
+            (0, 0, 0, 9),
+            (0, 1, 2, 11),
+            (1, 0, 0, 9),
+            (1, 1, 2, 11),
+        ],
+        columns=["target", "i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"],
+    )
+    epochs = mne.EpochsArray(
+        X,
+        info=mne.create_info(ch_names=["ch1", "ch2", "ch3"], sfreq=10, ch_types="eeg"),
+        metadata=metadata,
+    )
+    windows = WindowsDataset(windows=epochs, targets_from="metadata", description={})
+    return BaseConcatDataset([windows])
+
+
+@pytest.fixture
 def concat_dataset_metadata(windows_dataset_metadata):
     return BaseConcatDataset([windows_dataset_metadata, windows_dataset_metadata])
 
