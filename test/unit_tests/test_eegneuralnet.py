@@ -67,6 +67,33 @@ class MockModuleFinalLayer(MockModuleReturnMockedPreds):
         return self.final_layer(x).reshape(x.shape[0], self.n_outputs)
 
 
+class MockModuleCroppedPreds(EEGModuleMixin, torch.nn.Module):
+    # keeps the time axis so the output looks like a cropped/dense prediction
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self.final_layer = torch.nn.Conv1d(
+            self.n_chans, self.n_outputs, self.n_times - 1
+        )
+
+    def forward(self, x):
+        return self.final_layer(x)
+
+
 @pytest.fixture(params=[EEGClassifier, EEGRegressor])
 def eegneuralnet_cls(request):
     return request.param
