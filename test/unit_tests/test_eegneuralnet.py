@@ -170,13 +170,13 @@ def slice_dataset(windows_dataset_channels):
 @pytest.fixture
 def cropped_windows_dataset():
     # two trials of two overlapping windows each, what predict_trials expects
-    X = np.random.RandomState(20200101).rand(4, 3, 10).astype(np.float32)
+    X = np.random.RandomState(20200101).rand(4, 3, 250).astype(np.float32)
     metadata = pd.DataFrame(
         [
-            (0, 0, 0, 9),
-            (0, 1, 2, 11),
-            (1, 0, 0, 9),
-            (1, 1, 2, 11),
+            (0, 0, 0, 249),
+            (0, 1, 2, 251),
+            (1, 0, 0, 249),
+            (1, 1, 2, 251),
         ],
         columns=["target", "i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"],
     )
@@ -313,7 +313,7 @@ def test_predict_trials_module_not_instantiated(
         module,
         module__n_outputs=2,
         module__n_chans=3,
-        module__n_times=10,
+        module__n_times=250,
         cropped=True,
         criterion=CroppedLoss,
         criterion__loss_function=nll_loss,
@@ -333,7 +333,7 @@ def test_predict_trials_not_initialized(eegneuralnet_cls, cropped_windows_datase
         MockModuleCroppedPreds,
         module__n_outputs=2,
         module__n_chans=3,
-        module__n_times=10,
+        module__n_times=250,
         cropped=True,
         batch_size=4,
     )
@@ -532,7 +532,7 @@ def test_module_name(eegneuralnet_cls):
         "ShallowFBCSPNet",
         module__n_outputs=4,
         module__n_chans=3,
-        module__n_times=100,
+        module__n_times=250,
         cropped=False,
     )
     net.initialize()
