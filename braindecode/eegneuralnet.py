@@ -143,7 +143,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
             with torch.no_grad():
-                preds.append(to_numpy(self.module.forward(X.to(self.device))))
+                preds.append(to_numpy(self.module_.forward(X.to(self.device))))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = np.concatenate(i_window_in_trials)
