@@ -126,7 +126,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 self._last_window_inds_ = None
 
     def predict_with_window_inds_and_ys(self, dataset):
-        self.module.eval()
+        # self.module can still be a name or a class, self.module_ is the built one
+        self.module_.eval()
         preds = []
         i_window_in_trials = []
         i_window_stops = []
