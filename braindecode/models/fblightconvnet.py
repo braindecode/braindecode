@@ -116,7 +116,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         n_bands=9,
         n_filters_spat: int = 32,
         n_dim: int = 3,
-        stride_factor: int = 4,
+        stride_factor: Optional[int] = None,
         win_len: int = 250,
         heads: int = 8,
         weight_softmax: bool = True,
@@ -134,6 +134,14 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        if stride_factor is not None:
+            warn(
+                "The parameter `stride_factor` is deprecated and ignored, it "
+                "will be removed in a future release. The temporal "
+                "segmentation of FBLightConvNet is set by `win_len`.",
+                DeprecationWarning,
+            )
 
         # Parameters
         self.n_bands = n_bands
