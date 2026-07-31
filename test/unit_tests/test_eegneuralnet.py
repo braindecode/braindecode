@@ -328,6 +328,29 @@ def test_predict_trials_module_not_instantiated(
     assert trial_targets.shape[0] == 2
 
 
+def test_predict_with_window_inds_and_ys_module_not_instantiated(
+    eegneuralnet_cls, cropped_windows_dataset
+):
+    # this is the path the cropped train scoring callbacks go through
+    eegneuralnet = eegneuralnet_cls(
+        MockModuleCroppedPreds,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=250,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
+        optimizer=optim.Adam,
+        batch_size=4,
+    )
+    eegneuralnet.initialize()
+    results = eegneuralnet.predict_with_window_inds_and_ys(cropped_windows_dataset)
+    assert results["preds"].shape[0] == 4
+    assert results["i_window_in_trials"].shape[0] == 4
+    assert results["i_window_stops"].shape[0] == 4
+    assert results["window_ys"].shape[0] == 4
+
+
 def test_predict_trials_not_initialized(eegneuralnet_cls, cropped_windows_dataset):
     eegneuralnet = eegneuralnet_cls(
         MockModuleCroppedPreds,
