@@ -1,5 +1,6 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Pierre Guetschel <pierre.guetschel@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
