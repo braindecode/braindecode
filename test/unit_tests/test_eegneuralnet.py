@@ -1,5 +1,6 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 import logging
