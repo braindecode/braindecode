@@ -156,6 +156,13 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.filter_parameters = filter_parameters or {}
 
         # Checkers
+        if self.n_times < self.win_len:
+            raise ValueError(
+                f"Time dimension ({self.n_times}) is shorter than win_len "
+                f"({self.win_len}), so the model cannot build a single "
+                f"temporal window. Pass a longer input or lower `win_len`."
+            )
+
         self.n_times_truncated = self.n_times
         if self.n_times % self.win_len != 0:
             warn(
