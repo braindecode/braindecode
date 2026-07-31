@@ -1,3 +1,7 @@
+# Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
+#
+# License: BSD-3
+
 from __future__ import annotations
 
 from typing import Optional
