@@ -20,6 +20,7 @@ from braindecode.datasets.moabb import MOABBDataset
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models import ShallowFBCSPNet
 from braindecode.preprocessing import create_windows_from_events
+from braindecode.training import CroppedLoss
 from braindecode.training.scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
@@ -482,6 +483,49 @@ def test_predict_trials():
         "same result as '.predict'.",
     ):
         clf.predict_trials(windows_ds2)
+
+
+def test_cropped_train_scoring_module_not_instantiated():
+    # cropped train scoring reads the built module, so a class must work here
+    set_random_seeds(seed=20200114, cuda=False)
+    n_trials, n_chans, n_times = 8, 3, 400
+    X = np.random.RandomState(20200114).randn(n_trials, n_chans, n_times)
+    X = X.astype(np.float32)
+    y = np.array([0, 1] * (n_trials // 2))
+
+    probe = ShallowFBCSPNet(
+        n_chans=n_chans, n_outputs=2, n_times=n_times, final_conv_length=2
+    )
+    probe.to_dense_prediction_model()
+    n_preds_per_input = probe.get_output_shape()[2]
+
+    windows_ds = create_from_X_y(
+        X,
+        y,
+        drop_last_window=False,
+        sfreq=100.0,
+        window_size_samples=n_times,
+        window_stride_samples=n_preds_per_input,
+    )
+
+    clf = EEGClassifier(
+        ShallowFBCSPNet,
+        module__n_chans=n_chans,
+        module__n_outputs=2,
+        module__n_times=n_times,
+        module__final_conv_length=2,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=torch.nn.functional.nll_loss,
+        optimizer=optim.AdamW,
+        train_split=None,
+        batch_size=2,
+        max_epochs=1,
+        classes=[0, 1],
+        callbacks=["accuracy"],
+    )
+    clf.fit(windows_ds, y=None)
+    assert "train_accuracy" in clf.history[-1]
 
 
 def test_post_epoch_train_scoring_uses_batch(monkeypatch):
