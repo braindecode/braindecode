@@ -28,6 +28,7 @@ from braindecode.models.base import EEGModuleMixin
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.training import CroppedLoss
+from braindecode.training.scoring import predict_trials
 
 
 class MockDataset(torch.utils.data.Dataset):
@@ -327,6 +328,12 @@ def test_predict_trials_module_not_instantiated(
     assert trial_preds.shape[0] == 2
     assert trial_preds.shape[1] == 2
     assert trial_targets.shape[0] == 2
+    # same thing the functional helper gives for the built module
+    expected_preds, expected_targets = predict_trials(
+        eegneuralnet.module_, cropped_windows_dataset
+    )
+    np.testing.assert_allclose(trial_preds, expected_preds)
+    np.testing.assert_array_equal(trial_targets, expected_targets)
 
 
 def test_predict_with_window_inds_and_ys_module_not_instantiated(
