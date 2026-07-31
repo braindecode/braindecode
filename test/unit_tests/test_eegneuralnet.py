@@ -359,6 +359,21 @@ def test_predict_with_window_inds_and_ys_module_not_instantiated(
     assert results["window_ys"].shape[0] == 4
 
 
+def test_predict_trials_sets_eval_mode(eegneuralnet_cls, cropped_windows_dataset):
+    eegneuralnet = eegneuralnet_cls(
+        MockModuleCroppedPreds,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=250,
+        cropped=True,
+        batch_size=4,
+    )
+    eegneuralnet.initialize()
+    eegneuralnet.module_.train()
+    eegneuralnet.predict_trials(cropped_windows_dataset, return_targets=False)
+    assert not eegneuralnet.module_.training
+
+
 def test_predict_trials_not_initialized(eegneuralnet_cls, cropped_windows_dataset):
     eegneuralnet = eegneuralnet_cls(
         MockModuleCroppedPreds,
