@@ -1,6 +1,7 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 
