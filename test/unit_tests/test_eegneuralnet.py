@@ -13,6 +13,7 @@ import torch
 from scipy.special import softmax
 from sklearn.base import clone
 from skorch.callbacks import LRScheduler
+from skorch.exceptions import NotInitializedError
 from skorch.helper import SliceDataset
 from skorch.utils import to_tensor
 from torch import optim
@@ -299,6 +300,45 @@ def test_predict_trials(eegneuralnet_cls, preds):
         match="This method was designed to predict " "trials in cropped mode.",
     ):
         eegneuralnet.predict_trials(MockDataset(), return_targets=False)
+
+
+@pytest.mark.parametrize("as_string", [False, True])
+def test_predict_trials_module_not_instantiated(
+    eegneuralnet_cls, cropped_windows_dataset, as_string
+):
+    # module given as a name or a class, so only module_ holds the built model
+    module = "ShallowFBCSPNet" if as_string else MockModuleCroppedPreds
+    kwargs = dict(module__final_conv_length=2) if as_string else dict()
+    eegneuralnet = eegneuralnet_cls(
+        module,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=10,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
+        optimizer=optim.Adam,
+        batch_size=4,
+        **kwargs,
+    )
+    eegneuralnet.initialize()
+    trial_preds, trial_targets = eegneuralnet.predict_trials(cropped_windows_dataset)
+    assert trial_preds.shape[0] == 2
+    assert trial_preds.shape[1] == 2
+    assert trial_targets.shape[0] == 2
+
+
+def test_predict_trials_not_initialized(eegneuralnet_cls, cropped_windows_dataset):
+    eegneuralnet = eegneuralnet_cls(
+        MockModuleCroppedPreds,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=10,
+        cropped=True,
+        batch_size=4,
+    )
+    with pytest.raises(NotInitializedError):
+        eegneuralnet.predict_trials(cropped_windows_dataset)
 
 
 def test_clonable(eegneuralnet_cls, preds):
