@@ -49,6 +49,14 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :meth:`braindecode.EEGClassifier.predict_trials`,
+  :meth:`braindecode.EEGRegressor.predict_trials` and the cropped train-side
+  scoring callbacks raising ``AttributeError`` or ``TypeError`` when the module
+  was passed as a model name or as an uninstantiated class. Those code paths
+  used the ``module`` constructor argument instead of the built ``module_``
+  attribute, so they only worked with an already instantiated module, which the
+  documentation discourages. By `Sarthak Tayal`_.
+
 - Use ``nn.Dropout1d`` instead of ``nn.Dropout2d`` for the channel-wise dropout
   inside :class:`braindecode.models.BDTCN`, ``braindecode.models.TCN`` and
   :class:`braindecode.models.BENDR`. Those layers receive
