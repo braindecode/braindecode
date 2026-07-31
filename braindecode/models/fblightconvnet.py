@@ -65,15 +65,18 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_bands : int or None or list of tuple of int, default=8
+    n_bands : int or None or list of tuple of int, default=9
         Number of frequency bands or a list of frequency band tuples. If a list of tuples is provided,
         each tuple defines the lower and upper bounds of a frequency band.
     n_filters_spat : int, default=32
         Number of spatial filters in the depthwise convolutional layer.
     n_dim : int, default=3
         Number of dimensions for the temporal reduction layer.
-    stride_factor : int, default=4
-        Stride factor used for reshaping the temporal dimension.
+    win_len : int, default=250
+        Length in samples of the non-overlapping temporal windows the signal is
+        split into before the variance based feature extraction. The number of
+        windows passed to the attention module is ``n_times // win_len``, so
+        ``n_times`` has to be at least ``win_len``.
     activation : nn.Module, default=nn.ELU
         Activation function class to apply after convolutional layers.
     verbose : bool, default=False
@@ -86,6 +89,9 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         If True, applies softmax to the attention weights.
     bias : bool, default=False
         If True, includes a bias term in the convolutional layers.
+    stride_factor : int or None, default=None
+        Deprecated and ignored, it will be removed in a future release. The
+        temporal segmentation of this model is controlled by ``win_len``.
 
     References
     ----------
