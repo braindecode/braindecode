@@ -47,6 +47,7 @@ from braindecode.models import (
     EEGTCNet,
     EMG2QwertyNet,
     FBCNet,
+    FBLightConvNet,
     FBMSNet,
     HybridNet,
     IFNet,
@@ -2588,6 +2589,51 @@ def test_fbmsnet_invalid_temporal_layer():
             temporal_layer='InvalidLayer',
             sfreq=250,
         )
+
+
+@pytest.mark.parametrize("win_len, n_windows", [(100, 10), (250, 4), (500, 2)])
+def test_fblightconvnet_win_len_sets_number_of_windows(win_len, n_windows):
+    model = FBLightConvNet(
+        n_chans=8,
+        n_outputs=3,
+        n_times=1000,
+        sfreq=250,
+        win_len=win_len,
+    )
+    assert model.attn_conv.kernel_size == n_windows
+
+
+def test_fblightconvnet_stride_factor_is_deprecated_and_ignored():
+    kwargs = dict(n_chans=8, n_outputs=3, n_times=1000, sfreq=250)
+
+    set_random_seeds(2025, cuda=False)
+    default = FBLightConvNet(**kwargs).eval()
+
+    with pytest.warns(DeprecationWarning, match="stride_factor"):
+        set_random_seeds(2025, cuda=False)
+        passed = FBLightConvNet(stride_factor=17, **kwargs).eval()
+
+    # stride_factor never reached a layer, so the two models agree exactly
+    assert passed.attn_conv.kernel_size == default.attn_conv.kernel_size
+    x = torch.randn(2, 8, 1000)
+    with torch.no_grad():
+        assert torch.equal(passed(x), default(x))
+
+
+def test_fblightconvnet_default_build_is_not_deprecated():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        FBLightConvNet(n_chans=8, n_outputs=3, n_times=1000, sfreq=250)
+    assert not [w for w in caught if issubclass(w.category, DeprecationWarning)]
+
+
+@pytest.mark.parametrize("n_times", [200, 249])
+def test_fblightconvnet_window_shorter_than_win_len(n_times):
+    # used to reach xavier_uniform_ with an empty kernel and die on a
+    # division by zero
+    with pytest.raises(ValueError, match="shorter than win_len"):
+        FBLightConvNet(n_chans=8, n_outputs=3, n_times=n_times, sfreq=250)
+
 
 def test_initialize_weights_linear():
     linear = nn.Linear(10, 5)

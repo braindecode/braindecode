@@ -35,6 +35,12 @@ Enhancements
 API and behavior changes
 ========================
 
+- The ``stride_factor`` parameter of :class:`braindecode.models.FBLightConvNet`
+  is deprecated and will be removed in a future release. The model never read
+  it, its temporal segmentation is set by ``win_len``, and the reference
+  implementation has no such parameter. Passing it now emits a
+  ``DeprecationWarning`` and keeps being ignored. By `Sarthak Tayal`_.
+
 - Interpolated models (e.g. ``InterpolatedBIOT``, ``InterpolatedLaBraM``) are no
   longer included in :data:`braindecode.models.util.models_dict`; they now live
   in the separate :data:`braindecode.models.util.interpolated_models_dict`
@@ -57,6 +63,13 @@ Bug fixes
   constructor argument instead of the initialized ``module_`` attribute, so they
   only worked when an already instantiated module was passed, which the
   documentation discourages. By `Sarthak Tayal`_.
+
+- Raise a clear ``ValueError`` in :class:`braindecode.models.FBLightConvNet`
+  when ``n_times`` is shorter than ``win_len``. The temporal attention kernel
+  is sized as ``n_times // win_len``, so a short window produced an empty
+  kernel and the constructor died with a ``ZeroDivisionError`` coming from the
+  weight initialisation. The docstring now also documents ``win_len`` and
+  reports the correct ``n_bands`` default of 9. By `Sarthak Tayal`_.
 
 - Use ``nn.Dropout1d`` instead of ``nn.Dropout2d`` for the channel-wise dropout
   inside :class:`braindecode.models.BDTCN`, ``braindecode.models.TCN`` and
