@@ -200,12 +200,16 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     architecture hyperparameter is a constructor argument and defaults to the
     published ``Zyphra/ZUNA`` config, so the defaults reproduce the pretrained
     encoder while smaller configurations can be built for training from
-    scratch or research. To download the upstream encoder checkpoint from
+    scratch or research. To download the pretrained encoder checkpoint from
     Hugging Face (requires ``pip install 'braindecode[hub]'``)::
 
-        ZUNA.from_pretrained(
-            "Zyphra/ZUNA", filename="model-00001-of-00001.safetensors"
-        )
+        # Defaults to the braindecode re-host (``braindecode/ZUNA``), a
+        # bit-identical mirror of the upstream weights; ``n_chans`` and
+        # ``n_outputs`` are montage- and task-dependent and must be given.
+        ZUNA.from_pretrained(n_chans=19, n_outputs=4)
+
+    Only the encoder is pretrained: the classification head is randomly
+    initialised and must be fine-tuned on the downstream task.
 
     Inputs must be 5-second EEG windows sampled at 256 Hz
     (``n_times=1280``). Channel coordinates are resolved by :meth:`forward`
@@ -482,3 +486,23 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             }
             return self.encoder.load_state_dict(state_dict, strict=strict)
         return super().load_state_dict(state_dict, strict=strict, **kwargs)
+
+    #: Default Hugging Face repo for :meth:`from_pretrained`: the braindecode
+    #: re-host of the ZUNA encoder (a bit-identical mirror of ``Zyphra/ZUNA``).
+    _HF_DEFAULT_REPO = "braindecode/ZUNA"
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path=None, *args, **kwargs):
+        """Load pretrained ZUNA weights, defaulting to the braindecode re-host.
+
+        ``pretrained_model_name_or_path`` defaults to ``"braindecode/ZUNA"``, a
+        bit-identical mirror of the upstream ``Zyphra/ZUNA`` encoder checkpoint,
+        re-hosted so the library has a stable location to point to. Pass a
+        different repo id or local path to override it. Only the encoder is
+        pretrained; the classification head is randomly initialised and must be
+        fine-tuned. ``n_chans`` (or ``chs_info``) and ``n_outputs`` are
+        montage- and task-dependent and must be supplied.
+        """
+        if pretrained_model_name_or_path is None:
+            pretrained_model_name_or_path = cls._HF_DEFAULT_REPO
+        return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
