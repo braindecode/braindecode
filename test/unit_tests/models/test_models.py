@@ -9,6 +9,7 @@
 #
 # License: BSD-3
 
+import warnings
 from collections import OrderedDict
 from functools import partial
 from unittest import mock
@@ -21,6 +22,7 @@ from sklearn.utils import check_random_state
 from torch import nn
 
 from braindecode.models import (
+    BDTCN,
     BENDR,
     BIOT,
     DGCNN,
@@ -2064,6 +2066,34 @@ def test_eegminer_invalid_parameters():
         )
 
 
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_legacy_state_dict_compatibility(method):
+    model_kwargs = {
+        "method": method,
+        "n_chans": 4,
+        "n_outputs": 2,
+        "n_times": 128,
+        "sfreq": 100.0,
+    }
+    model = EEGMiner(**model_kwargs)
+    state_dict = model.state_dict()
+    legacy_keys = {
+        "filter.n_range",
+        "filter.f_mean",
+        "filter.bandwidth",
+        "filter.shape",
+        "filter.group_delay",
+        "batch_layer.running_mean",
+        "batch_layer.running_var",
+        "batch_layer.num_batches_tracked",
+        "final_layer.weight",
+        "final_layer.bias",
+    }
+
+    assert set(state_dict) == legacy_keys
+    EEGMiner(**model_kwargs).load_state_dict(state_dict, strict=True)
+
+
 def test_eegminer_filter_clamping():
     """
     Test that EEGMiner's filters are constructed correctly and parameters are clamped.
@@ -2160,7 +2190,7 @@ def test_eegminer_plv_values_range():
     # Forward pass up to PLV computation
     x = eegminer.ensure_dim(input_tensor)
     x = eegminer.filter(x)
-    x = eegminer._apply_plv(x, n_chans=n_chans)
+    x = eegminer.feature_layer(x)
 
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
@@ -4032,3 +4062,47 @@ def test_emg2qwerty_feature_flags():
     assert isinstance(bundle_t, dict) and torch.equal(bundle_t["features"], out_t[1])
     assert m_t.get_config()["return_feature"] is True
     assert m_t.get_output_shape() == (1, emissions.shape[1], 99)
+
+
+@pytest.mark.parametrize("model_cls", [BDTCN, BENDR])
+def test_channel_dropout_on_1d_activations(model_cls):
+    """BDTCN and BENDR drop whole channels of a ``(batch, channels, times)``
+    tensor, so the dropout modules must be ``nn.Dropout1d``. ``nn.Dropout2d``
+    routes 3D input to the channel-wise path only through a deprecated
+    fallback that warns on every forward pass."""
+    model = model_cls(
+        n_chans=8, n_outputs=2, n_times=256, sfreq=100.0, drop_prob=0.5
+    ).train()
+
+    assert any(isinstance(m, nn.Dropout1d) for m in model.modules())
+    assert not any(isinstance(m, nn.Dropout2d) for m in model.modules())
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        model(torch.randn(4, 8, 256))
+    assert not [w for w in caught if "dropout2d" in str(w.message)]
+
+
+def test_tcn_bai_variant_channel_dropout():
+    """The Bai et al. ``TCN`` shares the residual block with ``BDTCN``, so it
+    gets the same channel-wise dropout module."""
+    model = TCN(n_chans=8, n_outputs=2, n_blocks=2, n_filters=5, drop_prob=0.5)
+    assert any(isinstance(m, nn.Dropout1d) for m in model.modules())
+    assert not any(isinstance(m, nn.Dropout2d) for m in model.modules())
+
+
+def test_dropout1d_masks_channels_not_batch_items():
+    """The channel-wise dropout used by BDTCN and BENDR zeroes rows of the
+    channel axis, independently per batch item. Under the announced
+    ``nn.Dropout2d`` semantics for 3D input the same tensor would be read as
+    unbatched and whole batch items would be dropped instead."""
+    set_random_seeds(2024, cuda=False)
+    out = nn.Dropout1d(0.5).train()(torch.ones(64, 16, 32))
+
+    # A dropped entry covers the full time axis of one (batch item, channel)
+    # pair.
+    zeroed = out.abs().sum(dim=-1) == 0
+    assert zeroed.any() and not zeroed.all()
+    # At least one batch item keeps some channels and loses others, which
+    # cannot happen when the mask is drawn over the batch axis.
+    assert (zeroed.any(dim=1) & ~zeroed.all(dim=1)).any()

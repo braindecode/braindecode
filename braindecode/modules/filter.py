@@ -1,3 +1,7 @@
+# Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
+#
+# License: BSD-3
+
 from __future__ import annotations
 
 from typing import Optional
@@ -637,20 +641,22 @@ class GeneralizedGaussianFilter(nn.Module):
             The constructed filters with shape `(out_channels, freq_bins, 2)`.
 
         """
-        # Clamp parameters
-        self.f_mean.data = torch.clamp(
-            self.f_mean.data,
-            min=self.clamp_f_mean[0] / (self.sample_rate / 2),
-            max=self.clamp_f_mean[1] / (self.sample_rate / 2),
+        min_f_mean = self.clamp_f_mean[0] / (self.sample_rate / 2)
+        max_f_mean = self.clamp_f_mean[1] / (self.sample_rate / 2)
+        f_mean = torch.clamp(self.f_mean, min=min_f_mean, max=max_f_mean)
+        bandwidth = torch.clamp(
+            self.bandwidth, min=1.0 / (self.sample_rate / 2), max=1.0
         )
-        self.bandwidth.data = torch.clamp(
-            self.bandwidth.data, min=1.0 / (self.sample_rate / 2), max=1.0
-        )
-        self.shape.data = torch.clamp(self.shape.data, min=2.0, max=3.0)
+        shape = torch.clamp(self.shape, min=2.0, max=3.0)
+
+        if not torch.jit.is_scripting():
+            self.f_mean.data = f_mean
+            self.bandwidth.data = bandwidth
+            self.shape.data = shape
 
         # Create magnitude response with gain=1 -> (channels, freqs)
         mag_response = self.exponential_power(
-            self.n_range, self.f_mean, self.bandwidth, self.shape * 8 - 14
+            self.n_range, f_mean, bandwidth, shape * 8 - 14
         )
         mag_response = mag_response / mag_response.max(dim=-1, keepdim=True)[0]
 

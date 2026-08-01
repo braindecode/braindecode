@@ -49,10 +49,24 @@ Requirements
 Bug fixes
 ==========
 
+- Use ``nn.Dropout1d`` instead of ``nn.Dropout2d`` for the channel-wise dropout
+  inside :class:`braindecode.models.BDTCN`, ``braindecode.models.TCN`` and
+  :class:`braindecode.models.BENDR`. Those layers receive
+  ``(batch, channels, times)`` activations, which ``nn.Dropout2d`` only handles
+  through a deprecated fallback that warns on every forward pass and is
+  scheduled to be reinterpreted as unbatched input, masking batch items rather
+  than channels. The masking behaviour is unchanged. By `Sarthak Tayal`_.
+
 - Clarify that :func:`braindecode.training.scoring.predict_trials`,
   :meth:`braindecode.EEGClassifier.predict_trials`, and
   :meth:`braindecode.EEGRegressor.predict_trials` return ground-truth dataset
   targets alongside predictions. By `Sarthak Tayal`_.
+
+- Make :class:`braindecode.models.EEGMiner` compatible with TorchScript across
+  magnitude, correlation, and phase-locking-value feature modes by replacing
+  runtime callable dispatch with a scriptable feature module. (:gh:`1101` by
+  `Sarthak Tayal`_)
+
 - Make the :class:`braindecode.models.REVE` position bank robust on offline /
   limited-network nodes: it is now cached in the writable MNE data directory
   (resolved via the ``REVE_POSITIONS_PATH`` config key, defaulting under
@@ -86,6 +100,13 @@ Enhancements
   (GEGLU with the default ``nn.GELU``, SwiGLU with ``nn.SiLU``; ``torch.nn.GLU``
   is hard-wired to the sigmoid) for building gated transformer feed-forwards.
   (:gh:`1078` by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.DANCE`, an event detection-and-classification
+  model (CNN encoder + Perceiver bottleneck + DETR-style decoder) that detects a
+  *set* of ``(start, end, class)`` events from long, unaligned EEG windows, with a
+  :class:`braindecode.training.DanceLoss` criterion, an ``f1_event`` detection
+  metric, and a runnable tutorial. The re-implemented spatial merger /
+  Perceiver / conv stack are numerically parity-verified against the upstream
+  reference. (:gh:`1075` by `Bruno Aristimunha`_)
 - Add an optional spatial Fourier :class:`braindecode.modules.ChannelMerger`
   (with :class:`braindecode.modules.FourierEmb`) to
   :class:`braindecode.models.BrainModule` via ``use_merger=True``, implementing
