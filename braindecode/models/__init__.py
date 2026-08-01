@@ -11,15 +11,17 @@ from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
 from .ctnet import CTNet
+from .dance import DANCE
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .dgcnn import DGCNN
 from .eegconformer import EEGConformer
+from .eegdino import EEGDINO
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
 from .eegitnet import EEGITNet
 from .eegminer import EEGMiner
-from .eegnet import EEGNet, EEGNetv4
+from .eegnet import EEGNet
 from .eegnex import EEGNeX
 from .eegpt import EEGPT, InterpolatedEEGPT
 from .eegsimpleconv import EEGSimpleConv
@@ -37,6 +39,7 @@ from .luna import LUNA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
+from .mvpformer import MVPFormer
 from .patchedtransformer import PBT
 from .reve import REVE
 from .sccnet import SCCNet
@@ -53,7 +56,9 @@ from .sleep_stager_blanco_2020 import SleepStagerBlanco2020
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
 from .sparcnet import SPARCNet
 from .sstdpn import SSTDPN
+from .steegformer import STEEGFormer
 from .syncnet import SyncNet
+from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
 from .tsinception import TSception
@@ -62,7 +67,9 @@ from .util import (
     _init_models_dict,
     build_model_config,
     extract_channel_locations_from_chs_info,
+    interpolated_models_dict,
     models_mandatory_parameters,
+    positions_from_chs_info,
 )
 from .zuna import ZUNA
 
@@ -81,10 +88,12 @@ __all__ = [
     "CodeBrain",
     "ContraWR",
     "CTNet",
+    "DANCE",
     "Deep4Net",
     "DeepSleepNet",
     "BrainModule",
     "EEGConformer",
+    "EEGDINO",
     "EEGPT",
     "InterpolatedEEGPT",
     "EEGInceptionERP",
@@ -92,7 +101,6 @@ __all__ = [
     "EEGITNet",
     "EEGMiner",
     "EEGNet",
-    "EEGNetv4",
     "EEGNeX",
     "EEGSym",
     "EEGSimpleConv",
@@ -113,8 +121,10 @@ __all__ = [
     "Labram",
     "LUNA",
     "extract_channel_locations_from_chs_info",
+    "positions_from_chs_info",
     "MEDFormer",
     "MSVTNet",
+    "MVPFormer",
     "PBT",
     "REVE",
     "SCCNet",
@@ -128,8 +138,10 @@ __all__ = [
     "SleepStagerBlanco2020",
     "SleepStagerChambon2018",
     "SPARCNet",
+    "STEEGFormer",
     "SyncNet",
     "BDTCN",
+    "TCFormer",
     "TCN",
     "TIDNet",
     "TSception",
@@ -138,4 +150,5 @@ __all__ = [
     "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",
+    "interpolated_models_dict",
 ]

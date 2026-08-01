@@ -491,7 +491,7 @@ pca = PCA(n_components=2)
 components = pca.fit_transform(X)
 
 fig, ax = plt.subplots()
-colors = colormaps["viridis"](range(5))
+colors = colormaps["viridis"](np.linspace(0, 1, 5))
 for i, stage in enumerate(["W", "N1", "N2", "N3", "R"]):
     mask = y == i
     ax.scatter(

@@ -2,11 +2,13 @@
 #
 # License: BSD-3
 
+import json
 import os
 from pathlib import Path
 from urllib.error import URLError
 
 import mne
+import pooch
 import pytest
 import torch
 
@@ -205,6 +207,8 @@ def test_labram_neural_decoder_forward_pass_single_sample(
     assert output.shape == (1, n_outputs)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_labram_can_load_pretrained_weights():
     """Ensure that Labram can load pre-trained weights from HuggingFace Hub."""
     mne_data_dir = mne.get_config("MNE_DATA")
@@ -892,12 +896,16 @@ def test_luna_variants_output_consistency(
 # ==============================================================================
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_loads(luna_base_pretrained_model):
     """Test that LUNA base pretrained model loads successfully from HuggingFace."""
     assert luna_base_pretrained_model is not None
     assert isinstance(luna_base_pretrained_model, LUNA)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_forward_pass(luna_base_pretrained_model):
     """Test pretrained base model forward pass."""
     model = luna_base_pretrained_model
@@ -910,6 +918,8 @@ def test_luna_base_pretrained_forward_pass(luna_base_pretrained_model):
     assert output.shape == (2, 2)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_parameter_count(luna_base_pretrained_model):
     """Test pretrained base model has expected parameter count."""
     total_params = sum(p.numel() for p in luna_base_pretrained_model.parameters())
@@ -917,6 +927,8 @@ def test_luna_base_pretrained_parameter_count(luna_base_pretrained_model):
     assert 5_000_000 < total_params < 10_000_000
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_different_batch_sizes(luna_base_pretrained_model):
     """Test pretrained base model with different batch sizes."""
     model = luna_base_pretrained_model
@@ -929,6 +941,8 @@ def test_luna_base_pretrained_different_batch_sizes(luna_base_pretrained_model):
         assert output.shape == (batch_size, 2)
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_luna_base_pretrained_caching(luna_base_pretrained_model):
     """Test that pretrained model weights are cached in mne_data."""
 
@@ -970,6 +984,8 @@ def _get_reve_cache_dir():
     return str(Path(mne_data_dir) / "reve_pretrained")
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_reve_positions_match():
     """Test that the positions from both implementations match."""
     pytest.skip(
@@ -1000,6 +1016,8 @@ def test_reve_positions_match():
 
 
 @pytest.mark.skipif(HF_TOKEN_REVE_MISSING, reason="HF token for REVE is missing")
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_reve_model_outputs_match():
     """Test that the outputs from both implementations match."""
     try:
@@ -1058,10 +1076,59 @@ def test_reve_model_outputs_match():
 
 
 # ==============================================================================
+# Offline robustness of the REVE position bank (no network required)
+# ==============================================================================
+
+
+def test_reve_position_bank_uses_prefetched_file(tmp_path, monkeypatch):
+    """A prefetched positions file is used offline, without any download."""
+    config = {"Cz": [0.0, 0.0, 1.0], "Pz": [0.0, -0.5, 0.5]}
+    (tmp_path / "reve_positions.json").write_text(json.dumps(config))
+    monkeypatch.setattr(
+        pooch, "retrieve", lambda *a, **k: pytest.fail("unexpected download")
+    )
+
+    bank = RevePositionBank(cache_dir=str(tmp_path))
+
+    assert bank.get_all_positions() == list(config.keys())
+    assert bank.forward(["Cz", "Pz"]).shape == (2, 3)
+
+
+def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
+    """On a cache miss, a download failure points the user at offline prefetch."""
+
+    def _fail(*args, **kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(pooch, "retrieve", _fail)
+
+    with pytest.raises(RuntimeError, match="prefetch it to"):
+        RevePositionBank(cache_dir=str(tmp_path))
+
+
+def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
+    """A corrupt/partial cached file triggers a re-download instead of crashing."""
+    cache_file = tmp_path / "reve_positions.json"
+    cache_file.write_text("{ this is not valid json")
+    config = {"Cz": [0.0, 0.0, 1.0]}
+
+    def _fake_retrieve(url, known_hash, fname, path, **kwargs):
+        (tmp_path / fname).write_text(json.dumps(config))
+
+    monkeypatch.setattr(pooch, "retrieve", _fake_retrieve)
+
+    bank = RevePositionBank(cache_dir=str(tmp_path))
+
+    assert bank.get_all_positions() == list(config.keys())
+
+
+# ==============================================================================
 # Tests for CBraMod Model
 # ==============================================================================
 
 
+@pytest.mark.network
+@pytest.mark.huggingface
 def test_cbramod_load_weights():
     model = CBraMod(return_encoder_output=True)
     state_dict = torch.hub.load_state_dict_from_url(

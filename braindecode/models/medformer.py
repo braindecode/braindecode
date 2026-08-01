@@ -6,7 +6,6 @@
 
 """Medformer: A Multi-Granularity Patching Transformer for Medical Time-Series Classification."""
 
-import math
 from math import sqrt
 from typing import List, Optional, Tuple
 
@@ -14,6 +13,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -329,28 +329,10 @@ class MEDFormer(EEGModuleMixin, nn.Module):
 class _PositionalEmbedding(nn.Module):
     def __init__(self, d_model: int, max_len: int = 5000):
         super().__init__()
-        # If d_model is odd, temporarily work with d_model + 1.
-        if d_model % 2 == 1:
-            d_model_adj = d_model + 1
-        else:
-            d_model_adj = d_model
         self.d_model = d_model  # store the original dimension
-
-        # Create a pe tensor of size (max_len, d_model_adj)
-        pe = torch.zeros(max_len, d_model_adj).float()
-        pe.requires_grad = False
-
-        # Compute the sinusoidal factors.
-        position = torch.arange(0, max_len).float().unsqueeze(1)
-        # Use d_model_adj in the denominator so that the frequencies are computed over an even number.
-        div_term = torch.exp(
-            torch.arange(0, d_model_adj, 2).float() * (-math.log(10000.0) / d_model_adj)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-
-        # Unsqueeze to shape (1, max_len, d_model_adj)
-        pe = pe.unsqueeze(0)
+        # Odd d_model is handled inside the shared primitive (computed on the
+        # next even width and truncated), so no manual padding is needed here.
+        pe = sinusoidal_positional_encoding(max_len, d_model).unsqueeze(0)
         self.register_buffer("pe", pe)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

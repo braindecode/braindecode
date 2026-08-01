@@ -16,6 +16,12 @@ import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` throu
 from torch import nn
 
 models_dict = {}
+# Interpolated models are channel-interpolating wrappers around existing
+# braindecode backbones (see :func:`braindecode.models.InterpolatedModel`).
+# They are derivatives of existing models rather than standalone
+# architectures, so they are kept in a separate registry to avoid polluting
+# ``models_dict`` (e.g. for benchmarking that iterates over all "real" models).
+interpolated_models_dict = {}
 
 _IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
 
@@ -189,9 +195,45 @@ def _init_models_dict():
             issubclass(m[1], models.base.EEGModuleMixin)
             and m[1] != models.base.EEGModuleMixin
         ):
-            if m[1].__name__ == "EEGNetv4":
-                continue
-            models_dict[m[0]] = m[1]
+            # Interpolated models are wrappers around existing backbones
+            # (identified by the ``_TARGET_CHS_INFO`` class attribute set by
+            # :func:`braindecode.models.InterpolatedModel`). Keep them in a
+            # dedicated registry instead of ``models_dict``.
+            if getattr(m[1], "_TARGET_CHS_INFO", None) is not None:
+                interpolated_models_dict[m[0]] = m[1]
+            else:
+                models_dict[m[0]] = m[1]
+
+
+def _get_model_class(model_name: str):
+    """Return the model class registered under ``model_name``.
+
+    Searches both the standard :data:`models_dict` and the
+    :data:`interpolated_models_dict` so that interpolated models remain
+    resolvable by name (e.g. for skorch wrappers and pydantic configs).
+
+    Parameters
+    ----------
+    model_name : str
+        Name of the model class to retrieve.
+
+    Returns
+    -------
+    type
+        The model class registered under ``model_name``.
+
+    Raises
+    ------
+    ValueError
+        If ``model_name`` is not found in either registry.
+    """
+    if not models_dict and not interpolated_models_dict:
+        _init_models_dict()
+    if model_name in models_dict:
+        return models_dict[model_name]
+    if model_name in interpolated_models_dict:
+        return interpolated_models_dict[model_name]
+    raise ValueError(f"Unknown model name {model_name!r}.")
 
 
 # Keep in sync with _EEG_PARAMS above.
@@ -362,6 +404,7 @@ models_mandatory_parameters: list[
     ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("TCFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("SignalJEPA", ["chs_info"], None),
@@ -417,6 +460,12 @@ models_mandatory_parameters: list[
     ),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "MVPFormer",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"sfreq": 100.0, "n_times": 2000},
+    ),
     (
         "REVE",
         ["n_times", "n_outputs", "n_chans", "chs_info"],
@@ -434,6 +483,26 @@ models_mandatory_parameters: list[
         {"n_chans": 19, "n_times": 6000},
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    ("EEGDINO", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "DANCE",
+        ["n_outputs", "n_chans", "n_times", "sfreq", "chs_info"],
+        {
+            "n_chans": 19,
+            "n_times": 6400,  # 32 s @ 200 Hz, above the depth-10 stack minimum
+            "sfreq": 200.0,
+            "input_window_seconds": 32.0,
+            "n_outputs": 4,
+            "chs_info": [
+                {
+                    "ch_name": f"E{i + 1}",
+                    "kind": "eeg",
+                    "loc": _rng.random(12),
+                }
+                for i in range(19)
+            ],
+        },
+    ),
     (
         "ZUNA",
         ["chs_info", "n_outputs"],
@@ -457,6 +526,9 @@ non_classification_models = [
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
+    # forward returns (batch, num_latents, n_outputs) dense per-token logits,
+    # not class logits.
+    "DANCE",
 ]
 
 ################################################################
@@ -678,6 +750,48 @@ def extract_channel_locations_from_chs_info(
         return None
 
     return result
+
+
+def positions_from_chs_info(chs_info) -> np.ndarray:
+    """``(n_chans, 2)`` electrode xy normalized to ``[0, 1]`` per axis.
+
+    Takes the raw 3D sensor coordinates ``ch["loc"][:3]``, keeps ``xy`` and
+    min-max normalizes each axis to ``[0, 1]`` -- the upstream brainmagick/DANCE
+    convention (``dance/example/data.py``). This is **not** MNE's
+    ``_find_topomap_coords`` projection (which returns an interpolated scalp grid
+    and would change the merger softmax). The ``1e-9`` floor avoids a
+    divide-by-zero on a degenerate (constant) axis.
+
+    Parameters
+    ----------
+    chs_info : list of dict
+        MNE-style channel info dicts, each with a ``"loc"`` array whose first
+        three entries are the head-frame ``x, y, z`` coordinates.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(n_chans, 2)`` float positions in ``[0, 1]``.
+    """
+    xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
+    xy = xyz[:, :2]
+    mn, mx = xy.min(axis=0), xy.max(axis=0)
+    return (xy - mn) / np.maximum(mx - mn, 1e-9)
+
+
+def has_valid_locations(chs_info) -> bool:
+    """``True`` if ``chs_info`` carries finite, non-all-zero electrode locations."""
+    if chs_info is None:
+        return False
+    try:
+        xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
+    except (KeyError, TypeError, ValueError):
+        return False
+    if xyz.size == 0 or not np.isfinite(xyz).all():
+        return False
+    if np.allclose(xyz, 0.0):
+        return False
+    return True
 
 
 _summary_table = get_summary_table()

@@ -3,6 +3,7 @@
 #
 # License: BSD-3
 import logging
+import warnings
 
 import mne
 import numpy as np
@@ -273,6 +274,7 @@ def test_clonable(eegneuralnet_cls, preds):
     clone(eegneuralnet)
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_numpy(eegneuralnet_cls, preds, Xy):
     X, y = Xy
     net = eegneuralnet_cls(
@@ -290,6 +292,7 @@ def test_set_signal_params_numpy(eegneuralnet_cls, preds, Xy):
     assert net.module_.n_outputs == (1 if isinstance(net, EEGRegressor) else 4)
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_epochs(eegneuralnet_cls, preds, epochs):
     y = epochs.metadata.target.values
     net = eegneuralnet_cls(
@@ -310,6 +313,7 @@ def test_set_signal_params_epochs(eegneuralnet_cls, preds, epochs):
     assert net.module_.sfreq == 10
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_torch_ds(eegneuralnet_cls, preds):
     n_outputs = 1 if eegneuralnet_cls == EEGRegressor else 4
     net = eegneuralnet_cls(
@@ -328,6 +332,7 @@ def test_set_signal_params_torch_ds(eegneuralnet_cls, preds):
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_windows_ds_metadata(
     eegneuralnet_cls, preds, windows_dataset_metadata
 ):
@@ -347,6 +352,7 @@ def test_set_signal_params_windows_ds_metadata(
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_windows_ds_channels(
     eegneuralnet_cls, preds, windows_dataset_channels
 ):
@@ -367,6 +373,7 @@ def test_set_signal_params_windows_ds_channels(
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_concat_ds_metadata(
     eegneuralnet_cls, preds, concat_dataset_metadata
 ):
@@ -386,6 +393,7 @@ def test_set_signal_params_concat_ds_metadata(
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_concat_ds_channels(
     eegneuralnet_cls, preds, concat_dataset_channels
 ):
@@ -406,6 +414,7 @@ def test_set_signal_params_concat_ds_channels(
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_initialized_module(eegneuralnet_cls, preds, caplog, Xy):
     X, y = Xy
     module = MockModuleReturnMockedPreds(
@@ -522,6 +531,7 @@ def test_cropped_trial_epoch_scoring(net):
     assert valid_scoring.name == "valid_accuracy"
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_slice_dataset(eegneuralnet_cls, preds, slice_dataset):
     if eegneuralnet_cls != EEGClassifier:
         n_outputs = 1
@@ -543,3 +553,36 @@ def test_set_signal_params_slice_dataset(eegneuralnet_cls, preds, slice_dataset)
     assert net.module_.n_times == 10
     assert net.module_.n_chans == 3
     assert net.module_.n_outputs == n_outputs
+
+
+@pytest.mark.parametrize(
+    "batch_size,should_warn",
+    [(6, True), (32, True), (2, False), (5, False)],
+)
+def test_drop_last_small_trainset_warns(
+    eegneuralnet_cls, preds, Xy, batch_size, should_warn
+):
+    # Xy has 5 training examples. iterator_train__drop_last=True is the
+    # braindecode default, so a batch_size larger than the training set drops
+    # every batch and silently skips training. We expect a UserWarning telling
+    # the user to lower batch_size or disable drop_last; batch_size <= 5 keeps
+    # at least one batch and must not warn.
+    X, y = Xy
+    net = eegneuralnet_cls(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=batch_size,
+        train_split=None,
+        max_epochs=1,
+    )
+    match = "all training batches are dropped"
+    if should_warn:
+        with pytest.warns(UserWarning, match=match):
+            net.fit(X, y=y)
+    else:
+        with warnings.catch_warnings(record=True) as records:
+            warnings.simplefilter("always")
+            net.fit(X, y=y)
+        assert not any(match in str(w.message) for w in records)

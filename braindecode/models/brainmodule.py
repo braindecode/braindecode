@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import typing as tp
+import warnings
 
 import torch
 import torchaudio as ta
@@ -17,6 +18,8 @@ from torch import nn
 from torch.nn import functional as F
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import has_valid_locations, positions_from_chs_info
+from braindecode.modules import ChannelMerger
 from braindecode.modules.layers import SubjectLayers
 
 __all__ = ["BrainModule"]
@@ -59,9 +62,12 @@ class BrainModule(EEGModuleMixin, nn.Module):
     The BrainModule integrates three primary mechanisms to align brain activity
     with deep speech representations:
 
-    1. **Spatial-temporal feature extraction.** The model uses a dedicated
-       spatial attention layer to remap sensor data based on physical
-       locations, followed by temporal processing through dilated convolutions.
+    1. **Spatial-temporal feature extraction.** Temporal processing is performed
+       through dilated convolutions. An *optional* spatial attention layer
+       (:class:`~braindecode.modules.ChannelMerger`, enabled via
+       ``use_merger=True``) can remap sensor data based on physical electrode
+       locations before the temporal stack; it is **off by default** so the
+       default behavior is a plain channel projection.
     2. **Subject-specific adaptation.** To leverage inter-subject variability,
        the architecture includes a "Subject Layer" or participant-specific
        1x1 convolution that allows the model to share core weights across a
@@ -76,14 +82,17 @@ class BrainModule(EEGModuleMixin, nn.Module):
 
     ``BrainModule.input_projection`` (Initial Processing)
         **Operations.** Raw M/EEG input
-        :math:`\mathbf{X} \in \mathbb{R}^{C \times T}` is first processed
-        through a spatial attention layer that projects sensor locations onto a
-        2D plane using Fourier-parameterized functions. This is followed by a
-        subject-specific 1x1 convolution
+        :math:`\mathbf{X} \in \mathbb{R}^{C \times T}` is optionally first
+        processed through a spatial attention layer
+        (:class:`~braindecode.modules.ChannelMerger`, only when
+        ``use_merger=True``) that projects sensor locations onto a 2D plane
+        using Fourier-parameterized functions, remapping the ``n_chans`` sensors
+        to ``n_virtual_channels`` montage-agnostic virtual channels. This is
+        followed by a subject-specific 1x1 convolution
         :math:`\mathbf{M}_s \in \mathbb{R}^{D_1 \times D_1}` if subject
-        features are enabled. The resulting features are projected to the
-        ``hidden_dim`` (default 320) to ensure compatibility with subsequent
-        residual connections.
+        features are enabled. The resulting features are projected by a plain
+        ``nn.Conv1d`` to the ``hidden_dim`` (default 320) to ensure
+        compatibility with subsequent residual connections.
 
         **Role.** Converts high-dimensional, subject-dependent sensor data into
         a standardized latent space while preserving spatial and temporal
@@ -111,10 +120,12 @@ class BrainModule(EEGModuleMixin, nn.Module):
       integrate information over large time windows without the computational
       cost of standard large kernels, while a 150 ms input shift facilitates
       alignment between stimulus and brain response.
-    - **Spatial:** The spatial attention layer learns a softmax weighting over
-      input sensors based on their 3D coordinates, allowing the model to focus
-      on regions typically activated during auditory stimulation (e.g., the
-      temporal cortex).
+    - **Spatial:** When ``use_merger=True``, the optional spatial attention
+      layer learns a softmax weighting over input sensors based on their
+      electrode ``(x, y)`` coordinates, allowing the model to focus on regions
+      typically activated during auditory stimulation (e.g., the temporal
+      cortex). It auto-disables (with a warning) if ``chs_info`` lacks usable
+      locations.
     - **Spectral:** Through the optional ``n_fft`` parameter, the model can
       apply an STFT transformation, converting time-domain signals into a
       spectrogram representation before encoding.
@@ -163,12 +174,37 @@ class BrainModule(EEGModuleMixin, nn.Module):
         Values > 1.0 grow channels deeper; < 1.0 shrink them.
         Note: growth != 1.0 disables residual connections between layers
         with different channel sizes.
-    dilation_growth : int, default=2
+    dilation_growth : float, default=2
         Dilation multiplier per layer (e.g., 2 means dilation doubles each layer).
         Improves receptive field exponentially. Requires odd kernel_size.
     dilation_period : int, default=5
         Reset dilation to 1 every N layers. Prevents dilation from growing
         too large and maintains local connectivity.
+    use_merger : bool, default=False
+        If True, prepend a spatial Fourier
+        :class:`~braindecode.modules.ChannelMerger` remapping the ``n_chans``
+        sensors onto ``n_virtual_channels`` montage-agnostic virtual channels via
+        softmax attention over a Fourier embedding of the electrode ``(x, y)``
+        positions (from ``chs_info``). Default False preserves the plain
+        channel-projection behavior. If ``chs_info`` has no usable locations
+        (``loc`` missing or all-zero), ``use_merger`` auto-disables with a
+        ``UserWarning`` (``get_config()`` still reports the *requested* value).
+        Footgun: the merger weights exist only when active, so a saved
+        ``state_dict`` reloads only into a model built with the same ``chs_info``;
+        :meth:`get_config`/:meth:`from_config` (and Hugging Face) serialize
+        ``chs_info`` and round-trip, but a manual ``state_dict`` copy dropping
+        ``chs_info`` silently disables the merger and fails a strict load.
+    n_virtual_channels : int, default=270
+        Virtual output channels from the spatial merger. Only used when
+        ``use_merger=True``; becomes the effective channel count for all
+        downstream layers (subject layers, STFT, projection).
+    merger_drop_prob : float, default=0.2
+        Spatial-attention dropout *radius* of the merger (non-parametric,
+        training only) -- NOT a Bernoulli probability. Each training step draws a
+        random center in normalized ``[0, 1]^2`` position space and bans every
+        channel within this radius. Must be in ``[0, 1)``; values ``>= 1`` ban
+        all channels and zero the merger output. Only used when
+        ``use_merger=True``.
     conv_drop_prob : float, default=0.0
         Dropout probability for convolutional layers.
     dropout_input : float, default=0.0
@@ -204,6 +240,9 @@ class BrainModule(EEGModuleMixin, nn.Module):
     channel_dropout_type : str, optional
         If specified with chs_info, only drop channels of this type
         (e.g., 'eeg', 'ref', 'eog'). If None with dropout_prob > 0, drops any channel.
+        Not supported together with ``use_merger=True`` (the merger remaps the raw
+        sensors to virtual channels, so the ``chs_info`` channel types no longer
+        match the tensor) -- raises ``ValueError`` if both are set.
     glu : int, default=2
         If > 0, applies Gated Linear Units (GLU) every N convolutional layers.
         GLUs gate intermediate representations for more expressivity.
@@ -230,6 +269,21 @@ class BrainModule(EEGModuleMixin, nn.Module):
       subject indices in the forward pass as an optional parameter or via batch.
     - STFT processing (n_fft > 0) automatically transforms input to spectrogram domain.
 
+    .. note::
+        **Differences from the upstream brainmagick / neuraltrain SimpleConv**
+        (all verified): default ``kernel_size`` is ``3`` (vs ``9``) and
+        ``dilation_growth`` is ``2`` (vs ``2.5``), with non-integer values
+        supported via the per-layer dilation int-cast; ``dilation_period=5``
+        adds a periodic dilation reset the upstream DANCE config omits;
+        ``batch_norm``, ``glu``, and the residual skip connections default **on**
+        (upstream DANCE leaves them off); the head is ``AdaptiveAvgPool1d ->
+        Linear`` yielding one ``(batch, n_outputs)`` prediction (upstream emits a
+        per-timestep sequence); optional
+        :class:`~braindecode.modules.layers.SubjectLayers`, STFT, and
+        channel-dropout extras are added; and the spatial
+        :class:`~braindecode.modules.ChannelMerger` (opt-in via
+        ``use_merger=True``) is shared with DANCE.
+
     .. versionadded:: 1.2
 
     """
@@ -250,8 +304,12 @@ class BrainModule(EEGModuleMixin, nn.Module):
         depth: int = 10,
         kernel_size: int = 3,
         growth: float = 1.0,
-        dilation_growth: int = 2,
+        dilation_growth: float = 2,
         dilation_period: int = 5,
+        # Spatial channel merger (optional)
+        use_merger: bool = False,
+        n_virtual_channels: int = 270,
+        merger_drop_prob: float = 0.2,
         # Regularization
         conv_drop_prob: float = 0.0,
         dropout_input: float = 0.0,
@@ -291,6 +349,59 @@ class BrainModule(EEGModuleMixin, nn.Module):
         self.fft_complex = fft_complex
         self.hidden_dim = hidden_dim
 
+        # Spatial channel merger (optional): remaps n_chans -> n_virtual_channels
+        # before everything else. Read the raw ``self._chs_info`` (None when
+        # unset); the ``chs_info`` property would raise instead of auto-disabling
+        # for ``use_merger=True`` callers who passed only ``n_chans``.
+        if use_merger and not has_valid_locations(self._chs_info):
+            warnings.warn(
+                "BrainModule: chs_info has no usable electrode locations "
+                "('loc' missing, non-finite, or all-zero); disabling use_merger.",
+                UserWarning,
+            )
+            use_merger = False
+        self.use_merger = use_merger
+        self.merger = None
+        if use_merger:
+            if n_virtual_channels <= 0:
+                raise ValueError(
+                    f"n_virtual_channels must be >= 1, got {n_virtual_channels}."
+                )
+            # merger_drop_prob is a spatial-attention *radius* in normalized
+            # [0, 1) position space (NOT a Bernoulli probability): >= 1 bans every
+            # channel and zeros the merger output.
+            if not 0.0 <= merger_drop_prob < 1.0:
+                raise ValueError(
+                    "merger_drop_prob is a spatial dropout radius in [0, 1), got "
+                    f"{merger_drop_prob}; values >= 1 ban all channels and zero "
+                    "the merger output."
+                )
+            self.merger = ChannelMerger(
+                out_channels=n_virtual_channels, dropout=merger_drop_prob
+            )
+            pos = positions_from_chs_info(self._chs_info)  # (n_chans, 2) in [0,1]
+            self.register_buffer(
+                "channel_positions",
+                torch.as_tensor(pos, dtype=torch.float32),
+                persistent=False,
+            )
+
+        # Running channel count seen by the rest of the network. The merger runs
+        # first in forward(), so every later stage uses the merged virtual
+        # channels rather than the raw n_chans.
+        channels = n_virtual_channels if self.use_merger else self.n_chans
+
+        # use_merger + STFT applies the STFT to the virtual channels, so
+        # input_projection and the STFT intermediate become large; warn (valid,
+        # just memory-heavy) rather than forbid.
+        if self.use_merger and n_fft is not None:
+            warnings.warn(
+                "Combining use_merger with n_fft (STFT) applies the STFT to "
+                f"{n_virtual_channels} virtual channels, producing a very large "
+                "input_projection and STFT intermediate tensor (memory-heavy).",
+                UserWarning,
+            )
+
         # Validate inputs
         _validate_brainmodule_params(
             subject_layers=subject_layers,
@@ -308,36 +419,30 @@ class BrainModule(EEGModuleMixin, nn.Module):
         # Initialize channel dropout (optional)
         self.channel_dropout = None
         if channel_dropout_prob > 0:
+            if self.use_merger and channel_dropout_type is not None:
+                # The merger remaps n_chans -> virtual channels, so raw chs_info
+                # indices/types no longer match the tensor; type-selective dropout
+                # cannot be honored on virtual channels.
+                raise ValueError(
+                    "channel_dropout_type is not supported together with "
+                    "use_merger=True (the spatial merger remaps channels to "
+                    "montage-agnostic virtual channels)."
+                )
+            # When use_merger is on, drop over the merged virtual channels: pass
+            # ch_info=None so dropout operates on the actual (post-merge) axis.
             self.channel_dropout = _ChannelDropout(
                 dropout_prob=channel_dropout_prob,
-                ch_info=chs_info,
+                ch_info=None if self.use_merger else chs_info,
                 channel_type=channel_dropout_type,
             )
 
-        # Initialize subject-specific modules (optional)
-        self.subject_embedding = None
-        self.subject_layers_module = None
-        input_channels = self.n_chans
+        # Channel accounting MUST follow the forward() order so every combination
+        # is sized correctly: merger -> STFT -> subject_layers -> subject_embedding
+        # -> input_projection. A different order mis-shapes input_projection /
+        # SubjectLayers for combined configs (e.g. subject_layers + STFT).
 
-        if subject_dim > 0:
-            self.subject_embedding = _ScaledEmbedding(
-                n_subjects, subject_dim, embedding_scale
-            )
-            input_channels += subject_dim
-
-        if subject_layers:
-            assert subject_dim > 0, "subject_layers requires subject_dim > 0"
-            # Use n_chans for input dim since subject_layers is applied before
-            # subject embeddings are concatenated in forward()
-            meg_dim = self.n_chans
-            dim = hidden_dim if subject_layers_dim == "hidden" else meg_dim
-            self.subject_layers_module = SubjectLayers(
-                meg_dim, dim, n_subjects, subject_layers_id
-            )
-            # After subject_layers, we have 'dim' channels, then add subject_dim
-            input_channels = dim + subject_dim
-
-        # Initialize STFT module (optional)
+        # STFT (optional) expands the channel axis: complex -> 2*freq_bins,
+        # magnitude -> freq_bins. It runs before the subject modules in forward().
         self.stft = None
         if n_fft is not None:
             self.stft = ta.transforms.Spectrogram(
@@ -347,16 +452,30 @@ class BrainModule(EEGModuleMixin, nn.Module):
                 power=None if fft_complex else 1,
                 return_complex=True,
             )
-            # Update input channels for spectrogram
             freq_bins = n_fft // 2 + 1
-            if fft_complex:
-                input_channels *= 2 * freq_bins
-            else:
-                input_channels *= freq_bins
+            channels *= 2 * freq_bins if fft_complex else freq_bins
+
+        # Subject-specific modules (optional). In forward(), subject_layers (a
+        # per-subject 1x1 map channels -> dim) runs first, then subject_embedding
+        # concatenates ``subject_dim`` channels.
+        self.subject_embedding = None
+        self.subject_layers_module = None
+        if subject_layers:
+            meg_dim = channels
+            dim = hidden_dim if subject_layers_dim == "hidden" else meg_dim
+            self.subject_layers_module = SubjectLayers(
+                meg_dim, dim, n_subjects, subject_layers_id
+            )
+            channels = dim
+        if subject_dim > 0:
+            self.subject_embedding = _ScaledEmbedding(
+                n_subjects, subject_dim, embedding_scale
+            )
+            channels += subject_dim
 
         # Initial projection layer: project input channels to hidden_dim
         # This is crucial for residual connections to work properly
-        self.input_projection = nn.Conv1d(input_channels, hidden_dim, 1)
+        self.input_projection = nn.Conv1d(channels, hidden_dim, 1)
 
         # Build channel dimensions for encoder (all same size for residuals)
         # With growth=1.0, all layers have hidden_dim channels (residuals work)
@@ -413,6 +532,12 @@ class BrainModule(EEGModuleMixin, nn.Module):
             )
         if x.shape[1] != self.n_chans:
             raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}")
+
+        # Apply the spatial channel merger first (if enabled): remaps the channel
+        # axis n_chans -> n_virtual_channels before every other transform.
+        if self.merger is not None:
+            pos = self.channel_positions[None].expand(x.shape[0], -1, -1)
+            x = self.merger(x, pos)  # (B, n_virtual_channels, T)
 
         # Apply STFT if enabled
         if self.stft is not None:
@@ -482,7 +607,7 @@ class _ConvSequence(nn.Module):
         a 3-layer network with 320 hidden dims.
     kernel_size : int, default=3
         Convolutional kernel size. Must be odd for proper padding with dilation.
-    dilation_growth : int, default=2
+    dilation_growth : float, default=2
         Dilation multiplier per layer. Improves receptive field exponentially.
     dilation_period : int, default=5
         Reset dilation to 1 every N layers.
@@ -504,7 +629,7 @@ class _ConvSequence(nn.Module):
         self,
         channels: tp.Sequence[int],
         kernel_size: int = 3,
-        dilation_growth: int = 2,
+        dilation_growth: float = 2,
         dilation_period: int = 5,
         dropout: float = 0.0,
         dropout_input: float = 0.0,
@@ -527,7 +652,7 @@ class _ConvSequence(nn.Module):
         self.glus = nn.ModuleList()
         self.skip_projections = nn.ModuleList()  # For when chin != chout
 
-        dilation = 1
+        dilation = 1.0  # float accumulator (dilation_growth may be non-integer)
         channels = tuple(channels)
 
         for k, (chin, chout) in enumerate(zip(channels[:-1], channels[1:])):
@@ -539,10 +664,16 @@ class _ConvSequence(nn.Module):
 
             # Reset dilation periodically
             if dilation_period and (k % dilation_period) == 0:
-                dilation = 1
+                dilation = 1.0
+
+            # Cast to int at use so a float dilation_growth (e.g. 2.5) yields an
+            # integer Conv1d dilation/padding while the accumulator stays float
+            # (per-block: 1, 2, 6, 15, 39, ... for growth=2.5, reset every
+            # dilation_period). dilation_period=None matches upstream SimpleConv.
+            int_dilation = int(dilation)
 
             # Dilated convolution with proper padding to maintain temporal size
-            pad = kernel_size // 2 * dilation
+            pad = kernel_size // 2 * int_dilation
             layers.extend(
                 [
                     nn.Conv1d(
@@ -551,7 +682,7 @@ class _ConvSequence(nn.Module):
                         kernel_size=kernel_size,
                         stride=1,  # Always stride=1 for residual connections
                         padding=pad,
-                        dilation=dilation,
+                        dilation=int_dilation,
                     ),
                 ]
             )
@@ -780,7 +911,7 @@ def _validate_brainmodule_params(
     depth: int,
     kernel_size: int,
     growth: float,
-    dilation_growth: int,
+    dilation_growth: float,
     channel_dropout_prob: float,
     channel_dropout_type: str | None,
     glu: int,
@@ -800,7 +931,7 @@ def _validate_brainmodule_params(
         Convolutional kernel size.
     growth : float
         Channel size multiplier per layer.
-    dilation_growth : int
+    dilation_growth : float
         Dilation multiplier per layer.
     channel_dropout_prob : float
         Channel dropout probability.

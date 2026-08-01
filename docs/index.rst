@@ -161,7 +161,7 @@
       <div class="container bd-facts-inner">
         <span class="bd-facts-label">By the numbers</span>
         <div class="bd-facts-row">
-          <a href="models/models.html"><b>65+</b> models</a>
+          <a href="models/models_table.html"><b>65+</b> models</a>
           <a href="api.html#augmentation"><b>20+</b> augmentations</a>
           <a href="https://moabb.neurotechx.com/" target="_blank" rel="noopener"><b>150+</b> datasets <span style="color:var(--bd-muted)">via MOABB</span></a>
           <a href="https://eegdash.org/" target="_blank" rel="noopener"><b>700+</b> datasets <span style="color:var(--bd-muted)">via EEGDash</span></a>
@@ -224,7 +224,7 @@
           <p class="section-sub">Built to <strong>plug into the EEG ecosystem you already use</strong>: every <a href="https://moabb.neurotechx.com/" target="_blank" rel="noopener">MOABB</a> dataset, every <a href="https://mne.tools/" target="_blank" rel="noopener">MNE-Python</a> preprocessing function, every <a href="https://scikit-learn.org/" target="_blank" rel="noopener">scikit-learn</a> training loop, plus 700+ BIDS datasets via <a href="https://eegdash.org/" target="_blank" rel="noopener">EEGDash</a>. One library, no lock-in.</p>
         </div>
         <div class="feature-grid">
-          <a href="models/models.html" class="feature-card">
+          <a href="models/models_table.html" class="feature-card">
             <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2-4 4-4 6 0s4 4 6 0 4-4 6 0 4 4 2 0"/></svg></span>
             <h3>Decode raw electrophysiology</h3>
             <p>End-to-end models go straight from raw EEG/ECoG/MEG to predictions. No hand-crafted features required.</p>
@@ -248,7 +248,7 @@
             <p>Fully compatible with every <a class="feature-inline-link" href="https://mne.tools/" target="_blank" rel="noopener">MNE</a> preprocessing function and with <a class="feature-inline-link" href="https://eegprep.org/" target="_blank" rel="noopener">EEGPrep</a>, plus exponential standardization and 20+ EEG augmentations.</p>
             <a href="api.html#augmentation" class="feature-link">Augmentation <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></a>
           </div>
-          <a href="models/models.html" class="feature-card">
+          <a href="models/models_table.html" class="feature-card">
             <span class="feature-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M8 6h2a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3M8 18h2a3 3 0 0 0 3-3v0a3 3 0 0 1 3-3"/></svg></span>
             <h3>Curated model zoo</h3>
             <p>EEGNeX, ConvNets, ATCNet, EEGConformer, foundation models. 60+ architectures reproduced from the original papers.</p>
@@ -293,14 +293,14 @@
                 <span class="code-step-num">02</span>
                 <span class="code-step-text">
                   <span class="code-step-title">Preprocess &amp; window</span>
-                  <span class="code-step-desc">Bandpass-filter, then cut motor-imagery trials.</span>
+                  <span class="code-step-desc">Keep EEG sensors, bandpass-filter, then window the trials.</span>
                 </span>
               </li>
               <li class="code-step">
                 <span class="code-step-num">03</span>
                 <span class="code-step-text">
                   <span class="code-step-title">Pick a model</span>
-                  <span class="code-step-desc">EEGNeX with 22 channels, 4 classes, 4.5 s @ 250 Hz.</span>
+                  <span class="code-step-desc">EEGNeX, sized from the data: 22 channels, 4 classes, 4 s @ 250 Hz.</span>
                 </span>
               </li>
               <li class="code-step">
@@ -321,8 +321,8 @@
               <div class="code-window-meta">PyTorch · CUDA</div>
             </div>
             <div class="code-window-body">
-              <div class="code-gutter"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div><div>10</div><div>11</div><div>12</div><div>13</div><div>14</div><div>15</div><div>16</div><div>17</div><div>18</div><div>19</div></div>
-              <div class="code-content"><div data-step="0"><span class="tok-com"># 1. Load BCI Competition IV-2a (subject 3) via MOABB</span></div><div data-step="0"><span class="tok-kw">from</span> <span class="tok-var">braindecode.datasets</span> <span class="tok-kw">import</span> <span class="tok-cls">MOABBDataset</span></div><div data-step="0"></div><div data-step="0"><span class="tok-var">dataset</span> = <span class="tok-fn">MOABBDataset</span>(<span class="tok-str">"BNCI2014_001"</span>, <span class="tok-attr">subject_ids</span>=[<span class="tok-num">3</span>])</div><div data-step="1"><span class="tok-com"># 2. Bandpass-filter and create event-aligned windows</span></div><div data-step="1"><span class="tok-kw">from</span> <span class="tok-var">braindecode.preprocessing</span> <span class="tok-kw">import</span> (</div><div data-step="1">    <span class="tok-cls">Preprocessor</span>, <span class="tok-fn">preprocess</span>, <span class="tok-fn">create_windows_from_events</span>,</div><div data-step="1">)</div><div data-step="1"></div><div data-step="1"><span class="tok-fn">preprocess</span>(<span class="tok-var">dataset</span>, [<span class="tok-fn">Preprocessor</span>(<span class="tok-str">"filter"</span>, <span class="tok-attr">l_freq</span>=<span class="tok-num">4.</span>, <span class="tok-attr">h_freq</span>=<span class="tok-num">38.</span>)])</div><div data-step="1"><span class="tok-var">windows</span> = <span class="tok-fn">create_windows_from_events</span>(<span class="tok-var">dataset</span>)</div><div data-step="2"><span class="tok-com"># 3. Instantiate a published architecture</span></div><div data-step="2"><span class="tok-kw">from</span> <span class="tok-var">braindecode.models</span> <span class="tok-kw">import</span> <span class="tok-cls">EEGNeX</span></div><div data-step="2"></div><div data-step="2"><span class="tok-var">model</span> = <span class="tok-fn">EEGNeX</span>(<span class="tok-attr">n_chans</span>=<span class="tok-num">22</span>, <span class="tok-attr">n_outputs</span>=<span class="tok-num">4</span>, <span class="tok-attr">n_times</span>=<span class="tok-num">1125</span>)</div><div data-step="3"><span class="tok-com"># 4. Train with the skorch-based EEGClassifier</span></div><div data-step="3"><span class="tok-kw">from</span> <span class="tok-var">braindecode</span> <span class="tok-kw">import</span> <span class="tok-cls">EEGClassifier</span></div><div data-step="3"></div><div data-step="3"><span class="tok-var">clf</span> = <span class="tok-fn">EEGClassifier</span>(<span class="tok-attr">module</span>=<span class="tok-var">model</span>, <span class="tok-attr">max_epochs</span>=<span class="tok-num">10</span>)</div><div data-step="3"><span class="tok-var">clf</span>.<span class="tok-fn">fit</span>(<span class="tok-var">windows</span>, <span class="tok-attr">y</span>=<span class="tok-kw">None</span>)</div></div>
+              <div class="code-gutter"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div><div>10</div><div>11</div><div>12</div><div>13</div><div>14</div><div>15</div><div>16</div><div>17</div><div>18</div><div>19</div><div>20</div></div>
+              <div class="code-content"><div data-step="0"><span class="tok-com"># 1. Load BCI Competition IV-2a (subject 3) via MOABB</span></div><div data-step="0"><span class="tok-kw">from</span> <span class="tok-var">braindecode.datasets</span> <span class="tok-kw">import</span> <span class="tok-cls">MOABBDataset</span></div><div data-step="0"></div><div data-step="0"><span class="tok-var">dataset</span> = <span class="tok-fn">MOABBDataset</span>(<span class="tok-str">"BNCI2014_001"</span>, <span class="tok-attr">subject_ids</span>=[<span class="tok-num">3</span>])</div><div data-step="1"><span class="tok-com"># 2. Keep EEG channels, bandpass-filter, and window the trials</span></div><div data-step="1"><span class="tok-kw">from</span> <span class="tok-var">braindecode.preprocessing</span> <span class="tok-kw">import</span> (</div><div data-step="1">    <span class="tok-cls">Preprocessor</span>, <span class="tok-fn">preprocess</span>, <span class="tok-fn">create_windows_from_events</span>,</div><div data-step="1">)</div><div data-step="1"></div><div data-step="1"><span class="tok-fn">preprocess</span>(<span class="tok-var">dataset</span>, [</div><div data-step="1">    <span class="tok-fn">Preprocessor</span>(<span class="tok-str">"pick_types"</span>, <span class="tok-attr">eeg</span>=<span class="tok-kw">True</span>),</div><div data-step="1">    <span class="tok-fn">Preprocessor</span>(<span class="tok-str">"filter"</span>, <span class="tok-attr">l_freq</span>=<span class="tok-num">4.</span>, <span class="tok-attr">h_freq</span>=<span class="tok-num">38.</span>),</div><div data-step="1">])</div><div data-step="1"><span class="tok-var">windows</span> = <span class="tok-fn">create_windows_from_events</span>(<span class="tok-var">dataset</span>)</div><div data-step="2"><span class="tok-com"># 3. Pick a published architecture by name</span></div><div data-step="2"><span class="tok-kw">from</span> <span class="tok-var">braindecode</span> <span class="tok-kw">import</span> <span class="tok-cls">EEGClassifier</span></div><div data-step="2"></div><div data-step="2"><span class="tok-var">clf</span> = <span class="tok-fn">EEGClassifier</span>(<span class="tok-str">"EEGNeX"</span>, <span class="tok-attr">max_epochs</span>=<span class="tok-num">10</span>, <span class="tok-attr">train_split</span>=<span class="tok-kw">None</span>)</div><div data-step="3"><span class="tok-com"># 4. Train with sklearn-style fit()</span></div><div data-step="3"><span class="tok-var">clf</span>.<span class="tok-fn">fit</span>(<span class="tok-var">windows</span>, <span class="tok-attr">y</span>=<span class="tok-kw">None</span>)</div></div>
             </div>
             <div class="code-output">
               <span class="ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Trains on CPU or GPU</span>
@@ -359,7 +359,7 @@
         <div class="zoo-grid"><!-- populated by landing.js --></div>
         <div class="zoo-foot">
           <span class="zoo-foot-count">Loading…</span>
-          <a href="models/models.html">Browse the full zoo on the Models page <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></a>
+          <a href="models/models_table.html">Browse the full zoo on the Models table <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg></a>
         </div>
       </div>
     </section>
@@ -521,7 +521,7 @@
               <span class="pipeline-col-name">Modeling</span>
             </div>
             <div class="pipeline-col-cards">
-              <a class="pipeline-card" href="models/models.html">
+              <a class="pipeline-card" href="models/models_table.html">
                 <span class="pipeline-card-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M8 6h2a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3M8 18h2a3 3 0 0 0 3-3v0a3 3 0 0 1 3-3"/></svg></span>
                 <span class="pipeline-card-text">
                   <span class="pipeline-card-name">braindecode.models</span>
@@ -679,7 +679,7 @@
             <ul>
               <li><a href="install/install.html">Install</a></li>
               <li><a href="auto_examples/index.html">Tutorials</a></li>
-              <li><a href="models/models.html">Models</a></li>
+              <li><a href="models/models_table.html">Models</a></li>
               <li><a href="api.html">API reference</a></li>
             </ul>
           </div>
