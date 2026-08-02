@@ -492,7 +492,7 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     _HF_DEFAULT_REPO = "braindecode/ZUNA"
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path=None, *args, **kwargs):
+    def from_pretrained(cls, *args, **kwargs):
         """Load pretrained ZUNA weights, defaulting to the braindecode re-host.
 
         ``pretrained_model_name_or_path`` defaults to ``"braindecode/ZUNA"``, a
@@ -503,6 +503,6 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         fine-tuned. ``n_chans`` (or ``chs_info``) and ``n_outputs`` are
         montage- and task-dependent and must be supplied.
         """
-        if pretrained_model_name_or_path is None:
-            pretrained_model_name_or_path = cls._HF_DEFAULT_REPO
-        return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+        if not args and kwargs.get("pretrained_model_name_or_path") is None:
+            kwargs["pretrained_model_name_or_path"] = cls._HF_DEFAULT_REPO
+        return super().from_pretrained(*args, **kwargs)
