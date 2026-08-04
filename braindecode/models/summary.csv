@@ -4,6 +4,7 @@ AttentionBaseNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",3692
 BDTCN,Normal Abnormal,Prediction,100,"n_chans, n_outputs, n_times",456502,"BDTCN(n_chans=21, n_outputs=2, n_times=6000, n_blocks=5, n_filters=55, kernel_size=16)","Convolution,Recurrent",EEG
 BIOT,"Sleep Staging, Epilepsy",Prediction,200,"n_chans, n_outputs",3183879,"BIOT(n_chans=2,  n_outputs=5,  n_times=6000)","Foundation Model",EEG
 CBraMod,General,"Prediction, Embedding",200,"n_outputs",4924000,"CBraMod(n_outputs=2)","Foundation Model",EEG
+BrainBERT,General,"Prediction, Embedding",2048,"n_chans, n_outputs, n_times, sfreq",648813,"BrainBERT(n_chans=2, n_outputs=5, n_times=1000, sfreq=2048)","Foundation Model,Attention/Transformer",iEEG
 CodeBrain,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times",15238802,"CodeBrain(n_chans=19, n_outputs=2, n_times=6000)","Foundation Model,Attention/Transformer",EEG
 ContraWR,Sleep Staging,"Prediction, Embedding",125,"n_chans, n_outputs, sfreq",1160165,"ContraWR(n_chans=2, n_outputs=5, n_times=3750, emb_size=256, sfreq=125)",Convolution,EEG
 CTNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",26900,"CTNet(n_chans=22, n_outputs=4, n_times=1000, n_filters_time=8, kernel_size=16, num_heads=2, embed_dim=16)","Convolution,Attention/Transformer",EEG

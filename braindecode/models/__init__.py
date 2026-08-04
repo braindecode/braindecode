@@ -6,6 +6,7 @@ from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
 from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
+from .brainbert import BrainBERT
 from .brainmodule import BrainModule
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
@@ -83,6 +84,7 @@ __all__ = [
     "EEGModuleMixin",
     "BIOT",
     "BENDR",
+    "BrainBERT",
     "CBraMod",
     "CodeBrain",
     "ContraWR",

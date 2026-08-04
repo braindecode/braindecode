@@ -57,6 +57,13 @@ Current 1.7.0 (2026-08-01)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.BrainBERT`, a self-supervised foundation model
+  for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023). The
+  short-time Fourier transform front-end is computed inside the model so it keeps
+  the standard ``(batch, n_chans, n_times)`` input signature; the Transformer
+  encoder is ported bit-exact from the upstream reference (:gh:`1104` by
+  `Adam Mounir`_)
+
 - Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
   registry for the interpolated (channel-adapting) models, keeping them separate
   from :data:`braindecode.models.util.models_dict` (:gh:`1093` by `Bruno Aristimunha`_)
