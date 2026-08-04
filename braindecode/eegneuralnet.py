@@ -1,5 +1,6 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Pierre Guetschel <pierre.guetschel@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -126,7 +127,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 self._last_window_inds_ = None
 
     def predict_with_window_inds_and_ys(self, dataset):
-        self.module.eval()
+        # self.module can still be a name or a class, self.module_ is the built one
+        self.module_.eval()
         preds = []
         i_window_in_trials = []
         i_window_stops = []
@@ -142,7 +144,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
             with torch.no_grad():
-                preds.append(to_numpy(self.module.forward(X.to(self.device))))
+                preds.append(to_numpy(self.module_.forward(X.to(self.device))))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = np.concatenate(i_window_in_trials)

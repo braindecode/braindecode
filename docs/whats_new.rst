@@ -84,6 +84,15 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :meth:`braindecode.EEGClassifier.predict_trials`,
+  :meth:`braindecode.EEGRegressor.predict_trials` and
+  :class:`braindecode.training.scoring.CroppedTrialEpochScoring` on the training
+  set raising ``AttributeError`` or ``TypeError`` when the module was passed as a
+  model name or as an uninstantiated class. Those paths read the ``module``
+  constructor argument instead of the initialized ``module_`` attribute, so they
+  only worked when an already instantiated module was passed, which the
+  documentation discourages. By `Sarthak Tayal`_.
+
 - Raise a clear ``ValueError`` in :class:`braindecode.models.FBLightConvNet`
   when ``n_times`` is shorter than ``win_len``. The temporal attention kernel
   is sized as ``n_times // win_len``, so a short window produced an empty

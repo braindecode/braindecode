@@ -228,8 +228,9 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             if return_targets:
                 return preds, X.get_metadata()["target"].to_numpy()
             return preds
+        self.check_is_fitted()
         return predict_trials(
-            module=self.module,
+            module=self.module_,
             dataset=X,
             return_targets=return_targets,
             batch_size=self.batch_size,
