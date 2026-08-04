@@ -195,6 +195,11 @@ print(f"Reconstructed: n_outputs={model_copy.n_outputs}")
 #      - |check|
 #      - |check|
 #      - |check|
+#    * - :class:`~braindecode.models.Brant`
+#      - |check|
+#      - |check|
+#      - |check|
+#      - |check|
 #    * - :class:`~braindecode.models.CBraMod`
 #      - |check|
 #      - |check|
