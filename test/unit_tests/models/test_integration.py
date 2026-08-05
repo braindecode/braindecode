@@ -24,6 +24,9 @@ from braindecode.models import (
     EEGPT,
     REVE,
     SSTDPN,
+    Deep4Net,
+    EEGConformer,
+    EEGInceptionERP,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -35,6 +38,9 @@ from braindecode.models import (
     InterpolatedEEGPT,
     InterpolatedLaBraM,
     InterpolatedSignalJEPA,
+    SCCNet,
+    ShallowFBCSPNet,
+    SleepStagerChambon2018,
     SyncNet,
     USleep,
 )
@@ -599,6 +605,59 @@ def test_model_torch_script(model):
     # output_script = scripted_model(input_tensor)
     # assert output_script.shape == output_model.shape
     # torch.testing.assert_close(output_script, output_model)
+
+
+@pytest.mark.skipif(
+    sys.platform.startswith("win") or sys.version_info >= (3, 14),
+    reason="torch.compile is known to have issues on Windows or with Python 3.14.",
+)
+@pytest.mark.parametrize(
+    "model_class",
+    [
+        ShallowFBCSPNet,
+        Deep4Net,
+        EEGConformer,
+        EEGInceptionERP,
+        SleepStagerChambon2018,
+        SCCNet,
+    ],
+    ids=lambda cls: cls.__name__,
+)
+def test_torch_script_without_plain_conversion(model_class):
+    """Models script directly, without being rebuilt as a plain ``nn.Module``.
+
+    ``EEGModuleMixin`` exposes the signal-related parameters as properties that
+    raise ``ValueError`` when unset, and annotates ``mapping`` with a postponed
+    ``Optional[Dict[str, str]]``. ``torch.jit.script`` reads every class
+    attribute while building the concrete type, so either one used to abort
+    scripting before ``forward`` was compiled.
+    """
+    model = model_class(
+        n_chans=default_signal_params["n_chans"],
+        n_outputs=default_signal_params["n_outputs"],
+        n_times=default_signal_params["n_times"],
+        sfreq=default_signal_params["sfreq"],
+    ).eval()
+    input_tensor = torch.randn(
+        2, default_signal_params["n_chans"], default_signal_params["n_times"]
+    )
+
+    scripted_model = torch.jit.script(model)
+
+    torch.testing.assert_close(scripted_model(input_tensor), model(input_tensor))
+
+
+def test_signal_params_still_raise_value_error():
+    """Hiding the properties from TorchScript must not silence their errors."""
+    model = ShallowFBCSPNet(
+        n_chans=default_signal_params["n_chans"],
+        n_outputs=default_signal_params["n_outputs"],
+        n_times=default_signal_params["n_times"],
+    )
+    with pytest.raises(ValueError, match="chs_info not specified"):
+        model.chs_info
+    with pytest.raises(ValueError, match="sfreq could not be inferred"):
+        model.sfreq
 
 
 @pytest.mark.parametrize("method", ["mag", "corr", "plv"])
