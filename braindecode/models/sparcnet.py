@@ -33,7 +33,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         Number of layers per dense block. Default is 4.
     growth_rate : int, optional
         Growth rate of the DenseNet. Default is 16.
-    bn_size : int, optional
+    bottleneck_size : int, optional
         Bottleneck size. Default is 16.
     drop_prob : float, optional
         Dropout rate. Default is 0.5.

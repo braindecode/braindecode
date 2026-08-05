@@ -75,7 +75,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         Number of Feature Maps at the first Convolution, width of the model.
     n_convs: int
         Number of blocks of convolutions (2 convolutions per block), depth of the model.
-    resampling: int
+    resampling_freq: int
         Resampling Frequency.
     kernel_size: int
         Size of the convolutions kernels.
