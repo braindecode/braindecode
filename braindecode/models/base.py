@@ -198,7 +198,30 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     See :ref:`load-pretrained-models` for a complete tutorial.
     """
 
+    #: Attributes that :func:`torch.jit.script` must not introspect. The
+    #: signal-related properties raise :class:`ValueError` when their value was
+    #: neither given nor inferrable, and ``mapping`` carries a postponed
+    #: annotation TorchScript cannot resolve. Either one aborts scripting
+    #: before ``forward`` is ever compiled.
+    __jit_ignored_attributes__ = [
+        *sorted(_EEG_PARAMS),
+        "input_shape",
+        "mapping",
+    ]
+
     def __init_subclass__(cls, **kwargs):
+        # TorchScript only honours ``__jit_ignored_attributes__`` for
+        # properties defined directly on the concrete class: it collects them
+        # with ``vars(type(module))``, which skips inherited ones. Rebinding
+        # the very same property objects on each subclass makes them visible
+        # there without changing any runtime behaviour.
+        for name in EEGModuleMixin.__jit_ignored_attributes__:
+            if name in cls.__dict__:
+                continue
+            prop = getattr(EEGModuleMixin, name, None)
+            if isinstance(prop, property):
+                setattr(cls, name, prop)
+
         # Append model-specific Hub integration notes to the docstring.
         # This runs before the metaclass __init__, so the Hub notes will
         # be included in the docstring that the metaclass processes.
