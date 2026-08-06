@@ -43,12 +43,20 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- The ``activation`` parameter of :class:`braindecode.models.AttnSleep` is now
+  used by the adaptive feature recalibration block, which was always built with
+  ``nn.ReLU`` no matter what was passed. By `Sarthak Tayal`_.
+
+- :class:`braindecode.models.AttnSleep` now reports which ``d_model`` a window
+  length needs instead of failing inside a layer normalization, and it sizes its
+  final layer from the measured feature length. By `Sarthak Tayal`_.
 
 Code health
 ============
 
-- None yet
+- The attention block of :class:`braindecode.models.AttnSleep` no longer builds
+  a weighted sum that is dropped on the next line, so each attention call runs
+  one matrix multiplication less. By `Sarthak Tayal`_.
 
 
 Current 1.7.0 (2026-08-01)

@@ -991,6 +991,64 @@ def test_eldele_2021_feats():
     assert out.shape == (n_examples, model.len_last_layer)
 
 
+def test_eldele_2021_d_model_mismatch():
+    with pytest.raises(ValueError, match="d_model=54"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
+
+
+def test_eldele_2021_heads_not_dividing_d_model():
+    with pytest.raises(ValueError, match="divisible"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
+
+
+def test_eldele_2021_other_window():
+    # 20 seconds at 100Hz, the feature extractor returns 54 time steps there
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=2000, d_model=54, n_attn_heads=6)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = torch.from_numpy(rng.randn(4, 1, 2000).astype(np.float32))
+
+    assert model.len_last_layer == 54 * 30
+    assert model(X).shape == (4, 5)
+
+
+def test_eldele_2021_other_window_feats():
+    model = AttnSleep(
+        sfreq=100,
+        n_outputs=5,
+        n_times=2000,
+        d_model=54,
+        n_attn_heads=6,
+        return_feats=True,
+    )
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = torch.from_numpy(rng.randn(4, 1, 2000).astype(np.float32))
+
+    assert model(X).shape == (4, model.len_last_layer)
+
+
+def test_eldele_2021_final_layer_matches_features():
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000)
+
+    assert model.len_last_layer == 80 * 30
+    assert model.final_layer.in_features == model.len_last_layer
+
+
+def test_eldele_2021_activation_reaches_afr():
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000, activation=nn.ELU)
+    afr_activations = [
+        type(module)
+        for module in model.feature_extractor[0].AFR.modules()
+        if isinstance(module, (nn.ReLU, nn.ELU))
+    ]
+
+    assert afr_activations
+    assert all(act is nn.ELU for act in afr_activations)
+
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
