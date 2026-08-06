@@ -391,7 +391,11 @@ class _MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, after_reduced_cnn_size, dropout=0.1):
         """Take in model size and number of heads."""
         super().__init__()
-        assert d_model % h == 0
+        if d_model % h != 0:
+            raise ValueError(
+                f"d_model ({d_model}) has to be divisible by the number of "
+                f"attention heads ({h})."
+            )
         self.d_per_head = d_model // h
         self.h = h
 
