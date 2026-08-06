@@ -34,7 +34,8 @@ class AttnSleep(EEGModuleMixin, nn.Module):
 
     Warning - This model was designed for signals of 30 seconds at 100Hz or 125Hz (in which case
     the reference architecture from [1]_ which was validated on SHHS dataset [2]_ will be used)
-    to use any other input is likely to make the model perform in unintended ways.
+    to use any other input is likely to make the model perform in unintended ways. Any other
+    window length also needs a ``d_model`` of its own, see the parameter below.
 
     Parameters
     ----------
