@@ -45,7 +45,11 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         Also the input dimension of the first FC layer in the feed forward
         and the output of the second FC layer in the same.
         Increase for higher sampling rate/signal length.
-        It should be divisible by n_attn_heads
+        It should be divisible by n_attn_heads.
+        It has to be equal to the number of time steps the feature extractor
+        returns, which is 80 for 30 seconds at 100 Hz and 100 for 30 seconds at
+        125 Hz. Other window lengths need their own value, and the error raised
+        at construction time reports the one to use.
     d_ff : int
         Output dimension of the first FC layer in the feed forward and the
         input dimension of the second FC layer in the same.
