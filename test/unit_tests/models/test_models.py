@@ -1001,6 +1001,18 @@ def test_eldele_2021_heads_not_dividing_d_model():
         AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
 
 
+def test_eldele_2021_other_window():
+    # 20 seconds at 100Hz, the feature extractor returns 54 time steps there
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=2000, d_model=54, n_attn_heads=6)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = torch.from_numpy(rng.randn(4, 1, 2000).astype(np.float32))
+
+    assert model.len_last_layer == 54 * 30
+    assert model(X).shape == (4, 5)
+
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
