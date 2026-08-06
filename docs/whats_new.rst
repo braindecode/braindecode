@@ -43,7 +43,9 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- The ``activation`` parameter of :class:`braindecode.models.AttnSleep` is now
+  used by the adaptive feature recalibration block, which was always built with
+  ``nn.ReLU`` no matter what was passed. By `Sarthak Tayal`_.
 
 Code health
 ============
