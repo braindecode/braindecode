@@ -161,7 +161,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         )
 
         self.feature_extractor = nn.Sequential(mrcnn, tce)
-        self.len_last_layer = self._len_last_layer(self.n_times)
+        self.len_last_layer = feature_length * after_reduced_cnn_size
         self.return_feats = return_feats
 
         # TODO: Add new way to handle return features
