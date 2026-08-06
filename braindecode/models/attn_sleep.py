@@ -196,7 +196,8 @@ class _SELayer(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool1d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False),
-            activation(inplace=True),
+            # not inplace, so activations without that keyword also work here
+            activation(),
             nn.Linear(channel // reduction, channel, bias=False),
             nn.Sigmoid(),
         )
