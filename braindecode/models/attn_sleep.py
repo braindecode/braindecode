@@ -322,7 +322,7 @@ class _MRCNN(nn.Module):
         self.dropout = nn.Dropout(drate)
         self.inplanes = 128
         self.AFR = self._make_layer(
-            _SEBasicBlock, after_reduced_cnn_size, 1, activate=activation_se
+            _SEBasicBlock, after_reduced_cnn_size, 1, activation=activation_se
         )
 
     def _make_layer(
