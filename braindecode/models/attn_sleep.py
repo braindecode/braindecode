@@ -142,6 +142,14 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             activation_se=activation,
         )
         feature_length = self._feature_length(mrcnn, self.n_times)
+        if feature_length != d_model:
+            raise ValueError(
+                f"d_model is {d_model} but the feature extractor returns "
+                f"{feature_length} time steps for an input of {self.n_times} "
+                f"samples at {self.sfreq} Hz. Set d_model={feature_length}, with "
+                "an n_attn_heads that divides it, or feed the window length the "
+                "current d_model was picked for."
+            )
 
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, drop_prob, activation=activation)
