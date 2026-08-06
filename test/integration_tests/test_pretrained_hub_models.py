@@ -318,21 +318,21 @@ class TestSTEEGFormerPretrained:
 
 
 class TestZUNAPretrained:
-    """Tests for the braindecode re-hosted ZUNA encoder checkpoint."""
+    """Tests for the upstream ZUNA1.1 classifier checkpoint."""
 
     @pytest.fixture
     def model(self, hub_cache_dir):
-        """Load ZUNA via the default braindecode/ZUNA re-host pointer."""
+        """Load ZUNA via the default Zyphra/ZUNA1.1 classifier pointer."""
         from braindecode.models import ZUNA
 
-        # No repo id passed: exercises the braindecode/ZUNA default. n_chans /
+        # No repo id passed: exercises the ZUNA1.1 classifier default. n_chans /
         # n_outputs are montage- and task-dependent and must be supplied.
         return ZUNA.from_pretrained(
             n_chans=19, n_outputs=4, cache_dir=hub_cache_dir
         )
 
     def test_load_from_hub(self, model):
-        """ZUNA loads the pretrained encoder from the Hub re-host."""
+        """ZUNA loads the pretrained encoder from the upstream Hub checkpoint."""
         assert model is not None
         assert model.n_chans == 19
         assert model.n_times == 1280

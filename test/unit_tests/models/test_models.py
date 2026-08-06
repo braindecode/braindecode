@@ -1458,7 +1458,9 @@ def test_zuna_exposes_architecture_parameters():
     assert {
         "dim", "n_layers", "n_heads", "head_dim", "fine_time_pts",
         "latent_dim", "max_seqlen", "rope_theta", "rope_dim",
-        "pos_bins", "pos_half_range", "norm_eps", "drop_prob", "activation",
+        "n_kv_heads", "pos_bins", "pos_half_range", "norm_eps",
+        "multiple_of", "ffn_dim_multiplier", "sandwich_norm", "qk_norm",
+        "drop_prob", "activation",
     } <= params
 
 
@@ -1567,6 +1569,32 @@ def test_zuna_load_state_dict_strips_upstream_prefix(small_zuna):
     randomized = {k: torch.randn_like(v) for k, v in small_zuna.encoder.state_dict().items()}
     upstream = {f"model.encoder.{k}": v for k, v in randomized.items()}
     upstream["model.decoder.dummy"] = torch.zeros(1)
+
+    small_zuna.load_state_dict(upstream)
+
+    loaded = small_zuna.encoder.state_dict()
+    for key, expected in randomized.items():
+        torch.testing.assert_close(loaded[key], expected)
+
+
+def test_zuna_load_state_dict_maps_zuna11_norm_keys(small_zuna):
+    randomized = {
+        k: torch.randn_like(v) for k, v in small_zuna.encoder.state_dict().items()
+    }
+    upstream = {}
+    norm_names = (
+        "q_norm.weight",
+        "k_norm.weight",
+        "attention_norm.weight",
+        "attention_norm_post.weight",
+        "ffn_norm.weight",
+        "ffn_norm_post.weight",
+    )
+    for key, value in randomized.items():
+        upstream_key = f"model.encoder.{key}"
+        if key == "norm.weight" or key.endswith(norm_names):
+            upstream_key = f"{upstream_key.removesuffix('.weight')}.norm.weight"
+        upstream[upstream_key] = value
 
     small_zuna.load_state_dict(upstream)
 

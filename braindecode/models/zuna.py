@@ -48,6 +48,17 @@ def _apply_rotary(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
     return (x_ * freqs).sum(-1).flatten(-2).type_as(x)
 
 
+def _repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+    if n_rep == 1:
+        return x
+    b, seq_len, n_kv_heads, head_dim = x.shape
+    return (
+        x[:, :, :, None, :]
+        .expand(b, seq_len, n_kv_heads, n_rep, head_dim)
+        .reshape(b, seq_len, n_kv_heads * n_rep, head_dim)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Transformer block
 # ---------------------------------------------------------------------------
@@ -74,22 +85,40 @@ class _RMSNorm(nn.Module):
 
 
 class _Attention(nn.Module):
-    def __init__(self, dim: int, n_heads: int, head_dim: int):
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        head_dim: int,
+        n_kv_heads: Optional[int] = None,
+        norm_eps: float = 1e-5,
+        qk_norm: bool = True,
+    ):
         super().__init__()
         self.n_heads = n_heads
+        self.n_kv_heads = n_heads if n_kv_heads is None else n_kv_heads
+        if n_heads % self.n_kv_heads != 0:
+            raise ValueError("n_heads must be divisible by n_kv_heads.")
+        self.heads_per_group = n_heads // self.n_kv_heads
         self.head_dim = head_dim
-        inner = n_heads * head_dim
-        self.wq = nn.Linear(dim, inner, bias=False)
-        self.wk = nn.Linear(dim, inner, bias=False)
-        self.wv = nn.Linear(dim, inner, bias=False)
-        self.wo = nn.Linear(inner, dim, bias=False)
+        self.wq = nn.Linear(dim, n_heads * head_dim, bias=False)
+        self.wk = nn.Linear(dim, self.n_kv_heads * head_dim, bias=False)
+        self.wv = nn.Linear(dim, self.n_kv_heads * head_dim, bias=False)
+        self.wo = nn.Linear(n_heads * head_dim, dim, bias=False)
+        self.q_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.k_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
         b, seq_len, _ = x.shape
-        shape = (b, seq_len, self.n_heads, self.head_dim)
-        xq = _apply_rotary(self.wq(x).view(shape), freqs_cis)
-        xk = _apply_rotary(self.wk(x).view(shape), freqs_cis)
-        xv = self.wv(x).view(shape)
+        q_shape = (b, seq_len, self.n_heads, self.head_dim)
+        kv_shape = (b, seq_len, self.n_kv_heads, self.head_dim)
+        xq = self.q_norm(self.wq(x).view(q_shape))
+        xk = self.k_norm(self.wk(x).view(kv_shape))
+        xq = _apply_rotary(xq, freqs_cis)
+        xk = _apply_rotary(xk, freqs_cis)
+        xv = self.wv(x).view(kv_shape)
+        xk = _repeat_kv(xk, self.heads_per_group)
+        xv = _repeat_kv(xv, self.heads_per_group)
         # SDPA expects (B, n_heads, L, head_dim). Each batch element is its
         # own document — no mask needed.
         out = F.scaled_dot_product_attention(
@@ -99,9 +128,17 @@ class _Attention(nn.Module):
 
 
 class _FeedForward(nn.Module):
-    def __init__(self, dim: int, multiple_of: int = 256):
+    def __init__(
+        self,
+        dim: int,
+        multiple_of: int = 256,
+        ffn_dim_multiplier: Optional[float] = None,
+    ):
         super().__init__()
-        hidden = multiple_of * math.ceil(int(8 * dim / 3) / multiple_of)
+        hidden = int(8 * dim / 3)
+        if ffn_dim_multiplier is not None:
+            hidden = int(ffn_dim_multiplier * hidden)
+        hidden = multiple_of * math.ceil(hidden / multiple_of)
         self.w1 = nn.Linear(dim, hidden, bias=False)
         self.w2 = nn.Linear(hidden, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden, bias=False)
@@ -111,16 +148,46 @@ class _FeedForward(nn.Module):
 
 
 class _TransformerBlock(nn.Module):
-    def __init__(self, dim: int, n_heads: int, head_dim: int, norm_eps: float):
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        head_dim: int,
+        norm_eps: float,
+        n_kv_heads: Optional[int] = None,
+        multiple_of: int = 256,
+        ffn_dim_multiplier: Optional[float] = None,
+        sandwich_norm: bool = True,
+        qk_norm: bool = True,
+    ):
         super().__init__()
-        self.attention = _Attention(dim, n_heads, head_dim)
-        self.feed_forward = _FeedForward(dim)
+        self.attention = _Attention(
+            dim,
+            n_heads,
+            head_dim,
+            n_kv_heads=n_kv_heads,
+            norm_eps=norm_eps,
+            qk_norm=qk_norm,
+        )
+        self.feed_forward = _FeedForward(
+            dim, multiple_of=multiple_of, ffn_dim_multiplier=ffn_dim_multiplier
+        )
         self.attention_norm = _RMSNorm(dim, eps=norm_eps)
         self.ffn_norm = _RMSNorm(dim, eps=norm_eps)
+        self.attention_norm_post = (
+            _RMSNorm(dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+        )
+        self.ffn_norm_post = (
+            _RMSNorm(dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+        )
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-        x = x + self.attention(self.attention_norm(x), freqs_cis)
-        return x + self.feed_forward(self.ffn_norm(x))
+        h = x.float() + self.attention_norm_post(
+            self.attention(self.attention_norm(x.float()), freqs_cis).float()
+        )
+        return h.float() + self.ffn_norm_post(
+            self.feed_forward(self.ffn_norm(h.float())).float()
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -132,13 +199,18 @@ class _ZUNAEncoder(nn.Module):
         dim: int = 1024,
         n_layers: int = 16,
         n_heads: int = 8,
+        n_kv_heads: Optional[int] = None,
         head_dim: int = 64,
         input_dim: int = 32,
         output_dim: int = 32,
-        max_seqlen: int = 50,
+        max_seqlen: int = 256,
         rope_theta: float = 10000.0,
         rope_dim: int = 4,
         norm_eps: float = 1e-5,
+        multiple_of: int = 256,
+        ffn_dim_multiplier: Optional[float] = None,
+        sandwich_norm: bool = True,
+        qk_norm: bool = True,
     ):
         super().__init__()
         if head_dim % rope_dim != 0:
@@ -146,7 +218,18 @@ class _ZUNAEncoder(nn.Module):
         self.tok_embeddings = nn.Linear(input_dim, dim)
         self.registers = nn.Parameter(torch.zeros(1, input_dim))
         self.layers = nn.ModuleList(
-            _TransformerBlock(dim, n_heads, head_dim, norm_eps) for _ in range(n_layers)
+            _TransformerBlock(
+                dim,
+                n_heads,
+                head_dim,
+                norm_eps,
+                n_kv_heads=n_kv_heads,
+                multiple_of=multiple_of,
+                ffn_dim_multiplier=ffn_dim_multiplier,
+                sandwich_norm=sandwich_norm,
+                qk_norm=qk_norm,
+            )
+            for _ in range(n_layers)
         )
         self.norm = _RMSNorm(dim, eps=norm_eps)
         self.output = nn.Linear(dim, output_dim, bias=False)
@@ -196,16 +279,15 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     ZUNA is a position-aware diffusion autoencoder for EEG superresolution,
     wrapped here with a Braindecode classification head.
 
-    Ports the inference path of the public ``Zyphra/ZUNA`` encoder. Every
+    Ports the inference path of the public ``Zyphra/ZUNA1.1`` encoder. Every
     architecture hyperparameter is a constructor argument and defaults to the
-    published ``Zyphra/ZUNA`` config, so the defaults reproduce the pretrained
+    published ``Zyphra/ZUNA1.1`` config, so the defaults reproduce the pretrained
     encoder while smaller configurations can be built for training from
     scratch or research. To download the pretrained encoder checkpoint from
     Hugging Face (requires ``pip install 'braindecode[hub]'``)::
 
-        # Defaults to the braindecode re-host (``braindecode/ZUNA``), a
-        # bit-identical mirror of the upstream weights; ``n_chans`` and
-        # ``n_outputs`` are montage- and task-dependent and must be given.
+        # Defaults to the upstream ZUNA1.1 classifier checkpoint; ``n_chans``
+        # and ``n_outputs`` are montage- and task-dependent and must be given.
         ZUNA.from_pretrained(n_chans=19, n_outputs=4)
 
     Only the encoder is pretrained: the classification head is randomly
@@ -247,6 +329,8 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         Number of transformer blocks in the encoder.
     n_heads : int
         Number of attention heads per block.
+    n_kv_heads : int | None
+        Number of key/value attention heads. Defaults to ``n_heads``.
     head_dim : int
         Dimension of each attention head. Must be divisible by ``rope_dim``.
     fine_time_pts : int
@@ -270,6 +354,15 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         bucketing (scalp-radius normalisation).
     norm_eps : float
         Epsilon of the RMS normalisation layers.
+    multiple_of : int
+        Feed-forward hidden dimension is rounded up to a multiple of this
+        value.
+    ffn_dim_multiplier : float | None
+        Optional multiplier applied to the feed-forward hidden dimension.
+    sandwich_norm : bool
+        Whether to apply the ZUNA1.1 post-attention and post-FFN RMS norms.
+    qk_norm : bool
+        Whether to apply ZUNA1.1 query/key RMS norms inside attention.
     drop_prob : float
         Accepted for braindecode API symmetry; the published encoder has no
         dropout, so the value is not wired into the pretrained architecture.
@@ -295,15 +388,20 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         dim: int = 1024,
         n_layers: int = 16,
         n_heads: int = 8,
+        n_kv_heads: Optional[int] = None,
         head_dim: int = 64,
         fine_time_pts: int = 32,
         latent_dim: int = 32,
-        max_seqlen: int = 50,
+        max_seqlen: int = 256,
         rope_theta: float = 10000.0,
         rope_dim: int = 4,
         pos_bins: int = 50,
         pos_half_range: float = 0.12,
         norm_eps: float = 1e-5,
+        multiple_of: int = 256,
+        ffn_dim_multiplier: Optional[float] = None,
+        sandwich_norm: bool = True,
+        qk_norm: bool = True,
         drop_prob: float = 0.0,
         activation: type[nn.Module] = nn.GELU,
     ):
@@ -341,6 +439,7 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             dim=dim,
             n_layers=n_layers,
             n_heads=n_heads,
+            n_kv_heads=n_kv_heads,
             head_dim=head_dim,
             input_dim=fine_time_pts,
             output_dim=latent_dim,
@@ -348,6 +447,10 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             rope_theta=rope_theta,
             rope_dim=rope_dim,
             norm_eps=norm_eps,
+            multiple_of=multiple_of,
+            ffn_dim_multiplier=ffn_dim_multiplier,
+            sandwich_norm=sandwich_norm,
+            qk_norm=qk_norm,
         )
         self.final_layer = self._make_final_layer(self.n_outputs)
 
@@ -475,34 +578,75 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         if hub_config is not None and "n_outputs" in hub_config:
             hub_config["n_outputs"] = n_outputs
 
+    @staticmethod
+    def _normalise_encoder_key(key: str) -> str:
+        key = key.removeprefix("model.").removeprefix("encoder.")
+        if key.endswith(".norm.weight"):
+            key = f"{key.removesuffix('.norm.weight')}.weight"
+        return key
+
     def load_state_dict(self, state_dict, strict=True, **kwargs):
         # Upstream Zyphra/ZUNA nests encoder weights under
         # ``model.encoder.*`` and bundles decoder weights we don't use.
         if any(k.startswith("model.encoder.") for k in state_dict):
             state_dict = {
-                k.removeprefix("model.").removeprefix("encoder."): v
+                self._normalise_encoder_key(k): v
                 for k, v in state_dict.items()
                 if k.removeprefix("model.").startswith("encoder.")
             }
             return self.encoder.load_state_dict(state_dict, strict=strict)
         return super().load_state_dict(state_dict, strict=strict, **kwargs)
 
-    #: Default Hugging Face repo for :meth:`from_pretrained`: the braindecode
-    #: re-host of the ZUNA encoder (a bit-identical mirror of ``Zyphra/ZUNA``).
-    _HF_DEFAULT_REPO = "braindecode/ZUNA"
+    #: Default Hugging Face repo for :meth:`from_pretrained`.
+    _HF_DEFAULT_REPO = "Zyphra/ZUNA1.1"
+    _HF_DEFAULT_FILENAME = "classifier/model-00001-of-00001.safetensors"
+    _UPSTREAM_CONFIG_REMAP = {
+        "dim": "dim",
+        "n_layers": "n_layers",
+        "n_heads": "n_heads",
+        "n_kv_heads": "n_kv_heads",
+        "head_dim": "head_dim",
+        "encoder_input_dim": "fine_time_pts",
+        "encoder_output_dim": "latent_dim",
+        "max_seqlen": "max_seqlen",
+        "rope_theta": "rope_theta",
+        "rope_dim": "rope_dim",
+        "norm_eps": "norm_eps",
+        "multiple_of": "multiple_of",
+        "ffn_dim_multiplier": "ffn_dim_multiplier",
+    }
+
+    @classmethod
+    def _apply_upstream_config(cls, model_kwargs):
+        upstream_config = model_kwargs.pop("model", None)
+        if not isinstance(upstream_config, dict):
+            return
+        for upstream_key, init_key in cls._UPSTREAM_CONFIG_REMAP.items():
+            if upstream_key in upstream_config and init_key not in model_kwargs:
+                model_kwargs[init_key] = upstream_config[upstream_key]
+
+    @classmethod
+    def _from_pretrained(cls, *args, **kwargs):
+        cls._apply_upstream_config(kwargs)
+        return super()._from_pretrained(*args, **kwargs)
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
-        """Load pretrained ZUNA weights, defaulting to the braindecode re-host.
+        """Load pretrained ZUNA weights, defaulting to the ZUNA1.1 classifier.
 
-        ``pretrained_model_name_or_path`` defaults to ``"braindecode/ZUNA"``, a
-        bit-identical mirror of the upstream ``Zyphra/ZUNA`` encoder checkpoint,
-        re-hosted so the library has a stable location to point to. Pass a
-        different repo id or local path to override it. Only the encoder is
-        pretrained; the classification head is randomly initialised and must be
-        fine-tuned. ``n_chans`` (or ``chs_info``) and ``n_outputs`` are
-        montage- and task-dependent and must be supplied.
+        ``pretrained_model_name_or_path`` defaults to ``"Zyphra/ZUNA1.1"``, and
+        ``filename`` defaults to the classifier checkpoint under
+        ``"classifier/model-00001-of-00001.safetensors"``. Only the encoder is
+        loaded; decoder weights in the upstream checkpoint are ignored, and the
+        Braindecode classification head is randomly initialised. ``n_chans`` (or
+        ``chs_info``) and ``n_outputs`` are montage- and task-dependent and must
+        be supplied.
         """
-        if not args and kwargs.get("pretrained_model_name_or_path") is None:
+        model_id = args[0] if args else kwargs.get("pretrained_model_name_or_path")
+        using_default_repo = model_id is None
+        if using_default_repo:
             kwargs["pretrained_model_name_or_path"] = cls._HF_DEFAULT_REPO
+            model_id = cls._HF_DEFAULT_REPO
+        if model_id == cls._HF_DEFAULT_REPO and kwargs.get("filename") is None:
+            kwargs["filename"] = cls._HF_DEFAULT_FILENAME
         return super().from_pretrained(*args, **kwargs)
