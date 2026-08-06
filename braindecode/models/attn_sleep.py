@@ -168,9 +168,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         """if return_feats:
             raise ValueError("return_feat == True is not accepted anymore")"""
         if not return_feats:
-            self.final_layer = nn.Linear(
-                d_model * after_reduced_cnn_size, self.n_outputs
-            )
+            self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
 
     @staticmethod
     def _feature_length(mrcnn, n_times):
