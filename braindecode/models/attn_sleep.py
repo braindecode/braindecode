@@ -68,9 +68,10 @@ class AttnSleep(EEGModuleMixin, nn.Module):
     input_size_s : float
         Alias for `input_window_seconds`.
     activation : nn.Module, default=nn.ReLU
-        Activation function class to apply. Should be a PyTorch activation
+        Activation function class to apply in the AFR block and in the
+        position wise feed forward of the TCE. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
-    activation_mrcnn : nn.Module, default=nn.ReLU
+    activation_mrcnn : nn.Module, default=nn.GELU
         Activation function class to apply in the Mask R-CNN layer.
         Should be a PyTorch activation module class like ``nn.ReLU`` or
         ``nn.GELU``. Default is ``nn.GELU``.
