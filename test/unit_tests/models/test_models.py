@@ -991,6 +991,11 @@ def test_eldele_2021_feats():
     assert out.shape == (n_examples, model.len_last_layer)
 
 
+def test_eldele_2021_d_model_mismatch():
+    with pytest.raises(ValueError, match="d_model=54"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
+
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
