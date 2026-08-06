@@ -1013,6 +1013,23 @@ def test_eldele_2021_other_window():
     assert model(X).shape == (4, 5)
 
 
+def test_eldele_2021_other_window_feats():
+    model = AttnSleep(
+        sfreq=100,
+        n_outputs=5,
+        n_times=2000,
+        d_model=54,
+        n_attn_heads=6,
+        return_feats=True,
+    )
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = torch.from_numpy(rng.randn(4, 1, 2000).astype(np.float32))
+
+    assert model(X).shape == (4, model.len_last_layer)
+
+
 def test_eldele_2021_final_layer_matches_features():
     model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000)
 
