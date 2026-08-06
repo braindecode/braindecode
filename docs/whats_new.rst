@@ -54,7 +54,9 @@ Bug fixes
 Code health
 ============
 
-- None yet
+- The attention block of :class:`braindecode.models.AttnSleep` no longer builds
+  a weighted sum that is dropped on the next line, so each attention call runs
+  one matrix multiplication less. By `Sarthak Tayal`_.
 
 
 Current 1.7.0 (2026-08-01)
