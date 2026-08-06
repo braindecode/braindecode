@@ -1013,6 +1013,18 @@ def test_eldele_2021_other_window():
     assert model(X).shape == (4, 5)
 
 
+def test_eldele_2021_activation_reaches_afr():
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000, activation=nn.ELU)
+    afr_activations = [
+        type(module)
+        for module in model.feature_extractor[0].AFR.modules()
+        if isinstance(module, (nn.ReLU, nn.ELU))
+    ]
+
+    assert afr_activations
+    assert all(act is nn.ELU for act in afr_activations)
+
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
