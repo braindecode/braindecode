@@ -1,4 +1,5 @@
 # Authors: Divyesh Narayanan <divyesh.narayanan@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
