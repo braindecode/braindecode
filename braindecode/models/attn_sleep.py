@@ -238,10 +238,10 @@ class _SEBasicBlock(nn.Module):
         super(_SEBasicBlock, self).__init__()
         self.conv1 = nn.Conv1d(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm1d(planes)
-        self.relu = activation(inplace=True)
+        self.relu = activation()
         self.conv2 = nn.Conv1d(planes, planes, 1)
         self.bn2 = nn.BatchNorm1d(planes)
-        self.se = _SELayer(planes, reduction)
+        self.se = _SELayer(planes, reduction, activation=activation)
         self.downsample = downsample
         self.stride = stride
         self.features = nn.Sequential(
