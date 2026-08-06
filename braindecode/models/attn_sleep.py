@@ -178,13 +178,11 @@ class AttnSleep(EEGModuleMixin, nn.Module):
 
     @staticmethod
     def _feature_length(mrcnn, n_times):
-        # length of the time axis coming out of the mrcnn, this is what the
-        # temporal context encoder sees as its model dimension
-        was_training = mrcnn.training
+        # time steps out of the mrcnn, the tce takes this as its model dimension
         mrcnn.eval()
         with torch.no_grad():
             out = mrcnn(torch.zeros(1, 1, n_times))
-        mrcnn.train(was_training)
+        mrcnn.train()
         return out.shape[-1]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
