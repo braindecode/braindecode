@@ -141,6 +141,8 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             activation=activation_mrcnn,
             activation_se=activation,
         )
+        feature_length = self._feature_length(mrcnn, self.n_times)
+
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, drop_prob, activation=activation)
         tce = _TCE(
@@ -162,12 +164,16 @@ class AttnSleep(EEGModuleMixin, nn.Module):
                 d_model * after_reduced_cnn_size, self.n_outputs
             )
 
-    def _len_last_layer(self, input_size):
-        self.feature_extractor.eval()
+    @staticmethod
+    def _feature_length(mrcnn, n_times):
+        # length of the time axis coming out of the mrcnn, this is what the
+        # temporal context encoder sees as its model dimension
+        was_training = mrcnn.training
+        mrcnn.eval()
         with torch.no_grad():
-            out = self.feature_extractor(torch.Tensor(1, 1, input_size))
-        self.feature_extractor.train()
-        return len(out.flatten())
+            out = mrcnn(torch.zeros(1, 1, n_times))
+        mrcnn.train(was_training)
+        return out.shape[-1]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
