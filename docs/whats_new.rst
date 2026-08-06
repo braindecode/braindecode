@@ -48,7 +48,7 @@ Bug fixes
   ``nn.ReLU`` no matter what was passed. By `Sarthak Tayal`_.
 
 - :class:`braindecode.models.AttnSleep` now reports which ``d_model`` a window
-  length needs instead of failing inside a layer normalisation, and it sizes its
+  length needs instead of failing inside a layer normalization, and it sizes its
   final layer from the measured feature length. By `Sarthak Tayal`_.
 
 Code health
