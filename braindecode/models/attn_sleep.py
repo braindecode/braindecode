@@ -326,7 +326,7 @@ class _MRCNN(nn.Module):
         )
 
     def _make_layer(
-        self, block, planes, blocks, stride=1, activate: type[nn.Module] = nn.ReLU
+        self, block, planes, blocks, stride=1, activation: type[nn.Module] = nn.ReLU
     ):  # makes residual SE block
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
