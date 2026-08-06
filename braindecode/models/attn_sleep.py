@@ -381,16 +381,12 @@ class _MRCNN(nn.Module):
 ##########################################################################################
 
 
-def _attention(
-    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Implementation of Scaled dot product attention."""
+def _attention_weights(query: torch.Tensor, key: torch.Tensor) -> torch.Tensor:
+    """Weights of the scaled dot product attention."""
     # d_k - dimension of the query and key vectors
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
-    p_attn = F.softmax(scores, dim=-1)  # attention weights
-    output = torch.matmul(p_attn, value)  # (B, h, T, d_k)
-    return output, p_attn
+    return F.softmax(scores, dim=-1)  # attention weights
 
 
 class _MultiHeadedAttention(nn.Module):
@@ -432,10 +428,10 @@ class _MultiHeadedAttention(nn.Module):
             .transpose(1, 2)
         )
 
-        x_raw, attn_weights = _attention(query, key, value)
+        attn_weights = _attention_weights(query, key)
         # apply dropout to the *weights*
         attn = self.dropout(attn_weights)
-        # recompute the weighted sum with dropped weights
+        # weighted sum with the dropped weights
         x = torch.matmul(attn, value)
 
         # stash the pre‑dropout weights if you need them
