@@ -1013,6 +1013,13 @@ def test_eldele_2021_other_window():
     assert model(X).shape == (4, 5)
 
 
+def test_eldele_2021_final_layer_matches_features():
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000)
+
+    assert model.len_last_layer == 80 * 30
+    assert model.final_layer.in_features == model.len_last_layer
+
+
 def test_eldele_2021_activation_reaches_afr():
     model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000, activation=nn.ELU)
     afr_activations = [
