@@ -996,6 +996,11 @@ def test_eldele_2021_d_model_mismatch():
         AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
 
 
+def test_eldele_2021_heads_not_dividing_d_model():
+    with pytest.raises(ValueError, match="divisible"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
+
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
