@@ -342,10 +342,12 @@ class _MRCNN(nn.Module):
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample))
+        layers.append(
+            block(self.inplanes, planes, stride, downsample, activation=activation)
+        )
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes, activate=activate))
+            layers.append(block(self.inplanes, planes, activation=activation))
 
         return nn.Sequential(*layers)
 
