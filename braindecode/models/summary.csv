@@ -45,6 +45,7 @@ FBLightConvNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq"
 IFNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",9860,"IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 BrainModule,Speech Decoding,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6186909,"BrainModule(n_chans=64, n_outputs=29, n_times=160, sfreq=1000)","Convolution","EEG, MEG"
 PBT,General,Prediction,250,"n_chans, n_outputs, n_times",818948,"PBT(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Foundation Model",EEG
+PopulationTransformer,General,"Prediction, Embedding",2048,"n_chans, n_outputs, n_times",480002,"PopulationTransformer(n_chans=8, n_outputs=2, n_times=768)","Foundation Model,Attention/Transformer",iEEG
 SSTDPN,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",19502,"SSTDPN(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 BENDR,General,"Prediction, Embedding",250,"n_chans, n_times, n_outputs",157141049,"BENDR(n_chans=22, n_outputs=4, n_times=1000)","Foundation Model,Convolution",EEG
 LUNA,General,"Prediction, Embedding",128,"n_chans, n_times, sfreq, chs_info",7100731,"LUNA(n_chans=22, n_times=512, sfreq=128)","Convolution,Channel,Foundation Model",EEG

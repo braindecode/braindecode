@@ -41,6 +41,7 @@ from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
 from .patchedtransformer import PBT
+from .popt import PopulationTransformer
 from .reve import REVE
 from .sccnet import SCCNet
 from .shallow_fbcsp import ShallowFBCSPNet
@@ -125,6 +126,7 @@ __all__ = [
     "MSVTNet",
     "MVPFormer",
     "PBT",
+    "PopulationTransformer",
     "REVE",
     "SCCNet",
     "ShallowFBCSPNet",
