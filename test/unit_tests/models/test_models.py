@@ -75,6 +75,7 @@ from braindecode.models.eegpt import (
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
+    _EEG_PARAMS,
     _get_possible_signal_params,
     _get_signal_params,
     interpolated_models_dict,
@@ -4156,9 +4157,6 @@ def test_dropout1d_masks_channels_not_batch_items():
     assert (zeroed.any(dim=1) & ~zeroed.all(dim=1)).any()
 
 
-_EEG_PARAMS = frozenset(
-    {"n_outputs", "n_chans", "chs_info", "n_times", "input_window_seconds", "sfreq"}
-)
 _NUMPYDOC_SECTIONS = frozenset(
     {
         "Returns",
