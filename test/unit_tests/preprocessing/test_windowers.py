@@ -984,7 +984,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                     "trial_stop_offset_samples": 0,
                     "window_size_samples": 100,
                     "window_stride_samples": 100,
-                    "drop_last_window": False,
+                    "on_last_window": "overlap",
                     "mapping": {"test": 0},
                     "preload": False,
                     "drop_bad_windows": True,
@@ -1602,3 +1602,133 @@ def test_to_epochs_dataset_is_consistent(lazy_loadable_dataset):
         np.testing.assert_allclose(x_epo, x_eeg)
         assert y_epo == y_eeg
         assert crop_epo == crop_eeg
+
+@pytest.mark.parametrize("on_last_window", ["overlap", "drop", "keep"])
+def test_on_last_window_events(lazy_loadable_dataset, on_last_window):
+    """on_last_window produces correct number of windows vs 'drop'."""
+    kwargs = dict(
+        concat_ds=lazy_loadable_dataset,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=70,
+        window_stride_samples=70,
+    )
+    windows = create_windows_from_events(**kwargs, on_last_window=on_last_window)
+    windows_drop = create_windows_from_events(**kwargs, on_last_window="drop")
+
+    n = len(windows.datasets[0].metadata)
+    n_drop = len(windows_drop.datasets[0].metadata)
+
+    if on_last_window == "drop":
+        assert n == n_drop
+    elif on_last_window == "keep":
+        assert n > n_drop
+        last = windows.datasets[0].metadata.iloc[-1]
+        assert last["i_stop_in_trial"] - last["i_start_in_trial"] < 70
+    else:  # overlap
+        assert n >= n_drop
+
+
+@pytest.mark.parametrize("on_last_window", ["overlap", "drop", "keep"])
+def test_on_last_window_fixed(lazy_loadable_dataset, on_last_window):
+    """on_last_window produces correct number of windows vs 'drop'."""
+    kwargs = dict(
+        concat_ds=lazy_loadable_dataset,
+        window_size_samples=110,
+        window_stride_samples=110,
+    )
+    windows = create_fixed_length_windows(**kwargs, on_last_window=on_last_window)
+    windows_drop = create_fixed_length_windows(**kwargs, on_last_window="drop")
+
+    n = len(windows.datasets[0].metadata)
+    n_drop = len(windows_drop.datasets[0].metadata)
+
+    if on_last_window == "drop":
+        assert n == n_drop
+    elif on_last_window == "keep":
+        assert n == n_drop + 1
+        last = windows.datasets[0].metadata.iloc[-1]
+        assert last["i_stop_in_trial"] - last["i_start_in_trial"] < 110
+    else:  # overlap
+        assert n >= n_drop
+
+
+@pytest.mark.parametrize(
+    "fn, extra_kwargs",
+    [
+        (create_windows_from_events, dict(
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+        )),
+        (create_fixed_length_windows, dict()),
+    ],
+)
+def test_on_last_window_deprecation_warning(lazy_loadable_dataset, fn, extra_kwargs):
+    """drop_last_window raises FutureWarning and maps to on_last_window='drop'."""
+    with pytest.warns(FutureWarning, match="drop_last_window"):
+        windows = fn(
+            concat_ds=lazy_loadable_dataset,
+            window_size_samples=90,
+            window_stride_samples=90,
+            drop_last_window=True,
+            **extra_kwargs,
+        )
+    meta = windows.datasets[0].metadata
+    assert np.all((meta["i_stop_in_trial"] - meta["i_start_in_trial"]).values == 90)
+
+@pytest.mark.parametrize(
+    "fn, extra_kwargs",
+    [
+        (create_windows_from_events, dict(
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+        )),
+        (create_fixed_length_windows, dict()),
+    ],
+)
+def test_on_last_window_conflict_raises(lazy_loadable_dataset, fn, extra_kwargs):
+    """Passing both drop_last_window and on_last_window raises ValueError."""
+    with pytest.raises(ValueError, match="Cannot specify both"):
+        fn(
+            concat_ds=lazy_loadable_dataset,
+            window_size_samples=90,
+            window_stride_samples=90,
+            drop_last_window=True,
+            on_last_window="drop",
+            **extra_kwargs,
+        )
+
+
+@pytest.mark.parametrize(
+    "fn, extra_kwargs",
+    [
+        (create_windows_from_events, dict(
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+        )),
+        (create_fixed_length_windows, dict()),
+    ],
+)
+def test_on_last_window_invalid_raises(lazy_loadable_dataset, fn, extra_kwargs):
+    """Invalid on_last_window value raises ValueError."""
+    with pytest.raises(ValueError, match="on_last_window"):
+        fn(
+            concat_ds=lazy_loadable_dataset,
+            window_size_samples=90,
+            window_stride_samples=90,
+            on_last_window="invalid",
+            **extra_kwargs,
+        )
+
+
+@pytest.mark.parametrize("mode", ["overlap", "keep"])
+def test_on_last_window_lazy_metadata_incompatible(lazy_loadable_dataset, mode):
+    """on_last_window != 'drop' with lazy_metadata raises ValueError."""
+    with pytest.raises(ValueError, match="lazy_metadata"):
+        create_fixed_length_windows(
+            concat_ds=lazy_loadable_dataset,
+            window_size_samples=90,
+            window_stride_samples=90,
+            on_last_window=mode,
+            lazy_metadata=True,
+        )
