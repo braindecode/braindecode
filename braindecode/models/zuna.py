@@ -20,11 +20,16 @@ from torch.nn import functional as F
 import braindecode.models.base as bd_base
 from braindecode.models.util import extract_channel_locations_from_chs_info
 
-# All ``__init__`` defaults below reproduce the published Zyphra/ZUNA
-# ``config_infer.yaml``. Change them together with the upstream checkpoint, or
+# All architecture defaults below reproduce the published Zyphra/ZUNA1.1
+# checkpoint config. Change them together with the upstream checkpoint, or
 # pretrained weights will silently produce non-comparable embeddings.
+_ZUNA_SFREQ = 256.0
+_ZUNA_DEFAULT_N_TIMES = 1280
+_ZUNA_MIN_SECONDS = 0.5
+_ZUNA_MAX_SECONDS = 30.0
 _SIGNAL_ERROR = (
-    "ZUNA requires inputs with 1280 time steps: 5 seconds sampled at 256 Hz."
+    "ZUNA1.1 expects 256 Hz EEG windows from 0.5 to 30.0 seconds, "
+    "with n_times divisible by fine_time_pts."
 )
 
 
@@ -293,9 +298,13 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     Only the encoder is pretrained: the classification head is randomly
     initialised and must be fine-tuned on the downstream task.
 
-    Inputs must be 5-second EEG windows sampled at 256 Hz
-    (``n_times=1280``). Channel coordinates are resolved by :meth:`forward`
-    in this order, and any of the three sources is sufficient:
+    Inputs must be EEG windows sampled at 256 Hz and may span 0.5 to 30.0
+    seconds. The default constructor shape remains ``n_times=1280``, but the
+    encoder accepts any runtime window length in the supported range as long
+    as it lands on the coarse-time token grid
+    (``fine_time_pts=32`` samples, i.e. 0.125 s, by default). Channel
+    coordinates are resolved by :meth:`forward` in this order, and any of the
+    three sources is sufficient:
 
     1. ``channel_positions`` passed to :meth:`forward`.
     2. ``chs_info`` provided at construction (via
@@ -318,11 +327,17 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     chs_info : list of dict | None
         MNE-style channel info; also used to extract coordinates.
     n_times : int | None
-        Number of samples per window (must be ``1280``).
+        Number of samples per window. If ``None``, inferred from
+        ``input_window_seconds`` and ``sfreq``, or defaults to ``1280`` when
+        neither is specified. Must correspond to 0.5 to 30.0 seconds at
+        256 Hz and be divisible by ``fine_time_pts``.
     input_window_seconds : float | None
-        Window length in seconds (must be ``5.0``).
+        Window length in seconds. If ``None``, inferred from ``n_times`` and
+        ``sfreq``, or from the default ``n_times`` and ``sfreq`` when neither
+        is specified. Must be in the ZUNA1.1 training range of 0.5 to 30.0
+        seconds.
     sfreq : float | None
-        Sampling frequency in Hz (must be ``256.0``).
+        Sampling frequency in Hz. ZUNA1.1 expects ``256.0`` Hz inputs.
     dim : int
         Transformer embedding dimension of the encoder.
     n_layers : int
@@ -335,13 +350,16 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         Dimension of each attention head. Must be divisible by ``rope_dim``.
     fine_time_pts : int
         Number of fine time points per token (the encoder input dimension).
-        ``n_times`` must be divisible by this value.
+        ``n_times`` must be divisible by this value. The pretrained ZUNA1.1
+        encoder uses ``32`` samples, equivalent to 0.125-second coarse-time
+        tokens at 256 Hz.
     latent_dim : int
         Per-token latent dimension produced by the encoder (the encoder
         output dimension).
     max_seqlen : int
         Size of the precomputed rotary table; must cover both ``pos_bins``
-        and ``n_times // fine_time_pts``.
+        and the largest ``n_times // fine_time_pts`` that the instance should
+        accept. The default ``256`` covers 30-second windows at 256 Hz.
     rope_theta : float
         Base period of the rotary positional embedding.
     rope_dim : int
@@ -372,9 +390,9 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [Warner2026] Warner, C., Mago, J., Huml, J.R., Osman, M. and
-       Millidge, B., 2026. ZUNA: Flexible EEG Superresolution with
-       Position-Aware Diffusion Autoencoders. arXiv preprint arXiv:2602.18478.
+    .. [Warner2026] Warner, C., Mago, J., Huml, J.R. and Millidge, B.,
+       2026. ZUNA1.1: A more flexible EEG foundation model for Denoising and
+       Super-resolution. arXiv preprint arXiv:2607.27308.
     """
 
     def __init__(
@@ -382,7 +400,7 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         n_outputs: Optional[int] = None,
         n_chans: Optional[int] = None,
         chs_info: Optional[list[dict]] = None,
-        n_times: Optional[int] = 1280,
+        n_times: Optional[int] = None,
         input_window_seconds: Optional[float] = None,
         sfreq: Optional[float] = None,
         dim: int = 1024,
@@ -405,18 +423,31 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         drop_prob: float = 0.0,
         activation: type[nn.Module] = nn.GELU,
     ):
-        n_times = 1280 if n_times is None else n_times
-        input_window_seconds = (
-            5.0 if input_window_seconds is None else input_window_seconds
-        )
-        sfreq = 256.0 if sfreq is None else sfreq
-        if (n_times, sfreq, input_window_seconds) != (1280, 256.0, 5.0):
-            raise ValueError(_SIGNAL_ERROR)
-        if n_times % fine_time_pts != 0:
+        sfreq = _ZUNA_SFREQ if sfreq is None else float(sfreq)
+        if not math.isclose(sfreq, _ZUNA_SFREQ):
+            raise ValueError(f"{_SIGNAL_ERROR} Got sfreq={sfreq}.")
+
+        if n_times is None and input_window_seconds is None:
+            n_times = _ZUNA_DEFAULT_N_TIMES
+        elif n_times is None:
+            assert input_window_seconds is not None
+            n_times = round(input_window_seconds * sfreq)
+        assert n_times is not None
+        if input_window_seconds is None:
+            input_window_seconds = n_times / sfreq
+
+        if n_times != round(input_window_seconds * sfreq):
             raise ValueError(
-                f"n_times ({n_times}) must be divisible by fine_time_pts "
-                f"({fine_time_pts})."
+                f"n_times={n_times} different from "
+                f"input_window_seconds={input_window_seconds} * sfreq={sfreq}"
             )
+        self._validate_signal_window(
+            n_times,
+            sfreq=sfreq,
+            fine_time_pts=fine_time_pts,
+            max_seqlen=max_seqlen,
+            pos_bins=pos_bins,
+        )
 
         super().__init__(
             n_outputs=n_outputs,
@@ -462,6 +493,50 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             if cached is not None
             else None,
             persistent=False,
+        )
+
+    @staticmethod
+    def _validate_signal_window(
+        n_times: int,
+        *,
+        sfreq: float,
+        fine_time_pts: int,
+        max_seqlen: int,
+        pos_bins: int,
+    ) -> None:
+        if n_times <= 0:
+            raise ValueError(f"n_times must be positive. Got {n_times}.")
+        if fine_time_pts <= 0:
+            raise ValueError(f"fine_time_pts must be positive. Got {fine_time_pts}.")
+        if n_times % fine_time_pts != 0:
+            raise ValueError(
+                f"{_SIGNAL_ERROR} Got n_times={n_times} and "
+                f"fine_time_pts={fine_time_pts}."
+            )
+
+        window_seconds = n_times / sfreq
+        if not (_ZUNA_MIN_SECONDS <= window_seconds <= _ZUNA_MAX_SECONDS):
+            raise ValueError(
+                f"{_SIGNAL_ERROR} Got {window_seconds:g} seconds "
+                f"({n_times} samples at {sfreq:g} Hz)."
+            )
+
+        coarse_time = n_times // fine_time_pts
+        required_seqlen = max(pos_bins, coarse_time)
+        if required_seqlen > max_seqlen:
+            raise ValueError(
+                f"max_seqlen ({max_seqlen}) must be at least "
+                f"max(pos_bins ({pos_bins}), n_times // fine_time_pts "
+                f"({coarse_time}))."
+            )
+
+    def _validate_runtime_window(self, n_times: int) -> None:
+        self._validate_signal_window(
+            n_times,
+            sfreq=self.sfreq,
+            fine_time_pts=self._fine_time_pts,
+            max_seqlen=self.encoder.freqs_cis.shape[0],
+            pos_bins=self._pos_bins,
         )
 
     def _make_final_layer(self, n_outputs: int) -> nn.Module:
@@ -529,10 +604,9 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             )
         if x.shape[1] != self.n_chans:
             raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
-        if x.shape[2] != self.n_times:
-            raise ValueError(_SIGNAL_ERROR)
 
         b, n_chans, n_times = x.shape
+        self._validate_runtime_window(n_times)
         coarse_time = n_times // self._fine_time_pts
         tokens = x.reshape(b, n_chans * coarse_time, self._fine_time_pts)
 

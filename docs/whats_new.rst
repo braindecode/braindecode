@@ -30,7 +30,8 @@ Enhancements
 
 - Add :class:`braindecode.models.ZUNA`, a position-aware EEG foundation model
   from Warner et al. (2026), ported from the public ``Zyphra/ZUNA1.1`` encoder
-  with a Braindecode classification head. The
+  with a Braindecode classification head and support for ZUNA1.1's 0.5- to
+  30-second 256 Hz input windows. The
   :meth:`braindecode.models.ZUNA.from_pretrained` helper defaults to the upstream
   ZUNA1.1 classifier checkpoint (:gh:`1020` by `Jon Huml`_)
 

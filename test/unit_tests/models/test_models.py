@@ -1442,7 +1442,7 @@ _SMALL_ZUNA_KWARGS = dict(
     head_dim=8,
     fine_time_pts=32,
     latent_dim=12,
-    max_seqlen=50,
+    max_seqlen=256,
     rope_theta=10000.0,
     rope_dim=4,
 )
@@ -1496,6 +1496,26 @@ def test_zuna_forward_return_features_dict(small_zuna):
     torch.testing.assert_close(out["features"], out["structured_latents"].mean(dim=2))
 
 
+@pytest.mark.parametrize(
+    "n_times, coarse_time",
+    [
+        (128, 4),
+        (1280, 40),
+        (7680, 240),
+    ],
+)
+def test_zuna_forward_accepts_variable_zuna11_lengths(n_times, coarse_time):
+    model = ZUNA(n_chans=3, n_outputs=2, **_SMALL_ZUNA_KWARGS)
+    out = model(
+        torch.randn(1, 3, n_times),
+        channel_positions=_ZUNA_POSITIONS,
+        return_features=True,
+    )
+    assert out["features"].shape == (1, 3, 12)
+    assert out["token_latents"].shape == (1, 3 * coarse_time, 12)
+    assert out["structured_latents"].shape == (1, 3, coarse_time, 12)
+
+
 def test_zuna_batched_forward_matches_per_sample(small_zuna):
     model = small_zuna.eval()
     x = torch.randn(3, 3, 1280)
@@ -1537,6 +1557,31 @@ def test_zuna_exposes_sfreq_and_input_window(small_zuna):
     assert small_zuna.input_window_seconds == 5.0
 
 
+def test_zuna_infers_variable_input_window_seconds():
+    model = ZUNA(
+        n_chans=3,
+        n_outputs=2,
+        input_window_seconds=10.0,
+        sfreq=256.0,
+        **_SMALL_ZUNA_KWARGS,
+    )
+    assert model.n_times == 2560
+    assert model.input_window_seconds == 10.0
+
+
+def test_zuna_variable_window_config_round_trip():
+    model = ZUNA(
+        n_chans=3,
+        n_outputs=2,
+        input_window_seconds=10.0,
+        sfreq=256.0,
+        **_SMALL_ZUNA_KWARGS,
+    )
+    restored = ZUNA.from_config(model.get_config())
+    assert restored.n_times == 2560
+    assert restored.input_window_seconds == 10.0
+
+
 def test_zuna_requires_channel_positions_or_names(small_zuna):
     with pytest.raises(ValueError, match="ZUNA requires channel coordinates or names"):
         small_zuna(torch.randn(1, 3, 1280))
@@ -1544,17 +1589,33 @@ def test_zuna_requires_channel_positions_or_names(small_zuna):
 
 def test_zuna_requires_montage_when_names_only(small_zuna):
     with pytest.raises(ValueError, match="ZUNA requires a montage"):
-        small_zuna(torch.randn(1, 3, 1280), channel_names=["Fz", "Cz", "Pz"], montage=None)
+        small_zuna(
+            torch.randn(1, 3, 1280),
+            channel_names=["Fz", "Cz", "Pz"],
+            montage=None,
+        )
 
 
-@pytest.mark.parametrize("bad_n_times", [1279, 1281])
-def test_zuna_rejects_non_zuna_n_times(bad_n_times):
-    with pytest.raises(ValueError, match="5 seconds sampled at 256 Hz"):
+@pytest.mark.parametrize(
+    "bad_n_times, match",
+    [
+        (96, "0.375 seconds"),
+        (7712, "30.125 seconds"),
+        (1279, "divisible by fine_time_pts"),
+    ],
+)
+def test_zuna_rejects_invalid_constructor_window(bad_n_times, match):
+    with pytest.raises(ValueError, match=match):
         ZUNA(n_chans=3, n_outputs=2, n_times=bad_n_times)
 
 
+def test_zuna_rejects_non_256_hz_inputs():
+    with pytest.raises(ValueError, match="256 Hz"):
+        ZUNA(n_chans=3, n_outputs=2, sfreq=250.0)
+
+
 def test_zuna_rejects_non_zuna_forward_length(small_zuna):
-    with pytest.raises(ValueError, match="5 seconds sampled at 256 Hz"):
+    with pytest.raises(ValueError, match="divisible by fine_time_pts"):
         small_zuna(torch.randn(1, 3, 1279), channel_positions=_ZUNA_POSITIONS)
 
 
@@ -1566,7 +1627,9 @@ def test_zuna_reset_head_replaces_final_layer(small_zuna):
 
 
 def test_zuna_load_state_dict_strips_upstream_prefix(small_zuna):
-    randomized = {k: torch.randn_like(v) for k, v in small_zuna.encoder.state_dict().items()}
+    randomized = {
+        k: torch.randn_like(v) for k, v in small_zuna.encoder.state_dict().items()
+    }
     upstream = {f"model.encoder.{k}": v for k, v in randomized.items()}
     upstream["model.decoder.dummy"] = torch.zeros(1)
 
