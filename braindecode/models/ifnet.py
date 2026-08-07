@@ -73,14 +73,17 @@ class IFNet(EEGModuleMixin, nn.Module):
     ----------
     bands : list[tuple[int, int]] or int or None, default=[[4, 16], (16, 40)]
         Frequency bands for filtering.
-    out_planes : int, default=64
+    n_filters_spat : int, default=64
         Number of output feature dimensions.
     kernel_sizes : tuple of int, default=(63, 31)
         List of kernel sizes for temporal convolutions.
-    patch_size : int, default=125
-        Size of the patches for temporal segmentation.
+    stride_factor : int, default=8
+        Number of temporal segments the padded signal is split into before
+        variance pooling.
     drop_prob : float, default=0.5
         Dropout probability.
+    linear_max_norm : float, default=0.5
+        Maximum norm constraint on the weights of the final linear layer.
     activation : nn.Module, default=nn.GELU
         Activation function after the InterFrequency Layer.
     verbose : bool, default=False

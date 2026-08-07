@@ -43,7 +43,22 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- Fix the docstrings of :class:`braindecode.models.ATCNet`,
+  :class:`braindecode.models.AttnSleep`, :class:`braindecode.models.CTNet`,
+  :class:`braindecode.models.EEGSimpleConv`, :class:`braindecode.models.IFNet`,
+  :class:`braindecode.models.SPARCNet`,
+  :class:`braindecode.models.SleepStagerBlanco2020`,
+  :class:`braindecode.models.SleepStagerChambon2018` and
+  :class:`braindecode.models.TIDNet`, which documented parameters their
+  constructors do not accept, either because the parameter was renamed
+  (``bn_size`` is ``bottleneck_size``, ``resampling`` is ``resampling_freq``,
+  ``att_dropout`` is ``att_drop_prob``) or because it was a deprecated alias
+  that has since been removed (``n_classes``, ``n_channels``, ``in_chans``,
+  ``input_size_s``, ``input_window_samples``). Following those docstrings
+  raised ``TypeError``. Also corrects the documented defaults of ``embed_dim``
+  and ``n_filters_time`` in :class:`braindecode.models.CTNet` and of
+  ``activation_mrcnn`` in :class:`braindecode.models.AttnSleep`.
+  By `Aditya Singh`_.
 
 Code health
 ============
@@ -1548,3 +1563,4 @@ Authors
 .. _Yiheng Li: https://github.com/YihengLi-1
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
+.. _Aditya Singh: https://github.com/adityasingh2400
