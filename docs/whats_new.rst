@@ -57,6 +57,13 @@ Current 1.7.0 (2026-08-01)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.ZUNA`, a position-aware EEG foundation model
+  from Warner et al. (2026), ported from the public ``Zyphra/ZUNA1.1`` encoder
+  with a Braindecode classification head and support for ZUNA1.1's 0.5- to
+  30-second 256 Hz input windows. The
+  :meth:`braindecode.models.ZUNA.from_pretrained` helper defaults to the upstream
+  ZUNA1.1 classifier checkpoint (:gh:`1020` by `Jon Huml`_)
+
 - Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
   registry for the interpolated (channel-adapting) models, keeping them separate
   from :data:`braindecode.models.util.models_dict` (:gh:`1093` by `Bruno Aristimunha`_)
@@ -1548,3 +1555,4 @@ Authors
 .. _Yiheng Li: https://github.com/YihengLi-1
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
+.. _Jon Huml: https://github.com/jonathanhuml
