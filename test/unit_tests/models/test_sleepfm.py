@@ -84,6 +84,14 @@ def test_attention_pooling_rejects_all_masked_sample():
         pooling(torch.randn(2, 3, 16), torch.ones(2, 3, dtype=torch.bool))
 
 
+def test_compiled_attention_pooling_rejects_all_masked_sample():
+    pooling = torch.compile(
+        _SleepFMAttentionPooling(16, num_heads=4), backend="eager", dynamic=False
+    )
+    with pytest.raises(AssertionError, match="at least one valid channel"):
+        pooling(torch.randn(2, 3, 16), torch.ones(2, 3, dtype=torch.bool))
+
+
 def test_sleepfm_forward_and_features():
     model = _small_sleepfm().eval()
     x = torch.randn(2, 3, 640)
@@ -128,6 +136,22 @@ def test_sleepfm_rejects_wrong_channel_mask_shape():
     model = _small_sleepfm()
     with pytest.raises(ValueError, match="channel_mask"):
         model(torch.randn(2, 3, 640), torch.zeros(2, 2, dtype=torch.bool))
+
+
+@pytest.mark.parametrize(
+    "channel_mask,error_type",
+    [
+        (torch.full((2, 3), 2), ValueError),
+        (torch.zeros(2, 3, dtype=torch.complex64), TypeError),
+    ],
+)
+def test_sleepfm_channel_mask_errors_use_public_argument_name(
+    channel_mask, error_type
+):
+    model = _small_sleepfm()
+    with pytest.raises(error_type, match="channel_mask") as exc_info:
+        model(torch.randn(2, 3, 640), channel_mask)
+    assert "key_padding_mask" not in str(exc_info.value)
 
 
 def test_sleepfm_stager_output_shape():
