@@ -122,8 +122,15 @@ class _SleepFMAttentionPooling(nn.Module):
                 f"got {tuple(x.shape)}."
             )
         key_padding_mask = self._validate_mask(key_padding_mask, x)
+        all_masked = None
+        if key_padding_mask is not None:
+            all_masked = key_padding_mask.all(dim=1)
+            key_padding_mask = key_padding_mask & ~all_masked.unsqueeze(1)
         if x.shape[1] == 1:
-            return x[:, 0]
+            output = x[:, 0]
+            if all_masked is not None:
+                output = output.masked_fill(all_masked.unsqueeze(1), 0)
+            return output
 
         output = self.transformer_layer(
             x,
@@ -131,8 +138,10 @@ class _SleepFMAttentionPooling(nn.Module):
         )
         if key_padding_mask is None:
             return output.mean(dim=1)
+        assert all_masked is not None
         valid = (~key_padding_mask).unsqueeze(-1).to(output.dtype)
-        return (output * valid).sum(dim=1) / valid.sum(dim=1)
+        output = (output * valid).sum(dim=1) / valid.sum(dim=1)
+        return output.masked_fill(all_masked.unsqueeze(1), 0)
 
 
 class _SleepFMTokenizer(nn.Module):

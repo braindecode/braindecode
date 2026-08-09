@@ -84,12 +84,12 @@ def test_attention_pooling_rejects_all_masked_sample():
         pooling(torch.randn(2, 3, 16), torch.ones(2, 3, dtype=torch.bool))
 
 
-def test_compiled_attention_pooling_rejects_all_masked_sample():
+def test_compiled_attention_pooling_safely_handles_all_masked_sample():
     pooling = torch.compile(
         _SleepFMAttentionPooling(16, num_heads=4), backend="eager", dynamic=False
     )
-    with pytest.raises(AssertionError, match="at least one valid channel"):
-        pooling(torch.randn(2, 3, 16), torch.ones(2, 3, dtype=torch.bool))
+    output = pooling(torch.randn(2, 3, 16), torch.ones(2, 3, dtype=torch.bool))
+    torch.testing.assert_close(output, torch.zeros_like(output))
 
 
 def test_sleepfm_forward_and_features():
