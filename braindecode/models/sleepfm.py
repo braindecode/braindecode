@@ -80,13 +80,14 @@ class _SleepFMAttentionPooling(nn.Module):
     def _validate_mask(
         key_padding_mask: torch.Tensor | None,
         x: torch.Tensor,
+        mask_name: str = "key_padding_mask",
     ) -> torch.Tensor | None:
         if key_padding_mask is None:
             return None
         expected_shape = x.shape[:2]
         if tuple(key_padding_mask.shape) != expected_shape:
             raise ValueError(
-                "key_padding_mask must have shape "
+                f"{mask_name} must have shape "
                 f"{tuple(expected_shape)}, got {tuple(key_padding_mask.shape)}."
             )
         if key_padding_mask.dtype != torch.bool:
@@ -101,9 +102,9 @@ class _SleepFMAttentionPooling(nn.Module):
                     torch.int64,
                 )
             ):
-                raise TypeError("key_padding_mask must be boolean or contain 0/1.")
+                raise TypeError(f"{mask_name} must be boolean or contain 0/1.")
             if not torch.all((key_padding_mask == 0) | (key_padding_mask == 1)):
-                raise ValueError("key_padding_mask may only contain 0 and 1.")
+                raise ValueError(f"{mask_name} may only contain 0 and 1.")
             key_padding_mask = key_padding_mask.bool()
         if not torch.compiler.is_compiling() and key_padding_mask.all(dim=1).any():
             raise ValueError("Each sample must contain at least one valid channel.")
@@ -359,7 +360,9 @@ class SleepFM(EEGModuleMixin, nn.Module):
             )
         if channel_mask.device != x.device:
             channel_mask = channel_mask.to(x.device)
-        return _SleepFMAttentionPooling._validate_mask(channel_mask, x)  # type: ignore[return-value]
+        return _SleepFMAttentionPooling._validate_mask(
+            channel_mask, x, mask_name="channel_mask"
+        )  # type: ignore[return-value]
 
     def tokenize(self, x: torch.Tensor) -> torch.Tensor:
         """Return per-channel, per-patch embeddings."""
