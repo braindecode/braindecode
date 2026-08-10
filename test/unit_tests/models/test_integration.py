@@ -24,6 +24,7 @@ from braindecode.models import (
     EEGPT,
     REVE,
     SSTDPN,
+    ZUNA,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -391,6 +392,7 @@ def test_model_has_drop_prob_parameter(model_class):
         InterpolatedEEGPT,
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
+        ZUNA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -560,7 +562,6 @@ def test_model_torch_script(model):
         "InterpolatedSignalJEPA",
         # TorchScript cannot script einops.rearrange (it uses **axes_lengths).
         "ZUNA",
-        # TorchScript cannot script einops.rearrange (it uses **axes_lengths).
         "STEEGFormer",
     ]
 

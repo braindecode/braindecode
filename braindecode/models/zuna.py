@@ -1,10 +1,5 @@
-# Original authors (Zyphra/ZUNA): Chris Warner, Jonas Mago, Jon Huml
-# Braindecode adaptation: Bruno Aristimunha <b.aristimunha@gmail.com>
-#
-# Ports the encoder-side inference path from https://github.com/Zyphra/zuna.
-# The upstream repository is released under the Apache License 2.0; this file
-# therefore inherits Apache-2.0 and is NOT covered by braindecode's BSD-3
-# license.
+# Authors: Chris Warner, Jonas Mago, Jon Huml
+#          Bruno Aristimunha <b.aristimunha@gmail.com> (Braindecode adaptation)
 #
 # License: Apache-2.0
 
@@ -23,19 +18,12 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 
 
-def _is_tracing() -> bool:
-    # torch.compiler.is_compiling only exists from torch 2.1.
-    compiling = getattr(getattr(torch, "compiler", None), "is_compiling", None)
-    return torch.jit.is_tracing() or bool(compiling and compiling())
-
-
-# ---------------------------------------------------------------------------
-# Public model
-# ---------------------------------------------------------------------------
 class ZUNA(EEGModuleMixin, nn.Module):
     r"""ZUNA from Warner et al (2026) [Warner2026]_.
 
     :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel` :bdg-info:`Attention/Transformer`
+
+    .. versionadded:: 1.7
 
     .. figure:: ../_static/model/zuna_arch.png
        :align: center
@@ -122,28 +110,8 @@ class ZUNA(EEGModuleMixin, nn.Module):
     - **Variable-length windows**: any 0.5-30 s window divisible by
       ``fine_time_pts`` is accepted at runtime without re-instantiation.
 
-    .. versionadded:: 1.7
-
     Parameters
     ----------
-    n_outputs : int | None
-        Number of output classes / regression targets.
-    n_chans : int | None
-        Number of EEG channels. Inferred from ``chs_info`` if not given.
-    chs_info : list of dict | None
-        MNE-style channel info; also used to extract coordinates.
-    n_times : int | None
-        Number of samples per window. If ``None``, inferred from
-        ``input_window_seconds`` and ``sfreq``, or defaults to ``1280`` when
-        neither is specified. Must correspond to 0.5 to 30.0 seconds at
-        256 Hz and be divisible by ``fine_time_pts``.
-    input_window_seconds : float | None
-        Window length in seconds. If ``None``, inferred from ``n_times`` and
-        ``sfreq``, or from the default ``n_times`` and ``sfreq`` when neither
-        is specified. Must be in the ZUNA1.1 training range of 0.5 to 30.0
-        seconds.
-    sfreq : float | None
-        Sampling frequency in Hz. ZUNA1.1 expects ``256.0`` Hz inputs.
     dim : int
         Transformer embedding dimension of the encoder.
     n_layers : int
@@ -187,12 +155,9 @@ class ZUNA(EEGModuleMixin, nn.Module):
         Whether to apply the ZUNA1.1 post-attention and post-FFN RMS norms.
     qk_norm : bool
         Whether to apply ZUNA1.1 query/key RMS norms inside attention.
-    drop_prob : float
-        Accepted for braindecode API symmetry; the published encoder has no
-        dropout, so the value is not wired into the pretrained architecture.
     activation : type[nn.Module]
-        Accepted for braindecode API symmetry; the encoder uses the fixed
-        SiLU feed-forward activation baked into the pretrained weights.
+        Feed-forward activation. The default is :class:`torch.nn.SiLU`, as
+        used by the pretrained encoder.
 
     References
     ----------
@@ -229,8 +194,7 @@ class ZUNA(EEGModuleMixin, nn.Module):
         ffn_dim_multiplier: Optional[float] = None,
         sandwich_norm: bool = True,
         qk_norm: bool = True,
-        drop_prob: float = 0.0,
-        activation: type[nn.Module] = nn.GELU,
+        activation: type[nn.Module] = nn.SiLU,
     ):
         if rope_dim != 4:
             raise ValueError(
@@ -263,14 +227,12 @@ class ZUNA(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, input_window_seconds
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self._latent_dim = latent_dim
         self._fine_time_pts = fine_time_pts
         self._pos_bins = pos_bins
         self._pos_half_range = pos_half_range
-        self.drop_prob = drop_prob
-        self.activation = activation
 
         self.encoder = _ZUNAEncoder(
             dim=dim,
@@ -288,6 +250,7 @@ class ZUNA(EEGModuleMixin, nn.Module):
             ffn_dim_multiplier=ffn_dim_multiplier,
             sandwich_norm=sandwich_norm,
             qk_norm=qk_norm,
+            activation=activation,
         )
         self.final_layer = self._make_final_layer(self.n_outputs)
 
@@ -536,6 +499,12 @@ class ZUNA(EEGModuleMixin, nn.Module):
         return super().from_pretrained(*args, **kwargs)
 
 
+def _is_tracing() -> bool:
+    # torch.compiler.is_compiling only exists from torch 2.1.
+    compiling = getattr(getattr(torch, "compiler", None), "is_compiling", None)
+    return torch.jit.is_tracing() or bool(compiling and compiling())
+
+
 # ---------------------------------------------------------------------------
 # Rotary embedding (4D over channel position + coarse time)
 # ---------------------------------------------------------------------------
@@ -636,6 +605,7 @@ class _FeedForward(nn.Module):
         dim: int,
         multiple_of: int = 256,
         ffn_dim_multiplier: Optional[float] = None,
+        activation: type[nn.Module] = nn.SiLU,
     ):
         super().__init__()
         hidden = int(8 * dim / 3)
@@ -645,9 +615,10 @@ class _FeedForward(nn.Module):
         self.w1 = nn.Linear(dim, hidden, bias=False)
         self.w2 = nn.Linear(hidden, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden, bias=False)
+        self.activation = activation()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+        return self.w2(self.activation(self.w1(x)) * self.w3(x))
 
 
 class _TransformerBlock(nn.Module):
@@ -662,6 +633,7 @@ class _TransformerBlock(nn.Module):
         ffn_dim_multiplier: Optional[float] = None,
         sandwich_norm: bool = True,
         qk_norm: bool = True,
+        activation: type[nn.Module] = nn.SiLU,
     ):
         super().__init__()
         self.attention = _Attention(
@@ -673,7 +645,10 @@ class _TransformerBlock(nn.Module):
             qk_norm=qk_norm,
         )
         self.feed_forward = _FeedForward(
-            dim, multiple_of=multiple_of, ffn_dim_multiplier=ffn_dim_multiplier
+            dim,
+            multiple_of=multiple_of,
+            ffn_dim_multiplier=ffn_dim_multiplier,
+            activation=activation,
         )
         self.attention_norm = _RMSNorm(dim, eps=norm_eps)
         self.ffn_norm = _RMSNorm(dim, eps=norm_eps)
@@ -715,6 +690,7 @@ class _ZUNAEncoder(nn.Module):
         ffn_dim_multiplier: Optional[float] = None,
         sandwich_norm: bool = True,
         qk_norm: bool = True,
+        activation: type[nn.Module] = nn.SiLU,
     ):
         super().__init__()
         if head_dim % rope_dim != 0:
@@ -732,6 +708,7 @@ class _ZUNAEncoder(nn.Module):
                 ffn_dim_multiplier=ffn_dim_multiplier,
                 sandwich_norm=sandwich_norm,
                 qk_norm=qk_norm,
+                activation=activation,
             )
             for _ in range(n_layers)
         )

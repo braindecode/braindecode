@@ -63,6 +63,19 @@ def test_forward_return_features_dict(small_zuna):
     torch.testing.assert_close(out["features"], out["structured_latents"].mean(dim=2))
 
 
+def test_uses_configured_activation():
+    model = ZUNA(
+        n_chans=3,
+        n_outputs=2,
+        n_times=1280,
+        activation=torch.nn.GELU,
+        **_SMALL_KWARGS,
+    )
+    assert isinstance(
+        model.encoder.layers[0].feed_forward.activation, torch.nn.GELU
+    )
+
+
 @pytest.mark.parametrize("n_times, coarse_time", [(128, 4), (7680, 240)])
 def test_forward_accepts_variable_zuna11_lengths(n_times, coarse_time):
     model = ZUNA(n_chans=3, n_outputs=2, **_SMALL_KWARGS)
