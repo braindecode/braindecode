@@ -281,25 +281,20 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
        :alt: ZUNA encoder-decoder architecture
        :width: 1000px
 
-    ZUNA is a position-aware diffusion autoencoder for EEG superresolution,
-    wrapped here with a Braindecode classification head.
+    ZUNA is a position-aware diffusion autoencoder for EEG superresolution.
 
-    Ports the inference path of the public ``Zyphra/ZUNA1.1`` encoder. Every
-    architecture hyperparameter is a constructor argument and defaults to the
+    Every architecture hyperparameter is a constructor argument and defaults to the
     published ``Zyphra/ZUNA1.1`` config, so the defaults reproduce the pretrained
     encoder while smaller configurations can be built for training from
-    scratch or research. To download the pretrained encoder checkpoint from
+    scratch. To download the pretrained encoder checkpoint from
     Hugging Face (requires ``pip install 'braindecode[hub]'``)::
 
         # Defaults to the upstream ZUNA1.1 classifier checkpoint; ``n_chans``
         # and ``n_outputs`` are montage- and task-dependent and must be given.
         ZUNA.from_pretrained(n_chans=19, n_outputs=4)
 
-    Only the encoder is pretrained: the classification head is randomly
-    initialised and must be fine-tuned on the downstream task.
-
     Inputs must be EEG windows sampled at 256 Hz and may span 0.5 to 30.0
-    seconds. The default constructor shape remains ``n_times=1280``, but the
+    seconds. The default constructor shape remains ``n_times=1280`` (i.e. 5 seconds), but the
     encoder accepts any runtime window length in the supported range as long
     as it lands on the coarse-time token grid
     (``fine_time_pts=32`` samples, i.e. 0.125 s, by default). Channel
