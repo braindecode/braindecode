@@ -34,241 +34,6 @@ _SIGNAL_ERROR = (
 
 
 # ---------------------------------------------------------------------------
-# Rotary embedding (4D over channel position + coarse time)
-# ---------------------------------------------------------------------------
-def _precompute_freqs_cis(rot_dim: int, end: int, theta: float) -> torch.Tensor:
-    freqs = 1.0 / (
-        theta ** (torch.arange(0, rot_dim, 2)[: rot_dim // 2].float() / rot_dim)
-    )
-    t = torch.arange(end)
-    freqs = torch.outer(t, freqs)
-    cos, sin = freqs.cos(), freqs.sin()
-    return torch.stack((cos, -sin, sin, cos), dim=-1).view(end, rot_dim // 2, 2, 2)
-
-
-def _apply_rotary(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-    # x: (B, L, n_heads, head_dim); freqs_cis: (L, head_dim/2, 2, 2).
-    x_ = x.reshape(*x.shape[:-1], -1, 1, 2)
-    freqs = freqs_cis.view(1, freqs_cis.shape[0], 1, freqs_cis.shape[1], 2, 2).float()
-    return (x_ * freqs).sum(-1).flatten(-2).type_as(x)
-
-
-def _repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
-    if n_rep == 1:
-        return x
-    b, seq_len, n_kv_heads, head_dim = x.shape
-    return (
-        x[:, :, :, None, :]
-        .expand(b, seq_len, n_kv_heads, n_rep, head_dim)
-        .reshape(b, seq_len, n_kv_heads * n_rep, head_dim)
-    )
-
-
-# ---------------------------------------------------------------------------
-# Transformer block
-# ---------------------------------------------------------------------------
-class _RMSNorm(nn.Module):
-    """Root-mean-square layer normalisation.
-
-    ``torch.nn.RMSNorm`` is only available from PyTorch 2.4, but braindecode
-    supports ``torch>=2.0``; this shippable equivalent (same approach as
-    :class:`~braindecode.models.REVE` and ``CodeBrain``) keeps the model
-    importable on older PyTorch while preserving the ``.weight`` parameter
-    name so upstream ZUNA checkpoints still load.
-    """
-
-    def __init__(self, dim: int, eps: float = 1e-5):
-        super().__init__()
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
-
-    def _norm(self, x: torch.Tensor) -> torch.Tensor:
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._norm(x.float()).type_as(x) * self.weight
-
-
-class _Attention(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        n_heads: int,
-        head_dim: int,
-        n_kv_heads: Optional[int] = None,
-        norm_eps: float = 1e-5,
-        qk_norm: bool = True,
-    ):
-        super().__init__()
-        self.n_heads = n_heads
-        self.n_kv_heads = n_heads if n_kv_heads is None else n_kv_heads
-        if n_heads % self.n_kv_heads != 0:
-            raise ValueError("n_heads must be divisible by n_kv_heads.")
-        self.heads_per_group = n_heads // self.n_kv_heads
-        self.head_dim = head_dim
-        self.wq = nn.Linear(dim, n_heads * head_dim, bias=False)
-        self.wk = nn.Linear(dim, self.n_kv_heads * head_dim, bias=False)
-        self.wv = nn.Linear(dim, self.n_kv_heads * head_dim, bias=False)
-        self.wo = nn.Linear(n_heads * head_dim, dim, bias=False)
-        self.q_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
-        self.k_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
-
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-        b, seq_len, _ = x.shape
-        q_shape = (b, seq_len, self.n_heads, self.head_dim)
-        kv_shape = (b, seq_len, self.n_kv_heads, self.head_dim)
-        xq = self.q_norm(self.wq(x).view(q_shape))
-        xk = self.k_norm(self.wk(x).view(kv_shape))
-        xq = _apply_rotary(xq, freqs_cis)
-        xk = _apply_rotary(xk, freqs_cis)
-        xv = self.wv(x).view(kv_shape)
-        xk = _repeat_kv(xk, self.heads_per_group)
-        xv = _repeat_kv(xv, self.heads_per_group)
-        # SDPA expects (B, n_heads, L, head_dim). Each batch element is its
-        # own document — no mask needed.
-        out = F.scaled_dot_product_attention(
-            xq.transpose(1, 2), xk.transpose(1, 2), xv.transpose(1, 2)
-        )
-        return self.wo(out.transpose(1, 2).reshape(b, seq_len, -1))
-
-
-class _FeedForward(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        multiple_of: int = 256,
-        ffn_dim_multiplier: Optional[float] = None,
-    ):
-        super().__init__()
-        hidden = int(8 * dim / 3)
-        if ffn_dim_multiplier is not None:
-            hidden = int(ffn_dim_multiplier * hidden)
-        hidden = multiple_of * math.ceil(hidden / multiple_of)
-        self.w1 = nn.Linear(dim, hidden, bias=False)
-        self.w2 = nn.Linear(hidden, dim, bias=False)
-        self.w3 = nn.Linear(dim, hidden, bias=False)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
-
-
-class _TransformerBlock(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        n_heads: int,
-        head_dim: int,
-        norm_eps: float,
-        n_kv_heads: Optional[int] = None,
-        multiple_of: int = 256,
-        ffn_dim_multiplier: Optional[float] = None,
-        sandwich_norm: bool = True,
-        qk_norm: bool = True,
-    ):
-        super().__init__()
-        self.attention = _Attention(
-            dim,
-            n_heads,
-            head_dim,
-            n_kv_heads=n_kv_heads,
-            norm_eps=norm_eps,
-            qk_norm=qk_norm,
-        )
-        self.feed_forward = _FeedForward(
-            dim, multiple_of=multiple_of, ffn_dim_multiplier=ffn_dim_multiplier
-        )
-        self.attention_norm = _RMSNorm(dim, eps=norm_eps)
-        self.ffn_norm = _RMSNorm(dim, eps=norm_eps)
-        self.attention_norm_post = (
-            _RMSNorm(dim, eps=norm_eps) if sandwich_norm else nn.Identity()
-        )
-        self.ffn_norm_post = (
-            _RMSNorm(dim, eps=norm_eps) if sandwich_norm else nn.Identity()
-        )
-
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-        h = x.float() + self.attention_norm_post(
-            self.attention(self.attention_norm(x.float()), freqs_cis).float()
-        )
-        return h.float() + self.ffn_norm_post(
-            self.feed_forward(self.ffn_norm(h.float())).float()
-        )
-
-
-# ---------------------------------------------------------------------------
-# Encoder
-# ---------------------------------------------------------------------------
-class _ZUNAEncoder(nn.Module):
-    def __init__(
-        self,
-        dim: int = 1024,
-        n_layers: int = 16,
-        n_heads: int = 8,
-        n_kv_heads: Optional[int] = None,
-        head_dim: int = 64,
-        input_dim: int = 32,
-        output_dim: int = 32,
-        max_seqlen: int = 256,
-        rope_theta: float = 10000.0,
-        rope_dim: int = 4,
-        norm_eps: float = 1e-5,
-        multiple_of: int = 256,
-        ffn_dim_multiplier: Optional[float] = None,
-        sandwich_norm: bool = True,
-        qk_norm: bool = True,
-    ):
-        super().__init__()
-        if head_dim % rope_dim != 0:
-            raise ValueError("head_dim must be divisible by rope_dim.")
-        self.tok_embeddings = nn.Linear(input_dim, dim)
-        self.registers = nn.Parameter(torch.zeros(1, input_dim))
-        self.layers = nn.ModuleList(
-            _TransformerBlock(
-                dim,
-                n_heads,
-                head_dim,
-                norm_eps,
-                n_kv_heads=n_kv_heads,
-                multiple_of=multiple_of,
-                ffn_dim_multiplier=ffn_dim_multiplier,
-                sandwich_norm=sandwich_norm,
-                qk_norm=qk_norm,
-            )
-            for _ in range(n_layers)
-        )
-        self.norm = _RMSNorm(dim, eps=norm_eps)
-        self.output = nn.Linear(dim, output_dim, bias=False)
-        self.register_buffer(
-            "freqs_cis",
-            _precompute_freqs_cis(head_dim // rope_dim, max_seqlen, rope_theta),
-            persistent=False,
-        )
-
-    def forward(self, tokens: torch.Tensor, tok_idx: torch.Tensor) -> torch.Tensor:
-        # tokens: (B, L, input_dim); tok_idx: (L, rope_dim).
-        b, seq_len, _ = tokens.shape
-
-        # Interleave one register token per source token, doubling the length.
-        regs = self.registers.expand(b, seq_len, -1).unsqueeze(2)
-        tokens = torch.cat([regs, tokens.unsqueeze(2)], dim=2).reshape(
-            b, 2 * seq_len, -1
-        )
-
-        # 4D RoPE: stack per-axis rotation matrices along head_dim/2. With
-        # ``tok_idx`` of shape (L, rope_dim), the gather yields
-        # (L, rope_dim, head_dim/(2*rope_dim), 2, 2); flatten gives the
-        # expected (L, head_dim/2, 2, 2).
-        tok_idx = tok_idx.repeat_interleave(2, dim=0)
-        freqs_cis = self.freqs_cis[tok_idx].flatten(1, 2)
-
-        h = self.tok_embeddings(tokens)
-        for layer in self.layers:
-            h = layer(h, freqs_cis)
-        h = h.reshape(b, seq_len, 2, -1)[:, :, 0]  # take the register slot
-        return self.output(self.norm(h))
-
-
-# ---------------------------------------------------------------------------
 # Public model
 # ---------------------------------------------------------------------------
 class ZUNA(bd_base.EEGModuleMixin, nn.Module):
@@ -316,7 +81,56 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
     :meth:`forward` returns ``(batch, n_outputs)`` logits by default, or a
     dict of intermediate latents when ``return_features=True``.
 
-    .. versionadded:: 1.6
+    .. rubric:: Architecture Overview
+
+    Each channel's window is cut into non-overlapping patches of
+    ``fine_time_pts`` samples (0.125 s at 256 Hz), giving a sequence of
+    ``n_chans * (n_times // fine_time_pts)`` tokens. Tokens are linearly
+    embedded, interleaved with learned register tokens, and processed by a
+    stack of ``n_layers`` transformer blocks whose attention is rotated by a
+    4D rotary embedding over the token's discretised scalp coordinates
+    ``(x, y, z)`` and its coarse-time index. The register slots are projected
+    to per-token latents, mean-pooled over time per channel, and classified.
+
+    .. rubric:: Macro Components
+
+    - ``ZUNA.encoder`` (:class:`torch.nn.Module`)
+
+      **Operations**: ``tok_embeddings`` (linear patch embedding) →
+      interleave ``registers`` → ``n_layers`` × ``_TransformerBlock``
+      (RMS-normed grouped-query attention with 4D RoPE and QK-norm, SwiGLU
+      feed-forward, sandwich norm) → ``norm`` → ``output`` linear projection
+      to ``latent_dim`` per token.
+
+      **Role**: pretrained, position-aware EEG token encoder.
+
+    - ``ZUNA.final_layer`` (:class:`torch.nn.Sequential`)
+
+      **Operations**: flatten the ``(n_chans, latent_dim)`` channel embedding
+      → linear map to ``n_outputs``.
+
+      **Role**: randomly initialised classification head fine-tuned on the
+      downstream task.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal**: 0.125-s patch tokens plus a coarse-time rotary axis; the
+      time dimension is mean-pooled after encoding.
+    - **Spatial**: three rotary axes carry each channel's bucketed 3D scalp
+      coordinates, making the encoder montage-agnostic.
+    - **Spectral**: no explicit frequency decomposition; spectral structure
+      is learned from the raw 256 Hz patches.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Register tokens**: one learned register interleaved per data token;
+      only register slots are read out, decoupling readout from input tokens.
+    - **Grouped-query attention**: ``n_kv_heads`` may be smaller than
+      ``n_heads``, with key/value heads repeated across query groups.
+    - **Variable-length windows**: any 0.5-30 s window divisible by
+      ``fine_time_pts`` is accepted at runtime without re-instantiation.
+
+    .. versionadded:: 1.7
 
     Parameters
     ----------
@@ -397,12 +211,15 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
+        # braindecode parameters
         n_outputs: Optional[int] = None,
         n_chans: Optional[int] = None,
         chs_info: Optional[list[dict]] = None,
         n_times: Optional[int] = None,
         input_window_seconds: Optional[float] = None,
         sfreq: Optional[float] = None,
+        # model-specific parameters
+        *,
         dim: int = 1024,
         n_layers: int = 16,
         n_heads: int = 8,
@@ -724,3 +541,238 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         if model_id == cls._HF_DEFAULT_REPO and kwargs.get("filename") is None:
             kwargs["filename"] = cls._HF_DEFAULT_FILENAME
         return super().from_pretrained(*args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Rotary embedding (4D over channel position + coarse time)
+# ---------------------------------------------------------------------------
+def _precompute_freqs_cis(rot_dim: int, end: int, theta: float) -> torch.Tensor:
+    freqs = 1.0 / (
+        theta ** (torch.arange(0, rot_dim, 2)[: rot_dim // 2].float() / rot_dim)
+    )
+    t = torch.arange(end)
+    freqs = torch.outer(t, freqs)
+    cos, sin = freqs.cos(), freqs.sin()
+    return torch.stack((cos, -sin, sin, cos), dim=-1).view(end, rot_dim // 2, 2, 2)
+
+
+def _apply_rotary(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+    # x: (B, L, n_heads, head_dim); freqs_cis: (L, head_dim/2, 2, 2).
+    x_ = x.reshape(*x.shape[:-1], -1, 1, 2)
+    freqs = freqs_cis.view(1, freqs_cis.shape[0], 1, freqs_cis.shape[1], 2, 2).float()
+    return (x_ * freqs).sum(-1).flatten(-2).type_as(x)
+
+
+def _repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+    if n_rep == 1:
+        return x
+    b, seq_len, n_kv_heads, head_dim = x.shape
+    return (
+        x[:, :, :, None, :]
+        .expand(b, seq_len, n_kv_heads, n_rep, head_dim)
+        .reshape(b, seq_len, n_kv_heads * n_rep, head_dim)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Transformer block
+# ---------------------------------------------------------------------------
+class _RMSNorm(nn.Module):
+    """Root-mean-square layer normalisation.
+
+    ``torch.nn.RMSNorm`` is only available from PyTorch 2.4, but braindecode
+    supports ``torch>=2.0``; this shippable equivalent (same approach as
+    :class:`~braindecode.models.REVE` and ``CodeBrain``) keeps the model
+    importable on older PyTorch while preserving the ``.weight`` parameter
+    name so upstream ZUNA checkpoints still load.
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self._norm(x.float()).type_as(x) * self.weight
+
+
+class _Attention(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        head_dim: int,
+        n_kv_heads: Optional[int] = None,
+        norm_eps: float = 1e-5,
+        qk_norm: bool = True,
+    ):
+        super().__init__()
+        self.n_heads = n_heads
+        self.n_kv_heads = n_heads if n_kv_heads is None else n_kv_heads
+        if n_heads % self.n_kv_heads != 0:
+            raise ValueError("n_heads must be divisible by n_kv_heads.")
+        self.heads_per_group = n_heads // self.n_kv_heads
+        self.head_dim = head_dim
+        self.wq = nn.Linear(dim, n_heads * head_dim, bias=False)
+        self.wk = nn.Linear(dim, self.n_kv_heads * head_dim, bias=False)
+        self.wv = nn.Linear(dim, self.n_kv_heads * head_dim, bias=False)
+        self.wo = nn.Linear(n_heads * head_dim, dim, bias=False)
+        self.q_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.k_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+        b, seq_len, _ = x.shape
+        q_shape = (b, seq_len, self.n_heads, self.head_dim)
+        kv_shape = (b, seq_len, self.n_kv_heads, self.head_dim)
+        xq = self.q_norm(self.wq(x).view(q_shape))
+        xk = self.k_norm(self.wk(x).view(kv_shape))
+        xq = _apply_rotary(xq, freqs_cis)
+        xk = _apply_rotary(xk, freqs_cis)
+        xv = self.wv(x).view(kv_shape)
+        xk = _repeat_kv(xk, self.heads_per_group)
+        xv = _repeat_kv(xv, self.heads_per_group)
+        # SDPA expects (B, n_heads, L, head_dim). Each batch element is its
+        # own document — no mask needed.
+        out = F.scaled_dot_product_attention(
+            xq.transpose(1, 2), xk.transpose(1, 2), xv.transpose(1, 2)
+        )
+        return self.wo(out.transpose(1, 2).reshape(b, seq_len, -1))
+
+
+class _FeedForward(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        multiple_of: int = 256,
+        ffn_dim_multiplier: Optional[float] = None,
+    ):
+        super().__init__()
+        hidden = int(8 * dim / 3)
+        if ffn_dim_multiplier is not None:
+            hidden = int(ffn_dim_multiplier * hidden)
+        hidden = multiple_of * math.ceil(hidden / multiple_of)
+        self.w1 = nn.Linear(dim, hidden, bias=False)
+        self.w2 = nn.Linear(hidden, dim, bias=False)
+        self.w3 = nn.Linear(dim, hidden, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+
+
+class _TransformerBlock(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        head_dim: int,
+        norm_eps: float,
+        n_kv_heads: Optional[int] = None,
+        multiple_of: int = 256,
+        ffn_dim_multiplier: Optional[float] = None,
+        sandwich_norm: bool = True,
+        qk_norm: bool = True,
+    ):
+        super().__init__()
+        self.attention = _Attention(
+            dim,
+            n_heads,
+            head_dim,
+            n_kv_heads=n_kv_heads,
+            norm_eps=norm_eps,
+            qk_norm=qk_norm,
+        )
+        self.feed_forward = _FeedForward(
+            dim, multiple_of=multiple_of, ffn_dim_multiplier=ffn_dim_multiplier
+        )
+        self.attention_norm = _RMSNorm(dim, eps=norm_eps)
+        self.ffn_norm = _RMSNorm(dim, eps=norm_eps)
+        self.attention_norm_post = (
+            _RMSNorm(dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+        )
+        self.ffn_norm_post = (
+            _RMSNorm(dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+        )
+
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+        h = x.float() + self.attention_norm_post(
+            self.attention(self.attention_norm(x.float()), freqs_cis).float()
+        )
+        return h.float() + self.ffn_norm_post(
+            self.feed_forward(self.ffn_norm(h.float())).float()
+        )
+
+
+# ---------------------------------------------------------------------------
+# Encoder
+# ---------------------------------------------------------------------------
+class _ZUNAEncoder(nn.Module):
+    def __init__(
+        self,
+        dim: int = 1024,
+        n_layers: int = 16,
+        n_heads: int = 8,
+        n_kv_heads: Optional[int] = None,
+        head_dim: int = 64,
+        input_dim: int = 32,
+        output_dim: int = 32,
+        max_seqlen: int = 256,
+        rope_theta: float = 10000.0,
+        rope_dim: int = 4,
+        norm_eps: float = 1e-5,
+        multiple_of: int = 256,
+        ffn_dim_multiplier: Optional[float] = None,
+        sandwich_norm: bool = True,
+        qk_norm: bool = True,
+    ):
+        super().__init__()
+        if head_dim % rope_dim != 0:
+            raise ValueError("head_dim must be divisible by rope_dim.")
+        self.tok_embeddings = nn.Linear(input_dim, dim)
+        self.registers = nn.Parameter(torch.zeros(1, input_dim))
+        self.layers = nn.ModuleList(
+            _TransformerBlock(
+                dim,
+                n_heads,
+                head_dim,
+                norm_eps,
+                n_kv_heads=n_kv_heads,
+                multiple_of=multiple_of,
+                ffn_dim_multiplier=ffn_dim_multiplier,
+                sandwich_norm=sandwich_norm,
+                qk_norm=qk_norm,
+            )
+            for _ in range(n_layers)
+        )
+        self.norm = _RMSNorm(dim, eps=norm_eps)
+        self.output = nn.Linear(dim, output_dim, bias=False)
+        self.register_buffer(
+            "freqs_cis",
+            _precompute_freqs_cis(head_dim // rope_dim, max_seqlen, rope_theta),
+            persistent=False,
+        )
+
+    def forward(self, tokens: torch.Tensor, tok_idx: torch.Tensor) -> torch.Tensor:
+        # tokens: (B, L, input_dim); tok_idx: (L, rope_dim).
+        b, seq_len, _ = tokens.shape
+
+        # Interleave one register token per source token, doubling the length.
+        regs = self.registers.expand(b, seq_len, -1).unsqueeze(2)
+        tokens = torch.cat([regs, tokens.unsqueeze(2)], dim=2).reshape(
+            b, 2 * seq_len, -1
+        )
+
+        # 4D RoPE: stack per-axis rotation matrices along head_dim/2. With
+        # ``tok_idx`` of shape (L, rope_dim), the gather yields
+        # (L, rope_dim, head_dim/(2*rope_dim), 2, 2); flatten gives the
+        # expected (L, head_dim/2, 2, 2).
+        tok_idx = tok_idx.repeat_interleave(2, dim=0)
+        freqs_cis = self.freqs_cis[tok_idx].flatten(1, 2)
+
+        h = self.tok_embeddings(tokens)
+        for layer in self.layers:
+            h = layer(h, freqs_cis)
+        h = h.reshape(b, seq_len, 2, -1)[:, :, 0]  # take the register slot
+        return self.output(self.norm(h))
