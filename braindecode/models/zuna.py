@@ -22,17 +22,11 @@ from torch.nn import functional as F
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 
-# All architecture defaults below reproduce the published Zyphra/ZUNA1.1
-# checkpoint config. Change them together with the upstream checkpoint, or
-# pretrained weights will silently produce non-comparable embeddings.
-_ZUNA_SFREQ = 256.0
-_ZUNA_DEFAULT_N_TIMES = 1280
-_ZUNA_MIN_SECONDS = 0.5
-_ZUNA_MAX_SECONDS = 30.0
-_SIGNAL_ERROR = (
-    "ZUNA1.1 expects 256 Hz EEG windows from 0.5 to 30.0 seconds, "
-    "with n_times divisible by fine_time_pts."
-)
+
+def _is_tracing() -> bool:
+    # torch.compiler.is_compiling only exists from torch 2.1.
+    compiling = getattr(getattr(torch, "compiler", None), "is_compiling", None)
+    return torch.jit.is_tracing() or bool(compiling and compiling())
 
 
 # ---------------------------------------------------------------------------
@@ -243,17 +237,20 @@ class ZUNA(EEGModuleMixin, nn.Module):
         drop_prob: float = 0.0,
         activation: type[nn.Module] = nn.GELU,
     ):
-        sfreq = _ZUNA_SFREQ if sfreq is None else float(sfreq)
-        if not math.isclose(sfreq, _ZUNA_SFREQ):
-            raise ValueError(f"{_SIGNAL_ERROR} Got sfreq={sfreq}.")
-
-        # EEGModuleMixin checks n_times/input_window_seconds consistency and
-        # derives one from the other; only the default window is local.
+        if rope_dim != 4:
+            raise ValueError(
+                "rope_dim must be 4 (x, y, z, coarse-time axes); "
+                f"got rope_dim={rope_dim}."
+            )
+        # ZUNA1.1 checkpoint contract: 256 Hz windows, default 5 s (1280
+        # samples). EEGModuleMixin checks n_times/input_window_seconds
+        # consistency and derives one from the other.
+        sfreq = 256.0 if sfreq is None else float(sfreq)
         if n_times is None:
             n_times = (
                 round(input_window_seconds * sfreq)
                 if input_window_seconds is not None
-                else _ZUNA_DEFAULT_N_TIMES
+                else round(5.0 * sfreq)
             )
         self._validate_signal_window(
             n_times,
@@ -303,15 +300,19 @@ class ZUNA(EEGModuleMixin, nn.Module):
         self._montage_positions: dict = {}
         self._tok_idx_cache: dict = {}
 
-        # Cache positions resolved from chs_info, if any.
+        # Cache positions resolved from chs_info. Discard partial or
+        # non-finite extractions so forward falls back to channel_names /
+        # explicit positions instead of silently corrupting RoPE buckets.
         cached = extract_channel_locations_from_chs_info(self._chs_info)
-        self.register_buffer(
-            "_cached_positions",
-            torch.as_tensor(cached, dtype=torch.float32)
-            if cached is not None
-            else None,
-            persistent=False,
-        )
+        positions = None
+        if cached is not None:
+            positions = torch.as_tensor(cached, dtype=torch.float32)
+            if (
+                positions.shape[0] != self.n_chans
+                or not torch.isfinite(positions).all()
+            ):
+                positions = None
+        self.register_buffer("_cached_positions", positions, persistent=False)
 
     @staticmethod
     def _validate_signal_window(
@@ -322,15 +323,20 @@ class ZUNA(EEGModuleMixin, nn.Module):
         max_seqlen: int,
         pos_bins: int,
     ) -> None:
+        msg = (
+            "ZUNA1.1 expects 256 Hz EEG windows from 0.5 to 30.0 seconds, "
+            "with n_times divisible by fine_time_pts."
+        )
+        if not math.isclose(sfreq, 256.0):
+            raise ValueError(f"{msg} Got sfreq={sfreq}.")
         if fine_time_pts <= 0 or n_times % fine_time_pts != 0:
             raise ValueError(
-                f"{_SIGNAL_ERROR} Got n_times={n_times} and "
-                f"fine_time_pts={fine_time_pts}."
+                f"{msg} Got n_times={n_times} and fine_time_pts={fine_time_pts}."
             )
         window_seconds = n_times / sfreq
-        if not (_ZUNA_MIN_SECONDS <= window_seconds <= _ZUNA_MAX_SECONDS):
+        if not 0.5 <= window_seconds <= 30.0:
             raise ValueError(
-                f"{_SIGNAL_ERROR} Got {window_seconds:g} seconds "
+                f"{msg} Got {window_seconds:g} seconds "
                 f"({n_times} samples at {sfreq:g} Hz)."
             )
         coarse_time = n_times // fine_time_pts
@@ -427,27 +433,28 @@ class ZUNA(EEGModuleMixin, nn.Module):
         coarse_time = n_times // self._fine_time_pts
         tokens = rearrange(x, "b c (t p) -> b (c t) p", p=self._fine_time_pts)
 
-        positions = self._resolve_positions(
-            channel_positions, channel_names, montage, x.device
+        # Without explicit per-call positions, tok_idx is a pure function of
+        # (window length, montage source), so cache it — except mid-trace,
+        # where a cached fake tensor would break torch.export.
+        cacheable = channel_positions is None and not _is_tracing()
+        cache_key = (
+            coarse_time,
+            x.device,
+            None if channel_names is None else (tuple(channel_names), montage),
         )
-        if positions.shape[0] != n_chans:
-            raise ValueError(
-                f"Expected {n_chans} channel positions, got {positions.shape[0]}."
-            )
-
-        # Construction-time positions make tok_idx a pure function of the
-        # window length — cache it, except mid-trace (breaks torch.export).
-        cacheable = (
-            channel_positions is None
-            and channel_names is None
-            and not torch.jit.is_tracing()
-            and not torch.compiler.is_compiling()
-        )
-        cache_key = (coarse_time, positions.device)
         tok_idx = self._tok_idx_cache.get(cache_key) if cacheable else None
         if tok_idx is None:
+            positions = self._resolve_positions(
+                channel_positions, channel_names, montage, x.device
+            )
+            if positions.shape[0] != n_chans:
+                raise ValueError(
+                    f"Expected {n_chans} channel positions, got {positions.shape[0]}."
+                )
             tok_idx = self._make_tok_idx(positions, coarse_time)
             if cacheable:
+                if len(self._tok_idx_cache) >= 64:
+                    self._tok_idx_cache.clear()
                 self._tok_idx_cache[cache_key] = tok_idx
         token_latents = self.encoder(tokens, tok_idx)
         structured = rearrange(token_latents, "b (c t) d -> b c t d", c=n_chans)
@@ -499,41 +506,19 @@ class ZUNA(EEGModuleMixin, nn.Module):
                 for k, v in state_dict.items()
                 if k.removeprefix("model.").startswith("encoder.")
             }
-            return self.encoder.load_state_dict(state_dict, strict=strict)
+            encoder_keys = self.encoder.state_dict().keys()
+            if not any(k in encoder_keys for k in state_dict):
+                raise ValueError(
+                    "No upstream ZUNA keys matched the encoder after "
+                    "remapping; the checkpoint layout is not the expected "
+                    "'model.encoder.*'."
+                )
+            return self.encoder.load_state_dict(state_dict, strict=strict, **kwargs)
         return super().load_state_dict(state_dict, strict=strict, **kwargs)
 
     #: Default Hugging Face repo for :meth:`from_pretrained`.
     _HF_DEFAULT_REPO = "Zyphra/ZUNA1.1"
     _HF_DEFAULT_FILENAME = "classifier/model-00001-of-00001.safetensors"
-    _UPSTREAM_CONFIG_REMAP = {
-        "dim": "dim",
-        "n_layers": "n_layers",
-        "n_heads": "n_heads",
-        "n_kv_heads": "n_kv_heads",
-        "head_dim": "head_dim",
-        "encoder_input_dim": "fine_time_pts",
-        "encoder_output_dim": "latent_dim",
-        "max_seqlen": "max_seqlen",
-        "rope_theta": "rope_theta",
-        "rope_dim": "rope_dim",
-        "norm_eps": "norm_eps",
-        "multiple_of": "multiple_of",
-        "ffn_dim_multiplier": "ffn_dim_multiplier",
-    }
-
-    @classmethod
-    def _apply_upstream_config(cls, model_kwargs):
-        upstream_config = model_kwargs.pop("model", None)
-        if not isinstance(upstream_config, dict):
-            return
-        for upstream_key, init_key in cls._UPSTREAM_CONFIG_REMAP.items():
-            if upstream_key in upstream_config and init_key not in model_kwargs:
-                model_kwargs[init_key] = upstream_config[upstream_key]
-
-    @classmethod
-    def _from_pretrained(cls, *args, **kwargs):
-        cls._apply_upstream_config(kwargs)
-        return super()._from_pretrained(*args, **kwargs)
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
@@ -560,23 +545,24 @@ class ZUNA(EEGModuleMixin, nn.Module):
 # Rotary embedding (4D over channel position + coarse time)
 # ---------------------------------------------------------------------------
 def _precompute_freqs_cis(rot_dim: int, end: int, theta: float) -> torch.Tensor:
+    # Complex rotary table e^{i * t * freq}: (end, rot_dim / 2), complex64.
     freqs = 1.0 / (
         theta ** (torch.arange(0, rot_dim, 2)[: rot_dim // 2].float() / rot_dim)
     )
-    t = torch.arange(end)
-    freqs = torch.outer(t, freqs)
-    cos, sin = freqs.cos(), freqs.sin()
-    return rearrange(
-        torch.stack((cos, -sin, sin, cos), dim=-1), "e d (r c) -> e d r c", r=2
-    )
+    angles = torch.outer(torch.arange(end).float(), freqs)
+    return torch.polar(torch.ones_like(angles), angles)
 
 
 def _apply_rotary(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-    # x: (B, L, n_heads, head_dim); freqs_cis: (L, head_dim/2, 2, 2).
-    x_ = rearrange(x, "b l h (d two) -> b l h d 1 two", two=2)
-    freqs = rearrange(freqs_cis, "l d r c -> 1 l 1 d r c").float()
-    rotated = (x_ * freqs).sum(-1)
-    return rearrange(rotated, "b l h d two -> b l h (d two)").type_as(x)
+    # x: (B, L, n_heads, head_dim); freqs_cis: complex (L, head_dim/2).
+    # Rotation via native complex multiply: (x0 + i x1) * e^{i theta}.
+    pairs = rearrange(x.float(), "b l h (d two) -> b l h d two", two=2)
+    rotated = torch.view_as_complex(pairs.contiguous()) * rearrange(
+        freqs_cis, "l d -> 1 l 1 d"
+    )
+    return rearrange(
+        torch.view_as_real(rotated), "b l h d two -> b l h (d two)"
+    ).type_as(x)
 
 
 # ---------------------------------------------------------------------------
@@ -601,7 +587,9 @@ class _RMSNorm(nn.Module):
         return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self._norm(x.float()).type_as(x) * self.weight
+        # type_as(weight) keeps half-precision models (model.half()) feeding
+        # their linears half inputs; fp32 models are unchanged.
+        return self._norm(x.float()).type_as(self.weight) * self.weight
 
 
 class _Attention(nn.Module):
@@ -770,12 +758,11 @@ class _ZUNAEncoder(nn.Module):
             torch.stack((regs, tokens), dim=2), "b l two d -> b (l two) d"
         )
 
-        # 4D RoPE: stack per-axis rotation matrices along head_dim/2. With
-        # ``tok_idx`` of shape (L, rope_dim), the gather yields
-        # (L, rope_dim, head_dim/(2*rope_dim), 2, 2); flatten gives the
-        # expected (L, head_dim/2, 2, 2).
+        # 4D RoPE: concatenate the per-axis complex phases along head_dim/2.
+        # ``tok_idx`` (L, rope_dim) gathers (L, rope_dim, head_dim/(2*rope_dim))
+        # from the complex table; merging axes gives (L, head_dim/2).
         tok_idx = repeat(tok_idx, "l d -> (l two) d", two=2)
-        freqs_cis = rearrange(self.freqs_cis[tok_idx], "l a d r c -> l (a d) r c")
+        freqs_cis = rearrange(self.freqs_cis[tok_idx], "l a d -> l (a d)")
 
         h = self.tok_embeddings(tokens)
         for layer in self.layers:
