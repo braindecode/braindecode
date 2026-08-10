@@ -126,7 +126,8 @@ class ZUNA(EEGModuleMixin, nn.Module):
     - **Register tokens**: one learned register interleaved per data token;
       only register slots are read out, decoupling readout from input tokens.
     - **Grouped-query attention**: ``n_kv_heads`` may be smaller than
-      ``n_heads``, with key/value heads repeated across query groups.
+      ``n_heads``; grouping uses SDPA's native ``enable_gqa`` and therefore
+      requires ``torch>=2.5`` (the default config has no grouping).
     - **Variable-length windows**: any 0.5-30 s window divisible by
       ``fine_time_pts`` is accepted at runtime without re-instantiation.
 
@@ -296,8 +297,7 @@ class ZUNA(EEGModuleMixin, nn.Module):
         )
         self.final_layer = self._make_final_layer(self.n_outputs)
 
-        # ponytail: plain-dict caches; tok_idx/montage lookups are pure
-        # functions of construction-time state, so entries never invalidate.
+        # Pure functions of construction-time state; never invalidated.
         self._montage_positions: dict = {}
         self._tok_idx_cache: dict = {}
 
@@ -320,26 +320,19 @@ class ZUNA(EEGModuleMixin, nn.Module):
         max_seqlen: int,
         pos_bins: int,
     ) -> None:
-        if n_times <= 0:
-            raise ValueError(f"n_times must be positive. Got {n_times}.")
-        if fine_time_pts <= 0:
-            raise ValueError(f"fine_time_pts must be positive. Got {fine_time_pts}.")
-        if n_times % fine_time_pts != 0:
+        if fine_time_pts <= 0 or n_times % fine_time_pts != 0:
             raise ValueError(
                 f"{_SIGNAL_ERROR} Got n_times={n_times} and "
                 f"fine_time_pts={fine_time_pts}."
             )
-
         window_seconds = n_times / sfreq
         if not (_ZUNA_MIN_SECONDS <= window_seconds <= _ZUNA_MAX_SECONDS):
             raise ValueError(
                 f"{_SIGNAL_ERROR} Got {window_seconds:g} seconds "
                 f"({n_times} samples at {sfreq:g} Hz)."
             )
-
         coarse_time = n_times // fine_time_pts
-        required_seqlen = max(pos_bins, coarse_time)
-        if required_seqlen > max_seqlen:
+        if max(pos_bins, coarse_time) > max_seqlen:
             raise ValueError(
                 f"max_seqlen ({max_seqlen}) must be at least "
                 f"max(pos_bins ({pos_bins}), n_times // fine_time_pts "
@@ -418,13 +411,11 @@ class ZUNA(EEGModuleMixin, nn.Module):
         montage: Optional[str] = "standard_1005",
         return_features: bool = False,
     ) -> Union[torch.Tensor, dict[str, torch.Tensor]]:
-        if x.ndim != 3:
+        if x.ndim != 3 or x.shape[1] != self.n_chans:
             raise ValueError(
-                f"Expected (batch, n_chans, n_times); got shape {tuple(x.shape)}."
+                f"Expected (batch, {self.n_chans}, n_times); "
+                f"got shape {tuple(x.shape)}."
             )
-        if x.shape[1] != self.n_chans:
-            raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
-
         b, n_chans, n_times = x.shape
         self._validate_runtime_window(n_times)
         coarse_time = n_times // self._fine_time_pts
@@ -438,16 +429,13 @@ class ZUNA(EEGModuleMixin, nn.Module):
                 f"Expected {n_chans} channel positions, got {positions.shape[0]}."
             )
 
-        # With construction-time positions (chs_info) the token indices only
-        # depend on the window length, so cache them across forward calls.
-        # Disabled while tracing/compiling: mutating the cache mid-trace
-        # leaks fake tensors into eager state and breaks torch.export.
-        compiling = getattr(getattr(torch, "compiler", None), "is_compiling", None)
+        # Construction-time positions make tok_idx a pure function of the
+        # window length — cache it, except mid-trace (breaks torch.export).
         cacheable = (
             channel_positions is None
             and channel_names is None
             and not torch.jit.is_tracing()
-            and not (compiling is not None and compiling())
+            and not torch.compiler.is_compiling()
         )
         cache_key = (coarse_time, positions.device)
         tok_idx = self._tok_idx_cache.get(cache_key) if cacheable else None
@@ -462,9 +450,8 @@ class ZUNA(EEGModuleMixin, nn.Module):
         if return_features:
             return {
                 "features": features,
-                # ZUNA has no CLS token; the key is required by the
-                # foundation-model return_features contract. nosec: model
-                # output slot, not a credential (Bandit B105 false positive).
+                # No CLS token in ZUNA; key required by the foundation-model
+                # contract. Not a credential (Bandit B105 false positive).
                 "cls_token": None,  # nosec B105
                 "token_latents": token_latents,
                 "structured_latents": structured,
@@ -483,15 +470,12 @@ class ZUNA(EEGModuleMixin, nn.Module):
         self.final_layer = self._make_final_layer(n_outputs).to(
             device=ref.device, dtype=ref.dtype
         )
-        # Keep the captured init config in sync so get_config()/from_config()
-        # and push_to_hub() round-trips rebuild the head with the new size
-        # instead of the value frozen at construction time.
-        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
-        if init_kwargs is not None and "n_outputs" in init_kwargs:
-            init_kwargs["n_outputs"] = n_outputs
-        hub_config = getattr(self, "_hub_mixin_config", None)
-        if hub_config is not None and "n_outputs" in hub_config:
-            hub_config["n_outputs"] = n_outputs
+        # Sync the captured init config so get_config()/push_to_hub()
+        # round-trips rebuild the head with the new size.
+        for cfg_name in ("_braindecode_init_kwargs", "_hub_mixin_config"):
+            cfg = getattr(self, cfg_name, None)
+            if cfg is not None and "n_outputs" in cfg:
+                cfg["n_outputs"] = n_outputs
 
     @staticmethod
     def _normalise_encoder_key(key: str) -> str:
@@ -586,17 +570,6 @@ def _apply_rotary(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
     return (x_ * freqs).sum(-1).flatten(-2).type_as(x)
 
 
-def _repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
-    if n_rep == 1:
-        return x
-    b, seq_len, n_kv_heads, head_dim = x.shape
-    return (
-        x[:, :, :, None, :]
-        .expand(b, seq_len, n_kv_heads, n_rep, head_dim)
-        .reshape(b, seq_len, n_kv_heads * n_rep, head_dim)
-    )
-
-
 # ---------------------------------------------------------------------------
 # Transformer block
 # ---------------------------------------------------------------------------
@@ -655,13 +628,14 @@ class _Attention(nn.Module):
         xq = _apply_rotary(xq, freqs_cis)
         xk = _apply_rotary(xk, freqs_cis)
         xv = self.wv(x).view(kv_shape)
-        xk = _repeat_kv(xk, self.heads_per_group)
-        xv = _repeat_kv(xv, self.heads_per_group)
         # SDPA expects (B, n_heads, L, head_dim). Each batch element is its
-        # own document — no mask needed.
-        out = F.scaled_dot_product_attention(
-            xq.transpose(1, 2), xk.transpose(1, 2), xv.transpose(1, 2)
-        )
+        # own document — no mask needed. GQA configs (n_kv_heads < n_heads)
+        # use SDPA's native grouping and therefore need torch>=2.5.
+        q, k, v = (t.transpose(1, 2) for t in (xq, xk, xv))
+        if self.heads_per_group > 1:
+            out = F.scaled_dot_product_attention(q, k, v, enable_gqa=True)
+        else:
+            out = F.scaled_dot_product_attention(q, k, v)
         return self.wo(out.transpose(1, 2).reshape(b, seq_len, -1))
 
 
