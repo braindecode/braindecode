@@ -17,7 +17,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-import braindecode.models.base as bd_base
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 
 # All architecture defaults below reproduce the published Zyphra/ZUNA1.1
@@ -36,7 +36,7 @@ _SIGNAL_ERROR = (
 # ---------------------------------------------------------------------------
 # Public model
 # ---------------------------------------------------------------------------
-class ZUNA(bd_base.EEGModuleMixin, nn.Module):
+class ZUNA(EEGModuleMixin, nn.Module):
     r"""ZUNA from Warner et al (2026) [Warner2026]_.
 
     :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel` :bdg-info:`Attention/Transformer`
@@ -244,19 +244,13 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         if not math.isclose(sfreq, _ZUNA_SFREQ):
             raise ValueError(f"{_SIGNAL_ERROR} Got sfreq={sfreq}.")
 
-        if n_times is None and input_window_seconds is None:
-            n_times = _ZUNA_DEFAULT_N_TIMES
-        elif n_times is None:
-            assert input_window_seconds is not None
-            n_times = round(input_window_seconds * sfreq)
-        assert n_times is not None
-        if input_window_seconds is None:
-            input_window_seconds = n_times / sfreq
-
-        if n_times != round(input_window_seconds * sfreq):
-            raise ValueError(
-                f"n_times={n_times} different from "
-                f"input_window_seconds={input_window_seconds} * sfreq={sfreq}"
+        # EEGModuleMixin checks n_times/input_window_seconds consistency and
+        # derives one from the other; only the default window is local.
+        if n_times is None:
+            n_times = (
+                round(input_window_seconds * sfreq)
+                if input_window_seconds is not None
+                else _ZUNA_DEFAULT_N_TIMES
             )
         self._validate_signal_window(
             n_times,
@@ -301,6 +295,11 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
             qk_norm=qk_norm,
         )
         self.final_layer = self._make_final_layer(self.n_outputs)
+
+        # ponytail: plain-dict caches; tok_idx/montage lookups are pure
+        # functions of construction-time state, so entries never invalidate.
+        self._montage_positions: dict = {}
+        self._tok_idx_cache: dict = {}
 
         # Cache positions resolved from chs_info, if any.
         cached = extract_channel_locations_from_chs_info(self._chs_info)
@@ -368,39 +367,43 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         channel_names: Optional[list[str]],
         montage: Optional[str],
         device: torch.device,
-        dtype: torch.dtype,
     ) -> torch.Tensor:
+        # Positions are only used for fp32 bucketing in _make_tok_idx, so
+        # they stay fp32 regardless of the model/input dtype.
         if channel_positions is not None:
-            pos = torch.as_tensor(channel_positions, dtype=dtype, device=device)
+            pos = torch.as_tensor(channel_positions, dtype=torch.float32, device=device)
             if pos.ndim != 2 or pos.shape[1] != 3:
                 raise ValueError("channel_positions must have shape (n_chans, 3).")
             return pos
         if self._cached_positions is not None:
-            return self._cached_positions.to(device=device, dtype=dtype)
+            return self._cached_positions.to(device=device)
         if channel_names is None:
             raise ValueError("ZUNA requires channel coordinates or names.")
         if montage is None:
             raise ValueError("ZUNA requires a montage to resolve channel names.")
-        import mne
+        key = (tuple(channel_names), montage)
+        pos = self._montage_positions.get(key)
+        if pos is None:
+            import mne
 
-        ch_pos = mne.channels.make_standard_montage(montage).get_positions()["ch_pos"]
-        missing = [n for n in channel_names if n not in ch_pos]
-        if missing:
-            raise ValueError(
-                f"Channel names {missing} not found in MNE montage {montage!r}."
-            )
-        return torch.stack(
-            [
-                torch.as_tensor(ch_pos[n], dtype=dtype, device=device)
-                for n in channel_names
+            ch_pos = mne.channels.make_standard_montage(montage).get_positions()[
+                "ch_pos"
             ]
-        )
+            missing = [n for n in channel_names if n not in ch_pos]
+            if missing:
+                raise ValueError(
+                    f"Channel names {missing} not found in MNE montage {montage!r}."
+                )
+            pos = torch.stack(
+                [torch.as_tensor(ch_pos[n], dtype=torch.float32) for n in channel_names]
+            )
+            self._montage_positions[key] = pos
+        return pos.to(device=device)
 
     def _make_tok_idx(self, positions: torch.Tensor, coarse_time: int) -> torch.Tensor:
         # Discretise channel coords into [0, pos_bins) per axis, then
         # interleave with a per-token coarse-time index. Bucketing is run in
         # fp32 so model dtype (e.g. fp16) does not perturb bucket boundaries.
-        positions = positions.float()
         normalised = (positions + self._pos_half_range) / (2 * self._pos_half_range)
         xyz = (normalised * self._pos_bins).long().clamp_(0, self._pos_bins - 1)
         xyz = xyz.repeat_interleave(coarse_time, dim=0)
@@ -428,14 +431,30 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         tokens = x.reshape(b, n_chans * coarse_time, self._fine_time_pts)
 
         positions = self._resolve_positions(
-            channel_positions, channel_names, montage, x.device, x.dtype
+            channel_positions, channel_names, montage, x.device
         )
         if positions.shape[0] != n_chans:
             raise ValueError(
                 f"Expected {n_chans} channel positions, got {positions.shape[0]}."
             )
 
-        tok_idx = self._make_tok_idx(positions, coarse_time)
+        # With construction-time positions (chs_info) the token indices only
+        # depend on the window length, so cache them across forward calls.
+        # Disabled while tracing/compiling: mutating the cache mid-trace
+        # leaks fake tensors into eager state and breaks torch.export.
+        compiling = getattr(getattr(torch, "compiler", None), "is_compiling", None)
+        cacheable = (
+            channel_positions is None
+            and channel_names is None
+            and not torch.jit.is_tracing()
+            and not (compiling is not None and compiling())
+        )
+        cache_key = (coarse_time, positions.device)
+        tok_idx = self._tok_idx_cache.get(cache_key) if cacheable else None
+        if tok_idx is None:
+            tok_idx = self._make_tok_idx(positions, coarse_time)
+            if cacheable:
+                self._tok_idx_cache[cache_key] = tok_idx
         token_latents = self.encoder(tokens, tok_idx)
         structured = token_latents.reshape(b, n_chans, coarse_time, self._latent_dim)
         features = structured.mean(dim=2)
@@ -443,13 +462,18 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         if return_features:
             return {
                 "features": features,
-                "cls_token": None,
+                # ZUNA has no CLS token; the key is required by the
+                # foundation-model return_features contract. nosec: model
+                # output slot, not a credential (Bandit B105 false positive).
+                "cls_token": None,  # nosec B105
                 "token_latents": token_latents,
                 "structured_latents": structured,
             }
         return self.final_layer(features)
 
     def get_output_shape(self) -> tuple[int, int]:
+        # The mixin's forward-pass implementation feeds zeros without channel
+        # positions, which _resolve_positions rejects — so answer statically.
         return (1, self.n_outputs)
 
     def reset_head(self, n_outputs):
@@ -534,10 +558,9 @@ class ZUNA(bd_base.EEGModuleMixin, nn.Module):
         be supplied.
         """
         model_id = args[0] if args else kwargs.get("pretrained_model_name_or_path")
-        using_default_repo = model_id is None
-        if using_default_repo:
-            kwargs["pretrained_model_name_or_path"] = cls._HF_DEFAULT_REPO
+        if model_id is None:
             model_id = cls._HF_DEFAULT_REPO
+            kwargs["pretrained_model_name_or_path"] = model_id
         if model_id == cls._HF_DEFAULT_REPO and kwargs.get("filename") is None:
             kwargs["filename"] = cls._HF_DEFAULT_FILENAME
         return super().from_pretrained(*args, **kwargs)
@@ -697,12 +720,13 @@ class _TransformerBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-        h = x.float() + self.attention_norm_post(
-            self.attention(self.attention_norm(x.float()), freqs_cis).float()
+        # Residual stream is kept in fp32; submodule outputs are cast back up
+        # in case autocast ran them in half precision.
+        x = x.float()
+        h = x + self.attention_norm_post(
+            self.attention(self.attention_norm(x), freqs_cis).float()
         )
-        return h.float() + self.ffn_norm_post(
-            self.feed_forward(self.ffn_norm(h.float())).float()
-        )
+        return h + self.ffn_norm_post(self.feed_forward(self.ffn_norm(h)).float())
 
 
 # ---------------------------------------------------------------------------
