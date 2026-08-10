@@ -558,8 +558,7 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
-        # Starred-unpack reshape (x.reshape(*x.shape[:-1], -1, 1, 2)) in the
-        # rotary embedding cannot be statically sized by TorchScript.
+        # TorchScript cannot script einops.rearrange (it uses **axes_lengths).
         "ZUNA",
         # TorchScript cannot script einops.rearrange (it uses **axes_lengths).
         "STEEGFormer",

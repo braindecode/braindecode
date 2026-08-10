@@ -14,6 +14,8 @@ import math
 from typing import Optional, Union
 
 import torch
+from einops import rearrange, repeat
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import functional as F
 
@@ -350,7 +352,7 @@ class ZUNA(EEGModuleMixin, nn.Module):
 
     def _make_final_layer(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(
-            nn.Flatten(),
+            Rearrange("batch chans latent -> batch (chans latent)"),
             nn.Linear(self.n_chans * self._latent_dim, n_outputs),
         )
 
@@ -399,9 +401,13 @@ class ZUNA(EEGModuleMixin, nn.Module):
         # fp32 so model dtype (e.g. fp16) does not perturb bucket boundaries.
         normalised = (positions + self._pos_half_range) / (2 * self._pos_half_range)
         xyz = (normalised * self._pos_bins).long().clamp_(0, self._pos_bins - 1)
-        xyz = xyz.repeat_interleave(coarse_time, dim=0)
-        t = torch.arange(coarse_time, device=positions.device).repeat(self.n_chans)
-        return torch.cat((xyz, t.unsqueeze(1)), dim=1)
+        xyz = repeat(xyz, "c d -> (c t) d", t=coarse_time)
+        t = repeat(
+            torch.arange(coarse_time, device=positions.device),
+            "t -> (c t) 1",
+            c=self.n_chans,
+        )
+        return torch.cat((xyz, t), dim=1)
 
     def forward(
         self,
@@ -419,7 +425,7 @@ class ZUNA(EEGModuleMixin, nn.Module):
         b, n_chans, n_times = x.shape
         self._validate_runtime_window(n_times)
         coarse_time = n_times // self._fine_time_pts
-        tokens = x.reshape(b, n_chans * coarse_time, self._fine_time_pts)
+        tokens = rearrange(x, "b c (t p) -> b (c t) p", p=self._fine_time_pts)
 
         positions = self._resolve_positions(
             channel_positions, channel_names, montage, x.device
@@ -444,7 +450,7 @@ class ZUNA(EEGModuleMixin, nn.Module):
             if cacheable:
                 self._tok_idx_cache[cache_key] = tok_idx
         token_latents = self.encoder(tokens, tok_idx)
-        structured = token_latents.reshape(b, n_chans, coarse_time, self._latent_dim)
+        structured = rearrange(token_latents, "b (c t) d -> b c t d", c=n_chans)
         features = structured.mean(dim=2)
 
         if return_features:
@@ -560,14 +566,17 @@ def _precompute_freqs_cis(rot_dim: int, end: int, theta: float) -> torch.Tensor:
     t = torch.arange(end)
     freqs = torch.outer(t, freqs)
     cos, sin = freqs.cos(), freqs.sin()
-    return torch.stack((cos, -sin, sin, cos), dim=-1).view(end, rot_dim // 2, 2, 2)
+    return rearrange(
+        torch.stack((cos, -sin, sin, cos), dim=-1), "e d (r c) -> e d r c", r=2
+    )
 
 
 def _apply_rotary(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
     # x: (B, L, n_heads, head_dim); freqs_cis: (L, head_dim/2, 2, 2).
-    x_ = x.reshape(*x.shape[:-1], -1, 1, 2)
-    freqs = freqs_cis.view(1, freqs_cis.shape[0], 1, freqs_cis.shape[1], 2, 2).float()
-    return (x_ * freqs).sum(-1).flatten(-2).type_as(x)
+    x_ = rearrange(x, "b l h (d two) -> b l h d 1 two", two=2)
+    freqs = rearrange(freqs_cis, "l d r c -> 1 l 1 d r c").float()
+    rotated = (x_ * freqs).sum(-1)
+    return rearrange(rotated, "b l h d two -> b l h (d two)").type_as(x)
 
 
 # ---------------------------------------------------------------------------
@@ -620,23 +629,22 @@ class _Attention(nn.Module):
         self.k_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
 
     def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-        b, seq_len, _ = x.shape
-        q_shape = (b, seq_len, self.n_heads, self.head_dim)
-        kv_shape = (b, seq_len, self.n_kv_heads, self.head_dim)
-        xq = self.q_norm(self.wq(x).view(q_shape))
-        xk = self.k_norm(self.wk(x).view(kv_shape))
+        xq = self.q_norm(rearrange(self.wq(x), "b l (h d) -> b l h d", h=self.n_heads))
+        xk = self.k_norm(
+            rearrange(self.wk(x), "b l (h d) -> b l h d", h=self.n_kv_heads)
+        )
         xq = _apply_rotary(xq, freqs_cis)
         xk = _apply_rotary(xk, freqs_cis)
-        xv = self.wv(x).view(kv_shape)
+        xv = rearrange(self.wv(x), "b l (h d) -> b l h d", h=self.n_kv_heads)
         # SDPA expects (B, n_heads, L, head_dim). Each batch element is its
         # own document — no mask needed. GQA configs (n_kv_heads < n_heads)
         # use SDPA's native grouping and therefore need torch>=2.5.
-        q, k, v = (t.transpose(1, 2) for t in (xq, xk, xv))
+        q, k, v = (rearrange(t, "b l h d -> b h l d") for t in (xq, xk, xv))
         if self.heads_per_group > 1:
             out = F.scaled_dot_product_attention(q, k, v, enable_gqa=True)
         else:
             out = F.scaled_dot_product_attention(q, k, v)
-        return self.wo(out.transpose(1, 2).reshape(b, seq_len, -1))
+        return self.wo(rearrange(out, "b h l d -> b l (h d)"))
 
 
 class _FeedForward(nn.Module):
@@ -757,20 +765,20 @@ class _ZUNAEncoder(nn.Module):
         b, seq_len, _ = tokens.shape
 
         # Interleave one register token per source token, doubling the length.
-        regs = self.registers.expand(b, seq_len, -1).unsqueeze(2)
-        tokens = torch.cat([regs, tokens.unsqueeze(2)], dim=2).reshape(
-            b, 2 * seq_len, -1
+        regs = self.registers.expand(b, seq_len, -1)
+        tokens = rearrange(
+            torch.stack((regs, tokens), dim=2), "b l two d -> b (l two) d"
         )
 
         # 4D RoPE: stack per-axis rotation matrices along head_dim/2. With
         # ``tok_idx`` of shape (L, rope_dim), the gather yields
         # (L, rope_dim, head_dim/(2*rope_dim), 2, 2); flatten gives the
         # expected (L, head_dim/2, 2, 2).
-        tok_idx = tok_idx.repeat_interleave(2, dim=0)
-        freqs_cis = self.freqs_cis[tok_idx].flatten(1, 2)
+        tok_idx = repeat(tok_idx, "l d -> (l two) d", two=2)
+        freqs_cis = rearrange(self.freqs_cis[tok_idx], "l a d r c -> l (a d) r c")
 
         h = self.tok_embeddings(tokens)
         for layer in self.layers:
             h = layer(h, freqs_cis)
-        h = h.reshape(b, seq_len, 2, -1)[:, :, 0]  # take the register slot
+        h = rearrange(h, "b (l two) d -> b l two d", two=2)[:, :, 0]  # register slot
         return self.output(self.norm(h))
