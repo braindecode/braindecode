@@ -200,7 +200,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     #: Attributes that :func:`torch.jit.script` must not introspect. The
     #: signal-related properties raise :class:`ValueError` when their value was
-    #: neither given nor inferrable, and ``mapping`` carries a postponed
+    #: neither given nor inferable, and ``mapping`` carries a postponed
     #: annotation TorchScript cannot resolve. Either one aborts scripting
     #: before ``forward`` is ever compiled.
     __jit_ignored_attributes__ = [
