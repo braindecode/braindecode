@@ -1192,8 +1192,8 @@ def test_codebrain_return_features():
 @pytest.mark.network
 def test_sleepfm_official_base_checkpoint():
     checkpoint = torch.hub.load_state_dict_from_url(
-        "https://github.com/zou-group/sleepfm-clinical/raw/refs/heads/main/"
-        "sleepfm/checkpoints/model_base/best.pt",
+        "https://huggingface.co/braindecode/SleepFM/resolve/main/"
+        "model_base/best.pt",
         map_location="cpu",
         check_hash=False,
     )
@@ -1212,14 +1212,14 @@ def test_sleepfm_official_base_checkpoint():
 @pytest.mark.network
 def test_sleepfm_official_staging_checkpoint():
     base_checkpoint = torch.hub.load_state_dict_from_url(
-        "https://github.com/zou-group/sleepfm-clinical/raw/refs/heads/main/"
-        "sleepfm/checkpoints/model_base/best.pt",
+        "https://huggingface.co/braindecode/SleepFM/resolve/main/"
+        "model_base/best.pt",
         map_location="cpu",
         check_hash=False,
     )
     staging_checkpoint = torch.hub.load_state_dict_from_url(
-        "https://github.com/zou-group/sleepfm-clinical/raw/refs/heads/main/"
-        "sleepfm/checkpoints/model_sleep_staging/best.pth",
+        "https://huggingface.co/braindecode/SleepFM/resolve/main/"
+        "model_sleep_staging/best.pth",
         map_location="cpu",
         check_hash=False,
     )
