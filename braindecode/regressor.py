@@ -172,8 +172,9 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             if return_targets:
                 return preds, np.concatenate([X[i][1] for i in range(len(X))])
             return preds
+        self.check_is_fitted()
         return predict_trials(
-            module=self.module,
+            module=self.module_,
             dataset=X,
             return_targets=return_targets,
             batch_size=self.batch_size,
