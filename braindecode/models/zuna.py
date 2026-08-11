@@ -9,6 +9,8 @@ import math
 from typing import Optional
 
 import torch
+from einops import rearrange
+from einops.layers.torch import Rearrange
 from rotary_embedding_torch import RotaryEmbedding
 from torch import nn
 from torch.nn import functional
@@ -66,8 +68,8 @@ class ZUNA(EEGModuleMixin, nn.Module):
 
     - ``ZUNA.final_layer`` (:class:`torch.nn.Sequential`)
 
-      **Operations**: flatten the ``(n_chans, latent_dim)`` channel embedding
-      → linear map to ``n_outputs``.
+      **Operations**: rearrange the ``(n_chans, latent_dim)`` channel embedding
+      into one feature axis → linear map to ``n_outputs``.
 
       **Role**: randomly initialised classification head fine-tuned on the
       downstream task.
@@ -184,17 +186,13 @@ class ZUNA(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        # Variables
         self.num_channels = self.n_chans
         self.latent_dim = latent_dim
-        self.patch_embedding = nn.Sequential(
-            PatchTokenizer(
-                patch_size=fine_time_pts,
-                n_times=self.n_times,
-                on_non_divisible="error",
-            ),
-            nn.Flatten(start_dim=1, end_dim=2),
-        )
+        coarse_time_points = self.n_times // fine_time_pts
+        rotary_axis_dim = head_dim // 4
 
+        # Checks
         channel_locations = extract_channel_locations_from_chs_info(
             self._chs_info, num_channels=self.num_channels
         )
@@ -206,8 +204,22 @@ class ZUNA(EEGModuleMixin, nn.Module):
             or not torch.isfinite(channel_positions).all()
         ):
             raise ValueError("ZUNA requires finite 3D locations for every channel.")
+        if head_dim % 8 != 0:
+            raise ValueError("head_dim must be divisible by eight for 4D RoPE.")
 
-        coarse_time_points = self.n_times // fine_time_pts
+        # Layers
+        self.patch_embedding = nn.Sequential(
+            PatchTokenizer(
+                patch_size=fine_time_pts,
+                n_times=self.n_times,
+                on_non_divisible="error",
+            ),
+            Rearrange(
+                "batch channel temporal_patch sample "
+                "-> batch (channel temporal_patch) sample"
+            ),
+        )
+
         normalized_positions = (channel_positions + pos_half_range) / (
             2 * pos_half_range
         )
@@ -222,9 +234,6 @@ class ZUNA(EEGModuleMixin, nn.Module):
             (channel_position_indices, coarse_time_indices.unsqueeze(1)), dim=1
         )
 
-        if head_dim % 8 != 0:
-            raise ValueError("head_dim must be divisible by eight for 4D RoPE.")
-        rotary_axis_dim = head_dim // 4
         rotary_embedding = RotaryEmbedding(
             # rotary_embedding_torch cannot construct dim=2 directly because
             # of its theta-rescaling formula; dim=4 followed by slicing is
@@ -237,9 +246,10 @@ class ZUNA(EEGModuleMixin, nn.Module):
             rotary_frequency_table = rotary_embedding(
                 torch.arange(max_seqlen, dtype=torch.float32)
             )[:, :rotary_axis_dim]
-        token_rotary_frequencies = rotary_frequency_table[
-            token_position_indices
-        ].flatten(1, 2)
+        token_rotary_frequencies = rearrange(
+            rotary_frequency_table[token_position_indices],
+            "token coordinate rotary_frequency -> token (coordinate rotary_frequency)",
+        )
         token_rotary_frequencies = token_rotary_frequencies.repeat_interleave(2, dim=0)
 
         self.encoder = _ZUNAEncoder(
@@ -258,7 +268,7 @@ class ZUNA(EEGModuleMixin, nn.Module):
             activation=activation,
         )
         self.final_layer = nn.Sequential(
-            nn.Flatten(),
+            Rearrange("batch channel latent -> batch (channel latent)"),
             nn.Linear(self.num_channels * self.latent_dim, self.n_outputs),
         )
 
@@ -288,12 +298,21 @@ class ZUNA(EEGModuleMixin, nn.Module):
         """Replace the classification head for a new number of outputs."""
         self._n_outputs = n_outputs
         self.final_layer = nn.Sequential(
-            nn.Flatten(),
+            Rearrange("batch channel latent -> batch (channel latent)"),
             nn.Linear(self.num_channels * self.latent_dim, n_outputs),
         )
 
 
 class _RotaryPositionEmbedding(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        # Layers
+        self.merge_rotary_pairs = Rearrange(
+            "batch sequence head frequency_pair complex_component "
+            "-> batch sequence head (frequency_pair complex_component)"
+        )
+
     def forward(
         self,
         query: torch.Tensor,
@@ -311,12 +330,12 @@ class _RotaryPositionEmbedding(nn.Module):
         key_pairs = key.float().reshape(
             batch_size, sequence_length, num_heads, head_dim // 2, 2
         )
-        rotated_query = torch.stack(
-            (-query_pairs[..., 1], query_pairs[..., 0]), dim=-1
-        ).flatten(-2)
-        rotated_key = torch.stack(
-            (-key_pairs[..., 1], key_pairs[..., 0]), dim=-1
-        ).flatten(-2)
+        rotated_query = self.merge_rotary_pairs(
+            torch.stack((-query_pairs[..., 1], query_pairs[..., 0]), dim=-1)
+        )
+        rotated_key = self.merge_rotary_pairs(
+            torch.stack((-key_pairs[..., 1], key_pairs[..., 0]), dim=-1)
+        )
 
         query = (query.float() * rotary_cosine + rotated_query * rotary_sine).type_as(
             query
@@ -357,8 +376,12 @@ class _Attention(nn.Module):
         qk_norm: bool = True,
     ):
         super().__init__()
+
+        # Variables
         self.n_heads = n_heads
         self.head_dim = head_dim
+
+        # Layers
         self.wq = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wk = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wv = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
@@ -405,10 +428,14 @@ class _FeedForward(nn.Module):
         activation: type[nn.Module] = nn.SiLU,
     ):
         super().__init__()
+
+        # Variables
         hidden_dim = int(8 * embedding_dim / 3)
         if ffn_dim_multiplier is not None:
             hidden_dim = int(ffn_dim_multiplier * hidden_dim)
         hidden_dim = multiple_of * math.ceil(hidden_dim / multiple_of)
+
+        # Layers
         self.w1 = nn.Linear(embedding_dim, hidden_dim, bias=False)
         self.w2 = nn.Linear(hidden_dim, embedding_dim, bias=False)
         self.w3 = nn.Linear(embedding_dim, hidden_dim, bias=False)
@@ -432,6 +459,8 @@ class _TransformerBlock(nn.Module):
         activation: type[nn.Module] = nn.SiLU,
     ):
         super().__init__()
+
+        # Layers
         self.attention = _Attention(
             embedding_dim,
             n_heads,
@@ -493,6 +522,8 @@ class _ZUNAEncoder(nn.Module):
         activation: type[nn.Module] = nn.SiLU,
     ):
         super().__init__()
+
+        # Layers
         self.tok_embeddings = nn.Linear(input_dim, dim)
         self.registers = nn.Parameter(torch.zeros(1, input_dim))
         self.layers = nn.ModuleList(
@@ -511,6 +542,8 @@ class _ZUNAEncoder(nn.Module):
         )
         self.norm = _RMSNorm(dim, epsilon=norm_eps)
         self.output = nn.Linear(dim, output_dim, bias=False)
+
+        # Buffers
         self.register_buffer(
             "rotary_cosine",
             rotary_frequencies.cos(),
