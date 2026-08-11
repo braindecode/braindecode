@@ -43,7 +43,27 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- Fix :func:`braindecode.training.mixup_criterion` treating a plain target
+  tensor of three elements as a mixup ``(y_a, y_b, lam)`` triple. The branch
+  was selected on ``len(target) == 3``, which is also true for the targets of
+  any batch holding three windows, so a validation batch or a last partial
+  batch of that size failed with ``Expected input batch_size (3) to match
+  target batch_size (0)``. The mixup branch is now selected on the container
+  type. By `Sarthak Tayal`_.
+
+- Keep the mixing coefficient of :class:`braindecode.augmentation.Mixup` on the
+  dtype of the batch. With ``beta_per_sample=True`` it came straight from numpy
+  as ``float64``, which upcast the loss returned by
+  :func:`braindecode.training.mixup_criterion` to ``float64`` while the model
+  stayed in ``float32``. By `Sarthak Tayal`_.
+
+- Let :class:`braindecode.augmentation.AugmentedDataLoader` used with
+  ``n_augmentation`` greater than zero carry the targets of a transform that
+  mixes them. Batches were concatenated as plain tensors, so combining that
+  option with :class:`braindecode.augmentation.Mixup` raised ``expected Tensor
+  as element 1 in argument 0, but got tuple``. The triple parts are now
+  concatenated one by one and the clean originals get a mixing coefficient of
+  one. By `Sarthak Tayal`_.
 
 Code health
 ============
