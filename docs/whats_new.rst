@@ -65,6 +65,14 @@ Bug fixes
   concatenated one by one and the clean originals get a mixing coefficient of
   one. By `Sarthak Tayal`_.
 
+- Let :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
+  train with a transform that mixes targets. The loader wrapper cast every
+  target with ``y.type(...)``, so a batch carrying the ``(y_a, y_b, lam)``
+  triple of :class:`braindecode.augmentation.Mixup` stopped the fit with
+  ``'tuple' object has no attribute 'type'`` before the first batch was seen.
+  The cast is now guarded the same way the channel-position branch next to it
+  already was. By `Sarthak Tayal`_.
+
 Code health
 ============
 

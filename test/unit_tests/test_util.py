@@ -1,5 +1,6 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 # License: BSD-3
 
 import os
@@ -402,6 +403,22 @@ def test_throwaway_index_loader_backward_compat():
     x, yy, net = _route((X, y, crop))
     assert torch.is_tensor(x)
     assert net._last_window_inds_ is crop  # index stashed for scoring
+
+
+def test_throwaway_index_loader_keeps_mixup_target():
+    """A ``(y_a, y_b, lam)`` target is passed on instead of being cast."""
+    B, C, T = 4, 10, 200
+    X = torch.randn(B, C, T)
+    y_a = torch.zeros(B, dtype=torch.int64)
+    y_b = torch.ones(B, dtype=torch.int64)
+    lam = torch.full((B,), 0.3)
+
+    x, yy, _ = _route((X, (y_a, y_b, lam)))
+    assert torch.is_tensor(x) and x.dtype == torch.float32
+    assert isinstance(yy, tuple) and len(yy) == 3
+    assert torch.equal(yy[0], y_a)
+    assert torch.equal(yy[1], y_b)
+    assert torch.equal(yy[2], lam)
 
 
 def test_looks_like_channel_mask_dtypes():
