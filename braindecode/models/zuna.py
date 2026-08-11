@@ -21,7 +21,7 @@ from braindecode.modules import PatchTokenizer
 
 
 class ZUNA(EEGModuleMixin, nn.Module):
-    r"""ZUNA from Warner et al (2026) [Warner2026]_.
+    r"""ZUNA from Warner et al. (2026) [Warner2026ZUNA]_.
 
     :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel` :bdg-info:`Attention/Transformer`
 
@@ -29,32 +29,55 @@ class ZUNA(EEGModuleMixin, nn.Module):
 
     .. figure:: ../_static/model/zuna_arch.png
        :align: center
-       :alt: ZUNA encoder-decoder architecture
+       :alt: ZUNA pretraining encoder-decoder architecture
        :width: 1000px
 
-    ZUNA is a position-aware diffusion autoencoder for EEG superresolution.
+    ZUNA was introduced as a diffusion autoencoder for masked EEG channel
+    reconstruction and super-resolution [Warner2026ZUNA]_. ZUNA1.1 retains
+    that objective and adds query-key normalization, sandwich normalization,
+    pretraining windows from 0.5 to 30 seconds, and eight channel and time
+    dropout schemes [Warner2026ZUNA11]_.
 
-    Architecture defaults follow the published ``Zyphra/ZUNA1.1`` encoder.
-    Inputs default to five-second windows sampled at 256 Hz. Channel
-    coordinates are read once from ``chs_info`` with
-    :func:`braindecode.models.util.extract_channel_locations_from_chs_info` and
-    encoded in the model's fixed rotary-position buffers.
+    This Braindecode class contains the ZUNA1.1 encoder followed by a
+    classification head. It does not contain the diffusion decoder, channel
+    masking, or reconstruction sampler shown in the figure. :meth:`forward`
+    returns logits of shape ``(batch, n_outputs)``. With
+    ``return_features=True``, it returns the per-channel encoder features used
+    by the classification head.
 
-    :meth:`forward` returns ``(batch, n_outputs)`` logits by default, or a
-    dict of intermediate latents when ``return_features=True``.
+    Signal size and sampling frequency follow the standard Braindecode model
+    arguments. Supply either ``n_times`` or both ``input_window_seconds`` and
+    ``sfreq``; ZUNA does not set these values implicitly. ZUNA1.1 was trained
+    at 256 Hz with 32-sample tokens. This implementation does not
+    resample, filter, or normalize the input. Channel coordinates are read from
+    ``chs_info`` when the model is constructed and stored in fixed rotary
+    position buffers.
 
     .. rubric:: Architecture Overview
 
-    Each channel's window is cut into non-overlapping patches of
-    ``fine_time_pts`` samples (0.125 s at 256 Hz), giving a sequence of
-    ``n_chans * (n_times // fine_time_pts)`` tokens. Tokens are linearly
-    embedded, interleaved with learned register tokens, and processed by a
-    stack of ``n_layers`` transformer blocks whose attention is rotated by a
-    4D rotary embedding over the token's discretised scalp coordinates
-    ``(x, y, z)`` and its coarse-time index. The register slots are projected
-    to per-token latents, mean-pooled over time per channel, and classified.
+    :class:`~braindecode.modules.PatchTokenizer` splits every channel into
+    non-overlapping patches of ``fine_time_pts`` samples. The resulting
+    ``n_chans * (n_times // fine_time_pts)`` patches are serialized in
+    channel-major order. A learned register is placed before each patch, and
+    both are projected to ``dim`` before entering the transformer blocks.
+
+    Self-attention is bidirectional. Four-dimensional rotary positions encode
+    each token's discretized scalp coordinates ``(x, y, z)`` and coarse-time
+    index. The encoder reads the register positions, projects them to
+    ``latent_dim``, restores the channel and patch axes, and averages over the
+    patch axis. A linear layer maps the concatenated channel features to
+    ``n_outputs``.
 
     .. rubric:: Macro Components
+
+    - ``ZUNA.patch_embedding`` (:class:`torch.nn.Sequential`)
+
+      **Operations**: split ``(batch, channel, time)`` into patches with
+      :class:`~braindecode.modules.PatchTokenizer`, then rearrange
+      ``(channel, temporal_patch)`` into one token axis.
+
+      **Role**: produce one continuous-valued token for every channel and time
+      patch.
 
     - ``ZUNA.encoder`` (:class:`torch.nn.Module`)
 
@@ -64,84 +87,106 @@ class ZUNA(EEGModuleMixin, nn.Module):
       feed-forward, sandwich norm) → ``norm`` → ``output`` linear projection
       to ``latent_dim`` per token.
 
-      **Role**: pretrained, position-aware EEG token encoder.
+      **Role**: encode channel-time patches while retaining their spatial and
+      temporal coordinates.
 
     - ``ZUNA.final_layer`` (:class:`torch.nn.Sequential`)
 
-      **Operations**: rearrange the ``(n_chans, latent_dim)`` channel embedding
-      into one feature axis → linear map to ``n_outputs``.
+      **Operations**: rearrange the ``(n_chans, latent_dim)`` channel features
+      into one axis → linear map to ``n_outputs``.
 
-      **Role**: randomly initialised classification head fine-tuned on the
-      downstream task.
+      **Role**: produce task logits from the pooled encoder features.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - **Temporal**: 0.125-s patch tokens plus a coarse-time rotary axis; the
-      time dimension is mean-pooled after encoding.
-    - **Spatial**: three rotary axes carry each channel's bucketed 3D scalp
-      coordinates, making the encoder montage-agnostic.
-    - **Spectral**: no explicit frequency decomposition; spectral structure
-      is learned from the raw 256 Hz patches.
+    - **Temporal**: fixed-size patches provide local samples, and the fourth
+      rotary axis identifies each patch's coarse-time index. The patch axis is
+      averaged after encoding.
+    - **Spatial**: the first three rotary axes contain bucketed 3D coordinates
+      from ``chs_info``. A model instance uses the montage supplied at
+      construction.
+    - **Spectral**: there is no Fourier or filter-bank stage. The encoder
+      receives raw time-domain patches.
 
     .. rubric:: Additional Mechanisms
 
-    - **Register tokens**: one learned register interleaved per data token;
-      only register slots are read out, decoupling readout from input tokens.
-    - **Scaled dot-product attention**: PyTorch SDPA selects the available
-      optimized attention kernel for the current device and dtype.
-    - **Fixed positional grid**: channel and coarse-time rotary positions are
-      computed once during construction, keeping the forward graph fully
-      tensor-based.
+    - **Register tokens**: one learned register is paired with every patch.
+      Only register outputs enter the latent projection.
+    - **ZUNA1.1 normalization**: query-key RMS normalization and optional
+      post-attention and post-feed-forward RMS normalization match the changes
+      introduced in ZUNA1.1.
+    - **Fixed positional grid**: channel and coarse-time rotary values are
+      computed during construction. Inputs passed to :meth:`forward` must have
+      the configured channel count and window length.
 
     Parameters
     ----------
-    dim : int
-        Transformer embedding dimension of the encoder.
-    n_layers : int
-        Number of transformer blocks in the encoder.
-    n_heads : int
-        Number of attention heads per block.
-    head_dim : int
-        Dimension of each attention head. Must be divisible by eight.
-    fine_time_pts : int
+    dim : int, optional
+        Transformer embedding dimension. The default is ``1024``.
+    n_layers : int, optional
+        Number of transformer blocks. The default is ``16``.
+    n_heads : int, optional
+        Number of attention heads per block. The default is ``8``.
+    head_dim : int, optional
+        Dimension of each attention head. It must be divisible by eight. The
+        default is ``64``.
+    fine_time_pts : int, optional
         Number of fine time points per token (the encoder input dimension).
-        ``n_times`` must be divisible by this value. The ZUNA1.1
-        encoder uses ``32`` samples, equivalent to 0.125-second coarse-time
-        tokens at 256 Hz.
-    latent_dim : int
-        Per-token latent dimension produced by the encoder (the encoder
-        output dimension).
-    max_seqlen : int
-        Size of the rotary-frequency table. It must cover ``pos_bins`` and
-        ``n_times // fine_time_pts``.
-    rope_theta : float
-        Base period of the rotary positional embedding.
-    pos_bins : int
-        Number of discretisation bins per spatial axis for channel
-        coordinates.
-    pos_half_range : float
+        ``n_times`` must be divisible by this value. The default is ``32``, or
+        0.125 seconds for data sampled at 256 Hz.
+    latent_dim : int, optional
+        Per-token output dimension of the encoder. The default is ``32``.
+    max_seqlen : int, optional
+        Length of the rotary frequency table. It must be at least
+        ``max(pos_bins, n_times // fine_time_pts)``. The default is ``256``.
+    rope_theta : float, optional
+        Base period of the rotary positional embedding. The default is
+        ``10000.0``.
+    pos_bins : int, optional
+        Number of buckets per spatial coordinate. The default is ``50``.
+    pos_half_range : float, optional
         Half-range (in metres) used to normalise channel coordinates before
-        bucketing (scalp-radius normalisation).
-    norm_eps : float
-        Epsilon of the RMS normalisation layers.
-    multiple_of : int
+        bucketing. Coordinates at or beyond this range are clipped to the first
+        or last bucket. The default is ``0.12``.
+    norm_eps : float, optional
+        Epsilon of the RMS normalization layers. The default is ``1e-5``.
+    multiple_of : int, optional
         Feed-forward hidden dimension is rounded up to a multiple of this
-        value.
-    ffn_dim_multiplier : float | None
-        Optional multiplier applied to the feed-forward hidden dimension.
-    sandwich_norm : bool
-        Whether to apply the ZUNA1.1 post-attention and post-FFN RMS norms.
-    qk_norm : bool
-        Whether to apply ZUNA1.1 query/key RMS norms inside attention.
-    activation : type[nn.Module]
-        Feed-forward activation. The default is :class:`torch.nn.SiLU`, as
-        used by the pretrained encoder.
+        value. The default is ``256``.
+    ffn_dim_multiplier : float | None, optional
+        Multiplier applied before rounding the feed-forward hidden dimension.
+        The default is ``None``.
+    sandwich_norm : bool, optional
+        Apply RMS normalization after attention and the feed-forward layer. The
+        default is ``True``.
+    qk_norm : bool, optional
+        Apply RMS normalization to queries and keys. The default is ``True``.
+    activation : type[nn.Module], optional
+        Feed-forward activation class. The default is
+        :class:`torch.nn.SiLU`.
+
+    Notes
+    -----
+    The full ZUNA1.1 pretraining model has an encoder and a rectified-flow
+    decoder. Its encoder latent is regularized with a maximum mean discrepancy
+    loss. The decoder and both pretraining losses are outside this class.
+
+    In the paper's downstream experiments, token latents were averaged and the
+    encoder was fine-tuned with the classifier. A frozen encoder with a linear
+    head performed worse. The authors also found that checkpoints with lower
+    reconstruction error were not necessarily better for classification
+    [Warner2026ZUNA11]_.
 
     References
     ----------
-    .. [Warner2026] Warner, C., Mago, J., Huml, J.R. and Millidge, B.,
-       2026. ZUNA1.1: A more flexible EEG foundation model for Denoising and
-       Super-resolution. arXiv preprint arXiv:2607.27308.
+    .. [Warner2026ZUNA] Warner, C., Mago, J., Huml, J. R., Osman, M., and
+       Millidge, B. (2026). ZUNA: Flexible EEG Superresolution with
+       Position-Aware Diffusion Autoencoders. arXiv:2602.18478.
+       https://arxiv.org/abs/2602.18478
+    .. [Warner2026ZUNA11] Warner, C., Mago, J., Huml, J. R., and Millidge, B.
+       (2026). ZUNA1.1: A More Flexible EEG Foundation Model for Denoising and
+       Super-Resolution. arXiv:2607.27308.
+       https://arxiv.org/abs/2607.27308
     """
 
     def __init__(
@@ -172,10 +217,6 @@ class ZUNA(EEGModuleMixin, nn.Module):
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
     ):
-        sfreq = 256.0 if sfreq is None else sfreq
-        if n_times is None and input_window_seconds is None:
-            n_times = 1280
-
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,

@@ -505,7 +505,7 @@ models_mandatory_parameters: list[
     ),
     (
         "ZUNA",
-        ["chs_info", "n_outputs"],
+        ["chs_info", "n_outputs", "n_times"],
         {
             "n_times": 1280,
             "sfreq": 256.0,
