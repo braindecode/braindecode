@@ -3,6 +3,7 @@
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
 #          Valentin Iovene <val@too.gy>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 # License: BSD (3-clause)
 
 from numbers import Real
