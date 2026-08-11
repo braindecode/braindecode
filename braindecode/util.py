@@ -1,4 +1,5 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 import glob
@@ -394,10 +395,15 @@ class ThrowAwayIndexLoader(object):
                     )
             elif hasattr(x, "type"):
                 x = x.type(torch.float32)
-                if self.is_regression:
-                    y = y.type(torch.float32)
-                else:
-                    y = y.type(torch.int64)
+                # a target-mixing transform such as Mixup hands over a
+                # (y_a, y_b, lam) tuple, which is already typed and has nothing
+                # to cast, same guard as the dict branch above
+                if hasattr(y, "type"):
+                    y = (
+                        y.type(torch.float32)
+                        if self.is_regression
+                        else y.type(torch.int64)
+                    )
             yield x, y
 
 
