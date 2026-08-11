@@ -177,6 +177,14 @@ class Compose(Transform):
         return X, y
 
 
+def _as_mixed_target(y, lam_dtype):
+    # an untouched target is the same as being mixed with itself with lam of one
+    if isinstance(y, tuple):
+        return y
+    lam = torch.ones(y.shape[0], device=y.device, dtype=lam_dtype)
+    return y, y, lam
+
+
 class _AugmentationCollate:
     """Collate that applies a transform to each batch, with optional expansion.
 
@@ -194,7 +202,10 @@ class _AugmentationCollate:
         ``0`` (default) applies the transform in place (batch size unchanged).
         ``> 0`` keeps the clean originals and appends ``n_augmentation``
         independently transformed copies, returning ``(X, y)`` of
-        ``(1 + n_augmentation)`` times the original size.
+        ``(1 + n_augmentation)`` times the original size. When the transform
+        mixes targets, as :class:`braindecode.augmentation.Mixup` does, ``y``
+        stays the ``(y_a, y_b, lam)`` triple and the clean originals get a
+        mixing coefficient of one.
     """
 
     def __init__(self, transform, device=None, n_augmentation=0):
@@ -217,6 +228,13 @@ class _AugmentationCollate:
             aug_X, aug_y = self.transform(X, y)
             xs.append(aug_X)
             ys.append(aug_y)
+        if any(isinstance(aug_y, tuple) for aug_y in ys):
+            # a target-mixing transform such as Mixup returns (y_a, y_b, lam),
+            # so the parts are concatenated one by one and the untouched copies
+            # are given a mixing coefficient of one
+            lam_dtype = next(t[2].dtype for t in ys if isinstance(t, tuple))
+            ys = [_as_mixed_target(aug_y, lam_dtype) for aug_y in ys]
+            return torch.cat(xs), tuple(torch.cat(part) for part in zip(*ys))
         return torch.cat(xs), torch.cat(ys)
 
 
