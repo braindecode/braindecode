@@ -513,9 +513,9 @@ class SleepFMStager(EEGModuleMixin, nn.Module):
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
     This model composes the raw-signal tokenizer from :class:`SleepFM` with
-    the authors' downstream sleep-staging architecture. Channel attention
-    pools per-channel embeddings, a Transformer contextualizes the patch
-    sequence, and a bidirectional LSTM emits one prediction for every
+    the authors' downstream sleep-staging architecture [sleepfm2026]_. Channel
+    attention pools per-channel embeddings, a Transformer contextualizes the
+    patch sequence, and a bidirectional LSTM emits one prediction for every
     5-second patch.
 
     The output shape is ``(batch, n_outputs, n_patches)``. For the released
