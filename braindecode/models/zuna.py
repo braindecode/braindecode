@@ -6,16 +6,16 @@
 from __future__ import annotations
 
 import math
-from typing import Optional, Union
+from typing import Optional
 
 import torch
-from einops import rearrange, repeat
-from einops.layers.torch import Rearrange
+from rotary_embedding_torch import RotaryEmbedding
 from torch import nn
-from torch.nn import functional as F
+from torch.nn import functional
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
+from braindecode.modules import PatchTokenizer
 
 
 class ZUNA(EEGModuleMixin, nn.Module):
@@ -32,30 +32,11 @@ class ZUNA(EEGModuleMixin, nn.Module):
 
     ZUNA is a position-aware diffusion autoencoder for EEG superresolution.
 
-    Every architecture hyperparameter is a constructor argument and defaults to the
-    published ``Zyphra/ZUNA1.1`` config, so the defaults reproduce the pretrained
-    encoder while smaller configurations can be built for training from
-    scratch. To download the pretrained encoder checkpoint from
-    Hugging Face (requires ``pip install 'braindecode[hub]'``)::
-
-        # Defaults to the upstream ZUNA1.1 classifier checkpoint; ``n_chans``
-        # and ``n_outputs`` are montage- and task-dependent and must be given.
-        ZUNA.from_pretrained(n_chans=19, n_outputs=4)
-
-    Inputs must be EEG windows sampled at 256 Hz and may span 0.5 to 30.0
-    seconds. The default constructor shape remains ``n_times=1280`` (i.e. 5 seconds), but the
-    encoder accepts any runtime window length in the supported range as long
-    as it lands on the coarse-time token grid
-    (``fine_time_pts=32`` samples, i.e. 0.125 s, by default). Channel
-    coordinates are resolved by :meth:`forward` in this order, and any of the
-    three sources is sufficient:
-
-    1. ``channel_positions`` passed to :meth:`forward`.
-    2. ``chs_info`` provided at construction (via
-       :func:`braindecode.models.util.extract_channel_locations_from_chs_info`,
-       cached at construction time).
-    3. ``channel_names`` looked up in an MNE standard montage (defaults to
-       ``"standard_1005"``; pass ``montage=None`` to disable).
+    Architecture defaults follow the published ``Zyphra/ZUNA1.1`` encoder.
+    Inputs default to five-second windows sampled at 256 Hz. Channel
+    coordinates are read once from ``chs_info`` with
+    :func:`braindecode.models.util.extract_channel_locations_from_chs_info` and
+    encoded in the model's fixed rotary-position buffers.
 
     :meth:`forward` returns ``(batch, n_outputs)`` logits by default, or a
     dict of intermediate latents when ``return_features=True``.
@@ -77,7 +58,7 @@ class ZUNA(EEGModuleMixin, nn.Module):
 
       **Operations**: ``tok_embeddings`` (linear patch embedding) →
       interleave ``registers`` → ``n_layers`` × ``_TransformerBlock``
-      (RMS-normed grouped-query attention with 4D RoPE and QK-norm, SwiGLU
+      (RMS-normed multi-head attention with 4D RoPE and QK-norm, SwiGLU
       feed-forward, sandwich norm) → ``norm`` → ``output`` linear projection
       to ``latent_dim`` per token.
 
@@ -104,11 +85,11 @@ class ZUNA(EEGModuleMixin, nn.Module):
 
     - **Register tokens**: one learned register interleaved per data token;
       only register slots are read out, decoupling readout from input tokens.
-    - **Grouped-query attention**: ``n_kv_heads`` may be smaller than
-      ``n_heads``; grouping uses SDPA's native ``enable_gqa`` and therefore
-      requires ``torch>=2.5`` (the default config has no grouping).
-    - **Variable-length windows**: any 0.5-30 s window divisible by
-      ``fine_time_pts`` is accepted at runtime without re-instantiation.
+    - **Scaled dot-product attention**: PyTorch SDPA selects the available
+      optimized attention kernel for the current device and dtype.
+    - **Fixed positional grid**: channel and coarse-time rotary positions are
+      computed once during construction, keeping the forward graph fully
+      tensor-based.
 
     Parameters
     ----------
@@ -118,26 +99,21 @@ class ZUNA(EEGModuleMixin, nn.Module):
         Number of transformer blocks in the encoder.
     n_heads : int
         Number of attention heads per block.
-    n_kv_heads : int | None
-        Number of key/value attention heads. Defaults to ``n_heads``.
     head_dim : int
-        Dimension of each attention head. Must be divisible by ``rope_dim``.
+        Dimension of each attention head. Must be divisible by eight.
     fine_time_pts : int
         Number of fine time points per token (the encoder input dimension).
-        ``n_times`` must be divisible by this value. The pretrained ZUNA1.1
+        ``n_times`` must be divisible by this value. The ZUNA1.1
         encoder uses ``32`` samples, equivalent to 0.125-second coarse-time
         tokens at 256 Hz.
     latent_dim : int
         Per-token latent dimension produced by the encoder (the encoder
         output dimension).
     max_seqlen : int
-        Size of the precomputed rotary table; must cover both ``pos_bins``
-        and the largest ``n_times // fine_time_pts`` that the instance should
-        accept. The default ``256`` covers 30-second windows at 256 Hz.
+        Size of the rotary-frequency table. It must cover ``pos_bins`` and
+        ``n_times // fine_time_pts``.
     rope_theta : float
         Base period of the rotary positional embedding.
-    rope_dim : int
-        Number of rotary axes (4D RoPE over ``x, y, z, coarse_time``).
     pos_bins : int
         Number of discretisation bins per spatial axis for channel
         coordinates.
@@ -180,13 +156,11 @@ class ZUNA(EEGModuleMixin, nn.Module):
         dim: int = 1024,
         n_layers: int = 16,
         n_heads: int = 8,
-        n_kv_heads: Optional[int] = None,
         head_dim: int = 64,
         fine_time_pts: int = 32,
         latent_dim: int = 32,
         max_seqlen: int = 256,
         rope_theta: float = 10000.0,
-        rope_dim: int = 4,
         pos_bins: int = 50,
         pos_half_range: float = 0.12,
         norm_eps: float = 1e-5,
@@ -196,28 +170,9 @@ class ZUNA(EEGModuleMixin, nn.Module):
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
     ):
-        if rope_dim != 4:
-            raise ValueError(
-                "rope_dim must be 4 (x, y, z, coarse-time axes); "
-                f"got rope_dim={rope_dim}."
-            )
-        # ZUNA1.1 checkpoint contract: 256 Hz windows, default 5 s (1280
-        # samples). EEGModuleMixin checks n_times/input_window_seconds
-        # consistency and derives one from the other.
-        sfreq = 256.0 if sfreq is None else float(sfreq)
-        if n_times is None:
-            n_times = (
-                round(input_window_seconds * sfreq)
-                if input_window_seconds is not None
-                else round(5.0 * sfreq)
-            )
-        self._validate_signal_window(
-            n_times,
-            sfreq=sfreq,
-            fine_time_pts=fine_time_pts,
-            max_seqlen=max_seqlen,
-            pos_bins=pos_bins,
-        )
+        sfreq = 256.0 if sfreq is None else sfreq
+        if n_times is None and input_window_seconds is None:
+            n_times = 1280
 
         super().__init__(
             n_outputs=n_outputs,
@@ -229,22 +184,72 @@ class ZUNA(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        self._latent_dim = latent_dim
-        self._fine_time_pts = fine_time_pts
-        self._pos_bins = pos_bins
-        self._pos_half_range = pos_half_range
+        self.num_channels = self.n_chans
+        self.latent_dim = latent_dim
+        self.patch_embedding = nn.Sequential(
+            PatchTokenizer(
+                patch_size=fine_time_pts,
+                n_times=self.n_times,
+                on_non_divisible="error",
+            ),
+            nn.Flatten(start_dim=1, end_dim=2),
+        )
+
+        channel_locations = extract_channel_locations_from_chs_info(
+            self._chs_info, num_channels=self.num_channels
+        )
+        if channel_locations is None:
+            raise ValueError("ZUNA requires channel locations in chs_info.")
+        channel_positions = torch.as_tensor(channel_locations, dtype=torch.float32)
+        if (
+            channel_positions.shape != (self.num_channels, 3)
+            or not torch.isfinite(channel_positions).all()
+        ):
+            raise ValueError("ZUNA requires finite 3D locations for every channel.")
+
+        coarse_time_points = self.n_times // fine_time_pts
+        normalized_positions = (channel_positions + pos_half_range) / (
+            2 * pos_half_range
+        )
+        channel_position_indices = (
+            (normalized_positions * pos_bins).long().clamp(0, pos_bins - 1)
+        )
+        channel_position_indices = channel_position_indices.repeat_interleave(
+            coarse_time_points, dim=0
+        )
+        coarse_time_indices = torch.arange(coarse_time_points).repeat(self.num_channels)
+        token_position_indices = torch.cat(
+            (channel_position_indices, coarse_time_indices.unsqueeze(1)), dim=1
+        )
+
+        if head_dim % 8 != 0:
+            raise ValueError("head_dim must be divisible by eight for 4D RoPE.")
+        rotary_axis_dim = head_dim // 4
+        rotary_embedding = RotaryEmbedding(
+            # rotary_embedding_torch cannot construct dim=2 directly because
+            # of its theta-rescaling formula; dim=4 followed by slicing is
+            # equivalent for the single-frequency dim=2 case.
+            dim=max(rotary_axis_dim, 4),
+            theta=rope_theta,
+            cache_if_possible=False,
+        )
+        with torch.no_grad():
+            rotary_frequency_table = rotary_embedding(
+                torch.arange(max_seqlen, dtype=torch.float32)
+            )[:, :rotary_axis_dim]
+        token_rotary_frequencies = rotary_frequency_table[
+            token_position_indices
+        ].flatten(1, 2)
+        token_rotary_frequencies = token_rotary_frequencies.repeat_interleave(2, dim=0)
 
         self.encoder = _ZUNAEncoder(
             dim=dim,
             n_layers=n_layers,
             n_heads=n_heads,
-            n_kv_heads=n_kv_heads,
             head_dim=head_dim,
             input_dim=fine_time_pts,
             output_dim=latent_dim,
-            max_seqlen=max_seqlen,
-            rope_theta=rope_theta,
-            rope_dim=rope_dim,
+            rotary_frequencies=token_rotary_frequencies,
             norm_eps=norm_eps,
             multiple_of=multiple_of,
             ffn_dim_multiplier=ffn_dim_multiplier,
@@ -252,286 +257,74 @@ class ZUNA(EEGModuleMixin, nn.Module):
             qk_norm=qk_norm,
             activation=activation,
         )
-        self.final_layer = self._make_final_layer(self.n_outputs)
-
-        # Pure functions of construction-time state; never invalidated.
-        self._montage_positions: dict = {}
-        self._tok_idx_cache: dict = {}
-
-        # Cache positions resolved from chs_info. Discard partial or
-        # non-finite extractions so forward falls back to channel_names /
-        # explicit positions instead of silently corrupting RoPE buckets.
-        cached = extract_channel_locations_from_chs_info(self._chs_info)
-        positions = None
-        if cached is not None:
-            positions = torch.as_tensor(cached, dtype=torch.float32)
-            if (
-                positions.shape[0] != self.n_chans
-                or not torch.isfinite(positions).all()
-            ):
-                positions = None
-        self.register_buffer("_cached_positions", positions, persistent=False)
-
-    @staticmethod
-    def _validate_signal_window(
-        n_times: int,
-        *,
-        sfreq: float,
-        fine_time_pts: int,
-        max_seqlen: int,
-        pos_bins: int,
-    ) -> None:
-        msg = (
-            "ZUNA1.1 expects 256 Hz EEG windows from 0.5 to 30.0 seconds, "
-            "with n_times divisible by fine_time_pts."
+        self.final_layer = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(self.num_channels * self.latent_dim, self.n_outputs),
         )
-        if not math.isclose(sfreq, 256.0):
-            raise ValueError(f"{msg} Got sfreq={sfreq}.")
-        if fine_time_pts <= 0 or n_times % fine_time_pts != 0:
-            raise ValueError(
-                f"{msg} Got n_times={n_times} and fine_time_pts={fine_time_pts}."
-            )
-        window_seconds = n_times / sfreq
-        if not 0.5 <= window_seconds <= 30.0:
-            raise ValueError(
-                f"{msg} Got {window_seconds:g} seconds "
-                f"({n_times} samples at {sfreq:g} Hz)."
-            )
-        coarse_time = n_times // fine_time_pts
-        if max(pos_bins, coarse_time) > max_seqlen:
-            raise ValueError(
-                f"max_seqlen ({max_seqlen}) must be at least "
-                f"max(pos_bins ({pos_bins}), n_times // fine_time_pts "
-                f"({coarse_time}))."
-            )
-
-    def _validate_runtime_window(self, n_times: int) -> None:
-        self._validate_signal_window(
-            n_times,
-            sfreq=self.sfreq,
-            fine_time_pts=self._fine_time_pts,
-            max_seqlen=self.encoder.freqs_cis.shape[0],
-            pos_bins=self._pos_bins,
-        )
-
-    def _make_final_layer(self, n_outputs: int) -> nn.Module:
-        return nn.Sequential(
-            Rearrange("batch chans latent -> batch (chans latent)"),
-            nn.Linear(self.n_chans * self._latent_dim, n_outputs),
-        )
-
-    def _resolve_positions(
-        self,
-        channel_positions: Optional[torch.Tensor],
-        channel_names: Optional[list[str]],
-        montage: Optional[str],
-        device: torch.device,
-    ) -> torch.Tensor:
-        # Positions are only used for fp32 bucketing in _make_tok_idx, so
-        # they stay fp32 regardless of the model/input dtype.
-        if channel_positions is not None:
-            pos = torch.as_tensor(channel_positions, dtype=torch.float32, device=device)
-            if pos.ndim != 2 or pos.shape[1] != 3:
-                raise ValueError("channel_positions must have shape (n_chans, 3).")
-            return pos
-        if self._cached_positions is not None:
-            return self._cached_positions.to(device=device)
-        if channel_names is None:
-            raise ValueError("ZUNA requires channel coordinates or names.")
-        if montage is None:
-            raise ValueError("ZUNA requires a montage to resolve channel names.")
-        key = (tuple(channel_names), montage)
-        pos = self._montage_positions.get(key)
-        if pos is None:
-            import mne
-
-            ch_pos = mne.channels.make_standard_montage(montage).get_positions()[
-                "ch_pos"
-            ]
-            missing = [n for n in channel_names if n not in ch_pos]
-            if missing:
-                raise ValueError(
-                    f"Channel names {missing} not found in MNE montage {montage!r}."
-                )
-            pos = torch.stack(
-                [torch.as_tensor(ch_pos[n], dtype=torch.float32) for n in channel_names]
-            )
-            self._montage_positions[key] = pos
-        return pos.to(device=device)
-
-    def _make_tok_idx(self, positions: torch.Tensor, coarse_time: int) -> torch.Tensor:
-        # Discretise channel coords into [0, pos_bins) per axis, then
-        # interleave with a per-token coarse-time index. Bucketing is run in
-        # fp32 so model dtype (e.g. fp16) does not perturb bucket boundaries.
-        normalised = (positions + self._pos_half_range) / (2 * self._pos_half_range)
-        xyz = (normalised * self._pos_bins).long().clamp_(0, self._pos_bins - 1)
-        xyz = repeat(xyz, "c d -> (c t) d", t=coarse_time)
-        t = repeat(
-            torch.arange(coarse_time, device=positions.device),
-            "t -> (c t) 1",
-            c=self.n_chans,
-        )
-        return torch.cat((xyz, t), dim=1)
 
     def forward(
         self,
-        x: torch.Tensor,
-        channel_positions: Optional[torch.Tensor] = None,
-        channel_names: Optional[list[str]] = None,
-        montage: Optional[str] = "standard_1005",
+        input_tensor: torch.Tensor,
         return_features: bool = False,
-    ) -> Union[torch.Tensor, dict[str, torch.Tensor]]:
-        if x.ndim != 3 or x.shape[1] != self.n_chans:
-            raise ValueError(
-                f"Expected (batch, {self.n_chans}, n_times); "
-                f"got shape {tuple(x.shape)}."
-            )
-        b, n_chans, n_times = x.shape
-        self._validate_runtime_window(n_times)
-        coarse_time = n_times // self._fine_time_pts
-        tokens = rearrange(x, "b c (t p) -> b (c t) p", p=self._fine_time_pts)
-
-        # Without explicit per-call positions, tok_idx is a pure function of
-        # (window length, montage source), so cache it — except mid-trace,
-        # where a cached fake tensor would break torch.export.
-        cacheable = channel_positions is None and not _is_tracing()
-        cache_key = (
-            coarse_time,
-            x.device,
-            None if channel_names is None else (tuple(channel_names), montage),
+    ):
+        patch_tokens = self.patch_embedding(input_tensor)
+        token_latents = self.encoder(patch_tokens)
+        structured_latents = token_latents.reshape(
+            token_latents.shape[0], self.num_channels, -1, self.latent_dim
         )
-        tok_idx = self._tok_idx_cache.get(cache_key) if cacheable else None
-        if tok_idx is None:
-            positions = self._resolve_positions(
-                channel_positions, channel_names, montage, x.device
-            )
-            if positions.shape[0] != n_chans:
-                raise ValueError(
-                    f"Expected {n_chans} channel positions, got {positions.shape[0]}."
-                )
-            tok_idx = self._make_tok_idx(positions, coarse_time)
-            if cacheable:
-                if len(self._tok_idx_cache) >= 64:
-                    self._tok_idx_cache.clear()
-                self._tok_idx_cache[cache_key] = tok_idx
-        token_latents = self.encoder(tokens, tok_idx)
-        structured = rearrange(token_latents, "b (c t) d -> b c t d", c=n_chans)
-        features = structured.mean(dim=2)
+        features = structured_latents.mean(dim=2)
+        logits = self.final_layer(features)
 
         if return_features:
+            if torch.jit.is_scripting():
+                return logits
             return {
                 "features": features,
-                # No CLS token in ZUNA; key required by the foundation-model
-                # contract. Not a credential (Bandit B105 false positive).
                 "cls_token": None,  # nosec B105
-                "token_latents": token_latents,
-                "structured_latents": structured,
             }
-        return self.final_layer(features)
+        return logits
 
-    def get_output_shape(self) -> tuple[int, int]:
-        # The mixin's forward-pass implementation feeds zeros without channel
-        # positions, which _resolve_positions rejects — so answer statically.
-        return (1, self.n_outputs)
-
-    def reset_head(self, n_outputs):
+    def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new number of outputs."""
         self._n_outputs = n_outputs
-        ref = next(self.parameters())
-        self.final_layer = self._make_final_layer(n_outputs).to(
-            device=ref.device, dtype=ref.dtype
+        self.final_layer = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(self.num_channels * self.latent_dim, n_outputs),
         )
-        # Sync the captured init config so get_config()/push_to_hub()
-        # round-trips rebuild the head with the new size.
-        for cfg_name in ("_braindecode_init_kwargs", "_hub_mixin_config"):
-            cfg = getattr(self, cfg_name, None)
-            if cfg is not None and "n_outputs" in cfg:
-                cfg["n_outputs"] = n_outputs
-
-    @staticmethod
-    def _normalise_encoder_key(key: str) -> str:
-        key = key.removeprefix("model.").removeprefix("encoder.")
-        if key.endswith(".norm.weight"):
-            key = f"{key.removesuffix('.norm.weight')}.weight"
-        return key
-
-    def load_state_dict(self, state_dict, strict=True, **kwargs):
-        # Upstream Zyphra/ZUNA nests encoder weights under
-        # ``model.encoder.*`` and bundles decoder weights we don't use.
-        if any(k.startswith("model.encoder.") for k in state_dict):
-            state_dict = {
-                self._normalise_encoder_key(k): v
-                for k, v in state_dict.items()
-                if k.removeprefix("model.").startswith("encoder.")
-            }
-            encoder_keys = self.encoder.state_dict().keys()
-            if not any(k in encoder_keys for k in state_dict):
-                raise ValueError(
-                    "No upstream ZUNA keys matched the encoder after "
-                    "remapping; the checkpoint layout is not the expected "
-                    "'model.encoder.*'."
-                )
-            return self.encoder.load_state_dict(state_dict, strict=strict, **kwargs)
-        return super().load_state_dict(state_dict, strict=strict, **kwargs)
-
-    #: Default Hugging Face repo for :meth:`from_pretrained`.
-    _HF_DEFAULT_REPO = "Zyphra/ZUNA1.1"
-    _HF_DEFAULT_FILENAME = "classifier/model-00001-of-00001.safetensors"
-
-    @classmethod
-    def from_pretrained(cls, *args, **kwargs):
-        """Load pretrained ZUNA weights, defaulting to the ZUNA1.1 classifier.
-
-        ``pretrained_model_name_or_path`` defaults to ``"Zyphra/ZUNA1.1"``, and
-        ``filename`` defaults to the classifier checkpoint under
-        ``"classifier/model-00001-of-00001.safetensors"``. Only the encoder is
-        loaded; decoder weights in the upstream checkpoint are ignored, and the
-        Braindecode classification head is randomly initialised. ``n_chans`` (or
-        ``chs_info``) and ``n_outputs`` are montage- and task-dependent and must
-        be supplied.
-        """
-        model_id = args[0] if args else kwargs.get("pretrained_model_name_or_path")
-        if model_id is None:
-            model_id = cls._HF_DEFAULT_REPO
-            kwargs["pretrained_model_name_or_path"] = model_id
-        if model_id == cls._HF_DEFAULT_REPO and kwargs.get("filename") is None:
-            kwargs["filename"] = cls._HF_DEFAULT_FILENAME
-        return super().from_pretrained(*args, **kwargs)
 
 
-def _is_tracing() -> bool:
-    # torch.compiler.is_compiling only exists from torch 2.1.
-    compiling = getattr(getattr(torch, "compiler", None), "is_compiling", None)
-    return torch.jit.is_tracing() or bool(compiling and compiling())
+class _RotaryPositionEmbedding(nn.Module):
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        rotary_cosine: torch.Tensor,
+        rotary_sine: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        rotary_cosine = rotary_cosine.unsqueeze(0).unsqueeze(2)
+        rotary_sine = rotary_sine.unsqueeze(0).unsqueeze(2)
+
+        batch_size, sequence_length, num_heads, head_dim = query.shape
+        query_pairs = query.float().reshape(
+            batch_size, sequence_length, num_heads, head_dim // 2, 2
+        )
+        key_pairs = key.float().reshape(
+            batch_size, sequence_length, num_heads, head_dim // 2, 2
+        )
+        rotated_query = torch.stack(
+            (-query_pairs[..., 1], query_pairs[..., 0]), dim=-1
+        ).flatten(-2)
+        rotated_key = torch.stack(
+            (-key_pairs[..., 1], key_pairs[..., 0]), dim=-1
+        ).flatten(-2)
+
+        query = (query.float() * rotary_cosine + rotated_query * rotary_sine).type_as(
+            query
+        )
+        key = (key.float() * rotary_cosine + rotated_key * rotary_sine).type_as(key)
+        return query, key
 
 
-# ---------------------------------------------------------------------------
-# Rotary embedding (4D over channel position + coarse time)
-# ---------------------------------------------------------------------------
-def _precompute_freqs_cis(rot_dim: int, end: int, theta: float) -> torch.Tensor:
-    # Complex rotary table e^{i * t * freq}: (end, rot_dim / 2), complex64.
-    freqs = 1.0 / (
-        theta ** (torch.arange(0, rot_dim, 2)[: rot_dim // 2].float() / rot_dim)
-    )
-    angles = torch.outer(torch.arange(end).float(), freqs)
-    return torch.polar(torch.ones_like(angles), angles)
-
-
-def _apply_rotary(x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-    # x: (B, L, n_heads, head_dim); freqs_cis: complex (L, head_dim/2).
-    # Rotation via native complex multiply: (x0 + i x1) * e^{i theta}.
-    pairs = rearrange(x.float(), "b l h (d two) -> b l h d two", two=2)
-    rotated = torch.view_as_complex(pairs.contiguous()) * rearrange(
-        freqs_cis, "l d -> 1 l 1 d"
-    )
-    return rearrange(
-        torch.view_as_real(rotated), "b l h d two -> b l h (d two)"
-    ).type_as(x)
-
-
-# ---------------------------------------------------------------------------
-# Transformer block
-# ---------------------------------------------------------------------------
 class _RMSNorm(nn.Module):
     """Root-mean-square layer normalisation.
 
@@ -539,96 +332,99 @@ class _RMSNorm(nn.Module):
     supports ``torch>=2.0``; this shippable equivalent (same approach as
     :class:`~braindecode.models.REVE` and ``CodeBrain``) keeps the model
     importable on older PyTorch while preserving the ``.weight`` parameter
-    name so upstream ZUNA checkpoints still load.
+    name for state-dict compatibility.
     """
 
-    def __init__(self, dim: int, eps: float = 1e-5):
+    def __init__(self, dimension: int, epsilon: float = 1e-5):
         super().__init__()
-        self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
+        self.epsilon = epsilon
+        self.weight = nn.Parameter(torch.ones(dimension))
 
-    def _norm(self, x: torch.Tensor) -> torch.Tensor:
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # type_as(weight) keeps half-precision models (model.half()) feeding
-        # their linears half inputs; fp32 models are unchanged.
-        return self._norm(x.float()).type_as(self.weight) * self.weight
+    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        normalized = input_tensor.float() * torch.rsqrt(
+            input_tensor.float().pow(2).mean(-1, keepdim=True) + self.epsilon
+        )
+        return normalized.type_as(self.weight) * self.weight
 
 
 class _Attention(nn.Module):
     def __init__(
         self,
-        dim: int,
+        embedding_dim: int,
         n_heads: int,
         head_dim: int,
-        n_kv_heads: Optional[int] = None,
         norm_eps: float = 1e-5,
         qk_norm: bool = True,
     ):
         super().__init__()
         self.n_heads = n_heads
-        self.n_kv_heads = n_heads if n_kv_heads is None else n_kv_heads
-        if n_heads % self.n_kv_heads != 0:
-            raise ValueError("n_heads must be divisible by n_kv_heads.")
-        self.heads_per_group = n_heads // self.n_kv_heads
         self.head_dim = head_dim
-        self.wq = nn.Linear(dim, n_heads * head_dim, bias=False)
-        self.wk = nn.Linear(dim, self.n_kv_heads * head_dim, bias=False)
-        self.wv = nn.Linear(dim, self.n_kv_heads * head_dim, bias=False)
-        self.wo = nn.Linear(n_heads * head_dim, dim, bias=False)
-        self.q_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
-        self.k_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.wq = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
+        self.wk = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
+        self.wv = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
+        self.wo = nn.Linear(n_heads * head_dim, embedding_dim, bias=False)
+        self.q_norm = _RMSNorm(head_dim, epsilon=norm_eps) if qk_norm else nn.Identity()
+        self.k_norm = _RMSNorm(head_dim, epsilon=norm_eps) if qk_norm else nn.Identity()
+        self.rotary_embedding = _RotaryPositionEmbedding()
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-        xq = self.q_norm(rearrange(self.wq(x), "b l (h d) -> b l h d", h=self.n_heads))
-        xk = self.k_norm(
-            rearrange(self.wk(x), "b l (h d) -> b l h d", h=self.n_kv_heads)
+    def forward(
+        self,
+        input_tensor: torch.Tensor,
+        rotary_cosine: torch.Tensor,
+        rotary_sine: torch.Tensor,
+    ) -> torch.Tensor:
+        batch_size, sequence_length, _ = input_tensor.shape
+        attention_shape = (
+            batch_size,
+            sequence_length,
+            self.n_heads,
+            self.head_dim,
         )
-        xq = _apply_rotary(xq, freqs_cis)
-        xk = _apply_rotary(xk, freqs_cis)
-        xv = rearrange(self.wv(x), "b l (h d) -> b l h d", h=self.n_kv_heads)
-        # SDPA expects (B, n_heads, L, head_dim). Each batch element is its
-        # own document — no mask needed. GQA configs (n_kv_heads < n_heads)
-        # use SDPA's native grouping and therefore need torch>=2.5.
-        q, k, v = (rearrange(t, "b l h d -> b h l d") for t in (xq, xk, xv))
-        if self.heads_per_group > 1:
-            out = F.scaled_dot_product_attention(q, k, v, enable_gqa=True)
-        else:
-            out = F.scaled_dot_product_attention(q, k, v)
-        return self.wo(rearrange(out, "b h l d -> b l (h d)"))
+        query = self.q_norm(self.wq(input_tensor).reshape(attention_shape))
+        key = self.k_norm(self.wk(input_tensor).reshape(attention_shape))
+        value = self.wv(input_tensor).reshape(attention_shape)
+        query, key = self.rotary_embedding(query, key, rotary_cosine, rotary_sine)
+
+        attention_output = functional.scaled_dot_product_attention(
+            query.transpose(1, 2),
+            key.transpose(1, 2),
+            value.transpose(1, 2),
+        )
+        attention_output = attention_output.transpose(1, 2).reshape(
+            batch_size, sequence_length, self.n_heads * self.head_dim
+        )
+        return self.wo(attention_output)
 
 
 class _FeedForward(nn.Module):
     def __init__(
         self,
-        dim: int,
+        embedding_dim: int,
         multiple_of: int = 256,
         ffn_dim_multiplier: Optional[float] = None,
         activation: type[nn.Module] = nn.SiLU,
     ):
         super().__init__()
-        hidden = int(8 * dim / 3)
+        hidden_dim = int(8 * embedding_dim / 3)
         if ffn_dim_multiplier is not None:
-            hidden = int(ffn_dim_multiplier * hidden)
-        hidden = multiple_of * math.ceil(hidden / multiple_of)
-        self.w1 = nn.Linear(dim, hidden, bias=False)
-        self.w2 = nn.Linear(hidden, dim, bias=False)
-        self.w3 = nn.Linear(dim, hidden, bias=False)
+            hidden_dim = int(ffn_dim_multiplier * hidden_dim)
+        hidden_dim = multiple_of * math.ceil(hidden_dim / multiple_of)
+        self.w1 = nn.Linear(embedding_dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, embedding_dim, bias=False)
+        self.w3 = nn.Linear(embedding_dim, hidden_dim, bias=False)
         self.activation = activation()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.w2(self.activation(self.w1(x)) * self.w3(x))
+    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        return self.w2(self.activation(self.w1(input_tensor)) * self.w3(input_tensor))
 
 
 class _TransformerBlock(nn.Module):
     def __init__(
         self,
-        dim: int,
+        embedding_dim: int,
         n_heads: int,
         head_dim: int,
         norm_eps: float,
-        n_kv_heads: Optional[int] = None,
         multiple_of: int = 256,
         ffn_dim_multiplier: Optional[float] = None,
         sandwich_norm: bool = True,
@@ -637,64 +433,66 @@ class _TransformerBlock(nn.Module):
     ):
         super().__init__()
         self.attention = _Attention(
-            dim,
+            embedding_dim,
             n_heads,
             head_dim,
-            n_kv_heads=n_kv_heads,
             norm_eps=norm_eps,
             qk_norm=qk_norm,
         )
         self.feed_forward = _FeedForward(
-            dim,
+            embedding_dim,
             multiple_of=multiple_of,
             ffn_dim_multiplier=ffn_dim_multiplier,
             activation=activation,
         )
-        self.attention_norm = _RMSNorm(dim, eps=norm_eps)
-        self.ffn_norm = _RMSNorm(dim, eps=norm_eps)
+        self.attention_norm = _RMSNorm(embedding_dim, epsilon=norm_eps)
+        self.ffn_norm = _RMSNorm(embedding_dim, epsilon=norm_eps)
         self.attention_norm_post = (
-            _RMSNorm(dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+            _RMSNorm(embedding_dim, epsilon=norm_eps)
+            if sandwich_norm
+            else nn.Identity()
         )
         self.ffn_norm_post = (
-            _RMSNorm(dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+            _RMSNorm(embedding_dim, epsilon=norm_eps)
+            if sandwich_norm
+            else nn.Identity()
         )
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
-        # Residual stream is kept in fp32; submodule outputs are cast back up
-        # in case autocast ran them in half precision.
-        x = x.float()
-        h = x + self.attention_norm_post(
-            self.attention(self.attention_norm(x), freqs_cis).float()
+    def forward(
+        self,
+        input_tensor: torch.Tensor,
+        rotary_cosine: torch.Tensor,
+        rotary_sine: torch.Tensor,
+    ) -> torch.Tensor:
+        input_tensor = input_tensor.float()
+        hidden_states = input_tensor + self.attention_norm_post(
+            self.attention(
+                self.attention_norm(input_tensor), rotary_cosine, rotary_sine
+            ).float()
         )
-        return h + self.ffn_norm_post(self.feed_forward(self.ffn_norm(h)).float())
+        return hidden_states + self.ffn_norm_post(
+            self.feed_forward(self.ffn_norm(hidden_states)).float()
+        )
 
 
-# ---------------------------------------------------------------------------
-# Encoder
-# ---------------------------------------------------------------------------
 class _ZUNAEncoder(nn.Module):
     def __init__(
         self,
-        dim: int = 1024,
-        n_layers: int = 16,
-        n_heads: int = 8,
-        n_kv_heads: Optional[int] = None,
-        head_dim: int = 64,
-        input_dim: int = 32,
-        output_dim: int = 32,
-        max_seqlen: int = 256,
-        rope_theta: float = 10000.0,
-        rope_dim: int = 4,
-        norm_eps: float = 1e-5,
-        multiple_of: int = 256,
+        dim: int,
+        n_layers: int,
+        n_heads: int,
+        head_dim: int,
+        input_dim: int,
+        output_dim: int,
+        rotary_frequencies: torch.Tensor,
+        norm_eps: float,
+        multiple_of: int,
         ffn_dim_multiplier: Optional[float] = None,
         sandwich_norm: bool = True,
         qk_norm: bool = True,
         activation: type[nn.Module] = nn.SiLU,
     ):
         super().__init__()
-        if head_dim % rope_dim != 0:
-            raise ValueError("head_dim must be divisible by rope_dim.")
         self.tok_embeddings = nn.Linear(input_dim, dim)
         self.registers = nn.Parameter(torch.zeros(1, input_dim))
         self.layers = nn.ModuleList(
@@ -703,7 +501,6 @@ class _ZUNAEncoder(nn.Module):
                 n_heads,
                 head_dim,
                 norm_eps,
-                n_kv_heads=n_kv_heads,
                 multiple_of=multiple_of,
                 ffn_dim_multiplier=ffn_dim_multiplier,
                 sandwich_norm=sandwich_norm,
@@ -712,32 +509,30 @@ class _ZUNAEncoder(nn.Module):
             )
             for _ in range(n_layers)
         )
-        self.norm = _RMSNorm(dim, eps=norm_eps)
+        self.norm = _RMSNorm(dim, epsilon=norm_eps)
         self.output = nn.Linear(dim, output_dim, bias=False)
         self.register_buffer(
-            "freqs_cis",
-            _precompute_freqs_cis(head_dim // rope_dim, max_seqlen, rope_theta),
+            "rotary_cosine",
+            rotary_frequencies.cos(),
+            persistent=False,
+        )
+        self.register_buffer(
+            "rotary_sine",
+            rotary_frequencies.sin(),
             persistent=False,
         )
 
-    def forward(self, tokens: torch.Tensor, tok_idx: torch.Tensor) -> torch.Tensor:
-        # tokens: (B, L, input_dim); tok_idx: (L, rope_dim).
-        b, seq_len, _ = tokens.shape
+    def forward(self, patch_tokens: torch.Tensor) -> torch.Tensor:
+        batch_size, sequence_length, patch_size = patch_tokens.shape
+        register_tokens = self.registers.expand(batch_size, sequence_length, -1)
+        interleaved_tokens = torch.stack(
+            (register_tokens, patch_tokens), dim=2
+        ).reshape(batch_size, 2 * sequence_length, patch_size)
 
-        # Interleave one register token per source token, doubling the length.
-        regs = self.registers.expand(b, seq_len, -1)
-        tokens = rearrange(
-            torch.stack((regs, tokens), dim=2), "b l two d -> b (l two) d"
-        )
-
-        # 4D RoPE: concatenate the per-axis complex phases along head_dim/2.
-        # ``tok_idx`` (L, rope_dim) gathers (L, rope_dim, head_dim/(2*rope_dim))
-        # from the complex table; merging axes gives (L, head_dim/2).
-        tok_idx = repeat(tok_idx, "l d -> (l two) d", two=2)
-        freqs_cis = rearrange(self.freqs_cis[tok_idx], "l a d -> l (a d)")
-
-        h = self.tok_embeddings(tokens)
+        hidden_states = self.tok_embeddings(interleaved_tokens)
         for layer in self.layers:
-            h = layer(h, freqs_cis)
-        h = rearrange(h, "b (l two) d -> b l two d", two=2)[:, :, 0]  # register slot
-        return self.output(self.norm(h))
+            hidden_states = layer(hidden_states, self.rotary_cosine, self.rotary_sine)
+        register_latents = hidden_states.reshape(batch_size, sequence_length, 2, -1)[
+            :, :, 0
+        ]
+        return self.output(self.norm(register_latents))
