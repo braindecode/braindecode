@@ -4,7 +4,25 @@
 
 ### BSD-3-Clause Licensed Files
 
-All files within the `src/` directory are licensed under the BSD-3-Clause License.
+Except where otherwise identified below or in a file header, Braindecode-authored
+source is licensed under the BSD-3-Clause License.
+
+### Apache-2.0 Licensed Files
+
+`braindecode/models/brant.py` is a modified adaptation of the Brant architecture
+by Daoze Zhang and contributors:
+
+- Project source: https://github.com/yzz673/Brant
+- Audited source revision: d66c0eddca149c87a6eaadad5cc60a235eca7f06
+
+The Braindecode adaptation changes the upstream architecture for Braindecode's
+raw-signal input API, in-model spectral feature extraction, configuration and
+dtype contracts, and downstream feature pooling and classification. The source
+file carries a prominent modification notice. It is distributed under the
+Apache License 2.0; the verbatim license is in `LICENSES/Apache-2.0.txt`.
+
+The Python distribution contains the Brant architecture implementation only. It
+does not contain, endorse, or verify any Brant pretrained weight artifact.
 
 ### CC BY-NC 4.0 Licensed Files
 
@@ -22,4 +40,5 @@ Inc. under CC BY-NC 4.0, and inherits the same noncommercial terms.
 ## License Links
 
 - [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause)
+- [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 - [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)

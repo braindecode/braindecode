@@ -2,6 +2,8 @@
 #          Adam Mounir <am91ris@gmail.com> (braindecode adaptation)
 #
 # License: Apache-2.0
+# Modifications: adapted to Braindecode's raw-signal API, downstream head,
+#                configuration, and dtype contracts; see NOTICE.txt.
 
 from __future__ import annotations
 
