@@ -1591,6 +1591,42 @@ def test_scalar_stop_offset_checks_every_present_event(
         )
 
 
+@pytest.mark.parametrize("use_mne_epochs", [False, True], ids=["eeg", "mne"])
+def test_inferred_event_size_filter_preserves_source_metadata(
+    event_dataset_factory, use_mne_epochs
+):
+    """Filtering a middle event cannot shift a later event's metadata."""
+    concat_ds = event_dataset_factory(
+        [1.0, 0.5, 1.0],
+        onsets=[1.0, 3.0, 5.0],
+        descriptions=["T0", "T1", "T2"],
+    )
+    concat_ds.datasets[0].raw.annotations.extras = [
+        {"trial_id": 10, "quality": "first"},
+        {"trial_id": 20, "quality": "middle"},
+        {"trial_id": 30, "quality": "last"},
+    ]
+
+    with pytest.warns(UserWarning, match="Dropping trials.*1"):
+        windows_ds = create_windows_from_events(
+            concat_ds=concat_ds,
+            mapping={"T0": 0, "T1": 1, "T2": 2},
+            use_mne_epochs=use_mne_epochs,
+        ).datasets[0]
+
+    metadata = (
+        windows_ds.windows.metadata if use_mne_epochs else windows_ds.metadata
+    )
+    assert metadata["i_window_in_trial"].tolist() == [0, 0]
+    assert metadata["i_start_in_trial"].tolist() == [100, 500]
+    assert metadata["i_stop_in_trial"].tolist() == [200, 600]
+    assert metadata["target"].tolist() == [0, 2]
+    assert metadata["trial_id"].tolist() == [10, 30]
+    assert metadata["quality"].tolist() == ["first", "last"]
+    if use_mne_epochs:
+        assert windows_ds.windows.event_id == {"T0": 0, "T2": 2}
+
+
 @pytest.mark.parametrize("per_event_params", [False, True], ids=["int", "dict"])
 def test_short_trial_drop_preserves_event_metadata(
     event_dataset_factory, per_event_params

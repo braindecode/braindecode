@@ -870,6 +870,8 @@ def _create_windows_from_events(
                 stops = stops[checker_trials_size]
                 if extras is not None:
                     extras = [e for i, e in enumerate(extras) if checker_trials_size[i]]
+        description = events[:, -1]
+
         if not use_mne_epochs:
             onsets = onsets - ds.raw.first_samp
             stops = stops - ds.raw.first_samp
