@@ -87,8 +87,8 @@ Fixed-Length Windows Extraction
 #     - Keyword-only strategy for an incomplete trailing window. Use
 #       `'overlap'` for a full window shifted flush to the recording end,
 #       `'drop'` to discard the remainder, or `'keep'` for a naturally placed
-#       shorter window. The `'keep'` mode requires `lazy_metadata=False` and
-#       `use_mne_epochs=False`.
+#       shorter window. With explicit window sizing, only `'drop'` supports
+#       `lazy_metadata=True`; `'keep'` also requires `use_mne_epochs=False`.
 #
 # **mapping** : dict(str: int) or None
 #     - Mapping from event description to target value.
@@ -116,7 +116,9 @@ Fixed-Length Windows Extraction
 #     - If `True`, only use the last target in the window.
 #
 # **lazy_metadata** : bool (default=False)
-#     - If True, metadata is not computed immediately, but only when accessed by using the _LazyDataFrame (experimental).
+#     - If True, metadata is computed on access with the experimental
+#       `_LazyDataFrame`. With explicit window sizing, this requires
+#       `on_last_window='drop'` and `use_mne_epochs=False`.
 #
 # **on_missing** : str (default='error')
 #     - What to do if one or several event ids are not found in the recording. Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.

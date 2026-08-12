@@ -212,6 +212,15 @@ def _normalize_on_missing(on_missing: str) -> str:
         ) from None
 
 
+def _validate_on_last_window(on_last_window: str | None) -> None:
+    """Validate a trailing-window strategy shared by public windowers."""
+    if on_last_window not in (None, "overlap", "drop", "keep"):
+        raise ValueError(
+            "on_last_window must be one of 'overlap', 'drop', 'keep', "
+            f"got {on_last_window!r}."
+        )
+
+
 # XXX it's called concat_ds...
 def create_windows_from_events(
     concat_ds: BaseConcatDataset[RawDataset],
@@ -377,11 +386,7 @@ def create_windows_from_events(
     if on_last_window is None:
         on_last_window = "overlap"
 
-    if on_last_window not in ("overlap", "drop", "keep"):
-        raise ValueError(
-            "on_last_window must be one of 'overlap', 'drop', 'keep', "
-            f"got {on_last_window!r}."
-        )
+    _validate_on_last_window(on_last_window)
     # Validate per-event-type dict parameters
     has_dict_params = any(
         isinstance(p, dict)
@@ -524,7 +529,8 @@ def create_fixed_length_windows(
         How to handle the last incomplete window when the recording duration is
         not evenly divisible by window_size_samples and window_stride_samples.
         Must be set if both window_size_samples and window_stride_samples are
-        provided.
+        provided. With explicit window sizing, only ``'drop'`` is compatible
+        with ``lazy_metadata=True``.
 
         - ``'overlap'``: create a final window flush to the recording end,
           which may overlap with the previous window.
@@ -554,7 +560,8 @@ def create_fixed_length_windows(
         rejection based on flatness is done. See mne.Epochs.
     lazy_metadata: bool
         If True, metadata is not computed immediately, but only when accessed
-        by using the _LazyDataFrame (experimental). Cannot be used together
+        by using the _LazyDataFrame (experimental). With explicit window
+        sizing, requires ``on_last_window='drop'``. Cannot be used together
         with ``use_mne_epochs=True``.
     on_missing: str
         What to do if one or several event ids are not found in the recording.
@@ -1391,6 +1398,8 @@ def _check_and_set_fixed_length_window_arguments(
             " instead."
         )
 
+    _validate_on_last_window(on_last_window)
+
     if (
         window_size_samples is not None
         and window_stride_samples is not None
@@ -1407,12 +1416,6 @@ def _check_and_set_fixed_length_window_arguments(
         and on_last_window is not None
     ):
         on_last_window = None
-
-    if on_last_window not in (None, "overlap", "drop", "keep"):
-        raise ValueError(
-            f"on_last_window must be one of 'overlap', 'drop', 'keep', "
-            f"got {on_last_window!r}."
-        )
 
     if on_last_window in ("keep", "overlap") and lazy_metadata:
         raise ValueError(

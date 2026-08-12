@@ -1341,6 +1341,15 @@ def concat_ds_two_event_types(event_dataset_factory):
     return event_dataset_factory([1.0] * 4)
 
 
+_ON_MISSING_ALIASES = [
+    pytest.param("error", "raise", id="error"),
+    pytest.param("warning", "warn", id="warning"),
+    pytest.param("ignore", "ignore", id="ignore"),
+    pytest.param("raise", "raise", id="raise"),
+    pytest.param("warn", "warn", id="warn"),
+]
+
+
 @pytest.mark.parametrize(
     "kwargs, match",
     [
@@ -1526,13 +1535,7 @@ def test_short_trial_drop_preserves_event_metadata(
 @pytest.mark.parametrize("per_event_params", [False, True], ids=["int", "dict"])
 @pytest.mark.parametrize(
     ("on_missing", "expected_mne_on_missing"),
-    [
-        pytest.param("error", "raise", id="error"),
-        pytest.param("warning", "warn", id="warning"),
-        pytest.param("ignore", "ignore", id="ignore"),
-        pytest.param("raise", "raise", id="raise"),
-        pytest.param("warn", "warn", id="warn"),
-    ],
+    _ON_MISSING_ALIASES,
 )
 def test_mne_short_trial_drop_removes_empty_event_class(
     monkeypatch,
@@ -1576,6 +1579,39 @@ def test_mne_short_trial_drop_removes_empty_event_class(
     assert metadata["i_start_in_trial"].tolist() == [300, 350, 700, 750]
     assert metadata["i_stop_in_trial"].tolist() == [350, 400, 750, 800]
     assert metadata["target"].tolist() == [1, 1, 1, 1]
+
+
+@pytest.mark.parametrize(
+    ("on_missing", "expected_mne_on_missing"),
+    _ON_MISSING_ALIASES,
+)
+def test_fixed_length_mne_normalizes_on_missing(
+    monkeypatch,
+    lazy_loadable_dataset,
+    on_missing,
+    expected_mne_on_missing,
+):
+    """Fixed-length MNE construction uses MNE's on_missing vocabulary."""
+    received_on_missing = []
+    mne_epochs = mne.Epochs
+
+    def epochs_spy(*args, **kwargs):
+        received_on_missing.append(kwargs["on_missing"])
+        return mne_epochs(*args, **kwargs)
+
+    monkeypatch.setattr(mne, "Epochs", epochs_spy)
+    n_times = lazy_loadable_dataset.datasets[0].raw.n_times
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        window_size_samples=n_times,
+        window_stride_samples=n_times,
+        on_last_window="drop",
+        on_missing=on_missing,
+        use_mne_epochs=True,
+    )
+
+    assert received_on_missing == [expected_mne_on_missing]
+    assert windows.datasets[0].window_kwargs[0][1]["on_missing"] == on_missing
 
 
 @pytest.mark.parametrize("per_event_params", [False, True], ids=["int", "dict"])
@@ -1858,6 +1894,40 @@ def test_on_last_window_rejects_invalid_value(trailing_window_case):
     fn, kwargs = trailing_window_case
     with pytest.raises(ValueError, match="on_last_window must be one of"):
         fn(**kwargs, on_last_window="invalid")
+
+
+def test_fixed_length_inferred_size_rejects_invalid_value(lazy_loadable_dataset):
+    with pytest.raises(ValueError, match="on_last_window must be one of"):
+        create_fixed_length_windows(
+            concat_ds=lazy_loadable_dataset,
+            on_last_window="invalid",
+        )
+
+
+@pytest.mark.parametrize(
+    "strategy_kwargs",
+    [
+        pytest.param({}, id="default"),
+        pytest.param({"on_last_window": "overlap"}, id="overlap"),
+        pytest.param({"on_last_window": "drop"}, id="drop"),
+        pytest.param({"on_last_window": "keep"}, id="keep"),
+    ],
+)
+def test_fixed_length_inferred_size_accepts_valid_values(
+    lazy_loadable_dataset, strategy_kwargs
+):
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        **strategy_kwargs,
+    )
+    dataset = windows.datasets[0]
+    stored_kwargs = dataset.window_kwargs[0][1]
+
+    assert dataset.metadata["i_start_in_trial"].tolist() == [0]
+    assert dataset.metadata["i_stop_in_trial"].tolist() == [dataset.raw.n_times]
+    assert stored_kwargs["window_size_samples"] is None
+    assert stored_kwargs["window_stride_samples"] is None
+    assert stored_kwargs["on_last_window"] is None
 
 
 def test_keep_requires_eeg_windows(trailing_window_case):
