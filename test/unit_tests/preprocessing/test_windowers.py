@@ -1524,6 +1524,61 @@ def test_short_trial_drop_preserves_event_metadata(
 
 
 @pytest.mark.parametrize("per_event_params", [False, True], ids=["int", "dict"])
+@pytest.mark.parametrize(
+    ("on_missing", "expected_mne_on_missing"),
+    [
+        pytest.param("error", "raise", id="error"),
+        pytest.param("warning", "warn", id="warning"),
+        pytest.param("ignore", "ignore", id="ignore"),
+        pytest.param("raise", "raise", id="raise"),
+        pytest.param("warn", "warn", id="warn"),
+    ],
+)
+def test_mne_short_trial_drop_removes_empty_event_class(
+    monkeypatch,
+    event_dataset_factory,
+    per_event_params,
+    on_missing,
+    expected_mne_on_missing,
+):
+    """Accepted short trials do not leave an empty MNE event class."""
+    concat_ds = event_dataset_factory([0.2, 1.0, 0.2, 1.0])
+    mapping = {"T0": 0, "T1": 1}
+    offset = {event_name: 0 for event_name in mapping} if per_event_params else 0
+    stride = {event_name: 50 for event_name in mapping} if per_event_params else 50
+    received_on_missing = []
+    mne_epochs = mne.Epochs
+
+    def epochs_spy(*args, **kwargs):
+        received_on_missing.append(kwargs["on_missing"])
+        return mne_epochs(*args, **kwargs)
+
+    monkeypatch.setattr(mne, "Epochs", epochs_spy)
+    with pytest.warns(UserWarning, match="are being dropped"):
+        windows = create_windows_from_events(
+            concat_ds=concat_ds,
+            trial_start_offset_samples=offset,
+            trial_stop_offset_samples=offset,
+            window_size_samples=50,
+            window_stride_samples=stride,
+            on_last_window="drop",
+            mapping=mapping,
+            on_missing=on_missing,
+            accepted_bads_ratio=1.0,
+            use_mne_epochs=True,
+        )
+
+    epochs = windows.datasets[0].windows
+    metadata = epochs.metadata
+    assert received_on_missing == [expected_mne_on_missing]
+    assert epochs.event_id == {"T1": 1}
+    assert metadata["i_window_in_trial"].tolist() == [0, 1, 0, 1]
+    assert metadata["i_start_in_trial"].tolist() == [300, 350, 700, 750]
+    assert metadata["i_stop_in_trial"].tolist() == [350, 400, 750, 800]
+    assert metadata["target"].tolist() == [1, 1, 1, 1]
+
+
+@pytest.mark.parametrize("per_event_params", [False, True], ids=["int", "dict"])
 @pytest.mark.parametrize("on_last_window", ["drop", "overlap", "keep"])
 def test_all_short_trials_raise_clear_error(
     event_dataset_factory, per_event_params, on_last_window

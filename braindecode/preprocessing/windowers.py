@@ -194,6 +194,24 @@ def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
     return use_mne_epochs
 
 
+def _normalize_on_missing(on_missing: str) -> str:
+    """Translate Braindecode's public spellings to the MNE vocabulary."""
+    aliases = {
+        "error": "raise",
+        "warning": "warn",
+        "ignore": "ignore",
+        "raise": "raise",
+        "warn": "warn",
+    }
+    try:
+        return aliases[on_missing]
+    except (KeyError, TypeError):
+        raise ValueError(
+            "on_missing must be one of 'error', 'warning', 'ignore', "
+            f"'raise', or 'warn', got {on_missing!r}."
+        ) from None
+
+
 # XXX it's called concat_ds...
 def create_windows_from_events(
     concat_ds: BaseConcatDataset[RawDataset],
@@ -297,7 +315,9 @@ def create_windows_from_events(
         rejection based on flatness is done. See mne.Epochs.
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
+        Valid keys are ``'error'`` | ``'warning'`` | ``'ignore'``. The MNE
+        spellings ``'raise'`` and ``'warn'`` are accepted as aliases. See
+        :class:`mne.Epochs`.
     accepted_bads_ratio: float, optional
         Acceptable proportion of trials with inconsistent length in a raw. If
         the number of trials whose length is exceeded by the window size is
@@ -305,7 +325,9 @@ def create_windows_from_events(
         the computation continues. Otherwise, an error is raised. Defaults to
         0.0 (raise an error). If all trials are accepted for dropping because
         they are too short, a ``ValueError`` is raised because no windows can
-        be created.
+        be created. If one event type is completely dropped but other windows
+        remain, that type is omitted from the MNE ``event_id`` and windowing
+        continues.
     use_mne_epochs: bool
         If False, return EEGWindowsDataset objects.
         If True, return mne.Epochs objects encapsulated in WindowsDataset objects,
@@ -536,7 +558,9 @@ def create_fixed_length_windows(
         with ``use_mne_epochs=True``.
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
+        Valid keys are ``'error'`` | ``'warning'`` | ``'ignore'``. The MNE
+        spellings ``'raise'`` and ``'warn'`` are accepted as aliases. See
+        :class:`mne.Epochs`.
     use_mne_epochs: bool | None
         If False, return EEGWindowsDataset objects.
         If True, return mne.Epochs objects encapsulated in WindowsDataset
@@ -873,6 +897,12 @@ def _create_windows_from_events(
         metadata = pd.concat([metadata, extras_df.reset_index(drop=True)], axis=1)
 
     if use_mne_epochs:
+        surviving_event_codes = set(description)
+        events_id = {
+            event_name: event_code
+            for event_name, event_code in events_id.items()
+            if event_code in surviving_event_codes
+        }
         # window size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(
             ds.raw,
@@ -886,7 +916,7 @@ def _create_windows_from_events(
             picks=picks,
             reject=reject,
             flat=flat,
-            on_missing=on_missing,
+            on_missing=_normalize_on_missing(on_missing),
             verbose=verbose,
         )
         if drop_bad_windows:
@@ -1048,7 +1078,7 @@ def _create_fixed_length_windows(
             picks=picks,
             reject=reject,
             flat=flat,
-            on_missing=on_missing,
+            on_missing=_normalize_on_missing(on_missing),
             verbose=verbose,
         )
         if drop_bad_windows:
