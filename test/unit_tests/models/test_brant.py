@@ -4,8 +4,8 @@ The bulk of the model contract (init / forward / serialization / categorization)
 is already exercised by the shared model suites via ``models_mandatory_parameters``.
 This file adds Brant-specific checks plus an upstream **parity gate**: when the
 gated reference code is available (``BRANT_SRC`` pointing to ``Brant_src``), the
-two Transformer encoders are checked to be bit-exact against upstream; otherwise
-the gate is skipped, so CI stays green without the gated dependency.
+two Transformer encoders are checked for numerical parity within tolerance;
+otherwise the gate is skipped, so CI stays green without the gated dependency.
 """
 
 from __future__ import annotations
@@ -59,16 +59,44 @@ def test_return_features():
 
 
 def test_reset_head_changes_n_outputs():
-    model = _model().eval()
+    model = _model().double().eval()
     model.reset_head(7)
+    assert model.n_outputs == model.get_config()["n_outputs"] == 7
+    assert next(model.final_layer.parameters()).dtype == torch.float64
+    restored = Brant.from_config(model.get_config())
+    assert restored.n_outputs == 7
     with torch.no_grad():
-        out = model(torch.randn(2, N_CHANS, N_TIMES))
+        out = model(torch.randn(2, N_CHANS, N_TIMES, dtype=torch.float64))
     assert out.shape == (2, 7)
+
+
+def test_local_checkpoint_resets_requested_head(tmp_path):
+    pytest.importorskip("huggingface_hub")
+    model = _model().eval()
+    model._save_pretrained(tmp_path)
+
+    restored = Brant.from_pretrained(tmp_path, n_outputs=7).eval()
+
+    torch.testing.assert_close(
+        restored.temporal_encoder.input_embedding.band_encoding,
+        model.temporal_encoder.input_embedding.band_encoding,
+    )
+    assert restored.n_outputs == restored.get_config()["n_outputs"] == 7
+    assert restored(torch.randn(2, N_CHANS, N_TIMES)).shape == (2, 7)
 
 
 def test_input_shorter_than_patch_raises():
     with pytest.raises(ValueError):
         _model(n_times=PATCH - 1)
+
+
+@pytest.mark.parametrize("n_times", [N_TIMES - 1, N_TIMES + 1])
+def test_runtime_input_length_must_match(n_times):
+    model = _model()
+    with pytest.raises(
+        ValueError, match=f"configured for {N_TIMES}.*received {n_times}"
+    ):
+        model(torch.randn(2, N_CHANS, n_times))
 
 
 def test_freq_bands_must_match_constant():
@@ -93,11 +121,13 @@ def _import_upstream_or_skip():
         from pretrain.pre_model import ChannelEncoder, TimeEncoder
     except ImportError as exc:  # pragma: no cover - depends on external code
         pytest.skip(f"upstream Brant not importable: {exc}")
+    finally:
+        sys.path.remove(src)
     return TimeEncoder, ChannelEncoder
 
 
-def test_encoders_are_bit_exact_with_upstream():
-    """Both encoders reproduce upstream exactly once weights are copied over."""
+def test_encoders_numerically_match_upstream():
+    """Both encoders numerically match upstream once weights are copied over."""
     TimeEncoder, ChannelEncoder = _import_upstream_or_skip()
 
     torch.manual_seed(0)
@@ -129,7 +159,7 @@ def test_encoders_are_bit_exact_with_upstream():
     with torch.no_grad():
         up_time = up_t(mask=None, data=data, power=power, need_mask=False, use_power=True)
         ours_time = ours_t(data, power)
-    assert torch.allclose(up_time, ours_time, atol=1e-5)
+    torch.testing.assert_close(up_time, ours_time, rtol=0, atol=1e-5)
 
     time_z = up_time.reshape(batch, n_chans, seq_len, d_model)
     time_z = time_z.transpose(1, 2).reshape(batch * seq_len, n_chans, d_model)
@@ -148,4 +178,4 @@ def test_encoders_are_bit_exact_with_upstream():
     with torch.no_grad():
         up_ch, _ = up_c(time_z)
         ours_ch, _ = ours_c(time_z)
-    assert torch.allclose(up_ch, ours_ch, atol=1e-5)
+    torch.testing.assert_close(up_ch, ours_ch, rtol=0, atol=1e-5)

@@ -8,9 +8,10 @@ Upstream code and pretrained weights are released under Apache-2.0:
 * weights: https://huggingface.co/Daoze/Brant
 
 The two Transformer encoders are ported weight-for-weight from the upstream
-reference (bit-exact, see ``scripts/brant_parity_check``); the classification
-head and channel/patch pooling are a braindecode-native adaptation. The official
-pretrained checkpoint is hosted on the Hugging Face Hub and loads directly via
+reference and checked for numerical parity (see ``scripts/brant_parity_check``);
+the classification head and channel/patch pooling are a braindecode-native
+adaptation. The official pretrained checkpoint is hosted on the Hugging Face
+Hub and loads directly via
 ``Brant.from_pretrained("braindecode/brant-pretrained")``.
 """
 
@@ -203,8 +204,17 @@ class Brant(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
+        old_param = next(self.final_layer.parameters())
+        self.final_layer = _BrantHead(
+            self.embed_dim, n_outputs, self._head_activation
+        ).to(device=old_param.device, dtype=old_param.dtype)
         self._n_outputs = n_outputs
-        self.final_layer = _BrantHead(self.embed_dim, n_outputs, self._head_activation)
+        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
+        if init_kwargs is not None:
+            init_kwargs["n_outputs"] = n_outputs
+        hub_config = getattr(self, "_hub_mixin_config", None)
+        if hub_config is not None:
+            hub_config["n_outputs"] = n_outputs
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Decode a batch of signals.
@@ -225,6 +235,12 @@ class Brant(EEGModuleMixin, nn.Module):
             Class logits of shape ``(batch, n_outputs)``, or the feature
             dict ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
+        if x.shape[-1] != self.n_times:
+            raise ValueError(
+                f"Brant was configured for {self.n_times} time samples, "
+                f"but received {x.shape[-1]}."
+            )
+
         batch_size, n_chans, _ = x.shape
         seq_len = self.seq_len
         d_model = self.embed_dim

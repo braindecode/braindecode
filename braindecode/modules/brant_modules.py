@@ -9,8 +9,9 @@ The only braindecode-native change lives in :class:`_BandPowerFeatures`: upstrea
 computes the per-band spectral power *outside* the model (scipy periodogram, fed
 in as an argument); here it is computed **inside** the forward pass so the model
 keeps the standard ``(batch, n_chans, n_times)`` input signature. The two
-Transformer encoders are ported verbatim, so their parameters map 1:1 to the
-upstream ``TimeEncoder`` / ``ChannelEncoder`` (see ``scripts/brant_parity_check``).
+Transformer encoders preserve the upstream parameter layout and are checked
+for numerical parity within a documented tolerance (see
+``scripts/brant_parity_check``).
 """
 
 from __future__ import annotations

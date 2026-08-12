@@ -7,6 +7,7 @@ import torch
 from braindecode.models import (
     BENDR,
     BIOT,
+    Brant,
     EEGDINO,
     EEGPT,
     REVE,
@@ -78,6 +79,7 @@ _MODELS = [
         id="InterpolatedBENDR",
     ),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
+    pytest.param(Brant, N_CHANS, {"sfreq": 250.0}, False, id="Brant"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
     pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
     pytest.param(
