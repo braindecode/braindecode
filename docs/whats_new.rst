@@ -22,11 +22,48 @@
 .. _current:
 
 
-Current 1.7.0 (GitHub)
+Current 1.8.0 (GitHub)
 ===============================
 
 Enhancements
 ============
+
+- None yet
+
+API and behavior changes
+========================
+
+- None yet
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
+  which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
+  validation (:gh:`1123` by `Bruno Aristimunha`_).
+
+Code health
+============
+
+- None yet
+
+
+Current 1.7.0 (2026-08-01)
+===============================
+
+Enhancements
+============
+
+- Add :class:`braindecode.models.ZUNA`, a position-aware EEG foundation model
+  from Warner et al. (2026), ported from the public ``Zyphra/ZUNA1.1`` encoder
+  with a Braindecode classification head, shared patch tokenization, and
+  construction-time spatial positions compatible with TorchScript and
+  ``torch.compile`` (:gh:`1020` by `Jon Huml`_)
 
 - Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
   registry for the interpolated (channel-adapting) models, keeping them separate
@@ -34,6 +71,12 @@ Enhancements
 
 API and behavior changes
 ========================
+
+- The ``stride_factor`` parameter of :class:`braindecode.models.FBLightConvNet`
+  is deprecated and will be removed in a future release. The model never read
+  it, its temporal segmentation is set by ``win_len``, and the reference
+  implementation has no such parameter. Passing it now emits a
+  ``DeprecationWarning`` and keeps being ignored. By `Sarthak Tayal`_.
 
 - Interpolated models (e.g. ``InterpolatedBIOT``, ``InterpolatedLaBraM``) are no
   longer included in :data:`braindecode.models.util.models_dict`; they now live
@@ -48,6 +91,22 @@ Requirements
 
 Bug fixes
 ==========
+
+- Fix :meth:`braindecode.EEGClassifier.predict_trials`,
+  :meth:`braindecode.EEGRegressor.predict_trials` and
+  :class:`braindecode.training.scoring.CroppedTrialEpochScoring` on the training
+  set raising ``AttributeError`` or ``TypeError`` when the module was passed as a
+  model name or as an uninstantiated class. Those paths read the ``module``
+  constructor argument instead of the initialized ``module_`` attribute, so they
+  only worked when an already instantiated module was passed, which the
+  documentation discourages. By `Sarthak Tayal`_.
+
+- Raise a clear ``ValueError`` in :class:`braindecode.models.FBLightConvNet`
+  when ``n_times`` is shorter than ``win_len``. The temporal attention kernel
+  is sized as ``n_times // win_len``, so a short window produced an empty
+  kernel and the constructor died with a ``ZeroDivisionError`` coming from the
+  weight initialisation. The docstring now also documents ``win_len`` and
+  reports the correct ``n_bands`` default of 9. By `Sarthak Tayal`_.
 
 - Use ``nn.Dropout1d`` instead of ``nn.Dropout2d`` for the channel-wise dropout
   inside :class:`braindecode.models.BDTCN`, ``braindecode.models.TCN`` and
@@ -1509,3 +1568,4 @@ Authors
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Michele Romani: https://github.com/BRomans
+.. _Jon Huml: https://github.com/jonathanhuml

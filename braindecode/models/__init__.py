@@ -71,6 +71,7 @@ from .util import (
     models_mandatory_parameters,
     positions_from_chs_info,
 )
+from .zuna import ZUNA
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
@@ -145,6 +146,7 @@ __all__ = [
     "TIDNet",
     "TSception",
     "USleep",
+    "ZUNA",
     "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",

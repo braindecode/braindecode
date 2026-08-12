@@ -1,0 +1,3 @@
+artifact-path: 0/dev/index.html
+circleci-jobs: fetch_docs_from_github
+job-title: Check rendered doc here!
