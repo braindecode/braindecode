@@ -9,6 +9,7 @@ import pytest
 import torch
 from sklearn.utils import check_random_state
 
+from braindecode import EEGRegressor
 from braindecode.augmentation.base import (
     AugmentedDataLoader,
     Compose,
@@ -36,6 +37,31 @@ class DummyTransform(Transform):
 
     def get_augmentation_params(self, X, y):
         return {"k": self.k}
+
+
+class _TinyMixupRegressor(torch.nn.Module):
+    def __init__(self, n_chans=2, n_times=20, n_outputs=1):
+        super().__init__()
+        self.linear = torch.nn.Linear(n_chans * n_times, n_outputs)
+
+    def forward(self, x):
+        return self.linear(x.flatten(start_dim=1))
+
+
+class _RecordingMixupMSELoss(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seen_targets = []
+
+    def forward(self, preds, target):
+        y_a, y_b, lam = target
+        self.seen_targets.append(
+            tuple(part.detach().cpu().clone() for part in (y_a, y_b, lam))
+        )
+        lam = lam.reshape(lam.shape[0], *([1] * (preds.ndim - 1)))
+        return (
+            lam * torch.square(preds - y_a) + (1 - lam) * torch.square(preds - y_b)
+        ).mean()
 
 
 @pytest.fixture
@@ -307,6 +333,60 @@ def test_mixup_lam_follows_batch_dtype(beta_per_sample):
 
     preds = torch.log_softmax(torch.randn(6, 2), dim=1)
     assert mixup_criterion(preds, out_y).dtype == preds.dtype
+
+
+@pytest.mark.parametrize("beta_per_sample", [False, True])
+@pytest.mark.parametrize("n_augmentation", [0, 2])
+def test_eegregressor_mixup_preserves_fractional_targets(
+    beta_per_sample, n_augmentation
+):
+    """The public fit boundary keeps fractional ``(B, 1)`` mixed targets."""
+    batch_size, n_chans, n_times = 6, 2, 20
+    X = torch.randn(batch_size, n_chans, n_times)
+    y = torch.tensor(
+        [0.25, 1.75, -2.5, 3.125, 4.875, -5.25], dtype=torch.float64
+    ).reshape(batch_size, 1)
+
+    regressor = EEGRegressor(
+        _TinyMixupRegressor,
+        criterion=_RecordingMixupMSELoss,
+        optimizer=torch.optim.SGD,
+        lr=0.01,
+        iterator_train=AugmentedDataLoader,
+        iterator_train__transforms=Mixup(
+            alpha=0.5,
+            beta_per_sample=beta_per_sample,
+            random_state=0,
+        ),
+        iterator_train__n_augmentation=n_augmentation,
+        iterator_train__shuffle=False,
+        iterator_train__drop_last=False,
+        batch_size=batch_size,
+        max_epochs=1,
+        train_split=None,
+        verbose=0,
+    )
+
+    regressor.fit(X, y)
+
+    assert len(regressor.criterion_.seen_targets) == 1
+    y_a, y_b, lam = regressor.criterion_.seen_targets[0]
+    n_copies = n_augmentation + 1
+    expected_y = y.to(torch.float32)
+    expected_y_a = expected_y.repeat(n_copies, 1)
+    assert y_a.shape == y_b.shape == (n_copies * batch_size, 1)
+    assert y_a.dtype == y_b.dtype == torch.float32
+    assert torch.equal(y_a, expected_y_a)
+
+    expected_sorted = expected_y.sort(dim=0).values
+    for target_block in y_b.split(batch_size):
+        assert torch.equal(target_block.sort(dim=0).values, expected_sorted)
+
+    assert lam.shape == (n_copies * batch_size,)
+    assert lam.dtype == torch.float32
+    if n_augmentation:
+        assert torch.equal(lam[:batch_size], torch.ones(batch_size))
+    assert np.isfinite(regressor.history[-1, "train_loss"])
 
 
 @pytest.mark.network
