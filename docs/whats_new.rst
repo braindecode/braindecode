@@ -28,12 +28,21 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- Add ``i_trial_in_dataset`` to
+  :func:`braindecode.preprocessing.create_windows_from_events` metadata so
+  windows expose a stable source annotation index for trial-level alignment,
+  including annotation ``extras`` after mapping, filtering, or dropped trials.
+  Conflicts with recording-description fields are now reported instead of
+  silently overwriting window metadata. (:gh:`1051` by `Bruno Aristimunha`_)
 
 API and behavior changes
 ========================
 
-- None yet
+- Align the ``on_missing`` values accepted by
+  :func:`braindecode.preprocessing.create_windows_from_events` with
+  :class:`mne.Epochs`: ``"raise"``, ``"warn"``, or
+  ``"ignore"``. The old ``"error"`` and ``"warning"`` spellings remain as
+  deprecated aliases until version 2.0. (:gh:`1051` by `Bruno Aristimunha`_)
 
 Requirements
 ============
@@ -224,11 +233,6 @@ Enhancements
   grouped-query attention Transformer with rotary positional embeddings, and a
   grouped temporal convolutional network head. (:gh:`1065` by `Bruno
   Aristimunha`_)
-- Add ``i_trial_in_dataset`` to
-  :func:`braindecode.preprocessing.create_windows_from_events` metadata so
-  windows expose a stable source annotation index for trial-level alignment,
-  including annotation ``extras`` after mapping, filtering, or dropped trials.
-  (:gh:`1051` by `Bruno Aristimunha`_)
 - Add a ``return_features`` option to :class:`braindecode.models.FBMSNet`: when
   enabled, ``forward()`` returns ``(logits, features)`` where ``features`` is
   the flattened pre-classifier vector (shape ``(batch, out_channels_spatial *

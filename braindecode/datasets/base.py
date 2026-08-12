@@ -1363,6 +1363,13 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             DataFrame containing as many rows as there are windows in the
             BaseConcatDataset, with the metadata and description information
             for each window.
+
+        Raises
+        ------
+        ValueError
+            If a column has conflicting values in the window metadata and the
+            dataset description. Identical values are coalesced; otherwise,
+            rename the conflicting description field before combining them.
         """
         if not all(
             [
@@ -1381,8 +1388,34 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 df = ds._windows.metadata
             else:
                 df = ds.metadata
-            for k, v in ds.description.items():
-                df[k] = v
+            description = ds.description
+            if description is not None:
+                overlapping_columns = set(df.columns).intersection(description.index)
+                conflicts = []
+                for column in overlapping_columns:
+                    value = description[column]
+                    if isinstance(df, pd.DataFrame) and pd.api.types.is_scalar(value):
+                        matches = (
+                            df[column].isna()
+                            if pd.isna(value)
+                            else df[column].eq(value).fillna(False)
+                        )
+                        if bool(matches.all()):
+                            continue
+                    conflicts.append(column)
+                conflicts = sorted(conflicts, key=str)
+                if conflicts:
+                    raise ValueError(
+                        f"Columns {conflicts} have conflicting values in window "
+                        "metadata and dataset description. Rename the conflicting "
+                        "description fields before calling get_metadata()."
+                    )
+            if isinstance(df, pd.DataFrame):
+                df = df.copy()
+            if description is not None:
+                for key, value in description.items():
+                    if key not in df.columns:
+                        df[key] = value
             all_dfs.append(df)
 
         return pd.concat(all_dfs)

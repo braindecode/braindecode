@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, cast
 
 import mne
 import numpy as np
@@ -194,6 +194,28 @@ def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
     return use_mne_epochs
 
 
+def _normalize_on_missing(
+    on_missing: str,
+) -> Literal["raise", "warn", "ignore"]:
+    aliases = {"error": "raise", "warning": "warn"}
+    if on_missing in aliases:
+        replacement = aliases[on_missing]
+        warnings.warn(
+            f"on_missing='{on_missing}' is deprecated; use '{replacement}' instead. "
+            "The alias will be removed in version 2.0.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return cast(Literal["raise", "warn", "ignore"], replacement)
+    valid_values = ("raise", "warn", "ignore")
+    if on_missing not in valid_values:
+        raise ValueError(
+            f"Invalid value for on_missing: {on_missing!r}. Expected one of "
+            f"{valid_values}."
+        )
+    return cast(Literal["raise", "warn", "ignore"], on_missing)
+
+
 # XXX it's called concat_ds...
 def create_windows_from_events(
     concat_ds: BaseConcatDataset[RawDataset],
@@ -208,7 +230,7 @@ def create_windows_from_events(
     picks: str | ArrayLike | slice | None = None,
     reject: dict[str, float] | None = None,
     flat: dict[str, float] | None = None,
-    on_missing: str = "error",
+    on_missing: Literal["raise", "warn", "ignore"] = "raise",
     accepted_bads_ratio: float = 0.0,
     use_mne_epochs: bool | None = None,
     on_overlapping_events: Literal["raise", "warn", "ignore"] = "raise",
@@ -284,7 +306,9 @@ def create_windows_from_events(
         rejection based on flatness is done. See mne.Epochs.
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
+        Valid values are ``"raise"``, ``"warn"``, and ``"ignore"``. The
+        legacy aliases ``"error"`` and ``"warning"`` are deprecated and will
+        be removed in version 2.0. See :class:`mne.Epochs`.
     accepted_bads_ratio: float, optional
         Acceptable proportion of trials with inconsistent length in a raw. If
         the number of trials whose length is exceeded by the window size is
@@ -313,6 +337,7 @@ def create_windows_from_events(
         source event in the original ``mne.Annotations`` for that recording, and
         any extra columns stored on the source annotations.
     """
+    on_missing = _normalize_on_missing(on_missing)
     _check_windowing_arguments(
         trial_start_offset_samples,
         trial_stop_offset_samples,
@@ -576,7 +601,7 @@ def _create_windows_from_events(
     picks=None,
     reject=None,
     flat=None,
-    on_missing="error",
+    on_missing="raise",
     accepted_bads_ratio=0.0,
     verbose="error",
     use_mne_epochs=False,

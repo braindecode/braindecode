@@ -245,7 +245,7 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
                     "picks": None,
                     "reject": None,
                     "flat": None,
-                    "on_missing": "error",
+                    "on_missing": "raise",
                     "accepted_bads_ratio": 0.0,
                     'on_overlapping_events': 'raise',
                     "verbose": "error",

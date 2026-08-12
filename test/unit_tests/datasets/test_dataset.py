@@ -250,6 +250,69 @@ def test_metadata(concat_windows_dataset):
     assert md.shape[0] == len(concat_windows_dataset)
 
 
+def _event_windows_with_description(
+    description, use_mne_epochs, event_descriptions=("T0", "T1")
+):
+    raw = mne.io.RawArray(
+        np.zeros((1, 500)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    raw.set_annotations(mne.Annotations([1, 3], [1, 1], event_descriptions))
+    return create_windows_from_events(
+        BaseConcatDataset([RawDataset(raw, description=description)]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=True,
+        mapping={"T0": 0, "T1": 1},
+        preload=True,
+        use_mne_epochs=use_mne_epochs,
+        verbose=False,
+    )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_get_metadata_rejects_description_metadata_collision(use_mne_epochs):
+    windows = _event_windows_with_description(
+        {"i_trial_in_dataset": 99}, use_mne_epochs
+    )
+    window_ds = windows.datasets[0]
+    expected_metadata = window_ds.metadata.copy(deep=True)
+    assert expected_metadata["i_trial_in_dataset"].tolist() == [0, 1]
+
+    with pytest.raises(ValueError, match="i_trial_in_dataset"):
+        windows.get_metadata()
+
+    pd.testing.assert_frame_equal(window_ds.metadata, expected_metadata)
+    assert window_ds.description["i_trial_in_dataset"] == 99
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_get_metadata_does_not_mutate_window_metadata(use_mne_epochs):
+    windows = _event_windows_with_description({"recording": 99}, use_mne_epochs)
+    window_ds = windows.datasets[0]
+    expected_metadata = window_ds.metadata.copy(deep=True)
+
+    metadata = windows.get_metadata()
+
+    assert metadata["recording"].tolist() == [99, 99]
+    pd.testing.assert_frame_equal(window_ds.metadata, expected_metadata)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_get_metadata_coalesces_identical_description_column(use_mne_epochs):
+    windows = _event_windows_with_description(
+        {"target": 0}, use_mne_epochs, event_descriptions=("T0", "T0")
+    )
+    window_ds = windows.datasets[0]
+    expected_metadata = window_ds.metadata.copy(deep=True)
+
+    metadata = windows.get_metadata()
+
+    assert metadata["target"].tolist() == [0, 0]
+    pd.testing.assert_frame_equal(window_ds.metadata, expected_metadata)
+
+
 def test_no_metadata(concat_ds_targets):
     with pytest.raises(TypeError, match="Metadata dataframe can only be"):
         concat_ds_targets[0].get_metadata()
