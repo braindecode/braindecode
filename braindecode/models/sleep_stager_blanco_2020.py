@@ -26,7 +26,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
     ----------
     n_conv_chans : int
         Number of convolutional channels. Set to 20 in [Blanco2020]_.
-    max_pool_size : int
+    max_pool_size : int, default=2
         Kernel and stride of the max pooling layers.
     n_groups : int
         Number of groups for the convolution. Set to 2 in [Blanco2020]_ for 2 Channel EEG.

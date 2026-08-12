@@ -75,7 +75,6 @@ from braindecode.models.eegpt import (
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
-    _EEG_PARAMS,
     _get_possible_signal_params,
     _get_signal_params,
     interpolated_models_dict,
@@ -4157,22 +4156,9 @@ def test_dropout1d_masks_channels_not_batch_items():
     assert (zeroed.any(dim=1) & ~zeroed.all(dim=1)).any()
 
 
-_NUMPYDOC_SECTIONS = frozenset(
-    {
-        "Returns",
-        "Yields",
-        "Attributes",
-        "Notes",
-        "References",
-        "Examples",
-        "Raises",
-        "Warns",
-        "Warnings",
-        "See Also",
-        "Other Parameters",
-    }
+_PARAM_LINE = re.compile(
+    r"^(?P<names>\*{0,2}\w+(?:\s*,\s*\*{0,2}\w+)*)\s*:"
 )
-_PARAM_LINE = re.compile(r"^(?P<name>\*{0,2}\w+)\s*:")
 
 
 def _documented_parameters(model_class):
@@ -4192,20 +4178,20 @@ def _documented_parameters(model_class):
     inside = False
     for position, line in enumerate(lines):
         stripped = line.strip()
-        if stripped == "Parameters":
-            inside = True
+        next_line = lines[position + 1].strip() if position + 1 < len(lines) else ""
+        if next_line and set(next_line) == {"-"}:
+            inside = stripped == "Parameters"
             continue
         if not inside:
-            continue
-        if stripped in _NUMPYDOC_SECTIONS:
-            inside = False
             continue
         match = _PARAM_LINE.match(line)
         if match is None:
             continue
         following = next((nxt for nxt in lines[position + 1 :] if nxt.strip()), "")
         if following.startswith(" "):
-            names.append(match.group("name").lstrip("*"))
+            names.extend(
+                name.strip().lstrip("*") for name in match.group("names").split(",")
+            )
     return names
 
 
@@ -4223,7 +4209,7 @@ def test_documented_parameters_exist_in_signature(model_name):
 
     accepted = set(parameters) - {"self"}
     documented = set(_documented_parameters(model_class))
-    unknown = sorted(documented - accepted - _EEG_PARAMS)
+    unknown = sorted(documented - accepted)
 
     assert not unknown, (
         f"{model_name} documents parameters its constructor does not accept: "

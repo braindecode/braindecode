@@ -79,9 +79,11 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         Resampling Frequency.
     kernel_size: int
         Size of the convolutions kernels.
-    activation: nn.Module, default=nn.ELU
+    return_feature : bool, default=False
+        If True, return the features before the final linear layer.
+    activation: nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
-        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     References
     ----------

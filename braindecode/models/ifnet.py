@@ -71,7 +71,7 @@ class IFNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    bands : list[tuple[int, int]] or int or None, default=[[4, 16], (16, 40)]
+    bands : list[tuple[int, int]] or int or None, default=[(4, 16), (16, 40)]
         Frequency bands for filtering.
     n_filters_spat : int, default=64
         Number of output feature dimensions.
@@ -88,7 +88,7 @@ class IFNet(EEGModuleMixin, nn.Module):
         Activation function after the InterFrequency Layer.
     verbose : bool, default=False
         Verbose to control the filtering layer
-    filter_parameters : dict, default={}
+    filter_parameters : dict or None, default=None
         Additional parameters for the filter bank layer.
 
     References

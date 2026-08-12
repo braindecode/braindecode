@@ -55,10 +55,11 @@ Bug fixes
   ``att_dropout`` is ``att_drop_prob``) or because it was a deprecated alias
   that has since been removed (``n_classes``, ``n_channels``, ``in_chans``,
   ``input_size_s``, ``input_window_samples``). Following those docstrings
-  raised ``TypeError``. Also corrects the documented defaults of ``embed_dim``
-  and ``n_filters_time`` in :class:`braindecode.models.CTNet` and of
-  ``activation_mrcnn`` in :class:`braindecode.models.AttnSleep`.
-  By `Aditya Singh`_.
+  raised ``TypeError``. It also corrects stale defaults and types in
+  :class:`braindecode.models.CTNet`, :class:`braindecode.models.AttnSleep`,
+  :class:`braindecode.models.EEGSimpleConv`, :class:`braindecode.models.IFNet`,
+  and :class:`braindecode.models.SleepStagerBlanco2020` (:gh:`1116` by `Aditya
+  Singh`_).
 
 Code health
 ============
