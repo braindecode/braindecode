@@ -1,7 +1,7 @@
 """Dev-only numerical parity check for :class:`braindecode.models.Brant`.
 
-Not part of CI. Verifies that braindecode's Brant encoders reproduce,
-weight-for-weight, the upstream reference
+Not part of CI. Checks whether braindecode's Brant encoders numerically reproduce
+the upstream reference after explicitly copying matching weights
 (``Brant_src/pretrain/pre_model.py``, Apache-2.0,
 https://huggingface.co/Daoze/Brant).
 

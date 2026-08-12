@@ -90,32 +90,25 @@ class Brant(EEGModuleMixin, nn.Module):
     .. rubric:: Additional Mechanisms
 
     The upstream reconstruction projection is retained in
-    ``Brant.spatial_encoder`` so converted checkpoints keep a one-to-one key
-    layout, although classification does not consume its output. Brant has no
-    class token, so ``return_features=True`` returns ``cls_token=None``. The
-    learned temporal positions require the runtime signal length to equal the
-    configured ``n_times``; channel count remains parameter-agnostic.
+    ``Brant.spatial_encoder`` as part of the source architecture, although
+    classification does not consume its output. Brant has no class token, so
+    ``return_features=True`` returns ``cls_token=None``. The learned temporal
+    positions require the runtime signal length to equal the configured
+    ``n_times``; channel count remains parameter-agnostic.
 
     The upstream model operates on signals down-sampled to **250 Hz**. The
-    defaults are a modest, ready-to-run configuration. The converted checkpoint
-    uses the paper architecture: ``patch_size=1500`` (6 s), ``embed_dim=2048``,
+    defaults are a modest, ready-to-run configuration. The paper's large
+    architecture uses ``patch_size=1500`` (6 s), ``embed_dim=2048``,
     ``ffn_dim=3072``, ``temporal_n_layers=12``, ``spatial_n_layers=5``,
     ``n_heads=16``, and ``n_times=22500`` (15 patches, 90 s).
 
-    .. important::
-       **Pre-trained weights available.** A converted upstream encoder
-       checkpoint (~508M parameters, pre-trained on ~1 TB of intracranial
-       recordings) is hosted on the Hugging Face Hub under the Apache-2.0
-       license and loads directly::
-
-           model = Brant.from_pretrained("braindecode/brant-pretrained", n_outputs=4)
-
-       The checkpoint stores a two-output placeholder head. Requesting a
-       different ``n_outputs`` rebuilds it automatically; for a new binary task,
-       call ``model.reset_head(2)`` explicitly. ``n_chans`` may be changed because
-       channels are pooled, while ``n_times=22500`` must be kept for the learned
-       temporal positions. These weights are intended for medical or research
-       use, following the upstream authors' release notice.
+    .. note::
+       **Architecture-only scope.** Braindecode does not ship or advertise a
+       verified Brant pretrained checkpoint with this implementation. The
+       inherited ``from_pretrained`` API remains available for checkpoints
+       saved from this implementation. Official-weight provenance, numerical
+       parity, and redistribution terms must be established independently
+       before an external artifact is documented or rehosted.
 
     .. versionadded:: 1.8
 
@@ -123,7 +116,7 @@ class Brant(EEGModuleMixin, nn.Module):
     ----------
     patch_size : int, optional
         Number of time samples per patch fed to the encoders. Default 250
-        (1 s at 250 Hz). The pretrained model uses 1500 (see above).
+        (1 s at 250 Hz). The paper's large architecture uses 1500 (see above).
     embed_dim : int, optional
         Model width ``D`` (patch embedding size). Default 256.
     ffn_dim : int, optional

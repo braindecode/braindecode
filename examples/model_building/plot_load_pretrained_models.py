@@ -245,6 +245,8 @@ print(f"Reconstructed: n_outputs={model_copy.n_outputs}")
 #
 # The feature shapes differ between models (reflecting their
 # architecture), but the API is always the same.
+# Brant's row describes that generic save/load API; this release does not
+# provide a curated Brant pretrained checkpoint.
 
 ######################################################################
 # Available pretrained weights
