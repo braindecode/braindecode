@@ -9,10 +9,10 @@ target dataset is small, but differences in amplifiers, montages, sampling
 rates, populations, and recording protocols can cause domain shift.
 
 This tutorial follows the TUAB-to-NMT pathology-classification direction from
-[1]_. A :class:`~braindecode.models.Deep4Net` is first trained on source-domain
-recordings. Its parameters initialize a second model, which is then fine-tuned
-on target-domain recordings. We also train the target model from scratch as a
-control.
+[1]_. A :class:`~braindecode.models.Deep4Net` [4]_ is first trained on
+source-domain recordings. Its parameters initialize a second model, which is
+then fine-tuned on target-domain recordings. We also train the target model from
+scratch as a control.
 
 The full TUAB and NMT corpora are large, and TUAB access requires registration.
 For a fast, network-free example, the executable part below uses synthetic MNE
@@ -112,9 +112,10 @@ channel_names = [
 # -------------------------------------
 #
 # Braindecode provides :class:`~braindecode.datasets.TUHAbnormal` and
-# :class:`~braindecode.datasets.NMT`. TUAB must be obtained from the `official
-# TUH portal <https://isip.piconepress.com/projects/nedc/html/tuh_eeg/>`_ under
-# its access terms. NMT can be obtained from its `Zenodo record
+# :class:`~braindecode.datasets.NMT`. The TUH EEG corpus is described in [2]_,
+# and the NMT dataset in [3]_. TUAB must be obtained from the `official TUH
+# portal <https://isip.piconepress.com/projects/nedc/html/tuh_eeg/>`_ under its
+# access terms. NMT can be obtained from its `Zenodo record
 # <https://zenodo.org/records/10909103>`_. Once the data are present locally,
 # the public loaders are used as follows:
 #
@@ -145,11 +146,24 @@ channel_names = [
 #
 # The next helper produces small synthetic source and target domains. Each
 # ``RawDataset`` represents a distinct participant recording, so the split
-# labels below also act as participant-level splits. The target domain has a
-# small frequency shift and slow drift to mimic a domain change. These invented
-# frequencies are teaching signals, not proposed biomarkers of pathology.
+# labels below also act as participant-level splits. A domain-wide participant
+# index supplies its stable recording identity; the split and pathology target
+# remain separate metadata and cannot change that identity. The target domain
+# has a small frequency shift and slow drift to mimic a domain change. These
+# invented frequencies are teaching signals, not proposed biomarkers of
+# pathology.
 
 info = mne.create_info(channel_names, sfreq=sfreq, ch_types="eeg")
+
+
+def make_recording_description(domain, participant_index, split, pathological):
+    """Describe one synthetic participant without encoding split or target."""
+    return {
+        "pathological": pathological,
+        "split": split,
+        "domain": domain,
+        "recording_id": f"{domain}-participant-{participant_index:03d}",
+    }
 
 
 def make_synthetic_domain(domain, split_sizes, random_state):
@@ -157,10 +171,11 @@ def make_synthetic_domain(domain, split_sizes, random_state):
     rng = np.random.default_rng(random_state)
     recordings = []
     times = np.arange(window_size_samples) / sfreq
+    participant_index = 0
 
     for split, recordings_per_class in split_sizes.items():
         for pathological in (0, 1):
-            for recording_index in range(recordings_per_class):
+            for _ in range(recordings_per_class):
                 data = rng.normal(
                     scale=0.25e-6,
                     size=(len(channel_names), window_size_samples),
@@ -175,14 +190,12 @@ def make_synthetic_domain(domain, split_sizes, random_state):
                     data += 0.05e-6 * np.sin(2 * np.pi * times)
 
                 raw = mne.io.RawArray(data, info.copy(), verbose=False)
-                description = {
-                    "pathological": pathological,
-                    "split": split,
-                    "domain": domain,
-                    "recording_id": (
-                        f"{domain}-{split}-{pathological}-{recording_index}"
-                    ),
-                }
+                description = make_recording_description(
+                    domain=domain,
+                    participant_index=participant_index,
+                    split=split,
+                    pathological=pathological,
+                )
                 recordings.append(
                     RawDataset(
                         raw,
@@ -190,6 +203,7 @@ def make_synthetic_domain(domain, split_sizes, random_state):
                         target_name="pathological",
                     )
                 )
+                participant_index += 1
 
     return BaseConcatDataset(recordings)
 
@@ -240,6 +254,18 @@ def window_recordings(recordings):
     )
 
 
+def assert_disjoint_recording_ids(ids_by_split):
+    """Reject a stable recording identity assigned to multiple splits."""
+    split_names = tuple(ids_by_split)
+    for split_index, left_split in enumerate(split_names):
+        for right_split in split_names[split_index + 1 :]:
+            overlap = ids_by_split[left_split].intersection(ids_by_split[right_split])
+            assert not overlap, (
+                f"Recording identity overlap between {left_split} and "
+                f"{right_split}: {sorted(overlap)}"
+            )
+
+
 source_recording_splits = source_recordings.split("split")
 source_windows = {
     split: window_recordings(split_recordings)
@@ -256,9 +282,7 @@ target_ids = {
     split: set(split_recordings.description["recording_id"])
     for split, split_recordings in target_recording_splits.items()
 }
-assert target_ids["train"].isdisjoint(target_ids["valid"])
-assert target_ids["train"].isdisjoint(target_ids["test"])
-assert target_ids["valid"].isdisjoint(target_ids["test"])
+assert_disjoint_recording_ids(target_ids)
 
 print("\nOne target-domain window and its metadata:")
 sample, target, window_index = target_windows["train"][0]
