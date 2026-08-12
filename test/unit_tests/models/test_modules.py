@@ -1350,13 +1350,171 @@ def test_forward_pass_ifnet_output_shape():
     assert out.shape[0] == 2  # batch_size preserved
 
 
+def test_rotary_positional_embedding_output_shape():
+    """RotaryPositionalEmbedding: output shapes match inputs and values are finite."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    n_dim = 16
+    n_heads = 4
+    init_seq_len = 64
+    batch, seq, head_dim = 2, 7, n_dim // n_heads
+
+    rope = RotaryPositionalEmbedding(
+        n_dim=head_dim * n_heads, init_seq_len=init_seq_len
+    )
+    q = torch.randn(batch, seq, n_heads, head_dim)
+    k = torch.randn(batch, seq, n_heads, head_dim)
+
+    q_out, k_out = rope(q, k)
+
+    assert q_out.shape == q.shape, f"q shape mismatch: {q_out.shape} != {q.shape}"
+    assert k_out.shape == k.shape, f"k shape mismatch: {k_out.shape} != {k.shape}"
+    assert torch.isfinite(q_out).all(), "q_out contains non-finite values"
+    assert torch.isfinite(k_out).all(), "k_out contains non-finite values"
+
+
+def test_rotary_positional_embedding_extends_cache_and_preserves_rotation():
+    """RoPE grows beyond its initial cache and keeps its complex phase on casts."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    rope = RotaryPositionalEmbedding(n_dim=16, init_seq_len=4).half()
+    q = torch.randn(2, 9, 4, 4, dtype=torch.float16)
+    q_out, _ = rope(q, q)
+
+    assert q_out.shape == q.shape
+    assert rope.max_seq_len_cache == 9
+    assert rope.rotate.is_complex()
+    assert torch.any(rope.rotate.imag != 0)
+
+
+def test_rotary_positional_embedding_repairs_real_only_checkpoint_cache():
+    """DeepSpeed-exported BrainOmni caches lose the complex sine component."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    source = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
+    exported = source.state_dict()
+    exported["rotate"] = exported["rotate"].real
+
+    target = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
+    target.load_state_dict(exported, strict=True)
+
+    assert target.rotate.is_complex()
+    torch.testing.assert_close(target.rotate, source.rotate)
+
+
+def test_rotary_positional_embedding_loads_extended_cache():
+    """A runtime-grown derived cache must survive a strict state-dict roundtrip."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    source = RotaryPositionalEmbedding(n_dim=16, init_seq_len=4)
+    source(torch.randn(1, 9, 4, 4), torch.randn(1, 9, 4, 4))
+
+    target = RotaryPositionalEmbedding(n_dim=16, init_seq_len=4)
+    target.load_state_dict(source.state_dict(), strict=True)
+
+    assert target.max_seq_len_cache == 9
+    torch.testing.assert_close(target.rotate, source.rotate)
+
+
+def test_rotary_positional_embedding_rejects_malformed_real_cache():
+    """The released-cache repair must not hide an incompatible checkpoint."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    source = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
+    exported = source.state_dict()
+    exported["rotate"] = exported["rotate"].real[:, :-1]
+
+    target = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
+    with pytest.raises(RuntimeError, match="size mismatch for rotate"):
+        target.load_state_dict(exported, strict=True)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"n_dim": 0, "n_head": 1}, "n_dim"),
+        ({"n_dim": 16, "n_head": 0}, "n_head"),
+        ({"n_dim": 15, "n_head": 4}, "divisible"),
+        ({"n_dim": 12, "n_head": 4, "rope": True}, "head dimension.*even"),
+        ({"n_dim": 16, "n_head": 4, "dropout": -0.1}, "dropout"),
+        ({"n_dim": 16, "n_head": 4, "dropout": 1.1}, "dropout"),
+    ],
+)
+def test_multi_head_attention_rope_rejects_invalid_arguments(kwargs, match):
+    from braindecode.modules import MultiHeadAttentionRoPE
+
+    defaults = {"n_dim": 16, "n_head": 4, "dropout": 0.0, "rope": False}
+    defaults.update(kwargs)
+    with pytest.raises(ValueError, match=match):
+        MultiHeadAttentionRoPE(**defaults)
+
+
+@pytest.mark.parametrize("rope", [True, False])
+def test_multi_head_attention_rope_output_shape(rope):
+    """MultiHeadAttentionRoPE: output shape (batch, seq, n_dim) and finite values."""
+    from braindecode.modules import MultiHeadAttentionRoPE
+
+    n_dim = 16
+    n_head = 4
+    batch, seq = 2, 7
+
+    module = MultiHeadAttentionRoPE(
+        n_dim=n_dim, n_head=n_head, dropout=0.0, causal=False, rope=rope
+    ).eval()
+    x = torch.randn(batch, seq, n_dim)
+
+    with torch.no_grad():
+        out = module(x)
+
+    assert out.shape == (batch, seq, n_dim), (
+        f"Expected ({batch}, {seq}, {n_dim}), got {out.shape}"
+    )
+    assert torch.isfinite(out).all(), "Output contains non-finite values"
+
+
+@pytest.mark.parametrize("mask_ndim", [2, 3, 4])
+def test_multi_head_attention_rope_mask_shapes(mask_ndim):
+    """Equivalent public SDPA mask layouts produce equivalent outputs."""
+    from braindecode.modules import MultiHeadAttentionRoPE
+
+    torch.manual_seed(0)
+    module = MultiHeadAttentionRoPE(
+        n_dim=16, n_head=4, dropout=0.0, causal=False, rope=True
+    ).eval()
+    x = torch.randn(2, 7, 16)
+    mask = torch.tril(torch.ones(7, 7, dtype=torch.bool))
+    if mask_ndim >= 3:
+        mask = mask.expand(2, -1, -1)
+    if mask_ndim == 4:
+        mask = mask.unsqueeze(1)
+
+    out = module(x, mask)
+    reference = module(x, torch.tril(torch.ones(7, 7, dtype=torch.bool)))
+    torch.testing.assert_close(out, reference)
+
+
+@pytest.mark.parametrize(
+    "mask_shape",
+    [(7,), (2, 1, 1, 7, 7), (2, 6, 6), (2, 2, 7, 7)],
+)
+def test_multi_head_attention_rope_rejects_invalid_mask_shape(mask_shape):
+    from braindecode.modules import MultiHeadAttentionRoPE
+
+    module = MultiHeadAttentionRoPE(16, 4, 0.0)
+    with pytest.raises(ValueError, match="mask"):
+        module(torch.randn(2, 7, 16), torch.ones(mask_shape, dtype=torch.bool))
+
+
 def test_patch_tokenizer():
     from braindecode.modules import PatchTokenizer
 
-    # non-learnable: pure reshape, no parameters
+    # non-learnable: pure windowing, no parameters
     tok = PatchTokenizer(patch_size=200, n_times=1000)
-    assert tok(torch.randn(2, 19, 1000)).shape == (2, 19, 5, 200)
+    x = torch.randn(2, 19, 1000)
+    assert tok(x).shape == (2, 19, 5, 200)
     assert sum(p.numel() for p in tok.parameters()) == 0
+    # non-overlapping windowing equals the contiguous reshape it replaces
+    assert torch.equal(tok(x), x.reshape(2, 19, 5, 200))
 
     # learnable: strided conv maps each patch to emb_dim
     tok_l = PatchTokenizer(patch_size=200, n_times=1000, emb_dim=64, learnable=True)
@@ -1367,6 +1525,23 @@ def test_patch_tokenizer():
     with pytest.warns(UserWarning, match="padded"):
         tok_pad = PatchTokenizer(patch_size=200, n_times=950)
     assert tok_pad(torch.randn(2, 19, 950)).shape == (2, 19, 5, 200)
+
+    # overlapping patches via construction-time stride (50% overlap -> 9 windows)
+    tok_ov = PatchTokenizer(patch_size=200, n_times=1000, stride=100)
+    assert tok_ov(torch.randn(2, 19, 1000)).shape == (2, 19, 9, 200)
+
+    # one non-learnable tokenizer reused at several overlaps via call-time stride
+    assert tok(torch.randn(2, 19, 1000), stride=100).shape == (2, 19, 9, 200)
+
+    # learnable supports overlap too (stride fixed at construction)
+    tok_lo = PatchTokenizer(
+        patch_size=200, n_times=1000, emb_dim=64, learnable=True, stride=100
+    )
+    assert tok_lo(torch.randn(2, 19, 1000)).shape == (2, 19, 9, 64)
+
+    # learnable rejects a conflicting call-time stride override
+    with pytest.raises(ValueError, match="non-learnable"):
+        tok_l(torch.randn(2, 19, 1000), stride=100)
 
     # crop mode hard-drops the trailing samples instead of padding them
     x = torch.arange(2 * 3 * 950, dtype=torch.float32).reshape(2, 3, 950)
@@ -1393,6 +1568,16 @@ def test_patch_tokenizer():
     expected = tok_linear.proj(patches)
     assert torch.allclose(tok_linear(x), expected)
     assert set(tok_linear.state_dict()) == {"proj.weight", "proj.bias"}
+
+
+def test_patch_tokenizer_preserves_legacy_positional_arguments():
+    """The fifth positional argument remains ``on_non_divisible``."""
+    from braindecode.modules import PatchTokenizer
+
+    tokenizer = PatchTokenizer(5, 12, None, False, "crop")
+    x = torch.arange(12, dtype=torch.float32).reshape(1, 1, 12)
+
+    assert torch.equal(tokenizer(x), x[..., :10].reshape(1, 1, 2, 5))
 
 
 def test_gated_linear_unit_geglu_semantics():

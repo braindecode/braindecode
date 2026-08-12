@@ -1,6 +1,7 @@
 include README.rst
 include LICENSE.txt
 include NOTICE.txt
+recursive-include LICENSES *.txt
 
 include braindecode/models/summary.csv
 

@@ -171,6 +171,7 @@ Additional Components
 =====================
 
 Some components within this repository are licensed under the Creative Commons
-Attribution-NonCommercial 4.0 International License.
+Attribution-NonCommercial 4.0 International License or the MIT License.
 
-Please refer to the ``LICENSE`` and ``NOTICE`` files for more detailed information.
+Please refer to ``LICENSE.txt``, ``NOTICE.txt``, and the ``LICENSES`` directory for more
+detailed information.

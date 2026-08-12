@@ -28,7 +28,12 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- Add :class:`braindecode.models.BrainOmni` and
+  :class:`braindecode.models.BrainTokenizer`, a unified EEG/MEG brain foundation
+  model and its VQ-VAE tokenizer (NeurIPS 2025). The public models can strictly
+  load the authors' released raw checkpoints and construct directly from the
+  released configurations. From-scratch codebooks follow the official K-means
+  initialization and distributed EMA updates. (:gh:`1043` by `Bruno Aristimunha`_)
 
 API and behavior changes
 ========================

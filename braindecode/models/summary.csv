@@ -56,6 +56,8 @@ InterpolatedBIOT,"Sleep Staging, Epilepsy",Prediction,200,"chs_info, n_outputs, 
 InterpolatedEEGPT,General,Prediction,256,"chs_info, n_outputs, n_times",25323137,"InterpolatedEEGPT(chs_info=<user>, n_outputs=4, n_times=1024)","Foundation Model,Attention/Transformer,Channel",EEG
 InterpolatedLaBraM,General,"Prediction, Embedding",200,"chs_info, n_outputs, n_times",5866196,"InterpolatedLaBraM(chs_info=<user>, n_outputs=4, n_times=1000)","Convolution,Foundation Model,Channel",EEG
 InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info",3456882,"InterpolatedSignalJEPA(chs_info=<user>)","Convolution,Channel,Foundation Model",EEG
+BrainOmni,General,"Prediction, Embedding",256,"chs_info, n_outputs, n_times, sfreq",13997796,"BrainOmni(chs_info=chs_info, n_outputs=4, n_times=1024, sfreq=256.0)","Foundation Model,Attention/Transformer","EEG, MEG"
+BrainTokenizer,General,Embedding,256,"chs_info, n_times, sfreq",5050338,"BrainTokenizer(chs_info=chs_info, n_times=1024, sfreq=256.0)","Foundation Model","EEG, MEG"
 TCFormer,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times",77820,"TCFormer(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 EEGDINO,General,Classification,200,"n_chans, n_outputs, n_times",4539698,"EEGDINO(n_chans=19, n_outputs=4, n_times=1000)","Foundation Model,Attention/Transformer",EEG
 DANCE,General,Event Detection,200,"n_chans, n_outputs, n_times, sfreq, chs_info",29813542,"DANCE(n_chans=19, n_outputs=4, n_times=6400, sfreq=200, input_window_seconds=32.0, chs_info=[{'ch_name': f'E{i+1}', 'kind': 'eeg', 'loc': numpy.random.default_rng(2024).random(12)} for i in range(19)])","Convolution,Attention/Transformer,Channel",EEG

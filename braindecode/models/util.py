@@ -9,6 +9,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Sequence
 
+import mne
 import numpy as np
 import pandas as pd
 import pydantic
@@ -483,6 +484,8 @@ models_mandatory_parameters: list[
         {"n_chans": 19, "n_times": 6000},
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    ("BrainOmni", ["chs_info", "n_outputs", "n_times", "sfreq"], None),
+    ("BrainTokenizer", ["chs_info", "n_times", "sfreq"], None),
     ("EEGDINO", ["n_chans", "n_outputs", "n_times"], None),
     (
         "DANCE",
@@ -526,6 +529,8 @@ non_classification_models = [
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
+    # Returns a reconstruction tensor (VQ-VAE output), not class logits.
+    "BrainTokenizer",
     # forward returns (batch, num_latents, n_outputs) dense per-token logits,
     # not class logits.
     "DANCE",
@@ -750,6 +755,90 @@ def extract_channel_locations_from_chs_info(
         return None
 
     return result
+
+
+_SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
+
+
+def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
+    """Per-modality position normalization (BrainOmni ``normalize_pos``).
+
+    This helper is adapted from OpenTSLab/BrainOmni under the MIT License; see
+    ``LICENSES/BrainOmni-MIT.txt``.
+
+    EEG (code 0) and MEG (codes 1, 2) positions are each mean-centered then
+    divided by ``sqrt(3 * mean(squared_norm))``.
+    """
+    pos = pos.copy()
+    eeg = sensor_type == 0
+    meg = (sensor_type == 1) | (sensor_type == 2)
+    for mask in (eeg, meg):
+        if not mask.any():
+            continue
+        xyz = pos[mask, :3]
+        xyz = xyz - xyz.mean(axis=0, keepdims=True)
+        scale = np.sqrt(3 * np.mean(np.sum(xyz**2, axis=1)))
+        scale = scale if scale > 0 else 1.0
+        pos[mask, :3] = xyz / scale
+    return pos
+
+
+def _geometry_from_chs_info(chs_info):
+    """Derive ``(pos (n_chans, 6) float32, sensor_type (n_chans,) int64)`` from ``chs_info``.
+
+    The geometry convention is adapted from OpenTSLab/BrainOmni under the MIT
+    License; see ``LICENSES/BrainOmni-MIT.txt``.
+
+    Positions come from :func:`extract_channel_locations_from_chs_info` and the
+    EEG/MAG/GRAD type from :func:`mne.channel_type`; the MEG coil orientation and
+    the per-modality normalization follow the BrainOmni convention. Raises if any
+    channel lacks a finite position.
+    """
+    # mne.channel_type owns the FIFF kind/unit -> eeg/mag/grad logic (it only needs
+    # ``info["chs"][idx]``). Lightweight dicts instead carry a resolved string in
+    # ``ch_type`` or ``kind``, so use those directly when present.
+    types = []
+    for index, ch in enumerate(chs_info):
+        resolved_type = ch.get("ch_type")
+        if resolved_type is None and isinstance(ch.get("kind"), str):
+            resolved_type = ch["kind"]
+        if resolved_type is None:
+            resolved_type = mne.channel_type({"chs": chs_info}, index)
+        types.append(str(resolved_type).lower())
+
+    xyz = extract_channel_locations_from_chs_info(chs_info)
+    if xyz is None or len(xyz) != len(chs_info) or not np.isfinite(xyz).all():
+        raise ValueError(
+            "chs_info lacks finite sensor positions; call raw.set_montage(...)."
+        )
+
+    unsupported = set(types) - set(_SENSOR_CODE)
+    if unsupported:
+        raise ValueError(
+            f"Unsupported channel type(s) {sorted(unsupported)}; pass only EEG/MEG."
+        )
+    sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
+
+    grad, mag = sensor_type == _SENSOR_CODE["grad"], sensor_type == _SENSOR_CODE["mag"]
+    ori = np.zeros((len(chs_info), 3))  # EEG orientation stays zero
+    for index in np.flatnonzero(grad):
+        # The released source selects the in-plane x-axis only for VectorView
+        # planar coils. Every other MEG coil (including axial gradiometers) uses
+        # the coil-normal z-axis.
+        coil_type = int(chs_info[index].get("coil_type", 0))
+        axis_slice = slice(3, 6) if 3011 <= coil_type <= 3015 else slice(9, 12)
+        axis = np.asarray(chs_info[index]["loc"], dtype=np.float64)[axis_slice]
+        if axis.shape != (3,) or not np.isfinite(axis).all():
+            raise ValueError("chs_info lacks a finite coil orientation for GRAD.")
+        ori[index] = axis  # gradiometer: in-plane (ex) axis
+    for index in np.flatnonzero(mag):
+        axis = np.asarray(chs_info[index]["loc"], dtype=np.float64)[9:12]
+        if axis.shape != (3,) or not np.isfinite(axis).all():
+            raise ValueError("chs_info lacks a finite coil orientation for MAG.")
+        ori[index] = axis  # magnetometer: coil normal (ez) axis
+
+    pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
+    return _normalize_pos(pos, sensor_type), sensor_type
 
 
 def positions_from_chs_info(chs_info) -> np.ndarray:

@@ -620,6 +620,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         serialized = []
         for ch in chs_info:
             ch_dict = {"ch_name": ch.get("ch_name", "")}
+            if ch.get("ch_type") is not None:
+                ch_dict["ch_type"] = str(ch["ch_type"])
             for key in _INT_FIELDS:
                 val = ch.get(key)
                 if val is not None:
