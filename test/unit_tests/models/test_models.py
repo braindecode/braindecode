@@ -1062,6 +1062,18 @@ def test_eldele_2021_feature_probe_preserves_eval_state():
     assert not feature_extractor.training
 
 
+def test_eldele_2021_feature_probe_restores_state_after_error():
+    class FailingFeatureExtractor(nn.Module):
+        def forward(self, x):
+            raise RuntimeError("shape probe failed")
+
+    feature_extractor = FailingFeatureExtractor().train()
+
+    with pytest.raises(RuntimeError, match="shape probe failed"):
+        AttnSleep._feature_length(feature_extractor, n_times=20)
+    assert feature_extractor.training
+
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
