@@ -52,6 +52,11 @@ def _create_description(description) -> pd.Series:
 
 def _metadata_values_equal(left: Any, right: Any) -> bool:
     """Compare metadata values, including nested arrays and missing values."""
+    if isinstance(left, np.ndarray) and left.ndim == 0:
+        left = left.item()
+    if isinstance(right, np.ndarray) and right.ndim == 0:
+        right = right.item()
+
     if left is right:
         return True
 
@@ -83,10 +88,6 @@ def _metadata_values_equal(left: Any, right: Any) -> bool:
     if isinstance(left, sequence_types) or isinstance(right, sequence_types):
         if not (isinstance(left, sequence_types) and isinstance(right, sequence_types)):
             return False
-        if isinstance(left, np.ndarray) and left.ndim == 0:
-            return _metadata_values_equal(left.item(), right)
-        if isinstance(right, np.ndarray) and right.ndim == 0:
-            return _metadata_values_equal(left, right.item())
         if (
             isinstance(left, np.ndarray)
             and isinstance(right, np.ndarray)
@@ -1457,17 +1458,21 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 for column in overlapping_columns:
                     value = description[column]
                     if isinstance(df, pd.DataFrame):
-                        if pd.api.types.is_scalar(value):
+                        metadata_values = df[column]
+                        if pd.api.types.is_scalar(value) and all(
+                            pd.api.types.is_scalar(metadata_value)
+                            for metadata_value in metadata_values
+                        ):
                             matches = (
-                                df[column].isna()
+                                metadata_values.isna()
                                 if pd.isna(value)
-                                else df[column].eq(value).fillna(False)
+                                else metadata_values.eq(value).fillna(False)
                             )
                             if bool(matches.all()):
                                 continue
                         elif all(
                             _metadata_values_equal(metadata_value, value)
-                            for metadata_value in df[column]
+                            for metadata_value in metadata_values
                         ):
                             continue
                     conflicts.append(column)

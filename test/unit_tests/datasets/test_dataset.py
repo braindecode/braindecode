@@ -313,7 +313,7 @@ def test_get_metadata_coalesces_identical_description_column(use_mne_epochs):
     pd.testing.assert_frame_equal(window_ds.metadata, expected_metadata)
 
 
-def _fixed_windows_with_vector_target(target, use_mne_epochs):
+def _fixed_windows_with_target(target, use_mne_epochs):
     raw = mne.io.RawArray(
         np.zeros((1, 100)),
         mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
@@ -321,7 +321,7 @@ def _fixed_windows_with_vector_target(target, use_mne_epochs):
     )
     raw_ds = RawDataset(
         raw,
-        description={"target": target},
+        description={"recording": 0, "target": target},
         target_name="target",
     )
     return create_fixed_length_windows(
@@ -338,7 +338,7 @@ def _fixed_windows_with_vector_target(target, use_mne_epochs):
 @pytest.mark.parametrize("use_mne_epochs", [False, True])
 def test_get_metadata_coalesces_identical_vector_target(use_mne_epochs):
     target = np.array([[0.0, np.nan], [1.0, 2.0]])
-    windows = _fixed_windows_with_vector_target(target, use_mne_epochs)
+    windows = _fixed_windows_with_target(target, use_mne_epochs)
     window_ds = windows.datasets[0]
     window_ds.description["target"] = target.copy()
     expected_metadata = window_ds.metadata.copy(deep=True)
@@ -355,13 +355,64 @@ def test_get_metadata_coalesces_identical_vector_target(use_mne_epochs):
 @pytest.mark.parametrize("use_mne_epochs", [False, True])
 def test_get_metadata_rejects_conflicting_vector_target(use_mne_epochs):
     target = np.array([[0.0, np.nan], [1.0, 2.0]])
-    windows = _fixed_windows_with_vector_target(target, use_mne_epochs)
+    windows = _fixed_windows_with_target(target, use_mne_epochs)
     windows.datasets[0].description["target"] = np.array(
         [[0.0, np.nan], [1.0, 3.0]]
     )
 
     with pytest.raises(ValueError, match="target"):
         windows.get_metadata()
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+@pytest.mark.parametrize(
+    "metadata_target,description_target",
+    [
+        pytest.param(np.array([1]), 1, id="one-element-vector-metadata"),
+        pytest.param(np.array([1, 2]), 1, id="multi-element-vector-metadata"),
+        pytest.param(1, np.array([1]), id="one-element-vector-description"),
+        pytest.param(1, np.array([1, 2]), id="multi-element-vector-description"),
+    ],
+)
+def test_get_metadata_rejects_scalar_vector_target_shape_mismatch(
+    use_mne_epochs, metadata_target, description_target
+):
+    windows = _fixed_windows_with_target(metadata_target, use_mne_epochs)
+    window_ds = windows.datasets[0]
+    expected_metadata_target = np.array(
+        window_ds.metadata.iloc[0]["target"], copy=True
+    )
+    window_ds.set_description({"target": description_target}, overwrite=True)
+
+    with pytest.raises(
+        ValueError, match=r"Columns \['target'\].*conflicting values"
+    ):
+        windows.get_metadata()
+
+    np.testing.assert_equal(
+        window_ds.metadata.iloc[0]["target"], expected_metadata_target
+    )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+@pytest.mark.parametrize(
+    "metadata_target,description_target",
+    [
+        pytest.param(np.array(1), 1, id="array-metadata"),
+        pytest.param(1, np.array(1), id="array-description"),
+        pytest.param(np.array(1), np.array(1), id="arrays"),
+    ],
+)
+def test_get_metadata_coalesces_zero_dimensional_target(
+    use_mne_epochs, metadata_target, description_target
+):
+    windows = _fixed_windows_with_target(metadata_target, use_mne_epochs)
+    window_ds = windows.datasets[0]
+    window_ds.set_description({"target": description_target}, overwrite=True)
+
+    metadata = windows.get_metadata()
+
+    np.testing.assert_equal(metadata.iloc[0]["target"], metadata_target)
 
 
 def test_no_metadata(concat_ds_targets):
