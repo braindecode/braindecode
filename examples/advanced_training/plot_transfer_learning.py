@@ -144,7 +144,8 @@ channel_names = [
 # The next helper produces small synthetic source and target domains. Each
 # ``RawDataset`` represents a distinct participant recording, so the split
 # labels below also act as participant-level splits. The target domain has a
-# small frequency shift and slow drift to mimic a domain change.
+# small frequency shift and slow drift to mimic a domain change. These invented
+# frequencies are teaching signals, not proposed biomarkers of pathology.
 
 info = mne.create_info(channel_names, sfreq=sfreq, ch_types="eeg")
 
