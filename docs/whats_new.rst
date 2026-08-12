@@ -28,7 +28,13 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- Models with TorchScript-compatible forward paths can now be passed straight
+  to :func:`torch.jit.script`, without first being rebuilt as a plain
+  :class:`torch.nn.Module`.
+  :class:`braindecode.models.base.EEGModuleMixin` hides its signal-related
+  properties and the ``mapping`` attribute from TorchScript introspection, so
+  scripting reaches ``forward`` instead of failing on the class attributes.
+  (:gh:`1115` by `Aditya Singh`_)
 
 API and behavior changes
 ========================
@@ -1557,3 +1563,4 @@ Authors
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Jon Huml: https://github.com/jonathanhuml
+.. _Aditya Singh: https://github.com/adityasingh2400

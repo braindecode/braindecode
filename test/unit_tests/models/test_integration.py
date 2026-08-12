@@ -9,6 +9,7 @@ from __future__ import annotations
 import inspect
 import os
 import sys
+from io import BytesIO
 from types import MethodType
 
 import mne
@@ -25,6 +26,9 @@ from braindecode.models import (
     REVE,
     SSTDPN,
     ZUNA,
+    Deep4Net,
+    EEGConformer,
+    EEGInceptionERP,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -36,6 +40,9 @@ from braindecode.models import (
     InterpolatedEEGPT,
     InterpolatedLaBraM,
     InterpolatedSignalJEPA,
+    SCCNet,
+    ShallowFBCSPNet,
+    SleepStagerChambon2018,
     SyncNet,
     USleep,
 )
@@ -591,15 +598,94 @@ def test_model_torch_script(model):
     scripted_model.save(fname)
 
     os.remove(fname)
-    # now that we can save,
-    # erasing the model from the memory
-    #
 
-    # print(f"Model {model_class.__name__} passed the test.")
-    # Continue this tests later. Not now...
-    # output_script = scripted_model(input_tensor)
-    # assert output_script.shape == output_model.shape
-    # torch.testing.assert_close(output_script, output_model)
+
+@pytest.mark.parametrize(
+    "model_class",
+    [
+        ShallowFBCSPNet,
+        Deep4Net,
+        EEGConformer,
+        EEGInceptionERP,
+        SleepStagerChambon2018,
+        SCCNet,
+    ],
+    ids=lambda cls: cls.__name__,
+)
+def test_torch_script_without_plain_conversion(model_class):
+    """Models script directly, without being rebuilt as a plain ``nn.Module``.
+
+    ``EEGModuleMixin`` exposes the signal-related parameters as properties that
+    raise ``ValueError`` when unset, and annotates ``mapping`` with a postponed
+    ``Optional[Dict[str, str]]``. ``torch.jit.script`` reads every class
+    attribute while building the concrete type, so either one used to abort
+    scripting before ``forward`` was compiled.
+    """
+    model = model_class(
+        n_chans=default_signal_params["n_chans"],
+        n_outputs=default_signal_params["n_outputs"],
+        n_times=default_signal_params["n_times"],
+        sfreq=default_signal_params["sfreq"],
+    ).eval()
+    input_tensor = torch.randn(
+        2, default_signal_params["n_chans"], default_signal_params["n_times"]
+    )
+
+    scripted_model = torch.jit.script(model)
+
+    torch.testing.assert_close(scripted_model(input_tensor), model(input_tensor))
+
+
+@pytest.mark.parametrize("n_chans", [None, default_signal_params["n_chans"]])
+def test_torch_script_with_chs_info(n_chans):
+    """MNE-style channel metadata must not be part of the scripted graph."""
+    chs_info = default_signal_params["chs_info"]
+    model = ShallowFBCSPNet(
+        n_chans=n_chans,
+        chs_info=chs_info,
+        n_outputs=default_signal_params["n_outputs"],
+        n_times=default_signal_params["n_times"],
+        sfreq=default_signal_params["sfreq"],
+    ).eval()
+    input_tensor = torch.randn(
+        2, len(chs_info), default_signal_params["n_times"]
+    )
+    assert model._n_chans == n_chans
+    assert model.chs_info is chs_info
+    expected = model(input_tensor)
+
+    scripted = torch.jit.script(model)
+    buffer = BytesIO()
+    torch.jit.save(scripted, buffer)
+    buffer.seek(0)
+    restored_script = torch.jit.load(buffer)
+
+    torch.testing.assert_close(scripted(input_tensor), expected)
+    torch.testing.assert_close(restored_script(input_tensor), expected)
+
+    restored_model = ShallowFBCSPNet.from_config(model.get_config()).eval()
+    restored_model.load_state_dict(model.state_dict())
+    assert restored_model._n_chans == n_chans
+    assert restored_model.n_chans == len(chs_info)
+    assert [ch["ch_name"] for ch in restored_model.chs_info] == [
+        ch["ch_name"] for ch in chs_info
+    ]
+    for restored_ch, original_ch in zip(restored_model.chs_info, chs_info):
+        np.testing.assert_allclose(restored_ch["loc"], original_ch["loc"])
+    torch.testing.assert_close(restored_model(input_tensor), expected)
+
+
+def test_signal_params_still_raise_value_error():
+    """Hiding the properties from TorchScript must not silence their errors."""
+    model = ShallowFBCSPNet(
+        n_chans=default_signal_params["n_chans"],
+        n_outputs=default_signal_params["n_outputs"],
+        n_times=default_signal_params["n_times"],
+    )
+    with pytest.raises(ValueError, match="chs_info not specified"):
+        model.chs_info
+    with pytest.raises(ValueError, match="sfreq could not be inferred"):
+        model.sfreq
 
 
 @pytest.mark.parametrize("method", ["mag", "corr", "plv"])
