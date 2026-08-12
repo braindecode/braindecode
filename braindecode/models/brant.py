@@ -334,6 +334,12 @@ class _BandPowerFeatures(nn.Module):
         torch.Tensor
             Shape ``(batch, n_chans, seq_len, n_bands)``.
         """
+        output_dtype = patches.dtype
+        # CPU FFT does not accept reduced precision, while CUDA float16 FFT is
+        # restricted to power-of-two lengths (the released patch size is 1500).
+        if output_dtype in (torch.float16, torch.bfloat16):
+            patches = patches.float()
+
         n = patches.shape[-1]
         # scipy periodogram default: detrend='constant' (remove the mean).
         x = patches - patches.mean(dim=-1, keepdim=True)
@@ -350,7 +356,7 @@ class _BandPowerFeatures(nn.Module):
             mask = (freqs > low) & (freqs <= high)
             band = psd[..., mask].sum(dim=-1)
             out.append(torch.log10(band + 1.0))
-        return torch.stack(out, dim=-1)
+        return torch.stack(out, dim=-1).to(dtype=output_dtype)
 
 
 class _BrantInputEmbedding(nn.Module):

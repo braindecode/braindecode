@@ -121,8 +121,15 @@ def test_band_power_shape_and_finite():
     assert torch.isfinite(out).all()
 
 
-def test_band_power_matches_scipy_periodogram():
-    patches = torch.randn(2, 3, 4, PATCH, dtype=torch.float64)
+@pytest.mark.parametrize(
+    "dtype, rtol, atol",
+    [
+        (torch.float32, 1e-6, 1e-7),
+        (torch.float64, 1e-12, 1e-12),
+    ],
+)
+def test_band_power_matches_scipy_periodogram(dtype, rtol, atol):
+    patches = torch.randn(2, 3, 4, PATCH, dtype=dtype)
     actual = _BandPowerFeatures(SFREQ, BRANT_FREQ_BANDS)(patches)
 
     freqs, psd = periodogram(patches.numpy(), fs=SFREQ, axis=-1)
@@ -134,7 +141,55 @@ def test_band_power_matches_scipy_periodogram():
         axis=-1,
     )
 
-    torch.testing.assert_close(actual, torch.from_numpy(expected), rtol=1e-12, atol=1e-12)
+    torch.testing.assert_close(
+        actual, torch.from_numpy(expected), rtol=rtol, atol=atol
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+def test_band_power_dtype_device_and_gradient(dtype):
+    patches = torch.randn(
+        2, 3, 4, PATCH, dtype=dtype, requires_grad=True
+    )
+
+    output = _BandPowerFeatures(SFREQ, BRANT_FREQ_BANDS)(patches)
+    output.float().sum().backward()
+
+    assert output.dtype == dtype
+    assert output.device == patches.device
+    assert torch.isfinite(output).all()
+    assert patches.grad is not None
+    assert torch.isfinite(patches.grad).all()
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_reduced_precision_forward_backward(dtype):
+    model = _model().to(dtype=dtype).train()
+    x = torch.randn(2, N_CHANS, N_TIMES, dtype=dtype, requires_grad=True)
+
+    output = model(x)
+    output.float().square().mean().backward()
+
+    assert output.dtype == dtype
+    assert torch.isfinite(output).all()
+    assert x.grad is not None
+    assert torch.isfinite(x.grad).all()
+
+
+def test_cpu_autocast_forward_backward():
+    model = _model().train()
+    x = torch.randn(2, N_CHANS, N_TIMES, requires_grad=True)
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        output = model(x)
+        loss = output.float().square().mean()
+    loss.backward()
+
+    assert output.dtype == torch.bfloat16
+    assert x.grad is not None
+    assert torch.isfinite(x.grad).all()
 
 
 @pytest.mark.parametrize("loader", ["test-gate", "developer-script"])
