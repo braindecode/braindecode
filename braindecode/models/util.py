@@ -795,14 +795,16 @@ def _geometry_from_chs_info(chs_info):
     channel lacks a finite position.
     """
     # mne.channel_type owns the FIFF kind/unit -> eeg/mag/grad logic (it only needs
-    # ``info["chs"][idx]``). Lightweight test dicts carry a resolved string ``kind``
-    # instead of FIFF integers, so use it directly for those.
-    types = [
-        str(ch.get("ch_type", ch["kind"])).lower()
-        if isinstance(ch.get("kind"), str)
-        else mne.channel_type({"chs": chs_info}, i)
-        for i, ch in enumerate(chs_info)
-    ]
+    # ``info["chs"][idx]``). Lightweight dicts instead carry a resolved string in
+    # ``ch_type`` or ``kind``, so use those directly when present.
+    types = []
+    for index, ch in enumerate(chs_info):
+        resolved_type = ch.get("ch_type")
+        if resolved_type is None and isinstance(ch.get("kind"), str):
+            resolved_type = ch["kind"]
+        if resolved_type is None:
+            resolved_type = mne.channel_type({"chs": chs_info}, index)
+        types.append(str(resolved_type).lower())
 
     xyz = extract_channel_locations_from_chs_info(chs_info)
     if xyz is None or len(xyz) != len(chs_info) or not np.isfinite(xyz).all():

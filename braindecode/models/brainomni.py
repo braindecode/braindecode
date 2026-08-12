@@ -912,6 +912,34 @@ def _window_stride(window_length: int, overlap_ratio: float) -> int:
     return stride
 
 
+class _RMSNorm(nn.Module):
+    """PyTorch 2.0 fallback matching the released BrainOmni RMSNorm."""
+
+    def __init__(self, n_dim, elementwise_affine=True, eps=1e-6):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(n_dim)) if elementwise_affine else 1.0
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        weight = self.weight
+        input_dtype = x.dtype
+        x = x.to(torch.float32)
+        x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        return (weight * x).to(input_dtype)
+
+
+_NATIVE_RMS_NORM = getattr(nn, "RMSNorm", None)
+_RMS_NORM_TYPES = (
+    (_RMSNorm,) if _NATIVE_RMS_NORM is None else (_RMSNorm, _NATIVE_RMS_NORM)
+)
+
+
+def _make_rms_norm(n_dim: int, eps: float = 1e-6) -> nn.Module:
+    """Construct native RMSNorm when available, otherwise the PyTorch 2.0 fallback."""
+    rms_norm = getattr(nn, "RMSNorm", _RMSNorm)
+    return rms_norm(n_dim, eps=eps)
+
+
 def _init_weights(module: nn.Module) -> None:
     r"""BrainOmni weight init, faithful to the upstream ``_init_weights``.
 
@@ -926,7 +954,9 @@ def _init_weights(module: nn.Module) -> None:
             nn.init.constant_(module.bias, 0.0)
     elif isinstance(module, nn.Embedding):
         nn.init.trunc_normal_(module.weight, std=0.02)
-    elif isinstance(module, nn.RMSNorm) and module.weight is not None:
+    elif isinstance(module, _RMS_NORM_TYPES) and isinstance(
+        module.weight, nn.Parameter
+    ):
         nn.init.constant_(module.weight, 1.0)
 
 
@@ -978,14 +1008,14 @@ class _SpatialTemporalBlock(nn.Module):
         assert n_dim % 2 == 0 and n_head % 2 == 0, (
             "n_dim and n_head must be even (split into spatial/temporal halves)"
         )
-        self.pre_attn_norm = nn.RMSNorm(n_dim, eps=1e-6)
+        self.pre_attn_norm = _make_rms_norm(n_dim, eps=1e-6)
         self.time_attn = MultiHeadAttentionRoPE(
             n_dim // 2, n_head // 2, dropout, causal=causal, rope=True
         )
         self.spatial_attn = MultiHeadAttentionRoPE(
             n_dim // 2, n_head // 2, dropout, causal=False, rope=False
         )
-        self.pre_ff_norm = nn.RMSNorm(n_dim, eps=1e-6)
+        self.pre_ff_norm = _make_rms_norm(n_dim, eps=1e-6)
         self.ff = _FeedForward(n_dim, dropout)
 
     def forward(self, x: torch.Tensor, mask=None) -> torch.Tensor:
@@ -1470,7 +1500,7 @@ class _SensorEmbedding(nn.Module):
             nn.Linear(n_dim // 2, n_dim),
         )
         self.aggregate_mlp = _FeedForward(n_dim, 0.0)
-        self.norm = nn.RMSNorm(n_dim, eps=1e-6)
+        self.norm = _make_rms_norm(n_dim, eps=1e-6)
 
     def forward(self, pos: torch.Tensor, sensor_type: torch.Tensor) -> torch.Tensor:
         x = self.pos_embedding_layer(pos)

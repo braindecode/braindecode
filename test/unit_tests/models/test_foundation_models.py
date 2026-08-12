@@ -1349,15 +1349,47 @@ def _real_chs(ch_names, ch_types):
     "chs_info, expected",
     [
         ([{"ch_name": "C1", "kind": "eeg", "loc": _loc(1.0)}], [0]),  # simplified EEG dict
+        ([{"ch_name": "C1", "ch_type": "eeg", "loc": _loc(1.0)}], [0]),
         (_real_chs(["MEG0111"], ["grad"]), [2]),  # real GRAD
         (_real_chs(["MEG0112"], ["mag"]), [1]),   # real MAG
         (_real_chs(["E1"], ["eeg"]), [0]),         # real EEG
     ],
-    ids=["eeg_simplified", "grad", "mag", "eeg_real"],
+    ids=["eeg_simplified", "eeg_ch_type", "grad", "mag", "eeg_real"],
 )
 def test_geometry_sensor_type(chs_info, expected):
     _, sensor_type = _geometry_from_chs_info(chs_info)
     assert sensor_type.tolist() == expected
+
+
+def test_braintokenizer_accepts_ch_type_only_geometry():
+    chs_info = [
+        {"ch_name": "C1", "ch_type": "eeg", "loc": _loc(0.1, 0.0, 0.1)},
+        {"ch_name": "C2", "ch_type": "eeg", "loc": _loc(-0.1, 0.0, 0.1)},
+    ]
+
+    model = BrainTokenizer(
+        chs_info=chs_info,
+        n_times=8,
+        sfreq=256.0,
+        window_length=8,
+        n_filters=4,
+        ratios=(2,),
+        kernel_size=3,
+        last_kernel_size=3,
+        emb_dim=8,
+        n_neuro=2,
+        tokenizer_num_heads=2,
+        codebook_dim=8,
+        codebook_size=8,
+        num_quantizers=1,
+    ).eval()
+
+    output = model(torch.randn(1, 2, 8))
+
+    assert torch.isfinite(model.pos).all()
+    assert model.sensor_type.tolist() == [0, 0]
+    assert output.shape == (1, 2, 8)
+    assert torch.isfinite(output).all()
 
 
 def test_geometry_eeg_orientation_and_centering():
@@ -1432,7 +1464,6 @@ def test_geometry_bad_loc_raises(loc):
 @pytest.mark.parametrize(
     "build, make_inputs, exp_shape",
     [
-        (lambda: nn.RMSNorm(8, eps=1e-6), lambda: (torch.randn(2, 5, 8),), (2, 5, 8)),
         (
             lambda: _SpatialTemporalBlock(16, 4, 0.0, causal=False),
             lambda: (torch.randn(2, 3, 7, 16),),  # (batch, chans, tokens, dim)
@@ -1458,12 +1489,61 @@ def test_geometry_bad_loc_raises(loc):
             (2, 3, 1, 8, 16),  # channels (5) collapse to n_neuro (3); T = 512/64
         ),
     ],
-    ids=["rmsnorm", "st_block", "sensor_module", "tokenizer_encoder"],
+    ids=["st_block", "sensor_module", "tokenizer_encoder"],
 )
 def test_brainomni_submodule_shapes(build, make_inputs, exp_shape):
     out = build()(*make_inputs())
     assert out.shape == exp_shape
     assert torch.isfinite(out).all()
+
+
+@pytest.mark.parametrize("model_name", ["tokenizer", "brainomni"])
+def test_brainomni_public_models_support_missing_native_rmsnorm(
+    monkeypatch, model_name
+):
+    """The public models must construct and run at the declared PyTorch 2.0 floor."""
+    monkeypatch.delattr(nn, "RMSNorm", raising=False)
+    common = {
+        "chs_info": _eeg_chs_info(2),
+        "n_times": 8,
+        "sfreq": 256.0,
+        "window_length": 8,
+        "n_filters": 4,
+        "ratios": (2,),
+        "kernel_size": 3,
+        "last_kernel_size": 3,
+        "emb_dim": 8,
+        "n_neuro": 2,
+        "tokenizer_num_heads": 2,
+        "codebook_dim": 8,
+        "codebook_size": 8,
+        "num_quantizers": 1,
+    }
+    if model_name == "tokenizer":
+        model = BrainTokenizer(**common).eval()
+        expected_shape = (1, 2, 8)
+        expected_weight_keys = {"sensor_embed.norm.weight"}
+    else:
+        model = BrainOmni(
+            n_outputs=3,
+            overlap_ratio=0.0,
+            lm_dim=8,
+            num_heads=2,
+            depth=2,
+            **common,
+        ).eval()
+        expected_shape = (1, 3)
+        expected_weight_keys = {
+            "tokenizer.sensor_embed.norm.weight",
+            "blocks.0.pre_attn_norm.weight",
+            "blocks.0.pre_ff_norm.weight",
+        }
+
+    output = model(torch.randn(1, 2, 8))
+
+    assert output.shape == expected_shape
+    assert torch.isfinite(output).all()
+    assert expected_weight_keys <= model.state_dict().keys()
 
 
 def test_seanet_roundtrip_downsampling():
