@@ -1311,10 +1311,14 @@ def test_windower_from_target_channels_partial_targets():
 def event_dataset_factory():
     """Create a small dataset with interleaved events and optional extras."""
 
-    def _make_event_dataset(durations, *, with_extras=False):
+    def _make_event_dataset(
+        durations, *, with_extras=False, onsets=None, descriptions=None
+    ):
         data = np.zeros((2, 1000), dtype=np.float32)
-        onsets = [1.0, 3.0, 5.0, 7.0]
-        descriptions = ["T0", "T1", "T0", "T1"]
+        if onsets is None:
+            onsets = [1.0, 3.0, 5.0, 7.0]
+        if descriptions is None:
+            descriptions = ["T0", "T1", "T0", "T1"]
         annotations = mne.Annotations(
             onset=onsets, duration=durations, description=descriptions
         )
@@ -1492,6 +1496,99 @@ def test_dict_params_per_event_type(
     if not use_mne_epochs:
         starts = metadata["i_start_in_trial"].values
         assert np.all(np.diff(starts) >= 0)
+
+
+@pytest.mark.parametrize(
+    ("stop_offsets", "mapping", "on_missing", "expected_metadata"),
+    [
+        pytest.param(
+            {"T0": 200, "T1": 0},
+            {"T0": 0, "T1": 1},
+            "error",
+            (
+                [100, 150, 200, 250, 300, 350, 850],
+                [150, 200, 250, 300, 350, 400, 900],
+                [0, 0, 0, 0, 0, 0, 1],
+            ),
+            id="heterogeneous-valid",
+        ),
+        pytest.param(
+            {"T0": 0, "T1": 0, "ABSENT": 10_000},
+            {"T0": 0, "T1": 1, "ABSENT": 2},
+            "ignore",
+            ([100, 150, 850], [150, 200, 900], [0, 0, 1]),
+            id="absent-class-ignored",
+        ),
+        pytest.param(
+            {"T0": 801, "T1": 0},
+            {"T0": 0, "T1": 1},
+            "error",
+            None,
+            id="present-overflow-rejected",
+        ),
+    ],
+)
+@pytest.mark.parametrize("use_mne_epochs", [False, True], ids=["eeg", "mne"])
+def test_dict_stop_offsets_use_present_event_boundaries(
+    event_dataset_factory,
+    stop_offsets,
+    mapping,
+    on_missing,
+    expected_metadata,
+    use_mne_epochs,
+):
+    """Dict boundary checks pair each present event with its own offset."""
+    concat_ds = event_dataset_factory(
+        [1.0, 0.5], onsets=[1.0, 8.5], descriptions=["T0", "T1"]
+    )
+    kwargs = dict(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=stop_offsets,
+        window_size_samples=50,
+        window_stride_samples=50,
+        on_last_window="drop",
+        mapping=mapping,
+        on_missing=on_missing,
+        use_mne_epochs=use_mne_epochs,
+    )
+    if expected_metadata is None:
+        with pytest.raises(ValueError, match='"trial_stop_offset_samples" too large'):
+            create_windows_from_events(**kwargs)
+        return
+
+    windows_ds = create_windows_from_events(**kwargs).datasets[0]
+    metadata = windows_ds.windows.metadata if use_mne_epochs else windows_ds.metadata
+    expected_starts, expected_stops, expected_targets = expected_metadata
+    assert metadata["i_start_in_trial"].tolist() == expected_starts
+    assert metadata["i_stop_in_trial"].tolist() == expected_stops
+    assert metadata["target"].tolist() == expected_targets
+    if use_mne_epochs:
+        assert windows_ds.windows.event_id == {"T0": 0, "T1": 1}
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True], ids=["eeg", "mne"])
+def test_scalar_stop_offset_checks_every_present_event(
+    event_dataset_factory, use_mne_epochs
+):
+    """Scalar validation cannot assume the final onset has the latest stop."""
+    concat_ds = event_dataset_factory(
+        [8.5, 0.5], onsets=[1.0, 8.5], descriptions=["T0", "T1"]
+    )
+    with pytest.raises(
+        ValueError,
+        match=r'Stop of trial 0 \(950\).*\(75\)',
+    ):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=75,
+            window_size_samples=50,
+            window_stride_samples=50,
+            on_last_window="drop",
+            mapping={"T0": 0, "T1": 1},
+            use_mne_epochs=use_mne_epochs,
+        )
 
 
 @pytest.mark.parametrize("per_event_params", [False, True], ids=["int", "dict"])
