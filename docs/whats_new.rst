@@ -28,7 +28,11 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
+  foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
+  2023), including in-model spectral features and the shared configuration,
+  feature-return, and head-reset APIs. This architecture-only addition does not
+  include or verify pretrained weights (:gh:`1100` by `Adam Mounir`_).
 
 API and behavior changes
 ========================

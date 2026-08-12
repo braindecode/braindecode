@@ -520,6 +520,7 @@ def test_model_torch_script(model):
 
     not_working_models = [
         "BIOT",
+        "Brant",  # FFT mask indexing and Dict/Tensor return are not scriptable.
         "Labram",
         "EEGPT",
         "SSTDPN",
