@@ -1422,12 +1422,14 @@ html[data-theme="dark"] .bd-landing .logo-strip-logos img {
   text-align: left;
   font-family: inherit;
   color: inherit;
+  text-decoration: none;
 }
 
-/* Subtle border tint on hover; no translate / cursor change because
-   .zoo-card is a presentational <article>, not an interactive control. */
-.bd-landing .zoo-card:hover {
-  border-color: var(--bd-line-2);
+.bd-landing .zoo-card:hover,
+.bd-landing .zoo-card:focus-visible {
+  border-color: var(--bd-brand);
+  box-shadow: var(--bd-shadow-sm);
+  outline: none;
 }
 
 .bd-landing .zoo-card-head {

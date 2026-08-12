@@ -22,12 +22,16 @@ from braindecode.models.base import HAS_HF_HUB, EEGModuleMixin
 
 # importing some fixtures/utilities to help with testing
 from braindecode.models.util import (
+    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
     non_classification_models,
 )
 
 from .test_integration import get_sp
+
+# Interpolated models are stored in a separate registry from ``models_dict``.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
@@ -40,7 +44,7 @@ def sample_model(request):
     """Instantiated model."""
     name, req, sig_params = request.param
     sp = get_sp(sig_params, req)
-    model = models_dict[name](**sp)
+    model = all_models_dict[name](**sp)
 
     model.eval()
     return model, name, sp
@@ -230,7 +234,7 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
     model._save_pretrained(repo_dir)
 
     # Load the model from the saved config using the class method
-    model_class = models_dict[name]
+    model_class = all_models_dict[name]
     restored = model_class.from_pretrained(repo_dir)
     restored.eval()
 

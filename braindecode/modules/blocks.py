@@ -6,51 +6,58 @@ from torch import nn
 
 
 class PatchTokenizer(nn.Module):
-    r"""Tokenize an EEG signal into temporal patches (optionally overlapping).
+    r"""Tokenize an EEG signal into temporal patches.
 
     Transforms ``(batch, n_chans, n_times)`` into
     ``(batch, n_chans, n_patches, patch_dim)`` by sliding a window of
-    ``patch_size`` samples along the time axis with a step of ``stride``
-    samples. The default ``stride = patch_size`` gives non-overlapping patches;
-    a smaller ``stride`` gives overlapping ones. This is the shared patch /
-    "tokenization" step used by transformer EEG foundation models (e.g. LaBraM,
-    CBraMod, EEG-DINO, BrainOmni).
+    ``patch_size`` samples with the configured ``stride``. By default the
+    stride equals the patch size, giving non-overlapping patches.
 
-    As in the filter-bank models (:class:`~braindecode.models.FBCNet`,
-    :class:`~braindecode.models.FBMSNet`), the time axis is always right
-    zero-padded so the windows tile it fully (no samples are dropped) and at
-    least one window is produced; it is never an error. Padding is recomputed
-    from the actual input length at every forward, so inputs whose length
-    differs from ``n_times`` are handled too. A warning is emitted at
-    construction when the configured ``n_times`` does not tile cleanly.
+    By default, as in the filter-bank models
+    (:class:`~braindecode.models.FBCNet`, :class:`~braindecode.models.FBMSNet`),
+    when the time axis does not tile under ``patch_size`` and ``stride``, the input is right
+    zero-padded (a warning is emitted at construction). Set
+    ``on_non_divisible="crop"`` to hard-crop the trailing samples instead, or
+    ``"error"`` to reject non-divisible inputs. Padding/cropping is applied at
+    ``forward`` time to the actual input length (not the construction-time
+    ``n_times``), so the module also accepts inputs of a different length.
 
     Two modes:
 
-    - **non-learnable** (``learnable=False``, default): a pure windowing view,
-      so ``patch_dim == patch_size`` and the raw samples of each patch are kept
-      (the patch embedding, if any, lives in the model). The ``stride`` may be
-      overridden per call (see :meth:`forward`), so one tokenizer can be reused
-      at several overlaps.
-    - **learnable** (``learnable=True``): a strided ``Conv1d`` (kernel
-      ``patch_size``, stride ``stride``, applied per channel) maps each patch to
-      ``emb_dim`` features, so ``patch_dim == emb_dim``. The stride is fixed at
-      construction.
+    - **non-learnable** (``learnable=False``, default): a windowing view, so
+      ``patch_dim == patch_size`` and the raw samples of each patch are kept
+      (the patch embedding, if any, lives in the model).
+    - **learnable** (``learnable=True``): maps each patch to ``emb_dim``
+      features, so ``patch_dim == emb_dim``. ``projection="conv"`` keeps the
+      historical strided ``Conv1d`` behavior; ``projection="linear"`` first
+      forms raw patches and then applies one ``Linear(patch_size, emb_dim)`` to
+      each patch.
 
     Parameters
     ----------
     patch_size : int
-        Number of time samples per patch (the window length).
+        Number of time samples per patch.
     n_times : int
-        Number of time samples of the input, used to emit the construction
-        warning when ``n_times`` does not tile cleanly into patches.
+        Number of time samples of the input, used to validate or announce the
+        configured non-divisible-input policy.
     emb_dim : int, optional
         Output features per patch in learnable mode. Defaults to ``patch_size``.
         Ignored when ``learnable=False``.
     learnable : bool, default=False
-        Whether the tokenizer is a learned convolution or a fixed windowing.
+        Whether the tokenizer is a learned convolution or a fixed reshape.
     stride : int, optional
-        Step between consecutive patches, in samples. Defaults to ``patch_size``
-        (non-overlapping). Use ``stride < patch_size`` for overlapping patches.
+        Step between consecutive patches. Defaults to ``patch_size``.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How to handle a time dimension that is not divisible by ``patch_size``.
+        ``"pad"`` right-pads with zeros, ``"crop"`` drops the trailing samples,
+        and ``"error"`` raises a :class:`ValueError`.
+    projection : {"conv", "linear"}, default="conv"
+        Learnable projection type. Only used when ``learnable=True``.
+    output_order : {"channel_patch", "patch_channel"}, default="channel_patch"
+        Axis order after the batch dimension. ``"channel_patch"`` returns
+        ``(batch, n_chans, n_patches, patch_dim)`` and preserves the historical
+        output. ``"patch_channel"`` returns
+        ``(batch, n_patches, n_chans, patch_dim)``.
 
     Examples
     --------
@@ -59,62 +66,123 @@ class PatchTokenizer(nn.Module):
     >>> tokenizer = PatchTokenizer(patch_size=200, n_times=1000)
     >>> tokenizer(torch.randn(2, 19, 1000)).shape
     torch.Size([2, 19, 5, 200])
-    >>> tokenizer(torch.randn(2, 19, 1000), stride=100).shape  # 50% overlap
-    torch.Size([2, 19, 9, 200])
     """
 
-    def __init__(self, patch_size, n_times, emb_dim=None, learnable=False, stride=None):
+    def __init__(
+        self,
+        patch_size,
+        n_times,
+        emb_dim=None,
+        learnable=False,
+        stride=None,
+        on_non_divisible="pad",
+        projection="conv",
+        output_order="channel_patch",
+    ):
         super().__init__()
+        if on_non_divisible not in ("pad", "crop", "error"):
+            raise ValueError(
+                "on_non_divisible must be 'pad', 'crop', or 'error', "
+                f"got {on_non_divisible!r}."
+            )
+        if projection not in ("conv", "linear"):
+            raise ValueError(
+                f"projection must be 'conv' or 'linear', got {projection!r}."
+            )
+        if output_order not in ("channel_patch", "patch_channel"):
+            raise ValueError(
+                "output_order must be 'channel_patch' or 'patch_channel', "
+                f"got {output_order!r}."
+            )
         self.patch_size = patch_size
         self.stride = patch_size if stride is None else stride
+        if self.patch_size <= 0 or self.stride <= 0:
+            raise ValueError("patch_size and stride must be positive integers.")
         self.learnable = learnable
+        self.on_non_divisible = on_non_divisible
+        self.projection = projection
+        self.output_order = output_order
         self.emb_dim = (emb_dim or patch_size) if learnable else patch_size
-        if self._pad_to_tile(n_times, self.stride):
-            warn(
-                f"Time dimension ({n_times}) does not tile into patches of size "
-                f"{patch_size} at stride {self.stride}. Input will be padded.",
-                UserWarning,
-            )
+        if self._remainder(n_times):
+            if on_non_divisible == "pad":
+                warn(
+                    f"Time dimension ({n_times}) does not tile into patches of "
+                    f"size {patch_size} at stride {self.stride}. Input will be padded.",
+                    UserWarning,
+                )
+            elif on_non_divisible == "error":
+                raise ValueError(
+                    f"Time dimension ({n_times}) is not divisible into patches "
+                    f"of size {patch_size} at stride {self.stride}."
+                )
+        # Padding/cropping for a non-divisible time axis is applied at runtime in
+        # _prepare_input (which works for any input length, not just the
+        # construction-time n_times), so no padding submodule is stored here.
         # Defined unconditionally (Identity when not learnable) so the attribute
         # always exists for torch.jit.script, which type-checks both branches.
-        if learnable:
-            self.patcher = nn.Conv1d(1, self.emb_dim, patch_size, stride=self.stride)
-        else:
-            self.patcher = nn.Identity()
+        self.patcher = nn.Identity()
+        self.proj = nn.Identity()
+        if learnable and projection == "conv":
+            self.patcher = nn.Conv1d(
+                1, self.emb_dim, patch_size, stride=self.stride
+            )
+        elif learnable and projection == "linear":
+            self.proj = nn.Linear(patch_size, self.emb_dim)
 
-    def _pad_to_tile(self, n_times: int, stride: int) -> int:
-        """Right-pad needed so ``patch_size`` windows tile ``n_times`` at ``stride`` (>= 1 window)."""
-        n_eff = max(n_times, self.patch_size)
-        remainder = (n_eff - self.patch_size) % stride
-        return (n_eff - n_times) + (stride - remainder) % stride
-
-    def forward(self, x: torch.Tensor, stride: Optional[int] = None) -> torch.Tensor:
-        """Patchify ``(batch, n_chans, n_times)`` -> ``(batch, n_chans, n_patches, patch_dim)``.
-
-        ``stride`` overrides the patch step for this call (non-learnable mode
-        only), so a single tokenizer can be reused at several overlaps; it
-        defaults to the ``stride`` set at construction.
-        """
+    def _remainder(self, n_times: int, stride: int | None = None) -> int:
         step = self.stride if stride is None else stride
-        pad = self._pad_to_tile(x.shape[-1], step)
-        if pad:
-            x = nn.functional.pad(x, (0, pad))
-        batch_size, n_chans, _ = x.shape
-        if self.learnable:
-            if step != self.stride:
+        if n_times < self.patch_size:
+            return n_times - self.patch_size
+        return (n_times - self.patch_size) % step
+
+    def _prepare_input(self, x, stride: int):
+        n_times = x.shape[-1]
+        remainder = self._remainder(n_times, stride)
+        if remainder == 0:
+            return x
+        if self.on_non_divisible == "pad":
+            pad = -remainder if remainder < 0 else stride - remainder
+            return nn.functional.pad(x, (0, pad))
+        if self.on_non_divisible == "crop":
+            cropped_n_times = n_times - max(remainder, 0)
+            if cropped_n_times < self.patch_size:
                 raise ValueError(
-                    "stride override is only supported for non-learnable "
-                    f"PatchTokenizer (got stride={step}, built with "
-                    f"stride={self.stride})."
+                    f"Need at least one full patch of {self.patch_size} samples, "
+                    f"got {n_times}."
                 )
+            return x[..., :cropped_n_times]
+        raise ValueError(
+            f"Time dimension ({n_times}) is not divisible into patches of size "
+            f"{self.patch_size} at stride {stride}."
+        )
+
+    def forward(
+        self, x: torch.Tensor, stride: Optional[int] = None
+    ) -> torch.Tensor:
+        step = self.stride if stride is None else stride
+        if step <= 0:
+            raise ValueError("stride must be a positive integer.")
+        if self.learnable and step != self.stride:
+            raise ValueError(
+                "stride override is only supported for non-learnable "
+                f"PatchTokenizer (got stride={step}, built with "
+                f"stride={self.stride})."
+            )
+        x = self._prepare_input(x, step)
+        batch_size, n_chans, _ = x.shape
+        if self.learnable and self.projection == "conv":
             x = x.flatten(0, 1).unsqueeze(1)  # (batch * chans, 1, time)
             x = self.patcher(x)  # (batch * chans, emb, patches)
-            return x.reshape(batch_size, n_chans, x.shape[-2], x.shape[-1]).permute(
+            x = x.reshape(batch_size, n_chans, x.shape[-2], x.shape[-1]).permute(
                 0, 1, 3, 2
             )
-        # Non-overlapping unfold is contiguous and equals the former reshape;
-        # overlapping unfold returns a strided view.
-        return x.unfold(dimension=-1, size=self.patch_size, step=step)
+        else:
+            x = x.unfold(dimension=-1, size=self.patch_size, step=step)
+            if self.learnable:
+                x = self.proj(x)
+        if self.output_order == "patch_channel":
+            return x.transpose(1, 2)
+        return x
 
 
 class InceptionBlock(nn.Module):

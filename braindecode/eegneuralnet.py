@@ -1,5 +1,6 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Pierre Guetschel <pierre.guetschel@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -7,7 +8,8 @@
 import abc
 import inspect
 import logging
-from typing import Literal
+import warnings
+from typing import Any, Literal
 
 import mne
 import numpy as np
@@ -19,7 +21,7 @@ from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
 from braindecode.datautil import infer_signal_properties
 
-from .models.util import models_dict
+from .models.util import _get_model_class
 from .training.scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
@@ -29,18 +31,16 @@ from .training.scoring import (
 log = logging.getLogger(__name__)
 
 
-def _get_model(model: str):
+def _get_model(model: Any) -> Any:
     """Returns the corresponding class in case the model passed is a string."""
     if isinstance(model, str):
-        if model in models_dict:
-            model = models_dict[model]
-        else:
-            raise ValueError(f"Unknown model name {model!r}.")
+        model = _get_model_class(model)
     return model
 
 
 class _EEGNeuralNet(NeuralNet, abc.ABC):
     signal_args_set_ = False
+    _warned_drop_last_ = False
 
     @property
     def log(self):
@@ -127,16 +127,24 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 self._last_window_inds_ = None
 
     def predict_with_window_inds_and_ys(self, dataset):
-        self.module.eval()
+        # self.module can still be a name or a class, self.module_ is the built one
+        self.module_.eval()
         preds = []
         i_window_in_trials = []
         i_window_stops = []
         window_ys = []
-        for X, y, i in self.get_iterator(dataset, drop_index=False):
+        for batch in self.get_iterator(dataset, drop_index=False):
+            if len(batch) > 3:
+                raise ValueError(
+                    "Cropped prediction does not support channel positions; "
+                    "disable return_ch_pos (set_return_ch_pos(False)) for cropped "
+                    "evaluation."
+                )
+            X, y, i = batch[0], batch[1], batch[2]
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
             with torch.no_grad():
-                preds.append(to_numpy(self.module.forward(X.to(self.device))))
+                preds.append(to_numpy(self.module_.forward(X.to(self.device))))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = np.concatenate(i_window_in_trials)
@@ -267,6 +275,44 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             X = X.get_data(units="uV")
         return super().get_dataset(X, y)
 
+    def get_iterator(self, dataset, training=False):
+        iterator = super().get_iterator(dataset, training=training)
+        # Warn (once per fit) if drop_last would discard every training batch,
+        # e.g. a training set smaller than batch_size. This silently skips
+        # training without raising any error, which is hard to diagnose.
+        if training and not self._warned_drop_last_:
+            self._warn_if_training_batches_dropped(iterator)
+        return iterator
+
+    def _warn_if_training_batches_dropped(self, loader):
+        """Warn if ``drop_last`` discards all training batches.
+
+        With ``iterator_train__drop_last=True`` (the braindecode default), a
+        training set smaller than ``batch_size`` yields zero batches, so no
+        forward/backward pass runs and the model is left untrained without any
+        error. We inspect the resolved training ``DataLoader`` (after
+        ``train_split`` has been applied), so the count reflects the actual
+        number of training examples.
+        """
+        self._warned_drop_last_ = True
+        if not getattr(loader, "drop_last", False):
+            return
+        batch_size = getattr(loader, "batch_size", None)
+        try:
+            n_train = len(loader.dataset)
+        except TypeError:
+            return  # e.g. an IterableDataset whose length is unknown
+        if not batch_size or n_train == 0 or n_train >= batch_size:
+            return
+        warnings.warn(
+            f"The training set has {n_train} example(s), which is smaller than "
+            f"batch_size={batch_size}. With iterator_train__drop_last=True "
+            f"(the braindecode default), all training batches are dropped and "
+            f"the model is not trained. Reduce batch_size to at most {n_train}, "
+            f"or pass iterator_train__drop_last=False.",
+            UserWarning,
+        )
+
     def partial_fit(self, X, y=None, classes=None, **fit_params):
         """Fit the module.
 
@@ -366,6 +412,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
           the module and to the ``self.train_split`` call.
         """
         # this needs to be executed before the net is initialized:
+        self._warned_drop_last_ = False  # re-check on every fresh fit
         if not self.signal_args_set_:
             self._set_signal_args(X, y, classes=None)
             self.signal_args_set_ = True

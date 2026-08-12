@@ -11,7 +11,9 @@ from typing_extensions import TypedDict
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
     SigArgName,
+    _get_model_class,
     _init_models_dict,
+    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
@@ -65,9 +67,7 @@ class BaseBraindecodeModelConfig(pydantic.BaseModel):
     """Base class for braindecode model pydantic configs."""
 
     def create_instance(self) -> EEGModuleMixin:
-        if self.model_name_ not in models_dict:
-            _init_models_dict()
-        model_cls = models_dict[self.model_name_]
+        model_cls = _get_model_class(self.model_name_)
         kwargs = self.model_dump(mode="python", exclude={"model_name_"})
         if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
             kwargs.pop("n_chans")
@@ -208,12 +208,12 @@ def make_model_config(
 # and define __all__ based on generated classes
 __all__ = ["make_model_config"]
 
-if not models_dict:
+if not models_dict and not interpolated_models_dict:
     _init_models_dict()
 
 models_configs: list[type[BaseBraindecodeModelConfig]] = []
 for model_name, req, _ in models_mandatory_parameters:
-    model_cls = models_dict[model_name]
+    model_cls = _get_model_class(model_name)
     model_cfg = make_model_config(model_cls, req)
     globals()[model_cfg.__name__] = model_cfg
     __all__.append(model_cfg.__name__)

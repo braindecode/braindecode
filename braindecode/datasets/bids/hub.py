@@ -327,6 +327,7 @@ class HubDatasetMixin:
 
         n_recordings = len(self.datasets)
         first_ds = self.datasets[0]
+        descriptions = [ds.description for ds in self.datasets]
 
         # Get dataset-specific info based on type using registry
         dataset_type = get_dataset_type(first_ds)
@@ -358,6 +359,9 @@ class HubDatasetMixin:
             raise TypeError(f"Unsupported dataset type: {dataset_type}")
 
         # Create README content and save
+        license_value, license_needs_update = _infer_license_from_descriptions(
+            descriptions
+        )
         readme_content = _generate_readme_content(
             format_info=format_info,
             n_recordings=n_recordings,
@@ -366,6 +370,8 @@ class HubDatasetMixin:
             data_type=data_type,
             n_windows=n_windows,
             total_duration=total_duration,
+            license=license_value,
+            license_needs_update=license_needs_update,
         )
 
         # Save README
@@ -967,6 +973,8 @@ def _generate_readme_content(
     n_windows: int,
     total_duration: float | None = None,
     format: str = "zarr",
+    license: str = "please-specify",
+    license_needs_update: bool = True,
 ):
     """Generate README.md content for a dataset uploaded to the Hub.
 
@@ -988,6 +996,10 @@ def _generate_readme_content(
         Total duration in seconds across all recordings.
     format : str
         Storage format (default: "zarr").
+    license : str
+        Dataset license string to write in YAML front matter.
+    license_needs_update : bool
+        Whether to append a reminder comment next to the license field.
 
     Returns
     -------
@@ -1003,6 +1015,10 @@ def _generate_readme_content(
         str(timedelta(seconds=int(total_duration))) if total_duration else "N/A"
     )
 
+    license_line = f"license: {license}"
+    if license_needs_update:
+        license_line += "  # Please update this field to reflect your dataset's license"
+
     return f"""---
 tags:
 - braindecode
@@ -1010,7 +1026,7 @@ tags:
 - neuroscience
 - brain-computer-interface
 - deep-learning
-license: unknown
+{license_line}
 ---
 
 # EEG Dataset
@@ -1106,3 +1122,27 @@ if hasattr(dataset.datasets[0], "bids_channels"):
 
 *Created with [braindecode](https://braindecode.org)*
 """
+
+
+def _infer_license_from_descriptions(
+    descriptions: list[pd.Series | None],
+) -> tuple[str, bool]:
+    """Infer a single dataset license from descriptions.
+
+    Returns inferred license and whether a manual update reminder is needed.
+    """
+    licenses = set()
+    for description in descriptions:
+        if description is None:
+            continue
+        raw_license = description.get("license", None)
+        if raw_license is None:
+            continue
+        normalized = str(raw_license).strip()
+        if normalized and normalized.lower() != "nan":
+            licenses.add(normalized)
+
+    if len(licenses) == 1:
+        return next(iter(licenses)), False
+
+    return "please-specify", True

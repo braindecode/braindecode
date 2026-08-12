@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Alexandre Gramfort
 #          Pierre Guetschel
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 from __future__ import annotations
@@ -23,6 +24,7 @@ from braindecode.models import (
     EEGPT,
     REVE,
     SSTDPN,
+    ZUNA,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -41,6 +43,7 @@ from braindecode.models.util import (
     _get_possible_signal_params,
     _summary_table,
     default_signal_params,
+    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
     non_classification_models,
@@ -48,6 +51,10 @@ from braindecode.models.util import (
 from braindecode.models.util import _get_signal_params as get_sp
 
 rng = np.random.default_rng(12)
+
+# Interpolated models are kept in a separate registry from ``models_dict``;
+# combine them here so integration tests continue to exercise both.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 
 def convert_model_to_plain(model):
@@ -98,7 +105,7 @@ def model(request):
     """Instantiated model."""
     name, req, sig_params = request.param
     sp = get_sp(sig_params, req)
-    model = models_dict[name](**sp)
+    model = all_models_dict[name](**sp)
 
     model.eval()
     return model
@@ -125,7 +132,7 @@ def get_epochs_y(signal_params=None, n_epochs=10):
 
 def test_completeness__models_test_cases():
     models_tested = set(x[0] for x in models_mandatory_parameters)
-    all_models = set(models_dict.keys())
+    all_models = set(all_models_dict.keys())
     assert (
         all_models == models_tested
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
@@ -142,7 +149,7 @@ def test_model_integration(model_name, required_params, signal_params):
     This lightly tests if the models will be compatible with the skorch wrappers.
     """
     # Verify that the parameters are correct:
-    model_class = models_dict[model_name]
+    model_class = all_models_dict[model_name]
     assert isinstance(required_params, list)
     assert set(required_params) <= {
         "n_times",
@@ -294,13 +301,13 @@ def test_model_integration_has_final_layer(model_name, required_params, signal_p
     """
     sp = get_sp(signal_params)
 
-    model = models_dict[model_name](**sp)
+    model = all_models_dict[model_name](**sp)
 
     last_layers_name = [name for name, _ in model.named_children()][-2:]
     assert "final_layer" in last_layers_name
 
 
-@pytest.mark.parametrize("model_class", models_dict.values())
+@pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_model_has_activation_parameter(model_class):
     """
     Test that checks if the model class's __init__ method has a parameter
@@ -336,7 +343,7 @@ def test_model_has_activation_parameter(model_class):
     )
 
 
-@pytest.mark.parametrize("model_class", models_dict.values())
+@pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_activation_default_parameters_are_nn_module_classes(model_class):
     """
     Test that checks if all parameters with default values in the model class's
@@ -362,7 +369,7 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
         )
 
 
-@pytest.mark.parametrize("model_class", models_dict.values())
+@pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_model_has_drop_prob_parameter(model_class):
     """
     Test that checks if the model class's __init__ method has a parameter
@@ -385,6 +392,7 @@ def test_model_has_drop_prob_parameter(model_class):
         InterpolatedEEGPT,
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
+        ZUNA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -516,7 +524,6 @@ def test_model_torch_script(model):
     not_working_models = [
         "BIOT",
         "Labram",
-        "EEGMiner",
         "EEGPT",
         "SSTDPN",
         "BENDR",
@@ -524,9 +531,23 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # einops rearrange/repeat in the Perceiver/decoder and the fixed-grid
+        # cross-attention make forward not torch.jit.script-able. (Reason is
+        # einops + dynamic length, NOT polymorphic return — DANCE.forward is
+        # monomorphic Tensor, unlike EEGDINO.)
+        "DANCE",
+        # einops Rearrange layers and the interleaved-RoPE slicing in the
+        # grouped-query attention are not torch.jit.script-able.
+        "TCFormer",
         # forward() returns Dict[str, Tensor] (features) or Tensor (logits);
         # torch.jit.script rejects this polymorphic return type.
         "EEGDINO",
+        # wavelet encoder (conv1d + circular padding) + Dict/Tensor polymorphic
+        # return; torch.jit.script rejects the polymorphic return type.
+        "MVPFormer",
+        # forward() returns Tensor (logits) or Tuple[Tensor, Tensor] (main +
+        # branch logits) when return_features=True; polymorphic return type.
+        "MSVTNet",
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
@@ -542,6 +563,7 @@ def test_model_torch_script(model):
         # VQ argmin dispatch and _encode_quantize method not scriptable.
         "BrainOmni",
         "BrainTokenizer",
+        "STEEGFormer",
     ]
 
     if model.__class__.__name__ in not_working_models:
@@ -586,7 +608,25 @@ def test_model_torch_script(model):
     # torch.testing.assert_close(output_script, output_model)
 
 
-@pytest.mark.parametrize("model_class", models_dict.values())
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_torch_script_methods(method):
+    model = EEGMiner(
+        method=method,
+        n_chans=4,
+        n_outputs=2,
+        n_times=128,
+        sfreq=100.0,
+    ).eval()
+    plain_model = convert_model_to_plain(model).eval()
+    input_tensor = torch.randn(2, 4, 128)
+
+    expected = plain_model(input_tensor)
+    scripted_model = torch.jit.script(plain_model)
+
+    torch.testing.assert_close(scripted_model(input_tensor), expected)
+
+
+@pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_completeness_summary_table(model_class):
 
     assert model_class.__name__ in _summary_table.index, (
@@ -637,7 +677,7 @@ def test_if_models_with_embedding_parameter(model):
     # redefining the embedding parameter
     signal_params[emb_param] = new_value
 
-    model = models_dict[model_name](**signal_params)
+    model = all_models_dict[model_name](**signal_params)
 
     print(
         f"Model {model_name} has an embedding parameter {emb_param} with value {new_value}."

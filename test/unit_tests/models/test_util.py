@@ -11,6 +11,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 from braindecode import models
 from braindecode.models.util import (
+    interpolated_models_dict,
     models_dict,
 )
 from braindecode.modules.util import (
@@ -91,6 +92,22 @@ def test_models_dict():
             and m != models.base.EEGModuleMixin
         )
     ]
-    models_list = list(models_dict.items())
-    assert len(all_models) == len(models_list)
-    assert set(all_models) == set(models_list)
+    # ``models_dict`` and ``interpolated_models_dict`` together must cover all
+    # EEGModuleMixin subclasses, and must be disjoint.
+    combined = {**models_dict, **interpolated_models_dict}
+    assert len(all_models) == len(combined)
+    assert set(all_models) == set(combined.items())
+    assert set(models_dict).isdisjoint(interpolated_models_dict)
+
+
+def test_interpolated_models_dict():
+    # Interpolated models are separated out of ``models_dict`` and are
+    # identified by the ``_TARGET_CHS_INFO`` attribute set by
+    # ``InterpolatedModel``.
+    assert len(interpolated_models_dict) > 0
+    for name, model_cls in interpolated_models_dict.items():
+        assert getattr(model_cls, "_TARGET_CHS_INFO", None) is not None
+        assert name not in models_dict
+    # No interpolated models leaked into ``models_dict``.
+    for model_cls in models_dict.values():
+        assert getattr(model_cls, "_TARGET_CHS_INFO", None) is None
