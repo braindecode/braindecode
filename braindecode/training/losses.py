@@ -80,7 +80,7 @@ def mixup_criterion(preds, target):
     ----------
     preds : torch.Tensor
         Predictions from the model.
-    target : torch.Tensor | tuple of torch.Tensor
+    target : torch.Tensor | tuple of torch.Tensor | list of torch.Tensor
         For predictions without mixup, the targets as a tensor. If mixup has
         been applied, a tuple or list containing the targets of the two mixed
         samples and the mixing coefficients as tensors. A plain tensor is

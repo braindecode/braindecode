@@ -387,23 +387,18 @@ class ThrowAwayIndexLoader(object):
             if isinstance(x, dict):
                 if hasattr(x["x"], "type"):
                     x["x"] = x["x"].type(torch.float32)
-                if hasattr(y, "type"):
-                    y = (
-                        y.type(torch.float32)
-                        if self.is_regression
-                        else y.type(torch.int64)
-                    )
             elif hasattr(x, "type"):
                 x = x.type(torch.float32)
-                # a target-mixing transform such as Mixup hands over a
-                # (y_a, y_b, lam) tuple, which is already typed and has nothing
-                # to cast, same guard as the dict branch above
-                if hasattr(y, "type"):
-                    y = (
-                        y.type(torch.float32)
-                        if self.is_regression
-                        else y.type(torch.int64)
-                    )
+            target_dtype = torch.float32 if self.is_regression else torch.int64
+            if isinstance(y, (tuple, list)) and len(y) == 3:
+                y_a, y_b, lam = y
+                y = (
+                    y_a.type(target_dtype),
+                    y_b.type(target_dtype),
+                    lam.type(torch.float32),
+                )
+            elif hasattr(y, "type"):
+                y = y.type(target_dtype)
             yield x, y
 
 

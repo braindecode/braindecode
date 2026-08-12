@@ -70,8 +70,8 @@ Bug fixes
   target with ``y.type(...)``, so a batch carrying the ``(y_a, y_b, lam)``
   triple of :class:`braindecode.augmentation.Mixup` stopped the fit with
   ``'tuple' object has no attribute 'type'`` before the first batch was seen.
-  The cast is now guarded the same way the channel-position branch next to it
-  already was. By `Sarthak Tayal`_.
+  The triple parts now follow the same classification/regression dtype contract
+  as a plain target. By `Sarthak Tayal`_.
 
 Code health
 ============

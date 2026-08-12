@@ -9,7 +9,12 @@ import pytest
 import torch
 from sklearn.utils import check_random_state
 
-from braindecode.augmentation.base import AugmentedDataLoader, Compose, Transform
+from braindecode.augmentation.base import (
+    AugmentedDataLoader,
+    Compose,
+    Transform,
+    _AugmentationCollate,
+)
 from braindecode.augmentation.transforms import Mixup, SmoothTimeMask
 from braindecode.datasets import create_from_mne_epochs
 from braindecode.training.losses import mixup_criterion
@@ -270,6 +275,25 @@ def test_augmented_data_loader_n_augmentation_mixup(beta_per_sample):
     # The loss can consume the batch, which needs one single dtype for lam.
     preds = torch.log_softmax(torch.randn(3 * batch_size, 2), dim=1)
     assert torch.isfinite(mixup_criterion(preds, batch_y))
+
+
+def test_augmentation_collate_accepts_list_mixed_target():
+    """List-form mixed targets follow the same expansion path as tuples."""
+    batch_size = 4
+    X = torch.randn(batch_size, 2, 10)
+    y = torch.arange(batch_size)
+
+    def list_mixup(batch_X, batch_y):
+        lam = torch.full((batch_X.shape[0],), 0.5, dtype=batch_X.dtype)
+        return batch_X, [batch_y, batch_y.flip(0), lam]
+
+    batch_X, batch_y = _AugmentationCollate(list_mixup, n_augmentation=1)(
+        list(zip(X, y))
+    )
+
+    assert batch_X.shape[0] == 2 * batch_size
+    assert isinstance(batch_y, tuple) and len(batch_y) == 3
+    assert all(part.shape == (2 * batch_size,) for part in batch_y)
 
 
 @pytest.mark.parametrize("beta_per_sample", [False, True])

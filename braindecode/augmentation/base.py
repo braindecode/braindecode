@@ -179,8 +179,8 @@ class Compose(Transform):
 
 def _as_mixed_target(y, lam_dtype):
     # an untouched target is the same as being mixed with itself with lam of one
-    if isinstance(y, tuple):
-        return y
+    if isinstance(y, (tuple, list)) and len(y) == 3:
+        return tuple(y)
     lam = torch.ones(y.shape[0], device=y.device, dtype=lam_dtype)
     return y, y, lam
 
@@ -228,11 +228,16 @@ class _AugmentationCollate:
             aug_X, aug_y = self.transform(X, y)
             xs.append(aug_X)
             ys.append(aug_y)
-        if any(isinstance(aug_y, tuple) for aug_y in ys):
+        mixed_ys = [
+            aug_y
+            for aug_y in ys
+            if isinstance(aug_y, (tuple, list)) and len(aug_y) == 3
+        ]
+        if mixed_ys:
             # a target-mixing transform such as Mixup returns (y_a, y_b, lam),
             # so the parts are concatenated one by one and the untouched copies
             # are given a mixing coefficient of one
-            lam_dtype = next(t[2].dtype for t in ys if isinstance(t, tuple))
+            lam_dtype = mixed_ys[0][2].dtype
             ys = [_as_mixed_target(aug_y, lam_dtype) for aug_y in ys]
             return torch.cat(xs), tuple(torch.cat(part) for part in zip(*ys))
         return torch.cat(xs), torch.cat(ys)

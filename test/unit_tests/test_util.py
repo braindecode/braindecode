@@ -405,20 +405,23 @@ def test_throwaway_index_loader_backward_compat():
     assert net._last_window_inds_ is crop  # index stashed for scoring
 
 
-def test_throwaway_index_loader_keeps_mixup_target():
-    """A ``(y_a, y_b, lam)`` target is passed on instead of being cast."""
+@pytest.mark.parametrize(
+    "is_regression,target_dtype",
+    [(False, torch.int64), (True, torch.float32)],
+)
+def test_throwaway_index_loader_casts_mixup_target(is_regression, target_dtype):
+    """Mixed targets follow the same dtype contract as plain targets."""
     B, C, T = 4, 10, 200
     X = torch.randn(B, C, T)
-    y_a = torch.zeros(B, dtype=torch.int64)
-    y_b = torch.ones(B, dtype=torch.int64)
-    lam = torch.full((B,), 0.3)
+    y_a = torch.zeros(B, dtype=torch.float64)
+    y_b = torch.ones(B, dtype=torch.float64)
+    lam = torch.full((B,), 0.3, dtype=torch.float64)
 
-    x, yy, _ = _route((X, (y_a, y_b, lam)))
+    x, yy, _ = _route((X, (y_a, y_b, lam)), is_regression=is_regression)
     assert torch.is_tensor(x) and x.dtype == torch.float32
     assert isinstance(yy, tuple) and len(yy) == 3
-    assert torch.equal(yy[0], y_a)
-    assert torch.equal(yy[1], y_b)
-    assert torch.equal(yy[2], lam)
+    assert yy[0].dtype == yy[1].dtype == target_dtype
+    assert yy[2].dtype == torch.float32
 
 
 def test_looks_like_channel_mask_dtypes():
