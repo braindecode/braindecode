@@ -66,6 +66,8 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         the final linear layer.
     n_classes : int
         Alias for `n_outputs`.
+    n_chans : int, default=1
+        Number of EEG channels. AttnSleep supports single-channel input only.
     input_size_s : float
         Alias for `input_window_seconds`.
     activation : nn.Module, default=nn.ReLU
@@ -103,9 +105,11 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         after_reduced_cnn_size=30,
         return_feats=False,
         chs_info=None,
-        n_chans=None,
+        n_chans=1,
         n_times=None,
     ):
+        if n_chans is None and chs_info is None:
+            n_chans = 1
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -115,6 +119,9 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        if self.n_chans != 1:
+            raise ValueError(f"AttnSleep requires n_chans=1, got {self.n_chans}.")
 
         self.mapping = {
             "fc.weight": "final_layer.weight",

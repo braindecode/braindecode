@@ -1035,6 +1035,12 @@ def test_eldele_2021_final_layer_matches_features():
 
     assert model.len_last_layer == 80 * 30
     assert model.final_layer.in_features == model.len_last_layer
+    assert model.eval().get_output_shape() == (1, 5)
+
+
+def test_eldele_2021_rejects_multiple_channels():
+    with pytest.raises(ValueError, match="requires n_chans=1"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_chans=2)
 
 
 def test_eldele_2021_activation_reaches_afr():
