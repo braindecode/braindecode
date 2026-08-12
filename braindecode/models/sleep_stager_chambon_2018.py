@@ -43,13 +43,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
-    n_channels : int
-        Alias for `n_chans`.
-    input_size_s:
-        Alias for `input_window_seconds`.
-    n_classes:
-        Alias for `n_outputs`.
-    activation: nn.Module, default=nn.ReLU
+    activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 

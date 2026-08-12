@@ -9,6 +9,8 @@
 #
 # License: BSD-3
 
+import inspect
+import re
 import warnings
 from collections import OrderedDict
 from functools import partial
@@ -4152,3 +4154,110 @@ def test_dropout1d_masks_channels_not_batch_items():
     # At least one batch item keeps some channels and loses others, which
     # cannot happen when the mask is drawn over the batch axis.
     assert (zeroed.any(dim=1) & ~zeroed.all(dim=1)).any()
+
+
+_PARAM_LINE = re.compile(
+    r"^(?P<names>\*{0,2}\w+(?:\s*,\s*\*{0,2}\w+)*)\s*:"
+)
+
+
+def _documented_parameters(model_class):
+    """Names listed in the ``Parameters`` section of a model docstring.
+
+    ``EEGModuleMixin.__init_subclass__`` appends the Hugging Face Hub notes to
+    every model docstring, so drop them before parsing. After
+    :func:`inspect.getdoc` a parameter entry sits at column zero and its
+    description is indented, which is what tells them apart from prose lines
+    such as ``Note: ...`` inside a description.
+    """
+    doc = inspect.getdoc(model_class) or ""
+    doc = doc.split(".. rubric:: Hugging Face Hub integration")[0]
+    lines = doc.split("\n")
+
+    names = []
+    inside = False
+    for position, line in enumerate(lines):
+        stripped = line.strip()
+        next_line = lines[position + 1].strip() if position + 1 < len(lines) else ""
+        if next_line and set(next_line) == {"-"}:
+            inside = stripped == "Parameters"
+            continue
+        if not inside:
+            continue
+        match = _PARAM_LINE.match(line)
+        if match is None:
+            continue
+        following = next((nxt for nxt in lines[position + 1 :] if nxt.strip()), "")
+        if following.startswith(" "):
+            names.extend(
+                name.strip().lstrip("*") for name in match.group("names").split(",")
+            )
+    return names
+
+
+@pytest.mark.parametrize("model_name", sorted(all_models_dict))
+def test_documented_parameters_exist_in_signature(model_name):
+    """Every documented parameter must be accepted by the constructor.
+
+    Renamed or removed parameters used to survive in the docstrings, so users
+    following the documentation got a ``TypeError`` instead of a model.
+    """
+    model_class = all_models_dict[model_name]
+    parameters = inspect.signature(model_class.__init__).parameters
+    if any(p.kind == p.VAR_KEYWORD for p in parameters.values()):
+        pytest.skip(f"{model_name} forwards **kwargs, any name is accepted")
+
+    accepted = set(parameters) - {"self"}
+    documented = set(_documented_parameters(model_class))
+    unknown = sorted(documented - accepted)
+
+    assert not unknown, (
+        f"{model_name} documents parameters its constructor does not accept: "
+        f"{unknown}"
+    )
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "ATCNet",
+        "AttnSleep",
+        "CTNet",
+        "EEGSimpleConv",
+        "IFNet",
+        "SPARCNet",
+        "SleepStagerBlanco2020",
+        "SleepStagerChambon2018",
+        "TIDNet",
+    ],
+)
+def test_audited_model_parameter_headers_follow_numpydoc(model_name):
+    """Changed parameter headers must be parsed as names, not name-and-type."""
+    model_class = all_models_dict[model_name]
+    doc = inspect.getdoc(model_class) or ""
+    doc = doc.split(".. rubric:: Hugging Face Hub integration")[0]
+    lines = doc.split("\n")
+
+    malformed = []
+    inside = False
+    for position, line in enumerate(lines):
+        stripped = line.strip()
+        next_line = lines[position + 1].strip() if position + 1 < len(lines) else ""
+        if next_line and set(next_line) == {"-"}:
+            inside = stripped == "Parameters"
+            continue
+        if not inside:
+            continue
+        match = _PARAM_LINE.match(line)
+        if match is None:
+            continue
+        following = next((nxt for nxt in lines[position + 1 :] if nxt.strip()), "")
+        if following.startswith(" ") and not line.startswith(
+            f"{match.group('names')} : "
+        ):
+            malformed.append(line)
+
+    assert not malformed, (
+        f"{model_class.__name__} has parameter headers numpydoc misparses: "
+        f"{malformed}"
+    )

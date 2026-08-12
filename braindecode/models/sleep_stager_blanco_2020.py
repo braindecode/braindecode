@@ -26,6 +26,8 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
     ----------
     n_conv_chans : int
         Number of convolutional channels. Set to 20 in [Blanco2020]_.
+    max_pool_size : int, default=2
+        Kernel and stride of the max pooling layers.
     n_groups : int
         Number of groups for the convolution. Set to 2 in [Blanco2020]_ for 2 Channel EEG.
         controls the connections between inputs and outputs. n_channels and n_conv_chans must be
@@ -39,13 +41,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
-    n_channels : int
-        Alias for `n_chans`.
-    n_classes : int
-        Alias for `n_outputs`.
-    input_size_s : float
-        Alias for `input_window_seconds`.
-    activation: nn.Module, default=nn.ReLU
+    activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
