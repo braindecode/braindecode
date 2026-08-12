@@ -21,7 +21,10 @@ def _load_tutorial_function(name):
 
     namespace = {}
     module = ast.Module(body=functions, type_ignores=[])
-    exec(compile(module, filename=str(TUTORIAL), mode="exec"), namespace)
+    # The parsed source is a repository-owned tutorial, not untrusted input.
+    exec(  # nosec B102
+        compile(module, filename=str(TUTORIAL), mode="exec"), namespace
+    )
     return namespace[name]
 
 
