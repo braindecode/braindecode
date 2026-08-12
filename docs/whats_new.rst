@@ -28,7 +28,9 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
-- None yet
+- Add a transfer-learning tutorial illustrating the TUAB-to-NMT pathology
+  workflow with offline synthetic recordings
+  (:gh:`580` by `Mohammad Javad D`_ and `Bruno Aristimunha`_).
 
 API and behavior changes
 ========================
