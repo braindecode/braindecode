@@ -13,19 +13,25 @@ class PatchTokenizer(nn.Module):
     patch / "tokenization" step used by transformer EEG foundation models
     (e.g. LaBraM, CBraMod, EEG-DINO).
 
-    As in the filter-bank models (:class:`~braindecode.models.FBCNet`,
-    :class:`~braindecode.models.FBMSNet`), when ``n_times`` is not a multiple of
-    ``patch_size`` the input is right zero-padded (a warning is emitted at
-    construction); it is never an error.
+    By default, as in the filter-bank models
+    (:class:`~braindecode.models.FBCNet`, :class:`~braindecode.models.FBMSNet`),
+    when ``n_times`` is not a multiple of ``patch_size`` the input is right
+    zero-padded (a warning is emitted at construction). Set
+    ``on_non_divisible="crop"`` to hard-crop the trailing samples instead, or
+    ``"error"`` to reject non-divisible inputs. Padding/cropping is applied at
+    ``forward`` time to the actual input length (not the construction-time
+    ``n_times``), so the module also accepts inputs of a different length.
 
     Two modes:
 
     - **non-learnable** (``learnable=False``, default): a pure reshape, so
       ``patch_dim == patch_size`` and the raw samples of each patch are kept
       (the patch embedding, if any, lives in the model).
-    - **learnable** (``learnable=True``): a strided ``Conv1d`` (kernel and
-      stride equal to ``patch_size``, applied per channel) maps each patch to
-      ``emb_dim`` features, so ``patch_dim == emb_dim``.
+    - **learnable** (``learnable=True``): maps each patch to ``emb_dim``
+      features, so ``patch_dim == emb_dim``. ``projection="conv"`` keeps the
+      historical strided ``Conv1d`` behavior; ``projection="linear"`` first
+      forms raw patches and then applies one ``Linear(patch_size, emb_dim)`` to
+      each patch.
 
     Parameters
     ----------
@@ -39,6 +45,17 @@ class PatchTokenizer(nn.Module):
         Ignored when ``learnable=False``.
     learnable : bool, default=False
         Whether the tokenizer is a learned convolution or a fixed reshape.
+    on_non_divisible : {"pad", "crop", "error"}, default="pad"
+        How to handle a time dimension that is not divisible by ``patch_size``.
+        ``"pad"`` right-pads with zeros, ``"crop"`` drops the trailing samples,
+        and ``"error"`` raises a :class:`ValueError`.
+    projection : {"conv", "linear"}, default="conv"
+        Learnable projection type. Only used when ``learnable=True``.
+    output_order : {"channel_patch", "patch_channel"}, default="channel_patch"
+        Axis order after the batch dimension. ``"channel_patch"`` returns
+        ``(batch, n_chans, n_patches, patch_dim)`` and preserves the historical
+        output. ``"patch_channel"`` returns
+        ``(batch, n_patches, n_chans, patch_dim)``.
 
     Examples
     --------
@@ -49,39 +66,97 @@ class PatchTokenizer(nn.Module):
     torch.Size([2, 19, 5, 200])
     """
 
-    def __init__(self, patch_size, n_times, emb_dim=None, learnable=False):
+    def __init__(
+        self,
+        patch_size,
+        n_times,
+        emb_dim=None,
+        learnable=False,
+        on_non_divisible="pad",
+        projection="conv",
+        output_order="channel_patch",
+    ):
         super().__init__()
+        if on_non_divisible not in ("pad", "crop", "error"):
+            raise ValueError(
+                "on_non_divisible must be 'pad', 'crop', or 'error', "
+                f"got {on_non_divisible!r}."
+            )
+        if projection not in ("conv", "linear"):
+            raise ValueError(
+                f"projection must be 'conv' or 'linear', got {projection!r}."
+            )
+        if output_order not in ("channel_patch", "patch_channel"):
+            raise ValueError(
+                "output_order must be 'channel_patch' or 'patch_channel', "
+                f"got {output_order!r}."
+            )
         self.patch_size = patch_size
         self.learnable = learnable
+        self.on_non_divisible = on_non_divisible
+        self.projection = projection
+        self.output_order = output_order
         self.emb_dim = (emb_dim or patch_size) if learnable else patch_size
         if n_times % patch_size:
-            warn(
-                f"Time dimension ({n_times}) is not divisible by patch_size "
-                f"({patch_size}). Input will be padded.",
-                UserWarning,
-            )
-            self.padding_layer = nn.ConstantPad1d(
-                (0, patch_size - n_times % patch_size), 0.0
-            )
-        else:
-            self.padding_layer = nn.Identity()
+            if on_non_divisible == "pad":
+                warn(
+                    f"Time dimension ({n_times}) is not divisible by patch_size "
+                    f"({patch_size}). Input will be padded.",
+                    UserWarning,
+                )
+            elif on_non_divisible == "error":
+                raise ValueError(
+                    f"Time dimension ({n_times}) is not divisible by patch_size "
+                    f"({patch_size})."
+                )
+        # Padding/cropping for a non-divisible time axis is applied at runtime in
+        # _prepare_input (which works for any input length, not just the
+        # construction-time n_times), so no padding submodule is stored here.
         # Defined unconditionally (Identity when not learnable) so the attribute
         # always exists for torch.jit.script, which type-checks both branches.
-        if learnable:
+        self.patcher = nn.Identity()
+        self.proj = nn.Identity()
+        if learnable and projection == "conv":
             self.patcher = nn.Conv1d(1, self.emb_dim, patch_size, stride=patch_size)
-        else:
-            self.patcher = nn.Identity()
+        elif learnable and projection == "linear":
+            self.proj = nn.Linear(patch_size, self.emb_dim)
+
+    def _prepare_input(self, x):
+        n_times = x.shape[-1]
+        remainder = n_times % self.patch_size
+        if remainder == 0:
+            return x
+        if self.on_non_divisible == "pad":
+            return nn.functional.pad(x, (0, self.patch_size - remainder))
+        if self.on_non_divisible == "crop":
+            cropped_n_times = n_times - remainder
+            if cropped_n_times < self.patch_size:
+                raise ValueError(
+                    f"Need at least one full patch of {self.patch_size} samples, "
+                    f"got {n_times}."
+                )
+            return x[..., :cropped_n_times]
+        raise ValueError(
+            f"Time dimension ({n_times}) is not divisible by patch_size "
+            f"({self.patch_size})."
+        )
 
     def forward(self, x):
-        x = self.padding_layer(x)
+        x = self._prepare_input(x)
         batch_size, n_chans, _ = x.shape
-        if self.learnable:
+        if self.learnable and self.projection == "conv":
             x = x.flatten(0, 1).unsqueeze(1)  # (batch * chans, 1, time)
             x = self.patcher(x)  # (batch * chans, emb, patches)
-            return x.reshape(batch_size, n_chans, x.shape[-2], x.shape[-1]).permute(
+            x = x.reshape(batch_size, n_chans, x.shape[-2], x.shape[-1]).permute(
                 0, 1, 3, 2
             )
-        return x.reshape(batch_size, n_chans, -1, self.patch_size)
+        else:
+            x = x.reshape(batch_size, n_chans, -1, self.patch_size)
+            if self.learnable:
+                x = self.proj(x)
+        if self.output_order == "patch_channel":
+            return x.transpose(1, 2)
+        return x
 
 
 class InceptionBlock(nn.Module):

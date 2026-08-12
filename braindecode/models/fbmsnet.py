@@ -75,6 +75,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Maximum norm constraint for the convolutional layers.
     linear_max_norm : float, default=0.5
         Maximum norm constraint for the linear layers.
+    return_features : bool, default=False
+        If True, the forward method returns the class logits and the flattened
+        features before the final classification layer.
     filter_parameters : dict, default=None
         Dictionary of parameters to use for the FilterBankLayer.
         If None, a default Chebyshev Type II filter with transition bandwidth of
@@ -116,6 +119,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         linear_max_norm: float = 0.5,
         verbose: bool = False,
         filter_parameters: dict[Any, Any] | None = None,
+        return_features: bool = False,
     ):
         super().__init__(
             n_chans=n_chans,
@@ -137,6 +141,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         self.kernels_weights = kernels_weights
         self.filter_parameters = filter_parameters or {}
         self.out_channels_spatial = self.n_filters_spat * self.dilatability
+        self.return_features = return_features
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -223,8 +228,12 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         Returns
         -------
-        torch.Tensor
-            Output tensor with shape (batch_size, n_outputs).
+        torch.Tensor or tuple[torch.Tensor, torch.Tensor]
+            Output tensor with shape (batch_size, n_outputs). If
+            ``return_features`` is True, a tuple containing the output tensor
+            and flattened features with shape
+            (batch_size, out_channels_spatial * stride_factor) is returned.
+            In TorchScript mode, only the output tensor is returned.
         """
         batch, _, _ = x.shape
 
@@ -253,12 +262,16 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         # shape: (batch, self.out_channels_spatial, self.stride_factor, 1)
 
         # Flatten and classify
-        x = self.flatten_layer(x)
+        features = self.flatten_layer(x)
         # shape: (batch, self.out_channels_spatial*self.stride_factor)
 
-        x = self.final_layer(x)
+        logits = self.final_layer(features)
         # shape: (batch, n_outputs)
-        return x
+        if torch.jit.is_scripting() or torch.jit.is_tracing():
+            return logits
+        if self.return_features:
+            return logits, features
+        return logits
 
 
 class _MixedConv2d(nn.Module):

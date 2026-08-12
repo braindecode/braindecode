@@ -45,6 +45,9 @@ Columns definitions:
     - **Application**: The application(s) the model is typically used for (e.g., Motor
       Imagery, P300, Sleep Staging). 'General' indicates applicability across multiple
       applications or no specific application focus.
+    - **Modality**: The recording modality (bio-signal type) the model is designed and
+      validated for, e.g. EEG, MEG, or sEMG. Most Braindecode models target EEG; a few
+      support more than one modality (e.g. EEG, MEG).
     - **Type**: The model's output interface. ``Prediction`` indicates a supervised head
       that can be used for classification or regression, depending on the wrapper, loss,
       and target. ``Embedding`` indicates a model that exposes an embedding
@@ -153,7 +156,7 @@ Braindecode.
       }
 
       /* --- DataTable: panes hidden until button click ---------------------- */
-      var FILTER_COLS = [1,2,3,4]; // Paradigm, Type, Categorization, Hyperparameters
+      var FILTER_COLS = [1,2,3,4]; // Application, Modality, Type, Categorization
       var table = $('.sortable').DataTable({
         dom: 'Blfrtip',                           // B = Buttons (no 'P' here)
         paging: false,
@@ -187,6 +190,15 @@ Braindecode.
 
       // Initial color pass
       applyTagPalette(document);
+
+      function applyInitialModelFilter() {
+        var model = new URLSearchParams(window.location.search).get('model');
+        if (!model) return;
+        table.search(model).draw();
+        $(table.table().container()).find('div.dataTables_filter input').val(model);
+      }
+
+      applyInitialModelFilter();
 
       /* --- Bonus UX: click a column header to open panes focused there ----- */
       $('.sortable thead th').each(function (i) {

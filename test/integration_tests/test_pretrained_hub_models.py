@@ -283,6 +283,40 @@ class TestLabramPretrained:
         assert out.shape == (2, expected_out_dim)
 
 
+class TestSTEEGFormerPretrained:
+    """Tests for the braindecode re-hosted STEEGFormer checkpoint."""
+
+    @pytest.fixture
+    def model(self, hub_cache_dir):
+        """Load STEEGFormer-small from Hub."""
+        from braindecode.models import STEEGFormer
+
+        return STEEGFormer.from_pretrained(
+            "braindecode/STEEGFormer-small",
+            n_outputs=2,
+            chan_pos_idx=list(range(22)),  # explicit identity: this test checks load, not montage
+            cache_dir=hub_cache_dir,
+        )
+
+    def test_load_from_hub(self, model):
+        """Test that STEEGFormer can be loaded from Hugging Face Hub."""
+        assert model is not None
+        assert model.n_chans == 22
+        assert model.n_times == 1000
+        assert model.n_outputs == 2
+        assert model.embed_dim == 512
+        assert model.depth == 8
+        assert model.n_chans_pos == 145
+
+    def test_forward_pass(self, model):
+        """Test that STEEGFormer forward pass works correctly."""
+        model.eval()
+        x = torch.randn(2, model.n_chans, model.n_times)
+        with torch.no_grad():
+            out = model(x)
+        assert out.shape == (2, model.n_outputs)
+
+
 # Parametrized test for quick validation of all models
 @pytest.mark.parametrize(
     "model_cls,repo_id,expected_n_chans",
@@ -297,17 +331,20 @@ class TestLabramPretrained:
         # does not pass — they are exercised by the dedicated
         # Test*Pretrained classes above.
         ("Labram", "braindecode/labram-pretrained", 128),
+        ("STEEGFormer", "braindecode/STEEGFormer-small", 22),
     ],
 )
-def test_all_pretrained_models_load(model_cls, repo_id, expected_n_chans, hub_cache_dir):
+def test_all_pretrained_models_load(
+    model_cls, repo_id, expected_n_chans, hub_cache_dir
+):
     """Test that all pre-trained models can be loaded from Hub."""
     import braindecode.models as models
 
     cls = getattr(models, model_cls)
     cache_dir = hub_cache_dir
 
-    # BENDR requires n_outputs parameter
-    if model_cls == "BENDR":
+    # BENDR and STEEGFormer require n_outputs to build the classification head
+    if model_cls in ("BENDR", "STEEGFormer"):
         model = cls.from_pretrained(repo_id, n_outputs=2, cache_dir=cache_dir)
     else:
         model = cls.from_pretrained(repo_id, cache_dir=cache_dir)
@@ -325,6 +362,7 @@ def test_all_pretrained_models_load(model_cls, repo_id, expected_n_chans, hub_ca
         # (n_times, n_outputs, strict=False); exercised by their dedicated
         # Test*Pretrained classes above.
         ("Labram", "braindecode/labram-pretrained"),
+        ("STEEGFormer", "braindecode/STEEGFormer-small"),
     ],
 )
 def test_pretrained_models_forward_pass(model_cls, repo_id, hub_cache_dir):
@@ -334,10 +372,13 @@ def test_pretrained_models_forward_pass(model_cls, repo_id, hub_cache_dir):
     cls = getattr(models, model_cls)
     cache_dir = hub_cache_dir
 
-    # BENDR requires n_outputs parameter
+    # BENDR and STEEGFormer require/request n_outputs parameter
     if model_cls == "BENDR":
         model = cls.from_pretrained(repo_id, n_outputs=2, cache_dir=cache_dir)
         x = torch.randn(2, model.n_chans, 256 * 5)
+    elif model_cls == "STEEGFormer":
+        model = cls.from_pretrained(repo_id, n_outputs=2, cache_dir=cache_dir)
+        x = torch.randn(2, model.n_chans, model.n_times)
     else:
         model = cls.from_pretrained(repo_id, cache_dir=cache_dir)
         x = torch.randn(2, model.n_chans, model.n_times)

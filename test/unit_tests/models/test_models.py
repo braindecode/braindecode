@@ -9,6 +9,7 @@
 #
 # License: BSD-3
 
+import warnings
 from collections import OrderedDict
 from functools import partial
 from unittest import mock
@@ -21,6 +22,7 @@ from sklearn.utils import check_random_state
 from torch import nn
 
 from braindecode.models import (
+    BDTCN,
     BENDR,
     BIOT,
     DGCNN,
@@ -45,6 +47,7 @@ from braindecode.models import (
     EEGTCNet,
     EMG2QwertyNet,
     FBCNet,
+    FBLightConvNet,
     FBMSNet,
     HybridNet,
     IFNet,
@@ -72,10 +75,14 @@ from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
+    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
 from braindecode.util import set_random_seeds
+
+# Interpolated models are stored in a separate registry from ``models_dict``.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 
 @pytest.fixture(scope="module")
@@ -2060,6 +2067,34 @@ def test_eegminer_invalid_parameters():
         )
 
 
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_legacy_state_dict_compatibility(method):
+    model_kwargs = {
+        "method": method,
+        "n_chans": 4,
+        "n_outputs": 2,
+        "n_times": 128,
+        "sfreq": 100.0,
+    }
+    model = EEGMiner(**model_kwargs)
+    state_dict = model.state_dict()
+    legacy_keys = {
+        "filter.n_range",
+        "filter.f_mean",
+        "filter.bandwidth",
+        "filter.shape",
+        "filter.group_delay",
+        "batch_layer.running_mean",
+        "batch_layer.running_var",
+        "batch_layer.num_batches_tracked",
+        "final_layer.weight",
+        "final_layer.bias",
+    }
+
+    assert set(state_dict) == legacy_keys
+    EEGMiner(**model_kwargs).load_state_dict(state_dict, strict=True)
+
+
 def test_eegminer_filter_clamping():
     """
     Test that EEGMiner's filters are constructed correctly and parameters are clamped.
@@ -2156,7 +2191,7 @@ def test_eegminer_plv_values_range():
     # Forward pass up to PLV computation
     x = eegminer.ensure_dim(input_tensor)
     x = eegminer.filter(x)
-    x = eegminer._apply_plv(x, n_chans=n_chans)
+    x = eegminer.feature_layer(x)
 
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
@@ -2182,7 +2217,7 @@ def test_models_batch1_train_mode(
     """
     sp = _get_signal_params(signal_params)
     model_kwargs = _get_possible_signal_params(sp, required_params)[0]
-    model = models_dict[model_name](**model_kwargs)
+    model = all_models_dict[model_name](**model_kwargs)
     batch_norms = [
         module
         for module in model.modules()
@@ -2447,6 +2482,35 @@ def test_fbmsnet_forward_pass(temporal_layer):
     assert output.shape == (batch_size, n_outputs)
 
 
+def test_fbmsnet_return_features():
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 4
+    batch_size = 2
+    default_n_filters_spat = 36
+    default_dilatability = 8
+    default_stride_factor = 4
+
+    model = FBMSNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=250,
+        return_features=True,
+    )
+    model.eval()
+
+    with torch.no_grad():
+        logits, features = model(torch.randn(batch_size, n_chans, n_times))
+
+    expected_feature_dim = model.out_channels_spatial * model.stride_factor
+    assert logits.shape == (batch_size, n_outputs)
+    assert features.shape == (batch_size, expected_feature_dim)
+    assert expected_feature_dim == (
+        default_n_filters_spat * default_dilatability * default_stride_factor
+    )
+
+
 def test_fbmsnet_specified_filter_parameters():
     n_chans = 22
     n_times = 1000
@@ -2525,6 +2589,51 @@ def test_fbmsnet_invalid_temporal_layer():
             temporal_layer='InvalidLayer',
             sfreq=250,
         )
+
+
+@pytest.mark.parametrize("win_len, n_windows", [(100, 10), (250, 4), (500, 2)])
+def test_fblightconvnet_win_len_sets_number_of_windows(win_len, n_windows):
+    model = FBLightConvNet(
+        n_chans=8,
+        n_outputs=3,
+        n_times=1000,
+        sfreq=250,
+        win_len=win_len,
+    )
+    assert model.attn_conv.kernel_size == n_windows
+
+
+def test_fblightconvnet_stride_factor_is_deprecated_and_ignored():
+    kwargs = dict(n_chans=8, n_outputs=3, n_times=1000, sfreq=250)
+
+    set_random_seeds(2025, cuda=False)
+    default = FBLightConvNet(**kwargs).eval()
+
+    with pytest.warns(DeprecationWarning, match="stride_factor"):
+        set_random_seeds(2025, cuda=False)
+        passed = FBLightConvNet(stride_factor=17, **kwargs).eval()
+
+    # stride_factor never reached a layer, so the two models agree exactly
+    assert passed.attn_conv.kernel_size == default.attn_conv.kernel_size
+    x = torch.randn(2, 8, 1000)
+    with torch.no_grad():
+        assert torch.equal(passed(x), default(x))
+
+
+def test_fblightconvnet_default_build_is_not_deprecated():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        FBLightConvNet(n_chans=8, n_outputs=3, n_times=1000, sfreq=250)
+    assert not [w for w in caught if issubclass(w.category, DeprecationWarning)]
+
+
+@pytest.mark.parametrize("n_times", [200, 249])
+def test_fblightconvnet_window_shorter_than_win_len(n_times):
+    # used to reach xavier_uniform_ with an empty kernel and die on a
+    # division by zero
+    with pytest.raises(ValueError, match="shorter than win_len"):
+        FBLightConvNet(n_chans=8, n_outputs=3, n_times=n_times, sfreq=250)
+
 
 def test_initialize_weights_linear():
     linear = nn.Linear(10, 5)
@@ -2989,6 +3098,176 @@ def test_brain_module_glu_combined_features(brain_module_params):
 
     assert output.shape == (4, params["n_outputs"])
     assert not torch.isnan(output).any()
+
+
+# ============================================================================
+# BrainModule Spatial ChannelMerger Tests
+# ============================================================================
+
+
+def _chs_info_with_loc(loc_array):
+    """Build chs_info dicts with a 12-entry ``loc`` per channel."""
+    chs_info = []
+    for i, loc in enumerate(loc_array):
+        chs_info.append(
+            {
+                "ch_name": f"ch{i}",
+                "ch_type": "eeg",
+                "kind": 2,  # FIFFV_EEG_CH
+                "loc": np.asarray(loc, dtype=float),
+            }
+        )
+    return chs_info
+
+
+def _rng_chs_info(n_chans, seed=0):
+    """chs_info with distinct random loc per channel (positions span [0, 1])."""
+    return _chs_info_with_loc(np.random.default_rng(seed).random((n_chans, 12)))
+
+
+def _run_forward(model, n_chans, n_outputs, n_times=512, batch=2, with_subject=False):
+    """Eval, forward a random batch, assert output shape and no NaNs."""
+    model.eval()
+    kwargs = (
+        {"subject_index": torch.zeros(batch, dtype=torch.long)} if with_subject else {}
+    )
+    out = model(torch.randn(batch, n_chans, n_times), **kwargs)
+    assert out.shape == (batch, n_outputs)
+    assert not torch.isnan(out).any()
+
+
+@pytest.mark.parametrize(
+    "kwargs, n_chans, n_outputs, with_subject, check",
+    [
+        pytest.param(
+            dict(n_chans=19, chs_info=_rng_chs_info(19), use_merger=True),
+            19,
+            4,
+            False,
+            lambda m: m.merger is not None
+            and m.use_merger
+            and tuple(m.channel_positions.shape) == (19, 2),
+            id="merger",
+        ),
+        pytest.param(
+            dict(
+                n_chans=19,
+                chs_info=_rng_chs_info(19),
+                use_merger=True,
+                n_virtual_channels=32,
+                subject_layers=True,
+                subject_dim=8,
+                n_subjects=5,
+            ),
+            19,
+            4,
+            True,
+            lambda m: m.subject_layers_module is not None,
+            id="merger_subject_layers",
+        ),
+        pytest.param(
+            dict(n_chans=8, subject_layers=True, subject_dim=4, n_subjects=5, n_fft=64),
+            8,
+            2,
+            True,
+            None,
+            id="subject_layers_stft",
+        ),
+        pytest.param(
+            dict(n_chans=8, subject_dim=4, n_subjects=5, n_fft=64),
+            8,
+            2,
+            True,
+            None,
+            id="stft_subject_embedding",
+        ),
+        pytest.param(
+            dict(n_chans=8, dilation_growth=2.5),
+            8,
+            2,
+            False,
+            None,
+            id="float_dilation_growth",
+        ),
+    ],
+)
+def test_brainmodule_forward_runs(kwargs, n_chans, n_outputs, with_subject, check):
+    """Each config constructs, forwards, and yields a clean (B, n_outputs)."""
+    set_random_seeds(0, False)
+    m = BrainModule(n_outputs=n_outputs, n_times=512, sfreq=128, **kwargs)
+    if check is not None:
+        assert check(m)
+    _run_forward(m, n_chans, n_outputs, with_subject=with_subject)
+
+
+@pytest.mark.parametrize(
+    "chs_info",
+    [
+        pytest.param(_chs_info_with_loc(np.zeros((8, 12))), id="all_zero_loc"),
+        pytest.param(None, id="no_chs_info"),
+    ],
+)
+def test_brainmodule_merger_autodisable(chs_info):
+    """use_merger auto-disables (with warning) when chs_info lacks locations."""
+    set_random_seeds(0, False)
+    with pytest.warns(UserWarning):
+        m = BrainModule(
+            n_chans=8,
+            n_outputs=2,
+            n_times=512,
+            sfreq=128,
+            chs_info=chs_info,
+            use_merger=True,
+        )
+    assert m.merger is None
+    assert m.use_merger is False
+    _run_forward(m, 8, 2)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        pytest.param(dict(n_virtual_channels=0), "n_virtual_channels", id="nvc_0"),
+        pytest.param(dict(n_virtual_channels=-1), "n_virtual_channels", id="nvc_neg"),
+        pytest.param(dict(merger_drop_prob=1.0), "merger_drop_prob", id="drop_prob"),
+    ],
+)
+def test_brainmodule_merger_invalid_params(kwargs, match):
+    """Invalid merger params are rejected up front with a clear error."""
+    with pytest.raises(ValueError, match=match):
+        BrainModule(
+            n_chans=4,
+            n_outputs=2,
+            n_times=256,
+            sfreq=128,
+            chs_info=_rng_chs_info(4),
+            use_merger=True,
+            **kwargs,
+        )
+
+
+def test_brainmodule_merger_stft_warns():
+    """use_merger + n_fft warns about the large input_projection (memory)."""
+    with pytest.warns(UserWarning, match="STFT"):
+        BrainModule(
+            n_chans=8,
+            n_outputs=2,
+            n_times=512,
+            sfreq=128,
+            chs_info=_rng_chs_info(8),
+            use_merger=True,
+            n_virtual_channels=16,
+            n_fft=64,
+        )
+
+
+def test_brainmodule_default_unchanged():
+    """Default behavior is preserved: no merger unless opted in."""
+    set_random_seeds(0, False)
+    m = BrainModule(n_chans=8, n_outputs=2, n_times=512, sfreq=128)
+    assert m.merger is None
+    assert m.use_merger is False
+
 
 def test_bendr():
     """
@@ -3829,3 +4108,47 @@ def test_emg2qwerty_feature_flags():
     assert isinstance(bundle_t, dict) and torch.equal(bundle_t["features"], out_t[1])
     assert m_t.get_config()["return_feature"] is True
     assert m_t.get_output_shape() == (1, emissions.shape[1], 99)
+
+
+@pytest.mark.parametrize("model_cls", [BDTCN, BENDR])
+def test_channel_dropout_on_1d_activations(model_cls):
+    """BDTCN and BENDR drop whole channels of a ``(batch, channels, times)``
+    tensor, so the dropout modules must be ``nn.Dropout1d``. ``nn.Dropout2d``
+    routes 3D input to the channel-wise path only through a deprecated
+    fallback that warns on every forward pass."""
+    model = model_cls(
+        n_chans=8, n_outputs=2, n_times=256, sfreq=100.0, drop_prob=0.5
+    ).train()
+
+    assert any(isinstance(m, nn.Dropout1d) for m in model.modules())
+    assert not any(isinstance(m, nn.Dropout2d) for m in model.modules())
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        model(torch.randn(4, 8, 256))
+    assert not [w for w in caught if "dropout2d" in str(w.message)]
+
+
+def test_tcn_bai_variant_channel_dropout():
+    """The Bai et al. ``TCN`` shares the residual block with ``BDTCN``, so it
+    gets the same channel-wise dropout module."""
+    model = TCN(n_chans=8, n_outputs=2, n_blocks=2, n_filters=5, drop_prob=0.5)
+    assert any(isinstance(m, nn.Dropout1d) for m in model.modules())
+    assert not any(isinstance(m, nn.Dropout2d) for m in model.modules())
+
+
+def test_dropout1d_masks_channels_not_batch_items():
+    """The channel-wise dropout used by BDTCN and BENDR zeroes rows of the
+    channel axis, independently per batch item. Under the announced
+    ``nn.Dropout2d`` semantics for 3D input the same tensor would be read as
+    unbatched and whole batch items would be dropped instead."""
+    set_random_seeds(2024, cuda=False)
+    out = nn.Dropout1d(0.5).train()(torch.ones(64, 16, 32))
+
+    # A dropped entry covers the full time axis of one (batch item, channel)
+    # pair.
+    zeroed = out.abs().sum(dim=-1) == 0
+    assert zeroed.any() and not zeroed.all()
+    # At least one batch item keeps some channels and loses others, which
+    # cannot happen when the mask is drawn over the batch axis.
+    assert (zeroed.any(dim=1) & ~zeroed.all(dim=1)).any()

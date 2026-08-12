@@ -75,6 +75,8 @@ interface for all EEG models and can derive variable names when needed.
     - :class:`BENDR` - Foundation model with pre-trained weights
     - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
     - :class:`EEGPT` - Pretrained transformer for universal EEG
+    - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
+      re-hosted weights
 
     **Example - Loading a pre-trained model:**
 
@@ -183,11 +185,13 @@ interface for all EEG models and can derive variable names when needed.
      SleepStagerChambon2018
      SPARCNet
      SSTDPN
+     STEEGFormer
      SyncNet
      TCFormer
      TIDNet
      TSception
      USleep
+     ZUNA
 
 Modules
 
@@ -212,6 +216,7 @@ stability.
     :template: class_in_subdir
     :recursive:
 
+    GatedLinearUnit
     LogActivation
     SafeLog
 
@@ -309,9 +314,11 @@ input shapes and dimensions.
     :template: class_in_subdir
     :recursive:
 
+    ChannelMerger
     Chomp1d
     DropPath
     Ensure4d
+    FourierEmb
     SubjectLayers
     TimeDistributed
 
@@ -411,6 +418,7 @@ The functional module contains various functions that can be used like functiona
      plv_time
      rescale_parameter
      safe_log
+     sinusoidal_positional_encoding
      square
 
 **********
@@ -781,12 +789,14 @@ models and evaluate their performance.
 
      CroppedLoss
      TimeSeriesLoss
+     DanceLoss
      CroppedTrialEpochScoring
      CroppedTimeSeriesEpochScoring
      PostEpochTrainScoring
      mixup_criterion
      trial_preds_from_window_preds
      predict_trials
+     f1_event
 
 *******
  Utils

@@ -5,10 +5,9 @@
 * https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
 """
 
-from functools import partial
+# Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
 
 import torch
-from einops.layers.torch import Rearrange
 from torch import nn
 
 import braindecode.functional as F
@@ -17,6 +16,36 @@ from braindecode.models.util import _disable_batch_norm_training_if_batch_size_o
 from braindecode.modules import GeneralizedGaussianFilter
 
 _eeg_miner_methods = ["mag", "corr", "plv"]
+
+
+class _EEGMinerFeatures(nn.Module):
+    def __init__(self, method, n_chans, n_filters, n_times):
+        super().__init__()
+        self.method = method
+        self.n_chans = n_chans
+        self.n_filters = n_filters
+        self.n_times = n_times
+        triu = torch.triu_indices(n_chans, n_chans, 1)
+        self.register_buffer("triu_row", triu[0], persistent=False)
+        self.register_buffer("triu_col", triu[1], persistent=False)
+
+    def forward(self, x):
+        if self.method == "mag":
+            return torch.sqrt((x * x).mean(dim=-1))
+        if self.method == "corr":
+            x = x.reshape(
+                x.shape[0], self.n_chans, self.n_filters, self.n_times
+            ).transpose(-3, -2)
+            x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
+                x.var(dim=-1, keepdim=True) + 1e-6
+            )
+            x = torch.matmul(x, x.transpose(-2, -1)) / x.shape[-1]
+            x = x.permute(0, 2, 3, 1).abs()
+        else:
+            x = x.transpose(-4, -3)
+            x = F.plv_time(x, forward_fourier=False)
+            x = x.permute(0, 2, 3, 1)
+        return x[:, self.triu_row, self.triu_col, :]
 
 
 class EEGMiner(EEGModuleMixin, nn.Module):
@@ -168,24 +197,18 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         )
 
         # Forward method
+        self.ensure_dim = nn.Identity()
         if self.method == "mag":
-            self.method_forward = self._apply_mag_forward
             self.n_features = self.n_chans * self.n_filters
-            self.ensure_dim = nn.Identity()
         elif self.method == "corr":
-            self.method_forward = partial(
-                self._apply_corr_forward,
-                n_chans=self.n_chans,
-                n_filters=self.n_filters,
-                n_times=self.n_times,
-            )
             self.n_features = self.n_filters * self.n_chans * (self.n_chans - 1) // 2
-            self.ensure_dim = nn.Identity()
         elif self.method == "plv":
-            self.method_forward = partial(self._apply_plv, n_chans=self.n_chans)
-            self.ensure_dim = Rearrange("... d -> ... 1 d")
+            self.ensure_dim = nn.Unflatten(-1, (1, self.n_times))
             self.n_features = (self.n_filters * self.n_chans * (self.n_chans - 1)) // 2
 
+        self.feature_layer = _EEGMinerFeatures(
+            self.method, self.n_chans, self.n_filters, self.n_times
+        )
         self.flatten_layer = nn.Flatten()
         # Classifier
         self.batch_layer = nn.BatchNorm1d(self.n_features, affine=False)
@@ -195,64 +218,17 @@ class EEGMiner(EEGModuleMixin, nn.Module):
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x):
         """x: (batch, electrodes, time)"""
-        batch = x.shape[0]
         x = self.ensure_dim(x)
         # Apply Gaussian filters in frequency domain
         # x -> (batch, electrodes * filters, time)
         x = self.filter(x)
 
-        x = self.method_forward(x=x, batch=batch)
+        x = self.feature_layer(x)
         # Classifier
         # Note that the order of dimensions before flattening the feature vector is important
         # for attributing feature weights during interpretation.
-        x = x.reshape(batch, self.n_features)
+        x = x.reshape(x.shape[0], self.n_features)
         x = self.batch_layer(x)
         x = self.final_layer(x)
 
-        return x
-
-    @staticmethod
-    def _apply_mag_forward(x, batch=None):
-        # Signal magnitude
-        x = x * x
-        x = x.mean(dim=-1)
-        x = torch.sqrt(x)
-        return x
-
-    @staticmethod
-    def _apply_corr_forward(
-        x, batch, n_chans, n_filters, n_times, epilson: float = 1e-6
-    ):
-        x = x.reshape(batch, n_chans, n_filters, n_times).transpose(-3, -2)
-        x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
-            x.var(dim=-1, keepdim=True) + epilson
-        )
-        x = torch.matmul(x, x.transpose(-2, -1)) / x.shape[-1]
-        # Original tensor shape: [batch, n_filters, chans, chans]
-        x = x.permute(0, 2, 3, 1)
-        # New tensor shape: [batch, chans, chans, n_filters]
-        # move filter channels to the end
-        x = x.abs()
-
-        # Get upper triu of symmetric connectivity matrix
-        triu = torch.triu_indices(n_chans, n_chans, 1)
-        x = x[:, triu[0], triu[1], :]
-
-        return x
-
-    @staticmethod
-    def _apply_plv(x, n_chans, batch=None):
-        # Compute PLV connectivity
-        # x -> (batch, electrodes, electrodes, filters)
-        x = x.transpose(-4, -3)  # swap electrodes and filters
-        # adjusting to compute the plv
-        x = F.plv_time(x, forward_fourier=False)
-        # batch, number of filters, connectivity matrix
-        # [batch, n_filters, chans, chans]
-        x = x.permute(0, 2, 3, 1)
-        # [batch, chans, chans, n_filters]
-
-        # Get upper triu of symmetric connectivity matrix
-        triu = torch.triu_indices(n_chans, n_chans, 1)
-        x = x[:, triu[0], triu[1], :]
         return x

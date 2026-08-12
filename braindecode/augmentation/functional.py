@@ -18,7 +18,7 @@ from mne.filter import notch_filter
 from scipy.interpolate import Rbf
 from sklearn.utils import check_random_state
 from torch.fft import fft, ifft
-from torch.nn.functional import one_hot, pad
+from torch.nn.functional import pad
 
 
 def identity(X: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -253,25 +253,34 @@ def channels_dropout(
     return X * mask.unsqueeze(-1), y
 
 
-def _make_permutation_matrix(
+def _make_channel_permutation(
     X: torch.Tensor, mask: torch.Tensor, random_state: int | np.random.Generator | None
 ) -> torch.Tensor:
+    """Per-sample channel permutation that shuffles only the masked channels.
+
+    Returns a ``(batch, n_channels)`` index permutation: output channel ``i`` is
+    taken from input channel ``perm[b, i]``. Masked channels are permuted among
+    their own positions; unmasked channels keep their place.
+
+    The per-sample ``rng.permutation`` is kept (rather than a vectorized random
+    draw) so the output is bit-for-bit identical to the previous one-hot/matmul
+    implementation — vectorizing the draw would change seeded results. The win
+    is downstream: the caller gathers with this index instead of building
+    ``(batch, n_channels, n_channels)`` one-hot matrices and a matmul.
+    """
     rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
-    hard_mask = mask.round()
-    batch_permutations = torch.empty(
-        batch_size, n_channels, n_channels, device=X.device
-    )
-    for b, mask in enumerate(hard_mask):
-        channels_to_shuffle = torch.arange(n_channels, device=X.device)
-        channels_to_shuffle = channels_to_shuffle[mask.bool()]
-        reordered_channels = torch.tensor(
-            rng.permutation(channels_to_shuffle.cpu()), device=X.device
+    hard_mask = mask.round().bool()
+    channels = torch.arange(n_channels, device=X.device)
+    perm = channels.repeat(batch_size, 1)
+    for b in range(batch_size):
+        channels_to_shuffle = channels[hard_mask[b]]
+        perm[b, channels_to_shuffle] = torch.tensor(
+            rng.permutation(channels_to_shuffle.cpu()),
+            device=X.device,
+            dtype=perm.dtype,
         )
-        channels_permutation = torch.arange(n_channels, device=X.device)
-        channels_permutation[channels_to_shuffle] = reordered_channels
-        batch_permutations[b, ...] = one_hot(channels_permutation)
-    return batch_permutations
+    return perm
 
 
 def channels_shuffle(
@@ -314,8 +323,11 @@ def channels_shuffle(
     if p_shuffle == 0:
         return X, y
     mask = _pick_channels_randomly(X, 1 - p_shuffle, random_state)
-    batch_permutations = _make_permutation_matrix(X, mask, random_state)
-    return torch.matmul(batch_permutations, X), y
+    perm = _make_channel_permutation(X, mask, random_state)
+    # Gather channels (output[b, i] = X[b, perm[b, i]]) instead of building
+    # one-hot permutation matrices and a (batch, C, C) @ (batch, C, T) matmul.
+    perm = perm.unsqueeze(-1).expand(-1, -1, X.shape[-1])
+    return torch.gather(X, 1, perm), y
 
 
 def gaussian_noise(
@@ -1188,19 +1200,21 @@ def mask_encoding(
        32 (2024): 875-886.
     """
 
-    batch_indices = torch.arange(X.shape[0]).repeat_interleave(n_segments)
-    start_indices = time_start.flatten()
-    mask_indices = start_indices[:, None] + torch.arange(segment_length)
+    # All channels are zeroed at the same time positions, so build a single
+    # (batch, n_times) time-mask and broadcast it over channels, vectorized
+    # (no Python loop over batch * n_segments).
+    device = X.device
+    batch_indices = torch.arange(X.shape[0], device=device).repeat_interleave(
+        n_segments * segment_length
+    )
+    seg_indices = (
+        time_start.flatten().to(device)[:, None]
+        + torch.arange(segment_length, device=device)
+    ).flatten()
+    time_mask = torch.zeros(X.shape[0], X.shape[-1], dtype=torch.bool, device=device)
+    time_mask[batch_indices, seg_indices] = True
 
-    # Create a boolean mask with the same shape as X
-    mask = torch.zeros_like(X, dtype=torch.bool)
-    for batch_index, grouped_mask_indices in zip(batch_indices, mask_indices):
-        mask[batch_index, :, grouped_mask_indices] = True
-
-    # Apply the mask to set the values to 0
-    X[mask] = 0
-
-    return X, y  # Return the masked tensor and labels
+    return X.masked_fill(time_mask.unsqueeze(1), 0), y
 
 
 def channels_rereference(
