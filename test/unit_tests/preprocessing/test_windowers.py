@@ -1308,22 +1308,37 @@ def test_windower_from_target_channels_partial_targets():
 
 
 @pytest.fixture(scope="module")
-def concat_ds_two_event_types():
+def event_dataset_factory():
+    """Create a small dataset with interleaved events and optional extras."""
+
+    def _make_event_dataset(durations, *, with_extras=False):
+        data = np.zeros((2, 1000), dtype=np.float32)
+        onsets = [1.0, 3.0, 5.0, 7.0]
+        descriptions = ["T0", "T1", "T0", "T1"]
+        annotations = mne.Annotations(
+            onset=onsets, duration=durations, description=descriptions
+        )
+        if with_extras:
+            annotations.extras = [
+                {"trial_id": trial_id, "quality": quality}
+                for trial_id, quality in zip(
+                    [10, 20, 30, 40],
+                    ["short", "second", "third", "fourth"],
+                )
+            ]
+
+        info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=100)
+        raw = mne.io.RawArray(data, info)
+        raw.set_annotations(annotations)
+        return BaseConcatDataset([RawDataset(raw)])
+
+    return _make_event_dataset
+
+
+@pytest.fixture(scope="module")
+def concat_ds_two_event_types(event_dataset_factory):
     """Dataset with two event types (T0, T1) interleaved, known layout."""
-    rng = np.random.RandomState(42)
-    data = rng.randn(2, 10000).astype(np.float32)
-    # 4 events, alternating T0/T1 with enough spacing
-    onsets = [1.0, 3.0, 5.0, 7.0]
-    durations = [1.0] * len(onsets)
-    descriptions = ["T0", "T1", "T0", "T1"]
-    annotations = mne.Annotations(
-        onset=onsets, duration=durations, description=descriptions
-    )
-    info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=100)
-    raw = mne.io.RawArray(data, info)
-    raw.set_annotations(annotations)
-    ds = RawDataset(raw)
-    return BaseConcatDataset([ds])
+    return event_dataset_factory([1.0] * 4)
 
 
 @pytest.mark.parametrize(
@@ -1470,59 +1485,73 @@ def test_dict_params_per_event_type(
         assert np.all(np.diff(starts) >= 0)
 
 
-def test_dict_params_bad_trial_dropped_extras_not_misassigned():
-    """Extras must come from the surviving trial, not from the dropped one.
-
-    When one T0 event is too short for the window size and is dropped via
-    accepted_bads_ratio, the returned i_trials from _compute_window_inds index
-    into the post-filter array.  Before the fix, those indices were mapped back
-    through orig_indices (sized for the pre-filter array), so the surviving
-    T0 window got the extras of the *dropped* trial instead of its own.
-    """
-    sfreq = 100
-    # T0 event 0: onset 1 s, duration 0.4 s  → 40 samples  (too short for window=60)
-    # T0 event 1: onset 5 s, duration 1.0 s  → 100 samples (fits)
-    # T1 events: both 1 s long (needed for mapping only)
-    onsets = [1.0, 3.0, 5.0, 7.0]
-    durations = [0.4, 1.0, 1.0, 1.0]
-    descriptions = ["T0", "T1", "T0", "T1"]
-    # unique per-trial extra so we can tell which trial a window came from
-    trial_ids = [10, 20, 30, 40]
-
-    annotations = mne.Annotations(
-        onset=onsets, duration=durations, description=descriptions
-    )
-    annotations.extras = [{"trial_id": tid} for tid in trial_ids]
-
-    rng = np.random.RandomState(0)
-    data = rng.randn(2, 10000).astype(np.float32)
-    info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=sfreq)
-    raw = mne.io.RawArray(data, info)
-    raw.set_annotations(annotations)
-    concat_ds = BaseConcatDataset([RawDataset(raw)])
-
+@pytest.mark.parametrize("per_event_params", [False, True], ids=["int", "dict"])
+def test_short_trial_drop_preserves_event_metadata(
+    event_dataset_factory, per_event_params
+):
+    """Targets and every extras column retain their source event index."""
+    concat_ds = event_dataset_factory([0.2, 1.0, 1.0, 1.0], with_extras=True)
     mapping = {"T0": 0, "T1": 1}
+    offset = {event_name: 0 for event_name in mapping} if per_event_params else 0
+    stride = {event_name: 50 for event_name in mapping} if per_event_params else 50
     with pytest.warns(UserWarning, match="are being dropped"):
         windows = create_windows_from_events(
             concat_ds=concat_ds,
-            trial_start_offset_samples={"T0": 0, "T1": 0},
-            trial_stop_offset_samples={"T0": 0, "T1": 0},
-            window_size_samples=60,
-            window_stride_samples=60,
+            trial_start_offset_samples=offset,
+            trial_stop_offset_samples=offset,
+            window_size_samples=50,
+            window_stride_samples=stride,
             on_last_window="drop",
             mapping=mapping,
-            accepted_bads_ratio=0.6,
+            accepted_bads_ratio=0.5,
+            use_mne_epochs=False,
         )
 
     metadata = windows.datasets[0].metadata
-    t0_meta = metadata[metadata["target"] == 0]
+    assert metadata["i_window_in_trial"].tolist() == [0, 1, 0, 1, 0, 1]
+    assert metadata["i_start_in_trial"].tolist() == [300, 350, 500, 550, 700, 750]
+    assert metadata["i_stop_in_trial"].tolist() == [350, 400, 550, 600, 750, 800]
+    assert metadata["target"].tolist() == [1, 1, 0, 0, 1, 1]
+    assert metadata["trial_id"].tolist() == [20, 20, 30, 30, 40, 40]
+    assert metadata["quality"].tolist() == [
+        "second",
+        "second",
+        "third",
+        "third",
+        "fourth",
+        "fourth",
+    ]
 
-    # The surviving T0 event is event index 2 (onset 5 s = sample 500).
-    # Its extra has trial_id == 30.  Before the fix, trial_id == 10 was returned
-    # because i_trials[0]=0 was mapped to orig_indices[0] (the dropped event).
-    assert (t0_meta["trial_id"] == 30).all(), (
-        f"Expected trial_id=30 for surviving T0 windows, got {t0_meta['trial_id'].tolist()}"
-    )
+
+@pytest.mark.parametrize("per_event_params", [False, True], ids=["int", "dict"])
+@pytest.mark.parametrize("on_last_window", ["drop", "overlap", "keep"])
+def test_all_short_trials_raise_clear_error(
+    event_dataset_factory, per_event_params, on_last_window
+):
+    """Accepting all too-short trials raises a public, stable error."""
+    concat_ds = event_dataset_factory([0.2, 0.3, 0.2, 0.3])
+    mapping = {"T0": 0, "T1": 1}
+    offset = {event_name: 0 for event_name in mapping} if per_event_params else 0
+    stride = {event_name: 50 for event_name in mapping} if per_event_params else 50
+
+    with (
+        pytest.warns(UserWarning, match="are being dropped"),
+        pytest.raises(
+            ValueError,
+            match="No windows can be created because all trials are shorter",
+        ),
+    ):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            trial_start_offset_samples=offset,
+            trial_stop_offset_samples=offset,
+            window_size_samples=50,
+            window_stride_samples=stride,
+            on_last_window=on_last_window,
+            mapping=mapping,
+            accepted_bads_ratio=1.0,
+            use_mne_epochs=False,
+        )
 
 
 def _make_small_eeg_windows_dataset(lazy_loadable_dataset):
@@ -1631,6 +1660,34 @@ def trailing_window_case(request):
     return fn, kwargs
 
 
+@pytest.fixture(
+    params=[
+        pytest.param(
+            (create_windows_from_events, {"trial_stop_offset_samples": 0}),
+            id="events",
+        ),
+        pytest.param((create_fixed_length_windows, {}), id="fixed-length"),
+    ]
+)
+def aligned_overlapping_window_case(request):
+    """Return both windowers on an exactly aligned overlapping lattice."""
+    data = np.zeros((2, 80), dtype=np.float32)
+    raw = mne.io.RawArray(
+        data, mne.create_info(["C3", "C4"], sfreq=100), verbose=False
+    )
+    raw.set_annotations(mne.Annotations([0], [0.8], ["event"]))
+    fn, extra_kwargs = request.param
+    kwargs = dict(
+        concat_ds=BaseConcatDataset([RawDataset(raw)]),
+        window_size_samples=20,
+        window_stride_samples=10,
+        on_last_window="keep",
+        use_mne_epochs=False,
+        **extra_kwargs,
+    )
+    return fn, kwargs
+
+
 @pytest.mark.parametrize(
     "on_last_window, expected_starts, expected_stops",
     [
@@ -1651,6 +1708,34 @@ def test_on_last_window(
     assert dataset[-1][0].shape[-1] == expected_stops[-1] - expected_starts[-1]
 
 
+def test_keep_aligned_overlap_does_not_add_partial_window(
+    aligned_overlapping_window_case,
+):
+    """An aligned lattice ends at the same full window for both windowers."""
+    fn, kwargs = aligned_overlapping_window_case
+    dataset = fn(**kwargs).datasets[0]
+
+    assert dataset.metadata["i_start_in_trial"].tolist() == [
+        0,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+    ]
+    assert dataset.metadata["i_stop_in_trial"].tolist() == [
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        80,
+    ]
+    assert all(dataset[i][0].shape[-1] == 20 for i in range(len(dataset)))
+
+
 @pytest.mark.parametrize(
     "drop_last_window, on_last_window",
     [
@@ -1662,7 +1747,9 @@ def test_drop_last_window_deprecation(
     trailing_window_case, drop_last_window, on_last_window
 ):
     fn, kwargs = trailing_window_case
-    with pytest.warns(FutureWarning, match="removed in version 2.0"):
+    with pytest.warns(
+        DeprecationWarning, match=r"removed in version 2\.0.*pull/1058"
+    ):
         deprecated = fn(**kwargs, drop_last_window=drop_last_window)
     current = fn(**kwargs, on_last_window=on_last_window)
 
@@ -1688,7 +1775,9 @@ def test_drop_last_window_positional_compatibility(
     else:
         args = (concat_ds, 0, None, 40, 40, drop_last_window)
 
-    with pytest.warns(FutureWarning, match="removed in version 2.0"):
+    with pytest.warns(
+        DeprecationWarning, match=r"removed in version 2\.0.*pull/1058"
+    ):
         deprecated = fn(*args)
     current = fn(**kwargs, on_last_window=on_last_window)
 
@@ -1728,7 +1817,7 @@ def test_events_default_to_overlap(trailing_window_case):
         pytest.skip("Explicit fixed-size and stride already require a strategy.")
 
     with warnings.catch_warnings():
-        warnings.simplefilter("error", FutureWarning)
+        warnings.simplefilter("error", DeprecationWarning)
         default = fn(**kwargs)
     overlap = fn(**kwargs, on_last_window="overlap")
     pd.testing.assert_frame_equal(

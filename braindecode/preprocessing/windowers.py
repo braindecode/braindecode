@@ -257,8 +257,10 @@ def create_windows_from_events(
         If a dict, keys must match the keys of ``mapping`` and different
         strides are applied per event type.
     drop_last_window: bool | None
-        Deprecated. Use ``on_last_window`` instead. If True, maps to
-        ``on_last_window='drop'``; if False, maps to ``on_last_window='overlap'``.
+        Deprecated and scheduled for removal in version 2.0. Use
+        ``on_last_window`` instead. Passing this parameter emits a
+        ``DeprecationWarning``. If True, maps to ``on_last_window='drop'``;
+        if False, maps to ``on_last_window='overlap'``.
     on_last_window: {'overlap', 'drop', 'keep'} | None
         How to handle the last incomplete window when the trial duration is not
         evenly divisible by window_size_samples and window_stride_samples.
@@ -269,7 +271,8 @@ def create_windows_from_events(
         - ``'drop'``: discard the remainder of the trial. Equivalent to the
           original ``drop_last_window=True``.
         - ``'keep'``: retain the last incomplete window at its natural shorter
-          size instead of moving its start backwards.
+          size instead of moving its start backwards. Not compatible with
+          ``use_mne_epochs=True``.
     mapping: dict(str: int)
         Mapping from event description to numerical target value. Must be
         provided when any of ``trial_start_offset_samples``,
@@ -300,7 +303,9 @@ def create_windows_from_events(
         the number of trials whose length is exceeded by the window size is
         smaller than this, then only the corresponding trials are dropped, but
         the computation continues. Otherwise, an error is raised. Defaults to
-        0.0 (raise an error).
+        0.0 (raise an error). If all trials are accepted for dropping because
+        they are too short, a ``ValueError`` is raised because no windows can
+        be created.
     use_mne_epochs: bool
         If False, return EEGWindowsDataset objects.
         If True, return mne.Epochs objects encapsulated in WindowsDataset objects,
@@ -340,8 +345,9 @@ def create_windows_from_events(
             )
         warnings.warn(
             "`drop_last_window` is deprecated and will be removed in version 2.0. "
-            "Use `on_last_window='drop'` if True, `on_last_window='overlap'` if False.",
-            FutureWarning,
+            "Use `on_last_window='drop'` if True, `on_last_window='overlap'` if False. "
+            "See https://github.com/braindecode/braindecode/pull/1058 for feedback.",
+            DeprecationWarning,
             stacklevel=2,
         )
         on_last_window = "drop" if drop_last_window else "overlap"
@@ -488,8 +494,10 @@ def create_fixed_length_windows(
         Stride between windows in samples. If None, set to be equal to winddow_size_samples, so
         windows will not overlap.
     drop_last_window: bool | None
-        Deprecated. Use ``on_last_window`` instead. If True, maps to
-        ``on_last_window='drop'``; if False, maps to ``on_last_window='overlap'``.
+        Deprecated and scheduled for removal in version 2.0. Use
+        ``on_last_window`` instead. Passing this parameter emits a
+        ``DeprecationWarning``. If True, maps to ``on_last_window='drop'``;
+        if False, maps to ``on_last_window='overlap'``.
     on_last_window: {'overlap', 'drop', 'keep'} | None
         How to handle the last incomplete window when the recording duration is
         not evenly divisible by window_size_samples and window_stride_samples.
@@ -558,8 +566,9 @@ def create_fixed_length_windows(
     if drop_last_window is not None:
         warnings.warn(
             "`drop_last_window` is deprecated and will be removed in version 2.0. "
-            "Use `on_last_window='drop'` if True, `on_last_window='overlap'` if False.",
-            FutureWarning,
+            "Use `on_last_window='drop'` if True, `on_last_window='overlap'` if False. "
+            "See https://github.com/braindecode/braindecode/pull/1058 for feedback.",
+            DeprecationWarning,
             stacklevel=2,
         )
         on_last_window = "drop" if drop_last_window else "overlap"
@@ -750,15 +759,6 @@ def _create_windows_from_events(
             stop_off = trial_stop_offset_samples[event_name]
             stride = window_stride_samples[event_name]
 
-            # _compute_window_inds drops trials whose effective duration is
-            # smaller than window_size_samples (subject to accepted_bads_ratio).
-            # Its returned i_trials index into the *post-filter* array, so we
-            # must apply the same mask to orig_indices before mapping.
-            eff_starts = type_onsets + start_off
-            eff_stops = type_stops + stop_off
-            good_mask = ~(window_size_samples > (eff_stops - eff_starts))
-            orig_indices_good = orig_indices[good_mask]
-
             type_i_trials, type_i_win, type_starts, type_stops = _compute_window_inds(
                 type_onsets.copy(),
                 type_stops.copy(),
@@ -770,8 +770,7 @@ def _create_windows_from_events(
                 accepted_bads_ratio,
             )
             # Map local trial indices back to global event indices.
-            # type_i_trials index into orig_indices_good (bad trials removed).
-            mapped_i_trials = [orig_indices_good[i] for i in type_i_trials]
+            mapped_i_trials = [orig_indices[i] for i in type_i_trials]
             all_i_trials.extend(mapped_i_trials)
             all_i_window_in_trials.extend(type_i_win)
             all_starts.extend(
@@ -830,6 +829,12 @@ def _create_windows_from_events(
             window_stride_samples,
             on_last_window,
             accepted_bads_ratio,
+        )
+
+    if len(starts) == 0:
+        raise ValueError(
+            "No windows can be created because all trials are shorter than "
+            "window_size_samples after applying the trial offsets."
         )
 
     if (on_overlapping_events != "ignore") and any(np.diff(starts) <= 0):
@@ -1218,6 +1223,7 @@ def _compute_window_inds(
     """
     starts = np.array([starts]) if isinstance(starts, int) else starts
     stops = np.array([stops]) if isinstance(stops, int) else stops
+    source_trial_indices = np.arange(len(starts))
 
     starts += start_offset
     stops += stop_offset
@@ -1227,6 +1233,7 @@ def _compute_window_inds(
         if sum(bads_mask) <= accepted_bads_ratio * len(starts):
             starts = starts[np.logical_not(bads_mask)]
             stops = stops[np.logical_not(bads_mask)]
+            source_trial_indices = source_trial_indices[np.logical_not(bads_mask)]
             warnings.warn(
                 f"Trials {np.where(bads_mask)[0]} are being dropped as the "
                 f"window size ({size}) exceeds their duration {min_duration}."
@@ -1242,12 +1249,12 @@ def _compute_window_inds(
             )
 
     i_window_in_trials, i_trials, window_starts, window_stops = [], [], [], []
-    for i_trial, (start, stop) in enumerate(zip(starts, stops)):
+    for i_trial, start, stop in zip(source_trial_indices, starts, stops):
         trial_starts = np.arange(start, stop - size + 1, stride).tolist()
 
         if on_last_window == "overlap" and trial_starts[-1] + size != stop:
             trial_starts.append(stop - size)
-        elif on_last_window == "keep":
+        elif on_last_window == "keep" and trial_starts[-1] + size != stop:
             next_start = trial_starts[-1] + stride
             if next_start < stop:
                 trial_starts.append(next_start)
