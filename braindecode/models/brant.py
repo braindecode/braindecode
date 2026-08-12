@@ -292,7 +292,7 @@ class Brant(EEGModuleMixin, nn.Module):
         # 5. pool over channels and patches, then classify.
         pooled = emb.mean(dim=(1, 2))
         if return_features:
-            return {"features": pooled, "cls_token": None}
+            return {"features": pooled, "cls_token": None}  # nosec B105
         return self.final_layer(pooled)
 
 
