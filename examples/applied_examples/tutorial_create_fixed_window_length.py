@@ -152,7 +152,7 @@ windows_dataset = create_fixed_length_windows(
     stop_offset_samples=None,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=True,
+    on_last_window="drop",
     mapping=None,
     preload=True,
     picks="eeg",  # Only EEG channels
@@ -199,7 +199,7 @@ windows_dataset = create_fixed_length_windows(
     dataset,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=True,
+    on_last_window="drop",
     mapping=mapping,
     preload=True,
 )
@@ -222,7 +222,7 @@ windows_with_rejection = create_fixed_length_windows(
     window_size_samples=200,
     window_stride_samples=100,
     reject=reject_criteria,
-    drop_last_window=True,
+    on_last_window="drop",
 )
 
 print(windows_with_rejection)
@@ -237,7 +237,7 @@ lazy_windows = create_fixed_length_windows(
     concat_ds=dataset,
     window_size_samples=200,
     window_stride_samples=100,
-    drop_last_window=True,
+    on_last_window="drop",
     lazy_metadata=True,
 )
 
@@ -258,7 +258,7 @@ shifted_windows_dataset = create_fixed_length_windows(
     start_offset_samples=start_offset_samples,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=True,
+    on_last_window="drop",
     preload=True,
 )
 

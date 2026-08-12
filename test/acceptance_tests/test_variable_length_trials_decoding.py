@@ -46,7 +46,7 @@ def test_variable_length_trials_cropped_decoding():
         concat_ds=variable_tuh,
         window_size_samples=1000,
         window_stride_samples=1000,
-        drop_last_window=False,
+        on_last_window="overlap",
         mapping={True: 1, False: 0},
     )
 

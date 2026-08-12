@@ -102,7 +102,7 @@ def concat_windows_dataset(concat_ds_targets):
         trial_stop_offset_samples=0,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=False,
+        on_last_window="overlap",
     )
 
     return windows_ds
@@ -463,7 +463,7 @@ def test_set_target_rejects_lazy_metadata(concat_ds_targets):
         concat_ds,
         window_size_samples=100,
         window_stride_samples=100,
-        drop_last_window=True,
+        on_last_window="drop",
         lazy_metadata=True,
     )
     with pytest.raises(TypeError, match="lazy_metadata=False"):
@@ -540,7 +540,7 @@ def test_multi_target_dataset(set_up):
         window_stride_samples=100,
         start_offset_samples=0,
         stop_offset_samples=None,
-        drop_last_window=False,
+        on_last_window="overlap",
         mapping={True: 1, False: 0, "M": 0, "F": 1},  # map non-digit targets
     )
     x, y, ind = windows_ds[0]

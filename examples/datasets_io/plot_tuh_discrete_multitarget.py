@@ -88,7 +88,7 @@ tuh_windows = create_fixed_length_windows(
     stop_offset_samples=None,
     window_size_samples=1000,
     window_stride_samples=1000,
-    drop_last_window=False,
+    on_last_window="overlap",
     mapping={"M": 0, "F": 1},  # map non-digit targets
 )
 # store the number of windows required for loading later on
