@@ -1,4 +1,7 @@
 name: Check Whats News Changes
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
+  cancel-in-progress: true
 on:
   pull_request:
     types: [ assigned, opened, synchronize, reopened, labeled, unlabeled ]
@@ -6,8 +9,8 @@ on:
       - '*'
 jobs:
   check-whats-news:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: tarides/changelog-check-action@v2
+      - uses: tarides/changelog-check-action@v3
         with:
           changelog: docs/whats_new.rst

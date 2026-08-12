@@ -8,9 +8,7 @@ import pytest
 import torch
 from sklearn.utils import check_random_state
 
-from braindecode.augmentation.base import AugmentedDataLoader
-from braindecode.augmentation.base import Compose
-from braindecode.augmentation.base import Transform
+from braindecode.augmentation.base import AugmentedDataLoader, Compose, Transform
 from braindecode.augmentation.transforms import SmoothTimeMask
 from braindecode.datasets import create_from_mne_epochs
 
@@ -20,7 +18,7 @@ def dummy_k_operation(X, y, k):
 
 
 class DummyTransform(Transform):
-    operation = staticmethod(dummy_k_operation)
+    operation = staticmethod(dummy_k_operation)  # type: ignore[assignment]
 
     def __init__(self, probability=1.0, random_state=None, k=None):
         if k is None:
@@ -38,11 +36,11 @@ def dummy_transform():
     return DummyTransform()
 
 
-def common_tranform_assertions(
-    input_batch,
-    output_batch,
-    expected_X=None,
-    diff_param=None,
+def common_transform_assertions(
+        input_batch,
+        output_batch,
+        expected_X=None,
+        diff_param=None,
 ):
     """Assert whether shapes and devices are conserved. Also, (optional)
     checks whether the expected features matrix is produced.
@@ -101,7 +99,7 @@ def test_transform_composition(random_batch, k1, k2, expected, p1, p2):
     concat_transform = Compose([dummy_transform1, dummy_transform2])
     expected_tensor = torch.ones(X.shape, device=X.device) * expected
 
-    common_tranform_assertions(random_batch, concat_transform(X, y), expected_tensor)
+    common_transform_assertions(random_batch, concat_transform(X, y), expected_tensor)
 
 
 def test_transform_proba_exception(rng_seed, dummy_transform):
@@ -152,8 +150,9 @@ def concat_windows_dataset():
         (1, False, False),
     ],
 )
+@pytest.mark.network
 def test_data_loader(
-    dummy_transform, concat_windows_dataset, nb_transforms, no_list, dummy
+        dummy_transform, concat_windows_dataset, nb_transforms, no_list, dummy
 ):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     transform = dummy_transform if dummy else SmoothTimeMask(0.5)
@@ -168,11 +167,13 @@ def test_data_loader(
             break
 
 
+@pytest.mark.network
 def test_data_loader_exception(concat_windows_dataset):
     with pytest.raises(TypeError):
         AugmentedDataLoader(concat_windows_dataset, transforms="a", batch_size=128)
 
 
+@pytest.mark.network
 def test_dataset_with_transform(concat_windows_dataset):
     factor = 10
     transform = DummyTransform(k=factor)
@@ -181,6 +182,63 @@ def test_dataset_with_transform(concat_windows_dataset):
     assert torch.all(transformed_X == factor)
 
 
+def test_augmented_data_loader_n_augmentation():
+    """``n_augmentation`` keeps the clean originals and appends augmented copies."""
+    from torch.utils.data import TensorDataset
+
+    n_samples, n_chans, n_times, batch_size = 8, 4, 20, 8
+    X = torch.randn(n_samples, n_chans, n_times)
+    y = torch.arange(n_samples)
+    k = 7.0
+
+    loader = AugmentedDataLoader(
+        TensorDataset(X, y),
+        transforms=DummyTransform(k=k, probability=1.0),
+        batch_size=batch_size,
+        n_augmentation=5,
+        shuffle=False,
+    )
+    batch_X, batch_y = next(iter(loader))
+
+    # 1 clean + 5 augmented copies -> 6x expansion
+    assert batch_X.shape == (6 * batch_size, n_chans, n_times)
+    assert batch_y.shape == (6 * batch_size,)
+    # The first block are the untouched originals (the point of the feature).
+    assert torch.equal(batch_X[:batch_size], X)
+    # Every appended copy was augmented (DummyTransform replaces X by all-k).
+    assert torch.all(batch_X[batch_size:] == k)
+    # Labels are tiled across the clean + augmented copies.
+    assert torch.equal(batch_y, y.repeat(6))
+
+
+def test_augmented_data_loader_default_no_expansion():
+    """Default (``n_augmentation=0``) keeps the batch size unchanged."""
+    from torch.utils.data import TensorDataset
+
+    batch_size = 8
+    X = torch.randn(batch_size, 4, 20)
+    y = torch.arange(batch_size)
+
+    loader = AugmentedDataLoader(
+        TensorDataset(X, y),
+        transforms=DummyTransform(k=1.0, probability=1.0),
+        batch_size=batch_size,
+        shuffle=False,
+    )
+    batch_X, _ = next(iter(loader))
+    assert batch_X.shape[0] == batch_size
+
+
+def test_augmented_data_loader_negative_n_augmentation():
+    """A negative ``n_augmentation`` is rejected."""
+    from torch.utils.data import TensorDataset
+
+    dataset = TensorDataset(torch.randn(4, 4, 20), torch.arange(4))
+    with pytest.raises(ValueError, match="n_augmentation"):
+        AugmentedDataLoader(dataset, n_augmentation=-1, batch_size=4)
+
+
+@pytest.mark.network
 def test_single_input_aug(concat_windows_dataset):
     # Create single input without the batch dimension, just (channels, time)
     X, y, _ = concat_windows_dataset[0]

@@ -1,4 +1,7 @@
 name: docs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
+  cancel-in-progress: true
 on:
   push:
     branches:
@@ -10,41 +13,80 @@ on:
 jobs:
   build_docs:
     runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
     steps:
       ## Install Braindecode
       - name: Checking Out Repository
         uses: actions/checkout@v4
-      # Cache MNE Data
-      # The cache key here is fixed except for os
-      # so if you download a new mne dataset in the code, best to manually increment the key below
+      # Install python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Cache MNE Data and HuggingFace Hub weights.
+      # Both caches are content-addressed (filenames + checksums for MNE,
+      # commit-pinned safetensors for HF), so they don't need to invalidate on
+      # pyproject.toml changes. Using github.run_id as the primary save key
+      # forces a fresh save each run; restore-keys lets every run start from
+      # the most recent cache instead of cold-downloading from physionet.org /
+      # huggingface.co.
       - name: Create/Restore MNE Data Cache
         id: cache-mne_data
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/mne_data
-          key: ${{ runner.os }}-v3
-      - uses: actions/setup-python@v4
+          key: docs-mne-data-v1-${{ github.run_id }}
+          restore-keys: |
+            docs-mne-data-v1-
+            docs-mne-data-
+      - name: Create/Restore HuggingFace Cache
+        uses: actions/cache@v4
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Show Python Version
-        run: python --version
-      # Update pip
-      - name: Update pip
-        run: pip install --upgrade pip
-      # Install with MOABB and docs dependencies
+          path: ~/.cache/huggingface/hub
+          key: docs-hf-hub-v1-${{ github.run_id }}
+          restore-keys: |
+            docs-hf-hub-v1-
+            docs-hf-hub-
+      # Install uv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      # Install with all dependencies for doc build to go through
       - name: Install with doc dependencies
-        run: pip install -e .[moabb,docs]
+        env:
+          # CI runners have no GPU; pull the CPU-only torch wheels instead of the
+          # ~1.8 GiB CUDA stack. Avoids disk exhaustion and speeds up install.
+          UV_TORCH_BACKEND: cpu
+        run: uv pip install --system -e .[all]
       # Show Braindecode Version
       - run: python -c "import braindecode; print(braindecode.__version__)"
-
-      - name: Checking Out Repository
-        uses: actions/checkout@v4
+      # Persist HF token to disk so sphinx-gallery examples can access gated repos
+      - name: Login to Hugging Face Hub
+        if: ${{ env.HF_TOKEN != '' }}
+        run: python -c "import os; from huggingface_hub import login; login(token=os.environ['HF_TOKEN'])"
       - name: Create Docs
         run: |
           cd docs
           make html
+
+      - name: Generate Notebooks from Examples
+        run: |
+          set -euo pipefail
+          echo "Converting Python examples to notebooks in docs/_build/html/auto_examples/_notebooks..."
+          mkdir -p docs/_build/html/auto_examples/_notebooks
+          find examples -type f -name '*.py' | while read -r f; do
+            rel="${f#examples/}"
+            out_dir="docs/_build/html/auto_examples/_notebooks/$(dirname "$rel")"
+            mkdir -p "$out_dir"
+            base="$(basename "$rel" .py)"
+            out_path="$out_dir/$base.ipynb"
+            python .github/scripts/convert_to_notebook.py --input "$f" --output "$out_path"
+          done
+
       - name: Upload HTML Docs as Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: HTML-Docs
           path: ./docs/_build/

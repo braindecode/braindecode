@@ -1,11 +1,13 @@
-"""Benchmarking eager and lazy loading
+""".. _benchmark-eager-lazy:
+
+Benchmarking eager and lazy loading
 ======================================
 
 In this example, we compare the execution time and memory requirements of 1)
 eager loading, i.e., preloading the entire data into memory and 2) lazy loading,
 i.e., only loading examples from disk when they are required. We also include
 some other experiment parameters in the comparison for the sake of completeness
-(e.g., `num_workers`, `cuda`, `batch_size`, etc.).
+(e.g., ``num_workers``, ``cuda``, ``batch_size``, etc.).
 
 While eager loading might be required for some preprocessing steps that require
 continuous data (e.g., temporal filtering, resampling), it also allows
@@ -32,31 +34,34 @@ have been instantiated with parameter `preload=False`.
 #
 # License: BSD (3-clause)
 
-from itertools import product
 import time
-
-import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader
+from itertools import product
 
 import mne
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
+from torch import nn, optim
+from torch.utils.data import DataLoader
 
 from braindecode.datasets import TUHAbnormal
+from braindecode.models import Deep4Net, ShallowFBCSPNet
 from braindecode.preprocessing import create_fixed_length_windows
-from braindecode.models import ShallowFBCSPNet, Deep4Net
-
+from braindecode.util import set_random_seeds
 
 mne.set_log_level("WARNING")  # avoid messages every time a window is extracted
 
 ###############################################################################
 # We start by setting two pytorch internal parameters that can affect the
-# comparison::
+# comparison:
+
 N_JOBS = 8
 torch.backends.cudnn.benchmark = True  # Enables automatic algorithm optimizations
 torch.set_num_threads(N_JOBS)  # Sets the available number of threads
+cuda = torch.cuda.is_available()
+seed = 20240205
+set_random_seeds(seed=seed, cuda=cuda)
 
 
 ###############################################################################
@@ -90,8 +95,8 @@ def load_example_data(preload, window_len_s, n_recordings=10):
         The recordings from the TUH Abnormal corpus do not all share the same
         sampling rate. The following assumes that the files have already been
         resampled to a common sampling rate.
-    """
 
+    """
     recording_ids = list(range(n_recordings))
 
     ds = TUHAbnormal(
@@ -118,9 +123,11 @@ def load_example_data(preload, window_len_s, n_recordings=10):
     # Drop bad epochs
     # XXX: This could be parallelized.
     # XXX: Also, this could be implemented in the Dataset object itself.
-    for ds in windows_ds.datasets:
-        ds.windows.drop_bad()
-        assert ds.windows.preload == preload
+    # We don't support drop_bad since the last version braindecode,
+    # to optimize the dataset speed. If you know how to fix, please open a PR.
+    # for ds in windows_ds.datasets:
+    #    ds.raw.drop_bad()
+    #   assert ds.raw.preload == preload
 
     return windows_ds
 
@@ -151,12 +158,13 @@ def create_example_model(
         Loss function
     optimizer :
         Optimizer
+
     """
     if kind == "shallow":
         model = ShallowFBCSPNet(
             n_channels,
             n_classes,
-            input_window_samples=window_len_samples,
+            n_times=window_len_samples,
             n_filters_time=40,
             filter_time_length=25,
             n_filters_spat=40,
@@ -172,7 +180,7 @@ def create_example_model(
         model = Deep4Net(
             n_channels,
             n_classes,
-            input_window_samples=window_len_samples,
+            n_times=window_len_samples,
             final_conv_length="auto",
             n_filters_time=25,
             n_filters_spat=25,
@@ -188,7 +196,6 @@ def create_example_model(
             first_pool_mode="max",
             later_pool_mode="max",
             drop_prob=0.5,
-            double_time_convs=False,
             split_first_layer=True,
             batch_norm=True,
             batch_norm_alpha=0.1,
@@ -201,7 +208,7 @@ def create_example_model(
         model.cuda()
 
     optimizer = optim.Adam(model.parameters())
-    loss = nn.NLLLoss()
+    loss = nn.CrossEntropyLoss()
 
     return model, loss, optimizer
 
@@ -228,6 +235,7 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
     -------
     model : torch.nn.Module
         Trained model.
+
     """
     for i in range(n_epochs):
         loss_vals = list()
@@ -335,10 +343,9 @@ for (
         num_workers=num_workers,
         worker_init_fn=None,
     )
-
     # Instantiate model and optimizer
-    n_channels = len(dataset.datasets[0].windows.ch_names)
-    n_times = len(dataset.datasets[0].windows.times)
+    n_channels = dataset[0][0].shape[0]
+    n_times = dataset[0][0].shape[1]
     n_classes = 2
     model, loss, optimizer = create_example_model(
         n_channels, n_classes, n_times, kind=model_kind, cuda=cuda

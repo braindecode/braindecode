@@ -1,10 +1,10 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
-
 import glob
 import os
 import random
+import re
 from warnings import warn
 
 import h5py
@@ -12,6 +12,7 @@ import mne
 import numpy as np
 import torch
 from sklearn.utils import check_random_state
+from torch import Tensor
 
 
 def set_random_seeds(seed, cuda, cudnn_benchmark=None):
@@ -22,11 +23,11 @@ def set_random_seeds(seed, cuda, cudnn_benchmark=None):
 
     Parameters
     ----------
-    seed: int
+    seed : int
         Random seed.
-    cuda: bool
+    cuda : bool
         Whether to set cuda seed with torch.
-    cudnn_benchmark: bool (default=None)
+    cudnn_benchmark : bool (default=None)
         Whether pytorch will use cudnn benchmark. When set to `None` it will not modify
         torch.backends.cudnn.benchmark (displays warning in the case of possible lack of
         reproducibility). When set to True, results may not be reproducible (no warning displayed).
@@ -62,17 +63,6 @@ def set_random_seeds(seed, cuda, cudnn_benchmark=None):
     np.random.seed(seed)
 
 
-def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs):
-    warn("np_to_var has been renamed np_to_th, please use np_to_th instead")
-    return np_to_th(
-        X,
-        requires_grad=requires_grad,
-        dtype=dtype,
-        pin_memory=pin_memory,
-        **tensor_kwargs,
-    )
-
-
 def np_to_th(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs):
     """
     Convenience function to transform numpy array to `torch.Tensor`.
@@ -81,17 +71,17 @@ def np_to_th(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwar
 
     Parameters
     ----------
-    X: ndarray or list or number
+    X : ndarray or list or number
         Input arrays
-    requires_grad: bool
+    requires_grad : bool
         passed on to Variable constructor
-    dtype: numpy dtype, optional
+    dtype : numpy dtype, optional
     var_kwargs:
         passed on to Variable constructor
 
     Returns
     -------
-    var: `torch.Tensor`
+    var : `torch.Tensor`
     """
     if not hasattr(X, "__len__"):
         X = [X]
@@ -104,27 +94,24 @@ def np_to_th(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwar
     return X_tensor
 
 
-def var_to_np(var):
-    warn("var_to_np has been renamed th_to_np, please use th_to_np instead")
-    return th_to_np(var)
+def th_to_np(var: Tensor):
+    """Convenience function to transform `torch.Tensor` to numpy.
 
-
-def th_to_np(var):
-    """Convenience function to transform `torch.Tensor` to numpy
     array.
-
-    Should work both for CPU and GPU."""
+    Should work both for CPU and GPU.
+    """
     return var.cpu().data.numpy()
 
 
 def corr(a, b):
     """
-    Computes correlation only between terms of a and terms of b, not within
+    Computes correlation only between terms of a and terms of b, not within.
+
     a and b.
 
     Parameters
     ----------
-    a, b: 2darray, features x samples
+    a, b : 2darray, features x samples
 
     Returns
     -------
@@ -139,12 +126,13 @@ def corr(a, b):
 
 def cov(a, b):
     """
-    Computes covariance only between terms of a and terms of b, not within
+    Computes covariance only between terms of a and terms of b, not within.
+
     a and b.
 
     Parameters
     ----------
-    a, b: 2darray, features x samples
+    a, b : 2darray, features x samples
 
     Returns
     -------
@@ -171,23 +159,24 @@ def _cov_and_var_to_corr(this_cov, var_a, var_b):
 
 def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
     """
-    Reshape two nd-arrays into 2d-arrays, apply function and reshape
+    Reshape two nd-arrays into 2d-arrays, apply function and reshape.
+
     result back.
 
     Parameters
     ----------
-    stat_fn: function
+    stat_fn : function
         Function to apply to 2d-arrays
-    a: nd-array: nd-array
-    b: nd-array
-    axis_a: int or list of int
+    a : nd-array: nd-array
+    b : nd-array
+    axis_a : int or list of int
         sample axis
-    axis_b: int or list of int
+    axis_b : int or list of int
         sample axis
 
     Returns
     -------
-    result: nd-array
+    result : nd-array
         The result reshaped to remaining_dims_a + remaining_dims_b
     """
     if not hasattr(axis_a, "__len__"):
@@ -215,7 +204,8 @@ def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
 
 
 def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None):
-    """Create indices for batches balanced in size
+    """Create indices for batches balanced in size.
+
     (batches will have maximum size difference of 1).
     Supply either batch size or number of batches. Resulting batches
     will not have the given batch size but rather the next largest batch size
@@ -233,7 +223,7 @@ def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None
 
     Returns
     -------
-    batches: list of list of int
+    batches : list of list of int
         Indices for each batch.
     """
     assert batch_size is not None or n_batches is not None
@@ -347,6 +337,17 @@ def create_mne_dummy_raw(
     return raw, save_fname
 
 
+def _looks_like_channel_mask(tensor):
+    """Tell the channel mask from channel positions in an extended batch.
+
+    ``pad_channels_collate`` emits the mask as a boolean tensor and the
+    positions as float; keying on the boolean dtype avoids misclassifying a 2D
+    position array as a mask. Accepts both torch and NumPy boolean dtypes.
+    """
+    dtype = getattr(tensor, "dtype", None)
+    return dtype == torch.bool or getattr(dtype, "kind", None) == "b"
+
+
 class ThrowAwayIndexLoader(object):
     def __init__(self, net, loader, is_regression):
         self.net = net
@@ -363,11 +364,35 @@ class ThrowAwayIndexLoader(object):
                 x, y, i = batch
                 # Store for scoring callbacks
                 self.net._last_window_inds_ = i
+            elif len(batch) > 3:
+                # Extended batch produced by ``return_ch_pos`` /
+                # ``pad_channels_collate``:
+                #   (X, y, crop_inds, [ch_pos], [ch_mask]).
+                # Route the signal + extras to the module via a dict input;
+                # skorch then calls ``module_(**x)``. The forward must accept
+                # ``forward(self, x, pos=None, ch_mask=None, ...)``.
+                signal, y, i = batch[0], batch[1], batch[2]
+                self.net._last_window_inds_ = i
+                x = {"x": signal}
+                for extra in batch[3:]:
+                    if _looks_like_channel_mask(extra):
+                        x["ch_mask"] = extra
+                    else:
+                        x["pos"] = extra
             else:
                 x, y = batch
 
             # TODO: should be on dataset side
-            if hasattr(x, "type"):
+            if isinstance(x, dict):
+                if hasattr(x["x"], "type"):
+                    x["x"] = x["x"].type(torch.float32)
+                if hasattr(y, "type"):
+                    y = (
+                        y.type(torch.float32)
+                        if self.is_regression
+                        else y.type(torch.int64)
+                    )
+            elif hasattr(x, "type"):
                 x = x.type(torch.float32)
                 if self.is_regression:
                     y = y.type(torch.float32)
@@ -394,31 +419,66 @@ def update_estimator_docstring(base_class, docstring):
     return out_docstring
 
 
+def _clean_docstring_sections(doc, remove_sections=("References",)):
+    """Remove numpydoc-style sections that cause Sphinx build errors.
+
+    Numpydoc renders section headers as ``.. rubric::`` directives.
+    When the section body contains indented RST directives (e.g.
+    ``.. footbibliography::`` or ``.. [citation]``), Sphinx errors
+    because rubric does not accept body content.  Stripping these
+    sections from the *raw* docstring prevents numpydoc from
+    generating the problematic output.
+    """
+    if not doc:
+        return doc or ""
+
+    for section in remove_sections:
+        # Match the section header + underline + body lines that follow.
+        # The body stops at the next numpydoc section (an optionally-indented
+        # word line followed by a dashes-only underline) or at end-of-string.
+        doc = re.sub(
+            rf"(\n[ \t]*){re.escape(section)}\n[ \t]*-+\n"
+            r"(?:(?![ \t]*\w[^\n]*\n[ \t]*-+)(?:[ \t]+[^\n]*\n|[ \t]*\n))*",
+            r"\1",
+            doc,
+        )
+    return doc
+
+
 def _update_moabb_docstring(base_class, docstring):
     base_doc = base_class.__doc__
+    if base_doc is None:
+        return docstring
+    base_doc = _clean_docstring_sections(
+        base_doc, remove_sections=("References", "Notes")
+    )
+    # Strip dangling citation references (e.g. ``[1]_``) whose definitions
+    # were in the removed References section.
+    base_doc = re.sub(r"\s*\[\d+\]_", "", base_doc)
     out_docstring = base_doc + f"\n\n{docstring}"
     return out_docstring
 
 
 def read_all_file_names(directory, extension):
-    """Read all files with specified extension from given path and sorts them
+    """Read all files with specified extension from given path and sorts them.
+
     based on a given sorting key.
 
     Parameters
     ----------
-    directory: str
+    directory : str
         Parent directory to be searched for files of the specified type.
-    extension: str
+    extension : str
         File extension, i.e. ".edf" or ".txt".
 
     Returns
     -------
-    file_paths: list(str)
+    file_paths : list(str)
         List of all files found in (sub)directories of path.
     """
     assert extension.startswith(".")
     file_paths = glob.glob(directory + "**/*" + extension, recursive=True)
-    assert (
-        len(file_paths) > 0
-    ), f"something went wrong. Found no {extension} files in {directory}"
+    assert len(file_paths) > 0, (
+        f"something went wrong. Found no {extension} files in {directory}"
+    )
     return file_paths

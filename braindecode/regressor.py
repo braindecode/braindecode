@@ -3,6 +3,7 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Pierre Guetschel <pierre.guetschel@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -11,8 +12,8 @@ import warnings
 import numpy as np
 from skorch.regressor import NeuralNetRegressor
 
-from .training.scoring import predict_trials
 from .eegneuralnet import _EEGNeuralNet
+from .training.scoring import predict_trials
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
@@ -89,7 +90,8 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             return iterator
 
     def predict_proba(self, X):
-        """Return the output of the module's forward method as a numpy
+        """Return the output of the module's forward method as a numpy.
+
         array. In case of cropped decoding returns averaged values for
         each trial.
 
@@ -116,16 +118,15 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
           If this doesn't work with your data, you have to pass a
           ``Dataset`` that can deal with the data.
 
+        Returns
+        -------
+        y_proba : numpy ndarray
+
         Warnings
         --------
         Regressors predict regression targets, so output of this method
         can't be interpreted as probabilities. We advise you to use
         `predict` method instead of `predict_proba`.
-
-        Returns
-        -------
-        y_proba : numpy ndarray
-
         """
         y_pred = super().predict_proba(X)
         # Normally, we have to average the predictions across crops/timesteps
@@ -139,26 +140,26 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             return y_pred
 
     def predict_trials(self, X, return_targets=True):
-        """Create trialwise predictions and optionally also return trialwise
-        labels from cropped dataset.
+        """Create trialwise predictions from a cropped dataset.
 
         Parameters
         ----------
-        X: braindecode.datasets.BaseConcatDataset
+        X : braindecode.datasets.BaseConcatDataset
             A braindecode dataset to be predicted.
-        return_targets: bool
+        return_targets : bool
             If True, additionally returns the trial targets.
 
         Returns
         -------
-        trial_predictions: np.ndarray
+        trial_predictions : np.ndarray
             3-dimensional array (n_trials x n_classes x n_predictions), where
             the number of predictions depend on the chosen window size and the
             receptive field of the network.
-        trial_labels: np.ndarray
-            2-dimensional array (n_trials x n_targets) where the number of
-            targets depends on the decoding paradigm and can be either a single
-            value, multiple values, or a sequence.
+        trial_targets : np.ndarray
+            Ground-truth targets from the dataset in a 2-dimensional array
+            (n_trials x n_targets). Only returned when ``return_targets=True``.
+            The number of targets depends on the decoding paradigm and can be
+            either a single value, multiple values, or a sequence.
         """
         if not self.cropped:
             warnings.warn(
@@ -171,8 +172,9 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             if return_targets:
                 return preds, np.concatenate([X[i][1] for i in range(len(X))])
             return preds
+        self.check_is_fitted()
         return predict_trials(
-            module=self.module,
+            module=self.module_,
             dataset=X,
             return_targets=return_targets,
             batch_size=self.batch_size,
@@ -228,10 +230,6 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
                 y = np.array(y).reshape(-1, 1)
         super().fit(X=X, y=y, **kwargs)
 
-    def _get_n_outputs(self, y, classes):
-        if y is None:
-            return None
-        if y.ndim == 1:
-            return 1
-        else:
-            return y.shape[-1]
+    @property
+    def mode(self):
+        return "regression"

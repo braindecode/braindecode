@@ -1,21 +1,17 @@
-"""
+""".. _sleep-staging-usleep:
+
 Sleep staging on the Sleep Physionet dataset using U-Sleep network
 ==================================================================
 
 .. note::
     Please take a look at the simpler sleep staging example
-    :ref:`here <sphx_glr_auto_examples_plot_sleep_staging.py>`
+    :ref:`sleep-staging-physionet-chambon2018`
     before going through this example. The current example uses a more complex
     architecture and a sequence-to-sequence (seq2seq) approach.
 
 This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We adapt the U-Sleep approach of [1]_ to learn on sequences of EEG
 windows using the openly accessible Sleep Physionet dataset [2]_ [3]_.
-
-.. warning::
-    The example is written to have a very short execution time.
-    This number of epochs is here too small and very few recordings are used.
-    To obtain competitive results you need to use more data and more epochs.
 
 """
 # Authors: Theo Gnassounou <theo.gnassounou@inria.fr>
@@ -34,10 +30,8 @@ windows using the openly accessible Sleep Physionet dataset [2]_ [3]_.
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
 # two recordings from two different individuals: we will use the first one to
-# train our network and the second one to evaluate performance (as in the `MNE`_
-# sleep staging example).
-#
-# .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
+# train our network and the second one to evaluate performance (as in the `MNE
+# sleep staging example <mne-clinical-60-sleep_>`_).
 #
 
 from braindecode.datasets import SleepPhysionet
@@ -57,8 +51,9 @@ dataset = SleepPhysionet(
 # done in [1]_ so that we keep the example as light as possible. No filtering
 # is described in [1]_.
 
-from braindecode.preprocessing import preprocess, Preprocessor
 from sklearn.preprocessing import robust_scale
+
+from braindecode.preprocessing import Preprocessor, preprocess
 
 preprocessors = [Preprocessor(robust_scale, channel_wise=True)]
 
@@ -153,11 +148,13 @@ class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y
 # neural network.
 
 import torch
-from braindecode.util import set_random_seeds
-from braindecode.models import USleep
 
-cuda = torch.cuda.is_available()  # check if GPU is available
-device = "cuda" if torch.cuda.is_available() else "cpu"
+from braindecode.models import USleep
+from braindecode.util import set_random_seeds
+
+cuda = torch.cuda.is_available()  # check if CUDA is available
+mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+device = "cuda" if cuda else "mps" if mps else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to roughly reproduce results
@@ -181,18 +178,18 @@ model = USleep(
     n_times=input_size_samples,
 )
 
-# Send model to GPU
-if cuda:
-    model.cuda()
+# Send model to the selected accelerator
+if device != "cpu":
+    model.to(device)
 ######################################################################
 # Training
 # --------
 #
-# We can now train our network. :class:`braindecode.EEGClassifier` is a
+# We can now train our network. :class:`braindecode.classifier.EEGClassifier` is a
 # braindecode object that is responsible for managing the training of neural
-# networks. It inherits from :class:`skorch.NeuralNetClassifier`, so the
+# networks. It inherits from :class:`skorch.classifier.NeuralNetClassifier`, so the
 # training logic is the same as in
-# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# `<skorch_>`_.
 #
 # .. note::
 #    We use different hyperparameters from [1]_, as these hyperparameters were
@@ -201,13 +198,14 @@ if cuda:
 #    optimization if reusing this code on a different dataset or with more
 #    recordings.
 
+from skorch.callbacks import EarlyStopping, EpochScoring
 from skorch.helper import predefined_split
-from skorch.callbacks import EpochScoring
+
 from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 3  # we use few epochs for speed and but more than one for plotting
+n_epochs = 3
 
 from sklearn.metrics import balanced_accuracy_score
 
@@ -229,7 +227,11 @@ valid_bal_acc = EpochScoring(
     name="valid_bal_acc",
     lower_is_better=False,
 )
-callbacks = [("train_bal_acc", train_bal_acc), ("valid_bal_acc", valid_bal_acc)]
+callbacks = [
+    ("train_bal_acc", train_bal_acc),
+    ("valid_bal_acc", valid_bal_acc),
+    ("early_stopping", EarlyStopping(patience=10, load_best=True)),
+]
 
 clf = EEGClassifier(
     model,
@@ -249,22 +251,47 @@ clf = EEGClassifier(
 # Deactivate the default valid_acc callback:
 clf.set_params(callbacks__valid_acc=None)
 
-# Model training for a specified number of epochs. `y` is None as it is already
-# supplied in the dataset.
+# Model training for a specified number of epochs. `y` is None as it is
+# already supplied in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
 
 ######################################################################
-# Plot results
-# ------------
+# Training for longer
+# -------------------
 #
-# We use the history stored by Skorch during training to plot the performance of
-# the model throughout training. Specifically, we plot the loss and the balanced
-# balanced accuracy for the training and validation sets.
+# The gallery build above uses only ``n_epochs = 3``. When trained
+# offline for up to 100 epochs with early stopping, the model reaches
+# **30.4 % balanced accuracy on the held-out recording (chance = 20 %)**.
+#
+# We can load the pretrained checkpoint from the Hugging Face Hub and
+# inspect the full training curves:
+
+import warnings
+
+repo_id = "braindecode/plot_sleep_staging_usleep"
+try:
+    from huggingface_hub import hf_hub_download
+
+    clf.initialize()
+    clf.load_params(
+        f_params=hf_hub_download(repo_id, "params.safetensors"),
+        f_history=hf_hub_download(repo_id, "history.json"),
+        use_safetensors=True,
+    )
+except Exception as exc:
+    warnings.warn(
+        f"Could not load pretrained checkpoint from {repo_id} ({exc}); "
+        "continuing with the locally trained short-run model.",
+        stacklevel=2,
+    )
+
+######################################################################
+# Plot training curves
+# ~~~~~~~~~~~~~~~~~~~~
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
 df.index.name = "Epoch"
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
@@ -274,21 +301,23 @@ ax1.set_ylabel("Loss")
 ax2.set_ylabel("Balanced accuracy")
 ax1.legend(["Train", "Valid"])
 ax2.legend(["Train", "Valid"])
+ax1.grid(alpha=0.3)
+ax2.grid(alpha=0.3)
 fig.tight_layout()
 plt.show()
 
 ######################################################################
 # Finally, we also display the confusion matrix and classification report:
-from braindecode.visualization import plot_confusion_matrix
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
 y_true = np.array([valid_set[i][1] for i in valid_sampler])
 y_pred = clf.predict(valid_set)
 
-confusion_mat = confusion_matrix(y_true.flatten(), y_pred.flatten())
-
-plot_confusion_matrix(
-    confusion_mat=confusion_mat, class_names=["Wake", "N1", "N2", "N3", "REM"]
+ConfusionMatrixDisplay.from_predictions(
+    y_true.flatten(),
+    y_pred.flatten(),
+    labels=[0, 1, 2, 3, 4],
+    display_labels=["Wake", "N1", "N2", "N3", "REM"],
 )
 
 print(classification_report(y_true.flatten(), y_pred.flatten()))
@@ -307,13 +336,6 @@ ax.plot(y_pred.flatten(), color="r", label="Predict annotations", alpha=0.5)
 ax.set_xlabel("Time (epochs)")
 ax.set_ylabel("Sleep stage")
 
-######################################################################
-# Our model was able to learn, as shown by the decreasing training and
-# validation loss values, despite the low amount of data that was available
-# (only two recordings in this example). To further improve performance, more
-# recordings should be included in the training set, the model should be
-# trained for more epochs and hyperparameters should be optimized.
-
 ###########################################################################
 # References
 # ----------
@@ -331,3 +353,5 @@ ax.set_ylabel("Sleep stage")
 #        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
 #        Research Resource for Complex Physiologic Signals.
 #        Circulation 101(23):e215-e220
+#
+# .. include:: /links.inc

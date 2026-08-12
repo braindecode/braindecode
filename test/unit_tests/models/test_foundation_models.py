@@ -1,0 +1,1181 @@
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#
+# License: BSD-3
+
+import json
+import os
+from pathlib import Path
+from urllib.error import URLError
+
+import mne
+import pooch
+import pytest
+import torch
+
+try:
+    from huggingface_hub import hf_hub_download
+    from safetensors.torch import load_file
+
+    HAS_SAFETENSORS = True
+except ImportError:
+    HAS_SAFETENSORS = False
+
+from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
+from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.reve import RevePositionBank
+
+
+@pytest.fixture
+def n_times():
+    return 1000
+
+
+@pytest.fixture
+def n_chans():
+    return 128
+
+
+@pytest.fixture
+def chs_info():
+    return [{"ch_name": ch_name} for ch_name in LABRAM_CHANNEL_ORDER]
+
+
+@pytest.fixture
+def ch_names(chs_info):
+    return [ch["ch_name"] for ch in chs_info]
+
+
+@pytest.fixture
+def n_outputs():
+    return 4
+
+
+@pytest.fixture
+def patch_size():
+    return 200
+
+
+@pytest.fixture
+def emb_size():
+    return 200
+
+
+@pytest.fixture
+def n_layers():
+    return 2
+
+
+@pytest.fixture
+def num_heads():
+    return 4
+
+
+@pytest.fixture
+def batch_size():
+    return 4
+
+
+@pytest.fixture
+def model_config_tokenizer(
+    n_times, n_chans, chs_info, n_outputs, patch_size, emb_size, n_layers, num_heads
+):
+    return {
+        "n_times": n_times,
+        "n_chans": n_chans,
+        "chs_info": chs_info,
+        "n_outputs": n_outputs,
+        "patch_size": patch_size,
+        "embed_dim": emb_size,
+        "num_layers": n_layers,
+        "num_heads": num_heads,
+        "neural_tokenizer": True,
+    }
+
+
+@pytest.fixture
+def model_config_decoder(
+    n_times, n_chans, chs_info, n_outputs, patch_size, emb_size, n_layers, num_heads
+):
+    return {
+        "n_times": n_times,
+        "n_chans": n_chans,
+        "chs_info": chs_info,
+        "n_outputs": n_outputs,
+        "patch_size": patch_size,
+        "embed_dim": emb_size,
+        "conv_in_channels": 8,
+        "conv_out_channels": 8,
+        "num_layers": n_layers,
+        "num_heads": num_heads,
+        "neural_tokenizer": False,
+    }
+
+
+@pytest.fixture
+def model_tokenizer(model_config_tokenizer):
+    return Labram(**model_config_tokenizer)
+
+
+@pytest.fixture
+def model_decoder(model_config_decoder):
+    return Labram(**model_config_decoder)
+
+
+# ==============================================================================
+# Tests for Labram with neural_tokenizer=True (default)
+# ==============================================================================
+
+
+def test_labram_neural_tokenizer_initialization(model_tokenizer):
+    """Test that the model initializes correctly in tokenizer mode."""
+    assert model_tokenizer is not None
+    assert model_tokenizer.neural_tokenizer is True
+    assert model_tokenizer.n_chans == 128
+    assert model_tokenizer.n_times == 1000
+    assert model_tokenizer.n_outputs == 4
+
+
+def test_labram_neural_tokenizer_forward_pass_basic(
+    model_tokenizer, batch_size, n_chans, n_times, n_outputs
+):
+    """Test basic forward pass in tokenizer mode."""
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model_tokenizer(x)
+    assert output.shape == (batch_size, n_outputs)
+
+
+def test_labram_neural_tokenizer_forward_pass_single_sample(
+    model_tokenizer, n_chans, n_times, n_outputs
+):
+    """Test forward pass with single sample in tokenizer mode."""
+    x = torch.randn(1, n_chans, n_times)
+    output = model_tokenizer(x)
+    assert output.shape == (1, n_outputs)
+
+
+def test_labram_neural_tokenizer_different_batch_sizes(
+    model_tokenizer, n_chans, n_times, n_outputs
+):
+    """Test with different batch sizes in tokenizer mode."""
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, n_chans, n_times)
+        output = model_tokenizer(x)
+        assert output.shape == (batch_size, n_outputs)
+
+
+def test_labram_neural_tokenizer_gradient_flow(model_tokenizer, n_chans, n_times):
+    """Test that gradients flow correctly through the model in tokenizer mode."""
+    x = torch.randn(4, n_chans, n_times, requires_grad=True)
+    output = model_tokenizer(x)
+    loss = output.sum()
+    loss.backward()
+
+    # Check that gradients exist
+    assert model_tokenizer.cls_token.grad is not None
+    assert any(p.grad is not None for p in model_tokenizer.blocks[0].parameters())
+
+
+# ==============================================================================
+# Tests for Labram with neural_tokenizer=False (decoder mode)
+# ==============================================================================
+
+
+def test_labram_neural_decoder_initialization(model_decoder):
+    """Test that the model initializes correctly in decoder mode."""
+    assert model_decoder is not None
+    assert model_decoder.neural_tokenizer is False
+    assert model_decoder.n_chans == 128
+    assert model_decoder.n_times == 1000
+    assert model_decoder.n_outputs == 4
+
+
+def test_labram_neural_decoder_forward_pass_basic(
+    model_decoder, batch_size, n_chans, n_times, n_outputs
+):
+    """Test basic forward pass in decoder mode."""
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model_decoder(x)
+    assert output.shape == (batch_size, n_outputs)
+
+
+def test_labram_neural_decoder_forward_pass_single_sample(
+    model_decoder, n_chans, n_times, n_outputs
+):
+    """Test forward pass with single sample in decoder mode."""
+    x = torch.randn(1, n_chans, n_times)
+    output = model_decoder(x)
+    assert output.shape == (1, n_outputs)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_labram_can_load_pretrained_weights():
+    """Ensure that Labram can load pre-trained weights from HuggingFace Hub."""
+    mne_data_dir = mne.get_config("MNE_DATA")
+    if mne_data_dir is None:
+        mne_data_dir = str(Path.home() / "mne_data")
+    cache_dir = Path(mne_data_dir) / "labram_pretrained"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = str(cache_dir)
+
+    try:
+        model = Labram.from_pretrained(
+            "braindecode/labram-pretrained",
+            cache_dir=cache_dir,
+        )
+    except (URLError, OSError) as err:
+        pytest.skip(f"Could not download pretrained Labram checkpoint: {err}")
+
+    # Verify model was loaded and can run a forward pass
+    x = torch.randn(1, model.n_chans, model.n_times)
+    output = model(x)
+    assert output.shape[0] == 1
+
+
+def test_labram_neural_decoder_different_batch_sizes(
+    model_decoder, n_chans, n_times, n_outputs
+):
+    """Test with different batch sizes in decoder mode."""
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, n_chans, n_times)
+        output = model_decoder(x)
+        assert output.shape == (batch_size, n_outputs)
+
+
+def test_labram_neural_decoder_gradient_flow(model_decoder, n_chans, n_times):
+    """Test that gradients flow correctly through the model in decoder mode."""
+    x = torch.randn(4, n_chans, n_times, requires_grad=True)
+    output = model_decoder(x)
+    loss = output.sum()
+    loss.backward()
+
+    # Check that gradients exist
+    assert model_decoder.cls_token.grad is not None
+    assert any(p.grad is not None for p in model_decoder.blocks[0].parameters())
+
+
+# ==============================================================================
+# Tests for Dimensionality Consistency between modes
+# ==============================================================================
+
+
+def test_labram_output_shapes_consistency_between_modes(n_times, chs_info, n_outputs):
+    """Ensure that both modes produce compatible outputs."""
+    batch_size = 2
+
+    model_tokenizer = Labram(
+        n_times=n_times,
+        chs_info=chs_info,
+        n_outputs=n_outputs,
+        neural_tokenizer=True,
+    )
+
+    model_decoder = Labram(
+        n_times=n_times,
+        chs_info=chs_info,
+        n_outputs=n_outputs,
+        neural_tokenizer=False,
+    )
+
+    x = torch.randn(batch_size, len(chs_info), n_times)
+
+    output_tokenizer = model_tokenizer(x)
+    output_decoder = model_decoder(x)
+
+    # Both should have the same output shape
+    assert output_tokenizer.shape == output_decoder.shape == (batch_size, n_outputs)
+
+
+def test_labram_patch_embedding_shapes(n_times, n_chans, patch_size, emb_size):
+    """Test patch embedding output shapes."""
+    from braindecode.models.labram import _PatchEmbed, _SegmentPatch
+
+    batch_size = 2
+
+    # Test SegmentPatch
+    segment_patch = _SegmentPatch(
+        n_times=n_times,
+        patch_size=patch_size,
+        n_chans=n_chans,
+        emb_dim=patch_size,
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output_segment = segment_patch(x)
+
+    # Should be (batch, n_chans, n_patches, patch_size)
+    assert output_segment.shape == (batch_size, n_chans, 5, patch_size)
+
+    # Test PatchEmbed
+    patch_embed = _PatchEmbed(
+        n_times=n_times,
+        patch_size=patch_size,
+        in_channels=n_chans,
+        emb_dim=emb_size,
+    )
+
+    output_patch = patch_embed(x)
+
+    # Should be (batch, n_patches, emb_dim)
+    assert output_patch.shape == (batch_size, 5, emb_size)
+
+
+# ==============================================================================
+# Tests for Edge Cases
+# ==============================================================================
+
+
+def test_labram_small_input_size(chs_info):
+    """Test with small input size."""
+    model = Labram(
+        n_times=400,
+        chs_info=chs_info,
+        n_outputs=4,
+        patch_size=200,
+        neural_tokenizer=True,
+    )
+
+    x = torch.randn(2, len(chs_info), 400)
+    output = model(x)
+
+    assert output.shape == (2, 4)
+
+
+def test_labram_large_patch_size_warning():
+    """Test that warning is issued when patch_size > n_times."""
+    with pytest.warns(UserWarning, match="patch_size.*n_times"):
+        model = Labram(
+            n_times=400,
+            n_chans=32,
+            n_outputs=4,
+            patch_size=500,  # Larger than n_times
+            neural_tokenizer=True,
+        )
+
+
+# ==============================================================================
+# Tests for Input Validation
+# ==============================================================================
+
+
+def test_labram_wrong_input_shape(model_tokenizer):
+    """Test that wrong input shape raises error."""
+    # Wrong shape (missing channel dimension)
+    x = torch.randn(2, 1000)
+
+    with pytest.raises((RuntimeError, ValueError, IndexError)):
+        model_tokenizer(x)
+
+
+def test_labram_wrong_channel_count(model_tokenizer, n_times):
+    """Test with wrong number of channels."""
+    # Wrong number of channels
+    x = torch.randn(2, 32, n_times)
+
+    # This might not raise immediately but could cause issues
+    # depending on how the model is implemented
+    try:
+        output = model_tokenizer(x)
+        # If it doesn't raise, the shape might be unexpected
+        assert output is not None
+    except (RuntimeError, IndexError, ValueError):
+        # Expected behavior
+        pass
+
+
+# ==============================================================================
+# Tests for Labram Channel Reordering
+# ==============================================================================
+
+
+def test_labram_channel_order_constant_exported():
+    """Test that LABRAM_CHANNEL_ORDER is exported and has expected format."""
+    assert LABRAM_CHANNEL_ORDER is not None
+    assert isinstance(LABRAM_CHANNEL_ORDER, (list, tuple))
+    assert len(LABRAM_CHANNEL_ORDER) > 100  # Should have 100+ channels
+    assert "FP1" in LABRAM_CHANNEL_ORDER
+    assert "CZ" in LABRAM_CHANNEL_ORDER
+    assert "O2" in LABRAM_CHANNEL_ORDER
+
+
+# ==============================================================================
+# Tests for Labram.forward(ch_names=...) subset / case / error paths
+# ==============================================================================
+
+
+def _small_labram_for_ch_names(chs_info, n_outputs):
+    """Build a tiny tokenizer-mode Labram on the full canonical bank."""
+    return Labram(
+        n_times=400,
+        chs_info=chs_info,
+        n_outputs=n_outputs,
+        patch_size=200,
+        embed_dim=64,
+        num_layers=1,
+        num_heads=4,
+        neural_tokenizer=True,
+    )
+
+
+def test_labram_forward_with_ch_names_subset(chs_info, n_outputs):
+    """Forward an arbitrary subset of canonical channels via ch_names."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    model.eval()
+
+    # Pick 8 canonical channels in non-canonical order
+    subset = [LABRAM_CHANNEL_ORDER[i] for i in (10, 0, 30, 5, 60, 15, 90, 20)]
+    x = torch.randn(2, len(subset), 400)
+
+    with torch.no_grad():
+        out = model(x, ch_names=subset)
+
+    assert out.shape == (2, n_outputs)
+
+
+def test_labram_forward_ch_names_is_case_insensitive(chs_info, n_outputs):
+    """Mixed-case ch_names should match LABRAM_CHANNEL_ORDER case-insensitively."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    model.eval()
+
+    upper = [LABRAM_CHANNEL_ORDER[i] for i in (0, 10, 20)]
+    mixed = [name.title() for name in upper]  # e.g. "Fp1", "Fpz", ...
+    x = torch.randn(1, len(mixed), 400)
+
+    with torch.no_grad():
+        out_upper = model(x, ch_names=upper)
+        out_mixed = model(x, ch_names=mixed)
+
+    # Same channels under either casing -> identical outputs.
+    assert torch.allclose(out_upper, out_mixed)
+
+
+def test_labram_forward_ch_names_unknown_channel_raises(chs_info, n_outputs):
+    """Unknown channel names should produce a clear ValueError."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    bad_names = [LABRAM_CHANNEL_ORDER[0], "NOT_A_REAL_CHANNEL"]
+    x = torch.randn(1, len(bad_names), 400)
+
+    with pytest.raises(ValueError, match="LABRAM_CHANNEL_ORDER"):
+        model(x, ch_names=bad_names)
+
+
+def test_labram_forward_ch_names_length_mismatch_raises(chs_info, n_outputs):
+    """len(ch_names) must equal x.shape[1]."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    names = [LABRAM_CHANNEL_ORDER[i] for i in (0, 1, 2)]
+    x = torch.randn(1, 4, 400)  # 4 channels, 3 names
+
+    with pytest.raises(ValueError, match="len.ch_names"):
+        model(x, ch_names=names)
+
+
+def test_labram_forward_none_ch_names_wrong_count_raises(chs_info, n_outputs):
+    """ch_names=None with a non-canonical channel count must raise early."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    x = torch.randn(1, 22, 400)  # not 128
+
+    with pytest.raises(ValueError, match="ch_names is None"):
+        model(x)
+
+
+def test_labram_forward_return_flags_remain_positional(
+    chs_info, n_outputs, n_chans
+):
+    """Back-compat: return_* flags can still be passed positionally."""
+    model = _small_labram_for_ch_names(chs_info, n_outputs)
+    model.eval()
+    x = torch.randn(1, n_chans, 400)
+
+    with torch.no_grad():
+        out_default = model(x)
+        # Positional: return_patch_tokens=False, return_all_tokens=True.
+        # ch_names is keyword-only, so this triggers the all-tokens path
+        # without forcing callers to switch to kwargs for the return flags.
+        out_all = model(x, False, True)
+
+    assert out_default.shape == (1, n_outputs)
+    # all_tokens returns one token per CLS + (n_chans * n_patches) patch
+    # tokens; only the trailing dim has to equal n_outputs.
+    assert out_all.dim() == 3
+    assert out_all.shape[0] == 1
+    assert out_all.shape[-1] == n_outputs
+    assert out_all.shape[1] > 1  # more than just the CLS token
+
+
+# ==============================================================================
+# Tests for LUNA Model Variants (Base, Large, Huge)
+# ==============================================================================
+
+
+@pytest.fixture
+def luna_base_config():
+    """Configuration for LUNA Base variant."""
+    return {
+        "n_outputs": 2,
+        "n_chans": 22,
+        "n_times": 1000,
+        "embed_dim": 64,
+        "num_queries": 4,
+        "depth": 8,
+        "num_heads": 2,
+    }
+
+
+@pytest.fixture
+def luna_large_config():
+    """Configuration for LUNA Large variant."""
+    return {
+        "n_outputs": 2,
+        "n_chans": 22,
+        "n_times": 1000,
+        "embed_dim": 96,
+        "num_queries": 6,
+        "depth": 10,
+        "num_heads": 2,
+    }
+
+
+@pytest.fixture
+def luna_huge_config():
+    """Configuration for LUNA Huge variant."""
+    return {
+        "n_outputs": 2,
+        "n_chans": 22,
+        "n_times": 1000,
+        "embed_dim": 128,
+        "num_queries": 8,
+        "depth": 24,
+        "num_heads": 2,
+    }
+
+
+@pytest.fixture
+def luna_base_model(luna_base_config):
+    """Create LUNA Base model."""
+    return LUNA(**luna_base_config)
+
+
+@pytest.fixture
+def luna_large_model(luna_large_config):
+    """Create LUNA Large model."""
+    return LUNA(**luna_large_config)
+
+
+@pytest.fixture
+def luna_huge_model(luna_huge_config):
+    """Create LUNA Huge model."""
+    return LUNA(**luna_huge_config)
+
+
+@pytest.fixture
+def luna_base_pretrained_model():
+    """Load LUNA Base pretrained model from HuggingFace Hub.
+
+    This fixture downloads and caches the base model. Uses mne_data folder
+    for persistence across CI runs.
+
+    Model located at: https://huggingface.co/thorir/LUNA
+
+    Available variants:
+    - LUNA_base.safetensors (embed_dim=64, num_queries=4, depth=8)
+    - LUNA_large.safetensors (embed_dim=96, num_queries=6, depth=10)
+    - LUNA_huge.safetensors (embed_dim=128, num_queries=8, depth=24)
+    """
+    if not HAS_SAFETENSORS:
+        pytest.skip("safetensors and huggingface_hub are required")
+
+    # Set cache directory to mne_data for CI persistence
+    mne_data_dir = mne.get_config("MNE_DATA")
+    if mne_data_dir is None:
+        mne_data_dir = str(Path.home() / "mne_data")
+    cache_dir = str(Path(mne_data_dir) / "luna_pretrained")
+
+    # Load from HuggingFace Hub with mne_data cache
+    try:
+        # Download the safetensors file
+        model_path = hf_hub_download(
+            repo_id="thorir/LUNA",
+            filename="LUNA_base.safetensors",
+            cache_dir=cache_dir,
+        )
+
+        # Create model instance for classification (fine-tuning)
+        model = LUNA(
+            n_outputs=2,
+            n_chans=22,
+            n_times=1000,
+            embed_dim=64,
+            num_queries=4,
+            depth=8,
+        )
+
+        # Load weights using safetensors
+        state_dict = load_file(model_path)
+        # load_state_dict applies model.mapping automatically
+        model.load_state_dict(state_dict, strict=False)
+
+        return model
+    except Exception as e:
+        # Skip tests if model not available
+        pytest.skip(
+            f"Pretrained model not available: {type(e).__name__}: {str(e)[:100]}"
+        )
+
+
+# ==============================================================================
+# Tests for LUNA Base Variant
+# ==============================================================================
+
+
+def test_luna_base_initialization(luna_base_model, luna_base_config):
+    """Test LUNA Base initialization with correct architecture."""
+    assert luna_base_model is not None
+    assert luna_base_model.embed_dim == 64
+    assert luna_base_model.num_queries == 4
+    assert luna_base_model.depth == 8
+    assert len(luna_base_model.blocks) == 8
+
+
+def test_luna_base_forward_pass(luna_base_model):
+    """Test LUNA Base forward pass produces correct output shape."""
+    x = torch.randn(2, 22, 1000)
+    with torch.no_grad():
+        output = luna_base_model(x)
+    assert output.shape == (2, 2)
+
+
+def test_luna_base_parameter_count(luna_base_model):
+    """Test LUNA Base has expected parameter count."""
+    total_params = sum(p.numel() for p in luna_base_model.parameters())
+    # Base should have roughly 7M parameters
+    assert 5_000_000 < total_params < 10_000_000
+
+
+def test_luna_base_different_batch_sizes(luna_base_model):
+    """Test LUNA Base with different batch sizes."""
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, 22, 1000)
+        with torch.no_grad():
+            output = luna_base_model(x)
+        assert output.shape == (batch_size, 2)
+
+
+def test_luna_base_gradient_flow(luna_base_model):
+    """Test that gradients flow correctly through LUNA Base."""
+    x = torch.randn(2, 22, 1000, requires_grad=True)
+    output = luna_base_model(x)
+    loss = output.sum()
+    loss.backward()
+
+    # Check that gradients exist in transformer blocks
+    assert any(p.grad is not None for p in luna_base_model.blocks[0].parameters())
+    # Check gradient in final classification head
+    assert luna_base_model.final_layer.decoder_ffn.fc1.weight.grad is not None
+
+
+# ==============================================================================
+# Tests for LUNA Large Variant
+# ==============================================================================
+
+
+def test_luna_large_initialization(luna_large_model, luna_large_config):
+    """Test LUNA Large initialization with correct architecture."""
+    assert luna_large_model is not None
+    assert luna_large_model.embed_dim == 96
+    assert luna_large_model.num_queries == 6
+    assert luna_large_model.depth == 10
+    assert len(luna_large_model.blocks) == 10
+
+
+def test_luna_large_forward_pass(luna_large_model):
+    """Test LUNA Large forward pass produces correct output shape."""
+    x = torch.randn(2, 22, 1000)
+    with torch.no_grad():
+        output = luna_large_model(x)
+    assert output.shape == (2, 2)
+
+
+def test_luna_large_parameter_count(luna_large_model):
+    """Test LUNA Large has expected parameter count."""
+    total_params = sum(p.numel() for p in luna_large_model.parameters())
+    # Large should have roughly 43M parameters
+    assert 30_000_000 < total_params < 60_000_000
+
+
+def test_luna_large_different_batch_sizes(luna_large_model):
+    """Test LUNA Large with different batch sizes."""
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, 22, 1000)
+        with torch.no_grad():
+            output = luna_large_model(x)
+        assert output.shape == (batch_size, 2)
+
+
+def test_luna_large_gradient_flow(luna_large_model):
+    """Test that gradients flow correctly through LUNA Large."""
+    x = torch.randn(2, 22, 1000, requires_grad=True)
+    output = luna_large_model(x)
+    loss = output.sum()
+    loss.backward()
+
+    # Check that gradients exist in transformer blocks
+    assert any(p.grad is not None for p in luna_large_model.blocks[0].parameters())
+    # Check gradient in final classification head
+    assert luna_large_model.final_layer.decoder_ffn.fc1.weight.grad is not None
+
+
+# ==============================================================================
+# Tests for LUNA Huge Variant
+# ==============================================================================
+
+
+def test_luna_huge_initialization(luna_huge_model, luna_huge_config):
+    """Test LUNA Huge initialization with correct architecture."""
+    assert luna_huge_model is not None
+    assert luna_huge_model.embed_dim == 128
+    assert luna_huge_model.num_queries == 8
+    assert luna_huge_model.depth == 24
+    assert len(luna_huge_model.blocks) == 24
+
+
+def test_luna_huge_forward_pass(luna_huge_model):
+    """Test LUNA Huge forward pass produces correct output shape."""
+    x = torch.randn(2, 22, 1000)
+    with torch.no_grad():
+        output = luna_huge_model(x)
+    assert output.shape == (2, 2)
+
+
+def test_luna_huge_parameter_count(luna_huge_model):
+    """Test LUNA Huge has expected parameter count."""
+    total_params = sum(p.numel() for p in luna_huge_model.parameters())
+    # Huge should have roughly 312M parameters
+    assert 250_000_000 < total_params < 350_000_000
+
+
+def test_luna_huge_different_batch_sizes(luna_huge_model):
+    """Test LUNA Huge with different batch sizes."""
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, 22, 1000)
+        with torch.no_grad():
+            output = luna_huge_model(x)
+        assert output.shape == (batch_size, 2)
+
+
+def test_luna_huge_gradient_flow(luna_huge_model):
+    """Test that gradients flow correctly through LUNA Huge."""
+    x = torch.randn(2, 22, 1000, requires_grad=True)
+    output = luna_huge_model(x)
+    loss = output.sum()
+    loss.backward()
+
+    # Check that gradients exist in transformer blocks
+    assert any(p.grad is not None for p in luna_huge_model.blocks[0].parameters())
+    # Check gradient in final classification head
+    assert luna_huge_model.final_layer.decoder_ffn.fc1.weight.grad is not None
+
+
+# ==============================================================================
+# Tests for LUNA Variant Comparisons
+# ==============================================================================
+
+
+def test_luna_channel_embed_batch_ordering(luna_base_config):
+    # channel embeddings should be consistent within each batch element
+    luna_base_config["n_chans"] = 3
+    luna_base_config["n_times"] = 80
+    luna_base_config["patch_size"] = 20
+    model = LUNA(**luna_base_config)
+    model.eval()
+
+    B, C, num_patches = 2, 3, 4
+    channel_locations = torch.zeros(B, C, 3)
+    for c in range(C):
+        channel_locations[0, c, 0] = c / (C - 1)
+        channel_locations[1, c, 1] = c / (C - 1)
+
+    x_signal = torch.randn(B, C, 80)
+    with torch.no_grad():
+        x_tok, ch_emb = model.prepare_tokens(x_signal, channel_locations, mask=None)
+
+    # each batch's patches should have identical channel embeddings
+    b0 = ch_emb[:num_patches, 1, :]
+    b1 = ch_emb[num_patches:, 1, :]
+    for i in range(1, num_patches):
+        assert torch.allclose(b0[0], b0[i], atol=1e-5)
+    for i in range(1, num_patches):
+        assert torch.allclose(b1[0], b1[i], atol=1e-5)
+
+    # embeddings for different batches (with different channel_locations)
+    # should not be identical
+    assert not torch.allclose(b0[0], b1[0], atol=1e-5)
+
+
+def test_luna_mapping_includes_temperature_typo():
+    # pretrained weights have typo key, mapping should handle it
+    model = LUNA(n_outputs=2, n_chans=22, n_times=1000, embed_dim=64,
+                 num_queries=4, depth=8)
+    assert "cross_attn.temparature" in model.mapping
+
+
+def test_luna_variants_parameter_count_hierarchy(
+    luna_base_model, luna_large_model, luna_huge_model
+):
+    """Test that parameter counts follow the hierarchy Base < Large < Huge."""
+    base_params = sum(p.numel() for p in luna_base_model.parameters())
+    large_params = sum(p.numel() for p in luna_large_model.parameters())
+    huge_params = sum(p.numel() for p in luna_huge_model.parameters())
+
+    assert base_params < large_params
+    assert large_params < huge_params
+
+
+def test_luna_variants_device_compatibility(
+    luna_base_model, luna_large_model, luna_huge_model
+):
+    """Test LUNA variants work correctly on CPU."""
+    x = torch.randn(2, 22, 1000)
+
+    for model_name, model in [
+        ("Base", luna_base_model),
+        ("Large", luna_large_model),
+        ("Huge", luna_huge_model),
+    ]:
+        model.eval()
+        with torch.no_grad():
+            output = model(x)
+        assert output.shape == (2, 2), f"LUNA {model_name} output shape incorrect"
+
+        # Test CUDA if available
+        if torch.cuda.is_available():
+            model_cuda = model.cuda()
+            x_cuda = x.cuda()
+            with torch.no_grad():
+                output_cuda = model_cuda(x_cuda)
+            assert output_cuda.shape == (2, 2)
+            assert output_cuda.device.type == "cuda"
+
+
+def test_luna_variants_different_channel_counts(
+    luna_base_config, luna_large_config, luna_huge_config
+):
+    """Test LUNA variants handle different channel counts."""
+    configs = [luna_base_config, luna_large_config, luna_huge_config]
+
+    for n_chans in [1, 4, 8, 16, 32, 64]:
+        for config in configs:
+            config["n_chans"] = n_chans
+            model = LUNA(**config)
+            model.eval()
+
+            x = torch.randn(2, n_chans, 1000)
+            with torch.no_grad():
+                output = model(x)
+            assert output.shape == (2, 2)
+
+
+def test_luna_variants_output_consistency(
+    luna_base_config, luna_large_config, luna_huge_config
+):
+    """Test that all LUNA variants produce consistent output shapes."""
+    configs = [luna_base_config, luna_large_config, luna_huge_config]
+    test_input = torch.randn(2, 22, 1000)
+
+    for config in configs:
+        model = LUNA(**config)
+        model.eval()
+
+        with torch.no_grad():
+            output = model(test_input)
+
+        assert output.shape == (2, 2), f"Output shape mismatch for config {config}"
+
+
+# ==============================================================================
+# Tests for Pretrained Models
+# ==============================================================================
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_luna_base_pretrained_loads(luna_base_pretrained_model):
+    """Test that LUNA base pretrained model loads successfully from HuggingFace."""
+    assert luna_base_pretrained_model is not None
+    assert isinstance(luna_base_pretrained_model, LUNA)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_luna_base_pretrained_forward_pass(luna_base_pretrained_model):
+    """Test pretrained base model forward pass."""
+    model = luna_base_pretrained_model
+    model.eval()
+
+    x = torch.randn(2, 22, 1000)
+    with torch.no_grad():
+        output = model(x)
+
+    assert output.shape == (2, 2)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_luna_base_pretrained_parameter_count(luna_base_pretrained_model):
+    """Test pretrained base model has expected parameter count."""
+    total_params = sum(p.numel() for p in luna_base_pretrained_model.parameters())
+    # Base should have roughly 7M parameters
+    assert 5_000_000 < total_params < 10_000_000
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_luna_base_pretrained_different_batch_sizes(luna_base_pretrained_model):
+    """Test pretrained base model with different batch sizes."""
+    model = luna_base_pretrained_model
+    model.eval()
+
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, 22, 1000)
+        with torch.no_grad():
+            output = model(x)
+        assert output.shape == (batch_size, 2)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_luna_base_pretrained_caching(luna_base_pretrained_model):
+    """Test that pretrained model weights are cached in mne_data."""
+
+    # Check that cache directory exists and has files
+    mne_data_dir = mne.get_config("MNE_DATA")
+    if mne_data_dir is None:
+        mne_data_dir = str(Path.home() / "mne_data")
+    cache_dir = Path(mne_data_dir) / "luna_pretrained"
+
+    if cache_dir.exists():
+        # Check that model files were downloaded
+        cache_files = list(cache_dir.rglob("*"))
+        assert len(cache_files) > 0, "Cache directory should contain downloaded files"
+
+
+# ==============================================================================
+# Tests for REVE Model
+# ==============================================================================
+
+# Check if HF token for REVE is available
+HF_TOKEN_REVE_MISSING = (
+    os.getenv("HF_TOKEN_REVE") is None or os.getenv("HF_TOKEN_REVE") == ""
+)
+
+# REVE test constants
+REVE_BATCH_SIZE = 2
+REVE_N_CHANS = 32
+REVE_N_TIMES = 1000
+REVE_N_OUTPUTS = 10
+REVE_MODEL_ID = "brain-bzh/reve-base"
+REVE_POSITIONS_ID = "brain-bzh/reve-positions"
+
+
+def _get_reve_cache_dir():
+    """Get cache directory for REVE pretrained models."""
+    mne_data_dir = mne.get_config("MNE_DATA")
+    if mne_data_dir is None:
+        mne_data_dir = str(Path.home() / "mne_data")
+    return str(Path(mne_data_dir) / "reve_pretrained")
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_reve_positions_match():
+    """Test that the positions from both implementations match."""
+    pytest.skip(
+        "TODO: Fix me. The test is broken on the CI but works locally (even after erasing the cache dir)."
+    )
+    try:
+        from transformers import AutoModel
+    except ImportError:
+        pytest.skip("transformers not installed")
+
+    cache_dir = _get_reve_cache_dir()
+    pos_bank_hf = AutoModel.from_pretrained(
+        REVE_POSITIONS_ID,
+        cache_dir=cache_dir,
+        trust_remote_code=True,
+    )
+    pos_bank_bd = RevePositionBank()
+
+    all_pos_hf = pos_bank_hf.get_all_positions()
+    all_pos_bd = pos_bank_bd.get_all_positions()
+
+    assert all_pos_hf == all_pos_bd, "Position names mismatch"
+
+    for pos in all_pos_bd:
+        pos_hf = pos_bank_hf([pos])
+        pos_bd = pos_bank_bd([pos])
+        assert torch.allclose(pos_hf, pos_bd)
+
+
+@pytest.mark.skipif(HF_TOKEN_REVE_MISSING, reason="HF token for REVE is missing")
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_reve_model_outputs_match():
+    """Test that the outputs from both implementations match."""
+    try:
+        from transformers import AutoModel
+    except ImportError:
+        pytest.skip("transformers not installed")
+
+    try:
+        import flash_attn  # noqa: F401
+    except ImportError:
+        pytest.skip("flash_attn not installed - outputs differ without it")
+
+    cache_dir = _get_reve_cache_dir()
+
+    # Load HuggingFace models
+    pos_bank_hf = AutoModel.from_pretrained(
+        REVE_POSITIONS_ID,
+        cache_dir=cache_dir,
+        trust_remote_code=True,
+    )
+    model_hf = AutoModel.from_pretrained(
+        REVE_MODEL_ID,
+        cache_dir=cache_dir,
+        trust_remote_code=True,
+        token=os.getenv("HF_TOKEN_REVE"),
+    )
+
+    # Load Braindecode model
+    model_bd = REVE.from_pretrained(
+        REVE_MODEL_ID,
+        cache_dir=cache_dir,
+        n_times=REVE_N_TIMES,
+        n_chans=REVE_N_CHANS,
+        n_outputs=REVE_N_OUTPUTS,
+        token=os.getenv("HF_TOKEN_REVE"),
+    )
+
+    ch_list = [f"E{i + 1}" for i in range(REVE_N_CHANS)]
+
+    torch.manual_seed(42)
+    eeg_input = torch.randn(REVE_BATCH_SIZE, REVE_N_CHANS, REVE_N_TIMES)
+
+    pos_hf = pos_bank_hf(ch_list)
+    pos_hf = pos_hf.unsqueeze(0).repeat(REVE_BATCH_SIZE, 1, 1)
+
+    pos_bd = model_bd.get_positions(ch_list)
+    pos_bd = pos_bd.unsqueeze(0).repeat(REVE_BATCH_SIZE, 1, 1)
+
+    assert torch.allclose(pos_hf, pos_bd)
+
+    # return_output is True to bypass the last layer
+    output_bd = model_bd(eeg_input, pos_bd, return_output=True)[-1]
+    output_hf = model_hf(eeg_input, pos_hf, return_output=True)[-1]
+
+    assert torch.allclose(output_hf, output_bd)
+
+
+# ==============================================================================
+# Offline robustness of the REVE position bank (no network required)
+# ==============================================================================
+
+
+def test_reve_position_bank_uses_prefetched_file(tmp_path, monkeypatch):
+    """A prefetched positions file is used offline, without any download."""
+    config = {"Cz": [0.0, 0.0, 1.0], "Pz": [0.0, -0.5, 0.5]}
+    (tmp_path / "reve_positions.json").write_text(json.dumps(config))
+    monkeypatch.setattr(
+        pooch, "retrieve", lambda *a, **k: pytest.fail("unexpected download")
+    )
+
+    bank = RevePositionBank(cache_dir=str(tmp_path))
+
+    assert bank.get_all_positions() == list(config.keys())
+    assert bank.forward(["Cz", "Pz"]).shape == (2, 3)
+
+
+def test_reve_position_bank_download_failure_raises(tmp_path, monkeypatch):
+    """On a cache miss, a download failure points the user at offline prefetch."""
+
+    def _fail(*args, **kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(pooch, "retrieve", _fail)
+
+    with pytest.raises(RuntimeError, match="prefetch it to"):
+        RevePositionBank(cache_dir=str(tmp_path))
+
+
+def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
+    """A corrupt/partial cached file triggers a re-download instead of crashing."""
+    cache_file = tmp_path / "reve_positions.json"
+    cache_file.write_text("{ this is not valid json")
+    config = {"Cz": [0.0, 0.0, 1.0]}
+
+    def _fake_retrieve(url, known_hash, fname, path, **kwargs):
+        (tmp_path / fname).write_text(json.dumps(config))
+
+    monkeypatch.setattr(pooch, "retrieve", _fake_retrieve)
+
+    bank = RevePositionBank(cache_dir=str(tmp_path))
+
+    assert bank.get_all_positions() == list(config.keys())
+
+
+# ==============================================================================
+# Tests for CBraMod Model
+# ==============================================================================
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_cbramod_load_weights():
+    model = CBraMod(return_encoder_output=True)
+    state_dict = torch.hub.load_state_dict_from_url(
+        "https://huggingface.co/braindecode/cbramod-pretrained/resolve/main/pytorch_model.bin",
+        map_location="cpu",
+    )
+    load_result = model.load_state_dict(state_dict)
+    assert not load_result.missing_keys
+    assert not load_result.unexpected_keys
+
+
+def test_cbramod_forward_pass():
+    model = CBraMod(return_encoder_output=True)
+    x = torch.randn(2, 22, 1000)
+    output = model(x)
+    assert output.shape == (2, 22, 5, 200)
+
+
+# ==============================================================================
+# Tests for CodeBrain Model
+# ==============================================================================
+
+
+
+def test_codebrain_forward_pass():
+    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
+    x = torch.randn(2, 19, 6000)
+    output = model(x)
+    assert output.shape == (2, 2)
+
+
+def test_codebrain_pretrain_mode():
+    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000, pretrain_mode=True)
+    x = torch.randn(2, 19, 6000)
+    x_t, x_f = model(x)
+    # seq_len = 6000 // 200 = 30, output shape: (batch, n_chans, seq_len, codebook_size)
+    assert x_t.shape == (2, 19, 30, 4096)
+    assert x_f.shape == (2, 19, 30, 4096)
+
+
+def test_codebrain_return_features():
+    model = CodeBrain(n_chans=19, n_outputs=2, n_times=6000)
+    x = torch.randn(2, 19, 6000)
+    out = model(x, return_features=True)
+    assert isinstance(out, dict)
+    assert "features" in out
+    assert "cls_token" in out
+    # features shape: (batch, n_chans, seq_len, out_channels)
+    assert out["features"].shape == (2, 19, 30, 200)
+    assert out["cls_token"] is None

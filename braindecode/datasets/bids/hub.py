@@ -1,0 +1,1148 @@
+# mypy: ignore-errors
+"""
+Hugging Face Hub integration for EEG datasets.
+
+This module provides push_to_hub() and pull_from_hub() functionality
+for braindecode datasets, similar to the model Hub integration.
+
+.. warning::
+    The format is **BIDS-inspired**, not **BIDS-compliant**. The metadata
+    files are BIDS-compliant, but the data is stored in Zarr format for
+    efficient training, which is not a valid BIDS EEG format.
+
+The format follows a BIDS-inspired sourcedata structure:
+- sourcedata/braindecode/
+  - dataset_description.json  (BIDS-compliant)
+  - participants.tsv          (BIDS-compliant)
+  - dataset.zarr/             (NOT BIDS-compliant - efficient data store)
+  - sub-<label>/
+    - eeg/
+      - *_events.tsv          (BIDS-compliant)
+      - *_channels.tsv        (BIDS-compliant)
+      - *_eeg.json            (BIDS-compliant)
+"""
+
+# Authors: Kuntal Kokate
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
+#
+# License: BSD (3-clause)
+
+import contextlib
+import json
+import logging
+import tempfile
+from datetime import timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING, List, Optional, Union
+
+import mne
+import numpy as np
+import pandas as pd
+import scipy
+from mne.utils import _soft_import
+
+if TYPE_CHECKING:
+    from ..base import BaseDataset
+
+import braindecode
+
+# Import registry for dynamic class lookup (avoids circular imports)
+from ..registry import get_dataset_class, get_dataset_type
+
+# Hub format and validation utilities
+from . import hub_format, hub_validation
+from .hub_io import (
+    _create_compressor,
+    _load_eegwindows_from_zarr,
+    _load_raw_from_zarr,
+    _load_windows_from_zarr,
+    _save_eegwindows_to_zarr,
+    _save_raw_to_zarr,
+    _save_windows_to_zarr,
+)
+
+# Lazy import zarr and huggingface_hub
+zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
+huggingface_hub = _soft_import(
+    "huggingface_hub", purpose="hugging face integration", strict=False
+)
+
+log = logging.getLogger(__name__)
+
+_LOCK_FILE = "format_info.json"
+
+
+class HubDatasetMixin:
+    """
+    Mixin class for Hugging Face Hub integration with EEG datasets.
+
+    This class adds `push_to_hub()` and `pull_from_hub()` methods to
+    BaseConcatDataset, enabling easy upload and download of datasets
+    to/from the Hugging Face Hub.
+
+    Examples
+    --------
+    >>> # Push dataset to Hub
+    >>> dataset = NMT(path=path, preload=True)
+    >>> dataset.push_to_hub(
+    ...     repo_id="username/nmt-dataset",
+    ... )
+    >>>
+    >>> # Load dataset from Hub
+    >>> dataset = BaseConcatDataset.pull_from_hub("username/nmt-dataset")
+    """
+
+    datasets: List["BaseDataset"]  # Attribute provided by inheriting class
+
+    def push_to_hub(
+        self,
+        repo_id: str,
+        private: bool = False,
+        token: Optional[str] = None,
+        compression: str = "blosc",
+        compression_level: int = 5,
+        pipeline_name: str = "braindecode",
+        chunk_size: int = 5_000_000,
+        local_cache_dir: str | Path | None = None,
+        **kwargs,
+    ) -> str:
+        """
+        Upload the dataset to the Hugging Face Hub in BIDS-like Zarr format.
+
+        The dataset is converted to Zarr format with blosc compression, which provides
+        optimal random access performance for PyTorch training. The data is stored
+        in a BIDS sourcedata-like structure with events.tsv, channels.tsv,
+        and participants.tsv sidecar files.
+
+        Parameters
+        ----------
+        repo_id : str
+            Repository ID on the Hugging Face Hub (e.g., "username/dataset-name").
+        private : bool, default=False
+            Whether to create a private repository.
+        token : str | None
+            Hugging Face API token. If None, uses cached token.
+        compression : str, default="blosc"
+            Compression algorithm for Zarr. Options: "blosc", "zstd", "gzip", None.
+        compression_level : int, default=5
+            Compression level (0-9). Level 5 provides optimal balance.
+        pipeline_name : str, default="braindecode"
+            Name of the processing pipeline for BIDS sourcedata.
+        chunk_size : int, default=5_000_000
+            Number of samples per chunk in Zarr along the time/window dimension.
+            Larger chunk sizes create fewer but larger chunks/files. This parameter
+            is used for both continuous data (e.g., RawDataset, EEGWindowsDataset)
+            and pre-cut windows (WindowsDataset). For WindowsDataset, multiple
+            windows may be stored in a single chunk depending on their duration
+            and the chosen ``chunk_size``.
+        local_cache_dir : str | Path | None
+            Local directory to use for temporary files during upload. If None, uses
+            the system temp directory and cleans it up after upload. If provided,
+            the directory is used as a persistent cache:
+
+            - If the directory is empty (or does not exist), the cache is built
+              there and a lock file (``format_info.json``) is written once
+              the cache is complete, before the upload starts. The file
+              contains the zarr conversion parameters as JSON.
+            - If the lock file is present and its JSON parameters match the
+              current call, cache creation is skipped and the upload resumes
+              directly (useful for retrying interrupted uploads).
+            - If the lock file is present but its JSON parameters differ from
+              the current call, a ``ValueError`` is raised.
+            - If the directory is non-empty but the lock file is absent, a
+              ``ValueError`` is raised listing the files found.
+        **kwargs
+            Additional arguments passed to huggingface_hub.upload_large_folder().
+
+        Returns
+        -------
+        str
+            URL of the uploaded dataset on the Hub.
+
+        Raises
+        ------
+        ImportError
+            If huggingface-hub is not installed.
+        ValueError
+            If the dataset is empty or format is invalid.
+
+        Examples
+        --------
+        >>> dataset = NMT(path=path, preload=True)
+        >>> # Upload with BIDS-like structure
+        >>> url = dataset.push_to_hub(
+        ...     repo_id="myusername/nmt-dataset",
+        ... )
+        """
+        if huggingface_hub is False or zarr is False:
+            raise ImportError(
+                "huggingface-hub or zarr is not installed. Install with: "
+                "pip install braindecode[hub]"
+            )
+
+        # Create API instance
+        hf_api = huggingface_hub.HfApi(token=token)
+
+        # Create repository if it doesn't exist
+        try:
+            hf_api.create_repo(
+                repo_id=repo_id,
+                private=private,
+                repo_type="dataset",
+                exist_ok=True,
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to create repository: {e}")
+
+        format_info = self._get_format_info_inline()
+        format_info_lock = {
+            "format": "zarr",
+            "pipeline_name": pipeline_name,
+            "compression": compression,
+            "compression_level": compression_level,
+            "chunk_size": chunk_size,
+            "braindecode_version": braindecode.__version__,
+            **format_info,
+        }
+
+        # Determine upload directory and whether to build the cache
+        with contextlib.ExitStack() as stack:
+            if local_cache_dir is None:
+                tmpdir = stack.enter_context(tempfile.TemporaryDirectory())
+                tmp_path = Path(tmpdir)
+                build_cache = True
+            else:
+                tmp_path = Path(local_cache_dir)
+                lock_path = tmp_path / _LOCK_FILE
+                if lock_path.exists():
+                    with open(lock_path, "r", encoding="utf-8") as _f:
+                        _lock_params = json.load(_f)
+                    if _lock_params != format_info_lock:
+                        raise ValueError(
+                            f"Lock file found at '{lock_path}' but its "
+                            f"parameters {_lock_params} differ from the "
+                            f"current call parameters {format_info_lock}. "
+                            "Provide an empty directory or match the "
+                            "original parameters."
+                        )
+                    log.info(
+                        f"Lock file found at '{lock_path}', skipping cache "
+                        "creation and resuming upload."
+                    )
+                    build_cache = False
+                else:
+                    if tmp_path.exists():
+                        existing = list(tmp_path.iterdir())
+                        if existing:
+                            entries = ", ".join(p.name for p in existing)
+                            raise ValueError(
+                                f"local_cache_dir '{tmp_path}' is not empty and "
+                                f"has no lock file. Found: {entries}. Provide an "
+                                "empty directory or one previously prepared by "
+                                "push_to_hub()."
+                            )
+                    else:
+                        tmp_path.mkdir(parents=True)
+                    build_cache = True
+
+            if build_cache:
+                self._build_local_cache(tmp_path, format_info_lock)
+
+            # Upload folder to Hub
+            log.info(f"Uploading to Hugging Face Hub ({repo_id})...")
+            try:
+                url = hf_api.upload_large_folder(
+                    repo_id=repo_id,
+                    folder_path=str(tmp_path),
+                    repo_type="dataset",
+                    **kwargs,
+                )
+                log.info(f"Dataset uploaded successfully to {repo_id}")
+                log.info(f"URL: https://huggingface.co/datasets/{repo_id}")
+                return url
+            except Exception as e:
+                raise RuntimeError(f"Failed to upload dataset: {e}")
+
+    def _build_local_cache(
+        self,
+        tmp_path,
+        format_info_lock,
+    ):
+        """Build the local cache directory with the dataset in Zarr format and BIDS-like structure.
+        This folder will be uploaded to the Hub"""
+        compression = format_info_lock["compression"]
+        compression_level = format_info_lock["compression_level"]
+        pipeline_name = format_info_lock["pipeline_name"]
+        chunk_size = format_info_lock["chunk_size"]
+
+        # Create BIDS-like sourcedata structure
+        log.info("Creating BIDS-like sourcedata structure...")
+        bids_layout = hub_format.BIDSSourcedataLayout(
+            tmp_path, pipeline_name=pipeline_name
+        )
+        sourcedata_dir = bids_layout.create_structure()
+
+        # Save dataset_description.json
+        bids_layout.save_dataset_description()
+
+        # Save participants.tsv
+        descriptions = [ds.description for ds in self.datasets]
+        bids_layout.save_participants(descriptions)
+
+        # Save BIDS sidecar files for each recording
+        self._save_bids_sidecar_files(bids_layout)
+
+        # Convert dataset to Zarr format inside sourcedata
+        log.info("Converting dataset to Zarr format...")
+        dataset_path = sourcedata_dir / "dataset.zarr"
+
+        self._convert_to_zarr_inline(
+            dataset_path,
+            compression,
+            compression_level,
+            chunk_size,
+        )
+
+        # Save dataset metadata (README.md)
+        self._save_dataset_card(tmp_path)
+
+        # Save format info
+        # This marks the cache as complete
+        format_info_path = tmp_path / _LOCK_FILE
+        with open(format_info_path, "w", encoding="utf-8") as f:
+            json.dump(format_info_lock, f, indent=2)
+
+    def _save_dataset_card(self, path: Path, bids_inspired: bool = True) -> None:
+        """Generate and save a dataset card (README.md) with metadata.
+
+        Parameters
+        ----------
+        path : Path
+            Directory where README.md will be saved.
+        bids_inspired : bool
+            Whether to include BIDS-inspired format documentation.
+        """
+        # Get info, which also validates uniformity across all datasets
+        format_info = self._get_format_info_inline()
+
+        n_recordings = len(self.datasets)
+        first_ds = self.datasets[0]
+        descriptions = [ds.description for ds in self.datasets]
+
+        # Get dataset-specific info based on type using registry
+        dataset_type = get_dataset_type(first_ds)
+
+        n_windows = format_info["total_samples"]
+
+        # Compute total duration across all recordings
+        total_duration = 0.0
+        if dataset_type == "WindowsDataset":
+            n_channels = len(first_ds.windows.ch_names)
+            data_type = "Windowed (from Epochs object)"
+            sfreq = first_ds.windows.info["sfreq"]
+            for ds in self.datasets:
+                epoch_length = ds.windows.tmax - ds.windows.tmin
+                total_duration += len(ds.windows) * epoch_length
+        elif dataset_type == "EEGWindowsDataset":
+            n_channels = len(first_ds.raw.ch_names)
+            sfreq = first_ds.raw.info["sfreq"]
+            data_type = "Windowed (from Raw object)"
+            for ds in self.datasets:
+                total_duration += ds.raw.n_times / ds.raw.info["sfreq"]
+        elif dataset_type == "RawDataset":
+            n_channels = len(first_ds.raw.ch_names)
+            sfreq = first_ds.raw.info["sfreq"]
+            data_type = "Continuous (Raw)"
+            for ds in self.datasets:
+                total_duration += ds.raw.n_times / ds.raw.info["sfreq"]
+        else:
+            raise TypeError(f"Unsupported dataset type: {dataset_type}")
+
+        # Create README content and save
+        license_value, license_needs_update = _infer_license_from_descriptions(
+            descriptions
+        )
+        readme_content = _generate_readme_content(
+            format_info=format_info,
+            n_recordings=n_recordings,
+            n_channels=n_channels,
+            sfreq=sfreq,
+            data_type=data_type,
+            n_windows=n_windows,
+            total_duration=total_duration,
+            license=license_value,
+            license_needs_update=license_needs_update,
+        )
+
+        # Save README
+        readme_path = path / "README.md"
+        with open(readme_path, "w", encoding="utf-8") as f:
+            f.write(readme_content)
+
+    def _save_bids_sidecar_files(
+        self, bids_layout: "hub_format.BIDSSourcedataLayout"
+    ) -> None:
+        """Save BIDS-compliant sidecar files for each recording.
+
+        This creates events.tsv, channels.tsv, and EEG sidecar JSON files
+        for each recording in a BIDS-like directory structure.
+
+        Parameters
+        ----------
+        bids_layout : BIDSSourcedataLayout
+            BIDS layout object for path generation.
+        """
+        dataset_type = get_dataset_type(self.datasets[0])
+
+        for i_ds, ds in enumerate(self.datasets):
+            # Get BIDS entities from description
+            description = ds.description if ds.description is not None else pd.Series()
+
+            # Get BIDSPath for this recording using mne_bids
+            bids_path = bids_layout.get_bids_path(description)
+
+            # Create subject directory
+            bids_path.mkdir(exist_ok=True)
+
+            # Get metadata and info based on dataset type
+            # Also compute recording_duration, recording_type, and epoch_length
+            recording_duration = None
+            recording_type = None
+            epoch_length = None
+
+            if dataset_type == "WindowsDataset":
+                info = ds.windows.info
+                metadata = ds.windows.metadata
+                sfreq = info["sfreq"]
+                # WindowsDataset contains pre-cut epochs
+                recording_type = "epoched"
+                # Use MNE's tmax - tmin for epoch length
+                epoch_length = ds.windows.tmax - ds.windows.tmin
+                # Total duration = number of epochs * epoch length
+                n_epochs = len(ds.windows)
+                recording_duration = n_epochs * epoch_length
+            elif dataset_type == "EEGWindowsDataset":
+                info = ds.raw.info
+                metadata = ds.metadata
+                sfreq = info["sfreq"]
+                # EEGWindowsDataset has continuous raw with window metadata
+                recording_type = "epoched"
+                # Use MNE Raw's duration property
+                recording_duration = ds.raw.duration
+                # Compute epoch_length from metadata if available
+                if metadata is not None and len(metadata) > 0:
+                    i_start = metadata["i_start_in_trial"].iloc[0]
+                    i_stop = metadata["i_stop_in_trial"].iloc[0]
+                    epoch_length = (i_stop - i_start) / sfreq
+            elif dataset_type == "RawDataset":
+                info = ds.raw.info
+                metadata = None
+                sfreq = info["sfreq"]
+                # RawDataset is continuous
+                recording_type = "continuous"
+                # Use MNE Raw's duration property
+                recording_duration = ds.raw.duration
+            else:
+                continue
+
+            # Determine task name from description or BIDSPath
+            task_name = bids_path.task or "unknown"
+
+            # Save BIDS sidecar files using mne_bids BIDSPath
+            hub_format.save_bids_sidecar_files(
+                bids_path=bids_path,
+                info=info,
+                metadata=metadata,
+                sfreq=sfreq,
+                task_name=str(task_name),
+                recording_duration=recording_duration,
+                recording_type=recording_type,
+                epoch_length=epoch_length,
+            )
+
+            log.debug(
+                f"Saved BIDS sidecar files for recording {i_ds} to {bids_path.directory}"
+            )
+
+    @classmethod
+    def pull_from_hub(
+        cls,
+        repo_id: str,
+        preload: bool = True,
+        token: Optional[str] = None,
+        cache_dir: Optional[Union[str, Path]] = None,
+        force_download: bool = False,
+        revision: str | None = None,
+        **kwargs,
+    ):
+        """
+        Load a dataset from the Hugging Face Hub.
+
+        Parameters
+        ----------
+        repo_id : str
+            Repository ID on the Hugging Face Hub (e.g., "username/dataset-name").
+        preload : bool, default=True
+            Whether to preload the data into memory. If False, uses lazy loading
+            (when supported by the format).
+        token : str | None
+            Hugging Face API token. If None, uses cached token.
+        cache_dir : str | Path | None
+            Directory to cache the downloaded dataset. If None, uses default
+            cache directory (~/.cache/huggingface/datasets).
+        force_download : bool, default=False
+            Whether to force re-download even if cached.
+        revision : str | None, default=None
+            Specific branch, tag, or commit to download. If None, uses the
+            repository's default revision.
+        **kwargs
+            Additional arguments (currently unused).
+
+        Returns
+        -------
+        BaseConcatDataset
+            The loaded dataset.
+
+        Raises
+        ------
+        ImportError
+            If huggingface-hub is not installed.
+        FileNotFoundError
+            If the repository or dataset files are not found.
+
+        Examples
+        --------
+        >>> from braindecode.datasets import BaseConcatDataset
+        >>> dataset = BaseConcatDataset.pull_from_hub("username/nmt-dataset")
+        >>> print(f"Loaded {len(dataset)} windows")
+        >>>
+        >>> # Use with PyTorch
+        >>> from torch.utils.data import DataLoader
+        >>> loader = DataLoader(dataset, batch_size=32, shuffle=True)
+        """
+        if zarr is False or huggingface_hub is False:
+            raise ImportError(
+                "huggingface hub functionality is not installed. Install with: "
+                "pip install braindecode[hub]"
+            )
+
+        log.info(f"Loading dataset from Hugging Face Hub ({repo_id})...")
+
+        try:
+            # Download the entire dataset directory
+            dataset_dir = huggingface_hub.snapshot_download(
+                repo_id=repo_id,
+                repo_type="dataset",
+                token=token,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                revision=revision,
+            )
+
+            # Load format info
+            format_info_path = Path(dataset_dir) / _LOCK_FILE
+            if format_info_path.exists():
+                with open(format_info_path, "r") as f:
+                    format_info = json.load(f)
+
+                # Verify it's zarr format
+                if format_info.get("format") != "zarr":
+                    raise ValueError(
+                        f"Dataset format is '{format_info.get('format')}', but only "
+                        "'zarr' format is supported. Please re-upload the dataset."
+                    )
+            else:
+                format_info = {}
+
+            pipeline_name = format_info.get("pipeline_name", "braindecode")
+
+            # Find zarr dataset path (try sourcedata, derivatives, then root)
+            zarr_path = (
+                Path(dataset_dir) / "sourcedata" / pipeline_name / "dataset.zarr"
+            )
+            if not zarr_path.exists():
+                zarr_path = (
+                    Path(dataset_dir) / "derivatives" / pipeline_name / "dataset.zarr"
+                )
+            if not zarr_path.exists():
+                zarr_path = Path(dataset_dir) / "dataset.zarr"
+
+            if not zarr_path.exists():
+                raise FileNotFoundError(
+                    f"Zarr dataset not found at {zarr_path}. "
+                    "The dataset may be in an unsupported format."
+                )
+
+            dataset = cls._load_from_zarr_inline(zarr_path, preload)
+
+            # Load BIDS metadata if available
+            cls._load_bids_metadata(dataset, Path(dataset_dir), pipeline_name)
+
+            log.info(f"Dataset loaded successfully from {repo_id}")
+            log.info(f"Recordings: {len(dataset.datasets)}")
+            log.info(
+                f"Total windows/samples: {format_info.get('total_samples', 'N/A')}"
+            )
+
+            return dataset
+
+        except huggingface_hub.utils.HfHubHTTPError as e:
+            if e.response.status_code == 404:
+                raise FileNotFoundError(
+                    f"Dataset '{repo_id}' not found on Hugging Face Hub. "
+                    "Please check the repository ID and ensure it exists."
+                )
+            else:
+                raise RuntimeError(f"Failed to download dataset: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load dataset from Hub: {e}")
+
+    @classmethod
+    def _load_bids_metadata(
+        cls,
+        dataset,
+        dataset_dir: Path,
+        pipeline_name: str,
+    ) -> None:
+        """Load BIDS metadata from sidecar files and attach to dataset.
+
+        Parameters
+        ----------
+        dataset : BaseConcatDataset
+            The loaded dataset to attach metadata to.
+        dataset_dir : Path
+            Root directory of the downloaded dataset.
+        pipeline_name : str
+            Name of the processing pipeline.
+        """
+        # Try sourcedata first, fall back to derivatives for backwards compatibility
+        sourcedata_dir = dataset_dir / "sourcedata" / pipeline_name
+        if not sourcedata_dir.exists():
+            sourcedata_dir = dataset_dir / "derivatives" / pipeline_name
+
+        # Load participants.tsv if available
+        participants_path = sourcedata_dir / "participants.tsv"
+        if participants_path.exists():
+            try:
+                participants_df = pd.read_csv(participants_path, sep="\t")
+                # Store as attribute on the concat dataset
+                dataset.participants = participants_df
+                log.debug(
+                    f"Loaded participants info for {len(participants_df)} subjects"
+                )
+            except Exception as e:
+                log.warning(f"Failed to load participants.tsv: {e}")
+
+        # Create layout for path generation
+        bids_layout = hub_format.BIDSSourcedataLayout(
+            dataset_dir, pipeline_name=pipeline_name
+        )
+
+        # Try to load events.tsv files and attach to individual datasets
+        for i_ds, ds in enumerate(dataset.datasets):
+            description = ds.description if ds.description is not None else pd.Series()
+
+            # Get BIDSPath for this recording
+            bids_path = bids_layout.get_bids_path(description)
+
+            # Load events.tsv if available
+            events_path = bids_path.copy().update(suffix="events", extension=".tsv")
+            if events_path.fpath.exists():
+                try:
+                    events_df = pd.read_csv(events_path.fpath, sep="\t")
+                    ds.bids_events = events_df
+                    log.debug(f"Loaded events for recording {i_ds}")
+                except Exception as e:
+                    log.warning(f"Failed to load events for recording {i_ds}: {e}")
+
+            # Load channels.tsv if available
+            channels_path = bids_path.copy().update(suffix="channels", extension=".tsv")
+            if channels_path.fpath.exists():
+                try:
+                    channels_df = pd.read_csv(channels_path.fpath, sep="\t")
+                    ds.bids_channels = channels_df
+                    log.debug(f"Loaded channels for recording {i_ds}")
+                except Exception as e:
+                    log.warning(f"Failed to load channels for recording {i_ds}: {e}")
+
+    def _convert_to_zarr_inline(
+        self,
+        output_path: Path,
+        compression: str,
+        compression_level: int,
+        chunk_size: int = 5_000_000,
+    ) -> None:
+        """Convert dataset to Zarr format (inline implementation)."""
+
+        if zarr is False or huggingface_hub is False:
+            raise ImportError(
+                "huggingface hub functionality is not installed. Install with: "
+                "pip install braindecode[hub]"
+            )
+
+        if output_path.exists():
+            raise FileExistsError(
+                f"{output_path} already exists. Set overwrite=True to replace it."
+            )
+
+        # Create zarr store (zarr v3 API)
+        root = zarr.open(str(output_path), mode="w")
+
+        # Validate uniformity across all datasets using shared validation
+        dataset_type, _, _ = hub_validation.validate_dataset_uniformity(self.datasets)
+
+        # Keep reference to first dataset for preprocessing kwargs
+        first_ds = self.datasets[0]
+
+        # Store global metadata
+        root.attrs["n_datasets"] = len(self.datasets)
+        root.attrs["dataset_type"] = dataset_type
+        root.attrs["braindecode_version"] = braindecode.__version__
+
+        # Track dependency versions for reproducibility
+        root.attrs["mne_version"] = mne.__version__
+        root.attrs["numpy_version"] = np.__version__
+        root.attrs["pandas_version"] = pd.__version__
+        root.attrs["zarr_version"] = zarr.__version__
+        root.attrs["scipy_version"] = scipy.__version__
+
+        # Save preprocessing kwargs (check first dataset, assuming uniform preprocessing)
+        # These are typically set by windowing functions on individual datasets
+        for kwarg_name in [
+            "raw_preproc_kwargs",
+            "window_kwargs",
+            "window_preproc_kwargs",
+        ]:
+            # Check first dataset for these attributes
+            if hasattr(first_ds, kwarg_name):
+                kwargs = getattr(first_ds, kwarg_name)
+                if kwargs:
+                    root.attrs[kwarg_name] = json.dumps(kwargs)
+
+        # Create compressor
+        compressor = _create_compressor(compression, compression_level)
+
+        # Save each recording
+        for i_ds, ds in enumerate(self.datasets):
+            grp = root.create_group(f"recording_{i_ds}")
+
+            if dataset_type == "WindowsDataset":
+                # Extract data from WindowsDataset
+                data = ds.windows.get_data()
+                metadata = ds.windows.metadata
+                description = ds.description
+                info_dict = ds.windows.info.to_json_dict()
+                target_name = ds.target_name if hasattr(ds, "target_name") else None
+
+                # Save using inlined function
+                _save_windows_to_zarr(
+                    grp,
+                    data,
+                    metadata,
+                    description,
+                    info_dict,
+                    compressor,
+                    target_name,
+                )
+
+            elif dataset_type == "EEGWindowsDataset":
+                # Get continuous raw data and metadata from EEGWindowsDataset
+                raw = ds.raw
+                metadata = ds.metadata
+                description = ds.description
+                info_dict = ds.raw.info.to_json_dict()
+                targets_from = ds.targets_from
+                last_target_only = ds.last_target_only
+
+                # Save using inlined function (saves continuous raw directly)
+                _save_eegwindows_to_zarr(
+                    grp,
+                    raw,
+                    metadata,
+                    description,
+                    info_dict,
+                    targets_from,
+                    last_target_only,
+                    compressor,
+                    chunk_size,
+                )
+
+            elif dataset_type == "RawDataset":
+                # Get continuous raw data from RawDataset
+                raw = ds.raw
+                description = ds.description
+                info_dict = ds.raw.info.to_json_dict()
+                target_name = ds.target_name if hasattr(ds, "target_name") else None
+
+                # Save using inlined function
+                _save_raw_to_zarr(
+                    grp,
+                    raw,
+                    description,
+                    info_dict,
+                    target_name,
+                    compressor,
+                    chunk_size,
+                )
+
+    def _get_format_info_inline(self):
+        """Get format info (inline implementation).
+
+        This is an inline version of hub_formats.get_format_info() that avoids
+        circular import.
+        """
+        if len(self.datasets) == 0:
+            raise ValueError("Cannot get format info for empty dataset")
+
+        # Validate uniformity across all datasets using shared validation
+        dataset_type, _, _ = hub_validation.validate_dataset_uniformity(self.datasets)
+
+        # Calculate dataset size
+        # BaseConcatDataset's __len__ already sums len(ds) for all datasets
+        total_samples = len(self)
+        total_size_mb = 0
+
+        for ds in self.datasets:
+            if dataset_type == "WindowsDataset":
+                # Use MNE's internal _size property to avoid loading data
+                total_size_mb += ds.windows._size / (1024 * 1024)
+            elif dataset_type == "EEGWindowsDataset":
+                # Use raw object's size (not extracted windows)
+                total_size_mb += ds.raw._size / (1024 * 1024)
+            elif dataset_type == "RawDataset":
+                total_size_mb += ds.raw._size / (1024 * 1024)
+
+        n_recordings = len(self.datasets)
+
+        return {
+            "n_recordings": n_recordings,
+            "total_samples": total_samples,
+            "total_size_mb": round(total_size_mb, 2),
+        }
+
+    @staticmethod
+    def _load_from_zarr_inline(input_path: Path, preload: bool):
+        """Load dataset from Zarr format (inline implementation).
+
+        This is an inline version of hub_formats.load_from_zarr() that avoids
+        circular import by using hub_formats_core directly.
+        """
+        if not input_path.exists():
+            raise FileNotFoundError(f"{input_path} does not exist.")
+
+        # Open zarr store (zarr v3 API)
+        root = zarr.open(str(input_path), mode="r")
+
+        n_datasets = root.attrs["n_datasets"]
+        dataset_type = root.attrs["dataset_type"]
+
+        # Get dataset classes from registry
+        WindowsDataset = get_dataset_class("WindowsDataset")
+        EEGWindowsDataset = get_dataset_class("EEGWindowsDataset")
+        RawDataset = get_dataset_class("RawDataset")
+        BaseConcatDataset = get_dataset_class("BaseConcatDataset")
+
+        datasets = []
+        for i_ds in range(n_datasets):
+            grp = root[f"recording_{i_ds}"]
+            group_name = f"recording_{i_ds}"
+
+            if dataset_type == "WindowsDataset":
+                # Load using inlined function
+                data, metadata, description, info_dict, target_name = (
+                    _load_windows_from_zarr(grp, preload)
+                )
+
+                if preload:
+                    # Convert to MNE objects and create dataset
+                    info = mne.Info.from_json_dict(info_dict)
+                    targets = metadata["target"].values
+                    if np.issubdtype(targets.dtype, np.integer):
+                        event_ids = targets
+                    else:
+                        event_ids = np.ones(len(metadata), dtype=int)
+                    events = np.column_stack(
+                        [
+                            metadata["i_start_in_trial"].values.astype(int),
+                            np.zeros(len(metadata), dtype=int),
+                            event_ids,
+                        ]
+                    )
+                    epochs = mne.EpochsArray(
+                        data, info, events=events, metadata=metadata
+                    )
+                    ds = WindowsDataset(epochs, description)
+                    if target_name is not None:
+                        ds.target_name = target_name
+                else:
+                    ds = WindowsDataset._from_zarr(
+                        zarr_path=input_path,
+                        group_name=group_name,
+                        metadata=metadata,
+                        description=description,
+                        info_dict=info_dict,
+                        target_name=target_name,
+                    )
+
+            elif dataset_type == "EEGWindowsDataset":
+                # Load using inlined function
+                (
+                    data,
+                    metadata,
+                    description,
+                    info_dict,
+                    targets_from,
+                    last_target_only,
+                ) = _load_eegwindows_from_zarr(grp, preload)
+
+                if preload:
+                    # Convert to MNE objects and create dataset
+                    # Data is already in continuous format [n_channels, n_timepoints]
+                    info = mne.Info.from_json_dict(info_dict)
+                    raw = mne.io.RawArray(data, info)
+                    ds = EEGWindowsDataset(
+                        raw=raw,
+                        metadata=metadata,
+                        description=description,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
+                    )
+                else:
+                    ds = EEGWindowsDataset._from_zarr(
+                        zarr_path=input_path,
+                        group_name=group_name,
+                        metadata=metadata,
+                        description=description,
+                        info_dict=info_dict,
+                        targets_from=targets_from,
+                        last_target_only=last_target_only,
+                    )
+
+            elif dataset_type == "RawDataset":
+                # Load using inlined function
+                data, description, info_dict, target_name = _load_raw_from_zarr(
+                    grp, preload
+                )
+
+                if preload:
+                    # Convert to MNE objects and create dataset
+                    # Data is in continuous format [n_channels, n_timepoints]
+                    info = mne.Info.from_json_dict(info_dict)
+                    raw = mne.io.RawArray(data, info)
+                    ds = RawDataset(raw, description)
+                    if target_name is not None:
+                        ds.target_name = target_name
+                else:
+                    ds = RawDataset._from_zarr(
+                        zarr_path=input_path,
+                        group_name=group_name,
+                        description=description,
+                        info_dict=info_dict,
+                        target_name=target_name,
+                    )
+
+            else:
+                raise ValueError(f"Unsupported dataset_type: {dataset_type}")
+
+            datasets.append(ds)
+
+        # Create concat dataset
+        concat_ds = BaseConcatDataset(datasets)
+
+        # Restore preprocessing kwargs (set on individual datasets, not concat)
+        for kwarg_name in [
+            "raw_preproc_kwargs",
+            "window_kwargs",
+            "window_preproc_kwargs",
+        ]:
+            if kwarg_name in root.attrs:
+                kwargs = json.loads(root.attrs[kwarg_name])
+                # Set on each individual dataset (where they were originally stored)
+                for ds in datasets:
+                    setattr(ds, kwarg_name, kwargs)
+
+        return concat_ds
+
+
+def _generate_readme_content(
+    format_info,
+    n_recordings: int,
+    n_channels: int,
+    sfreq,
+    data_type: str,
+    n_windows: int,
+    total_duration: float | None = None,
+    format: str = "zarr",
+    license: str = "please-specify",
+    license_needs_update: bool = True,
+):
+    """Generate README.md content for a dataset uploaded to the Hub.
+
+    Parameters
+    ----------
+    format_info : dict
+        Dictionary containing format metadata (e.g., total_size_mb).
+    n_recordings : int
+        Number of recordings in the dataset.
+    n_channels : int
+        Number of EEG channels.
+    sfreq : float or None
+        Sampling frequency in Hz.
+    data_type : str
+        Type of dataset (e.g., "Windowed", "Continuous").
+    n_windows : int
+        Number of windows/samples in the dataset.
+    total_duration : float or None
+        Total duration in seconds across all recordings.
+    format : str
+        Storage format (default: "zarr").
+    license : str
+        Dataset license string to write in YAML front matter.
+    license_needs_update : bool
+        Whether to append a reminder comment next to the license field.
+
+    Returns
+    -------
+    str
+        Markdown content for the README.md file.
+    """
+    total_size_mb = (
+        format_info.get("total_size_mb", 0.0) if isinstance(format_info, dict) else 0.0
+    )
+    sfreq_str = f"{sfreq:g}" if sfreq is not None else "N/A"
+
+    duration_str = (
+        str(timedelta(seconds=int(total_duration))) if total_duration else "N/A"
+    )
+
+    license_line = f"license: {license}"
+    if license_needs_update:
+        license_line += "  # Please update this field to reflect your dataset's license"
+
+    return f"""---
+tags:
+- braindecode
+- eeg
+- neuroscience
+- brain-computer-interface
+- deep-learning
+{license_line}
+---
+
+# EEG Dataset
+
+This dataset was created using [braindecode](https://braindecode.org), a deep
+learning library for EEG/MEG/ECoG signals.
+
+## Dataset Information
+
+| Property | Value |
+|----------|------:|
+| Recordings | {n_recordings} |
+| Type | {data_type} |
+| Channels | {n_channels} |
+| Sampling frequency | {sfreq_str} Hz |
+| Total duration | {duration_str} |
+| Windows/samples | {n_windows:,} |
+| Size | {total_size_mb:.2f} MB |
+| Format | {format} |
+
+## Quick Start
+
+```python
+from braindecode.datasets import BaseConcatDataset
+
+# Load from Hugging Face Hub
+dataset = BaseConcatDataset.pull_from_hub("username/dataset-name")
+
+# Access a sample
+X, y, metainfo = dataset[0]
+# X: EEG data [n_channels, n_times]
+# y: target label
+# metainfo: window indices
+```
+
+## Training with PyTorch
+
+```python
+from torch.utils.data import DataLoader
+
+loader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
+
+for X, y, metainfo in loader:
+    # X: [batch_size, n_channels, n_times]
+    # y: [batch_size]
+    pass  # Your training code
+```
+
+## BIDS-inspired Structure
+
+This dataset uses a **BIDS-inspired** organization. Metadata files follow BIDS
+conventions, while data is stored in Zarr format for efficient deep learning.
+
+**BIDS-style metadata:**
+- `dataset_description.json` - Dataset information
+- `participants.tsv` - Subject metadata
+- `*_events.tsv` - Trial/window events
+- `*_channels.tsv` - Channel information
+- `*_eeg.json` - Recording parameters
+
+**Data storage:**
+- `dataset.zarr/` - Zarr format (optimized for random access)
+
+```
+sourcedata/braindecode/
+├── dataset_description.json
+├── participants.tsv
+├── dataset.zarr/
+└── sub-<label>/
+    └── eeg/
+        ├── *_events.tsv
+        ├── *_channels.tsv
+        └── *_eeg.json
+```
+
+### Accessing Metadata
+
+```python
+# Participants info
+if hasattr(dataset, "participants"):
+    print(dataset.participants)
+
+# Events for a recording
+if hasattr(dataset.datasets[0], "bids_events"):
+    print(dataset.datasets[0].bids_events)
+
+# Channel info
+if hasattr(dataset.datasets[0], "bids_channels"):
+    print(dataset.datasets[0].bids_channels)
+```
+
+---
+
+*Created with [braindecode](https://braindecode.org)*
+"""
+
+
+def _infer_license_from_descriptions(
+    descriptions: list[pd.Series | None],
+) -> tuple[str, bool]:
+    """Infer a single dataset license from descriptions.
+
+    Returns inferred license and whether a manual update reminder is needed.
+    """
+    licenses = set()
+    for description in descriptions:
+        if description is None:
+            continue
+        raw_license = description.get("license", None)
+        if raw_license is None:
+            continue
+        normalized = str(raw_license).strip()
+        if normalized and normalized.lower() != "nan":
+            licenses.add(normalized)
+
+    if len(licenses) == 1:
+        return next(iter(licenses)), False
+
+    return "please-specify", True

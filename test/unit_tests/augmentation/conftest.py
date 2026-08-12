@@ -9,8 +9,7 @@ from sklearn.utils import check_random_state
 from skorch.helper import to_tensor
 from torch import optim
 
-from braindecode.augmentation import AugmentedDataLoader
-from braindecode.augmentation import TimeReverse
+from braindecode.augmentation import AugmentedDataLoader, TimeReverse
 from braindecode.classifier import EEGClassifier
 
 

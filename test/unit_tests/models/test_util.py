@@ -5,35 +5,19 @@
 
 import inspect
 
-import pytest
 import numpy as np
-from torch import nn
+import pytest
 from sklearn.preprocessing import OneHotEncoder
 
-from braindecode.models.modules import Expression
+from braindecode import models
 from braindecode.models.util import (
-    get_output_shape,
-    aggregate_probas,
-    _pad_shift_array,
+    interpolated_models_dict,
     models_dict,
 )
-from braindecode import models
-
-
-def test_get_output_shape_1d_model():
-    model = nn.Conv1d(1, 1, 3)
-    out_shape = get_output_shape(model, in_chans=1, input_window_samples=5)
-    assert out_shape == (
-        1,
-        1,
-        3,
-    )
-
-
-def test_get_output_shape_2d_model():
-    model = nn.Sequential(Expression(lambda x: x.unsqueeze(-1)), nn.Conv2d(1, 1, (3, 1)))
-    out_shape = get_output_shape(model, in_chans=1, input_window_samples=5)
-    assert out_shape == (1, 1, 3, 1)
+from braindecode.modules.util import (
+    _pad_shift_array,
+    aggregate_probas,
+)
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64])
@@ -108,6 +92,22 @@ def test_models_dict():
             and m != models.base.EEGModuleMixin
         )
     ]
-    models_list = list(models_dict.items())
-    assert len(all_models) == len(models_list)
-    assert set(all_models) == set(models_list)
+    # ``models_dict`` and ``interpolated_models_dict`` together must cover all
+    # EEGModuleMixin subclasses, and must be disjoint.
+    combined = {**models_dict, **interpolated_models_dict}
+    assert len(all_models) == len(combined)
+    assert set(all_models) == set(combined.items())
+    assert set(models_dict).isdisjoint(interpolated_models_dict)
+
+
+def test_interpolated_models_dict():
+    # Interpolated models are separated out of ``models_dict`` and are
+    # identified by the ``_TARGET_CHS_INFO`` attribute set by
+    # ``InterpolatedModel``.
+    assert len(interpolated_models_dict) > 0
+    for name, model_cls in interpolated_models_dict.items():
+        assert getattr(model_cls, "_TARGET_CHS_INFO", None) is not None
+        assert name not in models_dict
+    # No interpolated models leaked into ``models_dict``.
+    for model_cls in models_dict.values():
+        assert getattr(model_cls, "_TARGET_CHS_INFO", None) is None

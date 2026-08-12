@@ -3,159 +3,184 @@
 #
 # License: BSD (3-clause)
 import inspect
+import warnings
+from copy import deepcopy
+from functools import wraps
+from pathlib import Path
+from typing import Any, Dict, Literal, Optional, Sequence
 
 import numpy as np
-import torch
-from scipy.special import log_softmax
-from sklearn.utils import deprecated
-
-import braindecode.models as models
-
-
-@deprecated(
-    "will be removed in version 1.0. Use EEGModuleMixin.to_dense_prediction_model method directly "
-    "on the model object."
-)
-def to_dense_prediction_model(model, axis=(2, 3)):
-    """
-    Transform a sequential model with strides to a model that outputs
-    dense predictions by removing the strides and instead inserting dilations.
-    Modifies model in-place.
-
-    Parameters
-    ----------
-    model: torch.nn.Module
-        Model which modules will be modified
-    axis: int or (int,int)
-        Axis to transform (in terms of intermediate output axes)
-        can either be 2, 3, or (2,3).
-
-    Notes
-    -----
-    Does not yet work correctly for average pooling.
-    Prior to version 0.1.7, there had been a bug that could move strides
-    backwards one layer.
-
-    """
-    if not hasattr(axis, "__len__"):
-        axis = [axis]
-    assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"
-    axis = np.array(axis) - 2
-    stride_so_far = np.array([1, 1])
-    for module in model.modules():
-        if hasattr(module, "dilation"):
-            assert module.dilation == 1 or (module.dilation == (1, 1)), (
-                "Dilation should equal 1 before conversion, maybe the model is "
-                "already converted?"
-            )
-            new_dilation = [1, 1]
-            for ax in axis:
-                new_dilation[ax] = int(stride_so_far[ax])
-            module.dilation = tuple(new_dilation)
-        if hasattr(module, "stride"):
-            if not hasattr(module.stride, "__len__"):
-                module.stride = (module.stride, module.stride)
-            stride_so_far *= np.array(module.stride)
-            new_stride = list(module.stride)
-            for ax in axis:
-                new_stride[ax] = 1
-            module.stride = tuple(new_stride)
-
-
-@deprecated(
-    "will be removed in version 1.0. Use EEGModuleMixin.get_output_shape method directly on the "
-    "model object."
-)
-def get_output_shape(model, in_chans, input_window_samples):
-    """Returns shape of neural network output for batch size equal 1.
-
-    Returns
-    -------
-    output_shape: tuple
-        shape of the network output for `batch_size==1` (1, ...)
-    """
-    with torch.no_grad():
-        dummy_input = torch.ones(
-            1,
-            in_chans,
-            input_window_samples,
-            dtype=next(model.parameters()).dtype,
-            device=next(model.parameters()).device,
-        )
-        output_shape = model(dummy_input).shape
-    return output_shape
-
-
-def _pad_shift_array(x, stride=1):
-    """Zero-pad and shift rows of a 3D array.
-
-    E.g., used to align predictions of corresponding windows in
-    sequence-to-sequence models.
-
-    Parameters
-    ----------
-    x : np.ndarray
-        Array of shape (n_rows, n_classes, n_windows).
-    stride : int
-        Number of non-overlapping elements between two consecutive sequences.
-
-    Returns
-    -------
-    np.ndarray :
-        Array of shape (n_rows, n_classes, (n_rows - 1) * stride + n_windows)
-        where each row is obtained by zero-padding the corresponding row in
-        ``x`` before and after in the last dimension.
-    """
-    if x.ndim != 3:
-        raise NotImplementedError(
-            "x must be of shape (n_rows, n_classes, n_windows), got " f"{x.shape}"
-        )
-    x_padded = np.pad(x, ((0, 0), (0, 0), (0, (x.shape[0] - 1) * stride)))
-    orig_strides = x_padded.strides
-    new_strides = (
-        orig_strides[0] - stride * orig_strides[2],
-        orig_strides[1],
-        orig_strides[2],
-    )
-    return np.lib.stride_tricks.as_strided(x_padded, strides=new_strides)
-
-
-def aggregate_probas(logits, n_windows_stride=1):
-    """Aggregate predicted probabilities with self-ensembling.
-
-    Aggregate window-wise predicted probabilities obtained on overlapping
-    sequences of windows using multiplicative voting as described in
-    [Phan2018]_.
-
-    Parameters
-    ----------
-    logits : np.ndarray
-        Array of shape (n_sequences, n_classes, n_windows) containing the
-        logits (i.e. the raw unnormalized scores for each class) for each
-        window of each sequence.
-    n_windows_stride : int
-        Number of windows between two consecutive sequences. Default is 1
-        (maximally overlapping sequences).
-
-    Returns
-    -------
-    np.ndarray :
-        Array of shape ((n_rows - 1) * stride + n_windows, n_classes)
-        containing the aggregated predicted probabilities for each window
-        contained in the input sequences.
-
-    References
-    ----------
-    .. [Phan2018] Phan, H., Andreotti, F., Cooray, N., Chén, O. Y., &
-        De Vos, M. (2018). Joint classification and prediction CNN framework
-        for automatic sleep stage classification. IEEE Transactions on
-        Biomedical Engineering, 66(5), 1285-1296.
-    """
-    log_probas = log_softmax(logits, axis=1)
-    return _pad_shift_array(log_probas, stride=n_windows_stride).sum(axis=0).T
-
+import pandas as pd
+import pydantic
+import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
+from torch import nn
 
 models_dict = {}
+# Interpolated models are channel-interpolating wrappers around existing
+# braindecode backbones (see :func:`braindecode.models.InterpolatedModel`).
+# They are derivatives of existing models rather than standalone
+# architectures, so they are kept in a separate registry to avoid polluting
+# ``models_dict`` (e.g. for benchmarking that iterates over all "real" models).
+interpolated_models_dict = {}
+
+_IMPORT_ADAPTER = pydantic.TypeAdapter(pydantic.ImportString)
+
+
+_EEG_PARAMS = frozenset(
+    {"n_outputs", "n_chans", "chs_info", "n_times", "input_window_seconds", "sfreq"}
+)
+
+_JSON_SAFE = (int, float, str, bool, type(None))
+_BATCH_NORM_MODULES = (
+    nn.BatchNorm1d,
+    nn.BatchNorm2d,
+    nn.BatchNorm3d,
+    nn.SyncBatchNorm,
+)
+
+
+def _disable_batch_norm_training_if_batch_size_one(forward):
+    """Temporarily set BatchNorm layers to train(False) for batch size one."""
+    forward_signature = inspect.signature(forward)
+
+    @wraps(forward)
+    def wrapped(self, *args, **kwargs):
+        bound = forward_signature.bind(self, *args, **kwargs)
+        x = next(value for name, value in bound.arguments.items() if name != "self")
+        batch_norms = []
+        if self.training and x.shape[0] == 1:
+            batch_norms = [
+                layer
+                for layer in self.modules()
+                if isinstance(layer, _BATCH_NORM_MODULES) and layer.training
+            ]
+            for batch_norm in batch_norms:
+                batch_norm.train(False)
+        try:
+            return forward(self, *args, **kwargs)
+        finally:
+            for batch_norm in batch_norms:
+                batch_norm.train(True)
+
+    return wrapped
+
+
+def _is_jsonable(val):
+    """Return True if *val* is directly JSON-serializable."""
+    if isinstance(val, _JSON_SAFE):
+        return True
+    if isinstance(val, (list, tuple)):
+        return all(_is_jsonable(v) for v in val)
+    if isinstance(val, dict):
+        return all(isinstance(k, str) and _is_jsonable(v) for k, v in val.items())
+    return False
+
+
+def track_model_init_kwargs(cls) -> None:
+    """Instrument a model class so constructor kwargs are tracked."""
+    init = cls.__init__
+    if getattr(init, "_braindecode_tracks_init_kwargs", False):
+        return
+
+    init_signature = inspect.signature(init)
+
+    @wraps(init)
+    def wrapped(self, *args, **kwargs):
+        bound = init_signature.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+
+        captured_kwargs = {}
+        for name, param in init_signature.parameters.items():
+            if name == "self" or name not in bound.arguments:
+                continue
+            value = bound.arguments[name]
+            if param.kind == param.VAR_KEYWORD:
+                captured_kwargs.update(value)
+            elif param.kind != param.VAR_POSITIONAL:
+                captured_kwargs[name] = value
+        self._braindecode_init_kwargs = captured_kwargs
+        return init(self, *args, **kwargs)
+
+    setattr(wrapped, "_braindecode_tracks_init_kwargs", True)
+    cls.__init__ = wrapped
+
+
+def build_model_config(model) -> dict:
+    """Build a JSON-serializable config dict from a model instance.
+
+    Prefers ``_hub_mixin_config`` when available (it uses Hub coders to
+    encode custom types like ``functools.partial``). Otherwise reuses the
+    ``__init__`` keyword arguments captured at construction time.
+
+    Parameters
+    ----------
+    model : EEGModuleMixin
+        The model instance.
+
+    Returns
+    -------
+    dict
+        All ``__init__`` parameters, JSON-serializable.
+    """
+    hub_config = getattr(model, "_hub_mixin_config", None)
+    if hub_config is not None:
+        config = dict(hub_config)
+    else:
+        init_kwargs = getattr(model, "_braindecode_init_kwargs", None)
+        if init_kwargs is None:
+            raise RuntimeError(
+                f"{type(model).__name__} was instantiated without captured init kwargs; "
+                "cannot build a reliable config."
+            )
+
+        config = {}
+        for name, val in deepcopy(init_kwargs).items():
+            if name == "chs_info":
+                continue
+            if isinstance(val, type):
+                val = f"{val.__module__}.{val.__qualname__}"
+            elif not _is_jsonable(val):
+                continue
+            config[name] = val
+    chs_info = getattr(model, "_chs_info", None)
+    if chs_info is not None:
+        config["chs_info"] = model._serialize_chs_info(chs_info)
+    return config
+
+
+def resolve_type_kwargs(cls, kwargs):
+    """Resolve type-encoded strings in *kwargs* back to Python types.
+
+    When a model config is saved to JSON, ``type[nn.Module]`` parameters
+    (e.g. ``activation=nn.ELU``) are stored as dotted import paths like
+    ``"torch.nn.modules.activation.ELU"``.  This function resolves them
+    back to actual types using :class:`pydantic.ImportString`.
+
+    Parameters
+    ----------
+    cls : type
+        The model class whose ``__init__`` signature is inspected.
+    kwargs : dict
+        Keyword arguments to resolve in-place.
+
+    Returns
+    -------
+    dict
+        The same *kwargs* dict, with type strings resolved.
+    """
+    for name, param in inspect.signature(cls.__init__).parameters.items():
+        val = kwargs.get(name)
+        if isinstance(val, str) and "." in val and isinstance(param.default, type):
+            try:
+                kwargs[name] = _IMPORT_ADAPTER.validate_python(val)
+            except pydantic.ValidationError:
+                warnings.warn(
+                    f"Could not resolve type string {val!r} for parameter "
+                    f"{name!r} in {cls.__name__}",
+                    stacklevel=2,
+                )
+    return kwargs
+
 
 # For the models inside the init model, go through all the models
 # check those have the EEGMixin class inherited. If they are, add them to the
@@ -163,12 +188,63 @@ models_dict = {}
 
 
 def _init_models_dict():
+    import braindecode.models as models
+
     for m in inspect.getmembers(models, inspect.isclass):
         if (
             issubclass(m[1], models.base.EEGModuleMixin)
             and m[1] != models.base.EEGModuleMixin
         ):
-            models_dict[m[0]] = m[1]
+            # Interpolated models are wrappers around existing backbones
+            # (identified by the ``_TARGET_CHS_INFO`` class attribute set by
+            # :func:`braindecode.models.InterpolatedModel`). Keep them in a
+            # dedicated registry instead of ``models_dict``.
+            if getattr(m[1], "_TARGET_CHS_INFO", None) is not None:
+                interpolated_models_dict[m[0]] = m[1]
+            else:
+                models_dict[m[0]] = m[1]
+
+
+def _get_model_class(model_name: str):
+    """Return the model class registered under ``model_name``.
+
+    Searches both the standard :data:`models_dict` and the
+    :data:`interpolated_models_dict` so that interpolated models remain
+    resolvable by name (e.g. for skorch wrappers and pydantic configs).
+
+    Parameters
+    ----------
+    model_name : str
+        Name of the model class to retrieve.
+
+    Returns
+    -------
+    type
+        The model class registered under ``model_name``.
+
+    Raises
+    ------
+    ValueError
+        If ``model_name`` is not found in either registry.
+    """
+    if not models_dict and not interpolated_models_dict:
+        _init_models_dict()
+    if model_name in models_dict:
+        return models_dict[model_name]
+    if model_name in interpolated_models_dict:
+        return interpolated_models_dict[model_name]
+    raise ValueError(f"Unknown model name {model_name!r}.")
+
+
+# Keep in sync with _EEG_PARAMS above.
+SigArgName = Literal[
+    "n_outputs",
+    "n_chans",
+    "chs_info",
+    "n_times",
+    "input_window_seconds",
+    "sfreq",
+]
 
 
 ################################################################
@@ -185,43 +261,537 @@ def _init_models_dict():
 # required_params: list[str]
 #   The signal-related parameters that are needed to initialize
 #   the model.
-# signal_params: dict | None
+# signal_params: dict | callable | None
 #   The characteristics of the signal that should be passed to
 #   the model tested in case the default_signal_params are not
-#   compatible with this model.
+#   compatible with this model.  May also be a zero-argument
+#   callable returning a dict (used to defer imports that would
+#   create circular dependencies).
 #   The keys of this dictionary can only be among those of
 #   default_signal_params.
 ################################################################
-models_mandatory_parameters = [
+
+_rng = np.random.default_rng(12)
+# Default 3-channel chs_info used by most model tests
+_chs_info_3ch = [
+    {
+        "ch_name": f"C{i}",
+        "kind": "eeg",
+        "loc": _rng.random(12),
+    }
+    for i in range(1, 4)
+]
+# 4-channel variant: MNE interpolation requires >=4 digitisation points
+_chs_info_4ch = [
+    {
+        "ch_name": f"C{i}",
+        "kind": "eeg",
+        "loc": _rng.random(12),
+    }
+    for i in range(1, 5)
+]
+
+
+def _get_labram_chs_info() -> list[dict]:
+    """Return the 128-channel canonical chs_info for LaBraM with 12-element locs.
+
+    Uses a lazy import from the ``labram`` module to avoid a circular import:
+    ``util.py`` is loaded by ``base.py`` before ``labram.py`` is fully
+    initialized.  The ``_LABRAM_TARGET_CHS_INFO`` entries store only a
+    3-element loc; this function zero-pads each to the 12-element MNE format
+    required by ``ChsInfoType``.
+    """
+    import numpy as np
+
+    from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
+
+    result = []
+    for ch in _LABRAM_TARGET_CHS_INFO:
+        loc3 = np.asarray(ch["loc"], dtype=float)
+        loc12 = np.zeros(12, dtype=float)
+        loc12[:3] = loc3[:3]
+        result.append(
+            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc12.tolist()}
+        )
+    return result
+
+
+def _get_bendr_chs_info() -> list[dict]:
+    """Return the 20-channel canonical chs_info for BENDR with 12-element locs.
+
+    Same lazy-import rationale as :func:`_get_labram_chs_info`. The last entry
+    is the ``SCALE`` amplitude-statistic placeholder (see
+    ``braindecode.models.bendr``).
+    """
+    import numpy as np
+
+    from braindecode.models.bendr import _BENDR_TARGET_CHS_INFO
+
+    result = []
+    for ch in _BENDR_TARGET_CHS_INFO:
+        loc3 = np.asarray(ch["loc"], dtype=float)
+        loc12 = np.zeros(12, dtype=float)
+        loc12[:3] = loc3[:3]
+        result.append(
+            {"ch_name": ch["ch_name"], "kind": ch["kind"], "loc": loc12.tolist()}
+        )
+    return result
+
+
+models_mandatory_parameters: list[
+    tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
+] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("BDTCN", ["n_chans", "n_outputs"], None),
     ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
-    ("DeepSleepNet", ["n_outputs"], None),
+    ("DeepSleepNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGConformer", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGInception", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGInceptionERP", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGNetv1", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGNetv4", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGResNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("HybridNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGPT", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    (
+        "InterpolatedEEGPT",
+        ["chs_info", "n_outputs", "n_times"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
     ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "SleepStagerBlanco2020",
         ["n_chans", "n_outputs", "n_times"],
-        # n_chans dividable by n_groups=2:
-        dict(chs_info=[dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 5)]),
+        {"n_chans": 4},  # n_chans dividable by n_groups=2
     ),
     ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
-        "SleepStagerEldele2021",
+        "AttnSleep",
         ["n_outputs", "n_times", "sfreq"],
-        dict(sfreq=100, n_times=3000, chs_info=[dict(ch_name="C1", kind="eeg")]),
+        {
+            "sfreq": 100.0,
+            "n_times": 3000,
+            "chs_info": [{"ch_name": "C1", "kind": "eeg"}],
+        },
     ),  # 1 channel
-    ("TCN", ["n_chans", "n_outputs"], None),
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128)),
-    ("BIOT", ["n_chans", "n_outputs", "sfreq"], None),
-    ("Labram", ["n_chans", "n_outputs", "n_times"], None),
+    ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 128.0}),
+    ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
+    (
+        "InterpolatedBIOT",
+        ["chs_info", "n_outputs", "sfreq", "n_times"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
+    ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "Labram",
+        ["chs_info", "n_outputs", "n_times"],
+        # Callable: Labram requires the exact 128-ch canonical order; deferred to
+        # avoid a circular import (util.py is loaded by base.py before labram.py).
+        lambda: {"chs_info": _get_labram_chs_info()},
+    ),
+    (
+        "InterpolatedLaBraM",
+        ["chs_info", "n_outputs", "n_times"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
+    ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("ContraWR", ["n_chans", "n_outputs", "sfreq", "n_times"], {"sfreq": 200.0}),
+    ("EEGNeX", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGSym", ["chs_info", "n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("TCFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 250.0}),
+    ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    ("SignalJEPA", ["chs_info"], None),
+    (
+        "InterpolatedSignalJEPA",
+        ["chs_info"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
+    ("SignalJEPA_Contextual", ["chs_info", "n_times", "n_outputs"], None),
+    ("SignalJEPA_PostLocal", ["n_chans", "n_times", "n_outputs"], None),
+    ("SignalJEPA_PreLocal", ["n_chans", "n_times", "n_outputs"], None),
+    ("FBCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    ("FBMSNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    (
+        "MetaNeuromotorHand",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 32000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 16.0,
+            "n_outputs": 100,
+        },
+    ),
+    (
+        "EMG2QwertyNet",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 32,
+            "n_times": 8000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 4.0,
+            "n_outputs": 99,
+        },
+    ),
+    ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
+    ("PBT", ["n_chans", "n_outputs", "n_times"], None),
+    ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("BrainModule", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    (
+        "BENDR",
+        ["n_chans", "n_outputs", "n_times"],
+        # Callable: BENDR now requires chs_info to match BENDR_CHANNEL_ORDER
+        # when supplied; deferred to avoid a circular import (util.py is loaded
+        # by base.py before bendr.py).
+        lambda: {"chs_info": _get_bendr_chs_info()},
+    ),
+    (
+        "InterpolatedBENDR",
+        ["chs_info", "n_outputs", "n_times"],
+        {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
+    ),
+    ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
+    ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
+    ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "MVPFormer",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {"sfreq": 100.0, "n_times": 2000},
+    ),
+    (
+        "REVE",
+        ["n_times", "n_outputs", "n_chans", "chs_info"],
+        {
+            "sfreq": 200.0,
+            "n_chans": 19,
+            "n_times": 1_000,
+            "chs_info": [{"ch_name": f"E{i + 1}", "kind": "eeg"} for i in range(19)],
+        },
+    ),
+    ("CBraMod", ["n_outputs"], None),
+    (
+        "CodeBrain",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_chans": 19, "n_times": 6000},
+    ),
+    ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    ("EEGDINO", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "DANCE",
+        ["n_outputs", "n_chans", "n_times", "sfreq", "chs_info"],
+        {
+            "n_chans": 19,
+            "n_times": 6400,  # 32 s @ 200 Hz, above the depth-10 stack minimum
+            "sfreq": 200.0,
+            "input_window_seconds": 32.0,
+            "n_outputs": 4,
+            "chs_info": [
+                {
+                    "ch_name": f"E{i + 1}",
+                    "kind": "eeg",
+                    "loc": _rng.random(12),
+                }
+                for i in range(19)
+            ],
+        },
+    ),
+    (
+        "ZUNA",
+        ["chs_info", "n_outputs", "n_times"],
+        {
+            "n_times": 1280,
+            "sfreq": 256.0,
+            "input_window_seconds": 5.0,
+        },
+    ),
 ]
+
+################################################################
+# List of models that are not meant for classification
+#
+# Their output shape may difer from the expected output shape
+# for classification models.
+################################################################
+non_classification_models = [
+    "SignalJEPA",
+    "InterpolatedSignalJEPA",
+    # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
+    "MetaNeuromotorHand",
+    "EMG2QwertyNet",
+    # forward returns (batch, num_latents, n_outputs) dense per-token logits,
+    # not class logits.
+    "DANCE",
+]
+
+################################################################
+
+default_signal_params: dict[SigArgName, Any] = {
+    "n_times": 1000,
+    "sfreq": 250.0,
+    "n_outputs": 2,
+    "chs_info": _chs_info_3ch,
+    "n_chans": len(_chs_info_3ch),
+    "input_window_seconds": 4.0,
+}
+
+
+def _get_signal_params(
+    signal_params: dict[SigArgName, Any] | None | Any,
+    required_params: list[SigArgName] | None = None,
+) -> dict[SigArgName, Any]:
+    """Get signal parameters for model initialization in tests.
+
+    ``signal_params`` may also be a zero-argument callable that returns a
+    ``dict``; this is used to defer imports that would cause circular
+    dependencies at module-load time (e.g. the Labram canonical channel list).
+    """
+    if callable(signal_params):
+        signal_params = signal_params()
+    sp = deepcopy(default_signal_params)
+    if signal_params is not None:
+        sp.update(signal_params)
+        if "chs_info" in signal_params and "n_chans" not in signal_params:
+            sp["n_chans"] = len(signal_params["chs_info"])
+        if "n_chans" in signal_params and "chs_info" not in signal_params:
+            sp["chs_info"] = [
+                {"ch_name": f"C{i}", "kind": "eeg", "loc": _rng.random(12)}
+                for i in range(signal_params["n_chans"])
+            ]
+        assert isinstance(sp["n_times"], int)
+        assert isinstance(sp["sfreq"], float)
+        assert isinstance(sp["input_window_seconds"], float)
+        if "input_window_seconds" not in signal_params:
+            sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
+        if "sfreq" not in signal_params:
+            sp["sfreq"] = sp["n_times"] / sp["input_window_seconds"]
+        if "n_times" not in signal_params:
+            sp["n_times"] = int(sp["input_window_seconds"] * sp["sfreq"])
+    if required_params is not None:
+        sp = {
+            k: sp[k] for k in set((signal_params or {}).keys()).union(required_params)
+        }
+    return sp
+
+
+def _get_possible_signal_params(
+    signal_params: dict[SigArgName, Any], required_params: list[SigArgName]
+):
+    sp = signal_params
+
+    # List possible model kwargs:
+    output_kwargs = []
+    output_kwargs.append(dict(n_outputs=sp["n_outputs"]))
+
+    if "n_outputs" not in required_params:
+        output_kwargs.append(dict(n_outputs=None))
+
+    channel_kwargs = []
+    channel_kwargs.append(dict(chs_info=sp["chs_info"], n_chans=None))
+    if "chs_info" not in required_params:
+        channel_kwargs.append(dict(n_chans=sp["n_chans"], chs_info=None))
+    if "n_chans" not in required_params and "chs_info" not in required_params:
+        channel_kwargs.append(dict(n_chans=None, chs_info=None))
+
+    time_kwargs = []
+    time_kwargs.append(
+        dict(n_times=sp["n_times"], sfreq=sp["sfreq"], input_window_seconds=None)
+    )
+    time_kwargs.append(
+        dict(
+            n_times=None,
+            sfreq=sp["sfreq"],
+            input_window_seconds=sp["input_window_seconds"],
+        )
+    )
+    time_kwargs.append(
+        dict(
+            n_times=sp["n_times"],
+            sfreq=None,
+            input_window_seconds=sp["input_window_seconds"],
+        )
+    )
+    if "n_times" not in required_params and "sfreq" not in required_params:
+        time_kwargs.append(
+            dict(
+                n_times=None,
+                sfreq=None,
+                input_window_seconds=sp["input_window_seconds"],
+            )
+        )
+    if (
+        "n_times" not in required_params
+        and "input_window_seconds" not in required_params
+    ):
+        time_kwargs.append(
+            dict(n_times=None, sfreq=sp["sfreq"], input_window_seconds=None)
+        )
+    if "sfreq" not in required_params and "input_window_seconds" not in required_params:
+        time_kwargs.append(
+            dict(n_times=sp["n_times"], sfreq=None, input_window_seconds=None)
+        )
+    if (
+        "n_times" not in required_params
+        and "sfreq" not in required_params
+        and "input_window_seconds" not in required_params
+    ):
+        time_kwargs.append(dict(n_times=None, sfreq=None, input_window_seconds=None))
+
+    return [
+        dict(**o, **c, **t)
+        for o in output_kwargs
+        for c in channel_kwargs
+        for t in time_kwargs
+    ]
+
+
+################################################################
+def get_summary_table(dir_name=None):
+    if dir_name is None:
+        dir_path = Path(__file__).parent
+    else:
+        dir_path = Path(dir_name) if not isinstance(dir_name, Path) else dir_name
+
+    path = dir_path / "summary.csv"
+
+    df = pd.read_csv(
+        path,
+        header=0,
+        index_col="Model",
+        skipinitialspace=True,
+    )
+    return df
+
+
+def extract_channel_locations_from_chs_info(
+    chs_info: Optional[Sequence[Dict[str, Any]]],
+    num_channels: Optional[int] = None,
+) -> Optional[np.ndarray]:
+    """Extract 3D channel locations from MNE-style channel information.
+
+    This function provides a unified approach to extract 3D channel locations
+    from MNE channel information. It's compatible with models like SignalJEPA
+    and LUNA that need to work with channel spatial information.
+
+    Parameters
+    ----------
+    chs_info : list of dict or None
+        Channel information, typically from ``mne.Info.chs``. Each dict should
+        contain a 'loc' key with a 12-element array (MNE format) where indices 0:3
+        represent the 3D cartesian coordinates.
+    num_channels : int or None
+        If specified, only extract the first ``num_channels`` channel locations.
+        If None, extract all available channels.
+
+    Returns
+    -------
+    channel_locations : np.ndarray of shape (n_channels, 3) or None
+        Array of 3D channel locations in cartesian coordinates. Returns None if
+        no valid locations are found.
+
+    Notes
+    -----
+    - This function handles both 12-element MNE location format (using indices 0:3)
+      and 3-element location format (using directly).
+    - Invalid or missing locations cause extraction to stop at that point.
+    - Returns None if no valid locations can be extracted.
+    - This is a unified utility compatible with models like SignalJEPA and LUNA.
+
+    Examples
+    --------
+    >>> import mne
+    >>> from braindecode.models.util import extract_channel_locations_from_chs_info
+    >>> raw = mne.io.read_raw_edf("sample.edf")
+    >>> locs = extract_channel_locations_from_chs_info(raw.info['chs'], num_channels=22)
+    >>> print(locs.shape)
+    (22, 3)
+    """
+    if chs_info is None:
+        return None
+
+    locations = []
+    n_to_extract = num_channels if num_channels is not None else len(chs_info)
+
+    for i, ch_info in enumerate(chs_info[:n_to_extract]):
+        if not isinstance(ch_info, dict):
+            break
+
+        loc = ch_info.get("loc")
+        if loc is None:
+            break
+
+        try:
+            loc_array = np.asarray(loc, dtype=np.float32)
+
+            # MNE format: 12-element array with electrode position at indices 0:3
+            if loc_array.ndim == 1 and loc_array.size >= 3:
+                coordinates = loc_array[:3]
+            else:
+                break
+
+            locations.append(coordinates)
+        except (ValueError, TypeError):
+            break
+
+    if len(locations) == 0:
+        return None
+
+    result = np.stack(locations, axis=0)
+
+    # Check positions are not all zero / degenerate
+    if np.allclose(result, 0):
+        return None
+
+    return result
+
+
+def positions_from_chs_info(chs_info) -> np.ndarray:
+    """``(n_chans, 2)`` electrode xy normalized to ``[0, 1]`` per axis.
+
+    Takes the raw 3D sensor coordinates ``ch["loc"][:3]``, keeps ``xy`` and
+    min-max normalizes each axis to ``[0, 1]`` -- the upstream brainmagick/DANCE
+    convention (``dance/example/data.py``). This is **not** MNE's
+    ``_find_topomap_coords`` projection (which returns an interpolated scalp grid
+    and would change the merger softmax). The ``1e-9`` floor avoids a
+    divide-by-zero on a degenerate (constant) axis.
+
+    Parameters
+    ----------
+    chs_info : list of dict
+        MNE-style channel info dicts, each with a ``"loc"`` array whose first
+        three entries are the head-frame ``x, y, z`` coordinates.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(n_chans, 2)`` float positions in ``[0, 1]``.
+    """
+    xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
+    xy = xyz[:, :2]
+    mn, mx = xy.min(axis=0), xy.max(axis=0)
+    return (xy - mn) / np.maximum(mx - mn, 1e-9)
+
+
+def has_valid_locations(chs_info) -> bool:
+    """``True`` if ``chs_info`` carries finite, non-all-zero electrode locations."""
+    if chs_info is None:
+        return False
+    try:
+        xyz = np.array([ch["loc"][:3] for ch in chs_info], dtype=float)
+    except (KeyError, TypeError, ValueError):
+        return False
+    if xyz.size == 0 or not np.isfinite(xyz).all():
+        return False
+    if np.allclose(xyz, 0.0):
+        return False
+    return True
+
+
+_summary_table = get_summary_table()

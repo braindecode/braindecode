@@ -2,136 +2,498 @@
 
 .. _api_reference:
 
-=============
-API Reference
-=============
-
-This is the reference for classes (``CamelCase`` names) and functions
-(``underscore_case`` names) of Braindecode.
-
-.. contents::
-   :local:
-   :depth: 2
-
-
-:py:mod:`braindecode`:
+###########################
+ Braindecode API Reference
+###########################
 
 .. automodule:: braindecode
-   :no-members:
-   :no-inherited-members:
+    :no-members:
+    :no-inherited-members:
 
-Classifier
-==========
+********
+ Models
+********
 
-:py:mod:`braindecode.classifier`:
+Model zoo availables in braindecode. The models are implemented as ``PyTorch``
+:py:class:`torch.nn.Module` and can be used for various EEG decoding ways tasks.
 
-.. currentmodule:: braindecode.classifier
+All the models have the convention of having the signal related parameters named the
+same way, following the braindecode's standards:
 
-.. autosummary::
-   :toctree: generated/
+- :fa:`shapes` ``n_outputs``: Number of labels or outputs of the model.
+- :fa:`wave-square` ``n_chans``: Number of EEG channels.
+- :fa:`clock` ``n_times``: Number of time points of the input window.
+- :fa:`wifi` ``sfreq``: Sampling frequency of the EEG recordings.
+- (:fa:`clock`/ :fa:`wifi`\) ``input_window_seconds``: Length of the input window in
+  seconds.
+- :fa:`info-circle` ``chs_info``: Information about each individual EEG channel. Refer
+  to :class:`mne.Info` (see its ``"chs"`` field for details).
 
-    EEGClassifier
+All the models assume that the input data is a 3D tensor of shape ``(batch_size,
+n_chans, n_times)``, and some models also accept a 4D tensor of shape ``(batch_size,
+n_chans, n_times, n_epochs)``, in case of cropped model.
 
-Regressor
-=========
+All the models are implemented as subclasses of
+:py:class:`~braindecode.models.EEGModuleMixin`, which is a base class for all EEG models
+in Braindecode. The :class:`~braindecode.models.EEGModuleMixin` class provides a common
+interface for all EEG models and can derive variable names when needed.
 
-:py:mod:`braindecode.regressor`:
+.. important::
 
-.. currentmodule:: braindecode.regressor
+    **Hugging Face Hub Integration**
 
-.. autosummary::
-   :toctree: generated/
+    All models in braindecode naturally possess the capability to push and pull from the
+    Hugging Face Hub through inheritance from
+    :class:`~huggingface_hub.PyTorchModelHubMixin`. This allows you to:
 
-    EEGRegressor
+    - **Load pre-trained models** from the Hub using
+      ``Model.from_pretrained("repo_id")``
+    - **Share your trained models** with the community using
+      ``model.push_to_hub("repo_id")``
+    - **Version control your models** with git-like versioning on the Hub
 
-Models
-======
+    To enable this functionality, install braindecode with Hub support:
+
+    ::
+
+        pip install braindecode[hug]
+
+    **Available pre-trained models:**
+
+    Some models have pre-trained weights available on the Hugging Face BrainDecode
+    organization:
+
+    .. currentmodule:: braindecode.models
+
+    - :class:`BIOT` - Foundation model with pre-trained weights
+    - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
+    - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
+      prediction
+    - :class:`Labram` - Large Brain Model with pre-trained weights
+    - :class:`REVE` - EEG foundation model with pre-trained weights
+    - :class:`LUNA` - Universal EEG embedding model with pre-trained weights
+    - :class:`BENDR` - Foundation model with pre-trained weights
+    - :class:`SignalJEPA` - Self-supervised learning model with pre-trained weights
+    - :class:`EEGPT` - Pretrained transformer for universal EEG
+    - :class:`STEEGFormer` - ViT-MAE EEG foundation model with braindecode-format
+      re-hosted weights
+
+    **Example - Loading a pre-trained model:**
+
+    .. code-block:: python
+
+        from braindecode.models import BIOT
+
+        # Load pre-trained BIOT model from Hugging Face Hub
+        model = BIOT.from_pretrained("braindecode/biot-pretrained-prest-16chs")
+
+        # Use for your EEG classification task
+        # ... your code here ...
+
+    **Example - Pushing your trained model:**
+
+    .. code-block:: python
+
+        from braindecode.models import EEGNeX
+
+        # Train your model
+        model = EEGNeX(n_chans=22, n_outputs=4, n_times=1000)
+        # ... training code ...
+
+        # Push to the Hub (requires huggingface-cli login)
+        model.push_to_hub(
+            repo_id="username/my-eegnex-model", commit_message="Initial model upload"
+        )
+
+    For more details, see the :class:`~braindecode.models.EEGModuleMixin` documentation
+    and the :ref:`hub-integration` tutorial.
+
+:note: Auto-generated Pydantic configs are available when the optional
+    ``braindecode[pydantic]`` extra (which installs ``pydantic`` and ``numpydantic``) is
+    installed; otherwise config generation is skipped.
 
 :py:mod:`braindecode.models.base`:
 
 .. currentmodule:: braindecode.models
 
 .. autosummary::
-   :toctree: generated/
+    :toctree: generated/
+    :recursive:
 
-    EEGModuleMixin
+     EEGModuleMixin
 
 :py:mod:`braindecode.models`:
 
 .. currentmodule:: braindecode.models
 
 .. autosummary::
-   :toctree: generated/
+    :toctree: generated/
+    :recursive:
 
-    ShallowFBCSPNet
-    Deep4Net
-    DeepSleepNet
-    EEGConformer
-    EEGInception
-    EEGInceptionERP
-    EEGInceptionMI
-    ATCNet
-    EEGITNet
-    EEGNetv1
-    EEGNetv4
-    HybridNet
-    EEGResNet
-    TCN
-    SleepStagerChambon2018
-    SleepStagerBlanco2020
-    SleepStagerEldele2021
-    USleep
-    TIDNet
-    get_output_shape
-    TimeDistributed
-    BIOT
-    Labram
-    EEGSimpleConv
+     ATCNet
+     AttentionBaseNet
+     AttnSleep
+     BDTCN
+     BENDR
+     BIOT
+     BrainModule
+     CBraMod
+     CodeBrain
+     ContraWR
+     CTNet
+     DGCNN
+     Deep4Net
+     DeepSleepNet
+     EEGConformer
+     EEGDINO
+     EEGInceptionERP
+     EEGInceptionMI
+     EEGITNet
+     EEGMiner
+     EEGNet
+     EEGPT
+     EEGNeX
+     EEGSimpleConv
+     EEGSym
+     EEGTCNet
+     EMG2QwertyNet
+     FBCNet
+     FBLightConvNet
+     FBMSNet
+     IFNet
+     InterpolatedBENDR
+     InterpolatedBIOT
+     InterpolatedEEGPT
+     InterpolatedLaBraM
+     InterpolatedModel
+     InterpolatedSignalJEPA
+     Labram
+     LUNA
+     MEDFormer
+     MetaNeuromotorHand
+     MSVTNet
+     PBT
+     REVE
+     SCCNet
+     ShallowFBCSPNet
+     SignalJEPA
+     SignalJEPA_Contextual
+     SignalJEPA_PostLocal
+     SignalJEPA_PreLocal
+     SincShallowNet
+     SleepStagerBlanco2020
+     SleepStagerChambon2018
+     SPARCNet
+     SSTDPN
+     STEEGFormer
+     SyncNet
+     TCFormer
+     TIDNet
+     TSception
+     USleep
+     ZUNA
 
+Modules
 
-Training
-========
+:py:mod:`braindecode.modules`:
 
-:py:mod:`braindecode.training`:
+This module contains the building blocks for Braindecode models. It contains activation
+functions, convolutional layers, attention mechanisms, filter banks, and other
+utilities.
 
-.. currentmodule:: braindecode.training
+.. currentmodule:: braindecode.modules
+
+Activation
+==========
+
+These modules wrap specialized activation functions—e.g., safe logarithms for numerical
+stability.
+
+:py:mod:`braindecode.modules.activation`:
 
 .. autosummary::
-   :toctree: generated/
+    :toctree: generated/activation
+    :template: class_in_subdir
+    :recursive:
 
-    CroppedLoss
-    TimeSeriesLoss
-    CroppedTrialEpochScoring
-    CroppedTimeSeriesEpochScoring
-    PostEpochTrainScoring
-    mixup_criterion
-    trial_preds_from_window_preds
-    predict_trials
+    GatedLinearUnit
+    LogActivation
+    SafeLog
 
-Datasets
+Attention
+=========
+
+These modules implement various attention mechanisms, including multi'head attention and
+squeeze and excitation layers.
+
+:py:mod:`braindecode.modules.attention`:
+
+.. autosummary::
+    :toctree: generated/attention
+    :template: class_in_subdir
+    :recursive:
+
+    CAT
+    CBAM
+    ECA
+    FCA
+    GCT
+    SRM
+    CATLite
+    EncNet
+    GatherExcite
+    GSoP
+    MultiHeadAttention
+    SqueezeAndExcitation
+
+Blocks
+======
+
+These modules are specialized building blocks for neural networks, including multi'layer
+perceptrons (MLPs) and inception blocks.
+
+:py:mod:`braindecode.modules.blocks`:
+
+.. autosummary::
+    :toctree: generated/blocks
+    :template: class_in_subdir
+    :recursive:
+
+    MLP
+    FeedForwardBlock
+    InceptionBlock
+    PatchTokenizer
+
+Convolution
+===========
+
+These modules implement constraints convolutional layers, including depthwise
+convolutions and causal convolutions. They also include convolutional layers with
+constraints and pooling layers.
+
+:py:mod:`braindecode.modules.convolution`:
+
+.. autosummary::
+    :toctree: generated/convolution
+    :template: class_in_subdir
+    :recursive:
+
+    AvgPool2dWithConv
+    CausalConv1d
+    CombinedConv
+    Conv2dWithConstraint
+    DepthwiseConv2d
+
+Filter
+======
+
+These modules implement Filter Bank as Layer and generalizer Gaussian layer.
+
+:py:mod:`braindecode.modules.filter`:
+
+.. autosummary::
+    :toctree: generated/filter
+    :template: class_in_subdir
+    :recursive:
+
+    ChannelInterpolationLayer
+    FilterBankLayer
+    GeneralizedGaussianFilter
+
+Layers
+======
+
+These modules implement various types of layers, including dropout layers, normalization
+layers, and time'distributed layers. They also include layers for handling different
+input shapes and dimensions.
+
+:py:mod:`braindecode.modules.layers`:
+
+.. autosummary::
+    :toctree: generated/layers
+    :template: class_in_subdir
+    :recursive:
+
+    ChannelMerger
+    Chomp1d
+    DropPath
+    Ensure4d
+    FourierEmb
+    SubjectLayers
+    TimeDistributed
+
+Linear
+======
+
+These modules implement linear layers with various constraints and initializations. They
+include linear layers with max'norm constraints and linear layers with specific
+initializations.
+
+:py:mod:`braindecode.modules.linear`:
+
+.. autosummary::
+    :toctree: generated/linear
+    :template: class_in_subdir
+    :recursive:
+
+    LinearWithConstraint
+    MaxNormLinear
+
+Stats
+=====
+
+These modules implement statistical layers, including layers for calculating the mean,
+standard deviation, and variance of input data. They also include layers for calculating
+the log power and log variance of input data. Mostly used on FilterBank models.
+
+:py:mod:`braindecode.modules.stats`:
+
+.. autosummary::
+    :toctree: generated/stats
+    :template: class_in_subdir
+    :recursive:
+
+    StatLayer
+
+.. autosummary::
+    :toctree: generated/stats
+    :recursive:
+
+    LogPowerLayer
+    LogVarLayer
+    MaxLayer
+    MeanLayer
+    StdLayer
+    VarLayer
+
+Utilities
+=========
+
+These modules implement various utility functions and classes for change to cropped
+model.
+
+:py:mod:`braindecode.modules.util`:
+
+.. autosummary::
+    :toctree: generated/util
+    :template: function_in_subdir
+    :recursive:
+
+    aggregate_probas
+
+Wrappers
 ========
+
+These modules implement wrappers for various types of models, including wrappers for
+models with multiple outputs and wrappers for models with intermediate outputs.
+
+:py:mod:`braindecode.modules.wrapper`:
+
+.. autosummary::
+    :toctree: generated/wrapper
+    :template: class_in_subdir
+    :recursive:
+
+    Expression
+    IntermediateOutputWrapper
+
+************
+ Functional
+************
+
+:py:mod:`braindecode.functional`:
+
+.. currentmodule:: braindecode.functional
+
+The functional module contains various functions that can be used like functional API.
+
+.. autosummary::
+    :toctree: generated
+    :recursive:
+
+     drop_path
+     glorot_weight_zero_bias
+     hilbert_freq
+     identity
+     plv_time
+     rescale_parameter
+     safe_log
+     sinusoidal_positional_encoding
+     square
+
+**********
+ Datasets
+**********
 
 :py:mod:`braindecode.datasets`:
 
 .. currentmodule:: braindecode.datasets
 
-.. autosummary::
-   :toctree: generated/
+Pytorch Datasets structure for common EEG datasets, and function to create the dataset
+from several different data formats. The options available are: `Numpy Arrays`, `MNE
+Raw` and `MNE Epochs`.
 
-    BaseDataset
-    BaseConcatDataset
-    WindowsDataset
-    MOABBDataset
-    HGD
-    BNCI2014001
-    TUH
-    TUHAbnormal
-    NMT
-    SleepPhysionet
-    BCICompetitionIVDataset4
-    create_from_X_y
-    create_from_mne_raw
-    create_from_mne_epochs
+Base classes
+============
+
+.. autosummary::
+    :toctree: generated/
+
+     BaseConcatDataset
+     RecordDataset
+     RawDataset
+     WindowsDataset
+
+Common Datasets
+===============
+
+.. autosummary::
+    :toctree: generated/
+
+     BCICompetitionIVDataset4
+     BNCI2014_001
+     CHBMIT
+     HGD
+     MOABBDataset
+     NMT
+     SleepPhysionet
+     SIENA
+     SleepPhysionetChallenge2018
+     TUH
+     TUHAbnormal
+     TUHEvents
+
+Dataset Builders Functions
+==========================
+
+Functions to create datasets from different data formats
+
+.. currentmodule:: braindecode.datasets
+
+.. autosummary::
+    :toctree: generated/
+
+     create_from_X_y
+     create_from_mne_raw
+     create_from_mne_epochs
+
+BIDS Integration
+----------------
+
+:py:mod:`braindecode.datasets.bids`:
+
+The BIDS subpackage provides tools for working with BIDS-formatted EEG data, including
+dataset loading and Hugging Face Hub push/pull functionality.
+
+.. currentmodule:: braindecode.datasets.bids
+
+.. autosummary::
+    :toctree: generated/
+
+     BIDSDataset
+     BIDSEpochsDataset
+     BIDSIterableDataset
+     HubDatasetMixin
 
 Preprocessing
 =============
@@ -140,121 +502,422 @@ Preprocessing
 
 .. currentmodule:: braindecode.preprocessing
 
+Core Functions
+==============
+
 .. autosummary::
-   :toctree: generated/
+    :toctree: generated/
 
-    create_windows_from_events
-    create_fixed_length_windows
-    create_windows_from_target_channels
-    exponential_moving_demean
-    exponential_moving_standardize
-    scale
-    filterbank
-    preprocess
-    Preprocessor
-    Resample
-    DropChannels
-    SetEEGReference
-    Filter
-    Pick
-    Crop
+     preprocess
+     Preprocessor
+     create_windows_from_events
+     create_fixed_length_windows
+     create_windows_from_target_channels
+     exponential_moving_demean
+     exponential_moving_standardize
+     filterbank
 
-Data Utils
-==========
+EEGPrep Pipeline
+================
+
+.. autosummary::
+    :toctree: generated/
+
+     EEGPrep
+     ReinterpolateRemovedChannels
+     RemoveBadChannels
+     RemoveBadChannelsNoLocs
+     RemoveBadWindows
+     RemoveBursts
+     RemoveCommonAverageReference
+     RemoveDCOffset
+     RemoveDrifts
+     RemoveFlatChannels
+
+Signal Processing
+=================
+
+.. autosummary::
+    :toctree: generated/
+
+     Resample
+     Resampling
+     Filter
+     FilterData
+     NotchFilter
+     SavgolFilter
+     ApplyHilbert
+     Rescale
+     OversampledTemporalProjection
+
+Channel Management
+==================
+
+.. autosummary::
+    :toctree: generated/
+
+     Pick
+     PickChannels
+     PickTypes
+     DropChannels
+     AddChannels
+     CombineChannels
+     RenameChannels
+     ReorderChannels
+     SetChannelTypes
+     InterpolateBads
+     InterpolateTo
+     InterpolateBridgedElectrodes
+     ComputeBridgedElectrodes
+     EqualizeChannels
+     EqualizeBads
+     FindBadChannelsLof
+
+Reference & Montage
+===================
+
+.. autosummary::
+    :toctree: generated/
+
+     SetEEGReference
+     SetBipolarReference
+     AddReferenceChannels
+     SetMontage
+
+SSP Projections
+===============
+
+.. autosummary::
+    :toctree: generated/
+
+     AddProj
+     ApplyProj
+     DelProj
+
+Data Transformation
+===================
+
+.. autosummary::
+    :toctree: generated/
+
+     Crop
+     CropByAnnotations
+     ComputeCurrentSourceDensity
+     FixStimArtifact
+     MaxwellFilter
+     RealignRaw
+     RegressArtifact
+
+Artifact Detection & Annotation
+===============================
+
+.. autosummary::
+    :toctree: generated/
+
+     AnnotateAmplitude
+     AnnotateBreak
+     AnnotateMovement
+     AnnotateMuscleZscore
+     AnnotateNan
+
+Metadata & Configuration
+========================
+
+.. autosummary::
+    :toctree: generated/
+
+     Anonymize
+     SetAnnotations
+     SetMeasDate
+     AddEvents
+     FixMagCoilTypes
+     ApplyGradientCompensation
+
+************
+ Data Utils
+************
 
 :py:mod:`braindecode.datautil`:
 
 .. currentmodule:: braindecode.datautil
 
 .. autosummary::
-   :toctree: generated/
+    :toctree: generated/
 
-    save_concat_dataset
-    load_concat_dataset
+     save_concat_dataset
+     load_concat_dataset
+     infer_signal_properties
 
-Samplers
-========
+**********
+ Samplers
+**********
+
+Samplers that can used to sample EEG data for training and testing and to create batches
+of data, used on Self'Supervised Learning and other tasks.
 
 :py:mod:`braindecode.samplers`:
 
 .. currentmodule:: braindecode.samplers
 
 .. autosummary::
-   :toctree: generated/
+    :toctree: generated/
 
-   RecordingSampler
-   SequenceSampler
-   RelativePositioningSampler
-   BalancedSequenceSampler
+     RecordingSampler
+     DistributedRecordingSampler
+     SequenceSampler
+     RelativePositioningSampler
+     DistributedRelativePositioningSampler
+     BalancedSequenceSampler
 
 .. _augmentation_api:
 
-Augmentation
-============
+**************
+ Augmentation
+**************
+
+The augmentation module follow the pytorch transforms API. It contains transformations
+that can be applied to EEG data. The transformations can be used to augment the data
+during training, which can help improve the performance of the model. The
+transformations can be applied to the data in a variety of ways, including time'domain
+transformations, frequency'domain transformations, and spatial transformations.
 
 :py:mod:`braindecode.augmentation`:
 
 .. currentmodule:: braindecode.augmentation
 
 .. autosummary::
-   :toctree: generated/
+    :toctree: generated/
 
-    Transform
-    IdentityTransform
-    Compose
-    AugmentedDataLoader
-    TimeReverse
-    SignFlip
-    FTSurrogate
-    ChannelsShuffle
-    ChannelsDropout
-    GaussianNoise
-    ChannelsSymmetry
-    SmoothTimeMask
-    BandstopFilter
-    FrequencyShift
-    SensorsRotation
-    SensorsZRotation
-    SensorsYRotation
-    SensorsXRotation
-    Mixup
+     Transform
+     IdentityTransform
+     Compose
+     AugmentedDataLoader
+     TimeReverse
+     SignFlip
+     FTSurrogate
+     ChannelsShuffle
+     ChannelsDropout
+     GaussianNoise
+     ChannelsSymmetry
+     SmoothTimeMask
+     BandstopFilter
+     FrequencyShift
+     SensorsRotation
+     SensorsZRotation
+     SensorsYRotation
+     SensorsXRotation
+     Mixup
+     SegmentationReconstruction
+     MaskEncoding
+     AmplitudeScale
+     ChannelsReref
 
-    functional.identity
-    functional.time_reverse
-    functional.sign_flip
-    functional.ft_surrogate
-    functional.channels_dropout
-    functional.channels_shuffle
-    functional.channels_permute
-    functional.gaussian_noise
-    functional.smooth_time_mask
-    functional.bandstop_filter
-    functional.frequency_shift
-    functional.sensors_rotation
-    functional.mixup
+The functional augmentation API contains the same transformations as the transforms API,
+but they are implemented as functions.
 
+:py:mod:`braindecode.augmentation.functional`:
 
-Utils
-=====
+.. currentmodule:: braindecode.augmentation.functional
+
+.. autosummary::
+    :toctree: generated/
+
+     identity
+     time_reverse
+     sign_flip
+     ft_surrogate
+     channels_dropout
+     channels_shuffle
+     channels_permute
+     gaussian_noise
+     smooth_time_mask
+     bandstop_filter
+     frequency_shift
+     sensors_rotation
+     mixup
+     segmentation_reconstruction
+     mask_encoding
+     amplitude_scale
+     channels_rereference
+
+************
+ Classifier
+************
+
+Skorch wrapper for braindecode models. The skorch wrapper allows to use braindecode
+models with scikit'learn API.
+
+:py:mod:`braindecode.classifier`:
+
+.. currentmodule:: braindecode.classifier
+
+.. autosummary::
+    :toctree: generated/
+
+     EEGClassifier
+
+***********
+ Regressor
+***********
+
+Skorch wrapper for braindecode models focus on regression tasks. The skorch wrapper
+allows to use braindecode models with scikit'learn API.
+
+:py:mod:`braindecode.regressor`:
+
+.. currentmodule:: braindecode.regressor
+
+.. autosummary::
+    :toctree: generated/
+
+     EEGRegressor
+
+**********
+ Training
+**********
+
+Training module contains functions and classes for training and evaluating EEG models.
+It is inside the Classifier and Regressor skorch classes, and it is used to train the
+models and evaluate their performance.
+
+:py:mod:`braindecode.training`:
+
+.. currentmodule:: braindecode.training
+
+.. autosummary::
+    :toctree: generated/
+
+     CroppedLoss
+     TimeSeriesLoss
+     DanceLoss
+     CroppedTrialEpochScoring
+     CroppedTimeSeriesEpochScoring
+     PostEpochTrainScoring
+     mixup_criterion
+     trial_preds_from_window_preds
+     predict_trials
+     f1_event
+
+*******
+ Utils
+*******
+
+Functions available in braindecode util module.
 
 :py:mod:`braindecode.util`:
 
 .. currentmodule:: braindecode.util
 
 .. autosummary::
-   :toctree: generated/
+    :toctree: generated/
 
-    set_random_seeds
+     set_random_seeds
 
-Visualization
-=============
+***************
+ Visualization
+***************
+
+Tools for opening up trained EEG decoders: per-trial attribution maps, sanity-check
+protocols that probe whether those maps reflect what the model actually learned,
+attribution-quality metrics, topographic projection, and confusion-matrix plotting.
+
+The end-to-end workflow tracks the EEG-XAI benchmark of Sujatha Ravindran &
+Contreras-Vidal (Sci Rep 2023, DOI `10.1038/s41598-023-43871-8
+<https://doi.org/10.1038/s41598-023-43871-8>`_): compute attributions, randomize labels
+and weights, score the resulting maps against the trained-model reference, and decide
+which methods are trustworthy on your data. See the :ref:`interpretability tutorial
+<interpretability-tutorial>` for a worked example on BCI IV 2a.
 
 :py:mod:`braindecode.visualization`:
 
 .. currentmodule:: braindecode.visualization
 
-.. autosummary::
-   :toctree: generated/
+Time-domain attribution
+=======================
 
-    compute_amplitude_gradients
-    plot_confusion_matrix
+Per-trial attribution maps in the input domain. Each function takes ``(model, x,
+target)`` and returns a tensor with the same spatial shape as ``x``; all are thin
+wrappers around `captum <https://captum.ai/>`_ (a soft dependency installed via ``pip
+install braindecode[viz]``) and raise :class:`ImportError` without it.
+
+.. autosummary::
+    :toctree: generated/
+
+     saliency
+     input_x_gradient
+     integrated_gradients
+     layer_grad_cam
+     guided_backprop
+     deconvolution
+     deep_lift
+     lrp
+
+Frequency-domain attribution
+============================
+
+Gradient of each model output with respect to the **amplitude spectrum** of the input —
+a complement to the time-domain methods that makes oscillatory contributions (e.g.
+alpha/beta motor imagery) visible directly in the topomap. Implemented in pure PyTorch
+via ``rfft``/``irfft`` round-tripping; no captum needed.
+
+.. autosummary::
+    :toctree: generated/
+
+     amplitude_gradients
+     amplitude_gradients_per_trial
+
+Sanity-check protocols
+======================
+
+Adebayo et al. (NeurIPS 2018) randomization checks for attribution maps, reused on EEG
+decoders by Sujatha Ravindran & Contreras-Vidal. :func:`random_target` powers the
+**label-randomization** check (does the map change when you ask about the wrong class?)
+and :func:`cascading_layer_reset` powers the **weight-randomization** check (does the
+map collapse as the trained weights are progressively replaced?). An attribution method
+that survives both is suspicious — its output likely reflects architecture rather than
+learning.
+
+.. autosummary::
+    :toctree: generated/
+
+     random_target
+     cascading_layer_reset
+
+Attribution-quality metrics
+===========================
+
+Score how similar two attribution maps are: typically a trained-model attribution
+against a randomized-model attribution, or against a ground-truth mask from a simulator.
+:func:`compute_metrics` returns twelve cosine / Pearson / mass-accuracy / rank-accuracy
+variants; :func:`compute_ssim_metrics` adds four SSIM-based scores using a pure-torch
+reimplementation of skimage's structural similarity (no extra dependency). Pass
+``chs_info=`` to score topographic projections instead of raw attribution maps.
+
+.. autosummary::
+    :toctree: generated/
+
+     compute_metrics
+     compute_ssim_metrics
+     METRIC_NAMES
+     SSIM_METRIC_NAMES
+
+Topography
+==========
+
+Project per-channel scalar values onto a 2-D scalp topomap grid via Clough-Tocher
+triangulation on MNE-derived sensor coordinates. Returns a plain ``ndarray`` so callers
+can compose with their own plotting stack rather than going through
+:func:`mne.viz.plot_topomap` (and its matplotlib roundtrip).
+
+.. autosummary::
+    :toctree: generated/
+
+     project_to_topomap
+
+Plotting
+========
+
+.. autosummary::
+    :toctree: generated/
+
+     plot_confusion_matrix

@@ -1,44 +1,46 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Pierre Guetschel <pierre.guetschel@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
 
 import abc
-import logging
 import inspect
+import logging
+import warnings
+from typing import Any, Literal
 
 import mne
 import numpy as np
 import torch
-from skorch import NeuralNet
 from sklearn.metrics import get_scorer
+from skorch import NeuralNet
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
-from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score, is_dataset
+from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
+from braindecode.datautil import infer_signal_properties
+
+from .models.util import _get_model_class
 from .training.scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
     PostEpochTrainScoring,
 )
-from .models.util import models_dict
-from .datasets.base import BaseConcatDataset, WindowsDataset
 
 log = logging.getLogger(__name__)
 
 
-def _get_model(model: str):
+def _get_model(model: Any) -> Any:
     """Returns the corresponding class in case the model passed is a string."""
     if isinstance(model, str):
-        if model in models_dict:
-            model = models_dict[model]
-        else:
-            raise ValueError(f"Unknown model name {model!r}.")
+        model = _get_model_class(model)
     return model
 
 
 class _EEGNeuralNet(NeuralNet, abc.ABC):
     signal_args_set_ = False
+    _warned_drop_last_ = False
 
     @property
     def log(self):
@@ -51,7 +53,6 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
 
         If the module is already initialized and no parameter was changed, it
         will be left as is.
-
         """
         kwargs = self.get_params_for("module")
         module = _get_model(self.module)
@@ -126,16 +127,24 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 self._last_window_inds_ = None
 
     def predict_with_window_inds_and_ys(self, dataset):
-        self.module.eval()
+        # self.module can still be a name or a class, self.module_ is the built one
+        self.module_.eval()
         preds = []
         i_window_in_trials = []
         i_window_stops = []
         window_ys = []
-        for X, y, i in self.get_iterator(dataset, drop_index=False):
+        for batch in self.get_iterator(dataset, drop_index=False):
+            if len(batch) > 3:
+                raise ValueError(
+                    "Cropped prediction does not support channel positions; "
+                    "disable return_ch_pos (set_return_ch_pos(False)) for cropped "
+                    "evaluation."
+                )
+            X, y, i = batch[0], batch[1], batch[2]
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
             with torch.no_grad():
-                preds.append(to_numpy(self.module.forward(X.to(self.device))))
+                preds.append(to_numpy(self.module_.forward(X.to(self.device))))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = np.concatenate(i_window_in_trials)
@@ -173,8 +182,9 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             ("print_log", PrintLog()),
         ]
 
+    @property
     @abc.abstractmethod
-    def _get_n_outputs(self, y, classes):
+    def mode(self) -> Literal["classification", "regression"]:
         pass
 
     def _set_signal_args(self, X, y, classes):
@@ -188,41 +198,10 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 "Skipping setting signal-related parameters from data."
             )
             return
-        # get kwargs from signal:
-        signal_kwargs = dict()
-        # Using shape to work both with torch.tensor and numpy.array:
-        if isinstance(X, mne.BaseEpochs) or (hasattr(X, "shape") and len(X.shape) >= 2):
-            if y is None:
-                raise ValueError("y must be specified if X is array-like.")
-            signal_kwargs["n_outputs"] = self._get_n_outputs(y, classes)
-            if isinstance(X, mne.BaseEpochs):
-                self.log.info("Using mne.Epochs to find signal-related parameters.")
-                signal_kwargs["n_times"] = len(X.times)
-                signal_kwargs["sfreq"] = X.info["sfreq"]
-                signal_kwargs["chs_info"] = X.info["chs"]
-            else:
-                self.log.info("Using array-like to find signal-related parameters.")
-                signal_kwargs["n_times"] = X.shape[-1]
-                signal_kwargs["n_chans"] = X.shape[-2]
-        elif is_dataset(X):
-            self.log.info(f"Using Dataset {X!r} to find signal-related parameters.")
-            X0 = X[0][0]
-            Xshape = X0.shape
-            signal_kwargs["n_times"] = Xshape[-1]
-            signal_kwargs["n_chans"] = Xshape[-2]
-            if isinstance(X, BaseConcatDataset) and all(
-                ds.targets_from == "metadata" for ds in X.datasets
-            ):
-                y_target = X.get_metadata().target
-                signal_kwargs["n_outputs"] = self._get_n_outputs(y_target, classes)
-            elif isinstance(X, WindowsDataset) and X.targets_from == "metadata":
-                y_target = X.windows.metadata.target
-                signal_kwargs["n_outputs"] = self._get_n_outputs(y_target, classes)
-        else:
-            self.log.warning(
-                "Can only infer signal shape of array-like and Datasets, "
-                f"got {type(X)!r}."
-            )
+        if classes is None:
+            classes = getattr(self, "classes", None)
+        signal_kwargs = infer_signal_properties(X, y, mode=self.mode, classes=classes)
+        if not signal_kwargs:
             return
 
         # kick out missing kwargs:
@@ -235,9 +214,19 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             if k in all_module_kwargs:
                 module_kwargs[k] = v
             else:
-                self.log.warning(
-                    f"Module {self.module!r} " f"is missing parameter {k!r}."
-                )
+                self.log.warning(f"Module {self.module!r} is missing parameter {k!r}.")
+
+        # kick out inferred signal kwargs if user specifies kwargs:
+        user_specified_kwargs = self.get_params_for("module").items()
+        if len(user_specified_kwargs) > 0:
+            self.log.info(
+                f"Overriding inferred parameters with user "
+                f"specified parameters{user_specified_kwargs!r}."
+            )
+            for k, v in self.get_params_for("module").items():
+                if k in module_kwargs:
+                    module_kwargs.pop(k)
+                    module_kwargs[k] = v
 
         # save kwargs to self:
         self.log.info(
@@ -248,7 +237,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         self.set_params(**module_kwargs)
 
     def get_dataset(self, X, y=None):
-        """Get a dataset that contains the input data and is passed to
+        """Get a dataset that contains the input data and is passed to.
+
         the iterator.
 
         Override this if you want to initialize your dataset
@@ -280,11 +270,48 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         -------
         dataset
           The initialized dataset.
-
         """
         if isinstance(X, mne.BaseEpochs):
             X = X.get_data(units="uV")
         return super().get_dataset(X, y)
+
+    def get_iterator(self, dataset, training=False):
+        iterator = super().get_iterator(dataset, training=training)
+        # Warn (once per fit) if drop_last would discard every training batch,
+        # e.g. a training set smaller than batch_size. This silently skips
+        # training without raising any error, which is hard to diagnose.
+        if training and not self._warned_drop_last_:
+            self._warn_if_training_batches_dropped(iterator)
+        return iterator
+
+    def _warn_if_training_batches_dropped(self, loader):
+        """Warn if ``drop_last`` discards all training batches.
+
+        With ``iterator_train__drop_last=True`` (the braindecode default), a
+        training set smaller than ``batch_size`` yields zero batches, so no
+        forward/backward pass runs and the model is left untrained without any
+        error. We inspect the resolved training ``DataLoader`` (after
+        ``train_split`` has been applied), so the count reflects the actual
+        number of training examples.
+        """
+        self._warned_drop_last_ = True
+        if not getattr(loader, "drop_last", False):
+            return
+        batch_size = getattr(loader, "batch_size", None)
+        try:
+            n_train = len(loader.dataset)
+        except TypeError:
+            return  # e.g. an IterableDataset whose length is unknown
+        if not batch_size or n_train == 0 or n_train >= batch_size:
+            return
+        warnings.warn(
+            f"The training set has {n_train} example(s), which is smaller than "
+            f"batch_size={batch_size}. With iterator_train__drop_last=True "
+            f"(the braindecode default), all training batches are dropped and "
+            f"the model is not trained. Reduce batch_size to at most {n_train}, "
+            f"or pass iterator_train__drop_last=False.",
+            UserWarning,
+        )
 
     def partial_fit(self, X, y=None, classes=None, **fit_params):
         """Fit the module.
@@ -333,7 +360,6 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         **fit_params : dict
           Additional parameters passed to the ``forward`` method of
           the module and to the ``self.train_split`` call.
-
         """
         # this needs to be executed before the net is initialized:
         if not self.signal_args_set_:
@@ -386,6 +412,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
           the module and to the ``self.train_split`` call.
         """
         # this needs to be executed before the net is initialized:
+        self._warned_drop_last_ = False  # re-check on every fresh fit
         if not self.signal_args_set_:
             self._set_signal_args(X, y, classes=None)
             self.signal_args_set_ = True

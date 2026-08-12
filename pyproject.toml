@@ -1,96 +1,170 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "braindecode"
-version = "0.8.1"
+dynamic = ["version"]
 description = "Deep learning software to decode EEG, ECG or MEG signals"
-authors = [{name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com"}]
-maintainers = [
-    {name = "Alexandre Gramfort", email = "agramfort@meta.com"},
-	 {name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com"},
-	 {name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com"}
+authors = [
+    { name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" },
+    { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
+    { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
 ]
-license = {text = "BSD-3-Clause"}
+maintainers = [
+    { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
+    { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
+    { name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" },
+]
+license = { text = "BSD-3-Clause" }
 keywords = [
     "python",
-	"deep-learning",
-	"neuroscience",
-	"pytorch",
-	"meg",
-	"eeg",
-	"neuroimaging",
-	"electroencephalography",
-	"magnetoencephalography",
-	"electrocorticography",
-	"ecog",
-	"electroencephalogram"
+    "deep-learning",
+    "neuroscience",
+    "pytorch",
+    "meg",
+    "eeg",
+    "neuroimaging",
+    "electroencephalography",
+    "magnetoencephalography",
+    "electrocorticography",
+    "ecog",
+    "electroencephalogram",
 ]
-classifiers=[
+classifiers = [
     'Development Status :: 3 - Alpha',
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     'Topic :: Software Development :: Build Tools',
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    'License :: OSI Approved :: BSD License',
-    'Programming Language :: Python :: 3.8',
-	'Programming Language :: Python :: 3.9',
-	'Programming Language :: Python :: 3.10',
-	'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
 ]
 readme = "README.rst"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 dependencies = [
-	'mne',
-	'numpy',
-	'pandas',
-	'scipy',
-	'matplotlib',
-	'h5py',
-	'skorch',
-	'torch',
-	'einops',
-	'joblib',
-	'torchinfo',
-	'linear_attention_transformer',
-	'docstring_inheritance'
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    'mne>=1.11.0',  # we get matplotlib, numpy, scipy from here
+    'mne_bids>=0.18', # in theory we get the mne here, but we prefer to have it explicit
+    'h5py',
+    'skorch>=1.3.0',
+    'joblib',
+    'torchinfo',
+    'pandas',
+    'wfdb>=4.3.1',  # requests comes transitively via mne→pooch and wfdb
+    'linear_attention_transformer',
+    'docstring_inheritance',        # we get einops from here
+    'rotary_embedding_torch',
+    'pydantic>=2.0',
 ]
+
+[tool.uv]
+required-environments = [
+  "sys_platform == 'darwin' and platform_machine == 'x86_64'",  # Intel Mac
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",   # Apple Silicon Mac (M1/M2/M3)
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",   # Linux 64-bit
+  "sys_platform == 'win32' and platform_machine == 'AMD64'"     # Windows 64-bit
+]
+
 [project.urls]
 homepage = "https://braindecode.org"
 repository = "https://github.com/braindecode/braindecode"
 documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
-moabb = ["moabb >= 1.0.0"]
+moabb = ["moabb>=1.4.3"]
+eegprep = ["eegprep[eeglabio]>=0.2.23"]
+hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
+viz = ["captum>=0.7.0"]
 tests = [
-    'pytest',
+    'pytest<9.1',  # pytest 9.1.0 changed IdMaker's signature, which breaks pytest_cases 3.10.1 (crash at collection time). Remove the cap once pytest_cases supports pytest >=9.1.
     'pytest-cov',
-	'codecov',
-	'pytest_cases'
+    'codecov',
+    'pytest_cases',
+    'mypy',
+    "transformers>=4.57.0",
+    "bids_validator",
 ]
-docs = [
-    'sphinx_gallery',
-	'sphinx_rtd_theme',
-	'pydata_sphinx_theme',
-	'numpydoc',
-	'memory_profiler',
-	'pillow',
-	'ipython',
-	'sphinx_design',
-	'lightning',
-	'seaborn',
-	'pre-commit'
+typing = [
+    'exca>=0.5.10',
+    'numpydantic>=1.7',
 ]
 
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+docs = [
+    'sphinx_gallery',
+    'sphinx_rtd_theme',
+    'sphinx-autodoc-typehints',
+    'sphinx-autobuild',
+    'sphinxcontrib-bibtex',
+    'sphinx_sitemap',
+    'sphinxext-opengraph',
+    'pydata_sphinx_theme',
+    'numpydoc',
+    'memory_profiler',
+    'pillow',
+    'ipython',
+    'sphinx_design',
+    'lightning',
+    'seaborn',
+    'pre-commit',
+    'openneuro-py>=2026.4.0',  # 2026.4.0 fixes DatasetFile.key->id after the OpenNeuro 5.0.0 schema change; older versions break against the live GraphQL server
+    'plotly',
+    'shap',
+    'nbformat',
+    'transformers',
+]
+
+all = [
+    "braindecode[moabb]",
+    "braindecode[tests]",
+    "braindecode[docs]",
+    "braindecode[hub]",
+    "braindecode[eegprep]",
+    "braindecode[typing]",
+    "braindecode[viz]",
+]
 
 [tool.setuptools]
 py-modules = []
 
+[tool.setuptools.dynamic]
+version = { attr = "braindecode.version.__version__" }
+
 [tool.setuptools.packages.find]
-where = ["."]  # list of folders that contain the packages (["."] by default)
-include = ["braindecode*"]  # package names should match these glob patterns (["*"] by default)
-exclude = []  # exclude packages matching these glob patterns (empty by default)
-namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
+where = ["."] # list of folders that contain the packages (["."] by default)
+include = [
+    "braindecode*",
+] # package names should match these glob patterns (["*"] by default)
+exclude = [] # exclude packages matching these glob patterns (empty by default)
+namespaces = false # to disable scanning PEP 420 namespaces (true by default)
 
 [tool.ruff]
-ignore-init-module-imports = true
+lint.ignore-init-module-imports = true
+line-length = 88
+target-version = "py311"
+
+
+[tool.isort]
+skip = [".gitignore"]
+skip_glob = ["test/*", "examples/*"]
+py_version = 311
+profile = "black"
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+known_first_party = ["braindecode"]
+lines_between_sections = 1
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+# which files count as test modules
+python_files = ["test_*.py", "*_test.py"]
+# which functions inside them count as tests
+python_functions = ["test_*"]
+markers = [
+    "integration: integration tests",
+    "network: tests that require network access",
+    "huggingface: tests that access Hugging Face Hub",
+    "slow: slow tests",
+]

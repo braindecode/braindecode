@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
+""".. _bcic-iv-2a-moabb-cropped:
+
 Cropped Decoding on BCIC IV 2a Dataset
 ======================================
 
@@ -10,17 +11,18 @@ Cropped Decoding on BCIC IV 2a Dataset
 """
 
 ######################################################################
-# Building on the `Trialwise decoding <./plot_bcic_iv_2a_moabb_trial.html>`__,
+# Building on the :ref:`Trialwise Decoding <bcic-iv-2a-moabb-trial>`,
 # we now do more data-efficient cropped decoding!
 #
 # In Braindecode, there are two supported configurations created for
 # training models: trialwise decoding and cropped decoding. We will
 # explain this visually by comparing trialwise to cropped decoding.
 #
-# .. image:: https://braindecode.org/stable/_static/trialwise_explanation.png
+# .. image:: /_static/trialwise_explanation.png
 #    :alt: Trialwise decoding
-# .. image:: https://braindecode.org/stable/_static/cropped_explanation.png
+# .. image:: /_static/cropped_explanation.png
 #    :alt: Cropped decoding
+#
 # On the left, you see trialwise decoding:
 #
 # 1. A complete trial is pushed through the network.
@@ -54,11 +56,11 @@ Cropped Decoding on BCIC IV 2a Dataset
 #        receptive field size, i.e., the number of timesteps the network uses
 #        to make a single prediction)
 #     -  The window size is a user-defined hyperparameter, called
-#        ``input_window_samples`` in Braindecode. It mostly affects runtime
+#        ``n_times`` in Braindecode. It mostly affects runtime
 #        (larger window sizes should be faster). As a rule of thumb, you can
 #        set it to two times the crop size.
 #     -  Crop size and window size together define how many predictions the
-#        network makes per window: ``#window − #crop + 1 = #predictions``
+#        network makes per window: ``#window - #crop + 1 = #predictions``
 #
 # .. note::
 #
@@ -82,8 +84,8 @@ Cropped Decoding on BCIC IV 2a Dataset
 # Loading and preprocessing the dataset
 # -------------------------------------
 #
-# Loading and preprocessing stays the same as in the `Trialwise decoding
-# tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__.
+# Loading and preprocessing stays the same as in the
+# :ref:`Trialwise decoding tutorial <bcic-iv-2a-moabb-trial>`.
 
 from braindecode.datasets import MOABBDataset
 
@@ -138,13 +140,13 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # choose 1000 samples, which are 4 seconds for the 250 Hz sampling rate.
 #
 
-input_window_samples = 1000
+n_times = 1000
 
 ######################################################################
 # Now we create the model. To enable it to be used in cropped decoding
 # efficiently, we manually set the length of the final convolution layer
 # to some length that makes the number of timesteps of the ConvNet smaller
-# than ``input_window_samples`` (see ``final_conv_length=30`` in the model
+# than ``n_times`` (see ``final_conv_length=30`` in the model
 # definition).
 #
 
@@ -174,7 +176,7 @@ n_chans = dataset[0][0].shape[0]
 model = ShallowFBCSPNet(
     n_chans,
     n_classes,
-    input_window_samples=input_window_samples,
+    n_times=n_times,
     final_conv_length=30,
 )
 
@@ -193,7 +195,7 @@ if cuda:
 model.to_dense_prediction_model()
 
 ######################################################################
-# To know the models’ output shape without the last layer, we calculate the
+# To know the models' output shape without the last layer, we calculate the
 # shape of model output for a dummy input.
 #
 
@@ -203,8 +205,8 @@ n_preds_per_input = model.get_output_shape()[2]
 # Cut the data into windows
 # -------------------------
 # In contrast to trialwise decoding, we have to supply an explicit
-# window size and window stride to the ``create_windows_from_events``
-# function.
+# window size and window stride to the
+# :func:`braindecode.preprocessing.create_windows_from_events` function.
 #
 
 from braindecode.preprocessing import create_windows_from_events
@@ -223,7 +225,7 @@ windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=trial_start_offset_samples,
     trial_stop_offset_samples=0,
-    window_size_samples=input_window_samples,
+    window_size_samples=n_times,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
     preload=True,
@@ -244,8 +246,10 @@ valid_set = splitted["1test"]  # Session evaluation
 # Training
 # --------
 # In difference to trialwise decoding, we now should supply
-# ``cropped=True`` to the EEGClassifier, and ``CroppedLoss`` as the
-# criterion, as well as ``criterion__loss_function`` as the loss function
+# ``cropped=True`` to the :class:`EEGClassifier
+# <braindecode.classifier.EEGClassifier>`, and :class:`CroppedLoss
+# <braindecode.training.CroppedLoss>` as the criterion,
+# as well as ``criterion__loss_function`` as the loss function
 # applied to the meaned predictions.
 #
 # .. note::
@@ -256,7 +260,7 @@ valid_set = splitted["1test"]  # Session evaluation
 #     cross validation on your training data.
 #
 
-from skorch.callbacks import LRScheduler
+from skorch.callbacks import EarlyStopping, LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
@@ -271,13 +275,13 @@ weight_decay = 0
 # weight_decay = 0.5 * 0.001
 
 batch_size = 64
-n_epochs = 2
+n_epochs = 4
 
 clf = EEGClassifier(
     model,
     cropped=True,
     criterion=CroppedLoss,
-    criterion__loss_function=torch.nn.functional.nll_loss,
+    criterion__loss_function=torch.nn.functional.cross_entropy,
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(valid_set),
     optimizer__lr=lr,
@@ -286,18 +290,50 @@ clf = EEGClassifier(
     batch_size=batch_size,
     callbacks=[
         "accuracy",
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=max(1, n_epochs - 1))),
+        ("early_stopping", EarlyStopping(patience=10, load_best=True)),
     ],
     device=device,
     classes=classes,
 )
-# Model training for a specified number of epochs. `y` is None as it is already supplied
-# in the dataset.
-_ = clf.fit(train_set, y=None, epochs=n_epochs)
+# Model training for a specified number of epochs. ``y`` is None as it is
+# already supplied in the dataset.
+clf.fit(train_set, y=None, epochs=n_epochs)
 
 ######################################################################
-# Plot Results
-# ----------------
+# Training for longer
+# -------------------
+#
+# The gallery build above uses only ``n_epochs = 4``. When trained
+# offline for up to 100 epochs with early stopping, the model reaches
+# **83.7 % accuracy on the held-out session (chance = 25 %)**.
+#
+# We can load the pretrained checkpoint from the Hugging Face Hub and
+# inspect the full training curves:
+
+import warnings
+
+repo_id = "braindecode/plot_bcic_iv_2a_moabb_cropped"
+try:
+    from huggingface_hub import hf_hub_download
+
+    clf.initialize()
+    clf.load_params(
+        f_params=hf_hub_download(repo_id, "params.safetensors"),
+        f_history=hf_hub_download(repo_id, "history.json"),
+        use_safetensors=True,
+    )
+except Exception as exc:
+    warnings.warn(
+        f"Could not load pretrained checkpoint from {repo_id} ({exc}); "
+        "continuing with the locally trained short-run model.",
+        stacklevel=2,
+    )
+
+######################################################################
+# Plot training curves
+# ~~~~~~~~~~~~~~~~~~~~
+#
 # .. note::
 #
 #     Note that we drop further in the classification error and
@@ -358,26 +394,19 @@ plt.tight_layout()
 # Generate a confusion matrix as in [2]_
 #
 
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
 
-from braindecode.visualization import plot_confusion_matrix
-
-# generate confusion matrices
-# get the targets
 y_true = valid_set.get_metadata().target
 y_pred = clf.predict(valid_set)
 
-# generating confusion matrix
-confusion_mat = confusion_matrix(y_true, y_pred)
-
-# add class labels
-# label_dict is class_name : str -> i_class : int
 label_dict = valid_set.datasets[0].window_kwargs[0][1]["mapping"]
-# sort the labels by values (values are integer class labels)
-labels = [k for k, v in sorted(label_dict.items(), key=lambda kv: kv[1])]
+sorted_items = sorted(label_dict.items(), key=lambda kv: kv[1])
+labels = [k for k, _ in sorted_items]
+class_ids = [v for _, v in sorted_items]
 
-# plot the basic conf. matrix
-plot_confusion_matrix(confusion_mat, class_names=labels)
+ConfusionMatrixDisplay.from_predictions(
+    y_true, y_pred, labels=class_ids, display_labels=labels
+)
 
 ##########################################################################
 #
@@ -393,4 +422,4 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 # .. [2] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
-#        Hum. Brain Mapping, 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
+#        Hum. Brain Mapping, 38: 5391-5420. https://onlinelibrary.wiley.com/doi/10.1002/hbm.23730.

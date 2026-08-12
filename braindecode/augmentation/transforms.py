@@ -1,5 +1,8 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
+#          Gustavo Rodrigues <gustavenrique01@gmail.com>
+#          Bruna Lopes <brunajaflopes@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -11,18 +14,25 @@ import torch
 from mne.channels import make_standard_montage
 
 from .base import Transform
-from .functional import bandstop_filter
-from .functional import channels_dropout
-from .functional import channels_permute
-from .functional import channels_shuffle
-from .functional import frequency_shift
-from .functional import ft_surrogate
-from .functional import gaussian_noise
-from .functional import mixup
-from .functional import sensors_rotation
-from .functional import sign_flip
-from .functional import smooth_time_mask
-from .functional import time_reverse
+from .functional import (
+    amplitude_scale,
+    band_rotation,
+    bandstop_filter,
+    channels_dropout,
+    channels_permute,
+    channels_rereference,
+    channels_shuffle,
+    frequency_shift,
+    ft_surrogate,
+    gaussian_noise,
+    mask_encoding,
+    mixup,
+    segmentation_reconstruction,
+    sensors_rotation,
+    sign_flip,
+    smooth_time_mask,
+    time_reverse,
+)
 
 
 class TimeReverse(Transform):
@@ -32,13 +42,13 @@ class TimeReverse(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
 
-    operation = staticmethod(time_reverse)
+    operation = staticmethod(time_reverse)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -58,13 +68,13 @@ class SignFlip(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
 
-    operation = staticmethod(sign_flip)
+    operation = staticmethod(sign_flip)  # type: ignore[assignment]
 
     def __init__(self, probability, random_state=None):
         super().__init__(probability=probability, random_state=random_state)
@@ -75,7 +85,7 @@ class FTSurrogate(Transform):
 
     Parameters
     ----------
-    probability: float
+    probability : float
         Float setting the probability of applying the operation.
     phase_noise_magnitude : float | torch.Tensor, optional
         Float between 0 and 1 setting the range over which the phase
@@ -85,7 +95,7 @@ class FTSurrogate(Transform):
         Whether to sample phase perturbations independently for each channel or
         not. It is advised to set it to False when spatial information is
         important for the task, like in BCI. Default False.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
@@ -98,7 +108,7 @@ class FTSurrogate(Transform):
        preprint arXiv:1806.08675.
     """
 
-    operation = staticmethod(ft_surrogate)
+    operation = staticmethod(ft_surrogate)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -108,15 +118,15 @@ class FTSurrogate(Transform):
         random_state=None,
     ):
         super().__init__(probability=probability, random_state=random_state)
-        assert isinstance(
-            phase_noise_magnitude, (float, int, torch.Tensor)
-        ), "phase_noise_magnitude should be a float."
-        assert (
-            0 <= phase_noise_magnitude <= 1
-        ), "phase_noise_magnitude should be between 0 and 1."
-        assert isinstance(
-            channel_indep, bool
-        ), "channel_indep is expected to be a boolean"
+        assert isinstance(phase_noise_magnitude, (float, int, torch.Tensor)), (
+            "phase_noise_magnitude should be a float."
+        )
+        assert 0 <= phase_noise_magnitude <= 1, (
+            "phase_noise_magnitude should be between 0 and 1."
+        )
+        assert isinstance(channel_indep, bool), (
+            "channel_indep is expected to be a boolean"
+        )
         self.phase_noise_magnitude = phase_noise_magnitude
         self.channel_indep = channel_indep
 
@@ -154,12 +164,12 @@ class ChannelsDropout(Transform):
 
     Parameters
     ----------
-    probability: float
+    probability : float
         Float setting the probability of applying the operation.
-    proba_drop: float | None, optional
+    p_drop : float | None, optional
         Float between 0 and 1 setting the probability of dropping each channel.
         Defaults to 0.2.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.RandomState, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument and to sample channels to erase. Defaults to None.
@@ -171,7 +181,7 @@ class ChannelsDropout(Transform):
        Reordering. arXiv preprint arXiv:2010.13694.
     """
 
-    operation = staticmethod(channels_dropout)
+    operation = staticmethod(channels_dropout)  # type: ignore[assignment]
 
     def __init__(self, probability, p_drop=0.2, random_state=None):
         super().__init__(probability=probability, random_state=random_state)
@@ -211,12 +221,12 @@ class ChannelsShuffle(Transform):
 
     Parameters
     ----------
-    probability: float
+    probability : float
         Float setting the probability of applying the operation.
-    p_shuffle: float | None, optional
+    p_shuffle : float | None, optional
         Float between 0 and 1 setting the probability of including the channel
         in the set of permuted channels. Defaults to 0.2.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument, to sample which channels to shuffle and to carry the shuffle.
@@ -229,7 +239,7 @@ class ChannelsShuffle(Transform):
        Reordering. arXiv preprint arXiv:2010.13694.
     """
 
-    operation = staticmethod(channels_shuffle)
+    operation = staticmethod(channels_shuffle)  # type: ignore[assignment]
 
     def __init__(self, probability, p_shuffle=0.2, random_state=None):
         super().__init__(probability=probability, random_state=random_state)
@@ -273,7 +283,7 @@ class GaussianNoise(Transform):
         Float setting the probability of applying the operation.
     std : float, optional
         Standard deviation to use for the additive noise. Defaults to 0.1.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -291,7 +301,7 @@ class GaussianNoise(Transform):
        Machine Learning for Health (pp. 238-253). PMLR.
     """
 
-    operation = staticmethod(gaussian_noise)
+    operation = staticmethod(gaussian_noise)  # type: ignore[assignment]
 
     def __init__(self, probability, std=0.1, random_state=None):
         super().__init__(
@@ -340,7 +350,7 @@ class ChannelsSymmetry(Transform):
         nomenclature) of the EEG channels that will be transformed. The
         first name should correspond the data in the first row of X, the
         second name in the second row and so on.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
@@ -352,7 +362,7 @@ class ChannelsSymmetry(Transform):
        arXiv preprint arXiv:1803.09702.
     """
 
-    operation = staticmethod(channels_permute)
+    operation = staticmethod(channels_permute)  # type: ignore[assignment]
 
     def __init__(self, probability, ordered_ch_names, random_state=None):
         super().__init__(
@@ -402,7 +412,8 @@ class ChannelsSymmetry(Transform):
 
 
 class SmoothTimeMask(Transform):
-    """Smoothly replace a randomly chosen contiguous part of all channels by
+    """Smoothly replace a randomly chosen contiguous part of all channels by.
+
     zeros.
 
     Suggested e.g. in [1]_ and [2]_
@@ -414,7 +425,7 @@ class SmoothTimeMask(Transform):
     mask_len_samples : int | torch.Tensor, optional
         Number of consecutive samples to zero out. Will be ignored if
         magnitude is not set to None. Defaults to 100.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -428,7 +439,7 @@ class SmoothTimeMask(Transform):
        Machine Learning for Health (pp. 238-253). PMLR.
     """
 
-    operation = staticmethod(smooth_time_mask)
+    operation = staticmethod(smooth_time_mask)  # type: ignore[assignment]
 
     def __init__(self, probability, mask_len_samples=100, random_state=None):
         super().__init__(
@@ -487,7 +498,8 @@ class SmoothTimeMask(Transform):
 
 
 class BandstopFilter(Transform):
-    """Apply a band-stop filter with desired bandwidth at a randomly selected
+    """Apply a band-stop filter with desired bandwidth at a randomly selected.
+
     frequency position between 0 and ``max_freq``.
 
     Suggested e.g. in [1]_ and [2]_
@@ -506,7 +518,7 @@ class BandstopFilter(Transform):
         that the corresponding high cut frequency + transition (=1Hz) are below
         ``max_freq``. If omitted or `None`, will default to the Nyquist
         frequency (``sfreq / 2``).
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -520,7 +532,7 @@ class BandstopFilter(Transform):
        Machine Learning for Health (pp. 238-253). PMLR.
     """
 
-    operation = staticmethod(bandstop_filter)
+    operation = staticmethod(bandstop_filter)  # type: ignore[assignment]
 
     def __init__(
         self, probability, sfreq, bandwidth=1, max_freq=None, random_state=None
@@ -529,16 +541,16 @@ class BandstopFilter(Transform):
             probability=probability,
             random_state=random_state,
         )
-        assert (
-            isinstance(bandwidth, Real) and bandwidth >= 0
-        ), "bandwidth should be a non-negative float."
-        assert (
-            isinstance(sfreq, Real) and sfreq > 0
-        ), "sfreq should be a positive float."
+        assert isinstance(bandwidth, Real) and bandwidth >= 0, (
+            "bandwidth should be a non-negative float."
+        )
+        assert isinstance(sfreq, Real) and sfreq > 0, (
+            "sfreq should be a positive float."
+        )
         if max_freq is not None:
-            assert (
-                isinstance(max_freq, Real) and max_freq > 0
-            ), "max_freq should be a positive float."
+            assert isinstance(max_freq, Real) and max_freq > 0, (
+                "max_freq should be a positive float."
+            )
         nyq = sfreq / 2
         if max_freq is None or max_freq > nyq:
             max_freq = nyq
@@ -547,9 +559,10 @@ class BandstopFilter(Transform):
                 f" Nyquist frequency ({nyq} Hz)."
                 f" Falling back to max_freq = {nyq}."
             )
-        assert (
-            bandwidth < max_freq
-        ), f"`bandwidth` needs to be smaller than max_freq={max_freq}"
+        assert bandwidth < max_freq - 2, (
+            f"`bandwidth` needs to be smaller than max_freq - 2={max_freq - 2} "
+            f"to allow valid notch frequency sampling with 1 Hz transition bands."
+        )
 
         # override bandwidth value when a magnitude is passed
         self.sfreq = sfreq
@@ -590,8 +603,8 @@ class BandstopFilter(Transform):
 
         # Prevents transitions from going below 0 and above max_freq
         notched_freqs = self.rng.uniform(
-            low=1 + 2 * self.bandwidth,
-            high=self.max_freq - 1 - 2 * self.bandwidth,
+            low=1 + self.bandwidth / 2,
+            high=self.max_freq - 1 - self.bandwidth / 2,
             size=X.shape[0],
         )
         return {
@@ -615,21 +628,21 @@ class FrequencyShift(Transform):
     max_delta_freq : float | torch.Tensor, optional
         Maximum shift in Hz that can be sampled (in absolute value).
         Defaults to 2 (shift sampled between -2 and 2 Hz).
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
     """
 
-    operation = staticmethod(frequency_shift)
+    operation = staticmethod(frequency_shift)  # type: ignore[assignment]
 
     def __init__(self, probability, sfreq, max_delta_freq=2, random_state=None):
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
-        assert (
-            isinstance(sfreq, Real) and sfreq > 0
-        ), "sfreq should be a positive float."
+        assert isinstance(sfreq, Real) and sfreq > 0, (
+            "sfreq should be a positive float."
+        )
         self.sfreq = sfreq
 
         self.max_delta_freq = max_delta_freq
@@ -670,7 +683,8 @@ class FrequencyShift(Transform):
 
 
 def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
-    """Returns standard 10-20 sensors position matrix (for instantiating
+    """Returns standard 10-20 sensors position matrix (for instantiating.
+
     SensorsRotation for example).
 
     Parameters
@@ -684,9 +698,9 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
         matrices that will be fed to `SensorsRotation` transform. By
         default None.
     """
-    assert (
-        raw_or_epoch is not None or ordered_ch_names is not None
-    ), "At least one of raw_or_epoch and ordered_ch_names is needed."
+    assert raw_or_epoch is not None or ordered_ch_names is not None, (
+        "At least one of raw_or_epoch and ordered_ch_names is needed."
+    )
     if ordered_ch_names is None:
         ordered_ch_names = raw_or_epoch.info["ch_names"]
     ten_twenty_montage = make_standard_montage("standard_1020")
@@ -698,7 +712,8 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
 
 
 class SensorsRotation(Transform):
-    """Interpolates EEG signals over sensors rotated around the desired axis
+    """Interpolates EEG signals over sensors rotated around the desired axis.
+
     with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
     Suggested in [1]_
@@ -726,7 +741,7 @@ class SensorsRotation(Transform):
         Whether to use spherical splines for the interpolation or not. When
         ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
         be used (as in the original paper). Defaults to True.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -738,7 +753,7 @@ class SensorsRotation(Transform):
        (EMBC) (pp. 471-474).
     """
 
-    operation = staticmethod(sensors_rotation)
+    operation = staticmethod(sensors_rotation)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -752,23 +767,23 @@ class SensorsRotation(Transform):
         super().__init__(probability=probability, random_state=random_state)
         if isinstance(sensors_positions_matrix, (np.ndarray, list)):
             sensors_positions_matrix = torch.as_tensor(sensors_positions_matrix)
-        assert isinstance(
-            sensors_positions_matrix, torch.Tensor
-        ), "sensors_positions should be an Tensor"
-        assert (
-            isinstance(max_degrees, (Real, torch.Tensor)) and max_degrees >= 0
-        ), "max_degrees should be non-negative float."
+        assert isinstance(sensors_positions_matrix, torch.Tensor), (
+            "sensors_positions should be an Tensor"
+        )
+        assert isinstance(max_degrees, (Real, torch.Tensor)) and max_degrees >= 0, (
+            "max_degrees should be non-negative float."
+        )
         assert isinstance(axis, str) and axis in [
             "x",
             "y",
             "z",
         ], "axis can be either x, y or z."
-        assert (
-            sensors_positions_matrix.shape[0] == 3
-        ), "sensors_positions_matrix shape should be 3 x n_channels."
-        assert isinstance(
-            spherical_splines, bool
-        ), "spherical_splines should be a boolean"
+        assert sensors_positions_matrix.shape[0] == 3, (
+            "sensors_positions_matrix shape should be 3 x n_channels."
+        )
+        assert isinstance(spherical_splines, bool), (
+            "spherical_splines should be a boolean"
+        )
         self.sensors_positions_matrix = sensors_positions_matrix
         self.axis = axis
         self.spherical_splines = spherical_splines
@@ -825,7 +840,8 @@ class SensorsRotation(Transform):
 
 
 class SensorsZRotation(SensorsRotation):
-    """Interpolates EEG signals over sensors rotated around the Z axis
+    """Interpolates EEG signals over sensors rotated around the Z axis.
+
     with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
     Suggested in [1]_
@@ -847,7 +863,7 @@ class SensorsZRotation(SensorsRotation):
         Whether to use spherical splines for the interpolation or not. When
         ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
         be used (as in the original paper). Defaults to True.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -881,7 +897,8 @@ class SensorsZRotation(SensorsRotation):
 
 
 class SensorsYRotation(SensorsRotation):
-    """Interpolates EEG signals over sensors rotated around the Y axis
+    """Interpolates EEG signals over sensors rotated around the Y axis.
+
     with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
     Suggested in [1]_
@@ -903,7 +920,7 @@ class SensorsYRotation(SensorsRotation):
         Whether to use spherical splines for the interpolation or not. When
         ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
         be used (as in the original paper). Defaults to True.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -937,7 +954,8 @@ class SensorsYRotation(SensorsRotation):
 
 
 class SensorsXRotation(SensorsRotation):
-    """Interpolates EEG signals over sensors rotated around the X axis
+    """Interpolates EEG signals over sensors rotated around the X axis.
+
     with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
     Suggested in [1]_
@@ -959,7 +977,7 @@ class SensorsXRotation(SensorsRotation):
         Whether to use spherical splines for the interpolation or not. When
         ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
         be used (as in the original paper). Defaults to True.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -993,17 +1011,19 @@ class SensorsXRotation(SensorsRotation):
 
 
 class Mixup(Transform):
-    """Implements Iterator for Mixup for EEG data. See [1]_.
+    """Implements Iterator for Mixup for EEG data.
+
+    See [1]_.
     Implementation based on [2]_.
 
     Parameters
     ----------
-    alpha: float
+    alpha : float
         Mixup hyperparameter.
-    beta_per_sample: bool (default=False)
+    beta_per_sample : bool (default=False)
         By default, one mixing coefficient per batch is drawn from a beta
         distribution. If True, one mixing coefficient per sample is drawn.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -1016,7 +1036,7 @@ class Mixup(Transform):
     .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
 
-    operation = staticmethod(mixup)
+    operation = staticmethod(mixup)  # type: ignore[assignment]
 
     def __init__(self, alpha, beta_per_sample=False, random_state=None):
         super().__init__(
@@ -1038,7 +1058,7 @@ class Mixup(Transform):
 
         Returns
         -------
-        params: dict
+        params : dict
             Contains the values sampled uniformly between 0 and 1 setting the
             linear interpolation between examples (lam) and the shuffled
             indices of examples that are mixed into original examples
@@ -1068,4 +1088,368 @@ class Mixup(Transform):
         return {
             "lam": lam,
             "idx_perm": idx_perm,
+        }
+
+
+class SegmentationReconstruction(Transform):
+    """Segmentation Reconstruction from Lotte (2015) [Lotte2015]_.
+
+    Applies a segmentation-reconstruction transform to the input data, as
+    proposed in [Lotte2015]_. It segments each trial in the batch and randomly mix
+    it to generate new synthetic trials by label, preserving the original
+    order of the segments in time domain.
+
+    Parameters
+    ----------
+    probability : float
+        Float setting the probability of applying the operation.
+    random_state : int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Used to decide whether to transform given the probability
+        argument and to sample the segments mixing. Defaults to None.
+    n_segments : int, optional
+        Number of segments to use in the batch. If None, X will be
+        automatically segmented, getting the last element in a list
+        of factors of the number of samples's square root. Defaults to None.
+
+    References
+    ----------
+    .. [Lotte2015] Lotte, F. (2015). Signal processing approaches to minimize
+        or suppress calibration time in oscillatory activity-based brain–computer
+        interfaces. Proceedings of the IEEE, 103(6), 871-890.
+    """
+
+    operation = staticmethod(segmentation_reconstruction)  # type: ignore[assignment]
+
+    def __init__(
+        self,
+        probability,
+        n_segments=None,
+        random_state=None,
+    ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
+        self.n_segments = n_segments
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        params : dict
+            Contains the number of segments to split the signal into.
+        """
+        X, y = batch[0], batch[1]
+
+        if y is not None:
+            if not isinstance(X, torch.Tensor) or not isinstance(y, torch.Tensor):
+                raise ValueError("X and y must be torch tensors.")
+
+            if X.shape[0] != y.shape[0]:
+                raise ValueError("Number of samples in X and y must be the same.")
+
+        if self.n_segments is None:
+            self.n_segments = int(X.shape[2])
+            n_segments_list = []
+            for i in range(1, int(self.n_segments**0.5) + 1):
+                if self.n_segments % i == 0:
+                    n_segments_list.append(i)
+            self.n_segments = n_segments_list[-1]
+
+        elif not (
+            isinstance(self.n_segments, (int, float))
+            and 1 <= self.n_segments <= X.shape[2]
+        ):
+            raise ValueError(
+                f"Number of segments must be a positive integer less than "
+                f"(or equal) the window size. Got {self.n_segments}"
+            )
+
+        if y is None:
+            data_classes = [(np.nan, X)]
+
+        else:
+            classes = torch.unique(y)
+
+            data_classes = [(i, X[y == i]) for i in classes]
+
+        rand_indices = dict()
+        for label, X_class in data_classes:
+            n_trials = X_class.shape[0]
+            rand_indices[label] = self.rng.randint(
+                0, n_trials, (n_trials, self.n_segments)
+            )
+
+        idx_shuffle = self.rng.permutation(X.shape[0])
+
+        return {
+            "n_segments": self.n_segments,
+            "data_classes": data_classes,
+            "rand_indices": rand_indices,
+            "idx_shuffle": idx_shuffle,
+        }
+
+
+class MaskEncoding(Transform):
+    """MaskEncoding from [1]_.
+
+    Replaces randomly chosen contiguous part (or parts) of all channels by
+    zeros (if more than one segment, it may overlap).
+
+    Implementation based on [1]_
+
+    Parameters
+    ----------
+    probability : float
+        Float setting the probability of applying the operation.
+    max_mask_ratio : float, optional
+        Signal ratio to zero out. Defaults to 0.1.
+    n_segments : int, optional
+        Number of segments to zero out in each example.
+        Defaults to 1.
+    random_state : int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Defaults to None.
+
+    References
+    ----------
+    .. [1] Ding, Wenlong, et al. "A Novel Data Augmentation Approach
+        Using Mask Encoding for Deep Learning-Based Asynchronous SSVEP-BCI."
+        IEEE Transactions on Neural Systems and Rehabilitation Engineering
+        32 (2024): 875-886.
+    """
+
+    operation = staticmethod(mask_encoding)  # type: ignore[assignment]
+
+    def __init__(
+        self,
+        probability,
+        max_mask_ratio=0.1,
+        n_segments=1,
+        random_state=None,
+    ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
+        assert isinstance(n_segments, int) and n_segments > 0, (
+            "n_segments should be a positive integer."
+        )
+        assert isinstance(max_mask_ratio, (int, float)) and 0 <= max_mask_ratio <= 1, (
+            "mask_ratio should be a float between 0 and 1."
+        )
+
+        self.mask_ratio = max_mask_ratio
+        self.n_segments = n_segments
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        params : dict
+            Contains ...
+        """
+        if len(batch) == 0:
+            return super().get_augmentation_params(*batch)
+        X = batch[0]
+
+        batch_size, _, n_times = X.shape
+
+        segment_length = int((n_times * self.mask_ratio) / self.n_segments)
+
+        assert segment_length >= 1, (
+            "n_segments should be a positive integer not higher than (max_mask_ratio * window size)."
+        )
+
+        time_start = self.rng.randint(
+            0, n_times - segment_length, (batch_size, self.n_segments)
+        )
+        time_start = torch.from_numpy(time_start)
+
+        return {
+            "time_start": time_start,
+            "segment_length": segment_length,
+            "n_segments": self.n_segments,
+        }
+
+
+class ChannelsReref(Transform):
+    """Randomly re-reference channels in EEG data matrix.
+
+    Part of the augmentations proposed in [1]_
+
+    Parameters
+    ----------
+    probability : float
+        Float setting the probability of applying the operation.
+    random_state : int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Used to decide whether or not to transform given the probability
+        argument, to sample which channels to shuffle and to carry the shuffle.
+        Defaults to None.
+
+    References
+    ----------
+    .. [1] Mohsenvand, M.N., Izadi, M.R. &amp; Maes, P.. (2020). Contrastive
+        Representation Learning for Electroencephalogram Classification. Proceedings
+        of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
+        Learning Research 136:238-253 Available from https://proceedings.mlr.press/v136/mohsenvand20a.html.
+    """
+
+    operation = staticmethod(channels_rereference)  # type: ignore[assignment]
+
+    def __init__(self, probability, random_state=None):
+        super().__init__(probability=probability, random_state=random_state)
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters."""
+        return {
+            "random_state": self.rng,
+        }
+
+
+class AmplitudeScale(Transform):
+    """Rescale amplitude based on a random sampled scaling value.
+
+    Part of the augmentations proposed in [1]_
+
+    Parameters
+    ----------
+    probability : float
+        Float setting the probability of applying the operation.
+    random_state : int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Used to decide whether or not to transform given the probability
+        argument, to sample which channels to shuffle and to carry the shuffle.
+        Defaults to None.
+
+    References
+    ----------
+    .. [1] Mohsenvand, M.N., Izadi, M.R. &amp; Maes, P.. (2020). Contrastive
+        Representation Learning for Electroencephalogram Classification. Proceedings
+        of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
+        Learning Research 136:238-253 Available from https://proceedings.mlr.press/v136/mohsenvand20a.html.
+    """
+
+    operation = staticmethod(amplitude_scale)  # type: ignore[assignment]
+
+    def __init__(self, probability, interval=(0.5, 2), random_state=None):
+        super().__init__(probability=probability, random_state=random_state)
+        self.scale = interval
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters."""
+        return {"random_state": self.rng, "scale": self.scale}
+
+
+class BandRotation(Transform):
+    """Per-band electrode rotation + inter-band temporal jitter.
+
+    Models small wristband rotation between sessions and relative timing
+    noise between two arms.  Introduced in [Sivakumar2024]_ for the
+    emg2qwerty surface-EMG keystroke decoding task: the channel axis is
+    laid out as ``(B, num_bands * electrodes_per_band, T)`` with bands
+    contiguous, each band gets a uniform circular roll along the channel
+    axis, and when ``num_bands >= 2``, band 1 also gets a sample-level
+    temporal shift.  The same offset / shift is applied to every sample
+    in a transformed sub-batch (one set of parameters per call).
+
+    Parameters
+    ----------
+    probability : float
+        Float setting the probability of applying the operation.
+    num_bands : int, optional
+        Number of electrode bands (e.g. ``2`` for left + right wristband).
+        Must be ``>= 1``.  Defaults to 2.
+    electrodes_per_band : int, optional
+        Electrodes per band (e.g. ``16``).  Must be ``>= 1``.  Defaults
+        to 16.
+    band_offsets : tuple of int, optional
+        Per-band roll values to sample from uniformly.  ``(-1, 0, 1)``
+        covers ±1-electrode misalignment.  Must be non-empty.  Defaults
+        to ``(-1, 0, 1)``.
+    max_temporal_jitter : int, optional
+        Max ±-sample temporal shift applied to band 1.  Defaults to 0
+        (jitter disabled).  Must be ``>= 0``.  The emg2qwerty paper uses
+        120 samples (60 ms at 2 kHz).
+    circular_jitter : bool, optional
+        If True (default, paper-faithful) the jitter is a circular roll;
+        if False the gap left by the shift is zero-padded.  See
+        :func:`band_rotation`.
+    random_state : int | numpy.random.RandomState, optional
+        Seed for the rotation / jitter sampler.  Defaults to None.
+
+    References
+    ----------
+    .. [Sivakumar2024] Sivakumar, V., Seely, J., Du, A., Bittner, S. R.,
+       Berenzweig, A., Bolarinwa, A., Gramfort, A., & Mandel, M. I. (2024).
+       "emg2qwerty: A Large Dataset with Baselines for Touch Typing using
+       Surface Electromyography." *NeurIPS Datasets and Benchmarks Track*.
+    """
+
+    operation = staticmethod(band_rotation)  # type: ignore[assignment]
+
+    def __init__(
+        self,
+        probability,
+        num_bands=2,
+        electrodes_per_band=16,
+        band_offsets=(-1, 0, 1),
+        max_temporal_jitter=0,
+        circular_jitter=True,
+        random_state=None,
+    ):
+        super().__init__(probability=probability, random_state=random_state)
+        # Up-front parameter validation; the underlying ``band_rotation``
+        # also re-checks at call time, but raising here surfaces config
+        # mistakes when the Transform is built rather than on the first
+        # batch.
+        if num_bands < 1:
+            raise ValueError(f"num_bands must be >= 1, got {num_bands}")
+        if electrodes_per_band < 1:
+            raise ValueError(
+                f"electrodes_per_band must be >= 1, got {electrodes_per_band}"
+            )
+        band_offsets = tuple(band_offsets)
+        if not band_offsets:
+            raise ValueError("band_offsets must be non-empty")
+        if not all(isinstance(o, (int, np.integer)) for o in band_offsets):
+            raise ValueError(
+                f"band_offsets must contain integers, got {band_offsets!r}"
+            )
+        if max_temporal_jitter < 0:
+            raise ValueError(
+                f"max_temporal_jitter must be >= 0, got {max_temporal_jitter}"
+            )
+        self.num_bands = num_bands
+        self.electrodes_per_band = electrodes_per_band
+        self.band_offsets = band_offsets
+        self.max_temporal_jitter = max_temporal_jitter
+        self.circular_jitter = circular_jitter
+
+    def get_augmentation_params(self, *batch):
+        return {
+            "num_bands": self.num_bands,
+            "electrodes_per_band": self.electrodes_per_band,
+            "band_offsets": self.band_offsets,
+            "max_temporal_jitter": self.max_temporal_jitter,
+            "circular_jitter": self.circular_jitter,
+            "random_state": self.rng,
         }

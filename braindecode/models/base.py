@@ -3,15 +3,55 @@
 #
 # License: BSD-3
 
-import warnings
-from typing import Dict, Iterable, List, Optional, Tuple
+from __future__ import annotations
 
+import json
+import warnings
 from collections import OrderedDict
+from pathlib import Path
+from typing import Dict, Iterable, Optional, Type, Union
 
 import numpy as np
 import torch
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
+from mne.utils import _soft_import
 from torchinfo import ModelStatistics, summary
+
+from braindecode.models.util import (
+    _EEG_PARAMS,
+    _IMPORT_ADAPTER,
+    build_model_config,
+    resolve_type_kwargs,
+    track_model_init_kwargs,
+)
+from braindecode.version import __version__
+
+huggingface_hub = _soft_import(
+    "huggingface_hub", "Hugging Face Hub integration", strict=False
+)
+
+HAS_HF_HUB = huggingface_hub is not False
+
+
+_HF_INSTALL_HINT = (
+    "requires the `huggingface_hub` package. "
+    "Install with: pip install 'braindecode[hub]'"
+)
+
+
+class _BaseHubMixinStub:
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        raise ImportError(f"{cls.__name__}.from_pretrained() {_HF_INSTALL_HINT}")
+
+    def push_to_hub(self, *args, **kwargs):
+        raise ImportError(f"{type(self).__name__}.push_to_hub() {_HF_INSTALL_HINT}")
+
+
+# Define base class for hub mixin
+_BaseHubMixin: Type = (
+    huggingface_hub.PyTorchModelHubMixin if HAS_HF_HUB else _BaseHubMixinStub
+)
 
 
 def deprecated_args(obj, *old_new_args):
@@ -31,9 +71,31 @@ def deprecated_args(obj, *old_new_args):
     return out_args
 
 
-class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
+class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
+    """Defer ``__init__`` wrapping until after docstring inheritance.
+
+    ``NumpyDocstringInheritanceInitMeta`` uses ``inspect.unwrap()``
+    internally, which bypasses ``@wraps`` wrappers.  By wrapping
+    ``__init__`` *after* docstring processing, the metaclass sees the
+    unwrapped function and correctly inherits ``cls.__doc__``.
+    """
+
+    def __init__(cls, class_name, class_bases, class_dict):
+        super().__init__(class_name, class_bases, class_dict)
+        # Only wrap subclass __init__s, not EEGModuleMixin itself.
+        # Wrapping the mixin would cause super().__init__() calls to
+        # overwrite _braindecode_init_kwargs captured by the subclass.
+        if any(isinstance(b, _BraindecodeDocstringMeta) for b in class_bases):
+            track_model_init_kwargs(cls)
+
+
+class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     """
     Mixin class for all EEG models in braindecode.
+
+    This class integrates with Hugging Face Hub when the ``huggingface_hub`` package
+    is installed, enabling models to be pushed to and loaded from the Hub using
+    :func:`push_to_hub()` and :func:`from_pretrained()` methods.
 
     Parameters
     ----------
@@ -51,20 +113,11 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         Length of the input window in seconds.
     sfreq : float
         Sampling frequency of the EEG recordings.
-    add_log_softmax: bool
-        Whether to use log-softmax non-linearity as the output function.
-        LogSoftmax final layer will be removed in the future.
-        Please adjust your loss function accordingly (e.g. CrossEntropyLoss)!
-        Check the documentation of the torch.nn loss functions:
-        https://pytorch.org/docs/stable/nn.html#loss-functions.
 
     Raises
     ------
     ValueError: If some input signal-related parameters are not specified
                 and can not be inferred.
-
-    FutureWarning: If add_log_softmax is True, since LogSoftmax final layer
-                   will be removed in the future.
 
     Notes
     -----
@@ -72,44 +125,191 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     there will be an attempt to infer them from the other parameters.
     """
 
+    #: Template for model-specific Hub integration notes appended by
+    #: ``__init_subclass__``.  ``{name}`` is replaced with the concrete
+    #: model class name.
+    _HUB_NOTES_TEMPLATE = """
+    .. rubric:: Hugging Face Hub integration
+
+    When the optional ``huggingface_hub`` package is installed, all models
+    automatically gain the ability to be pushed to and loaded from the
+    Hugging Face Hub. Install with::
+
+        pip install braindecode[hub]
+
+    **Pushing a model to the Hub:**
+
+    .. code-block::
+
+        from braindecode.models import {name}
+
+        # Train your model
+        model = {name}(n_chans=22, n_outputs=4, n_times=1000)
+        # ... training code ...
+
+        # Push to the Hub
+        model.push_to_hub(
+            repo_id="username/my-{name_lower}-model",
+            commit_message="Initial model upload",
+        )
+
+    **Loading a model from the Hub:**
+
+    .. code-block::
+
+        from braindecode.models import {name}
+
+        # Load pretrained model
+        model = {name}.from_pretrained("username/my-{name_lower}-model")
+
+        # Load with a different number of outputs (head is rebuilt automatically)
+        model = {name}.from_pretrained("username/my-{name_lower}-model", n_outputs=4)
+
+    **Extracting features and replacing the head:**
+
+    .. code-block::
+
+        import torch
+
+        x = torch.randn(1, model.n_chans, model.n_times)
+        # Extract encoder features (consistent dict across all models)
+        out = model(x, return_features=True)
+        features = out["features"]
+
+        # Replace the classification head
+        model.reset_head(n_outputs=10)
+
+    **Saving and restoring full configuration:**
+
+    .. code-block::
+
+        import json
+
+        config = model.get_config()            # all __init__ params
+        with open("config.json", "w") as f:
+            json.dump(config, f)
+
+        model2 = {name}.from_config(config)    # reconstruct (no weights)
+
+    All model parameters (both EEG-specific and model-specific such as
+    dropout rates, activation functions, number of filters) are automatically
+    saved to the Hub and restored when loading.
+
+    See :ref:`load-pretrained-models` for a complete tutorial.
+    """
+
+    def __init_subclass__(cls, **kwargs):
+        # Append model-specific Hub integration notes to the docstring.
+        # This runs before the metaclass __init__, so the Hub notes will
+        # be included in the docstring that the metaclass processes.
+        if cls.__doc__ is not None:
+            hub_notes = cls._HUB_NOTES_TEMPLATE.format(
+                name=cls.__name__,
+                name_lower=cls.__name__.lower(),
+            )
+            cls.__doc__ = cls.__doc__.rstrip() + "\n" + hub_notes
+
+        if not HAS_HF_HUB:
+            super().__init_subclass__(**kwargs)
+            return
+
+        base_tags = ["braindecode", cls.__name__]
+        user_tags = kwargs.pop("tags", None)
+        tags = list(user_tags) if user_tags is not None else []
+        for tag in base_tags:
+            if tag not in tags:
+                tags.append(tag)
+
+        docs_url = kwargs.pop(
+            "docs_url",
+            f"https://braindecode.org/stable/generated/braindecode.models.{cls.__name__}.html",
+        )
+        repo_url = kwargs.pop("repo_url", "https://braindecode.org")
+        library_name = kwargs.pop("library_name", "braindecode")
+        license = kwargs.pop("license", "bsd-3-clause")
+
+        # Register a coder so that type[nn.Module] parameters
+        # (e.g. activation=nn.ELU) are serialized as importable
+        # strings in config.json and decoded back on load.
+        coders = kwargs.pop("coders", None) or {}
+        coders.setdefault(
+            type,
+            (
+                lambda t: f"{t.__module__}.{t.__qualname__}",
+                lambda data: _IMPORT_ADAPTER.validate_python(data),
+            ),
+        )
+
+        # TODO: model_card_template can be added in the future for custom model cards
+        super().__init_subclass__(
+            tags=tags,
+            docs_url=docs_url,
+            repo_url=repo_url,
+            library_name=library_name,
+            license=license,
+            coders=coders,
+            **kwargs,
+        )
+
     def __init__(
         self,
-        n_outputs: Optional[int] = None,
-        n_chans: Optional[int] = None,
-        chs_info: Optional[List[Dict]] = None,
-        n_times: Optional[int] = None,
-        input_window_seconds: Optional[float] = None,
-        sfreq: Optional[float] = None,
-        add_log_softmax: Optional[bool] = False,
+        n_outputs: Optional[int] = None,  # type: ignore[assignment]
+        n_chans: Optional[int] = None,  # type: ignore[assignment]
+        chs_info=None,  # type: ignore[assignment]
+        n_times: Optional[int] = None,  # type: ignore[assignment]
+        input_window_seconds: Optional[float] = None,  # type: ignore[assignment]
+        sfreq: Optional[float] = None,  # type: ignore[assignment]
     ):
+        # Deserialize chs_info if it comes as a list of dicts (from Hub)
+        if chs_info is not None and isinstance(chs_info, list):
+            if len(chs_info) > 0 and isinstance(chs_info[0], dict):
+                # Check if it needs deserialization (has 'loc' as list)
+                if "loc" in chs_info[0] and isinstance(chs_info[0]["loc"], list):
+                    chs_info = self._deserialize_chs_info(chs_info)
+                    warnings.warn(
+                        "Modifying chs_info argument using the _deserialize_chs_info() method"
+                    )
+
         if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
             raise ValueError(f"{n_chans=} different from {chs_info=} length")
         if (
             n_times is not None
             and input_window_seconds is not None
             and sfreq is not None
-            and n_times != int(input_window_seconds * sfreq)
+            and n_times != round(input_window_seconds * sfreq)
         ):
             raise ValueError(
-                f"{n_times=} different from " f"{input_window_seconds=} * {sfreq=}"
+                f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
             )
-        self._n_outputs = n_outputs
-        self._n_chans = n_chans
-        self._chs_info = chs_info
-        self._n_times = n_times
-        self._input_window_seconds = input_window_seconds
-        self._sfreq = sfreq
-        self._add_log_softmax = add_log_softmax
+
+        self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
+        self._chs_info = chs_info  # type: ignore[assignment]
+        self._n_outputs = n_outputs  # type: ignore[assignment]
+        self._n_chans = n_chans  # type: ignore[assignment]
+        self._n_times = n_times  # type: ignore[assignment]
+        self._sfreq = sfreq  # type: ignore[assignment]
+
+        # Back-fill instance attributes from _hub_mixin_config for any
+        # params the subclass didn't store on self.  Skip EEG params
+        # (stored as self._*) and descriptors (properties).
+        for key, val in getattr(self, "_hub_mixin_config", {}).items():
+            if key in _EEG_PARAMS:
+                continue
+            if hasattr(getattr(type(self), key, None), "__get__"):
+                continue
+            if not hasattr(self, key):
+                setattr(self, key, val)
+
         super().__init__()
 
     @property
-    def n_outputs(self):
+    def n_outputs(self) -> int:
         if self._n_outputs is None:
             raise ValueError("n_outputs not specified.")
         return self._n_outputs
 
     @property
-    def n_chans(self):
+    def n_chans(self) -> int:
         if self._n_chans is None and self._chs_info is not None:
             return len(self._chs_info)
         elif self._n_chans is None:
@@ -119,19 +319,19 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_chans
 
     @property
-    def chs_info(self):
+    def chs_info(self) -> list[str]:
         if self._chs_info is None:
             raise ValueError("chs_info not specified.")
         return self._chs_info
 
     @property
-    def n_times(self):
+    def n_times(self) -> int:
         if (
             self._n_times is None
             and self._input_window_seconds is not None
             and self._sfreq is not None
         ):
-            return int(self._input_window_seconds * self._sfreq)
+            return round(self._input_window_seconds * self._sfreq)
         elif self._n_times is None:
             raise ValueError(
                 "n_times could not be inferred. "
@@ -140,13 +340,13 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_times
 
     @property
-    def input_window_seconds(self):
+    def input_window_seconds(self) -> float:
         if (
             self._input_window_seconds is None
             and self._n_times is not None
             and self._sfreq is not None
         ):
-            return self._n_times / self._sfreq
+            return float(self._n_times / self._sfreq)
         elif self._input_window_seconds is None:
             raise ValueError(
                 "input_window_seconds could not be inferred. "
@@ -155,13 +355,13 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._input_window_seconds
 
     @property
-    def sfreq(self):
+    def sfreq(self) -> float:
         if (
             self._sfreq is None
             and self._input_window_seconds is not None
             and self._n_times is not None
         ):
-            return self._n_times // self._input_window_seconds
+            return float(self._n_times / self._input_window_seconds)
         elif self._sfreq is None:
             raise ValueError(
                 "sfreq could not be inferred. "
@@ -170,35 +370,26 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._sfreq
 
     @property
-    def add_log_softmax(self):
-        if self._add_log_softmax:
-            warnings.warn(
-                "LogSoftmax final layer will be removed! "
-                + "Please adjust your loss function accordingly (e.g. CrossEntropyLoss)!"
-            )
-        return self._add_log_softmax
-
-    @property
-    def input_shape(self) -> Tuple[int]:
+    def input_shape(self) -> tuple[int, int, int]:
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
-    def get_output_shape(self) -> Tuple[int]:
+    def get_output_shape(self) -> tuple[int, ...]:
         """Returns shape of neural network output for batch size equal 1.
 
         Returns
         -------
-        output_shape: Tuple[int]
+        output_shape : tuple[int, ...]
             shape of the network output for `batch_size==1` (1, ...)
         """
         with torch.inference_mode():
             try:
                 return tuple(
-                    self.forward(
+                    self.forward(  # type: ignore
                         torch.zeros(
                             self.input_shape,
-                            dtype=next(self.parameters()).dtype,
-                            device=next(self.parameters()).device,
+                            dtype=next(self.parameters()).dtype,  # type: ignore
+                            device=next(self.parameters()).device,  # type: ignore
                         )
                     ).shape
                 )
@@ -219,7 +410,105 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     raise ValueError(msg) from exc
                 raise exc
 
-    mapping = None
+    def get_config(self) -> dict:
+        """Return a JSON-serializable dict of all ``__init__`` parameters.
+
+        The returned dictionary can be saved to a JSON file and later
+        used with :meth:`from_config` to reconstruct the model (without
+        weights).  It is also used internally by :meth:`push_to_hub` to
+        persist the full model configuration.
+
+        Returns
+        -------
+        dict
+            All ``__init__`` parameters, JSON-serializable.
+            ``type[nn.Module]`` parameters (e.g. ``activation``) are
+            encoded as importable dotted-path strings.
+
+        Examples
+        --------
+        >>> import json
+        >>> from braindecode.models import EEGNet
+        >>> model = EEGNet(n_chans=22, n_times=1000, n_outputs=4, F1=16)
+        >>> config = model.get_config()
+        >>> config["F1"]
+        16
+        >>> # Save to disk
+        >>> with open("config.json", "w") as f:
+        ...     json.dump(config, f)
+
+        .. versionadded:: 1.4
+        """
+        return build_model_config(self)
+
+    @classmethod
+    def from_config(cls, config: dict) -> "EEGModuleMixin":
+        """Create a model instance from a configuration dict.
+
+        This is the inverse of :meth:`get_config`.  Weights are **not**
+        loaded -- use :meth:`from_pretrained` for that.
+
+        Parameters
+        ----------
+        config : dict
+            Configuration dict as returned by :meth:`get_config`.
+
+        Returns
+        -------
+        EEGModuleMixin
+            A new model instance.
+
+        Examples
+        --------
+        >>> import json
+        >>> from braindecode.models import EEGNet
+        >>> model = EEGNet(n_chans=22, n_times=1000, n_outputs=4, F1=16)
+        >>> config = model.get_config()
+        >>> # Reconstruct (without weights)
+        >>> model2 = EEGNet.from_config(config)
+        >>> model2.F1
+        16
+        >>> # Or from a JSON file
+        >>> with open("config.json") as f:
+        ...     config = json.load(f)
+        >>> model3 = EEGNet.from_config(config)
+
+        .. versionadded:: 1.4
+        """
+        config = dict(config)  # shallow copy
+        config.pop("braindecode_version", None)
+        resolve_type_kwargs(cls, config)
+        return cls(**config)
+
+    def reset_head(self, n_outputs):
+        """Replace the classification head for a new number of outputs.
+
+        This is called automatically by :meth:`from_pretrained` when the
+        user passes an ``n_outputs`` that differs from the saved config.
+        Override in subclasses that need a model-specific head structure.
+
+        Parameters
+        ----------
+        n_outputs : int
+            New number of output classes.
+
+        Examples
+        --------
+        >>> from braindecode.models import BENDR
+        >>> model = BENDR(n_chans=22, n_times=1000, n_outputs=4)
+        >>> model.reset_head(10)
+        >>> model.n_outputs
+        10
+
+        .. versionadded:: 1.4
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement reset_head(). "
+            "Override this method to support changing n_outputs after "
+            "loading pretrained weights."
+        )
+
+    mapping: Optional[Dict[str, str]] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         mapping = self.mapping if self.mapping else {}
@@ -232,15 +521,16 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
         return super().load_state_dict(new_state_dict, *args, **kwargs)
 
-    def to_dense_prediction_model(self, axis: Tuple[int] = (2, 3)) -> None:
+    def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """
-        Transform a sequential model with strides to a model that outputs
+        Transform a sequential model with strides to a model that outputs.
+
         dense predictions by removing the strides and instead inserting dilations.
         Modifies model in-place.
 
         Parameters
         ----------
-        axis: int or (int,int)
+        axis : int or (int,int)
             Axis to transform (in terms of intermediate output axes)
             can either be 2, 3, or (2,3).
 
@@ -249,21 +539,20 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         Does not yet work correctly for average pooling.
         Prior to version 0.1.7, there had been a bug that could move strides
         backwards one layer.
-
         """
-        if not hasattr(axis, "__len__"):
-            axis = [axis]
-        assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"
+        if not hasattr(axis, "__iter__"):
+            axis = (axis,)
+        assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"  # type: ignore[union-attr]
         axis = np.array(axis) - 2
         stride_so_far = np.array([1, 1])
-        for module in self.modules():
+        for module in self.modules():  # type: ignore
             if hasattr(module, "dilation"):
                 assert module.dilation == 1 or (module.dilation == (1, 1)), (
                     "Dilation should equal 1 before conversion, maybe the model is "
                     "already converted?"
                 )
                 new_dilation = [1, 1]
-                for ax in axis:
+                for ax in axis:  # type: ignore[union-attr]
                     new_dilation[ax] = int(stride_so_far[ax])
                 module.dilation = tuple(new_dilation)
             if hasattr(module, "stride"):
@@ -271,7 +560,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     module.stride = (module.stride, module.stride)
                 stride_so_far *= np.array(module.stride)
                 new_stride = list(module.stride)
-                for ax in axis:
+                for ax in axis:  # type: ignore[union-attr]
                     new_stride[ax] = 1
                 module.stride = tuple(new_stride)
 
@@ -301,9 +590,18 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         torchinfo.ModelStatistics
             ModelStatistics generated by torchinfo.summary.
         """
+        try:
+            n_chans = self.n_chans
+        except ValueError:
+            n_chans = 1
+        try:
+            n_times = self.n_times
+        except ValueError:
+            n_times = 200
+
         return summary(
             self,
-            input_size=(1, self.n_chans, self.n_times),
+            input_size=(1, n_chans, n_times),
             col_names=col_names,
             row_settings=row_settings,
             verbose=0,
@@ -311,3 +609,176 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
+
+    @staticmethod
+    def _serialize_chs_info(chs_info):
+        """Serialize MNE channel info (``info["chs"]``) to JSON-compatible dicts."""
+        if chs_info is None:
+            return None
+        _INT_FIELDS = ("kind", "coil_type", "unit")
+        _FLOAT_FIELDS = ("cal", "range")
+        serialized = []
+        for ch in chs_info:
+            ch_dict = {"ch_name": ch.get("ch_name", "")}
+            for key in _INT_FIELDS:
+                val = ch.get(key)
+                if val is not None:
+                    ch_dict[key] = val if isinstance(val, str) else int(val)
+            for key in _FLOAT_FIELDS:
+                val = ch.get(key)
+                if val is not None:
+                    ch_dict[key] = float(val)
+            if "loc" in ch and ch["loc"] is not None:
+                ch_dict["loc"] = (
+                    ch["loc"].tolist()
+                    if hasattr(ch["loc"], "tolist")
+                    else list(ch["loc"])
+                )
+            serialized.append(ch_dict)
+        return serialized
+
+    @staticmethod
+    def _deserialize_chs_info(chs_info_dict):
+        """Deserialize JSON channel dicts back to MNE-compatible format."""
+        if chs_info_dict is None:
+            return None
+        deserialized = []
+        for ch_dict in chs_info_dict:
+            ch = ch_dict.copy()
+            if "loc" in ch and ch["loc"] is not None:
+                ch["loc"] = np.array(ch["loc"])
+            deserialized.append(ch)
+        return deserialized
+
+    def _save_pretrained(self, save_directory):
+        """
+        Save model configuration and weights to the Hub.
+
+        This method is called by PyTorchModelHubMixin.push_to_hub() to save
+        model-specific configuration alongside the model weights.
+
+        Parameters
+        ----------
+        save_directory : str or Path
+            Directory where the configuration should be saved.
+        """
+        if not HAS_HF_HUB:
+            return
+
+        save_directory = Path(save_directory)
+
+        config = build_model_config(self)
+        config["braindecode_version"] = __version__
+
+        # Save to config.json
+        config_path = save_directory / "config.json"
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+
+        # Save model weights with standard Hub filename
+        weights_path = save_directory / "pytorch_model.bin"
+        torch.save(self.state_dict(), weights_path)
+
+        # Also save in safetensors format using parent's implementation
+        try:
+            super()._save_pretrained(save_directory)
+        except (ImportError, RuntimeError) as e:
+            # Fallback to pytorch_model.bin if safetensors saving fails
+            warnings.warn(
+                f"Could not save model in safetensors format: {e}. "
+                "Model weights saved in pytorch_model.bin instead.",
+                stacklevel=2,
+            )
+
+    if HAS_HF_HUB:
+
+        @classmethod
+        def _from_pretrained(
+            cls,
+            *,
+            model_id: str,
+            revision: Optional[str],
+            cache_dir: Optional[Union[str, Path]],
+            force_download: bool,
+            local_files_only: bool,
+            token: Union[str, bool, None],
+            map_location: str = "cpu",
+            strict: bool = False,
+            **model_kwargs,
+        ):
+            model_kwargs.pop("braindecode_version", None)
+            filename = model_kwargs.pop("filename", None)
+            resolve_type_kwargs(cls, model_kwargs)
+
+            # Read saved n_outputs from config.json to detect when the
+            # user wants a different number of outputs.  Works for both
+            # local directories and Hub repo IDs.
+            saved_n_outputs = None
+            try:
+                if Path(model_id).is_dir():
+                    config_file = Path(model_id) / "config.json"
+                else:
+                    config_file = huggingface_hub.hf_hub_download(
+                        repo_id=model_id,
+                        filename="config.json",
+                        revision=revision,
+                        cache_dir=cache_dir,
+                        force_download=force_download,
+                        token=token,
+                        local_files_only=local_files_only,
+                    )
+                with open(config_file, "r") as f:
+                    saved_n_outputs = json.load(f).get("n_outputs")
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass  # config unavailable; skip reset_head logic
+
+            requested_n_outputs = model_kwargs.get("n_outputs")
+
+            # If the user requests different n_outputs, load with the
+            # saved value first (so weights match), then swap the head.
+            if (
+                saved_n_outputs is not None
+                and requested_n_outputs is not None
+                and requested_n_outputs != saved_n_outputs
+            ):
+                model_kwargs["n_outputs"] = saved_n_outputs
+
+            # If a custom filename is provided, temporarily override the
+            # HuggingFace constant so the parent class downloads the
+            # correct file (e.g. "LUNA_base.safetensors" instead of
+            # "model.safetensors").
+            hf_constants = huggingface_hub.constants
+            _orig_safetensors = hf_constants.SAFETENSORS_SINGLE_FILE
+            if filename is not None:
+                hf_constants.SAFETENSORS_SINGLE_FILE = filename
+            try:
+                model = super()._from_pretrained(  # type: ignore
+                    model_id=model_id,
+                    revision=revision,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    local_files_only=local_files_only,
+                    token=token,
+                    map_location=map_location,
+                    strict=strict,
+                    **model_kwargs,
+                )
+            finally:
+                hf_constants.SAFETENSORS_SINGLE_FILE = _orig_safetensors
+
+            if (
+                saved_n_outputs is not None
+                and requested_n_outputs is not None
+                and requested_n_outputs != saved_n_outputs
+            ):
+                try:
+                    model.reset_head(requested_n_outputs)
+                except NotImplementedError:
+                    raise ValueError(
+                        f"{type(model).__name__} does not support changing "
+                        f"n_outputs after loading. Saved model has "
+                        f"n_outputs={saved_n_outputs}, but "
+                        f"n_outputs={requested_n_outputs} was requested."
+                    ) from None
+
+            return model

@@ -8,12 +8,12 @@ ci:
   autoupdate_branch: "master"
   autoupdate_commit_msg: "[pre-commit.ci] pre-commit autoupdate"
   autoupdate_schedule: quarterly
-  skip: []
+  skip: [ ]
   submodules: false
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
       - id: check-json
@@ -21,48 +21,126 @@ repos:
       - id: check-toml
       - id: check-docstring-first
       - id: check-added-large-files
+        args: ['--maxkb=2048']
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-case-conflict
       - id: mixed-line-ending
-      - id: end-of-file-fixer
-      - id: check-case-conflict
       - id: forbid-new-submodules
       - id: pretty-format-json
-        args: ["--autofix", "--no-sort-keys", "--indent=4"]
+        args: [ "--autofix", "--no-sort-keys", "--indent=4" ]
 
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.3.5
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.9
     hooks:
+      - id: ruff-format
+        name: ruff format code
+        files: ^(braindecode|docs|examples)/
       - id: ruff
-        args: ["--ignore=E402,E501,F401", "--fix"] #, --exit-non-zero-on-fix, ]
+        name: ruff lint docs & examples
+        args:
+          [
+            "--fix",
+            "--select=E,W,F,I,D",
+            "--ignore=E402,E501,F401,D103,D400,D100,D101,D102,D105,D107,D415,D417,D205",
+          ]
+        files: ^(docs|examples)/
+      - id: ruff
+        name: ruff — remove unused imports
+        args:
+          - --fix
+          - --select=F401,I
+          - --exit-non-zero-on-fix
+        types: [python]
       - id: ruff
         name: ruff lint braindecode preview
-        args: ["--fix", "--preview", "--select=NPY201"]
+        args:
+          [
+            "--fix",
+            "--preview",
+            "--select=NPY201",
+            "--ignore=D100,D101,D102,D105,D107,D415,D417,D205",
+          ]
         files: ^braindecode/
       - id: ruff
-        name: ruff lint docs, and examples
-        # D103: missing docstring in public function
-        # D400: docstring first line must end with period
-        args: ["--ignore=D103,D400,E402", "--fix"]
-        files: ^docs/|^examples/
-      - id: ruff-format
-        files: ^braindecode/|^docs/|^examples/
-
+        name: ruff lint docs & examples
+        args:
+          [
+            "--fix",
+            "--select=D",
+            "--ignore=D103,D400,E402,D100,D101,D102,D105,D107,D415,D417,D205",
+          ]
+        files: ^(docs|examples)/
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.6
+    rev: v2.4.1
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=splitted,meaned,wil,whats,additionals,alle,alot,bund,currenty,datas,farenheit,falsy,fo,haa,hass,iif,incomfort,ines,ist,nam,nd,pres,pullrequests,resset,rime,ser,serie,te,technik,ue,unsecure,withing,zar
-          - --skip="./.*,*.csv,*.json,*.ambr"
+          - --ignore-words-list=Gool,carin,splitted,meaned,wil,whats,additionals,alle,alot,bund,currenty,datas,farenheit,falsy,fo,haa,hass,iif,incomfort,ines,ist,nam,nd,pres,pullrequests,resset,rime,ser,serie,te,technik,ue,unsecure,withing,zar,mane,THIRDPARTY,Hsi,Buss,Claus,Lew,Shepard,Comon,temparature,Mian
+          - --skip="./.*,*.csv,*.json,*.ambr,*.toml"
           - --quiet-level=2
-        exclude_types: [csv, json]
+        exclude_types: [ csv, json ]
         exclude: ^tests/|generated/^.github
 
-  -   repo: https://github.com/asottile/blacken-docs
-      rev: 1.16.0
-      hooks:
+  - repo: https://github.com/asottile/blacken-docs
+    rev: 1.20.0
+    hooks:
       - id: blacken-docs
         exclude: ^.github|CONTRIBUTING.md
+
+  # -----------------------------
+  # NEW: Sphinx/RST formatting + lint
+  # -----------------------------
+
+  - repo: https://github.com/LilSpazJoekp/docstrfmt
+    rev: v2.0.0
+    hooks:
+      - id: docstrfmt
+        name: docstrfmt (rst only; do not touch numpy docstrings)
+        language_version: python3
+        files: \.(rst|txt)$
+        exclude: ^docs/_templates/|^docs/whats_new\.rst$
+
+  - repo: https://github.com/sphinx-contrib/sphinx-lint
+    rev: v1.0.2
+    hooks:
+      - id: sphinx-lint
+        name: sphinx-lint (rst)
+        types: [rst]
+
+  # Optional: run the real Sphinx warning engine, but keep it off the default commit path.
+  - repo: local
+    hooks:
+      - id: sphinx-build-warnings
+        name: sphinx-build -n -W --keep-going (manual)
+        entry: sphinx-build -b html -n -W --keep-going docs docs/_build/html
+        language: system
+        pass_filenames: false
+        stages: [manual]
+
+      - id: numpydoc-validate
+        name: numpydoc lint (manual)
+        entry: python -m numpydoc lint
+        language: system
+        types: [python]
+        files: ^braindecode/
+        stages: [manual]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        files: braindecode/.*.py|test/.*.py|examples/.*.py
+        additional_dependencies:
+          [
+            types-PyYAML,
+            types-requests,
+          ]
+        verbose: true
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 7.0.0
+    hooks:
+      - id: isort
+        exclude: ^\.gitignore

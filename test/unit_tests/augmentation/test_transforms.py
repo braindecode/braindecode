@@ -1,40 +1,48 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
+#          Gustavo Rodrigues <gustavenrique01@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
-
-from test.unit_tests.augmentation.test_base import common_tranform_assertions
-
 import numpy as np
 import pytest
 import torch
-from scipy.fft import fft
-from scipy.fft import fftfreq
-from scipy.fft import fftshift
-from scipy.signal import find_peaks
-from scipy.signal import welch
+from scipy.fft import fft, fftfreq, fftshift
+from scipy.signal import find_peaks, welch
 from sklearn.utils import check_random_state
 from skorch.helper import predefined_split
 from torch import nn
 
-from braindecode.augmentation import IdentityTransform
-from braindecode.augmentation.functional import _frequency_shift
-from braindecode.augmentation.functional import _torch_normalize_vectors
-from braindecode.augmentation.functional import sensors_rotation
-from braindecode.augmentation.transforms import BandstopFilter
-from braindecode.augmentation.transforms import ChannelsDropout
-from braindecode.augmentation.transforms import ChannelsShuffle
-from braindecode.augmentation.transforms import ChannelsSymmetry
-from braindecode.augmentation.transforms import FrequencyShift
-from braindecode.augmentation.transforms import FTSurrogate
-from braindecode.augmentation.transforms import GaussianNoise
-from braindecode.augmentation.transforms import Mixup
-from braindecode.augmentation.transforms import SensorsXRotation
-from braindecode.augmentation.transforms import SensorsYRotation
-from braindecode.augmentation.transforms import SensorsZRotation
-from braindecode.augmentation.transforms import SignFlip
-from braindecode.augmentation.transforms import SmoothTimeMask
-from braindecode.augmentation.transforms import TimeReverse
-from braindecode.augmentation.transforms import _get_standard_10_20_positions
+from braindecode import EEGClassifier
+from braindecode.augmentation import AugmentedDataLoader, IdentityTransform
+from braindecode.augmentation.functional import (
+    _frequency_shift,
+    _torch_normalize_vectors,
+    sensors_rotation,
+)
+from braindecode.augmentation.transforms import (
+    AmplitudeScale,
+    BandRotation,
+    BandstopFilter,
+    ChannelsDropout,
+    ChannelsShuffle,
+    ChannelsSymmetry,
+    FrequencyShift,
+    FTSurrogate,
+    GaussianNoise,
+    MaskEncoding,
+    Mixup,
+    SegmentationReconstruction,
+    SensorsXRotation,
+    SensorsYRotation,
+    SensorsZRotation,
+    SignFlip,
+    SmoothTimeMask,
+    TimeReverse,
+    _get_standard_10_20_positions,
+)
+from braindecode.models import ShallowFBCSPNet
+from test.dataset import concat_ds_targets, concat_windows_dataset
+from test.unit_tests.augmentation.test_base import common_transform_assertions
 
 
 @pytest.fixture
@@ -73,7 +81,7 @@ def test_time_reverse_transform(time_aranged_batch, probability):
             .float()
         )
 
-    common_tranform_assertions(
+    common_transform_assertions(
         time_aranged_batch, flip_transform(*time_aranged_batch), expected_tensor
     )
 
@@ -93,7 +101,7 @@ def test_sign_flip_transform(time_aranged_batch, probability):
             .float()
         )
 
-    common_tranform_assertions(
+    common_transform_assertions(
         time_aranged_batch, sign_flip_transform(*time_aranged_batch), expected_tensor
     )
 
@@ -131,7 +139,7 @@ def test_ft_surrogate_transforms(
         phase_noise_magnitude=phase_noise_magnitude,
         channel_indep=channel_indep,
     )
-    common_tranform_assertions(
+    common_transform_assertions(
         random_batch,
         transform(*random_batch),
         diff_param=phase_noise_magnitude if diff else None,
@@ -169,7 +177,7 @@ def test_channels_dropout_transform(rng_seed, p_drop, diff):
     transform = ChannelsDropout(1, p_drop=p_drop, random_state=rng_seed)
     new_batch = transform(*ones_batch)
     tr_X, _ = new_batch
-    common_tranform_assertions(ones_batch, new_batch, diff_param=p_drop if diff else None)
+    common_transform_assertions(ones_batch, new_batch, diff_param=p_drop if diff else None)
     zeros_mask = np.all(tr_X.detach().cpu().numpy() <= 1e-3, axis=-1)
     average_nb_of_zero_rows = np.mean(np.sum(zeros_mask.astype(int), axis=-1))
     proportion_of_zeros = transform.p_drop
@@ -188,7 +196,7 @@ def test_channels_shuffle_transform(rng_seed, ch_aranged_batch, p_shuffle):
     transform = ChannelsShuffle(1, p_shuffle=p_shuffle, random_state=rng_seed)
     new_batch = transform(*ch_aranged_batch)
     tr_X, _ = new_batch
-    common_tranform_assertions(ch_aranged_batch, new_batch)
+    common_transform_assertions(ch_aranged_batch, new_batch)
     # test that rows (channels) are conserved
     assert all([torch.equal(tr_X[0, :, 0], tr_X[0, :, i]) for i in range(tr_X.shape[2])])
     # test that rows (channels) have been shuffled
@@ -221,7 +229,7 @@ def test_gaussian_noise_transform(rng_seed, probability, diff):
     transform = GaussianNoise(probability, std=std, random_state=rng_seed)
     new_batch = transform(*ones_batch)
     tr_X, _ = new_batch
-    common_tranform_assertions(ones_batch, new_batch, diff_param=std if diff else None)
+    common_transform_assertions(ones_batch, new_batch, diff_param=std if diff else None)
 
     if probability == 1.0:
         # check that the values of X changed, but the rows and cols means are
@@ -296,7 +304,7 @@ def test_channels_symmetry_transform(probability):
 
     ordered_batch = (X, torch.zeros(batch_size))
 
-    common_tranform_assertions(ordered_batch, transform(*ordered_batch), expected_tensor)
+    common_transform_assertions(ordered_batch, transform(*ordered_batch), expected_tensor)
 
 
 @pytest.mark.parametrize(
@@ -330,7 +338,7 @@ def test_smooth_time_mask_transform(
             1.0, mask_len_samples=mask_len_samples, random_state=rng_seed
         )
         transformed_batch = transform(*ones_batch)
-        common_tranform_assertions(
+        common_transform_assertions(
             ones_batch, transformed_batch, diff_param=mask_len_samples if diff else None
         )
 
@@ -371,7 +379,7 @@ def test_bandstop_filter_transform(rng_seed, random_batch, bandwidth, fail):
         )
 
         transformed_batch = transform(*random_batch)
-        common_tranform_assertions(random_batch, transformed_batch)
+        common_transform_assertions(random_batch, transformed_batch)
 
         if transform.bandwidth > 0:
             # Transform white noise
@@ -399,6 +407,19 @@ def test_bandstop_filter_transform(rng_seed, random_batch, bandwidth, fail):
             # of the filter's one, and greater than half of it
             assert filtered_bandwidth < 2 * transform.bandwidth
             assert filtered_bandwidth > 0.5 * transform.bandwidth
+
+
+def test_bandstop_freq_range_matches_docstring(rng_seed):
+    # notch center freqs should respect bw/2 bounds not 2*bw
+    sfreq = 100
+    bw = 10
+    transform = BandstopFilter(1.0, bandwidth=bw, sfreq=sfreq, random_state=rng_seed)
+    X = torch.randn(50, 2, 1000)
+    params = transform.get_augmentation_params(X, torch.zeros(50))
+    freqs = params["freqs_to_notch"]
+    transition = 1
+    assert freqs.min() >= transition + bw / 2
+    assert freqs.max() <= sfreq / 2 - transition - bw / 2
 
 
 def _get_frequency_peaks(time, signal, sfreq, min_peak_height=100):
@@ -452,7 +473,7 @@ def test_frequency_shift_transform(
     )
 
     transformed_batch = transform(*random_batch)
-    common_tranform_assertions(
+    common_transform_assertions(
         random_batch, transformed_batch, diff_param=max_shift if diff else None
     )
 
@@ -570,7 +591,7 @@ def test_sensors_rotation_transforms(
             random_state=rng_seed,
         )
         transformed_batch = transform(*cropped_random_batch)
-        common_tranform_assertions(
+        common_transform_assertions(
             cropped_random_batch,
             transformed_batch,
             diff_param=max_degrees if diff else None,
@@ -631,10 +652,157 @@ MONTAGE_10_20 = [
 ]
 
 
+@pytest.fixture()
+def dataset():
+    return concat_windows_dataset(concat_ds_targets())
+
+
+@pytest.mark.parametrize("probability", [0, 0.5, 1])
+def test_segmentation_reconstruction_with_EEGClassifier(dataset, probability):
+
+    transform = SegmentationReconstruction(probability=probability)
+
+    model = ShallowFBCSPNet(n_times=750, n_chans=4, n_outputs=2)
+
+    clf = EEGClassifier(
+        module=model,
+        optimizer=torch.optim.Adam,
+        iterator_train=AugmentedDataLoader,
+        iterator_train__transforms=transform,
+        batch_size=5,
+        max_epochs=1,
+        classes=[0, 1],
+        train_split=predefined_split(dataset),
+        verbose=0,
+    )
+
+    _ = clf.fit(X=dataset)
+
+
+@pytest.mark.parametrize("n_segments", [1, 5, 10, None, 50])
+def test_segmentation_reconstruction_transform(
+        time_aranged_batch,
+        n_segments,
+):
+    X, _ = time_aranged_batch
+    transform = SegmentationReconstruction(
+        probability=1.0,
+        n_segments=n_segments,
+    )
+    common_transform_assertions(
+        time_aranged_batch, transform(*time_aranged_batch), X
+    )
+
+
+def test_segmentation_rec_with_large_n_segments(time_aranged_batch):
+    X, _ = time_aranged_batch
+    transform = SegmentationReconstruction(
+        probability=1.0,
+        n_segments=100,
+    )
+    with pytest.raises(ValueError):
+        common_transform_assertions(
+            time_aranged_batch, transform(*time_aranged_batch), X
+        )
+
+
+@pytest.mark.parametrize(
+    "max_mask_ratio, n_segments, fail",
+    [
+        (3, 1, True),
+        (0, 1, True),
+        (0.2, 1, False),
+        (0.2, -1, True),
+        (0.2, 2, False),
+        (1., 3, False),
+    ],
+)
+def test_mask_encoding_transform(
+        rng_seed,
+        max_mask_ratio,
+        n_segments,
+        fail,
+):
+    if fail:
+        with pytest.raises(AssertionError):
+            # Check max_mask_ratio cannot be outside interval [0,1] and
+            # n_segments must be a positive integer
+            transform = MaskEncoding(
+                1.0, max_mask_ratio=max_mask_ratio,
+                n_segments=n_segments,
+                random_state=rng_seed,
+            )
+            # Check n_segments cannot be higher than (max_mask_ratio * window_size)
+            ones_batch = ones_and_zeros_batch()
+            common_transform_assertions(
+                ones_batch, transform(*ones_batch)
+            )
+    else:
+        ones_batch = ones_and_zeros_batch()
+        transform = MaskEncoding(
+            1.0, max_mask_ratio=max_mask_ratio,
+            n_segments=n_segments, random_state=rng_seed,
+        )
+
+        transformed_batch = transform(*ones_batch)
+        common_transform_assertions(
+            ones_batch, transformed_batch
+        )
+
+        # check that the number of zeros in the masked matrix is at least
+        # segment_length
+        transformed_X = transformed_batch[0]
+        _, _, n_times = transformed_X.shape
+
+        segment_length = int((n_times * max_mask_ratio) / n_segments)
+        for sample in transformed_X:
+            # check that the number of zeros in the masked matrix is at least
+            # segment_length
+            assert np.sum(sample[0, :].detach().cpu().numpy() == 0) >= segment_length
+
+
+def test_amplitude_scale_transform_runs_with_default_random_state():
+    # class path used to crash in torch.Generator.manual_seed
+    X = torch.randn(4, 8, 50)
+    y = torch.zeros(4)
+
+    out_default, _ = AmplitudeScale(probability=1.0)(X, y)
+    assert out_default.shape == X.shape
+
+    out_seeded, _ = AmplitudeScale(probability=1.0, random_state=42)(X, y)
+    assert out_seeded.shape == X.shape
+
+    out_id, _ = AmplitudeScale(probability=1.0, interval=(1.0, 1.0), random_state=0)(
+        X, y
+    )
+    assert torch.equal(out_id, X)
+
+
+def test_band_rotation_transform_seed_reproducibility():
+    """Two ``BandRotation`` instances built with the same seed produce
+    bit-identical outputs on the same input."""
+    X = torch.randn(4, 32, 64)
+    kw = dict(
+        probability=1.0, num_bands=2, electrodes_per_band=16,
+        band_offsets=(-1, 0, 1), max_temporal_jitter=4,
+    )
+    out_a = BandRotation(**kw, random_state=123)(X)
+    out_b = BandRotation(**kw, random_state=123)(X)
+    assert torch.equal(out_a, out_b)
+    # Probability=0 path: input passes through.
+    assert torch.equal(BandRotation(**{**kw, "probability": 0.0})(X), X)
+
+
 @pytest.mark.parametrize(
     "augmentation,kwargs",
     [
         (IdentityTransform, {"probability": 0.5}),
+        (AmplitudeScale, {"probability": 0.5}),
+        (
+            BandRotation,
+            # random_batch is 22 channels → 2 bands × 11 electrodes
+            {"probability": 0.5, "num_bands": 2, "electrodes_per_band": 11},
+        ),
         (BandstopFilter, {"probability": 0.5, "sfreq": 100}),
         (ChannelsDropout, {"probability": 0.5}),
         (ChannelsShuffle, {"probability": 0.5}),
@@ -648,6 +816,8 @@ MONTAGE_10_20 = [
         (SensorsXRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SensorsYRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SensorsZRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
+        (SegmentationReconstruction, {"probability": 0.5}),
+        (MaskEncoding, {"probability": 0.5}),
     ],
 )
 def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):

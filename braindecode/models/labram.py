@@ -2,94 +2,320 @@
 Labram module.
 Authors: Wei-Bang Jiang
          Bruno Aristimunha <b.aristimunha@gmail.com>
+         Matthew Chen <matt.chen4260@gmail.com>
 License: BSD 3 clause
 """
 
-from warnings import warn
 from collections import OrderedDict
+from warnings import warn
 
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn.init import trunc_normal_
 from einops import rearrange
 from einops.layers.torch import Rearrange
+from torch.nn.init import trunc_normal_
 
-from .functions import rescale_parameter
-from .modules import MLP, DropPath
-from .base import EEGModuleMixin
+from braindecode.functional import rescale_parameter
+from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import MLP, DropPath
+
+# -----------------------------------------------------------------------------
+# Standard 10-20 system electrode positions used by LaBraM for position embeddings.
+# This defines the canonical channel order that the pretrained LaBraM model expects.
+# Channels from input data will be automatically reordered to match this order.
+# Reference: https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/utils.py#L42-L57
+# We just commented the last 8 channels to match the 128 in the pretrained weights here
+#
+# Channels positions come from several sources:
+#   - standard_1005 names (majority): looked up directly by uppercase key
+#   - bipolar pairs "A-B"  → midpoint of A and B (from standard_1005).
+#     TODO: this is a simplification. A bipolar signal V(A)-V(B) cannot
+#     be faithfully recovered by spatial interpolation at the midpoint.
+#     Revisit in a follow-up PR (e.g. a dedicated BipolarDerivationLayer).
+#   - legacy 10-20 aliases T3/T4/T5/T6 → T7/T8/P7/P8 (standard_1005)
+#   - mastoid M1/M2, ear A1/A2 → standard_1005 (A1/A2 already present there)
+#   - O9/O10 → standard_1020
+#   - CB1/CB2 → standard_postfixed (Cb1/Cb2 cerebellar sites)
+#   - T1/T2 → standard_postfixed (anterior temporal, same as FT9/FT10)
+#   - IZ → standard_1005 (inion area)
+#   - intermediate CFC1-CFC6 → midpoint(FCn, Cn) in standard_1005
+#   - CFC7/CFC8 → midpoint(FT7, T7) / midpoint(FT8, T8)
+#   - CCP7/CCP8 → midpoint(T7, TP7) / midpoint(T8, TP8)
+#   - FTT9h/TTP7h/TPP9h/FTT10h/TPP8h/TPP10h → standard_1005 (h-suffix entries)
+#
+# The `loc` values are only used to build an MNE interpolation matrix
+# for InterpolatedLaBraM. They are NOT used by Labram itself, which
+# relies on learned position embeddings indexed by channel name.
+# -----------------------------------------------------------------------------
+
+# fmt: off
+_LABRAM_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
+    ("FP1", (-0.02943670, 0.08391710, -0.00699000)),  # standard_1005
+    ("FPZ", (0.00011230, 0.08824700, -0.00171300)),  # standard_1005
+    ("FP2", (0.02987230, 0.08489590, -0.00708000)),  # standard_1005
+    ("AF9", (-0.04897080, 0.06408720, -0.04768300)),  # standard_1005
+    ("AF7", (-0.05483970, 0.06857220, -0.01059000)),  # standard_1005
+    ("AF5", (-0.04543070, 0.07286220, 0.00597800)),  # standard_1005
+    ("AF3", (-0.03370070, 0.07683710, 0.02122700)),  # standard_1005
+    ("AF1", (-0.01847170, 0.07990410, 0.03275200)),  # standard_1005
+    ("AFZ", (0.00023130, 0.08077100, 0.03541700)),  # standard_1005
+    ("AF2", (0.01982030, 0.08030190, 0.03276400)),  # standard_1005
+    ("AF4", (0.03571230, 0.07772590, 0.02195600)),  # standard_1005
+    ("AF6", (0.04658430, 0.07380780, 0.00603400)),  # standard_1005
+    ("AF8", (0.05574330, 0.06965680, -0.01075500)),  # standard_1005
+    ("AF10", (0.05043520, 0.06386980, -0.04800500)),  # standard_1005
+    ("F9", (-0.07010190, 0.04165230, -0.04995200)),  # standard_1005
+    ("F7", (-0.07026290, 0.04247430, -0.01142000)),  # standard_1005
+    ("F5", (-0.06446580, 0.04803530, 0.01692100)),  # standard_1005
+    ("F3", (-0.05024380, 0.05311120, 0.04219200)),  # standard_1005
+    ("F1", (-0.02749580, 0.05693110, 0.06034200)),  # standard_1005
+    ("FZ", (0.00031220, 0.05851200, 0.06646200)),  # standard_1005
+    ("F2", (0.02951420, 0.05760190, 0.05954000)),  # standard_1005
+    ("F4", (0.05183620, 0.05430480, 0.04081400)),  # standard_1005
+    ("F6", (0.06791420, 0.04982970, 0.01636700)),  # standard_1005
+    ("F8", (0.07304310, 0.04442170, -0.01200000)),  # standard_1005
+    ("F10", (0.07211410, 0.04206670, -0.05045200)),  # standard_1005
+    ("FT9", (-0.08407590, 0.01456730, -0.05042900)),  # standard_1005
+    ("FT7", (-0.08077500, 0.01412030, -0.01113500)),  # standard_1005
+    ("FC5", (-0.07721490, 0.01864330, 0.02446000)),  # standard_1005
+    ("FC3", (-0.06018190, 0.02271620, 0.05554400)),  # standard_1005
+    ("FC1", (-0.03406190, 0.02601110, 0.07998700)),  # standard_1005
+    ("FCZ", (0.00037610, 0.02739000, 0.08866800)),  # standard_1005
+    ("FC2", (0.03478410, 0.02643790, 0.07880800)),  # standard_1005
+    ("FC4", (0.06229310, 0.02372280, 0.05563000)),  # standard_1005
+    ("FC6", (0.07953410, 0.01993570, 0.02443800)),  # standard_1005
+    ("FT8", (0.08181510, 0.01541670, -0.01133000)),  # standard_1005
+    ("FT10", (0.08411310, 0.01436470, -0.05053800)),  # standard_1005
+    ("T9", (-0.08589410, -0.01582870, -0.04828300)),  # standard_1005
+    ("T7", (-0.08416110, -0.01601870, -0.00934600)),  # standard_1005
+    ("C5", (-0.08028010, -0.01375970, 0.02916000)),  # standard_1005
+    ("C3", (-0.06535810, -0.01163170, 0.06435800)),  # standard_1005
+    ("C1", (-0.03615800, -0.00998390, 0.08975200)),  # standard_1005
+    ("CZ", (0.00040090, -0.00916700, 0.10024400)),  # standard_1005
+    ("C2", (0.03767200, -0.00962410, 0.08841200)),  # standard_1005
+    ("C4", (0.06711790, -0.01090030, 0.06358000)),  # standard_1005
+    ("C6", (0.08345590, -0.01277630, 0.02920800)),  # standard_1005
+    ("T8", (0.08507990, -0.01502030, -0.00949000)),  # standard_1005
+    ("T10", (0.08555990, -0.01636130, -0.04827100)),  # standard_1005
+    ("TP9", (-0.08561920, -0.04651470, -0.04570700)),  # standard_1005
+    ("TP7", (-0.08483020, -0.04602170, -0.00705600)),  # standard_1005
+    ("CP5", (-0.07959220, -0.04655070, 0.03094900)),  # standard_1005
+    ("CP3", (-0.06355620, -0.04700880, 0.06562400)),  # standard_1005
+    ("CP1", (-0.03551310, -0.04729190, 0.09131500)),  # standard_1005
+    ("CPZ", (0.00038580, -0.04731800, 0.09943200)),  # standard_1005
+    ("CP2", (0.03838380, -0.04707310, 0.09069500)),  # standard_1005
+    ("CP4", (0.06661180, -0.04663720, 0.06558000)),  # standard_1005
+    ("CP6", (0.08332180, -0.04610130, 0.03120600)),  # standard_1005
+    ("TP8", (0.08554880, -0.04554530, -0.00713000)),  # standard_1005
+    ("TP10", (0.08616180, -0.04703530, -0.04586900)),  # standard_1005
+    ("P9", (-0.07300930, -0.07376570, -0.04099800)),  # standard_1005
+    ("P7", (-0.07243430, -0.07345270, -0.00248700)),  # standard_1005
+    ("P5", (-0.06727230, -0.07629070, 0.02838200)),  # standard_1005
+    ("P3", (-0.05300730, -0.07878780, 0.05594000)),  # standard_1005
+    ("P1", (-0.02862030, -0.08052490, 0.07543600)),  # standard_1005
+    ("PZ", (0.00032470, -0.08111500, 0.08261500)),  # standard_1005
+    ("P2", (0.03191970, -0.08048710, 0.07671600)),  # standard_1005
+    ("P4", (0.05566670, -0.07856020, 0.05656100)),  # standard_1005
+    ("P6", (0.06788770, -0.07590430, 0.02809100)),  # standard_1005
+    ("P8", (0.07305570, -0.07306830, -0.00254000)),  # standard_1005
+    ("P10", (0.07389470, -0.07439030, -0.04122000)),  # standard_1005
+    ("PO9", (-0.05491040, -0.09804480, -0.03546500)),  # standard_1005
+    ("PO7", (-0.05484040, -0.09752790, 0.00279200)),  # standard_1005
+    ("PO5", (-0.04842440, -0.09934080, 0.02159900)),  # standard_1005
+    ("PO3", (-0.03651140, -0.10085290, 0.03716700)),  # standard_1005
+    ("PO1", (-0.01897240, -0.10176800, 0.04653600)),  # standard_1005
+    ("POZ", (0.00021560, -0.10217800, 0.05060800)),  # standard_1005
+    ("PO2", (0.01987760, -0.10179300, 0.04639300)),  # standard_1005
+    ("PO4", (0.03678160, -0.10084910, 0.03639700)),  # standard_1005
+    ("PO6", (0.04981960, -0.09944610, 0.02172700)),  # standard_1005
+    ("PO8", (0.05566660, -0.09762510, 0.00273000)),  # standard_1005
+    ("PO10", (0.05498760, -0.09809110, -0.03554100)),  # standard_1005
+    ("O1", (-0.02941340, -0.11244900, 0.00883900)),  # standard_1005
+    ("OZ", (0.00010760, -0.11489200, 0.01465700)),  # standard_1005
+    ("O2", (0.02984260, -0.11215600, 0.00880000)),  # standard_1005
+    ("O9", (-0.02981840, -0.11457000, -0.02921600)),  # standard_1020
+    ("CB1", (-0.05491040, -0.09804480, -0.03546500)),  # standard_postfixed (cerebellar site; coincides with PO9 in standard_1005)
+    ("CB2", (0.05498760, -0.09809110, -0.03554100)),  # standard_postfixed (cerebellar site; coincides with PO10 in standard_1005)
+    ("IZ", (0.00000450, -0.11856500, -0.02307800)),  # standard_1005 (inion area)
+    ("O10", (0.02974160, -0.11426000, -0.02925600)),  # standard_1020
+    ("T3", (-0.08416110, -0.01601870, -0.00934600)),  # legacy alias of T7 (standard_1005)
+    ("T5", (-0.07243430, -0.07345270, -0.00248700)),  # legacy alias of P7 (standard_1005)
+    ("T4", (0.08507990, -0.01502030, -0.00949000)),  # legacy alias of T8 (standard_1005)
+    ("T6", (0.07305570, -0.07306830, -0.00254000)),  # legacy alias of P8 (standard_1005)
+    ("M1", (-0.08607610, -0.04498970, -0.06798600)),  # standard_1005 (left mastoid)
+    ("M2", (0.08579390, -0.04500930, -0.06803100)),  # standard_1005 (right mastoid)
+    ("A1", (-0.08607610, -0.02498970, -0.06798600)),  # standard_1005 (left ear reference)
+    ("A2", (0.08579390, -0.02500930, -0.06803100)),  # standard_1005 (right ear reference)
+    ("CFC1", (-0.03510995, 0.00801360, 0.08486950)),  # midpoint(FC1, C1) in standard_1005
+    ("CFC2", (0.03622805, 0.00840690, 0.08361000)),  # midpoint(FC2, C2) in standard_1005
+    ("CFC3", (-0.06277000, 0.00554225, 0.05995100)),  # midpoint(FC3, C3) in standard_1005
+    ("CFC4", (0.06470550, 0.00641125, 0.05960500)),  # midpoint(FC4, C4) in standard_1005
+    ("CFC5", (-0.07874750, 0.00244180, 0.02681000)),  # midpoint(FC5, C5) in standard_1005
+    ("CFC6", (0.08149500, 0.00357970, 0.02682300)),  # midpoint(FC6, C6) in standard_1005
+    ("CFC7", (-0.08246805, -0.00094920, -0.01024050)),  # midpoint(FT7, T7) in standard_1005
+    ("CFC8", (0.08344750, 0.00019820, -0.01041000)),  # midpoint(FT8, T8) in standard_1005
+    ("CCP1", (-0.03693010, -0.02856990, 0.09173400)),  # standard_1005
+    ("CCP2", (0.03853990, -0.02822510, 0.09097600)),  # standard_1005
+    ("CCP3", (-0.06612810, -0.02929570, 0.06589800)),  # standard_1005
+    ("CCP4", (0.06885390, -0.02864030, 0.06641000)),  # standard_1005
+    ("CCP5", (-0.08154310, -0.03017270, 0.03027300)),  # standard_1005
+    ("CCP6", (0.08455290, -0.02937830, 0.03087800)),  # standard_1005
+    ("CCP7", (-0.08449565, -0.03102020, -0.00820100)),  # midpoint(T7, TP7) in standard_1005
+    ("CCP8", (0.08531435, -0.03028280, -0.00831000)),  # midpoint(T8, TP8) in standard_1005
+    ("T1", (-0.08407590, 0.01456730, -0.05042900)),  # standard_postfixed (anterior temporal; same position as FT9 in standard_1005)
+    ("T2", (0.08411310, 0.01436470, -0.05053800)),  # standard_postfixed (anterior temporal; same position as FT10 in standard_1005)
+    ("FTT9h", (-0.08412500, -0.00184670, -0.02979400)),  # standard_1005 (h-suffix intermediate position)
+    ("TTP7h", (-0.08556510, -0.03062870, 0.01115300)),  # standard_1005 (h-suffix intermediate position)
+    ("TPP9h", (-0.07816020, -0.06075670, -0.02382400)),  # standard_1005 (h-suffix intermediate position)
+    ("FTT10h", (0.08412300, -0.00180830, -0.02963800)),  # standard_1005 (h-suffix intermediate position)
+    ("TPP8h", (0.07851980, -0.06043230, 0.01290200)),  # standard_1005 (h-suffix intermediate position)
+    ("TPP10h", (0.07890270, -0.06095530, -0.02380500)),  # standard_1005 (h-suffix intermediate position)
+    ("FP1-F7", (-0.04984980, 0.06319570, -0.00920500)),  # bipolar: midpoint(FP1, F7) from standard_1005
+    ("F7-T7", (-0.07721200, 0.01322780, -0.01038300)),  # bipolar: midpoint(F7, T7) from standard_1005
+    ("T7-P7", (-0.07829770, -0.04473570, -0.00591650)),  # bipolar: midpoint(T7, P7) from standard_1005
+    ("P7-O1", (-0.05092385, -0.09295085, 0.00317600)),  # bipolar: midpoint(P7, O1) from standard_1005
+    ("FP2-F8", (0.05145770, 0.06465880, -0.00954000)),  # bipolar: midpoint(FP2, F8) from standard_1005
+    ("F8-T8", (0.07906150, 0.01470070, -0.01074500)),  # bipolar: midpoint(F8, T8) from standard_1005
+    ("T8-P8", (0.07906780, -0.04404430, -0.00601500)),  # bipolar: midpoint(T8, P8) from standard_1005
+    ("P8-O2", (0.05144915, -0.09261215, 0.00313000)),  # bipolar: midpoint(P8, O2) from standard_1005
+]   # "FP1-F3", "F3-C3", "C3-P3", "P3-O1", "FP2-F4", "F4-C4", "C4-P4", "P4-O2"
+# fmt: on
+
+_LABRAM_TARGET_CHS_INFO = [
+    {
+        "ch_name": ch,
+        "kind": "eeg",
+        "loc": np.asarray(loc, dtype=float),
+    }
+    for ch, loc in _LABRAM_TARGET_CHS_TUPLES
+]
+LABRAM_CHANNEL_ORDER = [ch for ch, _ in _LABRAM_TARGET_CHS_TUPLES]
+_LABRAM_CANONICAL_INDEX = {n.upper(): i for i, n in enumerate(LABRAM_CHANNEL_ORDER)}
 
 
 class Labram(EEGModuleMixin, nn.Module):
-    """Labram.
+    r"""Labram from Jiang, W B et al (2024) [Jiang2024]_.
+
+    :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
+
+    .. figure:: https://arxiv.org/html/2405.18765v1/x1.png
+        :align: center
+        :alt: Labram Architecture.
 
     Large Brain Model for Learning Generic Representations with Tremendous
-    EEG Data in BCI from [Jiang2024]_
+    EEG Data in BCI from [Jiang2024]_.
 
-    This an **adaptation** of the code [Code2024]_ from the Labram model.
+    This is an **adaptation** of the code [Code2024]_ from the Labram model.
 
     The model is transformer architecture with **strong** inspiration from
     BEiTv2 [BeiTv2]_.
 
     The models can be used in two modes:
-        - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
-        - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
+
+    - Neural Tokenizer: Design to get an embedding layers (e.g. classification).
+    - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
 
     The braindecode's modification is to allow the model to be used in
     with an input shape of (batch, n_chans, n_times), if neural tokenizer
     equals True. The original implementation uses (batch, n_chans, n_patches,
     patch_size) as input with static segmentation of the input data.
 
-    The models have the following sequence of steps:
-    if neural tokenizer:
-        - SegmentPatch: Segment the input data in patches;
-        - TemporalConv: Apply a temporal convolution to the segmented data;
-        - Residual adding cls, temporal and position embeddings (optional);
-        - WindowsAttentionBlock: Apply a windows attention block to the data;
-        - LayerNorm: Apply layer normalization to the data;
-        - Linear: An head linear layer to transformer the data into classes.
-    else:
-        - PatchEmbed: Apply a patch embedding to the input data;
-        - Residual adding cls, temporal and position embeddings (optional);
-        - WindowsAttentionBlock: Apply a windows attention block to the data;
-        - LayerNorm: Apply layer normalization to the data;
-        - Linear: An head linear layer to transformer the data into classes.
+    The models have the following sequence of steps::
+
+        if neural tokenizer:
+            - SegmentPatch: Segment the input data in patches;
+            - TemporalConv: Apply a temporal convolution to the segmented data;
+            - Residual adding cls, temporal and position embeddings (optional);
+            - WindowsAttentionBlock: Apply a windows attention block to the data;
+            - LayerNorm: Apply layer normalization to the data;
+            - Linear: An head linear layer to transformer the data into classes.
+
+        else:
+            - PatchEmbed: Apply a patch embedding to the input data;
+            - Residual adding cls, temporal and position embeddings (optional);
+            - WindowsAttentionBlock: Apply a windows attention block to the data;
+            - LayerNorm: Apply layer normalization to the data;
+            - Linear: An head linear layer to transformer the data into classes.
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       This model has pre-trained weights available on the Hugging Face Hub.
+       You can load them using:
+
+       .. code-block:: python
+
+           from braindecode.models import Labram
+
+           # Load pre-trained model from Hugging Face Hub
+           model = Labram.from_pretrained("braindecode/labram-pretrained")
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-labram-model", commit_message="Upload trained Labram model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
 
     .. versionadded:: 0.9
+
+
+    Examples
+    --------
+    Load pre-trained weights::
+
+        >>> import torch
+        >>> from braindecode.models import Labram
+        >>> model = Labram(n_times=1600, n_chans=64, n_outputs=4)
+        >>> url = "https://huggingface.co/braindecode/Labram-Braindecode/blob/main/braindecode_labram_base.pt"
+        >>> state = torch.hub.load_state_dict_from_url(url, progress=True)
+        >>> model.load_state_dict(state)
+
 
     Parameters
     ----------
     patch_size : int
         The size of the patch to be used in the patch embedding.
-    emb_size : int
+    learned_patcher : bool
+        Whether to use a learned patch embedding (via a convolutional layer) or a fixed patch embedding (via rearrangement).
+    embed_dim : int
         The dimension of the embedding.
-    in_channels : int
+    conv_in_channels : int
         The number of convolutional input channels.
-    out_channels : int
+    conv_out_channels : int
         The number of convolutional output channels.
-    n_layers :  int (default=12)
+    num_layers :  int (default=12)
         The number of attention layers of the model.
-    att_num_heads : int (default=10)
+    num_heads : int (default=10)
         The number of attention heads.
     mlp_ratio : float (default=4.0)
         The expansion ratio of the mlp layer
     qkv_bias :  bool (default=False)
         If True, add a learnable bias to the query, key, and value tensors.
-    qk_norm : Pytorch Normalize layer (default=None)
-        If not None, apply LayerNorm to the query and key tensors
+    qk_norm : Pytorch Normalize layer (default=nn.LayerNorm)
+        If not None, apply LayerNorm to the query and key tensors.
+        Default is nn.LayerNorm for better weight transfer from original LaBraM.
+        Set to None to disable Q,K normalization.
     qk_scale : float (default=None)
         If not None, use this value as the scale factor. If None,
         use head_dim**-0.5, where head_dim = dim // num_heads.
-    drop_rate : float (default=0.0)
+    drop_prob : float (default=0.0)
         Dropout rate for the attention weights.
-    attn_drop_rate : float (default=0.0)
+    attn_drop_prob : float (default=0.0)
         Dropout rate for the attention weights.
-    drop_path_rate : float (default=0.0)
+    drop_path_prob : float (default=0.0)
         Dropout rate for the attention weights used on DropPath.
     norm_layer : Pytorch Normalize layer (default=nn.LayerNorm)
         The normalization layer to be used.
-    init_values : float (default=None)
+    init_values : float (default=0.1)
         If not None, use this value to initialize the gamma_1 and gamma_2
-        parameters.
+        parameters for residual scaling. Default is 0.1 for better weight
+        transfer from original LaBraM. Set to None to disable.
     use_abs_pos_emb : bool (default=True)
         If True, use absolute position embedding.
     use_mean_pooling : bool (default=True)
@@ -97,10 +323,14 @@ class Labram(EEGModuleMixin, nn.Module):
     init_scale : float (default=0.001)
         The initial scale to be used in the parameters of the model.
     neural_tokenizer : bool (default=True)
-        The model can be used in two modes: Neural Tokenizor or Neural Decoder.
+        The model can be used in two modes: Neural Tokenizer or Neural Decoder.
     attn_head_dim : bool (default=None)
         The head dimension to be used in the attention layer, to be used only
         during pre-training.
+    activation: nn.Module, default=nn.GELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+
     References
     ----------
     .. [Jiang2024] Wei-Bang Jiang, Li-Ming Zhao, Bao-Liang Lu. 2024, May.
@@ -125,25 +355,27 @@ class Labram(EEGModuleMixin, nn.Module):
         sfreq=None,
         input_window_seconds=None,
         patch_size=200,
-        emb_size=200,
-        in_channels=1,
-        out_channels=8,
-        n_layers=12,
-        att_num_heads=10,
+        learned_patcher=False,
+        embed_dim=200,
+        conv_in_channels=1,
+        conv_out_channels=8,
+        num_layers=12,
+        num_heads=10,
         mlp_ratio=4.0,
         qkv_bias=False,
-        qk_norm=None,
+        qk_norm: type[nn.Module] = nn.LayerNorm,
         qk_scale=None,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
-        drop_path_rate=0.0,
-        norm_layer=nn.LayerNorm,
-        init_values=None,
+        drop_prob=0.0,
+        attn_drop_prob=0.0,
+        drop_path_prob=0.0,
+        norm_layer: type[nn.Module] = nn.LayerNorm,
+        init_values=0.1,
         use_abs_pos_emb=True,
-        use_mean_pooling=True,
+        use_mean_pooling=False,
         init_scale=0.001,
         neural_tokenizer=True,
         attn_head_dim=None,
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -153,23 +385,52 @@ class Labram(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, n_times, input_window_seconds, sfreq
+
+        # Non-canonical chs_info is accepted with a warning so callers can
+        # resolve channels per batch via forward(ch_names=...).
+        try:
+            _chs_info = self.chs_info
+        except ValueError:
+            _chs_info = None
+        if _chs_info is not None:
+            user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
+            if [n.upper() for n in user_names] != list(_LABRAM_CANONICAL_INDEX):
+                warn(
+                    f"Labram chs_info does not match LABRAM_CHANNEL_ORDER "
+                    f"(got {len(user_names)} of {len(LABRAM_CHANNEL_ORDER)}). "
+                    f"Pass ch_names to forward() per batch, or use "
+                    f"InterpolatedLaBraM.",
+                    UserWarning,
+                )
 
         self.patch_size = patch_size
-        self.n_path = self.n_times // patch_size
-        self.num_features = self.emb_size = emb_size
+        self.num_features = self.embed_dim = embed_dim
         self.neural_tokenizer = neural_tokenizer
         self.init_scale = init_scale
 
-        if neural_tokenizer and in_channels != 1:
+        if patch_size > self.n_times:
             warn(
-                "The model is in Neural Tokenizer mode, but the variable "
-                + "`in_channels` is different from the default values."
-                + "`in_channels` is only needed for the Neural Decoder mode."
-                + "in_channels is not used in the Neural Tokenizer mode.",
+                f"patch_size ({patch_size}) > n_times ({self.n_times}); "
+                f"setting patch_size = {self.n_times}.",
                 UserWarning,
             )
-            in_channels = 1
+            self.patch_size = self.n_times
+            self.num_features = None
+            self.embed_dim = None
+        else:
+            self.patch_size = patch_size
+        self.n_path = self.n_times // self.patch_size
+
+        if neural_tokenizer and conv_in_channels != 1:
+            warn(
+                "The model is in Neural Tokenizer mode, but the variable "
+                + "`conv_in_channels` is different from the default values."
+                + "`conv_in_channels` is only needed for the Neural Decoder mode."
+                + "conv_in_channels is not used in the Neural Tokenizer mode.",
+                UserWarning,
+            )
+            conv_in_channels = 1
             # If you can use the model in Neural Tokenizer mode,
         # temporal conv layer will be use over the patched dataset
         if neural_tokenizer:
@@ -183,9 +444,15 @@ class Labram(EEGModuleMixin, nn.Module):
                                 patch_size=self.patch_size,
                                 n_chans=self.n_chans,
                                 emb_dim=self.patch_size,
+                                learned_patcher=learned_patcher,
                             ),
                         ),
-                        ("temporal_conv", _TemporalConv(out_channels=out_channels)),
+                        (
+                            "temporal_conv",
+                            _TemporalConv(
+                                out_channels=conv_out_channels, activation=activation
+                            ),
+                        ),
                     ]
                 )
             )
@@ -201,13 +468,22 @@ class Labram(EEGModuleMixin, nn.Module):
                 _PatchEmbed(
                     n_times=self.n_times,
                     patch_size=patch_size,
-                    in_channels=in_channels,
-                    emb_dim=self.emb_size,
+                    in_channels=conv_in_channels,
+                    emb_dim=self.embed_dim,
                 ),
             )
+
+        with torch.no_grad():
+            dummy = torch.zeros(1, self.n_chans, self.n_times)
+            out = self.patch_embed(dummy)
+        # out.shape for tokenizer: (1, n_chans, emb_dim)
+        # for decoder:        (1, n_patch, patch_size, emb_dim), but we want last dim
+        self.embed_dim = out.shape[-1]
+        self.num_features = self.embed_dim
+
         # Defining the parameters
-        # Creating a parameter list with cls token
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, self.emb_size))
+        # Creating a parameter list with cls token]
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, self.embed_dim))
         # Positional embedding and time embedding are complementary
         # one is for the spatial information and the other is for the temporal
         # information.
@@ -216,32 +492,32 @@ class Labram(EEGModuleMixin, nn.Module):
         # information.
         if use_abs_pos_emb:
             self.position_embedding = nn.Parameter(
-                torch.zeros(1, self.n_chans + 1, self.emb_size),
+                torch.zeros(1, len(LABRAM_CHANNEL_ORDER) + 1, self.embed_dim),
                 requires_grad=True,
             )
         else:
             self.position_embedding = None
 
         self.temporal_embedding = nn.Parameter(
-            torch.zeros(1, self.patch_embed[0].n_patchs + 1, self.emb_size),
+            torch.zeros(1, self.patch_embed[0].n_patchs + 1, self.embed_dim),
             requires_grad=True,
         )
-        self.pos_drop = nn.Dropout(p=drop_rate)
+        self.pos_drop = nn.Dropout(p=drop_prob)
 
         dpr = [
-            x.item() for x in torch.linspace(0, drop_path_rate, n_layers)
+            x.item() for x in torch.linspace(0, drop_path_prob, num_layers)
         ]  # stochastic depth decay rule
         self.blocks = nn.ModuleList(
             [
                 _WindowsAttentionBlock(
-                    dim=self.emb_size,
-                    num_heads=att_num_heads,
+                    dim=self.embed_dim,
+                    num_heads=num_heads,
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
                     qk_norm=qk_norm,
                     qk_scale=qk_scale,
-                    drop=drop_rate,
-                    attn_drop=attn_drop_rate,
+                    drop=drop_prob,
+                    attn_drop=attn_drop_prob,
                     drop_path=dpr[i],
                     norm_layer=norm_layer,
                     init_values=init_values,
@@ -251,17 +527,19 @@ class Labram(EEGModuleMixin, nn.Module):
                         else None
                     ),
                     attn_head_dim=attn_head_dim,
+                    activation=activation,
                 )
-                for i in range(n_layers)
+                for i in range(num_layers)
             ]
         )
-        self.norm = nn.Identity() if use_mean_pooling else norm_layer(self.emb_size)
-        self.fc_norm = norm_layer(self.emb_size) if use_mean_pooling else None
+        self.norm = (
+            nn.Identity() if use_mean_pooling else norm_layer(self.embed_dim, eps=1e-6)
+        )
+        self.fc_norm = (
+            norm_layer(self.embed_dim, eps=1e-6) if use_mean_pooling else None
+        )
 
-        if self.n_outputs > 0:
-            self.head = nn.Linear(self.emb_size, self.n_outputs)
-        else:
-            self.head = nn.Identity()
+        self.reset_classifier(self.n_outputs)
 
         self.apply(self._init_weights)
         self.fix_init_weight_and_init_embedding()
@@ -277,16 +555,16 @@ class Labram(EEGModuleMixin, nn.Module):
         if self.position_embedding is not None:
             trunc_normal_(self.position_embedding, std=0.02)
 
-        if isinstance(self.head, nn.Linear):
-            trunc_normal_(self.head.weight, std=0.02)
+        if isinstance(self.final_layer, nn.Linear):
+            trunc_normal_(self.final_layer.weight, std=0.02)
 
         for layer_id, layer in enumerate(self.blocks):
             rescale_parameter(layer.attn.proj.weight.data, layer_id + 1)
             rescale_parameter(layer.mlp[-2].weight.data, layer_id + 1)
 
-        if isinstance(self.head, nn.Linear):
-            self.head.weight.data.mul_(self.init_scale)
-            self.head.bias.data.mul_(self.init_scale)
+        if isinstance(self.final_layer, nn.Linear):
+            self.final_layer.weight.data.mul_(self.init_scale)
+            self.final_layer.bias.data.mul_(self.init_scale)
 
     @staticmethod
     def _init_weights(layer):
@@ -326,7 +604,7 @@ class Labram(EEGModuleMixin, nn.Module):
     def forward_features(
         self,
         x,
-        input_chans=None,
+        input_chans,
         return_patch_tokens=False,
         return_all_tokens=False,
     ):
@@ -336,10 +614,9 @@ class Labram(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            The input data with shape (batch, n_chans, n_patches, patch size),
-            if neural decoder or (batch, n_chans, n_times), if neural tokenizer.
-        input_chans : int
-            The number of input channels.
+            The input data with shape (batch, n_chans, n_times).
+        input_chans : torch.Tensor
+            Indices for selecting position embeddings (including the [CLS] token).
         return_patch_tokens : bool
             Whether to return the patch tokens.
         return_all_tokens : bool
@@ -350,38 +627,69 @@ class Labram(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             The output of the model.
         """
+        batch_size, n_input_chans, _ = x.shape
 
         if self.neural_tokenizer:
-            batch_size, nch, n_patch, temporal = self.patch_embed.segment_patch(x).shape
+            # For neural tokenizer: input is (batch, n_chans, n_times)
+            # patch_embed returns (batch, n_chans, emb_dim)
+            x = self.patch_embed(x)
+            # x shape: (batch, n_chans, emb_dim)
+            n_patch = n_input_chans  # Use actual input channels, not self.n_chans
+            temporal = self.embed_dim
         else:
-            batch_size, nch, n_patch = self.patch_embed(x).shape
-        x = self.patch_embed(x)
+            # For neural decoder: input is (batch, n_chans, n_times)
+            # patch_embed returns (batch, n_patchs, emb_dim)
+            x = self.patch_embed(x)
+            # x shape: (batch, n_patchs, emb_dim)
+            batch_size, n_patch, temporal = x.shape
+
         # add the [CLS] token to the embedded patch tokens
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
 
+        # Concatenate cls token with patch/channel embeddings
         x = torch.cat((cls_tokens, x), dim=1)
 
         # Positional Embedding
-        if input_chans is not None:
-            pos_embed_used = self.position_embedding[:, input_chans]
-        else:
-            pos_embed_used = self.position_embedding
-
         if self.position_embedding is not None:
-            pos_embed = self._adj_position_embedding(
-                pos_embed_used=pos_embed_used, batch_size=batch_size
-            )
+            if self.neural_tokenizer:
+                # In tokenizer mode, use channel-based position embedding
+                pos_embed_used = self.position_embedding[:, input_chans]
+
+                pos_embed = self._adj_position_embedding(
+                    pos_embed_used=pos_embed_used, batch_size=batch_size
+                )
+            else:
+                # In decoder mode, we have different number of patches
+                # Adapt position embedding for n_patch patches
+                # Use the first n_patch+1 positions from position_embedding
+                n_pos = min(self.position_embedding.shape[1], n_patch + 1)
+                pos_embed_used = self.position_embedding[:, :n_pos, :]
+                pos_embed = pos_embed_used.expand(batch_size, -1, -1)
+
             x += pos_embed
 
         # The time embedding is added across the channels after the [CLS] token
         if self.neural_tokenizer:
-            num_ch = self.n_chans
+            num_ch = n_input_chans  # Use actual input channels
+            time_embed = self._adj_temporal_embedding(
+                num_ch=num_ch, batch_size=batch_size, dim_embed=temporal
+            )
+            x[:, 1:, :] += time_embed
         else:
-            num_ch = n_patch
-        time_embed = self._adj_temporal_embedding(
-            num_ch=num_ch, batch_size=batch_size, dim_embed=temporal
-        )
-        x[:, 1:, :] += time_embed
+            # In decoder mode, we have n_patch patches and don't need to expand
+            # Just broadcast the temporal embedding
+            if temporal is None:
+                temporal = self.embed_dim
+
+            # Get temporal embeddings for n_patch patches
+            n_time_tokens = min(n_patch, self.temporal_embedding.shape[1] - 1)
+            time_embed = self.temporal_embedding[
+                :, 1 : n_time_tokens + 1, :
+            ]  # (1, n_patch, emb_dim)
+            time_embed = time_embed.expand(
+                batch_size, -1, -1
+            )  # (batch, n_patch, emb_dim)
+            x[:, 1:, :] += time_embed
 
         x = self.pos_drop(x)
 
@@ -392,10 +700,10 @@ class Labram(EEGModuleMixin, nn.Module):
         if self.fc_norm is not None:
             if return_all_tokens:
                 return self.fc_norm(x)
-            temporal = x[:, 1:, :]
+            tokens = x[:, 1:, :]
             if return_patch_tokens:
-                return self.fc_norm(temporal)
-            return self.fc_norm(temporal.mean(1))
+                return self.fc_norm(tokens)
+            return self.fc_norm(tokens.mean(1))
         else:
             if return_all_tokens:
                 return x
@@ -406,9 +714,11 @@ class Labram(EEGModuleMixin, nn.Module):
     def forward(
         self,
         x,
-        input_chans=None,
         return_patch_tokens=False,
         return_all_tokens=False,
+        return_features=False,
+        *,
+        ch_names: list[str] | None = None,
     ):
         """
         Forward the input EEG data through the model.
@@ -418,25 +728,73 @@ class Labram(EEGModuleMixin, nn.Module):
         x: torch.Tensor
             The input data with shape (batch, n_chans, n_times)
             or (batch, n_chans, n_patches, patch size).
-        input_chans: int
-            An input channel to select some dimensions
         return_patch_tokens: bool
             Return the patch tokens
         return_all_tokens: bool
             Return all the tokens
+        return_features : bool
+            If True, return a dict with ``"features"`` (patch tokens) and
+            ``"cls_token"`` instead of the classification output.
+        ch_names : list of str, optional
+            Keyword-only. Channel names matching the channel axis of ``x``.
+            Matched case-insensitively against :data:`LABRAM_CHANNEL_ORDER`
+            to select the corresponding position embeddings, so callers can
+            forward an arbitrary subset of canonical channels. If ``None``
+            (default), ``x`` must already be in :data:`LABRAM_CHANNEL_ORDER`
+            with exactly ``len(LABRAM_CHANNEL_ORDER)`` channels; otherwise
+            a :class:`ValueError` is raised. Only honored when
+            ``neural_tokenizer=True``; in decoder mode the position
+            embedding is sequential and ``ch_names`` has no effect.
 
         Returns
         -------
-        torch.Tensor
+        torch.Tensor or dict
             The output of the model with dimensions (batch, n_outputs)
         """
+        if ch_names is None:
+            if x.shape[1] != len(LABRAM_CHANNEL_ORDER):
+                raise ValueError(
+                    f"x has {x.shape[1]} channels but ch_names is None; "
+                    f"expected {len(LABRAM_CHANNEL_ORDER)} canonical channels "
+                    f"in LABRAM_CHANNEL_ORDER. Either pass "
+                    f"ch_names=<your channel names> matching x.shape[1], or "
+                    f"use InterpolatedLaBraM to project from an arbitrary "
+                    f"montage onto the canonical 128-channel layout."
+                )
+            input_chans = torch.arange(
+                len(LABRAM_CHANNEL_ORDER) + 1, device=x.device, dtype=torch.long
+            )
+        else:
+            if len(ch_names) != x.shape[1]:
+                raise ValueError(
+                    f"len(ch_names)={len(ch_names)} != x.shape[1]={x.shape[1]}"
+                )
+            try:
+                matched = [_LABRAM_CANONICAL_INDEX[n.upper()] for n in ch_names]
+            except KeyError as exc:
+                raise ValueError(
+                    f"ch_names contains a name not in LABRAM_CHANNEL_ORDER: "
+                    f"{exc.args[0]!r}. Filter unknown channels before calling "
+                    f"forward, or use InterpolatedLaBraM."
+                ) from exc
+            # CLS token at index 0; canonical channel indices are offset by 1.
+            input_chans = torch.tensor(
+                [0] + [i + 1 for i in matched], device=x.device, dtype=torch.long
+            )
+
+        if return_features:
+            x = self.forward_features(
+                x, input_chans=input_chans, return_all_tokens=True
+            )
+            return {"features": x[:, 1:, :], "cls_token": x[:, 0, :]}
+
         x = self.forward_features(
             x,
             input_chans=input_chans,
             return_patch_tokens=return_patch_tokens,
             return_all_tokens=return_all_tokens,
         )
-        x = self.head(x)
+        x = self.final_layer(x)
         return x
 
     def get_classifier(self):
@@ -448,7 +806,7 @@ class Labram(EEGModuleMixin, nn.Module):
         torch.nn.Module
             The classifier of the head model.
         """
-        return self.head
+        return self.final_layer
 
     def reset_classifier(self, n_outputs):
         """
@@ -459,24 +817,27 @@ class Labram(EEGModuleMixin, nn.Module):
         n_outputs : int
             The new number of classes.
         """
-        self.n_outputs = n_outputs
-        self.head = (
-            nn.Linear(self.emb_dim, self.n_outputs)
-            if self.n_outputs > 0
-            else nn.Identity()
+        self.final_layer = (
+            nn.Linear(self.embed_dim, n_outputs) if n_outputs > 0 else nn.Identity()
         )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.reset_classifier(n_outputs)
 
     def _adj_temporal_embedding(self, num_ch, batch_size, dim_embed=None):
         """
         Adjust the dimensions of the time embedding to match the
-        number of channels.
+        number of channels or patches.
 
         Parameters
         ----------
         num_ch : int
-            The number of channels or number of code books vectors.
+            The number of channels or number of patches.
         batch_size : int
             Batch size of the input data.
+        dim_embed : int
+            The embedding dimension (temporal feature dimension).
 
         Returns
         -------
@@ -487,57 +848,43 @@ class Labram(EEGModuleMixin, nn.Module):
         if dim_embed is None:
             cut_dimension = self.patch_size
         else:
-            cut_dimension = dim_embed
-        # first step will be match the time_embed to the number of channels
-        temporal_embedding = self.temporal_embedding[:, 1:cut_dimension, :]
+            cut_dimension = min(dim_embed, self.temporal_embedding.shape[1] - 1)
+
+        # Get the temporal embedding: (1, temporal_embedding_dim, emb_size)
+        # Slice to cut_dimension: (1, cut_dimension, emb_size)
+        temporal_embedding = self.temporal_embedding[:, 0:cut_dimension, :]
+
         # Add a new dimension to the time embedding
-        # e.g. (batch, 62, 200) -> (batch, 1, 62, 200)
+        # e.g. (1, 5, 200) -> (1, 1, 5, 200)
         temporal_embedding = temporal_embedding.unsqueeze(1)
-        # Expand the time embedding to match the number of channels
-        # or number of patches from
+
+        # Expand the time embedding to match the number of channels or patches
+        # (1, 1, cut_dimension, 200) -> (batch_size, num_ch, cut_dimension, 200)
         temporal_embedding = temporal_embedding.expand(batch_size, num_ch, -1, -1)
+
         # Flatten the intermediate dimensions
+        # (batch_size, num_ch, cut_dimension, 200) -> (batch_size, num_ch * cut_dimension, 200)
         temporal_embedding = temporal_embedding.flatten(1, 2)
+
         return temporal_embedding
 
     def _adj_position_embedding(self, pos_embed_used, batch_size):
-        """
-        Adjust the dimensions of position embedding to match the
-        number of patches.
-
-        Parameters
-        ----------
-        pos_embed_used : torch.Tensor
-            The position embedding to be adjusted.
-        batch_size : int
-            The number of batches.
-
-        Returns
-        -------
-        pos_embed : torch.Tensor
-            The adjusted position embedding
-        """
-        # [CLS] token has no position embedding
-        pos_embed = pos_embed_used[:, 1:, :]
-        # Adding a new dimension to the position embedding
-        pos_embed = pos_embed.unsqueeze(2)
-        # Need to expand the position embedding to match the number of
-        # n_patches
-        pos_embed = pos_embed.expand(batch_size, -1, self.patch_embed[0].n_patchs, -1)
-        # Flatten the intermediate dimensions,
-        # such as the number of patches and the "channels" dim
-        pos_embed = pos_embed.flatten(1, 2)
-        # Get the base position embedding
-        # This is the position embedding for the [CLS] token
-        base_pos = pos_embed[:, 0:1, :].expand(batch_size, -1, -1)
-        # Concatenate the base position embedding with the
-        # position embedding
-        pos_embed = torch.cat((base_pos, pos_embed), dim=1)
+        """Copy/pasted from https://github.com/935963004/LaBraM/blob/c431221e6cfd23dbfa9950e0180682fb322b0548/modeling_finetune.py#L358-L362"""
+        input_time_window = self.patch_embed[0].n_patchs
+        pos_embed = (
+            pos_embed_used[:, 1:, :]
+            .unsqueeze(2)
+            .expand(batch_size, -1, input_time_window, -1)
+            .flatten(1, 2)
+        )
+        pos_embed = torch.cat(
+            (pos_embed_used[:, 0:1, :].expand(batch_size, -1, -1), pos_embed), dim=1
+        )
         return pos_embed
 
 
 class _SegmentPatch(nn.Module):
-    """Segment and Patch for EEG data.
+    r"""Segment and Patch for EEG data.
 
     Adapted Patch Embedding inspired in the Visual Transform approach
     to extract the learned segmentor, we expect get the input shape as:
@@ -583,16 +930,16 @@ class _SegmentPatch(nn.Module):
         self.n_chans = n_chans
         self.learned_patcher = learned_patcher
 
-        self.patcher = nn.Conv1d(
-            in_channels=1,
-            out_channels=self.emb_dim,
-            kernel_size=self.patch_size,
-            stride=self.patch_size,
-        )
-
-        self.adding_extra_dim = Rearrange(
-            pattern="batch nchans temporal -> (batch nchans) 1 temporal"
-        )
+        if learned_patcher:
+            self.patcher = nn.Conv1d(
+                in_channels=1,
+                out_channels=self.emb_dim,
+                kernel_size=self.patch_size,
+                stride=self.patch_size,
+            )
+            self.adding_extra_dim = Rearrange(
+                pattern="batch nchans temporal -> (batch nchans) 1 temporal"
+            )
 
     def forward(self, x):
         """
@@ -608,7 +955,7 @@ class _SegmentPatch(nn.Module):
         X_patch: Tensor
             [batch, n_chans, n_times//patch_size, patch_size]
         """
-        batch_size, _, _ = x.shape
+        batch_size, n_chans_actual, n_times_actual = x.shape
         # Input shape: [batch, n_chs, n_times]
 
         # First, rearrange input to treat the channel dimension 'n_chs' as
@@ -626,42 +973,45 @@ class _SegmentPatch(nn.Module):
             # Assuming you want [batch, n_chs, n_patches, emb_dim]
             # as output, which keeps channel information
             # This treats each patch embedding as a feature alongside channels
+            # Use actual number of channels from input, not self.n_chans
             x = rearrange(
                 x,
                 pattern="(batch nchans) embed npatchs -> batch nchans npatchs embed",
                 batch=batch_size,
-                nchans=self.n_chans,
+                nchans=n_chans_actual,
             )
         else:
             x = x.view(
                 batch_size,
-                self.n_chans,
-                self.n_times // self.patch_size,
+                n_chans_actual,
+                n_times_actual // self.patch_size,
                 self.patch_size,
             )
         return x
 
 
 class _PatchEmbed(nn.Module):
-    """EEG to Patch Embedding.
+    r"""EEG to Patch Embedding for Neural Decoder mode.
 
     This code is used when we want to apply the patch embedding
-    after the codebook layer.
+    after the codebook layer (Neural Decoder mode).
+
+    The input is expected to be in the format (Batch, n_channels, n_times),
+    but the original LaBraM expects pre-patched data (Batch, n_channels, n_patches, patch_size).
+    This class reshapes the input to the pre-patched format, then applies a 2D
+    convolution to project this pre-patched data to the embedding dimension,
+    and finally flattens across channels to produce a unified embedding.
 
     Parameters:
     -----------
     n_times: int (default=2000)
-        Number of temporal components of the input tensor.
+        Number of temporal components of the input tensor (used for dimension calculation).
     patch_size: int (default=200)
         Size of the patch, default is 1-seconds with 200Hz.
     in_channels: int (default=1)
-        Number of input channels for to be used in the convolution.
+        Number of input channels (from VQVAE codebook).
     emb_dim: int (default=200)
-        Number of out_channes to be used in the convolution, here,
-        we used the same as patch_size.
-    n_codebooks: int (default=62)
-        Number of patches to be used in the convolution, here,
-        we used the same as n_times // patch_size.
+        Number of output embedding dimension.
     """
 
     def __init__(
@@ -671,10 +1021,13 @@ class _PatchEmbed(nn.Module):
         self.n_times = n_times
         self.patch_size = patch_size
         self.patch_shape = (1, self.n_times // self.patch_size)
-        n_patchs = n_codebooks * (self.n_times // self.patch_size)
+        self.n_patchs = self.n_times // self.patch_size
+        self.emb_dim = emb_dim
+        self.in_channels = in_channels
 
-        self.n_patchs = n_patchs
-
+        # 2D Conv to project the pre-patched data
+        # Input: (Batch, in_channels, n_patches, patch_size)
+        # After proj: (Batch, emb_dim, n_patches, 1)
         self.proj = nn.Conv2d(
             in_channels=in_channels,
             out_channels=emb_dim,
@@ -682,32 +1035,69 @@ class _PatchEmbed(nn.Module):
             stride=(1, self.patch_size),
         )
 
-        self.merge_transpose = Rearrange(
-            "Batch ch patch spatch -> Batch patch spatch ch",
-        )
-
     def forward(self, x):
         """
-        Apply the convolution to the input tensor.
-        then merge the output tensor to the desired shape.
+        Apply the temporal projection to the input tensor after grouping channels.
 
-        Parameters:
-        -----------
-        x: torch.Tensor
-            Input tensor of shape (Batch, Channels, n_patchs, patch_size).
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (Batch, n_channels, n_times) or
+            (Batch, n_channels, n_patches, patch_size).
 
-        Return:
+        Returns
         -------
-        x: torch.Tensor
-            Output tensor of shape (Batch, n_patchs, patch_size, channels).
+        torch.Tensor
+            Output tensor of shape (Batch, n_patchs, emb_dim).
         """
+        if x.ndim == 4:
+            batch_size, n_channels, n_patchs, patch_len = x.shape
+            if patch_len != self.patch_size:
+                raise ValueError(
+                    "When providing a 4D tensor, the last dimension "
+                    f"({patch_len}) must match patch_size ({self.patch_size})."
+                )
+            n_times = n_patchs * patch_len
+            x = x.reshape(batch_size, n_channels, n_times)
+        elif x.ndim == 3:
+            batch_size, n_channels, n_times = x.shape
+        else:
+            raise ValueError(
+                "Input must be either 3D (batch, channels, times) or "
+                "4D (batch, channels, n_patches, patch_size)."
+            )
+
+        if n_times % self.patch_size != 0:
+            raise ValueError(
+                f"n_times ({n_times}) must be divisible by patch_size ({self.patch_size})."
+            )
+        if n_channels % self.in_channels != 0:
+            raise ValueError(
+                "The input channel dimension "
+                f"({n_channels}) must be divisible by in_channels ({self.in_channels})."
+            )
+
+        group_size = n_channels // self.in_channels
+
+        # Reshape so Conv2d sees `in_channels` feature maps and uses the grouped
+        # EEG channels as the spatial height dimension.
+        # Shape after view: (Batch, in_channels, group_size, n_times)
+        x = x.view(batch_size, self.in_channels, group_size, n_times)
+
+        # Apply the temporal projection per group.
+        # Output shape: (Batch, emb_dim, group_size, n_patchs)
         x = self.proj(x)
-        x = self.merge_transpose(x)
+
+        # THIS IS braindecode's MODIFICATION:
+        # Average over the grouped channel dimension and permute to (Batch, n_patchs, emb_dim)
+        x = x.mean(dim=2)
+        x = x.transpose(1, 2).contiguous()
+
         return x
 
 
 class _Attention(nn.Module):
-    """
+    r"""
     Attention with the options of Window-based multi-head self attention (W-MSA).
 
     This code is strong inspired by:
@@ -774,8 +1164,8 @@ class _Attention(nn.Module):
             self.v_bias = None
 
         if qk_norm is not None:
-            self.q_norm = qk_norm(head_dim)
-            self.k_norm = qk_norm(head_dim)
+            self.q_norm = qk_norm(head_dim, eps=1e-6)
+            self.k_norm = qk_norm(head_dim, eps=1e-6)
         else:
             self.q_norm = None
             self.k_norm = None
@@ -905,7 +1295,7 @@ class _Attention(nn.Module):
 
 
 class _WindowsAttentionBlock(nn.Module):
-    """Blocks of Windows Attention with Layer norm and MLP.
+    r"""Blocks of Windows Attention with Layer norm and MLP.
 
     Notes: This code is strong inspired by:
     BeiTv2 from Microsoft.
@@ -934,7 +1324,7 @@ class _WindowsAttentionBlock(nn.Module):
     init_values: float (default=None)
         If not None, use this value to initialize the gamma_1 and gamma_2
         parameters.
-    act_layer: nn.GELU (default)
+    activation: nn.GELU (default)
         Activation function.
     norm_layer: nn.LayerNorm (default)
         Normalization layer.
@@ -964,13 +1354,13 @@ class _WindowsAttentionBlock(nn.Module):
         attn_drop=0.0,
         drop_path=0.0,
         init_values=None,
-        act_layer=nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
         norm_layer=nn.LayerNorm,
         window_size=None,
         attn_head_dim=None,
     ):
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim, eps=1e-6)
         self.attn = _Attention(
             dim,
             num_heads=num_heads,
@@ -984,12 +1374,12 @@ class _WindowsAttentionBlock(nn.Module):
         )
 
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-        self.norm2 = norm_layer(dim)
+        self.norm2 = norm_layer(dim, eps=1e-6)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MLP(
             in_features=dim,
             hidden_features=[mlp_hidden_dim],
-            activation=act_layer,
+            activation=activation,
             drop=drop,
         )
 
@@ -1040,7 +1430,7 @@ class _WindowsAttentionBlock(nn.Module):
 
 
 class _TemporalConv(nn.Module):
-    """
+    r"""
     Temporal Convolutional Module inspired by Visual Transformer.
 
     In this module we apply the follow steps three times repeatedly
@@ -1067,6 +1457,10 @@ class _TemporalConv(nn.Module):
         Padding for the first convolution.
     padding_2: tuple (default=(0, 1))
         Padding for the second and third convolutions.
+    activation: nn.Module, default=nn.GELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+
     Returns:
     --------
     x: torch.Tensor
@@ -1083,7 +1477,7 @@ class _TemporalConv(nn.Module):
         padding_1=(0, 7),
         kernel_size_2=(1, 3),
         padding_2=(0, 1),
-        act_layer=nn.GELU,
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
 
@@ -1100,7 +1494,7 @@ class _TemporalConv(nn.Module):
             stride=stride_1,
             padding=padding_1,
         )
-        self.act_layer_1 = act_layer()
+        self.act_layer_1 = activation()
         self.norm1 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
 
         self.conv2 = nn.Conv2d(
@@ -1109,7 +1503,7 @@ class _TemporalConv(nn.Module):
             kernel_size=kernel_size_2,
             padding=padding_2,
         )
-        self.act_layer_2 = act_layer()
+        self.act_layer_2 = activation()
         self.norm2 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
 
         self.conv3 = nn.Conv2d(
@@ -1119,7 +1513,7 @@ class _TemporalConv(nn.Module):
             padding=padding_2,
         )
         self.norm3 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
-        self.act_layer_3 = act_layer()
+        self.act_layer_3 = activation()
 
         self.transpose_temporal_channel = Rearrange("Batch C NA T -> Batch NA (T C)")
 
@@ -1144,3 +1538,23 @@ class _TemporalConv(nn.Module):
         x = self.act_layer_3(self.norm3(self.conv3(x)))
         x = self.transpose_temporal_channel(x)
         return x
+
+
+# -----------------------------------------------------------------------------
+# InterpolatedLaBraM — experimental channel-interpolation variant of Labram
+# -----------------------------------------------------------------------------
+# A :func:`~braindecode.models.interpolated.InterpolatedModel` wrapper around
+# :class:`Labram` whose target channel set is the 128-channel canonical
+# ``LABRAM_CHANNEL_ORDER``. Accepts arbitrary user ``chs_info``; projects to
+# the canonical 128 channels via an MNE-backed (frozen by default)
+# interpolation matrix.
+#
+# NOTE: 8 of the 128 canonical channels are bipolar derivations (e.g. FP1-F7);
+# their positions are approximated as midpoints — see the TODO in
+# ``_LABRAM_TARGET_CHS_TUPLES``.
+
+from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
+
+InterpolatedLaBraM = InterpolatedModel(
+    Labram, _LABRAM_TARGET_CHS_INFO, name="InterpolatedLaBraM"
+)

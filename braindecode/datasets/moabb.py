@@ -9,11 +9,16 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
-import pandas as pd
-import mne
 
-from .base import BaseDataset, BaseConcatDataset
+import warnings
+from typing import Any
+
+import mne
+import pandas as pd
+
 from braindecode.util import _update_moabb_docstring
+
+from .base import BaseConcatDataset, RawDataset
 
 
 def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
@@ -30,7 +35,7 @@ def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
     raise ValueError(f"{dataset_name} not found in moabb datasets")
 
 
-def _fetch_and_unpack_moabb_data(dataset, subject_ids, dataset_load_kwargs=None):
+def _fetch_and_unpack_moabb_data(dataset, subject_ids=None, dataset_load_kwargs=None):
     if dataset_load_kwargs is None:
         data = dataset.get_data(subject_ids)
     else:
@@ -53,11 +58,17 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids, dataset_load_kwargs=None)
 
 
 def _annotations_from_moabb_stim_channel(raw, dataset):
-    # find events from stim channel
-    events = mne.find_events(raw)
+    # find events from the stim channel
+    stim_channels = mne.utils._get_stim_channel(None, raw.info, raise_error=False)
+    if len(stim_channels) > 0:
+        # returns an empty array if none found
+        events = mne.find_events(raw, shortest_event=0, verbose=False)
+        event_id = dataset.event_id
+    else:
+        events, event_id = mne.events_from_annotations(raw, verbose=False)
 
     # get annotations from events
-    event_desc = {k: v for v, k in dataset.event_id.items()}
+    event_desc = {k: v for v, k in event_id.items()}
     annots = mne.annotations_from_events(events, raw.info["sfreq"], event_desc)
 
     # set trial on and offset given by moabb
@@ -69,23 +80,23 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
 
 def fetch_data_with_moabb(
     dataset_name: str,
-    subject_ids: list[int] | int,
-    dataset_kwargs: dict[str, []] | None = None,
-    dataset_load_kwargs: dict[str, []] | None = None,
+    subject_ids: list[int] | int | None = None,
+    dataset_kwargs: dict[str, Any] | None = None,
+    dataset_load_kwargs: dict[str, Any] | None = None,
 ) -> tuple[list[mne.io.Raw], pd.DataFrame]:
     # ToDo: update path to where moabb downloads / looks for the data
     """Fetch data using moabb.
 
     Parameters
     ----------
-    dataset_name: str | moabb.datasets.base.BaseDataset
+    dataset_name : str | moabb.datasets.base.BaseDataset
         the name of a dataset included in moabb
-    subject_ids: list(int) | int
+    subject_ids : list(int) | int
         (list of) int of subject(s) to be fetched
-    dataset_kwargs: dict, optional
+    dataset_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset when instantiating it.
-    data_load_kwargs: dict, optional
+    data_load_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset's load_data method.
         Allows using the moabb cache_config=None and
@@ -93,8 +104,8 @@ def fetch_data_with_moabb(
 
     Returns
     -------
-    raws: mne.Raw
-    info: pandas.DataFrame
+    raws : mne.Raw
+    info : pandas.DataFrame
     """
     if isinstance(dataset_name, str):
         dataset = _find_dataset_in_moabb(dataset_name, dataset_kwargs)
@@ -115,15 +126,15 @@ class MOABBDataset(BaseConcatDataset):
 
     Parameters
     ----------
-    dataset_name: str
+    dataset_name : str
         name of dataset included in moabb to be fetched
-    subject_ids: list(int) | int | None
+    subject_ids : list(int) | int | None
         (list of) int of subject(s) to be fetched. If None, data of all
         subjects is fetched.
-    dataset_kwargs: dict, optional
+    dataset_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset when instantiating it.
-    dataset_load_kwargs: dict, optional
+    dataset_load_kwargs : dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset's load_data method.
         Allows using the moabb cache_config=None and
@@ -133,10 +144,19 @@ class MOABBDataset(BaseConcatDataset):
     def __init__(
         self,
         dataset_name: str,
-        subject_ids: list[int] | int | None,
-        dataset_kwargs: dict[str, []] | None = None,
-        dataset_load_kwargs: dict[str, []] | None = None,
+        subject_ids: list[int] | int | None = None,
+        dataset_kwargs: dict[str, Any] | None = None,
+        dataset_load_kwargs: dict[str, Any] | None = None,
     ):
+        # soft dependency on moabb
+        from moabb import __version__ as moabb_version  # type: ignore
+
+        if moabb_version == "1.0.0":
+            warnings.warn(
+                "moabb version 1.0.0 generates incorrect annotations. "
+                "Please update to another version, version 0.5 or 1.1.0 "
+            )
+
         raws, description = fetch_data_with_moabb(
             dataset_name,
             subject_ids,
@@ -144,13 +164,13 @@ class MOABBDataset(BaseConcatDataset):
             dataset_load_kwargs=dataset_load_kwargs,
         )
         all_base_ds = [
-            BaseDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
+            RawDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
         ]
         super().__init__(all_base_ds)
 
 
-class BNCI2014001(MOABBDataset):
-    doc = """See moabb.datasets.bnci.BNCI2014001
+class BNCI2014_001(MOABBDataset):
+    doc = """See moabb.datasets.bnci.BNCI2014_001
 
     Parameters
     ----------
@@ -159,14 +179,14 @@ class BNCI2014001(MOABBDataset):
         subjects is fetched.
     """
     try:
-        from moabb.datasets import BNCI2014001
+        from moabb.datasets import BNCI2014_001
 
-        __doc__ = _update_moabb_docstring(BNCI2014001, doc)
+        __doc__ = _update_moabb_docstring(BNCI2014_001, doc)
     except ModuleNotFoundError:
         pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
 
     def __init__(self, subject_ids):
-        super().__init__("BNCI2014001", subject_ids=subject_ids)
+        super().__init__("BNCI2014_001", subject_ids=subject_ids)
 
 
 class HGD(MOABBDataset):

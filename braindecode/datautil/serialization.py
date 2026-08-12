@@ -1,13 +1,11 @@
-"""
-Convenience functions for storing and loading of windows datasets.
-"""
+"""Convenience functions for storing and loading of windows datasets."""
 
 # Authors: Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD (3-clause)
 
-import os
 import json
+import os
 import pickle
 import warnings
 from glob import glob
@@ -18,46 +16,48 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 from ..datasets.base import (
-    BaseDataset,
     BaseConcatDataset,
-    WindowsDataset,
     EEGWindowsDataset,
+    RawDataset,
+    WindowsDataset,
 )
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):
     warnings.warn(
         '"save_concat_dataset()" is deprecated and will be removed in'
-        " the future. Use dataset.save() instead."
+        " the future. Use dataset.save() instead.",
+        UserWarning,
     )
     concat_dataset.save(path=path, overwrite=overwrite)
 
 
 def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
-    """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
+    """Load a stored BaseConcatDataset from.
+
     files.
 
     Parameters
     ----------
-    path: pathlib.Path
+    path : pathlib.Path
         Path to the directory of the .fif / -epo.fif and .json files.
-    preload: bool
+    preload : bool
         Whether to preload the data.
-    ids_to_load: None | list(int)
+    ids_to_load : None | list(int)
         Ids of specific files to load.
-    target_name: None or str
+    target_name : None or str
         Load specific description column as target. If not given, take saved
         target name.
 
     Returns
     -------
-    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
+    concat_dataset : BaseConcatDataset
     """
     # assume we have a single concat dataset to load
     is_raw = (path / "0-raw.fif").is_file()
-    assert not (
-        not is_raw and target_name is not None
-    ), "Setting a new target is only supported for raws."
+    assert not (not is_raw and target_name is not None), (
+        "Setting a new target is only supported for raws."
+    )
     is_epochs = (path / "0-epo.fif").is_file()
     paths = [path]
     # assume we have multiple concat datasets to load
@@ -71,7 +71,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
         ids_to_load = None
     # if we have neither a single nor multiple datasets, something went wrong
     assert is_raw or is_epochs, (
-        f"Expect either raw or epo to exist in {path} or in " f'{path / "0"}'
+        f"Expect either raw or epo to exist in {path} or in {path / '0'}"
     )
 
     datasets = []
@@ -86,7 +86,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
         for i_signal, signal in enumerate(all_signals):
             if is_raw:
                 datasets.append(
-                    BaseDataset(
+                    RawDataset(
                         signal, description.iloc[i_signal], target_name=target_name
                     )
                 )
@@ -106,7 +106,14 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
 def _load_signals_and_description(path, preload, is_raw, ids_to_load=None):
     all_signals = []
     file_name = "{}-raw.fif" if is_raw else "{}-epo.fif"
-    description_df = pd.read_json(path / "description.json")
+    description_df = pd.read_json(
+        path / "description.json", typ="series", convert_dates=False
+    )
+
+    if "timestamp" in description_df.index:
+        timestamp_numeric = pd.to_numeric(description_df["timestamp"])
+        description_df["timestamp"] = pd.to_datetime(timestamp_numeric)
+
     if ids_to_load is None:
         file_names = path.glob(f"*{file_name.lstrip('{}')}")
         # Extract ids, e.g.,
@@ -130,12 +137,17 @@ def _load_signals(fif_file, preload, is_raw):
         with open(pkl_file, "rb") as f:
             signals = pickle.load(f)
 
-        # If the file has been moved together with the pickle file, make sure
-        # the path links to correct fif file.
-        signals._fname = str(fif_file)
-        if preload:
-            signals.load_data()
-        return signals
+        if all(Path(f).exists() for f in signals.filenames):
+            if preload:
+                signals.load_data()
+            return signals
+        else:  # This may happen if the file has been moved together with the pickle file.
+            warnings.warn(
+                f"Pickle file {pkl_file} exists, but the referenced fif "
+                "file(s) do not exist. Will read the fif file(s) directly "
+                "and re-create the pickle file.",
+                UserWarning,
+            )
 
     # If pickle didn't exist read via mne (likely slower) and save pkl after
     if is_raw:
@@ -162,26 +174,27 @@ def _load_signals(fif_file, preload, is_raw):
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None, n_jobs=1):
-    """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
+    """Load a stored BaseConcatDataset from.
+
     files.
 
     Parameters
     ----------
-    path: str | pathlib.Path
+    path : str | pathlib.Path
         Path to the directory of the .fif / -epo.fif and .json files.
-    preload: bool
+    preload : bool
         Whether to preload the data.
-    ids_to_load: list of int | None
+    ids_to_load : list of int | None
         Ids of specific files to load.
-    target_name: str | list | None
+    target_name : str | list | None
         Load specific description column as target. If not given, take saved
         target name.
-    n_jobs: int
+    n_jobs : int
         Number of jobs to be used to read files in parallel.
 
     Returns
     -------
-    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
+    concat_dataset : BaseConcatDataset
     """
     # Make sure we always work with a pathlib.Path
     path = Path(path)
@@ -241,7 +254,11 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     signals = _load_signals(fif_file_path, preload, is_raw)
 
     description_file_path = sub_dir / "description.json"
-    description = pd.read_json(description_file_path, typ="series")
+    description = pd.read_json(description_file_path, typ="series", convert_dates=False)
+
+    # if 'timestamp' in description.index:
+    #     timestamp_numeric = pd.to_numeric(description['timestamp'])
+    #     description['timestamp'] = pd.to_datetime(timestamp_numeric, unit='s')
 
     target_file_path = sub_dir / "target_name.json"
     target_name = None
@@ -249,7 +266,7 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
         target_name = json.load(open(target_file_path, "r"))["target_name"]
 
     if is_raw and (not has_stored_windows):
-        dataset = BaseDataset(signals, description, target_name)
+        dataset = RawDataset(signals, description, target_name)
     else:
         window_kwargs = _load_kwargs_json("window_kwargs", sub_dir)
         windows_ds_kwargs = [
@@ -285,14 +302,15 @@ def _load_kwargs_json(kwargs_name, sub_dir):
     kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
     if os.path.exists(kwargs_file_path):
         kwargs = json.load(open(kwargs_file_path, "r"))
-        kwargs = [tuple(kwarg) for kwarg in kwargs]
         return kwargs
 
 
 def _is_outdated_saved(path):
-    """Data was saved in the old way if there are 'description.json', '-raw.fif'
+    """Data was saved in the old way if there are 'description.json', '-raw.fif'.
+
     or '-epo.fif' in path (no subdirectories) OR if there are more 'fif' files
-    than 'description.json' files."""
+    than 'description.json' files.
+    """
     description_files = glob(os.path.join(path, "**/description.json"))
     fif_files = glob(os.path.join(path, "**/*-raw.fif")) + glob(
         os.path.join(path, "**/*-epo.fif")
@@ -326,7 +344,7 @@ def _check_save_dir_empty(save_dir):
         Directory under which a `BaseConcatDataset` will be saved.
 
     Raises
-    -------
+    ------
     FileExistsError
         If ``save_dir`` is not a valid directory for saving.
     """

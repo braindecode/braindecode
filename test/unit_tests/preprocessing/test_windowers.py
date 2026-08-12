@@ -2,24 +2,38 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Hubert Banville <hubert.jbanville@gmail.com>
+#          Matthew Chen <matt.chen42601@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 
 import copy
+import logging
 import platform
+import warnings
+from contextlib import nullcontext
+
 import mne
 import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset
+from braindecode.datasets.base import (
+    BaseConcatDataset,
+    EEGWindowsDataset,
+    RawDataset,
+    WindowsDataset,
+)
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing import (
-    create_windows_from_events,
     create_fixed_length_windows,
+    create_windows_from_events,
 )
 from braindecode.preprocessing.preprocess import Preprocessor, preprocess
-from braindecode.preprocessing.windowers import create_windows_from_target_channels
+from braindecode.preprocessing.windowers import (
+    _LazyDataFrame,
+    create_windows_from_target_channels,
+)
 from braindecode.util import create_mne_dummy_raw
 
 
@@ -39,10 +53,31 @@ def _get_raw(tmpdir_factory, description=None):
 
 @pytest.fixture(scope="module")
 def concat_ds_targets():
-    raws, description = fetch_data_with_moabb(dataset_name="BNCI2014001", subject_ids=4)
+    raws, description = fetch_data_with_moabb(
+        dataset_name="BNCI2014_001", subject_ids=4
+    )
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
-    ds = BaseDataset(raws[0], description.iloc[0])
+    ds = RawDataset(raws[0], description.iloc[0])
+    concat_ds = BaseConcatDataset([ds])
+    return concat_ds, targets
+
+
+@pytest.fixture(scope="module")
+def concat_ds_targets_overlap():
+    rng = np.random.RandomState(42)
+    data = rng.randn(2, 2000).astype(np.float32)
+    onsets = [1.0, 3.1, 5.2]
+    durations = [2.5] * len(onsets)  # overlapping events
+    targets = rng.randint(0, 2, size=len(onsets))
+    targets_desc = {0: "T0", 1: "T1"}
+    descriptions = [targets_desc[t] for t in targets]
+    annotations = mne.Annotations(
+        onset=onsets, duration=durations, description=descriptions
+    )
+    raw = mne.io.RawArray(data, mne.create_info(ch_names=["ch0", "ch1"], sfreq=100))
+    raw.set_annotations(annotations)
+    ds = RawDataset(raw)
     concat_ds = BaseConcatDataset([ds])
     return concat_ds, targets
 
@@ -51,7 +86,7 @@ def concat_ds_targets():
 def lazy_loadable_dataset(tmpdir_factory):
     """Make a dataset of fif files that can be loaded lazily."""
     raw = _get_raw(tmpdir_factory)
-    base_ds = BaseDataset(raw, description=pd.Series({"file_id": 1}))
+    base_ds = RawDataset(raw, description=pd.Series({"file_id": 1}))
     concat_ds = BaseConcatDataset([base_ds])
 
     return concat_ds
@@ -102,7 +137,7 @@ def test_windows_from_events_n_jobs(lazy_loadable_dataset):
 
 def test_windows_from_events_mapping_filter(tmpdir_factory):
     raw = _get_raw(tmpdir_factory, 5 * ["T0", "T1"])
-    base_ds = BaseDataset(raw, description=pd.Series({"file_id": 1}))
+    base_ds = RawDataset(raw, description=pd.Series({"file_id": 1}))
     concat_ds = BaseConcatDataset([base_ds])
 
     windows = create_windows_from_events(
@@ -129,10 +164,10 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
 def test_windows_from_events_different_events(tmpdir_factory):
     description_expected = 5 * ["T0", "T1"] + 4 * ["T2", "T3"] + 2 * ["T1"]
     raw = _get_raw(tmpdir_factory, description_expected[:10])
-    base_ds = BaseDataset(raw, description=pd.Series({"file_id": 1}))
+    base_ds = RawDataset(raw, description=pd.Series({"file_id": 1}))
 
     raw_1 = _get_raw(tmpdir_factory, description_expected[10:])
-    base_ds_1 = BaseDataset(raw_1, description=pd.Series({"file_id": 2}))
+    base_ds_1 = RawDataset(raw_1, description=pd.Series({"file_id": 2}))
     concat_ds = BaseConcatDataset([base_ds, base_ds_1])
 
     windows = create_windows_from_events(
@@ -171,6 +206,19 @@ def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
     )
 
     assert all([not ds.raw.preload for ds in windows.datasets])
+
+
+def test_fixed_length_windows_stride_defaults_to_size(lazy_loadable_dataset):
+    # stride should default to window_size when not provided
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        window_size_samples=100,
+    )
+    for ds in windows.datasets:
+        starts = ds.metadata["i_start_in_trial"].values
+        assert len(starts) > 1
+        diffs = np.diff(starts)
+        assert (diffs == 100).all()
 
 
 def test_one_window_per_original_trial(concat_ds_targets):
@@ -291,17 +339,51 @@ def test_single_sample_size_windows(concat_ds_targets):
     np.testing.assert_array_equal(ys[999::1000], targets)
 
 
-def test_overlapping_trial_offsets(concat_ds_targets):
-    concat_ds, _ = concat_ds_targets
-    with pytest.raises(NotImplementedError, match="Trial overlap not implemented."):
-        create_windows_from_events(
-            concat_ds=concat_ds,
-            trial_start_offset_samples=-2000,
-            trial_stop_offset_samples=0,
-            window_size_samples=1000,
-            window_stride_samples=1000,
-            drop_last_window=False,
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+@pytest.mark.parametrize("on_overlapping_events", ["raise", "warn", "ignore", "foo"])
+def test_overlapping_trial_offsets_warn(
+    concat_ds_targets_overlap, use_mne_epochs, on_overlapping_events
+):
+    concat_ds, _ = concat_ds_targets_overlap
+    msg = "Overlapping trials detected"
+    concat_ds, targets = concat_ds_targets_overlap
+    events, _ = mne.events_from_annotations(concat_ds.datasets[0].raw)
+    with (
+        pytest.warns(UserWarning, match=msg)
+        if on_overlapping_events == "warn"
+        else (
+            pytest.raises(ValueError, match=msg)
+            if on_overlapping_events == "raise"
+            else (
+                nullcontext()
+                if on_overlapping_events == "ignore"
+                else pytest.raises(
+                    ValueError,
+                    match=f"Invalid value {on_overlapping_events} for on_overlapping_events.",
+                )
+            )
         )
+    ):
+        windows = create_windows_from_events(
+            concat_ds,
+            use_mne_epochs=use_mne_epochs,
+            on_overlapping_events=on_overlapping_events,
+            trial_start_offset_samples=-100,
+            window_size_samples=50,
+            window_stride_samples=50,
+            accepted_bads_ratio=1.0,
+        )
+    if on_overlapping_events in ["ignore", "warn"]:
+        data = concat_ds.datasets[0].raw.get_data()
+        # assert len(windows) == len(targets) * 7 - 1
+        for i, (X, y, crop_inds) in enumerate(windows):
+            # test crop ids correctness
+            i_window_in_trial, i_start_in_trial, i_stop_in_trial = crop_inds
+            # assert events[i, 0] == i_start_in_trial + 100 * i_window_in_trial
+            # assert i_stop_in_trial - i_start_in_trial == 100
+            # test data correctness
+            np.testing.assert_array_equal(X, data[:, i_start_in_trial:i_stop_in_trial])
+            assert y == targets[i // 7]
 
 
 @pytest.mark.parametrize("preload", [(True, False)])
@@ -362,7 +444,7 @@ def test_fixed_length_windower(
     data = rng.randn(2, 1000)
     raw = mne.io.RawArray(data=data, info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    base_ds = BaseDataset(raw, desc, target_name="age")
+    base_ds = RawDataset(raw, desc, target_name="age")
     concat_ds = BaseConcatDataset([base_ds])
 
     if window_size_samples is None:
@@ -403,6 +485,213 @@ def test_fixed_length_windower(
             epochs_data[j, :],
             err_msg=f"Epochs different for epoch {j}",
         )
+
+
+@pytest.mark.parametrize(
+    "start_offset_samples,window_size_samples,window_stride_samples,drop_last_window,mapping",
+    [
+        (0, 100, 90, True, None),
+        (0, 100, 50, True, {48: 0}),
+        (0, 50, 50, True, None),
+        (0, None, 50, True, None),
+        (5, 10, 20, True, None),
+    ],
+)
+def test_fixed_length_windower_lazy(
+    start_offset_samples,
+    window_size_samples,
+    window_stride_samples,
+    drop_last_window,
+    mapping,
+):
+    rng = np.random.RandomState(42)
+    info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
+    data = rng.randn(2, 1000)
+    raw = mne.io.RawArray(data=data, info=info)
+    desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
+    base_ds = RawDataset(raw, desc, target_name="age")
+    concat_ds = BaseConcatDataset([base_ds])
+
+    if window_size_samples is None:
+        window_size_samples = base_ds.raw.n_times
+    stop_offset_samples = data.shape[1] - start_offset_samples
+    epochs_ds = create_fixed_length_windows(
+        concat_ds,
+        start_offset_samples=start_offset_samples,
+        stop_offset_samples=stop_offset_samples,
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=drop_last_window,
+        mapping=mapping,
+    )
+    epochs_ds_lazy = create_fixed_length_windows(
+        concat_ds,
+        start_offset_samples=start_offset_samples,
+        stop_offset_samples=stop_offset_samples,
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=drop_last_window,
+        mapping=mapping,
+        lazy_metadata=True,
+    )
+    assert len(epochs_ds) == len(epochs_ds_lazy)
+    for (X, y, i), (Xl, yl, il) in zip(epochs_ds, epochs_ds_lazy):
+        assert (X == Xl).all()
+        assert y == yl
+        assert i == il
+    # not supported yet:
+    # metadata = epochs_ds.get_metadata()
+    # metadata_lazy = epochs_ds_lazy.get_metadata()
+    for d, d_lazy in zip(epochs_ds.datasets, epochs_ds_lazy.datasets):
+        crop_inds = d.metadata.loc[
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
+        crop_inds_lazy = d_lazy.metadata.loc[
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
+        y = d.metadata.loc[:, "target"].to_list()
+        y_lazy = d_lazy.metadata.loc[:, "target"].to_list()
+        n = len(d.metadata)
+        assert n == len(d_lazy.metadata)
+        assert len(crop_inds) == len(crop_inds_lazy)
+        assert len(y) == len(y_lazy)
+        assert all(
+            crop_inds[i].tolist() == crop_inds_lazy[i].tolist() for i in range(n)
+        )
+        assert all(y[i] == y_lazy[i] for i in range(n))
+
+
+def test_lazy_dataframe():
+    with pytest.raises(ValueError, match="Length must be a positive integer."):
+        _ = _LazyDataFrame(length=-1, functions=dict(a=lambda i: 2 * i), columns=["a"])
+    with pytest.raises(
+        ValueError, match="All columns must have a corresponding function."
+    ):
+        _ = _LazyDataFrame(length=10, columns=["a"], functions=dict())
+    with pytest.raises(ValueError, match="Series must have exactly one column."):
+        _ = _LazyDataFrame(
+            length=10,
+            columns=["a", "b"],
+            functions=dict(a=lambda i: 2 * i, b=lambda i: 2 + i),
+            series=True,
+        )
+    df = _LazyDataFrame(length=10, functions=dict(a=lambda i: 2 * i), columns=["a"])
+    assert len(df) == 10
+    assert all(df[i, "a"] == 2 * i for i in range(10))
+    assert all((df[i] == pd.Series(dict(a=2 * i))).all() for i in range(10))
+    assert all((df[i, :] == pd.Series(dict(a=2 * i))).all() for i in range(10))
+    with pytest.raises(IndexError, match="index must be either \\[row\\] or"):
+        _ = df[0, 0, 0]
+    with pytest.raises(
+        IndexError, match="All columns must be present in the dataframe"
+    ):
+        _ = df[0, "b"]
+    with pytest.raises(
+        NotImplementedError, match="Row indexing only supports either a single"
+    ):
+        _ = df[0:2]
+    with pytest.raises(IndexError, match="out of bounds"):
+        _ = df[10]
+
+
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_metadata_extras(lazy_loadable_dataset, use_mne_epochs):
+    dataset = copy.deepcopy(lazy_loadable_dataset)
+
+    # set extras
+    for ds in dataset.datasets:
+        ann = ds.raw.annotations
+        ann.extras = [{"extra_col": 0} for _ in range(len(ann))]
+
+    windows = create_windows_from_events(
+        concat_ds=dataset,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=False,
+        use_mne_epochs=use_mne_epochs,
+    )
+
+    for ds in windows.datasets:
+        metadata = windows.get_metadata()
+        assert "extra_col" in metadata.columns
+        np.testing.assert_array_equal(
+            metadata["extra_col"].to_numpy(), np.zeros(len(windows))
+        )
+
+
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ["ch0"], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ],
+)
+def test_not_use_mne_epochs_fail(
+    drop_bad_windows,
+    picks,
+    flat,
+    reject,
+    lazy_loadable_dataset,
+):
+    with pytest.raises(ValueError, match="Cannot set use_mne_epochs=False"):
+        _ = create_windows_from_events(
+            lazy_loadable_dataset,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ["ch0"], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ],
+)
+def test_auto_use_mne_epochs(
+    drop_bad_windows, picks, flat, reject, lazy_loadable_dataset
+):
+    with pytest.warns(
+        UserWarning, match="mne Epochs are created, which will be substantially slower"
+    ):
+        windows = create_windows_from_events(
+            lazy_loadable_dataset,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=None,
+        )
+    assert all(isinstance(w.windows, mne.Epochs) for w in windows.datasets)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, None])
+def test_not_use_mne_epochs(use_mne_epochs, lazy_loadable_dataset):
+    message = (
+        "Using reject or picks or flat or dropping bad windows means "
+        "mne Epochs are created, "
+        "which will be substantially slower and may be deprecated in the future."
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=message)
+        windows = create_windows_from_events(
+            lazy_loadable_dataset,
+            drop_bad_windows=False,
+            picks=None,
+            flat=None,
+            reject=None,
+            use_mne_epochs=use_mne_epochs,
+        )
+    assert all(isinstance(w, EEGWindowsDataset) for w in windows.datasets)
 
 
 # Skip if OS is Windows
@@ -528,6 +817,139 @@ def test_windows_fixed_length_cropped(lazy_loadable_dataset):
     assert (windows1[0][0] == windows2[0][0]).all()
 
 
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_fixed_length_windows_use_mne_epochs(lazy_loadable_dataset, use_mne_epochs):
+    """Test that use_mne_epochs=True/False produce equivalent window data."""
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        start_offset_samples=0,
+        stop_offset_samples=100,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        use_mne_epochs=use_mne_epochs,
+    )
+    if use_mne_epochs:
+        assert all(isinstance(w, WindowsDataset) for w in windows.datasets)
+    else:
+        assert all(isinstance(w, EEGWindowsDataset) for w in windows.datasets)
+    # Check we get actual data
+    X, y, crop_inds = windows[0]
+    assert X.shape == (2, 50)
+
+
+def test_fixed_length_windows_use_mne_epochs_data_equivalent(lazy_loadable_dataset):
+    """Test that both paths return the same window data."""
+    kwargs = dict(
+        concat_ds=lazy_loadable_dataset,
+        start_offset_samples=0,
+        stop_offset_samples=100,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+    )
+    windows_eeg = create_fixed_length_windows(**kwargs, use_mne_epochs=False)
+    windows_mne = create_fixed_length_windows(**kwargs, use_mne_epochs=True)
+    assert len(windows_eeg) == len(windows_mne)
+    for (x1, y1, i1), (x2, y2, i2) in zip(windows_eeg, windows_mne):
+        np.testing.assert_allclose(x1, x2)
+        assert y1 == y2
+        assert i1 == i2
+
+
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ["ch0"], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ],
+)
+def test_fixed_length_not_use_mne_epochs_fail(
+    drop_bad_windows, picks, flat, reject, lazy_loadable_dataset
+):
+    with pytest.raises(ValueError, match="Cannot set use_mne_epochs=False"):
+        _ = create_fixed_length_windows(
+            lazy_loadable_dataset,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ["ch0"], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ],
+)
+def test_fixed_length_auto_use_mne_epochs(
+    drop_bad_windows, picks, flat, reject, lazy_loadable_dataset
+):
+    with pytest.warns(
+        UserWarning, match="mne Epochs are created, which will be substantially slower"
+    ):
+        windows = create_fixed_length_windows(
+            lazy_loadable_dataset,
+            start_offset_samples=0,
+            stop_offset_samples=100,
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=None,
+        )
+    assert all(isinstance(w, WindowsDataset) for w in windows.datasets)
+
+
+def test_fixed_length_lazy_metadata_use_mne_epochs_error(lazy_loadable_dataset):
+    with pytest.raises(
+        ValueError, match="Cannot use lazy_metadata=True with use_mne_epochs=True"
+    ):
+        _ = create_fixed_length_windows(
+            lazy_loadable_dataset,
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+            lazy_metadata=True,
+            use_mne_epochs=True,
+        )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, None])
+def test_fixed_length_not_use_mne_epochs(use_mne_epochs, lazy_loadable_dataset):
+    message = (
+        "Using reject or picks or flat or dropping bad windows means "
+        "mne Epochs are created, "
+        "which will be substantially slower and may be deprecated in the future."
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=message)
+        windows = create_fixed_length_windows(
+            lazy_loadable_dataset,
+            start_offset_samples=0,
+            stop_offset_samples=100,
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+            drop_bad_windows=False,
+            picks=None,
+            flat=None,
+            reject=None,
+            use_mne_epochs=use_mne_epochs,
+        )
+    assert all(isinstance(w, EEGWindowsDataset) for w in windows.datasets)
+
+
 def test_epochs_kwargs(lazy_loadable_dataset):
     picks = ["ch0"]
     on_missing = "warning"
@@ -571,6 +993,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                     "flat": flat,
                     "on_missing": on_missing,
                     "accepted_bads_ratio": 0.0,
+                    'on_overlapping_events': 'raise',
                     "verbose": "error",
                     "use_mne_epochs": True,
                 },
@@ -660,6 +1083,51 @@ def test_window_sizes_from_events(concat_ds_targets):
     assert x.shape[-1] == expected_n_samples
 
 
+def test_window_sizes_from_events_with_verbose(caplog, concat_ds_targets):
+    logger = logging.getLogger("mne")
+    logger.propagate = True  # Temporarily propagate to root logger
+    caplog.set_level(logging.INFO)
+
+    # verbose is True, so we expect to see the used annotations descriptions
+    concat_ds, targets = concat_ds_targets
+    create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1,
+        trial_stop_offset_samples=0,
+        drop_last_window=False,
+        verbose=True,
+    )
+    assert "Used Annotations descriptions:" in caplog.text
+    caplog.clear()
+
+    # verbose is False, so we should NOT see the used annotations descriptions
+    concat_ds, targets = concat_ds_targets
+    create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1,
+        trial_stop_offset_samples=0,
+        drop_last_window=False,
+        verbose=False,
+    )
+
+    assert "Used Annotations descriptions:" not in caplog.text
+    caplog.clear()
+
+    # verbose is not specified, so it defaults to verbose="error"
+    concat_ds, targets = concat_ds_targets
+    create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1,
+        trial_stop_offset_samples=0,
+        drop_last_window=False,
+    )
+
+    assert "Used Annotations descriptions:" not in caplog.text
+    caplog.clear()
+
+    logger.propagate = False  # Reset to default
+
+
 def test_window_sizes_too_large(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     # Window size larger than all trials
@@ -698,6 +1166,8 @@ def test_window_sizes_too_large(concat_ds_targets):
     # Replace first trial by a new shorter one
     annots.delete(0)
     del annot_0["orig_time"]
+    del annot_0["extras"]  # empty extra dict
+
     annots.append(**annot_0)
     concat_ds.datasets[0].raw.set_annotations(annots)
     with pytest.warns(UserWarning, match=".* are being dropped as the window size .*"):
@@ -730,7 +1200,7 @@ def dataset_target_time_series():
 
     raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
     desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
-    base_dataset = BaseDataset(raw, desc, target_name=None)
+    base_dataset = RawDataset(raw, desc, target_name=None)
     concat_ds = BaseConcatDataset([base_dataset])
     windows_dataset = create_windows_from_target_channels(
         concat_ds,
@@ -772,3 +1242,363 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds
         )
+
+
+def test_windower_from_target_channels_partial_targets():
+    # when target channels have values @ diff timepoints, windows should be
+    # created at the union of all non nan positions across channels, not just the first
+    rng = np.random.RandomState(99)
+    signal_sfreq = 50
+    n_samples = 500
+
+    info = mne.create_info(
+        ch_names=["eeg0", "eeg1", "target_0", "target_1"],
+        sfreq=signal_sfreq,
+        ch_types=["eeg", "eeg", "misc", "misc"],
+    )
+
+    signal = rng.randn(2, n_samples)
+
+    # target_0 has values at samples 100, 200, 300, 400
+    # target_1 has values at samples 150, 250, 350, 450
+    # so the union should give us windows at all 8 positions
+    targets = np.full((2, n_samples), np.nan)
+    ch0_positions = [100, 200, 300, 400]
+    ch1_positions = [150, 250, 350, 450]
+
+    for pos in ch0_positions:
+        targets[0, pos] = rng.randn()
+
+    for pos in ch1_positions:
+        targets[1, pos] = rng.randn()
+
+    raw = mne.io.RawArray(
+        np.concatenate([signal, targets]),
+        info=info,
+    )
+    desc = pd.Series({"pathological": False, "gender": "F", "age": 30})
+    base_dataset = RawDataset(raw, desc, target_name=None)
+    concat_ds = BaseConcatDataset([base_dataset])
+
+    window_size = 50
+    windows_dataset = create_windows_from_target_channels(
+        concat_ds,
+        window_size_samples=window_size,
+    )
+
+    # all 8 positions should produce valid windows
+    # (all are >= window_size and < n_samples + first_samp)
+    all_positions = sorted(ch0_positions + ch1_positions)
+    expected_stops = [
+        p + 1
+        for p in all_positions
+        if (p + 1) >= window_size
+    ]
+    assert len(windows_dataset) == len(expected_stops)
+
+    # verify each window lands at the right spot
+    for i, expected_stop in enumerate(expected_stops):
+        epoch, y, window_inds = windows_dataset[i]
+        assert window_inds[2] == expected_stop
+
+
+# ---------- Tests for per-event-type dict parameters ----------
+
+
+@pytest.fixture(scope="module")
+def concat_ds_two_event_types():
+    """Dataset with two event types (T0, T1) interleaved, known layout."""
+    rng = np.random.RandomState(42)
+    data = rng.randn(2, 10000).astype(np.float32)
+    # 4 events, alternating T0/T1 with enough spacing
+    onsets = [1.0, 3.0, 5.0, 7.0]
+    durations = [1.0] * len(onsets)
+    descriptions = ["T0", "T1", "T0", "T1"]
+    annotations = mne.Annotations(
+        onset=onsets, duration=durations, description=descriptions
+    )
+    info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=100)
+    raw = mne.io.RawArray(data, info)
+    raw.set_annotations(annotations)
+    ds = RawDataset(raw)
+    return BaseConcatDataset([ds])
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        pytest.param(
+            dict(
+                trial_start_offset_samples={"T0": 0, "T1": -10},
+                trial_stop_offset_samples=0,
+                window_size_samples=50,
+                window_stride_samples=50,
+                drop_last_window=True,
+            ),
+            "mapping must be provided",
+            id="require_mapping",
+        ),
+        pytest.param(
+            dict(
+                trial_start_offset_samples={"T0": 0, "T1": -10},
+                trial_stop_offset_samples=0,
+                mapping={"T0": 0, "T1": 1},
+            ),
+            "window_size_samples must be provided",
+            id="require_window_size",
+        ),
+        pytest.param(
+            dict(
+                trial_start_offset_samples={"T0": 0, "T2": -10},
+                trial_stop_offset_samples=0,
+                window_size_samples=50,
+                window_stride_samples=50,
+                drop_last_window=True,
+                mapping={"T0": 0, "T1": 1},
+            ),
+            "Keys of trial_start_offset_samples",
+            id="keys_must_match_mapping",
+        ),
+    ],
+)
+def test_dict_params_validation(concat_ds_two_event_types, kwargs, match):
+    """Dict params validation raises ValueError with informative messages."""
+    with pytest.raises(ValueError, match=match):
+        create_windows_from_events(concat_ds=concat_ds_two_event_types, **kwargs)
+
+
+def test_dict_params_uniform_values_match_int(concat_ds_two_event_types):
+    """Dict params with identical values should produce the same result as int params."""
+    mapping = {"T0": 0, "T1": 1}
+    kwargs = dict(
+        concat_ds=concat_ds_two_event_types,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+    )
+    windows_int = create_windows_from_events(**kwargs)
+
+    kwargs_dict = dict(
+        concat_ds=concat_ds_two_event_types,
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+        trial_start_offset_samples={"T0": 0, "T1": 0},
+        trial_stop_offset_samples={"T0": 0, "T1": 0},
+    )
+    windows_dict = create_windows_from_events(**kwargs_dict)
+
+    for ds_int, ds_dict in zip(windows_int.datasets, windows_dict.datasets):
+        pd.testing.assert_frame_equal(
+            ds_int.metadata.reset_index(drop=True),
+            ds_dict.metadata.reset_index(drop=True),
+        )
+
+
+@pytest.mark.parametrize(
+    "trial_start_offset_samples, trial_stop_offset_samples, "
+    "window_stride_samples, use_mne_epochs, expected_t0, expected_t1",
+    [
+        pytest.param(
+            {"T0": 0, "T1": -20}, 0, 50, False, 4, 4,
+            id="start_offset_per_type",
+        ),
+        pytest.param(
+            0, 0, {"T0": 50, "T1": 25}, False, 4, 6,
+            id="stride_per_type",
+        ),
+        pytest.param(
+            0, {"T0": 0, "T1": 50}, 50, False, 4, 6,
+            id="stop_offset_per_type",
+        ),
+        pytest.param(
+            {"T0": 0, "T1": -10}, 0, 50, False, 4, 4,
+            id="chronological_ordering",
+        ),
+        pytest.param(
+            0, 0, {"T0": 50, "T1": 25}, False, 4, 6,
+            id="mixed_int_and_dict",
+        ),
+        pytest.param(
+            {"T0": 0, "T1": -10}, 0, 50, True, None, None,
+            id="use_mne_epochs",
+        ),
+    ],
+)
+def test_dict_params_per_event_type(
+    concat_ds_two_event_types,
+    trial_start_offset_samples,
+    trial_stop_offset_samples,
+    window_stride_samples,
+    use_mne_epochs,
+    expected_t0,
+    expected_t1,
+):
+    """Per-event-type dict parameters produce correct window counts and ordering."""
+    mapping = {"T0": 0, "T1": 1}
+    windows = create_windows_from_events(
+        concat_ds=concat_ds_two_event_types,
+        trial_start_offset_samples=trial_start_offset_samples,
+        trial_stop_offset_samples=trial_stop_offset_samples,
+        window_size_samples=50,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=True,
+        mapping=mapping,
+        use_mne_epochs=use_mne_epochs,
+    )
+    if use_mne_epochs:
+        metadata = windows.datasets[0].windows.metadata
+    else:
+        metadata = windows.datasets[0].metadata
+
+    assert len(metadata) > 0
+
+    if expected_t0 is not None:
+        t0_meta = metadata[metadata["target"] == 0]
+        t1_meta = metadata[metadata["target"] == 1]
+        assert len(t0_meta) == expected_t0
+        assert len(t1_meta) == expected_t1
+
+    if not use_mne_epochs:
+        starts = metadata["i_start_in_trial"].values
+        assert np.all(np.diff(starts) >= 0)
+
+
+def test_dict_params_bad_trial_dropped_extras_not_misassigned():
+    """Extras must come from the surviving trial, not from the dropped one.
+
+    When one T0 event is too short for the window size and is dropped via
+    accepted_bads_ratio, the returned i_trials from _compute_window_inds index
+    into the post-filter array.  Before the fix, those indices were mapped back
+    through orig_indices (sized for the pre-filter array), so the surviving
+    T0 window got the extras of the *dropped* trial instead of its own.
+    """
+    sfreq = 100
+    # T0 event 0: onset 1 s, duration 0.4 s  → 40 samples  (too short for window=60)
+    # T0 event 1: onset 5 s, duration 1.0 s  → 100 samples (fits)
+    # T1 events: both 1 s long (needed for mapping only)
+    onsets = [1.0, 3.0, 5.0, 7.0]
+    durations = [0.4, 1.0, 1.0, 1.0]
+    descriptions = ["T0", "T1", "T0", "T1"]
+    # unique per-trial extra so we can tell which trial a window came from
+    trial_ids = [10, 20, 30, 40]
+
+    annotations = mne.Annotations(
+        onset=onsets, duration=durations, description=descriptions
+    )
+    annotations.extras = [{"trial_id": tid} for tid in trial_ids]
+
+    rng = np.random.RandomState(0)
+    data = rng.randn(2, 10000).astype(np.float32)
+    info = mne.create_info(ch_names=["ch0", "ch1"], sfreq=sfreq)
+    raw = mne.io.RawArray(data, info)
+    raw.set_annotations(annotations)
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+
+    mapping = {"T0": 0, "T1": 1}
+    with pytest.warns(UserWarning, match="are being dropped"):
+        windows = create_windows_from_events(
+            concat_ds=concat_ds,
+            trial_start_offset_samples={"T0": 0, "T1": 0},
+            trial_stop_offset_samples={"T0": 0, "T1": 0},
+            window_size_samples=60,
+            window_stride_samples=60,
+            drop_last_window=True,
+            mapping=mapping,
+            accepted_bads_ratio=0.6,
+        )
+
+    metadata = windows.datasets[0].metadata
+    t0_meta = metadata[metadata["target"] == 0]
+
+    # The surviving T0 event is event index 2 (onset 5 s = sample 500).
+    # Its extra has trial_id == 30.  Before the fix, trial_id == 10 was returned
+    # because i_trials[0]=0 was mapped to orig_indices[0] (the dropped event).
+    assert (t0_meta["trial_id"] == 30).all(), (
+        f"Expected trial_id=30 for surviving T0 windows, got {t0_meta['trial_id'].tolist()}"
+    )
+
+
+def _make_small_eeg_windows_dataset(lazy_loadable_dataset):
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        start_offset_samples=0,
+        stop_offset_samples=200,
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=True,
+        use_mne_epochs=False,
+    )
+    return windows.datasets[0]
+
+
+def test_to_epochs_dataset_raises_when_targets_not_from_metadata(lazy_loadable_dataset):
+    eeg_ds = _make_small_eeg_windows_dataset(lazy_loadable_dataset)
+    eeg_ds.targets_from = "channels"
+
+    with pytest.raises(
+        ValueError,
+        match="to_epochs_dataset only works if targets are obtained from metadata.",
+    ):
+        eeg_ds.to_epochs_dataset()
+
+
+def test_to_epochs_dataset_raises_on_inconsistent_window_sizes(lazy_loadable_dataset):
+    eeg_ds = _make_small_eeg_windows_dataset(lazy_loadable_dataset)
+    bad_metadata = eeg_ds.metadata.copy()
+    bad_metadata.loc[bad_metadata.index[0], "i_stop_in_trial"] += 1
+    bad_eeg_ds = EEGWindowsDataset(
+        raw=eeg_ds.raw,
+        metadata=bad_metadata,
+        description=eeg_ds.description,
+        transform=eeg_ds.transform,
+        targets_from=eeg_ds.targets_from,
+        last_target_only=eeg_ds.last_target_only,
+    )
+
+    with pytest.raises(ValueError, match="Windows have inconsistent sizes."):
+        bad_eeg_ds.to_epochs_dataset()
+
+
+def test_to_epochs_dataset_raises_on_empty_windows(lazy_loadable_dataset):
+    eeg_ds = _make_small_eeg_windows_dataset(lazy_loadable_dataset)
+    empty_metadata = eeg_ds.metadata.iloc[0:0].copy()
+    empty_eeg_ds = EEGWindowsDataset(
+        raw=eeg_ds.raw,
+        metadata=empty_metadata,
+        description=eeg_ds.description,
+        transform=eeg_ds.transform,
+        targets_from=eeg_ds.targets_from,
+        last_target_only=eeg_ds.last_target_only,
+    )
+
+    with pytest.raises(ValueError, match="No windows to convert."):
+        empty_eeg_ds.to_epochs_dataset()
+
+
+def test_to_epochs_dataset_is_consistent(lazy_loadable_dataset):
+    eeg_ds = _make_small_eeg_windows_dataset(lazy_loadable_dataset)
+    eeg_ds.raw_preproc_kwargs = [{"name": "dummy", "kwargs": {"a": 1}}]
+
+    epochs_ds = eeg_ds.to_epochs_dataset()
+
+    assert isinstance(epochs_ds, WindowsDataset)
+    assert isinstance(epochs_ds.windows, mne.Epochs)
+    assert len(epochs_ds) == len(eeg_ds)
+    assert epochs_ds.targets_from == eeg_ds.targets_from
+    assert epochs_ds.last_target_only == eeg_ds.last_target_only
+    assert epochs_ds.transform is eeg_ds.transform
+    assert epochs_ds.description.equals(eeg_ds.description)
+    assert epochs_ds.windows.metadata is not None
+    assert epochs_ds.windows.metadata.equals(eeg_ds.metadata)
+
+    assert epochs_ds.raw_preproc_kwargs == eeg_ds.raw_preproc_kwargs
+
+    for (x_eeg, y_eeg, crop_eeg), (x_epo, y_epo, crop_epo) in zip(eeg_ds, epochs_ds):
+        np.testing.assert_allclose(x_epo, x_eeg)
+        assert y_epo == y_eeg
+        assert crop_epo == crop_eeg

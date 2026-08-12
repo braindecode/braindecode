@@ -5,6 +5,10 @@ The NMT Scalp EEG Dataset is an open-source annotated dataset of healthy and
 pathological EEG recordings for predictive modeling. This dataset contains
 2,417 recordings from unique participants spanning almost 625 h.
 
+Note:
+    - The signal unit may not be uV and further examination is required.
+    - The spectrum shows that the signal may have been band-pass filtered from about 2 - 33Hz,
+    which needs to be further determined.
 """
 
 # Authors: Mohammad Bayazi <mj.darvishi92@gmail.com>
@@ -13,20 +17,21 @@ pathological EEG recordings for predictive modeling. This dataset contains
 # License: BSD (3-clause)
 
 from __future__ import annotations
+
 import glob
 import os
 import warnings
+from pathlib import Path
+from unittest import mock
 
+import mne
 import numpy as np
 import pandas as pd
-import mne
-
-from unittest import mock
-from pathlib import Path
-from joblib import delayed, Parallel
+from joblib import Parallel, delayed
 from mne.datasets import fetch_dataset
 
-from braindecode.datasets.base import BaseConcatDataset, BaseDataset
+from braindecode.datasets.base import BaseConcatDataset, RawDataset
+from braindecode.datasets.utils import _correct_dataset_path
 
 NMT_URL = "https://zenodo.org/record/10909103/files/NMT.zip"
 NMT_archive_name = "NMT.zip"
@@ -61,45 +66,64 @@ class NMT(BaseConcatDataset):
 
     Parameters
     ----------
-    path: str
+    path : str
         Parent directory of the dataset.
-    recording_ids: list(int) | int
+    recording_ids : list(int) | int
         A (list of) int of recording id(s) to be read (order matters and will
         overwrite default chronological order, e.g. if recording_ids=[1,0],
         then the first recording returned by this class will be chronologically
         later than the second recording. Provide recording_ids in ascending
         order to preserve chronological order.).
-    target_name: str
+    target_name : str
         Can be "pathological", "gender", or "age".
-    preload: bool
+    preload : bool
         If True, preload the data of the Raw objects.
 
     References
     ----------
     .. [Khan2022] Khan, H.A.,Ul Ain, R., Kamboh, A.M., Butt, H.T.,Shafait,S.,
-    Alamgir, W., Stricker, D. and Shafait, F., 2022. The NMT scalp EEG dataset:
-    an open-source annotated dataset of healthy and pathological EEG recordings
-    for predictive modeling. Frontiers in neuroscience, 15, p.755817.
+        Alamgir, W., Stricker, D. and Shafait, F., 2022. The NMT scalp EEG
+        dataset: an open-source annotated dataset of healthy and pathological
+        EEG recordings for predictive modeling. Frontiers in neuroscience,
+        15, p.755817.
     """
 
     def __init__(
         self,
-        path: str,
-        target_name: str = "pathological",
-        recording_ids: list[int] | None = None,
-        preload: bool = False,
-        n_jobs: int = 1,
+        path=None,
+        target_name="pathological",
+        recording_ids=None,
+        preload=False,
+        n_jobs=1,
     ):
-        # If the path is not informed, we fetch the dataset from zenodo.
+        # Convert empty string to None for consistency
+        if path == "":
+            path = None
+
+        # Download dataset if not present
         if path is None:
             path = fetch_dataset(
                 dataset_params=NMT_dataset_params,
+                path=None,
                 processor="unzip",
                 force_update=False,
             )
             # First time we fetch the dataset, we need to move the files to the
             # correct directory.
-            path = _correct_path(path)
+            path = _correct_dataset_path(
+                path, NMT_archive_name, "nmt_scalp_eeg_dataset"
+            )
+        else:
+            # Validate that the provided path is a valid NMT dataset
+            if not Path(f"{path}/Labels.csv").exists():
+                raise ValueError(
+                    f"The provided path {path} does not contain a valid "
+                    "NMT dataset (missing Labels.csv). Please ensure the "
+                    "path points directly to the NMT dataset directory."
+                )
+            path = _correct_dataset_path(
+                path, NMT_archive_name, "nmt_scalp_eeg_dataset"
+            )
 
         # Get all file paths
         file_paths = glob.glob(
@@ -125,7 +149,10 @@ class NMT(BaseConcatDataset):
             os.path.join(path, "Labels.csv"), index_col="recordname"
         )
         if recording_ids is not None:
-            description = description.iloc[recording_ids]
+            # Match metadata by record name instead of position to fix alignment bug
+            # when CSV order differs from sorted file order
+            selected_recordnames = [os.path.basename(fp) for fp in file_paths]
+            description = description.loc[selected_recordnames]
         description.replace(
             {
                 "not specified": "X",
@@ -148,10 +175,8 @@ class NMT(BaseConcatDataset):
             ]
         else:
             base_datasets = Parallel(n_jobs)(
-                delayed(
-                    self._create_dataset(d, target_name, preload)
-                    for recording_id, d in description.iterrows()
-                )
+                delayed(self._create_dataset)(d, target_name, preload)
+                for recording_id, d in description.iterrows()
             )
 
         super().__init__(base_datasets)
@@ -162,41 +187,8 @@ class NMT(BaseConcatDataset):
         d["n_samples"] = raw.n_times
         d["sfreq"] = raw.info["sfreq"]
         d["train"] = "train" in d.path.split(os.sep)
-        base_dataset = BaseDataset(raw, d, target_name)
+        base_dataset = RawDataset(raw, d, target_name)
         return base_dataset
-
-
-def _correct_path(path: str):
-    """
-    Check if the path is correct and rename the file if needed.
-
-    Parameters
-    ----------
-    path: basestring
-        Path to the file.
-
-    Returns
-    -------
-    path: basestring
-        Corrected path.
-    """
-    if not Path(path).exists():
-        unzip_file_name = f"{NMT_archive_name}.unzip"
-        if (Path(path).parent / unzip_file_name).exists():
-            try:
-                os.rename(
-                    src=Path(path).parent / unzip_file_name,
-                    dst=Path(path),
-                )
-
-            except PermissionError:
-                raise PermissionError(
-                    f"Please rename {Path(path).parent / unzip_file_name}"
-                    + f"manually to {path} and try again."
-                )
-        path = os.path.join(path, "nmt_scalp_eeg_dataset")
-
-    return path
 
 
 def _get_header(*args):
@@ -206,18 +198,23 @@ def _get_header(*args):
 
 def _fake_pd_read_csv(*args, **kwargs):
     # Create a list of lists to hold the data
+    # Updated to match the file IDs from _NMT_PATHS (0000036-0000042)
+    # to align with the mocked glob.glob return value
     data = [
-        ["0000001.edf", "normal", 35, "male", "train"],
-        ["0000002.edf", "abnormal", 28, "female", "test"],
-        ["0000003.edf", "normal", 62, "male", "train"],
-        ["0000004.edf", "abnormal", 41, "female", "test"],
-        ["0000005.edf", "normal", 19, "male", "train"],
-        ["0000006.edf", "abnormal", 55, "female", "test"],
-        ["0000007.edf", "normal", 71, "male", "train"],
+        ["0000036.edf", "normal", 35, "male", "train"],
+        ["0000037.edf", "abnormal", 28, "female", "test"],
+        ["0000038.edf", "normal", 62, "male", "train"],
+        ["0000039.edf", "abnormal", 41, "female", "test"],
+        ["0000040.edf", "normal", 19, "male", "train"],
+        ["0000041.edf", "abnormal", 55, "female", "test"],
+        ["0000042.edf", "normal", 71, "male", "train"],
     ]
 
     # Create the DataFrame, specifying column names
     df = pd.DataFrame(data, columns=["recordname", "label", "age", "gender", "loc"])
+
+    # Set recordname as index to match the real pd.read_csv behavior with index_col="recordname"
+    df.set_index("recordname", inplace=True)
 
     return df
 
@@ -278,18 +275,33 @@ _NMT_PATHS = {
 class _NMTMock(NMT):
     """Mocked class for testing and examples."""
 
-    @mock.patch("glob.glob", return_value=_NMT_PATHS.keys())
-    @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
+    @mock.patch("pathlib.Path.exists", return_value=True)
+    @mock.patch("braindecode.datasets.nmt._correct_dataset_path")
+    @mock.patch("mne.datasets.fetch_dataset")
     @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
+    @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
+    @mock.patch("glob.glob", return_value=_NMT_PATHS.keys())
     def __init__(
         self,
         mock_glob,
+        mock_fetch,
+        mock_correct_path,
+        mock_path_exists,
         path,
         recording_ids=None,
         target_name="pathological",
         preload=False,
         n_jobs=1,
     ):
+        # Prevent download by providing a dummy path if empty/None
+        if not path:
+            path = "mocked_nmt_path"
+
+        # Mock fetch_dataset to return a valid path without downloading
+        mock_fetch.return_value = path
+        # Mock _correct_dataset_path to return the path as-is
+        mock_correct_path.side_effect = lambda p, *args, **kwargs: p
+
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
             super().__init__(

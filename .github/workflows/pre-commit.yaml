@@ -1,4 +1,8 @@
 name: pre-commit-codestyle
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
+  cancel-in-progress: true
+
 on: [pull_request]
 
 jobs:

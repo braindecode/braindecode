@@ -1,4 +1,5 @@
-"""
+""".. _sleep-staging-physionet-chambon2018:
+
 Sleep staging on the Sleep Physionet dataset using Chambon2018 network
 ======================================================================
 
@@ -23,13 +24,12 @@ sequences of EEG windows using the openly accessible Sleep Physionet dataset
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
 # two recordings from two different individuals: we will use the first one to
-# train our network and the second one to evaluate performance (as in the `MNE`_
-# sleep staging example).
-#
-# .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
+# train our network and the second one to evaluate performance (as in the `MNE
+# sleep staging example <mne-clinical-60-sleep_>`_).
 #
 
 from numbers import Integral
+
 from braindecode.datasets import SleepPhysionet
 
 subject_ids = [0, 1]
@@ -43,8 +43,9 @@ dataset = SleepPhysionet(subject_ids=subject_ids, recording_ids=[2], crop_wake_m
 # a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
 # Physionet data is already sampled at a lower 100 Hz.
 
-from braindecode.preprocessing import preprocess, Preprocessor
 from numpy import multiply
+
+from braindecode.preprocessing import Preprocessor, preprocess
 
 high_cut_hz = 30
 factor = 1e6
@@ -128,6 +129,7 @@ train_set, valid_set = splits["train"], splits["valid"]
 #
 
 import numpy as np
+
 from braindecode.samplers import SequenceSampler
 
 n_windows = 3  # Sequences of 3 consecutive windows
@@ -182,11 +184,14 @@ class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y
 
 import torch
 from torch import nn
-from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerChambon2018, TimeDistributed
 
-cuda = torch.cuda.is_available()  # check if GPU is available
-device = "cuda" if torch.cuda.is_available() else "cpu"
+from braindecode.models import SleepStagerChambon2018
+from braindecode.modules import TimeDistributed
+from braindecode.util import set_random_seeds
+
+cuda = torch.cuda.is_available()  # check if CUDA is available
+mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+device = "cuda" if cuda else "mps" if mps else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to roughly reproduce results
@@ -218,19 +223,18 @@ model = nn.Sequential(
     ),
 )
 
-# Send model to GPU
-if cuda:
-    model.cuda()
+# Send model to the selected accelerator
+if device != "cpu":
+    model.to(device)
 
 ######################################################################
 # Training
 # --------
 #
-# We can now train our network. :class:`braindecode.EEGClassifier` is a
+# We can now train our network. :class:`braindecode.classifier.EEGClassifier` is a
 # braindecode object that is responsible for managing the training of neural
-# networks. It inherits from :class:`skorch.NeuralNetClassifier`, so the
-# training logic is the same as in
-# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# networks. It inherits from :class:`skorch.classifier.NeuralNetClassifier`, so the
+# training logic is the same as in `<skorch_>`_.
 #
 # .. note::
 #    We use different hyperparameters from [1]_, as these hyperparameters were
@@ -240,8 +244,9 @@ if cuda:
 #    with more recordings.
 #
 
+from skorch.callbacks import EarlyStopping, EpochScoring
 from skorch.helper import predefined_split
-from skorch.callbacks import EpochScoring
+
 from braindecode import EEGClassifier
 
 lr = 1e-3
@@ -260,7 +265,11 @@ valid_bal_acc = EpochScoring(
     name="valid_bal_acc",
     lower_is_better=False,
 )
-callbacks = [("train_bal_acc", train_bal_acc), ("valid_bal_acc", valid_bal_acc)]
+callbacks = [
+    ("train_bal_acc", train_bal_acc),
+    ("valid_bal_acc", valid_bal_acc),
+    ("early_stopping", EarlyStopping(patience=10, load_best=True)),
+]
 
 clf = EEGClassifier(
     model,
@@ -282,17 +291,42 @@ clf = EEGClassifier(
 clf.fit(train_set, y=None, epochs=n_epochs)
 
 ######################################################################
-# Plot results
-# ------------
+# Training for longer
+# -------------------
 #
-# We use the history stored by Skorch during training to plot the performance of
-# the model throughout training. Specifically, we plot the loss and the balanced
-# balanced accuracy for the training and validation sets.
+# The gallery build above uses only ``n_epochs = 10``. When trained
+# offline for up to 100 epochs with early stopping, the model reaches
+# **64.2 % balanced accuracy on the held-out recording (chance = 20 %)**.
+#
+# We can load the pretrained checkpoint from the Hugging Face Hub and
+# inspect the full training curves:
+
+import warnings
+
+repo_id = "braindecode/plot_sleep_staging_chambon2018"
+try:
+    from huggingface_hub import hf_hub_download
+
+    clf.initialize()
+    clf.load_params(
+        f_params=hf_hub_download(repo_id, "params.safetensors"),
+        f_history=hf_hub_download(repo_id, "history.json"),
+        use_safetensors=True,
+    )
+except Exception as exc:
+    warnings.warn(
+        f"Could not load pretrained checkpoint from {repo_id} ({exc}); "
+        "continuing with the locally trained short-run model.",
+        stacklevel=2,
+    )
+
+######################################################################
+# Plot training curves
+# ~~~~~~~~~~~~~~~~~~~~
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
 df.index.name = "Epoch"
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
@@ -302,6 +336,8 @@ ax1.set_ylabel("Loss")
 ax2.set_ylabel("Balanced accuracy")
 ax1.legend(["Train", "Valid"])
 ax2.legend(["Train", "Valid"])
+ax1.grid(alpha=0.3)
+ax2.grid(alpha=0.3)
 fig.tight_layout()
 plt.show()
 
@@ -309,16 +345,16 @@ plt.show()
 # Finally, we also display the confusion matrix and classification report:
 #
 
-from sklearn.metrics import confusion_matrix, classification_report
-from braindecode.visualization import plot_confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
-y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
+y_true = [valid_set[i][1] for i in valid_sampler]
 y_pred = clf.predict(valid_set)
 
-confusion_mat = confusion_matrix(y_true, y_pred)
-
-plot_confusion_matrix(
-    confusion_mat=confusion_mat, class_names=["Wake", "N1", "N2", "N3", "REM"]
+ConfusionMatrixDisplay.from_predictions(
+    y_true,
+    y_pred,
+    labels=[0, 1, 2, 3, 4],
+    display_labels=["Wake", "N1", "N2", "N3", "REM"],
 )
 
 print(classification_report(y_true, y_pred))
@@ -336,18 +372,6 @@ ax.plot(y_true, color="b", label="Expert annotations")
 ax.plot(y_pred.flatten(), color="r", label="Predict annotations", alpha=0.5)
 ax.set_xlabel("Time (epochs)")
 ax.set_ylabel("Sleep stage")
-
-######################################################################
-# Our model was able to learn despite the low amount of data that was available
-# (only two recordings in this example) and reached a balanced accuracy of
-# about 36% in a 5-class classification task (chance-level = 20%) on held-out
-# data.
-#
-# .. note::
-#    To further improve performance, more recordings should be included in the
-#    training set, and hyperparameters should be selected accordingly.
-#    Increasing the sequence length was also shown in [1]_ to help improve
-#    performance, especially when few EEG channels are available.
 
 ###########################################################################
 # References
@@ -368,3 +392,5 @@ ax.set_ylabel("Sleep stage")
 #        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
 #        Research Resource for Complex Physiologic Signals.
 #        Circulation 101(23):e215-e220
+#
+# .. include:: /links.inc
