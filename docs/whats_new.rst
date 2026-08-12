@@ -49,13 +49,13 @@ Bug fixes
   any batch holding three windows, so a validation batch or a last partial
   batch of that size failed with ``Expected input batch_size (3) to match
   target batch_size (0)``. The mixup branch is now selected on the container
-  type. By `Sarthak Tayal`_.
+  type. (:gh:`1122` by `Sarthak Tayal`_)
 
 - Keep the mixing coefficient of :class:`braindecode.augmentation.Mixup` on the
   dtype of the batch. With ``beta_per_sample=True`` it came straight from numpy
   as ``float64``, which upcast the loss returned by
   :func:`braindecode.training.mixup_criterion` to ``float64`` while the model
-  stayed in ``float32``. By `Sarthak Tayal`_.
+  stayed in ``float32``. (:gh:`1122` by `Sarthak Tayal`_)
 
 - Let :class:`braindecode.augmentation.AugmentedDataLoader` used with
   ``n_augmentation`` greater than zero carry the targets of a transform that
@@ -63,7 +63,7 @@ Bug fixes
   option with :class:`braindecode.augmentation.Mixup` raised ``expected Tensor
   as element 1 in argument 0, but got tuple``. The triple parts are now
   concatenated one by one and the clean originals get a mixing coefficient of
-  one. By `Sarthak Tayal`_.
+  one. (:gh:`1122` by `Sarthak Tayal`_)
 
 - Let :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
   train with a transform that mixes targets. The loader wrapper cast every
@@ -71,7 +71,11 @@ Bug fixes
   triple of :class:`braindecode.augmentation.Mixup` stopped the fit with
   ``'tuple' object has no attribute 'type'`` before the first batch was seen.
   The triple parts now follow the same classification/regression dtype contract
-  as a plain target. By `Sarthak Tayal`_.
+  as a plain target. (:gh:`1122` by `Sarthak Tayal`_).
+
+- Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
+  which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
+  validation (:gh:`1123` by `Bruno Aristimunha`_).
 
 Code health
 ============
