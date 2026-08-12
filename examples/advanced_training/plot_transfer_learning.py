@@ -74,9 +74,10 @@ from braindecode.util import set_random_seeds
 # more than one partition.
 
 seed = 20240812
-cuda = torch.cuda.is_available()
-device = "cuda" if cuda else "cpu"
-set_random_seeds(seed=seed, cuda=cuda)
+# Keep the generated gallery output reproducible across CPU- and GPU-equipped
+# documentation builders.
+device = "cpu"
+set_random_seeds(seed=seed, cuda=False)
 mne.set_log_level("ERROR")
 
 sfreq = 100
@@ -122,7 +123,8 @@ channel_names = [
 #    from braindecode.datasets import NMT, TUHAbnormal
 #
 #    source_recordings = TUHAbnormal(
-#        path="/path/to/tuh_eeg_abnormal/v3.0.1/edf",
+#        path="/path/to/tuh_eeg_abnormal",
+#        version="v3.0.1",
 #        target_name="pathological",
 #    )
 #    target_recordings = NMT(
@@ -212,8 +214,8 @@ preprocess(target_recordings, recording_wise_standardization, n_jobs=1)
 
 print("Source recordings by split and class:")
 print(source_recordings.description.groupby(["split", "pathological"]).size())
-print("\nTarget recordings by split and class:")
-print(target_recordings.description.groupby(["split", "pathological"]).size())
+print("\nTarget recordings by split:")
+print(target_recordings.description.groupby("split").size())
 
 
 ######################################################################
@@ -226,27 +228,33 @@ print(target_recordings.description.groupby(["split", "pathological"]).size())
 # sessions must additionally be grouped by participant.
 
 
-def window_each_split(recordings):
+def window_recordings(recordings):
     """Create one fixed-length window per synthetic recording."""
-    return {
-        split: create_fixed_length_windows(
-            split_recordings,
-            window_size_samples=window_size_samples,
-            window_stride_samples=window_size_samples,
-            drop_last_window=True,
-            preload=True,
-            verbose="error",
-        )
-        for split, split_recordings in recordings.split("split").items()
-    }
+    return create_fixed_length_windows(
+        recordings,
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_size_samples,
+        drop_last_window=True,
+        preload=True,
+        verbose="error",
+    )
 
 
-source_windows = window_each_split(source_recordings)
-target_windows = window_each_split(target_recordings)
+source_recording_splits = source_recordings.split("split")
+source_windows = {
+    split: window_recordings(split_recordings)
+    for split, split_recordings in source_recording_splits.items()
+}
+target_recording_splits = target_recordings.split("split")
+target_windows = {
+    split: window_recordings(target_recording_splits[split])
+    for split in ("train", "valid")
+}
+assert set(target_windows) == {"train", "valid"}
 
 target_ids = {
-    split: set(windows.description["recording_id"])
-    for split, windows in target_windows.items()
+    split: set(split_recordings.description["recording_id"])
+    for split, split_recordings in target_recording_splits.items()
 }
 assert target_ids["train"].isdisjoint(target_ids["valid"])
 assert target_ids["train"].isdisjoint(target_ids["test"])
@@ -328,7 +336,7 @@ source_state = {
 # dropout streams are reproducible.
 
 target_seed = seed + 2
-set_random_seeds(seed=target_seed, cuda=cuda)
+set_random_seeds(seed=target_seed, cuda=False)
 scratch_clf = make_classifier(
     target_windows["valid"],
     max_epochs=target_epochs,
@@ -360,7 +368,7 @@ class LoadModelState(Callback):
         net.module_.load_state_dict(self.state_dict, strict=True)
 
 
-set_random_seeds(seed=target_seed, cuda=cuda)
+set_random_seeds(seed=target_seed, cuda=False)
 fine_tune_clf = make_classifier(
     target_windows["valid"],
     max_epochs=target_epochs,
@@ -368,14 +376,8 @@ fine_tune_clf = make_classifier(
 )
 _ = fine_tune_clf.fit(target_windows["train"], y=None)
 
-# We fine-tune every layer, as in the main comparison in [1]_. With much less
-# target data, another experiment could freeze the backbone and train only the
-# current Deep4Net classifier head:
-#
-# .. code-block:: python
-#
-#    for name, parameter in fine_tune_clf.module_.named_parameters():
-#        parameter.requires_grad = name.startswith("final_layer.")
+# We fine-tune every layer, as in the main comparison in [1]_. A frozen-backbone
+# ablation would be a separate experiment and is not part of this comparison.
 
 
 ######################################################################
@@ -383,19 +385,21 @@ _ = fine_tune_clf.fit(target_windows["train"], y=None)
 # ------------------------------------------------
 #
 # Balanced accuracy gives equal weight to normal and pathological recall. Both
-# classifiers are fully trained before the test labels are read. On real data,
-# repeat training across documented random seeds and report uncertainty rather
-# than selecting the seed with the best test score.
+# classifiers are fully trained before the test recordings are windowed and
+# their targets are extracted for scoring. On real data, repeat training across
+# documented random seeds and report uncertainty rather than selecting the seed
+# with the best test score.
 
-test_metadata = target_windows["test"].get_metadata()
+target_test_windows = window_recordings(target_recording_splits["test"])
+test_metadata = target_test_windows.get_metadata()
 y_test = test_metadata["target"].to_numpy(dtype=np.int64)
 scratch_score = balanced_accuracy_score(
     y_test,
-    scratch_clf.predict(target_windows["test"]),
+    scratch_clf.predict(target_test_windows),
 )
 fine_tune_score = balanced_accuracy_score(
     y_test,
-    fine_tune_clf.predict(target_windows["test"]),
+    fine_tune_clf.predict(target_test_windows),
 )
 
 print(f"Target test balanced accuracy from scratch: {scratch_score:.3f}")
