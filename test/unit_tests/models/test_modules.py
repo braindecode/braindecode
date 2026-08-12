@@ -1570,6 +1570,16 @@ def test_patch_tokenizer():
     assert set(tok_linear.state_dict()) == {"proj.weight", "proj.bias"}
 
 
+def test_patch_tokenizer_preserves_legacy_positional_arguments():
+    """The fifth positional argument remains ``on_non_divisible``."""
+    from braindecode.modules import PatchTokenizer
+
+    tokenizer = PatchTokenizer(5, 12, None, False, "crop")
+    x = torch.arange(12, dtype=torch.float32).reshape(1, 1, 12)
+
+    assert torch.equal(tokenizer(x), x[..., :10].reshape(1, 1, 2, 5))
+
+
 def test_gated_linear_unit_geglu_semantics():
     """GatedLinearUnit halves the last dim and gates with the given activation."""
     from braindecode.modules import GatedLinearUnit

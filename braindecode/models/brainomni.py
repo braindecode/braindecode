@@ -24,6 +24,40 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _geometry_from_chs_info
 from braindecode.modules import MultiHeadAttentionRoPE, PatchTokenizer, ResidualVQ
 
+_TOKENIZER_CONFIG_RENAMES = {
+    "n_dim": "emb_dim",
+    "n_head": "tokenizer_num_heads",
+    "dropout": "drop_prob",
+}
+_BRAINOMNI_CONFIG_RENAMES = {
+    "n_dim": "emb_dim",
+    "n_head": "tokenizer_num_heads",
+    "dropout": "tokenizer_drop_prob",
+    "lm_head": "num_heads",
+    "lm_depth": "depth",
+    "lm_dropout": "drop_prob",
+}
+_BRAINOMNI_PRETRAINING_KEYS = {"mask_ratio", "num_quantizers_used"}
+
+
+def _translate_opentslab_config(
+    config: dict, renames: dict[str, str], ignored: set[str] | None = None
+) -> dict:
+    """Return a non-mutating translation of an official BrainOmni config."""
+    translated = dict(config)
+    for key in ignored or ():
+        translated.pop(key, None)
+    for source, target in renames.items():
+        if source not in translated:
+            continue
+        if target in translated:
+            raise ValueError(
+                f"OpenTSLab config contains both {source!r} and its Braindecode "
+                f"name {target!r}."
+            )
+        translated[target] = translated.pop(source)
+    return translated
+
 
 class BrainTokenizer(EEGModuleMixin, nn.Module):
     r"""BrainTokenizer from Xiao et al. (2025) [brainomni]_.
@@ -114,16 +148,38 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
 
         The authors publish the MIT-licensed ``BrainTokenizer.pt`` artifact in
         ``OpenTSLab/BrainOmni`` on the Hugging Face Hub. It is a plain PyTorch
-        state dict rather than a Braindecode Hub repository. Translate the
-        accompanying ``model_cfg.json`` keys ``n_dim`` / ``n_head`` / ``dropout``
-        to ``emb_dim`` / ``tokenizer_num_heads`` / ``drop_prob``, then pass the
-        state dict to :meth:`load_state_dict` with ``strict=True``. Input is
-        expected at 256 Hz and must follow the authors' preprocessing.
+        state dict rather than a Braindecode Hub repository. The accompanying
+        ``model_cfg.json`` can be passed directly to
+        :meth:`from_opentslab_config`; then pass the state dict to
+        :meth:`load_state_dict` with ``strict=True``. For example::
+
+            config = json.loads(Path(config_path).read_text())
+            model = BrainTokenizer.from_opentslab_config(
+                config, chs_info=chs_info, n_times=512, sfreq=256.0
+            )
+            model.load_state_dict(
+                torch.load(checkpoint_path, weights_only=True), strict=True
+            )
+
+        Input is expected at 256 Hz and must follow the authors' preprocessing.
 
     .. versionadded:: 1.8
 
     Parameters
     ----------
+    n_outputs : int, optional
+        Number of output classes. Retained for the standard model interface;
+        reconstruction does not use a classification output.
+    n_chans : int, optional
+        Number of input channels. Inferred from ``chs_info`` when omitted.
+    chs_info : list of dict, optional
+        MNE channel information used to derive sensor geometry.
+    n_times : int, optional
+        Number of input samples.
+    input_window_seconds : float, optional
+        Input duration in seconds.
+    sfreq : float, optional
+        Sampling frequency in Hz. Released weights expect 256 Hz.
     emb_dim : int
         Embedding dimensionality throughout the model.
     n_neuro : int
@@ -301,6 +357,29 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         )
         self.apply(_init_weights)
 
+    @classmethod
+    def from_opentslab_config(cls, config: dict, **kwargs) -> BrainTokenizer:
+        """Construct from the authors' released ``model_cfg.json``.
+
+        Parameters
+        ----------
+        config : dict
+            Parsed official tokenizer configuration. The input is not mutated.
+        **kwargs : dict
+            Braindecode metadata such as ``chs_info``, ``n_times``, and
+            ``sfreq``, or explicit overrides for translated configuration values.
+
+        Returns
+        -------
+        BrainTokenizer
+            A tokenizer configured for the accompanying official checkpoint.
+        """
+        translated = _translate_opentslab_config(
+            config, renames=_TOKENIZER_CONFIG_RENAMES
+        )
+        translated.update(kwargs)
+        return cls(**translated)
+
     def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
         """Apply the released tokenizer's short/tail windowing policy."""
         step = _window_stride(self.window_length, overlap_ratio)
@@ -395,9 +474,11 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         -----
         This method internally switches the tokenizer to eval mode before
         encoding so that VQ codebooks are never EMA-updated (which would
-        corrupt them) and dropout is disabled for deterministic output.  The
-        prior training/eval mode is restored when the call returns, so calling
-        ``tokenize`` while the module is in train mode is safe::
+        corrupt them) and dropout is disabled for deterministic output. A fresh
+        training-from-scratch codebook still performs the official one-time
+        K-means initialization on its first input. The prior training/eval mode
+        is restored when the call returns, so calling ``tokenize`` while the
+        module is in train mode is safe::
 
             model.train()
             feat, indices = model.tokenize(x)  # codebooks frozen, mode restored
@@ -495,19 +576,43 @@ class BrainOmni(EEGModuleMixin, nn.Module):
 
         The authors publish MIT-licensed ``BrainOmni.pt`` artifacts in
         ``OpenTSLab/BrainOmni`` on the Hugging Face Hub. They are plain PyTorch
-        Stage-2 state dicts, not Braindecode Hub repositories. Translate the
-        accompanying config keys ``n_dim`` / ``n_head`` / ``dropout`` and
-        ``lm_head`` / ``lm_depth`` / ``lm_dropout`` to ``emb_dim`` /
-        ``tokenizer_num_heads`` / ``tokenizer_drop_prob`` and ``num_heads`` /
-        ``depth`` / ``drop_prob``, then pass the state dict to
-        :meth:`load_state_dict` with ``strict=True``. The pretraining-only mask
-        predictor is discarded and the classification ``final_layer`` remains
-        freshly initialized, so fine-tune or linear-probe before use.
+        Stage-2 state dicts, not Braindecode Hub repositories. Pass the parsed
+        accompanying config directly to :meth:`from_opentslab_config`, which
+        translates the six differing names and discards the pretraining-only
+        ``mask_ratio`` and ``num_quantizers_used`` values::
+
+            config = json.loads(Path(config_path).read_text())
+            model = BrainOmni.from_opentslab_config(
+                config,
+                chs_info=chs_info,
+                n_outputs=n_outputs,
+                n_times=512,
+                sfreq=256.0,
+            )
+            model.load_state_dict(
+                torch.load(checkpoint_path, weights_only=True), strict=True
+            )
+
+        The pretraining-only mask predictor in the checkpoint is discarded and
+        the classification ``final_layer`` remains freshly initialized, so
+        fine-tune or linear-probe before use.
 
     .. versionadded:: 1.8
 
     Parameters
     ----------
+    n_outputs : int, optional
+        Number of downstream outputs.
+    n_chans : int, optional
+        Number of input channels. Inferred from ``chs_info`` when omitted.
+    chs_info : list of dict, optional
+        MNE channel information used to derive sensor geometry.
+    n_times : int, optional
+        Number of input samples.
+    input_window_seconds : float, optional
+        Input duration in seconds.
+    sfreq : float, optional
+        Sampling frequency in Hz. Released weights expect 256 Hz.
     emb_dim : int
         Tokenizer embedding dimension.
     n_neuro : int
@@ -674,6 +779,32 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         self.final_layer = self._make_head(self.n_outputs)
         self.apply(_init_weights)
         self.tokenizer.requires_grad_(False)
+
+    @classmethod
+    def from_opentslab_config(cls, config: dict, **kwargs) -> BrainOmni:
+        """Construct from a released tiny/base ``model_cfg.json``.
+
+        Parameters
+        ----------
+        config : dict
+            Parsed official Stage-2 configuration. Pretraining-only mask values
+            are ignored and the input is not mutated.
+        **kwargs : dict
+            Braindecode metadata such as ``chs_info``, ``n_outputs``,
+            ``n_times``, and ``sfreq``, or explicit configuration overrides.
+
+        Returns
+        -------
+        BrainOmni
+            A downstream model configured for the accompanying checkpoint.
+        """
+        translated = _translate_opentslab_config(
+            config,
+            renames=_BRAINOMNI_CONFIG_RENAMES,
+            ignored=_BRAINOMNI_PRETRAINING_KEYS,
+        )
+        translated.update(kwargs)
+        return cls(**translated)
 
     def _make_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(
@@ -883,6 +1014,36 @@ class _SpatialTemporalBlock(nn.Module):
         return torch.cat([xs, xt], dim=-1)
 
 
+def _safe_pad1d(
+    x: torch.Tensor, padding: tuple[int, int], mode: str = "constant"
+) -> torch.Tensor:
+    """Pad 1-D inputs, extending very short signals before reflection."""
+    padding_left, padding_right = padding
+    if padding_left < 0 or padding_right < 0:
+        raise ValueError(f"padding values must be non-negative, got {padding}.")
+    if mode == "zero":
+        mode = "constant"
+    if mode != "reflect":
+        return F.pad(x, padding, mode=mode)
+    extra_padding = max(max(padding) - x.shape[-1] + 1, 0)
+    if extra_padding:
+        x = F.pad(x, (0, extra_padding))
+    padded = F.pad(x, padding, mode="reflect")
+    if extra_padding:
+        padded = padded[..., :-extra_padding]
+    return padded
+
+
+def _unpad1d(x: torch.Tensor, padding: tuple[int, int]) -> torch.Tensor:
+    """Remove asymmetric 1-D padding without the ``-0`` slicing trap."""
+    padding_left, padding_right = padding
+    if padding_left < 0 or padding_right < 0:
+        raise ValueError(f"padding values must be non-negative, got {padding}.")
+    if padding_left + padding_right > x.shape[-1]:
+        raise ValueError(f"Cannot remove padding {padding} from length {x.shape[-1]}.")
+    return x[..., padding_left : x.shape[-1] - padding_right]
+
+
 class _SEANetConv1d(nn.Module):
     """Conv1d with built-in asymmetric / causal padding."""
 
@@ -930,11 +1091,11 @@ class _SEANetConv1d(nn.Module):
         # length up to the next multiple of ``stride`` (EnCodec convention).
         extra_padding = (kernel_size - padding_total - x.shape[-1]) % stride
         if self.causal:
-            x = F.pad(x, (padding_total, extra_padding), mode=self.pad_mode)
+            x = _safe_pad1d(x, (padding_total, extra_padding), mode=self.pad_mode)
         else:
             padding_right = padding_total // 2
             padding_left = padding_total - padding_right
-            x = F.pad(
+            x = _safe_pad1d(
                 x, (padding_left, padding_right + extra_padding), mode=self.pad_mode
             )
         return self.conv(x)
@@ -962,27 +1123,9 @@ class _SEANetConvTranspose1d(nn.Module):
         )
         assert 0.0 <= self.trim_right_ratio <= 1.0
         padding_total = kernel_size - stride
-        if causal:
-            # Causal: no native padding; trimming is done in forward via inline slice.
-            self.convtr = weight_norm(
-                nn.ConvTranspose1d(in_channels, out_channels, kernel_size, stride)
-            )
-        else:
-            # Non-causal: use native padding= to remove padding_total//2 per side.
-            assert padding_total % 2 == 0, (
-                f"Non-causal _SEANetConvTranspose1d requires even padding_total "
-                f"(kernel_size-stride={padding_total}); got kernel_size={kernel_size}, "
-                f"stride={stride}."
-            )
-            self.convtr = weight_norm(
-                nn.ConvTranspose1d(
-                    in_channels,
-                    out_channels,
-                    kernel_size,
-                    stride,
-                    padding=padding_total // 2,
-                )
-            )
+        self.convtr = weight_norm(
+            nn.ConvTranspose1d(in_channels, out_channels, kernel_size, stride)
+        )
         self._padding_total = padding_total
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -990,8 +1133,10 @@ class _SEANetConvTranspose1d(nn.Module):
         if self.causal:
             padding_right = math.ceil(self._padding_total * self.trim_right_ratio)
             padding_left = self._padding_total - padding_right
-            y = y[..., padding_left : y.shape[-1] - padding_right]
-        return y
+        else:
+            padding_right = self._padding_total // 2
+            padding_left = self._padding_total - padding_right
+        return _unpad1d(y, (padding_left, padding_right))
 
 
 class _SEANetLSTM(nn.Module):

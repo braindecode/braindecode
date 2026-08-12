@@ -45,8 +45,6 @@ class PatchTokenizer(nn.Module):
         Ignored when ``learnable=False``.
     learnable : bool, default=False
         Whether the tokenizer is a learned convolution or a fixed reshape.
-    stride : int, optional
-        Step between consecutive patches. Defaults to ``patch_size``.
     on_non_divisible : {"pad", "crop", "error"}, default="pad"
         How to handle a time dimension that is not divisible by ``patch_size``.
         ``"pad"`` right-pads with zeros, ``"crop"`` drops the trailing samples,
@@ -58,6 +56,9 @@ class PatchTokenizer(nn.Module):
         ``(batch, n_chans, n_patches, patch_dim)`` and preserves the historical
         output. ``"patch_channel"`` returns
         ``(batch, n_patches, n_chans, patch_dim)``.
+    stride : int, optional
+        Step between consecutive patches. Defaults to ``patch_size``. This is
+        appended after the historical arguments to preserve positional calls.
 
     Examples
     --------
@@ -74,10 +75,10 @@ class PatchTokenizer(nn.Module):
         n_times,
         emb_dim=None,
         learnable=False,
-        stride=None,
         on_non_divisible="pad",
         projection="conv",
         output_order="channel_patch",
+        stride=None,
     ):
         super().__init__()
         if on_non_divisible not in ("pad", "crop", "error"):
@@ -123,9 +124,7 @@ class PatchTokenizer(nn.Module):
         self.patcher = nn.Identity()
         self.proj = nn.Identity()
         if learnable and projection == "conv":
-            self.patcher = nn.Conv1d(
-                1, self.emb_dim, patch_size, stride=self.stride
-            )
+            self.patcher = nn.Conv1d(1, self.emb_dim, patch_size, stride=self.stride)
         elif learnable and projection == "linear":
             self.proj = nn.Linear(patch_size, self.emb_dim)
 
@@ -156,9 +155,7 @@ class PatchTokenizer(nn.Module):
             f"{self.patch_size} at stride {stride}."
         )
 
-    def forward(
-        self, x: torch.Tensor, stride: Optional[int] = None
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, stride: Optional[int] = None) -> torch.Tensor:
         step = self.stride if stride is None else stride
         if step <= 0:
             raise ValueError("stride must be a positive integer.")

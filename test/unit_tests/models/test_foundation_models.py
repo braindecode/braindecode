@@ -13,6 +13,8 @@ import numpy as np
 import pooch
 import pytest
 import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
 import torch.nn as nn
 
 try:
@@ -49,7 +51,7 @@ from braindecode.models.brainomni import (
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.reve import RevePositionBank
 from braindecode.models.util import _geometry_from_chs_info
-from braindecode.modules import ResidualVQ
+from braindecode.modules import Codebook, ResidualVQ
 
 
 @pytest.fixture
@@ -1281,6 +1283,56 @@ def _quantizer(num_quantizers=2):
     )
 
 
+def _distributed_codebook_update(rank, world_size, init_file, output_dir):
+    """Exercise one EMA update with different data on each CPU rank."""
+    dist.init_process_group(
+        backend="gloo",
+        init_method=f"file://{init_file}",
+        rank=rank,
+        world_size=world_size,
+    )
+    try:
+        codebook = Codebook(
+            dim=2,
+            codebook_size=2,
+            decay=0.5,
+            threshold_ema_dead_code=0,
+        )
+        codebook.inited.fill_(1)
+        codebook.cluster_size.copy_(torch.tensor([4.0, 4.0]))
+        codebook.embed.copy_(torch.tensor([[-1.0, 0.0], [1.0, 0.0]]))
+        codebook.embed_avg.copy_(torch.tensor([[-4.0, 0.0], [4.0, 0.0]]))
+        local_samples = (
+            torch.tensor([[[-2.0, 0.0], [-1.0, 0.0]]])
+            if rank == 0
+            else torch.tensor([[[1.0, 0.0], [2.0, 0.0]]])
+        )
+        codebook.train()(local_samples)
+        torch.manual_seed(rank)
+        fresh_codebook = Codebook(
+            dim=2,
+            codebook_size=2,
+            decay=0.5,
+            threshold_ema_dead_code=0,
+            kmeans_iters=2,
+        )
+        fresh_codebook.train()(local_samples)
+        torch.save(
+            {
+                "cluster_size": codebook.cluster_size,
+                "embed_avg": codebook.embed_avg,
+                "embed": codebook.embed,
+                "fresh_inited": fresh_codebook.inited,
+                "fresh_cluster_size": fresh_codebook.cluster_size,
+                "fresh_embed_avg": fresh_codebook.embed_avg,
+                "fresh_embed": fresh_codebook.embed,
+            },
+            Path(output_dir) / f"rank-{rank}.pt",
+        )
+    finally:
+        dist.destroy_process_group()
+
+
 # ---- geometry derivation -----------------------------------------------------
 
 
@@ -1431,6 +1483,40 @@ def test_seanet_roundtrip_downsampling():
     assert torch.isfinite(x_rec).all()
 
 
+def test_seanet_roundtrip_supports_odd_ratio():
+    kw = dict(
+        channels=1,
+        dimension=8,
+        n_filters=4,
+        ratios=[5],
+        kernel_size=5,
+        last_kernel_size=5,
+    )
+    encoder, decoder = _SEANetEncoder(**kw), _SEANetDecoder(**kw)
+    x = torch.randn(1, 1, 25)
+
+    reconstruction = decoder(encoder(x))
+
+    assert reconstruction.shape == x.shape
+    assert torch.isfinite(reconstruction).all()
+
+
+def test_seanet_reflect_padding_supports_one_sample_input():
+    encoder = _SEANetEncoder(
+        channels=1,
+        dimension=8,
+        n_filters=4,
+        ratios=[2],
+        kernel_size=5,
+        last_kernel_size=5,
+    )
+
+    encoded = encoder(torch.randn(1, 1, 1))
+
+    assert encoded.shape == (1, 8, 1)
+    assert torch.isfinite(encoded).all()
+
+
 # ---- residual vector quantization --------------------------------------------
 
 
@@ -1440,6 +1526,50 @@ def test_brain_quantizer_shapes_and_loss():
     assert x_q.shape == (2, 5, 16)
     assert indices.shape == (2, 5, 4)  # num_quantizers
     assert torch.isfinite(loss)
+
+
+def test_brain_quantizer_initializes_codebook_from_first_batch():
+    torch.manual_seed(0)
+    quantizer = _quantizer(num_quantizers=1).train()
+    codebook = quantizer.layers[0]._codebook
+    x = torch.randn(8, 10, 16)
+
+    assert codebook.inited.item() == 0
+    assert torch.count_nonzero(codebook.cluster_size) == 0
+    assert torch.count_nonzero(codebook.embed) == 0
+
+    quantizer(x)
+
+    assert codebook.inited.item() == 1
+    assert codebook.cluster_size.sum() > 0
+    assert torch.isfinite(codebook.embed).all()
+    assert codebook.embed.norm(dim=-1).max() < 1.1
+
+
+@pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
+def test_brain_quantizer_distributed_ema_uses_global_statistics(tmp_path):
+    world_size = 2
+    mp.spawn(
+        _distributed_codebook_update,
+        args=(world_size, str(tmp_path / "init"), str(tmp_path)),
+        nprocs=world_size,
+        join=True,
+    )
+    states = [
+        torch.load(tmp_path / f"rank-{rank}.pt", weights_only=True)
+        for rank in range(world_size)
+    ]
+
+    for key in states[0]:
+        torch.testing.assert_close(states[0][key], states[1][key])
+    torch.testing.assert_close(states[0]["cluster_size"], torch.tensor([3.0, 3.0]))
+    torch.testing.assert_close(
+        states[0]["embed_avg"], torch.tensor([[-3.5, 0.0], [3.5, 0.0]])
+    )
+    torch.testing.assert_close(
+        states[0]["embed"], torch.tensor([[-7.0 / 6.0, 0.0], [7.0 / 6.0, 0.0]])
+    )
+    assert states[0]["fresh_inited"].item() == 1
 
 
 @pytest.mark.parametrize(
@@ -1473,6 +1603,7 @@ def test_brain_quantizer_codebook_ema(train, expect_change):
     q = _quantizer(num_quantizers=2)
     q.train(train)
     codebook = q.layers[0]._codebook
+    q(torch.randn(8, 10, 16))  # initialize fresh K-means codebooks
     before = codebook.embed.clone()
     for _ in range(3):
         q(torch.randn(8, 10, 16))
@@ -1496,6 +1627,86 @@ def test_braintokenizer_forward_reconstruction_shape(n_times):
     model = _small_tokenizer(n_times=n_times).eval()
     x = torch.randn(2, 4, n_times)
     assert model(x).shape == x.shape
+
+
+def test_braintokenizer_first_training_forward_keeps_codebooks_bounded():
+    torch.manual_seed(0)
+    model = _small_tokenizer().train()
+    codebook = model.quantizer.layers[0]._codebook
+
+    reconstruction = model(torch.randn(2, 4, 512))
+
+    assert torch.isfinite(reconstruction).all()
+    assert codebook.inited.item() == 1
+    assert codebook.cluster_size.sum() > 0
+    assert codebook.embed.norm(dim=-1).max() < 1.1
+
+
+@pytest.mark.parametrize(
+    "window_length, ratios",
+    [(5, (5,)), (1, (1,))],
+    ids=["odd_ratio", "one_sample_window"],
+)
+def test_braintokenizer_supports_documented_positive_ratios_and_windows(
+    window_length, ratios
+):
+    model = BrainTokenizer(
+        chs_info=_eeg_chs_info(2),
+        n_times=window_length,
+        sfreq=256.0,
+        window_length=window_length,
+        ratios=ratios,
+        emb_dim=8,
+        n_neuro=2,
+        n_filters=4,
+        tokenizer_num_heads=2,
+        codebook_dim=8,
+        codebook_size=8,
+        num_quantizers=1,
+    ).eval()
+    x = torch.randn(1, 2, window_length)
+
+    assert model(x).shape == x.shape
+
+
+def test_brainomni_constructs_from_official_stage2_config():
+    official_config = {
+        "window_length": 8,
+        "n_filters": 4,
+        "ratios": [2],
+        "kernel_size": 3,
+        "last_kernel_size": 3,
+        "n_dim": 8,
+        "n_head": 2,
+        "n_neuro": 2,
+        "dropout": 0.0,
+        "codebook_dim": 8,
+        "codebook_size": 8,
+        "num_quantizers": 1,
+        "rotation_trick": True,
+        "quantize_optimize_method": "ema",
+        "overlap_ratio": 0.0,
+        "lm_dim": 8,
+        "lm_head": 2,
+        "lm_depth": 2,
+        "lm_dropout": 0.0,
+        "mask_ratio": 0.5,
+        "num_quantizers_used": 1,
+    }
+    original_config = dict(official_config)
+
+    model = BrainOmni.from_opentslab_config(
+        official_config,
+        chs_info=_eeg_chs_info(2),
+        n_outputs=3,
+        n_times=8,
+        sfreq=256.0,
+    )
+
+    assert model.lm_dim == 8
+    assert len(model.blocks) == 2
+    assert model.tokenizer.emb_dim == 8
+    assert official_config == original_config
 
 
 def test_braintokenizer_reconstruction_zero_fills_dropped_tail():
@@ -1722,12 +1933,26 @@ def test_braintokenizer_released_checkpoint_strict_load_and_parity(tmp_path):
             cache_dir=tmp_path,
         )
     )
+    config_path = Path(
+        hf_hub_download(
+            "OpenTSLab/BrainOmni",
+            "braintokenizer/model_cfg.json",
+            revision=revision,
+            cache_dir=tmp_path,
+        )
+    )
     assert hashlib.sha256(path.read_bytes()).hexdigest() == (
         "d41c44c14c3f3b11fd0fb660752e356dff4cb4bc5f32a05f470f503ffddc7b1a"
     )
+    assert hashlib.sha256(config_path.read_bytes()).hexdigest() == (
+        "67d99edcfdc54285bed7f37757b6fc9732199c56ac48f86027af1c8a22e95183"
+    )
     state_dict = torch.load(path, map_location="cpu", weights_only=True)
-    model = BrainTokenizer(
-        chs_info=_eeg_chs_info(2), n_times=512, sfreq=256.0
+    model = BrainTokenizer.from_opentslab_config(
+        json.loads(config_path.read_text()),
+        chs_info=_eeg_chs_info(2),
+        n_times=512,
+        sfreq=256.0,
     ).eval()
     model.load_state_dict(state_dict, strict=True)
 
@@ -1780,12 +2005,27 @@ def test_brainomni_released_checkpoint_strict_load_and_parity(tmp_path):
             cache_dir=tmp_path,
         )
     )
+    config_path = Path(
+        hf_hub_download(
+            "OpenTSLab/BrainOmni",
+            "tiny/model_cfg.json",
+            revision=revision,
+            cache_dir=tmp_path,
+        )
+    )
     assert hashlib.sha256(path.read_bytes()).hexdigest() == (
         "62c67ba6a84ea0625e67a3b5e7463fe3930bfee88a612a225e9062a052542ffc"
     )
+    assert hashlib.sha256(config_path.read_bytes()).hexdigest() == (
+        "4b994b38f1a8dccc8136f2b837a8ad2d3ebb028a1af0c527f9e0902a1a5c252e"
+    )
     state_dict = torch.load(path, map_location="cpu", weights_only=True)
-    model = BrainOmni(
-        chs_info=_eeg_chs_info(2), n_times=512, sfreq=256.0, n_outputs=3
+    model = BrainOmni.from_opentslab_config(
+        json.loads(config_path.read_text()),
+        chs_info=_eeg_chs_info(2),
+        n_times=512,
+        sfreq=256.0,
+        n_outputs=3,
     ).eval()
     original_head = {
         key: value.clone()
@@ -1849,18 +2089,27 @@ def test_brainomni_base_released_checkpoint_strict_load(tmp_path):
             cache_dir=tmp_path,
         )
     )
+    config_path = Path(
+        hf_hub_download(
+            "OpenTSLab/BrainOmni",
+            "base/model_cfg.json",
+            revision=revision,
+            cache_dir=tmp_path,
+        )
+    )
     assert hashlib.sha256(path.read_bytes()).hexdigest() == (
         "435db24e57a55df05aa7e16355def7b7ecbedb22aa1ec16063e7d14efd2386d0"
     )
+    assert hashlib.sha256(config_path.read_bytes()).hexdigest() == (
+        "492e2229b1fb87d49330b23f482a1641ec7cdc0b41d38f76384f18fdef3696d5"
+    )
     state_dict = torch.load(path, map_location="cpu", weights_only=True)
-    model = BrainOmni(
+    model = BrainOmni.from_opentslab_config(
+        json.loads(config_path.read_text()),
         chs_info=_eeg_chs_info(2),
         n_times=512,
         sfreq=256.0,
         n_outputs=3,
-        lm_dim=512,
-        num_heads=16,
-        depth=12,
     )
     original_head = {
         key: value.clone()
@@ -1878,9 +2127,11 @@ def test_brainomni_base_released_checkpoint_strict_load(tmp_path):
 def test_brainomni_vq_frozen_during_train_step():
     torch.manual_seed(0)
     model = _small_brainomni().train()
+    x = torch.randn(2, 4, 512)
+    model.tokenizer.tokenize(x)  # one-time initialization for a fresh tokenizer
     codebook = model.tokenizer.quantizer.layers[0]._codebook
     before = codebook.embed.clone()
-    model(torch.randn(2, 4, 512)).sum().backward()
+    model(x).sum().backward()
     assert torch.allclose(before, codebook.embed)  # frozen tokenizer
 
 

@@ -11,11 +11,30 @@
 # ``load_state_dict(..., strict=True)`` adapter can load the upstream weights.
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
 # Rotation-trick STE helpers (Fifty et al. 2024, §4.2 https://arxiv.org/abs/2410.06424).
+
+
+def _is_distributed() -> bool:
+    return dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
+
+
+@torch.no_grad()
+def _broadcast_tensors(tensors, src: int = 0) -> None:
+    if not _is_distributed():
+        return
+    for tensor in tensors:
+        dist.broadcast(tensor, src=src)
+
+
+@torch.no_grad()
+def _all_reduce_sum(tensor: torch.Tensor) -> None:
+    if _is_distributed():
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
 
 
 def _efficient_rotation_trick_transform(u, q, e):
@@ -56,6 +75,11 @@ class Codebook(nn.Module):
     threshold_ema_dead_code : int
         Minimum cluster size below which a code is considered dead and
         replaced with a random sample from the current batch.
+    kmeans_init : bool
+        If ``True``, initialize embeddings and cluster counts from the first
+        input batch, matching the released BrainOmni training implementation.
+    kmeans_iters : int
+        Number of K-means iterations used for first-batch initialization.
 
     References
     ----------
@@ -73,6 +97,8 @@ class Codebook(nn.Module):
         decay: float = 0.99,
         epsilon: float = 1e-6,
         threshold_ema_dead_code: int = 2,
+        kmeans_init: bool = True,
+        kmeans_iters: int = 10,
     ):
         super().__init__()
         if dim <= 0:
@@ -88,16 +114,19 @@ class Codebook(nn.Module):
                 "threshold_ema_dead_code must be non-negative, got "
                 f"{threshold_ema_dead_code}."
             )
+        if kmeans_iters <= 0:
+            raise ValueError(f"kmeans_iters must be positive, got {kmeans_iters}.")
         self.decay = decay
         self.epsilon = epsilon
         self.threshold_ema_dead_code = threshold_ema_dead_code
         self.codebook_size = codebook_size
+        self.kmeans_iters = kmeans_iters
 
-        embed = torch.empty(codebook_size, dim)
-        nn.init.kaiming_uniform_(embed)
-        # 'inited' buffer kept so state-dict keys match upstream checkpoint.
-        # Upstream stores this flag as a float tensor in the released artifacts.
-        self.register_buffer("inited", torch.tensor([1.0]))
+        embed = torch.zeros(codebook_size, dim)
+        if not kmeans_init:
+            nn.init.kaiming_uniform_(embed)
+        # The float flag and all buffer names match the official checkpoints.
+        self.register_buffer("inited", torch.tensor([float(not kmeans_init)]))
         self.register_buffer("cluster_size", torch.zeros(codebook_size))
         self.register_buffer("embed", embed)
         self.register_buffer("embed_avg", embed.clone())
@@ -109,6 +138,53 @@ class Codebook(nn.Module):
         else:
             indices = torch.randint(0, num_samples, (num,), device=device)
         return samples[indices]
+
+    @torch.no_grad()
+    def _kmeans(self, samples: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        samples = rearrange(samples, "... dim -> (...) dim")
+        dim, dtype = samples.shape[1], samples.dtype
+        if samples.shape[0] < self.codebook_size:
+            noise = torch.randn(
+                self.codebook_size - samples.shape[0],
+                dim,
+                device=samples.device,
+                dtype=dtype,
+            )
+            samples = torch.cat([samples, noise], dim=0)
+        centers = self._sample_vectors(samples, self.codebook_size)
+        bins = torch.ones(self.codebook_size, device=samples.device, dtype=torch.long)
+        for _ in range(self.kmeans_iters):
+            distances = ((samples.unsqueeze(1) - centers) ** 2).sum(dim=-1)
+            buckets = distances.argmin(dim=-1)
+            bins = torch.bincount(buckets, minlength=self.codebook_size)
+            empty = bins == 0
+            bins[empty] = 1
+            new_centers = torch.zeros(
+                self.codebook_size, dim, device=samples.device, dtype=dtype
+            )
+            new_centers.scatter_add_(0, buckets.unsqueeze(-1).expand(-1, dim), samples)
+            new_centers = new_centers / bins.unsqueeze(-1)
+            centers = torch.where(empty.unsqueeze(-1), centers, new_centers)
+        return centers, bins
+
+    @torch.no_grad()
+    def init_embed_(self, data: torch.Tensor) -> None:
+        """Initialize fresh codebooks from data and synchronize rank-zero state."""
+        # First-batch K-means is deliberately stateful and data-dependent, so it
+        # cannot be captured by ``torch.export``. Evaluation exports consume an
+        # already initialized or pretrained codebook and leave its buffers alone.
+        if torch.compiler.is_compiling() and not self.training:
+            return
+        if bool(self.inited.item()):
+            return
+        data = rearrange(data, "... dim -> (...) dim")
+        sampled = self._sample_vectors(data, 4096)
+        embed, cluster_size = self._kmeans(sampled)
+        self.embed.copy_(embed)
+        self.embed_avg.copy_(embed)
+        self.cluster_size.copy_(cluster_size)
+        self.inited.fill_(1)
+        _broadcast_tensors(self.buffers())
 
     def replace_(self, samples: torch.Tensor, mask: torch.Tensor) -> None:
         modified = torch.where(
@@ -126,6 +202,7 @@ class Codebook(nn.Module):
             return
         batch_samples = rearrange(batch_samples, "... dim -> (...) dim")
         self.replace_(batch_samples, expired)
+        _broadcast_tensors(self.buffers())
 
     @torch.no_grad()
     def quantize(self, x: torch.Tensor) -> torch.Tensor:
@@ -153,6 +230,7 @@ class Codebook(nn.Module):
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         shape, dtype = x.shape, x.dtype
         x = rearrange(x, "... dim -> (...) dim")
+        self.init_embed_(x)
         embed_ind = self.quantize(x)
         embed_onehot = F.one_hot(embed_ind, self.codebook_size).type(dtype)
         embed_ind = embed_ind.view(*shape[:-1])
@@ -162,10 +240,12 @@ class Codebook(nn.Module):
             self.expire_codes_(x)
             # EMA update of the cluster sizes and code sums (.data detaches grad).
             one_hot_sum = embed_onehot.sum(0)
+            _all_reduce_sum(one_hot_sum)
             self.cluster_size.data.mul_(self.decay).add_(
                 one_hot_sum, alpha=1 - self.decay
             )
             embed_sum = (embed_onehot.t() @ x).to(torch.float32)
+            _all_reduce_sum(embed_sum)
             self.embed_avg.data.mul_(self.decay).add_(embed_sum, alpha=1 - self.decay)
             smoothed = (self.cluster_size + self.epsilon) / (
                 self.cluster_size.sum() + self.epsilon * self.codebook_size
@@ -198,6 +278,10 @@ class VectorQuantizer(nn.Module):
     rotation_trick : bool
         When ``True`` the rotation-trick STE [rottrick]_ is used instead
         of the standard straight-through estimator.
+    kmeans_init : bool
+        Whether to initialize the codebook from the first input batch.
+    kmeans_iters : int
+        Number of K-means iterations used for first-batch initialization.
 
     References
     ----------
@@ -217,6 +301,8 @@ class VectorQuantizer(nn.Module):
         epsilon: float = 1e-6,
         threshold_ema_dead_code: int = 2,
         rotation_trick: bool = True,
+        kmeans_init: bool = True,
+        kmeans_iters: int = 10,
     ):
         super().__init__()
         _codebook_dim: int = codebook_dim if codebook_dim is not None else dim
@@ -237,6 +323,8 @@ class VectorQuantizer(nn.Module):
             decay=decay,
             epsilon=epsilon,
             threshold_ema_dead_code=threshold_ema_dead_code,
+            kmeans_init=kmeans_init,
+            kmeans_iters=kmeans_iters,
         )
         self.rotation_trick = rotation_trick
         self.codebook_size = codebook_size
