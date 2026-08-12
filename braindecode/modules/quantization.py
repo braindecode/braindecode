@@ -23,6 +23,13 @@ def _is_distributed() -> bool:
     return dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
 
 
+def _is_compiling() -> bool:
+    """Feature-detect the public compiler API absent from PyTorch 2.0."""
+    compiler = getattr(torch, "compiler", None)
+    is_compiling = getattr(compiler, "is_compiling", None)
+    return is_compiling is not None and is_compiling()
+
+
 @torch.no_grad()
 def _broadcast_tensors(tensors, src: int = 0) -> None:
     if not _is_distributed():
@@ -173,7 +180,7 @@ class Codebook(nn.Module):
         # First-batch K-means is deliberately stateful and data-dependent, so it
         # cannot be captured by ``torch.export``. Evaluation exports consume an
         # already initialized or pretrained codebook and leave its buffers alone.
-        if torch.compiler.is_compiling() and not self.training:
+        if _is_compiling() and not self.training:
             return
         if bool(self.inited.item()):
             return

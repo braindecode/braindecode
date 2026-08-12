@@ -1546,6 +1546,22 @@ def test_brain_quantizer_initializes_codebook_from_first_batch():
     assert codebook.embed.norm(dim=-1).max() < 1.1
 
 
+def test_brain_quantizer_supports_torch_without_compiler_namespace(monkeypatch):
+    """PyTorch 2.0 has no public ``torch.compiler`` namespace."""
+    codebook = Codebook(
+        dim=2,
+        codebook_size=2,
+        threshold_ema_dead_code=0,
+        kmeans_init=False,
+    ).eval()
+    monkeypatch.delattr(torch, "compiler")
+
+    quantized, indices = codebook(torch.randn(1, 2, 2))
+
+    assert quantized.shape == (1, 2, 2)
+    assert indices.shape == (1, 2)
+
+
 @pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")
 def test_brain_quantizer_distributed_ema_uses_global_statistics(tmp_path):
     world_size = 2
