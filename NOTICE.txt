@@ -19,7 +19,22 @@ The `meta_neuromotor.py` file is a derivative of
 `facebookresearch/generic-neuromotor-interface`, released by Meta Platforms,
 Inc. under CC BY-NC 4.0, and inherits the same noncommercial terms.
 
+### MIT Licensed Components
+
+The BrainOmni port, including `braindecode/models/brainomni.py`, the
+BrainOmni-derived geometry helpers in `braindecode/models/util.py`, and the
+BrainOmni-derived portions of `braindecode/modules/attention.py` and
+`braindecode/modules/quantization.py`, is adapted from OpenTSLab/BrainOmni. Its
+SEANet components derive from Meta Platforms' EnCodec. The corresponding
+copyright notices and MIT terms are reproduced in `LICENSES/BrainOmni-MIT.txt`.
+
+The residual vector-quantization implementation in
+`braindecode/modules/quantization.py` is also adapted from
+`lucidrains/vector-quantize-pytorch`. Its copyright notice and MIT terms are
+reproduced in `LICENSES/vector-quantize-pytorch-MIT.txt`.
+
 ## License Links
 
 - [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause)
 - [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)
+- [MIT License](https://opensource.org/license/mit)
