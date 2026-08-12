@@ -43,7 +43,9 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
+  which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
+  validation (:gh:`1123` by `Bruno Aristimunha`_).
 
 Code health
 ============
