@@ -597,21 +597,8 @@ def test_model_torch_script(model):
     scripted_model.save(fname)
 
     os.remove(fname)
-    # now that we can save,
-    # erasing the model from the memory
-    #
-
-    # print(f"Model {model_class.__name__} passed the test.")
-    # Continue this tests later. Not now...
-    # output_script = scripted_model(input_tensor)
-    # assert output_script.shape == output_model.shape
-    # torch.testing.assert_close(output_script, output_model)
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("win") or sys.version_info >= (3, 14),
-    reason="torch.compile is known to have issues on Windows or with Python 3.14.",
-)
 @pytest.mark.parametrize(
     "model_class",
     [
