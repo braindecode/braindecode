@@ -17,8 +17,8 @@ import pytest
 import torch
 
 from braindecode.models import Brant
-from braindecode.models.brant import BRANT_FREQ_BANDS
-from braindecode.modules.brant_modules import (
+from braindecode.models.brant import (
+    BRANT_FREQ_BANDS,
     _BandPowerFeatures,
     _BrantSpatialEncoder,
     _BrantTemporalEncoder,

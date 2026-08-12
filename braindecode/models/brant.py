@@ -1,19 +1,7 @@
-"""Brant: a foundation model for intracranial (sEEG/iEEG) neural signals.
-
-Port of Brant (Zhang et al., NeurIPS 2023) into a braindecode-native model.
-Upstream code and pretrained weights are released under Apache-2.0:
-
-* paper: https://proceedings.neurips.cc/paper_files/paper/2023/hash/535915d26859036410b0533804cee788-Abstract-Conference.html
-* code: https://github.com/yzz673/Brant
-* weights: https://huggingface.co/Daoze/Brant
-
-The two Transformer encoders are ported weight-for-weight from the upstream
-reference and checked for numerical parity (see ``scripts/brant_parity_check``);
-the classification head and channel/patch pooling are a braindecode-native
-adaptation. The official pretrained checkpoint is hosted on the Hugging Face
-Hub and loads directly via
-``Brant.from_pretrained("braindecode/brant-pretrained")``.
-"""
+# Authors: Daoze Zhang <zhangdz@zju.edu.cn>
+#          Adam Mounir <am91ris@gmail.com> (braindecode adaptation)
+#
+# License: Apache-2.0
 
 from __future__ import annotations
 
@@ -22,12 +10,6 @@ import torch.nn as nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
-from braindecode.modules.brant_modules import (
-    _BandPowerFeatures,
-    _BrantHead,
-    _BrantSpatialEncoder,
-    _BrantTemporalEncoder,
-)
 
 # Standard rhythmic-activity bands (Hz) used by Brant's frequency encoding,
 # from the paper (§ Frequency encoding): theta, alpha, beta, gamma1-5.
@@ -118,7 +100,15 @@ class Brant(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        # --- Brant hyper-parameters (modest defaults; paper config in docstring) ---
+        # braindecode parameters
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        *,
+        # model-specific parameters
         patch_size: int = 250,
         embed_dim: int = 256,
         ffn_dim: int = 384,
@@ -128,13 +118,6 @@ class Brant(EEGModuleMixin, nn.Module):
         n_freq_bands: int = 8,
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.ReLU,
-        # --- braindecode mandatory signal parameters ---
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -144,7 +127,7 @@ class Brant(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, chs_info, n_times, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.patch_size = patch_size
         self.embed_dim = embed_dim
@@ -156,9 +139,9 @@ class Brant(EEGModuleMixin, nn.Module):
         self.drop_prob = drop_prob
         self._head_activation = activation
 
-        if n_freq_bands != len(BRANT_FREQ_BANDS):
+        if self.n_freq_bands != len(BRANT_FREQ_BANDS):
             raise ValueError(
-                f"n_freq_bands ({n_freq_bands}) must equal "
+                f"n_freq_bands ({self.n_freq_bands}) must equal "
                 f"len(BRANT_FREQ_BANDS) ({len(BRANT_FREQ_BANDS)})."
             )
         # Number of patches per channel, fixed by the input length. The learnable
@@ -175,7 +158,7 @@ class Brant(EEGModuleMixin, nn.Module):
         # that keeps the raw samples the band-power and the temporal input
         # embedding both consume, and adds no parameters.
         self.patch_tokenizer = PatchTokenizer(
-            patch_size=patch_size,
+            patch_size=self.patch_size,
             n_times=self.n_times,
             learnable=False,
             on_non_divisible="crop",
@@ -183,24 +166,24 @@ class Brant(EEGModuleMixin, nn.Module):
         # braindecode-native: band-power computed inside forward (see module).
         self.band_power = _BandPowerFeatures(self.sfreq, BRANT_FREQ_BANDS)
         self.temporal_encoder = _BrantTemporalEncoder(
-            patch_size=patch_size,
-            d_model=embed_dim,
+            patch_size=self.patch_size,
+            d_model=self.embed_dim,
             seq_len=self.seq_len,
-            n_bands=n_freq_bands,
-            dim_feedforward=ffn_dim,
-            n_layers=temporal_n_layers,
-            n_heads=n_heads,
-            drop_prob=drop_prob,
+            n_bands=self.n_freq_bands,
+            dim_feedforward=self.ffn_dim,
+            n_layers=self.temporal_n_layers,
+            n_heads=self.n_heads,
+            drop_prob=self.drop_prob,
         )
         self.spatial_encoder = _BrantSpatialEncoder(
-            d_model=embed_dim,
-            out_dim=patch_size,
-            dim_feedforward=ffn_dim,
-            n_layers=spatial_n_layers,
-            n_heads=n_heads,
-            drop_prob=drop_prob,
+            d_model=self.embed_dim,
+            out_dim=self.patch_size,
+            dim_feedforward=self.ffn_dim,
+            n_layers=self.spatial_n_layers,
+            n_heads=self.n_heads,
+            drop_prob=self.drop_prob,
         )
-        self.final_layer = _BrantHead(embed_dim, self.n_outputs, activation)
+        self.final_layer = _BrantHead(self.embed_dim, self.n_outputs, activation)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
@@ -266,3 +249,160 @@ class Brant(EEGModuleMixin, nn.Module):
         if return_features:
             return {"features": pooled, "cls_token": None}
         return self.final_layer(pooled)
+
+
+class _BandPowerFeatures(nn.Module):
+    """Per-patch log spectral power in a set of frequency bands.
+
+    This is the in-model counterpart of the upstream ``compute_power`` routine:
+    a SciPy-compatible periodogram followed by a log-sum within each band.
+
+    Parameters
+    ----------
+    sfreq : float
+        Sampling frequency of the input signal, in Hz.
+    bands : tuple of (float, float)
+        Frequency band edges ``(low, high)`` in Hz. A frequency ``f`` belongs to
+        a band when ``low < f <= high``.
+    """
+
+    def __init__(self, sfreq: float, bands: tuple[tuple[float, float], ...]):
+        super().__init__()
+        self.sfreq = float(sfreq)
+        self.bands = tuple(bands)
+
+    def forward(self, patches: torch.Tensor) -> torch.Tensor:
+        """Compute log band-power of every patch.
+
+        Parameters
+        ----------
+        patches : torch.Tensor
+            Shape ``(batch, n_chans, seq_len, patch_size)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Shape ``(batch, n_chans, seq_len, n_bands)``.
+        """
+        n = patches.shape[-1]
+        # scipy periodogram default: detrend='constant' (remove the mean).
+        x = patches - patches.mean(dim=-1, keepdim=True)
+        spectrum = torch.fft.rfft(x, dim=-1)
+        # one-sided power spectral density, density scaling (boxcar window).
+        psd = spectrum.abs().pow(2) / (self.sfreq * n)
+        psd[..., 1:] = psd[..., 1:] * 2
+        if n % 2 == 0:  # do not double the Nyquist bin
+            psd[..., -1] = psd[..., -1] / 2
+        freqs = torch.fft.rfftfreq(n, d=1.0 / self.sfreq, device=patches.device)
+
+        out = []
+        for low, high in self.bands:
+            mask = (freqs > low) & (freqs <= high)
+            band = psd[..., mask].sum(dim=-1)
+            out.append(torch.log10(band + 1.0))
+        return torch.stack(out, dim=-1)
+
+
+class _BrantInputEmbedding(nn.Module):
+    """Input encoding of Brant: linear patch projection + frequency + position."""
+
+    def __init__(self, patch_size: int, d_model: int, seq_len: int, n_bands: int):
+        super().__init__()
+        self.band_encoding = nn.Parameter(torch.randn(n_bands, d_model))
+        self.positional_encoding = nn.Parameter(torch.randn(seq_len, d_model))
+        self.proj = nn.Sequential(nn.Linear(patch_size, d_model))
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, data: torch.Tensor, power: torch.Tensor) -> torch.Tensor:
+        """Embed raw patches together with frequency and position information."""
+        batch_size, n_chans, seq_len, patch_size = data.shape
+        power = self.softmax(power)
+        power_emb = torch.einsum("hijk, kl->hijl", power, self.band_encoding)
+
+        data = data.reshape(batch_size * n_chans, seq_len, patch_size)
+        input_emb = self.proj(data)
+        input_emb = input_emb + power_emb.reshape(
+            batch_size * n_chans, seq_len, -1
+        )
+        return input_emb + self.positional_encoding
+
+
+class _BrantTemporalEncoder(nn.Module):
+    """Temporal Transformer encoder (upstream ``TimeEncoder``)."""
+
+    def __init__(
+        self,
+        patch_size: int,
+        d_model: int,
+        seq_len: int,
+        n_bands: int,
+        dim_feedforward: int,
+        n_layers: int,
+        n_heads: int,
+        drop_prob: float,
+    ):
+        super().__init__()
+        self.input_embedding = _BrantInputEmbedding(
+            patch_size=patch_size,
+            d_model=d_model,
+            seq_len=seq_len,
+            n_bands=n_bands,
+        )
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=n_heads,
+            dim_feedforward=dim_feedforward,
+            dropout=drop_prob,
+            batch_first=True,
+        )
+        self.trans_enc = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+
+    def forward(self, data: torch.Tensor, power: torch.Tensor) -> torch.Tensor:
+        return self.trans_enc(self.input_embedding(data, power))
+
+
+class _BrantSpatialEncoder(nn.Module):
+    """Spatial Transformer encoder (upstream ``ChannelEncoder``)."""
+
+    def __init__(
+        self,
+        d_model: int,
+        out_dim: int,
+        dim_feedforward: int,
+        n_layers: int,
+        n_heads: int,
+        drop_prob: float,
+    ):
+        super().__init__()
+        self.proj_out = nn.Sequential(nn.Linear(d_model, out_dim))
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=n_heads,
+            dim_feedforward=dim_feedforward,
+            dropout=drop_prob,
+            batch_first=True,
+        )
+        self.trans_enc = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+
+    def forward(self, time_z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        ch_z = self.trans_enc(time_z)
+        return ch_z, self.proj_out(ch_z)
+
+
+class _BrantHead(nn.Module):
+    """Braindecode downstream classification head for Brant."""
+
+    def __init__(
+        self, in_dim: int, out_dim: int, activation: type[nn.Module] = nn.ReLU
+    ):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(in_dim, in_dim // 2),
+            activation(),
+            nn.Linear(in_dim // 2, in_dim // 4),
+            activation(),
+            nn.Linear(in_dim // 4, out_dim),
+        )
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        return self.mlp(z)

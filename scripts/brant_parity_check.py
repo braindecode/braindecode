@@ -1,8 +1,8 @@
 """Dev-only numerical parity check for :class:`braindecode.models.Brant`.
 
-Not part of CI. Verifies that braindecode's re-implemented Brant encoders
-(:mod:`braindecode.modules.brant_modules`) reproduce, weight-for-weight, the
-upstream reference (``Brant_src/pretrain/pre_model.py``, Apache-2.0,
+Not part of CI. Verifies that braindecode's Brant encoders reproduce,
+weight-for-weight, the upstream reference
+(``Brant_src/pretrain/pre_model.py``, Apache-2.0,
 https://huggingface.co/Daoze/Brant).
 
 Usage
@@ -28,7 +28,7 @@ from pathlib import Path
 
 import torch
 
-from braindecode.modules.brant_modules import (
+from braindecode.models.brant import (
     _BrantSpatialEncoder,
     _BrantTemporalEncoder,
 )
