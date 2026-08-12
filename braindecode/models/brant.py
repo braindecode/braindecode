@@ -30,42 +30,92 @@ class Brant(EEGModuleMixin, nn.Module):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
-    Brant is a foundation model for intracranial neural signals (sEEG/iEEG).
-    The raw signal is cut into fixed-length **patches**; two Transformer
-    encoders are then stacked:
+    .. rubric:: Architecture Overview
 
-    1. a **temporal encoder** over a sequence of consecutive patches of one
-       channel, capturing long-range temporal dependency, and
-    2. a **spatial encoder** over the patches sharing the same time index across
-       channels, capturing spatial correlation.
+    Brant models intracranial neural signals (sEEG/iEEG) in four stages
+    [Brant2023]_:
 
-    Time- and frequency-domain information are combined: alongside a linear
-    projection of the raw patch and a learnable temporal positional encoding,
-    a **frequency encoding** is added — the log spectral power of the patch in
-    each of :data:`BRANT_FREQ_BANDS` (8 rhythmic bands) softmax-weights 8
-    learnable per-band embeddings. Following the braindecode convention, that
-    frequency computation is performed **inside** ``forward`` so the model keeps
-    the standard ``(batch, n_chans, n_times)`` input signature.
+    1. Split every channel into non-overlapping temporal patches.
+    2. Combine a linear patch projection with learned temporal positions and a
+       spectral-power embedding.
+    3. Apply a temporal Transformer within each channel, followed by a spatial
+       Transformer across channels at each patch index.
+    4. Mean-pool the channel-patch representation and classify it with a
+       Braindecode downstream head.
+
+    .. rubric:: Macro Components
+
+    ``Brant.patch_tokenizer``
+        **Operations.** Crops an incomplete tail and reshapes the signal into
+        non-overlapping patches of ``patch_size`` samples.
+
+        **Role.** Preserves the raw samples consumed by both the linear patch
+        projection and the spectral-power calculation.
+
+    ``Brant.band_power`` and ``Brant.temporal_encoder``
+        **Operations.** A periodogram is summed over the eight rhythmic bands in
+        :data:`BRANT_FREQ_BANDS`. Their log powers softmax-weight learned band
+        embeddings, which are added to projected patches and temporal positions
+        before self-attention within each channel.
+
+        **Role.** Fuse time- and frequency-domain information while capturing
+        long-range dependencies between consecutive patches.
+
+    ``Brant.spatial_encoder``
+        **Operations.** Self-attention is applied across all channels sharing a
+        patch index.
+
+        **Role.** Capture spatial correlations without a fixed channel
+        vocabulary or channel-specific parameters.
+
+    ``Brant.final_layer``
+        **Operations.** Mean-pool the encoded channel-patch grid and apply a
+        three-layer MLP.
+
+        **Role.** Adapt the upstream encoder to Braindecode classification. This
+        pooling and head are not part of the masked-reconstruction pretraining
+        objective.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Temporal:** learned patch positions and the temporal Transformer preserve
+      patch order and model long-range activity within each channel.
+    - **Spatial:** the spatial Transformer attends across the channels at every
+      temporal patch index.
+    - **Spectral:** log power in theta, alpha, beta, and five gamma bands weights
+      eight learned frequency embeddings.
+
+    .. rubric:: Additional Mechanisms
+
+    The upstream reconstruction projection is retained in
+    ``Brant.spatial_encoder`` so converted checkpoints keep a one-to-one key
+    layout, although classification does not consume its output. Brant has no
+    class token, so ``return_features=True`` returns ``cls_token=None``. The
+    learned temporal positions require the runtime signal length to equal the
+    configured ``n_times``; channel count remains parameter-agnostic.
 
     The upstream model operates on signals down-sampled to **250 Hz**. The
-    defaults below are a modest, ready-to-run configuration; the **released
-    pretrained model** (paper §3.2, ~500M parameters) uses ``patch_size=1500``
-    (6 s at 250 Hz), ``embed_dim=2048``, ``ffn_dim=3072``, ``temporal_n_layers=12``,
-    ``spatial_n_layers=5`` and ``n_heads=16`` — pass these to reproduce it.
+    defaults are a modest, ready-to-run configuration. The converted checkpoint
+    uses the paper architecture: ``patch_size=1500`` (6 s), ``embed_dim=2048``,
+    ``ffn_dim=3072``, ``temporal_n_layers=12``, ``spatial_n_layers=5``,
+    ``n_heads=16``, and ``n_times=22500`` (15 patches, 90 s).
 
     .. important::
-       **Pre-trained weights available.** The official checkpoint (~508M
-       parameters, pre-trained on ~1 TB of intracranial recordings) is hosted on
-       the Hugging Face Hub under the Apache-2.0 license and loads directly::
+       **Pre-trained weights available.** A converted upstream encoder
+       checkpoint (~508M parameters, pre-trained on ~1 TB of intracranial
+       recordings) is hosted on the Hugging Face Hub under the Apache-2.0
+       license and loads directly::
 
-           model = Brant.from_pretrained("braindecode/brant-pretrained", n_outputs=2)
+           model = Brant.from_pretrained("braindecode/brant-pretrained", n_outputs=4)
 
-       It uses the paper configuration above (``patch_size=1500``,
-       ``n_times=22500``); ``n_chans`` and ``n_outputs`` may be changed freely,
-       as channels are pooled and the classification head is task-specific. These
-       weights are released for medical or research use only.
+       The checkpoint stores a two-output placeholder head. Requesting a
+       different ``n_outputs`` rebuilds it automatically; for a new binary task,
+       call ``model.reset_head(2)`` explicitly. ``n_chans`` may be changed because
+       channels are pooled, while ``n_times=22500`` must be kept for the learned
+       temporal positions. These weights are intended for medical or research
+       use, following the upstream authors' release notice.
 
-    .. versionadded:: 1.7
+    .. versionadded:: 1.8
 
     Parameters
     ----------
@@ -321,9 +371,7 @@ class _BrantInputEmbedding(nn.Module):
 
         data = data.reshape(batch_size * n_chans, seq_len, patch_size)
         input_emb = self.proj(data)
-        input_emb = input_emb + power_emb.reshape(
-            batch_size * n_chans, seq_len, -1
-        )
+        input_emb = input_emb + power_emb.reshape(batch_size * n_chans, seq_len, -1)
         return input_emb + self.positional_encoding
 
 

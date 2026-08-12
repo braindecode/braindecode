@@ -30,7 +30,7 @@ Enhancements
 
 - Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
   foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
-  2023), with the official pretrained weights available via
+  2023), with the converted upstream encoder checkpoint available via
   ``Brant.from_pretrained("braindecode/brant-pretrained")`` (:gh:`1100` by
   `Adam Mounir`_)
 

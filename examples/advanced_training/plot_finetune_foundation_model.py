@@ -119,8 +119,9 @@ print(metadata.head(10))
 # For other foundation models (BENDR, BIOT, Brant, Labram, STEEGFormer, etc.)
 # the same one-line pattern applies — see :ref:`load-pretrained-models`. Brant
 # is the intracranial (sEEG/iEEG) foundation model of the collection and loads
-# as ``Brant.from_pretrained("braindecode/brant-pretrained", n_outputs=2)``. For
-# example, the braindecode re-host of the STEEGFormer small checkpoint can be
+# as ``Brant.from_pretrained("braindecode/brant-pretrained",
+# n_outputs=len(classes))`` for 250 Hz, 90-second inputs. For example, the
+# braindecode re-host of the STEEGFormer small checkpoint can be
 # loaded as ``STEEGFormer.from_pretrained("braindecode/STEEGFormer-small",
 # n_outputs=len(classes), chs_info=chs_info)`` -- pass ``n_outputs`` to size the
 # classification head and ``chs_info`` to align your montage with the channel
