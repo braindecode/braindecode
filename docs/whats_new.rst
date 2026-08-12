@@ -579,10 +579,9 @@ API and behavior changes
   makes the handling of incomplete trailing windows explicit. ``drop_last_window=False``
   maps to ``on_last_window='overlap'`` and ``drop_last_window=True`` maps to
   ``on_last_window='drop'``. The new ``'keep'`` mode retains the last incomplete
-  window at its natural shorter size, which is preferable for ERP paradigms (e.g.
-  P300, N170) where trial independence is assumed and overlapping windows can bias
-  classification. Using ``drop_last_window`` now raises a ``FutureWarning``.
-  By `Michele Romani`_.
+  window at its natural shorter size instead of moving its start backwards.
+  Explicit use of ``drop_last_window`` now raises a ``FutureWarning``.
+  (:gh:`1058` by `Michele Romani`_)
 
 Bug fixes
 ==========

@@ -222,10 +222,8 @@ def create_windows_from_events(
     This function extracts windows of size window_size_samples in the interval
     [trial onset + trial_start_offset_samples, trial onset + trial duration +
     trial_stop_offset_samples] around each trial, with a separation of
-    window_stride_samples between consecutive windows. If the last window
-    around an event does not end at trial_stop_offset_samples and
-    drop_last_window is set to False, an additional overlapping window that
-    ends at trial_stop_offset_samples is created.
+    window_stride_samples between consecutive windows. ``on_last_window``
+    controls how a trailing incomplete window is handled.
 
     Windows are extracted from the interval defined by the following::
 
@@ -264,18 +262,14 @@ def create_windows_from_events(
     on_last_window: {'overlap', 'drop', 'keep'} | None
         How to handle the last incomplete window when the trial duration is not
         evenly divisible by window_size_samples and window_stride_samples.
+
         - ``'overlap'``: create a final window flush to the trial end, which
           will overlap with the previous window. This is the default and
           preserves the original behavior of ``drop_last_window=False``.
-          **Not recommended for ERP paradigms** (e.g. P300, N170) where trial
-          independence is assumed, as the overlapping window introduces
-          redundant data that can bias classification and inflate performance
-          estimates.
         - ``'drop'``: discard the remainder of the trial. Equivalent to the
           original ``drop_last_window=True``.
         - ``'keep'``: retain the last incomplete window at its natural shorter
-          size. Suitable for ERP analyses where losing a few samples is
-          preferable to introducing overlap or padding artifacts.
+          size instead of moving its start backwards.
     mapping: dict(str: int)
         Mapping from event description to numerical target value. Must be
         provided when any of ``trial_start_offset_samples``,
@@ -338,13 +332,6 @@ def create_windows_from_events(
             f"Invalid value {on_overlapping_events} for on_overlapping_events."
         )
 
-    # Handle backward compatibility
-    if on_last_window is not None and drop_last_window:
-        raise ValueError(
-            "Cannot specify both `drop_last_window` and `on_last_window`. "
-            "Use `on_last_window` only, as `drop_last_window` is deprecated."
-        )
-
     if drop_last_window is not None:
         if on_last_window is not None:
             raise ValueError(
@@ -352,7 +339,7 @@ def create_windows_from_events(
                 "Use `on_last_window` only, as `drop_last_window` is deprecated."
             )
         warnings.warn(
-            "`drop_last_window` is deprecated and will be removed in version 1.8.x. "
+            "`drop_last_window` is deprecated and will be removed in version 2.0. "
             "Use `on_last_window='drop'` if True, `on_last_window='overlap'` if False.",
             FutureWarning,
             stacklevel=2,
@@ -425,6 +412,11 @@ def create_windows_from_events(
     use_mne_epochs = _get_use_mne_epochs(
         use_mne_epochs, reject, picks, flat, drop_bad_windows
     )
+    if on_last_window == "keep" and use_mne_epochs:
+        raise ValueError(
+            "on_last_window='keep' requires use_mne_epochs=False because "
+            "mne.Epochs cannot contain variable-length windows."
+        )
     if use_mne_epochs and drop_bad_windows is None:
         drop_bad_windows = True
 
@@ -503,16 +495,14 @@ def create_fixed_length_windows(
         not evenly divisible by window_size_samples and window_stride_samples.
         Must be set if both window_size_samples and window_stride_samples are
         provided.
+
         - ``'overlap'``: create a final window flush to the recording end,
-          which will overlap with the previous window. This is the default.
-          **Not recommended when trial independence is required** (e.g. in ERP
-          paradigms such as P300 or N170), as the overlapping window introduces
-          redundant data that can bias classification and inflate performance
-          estimates.
+          which may overlap with the previous window.
         - ``'drop'``: discard the remainder. Equivalent to the original
           ``drop_last_window=True``.
         - ``'keep'``: retain the last incomplete window at its natural shorter
-          size. Not compatible with ``lazy_metadata=True``.
+          size. Not compatible with ``lazy_metadata=True`` or
+          ``use_mne_epochs=True``.
     mapping: dict(str: int)
         Mapping from event description to target value.
     preload: bool
@@ -567,14 +557,12 @@ def create_fixed_length_windows(
         )
     if drop_last_window is not None:
         warnings.warn(
-            "`drop_last_window` is deprecated and will be removed in version 1.8.x. "
+            "`drop_last_window` is deprecated and will be removed in version 2.0. "
             "Use `on_last_window='drop'` if True, `on_last_window='overlap'` if False.",
             FutureWarning,
             stacklevel=2,
         )
         on_last_window = "drop" if drop_last_window else "overlap"
-    if on_last_window is None:
-        on_last_window = "overlap"
 
     stop_offset_samples, window_stride_samples, on_last_window = (
         _check_and_set_fixed_length_window_arguments(
@@ -596,6 +584,11 @@ def create_fixed_length_windows(
     use_mne_epochs = _get_use_mne_epochs(
         use_mne_epochs, reject, picks, flat, drop_bad_windows
     )
+    if on_last_window == "keep" and use_mne_epochs:
+        raise ValueError(
+            "on_last_window='keep' requires use_mne_epochs=False because "
+            "mne.Epochs cannot contain variable-length windows."
+        )
     if use_mne_epochs and drop_bad_windows is None:
         drop_bad_windows = True
     if use_mne_epochs and lazy_metadata:
@@ -1248,58 +1241,24 @@ def _compute_window_inds(
                 "and restart training to be able to continue."
             )
 
-    i_window_in_trials, i_trials, window_starts = [], [], []
-    for start_i, (start, stop) in enumerate(zip(starts, stops)):
-        # Generate possible window starts, with given stride, between original
-        # trial onsets and stops (shifted by start_offset and stop_offset,
-        # respectively)
-        possible_starts = np.arange(start, stop, stride)
+    i_window_in_trials, i_trials, window_starts, window_stops = [], [], [], []
+    for i_trial, (start, stop) in enumerate(zip(starts, stops)):
+        trial_starts = np.arange(start, stop - size + 1, stride).tolist()
 
-        # Possible window start is actually a start, if window size fits in
-        # trial start and stop
-        for i_window, s in enumerate(possible_starts):
-            if (s + size) <= stop:
-                window_starts.append(s)
-                i_window_in_trials.append(i_window)
-                i_trials.append(start_i)
+        if on_last_window == "overlap" and trial_starts[-1] + size != stop:
+            trial_starts.append(stop - size)
+        elif on_last_window == "keep":
+            next_start = trial_starts[-1] + stride
+            if next_start < stop:
+                trial_starts.append(next_start)
 
-        # If the last window start + window size is not the same as
-        # stop + stop_offset, create another window that overlaps and stops
-        # at onset + stop_offset
-        i_window_in_trials, i_trials, window_starts = [], [], []
-        for start_i, (start, stop) in enumerate(zip(starts, stops)):
-            possible_starts = np.arange(start, stop, stride)
+        i_window_in_trials.extend(range(len(trial_starts)))
+        i_trials.extend([i_trial] * len(trial_starts))
+        window_starts.extend(trial_starts)
+        window_stops.extend(
+            min(window_start + size, stop) for window_start in trial_starts
+        )
 
-            last_complete_start = None
-            for i_window, s in enumerate(possible_starts):
-                if (s + size) <= stop:
-                    window_starts.append(s)
-                    i_window_in_trials.append(i_window)
-                    i_trials.append(start_i)
-                    last_complete_start = s
-
-            if on_last_window != "drop":
-                last_start = last_complete_start if last_complete_start is not None else start
-                if last_start + size != stop:
-                    if on_last_window == "overlap":
-                        window_starts.append(stop - size)
-                        i_window_in_trials.append(i_window_in_trials[-1] + 1)
-                        i_trials.append(start_i)
-                    elif on_last_window == "keep":
-                        next_start = last_start + stride
-                        if next_start < stop:
-                            window_starts.append(next_start)
-                            i_window_in_trials.append(i_window_in_trials[-1] + 1)
-                            i_trials.append(start_i)
-
-    # Set window stops to be event stops (rather than trial stops)
-    window_stops = np.array(window_starts) + size
-    if on_last_window == "keep":
-        last_idx_by_trial: dict[int, int] = {}
-        for i, t in enumerate(i_trials):
-            last_idx_by_trial[t] = i
-        for trial_idx, last_window_idx in last_idx_by_trial.items():
-            window_stops[last_window_idx] = min(window_stops[last_window_idx], stops[trial_idx])
     if not (len(i_window_in_trials) == len(window_starts) == len(window_stops)):
         raise ValueError(
             f"{len(i_window_in_trials)} == {len(window_starts)} == {len(window_stops)}"
@@ -1363,12 +1322,10 @@ def _check_and_set_fixed_length_window_arguments(
     stop_offset_samples,
     window_size_samples,
     window_stride_samples,
-    on_last_window,  # replaces drop_last_window
+    on_last_window,
     lazy_metadata,
 ):
-    """Raises warnings for incorrect input arguments and will set correct
-    default values for stop_offset_samples, window_stride_samples & on_last_window, if necessary.
-    """
+    """Validate arguments and fill defaults for fixed-length windowing."""
 
     if window_size_samples is not None and window_stride_samples is None:
         window_stride_samples = window_size_samples
@@ -1397,8 +1354,6 @@ def _check_and_set_fixed_length_window_arguments(
             " instead."
         )
 
-    # on_last_window is only required when both window_size and stride are set,
-    # because only then can there be a remainder to handle
     if (
         window_size_samples is not None
         and window_stride_samples is not None
@@ -1414,11 +1369,7 @@ def _check_and_set_fixed_length_window_arguments(
         and window_stride_samples is None
         and on_last_window is not None
     ):
-        # window size is inferred = whole recording = no remainder possible,
-        # so on_last_window has no effect; normalize to None to keep the
-        # downstream assertion clean
         on_last_window = None
-
 
     if on_last_window not in (None, "overlap", "drop", "keep"):
         raise ValueError(
@@ -1432,7 +1383,11 @@ def _check_and_set_fixed_length_window_arguments(
             "Only on_last_window='drop' is supported with lazy_metadata."
         )
 
-    assert (window_size_samples is None) == (window_stride_samples is None) == (on_last_window is None)
+    assert (
+        (window_size_samples is None)
+        == (window_stride_samples is None)
+        == (on_last_window is None)
+    )
 
     return stop_offset_samples, window_stride_samples, on_last_window
 
