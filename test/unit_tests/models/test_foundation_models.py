@@ -1253,6 +1253,55 @@ def _mixed_chs_info():
     ]
 
 
+def _ch_type_only_chs_info():
+    return [
+        {"ch_name": "C1", "ch_type": "eeg", "loc": _loc(0.1, 0.0, 0.1)},
+        {"ch_name": "C2", "ch_type": "eeg", "loc": _loc(-0.1, 0.0, 0.1)},
+    ]
+
+
+def _small_ch_type_model(model_class):
+    common = {
+        "chs_info": _ch_type_only_chs_info(),
+        "n_times": 8,
+        "sfreq": 256.0,
+        "window_length": 8,
+        "n_filters": 4,
+        "ratios": (2,),
+        "kernel_size": 3,
+        "last_kernel_size": 3,
+        "emb_dim": 8,
+        "n_neuro": 2,
+        "tokenizer_num_heads": 2,
+        "codebook_dim": 8,
+        "codebook_size": 8,
+        "num_quantizers": 1,
+    }
+    if model_class is BrainTokenizer:
+        return BrainTokenizer(**common).eval()
+    return BrainOmni(
+        n_outputs=3,
+        overlap_ratio=0.0,
+        lm_dim=8,
+        num_heads=2,
+        depth=2,
+        **common,
+    ).eval()
+
+
+def _brainomni_geometry(model):
+    tokenizer = model if isinstance(model, BrainTokenizer) else model.tokenizer
+    return tokenizer.pos, tokenizer.sensor_type
+
+
+def _assert_same_state(source, restored):
+    source_state = source.state_dict()
+    restored_state = restored.state_dict()
+    assert source_state.keys() == restored_state.keys()
+    for key, value in source_state.items():
+        assert torch.equal(value, restored_state[key]), key
+
+
 def _small_tokenizer(n_chans=4, n_times=512):
     return BrainTokenizer(
         chs_info=_eeg_chs_info(n_chans), n_times=n_times, sfreq=256.0, **_BRAINOMNI_KW
@@ -1362,10 +1411,7 @@ def test_geometry_sensor_type(chs_info, expected):
 
 
 def test_braintokenizer_accepts_ch_type_only_geometry():
-    chs_info = [
-        {"ch_name": "C1", "ch_type": "eeg", "loc": _loc(0.1, 0.0, 0.1)},
-        {"ch_name": "C2", "ch_type": "eeg", "loc": _loc(-0.1, 0.0, 0.1)},
-    ]
+    chs_info = _ch_type_only_chs_info()
 
     model = BrainTokenizer(
         chs_info=chs_info,
@@ -1390,6 +1436,57 @@ def test_braintokenizer_accepts_ch_type_only_geometry():
     assert model.sensor_type.tolist() == [0, 0]
     assert output.shape == (1, 2, 8)
     assert torch.isfinite(output).all()
+
+
+@pytest.mark.parametrize(
+    "model_class", [BrainTokenizer, BrainOmni], ids=["tokenizer", "brainomni"]
+)
+def test_brainomni_ch_type_only_config_roundtrip(model_class):
+    model = _small_ch_type_model(model_class)
+    config = json.loads(json.dumps(model.get_config()))
+
+    assert [ch["ch_type"] for ch in config["chs_info"]] == ["eeg", "eeg"]
+    restored = model_class.from_config(config).eval()
+    incompatible = restored.load_state_dict(model.state_dict(), strict=True)
+    assert not incompatible.missing_keys
+    assert not incompatible.unexpected_keys
+
+    source_pos, source_type = _brainomni_geometry(model)
+    restored_pos, restored_type = _brainomni_geometry(restored)
+    torch.testing.assert_close(restored_pos, source_pos, rtol=0, atol=0)
+    torch.testing.assert_close(restored_type, source_type, rtol=0, atol=0)
+    _assert_same_state(model, restored)
+
+    x = torch.randn(1, 2, 8)
+    torch.testing.assert_close(restored(x), model(x))
+
+
+@pytest.mark.parametrize(
+    "model_class", [BrainTokenizer, BrainOmni], ids=["tokenizer", "brainomni"]
+)
+def test_brainomni_ch_type_only_local_hub_roundtrip(tmp_path, model_class):
+    pytest.importorskip("huggingface_hub")
+    model = _small_ch_type_model(model_class)
+    save_dir = tmp_path / model_class.__name__
+    save_dir.mkdir()
+
+    model._save_pretrained(save_dir)
+    restored = model_class.from_pretrained(
+        save_dir, local_files_only=True, strict=True
+    ).eval()
+
+    with open(save_dir / "config.json") as config_file:
+        config = json.load(config_file)
+    assert [ch["ch_type"] for ch in config["chs_info"]] == ["eeg", "eeg"]
+
+    source_pos, source_type = _brainomni_geometry(model)
+    restored_pos, restored_type = _brainomni_geometry(restored)
+    torch.testing.assert_close(restored_pos, source_pos, rtol=0, atol=0)
+    torch.testing.assert_close(restored_type, source_type, rtol=0, atol=0)
+    _assert_same_state(model, restored)
+
+    x = torch.randn(1, 2, 8)
+    torch.testing.assert_close(restored(x), model(x))
 
 
 def test_geometry_eeg_orientation_and_centering():
