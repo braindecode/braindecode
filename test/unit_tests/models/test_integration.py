@@ -9,6 +9,7 @@ from __future__ import annotations
 import inspect
 import os
 import sys
+from io import BytesIO
 from types import MethodType
 
 import mne
@@ -633,6 +634,45 @@ def test_torch_script_without_plain_conversion(model_class):
     scripted_model = torch.jit.script(model)
 
     torch.testing.assert_close(scripted_model(input_tensor), model(input_tensor))
+
+
+@pytest.mark.parametrize("n_chans", [None, default_signal_params["n_chans"]])
+def test_torch_script_with_chs_info(n_chans):
+    """MNE-style channel metadata must not be part of the scripted graph."""
+    chs_info = default_signal_params["chs_info"]
+    model = ShallowFBCSPNet(
+        n_chans=n_chans,
+        chs_info=chs_info,
+        n_outputs=default_signal_params["n_outputs"],
+        n_times=default_signal_params["n_times"],
+        sfreq=default_signal_params["sfreq"],
+    ).eval()
+    input_tensor = torch.randn(
+        2, len(chs_info), default_signal_params["n_times"]
+    )
+    assert model._n_chans == n_chans
+    assert model.chs_info is chs_info
+    expected = model(input_tensor)
+
+    scripted = torch.jit.script(model)
+    buffer = BytesIO()
+    torch.jit.save(scripted, buffer)
+    buffer.seek(0)
+    restored_script = torch.jit.load(buffer)
+
+    torch.testing.assert_close(scripted(input_tensor), expected)
+    torch.testing.assert_close(restored_script(input_tensor), expected)
+
+    restored_model = ShallowFBCSPNet.from_config(model.get_config()).eval()
+    restored_model.load_state_dict(model.state_dict())
+    assert restored_model._n_chans == n_chans
+    assert restored_model.n_chans == len(chs_info)
+    assert [ch["ch_name"] for ch in restored_model.chs_info] == [
+        ch["ch_name"] for ch in chs_info
+    ]
+    for restored_ch, original_ch in zip(restored_model.chs_info, chs_info):
+        np.testing.assert_allclose(restored_ch["loc"], original_ch["loc"])
+    torch.testing.assert_close(restored_model(input_tensor), expected)
 
 
 def test_signal_params_still_raise_value_error():

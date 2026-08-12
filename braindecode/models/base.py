@@ -205,9 +205,13 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     #: before ``forward`` is ever compiled.
     __jit_ignored_attributes__ = [
         *sorted(_EEG_PARAMS),
+        "_chs_info",
         "input_shape",
         "mapping",
     ]
+    #: Rich MNE channel dictionaries are intentionally unavailable in scripted
+    #: forwards; they remain unchanged on eager models and in saved configs.
+    __jit_unused_properties__ = ["chs_info"]
 
     def __init_subclass__(cls, **kwargs):
         # TorchScript only honours ``__jit_ignored_attributes__`` for
@@ -215,7 +219,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         # with ``vars(type(module))``, which skips inherited ones. Rebinding
         # the very same property objects on each subclass makes them visible
         # there without changing any runtime behaviour.
-        for name in EEGModuleMixin.__jit_ignored_attributes__:
+        for name in cls.__jit_ignored_attributes__:
             if name in cls.__dict__:
                 continue
             prop = getattr(cls, name, None)
@@ -309,6 +313,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         self._chs_info = chs_info  # type: ignore[assignment]
         self._n_outputs = n_outputs  # type: ignore[assignment]
         self._n_chans = n_chans  # type: ignore[assignment]
+        # TorchScript cannot represent the rich MNE dictionaries in _chs_info.
+        # Keep the original eager state above and expose only the derived scalar
+        # to scripted signal-property getters.
+        self._n_chans_for_jit = (
+            len(chs_info) if n_chans is None and chs_info is not None else n_chans
+        )
         self._n_times = n_times  # type: ignore[assignment]
         self._sfreq = sfreq  # type: ignore[assignment]
 
@@ -333,6 +343,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     @property
     def n_chans(self) -> int:
+        if torch.jit.is_scripting():
+            if self._n_chans_for_jit is None:
+                raise ValueError(
+                    "n_chans could not be inferred. Either specify n_chans or chs_info."
+                )
+            return self._n_chans_for_jit
         if self._n_chans is None and self._chs_info is not None:
             return len(self._chs_info)
         elif self._n_chans is None:
@@ -342,7 +358,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         return self._n_chans
 
     @property
-    def chs_info(self) -> list[str]:
+    def chs_info(self) -> list[dict]:
         if self._chs_info is None:
             raise ValueError("chs_info not specified.")
         return self._chs_info
