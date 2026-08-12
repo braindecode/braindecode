@@ -41,7 +41,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         Whether to use bias in convolutional layers. Default is True.
     batch_norm : bool, optional
         Whether to use batch normalization. Default is True.
-    activation: nn.Module, default=nn.ELU
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 

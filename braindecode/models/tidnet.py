@@ -45,7 +45,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
     summary : int
         Output size of AdaptiveAvgPool1D layer. If set to -1, value will be calculated
         automatically (n_times // pooling).
-    activation: nn.Module, default=nn.LeakyReLU
+    activation : nn.Module, default=nn.LeakyReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.LeakyReLU``.
 

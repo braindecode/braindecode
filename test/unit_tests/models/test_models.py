@@ -4215,3 +4215,49 @@ def test_documented_parameters_exist_in_signature(model_name):
         f"{model_name} documents parameters its constructor does not accept: "
         f"{unknown}"
     )
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "ATCNet",
+        "AttnSleep",
+        "CTNet",
+        "EEGSimpleConv",
+        "IFNet",
+        "SPARCNet",
+        "SleepStagerBlanco2020",
+        "SleepStagerChambon2018",
+        "TIDNet",
+    ],
+)
+def test_audited_model_parameter_headers_follow_numpydoc(model_name):
+    """Changed parameter headers must be parsed as names, not name-and-type."""
+    model_class = all_models_dict[model_name]
+    doc = inspect.getdoc(model_class) or ""
+    doc = doc.split(".. rubric:: Hugging Face Hub integration")[0]
+    lines = doc.split("\n")
+
+    malformed = []
+    inside = False
+    for position, line in enumerate(lines):
+        stripped = line.strip()
+        next_line = lines[position + 1].strip() if position + 1 < len(lines) else ""
+        if next_line and set(next_line) == {"-"}:
+            inside = stripped == "Parameters"
+            continue
+        if not inside:
+            continue
+        match = _PARAM_LINE.match(line)
+        if match is None:
+            continue
+        following = next((nxt for nxt in lines[position + 1 :] if nxt.strip()), "")
+        if following.startswith(" ") and not line.startswith(
+            f"{match.group('names')} : "
+        ):
+            malformed.append(line)
+
+    assert not malformed, (
+        f"{model_class.__name__} has parameter headers numpydoc misparses: "
+        f"{malformed}"
+    )
