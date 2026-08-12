@@ -1373,6 +1373,82 @@ def test_rotary_positional_embedding_output_shape():
     assert torch.isfinite(k_out).all(), "k_out contains non-finite values"
 
 
+def test_rotary_positional_embedding_extends_cache_and_preserves_rotation():
+    """RoPE grows beyond its initial cache and keeps its complex phase on casts."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    rope = RotaryPositionalEmbedding(n_dim=16, init_seq_len=4).half()
+    q = torch.randn(2, 9, 4, 4, dtype=torch.float16)
+    q_out, _ = rope(q, q)
+
+    assert q_out.shape == q.shape
+    assert rope.max_seq_len_cache == 9
+    assert rope.rotate.is_complex()
+    assert torch.any(rope.rotate.imag != 0)
+
+
+def test_rotary_positional_embedding_repairs_real_only_checkpoint_cache():
+    """DeepSpeed-exported BrainOmni caches lose the complex sine component."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    source = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
+    exported = source.state_dict()
+    exported["rotate"] = exported["rotate"].real
+
+    target = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
+    target.load_state_dict(exported, strict=True)
+
+    assert target.rotate.is_complex()
+    torch.testing.assert_close(target.rotate, source.rotate)
+
+
+def test_rotary_positional_embedding_loads_extended_cache():
+    """A runtime-grown derived cache must survive a strict state-dict roundtrip."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    source = RotaryPositionalEmbedding(n_dim=16, init_seq_len=4)
+    source(torch.randn(1, 9, 4, 4), torch.randn(1, 9, 4, 4))
+
+    target = RotaryPositionalEmbedding(n_dim=16, init_seq_len=4)
+    target.load_state_dict(source.state_dict(), strict=True)
+
+    assert target.max_seq_len_cache == 9
+    torch.testing.assert_close(target.rotate, source.rotate)
+
+
+def test_rotary_positional_embedding_rejects_malformed_real_cache():
+    """The released-cache repair must not hide an incompatible checkpoint."""
+    from braindecode.modules import RotaryPositionalEmbedding
+
+    source = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
+    exported = source.state_dict()
+    exported["rotate"] = exported["rotate"].real[:, :-1]
+
+    target = RotaryPositionalEmbedding(n_dim=16, init_seq_len=9)
+    with pytest.raises(RuntimeError, match="size mismatch for rotate"):
+        target.load_state_dict(exported, strict=True)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"n_dim": 0, "n_head": 1}, "n_dim"),
+        ({"n_dim": 16, "n_head": 0}, "n_head"),
+        ({"n_dim": 15, "n_head": 4}, "divisible"),
+        ({"n_dim": 12, "n_head": 4, "rope": True}, "head dimension.*even"),
+        ({"n_dim": 16, "n_head": 4, "dropout": -0.1}, "dropout"),
+        ({"n_dim": 16, "n_head": 4, "dropout": 1.1}, "dropout"),
+    ],
+)
+def test_multi_head_attention_rope_rejects_invalid_arguments(kwargs, match):
+    from braindecode.modules import MultiHeadAttentionRoPE
+
+    defaults = {"n_dim": 16, "n_head": 4, "dropout": 0.0, "rope": False}
+    defaults.update(kwargs)
+    with pytest.raises(ValueError, match=match):
+        MultiHeadAttentionRoPE(**defaults)
+
+
 @pytest.mark.parametrize("rope", [True, False])
 def test_multi_head_attention_rope_output_shape(rope):
     """MultiHeadAttentionRoPE: output shape (batch, seq, n_dim) and finite values."""
@@ -1394,6 +1470,39 @@ def test_multi_head_attention_rope_output_shape(rope):
         f"Expected ({batch}, {seq}, {n_dim}), got {out.shape}"
     )
     assert torch.isfinite(out).all(), "Output contains non-finite values"
+
+
+@pytest.mark.parametrize("mask_ndim", [2, 3, 4])
+def test_multi_head_attention_rope_mask_shapes(mask_ndim):
+    """Equivalent public SDPA mask layouts produce equivalent outputs."""
+    from braindecode.modules import MultiHeadAttentionRoPE
+
+    torch.manual_seed(0)
+    module = MultiHeadAttentionRoPE(
+        n_dim=16, n_head=4, dropout=0.0, causal=False, rope=True
+    ).eval()
+    x = torch.randn(2, 7, 16)
+    mask = torch.tril(torch.ones(7, 7, dtype=torch.bool))
+    if mask_ndim >= 3:
+        mask = mask.expand(2, -1, -1)
+    if mask_ndim == 4:
+        mask = mask.unsqueeze(1)
+
+    out = module(x, mask)
+    reference = module(x, torch.tril(torch.ones(7, 7, dtype=torch.bool)))
+    torch.testing.assert_close(out, reference)
+
+
+@pytest.mark.parametrize(
+    "mask_shape",
+    [(7,), (2, 1, 1, 7, 7), (2, 6, 6), (2, 2, 7, 7)],
+)
+def test_multi_head_attention_rope_rejects_invalid_mask_shape(mask_shape):
+    from braindecode.modules import MultiHeadAttentionRoPE
+
+    module = MultiHeadAttentionRoPE(16, 4, 0.0)
+    with pytest.raises(ValueError, match="mask"):
+        module(torch.randn(2, 7, 16), torch.ones(mask_shape, dtype=torch.bool))
 
 
 def test_patch_tokenizer():

@@ -1,12 +1,14 @@
-# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+# Authors: Qian Xiao and OpenTSLab BrainOmni contributors
+#          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-# License: BSD-3
+# License: MIT (see LICENSES/BrainOmni-MIT.txt and
+#          LICENSES/vector-quantize-pytorch-MIT.txt)
 #
 # The vector quantization below is adapted from lucidrains' vector-quantize-pytorch
 # (MIT License, https://github.com/lucidrains/vector-quantize-pytorch). Buffer and
 # parameter names are deliberately kept aligned with the published BrainOmni
-# checkpoint (OpenTSLab/BrainOmni) so that ``from_pretrained(strict=True)`` loads
-# the upstream weights; see the per-class "state-dict parity" notes.
+# checkpoint (OpenTSLab/BrainOmni) so the public model's
+# ``load_state_dict(..., strict=True)`` adapter can load the upstream weights.
 
 import torch
 import torch.nn as nn
@@ -73,6 +75,19 @@ class Codebook(nn.Module):
         threshold_ema_dead_code: int = 2,
     ):
         super().__init__()
+        if dim <= 0:
+            raise ValueError(f"dim must be positive, got {dim}.")
+        if codebook_size <= 0:
+            raise ValueError(f"codebook_size must be positive, got {codebook_size}.")
+        if not 0.0 <= decay < 1.0:
+            raise ValueError(f"decay must satisfy 0 <= decay < 1, got {decay}.")
+        if epsilon <= 0:
+            raise ValueError(f"epsilon must be positive, got {epsilon}.")
+        if threshold_ema_dead_code < 0:
+            raise ValueError(
+                "threshold_ema_dead_code must be non-negative, got "
+                f"{threshold_ema_dead_code}."
+            )
         self.decay = decay
         self.epsilon = epsilon
         self.threshold_ema_dead_code = threshold_ema_dead_code
@@ -81,7 +96,8 @@ class Codebook(nn.Module):
         embed = torch.empty(codebook_size, dim)
         nn.init.kaiming_uniform_(embed)
         # 'inited' buffer kept so state-dict keys match upstream checkpoint.
-        self.register_buffer("inited", torch.tensor([True]))
+        # Upstream stores this flag as a float tensor in the released artifacts.
+        self.register_buffer("inited", torch.tensor([1.0]))
         self.register_buffer("cluster_size", torch.zeros(codebook_size))
         self.register_buffer("embed", embed)
         self.register_buffer("embed_avg", embed.clone())
@@ -204,6 +220,10 @@ class VectorQuantizer(nn.Module):
     ):
         super().__init__()
         _codebook_dim: int = codebook_dim if codebook_dim is not None else dim
+        if dim <= 0:
+            raise ValueError(f"dim must be positive, got {dim}.")
+        if _codebook_dim <= 0:
+            raise ValueError(f"codebook_dim must be positive, got {_codebook_dim}.")
         requires_projection = _codebook_dim != dim
         self.project_in = (
             nn.Linear(dim, _codebook_dim) if requires_projection else nn.Identity()
@@ -293,6 +313,14 @@ class ResidualVQ(nn.Module):
         super().__init__()
         if quantize_optimize_method != "ema":
             raise ValueError(f"Only 'ema' supported, got {quantize_optimize_method!r}")
+        for name, value in (
+            ("dim", dim),
+            ("codebook_dim", codebook_dim),
+            ("codebook_size", codebook_size),
+            ("num_quantizers", num_quantizers),
+        ):
+            if value <= 0:
+                raise ValueError(f"{name} must be positive, got {value}.")
         self.num_quantizers = num_quantizers
         self.layers = nn.ModuleList(
             [

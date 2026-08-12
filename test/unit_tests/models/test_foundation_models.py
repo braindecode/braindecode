@@ -2,6 +2,7 @@
 #
 # License: BSD-3
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,12 @@ import torch.nn as nn
 
 try:
     from huggingface_hub import hf_hub_download
+
+    HAS_HF_HUB = True
+except ImportError:
+    HAS_HF_HUB = False
+
+try:
     from safetensors.torch import load_file
 
     HAS_SAFETENSORS = True
@@ -1313,6 +1320,51 @@ def test_geometry_eeg_orientation_and_centering():
     assert np.allclose(pos[:, :3].mean(axis=0), 0.0, atol=1e-6)  # mean-centered
 
 
+@pytest.mark.parametrize(
+    "kind, coil_type, orientation_slice",
+    [
+        ("grad", 3012, slice(3, 6)),  # planar gradiometer
+        ("grad", 5001, slice(9, 12)),  # axial gradiometer
+        ("mag", 3022, slice(9, 12)),
+    ],
+)
+def test_geometry_meg_orientation_uses_mne_loc_axes(
+    kind, coil_type, orientation_slice
+):
+    loc = _loc(0.1, 0.2, 0.3)
+    loc[orientation_slice] = (0.4, 0.5, 0.6)
+    pos, _ = _geometry_from_chs_info(
+        [{"ch_name": "M1", "kind": kind, "coil_type": coil_type, "loc": loc}]
+    )
+    assert np.allclose(pos[0, 3:], (0.4, 0.5, 0.6))
+
+
+@pytest.mark.parametrize(
+    "kind, coil_type, orientation_slice",
+    [
+        ("grad", 3012, slice(3, 6)),
+        ("grad", 5001, slice(9, 12)),
+        ("mag", 3022, slice(9, 12)),
+    ],
+)
+def test_geometry_nonfinite_meg_orientation_raises(
+    kind, coil_type, orientation_slice
+):
+    loc = _loc(0.1, 0.2, 0.3)
+    loc[orientation_slice] = np.nan
+    with pytest.raises(ValueError, match="finite coil orientation"):
+        _geometry_from_chs_info(
+            [
+                {
+                    "ch_name": "M1",
+                    "kind": kind,
+                    "coil_type": coil_type,
+                    "loc": loc,
+                }
+            ]
+        )
+
+
 @pytest.mark.parametrize("loc", [np.full(12, np.nan), None], ids=["nan", "absent"])
 def test_geometry_bad_loc_raises(loc):
     ch = {"ch_name": "A", "kind": "eeg"}
@@ -1391,6 +1443,27 @@ def test_brain_quantizer_shapes_and_loss():
 
 
 @pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"dim": 0}, "dim"),
+        ({"codebook_dim": 0}, "codebook_dim"),
+        ({"codebook_size": 0}, "codebook_size"),
+        ({"num_quantizers": 0}, "num_quantizers"),
+    ],
+)
+def test_brain_quantizer_rejects_invalid_arguments(kwargs, match):
+    defaults = {
+        "dim": 16,
+        "codebook_dim": 16,
+        "codebook_size": 32,
+        "num_quantizers": 2,
+    }
+    defaults.update(kwargs)
+    with pytest.raises(ValueError, match=match):
+        ResidualVQ(**defaults)
+
+
+@pytest.mark.parametrize(
     "train, expect_change",
     [(True, True), (False, False)],
     ids=["train_updates", "eval_frozen"],
@@ -1418,10 +1491,17 @@ def test_braintokenizer_has_final_layer():
     assert "final_layer" in last_two
 
 
-def test_braintokenizer_forward_reconstruction_shape():
-    model = _small_tokenizer().eval()
-    x = torch.randn(2, 4, 512)
+@pytest.mark.parametrize("n_times", [300, 512, 600])
+def test_braintokenizer_forward_reconstruction_shape(n_times):
+    model = _small_tokenizer(n_times=n_times).eval()
+    x = torch.randn(2, 4, n_times)
     assert model(x).shape == x.shape
+
+
+def test_braintokenizer_reconstruction_zero_fills_dropped_tail():
+    model = _small_tokenizer(n_times=600).eval()
+    reconstruction = model(torch.randn(1, 4, 600))
+    assert torch.count_nonzero(reconstruction[..., 512:]) == 0
 
 
 def test_braintokenizer_encode_decode_and_tokenize():
@@ -1435,6 +1515,58 @@ def test_braintokenizer_encode_decode_and_tokenize():
     feat, idx = model.tokenize(x)
     assert feat.shape[:2] == (2, 3) and feat.shape[-1] == 16  # (batch, n_neuro, tokens, emb_dim)
     assert idx.shape[-1] == 2
+
+
+@pytest.mark.parametrize(
+    "n_times, overlap_ratio, expected_starts",
+    [
+        (300, 0.0, [0]),
+        (600, 0.0, [0]),
+        (600, 0.25, [0, 384]),
+    ],
+)
+def test_braintokenizer_unfold_matches_released_source(
+    n_times, overlap_ratio, expected_starts
+):
+    model = _small_tokenizer(n_times=n_times)
+    x = torch.arange(n_times, dtype=torch.float32).reshape(1, 1, -1)
+    windows = model._unfold(x, overlap_ratio=overlap_ratio)
+    assert windows[0, 0, :, 0].tolist() == expected_starts
+
+
+@pytest.mark.parametrize(
+    "overlap_ratio", [-0.1, 1.0 - 0.5 / 512, 1.0, 1.1]
+)
+def test_braintokenizer_rejects_invalid_overlap(overlap_ratio):
+    model = _small_tokenizer()
+    with pytest.raises(ValueError, match="overlap_ratio"):
+        model.tokenize(torch.randn(1, 4, 512), overlap_ratio=overlap_ratio)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"window_length": 0}, "window_length"),
+        ({"n_filters": 0}, "n_filters"),
+        ({"ratios": ()}, "ratios"),
+        ({"ratios": (8, 0, 2)}, "ratios"),
+        ({"kernel_size": 0}, "kernel_size"),
+        ({"last_kernel_size": 0}, "last_kernel_size"),
+        ({"emb_dim": 15}, "emb_dim.*tokenizer_num_heads"),
+        ({"tokenizer_num_heads": 0}, "tokenizer_num_heads"),
+        ({"n_neuro": 0}, "n_neuro"),
+        ({"drop_prob": -0.1}, "drop_prob"),
+        ({"drop_prob": 1.1}, "drop_prob"),
+    ],
+)
+def test_braintokenizer_rejects_invalid_constructor_arguments(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        BrainTokenizer(
+            chs_info=_eeg_chs_info(4),
+            n_times=512,
+            sfreq=256.0,
+            **(_BRAINOMNI_KW | kwargs),
+        )
 
 
 # ---- public BrainOmni classifier ---------------------------------------------
@@ -1472,6 +1604,277 @@ def test_brainomni_reset_head_changes_only_head():
     assert id(model.tokenizer) == tokenizer_id  # backbone untouched
 
 
+def test_brainomni_return_features_head_contract():
+    model = _small_brainomni().eval()
+    x = torch.randn(2, 4, 512)
+    bundle = model(x, return_features=True)
+    assert set(bundle) == {"features", "cls_token"}
+    assert bundle["cls_token"] is None
+    assert torch.allclose(model.final_layer(bundle["features"]), model(x))
+
+
+def test_brainomni_reset_head_preserves_dtype():
+    model = _small_brainomni().double()
+    model.reset_head(5)
+    assert next(model.final_layer.parameters()).dtype == torch.float64
+
+
+def test_brainomni_released_dropout_configuration():
+    """Tokenizer and Stage-2 dropout follow their separate released configs."""
+    model = _small_brainomni()
+    assert model.tokenizer.drop_prob == 0.0
+    assert model.tokenizer.encoder.backwardsolution.dropout == 0.0
+    assert model.tokenizer.final_layer.forwardsolution.dropout == 0.0
+    assert model.drop_prob == 0.1
+    assert model.blocks[0].time_attn.dropout == 0.1
+    assert model.final_layer[0].p == 0.1
+
+
+def test_brainomni_downstream_head_dropout_is_independent():
+    """The released downstream head keeps 0.1 dropout when LM dropout changes."""
+    model = BrainOmni(
+        chs_info=_eeg_chs_info(4),
+        n_outputs=3,
+        n_times=512,
+        sfreq=256.0,
+        lm_dim=16,
+        num_heads=4,
+        depth=2,
+        drop_prob=0.0,
+        **_BRAINOMNI_KW,
+    )
+    assert model.blocks[0].time_attn.dropout == 0.0
+    assert model.final_layer[0].p == 0.1
+
+
+@pytest.mark.parametrize("model_factory", [_small_tokenizer, _small_brainomni])
+def test_brainomni_native_state_dict_roundtrip(model_factory):
+    source = model_factory()
+    target = model_factory()
+    target.load_state_dict(source.state_dict(), strict=True)
+    for key, value in source.state_dict().items():
+        assert torch.equal(target.state_dict()[key], value)
+
+
+@pytest.mark.parametrize("model_factory", [_small_tokenizer, _small_brainomni])
+def test_brainomni_checkpoint_key_remap_rejects_collisions(model_factory):
+    model = model_factory()
+    state_dict = model.state_dict()
+    if isinstance(model, BrainTokenizer):
+        native_key = next(key for key in state_dict if ".conv.weight_g" in key)
+        official_key = native_key.replace(".conv.weight_g", ".conv.conv.weight_g")
+    else:
+        native_key = next(
+            key for key in state_dict if "tokenizer." in key and ".conv.weight_g" in key
+        )
+        official_key = native_key.replace(".conv.weight_g", ".conv.conv.weight_g")
+    state_dict[official_key] = state_dict[native_key].clone()
+    with pytest.raises(ValueError, match="collide"):
+        model.load_state_dict(state_dict, strict=True)
+
+
+def test_brainomni_tokenizer_parameters_are_frozen():
+    model = _small_brainomni()
+    assert all(not parameter.requires_grad for parameter in model.tokenizer.parameters())
+    assert all(parameter.requires_grad for parameter in model.blocks.parameters())
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"overlap_ratio": -0.1}, "overlap_ratio"),
+        ({"overlap_ratio": 1.0 - 0.5 / 512}, "overlap_ratio"),
+        ({"overlap_ratio": 1.0}, "overlap_ratio"),
+        ({"lm_dim": 15}, "lm_dim.*num_heads"),
+        ({"num_heads": 3}, "num_heads.*even"),
+        ({"depth": 0}, "depth"),
+        ({"tokenizer_drop_prob": -0.1}, "tokenizer_drop_prob"),
+        ({"tokenizer_drop_prob": 1.1}, "tokenizer_drop_prob"),
+        ({"drop_prob": -0.1}, "drop_prob"),
+        ({"drop_prob": 1.1}, "drop_prob"),
+    ],
+)
+def test_brainomni_rejects_invalid_constructor_arguments(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        model_kwargs = dict(lm_dim=16, num_heads=4, depth=2)
+        model_kwargs.update(kwargs)
+        BrainOmni(
+            chs_info=_eeg_chs_info(4),
+            n_outputs=3,
+            n_times=512,
+            sfreq=256.0,
+            **(_BRAINOMNI_KW | model_kwargs),
+        )
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_braintokenizer_released_checkpoint_strict_load_and_parity(tmp_path):
+    """Gate the exact official tokenizer artifact and public loading path."""
+    if not HAS_HF_HUB:
+        pytest.skip("huggingface_hub is required")
+    revision = "9a4d3c70495370397ccfbfd6d2496f25647545a5"
+    path = Path(
+        hf_hub_download(
+            "OpenTSLab/BrainOmni",
+            "braintokenizer/BrainTokenizer.pt",
+            revision=revision,
+            cache_dir=tmp_path,
+        )
+    )
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+        "d41c44c14c3f3b11fd0fb660752e356dff4cb4bc5f32a05f470f503ffddc7b1a"
+    )
+    state_dict = torch.load(path, map_location="cpu", weights_only=True)
+    model = BrainTokenizer(
+        chs_info=_eeg_chs_info(2), n_times=512, sfreq=256.0
+    ).eval()
+    model.load_state_dict(state_dict, strict=True)
+
+    # Values captured from pinned source 340d6b5 with the same released
+    # artifact and deterministic input/geometry.
+    model.pos.copy_(
+        torch.tensor([[0.1, 0.2, 0.3, 0, 0, 0], [-0.2, 0.1, 0.4, 0, 0, 0]])
+    )
+    torch.manual_seed(123)
+    feat, indices = model.tokenize(torch.randn(1, 2, 512))
+    assert feat.shape == (1, 16, 8, 256)
+    assert indices.shape == (1, 16, 8, 4)
+    expected = torch.tensor(
+        [
+            -0.048095703125,
+            0.039093017578125,
+            0.0056915283203125,
+            -0.0263824462890625,
+            0.063201904296875,
+            0.07301521301269531,
+            -0.024904251098632812,
+            -0.02942657470703125,
+            -0.081573486328125,
+            -0.005706787109375,
+            -0.040435791015625,
+            0.038818359375,
+            -0.12237548828125,
+            -0.0460357666015625,
+            0.004184722900390625,
+            0.00177764892578125,
+        ]
+    )
+    torch.testing.assert_close(feat.flatten()[:16], expected, rtol=1e-5, atol=1e-5)
+    assert feat.sum().item() == pytest.approx(-52.497127532958984, abs=1e-4)
+    assert indices.sum().item() == 138744
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_brainomni_released_checkpoint_strict_load_and_parity(tmp_path):
+    """Gate the exact official tiny artifact and deterministic encoder path."""
+    if not HAS_HF_HUB:
+        pytest.skip("huggingface_hub is required")
+    revision = "9a4d3c70495370397ccfbfd6d2496f25647545a5"
+    path = Path(
+        hf_hub_download(
+            "OpenTSLab/BrainOmni",
+            "tiny/BrainOmni.pt",
+            revision=revision,
+            cache_dir=tmp_path,
+        )
+    )
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+        "62c67ba6a84ea0625e67a3b5e7463fe3930bfee88a612a225e9062a052542ffc"
+    )
+    state_dict = torch.load(path, map_location="cpu", weights_only=True)
+    model = BrainOmni(
+        chs_info=_eeg_chs_info(2), n_times=512, sfreq=256.0, n_outputs=3
+    ).eval()
+    original_head = {
+        key: value.clone()
+        for key, value in model.state_dict().items()
+        if key.startswith("final_layer.")
+    }
+    model.load_state_dict(state_dict, strict=True)
+    assert all(
+        torch.equal(model.state_dict()[key], value)
+        for key, value in original_head.items()
+    )
+    assert torch.any(
+        model.blocks[0].time_attn.rope_embedding_layer.rotate.imag != 0
+    )
+
+    # The released DeepSpeed export stores RoPE's derived complex cache as
+    # real-only. Both the pinned upstream run and public loader regenerate the
+    # mathematically defined cache before computing this signature.
+    model.tokenizer.pos.copy_(
+        torch.tensor([[0.1, 0.2, 0.3, 0, 0, 0], [-0.2, 0.1, 0.4, 0, 0, 0]])
+    )
+    torch.manual_seed(123)
+    feat = model.encode(torch.randn(1, 2, 512))
+    assert feat.shape == (1, 16, 8, 256)
+    expected = torch.tensor(
+        [
+            0.00458572618663311,
+            -0.005507787223905325,
+            -0.02145325019955635,
+            -0.047605402767658234,
+            -0.05783329904079437,
+            0.04926654323935509,
+            -0.00911555252969265,
+            -0.03314506262540817,
+            -0.006572749465703964,
+            -0.22567233443260193,
+            -0.12159579992294312,
+            0.00981579814106226,
+            -0.04502265900373459,
+            -0.006218839902430773,
+            0.01613355241715908,
+            0.06309985369443893,
+        ]
+    )
+    torch.testing.assert_close(feat.flatten()[:16], expected, rtol=1e-5, atol=1e-5)
+    assert feat.sum().item() == pytest.approx(62.14745330810547, abs=1e-4)
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_brainomni_base_released_checkpoint_strict_load(tmp_path):
+    """Gate the exact official base architecture and public loading path."""
+    if not HAS_HF_HUB:
+        pytest.skip("huggingface_hub is required")
+    revision = "9a4d3c70495370397ccfbfd6d2496f25647545a5"
+    path = Path(
+        hf_hub_download(
+            "OpenTSLab/BrainOmni",
+            "base/BrainOmni.pt",
+            revision=revision,
+            cache_dir=tmp_path,
+        )
+    )
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+        "435db24e57a55df05aa7e16355def7b7ecbedb22aa1ec16063e7d14efd2386d0"
+    )
+    state_dict = torch.load(path, map_location="cpu", weights_only=True)
+    model = BrainOmni(
+        chs_info=_eeg_chs_info(2),
+        n_times=512,
+        sfreq=256.0,
+        n_outputs=3,
+        lm_dim=512,
+        num_heads=16,
+        depth=12,
+    )
+    original_head = {
+        key: value.clone()
+        for key, value in model.state_dict().items()
+        if key.startswith("final_layer.")
+    }
+    model.load_state_dict(state_dict, strict=True)
+    assert torch.equal(model.projection.weight, state_dict["projection.weight"])
+    assert all(
+        torch.equal(model.state_dict()[key], value)
+        for key, value in original_head.items()
+    )
+
+
 def test_brainomni_vq_frozen_during_train_step():
     torch.manual_seed(0)
     model = _small_brainomni().train()
@@ -1484,3 +1887,5 @@ def test_brainomni_vq_frozen_during_train_step():
 def test_brainomni_sfreq_warning():
     with pytest.warns(UserWarning, match="256"):
         _small_brainomni(sfreq=128.0)
+    with pytest.warns(UserWarning, match="256"):
+        _small_brainomni(sfreq=255.6)

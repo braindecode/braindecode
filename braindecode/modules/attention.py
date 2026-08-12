@@ -9,8 +9,10 @@ AttentionBaseNet class.
 # Authors: Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Qian Xiao and OpenTSLab BrainOmni contributors
 #
-# License: BSD (3-clause)
+# License: BSD (3-clause); BrainOmni-derived RoPE modules are MIT licensed
+#          (see LICENSES/BrainOmni-MIT.txt)
 
 import math
 from typing import Optional
@@ -1083,6 +1085,14 @@ class RotaryPositionalEmbedding(nn.Module):
 
     def __init__(self, n_dim, init_seq_len, base=10000):
         super().__init__()
+        if n_dim <= 0 or n_dim % 2:
+            raise ValueError(f"n_dim must be a positive even integer, got {n_dim}.")
+        if init_seq_len <= 0:
+            raise ValueError(
+                f"init_seq_len must be a positive integer, got {init_seq_len}."
+            )
+        if base <= 0:
+            raise ValueError(f"base must be positive, got {base}.")
         self.register_buffer(
             "freqs",
             1.0 / (base ** (torch.arange(0, n_dim, 2)[: (n_dim // 2)].float() / n_dim)),
@@ -1102,6 +1112,48 @@ class RotaryPositionalEmbedding(nn.Module):
         if self.rotate.dtype != prev_dtype:
             self._set_rotate_cache(self.max_seq_len_cache)
         return result
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        # ``rotate`` is a deterministic cache. DeepSpeed's ``zero_to_fp32.py``
+        # exported the released BrainOmni cache as float32, discarding its sine
+        # (imaginary) component. Runtime use can also grow the cache beyond its
+        # construction length. Load ``freqs`` normally, then rebuild either
+        # compatible representation from the authoritative frequency buffer.
+        rotate_key = prefix + "rotate"
+        exported_rotate = state_dict.get(rotate_key)
+        compatible_rotate = (
+            exported_rotate is not None
+            and exported_rotate.ndim == 2
+            and exported_rotate.shape[0] > 0
+            and exported_rotate.shape[1] == self.rotate.shape[1]
+        )
+        repair_rotate = compatible_rotate and (
+            not torch.is_complex(exported_rotate)
+            or exported_rotate.shape != self.rotate.shape
+        )
+        if repair_rotate:
+            state_dict = state_dict.copy()
+            state_dict[rotate_key] = self.rotate
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+        if repair_rotate:
+            self._set_rotate_cache(exported_rotate.shape[0])
 
     def reshape_for_broadcast(self, x: torch.Tensor):
         """x: (batch, seq, n_heads, head_dim); rotate cache: (seq, dim)."""
@@ -1186,9 +1238,18 @@ class MultiHeadAttentionRoPE(nn.Module):
         rope: bool = False,
     ):
         super().__init__()
-        assert n_dim % n_head == 0, (
-            f"n_dim ({n_dim}) must be divisible by n_head ({n_head})"
-        )
+        if n_dim <= 0:
+            raise ValueError(f"n_dim must be positive, got {n_dim}.")
+        if n_head <= 0:
+            raise ValueError(f"n_head must be positive, got {n_head}.")
+        if n_dim % n_head:
+            raise ValueError(f"n_dim ({n_dim}) must be divisible by n_head ({n_head}).")
+        if rope and (n_dim // n_head) % 2:
+            raise ValueError(
+                f"RoPE head dimension must be even, got {n_dim // n_head}."
+            )
+        if not 0.0 <= dropout <= 1.0:
+            raise ValueError(f"dropout must satisfy 0 <= dropout <= 1, got {dropout}.")
         self.dropout = dropout
         self.n_dim = n_dim
         self.n_head = n_head
@@ -1210,7 +1271,9 @@ class MultiHeadAttentionRoPE(nn.Module):
         x : torch.Tensor
             Input of shape ``(batch, seq, n_dim)``.
         mask : torch.Tensor, optional
-            Attention mask broadcast-compatible with ``(batch, 1, seq, seq)``.
+            Attention mask with shape ``(seq, seq)``, ``(batch, seq, seq)``,
+            or a shape broadcast-compatible with
+            ``(batch, n_head, seq, seq)``.
 
         Returns
         -------
@@ -1246,7 +1309,32 @@ class MultiHeadAttentionRoPE(nn.Module):
         )
 
         if mask is not None:
-            mask = mask.unsqueeze(1)
+            if mask.ndim == 2:
+                if mask.shape != (seq, seq):
+                    raise ValueError(
+                        f"A 2-D mask must have shape ({seq}, {seq}), got "
+                        f"{tuple(mask.shape)}."
+                    )
+            elif mask.ndim == 3:
+                if mask.shape != (batch, seq, seq):
+                    raise ValueError(
+                        f"A 3-D mask must have shape ({batch}, {seq}, {seq}), "
+                        f"got {tuple(mask.shape)}."
+                    )
+                mask = mask.unsqueeze(1)
+            elif mask.ndim == 4:
+                if (
+                    mask.shape[-2:] != (seq, seq)
+                    or mask.shape[0] not in (1, batch)
+                    or mask.shape[1] not in (1, self.n_head)
+                ):
+                    raise ValueError(
+                        "A 4-D mask must be broadcast-compatible with "
+                        f"({batch}, {self.n_head}, {seq}, {seq}), got "
+                        f"{tuple(mask.shape)}."
+                    )
+            else:
+                raise ValueError(f"mask must be 2-D, 3-D, or 4-D, got {mask.ndim}-D.")
 
         # SDPA applies dropout regardless of train mode; gate it for deterministic eval.
         output = (

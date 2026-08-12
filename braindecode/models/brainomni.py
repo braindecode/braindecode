@@ -1,6 +1,7 @@
-# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+# Authors: Qian Xiao and OpenTSLab BrainOmni contributors
+#          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-# License: BSD-3
+# License: MIT (see LICENSES/BrainOmni-MIT.txt)
 #
 # Ported from https://github.com/OpenTSLab/BrainOmni (MIT License, 2025 OpenTSLab).
 # SEANet/conv/LSTM submodules derive from Meta's EnCodec (MIT License).
@@ -8,6 +9,7 @@ from __future__ import annotations
 
 import math
 import warnings
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -28,7 +30,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
 
-    ``BrainTokenizer`` is the pretrainable VQ-VAE tokenizer backbone of BrainOmni
+    ``BrainTokenizer`` is the VQ-VAE tokenizer backbone of BrainOmni
     [brainomni]_. It encodes raw multi-channel EEG/MEG windows into discrete
     neural tokens via a SEANet convolutional encoder, residual vector
     quantization (RVQ), and a cross-attention decoder that reconstructs the
@@ -57,10 +59,11 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
     .. rubric:: Macro Components
 
     ``BrainTokenizer.patcher`` (:class:`~braindecode.modules.PatchTokenizer`)
-        **Operations.** Slices ``(batch, n_chans, n_times)`` into non-overlapping
-        windows of ``window_length`` samples, zero-padding the tail when the
-        signal does not tile evenly. **Role.** Defines the analysis window that
-        SEANet encodes.
+        **Operations.** Slices ``(batch, n_chans, n_times)`` into windows of
+        ``window_length`` samples. A signal shorter than one window is padded;
+        with overlap, only the final overlapping window is padded; without
+        overlap, an incomplete tail is dropped, matching the released source.
+        **Role.** Defines the analysis window that SEANet encodes.
 
     ``BrainTokenizer.sensor_embed`` (``_SensorEmbedding``)
         **Operations.** Maps each channel's ``(position, orientation)`` 6-vector
@@ -105,18 +108,19 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
     - **Weight-normed convolutions.** SEANet uses classic ``weight_norm`` so the
       ``weight_g``/``weight_v`` keys stay aligned with the upstream release.
 
-    .. rubric:: Pretrained Weights
+    .. rubric:: Released Weights
 
     .. important::
 
-        Converted *tiny* and *base* tokenizer checkpoints are hosted on the
-        Hugging Face Hub. Load with
-        ``BrainTokenizer.from_pretrained("braindecode/braintokenizer-pretrained")``
-        (requires ``braindecode[hub]``). Input is expected at 256 Hz; apply
-        sensor-type-wise group z-score normalisation (separately for EEG, MAG and
-        GRAD channels) before forwarding.
+        The authors publish the MIT-licensed ``BrainTokenizer.pt`` artifact in
+        ``OpenTSLab/BrainOmni`` on the Hugging Face Hub. It is a plain PyTorch
+        state dict rather than a Braindecode Hub repository. Translate the
+        accompanying ``model_cfg.json`` keys ``n_dim`` / ``n_head`` / ``dropout``
+        to ``emb_dim`` / ``tokenizer_num_heads`` / ``drop_prob``, then pass the
+        state dict to :meth:`load_state_dict` with ``strict=True``. Input is
+        expected at 256 Hz and must follow the authors' preprocessing.
 
-    .. versionadded:: 1.6.1
+    .. versionadded:: 1.8
 
     Parameters
     ----------
@@ -156,9 +160,17 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
 
     Notes
     -----
-    Input is expected at 256 Hz.  When using pretrained weights, apply
-    sensor-type-wise group z-score normalisation (separately for EEG, MAG,
-    and GRAD channels) before forwarding.
+    Input is expected at 256 Hz. The released preprocessing applies a
+    0.1--96 Hz band-pass, 50/60 Hz notch filtering, bad-channel interpolation,
+    per-sensor-type average referencing, then group scaling within EEG, MAG,
+    and GRAD. The paper's description of the final scaling is not identical to
+    the released implementation; reproduce the source pipeline when using the
+    released weights.
+
+    With zero overlap, the released windower drops an incomplete final window.
+    :meth:`forward` and :meth:`encode_decode` zero-fill that dropped tail only
+    to preserve Braindecode's fixed ``n_times`` reconstruction shape;
+    :meth:`tokenize` returns only tokens produced by complete windows.
 
     References
     ----------
@@ -206,7 +218,7 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        if int(round(self.sfreq)) != 256:
+        if not math.isclose(float(self.sfreq), 256.0, rel_tol=0.0, abs_tol=1e-6):
             warnings.warn(
                 f"BrainOmni pretrained weights expect sfreq=256 Hz, got "
                 f"{self.sfreq}. Use only for training from scratch.",
@@ -223,8 +235,41 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         self.drop_prob = drop_prob
         self.activation = activation
 
+        if window_length <= 0:
+            raise ValueError(f"window_length must be positive, got {window_length}.")
+        if n_filters <= 0:
+            raise ValueError(f"n_filters must be positive, got {n_filters}.")
+        if not ratios or any(ratio <= 0 for ratio in ratios):
+            raise ValueError(
+                f"ratios must be a non-empty sequence of positive values, got {ratios}."
+            )
+        if kernel_size <= 0:
+            raise ValueError(f"kernel_size must be positive, got {kernel_size}.")
+        if last_kernel_size <= 0:
+            raise ValueError(
+                f"last_kernel_size must be positive, got {last_kernel_size}."
+            )
+        if tokenizer_num_heads <= 0:
+            raise ValueError(
+                f"tokenizer_num_heads must be positive, got {tokenizer_num_heads}."
+            )
+        if emb_dim <= 0 or emb_dim % tokenizer_num_heads:
+            raise ValueError(
+                f"emb_dim ({emb_dim}) must be positive and divisible by "
+                f"tokenizer_num_heads ({tokenizer_num_heads})."
+            )
+        if n_neuro <= 0:
+            raise ValueError(f"n_neuro must be positive, got {n_neuro}.")
+        if not 0.0 <= drop_prob <= 1.0:
+            raise ValueError(
+                f"drop_prob must satisfy 0 <= drop_prob <= 1, got {drop_prob}."
+            )
+
         self.patcher = PatchTokenizer(
-            patch_size=window_length, n_times=self.n_times, learnable=False
+            patch_size=window_length,
+            n_times=self.n_times,
+            learnable=False,
+            on_non_divisible="crop",
         )
         self.sensor_embed = _SensorEmbedding(emb_dim)
         self.encoder = _TokenizerEncoder(
@@ -257,9 +302,43 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         self.apply(_init_weights)
 
     def _unfold(self, x: torch.Tensor, overlap_ratio: float = 0.0) -> torch.Tensor:
-        """Slice ``x`` (batch, n_chans, n_times) into ``(batch, n_chans, n_windows, window_length)`` windows."""
-        step = round(self.window_length * (1 - overlap_ratio))
+        """Apply the released tokenizer's short/tail windowing policy."""
+        step = _window_stride(self.window_length, overlap_ratio)
+        if x.shape[-1] < self.window_length:
+            x = F.pad(x, (0, self.window_length - x.shape[-1]))
+        elif overlap_ratio > 0.0:
+            remainder = (x.shape[-1] - self.window_length) % step
+            if remainder:
+                x = F.pad(x, (0, step - remainder))
         return self.patcher(x, stride=step)
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Load either native or official OpenTSLab BrainTokenizer weights."""
+        remapped = OrderedDict()
+        metadata = getattr(state_dict, "_metadata", None)
+        official = any(
+            key.startswith("quantizer.rvq.")
+            or key.startswith("decoder.")
+            or ".conv.conv." in key
+            for key in state_dict
+        )
+        for key, value in state_dict.items():
+            new_key = key.replace("quantizer.rvq.", "quantizer.")
+            if new_key.startswith("decoder."):
+                new_key = "final_layer." + new_key.removeprefix("decoder.")
+            new_key = new_key.replace(".convtr.convtr.", ".convtr.")
+            new_key = new_key.replace(".conv.conv.", ".conv.")
+            if new_key in remapped:
+                raise ValueError(
+                    f"Checkpoint keys collide after remapping: {new_key!r}."
+                )
+            remapped[new_key] = value
+        if official:
+            remapped["pos"] = self.pos
+            remapped["sensor_type"] = self.sensor_type
+        if metadata is not None:
+            remapped._metadata = metadata
+        return super().load_state_dict(remapped, *args, **kwargs)
 
     def _encode_quantize(self, x: torch.Tensor, overlap_ratio: float = 0.0):
         """Unfold -> sensor-embed -> encode -> RVQ -> (feat_q, indices, commit, se)."""
@@ -274,21 +353,24 @@ class BrainTokenizer(EEGModuleMixin, nn.Module):
         return feat_q, indices, commit, se
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """VQ-VAE reconstruction. ``x`` (batch, n_chans, n_times) -> reconstruction (batch, n_chans, n_times)."""
+        """Reconstruct ``x``, zero-filling a dropped non-overlap tail."""
         feat_q, _, _, se = self._encode_quantize(x)
         recon = self.final_layer(
             feat_q, se
         )  # (batch, n_chans, n_windows, window_length)
-        # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
         recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
+        if recon.shape[-1] < x.shape[-1]:
+            recon = F.pad(recon, (0, x.shape[-1] - recon.shape[-1]))
         return recon[..., : x.shape[-1]]
 
     def encode_decode(self, x: torch.Tensor):
-        """Reconstruction pass returning ``(recon (batch, n_chans, n_times), commitment_loss, indices)`` for training loops."""
+        """Return reconstruction, commitment loss, and codebook indices."""
         feat_q, indices, commit, se = self._encode_quantize(x)
         recon = self.final_layer(feat_q, se)
-        # _unfold pads to a multiple of window_length, so N*L >= T; trim to original.
-        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)[..., : x.shape[-1]]
+        recon = recon.reshape(recon.shape[0], recon.shape[1], -1)
+        if recon.shape[-1] < x.shape[-1]:
+            recon = F.pad(recon, (0, x.shape[-1] - recon.shape[-1]))
+        recon = recon[..., : x.shape[-1]]
         return recon, commit, indices
 
     @torch.no_grad()
@@ -359,8 +441,8 @@ class BrainOmni(EEGModuleMixin, nn.Module):
     The tokenizer slides over the input with stride
     ``window_length * (1 - overlap_ratio)`` to produce a temporal sequence of
     ``n_neuro`` neural-source embeddings per window, which the transformer then
-    processes. During fine-tuning only ``blocks`` and ``final_layer`` are
-    trainable: :meth:`encode` reads the backbone through
+    processes. During fine-tuning ``projection``, ``blocks``, and
+    ``final_layer`` are trainable: :meth:`encode` reads the backbone through
     :meth:`BrainTokenizer.tokenize`, which runs under :func:`torch.no_grad` in
     ``eval`` mode, so the tokenizer's convolutions and VQ codebooks receive no
     gradients and are never EMA-updated (no ``train`` override is needed).
@@ -402,24 +484,27 @@ class BrainOmni(EEGModuleMixin, nn.Module):
     .. rubric:: Additional Mechanisms
 
     - **Frozen backbone.** The tokenizer is hard-frozen via :func:`torch.no_grad`
-      inside :meth:`BrainTokenizer.tokenize`; only ``blocks`` and ``final_layer``
-      train.
+      inside :meth:`BrainTokenizer.tokenize`; ``projection``, ``blocks``, and
+      ``final_layer`` train.
     - **L2-normalized embedding.** :meth:`encode` L2-normalizes the backbone
       output, matching the upstream representation used for classification.
 
-    .. rubric:: Pretrained Weights
+    .. rubric:: Released Weights
 
     .. important::
 
-        Converted *tiny* and *base* checkpoints are hosted on the Hugging Face
-        Hub. Load with
-        ``BrainOmni.from_pretrained("braindecode/brainomni-pretrained")``
-        (requires ``braindecode[hub]``); the classification ``final_layer`` is
-        freshly initialised, so fine-tune or linear-probe before use. Input is
-        expected at 256 Hz; apply sensor-type-wise group z-score normalisation
-        (separately for EEG, MAG and GRAD channels) before forwarding.
+        The authors publish MIT-licensed ``BrainOmni.pt`` artifacts in
+        ``OpenTSLab/BrainOmni`` on the Hugging Face Hub. They are plain PyTorch
+        Stage-2 state dicts, not Braindecode Hub repositories. Translate the
+        accompanying config keys ``n_dim`` / ``n_head`` / ``dropout`` and
+        ``lm_head`` / ``lm_depth`` / ``lm_dropout`` to ``emb_dim`` /
+        ``tokenizer_num_heads`` / ``tokenizer_drop_prob`` and ``num_heads`` /
+        ``depth`` / ``drop_prob``, then pass the state dict to
+        :meth:`load_state_dict` with ``strict=True``. The pretraining-only mask
+        predictor is discarded and the classification ``final_layer`` remains
+        freshly initialized, so fine-tune or linear-probe before use.
 
-    .. versionadded:: 1.6.1
+    .. versionadded:: 1.8
 
     Parameters
     ----------
@@ -454,6 +539,9 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         Whether to use the rotation-trick STE for codebook updates.
     quantize_optimize_method : str
         Codebook optimisation strategy (``"ema"``).
+    tokenizer_drop_prob : float
+        Dropout probability in the tokenizer attention blocks. The released
+        tokenizer configuration uses ``0.0``.
     lm_dim : int
         Transformer hidden dimension.
     num_heads : int
@@ -462,7 +550,8 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         Total number of transformer blocks.  Note: the last block is
         excluded from ``encode`` / ``forward`` (kept for checkpoint parity).
     drop_prob : float
-        Dropout probability throughout the model.
+        Dropout probability in the Stage-2 transformer. The released downstream
+        classification head uses a fixed dropout probability of ``0.1``.
     activation : type[nn.Module]
         Activation used in the classification head.
 
@@ -471,8 +560,8 @@ class BrainOmni(EEGModuleMixin, nn.Module):
     The :class:`BrainTokenizer` backbone (convolutions and VQ codebooks) is
     hard-frozen: :meth:`BrainTokenizer.tokenize` runs it under
     :func:`torch.no_grad` in ``eval`` mode, so it receives no gradients and its
-    codebooks are never EMA-updated during fine-tuning. Only ``blocks`` and
-    ``final_layer`` are trainable.
+    codebooks are never EMA-updated during fine-tuning. The optional
+    ``projection``, ``blocks``, and ``final_layer`` remain trainable.
 
     References
     ----------
@@ -508,6 +597,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         num_quantizers: int = 4,
         rotation_trick: bool = True,
         quantize_optimize_method: str = "ema",
+        tokenizer_drop_prob: float = 0.0,
         lm_dim: int = 256,
         num_heads: int = 8,
         depth: int = 12,
@@ -524,9 +614,30 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        _window_stride(window_length, overlap_ratio)
+        if num_heads <= 0 or num_heads % 2:
+            raise ValueError(f"num_heads must be positive and even, got {num_heads}.")
+        if lm_dim <= 0 or lm_dim % 2 or lm_dim % num_heads:
+            raise ValueError(
+                f"lm_dim ({lm_dim}) must be positive, even, and divisible by "
+                f"num_heads ({num_heads})."
+            )
+        if depth <= 0:
+            raise ValueError(f"depth must be positive, got {depth}.")
+        if not 0.0 <= tokenizer_drop_prob <= 1.0:
+            raise ValueError(
+                "tokenizer_drop_prob must satisfy 0 <= tokenizer_drop_prob <= 1, "
+                f"got {tokenizer_drop_prob}."
+            )
+        if not 0.0 <= drop_prob <= 1.0:
+            raise ValueError(
+                f"drop_prob must satisfy 0 <= drop_prob <= 1, got {drop_prob}."
+            )
+
         self.lm_dim = lm_dim
         self.n_neuro = n_neuro
         self.overlap_ratio = overlap_ratio
+        self.tokenizer_drop_prob = tokenizer_drop_prob
         self.drop_prob = drop_prob
         self.activation = activation
 
@@ -547,7 +658,7 @@ class BrainOmni(EEGModuleMixin, nn.Module):
             num_quantizers=num_quantizers,
             rotation_trick=rotation_trick,
             quantize_optimize_method=quantize_optimize_method,
-            drop_prob=drop_prob,
+            drop_prob=tokenizer_drop_prob,
             activation=activation,
         )
         self.projection: nn.Module = (
@@ -562,10 +673,11 @@ class BrainOmni(EEGModuleMixin, nn.Module):
         self._head_in = n_neuro * lm_dim
         self.final_layer = self._make_head(self.n_outputs)
         self.apply(_init_weights)
+        self.tokenizer.requires_grad_(False)
 
     def _make_head(self, n_outputs: int) -> nn.Module:
         return nn.Sequential(
-            nn.Dropout(self.drop_prob),
+            nn.Dropout(0.1),
             nn.Linear(self._head_in, self.lm_dim),
             self.activation(),
             nn.Linear(self.lm_dim, n_outputs),
@@ -574,7 +686,10 @@ class BrainOmni(EEGModuleMixin, nn.Module):
     def reset_head(self, n_outputs: int) -> None:
         """Re-create the classification head for ``n_outputs`` classes."""
         self._n_outputs = n_outputs
+        reference = next(self.parameters())
         self.final_layer = self._make_head(n_outputs)
+        self.final_layer.apply(_init_weights)
+        self.final_layer.to(device=reference.device, dtype=reference.dtype)
 
     def _tokens(self, x: torch.Tensor) -> torch.Tensor:
         """Tokenize ``x`` and project to ``lm_dim``.
@@ -597,12 +712,73 @@ class BrainOmni(EEGModuleMixin, nn.Module):
             h = block(h)
         return F.normalize(h, p=2.0, dim=-1, eps=1e-6)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Classify ``x`` (batch, n_chans, n_times) -> logits (batch, n_outputs)."""
+    def forward(self, x: torch.Tensor, return_features: bool = False):
+        """Classify ``x`` or return the pooled pre-classifier features."""
         feat = self.encode(x)  # (batch, n_neuro, n_windows * n_tokens, lm_dim)
         feat = feat.mean(dim=2)  # pool over tokens -> (batch, n_neuro, lm_dim)
         feat = feat.reshape(feat.shape[0], -1)  # (batch, n_neuro * lm_dim)
+        if return_features:
+            return {"features": feat, "cls_token": None}
         return self.final_layer(feat)
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Load either native or official OpenTSLab BrainOmni weights.
+
+        The official artifact contains the Stage-2 mask-prediction head rather
+        than a downstream classifier. Those three pretraining-only tensors are
+        intentionally ignored; the downstream ``final_layer`` remains local.
+        The released DeepSpeed export also stores RoPE's derived cache without
+        its complex phase; loading regenerates that cache from its frequencies.
+        """
+        remapped = OrderedDict()
+        metadata = getattr(state_dict, "_metadata", None)
+        own_state = self.state_dict()
+        official = any(
+            key == "mask_token"
+            or key.startswith("predict_head.")
+            or key.startswith("tokenizer.decoder.")
+            for key in state_dict
+        )
+        for key, value in state_dict.items():
+            if official and (key == "mask_token" or key.startswith("predict_head.")):
+                continue
+            new_key = key.replace("tokenizer.quantizer.rvq.", "tokenizer.quantizer.")
+            if new_key.startswith("tokenizer.decoder."):
+                new_key = "tokenizer.final_layer." + new_key.removeprefix(
+                    "tokenizer.decoder."
+                )
+            new_key = new_key.replace(".convtr.convtr.", ".convtr.")
+            new_key = new_key.replace(".conv.conv.", ".conv.")
+            if new_key in remapped:
+                raise ValueError(
+                    f"Checkpoint keys collide after remapping: {new_key!r}."
+                )
+            remapped[new_key] = value
+        if official:
+            for key in own_state:
+                if key.startswith("final_layer.") or key in {
+                    "tokenizer.pos",
+                    "tokenizer.sensor_type",
+                }:
+                    remapped[key] = own_state[key]
+        if metadata is not None:
+            remapped._metadata = metadata
+        return super().load_state_dict(remapped, *args, **kwargs)
+
+
+def _window_stride(window_length: int, overlap_ratio: float) -> int:
+    """Validate a BrainOmni overlap and return its integer sample stride."""
+    if not 0.0 <= overlap_ratio < 1.0:
+        raise ValueError(
+            f"overlap_ratio must satisfy 0 <= overlap_ratio < 1, got {overlap_ratio}."
+        )
+    stride = int(window_length * (1 - overlap_ratio))
+    if stride < 1:
+        raise ValueError(
+            f"overlap_ratio={overlap_ratio} produces a zero-sample stride for "
+            f"window_length={window_length}."
+        )
+    return stride
 
 
 def _init_weights(module: nn.Module) -> None:

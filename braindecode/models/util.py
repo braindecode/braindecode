@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 import pydantic
 import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
-from mne._fiff.tag import _loc_to_coil_trans
 from torch import nn
 
 models_dict = {}
@@ -764,6 +763,9 @@ _SENSOR_CODE = {"eeg": 0, "mag": 1, "grad": 2}
 def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
     """Per-modality position normalization (BrainOmni ``normalize_pos``).
 
+    This helper is adapted from OpenTSLab/BrainOmni under the MIT License; see
+    ``LICENSES/BrainOmni-MIT.txt``.
+
     EEG (code 0) and MEG (codes 1, 2) positions are each mean-centered then
     divided by ``sqrt(3 * mean(squared_norm))``.
     """
@@ -783,6 +785,9 @@ def _normalize_pos(pos: np.ndarray, sensor_type: np.ndarray) -> np.ndarray:
 
 def _geometry_from_chs_info(chs_info):
     """Derive ``(pos (n_chans, 6) float32, sensor_type (n_chans,) int64)`` from ``chs_info``.
+
+    The geometry convention is adapted from OpenTSLab/BrainOmni under the MIT
+    License; see ``LICENSES/BrainOmni-MIT.txt``.
 
     Positions come from :func:`extract_channel_locations_from_chs_info` and the
     EEG/MAG/GRAD type from :func:`mne.channel_type`; the MEG coil orientation and
@@ -812,16 +817,23 @@ def _geometry_from_chs_info(chs_info):
         )
     sensor_type = np.array([_SENSOR_CODE[t] for t in types], dtype=np.int64)
 
-    loc = np.stack(
-        [np.asarray(ch["loc"], dtype=np.float64) for ch in chs_info]
-    )  # (n_chans, 12)
-    coil_trans = _loc_to_coil_trans(
-        loc
-    )  # (n_chans, 4, 4); 3x3 columns are the ex/ey/ez axes
     grad, mag = sensor_type == _SENSOR_CODE["grad"], sensor_type == _SENSOR_CODE["mag"]
     ori = np.zeros((len(chs_info), 3))  # EEG orientation stays zero
-    ori[grad] = coil_trans[grad, :3, 0]  # gradiometer: in-plane (ex) axis
-    ori[mag] = coil_trans[mag, :3, 2]  # magnetometer: coil normal (ez) axis
+    for index in np.flatnonzero(grad):
+        # The released source selects the in-plane x-axis only for VectorView
+        # planar coils. Every other MEG coil (including axial gradiometers) uses
+        # the coil-normal z-axis.
+        coil_type = int(chs_info[index].get("coil_type", 0))
+        axis_slice = slice(3, 6) if 3011 <= coil_type <= 3015 else slice(9, 12)
+        axis = np.asarray(chs_info[index]["loc"], dtype=np.float64)[axis_slice]
+        if axis.shape != (3,) or not np.isfinite(axis).all():
+            raise ValueError("chs_info lacks a finite coil orientation for GRAD.")
+        ori[index] = axis  # gradiometer: in-plane (ex) axis
+    for index in np.flatnonzero(mag):
+        axis = np.asarray(chs_info[index]["loc"], dtype=np.float64)[9:12]
+        if axis.shape != (3,) or not np.isfinite(axis).all():
+            raise ValueError("chs_info lacks a finite coil orientation for MAG.")
+        ori[index] = axis  # magnetometer: coil normal (ez) axis
 
     pos = np.concatenate([xyz, ori], axis=1).astype(np.float32)
     return _normalize_pos(pos, sensor_type), sensor_type
