@@ -11,9 +11,9 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class MSVTNet(EEGModuleMixin, nn.Module):
-    """MSVTNet model from Liu K et al (2024) from [msvt2024]_.
+    r"""MSVTNet model from Liu K et al (2024) from [msvt2024]_.
 
-    :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Small Attention`
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Attention/Transformer`
 
     This model implements a multi-scale convolutional transformer network
     for EEG signal classification, as described in [msvt2024]_.
@@ -186,14 +186,18 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
         x = self.final_layer(x)
         if self.return_features:
-            # x shape after final layer: [batch_size, num_classes]
-            # branch_preds shape: [batch_size, num_classes]
-            return torch.stack(branch_preds)
+            # Return BOTH the main-head logits and the stacked branch logits, as
+            # in the authors' implementation (``return x, bx``). This is required
+            # for the paper's joint deep-supervision loss
+            # ``lambda * CE(main) + (1 - lambda) * sum_i CE(branch_i)`` and lets
+            # callers score on the main head.
+            # x: [batch_size, n_classes]; branches: [n_branches, batch_size, n_classes]
+            return x, torch.stack(branch_preds)
         return x
 
 
 class _TSConv(nn.Sequential):
-    """
+    r"""
     Time-Distributed Separable Convolution block.
 
     The architecture consists of:
@@ -280,7 +284,7 @@ class _TSConv(nn.Sequential):
 
 
 class _PositionalEncoding(nn.Module):
-    """
+    r"""
     Positional encoding module that adds learnable positional embeddings.
 
     Parameters
@@ -303,7 +307,7 @@ class _PositionalEncoding(nn.Module):
 
 
 class _Transformer(nn.Module):
-    """
+    r"""
     Transformer encoder module with learnable class token and positional encoding.
 
     Parameters
@@ -359,7 +363,7 @@ class _Transformer(nn.Module):
 
 
 class _DenseLayers(nn.Sequential):
-    """
+    r"""
     Final classification layers.
 
     Parameters

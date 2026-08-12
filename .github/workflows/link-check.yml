@@ -1,0 +1,93 @@
+name: Link Check
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/link-check.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/link-check.yml"
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check links in Markdown and RST files
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --verbose
+            --no-progress
+            --accept 200,204,206,301,302,303,307,308,429
+            --timeout 30
+            --max-retries 3
+            --exclude "^mailto:"
+            --exclude "^https://github\\.com/braindecode/braindecode/(issues|pulls|compare)"
+            --exclude "^https://github\\.com/.*/(fork|new)"
+            --exclude "localhost"
+            --exclude "127\\.0\\.0\\.1"
+            --exclude "example\\.com"
+            --exclude "^file://"
+            --exclude "^git\\+"
+            --exclude "arxiv\\.org"
+            --exclude "twitter\\.com"
+            --exclude "x\\.com"
+            --exclude "linkedin\\.com"
+            --exclude "app\\.gitter\\.im"
+            --exclude "gitter\\.im"
+            --exclude "gitlab\\.com"
+            --exclude "dx\\.doi\\.org"
+            --exclude "^https://doi\\.org/10\\.1002/hbm"
+            --exclude "^https://dl\\.acm\\.org/doi"
+            "./**/*.md"
+            "./**/*.rst"
+          fail: true
+          output: ./lychee-report.md
+
+      - name: Upload link check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: link-check-report
+          path: ./lychee-report.md
+          retention-days: 30
+
+      - name: Create issue on link check failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let report = '';
+            try {
+              report = fs.readFileSync('./lychee-report.md', 'utf8');
+            } catch (e) {
+              report = 'Could not read the link check report.';
+            }
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'broken-links'
+            });
+            if (issues.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Broken links detected in documentation',
+                body: `## Automated Link Check Report\n\nThe weekly link check has detected broken links.\n\n<details>\n<summary>Report</summary>\n\n${report}\n\n</details>`,
+                labels: ['broken-links', 'documentation']
+              });
+            }

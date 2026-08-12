@@ -1,5 +1,6 @@
 # Authors: Patryk Chrabaszcz
 #          Lukas Gemein <l.gemein@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 import torch
@@ -12,7 +13,7 @@ from braindecode.modules import Chomp1d, Ensure4d, SqueezeFinalOutput
 
 
 class BDTCN(EEGModuleMixin, nn.Module):
-    """Braindecode TCN from Gemein, L et al (2020) [gemein2020]_.
+    r"""Braindecode TCN from Gemein, L et al (2020) [gemein2020]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
@@ -90,7 +91,7 @@ class BDTCN(EEGModuleMixin, nn.Module):
 
 
 class TCN(nn.Module):
-    """Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
+    r"""Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
 
     See [Bai2018]_ for details.
 
@@ -236,7 +237,9 @@ class _TemporalBlock(nn.Module):
         )
         self.chomp1 = Chomp1d(padding)
         self.relu1 = activation()
-        self.dropout1 = nn.Dropout2d(drop_prob)
+        # activations are (batch, channels, times), dropout2d only masks
+        # channel-wise there through a deprecated fallback
+        self.dropout1 = nn.Dropout1d(drop_prob)
 
         self.conv2 = weight_norm(
             nn.Conv1d(
@@ -250,7 +253,7 @@ class _TemporalBlock(nn.Module):
         )
         self.chomp2 = Chomp1d(padding)
         self.relu2 = activation()
-        self.dropout2 = nn.Dropout2d(drop_prob)
+        self.dropout2 = nn.Dropout1d(drop_prob)
 
         self.downsample = (
             nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None

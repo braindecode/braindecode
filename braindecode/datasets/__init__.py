@@ -1,6 +1,4 @@
-"""
-Loader code for some datasets.
-"""
+"""Loader code for some datasets."""
 
 from .base import (
     BaseConcatDataset,
@@ -12,13 +10,14 @@ from .base import (
 from .bcicomp import BCICompetitionIVDataset4
 from .bids import BIDSDataset, BIDSEpochsDataset
 from .chb_mit import CHBMIT
+from .collate import pad_channels_collate
 from .mne import create_from_mne_epochs, create_from_mne_raw
 from .moabb import BNCI2014_001, HGD, MOABBDataset
 from .nmt import NMT
 from .siena import SIENA
 from .sleep_physio_challe_18 import SleepPhysionetChallenge2018
 from .sleep_physionet import SleepPhysionet
-from .tuh import TUH, TUHAbnormal
+from .tuh import TUH, TUHAbnormal, TUHEvents
 from .xy import create_from_X_y
 
 __all__ = [
@@ -36,6 +35,7 @@ __all__ = [
     "create_from_mne_epochs",
     "TUH",
     "TUHAbnormal",
+    "TUHEvents",
     "SIENA",
     "NMT",
     "CHBMIT",
@@ -43,4 +43,5 @@ __all__ = [
     "SleepPhysionetChallenge2018",
     "create_from_X_y",
     "BCICompetitionIVDataset4",
+    "pad_channels_collate",
 ]

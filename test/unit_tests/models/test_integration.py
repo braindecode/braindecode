@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Alexandre Gramfort
 #          Pierre Guetschel
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 from __future__ import annotations
@@ -20,13 +21,21 @@ from torch.export import ExportedProgram, export
 
 from braindecode import EEGClassifier
 from braindecode.models import (
+    EEGPT,
+    REVE,
     SSTDPN,
+    ZUNA,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
     FBCNet,
     FBLightConvNet,
     FBMSNet,
+    InterpolatedBENDR,
+    InterpolatedBIOT,
+    InterpolatedEEGPT,
+    InterpolatedLaBraM,
+    InterpolatedSignalJEPA,
     SyncNet,
     USleep,
 )
@@ -34,6 +43,7 @@ from braindecode.models.util import (
     _get_possible_signal_params,
     _summary_table,
     default_signal_params,
+    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
     non_classification_models,
@@ -41,6 +51,10 @@ from braindecode.models.util import (
 from braindecode.models.util import _get_signal_params as get_sp
 
 rng = np.random.default_rng(12)
+
+# Interpolated models are kept in a separate registry from ``models_dict``;
+# combine them here so integration tests continue to exercise both.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 
 def convert_model_to_plain(model):
@@ -91,7 +105,7 @@ def model(request):
     """Instantiated model."""
     name, req, sig_params = request.param
     sp = get_sp(sig_params, req)
-    model = models_dict[name](**sp)
+    model = all_models_dict[name](**sp)
 
     model.eval()
     return model
@@ -118,7 +132,7 @@ def get_epochs_y(signal_params=None, n_epochs=10):
 
 def test_completeness__models_test_cases():
     models_tested = set(x[0] for x in models_mandatory_parameters)
-    all_models = set(models_dict.keys())
+    all_models = set(all_models_dict.keys())
     assert (
         all_models == models_tested
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
@@ -135,7 +149,7 @@ def test_model_integration(model_name, required_params, signal_params):
     This lightly tests if the models will be compatible with the skorch wrappers.
     """
     # Verify that the parameters are correct:
-    model_class = models_dict[model_name]
+    model_class = all_models_dict[model_name]
     assert isinstance(required_params, list)
     assert set(required_params) <= {
         "n_times",
@@ -145,6 +159,10 @@ def test_model_integration(model_name, required_params, signal_params):
         "input_window_seconds",
         "n_chans",
     }
+    # signal_params may be a callable (used to defer imports that would cause
+    # circular dependencies at module-load time); resolve it before checking.
+    if callable(signal_params):
+        signal_params = signal_params()
     assert signal_params is None or isinstance(signal_params, dict)
     if signal_params is not None:
         assert set(signal_params.keys()) <= set(default_signal_params.keys())
@@ -273,13 +291,38 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
     assert len([name for name, _ in last_layers_name if name == "final_layer"]) > 0
 
 
-@pytest.mark.parametrize("model_class", models_dict.values())
+@pytest.mark.parametrize(
+    "model_name, required_params, signal_params", models_mandatory_parameters
+)
+def test_model_integration_has_final_layer(model_name, required_params, signal_params):
+    """Only tests that th model has a layer named 'final_layer'.
+
+    This test should also cover models that are not meant for classification.
+    """
+    sp = get_sp(signal_params)
+
+    model = all_models_dict[model_name](**sp)
+
+    last_layers_name = [name for name, _ in model.named_children()][-2:]
+    assert "final_layer" in last_layers_name
+
+
+@pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_model_has_activation_parameter(model_class):
     """
     Test that checks if the model class's __init__ method has a parameter
     named 'activation' or any parameter that starts with 'activation'.
     """
-    if model_class in [EEGMiner]:
+    if model_class in [
+        EEGMiner,
+        REVE,
+        EEGPT,
+        InterpolatedBENDR,
+        InterpolatedBIOT,
+        InterpolatedEEGPT,
+        InterpolatedLaBraM,
+        InterpolatedSignalJEPA,
+    ]:
         pytest.skip(f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
     init_method = model_class.__init__
@@ -300,7 +343,7 @@ def test_model_has_activation_parameter(model_class):
     )
 
 
-@pytest.mark.parametrize("model_class", models_dict.values())
+@pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_activation_default_parameters_are_nn_module_classes(model_class):
     """
     Test that checks if all parameters with default values in the model class's
@@ -326,7 +369,7 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
         )
 
 
-@pytest.mark.parametrize("model_class", models_dict.values())
+@pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_model_has_drop_prob_parameter(model_class):
     """
     Test that checks if the model class's __init__ method has a parameter
@@ -343,6 +386,13 @@ def test_model_has_drop_prob_parameter(model_class):
         FBMSNet,
         FBLightConvNet,
         SSTDPN,
+        REVE,
+        InterpolatedBENDR,
+        InterpolatedBIOT,
+        InterpolatedEEGPT,
+        InterpolatedLaBraM,
+        InterpolatedSignalJEPA,
+        ZUNA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -364,6 +414,7 @@ def test_model_has_drop_prob_parameter(model_class):
         f" Found parameters: {param_names}"
     )
 
+
 # skip if windows or python 3.14
 @pytest.mark.skipif(
     sys.platform.startswith("win") or sys.version_info >= (3, 14),
@@ -374,6 +425,16 @@ def test_model_compiled(model):
     Verifies that all models can be torch compiled without issue
     and if the outputs are the same.
     """
+    not_compilable_models = [
+        # torch.compile currently stalls on the STFT/eigendecomposition-based
+        # MPF featurizer at the default handwriting input size.
+        "MetaNeuromotorHand",
+    ]
+    if model.__class__.__name__ in not_compilable_models:
+        pytest.skip(
+            f"Skipping {model.__class__.__name__} as not working with torch.compile"
+        )
+
     # This assumes the model has attributes n_chans and n_times
     try:
         n_chans = model.n_chans
@@ -403,17 +464,24 @@ def test_model_exported(model):
     # Models known to have export issues on Windows and Python 3.14+ (non-pytree-compatible attributes)
     model_name = model.__class__.__name__
 
+    not_exportable_models = [
+        "SyncNet",  # We found a fake tensor in the exported program constant's list.
+        "EEGMiner",  # We found a fake tensor in the exported program constant's list.
+        "SSTDPN",  # We found a fake tensor in the exported program constant's list.
+        "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
+        "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
+    ]
     if sys.platform.startswith("win"):
-        not_exportable_models_win = [
+        not_exportable_models += [
             "LUNA",  # Has _channel_location_cache dict that breaks pytree on Windows
         ]
-        if model_name in not_exportable_models_win:
-            pytest.skip(f"{model_name} export is not compatible on Windows")
+    if model_name in not_exportable_models:
+        pytest.skip(f"{model_name} export is not possible on this platform.")
 
     if sys.version_info >= (3, 14):
         not_exportable_models_py314 = [
             "LUNA",  # Has _channel_location_cache dict that breaks pytree on Python 3.14+
-        ] # TODO: fix LUNA export issues on Python 3.14+ one day
+        ]  # TODO: fix LUNA export issues on Python 3.14+ one day
         if model_name in not_exportable_models_py314:
             pytest.skip(f"{model_name} export is not compatible on Python 3.14+")
 
@@ -428,11 +496,16 @@ def test_model_exported(model):
         n_times = default_signal_params["n_times"]
     example_input = torch.randn(1, n_chans, n_times)
 
+    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
+        with torch.no_grad():
+            _ = model(example_input)
+
     # this will raise if the model isn't fully traceable
     exported_prog: ExportedProgram = export(model, args=(example_input,), strict=False)
 
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
+
 
 # skip if windows or python 3.14
 @pytest.mark.skipif(
@@ -448,10 +521,43 @@ def test_model_torch_script(model):
     not_working_models = [
         "BIOT",
         "Labram",
-        "EEGMiner",
+        "EEGPT",
         "SSTDPN",
         "BENDR",
         "LUNA",
+        "REVE",
+        "CBraMod",
+        "CodeBrain",
+        # einops rearrange/repeat in the Perceiver/decoder and the fixed-grid
+        # cross-attention make forward not torch.jit.script-able. (Reason is
+        # einops + dynamic length, NOT polymorphic return — DANCE.forward is
+        # monomorphic Tensor, unlike EEGDINO.)
+        "DANCE",
+        # einops Rearrange layers and the interleaved-RoPE slicing in the
+        # grouped-query attention are not torch.jit.script-able.
+        "TCFormer",
+        # forward() returns Dict[str, Tensor] (features) or Tensor (logits);
+        # torch.jit.script rejects this polymorphic return type.
+        "EEGDINO",
+        # wavelet encoder (conv1d + circular padding) + Dict/Tensor polymorphic
+        # return; torch.jit.script rejects the polymorphic return type.
+        "MVPFormer",
+        # forward() returns Tensor (logits) or Tuple[Tensor, Tensor] (main +
+        # branch logits) when return_features=True; polymorphic return type.
+        "MSVTNet",
+        # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
+        # (torch.linalg.eigh + torch.stft).
+        "MetaNeuromotorHand",
+        "SignalJEPA",
+        "SignalJEPA_Contextual",
+        "SignalJEPA_PostLocal",
+        "SignalJEPA_PreLocal",
+        "InterpolatedBENDR",
+        "InterpolatedBIOT",
+        "InterpolatedEEGPT",
+        "InterpolatedLaBraM",
+        "InterpolatedSignalJEPA",
+        "STEEGFormer",
     ]
 
     if model.__class__.__name__ in not_working_models:
@@ -496,7 +602,25 @@ def test_model_torch_script(model):
     # torch.testing.assert_close(output_script, output_model)
 
 
-@pytest.mark.parametrize("model_class", models_dict.values())
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_torch_script_methods(method):
+    model = EEGMiner(
+        method=method,
+        n_chans=4,
+        n_outputs=2,
+        n_times=128,
+        sfreq=100.0,
+    ).eval()
+    plain_model = convert_model_to_plain(model).eval()
+    input_tensor = torch.randn(2, 4, 128)
+
+    expected = plain_model(input_tensor)
+    scripted_model = torch.jit.script(plain_model)
+
+    torch.testing.assert_close(scripted_model(input_tensor), expected)
+
+
+@pytest.mark.parametrize("model_class", all_models_dict.values())
 def test_completeness_summary_table(model_class):
 
     assert model_class.__name__ in _summary_table.index, (
@@ -515,9 +639,15 @@ def test_if_models_with_embedding_parameter(model):
     # check if there is any mention to emb_size or embedding_dim or emb
     # or return_features or feature
 
-    parameters_related_with_emb = ["emb_size", "embedding_dim", "emb",
-                                   "return_features", "feature", "embed_dim",
-                                   'emb_dim']
+    parameters_related_with_emb = [
+        "emb_size",
+        "embedding_dim",
+        "emb",
+        "return_features",
+        "feature",
+        "embed_dim",
+        "emb_dim",
+    ]
 
     # check if any of the parameters related to embedding are present in the model
     if not any(param in params for param in parameters_related_with_emb):
@@ -541,7 +671,7 @@ def test_if_models_with_embedding_parameter(model):
     # redefining the embedding parameter
     signal_params[emb_param] = new_value
 
-    model = models_dict[model_name](**signal_params)
+    model = all_models_dict[model_name](**signal_params)
 
     print(
         f"Model {model_name} has an embedding parameter {emb_param} with value {new_value}."

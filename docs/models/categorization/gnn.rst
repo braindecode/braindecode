@@ -4,24 +4,32 @@
 
 .. _models_gnn:
 
-|gnn-icon| Graph Neural Networks
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+##################################
+ |gnn-icon| Graph Neural Networks
+##################################
 
 .. |gnn-icon| image:: ../../_static/model_cat/gnn.png
-   :height: 56px
-   :alt: Graph Neural Networks icon
-   :class: heading-icon no-scaled-link
+    :alt: Graph Neural Networks icon
+    :height: 56px
+    :class: heading-icon no-scaled-link
 
 :bdg-light:`Graph Neural Network`
 
+This category contains graph-based models that treat EEG electrodes as graph nodes and
+learn inter-channel relationships dynamically.
 
-I doesn't know much about GNNs for EEG yet. No LitMap available.
+.. rubric:: Available Models
+
+- :class:`DGCNN` — Dynamic Graph Convolutional Neural Network. Treats electrodes as
+  graph nodes and learns the adjacency matrix jointly with all other parameters via
+  back-propagation. Uses Chebyshev spectral graph convolution to extract spatial
+  features from the learned graph Laplacian. Based on Song et al. (2018).
 
 .. include:: ../../links.inc
 
 .. raw:: html
 
-  <style>
-    /* nudge the icon so it sits nicely on the baseline */
-    img.heading-icon { vertical-align: -0.2em; margin-right: .45rem; }
-  </style>
+    <style>
+      /* nudge the icon so it sits nicely on the baseline */
+      img.heading-icon { vertical-align: -0.2em; margin-right: .45rem; }
+    </style>

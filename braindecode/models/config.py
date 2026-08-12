@@ -1,25 +1,29 @@
-import functools
-import operator
+# Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
 from collections.abc import Callable
 from inspect import signature
 from types import UnionType
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import numpy as np
-from mne.utils import _soft_import
+import pydantic
 from typing_extensions import TypedDict
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.util import SigArgName, models_dict, models_mandatory_parameters
-
-pydantic = _soft_import(name="pydantic", purpose="model configuration", strict=False)
+from braindecode.models.util import (
+    SigArgName,
+    _get_model_class,
+    _init_models_dict,
+    interpolated_models_dict,
+    models_dict,
+    models_mandatory_parameters,
+)
 
 try:
     from numpydantic import NDArray, Shape
+
+    _loc_type = NDArray[Shape["12"], np.float64]
 except ImportError:
-    # we can't use soft import for numpydantic because numpydantic does not define its version in __init__
-    NDArray = Any  # type: ignore
-    Shape = Any  # type: ignore
+    _loc_type = np.ndarray  # type: ignore[misc]
 
 
 class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg]
@@ -28,7 +32,7 @@ class ChsInfoType(TypedDict, total=False, closed=True):  # type: ignore[call-arg
     coil_type: int
     coord_frame: int
     kind: str
-    loc: NDArray[Shape["12"], np.float64]  # type: ignore[misc]
+    loc: _loc_type  # type: ignore[valid-type,misc]
     logno: int
     range: float
     scanno: int
@@ -59,10 +63,27 @@ SIGNAL_ARGS_TYPES = {
 }
 
 
+class BaseBraindecodeModelConfig(pydantic.BaseModel):
+    """Base class for braindecode model pydantic configs."""
+
+    def create_instance(self) -> EEGModuleMixin:
+        model_cls = _get_model_class(self.model_name_)
+        kwargs = self.model_dump(mode="python", exclude={"model_name_"})
+        if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
+            kwargs.pop("n_chans")
+        if (
+            kwargs.get("n_times") is not None
+            and kwargs.get("input_window_seconds") is not None
+            and kwargs.get("sfreq") is not None
+        ):
+            kwargs.pop("n_times")
+        return model_cls(**kwargs)
+
+
 def make_model_config(
     model_class: type[EEGModuleMixin],
     required: list[SigArgName],
-):
+) -> type[BaseBraindecodeModelConfig]:
     """Create a pydantic model config for a given model class.
 
     Parameters
@@ -77,25 +98,6 @@ def make_model_config(
     type
         A pydantic BaseModel subclass representing the model config.
     """
-    if not pydantic:
-        raise ImportError(
-            "pydantic is required to use make_model_config. "
-            "Please install braindecode[typing]."
-        )
-
-    # ironically, we need to ignore the type here to have the soft dependency.
-    class BaseBraindecodeModelConfig(pydantic.BaseModel):  # type: ignore
-        def create_instance(self) -> EEGModuleMixin:
-            kwargs = self.model_dump(mode="python", exclude={"model_name_"})
-            if kwargs.get("n_chans") is not None and kwargs.get("chs_info") is not None:
-                kwargs.pop("n_chans")
-            if (
-                kwargs.get("n_times") is not None
-                and kwargs.get("input_window_seconds") is not None
-                and kwargs.get("sfreq") is not None
-            ):
-                kwargs.pop("n_times")
-            return model_class(**kwargs)
 
     @pydantic.model_validator(mode="before")
     def validate_signal_params(cls, data: Any):
@@ -150,12 +152,12 @@ def make_model_config(
             and sfreq is not None
             and input_window_seconds is not None
         ):
-            if n_times != int(input_window_seconds * sfreq):
+            if n_times != round(input_window_seconds * sfreq):
                 raise ValueError(
                     f"Provided {n_times=} does not match {input_window_seconds=} * {sfreq=}."
                 )
         elif n_times is None and sfreq is not None and input_window_seconds is not None:
-            data["n_times"] = int(input_window_seconds * sfreq)
+            data["n_times"] = round(input_window_seconds * sfreq)
         elif sfreq is None and n_times is not None and input_window_seconds is not None:
             data["sfreq"] = n_times / input_window_seconds
         elif input_window_seconds is None and n_times is not None and sfreq is not None:
@@ -206,21 +208,23 @@ def make_model_config(
 # and define __all__ based on generated classes
 __all__ = ["make_model_config"]
 
-if not pydantic:
-    pass
-else:
-    models_configs = []
-    for model_name, req, _ in models_mandatory_parameters:
-        model_cls = models_dict[model_name]
-        model_cfg = make_model_config(model_cls, req)
-        globals()[model_cfg.__name__] = model_cfg
-        __all__.append(model_cfg.__name__)
-        models_configs.append(model_cfg)
+if not models_dict and not interpolated_models_dict:
+    _init_models_dict()
 
-    BraindecodeModelConfig = Annotated[  # type: ignore
-        functools.reduce(operator.or_, models_configs),
-        pydantic.Field(discriminator="model_name_"),
-    ]
+models_configs: list[type[BaseBraindecodeModelConfig]] = []
+for model_name, req, _ in models_mandatory_parameters:
+    model_cls = _get_model_class(model_name)
+    model_cfg = make_model_config(model_cls, req)
+    globals()[model_cfg.__name__] = model_cfg
+    __all__.append(model_cfg.__name__)
+    models_configs.append(model_cfg)
+
+BraindecodeModelConfig = Annotated[  # type: ignore[valid-type]
+    Union[tuple(models_configs)],
+    pydantic.Field(
+        discriminator="model_name_", description="Braindecode model configuration"
+    ),
+]
 
 # # Example usage:
 #

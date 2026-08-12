@@ -33,15 +33,15 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
     http://www.bbci.de/competition/iv/ for the dataset and competition description.
     ECoG library containing the dataset: https://searchworks.stanford.edu/view/zk881ps0522
 
-    Notes
-    -----
-    When using this dataset please cite [1]_ .
-
     Parameters
     ----------
     subject_ids : list(int) | int | None
         (list of) int of subject(s) to be loaded. If None, load all available
         subjects. Should be in range 1-3.
+
+    Notes
+    -----
+    When using this dataset please cite [1]_ .
 
     References
     ----------
@@ -94,7 +94,6 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
 
         Returns
         -------
-
         """
         signature = "BCICompetitionIVDataset4"
         folder_name = "BCI_Competion4_dataset4_data_fingerflexions"

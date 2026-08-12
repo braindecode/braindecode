@@ -8,6 +8,7 @@ AttentionBaseNet class.
 
 # Authors: Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -35,6 +36,16 @@ class SqueezeAndExcitation(nn.Module):
     bias: bool, default=False
         if True, adds a learnable bias will be used in the convolution.
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import SqueezeAndExcitation
+    >>> module = SqueezeAndExcitation(in_channels=16, reduction_rate=4)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Hu2018] Hu, J., Albanie, S., Sun, G., Wu, E., 2018.
@@ -50,7 +61,7 @@ class SqueezeAndExcitation(nn.Module):
         )
         self.nonlinearity = nn.ReLU()
         self.fc2 = nn.Conv2d(
-            in_channels=reduction_rate,
+            in_channels=sq_channels,
             out_channels=in_channels,
             kernel_size=1,
             bias=bias,
@@ -89,6 +100,16 @@ class GSoP(nn.Module):
         reduction ratio of the fully-connected layers
     bias: bool, default=False
         if True, adds a learnable bias will be used in the convolution.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import GSoP
+    >>> module = GSoP(in_channels=16, reduction_rate=4)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -145,6 +166,16 @@ class FCA(nn.Module):
         Sequence length along temporal dimension, default=62
     reduction_rate : int, default=4
         Reduction ratio of the fully-connected layers.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import FCA
+    >>> module = FCA(in_channels=16, seq_len=64, reduction_rate=4, freq_idx=0)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -230,6 +261,16 @@ class EncNet(nn.Module):
     n_codewords : int
         number of codewords
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import EncNet
+    >>> module = EncNet(in_channels=16, n_codewords=8)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Zhang2018] Zhang, H. et al. 2018.
@@ -287,6 +328,16 @@ class ECA(nn.Module):
         kernel size of convolutional layer, determines degree of channel
         interaction, must be odd.
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import ECA
+    >>> module = ECA(in_channels=16, kernel_size=3)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Wang2021] Wang, Q. et al., 2021. ECA-Net: Efficient Channel Attention
@@ -337,6 +388,16 @@ class GatherExcite(nn.Module):
         whether to use an excite block with fully-connected layers
     reduction_rate : int, default=4
         reduction ratio of the excite block (if used)
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import GatherExcite
+    >>> module = GatherExcite(in_channels=16, seq_len=64, extra_params=False, use_mlp=True)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -407,6 +468,16 @@ class GCT(nn.Module):
     in_channels : int
         number of input feature channels
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import GCT
+    >>> module = GCT(in_channels=16)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Yang2020] Yang, Z. Linchao, Z., Wu, Y., Yang, Y., 2020.
@@ -451,6 +522,16 @@ class SRM(nn.Module):
         whether to use fully-connected layers instead of a convolutional layer,
     reduction_rate : int, default=4
         reduction ratio of the fully-connected layers (if used),
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import SRM
+    >>> module = SRM(in_channels=16, use_mlp=False)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -517,6 +598,16 @@ class CBAM(nn.Module):
     kernel_size : int
         kernel size of the convolutional layer
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import CBAM
+    >>> module = CBAM(in_channels=16, reduction_rate=4, kernel_size=3)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Woo2018] Woo, S., Park, J., Lee, J., Kweon, I., 2018.
@@ -574,6 +665,16 @@ class CAT(nn.Module):
         kernel size of the convolutional layer
     bias : bool, default=False
         if True, adds a learnable bias will be used in the convolution,
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import CAT
+    >>> module = CAT(in_channels=16, reduction_rate=4, kernel_size=3)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
 
     References
     ----------
@@ -671,6 +772,16 @@ class CATLite(nn.Module):
     bias : bool, default=True
         if True, adds a learnable bias will be used in the convolution,
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import CATLite
+    >>> module = CATLite(in_channels=16, reduction_rate=4)
+    >>> inputs = torch.randn(2, 16, 1, 64)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 16, 1, 64])
+
     References
     ----------
     .. [Wu2023] Wu, Z. et al., 2023 CAT: Learning to Collaborate Channel and
@@ -724,37 +835,213 @@ class CATLite(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, emb_size, num_heads, dropout):
+    """Multi-head self-attention block.
+
+    Uses ``F.scaled_dot_product_attention`` for optimized attention
+    kernels (flash-attention on CUDA, memory-efficient on other devices).
+
+    Parameters
+    ----------
+    emb_size : int
+        The embedding dimension.
+    num_heads : int
+        Number of attention heads. Must evenly divide ``emb_size``.
+    dropout : float, optional
+        Dropout probability applied to attention weights. Default: 0.0.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import MultiHeadAttention
+    >>> module = MultiHeadAttention(emb_size=32, num_heads=4, dropout=0.1)
+    >>> inputs = torch.randn(2, 10, 32)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 10, 32])
+    """
+
+    def __init__(self, emb_size, num_heads, dropout=0.0):
         super().__init__()
+        if emb_size % num_heads != 0:
+            raise ValueError(
+                f"emb_size ({emb_size}) must be divisible by num_heads ({num_heads})."
+            )
         self.emb_size = emb_size
         self.num_heads = num_heads
+        self.head_dim = emb_size // num_heads
         self.keys = nn.Linear(emb_size, emb_size)
         self.queries = nn.Linear(emb_size, emb_size)
         self.values = nn.Linear(emb_size, emb_size)
-        self.att_drop = nn.Dropout(dropout)
+        self.att_drop = dropout
         self.projection = nn.Linear(emb_size, emb_size)
 
         self.rearrange_stack = Rearrange(
-            "b n (h d) -> b h n d",
-            h=num_heads,
+            "batch seq (heads head_dim) -> batch heads seq head_dim",
+            heads=num_heads,
         )
         self.rearrange_unstack = Rearrange(
-            "b h n d -> b n (h d)",
+            "batch heads seq head_dim -> batch seq (heads head_dim)",
         )
 
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : Tensor
+            Input tensor of shape ``(batch, seq, emb_size)``.
+        mask : Tensor, optional
+            Attention mask following PyTorch SDPA convention: for boolean
+            masks ``True`` means **ignore** that position; for float
+            masks the values are **added** to attention scores before
+            softmax.
+        """
         queries = self.rearrange_stack(self.queries(x))
         keys = self.rearrange_stack(self.keys(x))
         values = self.rearrange_stack(self.values(x))
-        energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
-        if mask is not None:
-            fill_value = float("-inf")
-            energy = energy.masked_fill(~mask, fill_value)
 
-        scaling = self.emb_size ** (1 / 2)
-        att = F.softmax(energy / scaling, dim=-1)
-        att = self.att_drop(att)
-        out = torch.einsum("bhal, bhlv -> bhav ", att, values)
+        dp = self.att_drop if self.training else 0.0
+        out = F.scaled_dot_product_attention(
+            queries,
+            keys,
+            values,
+            attn_mask=mask,
+            dropout_p=dp,
+        )
+
         out = self.rearrange_unstack(out)
-        out = self.projection(out)
-        return out
+        return self.projection(out)
+
+
+class CrissCrossTransformerEncoderLayer(nn.Module):
+    """
+    **Criss-Cross Transformer Encoder Layer** implementing the criss-cross attention mechanism
+    proposed in Wang et al. (2025) [cbramod]_.
+
+    This layer models spatial and temporal dependencies in EEG signals through parallel
+    **Spatial Attention** (S-Attention) and **Temporal Attention** (T-Attention). Unlike
+    standard Transformer layers that model all spatial-temporal dependencies together,
+    this layer separates these heterogeneous dependencies:
+
+    - **S-Attention**: Captures dependencies between EEG channels within a fixed time interval.
+      For each temporal stripe across all channels, it applies self-attention independently,
+      learning channel interactions while keeping time steps separate.
+
+    - **T-Attention**: Captures dependencies between temporal patches within a fixed channel.
+      For each channel across all time intervals, it applies self-attention independently,
+      learning temporal dynamics while keeping channels separate.
+
+    The attention heads are split equally between S-Attention and T-Attention, and their
+    outputs are concatenated. This criss-cross design effectively captures EEG's unique
+    structural characteristics—EEG signals exhibit heterogeneous spatial and temporal
+    dependencies that differ from images (which have only spatial dependencies).
+
+    Input shape: ``(batch, channels, n_patches, patch_size)``
+    Output shape: ``(batch, channels, n_patches, patch_size)``
+
+    .. figure:: https://braindecode.org/dev/_static/model/criss-cross-attention.png
+       :align: center
+       :alt: Criss-Cross Attention Mechanism
+
+    References
+    ----------
+    .. [cbramod] Wang, J., Zhao, S., Luo, Z., Zhou, Y., Jiang, H., Li, S., Li, T., & Pan, G. (2025).
+       CBraMod: A Criss-Cross Brain Foundation Model for EEG Decoding.
+       In The Thirteenth International Conference on Learning Representations (ICLR 2025).
+       https://arxiv.org/abs/2412.07236
+    """
+
+    __constants__ = ["norm_first"]
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int,
+        dim_feedforward: int = 2048,
+        dropout: float = 0.1,
+        activation: type[nn.Module] = nn.GELU,
+        layer_norm_eps: float = 1e-5,
+        batch_first: bool = False,
+        norm_first: bool = False,
+        bias: bool = True,
+    ) -> None:
+        super().__init__()
+        self.self_attn_s = nn.MultiheadAttention(
+            d_model // 2,
+            nhead // 2,
+            dropout=dropout,
+            bias=bias,
+            batch_first=batch_first,
+        )
+        self.self_attn_t = nn.MultiheadAttention(
+            d_model // 2,
+            nhead // 2,
+            dropout=dropout,
+            bias=bias,
+            batch_first=batch_first,
+        )
+
+        # Implementation of Feedforward model
+        self.linear1 = nn.Linear(d_model, dim_feedforward, bias=bias)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(dim_feedforward, d_model, bias=bias)
+
+        self.norm_first = norm_first
+        self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.activation = activation()
+
+    def forward(
+        self,
+        src: Tensor,
+        src_mask: Optional[Tensor] = None,
+        src_key_padding_mask: Optional[Tensor] = None,
+        is_causal: bool = False,
+    ) -> Tensor:
+        x = src
+        x = x + self._sa_block(
+            self.norm1(x), src_mask, src_key_padding_mask, is_causal=is_causal
+        )
+        x = x + self._ff_block(self.norm2(x))
+        return x
+
+    # self-attention block
+    def _sa_block(
+        self,
+        x: Tensor,
+        attn_mask: Optional[Tensor],
+        key_padding_mask: Optional[Tensor],
+        is_causal: bool = False,
+    ) -> Tensor:
+        bz, ch_num, patch_num, patch_size = x.shape
+        xs = x[:, :, :, : patch_size // 2]
+        xt = x[:, :, :, patch_size // 2 :]
+        xs = rearrange(xs, "b c n p2 -> (b n) c p2")
+        xt = rearrange(xt, "b c n p2 -> (b c) n p2")
+        xs = self.self_attn_s(
+            xs,
+            xs,
+            xs,
+            attn_mask=attn_mask,
+            key_padding_mask=key_padding_mask,
+            need_weights=False,
+        )[0]
+        xs = rearrange(xs, "(b n) c p2 -> b c n p2", b=bz, n=patch_num)
+        xt = self.self_attn_t(
+            xt,
+            xt,
+            xt,
+            attn_mask=attn_mask,
+            key_padding_mask=key_padding_mask,
+            need_weights=False,
+        )[0]
+        xt = rearrange(xt, "(b c) n p2 -> b c n p2", b=bz, c=ch_num)
+        x = torch.concat((xs, xt), dim=3)
+        return self.dropout1(x)
+
+    # feed forward block
+    def _ff_block(self, x: Tensor) -> Tensor:
+        x = self.linear2(self.dropout(self.activation(self.linear1(x))))
+        return self.dropout2(x)

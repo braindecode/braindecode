@@ -19,9 +19,13 @@ from braindecode.models.config import make_model_config
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
+    interpolated_models_dict,
     models_dict,
     models_mandatory_parameters,
 )
+
+# Interpolated models are stored in a separate registry from ``models_dict``.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 
 @pytest.mark.parametrize(
@@ -29,7 +33,7 @@ from braindecode.models.util import (
 )
 def test_make_model_config_instantiation(model_name, required, signal_params):
     """Test the make_model_config function for instance creation."""
-    model_class = models_dict[model_name]
+    model_class = all_models_dict[model_name]
     ModelConfig = make_model_config(model_class, required)
 
     sp = _get_signal_params(signal_params)
@@ -48,7 +52,7 @@ def test_make_model_config_json_serialization(model_name, required, signal_param
 
     If this test fails, this is probably due to a bad typing of the corresponding model's arguments.
     """
-    model_class = models_dict[model_name]
+    model_class = all_models_dict[model_name]
     ModelConfig = make_model_config(model_class, required)
 
     sp = _get_signal_params(signal_params)
@@ -60,3 +64,66 @@ def test_make_model_config_json_serialization(model_name, required, signal_param
         np.testing.assert_equal(
             cfg_from_serialized.model_dump(mode="python"), cfg.model_dump(mode="python")
         )
+
+
+@pytest.mark.parametrize(
+    "n_times, input_window_seconds, sfreq",
+    [
+        (1001, 4.004, 250.0),  # Issue example: 4.004 * 250.0 = 1001.0
+        (751, 3.004, 250.0),   # 3.004 * 250.0 = 751.0
+        (501, 2.004, 250.0),   # 2.004 * 250.0 = 501.0
+        (101, 0.404, 250.0),   # 0.404 * 250.0 = 101.0
+    ],
+)
+def test_fractional_input_window_seconds_config(n_times, input_window_seconds, sfreq):
+    """Test that config accepts fractional input_window_seconds when consistent.
+
+    This test validates the fix for the bug where int() truncation rejected
+    valid configurations in the pydantic validator.
+    """
+    from braindecode.models import EEGNet
+
+    ModelConfig = make_model_config(EEGNet, ["n_chans", "n_outputs", "n_times"])
+
+    # Should not raise ValueError
+    cfg = ModelConfig(
+        n_chans=22,
+        n_outputs=4,
+        n_times=n_times,
+        input_window_seconds=input_window_seconds,
+        sfreq=sfreq,
+    )
+    assert cfg.n_times == n_times
+    assert cfg.input_window_seconds == input_window_seconds
+    assert cfg.sfreq == sfreq
+
+
+@pytest.mark.parametrize(
+    "n_times, input_window_seconds, sfreq, expected_n_times",
+    [
+        (None, 4.004, 250.0, 1001),  # Infer n_times with rounding
+        (None, 3.004, 250.0, 751),   # Infer n_times with rounding
+        (None, 2.004, 250.0, 501),   # Infer n_times with rounding
+        (None, 0.404, 250.0, 101),   # Infer n_times with rounding
+    ],
+)
+def test_fractional_input_window_seconds_inference_config(
+    n_times, input_window_seconds, sfreq, expected_n_times
+):
+    """Test that config correctly infers n_times with fractional input_window_seconds.
+
+    This test validates that the pydantic validator uses round() instead of int()
+    when inferring n_times.
+    """
+    from braindecode.models import EEGNet
+
+    ModelConfig = make_model_config(EEGNet, ["n_chans", "n_outputs", "n_times"])
+
+    cfg = ModelConfig(
+        n_chans=22,
+        n_outputs=4,
+        n_times=n_times,
+        input_window_seconds=input_window_seconds,
+        sfreq=sfreq,
+    )
+    assert cfg.n_times == expected_n_times

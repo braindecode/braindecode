@@ -20,6 +20,16 @@ class MaxNormLinear(nn.Linear):
         If set to ``False``, the layer will not learn an additive bias.
         Default: ``True``.
 
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import MaxNormLinear
+    >>> module = MaxNormLinear(10, 5, max_norm_val=2)
+    >>> inputs = torch.randn(2, 10)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 5])
+
     References
     ----------
     .. [1] https://keras.io/api/layers/core_layers/dense/#dense-class
@@ -41,7 +51,18 @@ class MaxNormLinear(nn.Linear):
 
 
 class LinearWithConstraint(nn.Linear):
-    """Linear layer with max-norm constraint on the weights."""
+    """Linear layer with max-norm constraint on the weights.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import LinearWithConstraint
+    >>> module = LinearWithConstraint(10, 5, max_norm=1.0)
+    >>> inputs = torch.randn(2, 10)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 5])
+    """
 
     def __init__(self, *args, max_norm=1.0, **kwargs):
         super(LinearWithConstraint, self).__init__(*args, **kwargs)

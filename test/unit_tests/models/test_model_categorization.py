@@ -9,18 +9,23 @@ from pathlib import Path
 
 import pytest
 
-from braindecode.models.util import models_dict
+from braindecode.models.util import interpolated_models_dict, models_dict
+
+# Interpolated models live in a separate registry; combine so their
+# categorization badges are still validated.
+all_models_dict = {**models_dict, **interpolated_models_dict}
 
 # Mapping of categorization names to badge formats
 CATEGORIZATION_BADGES = {
     "Convolution": ":bdg-success:`Convolution`",
     "Recurrent": ":bdg-secondary:`Recurrent`",
-    "Small Attention": ":bdg-info:`Small Attention`",
+    "Attention/Transformer": ":bdg-info:`Attention/Transformer`",
     "Filterbank": ":bdg-primary:`Filterbank`",
     "FilterBank": ":bdg-primary:`Filterbank`",  # Handle both cases
     "Interpretability": ":bdg-warning:`Interpretability`",
-    "Large Brain Model": ":bdg-danger:`Large Brain Model`",
+    "Foundation Model": ":bdg-danger:`Foundation Model`",
     "Channel": ":bdg-dark-line:`Channel`",
+    "Graph Neural Network": ":bdg-light:`Graph Neural Network`",
 }
 
 
@@ -45,10 +50,10 @@ def load_model_categorizations():
 MODEL_CATEGORIZATIONS = load_model_categorizations()
 
 
-@pytest.mark.parametrize("model_name", sorted(models_dict.keys()))
+@pytest.mark.parametrize("model_name", sorted(all_models_dict.keys()))
 def test_model_has_categorization_badges(model_name):
     """Test that each model has the correct categorization badges in its docstring."""
-    model_class = models_dict[model_name]
+    model_class = all_models_dict[model_name]
     docstring = model_class.__doc__
 
     assert docstring is not None, f"{model_name} has no docstring"
@@ -79,7 +84,7 @@ def test_model_has_categorization_badges(model_name):
 def test_all_models_in_summary_csv():
     """Test that all models in __init__.py are covered in summary.csv."""
     models_in_csv = set(MODEL_CATEGORIZATIONS.keys())
-    models_in_code = set(models_dict.keys())
+    models_in_code = set(all_models_dict.keys())
 
     # Models in code but not in CSV
     missing_in_csv = models_in_code - models_in_csv
@@ -98,7 +103,7 @@ def test_all_models_in_summary_csv():
 
 def test_badge_format_consistency():
     """Test that all badges follow the expected format."""
-    for model_name, model_class in models_dict.items():
+    for model_name, model_class in all_models_dict.items():
         docstring = model_class.__doc__
         if docstring is None:
             continue
@@ -113,8 +118,8 @@ def test_badge_format_consistency():
         for badge in found_badges:
             # Only check categorization badges (ignore other potential badges)
             if any(cat_name.lower() in badge.lower() for cat_name in [
-                "convolution", "recurrent", "attention", "filterbank",
-                "interpretability", "large brain model", "channel"
+                "convolution", "recurrent", "attention", "transformer", "filterbank",
+                "interpretability", "foundation model", "channel"
             ]):
                 assert badge in valid_badges, (
                     f"{model_name} has invalid badge format: {badge}\n"

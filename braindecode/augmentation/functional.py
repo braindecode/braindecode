@@ -2,6 +2,7 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #          Bruna Lopes <brunajaflopes@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -17,7 +18,7 @@ from mne.filter import notch_filter
 from scipy.interpolate import Rbf
 from sklearn.utils import check_random_state
 from torch.fft import fft, ifft
-from torch.nn.functional import one_hot, pad
+from torch.nn.functional import pad
 
 
 def identity(X: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -144,7 +145,7 @@ def ft_surrogate(
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    phase_noise_magnitude: float
+    phase_noise_magnitude : float
         Float between 0 and 1 setting the range over which the phase
         perturbation is uniformly sampled:
         [0, `phase_noise_magnitude` * 2 * `pi`].
@@ -152,7 +153,7 @@ def ft_surrogate(
         Whether to sample phase perturbations independently for each channel or
         not. It is advised to set it to False when spatial information is
         important for the task, like in BCI.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Used to draw the phase perturbation. Defaults to None.
 
     Returns
@@ -252,25 +253,34 @@ def channels_dropout(
     return X * mask.unsqueeze(-1), y
 
 
-def _make_permutation_matrix(
+def _make_channel_permutation(
     X: torch.Tensor, mask: torch.Tensor, random_state: int | np.random.Generator | None
 ) -> torch.Tensor:
+    """Per-sample channel permutation that shuffles only the masked channels.
+
+    Returns a ``(batch, n_channels)`` index permutation: output channel ``i`` is
+    taken from input channel ``perm[b, i]``. Masked channels are permuted among
+    their own positions; unmasked channels keep their place.
+
+    The per-sample ``rng.permutation`` is kept (rather than a vectorized random
+    draw) so the output is bit-for-bit identical to the previous one-hot/matmul
+    implementation — vectorizing the draw would change seeded results. The win
+    is downstream: the caller gathers with this index instead of building
+    ``(batch, n_channels, n_channels)`` one-hot matrices and a matmul.
+    """
     rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
-    hard_mask = mask.round()
-    batch_permutations = torch.empty(
-        batch_size, n_channels, n_channels, device=X.device
-    )
-    for b, mask in enumerate(hard_mask):
-        channels_to_shuffle = torch.arange(n_channels, device=X.device)
-        channels_to_shuffle = channels_to_shuffle[mask.bool()]
-        reordered_channels = torch.tensor(
-            rng.permutation(channels_to_shuffle.cpu()), device=X.device
+    hard_mask = mask.round().bool()
+    channels = torch.arange(n_channels, device=X.device)
+    perm = channels.repeat(batch_size, 1)
+    for b in range(batch_size):
+        channels_to_shuffle = channels[hard_mask[b]]
+        perm[b, channels_to_shuffle] = torch.tensor(
+            rng.permutation(channels_to_shuffle.cpu()),
+            device=X.device,
+            dtype=perm.dtype,
         )
-        channels_permutation = torch.arange(n_channels, device=X.device)
-        channels_permutation[channels_to_shuffle] = reordered_channels
-        batch_permutations[b, ...] = one_hot(channels_permutation)
-    return batch_permutations
+    return perm
 
 
 def channels_shuffle(
@@ -289,10 +299,10 @@ def channels_shuffle(
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    p_shuffle: float | None
+    p_shuffle : float | None
         Float between 0 and 1 setting the probability of including the channel
         in the set of permutted channels.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to sample which channels to shuffle and to carry the shuffle.
         Defaults to None.
@@ -313,8 +323,11 @@ def channels_shuffle(
     if p_shuffle == 0:
         return X, y
     mask = _pick_channels_randomly(X, 1 - p_shuffle, random_state)
-    batch_permutations = _make_permutation_matrix(X, mask, random_state)
-    return torch.matmul(batch_permutations, X), y
+    perm = _make_channel_permutation(X, mask, random_state)
+    # Gather channels (output[b, i] = X[b, perm[b, i]]) instead of building
+    # one-hot permutation matrices and a (batch, C, C) @ (batch, C, T) matmul.
+    perm = perm.unsqueeze(-1).expand(-1, -1, X.shape[-1])
+    return torch.gather(X, 1, perm), y
 
 
 def gaussian_noise(
@@ -335,7 +348,7 @@ def gaussian_noise(
         EEG labels for the example or batch.
     std : float
         Standard deviation to use for the additive noise.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -468,7 +481,8 @@ def bandstop_filter(
     bandwidth: float,
     freqs_to_notch: npt.ArrayLike | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Apply a band-stop filter with desired bandwidth at the desired frequency
+    """Apply a band-stop filter with desired bandwidth at the desired frequency.
+
     position.
 
     Suggested e.g. in [1]_ and [2]_
@@ -620,6 +634,7 @@ def _torch_legval(
 ) -> torch.Tensor:
     """
     Evaluate a Legendre series at points x.
+
     If `c` is of length `n + 1`, this function returns the value:
     .. math:: p(x) = c_0 * L_0(x) + c_1 * L_1(x) + ... + c_n * L_n(x)
     The parameter `x` is converted to an array only if it is a tuple or a
@@ -805,12 +820,6 @@ def _torch_make_interpolation_matrix(
         The interpolation matrix that maps good signals to the location
         of bad signals.
 
-    References
-    ----------
-    [1] Perrin, F., Pernier, J., Bertrand, O. and Echallier, JF. (1989).
-        Spherical splines for scalp potential and current density mapping.
-        Electroencephalography Clinical Neurophysiology, Feb; 72(2):184-7.
-
     Notes
     -----
     Code copied and modified from MNE-Python:
@@ -841,6 +850,12 @@ def _torch_make_interpolation_matrix(
     LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
     OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
     DAMAGE.
+
+    References
+    ----------
+    [1] Perrin, F., Pernier, J., Bertrand, O. and Echallier, JF. (1989).
+        Spherical splines for scalp potential and current density mapping.
+        Electroencephalography Clinical Neurophysiology, Feb; 72(2):184-7.
     """
     pos_from = pos_from.clone()
     pos_to = pos_to.clone()
@@ -968,7 +983,8 @@ def sensors_rotation(
     angles: npt.ArrayLike,
     spherical_splines: bool,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Interpolates EEG signals over sensors rotated around the desired axis
+    """Interpolates EEG signals over sensors rotated around the desired axis.
+
     with the desired angle.
 
     Suggested in [1]_
@@ -1027,7 +1043,7 @@ def mixup(
     lam : torch.Tensor
         Values between 0 and 1 setting the linear interpolation between
         examples.
-    idx_perm: torch.Tensor
+    idx_perm : torch.Tensor
         Permuted indices of example that are mixed into original examples.
 
     Returns
@@ -1080,18 +1096,20 @@ def segmentation_reconstruction(
         EEG labels for the example or batch.
     n_segments : int
         Number of segments to use in the batch.
-    data_classes: list[tuple[int, torch.Tensor]]
+    data_classes : list[tuple[int, torch.Tensor]]
         List of tuples. Each tuple contains the class index and the corresponding EEG data.
-    rand_indices: array-like
+    rand_indices : array-like
         Array of indices that indicates which trial to use in each segment.
-    idx_shuffle: array-like
+    idx_shuffle : array-like
         Array of indices to shuffle the new generated trials.
+
     Returns
     -------
     torch.Tensor
         Transformed inputs.
     torch.Tensor
         Transformed labels.
+
     References
     ----------
     .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
@@ -1145,7 +1163,7 @@ def mask_encoding(
     segment_length: int,
     n_segments: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Mark encoding from Ding et al. (2024) from [ding2024]_.
+    """Mark encoding from Ding et al (2024) from [ding2024]_.
 
     Replaces a contiguous part (or parts) of all channels by zeros
     (if more than one segment, it may overlap).
@@ -1182,19 +1200,21 @@ def mask_encoding(
        32 (2024): 875-886.
     """
 
-    batch_indices = torch.arange(X.shape[0]).repeat_interleave(n_segments)
-    start_indices = time_start.flatten()
-    mask_indices = start_indices[:, None] + torch.arange(segment_length)
+    # All channels are zeroed at the same time positions, so build a single
+    # (batch, n_times) time-mask and broadcast it over channels, vectorized
+    # (no Python loop over batch * n_segments).
+    device = X.device
+    batch_indices = torch.arange(X.shape[0], device=device).repeat_interleave(
+        n_segments * segment_length
+    )
+    seg_indices = (
+        time_start.flatten().to(device)[:, None]
+        + torch.arange(segment_length, device=device)
+    ).flatten()
+    time_mask = torch.zeros(X.shape[0], X.shape[-1], dtype=torch.bool, device=device)
+    time_mask[batch_indices, seg_indices] = True
 
-    # Create a boolean mask with the same shape as X
-    mask = torch.zeros_like(X, dtype=torch.bool)
-    for batch_index, grouped_mask_indices in zip(batch_indices, mask_indices):
-        mask[batch_index, :, grouped_mask_indices] = True
-
-    # Apply the mask to set the values to 0
-    X[mask] = 0
-
-    return X, y  # Return the masked tensor and labels
+    return X.masked_fill(time_mask.unsqueeze(1), 0), y
 
 
 def channels_rereference(
@@ -1212,7 +1232,7 @@ def channels_rereference(
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -1229,7 +1249,6 @@ def channels_rereference(
         Representation Learning for Electroencephalogram Classification. Proceedings
         of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
         Learning Research 136:238-253
-
     """
 
     rng = check_random_state(random_state)
@@ -1261,10 +1280,11 @@ def amplitude_scale(
     y : torch.Tensor
         EEG labels for the example or batch.
     scale : tuple of floats
-        Interval from which ypu sample the scaling value
-    random_state: int | numpy.random.Generator, optional
-        Seed to be used to instantiate numpy random number generator instance.
-        Defaults to None.
+        Interval ``(low, high)`` from which the per (sample, channel)
+        scaling value is uniformly sampled.
+    random_state : int | numpy.random.RandomState | None, optional
+        Seed used to instantiate the numpy random number generator that
+        draws the scaling values. Defaults to None.
 
     Returns
     -------
@@ -1279,19 +1299,148 @@ def amplitude_scale(
         Representation Learning for Electroencephalogram Classification. Proceedings
         of the Machine Learning for Health NeurIPS Workshop, in Proceedings of Machine
         Learning Research 136:238-253
-
     """
 
-    rng = torch.Generator()
-    rng.manual_seed(random_state)
+    # use the same numpy rng path as the rest of this module. the previous
+    # torch.Generator + manual_seed path crashed on None and on the
+    # numpy RandomState that Transform passes in via self.rng.
+    rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
 
-    # Parameter for scaling amplitude / channel / trial
     l, h = scale
-    s = l + (h - l) * torch.rand(
-        batch_size, n_channels, 1, generator=rng, device=X.device, dtype=X.dtype
+    s = torch.as_tensor(
+        rng.uniform(low=l, high=h, size=(batch_size, n_channels, 1)),
+        device=X.device,
+        dtype=X.dtype,
     )
 
     X = s * X
 
     return X, y
+
+
+def band_rotation(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    num_bands: int = 2,
+    electrodes_per_band: int = 16,
+    band_offsets: tuple[int, ...] = (-1, 0, 1),
+    max_temporal_jitter: int = 0,
+    circular_jitter: bool = True,
+    random_state: int | np.random.RandomState | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-band electrode rotation + inter-band temporal jitter.
+
+    Models small wristband rotation between sessions and relative timing
+    noise between two arms.  Introduced in [Sivakumar2024]_ for the
+    emg2qwerty CTC keystroke decoding task: each electrode band gets its
+    own circular roll along the channel axis (``Uniform(band_offsets)``
+    positions), and band 1 also gets a sample-level temporal shift
+    (``Uniform(-max_temporal_jitter, +max_temporal_jitter)``) along the
+    time axis.
+
+    Channel layout assumes ``(B, num_bands * electrodes_per_band, T)`` with
+    bands contiguous along the channel axis.  Same offset / shift is
+    applied to every sample in the batch (one set of parameters per call).
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EMG input batch of shape ``(B, C, T)`` with
+        ``C == num_bands * electrodes_per_band``.
+    y : torch.Tensor
+        Labels (returned unchanged).
+    num_bands : int, optional
+        Number of electrode bands (e.g. ``2`` for left + right wristband).
+        Must be ``>= 1``.  Defaults to 2.
+    electrodes_per_band : int, optional
+        Electrodes per band (e.g. ``16``).  Must be ``>= 1``.  Defaults
+        to 16.
+    band_offsets : tuple of int, optional
+        Per-band roll values to sample from uniformly.  ``(-1, 0, 1)``
+        covers ±1-electrode misalignment.  Must be non-empty.  Defaults
+        to ``(-1, 0, 1)``.
+    max_temporal_jitter : int, optional
+        Max ±-sample temporal shift applied to band 1 only when
+        ``num_bands >= 2``.  Defaults to 0 (disabled).  Must be ``>= 0``.
+    circular_jitter : bool, optional
+        If True (the default, paper-faithful), the temporal jitter is a
+        circular ``torch.roll`` — samples shifted off one edge wrap to
+        the other.  If False, the gap left by the shift is zero-padded
+        and the shifted-off samples are dropped, avoiding wrap-around
+        discontinuity at the cost of a small zeroed margin.  Has no
+        effect when ``max_temporal_jitter == 0``.
+    random_state : int | numpy.random.RandomState, optional
+        Seed / generator for sampling rotation + jitter values.
+
+    Returns
+    -------
+    torch.Tensor
+        Transformed inputs.
+    torch.Tensor
+        Labels (unchanged).
+
+    References
+    ----------
+    .. [Sivakumar2024] Sivakumar, V., Seely, J., Du, A., Bittner, S. R.,
+       Berenzweig, A., Bolarinwa, A., Gramfort, A., & Mandel, M. I. (2024).
+       "emg2qwerty: A Large Dataset with Baselines for Touch Typing using
+       Surface Electromyography." *NeurIPS Datasets and Benchmarks Track*.
+    """
+    if num_bands < 1:
+        raise ValueError(f"num_bands must be >= 1, got {num_bands}")
+    if electrodes_per_band < 1:
+        raise ValueError(f"electrodes_per_band must be >= 1, got {electrodes_per_band}")
+    # Normalise to a tuple before truth-testing so callers can pass any
+    # sequence-like (incl. ``np.ndarray``) without hitting numpy's
+    # ambiguous-truth-value error on ``if not band_offsets``.
+    band_offsets = tuple(band_offsets)
+    if not band_offsets:
+        raise ValueError("band_offsets must be non-empty")
+    if not all(isinstance(o, (int, np.integer)) for o in band_offsets):
+        raise ValueError(f"band_offsets must contain integers, got {band_offsets!r}")
+    if max_temporal_jitter < 0:
+        raise ValueError(f"max_temporal_jitter must be >= 0, got {max_temporal_jitter}")
+    expected_channels = num_bands * electrodes_per_band
+    if X.shape[1] != expected_channels:
+        raise ValueError(
+            f"X.shape[1]={X.shape[1]} != num_bands * electrodes_per_band="
+            f"{expected_channels}"
+        )
+
+    rng = check_random_state(random_state)
+    band_offsets_arr = np.asarray(band_offsets)
+    out = X.clone()
+
+    # Per-band channel-axis rolls.  A vectorized ``torch.gather`` was
+    # benchmarked and is ~16 % slower for the typical ``num_bands == 2``
+    # case on CPU (the index tensor is larger than what two contiguous
+    # rolls touch); the gather only wins past ``num_bands >= 8``.
+    for b in range(num_bands):
+        offset = int(rng.choice(band_offsets_arr))
+        if offset:
+            sl = slice(b * electrodes_per_band, (b + 1) * electrodes_per_band)
+            out[:, sl, :] = torch.roll(out[:, sl, :], offset, dims=1)
+
+    # Inter-band temporal jitter — paper recipe applies it to band 1 only.
+    if max_temporal_jitter > 0 and num_bands >= 2:
+        shift = int(rng.randint(-max_temporal_jitter, max_temporal_jitter + 1))
+        if shift:
+            sl = slice(electrodes_per_band, 2 * electrodes_per_band)
+            band1 = out[:, sl, :]
+            if circular_jitter:
+                # Paper-faithful circular shift; wraps end-of-window
+                # samples to the start (and vice versa).
+                out[:, sl, :] = torch.roll(band1, shift, dims=2)
+            else:
+                # Crop-and-pad shift: drop samples that fall off one end,
+                # zero-pad the gap on the other.  Avoids the wrap-around
+                # discontinuity at the cost of a ``|shift|``-sample margin.
+                shifted = torch.zeros_like(band1)
+                if shift > 0:
+                    shifted[:, :, shift:] = band1[:, :, :-shift]
+                else:  # shift < 0
+                    shifted[:, :, :shift] = band1[:, :, -shift:]
+                out[:, sl, :] = shifted
+
+    return out, y

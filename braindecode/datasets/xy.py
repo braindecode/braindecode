@@ -26,31 +26,32 @@ def create_from_X_y(
     window_size_samples: int | None = None,
     window_stride_samples: int | None = None,
 ) -> BaseConcatDataset:
-    """Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
+    """Create a BaseConcatDataset of WindowsDatasets from X and y to be used for.
+
     decoding with skorch and braindecode, where X is a list of pre-cut trials
     and y are corresponding targets.
 
     Parameters
     ----------
-    X: array-like
+    X : array-like
         list of pre-cut trials as n_trials x n_channels x n_times
-    y: array-like
+    y : array-like
         targets corresponding to the trials
-    drop_last_window: bool
+    drop_last_window : bool
         whether or not have a last overlapping window, when
         windows/windows do not equally divide the continuous signal
-    sfreq: float
+    sfreq : float
         Sampling frequency of signals.
-    ch_names: array-like
+    ch_names : array-like
         Names of the channels.
-    window_size_samples: int
+    window_size_samples : int
         window size
-    window_stride_samples: int
+    window_stride_samples : int
         stride between windows
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset
+    windows_datasets : BaseConcatDataset
         X and y transformed to a dataset format that is compatible with skorch
         and braindecode
     """

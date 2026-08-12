@@ -25,14 +25,13 @@ class BIDSIterableDataset(IterableDataset):
 
     Examples
     --------
-    >>> from braindecode.datasets import RecordDataset, BaseConcatDataset
-    >>> from braindecode.datasets.bids import BIDSIterableDataset, _description_from_bids_path
+    >>> from braindecode.datasets import BaseConcatDataset, RawDataset, RecordDataset
+    >>> from braindecode.datasets.bids import BIDSIterableDataset
     >>> from braindecode.preprocessing import create_fixed_length_windows
     >>>
     >>> def my_reader_fn(path):
     ...     raw = mne_bids.read_raw_bids(path)
-    ...     desc = _description_from_bids_path(path)
-    ...     ds = RawDataset(raw, description=desc)
+    ...     ds: RecordDataset = RawDataset(raw, description={"path": path.fpath})
     ...     windows_ds = create_fixed_length_windows(
     ...         BaseConcatDataset([ds]),
     ...         window_size_samples=400,
@@ -48,7 +47,8 @@ class BIDSIterableDataset(IterableDataset):
     Parameters
     ----------
     reader_fn : Callable[[mne_bids.BIDSPath], Sequence]
-        A function that takes a BIDSPath and returns a dataset.
+        A function that takes a BIDSPath and returns a dataset (e.g., a
+        RecordDataset or BaseConcatDataset of RecordDataset).
     pool_size : int
         The number of recordings to read and sample from.
     bids_paths : list[mne_bids.BIDSPath] | None
@@ -62,7 +62,7 @@ class BIDSIterableDataset(IterableDataset):
         The acquisition session. Corresponds to "ses".
     tasks : str | array-like of str | None
         The experimental task. Corresponds to "task".
-    acquisitions: str | array-like of str | None
+    acquisitions : str | array-like of str | None
         The acquisition parameters. Corresponds to "acq".
     runs : str | array-like of str | None
         The run number. Corresponds to "run".
@@ -106,6 +106,8 @@ class BIDSIterableDataset(IterableDataset):
         If True, preload the data. Defaults to False.
     n_jobs : int
         Number of jobs to run in parallel. Defaults to 1.
+
+
     """
 
     def __init__(

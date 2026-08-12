@@ -1,4 +1,4 @@
-from .activation import LogActivation, SafeLog
+from .activation import GatedLinearUnit, LogActivation, SafeLog, Square
 from .attention import (
     CAT,
     CBAM,
@@ -7,22 +7,35 @@ from .attention import (
     GCT,
     SRM,
     CATLite,
+    CrissCrossTransformerEncoderLayer,
     EncNet,
     GatherExcite,
     GSoP,
     MultiHeadAttention,
     SqueezeAndExcitation,
 )
-from .blocks import MLP, FeedForwardBlock, InceptionBlock
+from .blocks import MLP, FeedForwardBlock, InceptionBlock, PatchTokenizer
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
     CombinedConv,
+    Conv1dWithConstraint,
     Conv2dWithConstraint,
     DepthwiseConv2d,
 )
+from .dance_modules import Perceiver, SimpleConv
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
-from .layers import Chomp1d, DropPath, Ensure4d, SqueezeFinalOutput, TimeDistributed
+from .interpolation import ChannelInterpolationLayer
+from .layers import (
+    ChannelMerger,
+    Chomp1d,
+    DropPath,
+    Ensure4d,
+    FourierEmb,
+    SqueezeFinalOutput,
+    SubjectLayers,
+    TimeDistributed,
+)
 from .linear import LinearWithConstraint, MaxNormLinear
 from .parametrization import MaxNorm, MaxNormParametrize
 from .stats import (
@@ -38,10 +51,13 @@ from .util import aggregate_probas
 from .wrapper import Expression, IntermediateOutputWrapper
 
 __all__ = [
+    "GatedLinearUnit",
     "LogActivation",
     "SafeLog",
+    "Square",
     "CAT",
     "CBAM",
+    "ChannelInterpolationLayer",
     "ECA",
     "FCA",
     "GCT",
@@ -52,19 +68,27 @@ __all__ = [
     "GSoP",
     "MultiHeadAttention",
     "SqueezeAndExcitation",
+    "CrissCrossTransformerEncoderLayer",
     "MLP",
     "FeedForwardBlock",
     "InceptionBlock",
+    "PatchTokenizer",
     "AvgPool2dWithConv",
     "CausalConv1d",
     "CombinedConv",
+    "Conv1dWithConstraint",
     "Conv2dWithConstraint",
     "DepthwiseConv2d",
+    "ChannelMerger",
+    "FourierEmb",
+    "Perceiver",
+    "SimpleConv",
     "FilterBankLayer",
     "GeneralizedGaussianFilter",
     "Chomp1d",
     "DropPath",
     "Ensure4d",
+    "SubjectLayers",
     "SqueezeFinalOutput",
     "TimeDistributed",
     "LinearWithConstraint",

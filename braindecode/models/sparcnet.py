@@ -11,7 +11,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class SPARCNet(EEGModuleMixin, nn.Module):
-    """Seizures, Periodic and Rhythmic pattern Continuum Neural Network (SPaRCNet) from Jing et al. (2023) [jing2023]_.
+    r"""Seizures, Periodic and Rhythmic pattern Continuum Neural Network (SPaRCNet) from Jing et al (2023) [jing2023]_.
 
     :bdg-success:`Convolution`
 
@@ -213,7 +213,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
 
 
 class _DenseLayer(nn.Sequential):
-    """
+    r"""
     A densely connected layer with batch normalization and dropout.
 
     Parameters
@@ -302,7 +302,7 @@ class _DenseLayer(nn.Sequential):
 
 
 class _DenseBlock(nn.Sequential):
-    """
+    r"""
     A densely connected block that uses DenseLayers.
 
     Parameters
@@ -371,7 +371,7 @@ class _DenseBlock(nn.Sequential):
 
 
 class _TransitionLayer(nn.Sequential):
-    """
+    r"""
     A pooling transition layer.
 
     Parameters

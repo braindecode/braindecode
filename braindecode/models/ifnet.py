@@ -29,7 +29,7 @@ from braindecode.modules import (
 
 
 class IFNet(EEGModuleMixin, nn.Module):
-    """IFNetV2 from Wang J et al (2023) [ifnet]_.
+    r"""IFNetV2 from Wang J et al (2023) [ifnet]_.
 
     :bdg-success:`Convolution` :bdg-primary:`Filterbank`
 
@@ -238,7 +238,7 @@ class IFNet(EEGModuleMixin, nn.Module):
 
 
 class _InterFrequencyModule(nn.Module):
-    """Module that combines outputs from different frequency bands."""
+    r"""Module that combines outputs from different frequency bands."""
 
     def __init__(self, activation: type[nn.Module] = nn.GELU):
         """
@@ -272,7 +272,7 @@ class _InterFrequencyModule(nn.Module):
 
 
 class _SpatioTemporalFeatureBlock(nn.Module):
-    """SpatioTemporal Feature Block consisting of spatial and temporal convolutions."""
+    r"""SpatioTemporal Feature Block consisting of spatial and temporal convolutions."""
 
     def __init__(
         self,

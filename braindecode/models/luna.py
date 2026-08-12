@@ -7,6 +7,7 @@ Retrieved from https://openreview.net/forum?id=uazfjnFL0G
 
 Original Authors: Berkay Döner, Thorir Mar Ingolfsson
 Braindecode Adaptation: Bruno Aristimunha
+Contributions: Sarthak Tayal <sarthaktayal2@gmail.com>
 
 the LICENSE Of this file is APACHE-2.0.
 """
@@ -27,9 +28,9 @@ from braindecode.modules.layers import DropPath
 
 
 class LUNA(EEGModuleMixin, nn.Module):
-    """LUNA from Döner et al. [LUNA]_.
+    r"""LUNA from Döner et al [LUNA]_.
 
-    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model` :bdg-dark-line:`Channel`
+    :bdg-success:`Convolution` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`
 
     .. figure:: https://arxiv.org/html/2510.22257v1/x1.png
         :align: center
@@ -43,6 +44,47 @@ class LUNA(EEGModuleMixin, nn.Module):
     2. Channel-Unification Module (cross-attention with learned queries)
     3. Patch-wise Temporal Encoder (RoPE-based transformer)
     4. Decoder Heads (classification or reconstruction)
+
+    .. important::
+       **Pre-trained Weights Available**
+
+       This model has pre-trained weights available on the Hugging Face Hub
+       at `PulpBio/LUNA <https://huggingface.co/PulpBio/LUNA>`_.
+
+       Available model variants:
+
+       - **LUNA_base.safetensors** - Base model (embed_dim=64, num_queries=4, depth=8)
+       - **LUNA_large.safetensors** - Large model (embed_dim=96, num_queries=6, depth=10)
+       - **LUNA_huge.safetensors** - Huge model (embed_dim=128, num_queries=8, depth=24)
+
+       Example loading for fine-tuning:
+
+       .. code-block:: python
+
+           from braindecode.models import LUNA
+
+           # Load pre-trained base model from Hugging Face Hub
+           model = LUNA.from_pretrained(
+               "PulpBio/LUNA",
+               filename="LUNA_base.safetensors",
+               n_outputs=2,
+               n_chans=22,
+               n_times=1000,
+               embed_dim=64,
+               num_queries=4,
+               depth=8,
+           )
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-luna-model", commit_message="Upload trained LUNA model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
 
     Parameters
     ----------
@@ -115,6 +157,7 @@ class LUNA(EEGModuleMixin, nn.Module):
             "channel_location_embedder.0.fc2.bias": "channel_location_embedder.fc2.bias",
             "channel_location_embedder.0.norm.weight": "channel_location_embedder.norm.weight",
             "channel_location_embedder.0.norm.bias": "channel_location_embedder.norm.bias",
+            "cross_attn.temparature": "cross_attn.temperature",  # typo in pretrained weights
         }
 
         # Model parameters
@@ -260,8 +303,10 @@ class LUNA(EEGModuleMixin, nn.Module):
         channel_locations_emb = self.channel_location_embedder(channel_locations)
 
         x_tokenized = rearrange(x_masked, "B (C t) D -> (B t) C D", C=num_channels)
-        channel_locations_emb = channel_locations_emb.repeat(
-            num_patches_per_channel, 1, 1
+        channel_locations_emb = (
+            channel_locations_emb.repeat_interleave(  # was repeat(), wrong dim ordering
+                num_patches_per_channel, dim=0
+            )
         )
         x_tokenized = x_tokenized + channel_locations_emb
 
@@ -402,7 +447,7 @@ def nerf_positional_encoding(coords: torch.Tensor, embed_size: int) -> torch.Ten
 
 
 class _ChannelEmbeddings(nn.Module):
-    """
+    r"""
     This class creates embeddings for each EEG channel based on a predefined
     mapping of channel names to indices.
 
@@ -430,7 +475,7 @@ class _ChannelEmbeddings(nn.Module):
 
 
 class _FrequencyFeatureEmbedder(nn.Module):
-    """
+    r"""
     This class takes data that is of the form (B, C, T) and patches it
     along the time dimension (T) into patches of size P (patch_size).
     The output is of the form (B, C, S, P) where S = T // P.
@@ -806,7 +851,7 @@ class _PatchEmbedNetwork(nn.Module):
 
 
 class _Mlp(nn.Module):
-    """MLP as used in Vision Transformer, MLP-Mixer and related networks.
+    r"""MLP as used in Vision Transformer, MLP-Mixer and related networks.
 
     Code copied from timm.models.mlp.Mlp
     """

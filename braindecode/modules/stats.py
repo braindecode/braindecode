@@ -22,6 +22,16 @@ class StatLayer(nn.Module):
         Used only for functions requiring clamping (e.g., log variance).
     apply_log : bool, default=False
         Whether to apply log after computation (used for LogVarLayer).
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import StatLayer
+    >>> module = StatLayer(stat_fn=torch.mean, dim=-1, keepdim=True)
+    >>> inputs = torch.randn(2, 3, 10)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 3, 1])
     """
 
     def __init__(

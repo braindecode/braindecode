@@ -1,4 +1,7 @@
+# Authors: Fashad Ahmed <fashad.ahmed20@gmail.com>
+#
 """Our local Sphinx configuration file."""
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
@@ -23,6 +26,11 @@ import os
 import os.path as op
 import sys
 import warnings
+
+# Enable docstring inheritance before any braindecode imports so that
+# NumpyDocstringInheritanceInitMeta merges parent parameters into child
+# class docstrings (e.g. EEGModuleMixin params into every model).
+os.environ["DOCSTRING_INHERITANCE_ENABLE"] = "1"
 
 import matplotlib
 
@@ -66,7 +74,8 @@ except Exception as e:
 needs_sphinx = "2.0"
 
 curdir = os.path.dirname(__file__)
-sys.path.append(os.path.abspath(os.path.join(curdir, "..", "braindecode")))
+# Ensure the local braindecode package is found before any editable install
+sys.path.insert(0, os.path.abspath(os.path.join(curdir, "..")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
 import sphinx_design
@@ -93,8 +102,10 @@ extensions = [
     "sphinx.ext.linkcode",
     "sphinx_sitemap",
     "sphinx_design",
+    "sphinxext.opengraph",
     "numpydoc",
     "gh_substitutions",
+    "zoo_data_gen",
 ]
 
 
@@ -258,14 +269,31 @@ todo_include_todos = True
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
     "python": ("https://docs.python.org/{.major}".format(sys.version_info), None),
-    "numpy": ("https://docs.scipy.org/doc/numpy/", None),
-    "scipy": ("https://docs.scipy.org/doc/scipy/reference", None),
-    "matplotlib": ("https://matplotlib.org/", None),
-    "sklearn": ("http://scikit-learn.org/stable", None),
-    "mne": ("http://mne.tools/stable", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "matplotlib": ("https://matplotlib.org/stable/", None),
+    "sklearn": ("https://scikit-learn.org/stable/", None),
+    "mne": ("https://mne.tools/stable/", None),
     "skorch": ("https://skorch.readthedocs.io/en/stable/", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
+    "huggingface_hub": (
+        "https://huggingface.co/docs/huggingface_hub/main/en/",
+        None,
+    ),
+    "mne_bids": ("https://mne.tools/mne-bids/stable/", None),
+    "spd_learn": ("https://spdlearn.org/", None),
 }
+
+if release.endswith("dev0"):
+    _pip_install_cell = (
+        "# Install the development version of braindecode\n"
+        "%pip install git+https://github.com/braindecode/braindecode.git"
+    )
+else:
+    _pip_install_cell = (
+        f"# Install braindecode (pinned to the version used to build this notebook)\n"
+        f"%pip install braindecode=={release}"
+    )
 
 sphinx_gallery_conf = {
     "examples_dirs": ["../examples"],
@@ -274,6 +302,7 @@ sphinx_gallery_conf = {
     "backreferences_dir": "generated",
     "show_memory": True,
     "reference_url": dict(braindecode=None),
+    "first_notebook_cell": _pip_install_cell,
     "subsection_order": ExplicitOrder(
         [
             "../examples/model_building",
@@ -292,7 +321,7 @@ sphinx_gallery_conf = {
 #
 
 html_theme = "pydata_sphinx_theme"
-switcher_version_match = "dev" if release.endswith("dev0") else version
+switcher_version_match = "dev" if (release.endswith("dev0")) else version
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
@@ -323,9 +352,21 @@ html_theme_options = {
         "image_dark": "_static/braindecode_long.svg",
         "alt_text": "Braindecode Logo",
     },
+    "secondary_sidebar_items": {
+        "**": [
+            "page-toc",
+            "sourcelink",
+            # Sphinx-Gallery-specific sidebar components
+            # https://sphinx-gallery.github.io/stable/advanced.html#using-sphinx-gallery-sidebar-components
+            "sg_download_links",
+            "sg_launcher_links",
+        ],
+    },
     "footer_start": ["copyright"],
     # 'pygment_light_style': 'default',
-    "analytics": dict(google_analytics_id="G-7Q43R82K6D"),
+    # Analytics intentionally NOT configured here — the project uses GTM
+    # (GTM-NWDKLVNR) injected from _templates/layout.html as the single
+    # entry point. Adding theme analytics on top would double-count.
 }
 
 # The name of an image file (relative to this directory) to place at the top
@@ -336,9 +377,16 @@ html_logo = "_static/braindecode_symbol.png"
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
+# Files copied verbatim into the build root (robots.txt, etc.)
+html_extra_path = ["_extra"]
 html_css_files = [
     "style.css",
 ]
+# Note: landing.css and the landing JS files (zoo-data.js, landing.js)
+# are *not* registered globally — they only ship on the index page,
+# injected from `_templates/layout.html` under `pagename == 'index'`.
+# Loading them site-wide added ~2k lines of CSS + a third-party
+# Google-Fonts request to every doc page for no benefit.
 
 # Favicon for the site
 html_favicon = "_static/braindecode_symbol.png"
@@ -368,6 +416,7 @@ html_context = {
     "default_mode": "light",
     "pygment_light_style": "tango",
     "pygment_dark_style": "native",
+    "doc_version": switcher_version_match,
     "icon_links_label": "Quick Links",  # for screen reader
     "show_toc_level": 1,
     "institutions": [
@@ -445,8 +494,29 @@ latex_documents = [
         "manual",
     ),
 ]
-html_baseurl = "https://braindecode.org"
+# Master/dev builds publish under /dev/ on GitHub Pages (see
+# .github/workflows/docs.yml `destination_dir: dev`). The baseurl,
+# OG canonical, and the sitemap location must match the actual deploy
+# path or crawlers will end up on 404s.
+html_baseurl = "https://braindecode.org/dev/"
 sitemap_filename = "sitemap.xml"
+# Flat URLs (no /en/{version}/) — same pattern as MOABB.
+sitemap_url_scheme = "{link}"
+
+# --- Open Graph / Twitter Card / meta description ---
+ogp_site_url = "https://braindecode.org/dev/"
+ogp_site_name = "Braindecode"
+ogp_image = "https://braindecode.org/dev/_static/braindecode_long.svg"
+ogp_image_alt = (
+    "Braindecode — open-source PyTorch toolbox for decoding raw EEG, ECoG and MEG"
+)
+ogp_description_length = 200
+ogp_enable_meta_description = True
+ogp_type = "website"
+ogp_custom_meta_tags = [
+    '<meta name="twitter:card" content="summary_large_image" />',
+    '<meta name="twitter:site" content="@braindecode" />',
+]
 # -- Fontawesome support -----------------------------------------------------
 
 # here the "fab" and "fas" refer to "brand" and "solid" (determines which font

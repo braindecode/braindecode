@@ -9,7 +9,6 @@ Note:
     - The signal unit may not be uV and further examination is required.
     - The spectrum shows that the signal may have been band-pass filtered from about 2 - 33Hz,
     which needs to be further determined.
-
 """
 
 # Authors: Mohammad Bayazi <mj.darvishi92@gmail.com>
@@ -67,17 +66,17 @@ class NMT(BaseConcatDataset):
 
     Parameters
     ----------
-    path: str
+    path : str
         Parent directory of the dataset.
-    recording_ids: list(int) | int
+    recording_ids : list(int) | int
         A (list of) int of recording id(s) to be read (order matters and will
         overwrite default chronological order, e.g. if recording_ids=[1,0],
         then the first recording returned by this class will be chronologically
         later than the second recording. Provide recording_ids in ascending
         order to preserve chronological order.).
-    target_name: str
+    target_name : str
         Can be "pathological", "gender", or "age".
-    preload: bool
+    preload : bool
         If True, preload the data of the Raw objects.
 
     References
@@ -150,7 +149,10 @@ class NMT(BaseConcatDataset):
             os.path.join(path, "Labels.csv"), index_col="recordname"
         )
         if recording_ids is not None:
-            description = description.iloc[recording_ids]
+            # Match metadata by record name instead of position to fix alignment bug
+            # when CSV order differs from sorted file order
+            selected_recordnames = [os.path.basename(fp) for fp in file_paths]
+            description = description.loc[selected_recordnames]
         description.replace(
             {
                 "not specified": "X",
@@ -196,18 +198,23 @@ def _get_header(*args):
 
 def _fake_pd_read_csv(*args, **kwargs):
     # Create a list of lists to hold the data
+    # Updated to match the file IDs from _NMT_PATHS (0000036-0000042)
+    # to align with the mocked glob.glob return value
     data = [
-        ["0000001.edf", "normal", 35, "male", "train"],
-        ["0000002.edf", "abnormal", 28, "female", "test"],
-        ["0000003.edf", "normal", 62, "male", "train"],
-        ["0000004.edf", "abnormal", 41, "female", "test"],
-        ["0000005.edf", "normal", 19, "male", "train"],
-        ["0000006.edf", "abnormal", 55, "female", "test"],
-        ["0000007.edf", "normal", 71, "male", "train"],
+        ["0000036.edf", "normal", 35, "male", "train"],
+        ["0000037.edf", "abnormal", 28, "female", "test"],
+        ["0000038.edf", "normal", 62, "male", "train"],
+        ["0000039.edf", "abnormal", 41, "female", "test"],
+        ["0000040.edf", "normal", 19, "male", "train"],
+        ["0000041.edf", "abnormal", 55, "female", "test"],
+        ["0000042.edf", "normal", 71, "male", "train"],
     ]
 
     # Create the DataFrame, specifying column names
     df = pd.DataFrame(data, columns=["recordname", "label", "age", "gender", "loc"])
+
+    # Set recordname as index to match the real pd.read_csv behavior with index_col="recordname"
+    df.set_index("recordname", inplace=True)
 
     return df
 

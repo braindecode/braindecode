@@ -1,40 +1,51 @@
-"""
-Some predefined network architectures for EEG decoding.
-"""
+"""Some predefined network architectures for EEG decoding."""
 
 from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
-from .bendr import BENDR
-from .biot import BIOT
+from .bendr import BENDR, InterpolatedBENDR
+from .biot import BIOT, InterpolatedBIOT
+from .brainmodule import BrainModule
+from .cbramod import CBraMod
+from .codebrain import CodeBrain
 from .contrawr import ContraWR
 from .ctnet import CTNet
+from .dance import DANCE
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
+from .dgcnn import DGCNN
 from .eegconformer import EEGConformer
+from .eegdino import EEGDINO
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
 from .eegitnet import EEGITNet
 from .eegminer import EEGMiner
-from .eegnet import EEGNet, EEGNetv4
+from .eegnet import EEGNet
 from .eegnex import EEGNeX
+from .eegpt import EEGPT, InterpolatedEEGPT
 from .eegsimpleconv import EEGSimpleConv
 from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
+from .emg2qwerty import EMG2QwertyNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
 from .hybrid import HybridNet
 from .ifnet import IFNet
-from .labram import Labram
+from .interpolated import InterpolatedModel
+from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
 from .medformer import MEDFormer
+from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
+from .mvpformer import MVPFormer
 from .patchedtransformer import PBT
+from .reve import REVE
 from .sccnet import SCCNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
+    InterpolatedSignalJEPA,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -45,16 +56,22 @@ from .sleep_stager_blanco_2020 import SleepStagerBlanco2020
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
 from .sparcnet import SPARCNet
 from .sstdpn import SSTDPN
+from .steegformer import STEEGFormer
 from .syncnet import SyncNet
+from .tcformer import TCFormer
 from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
 from .tsinception import TSception
 from .usleep import USleep
 from .util import (
     _init_models_dict,
+    build_model_config,
     extract_channel_locations_from_chs_info,
+    interpolated_models_dict,
     models_mandatory_parameters,
+    positions_from_chs_info,
 )
+from .zuna import ZUNA
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
@@ -67,32 +84,49 @@ __all__ = [
     "EEGModuleMixin",
     "BIOT",
     "BENDR",
+    "CBraMod",
+    "CodeBrain",
     "ContraWR",
     "CTNet",
+    "DANCE",
     "Deep4Net",
     "DeepSleepNet",
+    "BrainModule",
     "EEGConformer",
+    "EEGDINO",
+    "EEGPT",
+    "InterpolatedEEGPT",
     "EEGInceptionERP",
     "EEGInceptionMI",
     "EEGITNet",
     "EEGMiner",
     "EEGNet",
-    "EEGNetv4",
     "EEGNeX",
     "EEGSym",
     "EEGSimpleConv",
     "EEGTCNet",
+    "DGCNN",
+    "EMG2QwertyNet",
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
+    "MetaNeuromotorHand",
     "HybridNet",
     "IFNet",
+    "InterpolatedBENDR",
+    "InterpolatedBIOT",
+    "InterpolatedLaBraM",
+    "InterpolatedModel",
+    "InterpolatedSignalJEPA",
     "Labram",
     "LUNA",
     "extract_channel_locations_from_chs_info",
+    "positions_from_chs_info",
     "MEDFormer",
     "MSVTNet",
+    "MVPFormer",
     "PBT",
+    "REVE",
     "SCCNet",
     "ShallowFBCSPNet",
     "SignalJEPA",
@@ -104,12 +138,17 @@ __all__ = [
     "SleepStagerBlanco2020",
     "SleepStagerChambon2018",
     "SPARCNet",
+    "STEEGFormer",
     "SyncNet",
     "BDTCN",
+    "TCFormer",
     "TCN",
     "TIDNet",
     "TSception",
     "USleep",
+    "ZUNA",
+    "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",
+    "interpolated_models_dict",
 ]

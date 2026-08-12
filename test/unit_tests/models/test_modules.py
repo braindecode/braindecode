@@ -1,4 +1,5 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 from warnings import catch_warnings, simplefilter
@@ -29,6 +30,7 @@ from braindecode.modules import (
     LinearWithConstraint,
     MaxNormLinear,
     SafeLog,
+    SqueezeAndExcitation,
     TimeDistributed,
 )
 
@@ -226,6 +228,16 @@ def test_mlp_increase(hidden_features):
         # For each layer that we add, the model
         # increase with 2 layers + 2 initial layers (input, output layer)
         assert len(model) == 2 * (len(hidden_features)) + 2
+
+
+def test_squeeze_and_excitation_forward():
+    module = SqueezeAndExcitation(in_channels=32, reduction_rate=4)
+    inputs = torch.rand(2, 32, 1, 64)
+
+    outputs = module(inputs)
+
+    assert module.fc1.out_channels == module.fc2.in_channels
+    assert outputs.shape == inputs.shape
 
 
 def test_segm_patch_not_learning():
@@ -555,7 +567,7 @@ def test_forward_pass_filter_bank(method, sample_input):
 @pytest.mark.parametrize(
     "ftype", ["butterworth", "cheby1", "cheby1", "cheby2", "butter"]
 )
-@pytest.mark.parametrize("phase", ["forward", "zero", "zero-double"])
+@pytest.mark.parametrize("phase", ["forward", "causal", "zero", "zero-double"])
 @pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
 def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
     # Set random seeds for reproducibility
@@ -576,8 +588,11 @@ def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
         sfreq=256, method="iir", iir_params=iir_params, phase=phase, verbose=False
     )
 
+    mne_filter_parameters = filter_parameters.copy()
+    if phase == "causal":
+        mne_filter_parameters["phase"] = "forward"
     filts = create_filter(
-        data=None, l_freq=l_freq, h_freq=h_freq, **filter_parameters
+        data=None, l_freq=l_freq, h_freq=h_freq, **mne_filter_parameters
     )  # creating iir filter
 
     # Initialize your FilterBankLayer
@@ -586,15 +601,58 @@ def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
     )
     filtered_signal_torch = filter_bank_layer(x)
 
-    # Simulating filtfilt from torch with scipy
     x_np = x.numpy().astype(np.float64)
-    filtered_scipy = _filfilt_in_torch_sytle(b=filts["b"], a=filts["a"], x_np=x_np)
+    if phase in ("forward", "causal"):
+        filtered_scipy = lfilter_scipy(
+            b=filts["b"].astype(np.double),
+            a=filts["a"].astype(np.double),
+            x=x_np,
+            axis=-1,
+        )
+    else:
+        filtered_scipy = _filfilt_in_torch_sytle(
+            b=filts["b"], a=filts["a"], x_np=x_np
+        )
     # Compare the outputs
     np.testing.assert_array_almost_equal(
         filtered_signal_torch.numpy().flatten(),
         filtered_scipy.flatten(),
         err_msg=f"Filtered outputs do not match between FilterBankLayer "
         f"and MNE-Python for and band=({l_freq}-{h_freq})Hz",
+    )
+
+
+@pytest.mark.parametrize("phase", ["forward", "causal"])
+def test_filter_bank_layer_matches_scipy_causal_fir(phase):
+    """Test that causal FIR filtering matches scipy.signal.lfilter."""
+    torch.manual_seed(0)
+    np.random.seed(0)
+
+    n_chans = 4
+    batch_size = 2
+    n_times = 512
+    x = torch.randn(batch_size, n_chans, n_times, dtype=torch.float64)
+
+    filter_bank_layer = FilterBankLayer(
+        n_chans=n_chans,
+        sfreq=128,
+        band_filters=[(8, 30)],
+        method="fir",
+        phase=phase,
+        filter_length=257,
+        verbose=False,
+    )
+
+    filtered_signal_torch = filter_bank_layer(x)
+    filt = filter_bank_layer.fir_list[0].detach().numpy().astype(np.double)
+    filtered_scipy = lfilter_scipy(
+        b=filt, a=np.array([1.0], dtype=np.double), x=x.numpy(), axis=-1
+    )
+
+    np.testing.assert_array_almost_equal(
+        filtered_signal_torch.numpy().flatten(),
+        filtered_scipy.flatten(),
+        err_msg="Causal FIR outputs do not match scipy.signal.lfilter",
     )
 
 
@@ -1229,7 +1287,7 @@ def test_gradients_match_casual_conv(batch, in_ch, out_ch, length, kernel, dilat
 def test_warning_conditions(n_bands, kernel_sizes, expected_warning):
     with catch_warnings(record=True) as w:
         simplefilter("always")
-        block = _SpatioTemporalFeatureBlock(
+        _SpatioTemporalFeatureBlock(
             n_times=130,  # not divisible by 16
             in_channels=4,
             out_channels=8,
@@ -1238,6 +1296,43 @@ def test_warning_conditions(n_bands, kernel_sizes, expected_warning):
             stride_factor=16,
         )
         assert any(expected_warning in str(warn.message) for warn in w)
+
+
+def test_multi_head_attention_forward_shape():
+    from braindecode.modules import MultiHeadAttention
+
+    mha = MultiHeadAttention(emb_size=32, num_heads=4, dropout=0.1)
+    x = torch.randn(2, 10, 32)
+    out = mha(x)
+    assert out.shape == (2, 10, 32)
+
+
+def test_multi_head_attention_bool_mask():
+    from braindecode.modules import MultiHeadAttention
+
+    torch.manual_seed(42)
+    mha = MultiHeadAttention(emb_size=16, num_heads=2)
+    mha.eval()
+    torch.manual_seed(42)
+    x = torch.randn(1, 4, 16)
+
+    # Boolean mask: True = ignore. Mask out positions 2 and 3.
+    mask = torch.zeros(4, 4, dtype=torch.bool)
+    mask[:, 2:] = True
+
+    out_masked = mha(x, mask=mask)
+    out_no_mask = mha(x)
+    assert out_masked.shape == out_no_mask.shape
+    # Outputs should differ when mask is applied
+    max_diff = (out_masked - out_no_mask).abs().max().item()
+    assert max_diff > 1e-3, f"Mask had no effect: max_diff={max_diff}"
+
+
+def test_multi_head_attention_invalid_emb_size():
+    from braindecode.modules import MultiHeadAttention
+
+    with pytest.raises(ValueError, match="divisible"):
+        MultiHeadAttention(emb_size=33, num_heads=4)
 
 
 def test_forward_pass_ifnet_output_shape():
@@ -1253,3 +1348,60 @@ def test_forward_pass_ifnet_output_shape():
     out = block(x)
     assert isinstance(out, torch.Tensor)
     assert out.shape[0] == 2  # batch_size preserved
+
+
+def test_patch_tokenizer():
+    from braindecode.modules import PatchTokenizer
+
+    # non-learnable: pure reshape, no parameters
+    tok = PatchTokenizer(patch_size=200, n_times=1000)
+    assert tok(torch.randn(2, 19, 1000)).shape == (2, 19, 5, 200)
+    assert sum(p.numel() for p in tok.parameters()) == 0
+
+    # learnable: strided conv maps each patch to emb_dim
+    tok_l = PatchTokenizer(patch_size=200, n_times=1000, emb_dim=64, learnable=True)
+    assert tok_l(torch.randn(2, 19, 1000)).shape == (2, 19, 5, 64)
+    assert sum(p.numel() for p in tok_l.parameters()) > 0
+
+    # non-divisible n_times is right-padded (warning at construction, never raises)
+    with pytest.warns(UserWarning, match="padded"):
+        tok_pad = PatchTokenizer(patch_size=200, n_times=950)
+    assert tok_pad(torch.randn(2, 19, 950)).shape == (2, 19, 5, 200)
+
+    # crop mode hard-drops the trailing samples instead of padding them
+    x = torch.arange(2 * 3 * 950, dtype=torch.float32).reshape(2, 3, 950)
+    tok_crop = PatchTokenizer(patch_size=200, n_times=950, on_non_divisible="crop")
+    expected = x[..., :800].reshape(2, 3, 4, 200)
+    assert torch.equal(tok_crop(x), expected)
+
+    # error mode rejects non-divisible windows
+    with pytest.raises(ValueError, match="not divisible"):
+        PatchTokenizer(patch_size=200, n_times=950, on_non_divisible="error")
+
+    # linear projection matches explicit per-patch Linear(patch_size, emb_dim)
+    tok_linear = PatchTokenizer(
+        patch_size=5,
+        n_times=12,
+        emb_dim=7,
+        learnable=True,
+        on_non_divisible="crop",
+        projection="linear",
+        output_order="patch_channel",
+    )
+    x = torch.randn(2, 3, 12)
+    patches = x[..., :10].reshape(2, 3, 2, 5).transpose(1, 2)
+    expected = tok_linear.proj(patches)
+    assert torch.allclose(tok_linear(x), expected)
+    assert set(tok_linear.state_dict()) == {"proj.weight", "proj.bias"}
+
+
+def test_gated_linear_unit_geglu_semantics():
+    """GatedLinearUnit halves the last dim and gates with the given activation."""
+    from braindecode.modules import GatedLinearUnit
+
+    glu = GatedLinearUnit()  # default GELU -> GEGLU
+    x = torch.randn(2, 4, 10)
+    value, gate = x.chunk(2, dim=-1)
+    out = glu(x)
+    assert out.shape == (2, 4, 5)
+    assert torch.equal(out, value * torch.nn.functional.gelu(gate))

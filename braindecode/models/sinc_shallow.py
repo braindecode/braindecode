@@ -9,7 +9,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class SincShallowNet(EEGModuleMixin, nn.Module):
-    """Sinc-ShallowNet from Borra, D et al (2020) [borra2020]_.
+    r"""Sinc-ShallowNet from Borra, D et al (2020) [borra2020]_.
 
     :bdg-success:`Convolution` :bdg-warning:`Interpretability`
 
@@ -158,8 +158,6 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         )
 
         self.depthwiseconv = nn.Sequential(
-            # Matching dim to depth wise conv!
-            Rearrange("batch timefil time nfilter -> batch nfilter timefil time"),
             nn.BatchNorm2d(
                 self.n_filters, momentum=0.99
             ),  # To match keras implementation
@@ -203,6 +201,8 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         """
         x = self.ensuredims(x)
         x = self.sinc_filter_layer(x)
+        # batch timefil time nfilter -> batch nfilter timefil time
+        x = x.permute(0, 3, 1, 2).contiguous()
         x = self.depthwiseconv(x)
         x = self.temporal_aggregation(x)
 
@@ -210,7 +210,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
 
 class _SincFilter(nn.Module):
-    """Sinc-Based Convolutional Layer for Band-Pass Filtering from Ravanelli and Bengio (2018) [ravanelli]_.
+    r"""Sinc-Based Convolutional Layer for Band-Pass Filtering from Ravanelli and Bengio (2018) [ravanelli]_.
 
     The `SincFilter` layer implements a convolutional layer where each kernel is
     defined using a parametrized sinc function.

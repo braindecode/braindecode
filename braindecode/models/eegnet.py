@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from einops.layers.torch import Rearrange
-from mne.utils import deprecated, warn
+from mne.utils import warn
 from torch import nn
 
 from braindecode.functional import glorot_weight_zero_bias
@@ -20,7 +20,7 @@ from braindecode.modules import (
 
 
 class EEGNet(EEGModuleMixin, nn.Sequential):
-    """EEGNet model from Lawhern et al. (2018) [Lawhern2018]_.
+    r"""EEGNet model from Lawhern et al (2018) [Lawhern2018]_.
 
     :bdg-success:`Convolution`
 
@@ -348,12 +348,3 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
         self.add_module("final_layer", module)
 
         glorot_weight_zero_bias(self)
-
-
-@deprecated(
-    "`EEGNetv4` was renamed to `EEGNet` in v1.12; this alias will be removed in v1.14."
-)
-class EEGNetv4(EEGNet):
-    """Deprecated alias for EEGNet."""
-
-    pass

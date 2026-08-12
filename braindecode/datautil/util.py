@@ -11,8 +11,7 @@ from skorch.helper import SliceDataset
 from skorch.utils import is_dataset
 
 from braindecode.datasets.base import BaseConcatDataset, WindowsDataset
-
-# from braindecode.models.util import SigArgName
+from braindecode.models.util import SigArgName
 
 log = logging.getLogger(__name__)
 
@@ -23,16 +22,15 @@ def ms_to_samples(ms, fs):
 
     Parameters
     ----------
-    ms: number
+    ms : number
         Milliseconds
-    fs: number
+    fs : number
         Sampling rate
 
     Returns
     -------
-    n_samples: int
+    n_samples : int
         Number of samples
-
     """
     return ms * fs / 1000.0
 
@@ -43,14 +41,14 @@ def samples_to_ms(n_samples, fs):
 
     Parameters
     ----------
-    n_samples: number
+    n_samples : number
         Number of samples
-    fs: number
+    fs : number
         Sampling rate
 
     Returns
     -------
-    milliseconds: int
+    milliseconds : int
     """
     return n_samples * 1000.0 / fs
 
@@ -79,16 +77,16 @@ def infer_signal_properties(
     y=None,
     mode: Literal["classification", "regression"] = "classification",
     classes: list | None = None,
-) -> dict[str, Any]:  # TODO
+) -> dict[SigArgName, Any]:
     """Infers signal properties from the data.
 
     The extracted signal properties are:
 
-      * n_chans: number of channels
-      * n_times: number of time points
-      * n_outputs: number of outputs
-      * chs_info: channel information
-      * sfreq: sampling frequency
+    + n_chans: number of channels
+    + n_times: number of time points
+    + n_outputs: number of outputs
+    + chs_info: channel information
+    + sfreq: sampling frequency
 
     The returned dictionary can serve as kwargs for model initialization.
 
@@ -96,22 +94,22 @@ def infer_signal_properties(
 
     Parameters
     ----------
-    X: array-like or mne.BaseEpochs or Dataset
+    X : array-like or mne.BaseEpochs or Dataset
         Input data
-    y: array-like or None
+    y : array-like or None
         Targets
-    mode: "classification" or "regression"
+    mode : "classification" or "regression"
         Mode of the task
-    classes: list or None
+    classes : list or None
         List of classes for classification
 
     Returns
     -------
-    signal_kwargs: dict
+    signal_kwargs : dict
         Dictionary with signal-properties. Can serve as kwargs for model
         initialization.
     """
-    signal_kwargs = dict()
+    signal_kwargs: dict[SigArgName, Any] = {}
     # Using shape to work both with torch.tensor and numpy.array:
     if (
         isinstance(X, mne.BaseEpochs)

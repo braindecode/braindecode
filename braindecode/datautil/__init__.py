@@ -1,6 +1,4 @@
-"""
-Utilities for data manipulation.
-"""
+"""Utilities for data manipulation."""
 
 from .channel_utils import (
     division_channels_idx,

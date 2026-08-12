@@ -1,8 +1,10 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 import logging
+import warnings
 
 import mne
 import numpy as np
@@ -12,6 +14,7 @@ import torch
 from scipy.special import softmax
 from sklearn.base import clone
 from skorch.callbacks import LRScheduler
+from skorch.exceptions import NotInitializedError
 from skorch.helper import SliceDataset
 from skorch.utils import to_tensor
 from torch import optim
@@ -25,6 +28,7 @@ from braindecode.models.base import EEGModuleMixin
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.training import CroppedLoss
+from braindecode.training.scoring import predict_trials
 
 
 class MockDataset(torch.utils.data.Dataset):
@@ -64,6 +68,33 @@ class MockModuleReturnMockedPreds(EEGModuleMixin, torch.nn.Module):
 class MockModuleFinalLayer(MockModuleReturnMockedPreds):
     def forward(self, x):
         return self.final_layer(x).reshape(x.shape[0], self.n_outputs)
+
+
+class MockModuleCroppedPreds(EEGModuleMixin, torch.nn.Module):
+    # keeps the time axis so the output looks like a cropped/dense prediction
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self.final_layer = torch.nn.Conv1d(
+            self.n_chans, self.n_outputs, self.n_times - 1
+        )
+
+    def forward(self, x):
+        return self.final_layer(x)
 
 
 @pytest.fixture(params=[EEGClassifier, EEGRegressor])
@@ -136,6 +167,28 @@ def windows_dataset_channels(epochs):
 def slice_dataset(windows_dataset_channels):
     X = SliceDataset(windows_dataset_channels)
     return X
+
+
+@pytest.fixture
+def cropped_windows_dataset():
+    # two trials of two overlapping windows each, what predict_trials expects
+    X = np.random.RandomState(20200101).rand(4, 3, 250).astype(np.float32)
+    metadata = pd.DataFrame(
+        [
+            (0, 0, 0, 249),
+            (0, 1, 2, 251),
+            (1, 0, 0, 249),
+            (1, 1, 2, 251),
+        ],
+        columns=["target", "i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"],
+    )
+    epochs = mne.EpochsArray(
+        X,
+        info=mne.create_info(ch_names=["ch1", "ch2", "ch3"], sfreq=10, ch_types="eeg"),
+        metadata=metadata,
+    )
+    windows = WindowsDataset(windows=epochs, targets_from="metadata", description={})
+    return BaseConcatDataset([windows])
 
 
 @pytest.fixture
@@ -251,6 +304,92 @@ def test_predict_trials(eegneuralnet_cls, preds):
         eegneuralnet.predict_trials(MockDataset(), return_targets=False)
 
 
+@pytest.mark.parametrize("as_string", [False, True])
+def test_predict_trials_module_not_instantiated(
+    eegneuralnet_cls, cropped_windows_dataset, as_string
+):
+    # module given as a name or a class, so only module_ holds the built model
+    module = "ShallowFBCSPNet" if as_string else MockModuleCroppedPreds
+    kwargs = dict(module__final_conv_length=2) if as_string else dict()
+    eegneuralnet = eegneuralnet_cls(
+        module,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=250,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
+        optimizer=optim.Adam,
+        batch_size=4,
+        **kwargs,
+    )
+    eegneuralnet.initialize()
+    trial_preds, trial_targets = eegneuralnet.predict_trials(cropped_windows_dataset)
+    assert trial_preds.shape[0] == 2
+    assert trial_preds.shape[1] == 2
+    assert trial_targets.shape[0] == 2
+    # same thing the functional helper gives for the built module, same batching
+    expected_preds, expected_targets = predict_trials(
+        eegneuralnet.module_,
+        cropped_windows_dataset,
+        batch_size=eegneuralnet.batch_size,
+    )
+    # float32 convolutions wobble a bit between backends, keep this loose
+    np.testing.assert_allclose(trial_preds, expected_preds, rtol=1e-4, atol=1e-5)
+    np.testing.assert_array_equal(trial_targets, expected_targets)
+
+
+def test_predict_with_window_inds_and_ys_module_not_instantiated(
+    eegneuralnet_cls, cropped_windows_dataset
+):
+    # this is the path the cropped train scoring callbacks go through
+    eegneuralnet = eegneuralnet_cls(
+        MockModuleCroppedPreds,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=250,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
+        optimizer=optim.Adam,
+        batch_size=4,
+    )
+    eegneuralnet.initialize()
+    results = eegneuralnet.predict_with_window_inds_and_ys(cropped_windows_dataset)
+    assert results["preds"].shape[0] == 4
+    assert results["i_window_in_trials"].shape[0] == 4
+    assert results["i_window_stops"].shape[0] == 4
+    assert results["window_ys"].shape[0] == 4
+
+
+def test_predict_trials_sets_eval_mode(eegneuralnet_cls, cropped_windows_dataset):
+    eegneuralnet = eegneuralnet_cls(
+        MockModuleCroppedPreds,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=250,
+        cropped=True,
+        batch_size=4,
+    )
+    eegneuralnet.initialize()
+    eegneuralnet.module_.train()
+    eegneuralnet.predict_trials(cropped_windows_dataset, return_targets=False)
+    assert not eegneuralnet.module_.training
+
+
+def test_predict_trials_not_initialized(eegneuralnet_cls, cropped_windows_dataset):
+    eegneuralnet = eegneuralnet_cls(
+        MockModuleCroppedPreds,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=250,
+        cropped=True,
+        batch_size=4,
+    )
+    with pytest.raises(NotInitializedError):
+        eegneuralnet.predict_trials(cropped_windows_dataset)
+
+
 def test_clonable(eegneuralnet_cls, preds):
     eegneuralnet = eegneuralnet_cls(
         MockModuleReturnMockedPreds,
@@ -273,6 +412,7 @@ def test_clonable(eegneuralnet_cls, preds):
     clone(eegneuralnet)
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_numpy(eegneuralnet_cls, preds, Xy):
     X, y = Xy
     net = eegneuralnet_cls(
@@ -290,6 +430,7 @@ def test_set_signal_params_numpy(eegneuralnet_cls, preds, Xy):
     assert net.module_.n_outputs == (1 if isinstance(net, EEGRegressor) else 4)
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_epochs(eegneuralnet_cls, preds, epochs):
     y = epochs.metadata.target.values
     net = eegneuralnet_cls(
@@ -310,6 +451,7 @@ def test_set_signal_params_epochs(eegneuralnet_cls, preds, epochs):
     assert net.module_.sfreq == 10
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_torch_ds(eegneuralnet_cls, preds):
     n_outputs = 1 if eegneuralnet_cls == EEGRegressor else 4
     net = eegneuralnet_cls(
@@ -328,6 +470,7 @@ def test_set_signal_params_torch_ds(eegneuralnet_cls, preds):
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_windows_ds_metadata(
     eegneuralnet_cls, preds, windows_dataset_metadata
 ):
@@ -347,6 +490,7 @@ def test_set_signal_params_windows_ds_metadata(
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_windows_ds_channels(
     eegneuralnet_cls, preds, windows_dataset_channels
 ):
@@ -367,6 +511,7 @@ def test_set_signal_params_windows_ds_channels(
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_concat_ds_metadata(
     eegneuralnet_cls, preds, concat_dataset_metadata
 ):
@@ -386,6 +531,7 @@ def test_set_signal_params_concat_ds_metadata(
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_concat_ds_channels(
     eegneuralnet_cls, preds, concat_dataset_channels
 ):
@@ -406,6 +552,7 @@ def test_set_signal_params_concat_ds_channels(
     assert net.module_.n_outputs == n_outputs
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_initialized_module(eegneuralnet_cls, preds, caplog, Xy):
     X, y = Xy
     module = MockModuleReturnMockedPreds(
@@ -522,6 +669,7 @@ def test_cropped_trial_epoch_scoring(net):
     assert valid_scoring.name == "valid_accuracy"
 
 
+@pytest.mark.filterwarnings("ignore:The training set has")
 def test_set_signal_params_slice_dataset(eegneuralnet_cls, preds, slice_dataset):
     if eegneuralnet_cls != EEGClassifier:
         n_outputs = 1
@@ -543,3 +691,36 @@ def test_set_signal_params_slice_dataset(eegneuralnet_cls, preds, slice_dataset)
     assert net.module_.n_times == 10
     assert net.module_.n_chans == 3
     assert net.module_.n_outputs == n_outputs
+
+
+@pytest.mark.parametrize(
+    "batch_size,should_warn",
+    [(6, True), (32, True), (2, False), (5, False)],
+)
+def test_drop_last_small_trainset_warns(
+    eegneuralnet_cls, preds, Xy, batch_size, should_warn
+):
+    # Xy has 5 training examples. iterator_train__drop_last=True is the
+    # braindecode default, so a batch_size larger than the training set drops
+    # every batch and silently skips training. We expect a UserWarning telling
+    # the user to lower batch_size or disable drop_last; batch_size <= 5 keeps
+    # at least one batch and must not warn.
+    X, y = Xy
+    net = eegneuralnet_cls(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=batch_size,
+        train_split=None,
+        max_epochs=1,
+    )
+    match = "all training batches are dropped"
+    if should_warn:
+        with pytest.warns(UserWarning, match=match):
+            net.fit(X, y=y)
+    else:
+        with warnings.catch_warnings(record=True) as records:
+            warnings.simplefilter("always")
+            net.fit(X, y=y)
+        assert not any(match in str(w.message) for w in records)

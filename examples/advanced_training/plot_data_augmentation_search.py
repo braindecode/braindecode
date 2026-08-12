@@ -35,6 +35,11 @@ the context of trialwise decoding with the BCI IV 2a dataset.
 #          Cédric Rommel <cedric.rommel@inria.fr>
 # License: BSD (3-clause)
 
+import json
+from pathlib import Path
+
+from joblib import parallel_backend
+
 ######################################################################
 # Loading and preprocessing the dataset
 # -------------------------------------
@@ -46,8 +51,8 @@ the context of trialwise decoding with the BCI IV 2a dataset.
 # to load BCI IV competition dataset 1. The dataset is available on the BNCI website.
 # There is 9 subjects recorded with 22 electrodes while doing a motor imagery task,
 # with 144 trials per class. We will load this dataset through the MOABB library.
-
-from skorch.callbacks import LRScheduler
+from skorch.callbacks import EarlyStopping, LRScheduler
+from skorch.dataset import ValidSplit
 
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
@@ -147,39 +152,157 @@ eval_set = splitted["1test"]  # Session evaluation
 # b) Time domain augmentations,
 # c) Spatial domain augmentations.
 #
-# From this same paper, we selected the best augmentations in each type: ``FTSurrogate``,
-# ``SmoothTimeMask``, ``ChannelsDropout``, respectively.
+# From this same paper, we selected the best augmentations in each type:
+# ``FTSurrogate``, ``SmoothTimeMask``, ``ChannelsDropout``. We also keep
+# ``IdentityTransform`` as an explicit baseline so the search can report the
+# relative improvement of each augmentation strength over no augmentation.
 #
-# For each augmentation, we adjustable two values from a range for one parameter
-# inside the transformation.
-#
-# It is important to remember that you can increase the range.
-# For that, we need to define three lists of transformations and range for the parameter
-# ∆φmax in FTSurrogate where ∆φmax ∈ [0, 2π); for ∆t in SmoothTimeMask is ∆t ∈ [0, 2];
-# For the method ChannelsDropout, we analyse the parameter p_drop ∈ [0, 1].
+# For each augmentation, we evaluate five strengths over one key parameter:
+# the phase noise magnitude for ``FTSurrogate``, the mask length for
+# ``SmoothTimeMask``, and the drop probability for ``ChannelsDropout``.
 
-from numpy import linspace
+import pandas as pd
 
-from braindecode.augmentation import ChannelsDropout, FTSurrogate, SmoothTimeMask
+from braindecode.augmentation import (
+    ChannelsDropout,
+    FTSurrogate,
+    IdentityTransform,
+    SmoothTimeMask,
+)
 
 seed = 20200220
 
-transforms_freq = [
-    FTSurrogate(probability=0.5, phase_noise_magnitude=phase_freq, random_state=seed)
-    for phase_freq in linspace(0, 1, 2)
-]
 
-transforms_time = [
-    SmoothTimeMask(
-        probability=0.5, mask_len_samples=int(sfreq * second), random_state=seed
+def _make_search_candidate(
+    transform,
+    *,
+    augmentation,
+    magnitude,
+    display_magnitude,
+    axis_label,
+    candidate_label,
+    sort_order,
+):
+    transform._tutorial_candidate_label = candidate_label
+    transform._tutorial_augmentation = augmentation
+    transform._tutorial_magnitude = magnitude
+    transform._tutorial_display_magnitude = display_magnitude
+    transform._tutorial_axis_label = axis_label
+    transform._tutorial_sort_order = sort_order
+    return transform
+
+
+def _augmentation_search_candidates(sfreq, seed):
+    candidates = [
+        _make_search_candidate(
+            IdentityTransform(),
+            augmentation="IdentityTransform",
+            magnitude=0.0,
+            display_magnitude=0.0,
+            axis_label="Identity baseline",
+            candidate_label="IdentityTransform()",
+            sort_order=0,
+        )
+    ]
+
+    for phase_noise in (0.1, 0.3, 0.5, 0.7, 0.9):
+        candidates.append(
+            _make_search_candidate(
+                FTSurrogate(
+                    probability=0.5,
+                    phase_noise_magnitude=phase_noise,
+                    random_state=seed,
+                ),
+                augmentation="FTSurrogate",
+                magnitude=phase_noise,
+                display_magnitude=phase_noise,
+                axis_label="Phase noise magnitude",
+                candidate_label=f"FTSurrogate(phase_noise_magnitude={phase_noise:.1f})",
+                sort_order=1,
+            )
+        )
+
+    for mask_len_samples in (100, 200, 300, 400, 500):
+        candidates.append(
+            _make_search_candidate(
+                SmoothTimeMask(
+                    probability=0.5,
+                    mask_len_samples=mask_len_samples,
+                    random_state=seed,
+                ),
+                augmentation="SmoothTimeMask",
+                magnitude=mask_len_samples,
+                display_magnitude=mask_len_samples / sfreq,
+                axis_label="Mask length (s)",
+                candidate_label=f"SmoothTimeMask(mask_len_samples={mask_len_samples})",
+                sort_order=2,
+            )
+        )
+
+    for p_drop in (0.2, 0.4, 0.6, 0.8, 1.0):
+        candidates.append(
+            _make_search_candidate(
+                ChannelsDropout(probability=0.5, p_drop=p_drop, random_state=seed),
+                augmentation="ChannelsDropout",
+                magnitude=p_drop,
+                display_magnitude=p_drop,
+                axis_label="Drop probability",
+                candidate_label=f"ChannelsDropout(p_drop={p_drop:.1f})",
+                sort_order=3,
+            )
+        )
+    return candidates
+
+
+def _search_results_table(cv_results):
+    rows = []
+    for index, params in enumerate(cv_results["params"]):
+        transform = params["iterator_train__transforms"]
+        rows.append(
+            {
+                "candidate_label": transform._tutorial_candidate_label,
+                "augmentation": transform._tutorial_augmentation,
+                "magnitude": transform._tutorial_magnitude,
+                "display_magnitude": transform._tutorial_display_magnitude,
+                "axis_label": transform._tutorial_axis_label,
+                "sort_order": transform._tutorial_sort_order,
+                "mean_training_accuracy": float(cv_results["mean_train_score"][index]),
+                "std_training_accuracy": float(cv_results["std_train_score"][index]),
+                "mean_validation_accuracy": float(cv_results["mean_test_score"][index]),
+                "std_validation_accuracy": float(cv_results["std_test_score"][index]),
+                "rank_validation_accuracy": int(cv_results["rank_test_score"][index]),
+            }
+        )
+
+    search_results = pd.DataFrame(rows).sort_values(["sort_order", "display_magnitude"])
+    identity_validation_score = float(
+        search_results.loc[
+            search_results["augmentation"] == "IdentityTransform",
+            "mean_validation_accuracy",
+        ].iloc[0]
     )
-    for second in linspace(0.1, 2, 2)
-]
+    identity_training_score = float(
+        search_results.loc[
+            search_results["augmentation"] == "IdentityTransform",
+            "mean_training_accuracy",
+        ].iloc[0]
+    )
+    search_results["relative_validation_improvement"] = (
+        search_results["mean_validation_accuracy"] / identity_validation_score - 1
+    )
+    search_results["relative_training_improvement"] = (
+        search_results["mean_training_accuracy"] / identity_training_score - 1
+    )
+    search_results["relative_validation_improvement_pct"] = (
+        search_results["relative_validation_improvement"] * 100
+    )
+    search_results["relative_training_improvement_pct"] = (
+        search_results["relative_training_improvement"] * 100
+    )
+    return search_results.reset_index(drop=True)
 
-transforms_spatial = [
-    ChannelsDropout(probability=0.5, p_drop=prob, random_state=seed)
-    for prob in linspace(0, 1, 2)
-]
+
+search_candidates = _augmentation_search_candidates(sfreq, seed)
 
 ######################################################################
 # Training a model with data augmentation
@@ -256,16 +379,17 @@ n_epochs = 2
 clf = EEGClassifier(
     model,
     iterator_train=AugmentedDataLoader,  # This tells EEGClassifier to use a custom DataLoader
-    iterator_train__transforms=[],  # This sets is handled by GridSearchCV
+    iterator_train__transforms=[IdentityTransform()],
     criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
-    train_split=None,  # GridSearchCV will control the split and train/validation over the dataset
+    train_split=ValidSplit(0.2, stratified=True, random_state=seed),
     optimizer__lr=lr,
     optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
     callbacks=[
         "accuracy",
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=max(1, n_epochs - 1))),
+        ("early_stopping", EarlyStopping(patience=2, load_best=True)),
     ],
     device=device,
     classes=classes,
@@ -288,10 +412,8 @@ from sklearn.model_selection import GridSearchCV, KFold
 cv = KFold(n_splits=2, shuffle=True, random_state=seed)
 fit_params = {"epochs": n_epochs}
 
-transforms = transforms_freq + transforms_time + transforms_spatial
-
 param_grid = {
-    "iterator_train__transforms": transforms,
+    "iterator_train__transforms": search_candidates,
 }
 
 clf.verbose = 0
@@ -300,6 +422,7 @@ search = GridSearchCV(
     estimator=clf,
     param_grid=param_grid,
     cv=cv,
+    n_jobs=-1,
     return_train_score=True,
     scoring="accuracy",
     refit=True,
@@ -307,7 +430,17 @@ search = GridSearchCV(
     error_score="raise",
 )
 
-search.fit(train_X, train_y, **fit_params)
+repo_id = "braindecode/plot_data_augmentation_search"
+artifact_paths = None
+try:
+    from huggingface_hub import hf_hub_download
+
+    artifact_paths = {
+        "search_results.csv": hf_hub_download(repo_id, "search_results.csv"),
+        "metadata.json": hf_hub_download(repo_id, "metadata.json"),
+    }
+except Exception:
+    artifact_paths = None
 
 ######################################################################
 # Analysing the best fit
@@ -317,26 +450,99 @@ search.fit(train_X, train_y, **fit_params)
 # remembering the order that was adjusted.
 
 import numpy as np
-import pandas as pd
 
-search_results = pd.DataFrame(search.cv_results_)
+required_search_columns = {
+    "candidate_label",
+    "augmentation",
+    "display_magnitude",
+    "axis_label",
+    "mean_validation_accuracy",
+    "relative_validation_improvement_pct",
+}
+required_metadata_keys = {
+    "best_candidate",
+    "best_relative_validation_improvement",
+    "identity_validation_score",
+    "validation_score",
+    "training_score",
+    "eval_accuracy",
+}
 
-best_run = search_results[search_results["rank_test_score"] == 1].squeeze()
-best_aug = best_run["params"]
-validation_score = np.around(best_run["mean_test_score"] * 100, 2).mean()
-training_score = np.around(best_run["mean_train_score"] * 100, 2).mean()
+loaded_search_results = None
+metadata = None
+if artifact_paths is not None:
+    loaded_search_results = pd.read_csv(artifact_paths["search_results.csv"])
+    metadata = json.loads(Path(artifact_paths["metadata.json"]).read_text())
+    if not required_search_columns.issubset(loaded_search_results.columns) or not (
+        required_metadata_keys.issubset(metadata)
+    ):
+        print(
+            "The published search artifact predates the relative-improvement "
+            "format, so the short local search was executed locally."
+        )
+        loaded_search_results = None
+        metadata = None
 
-report_message = (
-    "Best augmentation is saved in best_aug which gave a mean validation accuracy"
-    + "of {}% (train accuracy of {}%).".format(validation_score, training_score)
-)
+if loaded_search_results is None:
+    print(
+        "This tutorial keeps the local augmentation search at 2 epochs per "
+        "candidate to keep docs builds fast. The published search results "
+        f"`{repo_id}` were not available, so the short search was executed locally."
+    )
+    with parallel_backend("threading", n_jobs=-1):
+        search.fit(train_X, train_y, **fit_params)
+    search_results = _search_results_table(search.cv_results_)
+    best_run = search_results.sort_values(
+        "mean_validation_accuracy", ascending=False
+    ).iloc[0]
+    best_aug = best_run["candidate_label"]
+    validation_score = best_run["mean_validation_accuracy"] * 100
+    training_score = best_run["mean_training_accuracy"] * 100
+    relative_improvement = best_run["relative_validation_improvement_pct"]
+    identity_validation_score = (
+        search_results.loc[
+            search_results["augmentation"] == "IdentityTransform",
+            "mean_validation_accuracy",
+        ].iloc[0]
+        * 100
+    )
+    report_message = (
+        "The best search candidate saved in `best_aug` reached "
+        f"{validation_score:.2f}% mean cross-validation accuracy "
+        f"({relative_improvement:+.2f}% relative to the IdentityTransform "
+        f"baseline of {identity_validation_score:.2f}%). "
+        f"Mean train accuracy was {training_score:.2f}%."
+    )
 
-print(report_message)
+    print(report_message)
 
-eval_X = SliceDataset(eval_set, idx=0)
-eval_y = SliceDataset(eval_set, idx=1)
-score = search.score(eval_X, eval_y)
-print(f"Eval accuracy is {score * 100:.2f}%.")
+    eval_X = SliceDataset(eval_set, idx=0)
+    eval_y = SliceDataset(eval_set, idx=1)
+    score = search.score(eval_X, eval_y)
+    print(f"Held-out session accuracy after refit is {score * 100:.2f}%.")
+else:
+    print(
+        "This tutorial keeps the local augmentation search at 2 epochs per "
+        "candidate to keep docs builds fast. Loaded saved search results from "
+        f"`{repo_id}` instead."
+    )
+    search_results = loaded_search_results
+    assert metadata is not None
+    best_aug = metadata["best_candidate"]
+    validation_score = metadata["validation_score"] * 100
+    training_score = metadata["training_score"] * 100
+    relative_improvement = metadata["best_relative_validation_improvement"] * 100
+    identity_validation_score = metadata["identity_validation_score"] * 100
+    report_message = (
+        "The best offline search candidate saved in `best_aug` reached "
+        f"{validation_score:.2f}% mean cross-validation accuracy "
+        f"({relative_improvement:+.2f}% relative to the IdentityTransform "
+        f"baseline of {identity_validation_score:.2f}%). "
+        f"Mean train accuracy was {training_score:.2f}%."
+    )
+    print(report_message)
+    score = metadata["eval_accuracy"]
+    print(f"Held-out session accuracy after refit is {score * 100:.2f}%.")
 
 ######################################################################
 # Plot results
@@ -344,18 +550,31 @@ print(f"Eval accuracy is {score * 100:.2f}%.")
 
 import matplotlib.pyplot as plt
 
-fig, ax = plt.subplots()
-search_results.plot.bar(
-    x="param_iterator_train__transforms",
-    y="mean_train_score",
-    yerr="std_train_score",
-    rot=45,
-    color=["C0", "C0", "C1", "C1", "C2", "C2"],
-    legend=None,
-    ax=ax,
-)
-ax.set_xlabel("Data augmentation strategy")
-ax.set_ylim(0.2, 0.32)
+plot_results = search_results.query("augmentation != 'IdentityTransform'")
+augmentations = plot_results["augmentation"].drop_duplicates().tolist()
+fig, axes = plt.subplots(1, len(augmentations), sharey=True, figsize=(12, 3.5))
+axes = np.atleast_1d(axes)
+palette = {
+    "FTSurrogate": "C0",
+    "SmoothTimeMask": "C1",
+    "ChannelsDropout": "C2",
+}
+for ax, augmentation in zip(axes, augmentations):
+    augmentation_results = plot_results.loc[
+        plot_results["augmentation"] == augmentation
+    ].sort_values("display_magnitude")
+    ax.plot(
+        augmentation_results["display_magnitude"],
+        augmentation_results["relative_validation_improvement_pct"],
+        color=palette.get(augmentation, "C0"),
+        marker="o",
+        linewidth=2,
+    )
+    ax.axhline(y=0, xmin=0, xmax=1, ls="--", c="tab:red", linewidth=1)
+    ax.set_title(augmentation)
+    ax.set_xlabel(augmentation_results["axis_label"].iloc[0])
+    ax.grid(alpha=0.3)
+axes[0].set_ylabel("Validation accuracy relative improvement (%)")
 plt.tight_layout()
 
 ######################################################################

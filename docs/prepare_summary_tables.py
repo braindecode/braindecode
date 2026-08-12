@@ -230,7 +230,7 @@ def wrap_hyperparameters(spec: str) -> str:
 
 
 def wrap_categorization(spec: str, sep: str = "<br/>") -> str:
-    """Render 'Convolution, Recurrent, Small Attention' as colored <span class="tag ..."> pills.
+    """Render 'Convolution, Recurrent, Attention/Transformer' as colored <span class="tag ..."> pills.
     Use with DataFrame.to_html(escape=False).
     """
     if not spec:
@@ -239,11 +239,11 @@ def wrap_categorization(spec: str, sep: str = "<br/>") -> str:
     palette = {
         "Convolution": "success",
         "Recurrent": "secondary",
-        "Small Attention": "info",
+        "Attention/Transformer": "info",
         "Filterbank": "primary",
         "Interpretability": "warning",
         "SPD": "dark",
-        "Large Brain Model": "danger",
+        "Foundation Model": "danger",
         "Graph Neural Network": "light",
         "Channel": "dark-line",  # outline
     }
@@ -275,11 +275,13 @@ def main(source_dir: str, target_dir: str):
         df["Categorization"] = df["Categorization"].str.replace(",", ", ")
         df["Categorization"] = df["Categorization"].apply(wrap_tags)
         df["Type"] = df["Type"].apply(wrap_tags)
+        df["Modality"] = df["Modality"].apply(wrap_tags)
 
         df = df[
             [
                 "Model",
                 "Application",
+                "Modality",
                 "Type",
                 "Categorization",
                 "Sampling Frequency (Hz)",

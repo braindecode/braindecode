@@ -2,20 +2,27 @@
 #
 # License: BSD (3-clause)
 import math
+from typing import Optional
 
 import torch
 from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn
+from torch.nn.utils.parametrize import is_parametrized, register_parametrization
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import CausalConv1d, Ensure4d, MaxNormLinear
+from braindecode.modules import (
+    CausalConv1d,
+    Ensure4d,
+    MaxNormLinear,
+    MaxNormParametrize,
+)
 
 
 class ATCNet(EEGModuleMixin, nn.Module):
-    """ATCNet from Altaheri et al. (2022) [1]_.
+    r"""ATCNet from Altaheri et al   (2022) [1]_.
 
-    :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Small Attention`
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent` :bdg-info:`Attention/Transformer`
 
     .. figure:: https://user-images.githubusercontent.com/25565236/185449791-e8539453-d4fa-41e1-865a-2cf7e91f60ef.png
         :align: center
@@ -83,7 +90,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     - :class:`_TCNResidualBlock` **(causal dilated temporal CNN)**
 
-        - *Operations.*
+        *Operations:*
+
         - Two :class:`braindecode.modules.CausalConv1d` layers per block with dilation  ``1, 2, 4, …``
         - Across blocks of `torch.nn.ELU` + `torch.nn.BatchNorm1d` + `torch.nn.Dropout`) +
           a residual (identity or 1x1 mapping).
@@ -94,10 +102,12 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     - **Aggregation & Classifier**
 
-        - *Operations.*
+        *Operations:*
+
         - Either (a) map each window feature ``(B, F2)`` to logits via :class:`braindecode.modules.MaxNormLinear`
-        and **average** across windows (default, matching official code), or
+          and **average** across windows (default, matching official code), or
         - (b) **concatenate** all window features ``(B, n·F2)`` and apply a single :class:`MaxNormLinear`.
+
         The max-norm constraint regularizes the readout.
 
     .. rubric:: Convolutional Details
@@ -113,7 +123,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
     - **Spatial.** A depthwise spatial conv spans the **full montage** (kernel ``(1, n_chans)``),
         producing *per-temporal-filter* spatial projections (no cross-filter mixing at this step).
         This mirrors EEGNet's interpretability: each temporal filter has its own spatial pattern.
-
 
     .. rubric:: Attention / Sequential Modules
 
@@ -147,19 +156,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
       kernels/pools/windows if inputs are too short.
     - **Aggregation choice.** ``concat=False`` (default, average of per-window logits) matches
       the official code; ``concat=True`` mirrors the paper's concatenation variant.
-
-
-    Notes
-    -----
-    - Inputs substantially shorter than the implied minimum length trigger **automatic
-      downscaling** of kernels, pools, windows, and TCN kernel size to maintain validity.
-    - The attention–TCN sequence operates **per window**; the last causal step is used as the
-      window feature, aligning the temporal semantics across windows.
-
-    .. versionadded:: 1.1
-
-        - More detailed documentation of the model.
-
 
     Parameters
     ----------
@@ -224,6 +220,27 @@ class ATCNet(EEGModuleMixin, nn.Module):
     max_norm_const : float
         Maximum L2-norm constraint imposed on weights of the last
         fully-connected layer. Defaults to 0.25.
+    conv_max_norm_const : float | None
+        If not ``None``, applies a max-norm constraint (via a weight
+        parametrization) to the convolution kernels of :class:`_ConvBlock` and
+        :class:`_TCNResidualBlock`, matching the official implementation which
+        uses ``0.6``. When ``None`` (default), no constraint is applied to those
+        layers, preserving the previous behavior. The complementary ``L2``
+        weight decay of the official code can be obtained from
+        :meth:`source_optimizer_param_groups`.
+
+        .. versionadded:: 1.6.1
+
+    Notes
+    -----
+    - Inputs substantially shorter than the implied minimum length trigger **automatic
+      downscaling** of kernels, pools, windows, and TCN kernel size to maintain validity.
+    - The attention–TCN sequence operates **per window**; the last causal step is used as the
+      window feature, aligning the temporal semantics across windows.
+
+    .. versionadded:: 1.1
+
+        - More detailed documentation of the model.
 
     References
     ----------
@@ -257,6 +274,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         tcn_activation: type[nn.Module] = nn.ELU,
         concat=False,
         max_norm_const=0.25,
+        conv_max_norm_const: Optional[float] = None,
         chs_info=None,
         n_times=None,
     ):
@@ -325,6 +343,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.tcn_activation = tcn_activation
         self.concat = concat
         self.max_norm_const = max_norm_const
+        self.conv_max_norm_const = conv_max_norm_const
         self.tcn_n_filters = int(self.conv_block_depth_mult * self.conv_block_n_filters)
         map = dict()
         for w in range(self.n_windows):
@@ -346,6 +365,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             pool_size_2=conv_block_pool_size_2,
             depth_mult=conv_block_depth_mult,
             dropout=conv_block_dropout,
+            conv_max_norm=self.conv_max_norm_const,
         )
 
         self.F2 = int(conv_block_depth_mult * conv_block_n_filters)
@@ -375,6 +395,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                             dropout=self.tcn_dropout,
                             activation=self.tcn_activation,
                             dilation=2**i,
+                            conv_max_norm=self.conv_max_norm_const,
                         )
                         for i in range(self.tcn_depth)
                     ]
@@ -458,9 +479,97 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
         return self.out_fun(sw_concat_agg)
 
+    def source_optimizer_param_groups(
+        self,
+        conv_weight_decay: float = 0.009,
+        dense_weight_decay: float = 0.5,
+    ) -> list[dict]:
+        r"""Source-faithful optimizer parameter groups for ATCNet.
+
+        The official Keras implementation applies ``L2`` weight decay only to the
+        convolution / TCN kernels (``conv_weightDecay = 0.009``) and to the final
+        dense layer (``dense_weightDecay = 0.5``); biases, BatchNorm and attention
+        weights are left undecayed. This reproduces the Keras ``L2`` kernel penalty
+        only for optimizers that implement ``weight_decay`` as a coupled L2 term,
+        e.g. :class:`torch.optim.SGD` or :class:`torch.optim.Adam` (as used by the
+        official code). For decoupled-weight-decay optimizers such as
+        :class:`torch.optim.AdamW`, ``weight_decay`` is *not* equivalent to a Keras
+        ``L2`` penalty.
+
+        Parameters
+        ----------
+        conv_weight_decay : float
+            Weight decay applied to the convolution and TCN kernels. Defaults to
+            ``0.009`` as in the official code.
+        dense_weight_decay : float
+            Weight decay applied to the final (dense) layer weights. Defaults to
+            ``0.5`` as in the official code.
+
+        Returns
+        -------
+        list of dict
+            Parameter groups ready to be passed to a ``torch.optim`` optimizer:
+            convolution/TCN kernels, final dense weights, and everything else
+            (no decay).
+
+        Examples
+        --------
+        >>> model = ATCNet(n_chans=22, n_outputs=4, n_times=1125)  # doctest: +SKIP
+        >>> opt = torch.optim.Adam(model.source_optimizer_param_groups())  # doctest: +SKIP
+        """
+
+        def weight_leaf(module):
+            # Return the leaf weight Parameter, accounting for a registered
+            # max-norm parametrization (``conv_max_norm_const`` / MaxNormLinear).
+            if is_parametrized(module, "weight"):
+                return module.parametrizations.weight.original
+            return module.weight
+
+        conv_weights: list[nn.Parameter] = []
+        dense_weights: list[nn.Parameter] = []
+        decayed_ids: set[int] = set()
+
+        # Convolution / TCN kernels (Keras L2 = 0.009).
+        for parent in (self.conv_block, self.temporal_conv_nets):
+            for module in parent.modules():
+                if isinstance(module, (nn.Conv1d, nn.Conv2d)):
+                    weight = weight_leaf(module)
+                    conv_weights.append(weight)
+                    decayed_ids.add(id(weight))
+
+        # Final dense / readout weights (Keras L2 = 0.5).
+        for module in self.final_layer.modules():
+            if isinstance(module, nn.Linear):
+                weight = weight_leaf(module)
+                dense_weights.append(weight)
+                decayed_ids.add(id(weight))
+
+        # Everything else (biases, BatchNorm, attention) is left undecayed.
+        other = [p for p in self.parameters() if id(p) not in decayed_ids]
+
+        return [
+            {"params": conv_weights, "weight_decay": conv_weight_decay},
+            {"params": dense_weights, "weight_decay": dense_weight_decay},
+            {"params": other, "weight_decay": 0.0},
+        ]
+
+
+def _register_max_norm(max_norm, *convs):
+    """Register a max-norm weight parametrization on each given convolution.
+
+    No-op when ``max_norm`` is ``None`` or a passed layer is not a convolution
+    (e.g. an ``nn.Identity`` residual shortcut).
+    """
+    if max_norm is None:
+        return
+    for conv in convs:
+        if isinstance(conv, (nn.Conv1d, nn.Conv2d)):
+            register_parametrization(conv, "weight", MaxNormParametrize(max_norm))
+
 
 class _ConvBlock(nn.Module):
-    """Convolutional block proposed in ATCNet [1]_, inspired by the EEGNet
+    r"""Convolutional block proposed in ATCNet [1]_, inspired by the EEGNet.
+
     architecture [2]_.
 
     References
@@ -486,6 +595,7 @@ class _ConvBlock(nn.Module):
         pool_size_2=7,
         depth_mult=2,
         dropout=0.3,
+        conv_max_norm: Optional[float] = None,
     ):
         super().__init__()
 
@@ -533,6 +643,9 @@ class _ConvBlock(nn.Module):
 
         self.drop3 = nn.Dropout2d(dropout)
 
+        # Optional source-faithful max-norm constraint on the conv kernels.
+        _register_max_norm(conv_max_norm, self.conv1, self.conv2, self.conv3)
+
     def forward(self, X):
         # ----- Temporal convolution -----
         # Dimension: (batch_size, 1, T, C)
@@ -562,7 +675,8 @@ class _ConvBlock(nn.Module):
 
 
 class _AttentionBlock(nn.Module):
-    """Multi Head self Attention (MHA) block used in ATCNet [1]_, inspired from
+    r"""Multi Head self Attention (MHA) block used in ATCNet [1]_, inspired from.
+
     [2]_.
 
     References
@@ -636,7 +750,9 @@ class _AttentionBlock(nn.Module):
 
 
 class _TCNResidualBlock(nn.Module):
-    """Modified TCN Residual block as proposed in [1]_. Inspired from
+    r"""Modified TCN Residual block as proposed in [1]_.
+
+    Inspired from
     Temporal Convolutional Networks (TCN) [2]_.
 
     References
@@ -658,6 +774,7 @@ class _TCNResidualBlock(nn.Module):
         dropout=0.3,
         activation: type[nn.Module] = nn.ELU,
         dilation=1,
+        conv_max_norm: Optional[float] = None,
     ):
         super().__init__()
         self.activation = activation()
@@ -702,6 +819,10 @@ class _TCNResidualBlock(nn.Module):
         else:
             self.reshaping_conv = nn.Identity()
 
+        # Optional source-faithful max-norm constraint on the conv kernels
+        # (reshaping_conv may be nn.Identity, which the helper skips).
+        _register_max_norm(conv_max_norm, self.conv1, self.conv2, self.reshaping_conv)
+
     def forward(self, X):
         # Dimension: (batch_size, F2, Tw)
         # ----- Double dilated convolutions -----
@@ -732,7 +853,7 @@ class _MHA(nn.Module):
         num_heads: int,
         dropout: float = 0.0,
     ):
-        """Multi-head Attention
+        """Multi-head Attention.
 
         The difference between this module and torch.nn.MultiheadAttention is
         that this module supports embedding dimensions different then input
@@ -775,20 +896,20 @@ class _MHA(nn.Module):
     def forward(
         self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor
     ) -> torch.Tensor:
-        """Compute MHA(Q, K, V)
+        """Compute MHA(Q, K, V).
 
         Parameters
         ----------
-        Q: torch.Tensor of size (batch_size, seq_len, input_dim)
+        Q : torch.Tensor of size (batch_size, seq_len, input_dim)
             Input query (Q) sequence.
-        K: torch.Tensor of size (batch_size, seq_len, input_dim)
+        K : torch.Tensor of size (batch_size, seq_len, input_dim)
             Input key (K) sequence.
-        V: torch.Tensor of size (batch_size, seq_len, input_dim)
+        V : torch.Tensor of size (batch_size, seq_len, input_dim)
             Input value (V) sequence.
 
         Returns
         -------
-        O: torch.Tensor of size (batch_size, seq_len, output_dim)
+        O : torch.Tensor of size (batch_size, seq_len, output_dim)
             Output MHA(Q, K, V)
         """
         assert Q.shape[-1] == K.shape[-1] == V.shape[-1] == self.input_dim

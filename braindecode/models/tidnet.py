@@ -11,7 +11,7 @@ from braindecode.modules import Ensure4d
 
 
 class TIDNet(EEGModuleMixin, nn.Module):
-    """Thinker Invariance DenseNet model from Kostas et al. (2020) [TIDNet]_.
+    r"""Thinker Invariance DenseNet model from Kostas et al (2020) [TIDNet]_.
 
     :bdg-success:`Convolution`
 
@@ -157,7 +157,7 @@ class _BatchNormZG(nn.BatchNorm2d):
 
 
 class _ConvBlock2D(nn.Module):
-    """Implements Convolution block with order:
+    r"""Implements Convolution block with order:
     Convolution, dropout, activation, batch-norm
     """
 

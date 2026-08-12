@@ -9,11 +9,12 @@ import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
 class USleep(EEGModuleMixin, nn.Module):
-    """
-    Sleep staging architecture from Perslev et al. (2021) [1]_.
+    r"""
+    Sleep staging architecture from Perslev et al (2021) [1]_.
 
     :bdg-success:`Convolution`
 
@@ -295,6 +296,7 @@ class USleep(EEGModuleMixin, nn.Module):
             # output is (B, n_classes, S)
         )
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
         If input x has shape (B, C, T), return y_pred of shape (B, n_classes).
@@ -331,7 +333,7 @@ class USleep(EEGModuleMixin, nn.Module):
 
 
 class _EncoderBlock(nn.Module):
-    """Encoding block for a timeseries x of shape (B, C, T)."""
+    r"""Encoding block for a timeseries x of shape (B, C, T)."""
 
     def __init__(
         self,
@@ -371,7 +373,7 @@ class _EncoderBlock(nn.Module):
 
 
 class _DecoderBlock(nn.Module):
-    """Decoding block for a timeseries x of shape (B, C, T)."""
+    r"""Decoding block for a timeseries x of shape (B, C, T)."""
 
     def __init__(
         self,

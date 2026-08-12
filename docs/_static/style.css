@@ -332,3 +332,49 @@ html[data-theme="dark"] .braindecode-hero__title {
     max-width: 500px;
     width: 100%;
 }
+
+/* ********************************************************** Announcement banner */
+
+.bd-header-announcement {
+  background-color: #DAEBF1 !important;  /* Your chosen background */
+  color: #002B5C !important;            /* A strong contrasting text colour */
+  border-left: 5px solid #007CBA !important; /* A refined accent colour */
+}
+
+.bd-header-announcement__content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.75rem;
+  padding: 0.75rem 1rem;
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.bd-header-announcement__content a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 2px;
+}
+
+.bd-header-announcement__content a.braindecode-announcement-cta {
+  background-color: #007CBA;
+  color: #ffffff !important;
+  text-decoration: none;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-weight: 800;
+  box-shadow: 0 10px 22px rgba(0, 124, 186, 0.25);
+  transition: background-color 200ms ease, transform 200ms ease;
+}
+
+.bd-header-announcement__content a.braindecode-announcement-cta:hover {
+  background-color: #005a8c;
+  transform: translateY(-1px);
+}
+
+.braindecode-announcement-secondary {
+  font-weight: 550;
+}

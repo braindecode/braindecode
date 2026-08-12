@@ -17,7 +17,7 @@ from braindecode.modules import (
 
 
 class Deep4Net(EEGModuleMixin, nn.Sequential):
-    """Deep ConvNet model from Schirrmeister et al (2017) [Schirrmeister2017]_.
+    r"""Deep ConvNet model from Schirrmeister et al (2017) [Schirrmeister2017]_.
 
     :bdg-success:`Convolution`
 

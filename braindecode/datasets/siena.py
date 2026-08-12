@@ -6,7 +6,6 @@ It reorganizes the file structure to comply with the BIDS specification. To this
 -   Metadata was organized according to BIDS.
 -   Data in the EEG edf files was modified to keep only the 19 channels from a 10-20 EEG system.
 -   Annotations were formatted as BIDS-score compatible tsv files.
-
 """
 
 # Authors: Dan, Jonathan
@@ -54,7 +53,6 @@ class SIENA(BIDSDataset):
     clinician after a careful review of the clinical and electrophysiological
     data of each patient.
 
-
     This BIDS-compatible version of the dataset was published by Jonathan Dan [Dan2025]_
     and is based on the original Siena Scalp EEG Database [Detti2020a]_, [Detti2020b]_.
 
@@ -70,7 +68,7 @@ class SIENA(BIDSDataset):
         The acquisition session. Corresponds to "ses".
     tasks : str | array-like of str | None
         The experimental task. Corresponds to "task".
-    acquisitions: str | array-like of str | None
+    acquisitions : str | array-like of str | None
         The acquisition parameters. Corresponds to "acq".
     runs : str | array-like of str | None
         The run number. Corresponds to "run".

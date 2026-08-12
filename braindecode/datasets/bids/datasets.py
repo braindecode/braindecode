@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """Dataset for loading BIDS.
 
 More information on BIDS (Brain Imaging Data Structure) can be found at https://bids.neuroimaging.io
@@ -19,26 +20,19 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseConcatDataset, RawDataset, WindowsDataset
+from ..base import BaseConcatDataset, RawDataset, WindowsDataset
 
 
 def _description_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
-    return {
-        "path": bids_path.fpath,
-        "subject": bids_path.subject,
-        "session": bids_path.session,
-        "task": bids_path.task,
-        "acquisition": bids_path.acquisition,
-        "run": bids_path.run,
-        "processing": bids_path.processing,
-        "recording": bids_path.recording,
-        "space": bids_path.space,
-        "split": bids_path.split,
-        "description": bids_path.description,
-        "suffix": bids_path.suffix,
-        "extension": bids_path.extension,
-        "datatype": bids_path.datatype,
-    }
+    description = {"path": bids_path.fpath, **bids_path.entities}
+    description.update(
+        {
+            "suffix": bids_path.suffix,
+            "extension": bids_path.extension,
+            "datatype": bids_path.datatype,
+        }
+    )
+    return description
 
 
 @dataclass
@@ -65,7 +59,7 @@ class BIDSDataset(BaseConcatDataset):
         The acquisition session. Corresponds to "ses".
     tasks : str | array-like of str | None
         The experimental task. Corresponds to "task".
-    acquisitions: str | array-like of str | None
+    acquisitions : str | array-like of str | None
         The acquisition parameters. Corresponds to "acq".
     runs : str | array-like of str | None
         The run number. Corresponds to "run".
@@ -143,6 +137,10 @@ class BIDSDataset(BaseConcatDataset):
     )
     datatypes: str | list[str] | None = None
     check: bool = False
+    # Loading arguments for mne_bids.read_raw_bids:
+    extra_params: dict | None = None
+    on_ch_mismatch: str = "raise"
+    # Other arguments:
     preload: bool = False
     n_jobs: int = 1
 
@@ -188,7 +186,12 @@ class BIDSDataset(BaseConcatDataset):
 
     def _get_dataset(self, bids_path: mne_bids.BIDSPath) -> RawDataset:
         description = _description_from_bids_path(bids_path)
-        raw = mne_bids.read_raw_bids(bids_path, verbose=False)
+        raw = mne_bids.read_raw_bids(
+            bids_path,
+            verbose=False,
+            on_ch_mismatch=self.on_ch_mismatch,
+            extra_params=self.extra_params,
+        )
         if self.preload:
             raw.load_data()
         return RawDataset(raw, description)

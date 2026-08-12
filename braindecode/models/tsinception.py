@@ -1,4 +1,4 @@
-# Authors: Bruno Aristimunha <b.aristimunha>
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -7,13 +7,13 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
-from mne.utils import deprecated, warn
+from mne.utils import warn
 
 from braindecode.models.base import EEGModuleMixin
 
 
 class TSception(EEGModuleMixin, nn.Module):
-    """TSception model from Ding et al. (2020) from [ding2020]_.
+    r"""TSception model from Ding et al. (2020) from [ding2020]_.
 
     :bdg-success:`Convolution`
 
@@ -283,13 +283,3 @@ class TSception(EEGModuleMixin, nn.Module):
             activation(),
             nn.AvgPool2d(kernel_size=(1, pool_size), stride=(1, pool_size)),
         )
-
-
-@deprecated(
-    "`TSceptionV1` was renamed to `TSception` in v1.12; "
-    "this alias will be removed in v1.14."
-)
-class TSceptionV1(TSception):
-    """Deprecated alias for TSception."""
-
-    pass

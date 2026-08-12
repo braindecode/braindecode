@@ -8,7 +8,6 @@ from copy import deepcopy
 
 import torch
 import torch.nn.functional as F
-from mne.utils import deprecated
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -16,9 +15,9 @@ from braindecode.modules import CausalConv1d
 
 
 class AttnSleep(EEGModuleMixin, nn.Module):
-    """Sleep Staging Architecture from Eldele et al. (2021) [Eldele2021]_.
+    r"""Sleep Staging Architecture from Eldele et al  (2021) [Eldele2021]_.
 
-    :bdg-success:`Convolution` :bdg-info:`Small Attention`
+    :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
     .. figure:: https://raw.githubusercontent.com/emadeldeen24/AttnSleep/refs/heads/main/imgs/AttnSleep.png
         :align: center
@@ -63,10 +62,10 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         Alias for `n_outputs`.
     input_size_s : float
         Alias for `input_window_seconds`.
-    activation: nn.Module, default=nn.ReLU
+    activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
-    activation_mrcnn: nn.Module, default=nn.ReLU
+    activation_mrcnn : nn.Module, default=nn.ReLU
         Activation function class to apply in the Mask R-CNN layer.
         Should be a PyTorch activation module class like ``nn.ReLU`` or
         ``nn.GELU``. Default is ``nn.GELU``.
@@ -175,7 +174,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
 
         Parameters
         ----------
-        x: torch.Tensor
+        x : torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
         """
 
@@ -363,7 +362,7 @@ class _MRCNN(nn.Module):
 def _attention(
     query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Implementation of Scaled dot product attention"""
+    """Implementation of Scaled dot product attention."""
     # d_k - dimension of the query and key vectors
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
@@ -392,7 +391,7 @@ class _MultiHeadedAttention(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, query, key, value: torch.Tensor) -> torch.Tensor:
-        """Implements Multi-head attention"""
+        """Implements Multi-head attention."""
         nbatches = query.size(0)
 
         query = query.view(nbatches, -1, self.h, self.d_per_head).transpose(1, 2)
@@ -423,9 +422,7 @@ class _MultiHeadedAttention(nn.Module):
 
 
 class _ResidualLayerNormAttn(nn.Module):
-    """
-    A residual connection followed by a layer norm.
-    """
+    r"""A residual connection followed by a layer norm."""
 
     def __init__(self, size, dropout, fn_attn):
         super().__init__()
@@ -464,8 +461,9 @@ class _ResidualLayerNormFF(nn.Module):
 
 
 class _TCE(nn.Module):
-    """
-    Transformer Encoder
+    r"""
+    Transformer Encoder.
+
     It is a stack of n layers.
     """
 
@@ -483,8 +481,9 @@ class _TCE(nn.Module):
 
 
 class _EncoderLayer(nn.Module):
-    """
-    An encoder layer
+    r"""
+    An encoder layer.
+
     Made up of self-attention and a feed forward layer.
     Each of these sublayers have residual and layer norm, implemented by _ResidualLayerNorm.
     """
@@ -515,7 +514,7 @@ class _EncoderLayer(nn.Module):
         )
 
     def forward(self, x_in: torch.Tensor) -> torch.Tensor:
-        """Transformer Encoder"""
+        """Transformer Encoder."""
         query = self.conv(x_in)
         # Encoder self-attention
         x = self.residual_self_attn(query, x_in, x_in)
@@ -524,7 +523,7 @@ class _EncoderLayer(nn.Module):
 
 
 class _PositionwiseFeedForward(nn.Module):
-    """Positionwise feed-forward network."""
+    r"""Positionwise feed-forward network."""
 
     def __init__(
         self, d_model, d_ff, dropout=0.1, activation: type[nn.Module] = nn.ReLU
@@ -538,12 +537,3 @@ class _PositionwiseFeedForward(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Implements FFN equation."""
         return self.w_2(self.dropout(self.activate(self.w_1(x))))
-
-
-@deprecated(
-    "`SleepStagerEldele2021` was renamed to `AttnSleep` in v1.12 to follow original author's name; this alias will be removed in v1.14."
-)
-class SleepStagerEldele2021(AttnSleep):
-    """Deprecated alias for SleepStagerEldele2021."""
-
-    pass

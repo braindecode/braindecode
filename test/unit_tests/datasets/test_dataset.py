@@ -187,7 +187,7 @@ def test_split_dataset_failure(concat_ds_targets):
     with pytest.raises(IndexError):
         concat_ds.split([])
 
-    with pytest.raises(AssertionError, match="datasets should not be an empty iterable"):
+    with pytest.raises(ValueError, match="datasets should not be an empty iterable"):
         concat_ds.split([[]])
 
     with pytest.raises(TypeError):
@@ -310,7 +310,7 @@ def test_set_description_base_dataset(concat_ds_targets):
     # try to set existing description without overwriting
     with pytest.raises(
         AssertionError,
-        match="'how' already in description. Please rename or set overwrite to" " True.",
+        match="'how' already in description. Please rename or set overwrite to True.",
     ):
         concat_ds.set_description(
             {
@@ -375,7 +375,7 @@ def test_set_description_windows_dataset(concat_windows_dataset):
     # try to set existing description without overwriting using Series
     with pytest.raises(
         AssertionError,
-        match="'wow' already in description. Please rename or set overwrite to" " True.",
+        match="'wow' already in description. Please rename or set overwrite to True.",
     ):
         window_ds.set_description(pd.Series({"wow": "error"}), overwrite=False)
 
@@ -399,6 +399,132 @@ def test_concat_dataset_target_transform(concat_windows_dataset):
 def test_concat_dataset_invalid_target_transform(concat_windows_dataset):
     with pytest.raises(TypeError):
         concat_windows_dataset.target_transform = 0
+
+
+def test_set_target_from_description(concat_windows_dataset):
+    """``set_target('subject')`` broadcasts the per-record description value
+    across every window and syncs ``ds.y``."""
+    # Earlier tests leak target_transform=sum onto the shared fixture;
+    # reset it so __getitem__ yields raw ints.
+    concat_windows_dataset.target_transform = None
+    orig = [list(ds.y) for ds in concat_windows_dataset.datasets]
+    orig_metadata = [ds.metadata.copy() for ds in concat_windows_dataset.datasets]
+    try:
+        ret = concat_windows_dataset.set_target("subject")
+        assert ret is concat_windows_dataset
+        for ds in concat_windows_dataset.datasets:
+            expected = int(ds.description["subject"])
+            assert all(int(v) == expected for v in ds.y)
+            assert (ds.metadata["target"].astype(int) == expected).all()
+        _, y0, _ = concat_windows_dataset[0]
+        assert int(y0) == int(concat_windows_dataset.datasets[0].description["subject"])
+    finally:
+        for ds, y, md in zip(concat_windows_dataset.datasets, orig, orig_metadata):
+            ds.y = list(y)
+            ds.metadata = md
+
+
+def test_set_target_missing_column(concat_windows_dataset):
+    with pytest.raises(ValueError, match="not found"):
+        concat_windows_dataset.set_target("does_not_exist")
+
+
+def test_set_target_on_raw_concat(concat_ds_targets):
+    """For a concat of RawDatasets, ``set_target`` points each subdataset's
+    ``target_name`` at the chosen description field; ``__getitem__`` then
+    reads ``description[target_name]`` as ``y`` with no rebuild."""
+    concat_ds = concat_ds_targets[0]
+    orig_target_names = [ds.target_name for ds in concat_ds.datasets]
+    try:
+        ret = concat_ds.set_target("subject")
+        assert ret is concat_ds
+        for ds in concat_ds.datasets:
+            assert ds.target_name == "subject"
+            _, y = ds[0]
+            assert y == ds.description["subject"]
+    finally:
+        for ds, name in zip(concat_ds.datasets, orig_target_names):
+            ds.target_name = name
+
+
+def test_set_target_missing_on_raw_concat(concat_ds_targets):
+    concat_ds = concat_ds_targets[0]
+    with pytest.raises(ValueError, match="not found"):
+        concat_ds.set_target("does_not_exist_on_raw")
+
+
+def test_set_target_rejects_lazy_metadata(concat_ds_targets):
+    """``lazy_metadata=True`` produces a ``_LazyDataFrame`` which lacks
+    .copy()/__setitem__. ``set_target`` must surface this precondition
+    with a clear TypeError instead of an AttributeError from inside
+    pandas land."""
+    concat_ds = concat_ds_targets[0]
+    lazy_windows = create_fixed_length_windows(
+        concat_ds,
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=True,
+        lazy_metadata=True,
+    )
+    with pytest.raises(TypeError, match="lazy_metadata=False"):
+        lazy_windows.set_target("subject")
+
+
+def test_set_target_syncs_windows_metadata(set_up):
+    """``ds.metadata`` and ``ds.windows.metadata`` start as the same object.
+    ``set_target`` must keep them in sync so ``get_metadata()`` and repr
+    paths see the new target column instead of stale values."""
+    _, _, _, windows_dataset, _, _ = set_up
+    concat = BaseConcatDataset([windows_dataset])
+    orig_target = list(windows_dataset.metadata["target"])
+    orig_y = list(windows_dataset.y)
+    try:
+        concat.set_target("i_window_in_trial")
+        # Both views must agree.
+        assert list(windows_dataset.metadata["target"]) == list(
+            windows_dataset.windows.metadata["target"]
+        )
+        # And get_metadata() (which reads ds._windows.metadata first) sees it.
+        agg = concat.get_metadata()
+        assert list(agg["target"]) == list(windows_dataset.metadata["target"])
+    finally:
+        windows_dataset.metadata["target"] = orig_target
+        if windows_dataset.windows.metadata is not windows_dataset.metadata:
+            windows_dataset.windows.metadata["target"] = orig_target
+        windows_dataset.y = orig_y
+
+
+def test_set_target_rejects_targets_from_channels(set_up):
+    """When ``targets_from='channels'``, __getitem__ derives y from misc
+    channels and ignores ``metadata['target']`` / ``ds.y``. set_target
+    must refuse to silently no-op."""
+    _, _, mne_epochs, _, _, _ = set_up
+    desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
+    ch_ds = WindowsDataset(mne_epochs, desc, targets_from="channels")
+    concat = BaseConcatDataset([ch_ds])
+    with pytest.raises(ValueError, match="targets_from"):
+        concat.set_target("pathological")
+
+
+def test_set_target_composes_with_target_transform(concat_windows_dataset):
+    """``target_transform`` must run *after* ``set_target`` writes the new
+    ``y`` so users can layer scalar reshaping on top of column selection."""
+    concat_windows_dataset.target_transform = None
+    orig = [list(ds.y) for ds in concat_windows_dataset.datasets]
+    orig_metadata = [ds.metadata.copy() for ds in concat_windows_dataset.datasets]
+    try:
+        concat_windows_dataset.set_target("subject")
+        concat_windows_dataset.target_transform = lambda subj: int(subj) * 100 + 7
+        _, y, _ = concat_windows_dataset[0]
+        expected = (
+            int(concat_windows_dataset.datasets[0].description["subject"]) * 100 + 7
+        )
+        assert y == expected
+    finally:
+        concat_windows_dataset.target_transform = None
+        for ds, y, md in zip(concat_windows_dataset.datasets, orig, orig_metadata):
+            ds.y = list(y)
+            ds.metadata = md
 
 
 def test_multi_target_dataset(set_up):
@@ -464,3 +590,419 @@ def test_windows_dataset_from_target_channels_raise_valuerror(set_up):
     _, _, epochs, _, _, _ = set_up
     with pytest.raises(ValueError):
         WindowsDataset(epochs, None, targets_from="non-existing")
+
+
+# ==================== Tests for lazy initialization ====================
+
+
+def test_lazy_cumulative_sizes_not_computed_on_init(concat_ds_targets):
+    """Test that cumulative sizes are not computed during init with lazy=True."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    assert lazy_ds._cumulative_sizes is None
+    assert lazy_ds._lazy is True
+
+
+def test_lazy_len_triggers_computation(concat_ds_targets):
+    """Test that len() correctly triggers cumulative size computation."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    assert lazy_ds._cumulative_sizes is None
+    length = len(lazy_ds)
+    assert lazy_ds._cumulative_sizes is not None
+    assert length == len(concat_ds)
+
+
+@pytest.mark.parametrize("idx", [0, 1, 2, 3, 4])
+def test_lazy_getitem_positive_index(concat_ds_targets, idx):
+    """Test __getitem__ with positive indices in lazy mode."""
+    concat_ds, _ = concat_ds_targets
+    if idx >= len(concat_ds):
+        pytest.skip(f"Index {idx} out of range for dataset of length {len(concat_ds)}")
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    lazy_item = lazy_ds[idx]
+    eager_item = concat_ds[idx]
+    np.testing.assert_array_equal(lazy_item[0], eager_item[0])
+    assert lazy_item[1] == eager_item[1]
+
+
+@pytest.mark.parametrize("idx", [-1, -2, -3])
+def test_lazy_getitem_negative_index(concat_ds_targets, idx):
+    """Test __getitem__ with negative indices in lazy mode."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    lazy_item = lazy_ds[idx]
+    eager_item = concat_ds[idx]
+    np.testing.assert_array_equal(lazy_item[0], eager_item[0])
+    assert lazy_item[1] == eager_item[1]
+
+
+def test_lazy_getitem_negative_index_out_of_range(concat_ds_targets):
+    """Test __getitem__ with negative index that exceeds dataset length."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    with pytest.raises(ValueError, match="absolute value of index should not exceed"):
+        lazy_ds[-len(lazy_ds) - 1]
+
+
+@pytest.mark.parametrize("lazy", [True, False], ids=["lazy", "eager"])
+def test_identical_results_across_modes(concat_ds_targets, lazy):
+    """Test that lazy and eager initialization produce identical results."""
+    concat_ds, _ = concat_ds_targets
+    ds = BaseConcatDataset(concat_ds.datasets, lazy=lazy)
+    reference_ds = BaseConcatDataset(concat_ds.datasets, lazy=False)
+
+    assert len(ds) == len(reference_ds)
+    np.testing.assert_array_equal(ds.cumulative_sizes, reference_ds.cumulative_sizes)
+
+    for i in range(min(5, len(reference_ds))):
+        item = ds[i]
+        ref_item = reference_ds[i]
+        np.testing.assert_array_equal(item[0], ref_item[0])
+        assert item[1] == ref_item[1]
+
+
+def test_lazy_flattened_baseconcatdataset(concat_ds_targets):
+    """Test that flattening BaseConcatDatasets works correctly with lazy=True."""
+    concat_ds, _ = concat_ds_targets
+    ds_list = concat_ds.datasets
+
+    concat_ds1 = BaseConcatDataset(ds_list[:2], lazy=True)
+    concat_ds2 = BaseConcatDataset(ds_list[2:], lazy=True)
+    flattened_ds = BaseConcatDataset([concat_ds1, concat_ds2], lazy=True)
+
+    assert len(flattened_ds.datasets) == len(ds_list)
+    assert len(flattened_ds) == len(concat_ds)
+
+    for i in range(min(5, len(concat_ds))):
+        flat_item = flattened_ds[i]
+        orig_item = concat_ds[i]
+        np.testing.assert_array_equal(flat_item[0], orig_item[0])
+        assert flat_item[1] == orig_item[1]
+
+
+def test_lazy_cumulative_sizes_property(concat_ds_targets):
+    """Test that cumulative_sizes property works correctly."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+
+    cumsizes = lazy_ds.cumulative_sizes
+    assert cumsizes is not None
+    assert len(cumsizes) == len(concat_ds.datasets)
+    np.testing.assert_array_equal(cumsizes, concat_ds.cumulative_sizes)
+
+
+def test_lazy_get_sequence(concat_ds_targets):
+    """Test _get_sequence works correctly with lazy initialization."""
+    concat_ds, _ = concat_ds_targets
+    lazy_ds = BaseConcatDataset(concat_ds.datasets, lazy=True)
+    eager_ds = BaseConcatDataset(concat_ds.datasets, lazy=False)
+
+    indices = list(range(min(5, len(eager_ds))))
+    lazy_X, lazy_y = lazy_ds[indices]
+    eager_X, eager_y = eager_ds[indices]
+
+    np.testing.assert_array_equal(lazy_X, eager_X)
+    np.testing.assert_array_equal(lazy_y, eager_y)
+
+
+@pytest.mark.parametrize("lazy", [True, False], ids=["lazy", "eager"])
+def test_empty_dataset_raises_valueerror(lazy):
+    """Test that empty dataset raises ValueError in both modes."""
+    with pytest.raises(ValueError, match="datasets should not be an empty iterable"):
+        BaseConcatDataset([], lazy=lazy)
+
+
+@pytest.mark.parametrize("lazy", [True, False], ids=["lazy", "eager"])
+def test_iterable_dataset_raises_typeerror(lazy):
+    """Test that providing an IterableDataset raises TypeError in both modes."""
+    from torch.utils.data import IterableDataset
+
+    class DummyIterableDataset(IterableDataset):
+        def __iter__(self):
+            yield 1
+
+    with pytest.raises(
+        TypeError, match="ConcatDataset does not support IterableDataset"
+    ):
+        BaseConcatDataset([DummyIterableDataset()], lazy=lazy)
+
+
+# ==================== Tests for __repr__ and _repr_html_ ====================
+
+
+def test_raw_dataset_repr(set_up):
+    """Test __repr__ of RawDataset."""
+    _, base_dataset, _, _, _, _ = set_up
+    r = repr(base_dataset)
+    assert "RawDataset" in r
+    assert "ch" in r
+    assert "Hz" in r
+    assert "samples" in r
+    assert "description" in r
+
+
+def test_windows_dataset_repr(set_up):
+    """Test __repr__ of WindowsDataset."""
+    _, _, _, windows_dataset, _, _ = set_up
+    r = repr(windows_dataset)
+    assert "WindowsDataset" in r
+    assert "windows" in r
+    assert "ch" in r
+    assert "Hz" in r
+    assert "description" in r
+
+
+def test_base_concat_dataset_repr(concat_ds_targets):
+    """Test __repr__ of BaseConcatDataset of RawDatasets."""
+    concat_ds = concat_ds_targets[0]
+    r = repr(concat_ds)
+    assert "BaseConcatDataset" in r
+    assert "RawDataset" in r
+    assert "recordings" in r
+    assert "Sfreq" in r
+    assert "Channels" in r
+    assert "Duration" in r
+    assert "* from first recording" in r
+    assert "Description" in r
+
+
+def test_base_concat_windows_dataset_repr(concat_windows_dataset):
+    """Test __repr__ of BaseConcatDataset of windowed datasets."""
+    r = repr(concat_windows_dataset)
+    assert "BaseConcatDataset" in r
+    assert "Sfreq" in r
+    assert "Channels" in r
+    assert "Window" in r
+    assert "* from first recording" in r
+
+
+def test_base_concat_dataset_repr_html(concat_ds_targets):
+    """Test _repr_html_ of BaseConcatDataset."""
+    concat_ds = concat_ds_targets[0]
+    html = concat_ds._repr_html_()
+    assert "<table" in html
+    assert "BaseConcatDataset" in html
+    assert "Recordings" in html
+    assert "Total samples" in html
+    assert "Sfreq" in html
+    assert "Channels" in html
+    assert "* from first recording" in html
+
+
+def test_raw_dataset_repr_html(set_up):
+    """Test _repr_html_ of RawDataset."""
+    _, base_dataset, _, _, _, _ = set_up
+    html = base_dataset._repr_html_()
+    assert "<table" in html
+    assert "RawDataset" in html
+    assert "Channels" in html
+    assert "Sfreq" in html
+    assert "Samples" in html
+
+
+def test_windows_dataset_repr_html(set_up):
+    """Test _repr_html_ of WindowsDataset."""
+    _, _, _, windows_dataset, _, _ = set_up
+    html = windows_dataset._repr_html_()
+    assert "<table" in html
+    assert "WindowsDataset" in html
+    assert "Channels" in html
+    assert "Targets" in html
+
+
+def test_windows_dataset_repr_metadata(set_up):
+    """Test __repr__ of WindowsDataset includes target info."""
+    _, _, _, windows_dataset, _, _ = set_up
+    r = repr(windows_dataset)
+    assert "targets:" in r
+
+
+def test_eeg_windows_dataset_repr_html(concat_windows_dataset):
+    """Test _repr_html_ of EEGWindowsDataset."""
+    ds = concat_windows_dataset.datasets[0]
+    html = ds._repr_html_()
+    assert "<table" in html
+    assert "EEGWindowsDataset" in html
+    assert "Channels" in html
+    assert "Targets" in html
+
+
+def test_eeg_windows_dataset_repr_metadata(concat_windows_dataset):
+    """Test __repr__ of EEGWindowsDataset includes target info."""
+    ds = concat_windows_dataset.datasets[0]
+    r = repr(ds)
+    assert "targets:" in r
+
+
+def test_base_concat_windows_dataset_repr_metadata(concat_windows_dataset):
+    """Test __repr__ of BaseConcatDataset of windowed datasets includes target info."""
+    r = repr(concat_windows_dataset)
+    assert "Targets" in r
+
+
+def test_base_concat_windows_dataset_repr_html_metadata(concat_windows_dataset):
+    """Test _repr_html_ of BaseConcatDataset of windowed datasets includes target info."""
+    html = concat_windows_dataset._repr_html_()
+    assert "Targets" in html
+
+
+def test_eeg_windows_dataset_repr(concat_windows_dataset):
+    """Test __repr__ of EEGWindowsDataset."""
+    ds = concat_windows_dataset.datasets[0]
+    r = repr(ds)
+    assert "EEGWindowsDataset" in r
+    assert "windows" in r
+    assert "ch" in r
+    assert "Hz" in r
+    assert "samples/win" in r
+
+
+# ==================== Tests for fast disk loading ====================
+
+
+def _make_fast_load_epochs(raw, events, metadata, tmp_path):
+    """Create in-memory Epochs, save to FIF, reload with preload=False.
+
+    Reloading from a FIF file ensures ``_bad_dropped=True`` and
+    ``_do_baseline=False``, satisfying all conditions checked by
+    ``_can_use_fast_get_epoch_from_raw``.
+    """
+    epochs = mne.Epochs(
+        raw=raw, events=events, metadata=metadata, baseline=None, preload=False
+    )
+    epochs.drop_bad()
+    fname = str(tmp_path / "fast-epo.fif")
+    epochs.save(fname, overwrite=True)
+    return mne.read_epochs(fname, preload=False)
+
+
+@pytest.fixture
+def basic_raw_and_metadata():
+    """Small in-memory raw and metadata for fast-loading tests."""
+    rng = np.random.RandomState(42)
+    info = mne.create_info(ch_names=["eeg0", "eeg1"], sfreq=50, ch_types="eeg")
+    raw = mne.io.RawArray(data=rng.randn(2, 1000), info=info)
+    events = np.array([[100, 0, 1], [200, 0, 2], [300, 0, 1], [400, 0, 3]])
+    metadata = pd.DataFrame(
+        {
+            "sample": events[:, 0],
+            "x": events[:, 1],
+            "target": events[:, 2],
+            "i_window_in_trial": [0, 0, 0, 0],
+            "i_start_in_trial": [0, 0, 0, 0],
+            "i_stop_in_trial": [50, 50, 50, 50],
+        }
+    )
+    return raw, events, metadata
+
+
+@pytest.fixture
+def fast_load_epochs(basic_raw_and_metadata, tmp_path):
+    """FIF-reloaded Epochs satisfying all _can_use_fast_get_epoch_from_raw conditions."""
+    raw, events, metadata = basic_raw_and_metadata
+    epochs = _make_fast_load_epochs(raw, events, metadata, tmp_path)
+    return raw, events, metadata, epochs
+
+
+@pytest.fixture
+def fast_load_windows_dataset(fast_load_epochs):
+    """WindowsDataset backed by fast-disk-eligible epochs."""
+    _, _, _, epochs = fast_load_epochs
+    desc = pd.Series({"subject": 1})
+    return WindowsDataset(epochs, desc)
+
+
+def test_can_use_fast_get_epoch_from_raw_true(fast_load_epochs):
+    """All conditions satisfied → _can_use_fast_get_epoch_from_raw returns True."""
+    _, _, _, epochs = fast_load_epochs
+    assert WindowsDataset._can_use_fast_get_epoch_from_raw(epochs)
+
+
+@pytest.mark.parametrize(
+    "attribute,bad_value",
+    [
+        ("_bad_dropped", False),
+        ("_do_baseline", True),
+        ("detrend", 1),
+        ("_decim", 2),
+        ("_offset", 0.0),
+        ("_projector", np.eye(2)),
+        ("preload", True),
+    ],
+    ids=[
+        "bad_dropped",
+        "do_baseline",
+        "detrend",
+        "decim",
+        "offset",
+        "projector",
+        "preload",
+    ],
+)
+def test_can_use_fast_get_epoch_from_raw_false(fast_load_epochs, attribute, bad_value):
+    """Each condition violated in isolation → _can_use_fast_get_epoch_from_raw returns False."""
+    _, _, _, epochs = fast_load_epochs
+    epochs = epochs.copy()  # avoid modifying fixture state for other tests
+    setattr(epochs, attribute, bad_value)
+    assert not WindowsDataset._can_use_fast_get_epoch_from_raw(epochs)
+
+
+def test_windows_dataset_fast_disk_enabled(fast_load_windows_dataset):
+    """WindowsDataset._fast_disk is True when all conditions are met."""
+    assert fast_load_windows_dataset._fast_disk is True
+
+
+@pytest.mark.parametrize(
+    "attribute,bad_value,expects_warning",
+    [
+        ("preload", True, False),  # preloaded → _fast_disk=False but no warning
+        ("_do_baseline", True, True),  # fast-loading blocked, not preloaded → warn
+        ("detrend", 1, True),
+        ("_decim", 2, True),
+    ],
+    ids=["preload", "do_baseline", "detrend", "decim"],
+)
+def test_windows_dataset_fast_disk_disabled(
+    fast_load_epochs, attribute, bad_value, expects_warning
+):
+    """WindowsDataset._fast_disk is False; UserWarning when epoch is neither fast-loadable
+    nor preloaded."""
+    import contextlib
+
+    _, _, _, epochs = fast_load_epochs
+    setattr(epochs, attribute, bad_value)
+    desc = pd.Series({"subject": 1})
+    ctx = (
+        pytest.warns(UserWarning, match="fast epoch access")
+        if expects_warning
+        else contextlib.nullcontext()
+    )
+    with ctx:
+        ds = WindowsDataset(epochs, desc)
+    assert ds._fast_disk is False
+
+
+def test_windows_dataset_fast_vs_preload_consistency(basic_raw_and_metadata, tmp_path):
+    """Fast disk loading and preloaded epochs return identical data for every index."""
+    raw, events, metadata = basic_raw_and_metadata
+    desc = pd.Series({"subject": 1})
+
+    # Fast path: FIF-reloaded with preload=False (_bad_dropped=True, _do_baseline=False)
+    epochs_fast = _make_fast_load_epochs(raw, events, metadata, tmp_path)
+    ds_fast = WindowsDataset(epochs_fast, desc)
+    assert ds_fast._fast_disk is True
+
+    # Reference: reload the same FIF file with preload=True (uses get_data slow path)
+    fname = str(tmp_path / "fast-epo.fif")
+    epochs_preloaded = mne.read_epochs(fname, preload=True)
+    ds_preloaded = WindowsDataset(epochs_preloaded, desc)
+    assert ds_preloaded._fast_disk is False
+
+    assert len(ds_fast) == len(ds_preloaded)
+    for i in range(len(ds_fast)):
+        X_fast, y_fast, crop_fast = ds_fast[i]
+        X_preloaded, y_preloaded, crop_preloaded = ds_preloaded[i]
+        np.testing.assert_array_equal(X_fast, X_preloaded)
+        assert y_fast == y_preloaded
+        assert crop_fast == crop_preloaded

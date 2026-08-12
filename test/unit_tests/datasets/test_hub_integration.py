@@ -6,7 +6,6 @@
 
 
 import inspect
-import warnings
 from unittest import mock
 
 import mne
@@ -18,17 +17,26 @@ import scipy
 # Optional imports for Hub functionality
 try:
     import zarr
+
     ZARR_AVAILABLE = True
 except ImportError:
     ZARR_AVAILABLE = False
     zarr = None
 
+import copy
+
 from braindecode.datasets import (
     BNCI2014_001,
     BaseConcatDataset,
+    EEGWindowsDataset,
     RawDataset,
+    WindowsDataset,
 )
-from braindecode.datasets.hub import _create_compressor
+from braindecode.datasets.bids.hub import (
+    _generate_readme_content,
+    _infer_license_from_descriptions,
+)
+from braindecode.datasets.bids.hub_io import _create_compressor
 from braindecode.datasets.registry import get_dataset_class, get_dataset_type
 from braindecode.preprocessing import create_windows_from_events
 
@@ -62,6 +70,50 @@ def test_hub_mixin_methods_exist(setup_concat_windows_dataset):
     assert hasattr(dataset, "pull_from_hub")
     assert callable(dataset.push_to_hub)
     assert callable(dataset.pull_from_hub)
+
+
+def test_infer_license_from_descriptions_detects_single_license():
+    """Infer a concrete license when all descriptions agree."""
+    descriptions = [
+        pd.Series({"subject": "1", "license": "cc-by-4.0"}),
+        pd.Series({"subject": "2", "license": "cc-by-4.0"}),
+    ]
+
+    license_value, needs_update = _infer_license_from_descriptions(descriptions)
+
+    assert license_value == "cc-by-4.0"
+    assert needs_update is False
+
+
+def test_infer_license_from_descriptions_falls_back_to_placeholder():
+    """Use placeholder when license is missing or inconsistent."""
+    descriptions = [
+        pd.Series({"subject": "1", "license": "cc-by-4.0"}),
+        pd.Series({"subject": "2", "license": "mit"}),
+    ]
+
+    license_value, needs_update = _infer_license_from_descriptions(descriptions)
+
+    assert license_value == "please-specify"
+    assert needs_update is True
+
+
+def test_generate_readme_content_license_placeholder_comment():
+    """README front matter includes a guidance comment for placeholder license."""
+    content = _generate_readme_content(
+        format_info={"total_size_mb": 1.0},
+        n_recordings=1,
+        n_channels=2,
+        sfreq=100,
+        data_type="Continuous (Raw)",
+        n_windows=100,
+        total_duration=10,
+        license="please-specify",
+        license_needs_update=True,
+    )
+
+    assert "license: please-specify" in content
+    assert "Please update this field to reflect your dataset's license" in content
 
 
 def test_dataset_card_generation(setup_concat_windows_dataset, tmp_path):
@@ -114,16 +166,20 @@ def test_no_lazy_imports_in_hub_module():
     even when optional dependencies are not available.
     """
     # Mock zarr and huggingface_hub to simulate missing dependencies
-    with mock.patch.dict('sys.modules', {
-        'zarr': mock.MagicMock(),
-        'huggingface_hub': mock.MagicMock(),
-    }):
+    with mock.patch.dict(
+        "sys.modules",
+        {
+            "zarr": mock.MagicMock(),
+            "huggingface_hub": mock.MagicMock(),
+        },
+    ):
         # Import hub module (should work even with mocked dependencies)
-        from braindecode.datasets import hub
+        from braindecode.datasets.bids import hub
 
         # Get all functions in the hub module
         functions = [
-            obj for name, obj in inspect.getmembers(hub)
+            obj
+            for name, obj in inspect.getmembers(hub)
             if inspect.isfunction(obj) and obj.__module__ == hub.__name__
         ]
 
@@ -131,8 +187,12 @@ def test_no_lazy_imports_in_hub_module():
         for func in functions:
             source = inspect.getsource(func)
             # No function should have 'from .base import' or 'from ..datasets.base import'
-            assert "from .base import" not in source, f"{func.__name__} has circular import"
-            assert "from ..datasets.base import" not in source, f"{func.__name__} has circular import"
+            assert (
+                "from .base import" not in source
+            ), f"{func.__name__} has circular import"
+            assert (
+                "from ..datasets.base import" not in source
+            ), f"{func.__name__} has circular import"
 
 
 def test_registry_pattern_works():
@@ -178,7 +238,6 @@ def test_eegwindows_lossless_round_trip(tmp_path):
     original_raw_data = windowed.datasets[0].raw.get_data()
     original_metadata = windowed.datasets[0].metadata.copy()
 
-
     # Save to Zarr
     zarr_path = tmp_path / "dataset.zarr"
     windowed._convert_to_zarr_inline(
@@ -195,15 +254,16 @@ def test_eegwindows_lossless_round_trip(tmp_path):
 
     # Verify continuous raw data is preserved (allowing for float32 precision)
     loaded_raw_data = loaded.datasets[0].raw.get_data()
-    assert loaded_raw_data.shape == original_raw_data.shape, \
-        f"Shape mismatch: {loaded_raw_data.shape} vs {original_raw_data.shape}"
+    assert (
+        loaded_raw_data.shape == original_raw_data.shape
+    ), f"Shape mismatch: {loaded_raw_data.shape} vs {original_raw_data.shape}"
     # Use allclose since we save as float32 (some precision loss expected)
     np.testing.assert_allclose(
         original_raw_data,
         loaded_raw_data,
         rtol=1e-6,  # Relative tolerance
         atol=1e-7,  # Absolute tolerance
-        err_msg="Continuous raw data not preserved within float32 precision!"
+        err_msg="Continuous raw data not preserved within float32 precision!",
     )
 
     # Verify metadata is preserved
@@ -214,7 +274,9 @@ def test_eegwindows_lossless_round_trip(tmp_path):
         orig_X, orig_y, orig_inds = windowed.datasets[0][i]
         load_X, load_y, load_inds = loaded.datasets[0][i]
 
-        np.testing.assert_array_equal(orig_X, load_X, err_msg=f"Window {i} data mismatch")
+        np.testing.assert_array_equal(
+            orig_X, load_X, err_msg=f"Window {i} data mismatch"
+        )
         assert orig_y == load_y, f"Window {i} target mismatch"
         assert orig_inds == load_inds, f"Window {i} crop indices mismatch"
 
@@ -265,7 +327,7 @@ def test_rawdataset_basic_save_load(tmp_path):
         loaded_data,
         rtol=1e-6,
         atol=1e-7,
-        err_msg="RawDataset data not preserved within float32 precision!"
+        err_msg="RawDataset data not preserved within float32 precision!",
     )
 
     # Verify description
@@ -314,15 +376,16 @@ def test_rawdataset_lossless_round_trip(tmp_path):
 
     # Verify continuous raw data is preserved (allowing for float32 precision)
     loaded_raw_data = loaded.datasets[0].raw.get_data()
-    assert loaded_raw_data.shape == original_raw_data.shape, \
-        f"Shape mismatch: {loaded_raw_data.shape} vs {original_raw_data.shape}"
+    assert (
+        loaded_raw_data.shape == original_raw_data.shape
+    ), f"Shape mismatch: {loaded_raw_data.shape} vs {original_raw_data.shape}"
 
     np.testing.assert_allclose(
         original_raw_data,
         loaded_raw_data,
         rtol=1e-6,
         atol=1e-7,
-        err_msg="Continuous raw data not preserved within float32 precision!"
+        err_msg="Continuous raw data not preserved within float32 precision!",
     )
 
     # Verify description is preserved (ignore series name attribute)
@@ -587,14 +650,9 @@ def test_different_lengths_allowed(tmp_path):
 
 
 def test_lazy_loading_support(tmp_path):
-    """Test that datasets can be loaded with preload parameter.
-
-    Note: Lazy loading (preload=False) is not fully implemented yet,
-    so data is always loaded into memory with a warning.
-    """
+    """Test that datasets can be loaded lazily with preload=False."""
     pytest.importorskip("zarr")
 
-    # Create and save a windowed dataset
     dataset = BNCI2014_001(subject_ids=[1])
     windowed = create_windows_from_events(
         concat_ds=BaseConcatDataset([dataset.datasets[0]]),
@@ -606,23 +664,23 @@ def test_lazy_loading_support(tmp_path):
     zarr_path = tmp_path / "lazy_test.zarr"
     windowed._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
 
-    # Load with preload=False (should warn and load anyway)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        loaded_lazy = windowed._load_from_zarr_inline(zarr_path, preload=False)
-        # Check that warning about lazy loading was issued
-        assert any("Lazy loading from Zarr not fully implemented" in str(warning.message)
-                   for warning in w)
+    lazy = windowed._load_from_zarr_inline(zarr_path, preload=False)
+    eager = windowed._load_from_zarr_inline(zarr_path, preload=True)
 
-    # Currently always loads into memory
-    assert loaded_lazy.datasets[0].windows.preload
+    # Lazy: no mne object, zarr reference set
+    assert lazy.datasets[0]._windows is None
+    assert lazy.datasets[0]._zarr_data is not None
+    # Eager: mne object present
+    assert eager.datasets[0].windows is not None
+    assert eager.datasets[0].windows.preload
 
-    # Load with preload=True
-    loaded_eager = windowed._load_from_zarr_inline(zarr_path, preload=True)
-    assert loaded_eager.datasets[0].windows.preload
-
-    # Both should have same number of windows
-    assert len(loaded_lazy.datasets[0]) == len(loaded_eager.datasets[0])
+    # Same length and data
+    assert len(lazy.datasets[0]) == len(eager.datasets[0])
+    for i in range(min(5, len(lazy.datasets[0]))):
+        lX, ly, li = lazy.datasets[0][i]
+        eX, ey, ei = eager.datasets[0][i]
+        np.testing.assert_array_equal(lX, eX)
+        assert ly == ey and li == ei
 
 
 def test_preprocessing_kwargs_preserved(tmp_path):
@@ -647,7 +705,9 @@ def test_preprocessing_kwargs_preserved(tmp_path):
 
     # Save to Zarr
     zarr_path = tmp_path / "with_kwargs.zarr"
-    windowed._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+    windowed._convert_to_zarr_inline(
+        zarr_path, compression="blosc", compression_level=5
+    )
 
     # Load back
     loaded = windowed._load_from_zarr_inline(zarr_path, preload=True)
@@ -656,7 +716,10 @@ def test_preprocessing_kwargs_preserved(tmp_path):
     assert hasattr(loaded.datasets[0], "window_kwargs")
     assert loaded.datasets[0].window_kwargs == windowed.datasets[0].window_kwargs
     assert hasattr(loaded.datasets[0], "window_preproc_kwargs")
-    assert loaded.datasets[0].window_preproc_kwargs == windowed.datasets[0].window_preproc_kwargs
+    assert (
+        loaded.datasets[0].window_preproc_kwargs
+        == windowed.datasets[0].window_preproc_kwargs
+    )
 
 
 @pytest.mark.parametrize("use_mne_epochs", [True, False])
@@ -678,7 +741,9 @@ def test_zarr_round_trip_parametrized(tmp_path, use_mne_epochs):
 
     # Save to Zarr
     zarr_path = tmp_path / f"{expected_type.lower()}_parametrized.zarr"
-    windowed._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+    windowed._convert_to_zarr_inline(
+        zarr_path, compression="blosc", compression_level=5
+    )
 
     # Load back
     loaded = windowed._load_from_zarr_inline(zarr_path, preload=True)
@@ -691,20 +756,26 @@ def test_zarr_round_trip_parametrized(tmp_path, use_mne_epochs):
 
     # Verify windows/raw preserved
     if use_mne_epochs:
-        assert loaded.datasets[0].windows.info["sfreq"] == windowed.datasets[0].windows.info["sfreq"]
+        assert (
+            loaded.datasets[0].windows.info["sfreq"]
+            == windowed.datasets[0].windows.info["sfreq"]
+        )
         # Check a few windows
         for i in range(min(3, len(loaded.datasets[0]))):
             orig_X, _, _ = windowed.datasets[0][i]
             load_X, _, _ = loaded.datasets[0][i]
             np.testing.assert_allclose(orig_X, load_X, rtol=1e-6, atol=1e-7)
     else:
-        assert loaded.datasets[0].raw.info["sfreq"] == windowed.datasets[0].raw.info["sfreq"]
+        assert (
+            loaded.datasets[0].raw.info["sfreq"]
+            == windowed.datasets[0].raw.info["sfreq"]
+        )
         # Verify continuous raw data preserved
         np.testing.assert_allclose(
             windowed.datasets[0].raw.get_data(),
             loaded.datasets[0].raw.get_data(),
             rtol=1e-6,
-            atol=1e-7
+            atol=1e-7,
         )
 
 
@@ -782,7 +853,9 @@ def test_dependency_version_metadata(tmp_path):
 
     # Save to Zarr
     zarr_path = tmp_path / "test_versions.zarr"
-    concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression="blosc", compression_level=5
+    )
 
     # Open Zarr and verify version metadata
     root = zarr.open(str(zarr_path), mode="r")
@@ -827,11 +900,15 @@ def test_overwrite_existing_file_error(tmp_path):
 
     # Save once
     zarr_path = tmp_path / "test_overwrite.zarr"
-    concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression="blosc", compression_level=5
+    )
 
     # Try to save again without overwrite - should fail
     with pytest.raises(FileExistsError, match="already exists"):
-        concat_ds._convert_to_zarr_inline(zarr_path, compression="blosc", compression_level=5)
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression="blosc", compression_level=5
+        )
 
 
 def test_create_compressor_function():
@@ -861,15 +938,16 @@ def test_create_compressor_function():
     assert compressor is None
 
 
-
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_push_to_hub_import_error(setup_concat_windows_dataset, tmp_path):
     """Test that push_to_hub raises ImportError when huggingface_hub not available."""
     dataset = setup_concat_windows_dataset
 
     # Mock the _soft_import to return False for huggingface_hub
-    with mock.patch('braindecode.datasets.hub.huggingface_hub', False):
-        with pytest.raises(ImportError, match="huggingface-hub or zarr is not installed"):
+    with mock.patch("braindecode.datasets.bids.hub.huggingface_hub", False):
+        with pytest.raises(
+            ImportError, match="huggingface-hub or zarr is not installed"
+        ):
             dataset.push_to_hub(
                 repo_id="test/repo",
                 compression="blosc",
@@ -889,35 +967,33 @@ def test_push_to_hub_success_mocked(setup_concat_windows_dataset, tmp_path):
 
     # Create mocks for the huggingface_hub module functions
     mock_hf_api = mock.MagicMock()
-    mock_create_repo = mock.MagicMock(return_value=None)
-    mock_upload_folder = mock.MagicMock(return_value=expected_url)
+    mock_hf_api.upload_large_folder.return_value = expected_url
 
-    with mock.patch.object(hf_hub, 'HfApi', return_value=mock_hf_api):
-        with mock.patch.object(hf_hub, 'create_repo', mock_create_repo):
-            with mock.patch.object(hf_hub, 'upload_folder', mock_upload_folder):
-                with mock.patch.object(dataset, '_convert_to_zarr_inline') as mock_convert:
-                    with mock.patch.object(dataset, '_save_dataset_card') as mock_save_card:
-                        # Call push_to_hub
-                        result_url = dataset.push_to_hub(
-                            repo_id=repo_id,
-                            compression="blosc",
-                            compression_level=5,
-                            private=False,
-                            token=None,
-                            commit_message="Test commit",
-                            create_pr=False,
-                        )
+    with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
+        with mock.patch.object(
+            dataset, "_convert_to_zarr_inline"
+        ) as mock_convert:
+            with mock.patch.object(
+                dataset, "_save_dataset_card"
+            ) as mock_save_card:
+                # Call push_to_hub
+                result_url = dataset.push_to_hub(
+                    repo_id=repo_id,
+                    compression="blosc",
+                    compression_level=5,
+                    private=False,
+                    token=None,
+                )
 
     # Verify the URL was returned
     assert result_url == expected_url
 
     # Verify create_repo was called with correct parameters
-    mock_create_repo.assert_called_once_with(
+    mock_hf_api.create_repo.assert_called_once_with(
         repo_id=repo_id,
         repo_type="dataset",
         exist_ok=True,
         private=False,
-        token=None,
     )
 
     # Verify _convert_to_zarr_inline was called
@@ -937,27 +1013,29 @@ def test_push_to_hub_upload_failure(setup_concat_windows_dataset, tmp_path):
 
     # Create mocks
     mock_hf_api = mock.MagicMock()
-    mock_create_repo = mock.MagicMock(return_value=None)
+    mock_hf_api.upload_large_folder.side_effect = Exception("Upload failed")
 
-    with mock.patch.object(hf_hub, 'HfApi', return_value=mock_hf_api):
-        with mock.patch.object(hf_hub, 'create_repo', mock_create_repo):
-            with mock.patch.object(hf_hub, 'upload_folder', side_effect=Exception("Upload failed")):
-                with mock.patch.object(dataset, '_convert_to_zarr_inline'):
-                    with mock.patch.object(dataset, '_save_dataset_card'):
-                        with pytest.raises(RuntimeError, match="Failed to upload dataset"):
-                            dataset.push_to_hub(
-                                repo_id=repo_id,
-                                compression="blosc",
-                                compression_level=5,
-                            )
+    with mock.patch.object(hf_hub, "HfApi", return_value=mock_hf_api):
+        with mock.patch.object(dataset, "_convert_to_zarr_inline"):
+            with mock.patch.object(dataset, "_save_dataset_card"):
+                with pytest.raises(
+                    RuntimeError, match="Failed to upload dataset"
+                ):
+                    dataset.push_to_hub(
+                        repo_id=repo_id,
+                        compression="blosc",
+                        compression_level=5,
+                    )
 
 
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_from_pull_from_hub_import_error(tmp_path):
     """Test that pull_from_hub raises ImportError when dependencies not available."""
     # Mock huggingface_hub as not available
-    with mock.patch('braindecode.datasets.hub.huggingface_hub', False):
-        with pytest.raises(ImportError, match="huggingface hub functionality is not installed"):
+    with mock.patch("braindecode.datasets.bids.hub.huggingface_hub", False):
+        with pytest.raises(
+            ImportError, match="huggingface hub functionality is not installed"
+        ):
             BaseConcatDataset.pull_from_hub(
                 repo_id="test/repo",
                 cache_dir=tmp_path,
@@ -977,8 +1055,10 @@ def test_pull_from_hub_404_error(tmp_path):
     mock_response.status_code = 404
     http_error = HfHubHTTPError("Not found", response=mock_response)
 
-    with mock.patch.object(hf_hub, 'snapshot_download', side_effect=http_error):
-        with pytest.raises(FileNotFoundError, match="Dataset .* not found on Hugging Face Hub"):
+    with mock.patch.object(hf_hub, "snapshot_download", side_effect=http_error):
+        with pytest.raises(
+            FileNotFoundError, match="Dataset .* not found on Hugging Face Hub"
+        ):
             BaseConcatDataset.pull_from_hub(
                 repo_id=repo_id,
                 cache_dir=tmp_path,
@@ -986,9 +1066,41 @@ def test_pull_from_hub_404_error(tmp_path):
 
 
 @pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
+def test_pull_from_hub_passes_revision(tmp_path):
+    """Test that pull_from_hub forwards revision to snapshot_download."""
+    hf_hub = pytest.importorskip("huggingface_hub")
+
+    repo_id = "test-user/test-dataset"
+    revision = "main"
+    mock_dataset = mock.MagicMock()
+    mock_dataset.datasets = []
+
+    (tmp_path / "dataset.zarr").mkdir()
+
+    with mock.patch.object(hf_hub, "snapshot_download", return_value=str(tmp_path)) as m:
+        with mock.patch.object(
+            BaseConcatDataset, "_load_from_zarr_inline", return_value=mock_dataset
+        ):
+            with mock.patch.object(BaseConcatDataset, "_load_bids_metadata"):
+                dataset = BaseConcatDataset.pull_from_hub(
+                    repo_id=repo_id, cache_dir=tmp_path, revision=revision
+                )
+
+    m.assert_called_once_with(
+        repo_id=repo_id,
+        repo_type="dataset",
+        token=None,
+        cache_dir=tmp_path,
+        force_download=False,
+        revision=revision,
+    )
+    assert dataset is mock_dataset
+
+
+@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
 def test_create_compressor_zarr_not_available():
     """Test that _create_compressor raises ImportError when zarr not available."""
-    with mock.patch('braindecode.datasets.hub.zarr', False):
+    with mock.patch("braindecode.datasets.bids.hub_io.zarr", False):
         with pytest.raises(ImportError, match="Zarr is not installed"):
             _create_compressor("blosc", 5)
 
@@ -1041,39 +1153,122 @@ def test_save_dataset_card_all_dataset_types(tmp_path):
     assert "Continuous (Raw)" in raw_readme or "raw" in raw_readme.lower()
 
 
-@pytest.mark.skipif(not ZARR_AVAILABLE, reason="zarr not available")
-def test_push_to_hub_default_commit_message(setup_concat_windows_dataset, tmp_path):
-    """Test that push_to_hub generates default commit message when not provided."""
-    hf_hub = pytest.importorskip("huggingface_hub")
+# ---------------------------------------------------------------------------
+# Lazy Zarr loading tests (parametrized)
+# ---------------------------------------------------------------------------
 
-    dataset = setup_concat_windows_dataset
-    repo_id = "test-user/test-dataset"
 
-    expected_url = f"https://huggingface.co/datasets/{repo_id}"
+def _make_zarr(tmp_path, ds_type):
+    """Build a small dataset of the given type, save to zarr, return (ds, path)."""
+    pytest.importorskip("zarr")
+    n_ch, info = 3, mne.create_info([f"ch{i}" for i in range(3)], sfreq=100, ch_types="eeg")
 
-    # Track the commit message used
-    captured_commit_message = None
+    if ds_type == "WindowsDataset":
+        n_w, n_t = 8, 100
+        data = np.random.randn(n_w, n_ch, n_t)
+        ev = np.column_stack([np.arange(n_w) * n_t, np.zeros(n_w, int), np.ones(n_w, int)])
+        md = pd.DataFrame({"i_window_in_trial": np.arange(n_w), "i_start_in_trial": ev[:, 0],
+                           "i_stop_in_trial": ev[:, 0] + n_t, "target": np.random.randint(0, 3, n_w)})
+        ds = BaseConcatDataset([WindowsDataset(
+            mne.EpochsArray(data, info, events=ev, metadata=md), pd.Series({"subject": "01"}))])
+    elif ds_type == "EEGWindowsDataset":
+        ws, n_w = 100, 6
+        raw = mne.io.RawArray(np.random.randn(n_ch, 800), info)
+        md = pd.DataFrame({"i_window_in_trial": np.arange(n_w), "i_start_in_trial": np.arange(n_w) * ws,
+                           "i_stop_in_trial": np.arange(n_w) * ws + ws, "target": np.random.randint(0, 2, n_w)})
+        ds = BaseConcatDataset([EEGWindowsDataset(raw, md, pd.Series({"subject": "02"}))])
+    else:
+        raw = mne.io.RawArray(np.random.randn(n_ch, 500), info)
+        ds = BaseConcatDataset([RawDataset(raw, pd.Series({"subject": "03", "target": 1}), target_name="target")])
 
-    def capture_upload_folder(*args, **kwargs):
-        nonlocal captured_commit_message
-        captured_commit_message = kwargs.get("commit_message")
-        return expected_url
+    p = tmp_path / f"{ds_type.lower()}.zarr"
+    ds._convert_to_zarr_inline(p, compression="blosc", compression_level=5)
+    return ds, p
 
-    mock_hf_api = mock.MagicMock()
-    mock_create_repo = mock.MagicMock(return_value=None)
 
-    with mock.patch.object(hf_hub, 'HfApi', return_value=mock_hf_api):
-        with mock.patch.object(hf_hub, 'create_repo', mock_create_repo):
-            with mock.patch.object(hf_hub, 'upload_folder', side_effect=capture_upload_folder):
-                with mock.patch.object(dataset, '_convert_to_zarr_inline'):
-                    with mock.patch.object(dataset, '_save_dataset_card'):
-                        # Call push_to_hub WITHOUT commit_message
-                        dataset.push_to_hub(
-                            repo_id=repo_id,
-                            compression="blosc",
-                            compression_level=5,
-                        )
+_DS_TYPES = ["WindowsDataset", "EEGWindowsDataset", "RawDataset"]
+_DS_CLASSES = {"WindowsDataset": WindowsDataset, "EEGWindowsDataset": EEGWindowsDataset, "RawDataset": RawDataset}
 
-    # Verify a default commit message was generated
-    assert captured_commit_message is not None
-    assert "Upload" in captured_commit_message or "EEG dataset" in captured_commit_message
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_round_trip_isinstance(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    ds = BaseConcatDataset._load_from_zarr_inline(path, preload=False).datasets[0]
+    assert isinstance(ds, _DS_CLASSES[ds_type])
+    assert get_dataset_type(ds) == ds_type
+    assert ds._zarr_data is not None
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_getitem_matches_preloaded(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    lazy = BaseConcatDataset._load_from_zarr_inline(path, preload=False)
+    eager = BaseConcatDataset._load_from_zarr_inline(path, preload=True)
+    for i in range(min(5, len(lazy.datasets[0]))):
+        l_out, e_out = lazy.datasets[0][i], eager.datasets[0][i]
+        np.testing.assert_allclose(l_out[0], e_out[0], rtol=1e-6, atol=1e-7)
+        assert l_out[1] == e_out[1]
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_len(tmp_path, ds_type):
+    orig, path = _make_zarr(tmp_path, ds_type)
+    lazy = BaseConcatDataset._load_from_zarr_inline(path, preload=False)
+    assert len(lazy.datasets[0]) == len(orig.datasets[0])
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_serialization(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    ds = BaseConcatDataset._load_from_zarr_inline(path, preload=False).datasets[0]
+    restored = copy.deepcopy(ds)
+    assert restored._zarr_data is not None
+    np.testing.assert_allclose(ds[0][0], restored[0][0], rtol=1e-6, atol=1e-7)
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_repr(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    ds = BaseConcatDataset._load_from_zarr_inline(path, preload=False).datasets[0]
+    assert ds_type in repr(ds)
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_transform(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    lazy = BaseConcatDataset._load_from_zarr_inline(path, preload=False)
+    lazy2 = BaseConcatDataset._load_from_zarr_inline(path, preload=False)
+    lazy.datasets[0].transform = lambda x: x * 2.0
+    np.testing.assert_allclose(lazy.datasets[0][0][0], lazy2.datasets[0][0][0] * 2.0)
+
+
+@pytest.mark.parametrize("ds_type", _DS_TYPES)
+def test_lazy_zarr_concat_getitem(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    X = BaseConcatDataset._load_from_zarr_inline(path, preload=False)[0][0]
+    assert isinstance(X, np.ndarray) and X.dtype == np.float32
+
+
+@pytest.mark.parametrize("ds_type", ["WindowsDataset", "EEGWindowsDataset"])
+def test_lazy_zarr_get_metadata(tmp_path, ds_type):
+    _, path = _make_zarr(tmp_path, ds_type)
+    md = BaseConcatDataset._load_from_zarr_inline(path, preload=False).get_metadata()
+    assert isinstance(md, pd.DataFrame) and "target" in md.columns
+
+
+def test_lazy_zarr_split(tmp_path):
+    pytest.importorskip("zarr")
+    info = mne.create_info([f"ch{i}" for i in range(3)], sfreq=100, ch_types="eeg")
+    dss = [RawDataset(mne.io.RawArray(np.random.randn(3, 500), info),
+                       pd.Series({"subject": str(s), "group": "A" if s < 2 else "B"}))
+           for s in range(3)]
+    p = tmp_path / "split.zarr"
+    BaseConcatDataset(dss)._convert_to_zarr_inline(p, compression="blosc", compression_level=5)
+    splits = BaseConcatDataset._load_from_zarr_inline(p, preload=False).split("group")
+    assert len(splits["A"].datasets) == 2 and len(splits["B"].datasets) == 1
+
+
+def test_lazy_zarr_preload_true_unchanged(tmp_path):
+    _, path = _make_zarr(tmp_path, "WindowsDataset")
+    eager = BaseConcatDataset._load_from_zarr_inline(path, preload=True)
+    assert eager.datasets[0].windows is not None and eager.datasets[0]._zarr_data is None

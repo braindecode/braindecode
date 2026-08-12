@@ -452,7 +452,6 @@ log_reg = LogisticRegression(
     C=1.0,
     class_weight="balanced",
     solver="lbfgs",
-    multi_class="multinomial",
     random_state=random_state,
 )
 clf_pipe = make_pipeline(StandardScaler(), log_reg)
@@ -492,7 +491,7 @@ pca = PCA(n_components=2)
 components = pca.fit_transform(X)
 
 fig, ax = plt.subplots()
-colors = colormaps["viridis"](range(5))
+colors = colormaps["viridis"](np.linspace(0, 1, 5))
 for i, stage in enumerate(["W", "N1", "N2", "N3", "R"]):
     mask = y == i
     ax.scatter(

@@ -13,7 +13,7 @@ from braindecode.modules import DepthwiseConv2d, Ensure4d, InceptionBlock
 
 
 class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
-    """EEG Inception for ERP-based from Santamaria-Vazquez et al (2020) [santamaria2020]_.
+    r"""EEG Inception for ERP-based from Santamaria-Vazquez et al (2020) [santamaria2020]_.
 
     :bdg-success:`Convolution`
 

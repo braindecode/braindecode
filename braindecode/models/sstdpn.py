@@ -17,7 +17,7 @@ from braindecode.models.base import EEGModuleMixin
 class SSTDPN(EEGModuleMixin, nn.Module):
     r"""SSTDPN from Can Han et al (2025) [Han2025]_.
 
-    :bdg-info:`Small Attention` :bdg-success:`Convolution`
+    :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`
 
     .. figure:: https://raw.githubusercontent.com/hancan16/SST-DPN/refs/heads/main/figs/framework.png
         :align: center
@@ -133,7 +133,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         learning data, according to [Han2025]_.
 
     Notes
-    ----------
+    -----
     * The implementation of the DPL loss functions (:math:`\mathcal{L}_S`, :math:`\mathcal{L}_C`, :math:`\mathcal{L}_{EF}`)
       and the optimization of ICPs are typically handled outside the primary ``forward`` method, within the training strategy
       (see Ref. 52 in [Han2025]_).
@@ -183,7 +183,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         This constraint acts as an implicit force to push features away from the origin. Default is 1.0.
 
     proto_cpt_std : float, optional
-        Standard deviation for Intra-class Compactness Prototype initialization. Default is 0.01.
+        Standard deviation for Intra-class Compactness Prototype initialization. Default is 1.0,
+        matching the source ``torch.randn`` initialization.
+
+        .. versionchanged:: 1.6.1
+            Default changed from ``0.01`` to ``1.0`` to match the original implementation.
 
     spt_attn_global_context_kernel : int, optional
         Kernel size for global context embedding in Spatial-Spectral Attention module.
@@ -231,7 +235,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         mvp_kernel_sizes: Optional[List[int]] = None,
         return_features: bool = False,
         proto_sep_maxnorm: float = 1.0,
-        proto_cpt_std: float = 0.01,
+        proto_cpt_std: float = 1.0,
         spt_attn_global_context_kernel: int = 250,
         spt_attn_epsilon: float = 1e-5,
         spt_attn_mode: str = "var",
@@ -300,7 +304,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         self._reset_parameters()
 
     def _reset_parameters(self) -> None:
-        """Initialize prototype parameters."""
+        r"""Initialize prototype parameters."""
         nn.init.kaiming_normal_(self.proto_sep)
         nn.init.normal_(self.proto_cpt, mean=0.0, std=self.proto_cpt_std)
 
@@ -327,9 +331,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         """
 
         features = self.encoder(x)  # (b, feat_dim)
-        # Renormalize inter-class separation prototypes
+        # Renormalize inter-class separation prototypes. ``proto_sep`` has shape
+        # (n_outputs, feat_dim); the source constrains each class-row prototype
+        # vector (``||s_i|| <= S``), i.e. renorm along dim=0.
         self.proto_sep.data = torch.renorm(
-            self.proto_sep.data, p=2, dim=1, maxnorm=self.proto_sep_maxnorm
+            self.proto_sep.data, p=2, dim=0, maxnorm=self.proto_sep_maxnorm
         )
         logits = torch.einsum("bd,cd->bc", features, self.proto_sep)  # (b, n_outputs)
         logits = self.final_layer(logits)
@@ -382,7 +388,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
 
 class _SSTEncoder(nn.Module):
-    """Internal encoder combining Adaptive Spatial-Spectral Fusion and Multi-scale Variance Pooling.
+    r"""Internal encoder combining Adaptive Spatial-Spectral Fusion and Multi-scale Variance Pooling.
 
     This class should not be instantiated directly. It is an internal component
     of :class:`SSTDPN`.
@@ -491,7 +497,7 @@ class _SSTEncoder(nn.Module):
 
 
 class _DepthwiseTemporalConv1d(nn.Module):
-    """Internal depthwise temporal convolution for spectral filtering.
+    r"""Internal depthwise temporal convolution for spectral filtering.
 
     Applies separate temporal convolution filters to each channel independently
     to extract spectral information across multiple bands. This is used to generate
@@ -598,7 +604,7 @@ class _DepthwiseTemporalConv1d(nn.Module):
 
 
 class _GlobalContextVarPool1D(nn.Module):
-    """Internal global context variance pooling module.
+    r"""Internal global context variance pooling module.
 
     Computes variance-based global context embeddings using specified kernel size.
     Used in the Spatial-Spectral Attention module.
@@ -656,7 +662,7 @@ class _GlobalContextVarPool1D(nn.Module):
 
 
 class _VariancePool1D(nn.Module):
-    """Internal variance pooling module for temporal feature extraction.
+    r"""Internal variance pooling module for temporal feature extraction.
 
     Applies variance pooling at a specified kernel size to capture temporal dynamics.
     Used in the Multi-scale Variance Pooling (MVP) module.
@@ -711,7 +717,7 @@ class _VariancePool1D(nn.Module):
 
 
 class _SpatSpectralAttn(nn.Module):
-    """Internal Spatial-Spectral Attention module with global context gating.
+    r"""Internal Spatial-Spectral Attention module with global context gating.
 
     This attention mechanism computes channel-wise gates based on global context
     embedding and applies adaptive reweighting to highlight task-relevant
@@ -803,7 +809,7 @@ class _SpatSpectralAttn(nn.Module):
 
 
 class _MultiScaleVarPooler(nn.Module):
-    """Internal Multi-scale Variance Pooling (MVP) module for temporal feature extraction.
+    r"""Internal Multi-scale Variance Pooling (MVP) module for temporal feature extraction.
 
     Applies variance pooling at multiple temporal scales in parallel, then concatenates
     the results to capture long-range temporal dependencies. Each scale processes a subset

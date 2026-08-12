@@ -36,6 +36,7 @@ def convert_to_zarr(
     output_path: Union[str, Path],
     compression: str = "blosc",
     compression_level: int = 5,
+    chunk_size: int = 5_000_000,
     overwrite: bool = False,
 ) -> Path:
     """Convert BaseConcatDataset to Zarr format.
@@ -58,6 +59,13 @@ def convert_to_zarr(
         blosc uses zstd codec by default, providing best balance of speed and compression.
     compression_level : int, default=5
         Compression level (0-9). Level 5 provides optimal balance based on benchmarks.
+    chunk_size : int, default=5_000_000
+        Target chunk size for Zarr storage.
+        For continuous data (e.g., RawDataset, EEGWindowsDataset), this is interpreted
+        as the approximate number of samples per chunk; larger values create fewer but
+        larger chunks on disk.
+        For pre-cut windowed data (WindowsDataset), this controls how many windows are
+        grouped together in each chunk (i.e., multiple windows can be stored per chunk).
     overwrite : bool, default=False
         Whether to overwrite existing directory.
 
@@ -69,8 +77,11 @@ def convert_to_zarr(
     Notes
     -----
     The chunking strategy is optimized for random access:
-    - Windowed data: Each window is a separate chunk (1, n_channels, n_times)
-    - Raw data: Chunks of (n_channels, 10000) samples
+    - Windowed data: Windows are stored in chunks of shape
+      (n_windows_in_chunk, n_channels, n_times), where n_windows_in_chunk is
+      determined by ``chunk_size``.
+    - Raw / continuous data: Time is split into chunks of approximately
+      ``chunk_size`` samples (per channel), e.g., (n_channels, n_times_per_chunk).
 
     Examples
     --------
@@ -96,7 +107,9 @@ def convert_to_zarr(
         shutil.rmtree(output_path)
 
     # Delegate to HubDatasetMixin method
-    dataset._convert_to_zarr_inline(output_path, compression, compression_level)
+    dataset._convert_to_zarr_inline(
+        output_path, compression, compression_level, chunk_size
+    )
 
     return output_path
 

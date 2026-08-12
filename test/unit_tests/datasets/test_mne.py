@@ -5,6 +5,7 @@
 
 import mne
 import numpy as np
+import pytest
 
 from braindecode.datasets.mne import create_from_mne_epochs, create_from_mne_raw
 
@@ -154,3 +155,72 @@ def test_create_from_mne_epochs():
             i_t = (i_w - n_anns * 9) // 4
             assert i_start == inds[i_t] + i_w_in_t * 2 - (i_w_in_t == 3)
             assert i_stop == inds[i_t] + i_w_in_t * 2 - (i_w_in_t == 3) + 5
+
+
+@pytest.fixture
+def epochs_for_params():
+    """Create a 4-channel, 2-trial EpochsArray for parameter tests."""
+    sfreq = 100
+    n_channels = 4
+    n_times = 100
+    info = mne.create_info(
+        [f"ch{i}" for i in range(n_channels)], sfreq=sfreq, ch_types="eeg"
+    )
+    data = np.random.randn(2, n_channels, n_times)
+    events = np.array([[0, 0, 1], [100, 0, 2]])
+    return mne.EpochsArray(data, info, events=events, tmin=0, baseline=None)
+
+
+def test_create_from_mne_epochs_all_params(epochs_for_params):
+    """Test mapping, preload, picks, drop_bad_windows, and descriptions together."""
+    windows_ds = create_from_mne_epochs(
+        [epochs_for_params],
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping={1: 0, 2: 1},
+        preload=True,
+        picks=[0, 1],
+        drop_bad_windows=False,
+        descriptions=[{"subject": 1}],
+    )
+    ds = windows_ds.datasets[0]
+    targets = [d.windows.metadata["target"].iloc[0] for d in windows_ds.datasets]
+    assert set(targets) == {0, 1}
+    assert ds.windows.preload is True
+    assert ds.windows.get_data().shape[1] == 2
+    assert len(windows_ds.datasets) == 2
+    assert ds.description["subject"] == 1
+
+
+@pytest.mark.parametrize(
+    "mapping, expected_targets",
+    [
+        (None, [1, 2]),
+        ({1: 0, 2: 1}, [0, 1]),
+        ({"1": 0, "2": 1}, [0, 1]),
+    ],
+)
+def test_create_from_mne_epochs_mapping(epochs_for_params, mapping, expected_targets):
+    """Test that mapping correctly remaps event codes, or preserves them if None."""
+    windows_ds = create_from_mne_epochs(
+        [epochs_for_params],
+        window_size_samples=50,
+        window_stride_samples=50,
+        drop_last_window=True,
+        mapping=mapping,
+    )
+    targets = [ds.windows.metadata["target"].iloc[0] for ds in windows_ds.datasets]
+    assert set(targets) == set(expected_targets)
+
+
+def test_create_from_mne_epochs_descriptions_length_mismatch(epochs_for_params):
+    """Test that mismatched descriptions length raises ValueError."""
+    with pytest.raises(ValueError, match="has to match"):
+        create_from_mne_epochs(
+            [epochs_for_params],
+            window_size_samples=50,
+            window_stride_samples=50,
+            drop_last_window=True,
+            descriptions=[{"subject": 1}, {"subject": 2}],
+        )

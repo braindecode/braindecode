@@ -1,22 +1,76 @@
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
+#
+# License: BSD (3-clause)
+
 import copy
 
+import numpy as np
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 
+# The 20 channels used to pre-train BENDR, in the order expected by the
+# `braindecode/braindecode-bendr` checkpoint. The first 19 entries are the
+# EEG channels taken verbatim from `dn3.transforms.instance.To1020.EEG_20_div`
+# (https://github.com/SPOClab-ca/dn3/blob/master/dn3/transforms/instance.py).
+# Their positions come from MNE's ``standard_1005`` montage (T5/T6 are
+# legacy names that share positions with P7/P8 there).
+#
+# The 20th entry is ``SCALE``, a relative-amplitude statistic (not an
+# electrode) appended by ``To1020(include_scale_ch=True)`` during
+# pre-training. Since it has no physical position, the ``loc`` below is
+# the centroid of the 19 EEG positions — purely a placeholder so that
+# :class:`~braindecode.modules.ChannelInterpolationLayer` (used by
+# :class:`InterpolatedBENDR`) can build a valid spline interpolation
+# matrix. It is NOT the SCALE the pre-training pipeline computes
+# (which is an RMS-like amplitude via ``dn3.MappingDeep1010``); users
+# who need a faithful SCALE must compute it themselves and feed 20
+# channels to :class:`BENDR` directly.
+_BENDR_TARGET_CHS_TUPLES: list[tuple[str, tuple[float, float, float]]] = [
+    ("FP1", (-0.0294367, +0.0839171, -0.0069900)),  # standard_1005
+    ("FP2", (+0.0298723, +0.0848959, -0.0070800)),  # standard_1005
+    ("F7", (-0.0702629, +0.0424743, -0.0114200)),  # standard_1005
+    ("F3", (-0.0502438, +0.0531112, +0.0421920)),  # standard_1005
+    ("FZ", (+0.0003122, +0.0585120, +0.0664620)),  # standard_1005
+    ("F4", (+0.0518362, +0.0543048, +0.0408140)),  # standard_1005
+    ("F8", (+0.0730431, +0.0444217, -0.0120000)),  # standard_1005
+    ("T7", (-0.0841611, -0.0160187, -0.0093460)),  # standard_1005
+    ("C3", (-0.0653581, -0.0116317, +0.0643580)),  # standard_1005
+    ("CZ", (+0.0004009, -0.0091670, +0.1002440)),  # standard_1005
+    ("C4", (+0.0671179, -0.0109003, +0.0635800)),  # standard_1005
+    ("T8", (+0.0850799, -0.0150203, -0.0094900)),  # standard_1005
+    ("T5", (-0.0724343, -0.0734527, -0.0024870)),  # standard_1005 (= P7)
+    ("P3", (-0.0530073, -0.0787878, +0.0559400)),  # standard_1005
+    ("PZ", (+0.0003247, -0.0811150, +0.0826150)),  # standard_1005
+    ("P4", (+0.0556667, -0.0785602, +0.0565610)),  # standard_1005
+    ("T6", (+0.0730557, -0.0730683, -0.0025400)),  # standard_1005 (= P8)
+    ("O1", (-0.0294134, -0.1124490, +0.0088390)),  # standard_1005
+    ("O2", (+0.0298426, -0.1121560, +0.0088000)),  # standard_1005
+    (
+        "SCALE",
+        (+0.0006439, -0.0131942, +0.0278448),
+    ),  # centroid of the 19 EEG positions (placeholder; see comment above)
+]
+
+_BENDR_TARGET_CHS_INFO: list[dict] = [
+    {"ch_name": ch, "kind": "eeg", "loc": np.asarray(loc, dtype=float)}
+    for ch, loc in _BENDR_TARGET_CHS_TUPLES
+]
+BENDR_CHANNEL_ORDER: list[str] = [ch for ch, _ in _BENDR_TARGET_CHS_TUPLES]
+
 
 class BENDR(EEGModuleMixin, nn.Module):
-    """BENDR (BErt-inspired Neural Data Representations) from Kostas et al. (2021) [bendr]_.
+    r"""BENDR (BErt-inspired Neural Data Representations) from Kostas et al (2021) [bendr]_.
 
-    :bdg-success:`Convolution` :bdg-danger:`Large Brain Model`
+    :bdg-success:`Convolution` :bdg-danger:`Foundation Model`
 
     .. figure:: https://www.frontiersin.org/files/Articles/653659/fnhum-15-653659-HTML/image_m/fnhum-15-653659-g001.jpg
         :align: center
         :alt: BENDR Architecture
         :width: 1000px
-
 
     The **BENDR** architecture adapts techniques used for language modeling (LM) toward the
     development of encephalography modeling (EM) [bendr]_. It utilizes a self-supervised
@@ -79,6 +133,31 @@ class BENDR(EEGModuleMixin, nn.Module):
       prepended to the BENDR sequence before input to the transformer, serving as the aggregate
       representation token [bendr]_.
 
+    .. important::
+       **Pre-trained Weights Available**
+
+       This model has pre-trained weights available on the Hugging Face Hub.
+       You can load them using:
+
+       .. code-block:: python
+
+           from braindecode.models import BENDR
+
+           # Load pre-trained model from Hugging Face Hub
+           # you can specify `n_outputs` for your downstream task
+           model = BENDR.from_pretrained("braindecode/braindecode-bendr", n_outputs=2)
+
+       To push your own trained model to the Hub:
+
+       .. code-block:: python
+
+           # After training your model
+           model.push_to_hub(
+               repo_id="username/my-bendr-model", commit_message="Upload trained BENDR model"
+           )
+
+       Requires installing ``braindecode[hug]`` for Hub integration.
+
     Notes
     -----
     * The full BENDR architecture contains a large number of parameters; configuration (1)
@@ -94,6 +173,27 @@ class BENDR(EEGModuleMixin, nn.Module):
         **Important:** To utilize the full potential of BENDR, the model requires
         **self-supervised pre-training** on large, unlabeled EEG datasets (like TUEG) followed
         by subsequent fine-tuning on the specific downstream classification task [bendr]_.
+
+    References
+    ----------
+    .. [bendr] Kostas, D., Aroca-Ouellette, S., & Rudzicz, F. (2021).
+       BENDR: Using transformers and a contrastive self-supervised learning task to learn from
+       massive amounts of EEG data.
+       Frontiers in Human Neuroscience, 15, 653659.
+       https://doi.org/10.3389/fnhum.2021.653659
+    .. [wav2vec2] Baevski, A., Zhou, Y., Mohamed, A., & Auli, M. (2020).
+       wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations.
+       In H. Larochelle, M. Ranzato, R. Hadsell, M. F. Balcan, & H. Lin (Eds),
+       Advances in Neural Information Processing Systems (Vol. 33, pp. 12449-12460).
+       https://dl.acm.org/doi/10.5555/3495724.3496768
+    .. [tfixup] Huang, T. K., Liang, S., Jha, A., & Salakhutdinov, R. (2020).
+       Improving Transformer Optimization Through Better Initialization.
+       In International Conference on Machine Learning (pp. 4475-4483). PMLR.
+       https://dl.acm.org/doi/10.5555/3524938.3525354
+    .. [layerdrop] Fan, A., Grave, E., & Joulin, A. (2020).
+       Reducing Transformer Depth on Demand with Structured Dropout.
+       International Conference on Learning Representations.
+       Retrieved from https://openreview.net/forum?id=SylO2yStDr
 
     Parameters
     ----------
@@ -138,27 +238,16 @@ class BENDR(EEGModuleMixin, nn.Module):
     final_layer : bool, default=True
         If True, includes a final linear classification layer that maps from encoder_h to
         n_outputs. If False, the model outputs the contextualized features directly.
-
-    References
-    ----------
-    .. [bendr] Kostas, D., Aroca-Ouellette, S., & Rudzicz, F. (2021).
-       BENDR: Using transformers and a contrastive self-supervised learning task to learn from
-       massive amounts of EEG data.
-       Frontiers in Human Neuroscience, 15, 653659.
-       https://doi.org/10.3389/fnhum.2021.653659
-    .. [wav2vec2] Baevski, A., Zhou, Y., Mohamed, A., & Auli, M. (2020).
-       wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations.
-       In H. Larochelle, M. Ranzato, R. Hadsell, M. F. Balcan, & H. Lin (Eds),
-       Advances in Neural Information Processing Systems (Vol. 33, pp. 12449-12460).
-       https://dl.acm.org/doi/10.5555/3495724.3496768
-    .. [tfixup] Huang, T. K., Liang, S., Jha, A., & Salakhutdinov, R. (2020).
-       Improving Transformer Optimization Through Better Initialization.
-       In International Conference on Machine Learning (pp. 4475-4483). PMLR.
-       https://dl.acm.org/doi/10.5555/3524938.3525354
-    .. [layerdrop] Fan, A., Grave, E., & Joulin, A. (2020).
-       Reducing Transformer Depth on Demand with Structured Dropout.
-       International Conference on Learning Representations.
-       Retrieved from https://openreview.net/forum?id=SylO2yStDr
+    encoder_only : bool, default=False
+        If True, bypass the contextualizer and use 4-chunk temporal pooling on the encoder
+        output instead. This corresponds to the encoder-only configuration described in
+        Section 2.4 and Table 2 of Kostas et al. (2021) [bendr]_, which outperformed the
+        full model on 4 out of 5 downstream tasks. The encoder output is split into 4 equal
+        temporal chunks, each chunk is mean-pooled, and the results are concatenated to
+        produce a feature vector of size ``encoder_h * 4`` (2048-dim with default settings).
+        The contextualizer is still created (to allow loading pretrained weights) but is not
+        used in the forward pass. Requires input length of at least
+        ``4 * product(enc_downsample)`` samples (384 with default downsampling of 96x).
     """
 
     def __init__(
@@ -185,6 +274,7 @@ class BENDR(EEGModuleMixin, nn.Module):
         enc_downsample=(3, 2, 2, 2, 2, 2),
         start_token=-5,  # Value for start token embedding
         final_layer=True,  # Whether to include the final linear layer
+        encoder_only=False,  # If True, bypass contextualizer and use 4-chunk pooling
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -198,11 +288,32 @@ class BENDR(EEGModuleMixin, nn.Module):
         # Keep these parameters if needed later, otherwise they are captured by the mixin
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        # If the user supplies chs_info, require it to match BENDR_CHANNEL_ORDER
+        # exactly (case-insensitive). Arbitrary channel sets should go through
+        # InterpolatedBENDR — same pattern as Labram / InterpolatedLaBraM.
+        # When chs_info is absent (the usual n_chans=20 path, incl.
+        # from_pretrained), no check is performed.
+        try:
+            _chs_info = self.chs_info
+        except ValueError:
+            _chs_info = None
+        if _chs_info is not None:
+            user_names = [ch["ch_name"] for ch in _chs_info]  # type: ignore[index]
+            canonical = BENDR_CHANNEL_ORDER
+            if [n.lower() for n in user_names] != [n.lower() for n in canonical]:
+                raise ValueError(
+                    f"BENDR requires chs_info to match BENDR_CHANNEL_ORDER exactly "
+                    f"({len(canonical)} channels, specific order; last is 'SCALE'). "
+                    f"Got {len(user_names)} channel(s). For arbitrary channel sets, "
+                    f"use InterpolatedBENDR "
+                    f"(from braindecode.models import InterpolatedBENDR)."
+                )
+
         self.encoder_h = encoder_h
         self.contextualizer_hidden = contextualizer_hidden
         self.include_final_layer = final_layer
+        self.encoder_only = encoder_only
 
-        # Encoder: Use parameters from __init__
         self.encoder = _ConvEncoderBENDR(
             in_features=self.n_chans,
             encoder_h=encoder_h,
@@ -224,35 +335,58 @@ class BENDR(EEGModuleMixin, nn.Module):
             layer_drop=layer_drop,
             start_token=start_token,  # Keep fixed start token value
         )
-        in_features = self.encoder.encoder_h  # Set in_features for final layer
+        # encoder_only → 4-chunk pooling produces encoder_h*4 features
+        # full model → start token produces encoder_h features
+        if self.encoder_only:
+            in_features = encoder_h * 4
+        else:
+            in_features = encoder_h
 
+        self._head_in_features = in_features
         self.final_layer = None
         if self.include_final_layer:
-            # Input to Linear will be [batch_size, encoder_h] after taking last timestep
-            linear = nn.Linear(in_features=in_features, out_features=self.n_outputs)
-            self.final_layer = nn.utils.parametrizations.weight_norm(
-                linear, name="weight", dim=1
-            )
+            self._build_head(self.n_outputs)
 
-    def forward(self, x):
-        # Input x: [batch_size, n_chans, n_times]
+    def _build_head(self, n_outputs):
+        linear = nn.Linear(in_features=self._head_in_features, out_features=n_outputs)
+        self.final_layer = nn.utils.parametrizations.weight_norm(
+            linear, name="weight", dim=1
+        )
+
+    def reset_head(self, n_outputs):
+        self._n_outputs = n_outputs
+        self.include_final_layer = True
+        self._build_head(n_outputs)
+
+    def forward(self, x, return_features=False):
         encoded = self.encoder(x)
         # encoded: [batch_size, encoder_h, n_encoded_times]
 
-        context = self.contextualizer(encoded)
-        # context: [batch_size, encoder_h, n_encoded_times + 1] (due to start token)
+        if self.encoder_only:
+            # 4-chunk temporal pooling (Kostas et al. 2021, Section 2.4)
+            n_time = encoded.shape[2]
+            if n_time < 4:
+                raise RuntimeError(
+                    f"Encoder output has {n_time} time steps, which is too few "
+                    f"for 4-chunk pooling (need at least 4). Increase input length."
+                )
+            # Use tensor_split for uneven chunks so no frames are dropped
+            chunks = torch.tensor_split(encoded, 4, dim=2)
+            feature = torch.cat([c.mean(dim=2) for c in chunks], dim=1)
+            # feature: [batch_size, encoder_h * 4]
+        else:
+            context = self.contextualizer(encoded)
+            # context: [batch_size, encoder_h, n_encoded_times + 1] (due to start token)
 
-        # Extract features - use the output corresponding to the start token (index 0)
-        # The output has shape [batch_size, features, seq_len+1]
-        # The start token was prepended at position 0 in the contextualizer before the
-        # transformer layers. After permutation back to [batch, features, seq_len+1],
-        # the start token output is at index 0.
-        # According to the paper (Kostas et al. 2021): "The transformer output of this
-        # initial position was not modified during pre-training, and only used for
-        # downstream tasks." This follows BERT's [CLS] token convention where the
-        # first token aggregates sequence information via self-attention.
-        feature = context[:, :, 0]
-        # feature: [batch_size, encoder_h]
+            # Extract features - use the output corresponding to the start token (index 0)
+            # According to the paper (Kostas et al. 2021): "The transformer output of this
+            # initial position was not modified during pre-training, and only used for
+            # downstream tasks." This follows BERT's [CLS] token convention.
+            feature = context[:, :, 0]
+            # feature: [batch_size, encoder_h]
+
+        if return_features:
+            return {"features": feature, "cls_token": None}
 
         if self.final_layer is not None:
             feature = self.final_layer(feature)
@@ -306,7 +440,9 @@ class _ConvEncoderBENDR(nn.Module):
                         padding=width
                         // 2,  # Correct padding for 'same' output length before stride
                     ),
-                    nn.Dropout2d(dropout),  # 2D dropout (matches paper specification)
+                    # channel-wise dropout (matches paper specification), on
+                    # (batch, channels, times) activations
+                    nn.Dropout1d(dropout),
                     nn.GroupNorm(
                         encoder_h // 2, encoder_h
                     ),  # Consider making num_groups configurable or ensure encoder_h is divisible by 2
@@ -325,7 +461,7 @@ class _ConvEncoderBENDR(nn.Module):
 
 
 class _BENDRContextualizer(nn.Module):
-    """Transformer-based contextualizer for BENDR."""
+    r"""Transformer-based contextualizer for BENDR."""
 
     def __init__(
         self,
@@ -467,3 +603,23 @@ class _BENDRContextualizer(nn.Module):
         # x: [batch_size, in_features, seq_len + 1]
 
         return x
+
+
+# -----------------------------------------------------------------------------
+# InterpolatedBENDR — experimental channel-interpolation variant of BENDR
+# -----------------------------------------------------------------------------
+# Wraps :class:`BENDR` with an MNE-backed channel-interpolation layer that
+# projects arbitrary user ``chs_info`` to the canonical 20-channel BENDR
+# input (:data:`_BENDR_TARGET_CHS_INFO` — the 19 pre-training EEG channels
+# plus a ``SCALE`` placeholder at the centroid of those 19 positions).
+# Frozen by default; set ``trainable=True`` to fine-tune the projection.
+#
+# NOTE: the ``SCALE`` target has no physical position, so the row of the
+# interpolation matrix that produces it is a spatial spline of the user's
+# EEG channels — *not* the dn3 ``MappingDeep1010`` RMS statistic the
+# checkpoint saw during pre-training. Expect degraded zero-shot transfer
+# from the SCALE channel; downstream fine-tuning should still work.
+
+from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
+
+InterpolatedBENDR = InterpolatedModel(BENDR, _BENDR_TARGET_CHS_INFO)

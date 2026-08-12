@@ -12,9 +12,9 @@ from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
-    """EEG Conformer from Song et al. (2022) [song2022]_.
+    r"""EEG Conformer from Song et al (2022) [song2022]_.
 
-    :bdg-success:`Convolution` :bdg-info:`Small Attention`
+    :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
 
     .. figure:: https://raw.githubusercontent.com/eeyhsong/EEG-Conformer/refs/heads/main/visualization/Fig1.png
         :align: center
@@ -284,7 +284,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
 
 class _PatchEmbedding(nn.Module):
-    """Patch Embedding.
+    r"""Patch Embedding.
 
     The authors used a convolution module to capture local features,
     instead of position embedding.
@@ -393,7 +393,7 @@ class _TransformerEncoderBlock(nn.Sequential):
 
 
 class _TransformerEncoder(nn.Sequential):
-    """Transformer encoder module for the transformer encoder.
+    r"""Transformer encoder module for the transformer encoder.
 
     Similar to the layers used in ViT.
 

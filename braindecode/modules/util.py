@@ -71,6 +71,15 @@ def aggregate_probas(logits, n_windows_stride=1):
         De Vos, M. (2018). Joint classification and prediction CNN framework
         for automatic sleep stage classification. IEEE Transactions on
         Biomedical Engineering, 66(5), 1285-1296.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from braindecode.modules import aggregate_probas
+    >>> logits = np.random.randn(3, 4, 5)  # (n_sequences, n_classes, n_windows)
+    >>> probas = aggregate_probas(logits, n_windows_stride=1)
+    >>> probas.shape
+    (7, 4)
     """
     log_probas = log_softmax(logits, axis=1)
     return _pad_shift_array(log_probas, stride=n_windows_stride).sum(axis=0).T

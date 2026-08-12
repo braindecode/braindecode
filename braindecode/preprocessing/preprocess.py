@@ -5,6 +5,8 @@
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Léo Burgund <leo.burgund@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -24,11 +26,11 @@ else:
     from collections.abc import Callable
 
 import numpy as np
-import pandas as pd
 from joblib import Parallel, delayed
 from mne import BaseEpochs, create_info
 from mne.io import BaseRaw
 from numpy.typing import NDArray
+from scipy.signal import lfilter
 
 from braindecode.datasets.base import (
     BaseConcatDataset,
@@ -216,6 +218,7 @@ def preprocess(
     offset: int = 0,
     copy_data: bool | None = None,
     parallel_kwargs: dict | None = None,
+    max_nbytes: int | str | None = "1M",
 ):
     """Apply preprocessors to a concat dataset.
 
@@ -243,14 +246,20 @@ def preprocess(
         Additional keyword arguments forwarded to ``joblib.Parallel``.
         Defaults to None (equivalent to ``{}``).
         See https://joblib.readthedocs.io/en/stable/generated/joblib.Parallel.html for details.
+    max_nbytes : int, str, or None
+        Threshold (in bytes; or e.g. ``"1M"``) above which joblib memory-maps
+        preloaded arrays as read-only when dispatching to worker processes.
+        Effective only when ``n_jobs != 1``. Pass ``None`` to disable memory
+        mapping when a preprocessor resizes the underlying data (for example
+        ``filterbank``), which would otherwise fail with an ``mmap can't
+        resize a readonly`` error. ``parallel_kwargs['max_nbytes']`` takes
+        precedence if both are provided.
 
     Returns
     -------
     BaseConcatDataset
         Preprocessed dataset.
     """
-    # In case of serialization, make sure directory is available before
-    # preprocessing
     if save_dir is not None and not overwrite:
         _check_save_dir_empty(save_dir)
 
@@ -265,22 +274,35 @@ def preprocess(
     parallel_params.setdefault(
         "prefer", "threads" if platform.system() == "Windows" else None
     )
+    parallel_params.setdefault("max_nbytes", max_nbytes)
 
-    list_of_ds = Parallel(n_jobs=n_jobs, **parallel_params)(
-        delayed(_preprocess)(
-            ds,
-            i + offset,
-            preprocessors,
-            save_dir,
-            overwrite,
-            copy_data=(
-                (parallel_processing and (save_dir is None))
-                if copy_data is None
-                else copy_data
-            ),
+    try:
+        list_of_ds = Parallel(n_jobs=n_jobs, **parallel_params)(
+            delayed(_preprocess)(
+                ds,
+                i + offset,
+                preprocessors,
+                save_dir,
+                overwrite,
+                copy_data=(
+                    (parallel_processing and (save_dir is None))
+                    if copy_data is None
+                    else copy_data
+                ),
+            )
+            for i, ds in enumerate(concat_ds.datasets)
         )
-        for i, ds in enumerate(concat_ds.datasets)
-    )
+    except (BufferError, ValueError, OSError) as exc:
+        msg = str(exc).lower().replace("-", "")
+        if "mmap" in msg and "readonly" in msg:
+            raise RuntimeError(
+                "Parallel preprocessing failed because joblib memory-mapped "
+                "a preloaded array that a preprocessor then attempted to "
+                "resize (e.g. ``filterbank``). Pass ``max_nbytes=None`` to "
+                "``preprocess`` to disable memory mapping, or supply a "
+                "``save_dir`` so the data is reloaded with ``preload=False``."
+            ) from exc
+        raise
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
         ids_to_load = [i + offset for i in range(len(concat_ds.datasets))]
@@ -323,6 +345,9 @@ def _replace_inplace(concat_ds, new_concat_ds):
         setattr(
             concat_ds, preproc_kwargs_attr, getattr(new_concat_ds, preproc_kwargs_attr)
         )
+
+    # Recompute cumulative_sizes after replacing datasets
+    concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
 
 
 def _preprocess(
@@ -384,7 +409,7 @@ def _preprocess(
     _set_preproc_kwargs(ds, preprocessors)
 
     if save_dir is not None:
-        concat_ds = BaseConcatDataset([ds])
+        concat_ds: BaseConcatDataset[RecordDataset] = BaseConcatDataset([ds])
         concat_ds.save(save_dir, overwrite=overwrite, offset=ds_index)
     else:
         return ds
@@ -421,14 +446,17 @@ def exponential_moving_standardize(
 ):
     r"""Perform exponential moving standardization.
 
-    Compute the exponental moving mean :math:`m_t` at time `t` as
-    :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
+    Compute the exponential moving mean :math:`m_t` at time `t` as
+    a weighted average:
+    :math:`m_t = \frac{\sum_{i=0}^t (1-\alpha)^i x_{t-i}}{\sum_{i=0}^t (1-\alpha)^i}`
+    where :math:`\alpha` is ``factor_new``.
 
     Then, compute exponential moving variance :math:`v_t` at time `t` as
-    :math:`v_t=\mathrm{factornew} \cdot (m_t - x_t)^2 + (1 - \mathrm{factornew}) \cdot v_{t-1}`.
+    a weighted average of the squared demeaned signal:
+    :math:`v_t = \frac{\sum_{i=0}^t (1-\alpha)^i (x_{t-i} - m_{t-i})^2}{\sum_{i=0}^t (1-\alpha)^i}`.
 
     Finally, standardize the data point :math:`x_t` at time `t` as:
-    :math:`x'_t=(x_t - m_t) / max(\sqrt{->v_t}, eps)`.
+    :math:`x'_t=(x_t - m_t) / max(\sqrt{v_t}, eps)`.
 
 
     Parameters
@@ -445,34 +473,52 @@ def exponential_moving_standardize(
     standardized: np.ndarray (n_channels, n_times)
         Standardized data.
     """
-    data = data.T
-    df = pd.DataFrame(data)
-    meaned = df.ewm(alpha=factor_new).mean()
-    demeaned = df - meaned
+    if not (0 < factor_new <= 1):
+        raise ValueError(f"factor_new must be between 0 and 1, got {factor_new}")
+
+    # We use a ratio of two linear filters:
+    # y_t = N_t / D_t
+    # N_t = x_t + (1-alpha) * N_{t-1}, N_0 = x_0
+    # D_t = 1 + (1-alpha) * D_{t-1}, D_0 = 1
+    alpha = factor_new
+    _, n_times = data.shape
+    inv_alpha = 1.0 - alpha
+
+    # Filter a sequence of ones: [1, 1+(1-a), 1+(1-a)+(1-a)^2, ...]
+    d = lfilter([1.0], [1.0, -inv_alpha], np.ones(n_times))
+
+    n = lfilter([1.0], [1.0, -inv_alpha], data, axis=1)
+    meaned = n / d
+    demeaned = data - meaned
+
     squared = demeaned * demeaned
-    square_ewmed = squared.ewm(alpha=factor_new).mean()
-    standardized = demeaned / np.maximum(eps, np.sqrt(np.array(square_ewmed)))
-    standardized = np.array(standardized)
+    n_sq = lfilter([1.0], [1.0, -inv_alpha], squared, axis=1)
+    square_ewmed = n_sq / d
+
+    standardized = demeaned / np.maximum(eps, np.sqrt(square_ewmed))
+
     if init_block_size is not None:
-        i_time_axis = 0
-        init_mean = np.mean(data[0:init_block_size], axis=i_time_axis, keepdims=True)
-        init_std = np.std(data[0:init_block_size], axis=i_time_axis, keepdims=True)
-        init_block_standardized = (data[0:init_block_size] - init_mean) / np.maximum(
+        init_mean = np.mean(data[:, :init_block_size], axis=1, keepdims=True)
+        init_std = np.std(data[:, :init_block_size], axis=1, keepdims=True)
+        init_block_standardized = (data[:, :init_block_size] - init_mean) / np.maximum(
             eps, init_std
         )
-        standardized[0:init_block_size] = init_block_standardized
-    return standardized.T
+        standardized[:, :init_block_size] = init_block_standardized
+
+    return standardized
 
 
 def exponential_moving_demean(
     data: NDArray, factor_new: float = 0.001, init_block_size: int | None = None
 ):
-    r"""Perform exponential moving demeanining.
+    r"""Perform exponential moving demeaning.
 
-    Compute the exponental moving mean :math:`m_t` at time `t` as
-    :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
+    Compute the exponential moving mean :math:`m_t` at time `t` as
+    a weighted average:
+    :math:`m_t = \frac{\sum_{i=0}^t (1-\alpha)^i x_{t-i}}{\sum_{i=0}^t (1-\alpha)^i}`
+    where :math:`\alpha` is ``factor_new``.
 
-    Deman the data point :math:`x_t` at time `t` as:
+    Demean the data point :math:`x_t` at time `t` as:
     :math:`x'_t=(x_t - m_t)`.
 
     Parameters
@@ -487,16 +533,24 @@ def exponential_moving_demean(
     demeaned: np.ndarray (n_channels, n_times)
         Demeaned data.
     """
-    data = data.T
-    df = pd.DataFrame(data)
-    meaned = df.ewm(alpha=factor_new).mean()
-    demeaned = df - meaned
-    demeaned = np.array(demeaned)
+    if not (0 < factor_new <= 1):
+        raise ValueError(f"factor_new must be between 0 and 1, got {factor_new}")
+
+    alpha = factor_new
+    _, n_times = data.shape
+    inv_alpha = 1.0 - alpha
+
+    d = lfilter([1.0], [1.0, -inv_alpha], np.ones(n_times))
+
+    n = lfilter([1.0], [1.0, -inv_alpha], data, axis=1)
+    meaned = n / d
+    demeaned = data - meaned
+
     if init_block_size is not None:
-        i_time_axis = 0
-        init_mean = np.mean(data[0:init_block_size], axis=i_time_axis, keepdims=True)
-        demeaned[0:init_block_size] = data[0:init_block_size] - init_mean
-    return demeaned.T
+        init_mean = np.mean(data[:, :init_block_size], axis=1, keepdims=True)
+        demeaned[:, :init_block_size] = data[:, :init_block_size] - init_mean
+
+    return demeaned
 
 
 def filterbank(
@@ -550,7 +604,24 @@ def filterbank(
         ch_types = filtered.info.get_channel_types()
         sampling_freq = filtered.info["sfreq"]
 
+        # Preserve info fields to avoid merge conflicts when adding channels
+        # These fields need to match across all raw objects being merged
+        fields_to_preserve = [
+            "description",
+            "line_freq",
+            "device_info",
+            "helium_info",
+            "experimenter",
+            "proj_name",
+        ]
+
         info = create_info(ch_names=ch_names, ch_types=ch_types, sfreq=sampling_freq)
+
+        # Copy fields from original info if they exist
+        for field in fields_to_preserve:
+            value = filtered.info.get(field)
+            if value is not None:
+                info[field] = value
 
         filtered.info = info
 

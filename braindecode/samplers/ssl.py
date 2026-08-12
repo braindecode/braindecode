@@ -190,7 +190,7 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
         self.tau_max = np.inf if tau_max is None else tau_max
         self.same_rec_neg = same_rec_neg
 
-        self.n_examples = n_examples // self.info.shape[0] * self.n_recordings
+        self.n_examples = n_examples * self.n_recordings // self.info.shape[0]
         warnings.warn(
             f"Rank {dist.get_rank()} - Number of datasets: {self.n_recordings}"
         )
