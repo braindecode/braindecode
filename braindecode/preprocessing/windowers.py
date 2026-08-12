@@ -230,7 +230,7 @@ def create_windows_from_events(
     picks: str | ArrayLike | slice | None = None,
     reject: dict[str, float] | None = None,
     flat: dict[str, float] | None = None,
-    on_missing: Literal["raise", "warn", "ignore"] = "raise",
+    on_missing: Literal["raise", "warn", "ignore", "error", "warning"] = "raise",
     accepted_bads_ratio: float = 0.0,
     use_mne_epochs: bool | None = None,
     on_overlapping_events: Literal["raise", "warn", "ignore"] = "raise",
@@ -314,7 +314,8 @@ def create_windows_from_events(
         the number of trials whose length is exceeded by the window size is
         smaller than this, then only the corresponding trials are dropped, but
         the computation continues. Otherwise, an error is raised. Defaults to
-        0.0 (raise an error).
+        0.0 (raise an error). If all trials are dropped, a ``ValueError`` is
+        raised because no windows can be created.
     use_mne_epochs: bool
         If False, return EEGWindowsDataset objects.
         If True, return mne.Epochs objects encapsulated in WindowsDataset objects,
@@ -797,6 +798,12 @@ def _create_windows_from_events(
             accepted_bads_ratio,
         )
         i_trials = [good_trials[i_trial] for i_trial in i_trials]
+
+    if len(starts) == 0:
+        raise ValueError(
+            "No windows can be created because all trials were dropped. "
+            "Check window_size_samples, trial offsets, and accepted_bads_ratio."
+        )
 
     if (on_overlapping_events != "ignore") and any(np.diff(starts) <= 0):
         msg = "Overlapping trials detected. You can ignore, warn, or raise an error, using the on_overlapping_events argument."

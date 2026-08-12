@@ -313,6 +313,57 @@ def test_get_metadata_coalesces_identical_description_column(use_mne_epochs):
     pd.testing.assert_frame_equal(window_ds.metadata, expected_metadata)
 
 
+def _fixed_windows_with_vector_target(target, use_mne_epochs):
+    raw = mne.io.RawArray(
+        np.zeros((1, 100)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    raw_ds = RawDataset(
+        raw,
+        description={"target": target},
+        target_name="target",
+    )
+    return create_fixed_length_windows(
+        BaseConcatDataset([raw_ds]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=True,
+        preload=True,
+        use_mne_epochs=use_mne_epochs,
+        verbose=False,
+    )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_get_metadata_coalesces_identical_vector_target(use_mne_epochs):
+    target = np.array([[0.0, np.nan], [1.0, 2.0]])
+    windows = _fixed_windows_with_vector_target(target, use_mne_epochs)
+    window_ds = windows.datasets[0]
+    window_ds.description["target"] = target.copy()
+    expected_metadata = window_ds.metadata.copy(deep=True)
+
+    metadata = windows.get_metadata()
+
+    np.testing.assert_equal(window_ds.description["target"], target)
+    np.testing.assert_equal(window_ds.metadata.iloc[0]["target"], target)
+    np.testing.assert_equal(windows[0][1], target)
+    np.testing.assert_equal(metadata.iloc[0]["target"], target)
+    pd.testing.assert_frame_equal(window_ds.metadata, expected_metadata)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_get_metadata_rejects_conflicting_vector_target(use_mne_epochs):
+    target = np.array([[0.0, np.nan], [1.0, 2.0]])
+    windows = _fixed_windows_with_vector_target(target, use_mne_epochs)
+    windows.datasets[0].description["target"] = np.array(
+        [[0.0, np.nan], [1.0, 3.0]]
+    )
+
+    with pytest.raises(ValueError, match="target"):
+        windows.get_metadata()
+
+
 def test_no_metadata(concat_ds_targets):
     with pytest.raises(TypeError, match="Metadata dataframe can only be"):
         concat_ds_targets[0].get_metadata()

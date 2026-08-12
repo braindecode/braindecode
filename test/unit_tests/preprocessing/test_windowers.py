@@ -12,6 +12,7 @@ import logging
 import platform
 import warnings
 from contextlib import nullcontext
+from typing import get_args, get_type_hints
 
 import mne
 import numpy as np
@@ -745,6 +746,57 @@ def test_event_windowing_rejects_invalid_on_missing():
             use_mne_epochs=False,
             verbose=False,
         )
+
+
+def test_event_windowing_on_missing_annotation_matches_runtime_contract():
+    annotation = get_type_hints(create_windows_from_events)["on_missing"]
+
+    assert set(get_args(annotation)) == {
+        "raise",
+        "warn",
+        "ignore",
+        "error",
+        "warning",
+    }
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+@pytest.mark.parametrize("per_event_parameters", [False, True])
+def test_event_windowing_all_short_trials_raise_clear_error(
+    use_mne_epochs, per_event_parameters
+):
+    raw = mne.io.RawArray(
+        np.zeros((1, 500)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    raw.set_annotations(mne.Annotations([1, 3], [0.2, 0.2], ["T0", "T1"]))
+    if per_event_parameters:
+        start_offsets = {"T0": 0, "T1": 0}
+        stop_offsets = {"T0": 0, "T1": 0}
+        strides = {"T0": 100, "T1": 100}
+    else:
+        start_offsets = stop_offsets = 0
+        strides = 100
+
+    with pytest.warns(UserWarning, match="Trials .* are being dropped"):
+        with pytest.raises(
+            ValueError,
+            match="No windows can be created because all trials were dropped",
+        ):
+            create_windows_from_events(
+                BaseConcatDataset([RawDataset(raw)]),
+                trial_start_offset_samples=start_offsets,
+                trial_stop_offset_samples=stop_offsets,
+                window_size_samples=100,
+                window_stride_samples=strides,
+                drop_last_window=True,
+                mapping={"T0": 0, "T1": 1},
+                accepted_bads_ratio=1.0,
+                preload=True,
+                use_mne_epochs=use_mne_epochs,
+                verbose=False,
+            )
 
 
 @pytest.mark.parametrize(
