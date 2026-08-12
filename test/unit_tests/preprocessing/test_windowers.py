@@ -12,6 +12,7 @@ import logging
 import platform
 import warnings
 from contextlib import nullcontext
+from typing import get_args, get_type_hints
 
 import mne
 import numpy as np
@@ -159,6 +160,47 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
         (raw.time_as_index(raw.annotations.onset[1::2], use_rounding=True)),
         crop_start_inds,
     )
+    np.testing.assert_array_equal(
+        windows.get_metadata()["i_trial_in_dataset"].to_numpy(), np.arange(1, 10, 2)
+    )
+
+
+def test_windows_from_events_mapping_filter_rejects_empty_selection(tmpdir_factory):
+    raw = _get_raw(tmpdir_factory, ["T0"])
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+
+    with pytest.raises(ValueError, match="Could not find any of the events"):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            window_size_samples=100,
+            window_stride_samples=100,
+            drop_last_window=True,
+            mapping={"T1": 0},
+        )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+@pytest.mark.parametrize("mapping", [None, {"T1": 0}], ids=["inferred", "explicit"])
+def test_windows_from_events_rejects_recording_without_annotations(
+    use_mne_epochs, mapping
+):
+    raw = mne.io.RawArray(
+        np.zeros((1, 500)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+
+    with pytest.raises(ValueError, match="No events found in the recording"):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            window_size_samples=100,
+            window_stride_samples=100,
+            drop_last_window=True,
+            mapping=mapping,
+            use_mne_epochs=use_mne_epochs,
+            verbose=False,
+        )
 
 
 def test_windows_from_events_different_events(tmpdir_factory):
@@ -601,7 +643,7 @@ def test_metadata_extras(lazy_loadable_dataset, use_mne_epochs):
     # set extras
     for ds in dataset.datasets:
         ann = ds.raw.annotations
-        ann.extras = [{"extra_col": 0} for _ in range(len(ann))]
+        ann.extras = [{"extra_col": i} for i in range(len(ann))]
 
     windows = create_windows_from_events(
         concat_ds=dataset,
@@ -613,12 +655,186 @@ def test_metadata_extras(lazy_loadable_dataset, use_mne_epochs):
         use_mne_epochs=use_mne_epochs,
     )
 
-    for ds in windows.datasets:
-        metadata = windows.get_metadata()
-        assert "extra_col" in metadata.columns
-        np.testing.assert_array_equal(
-            metadata["extra_col"].to_numpy(), np.zeros(len(windows))
+    metadata = windows.get_metadata()
+    assert len(metadata) == len(windows)
+    assert "extra_col" in metadata.columns
+    assert "i_trial_in_dataset" in metadata.columns
+    np.testing.assert_array_equal(
+        metadata["i_trial_in_dataset"].to_numpy(), np.arange(len(windows))
+    )
+    np.testing.assert_array_equal(
+        metadata["extra_col"].to_numpy(),
+        metadata["i_trial_in_dataset"].to_numpy(),
+    )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_event_metadata_stays_aligned_after_short_trial_drop(use_mne_epochs):
+    raw = mne.io.RawArray(
+        np.zeros((1, 900)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    annotations = mne.Annotations(
+        onset=[1, 3, 6],
+        duration=[0.5, 2, 2],
+        description=["T0", "T1", "T0"],
+    )
+    annotations.extras = [{"trial_id": value} for value in [10, 20, 30]]
+    raw.set_annotations(annotations)
+
+    with pytest.warns(UserWarning, match="Trials \\[0\\] are being dropped"):
+        windows = create_windows_from_events(
+            BaseConcatDataset(
+                [RawDataset(raw, description=pd.Series({"recording": 0}))]
+            ),
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+            window_size_samples=100,
+            window_stride_samples=100,
+            drop_last_window=True,
+            mapping={"T0": 0, "T1": 1},
+            accepted_bads_ratio=1 / 3,
+            use_mne_epochs=use_mne_epochs,
         )
+
+    metadata = windows.get_metadata()
+    assert metadata[["i_trial_in_dataset", "target", "trial_id"]].values.tolist() == [
+        [1, 1, 20],
+        [1, 1, 20],
+        [2, 0, 30],
+        [2, 0, 30],
+    ]
+    assert "i_trial_in_dataset" not in repr(windows)
+
+
+def test_mne_on_missing_default_after_event_class_is_dropped():
+    raw = mne.io.RawArray(
+        np.zeros((1, 700)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    raw.set_annotations(
+        mne.Annotations(
+            onset=[1, 4],
+            duration=[1.5, 0.5],
+            description=["T0", "T1"],
+        )
+    )
+
+    with pytest.warns(UserWarning, match="Trials \\[1\\] are being dropped"):
+        with pytest.raises(ValueError, match="No matching events found for T1"):
+            create_windows_from_events(
+                BaseConcatDataset([RawDataset(raw, description={"recording": 0})]),
+                window_size_samples=150,
+                window_stride_samples=150,
+                drop_last_window=True,
+                mapping={"T0": 0, "T1": 1},
+                accepted_bads_ratio=0.5,
+                preload=True,
+                use_mne_epochs=True,
+                verbose=False,
+            )
+
+
+@pytest.mark.parametrize(
+    "on_missing, expected",
+    [("error", "raise"), ("warning", "warn")],
+)
+def test_event_windowing_normalizes_legacy_on_missing(on_missing, expected):
+    raw = mne.io.RawArray(
+        np.zeros((1, 300)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    raw.set_annotations(mne.Annotations([1], [1], ["T0"]))
+
+    with pytest.warns(FutureWarning, match=f"{on_missing}.*{expected}"):
+        windows = create_windows_from_events(
+            BaseConcatDataset([RawDataset(raw, description={"recording": 0})]),
+            window_size_samples=100,
+            window_stride_samples=100,
+            drop_last_window=True,
+            mapping={"T0": 0},
+            on_missing=on_missing,
+            use_mne_epochs=False,
+            verbose=False,
+        )
+
+    assert windows.datasets[0].window_kwargs[0][1]["on_missing"] == expected
+
+
+def test_event_windowing_rejects_invalid_on_missing():
+    on_missing = "invalid"
+    raw = mne.io.RawArray(
+        np.zeros((1, 300)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    raw.set_annotations(mne.Annotations([1], [1], ["T0"]))
+
+    with pytest.raises(ValueError, match="on_missing"):
+        create_windows_from_events(
+            BaseConcatDataset([RawDataset(raw, description={"recording": 0})]),
+            window_size_samples=100,
+            window_stride_samples=100,
+            drop_last_window=True,
+            mapping={"T0": 0},
+            on_missing=on_missing,
+            use_mne_epochs=False,
+            verbose=False,
+        )
+
+
+def test_event_windowing_on_missing_annotation_matches_runtime_contract():
+    annotation = get_type_hints(create_windows_from_events)["on_missing"]
+
+    assert set(get_args(annotation)) == {
+        "raise",
+        "warn",
+        "ignore",
+        "error",
+        "warning",
+    }
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+@pytest.mark.parametrize("per_event_parameters", [False, True])
+def test_event_windowing_all_short_trials_raise_clear_error(
+    use_mne_epochs, per_event_parameters
+):
+    raw = mne.io.RawArray(
+        np.zeros((1, 500)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    raw.set_annotations(mne.Annotations([1, 3], [0.2, 0.2], ["T0", "T1"]))
+    if per_event_parameters:
+        start_offsets = {"T0": 0, "T1": 0}
+        stop_offsets = {"T0": 0, "T1": 0}
+        strides = {"T0": 100, "T1": 100}
+    else:
+        start_offsets = stop_offsets = 0
+        strides = 100
+
+    with pytest.warns(UserWarning, match="Trials .* are being dropped"):
+        with pytest.raises(
+            ValueError,
+            match="No windows can be created because all trials were dropped",
+        ):
+            create_windows_from_events(
+                BaseConcatDataset([RawDataset(raw)]),
+                trial_start_offset_samples=start_offsets,
+                trial_stop_offset_samples=stop_offsets,
+                window_size_samples=100,
+                window_stride_samples=strides,
+                drop_last_window=True,
+                mapping={"T0": 0, "T1": 1},
+                accepted_bads_ratio=1.0,
+                preload=True,
+                use_mne_epochs=use_mne_epochs,
+                verbose=False,
+            )
 
 
 @pytest.mark.parametrize(
@@ -952,7 +1168,7 @@ def test_fixed_length_not_use_mne_epochs(use_mne_epochs, lazy_loadable_dataset):
 
 def test_epochs_kwargs(lazy_loadable_dataset):
     picks = ["ch0"]
-    on_missing = "warning"
+    on_missing = "warn"
     flat = {"eeg": 3e-6}
     reject = {"eeg": 43e-6}
 
@@ -1521,6 +1737,7 @@ def test_dict_params_bad_trial_dropped_extras_not_misassigned():
     assert (t0_meta["trial_id"] == 30).all(), (
         f"Expected trial_id=30 for surviving T0 windows, got {t0_meta['trial_id'].tolist()}"
     )
+    assert (t0_meta["i_trial_in_dataset"] == 2).all()
 
 
 def _make_small_eeg_windows_dataset(lazy_loadable_dataset):

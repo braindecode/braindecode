@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, cast
 
 import mne
 import numpy as np
@@ -194,6 +194,28 @@ def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
     return use_mne_epochs
 
 
+def _normalize_on_missing(
+    on_missing: str,
+) -> Literal["raise", "warn", "ignore"]:
+    aliases = {"error": "raise", "warning": "warn"}
+    if on_missing in aliases:
+        replacement = aliases[on_missing]
+        warnings.warn(
+            f"on_missing='{on_missing}' is deprecated; use '{replacement}' instead. "
+            "The alias will be removed in version 2.0.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return cast(Literal["raise", "warn", "ignore"], replacement)
+    valid_values = ("raise", "warn", "ignore")
+    if on_missing not in valid_values:
+        raise ValueError(
+            f"Invalid value for on_missing: {on_missing!r}. Expected one of "
+            f"{valid_values}."
+        )
+    return cast(Literal["raise", "warn", "ignore"], on_missing)
+
+
 # XXX it's called concat_ds...
 def create_windows_from_events(
     concat_ds: BaseConcatDataset[RawDataset],
@@ -208,7 +230,7 @@ def create_windows_from_events(
     picks: str | ArrayLike | slice | None = None,
     reject: dict[str, float] | None = None,
     flat: dict[str, float] | None = None,
-    on_missing: str = "error",
+    on_missing: Literal["raise", "warn", "ignore", "error", "warning"] = "raise",
     accepted_bads_ratio: float = 0.0,
     use_mne_epochs: bool | None = None,
     on_overlapping_events: Literal["raise", "warn", "ignore"] = "raise",
@@ -284,13 +306,16 @@ def create_windows_from_events(
         rejection based on flatness is done. See mne.Epochs.
     on_missing: str
         What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error' | ‘warning' | ‘ignore'. See mne.Epochs.
+        Valid values are ``"raise"``, ``"warn"``, and ``"ignore"``. The
+        legacy aliases ``"error"`` and ``"warning"`` are deprecated and will
+        be removed in version 2.0. See :class:`mne.Epochs`.
     accepted_bads_ratio: float, optional
         Acceptable proportion of trials with inconsistent length in a raw. If
         the number of trials whose length is exceeded by the window size is
         smaller than this, then only the corresponding trials are dropped, but
         the computation continues. Otherwise, an error is raised. Defaults to
-        0.0 (raise an error).
+        0.0 (raise an error). If all trials are dropped, a ``ValueError`` is
+        raised because no windows can be created.
     use_mne_epochs: bool
         If False, return EEGWindowsDataset objects.
         If True, return mne.Epochs objects encapsulated in WindowsDataset objects,
@@ -309,7 +334,11 @@ def create_windows_from_events(
     -------
     windows_datasets: BaseConcatDataset[WindowsDataset | EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
+        Each window metadata row contains ``i_trial_in_dataset``, the index of the
+        source event in the original ``mne.Annotations`` for that recording, and
+        any extra columns stored on the source annotations.
     """
+    on_missing = _normalize_on_missing(on_missing)
     _check_windowing_arguments(
         trial_start_offset_samples,
         trial_stop_offset_samples,
@@ -573,7 +602,7 @@ def _create_windows_from_events(
     picks=None,
     reject=None,
     flat=None,
-    on_missing="error",
+    on_missing="raise",
     accepted_bads_ratio=0.0,
     verbose="error",
     use_mne_epochs=False,
@@ -616,16 +645,23 @@ def _create_windows_from_events(
         )
 
     events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
+    if len(events) == 0:
+        raise ValueError(
+            "No events found in the recording. Add annotations before calling "
+            "create_windows_from_events."
+        )
     onsets = events[:, 0]
     ann = ds.raw.annotations
+    filtered_annotations = [
+        (i, a) for i, a in enumerate(ann) if a["description"] in events_id
+    ]
+    i_trials_in_dataset = np.array([i for i, _ in filtered_annotations])
     # Onsets are relative to the beginning of the recording
-    filtered_durations = np.array(
-        [a["duration"] for a in ann if a["description"] in events_id]
-    )
+    filtered_durations = np.array([a["duration"] for _, a in filtered_annotations])
 
     extras = None
     if hasattr(ann, "extras"):
-        extras = [a["extras"] for a in ann if a["description"] in events_id]
+        extras = [a["extras"] for _, a in filtered_annotations]
         if not any(extras):
             extras = None
 
@@ -743,6 +779,7 @@ def _create_windows_from_events(
                 events = events[checker_trials_size]
                 onsets = onsets[checker_trials_size]
                 stops = stops[checker_trials_size]
+                i_trials_in_dataset = i_trials_in_dataset[checker_trials_size]
                 if extras is not None:
                     extras = [e for i, e in enumerate(extras) if checker_trials_size[i]]
         description = events[:, -1]
@@ -750,6 +787,11 @@ def _create_windows_from_events(
         if not use_mne_epochs:
             onsets = onsets - ds.raw.first_samp
             stops = stops - ds.raw.first_samp
+        good_trials = np.flatnonzero(
+            window_size_samples
+            <= (stops + trial_stop_offset_samples)
+            - (onsets + trial_start_offset_samples)
+        )
         i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
             onsets,
             stops,
@@ -759,6 +801,13 @@ def _create_windows_from_events(
             window_stride_samples,
             drop_last_window,
             accepted_bads_ratio,
+        )
+        i_trials = [good_trials[i_trial] for i_trial in i_trials]
+
+    if len(starts) == 0:
+        raise ValueError(
+            "No windows can be created because all trials were dropped. "
+            "Check window_size_samples, trial offsets, and accepted_bads_ratio."
         )
 
     if (on_overlapping_events != "ignore") and any(np.diff(starts) <= 0):
@@ -782,6 +831,7 @@ def _create_windows_from_events(
     metadata = pd.DataFrame(
         {
             "i_window_in_trial": i_window_in_trials,
+            "i_trial_in_dataset": i_trials_in_dataset[np.asarray(i_trials, dtype=int)],
             "i_start_in_trial": starts,
             "i_stop_in_trial": stops,
             "target": description,

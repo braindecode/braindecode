@@ -18,7 +18,7 @@ import shutil
 import warnings
 from abc import abstractmethod
 from collections import Counter
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Mapping
 from glob import glob
 from pathlib import Path
 from typing import Any, Generic, Iterable, no_type_check
@@ -50,6 +50,69 @@ def _create_description(description) -> pd.Series:
     return description
 
 
+def _metadata_values_equal(left: Any, right: Any) -> bool:
+    """Compare metadata values, including nested arrays and missing values."""
+    if isinstance(left, np.ndarray) and left.ndim == 0:
+        left = left.item()
+    if isinstance(right, np.ndarray) and right.ndim == 0:
+        right = right.item()
+
+    if left is right:
+        return True
+
+    left_is_scalar = pd.api.types.is_scalar(left)
+    right_is_scalar = pd.api.types.is_scalar(right)
+    if left_is_scalar or right_is_scalar:
+        if not (left_is_scalar and right_is_scalar):
+            return False
+        try:
+            left_is_missing = bool(pd.isna(left))
+            right_is_missing = bool(pd.isna(right))
+        except (TypeError, ValueError):
+            left_is_missing = right_is_missing = False
+        if left_is_missing or right_is_missing:
+            return left_is_missing and right_is_missing
+        try:
+            return bool(left == right)
+        except (TypeError, ValueError):
+            return False
+
+    if isinstance(left, Mapping) or isinstance(right, Mapping):
+        if not (isinstance(left, Mapping) and isinstance(right, Mapping)):
+            return False
+        if set(left) != set(right):
+            return False
+        return all(_metadata_values_equal(left[key], right[key]) for key in left)
+
+    sequence_types = (list, tuple, np.ndarray, pd.Index, pd.Series)
+    if isinstance(left, sequence_types) or isinstance(right, sequence_types):
+        if not (isinstance(left, sequence_types) and isinstance(right, sequence_types)):
+            return False
+        if (
+            isinstance(left, np.ndarray)
+            and isinstance(right, np.ndarray)
+            and left.shape != right.shape
+        ):
+            return False
+        left_values = left.tolist() if hasattr(left, "tolist") else list(left)
+        right_values = right.tolist() if hasattr(right, "tolist") else list(right)
+        return len(left_values) == len(right_values) and all(
+            _metadata_values_equal(left_value, right_value)
+            for left_value, right_value in zip(left_values, right_values)
+        )
+
+    try:
+        equal = left == right
+    except (TypeError, ValueError):
+        return False
+    if not pd.api.types.is_scalar(equal):
+        return False
+    try:
+        return bool(equal)
+    except (TypeError, ValueError):
+        return False
+
+
 def _html_row(label, value):
     """Generate a single HTML table row."""
     label = _html.escape(str(label))
@@ -59,6 +122,7 @@ def _html_row(label, value):
 
 _METADATA_INTERNAL_COLS = {
     "i_window_in_trial",
+    "i_trial_in_dataset",
     "i_start_in_trial",
     "i_stop_in_trial",
     "target",
@@ -1362,6 +1426,16 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
             DataFrame containing as many rows as there are windows in the
             BaseConcatDataset, with the metadata and description information
             for each window.
+
+        Raises
+        ------
+        TypeError
+            If a window dataset uses lazy metadata. Re-window with
+            ``lazy_metadata=False`` before aggregating metadata.
+        ValueError
+            If a column has conflicting values in the window metadata and the
+            dataset description. Identical values are coalesced; otherwise,
+            rename the conflicting description field before combining them.
         """
         if not all(
             [
@@ -1380,8 +1454,48 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 df = ds._windows.metadata
             else:
                 df = ds.metadata
-            for k, v in ds.description.items():
-                df[k] = v
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError(
+                    "get_metadata requires materialized metadata DataFrames; "
+                    f"got {type(df).__name__}. Re-window with "
+                    "lazy_metadata=False before calling get_metadata()."
+                )
+            description = ds.description
+            if description is not None:
+                overlapping_columns = set(df.columns).intersection(description.index)
+                conflicts = []
+                for column in overlapping_columns:
+                    value = description[column]
+                    metadata_values = df[column]
+                    if pd.api.types.is_scalar(value) and all(
+                        pd.api.types.is_scalar(metadata_value)
+                        for metadata_value in metadata_values
+                    ):
+                        matches = (
+                            metadata_values.isna()
+                            if pd.isna(value)
+                            else metadata_values.eq(value).fillna(False)
+                        )
+                        if bool(matches.all()):
+                            continue
+                    elif all(
+                        _metadata_values_equal(metadata_value, value)
+                        for metadata_value in metadata_values
+                    ):
+                        continue
+                    conflicts.append(column)
+                conflicts = sorted(conflicts, key=str)
+                if conflicts:
+                    raise ValueError(
+                        f"Columns {conflicts} have conflicting values in window "
+                        "metadata and dataset description. Rename the conflicting "
+                        "description fields before calling get_metadata()."
+                    )
+            df = df.copy()
+            if description is not None:
+                for key, value in description.items():
+                    if key not in df.columns:
+                        df[key] = value
             all_dfs.append(df)
 
         return pd.concat(all_dfs)
