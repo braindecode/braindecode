@@ -43,6 +43,9 @@ Requirements
 Bug fixes
 ==========
 
+- Make :class:`braindecode.datasets.SleepPhysionet` wake cropping retain the complete
+  final sleep annotation without including an extra endpoint sample (:gh:`612` by
+  `John Muradeli`_).
 - Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
   which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
   validation (:gh:`1123` by `Bruno Aristimunha`_).
