@@ -517,7 +517,7 @@ class EEGPrep(EEGPrepBasePreprocessor):
         # do a check if the data has a supported sampling rate
         if self.burst_removal_cutoff is not None:
             supported_rates = (100, 128, 200, 250, 256, 300, 500, 512)
-            cur_srate = int(eegprep.utils.round_mat(eeg["srate"]))
+            cur_srate = int(np.floor(float(eeg["srate"]) + 0.5))
             if cur_srate not in supported_rates:
                 # note: technically the method will run if you disable this error,
                 #   but you're likely getting (potentially quite) suboptimal results

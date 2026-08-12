@@ -54,7 +54,9 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
+  which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
+  validation (:gh:`1123` by `Bruno Aristimunha`_).
 
 Code health
 ============
@@ -67,6 +69,12 @@ Current 1.7.0 (2026-08-01)
 
 Enhancements
 ============
+
+- Add :class:`braindecode.models.ZUNA`, a position-aware EEG foundation model
+  from Warner et al. (2026), ported from the public ``Zyphra/ZUNA1.1`` encoder
+  with a Braindecode classification head, shared patch tokenization, and
+  construction-time spatial positions compatible with TorchScript and
+  ``torch.compile`` (:gh:`1020` by `Jon Huml`_)
 
 - Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
   registry for the interpolated (channel-adapting) models, keeping them separate
@@ -1559,3 +1567,4 @@ Authors
 .. _Yiheng Li: https://github.com/YihengLi-1
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
+.. _Jon Huml: https://github.com/jonathanhuml
