@@ -57,6 +57,27 @@ class DummyModuleConfigRoundTrip(EEGModuleMixin, nn.Sequential):
         self.add_module("linear", nn.Linear(self.n_times, self.n_outputs))
 
 
+class DummyModuleWithOverriddenSfreq(DummyModule):
+    """Extension model with a custom inherited signal property."""
+
+    @property
+    def sfreq(self):
+        return 321.0
+
+
+class DummyModuleWithInheritedOverride(DummyModuleWithOverriddenSfreq):
+    """Second-level extension that must retain the custom property."""
+
+
+def test_init_subclass_preserves_inherited_signal_property_override():
+    assert (
+        DummyModuleWithInheritedOverride.__dict__["sfreq"]
+        is DummyModuleWithOverriddenSfreq.__dict__["sfreq"]
+    )
+    descriptor = DummyModuleWithInheritedOverride.__dict__["sfreq"]
+    assert descriptor.__get__(object(), DummyModuleWithInheritedOverride) == 321.0
+
+
 @pytest.fixture(scope="function")
 def dummy_module():
     return DummyModule(

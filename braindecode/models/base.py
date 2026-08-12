@@ -218,7 +218,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         for name in EEGModuleMixin.__jit_ignored_attributes__:
             if name in cls.__dict__:
                 continue
-            prop = getattr(EEGModuleMixin, name, None)
+            prop = getattr(cls, name, None)
             if isinstance(prop, property):
                 setattr(cls, name, prop)
 
