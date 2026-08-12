@@ -126,7 +126,10 @@ class _SleepFMAttentionPooling(nn.Module):
         if key_padding_mask is not None:
             all_masked = key_padding_mask.all(dim=1)
             key_padding_mask = key_padding_mask & ~all_masked.unsqueeze(1)
-        if x.shape[1] == 1:
+        # Upstream only takes this shortcut for a masked singleton. Without a
+        # mask the Transformer layer still runs, including for temporal pooling
+        # over a one-patch recording.
+        if key_padding_mask is not None and x.shape[1] == 1:
             output = x[:, 0]
             if all_masked is not None:
                 output = output.masked_fill(all_masked.unsqueeze(1), 0)

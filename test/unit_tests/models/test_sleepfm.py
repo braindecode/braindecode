@@ -65,6 +65,16 @@ def test_attention_pooling_shape():
     assert out.shape == (6, 16)
 
 
+def test_attention_pooling_runs_transformer_for_unmasked_singleton():
+    """Match upstream: only a masked singleton bypasses self-attention."""
+    pooling = _SleepFMAttentionPooling(16, num_heads=4, drop_prob=0.0).eval()
+    x = torch.randn(2, 1, 16)
+    with torch.no_grad():
+        expected = pooling.transformer_layer(x).squeeze(1)
+        actual = pooling(x)
+    torch.testing.assert_close(actual, expected)
+
+
 def test_attention_pooling_ignores_masked_values():
     torch.manual_seed(7)
     pooling = _SleepFMAttentionPooling(16, num_heads=4, drop_prob=0.0).eval()

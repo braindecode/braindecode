@@ -39,7 +39,7 @@ Enhancements
   ``4 -> 32 -> output`` MLP over age, sex, BMI, and race/ethnicity. These
   covariate-dependent disease baselines remain outside the electrophysiological
   model API. The implementation is distributed under CC BY-NC 4.0 to match the
-  official SleepFM release. By `Fashad Ahmed`_.
+  official SleepFM release. (:gh:`1106` by `Fashad Ahmed`_)
 
 API and behavior changes
 ========================
