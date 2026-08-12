@@ -329,14 +329,15 @@ def create_windows_from_events(
         :class:`mne.Epochs`.
     accepted_bads_ratio: float, optional
         Acceptable proportion of trials with inconsistent length in a raw. If
-        the number of trials whose length is exceeded by the window size is
-        smaller than this, then only the corresponding trials are dropped, but
-        the computation continues. Otherwise, an error is raised. Defaults to
-        0.0 (raise an error). If all trials are accepted for dropping because
-        they are too short, a ``ValueError`` is raised because no windows can
-        be created. If one event type is completely dropped but other windows
+        the proportion of trials whose length is exceeded by the window size is
+        no greater than this, only the corresponding trials are dropped and the
+        computation continues. Otherwise, an error is raised. Defaults to 0.0
+        (raise an error). If all trials are accepted for dropping because they
+        are too short, a ``ValueError`` is raised because no windows can be
+        created. If one event type is completely dropped but other windows
         remain, that type is omitted from the MNE ``event_id`` and windowing
-        continues.
+        continues. With per-event dictionary parameters, the ratio is computed
+        once across all mapped trials in each raw, not separately by event type.
     use_mne_epochs: bool
         If False, return EEGWindowsDataset objects.
         If True, return mne.Epochs objects encapsulated in WindowsDataset objects,
@@ -768,6 +769,26 @@ def _create_windows_from_events(
     if isinstance(trial_start_offset_samples, dict):
         # Per-event-type windowing: skip inference, group by event type
         description = events[:, -1]
+        event_names_by_code = {
+            event_code: event_name for event_name, event_code in events_id.items()
+        }
+        start_offsets = np.array(
+            [
+                trial_start_offset_samples[event_names_by_code[event_code]]
+                for event_code in description
+            ]
+        )
+        stop_offsets = np.array(
+            [
+                trial_stop_offset_samples[event_names_by_code[event_code]]
+                for event_code in description
+            ]
+        )
+        bads_mask = _check_bad_trial_ratio(
+            (stops + stop_offsets) - (onsets + start_offsets),
+            window_size_samples,
+            accepted_bads_ratio,
+        )
 
         if not use_mne_epochs:
             onsets = onsets - ds.raw.first_samp
@@ -779,7 +800,7 @@ def _create_windows_from_events(
         all_stops: list[int] = []
 
         for event_name, event_code in events_id.items():
-            mask = description == event_code
+            mask = (description == event_code) & ~bads_mask
             if not np.any(mask):
                 continue
             type_onsets = onsets[mask]
@@ -798,7 +819,7 @@ def _create_windows_from_events(
                 window_size_samples,
                 stride,
                 on_last_window,
-                accepted_bads_ratio,
+                0.0,
             )
             # Map local trial indices back to global event indices.
             mapped_i_trials = [orig_indices[i] for i in type_i_trials]
@@ -1248,10 +1269,10 @@ def _compute_window_inds(
         additional window flush to the trial end), 'drop' (discard the remainder),
         or 'keep' (keep the shorter window as-is).
     accepted_bads_ratio: float
-        Acceptable proportion of bad trials within a raw. If the number of
-        trials whose length is exceeded by the window size is smaller than
-        this, then only the corresponding trials are dropped, but the
-        computation continues. Otherwise, an error is raised.
+        Acceptable proportion of bad trials within a raw. If the proportion of
+        trials whose length is exceeded by the window size is no greater than
+        this, only the corresponding trials are dropped and the computation
+        continues. Otherwise, an error is raised.
 
     Returns
     -------
@@ -1264,26 +1285,14 @@ def _compute_window_inds(
 
     starts += start_offset
     stops += stop_offset
-    if any(size > (stops - starts)):
-        bads_mask = size > (stops - starts)
-        min_duration = (stops - starts).min()
-        if sum(bads_mask) <= accepted_bads_ratio * len(starts):
-            starts = starts[np.logical_not(bads_mask)]
-            stops = stops[np.logical_not(bads_mask)]
-            source_trial_indices = source_trial_indices[np.logical_not(bads_mask)]
-            warnings.warn(
-                f"Trials {np.where(bads_mask)[0]} are being dropped as the "
-                f"window size ({size}) exceeds their duration {min_duration}."
-            )
-        else:
-            current_ratio = sum(bads_mask) / len(starts)
-            raise ValueError(
-                f"Window size {size} exceeds trial duration "
-                f"({min_duration}) for too many trials "
-                f"({current_ratio * 100}%). Set "
-                f"accepted_bads_ratio to at least {current_ratio}"
-                "and restart training to be able to continue."
-            )
+    bads_mask = _check_bad_trial_ratio(
+        stops - starts,
+        size,
+        accepted_bads_ratio,
+    )
+    starts = starts[~bads_mask]
+    stops = stops[~bads_mask]
+    source_trial_indices = source_trial_indices[~bads_mask]
 
     i_window_in_trials, i_trials, window_starts, window_stops = [], [], [], []
     for i_trial, start, stop in zip(source_trial_indices, starts, stops):
@@ -1309,6 +1318,31 @@ def _compute_window_inds(
         )
 
     return i_trials, i_window_in_trials, window_starts, window_stops
+
+
+def _check_bad_trial_ratio(durations, size, accepted_bads_ratio):
+    """Validate short trials against the whole-raw acceptance ratio."""
+    bads_mask = size > durations
+    if not np.any(bads_mask):
+        return bads_mask
+
+    min_duration = durations.min()
+    n_bad_trials = np.count_nonzero(bads_mask)
+    current_ratio = n_bad_trials / len(durations)
+    if current_ratio <= accepted_bads_ratio:
+        warnings.warn(
+            f"Trials {np.where(bads_mask)[0]} are being dropped as the "
+            f"window size ({size}) exceeds their duration {min_duration}."
+        )
+        return bads_mask
+
+    raise ValueError(
+        f"Window size {size} exceeds trial duration "
+        f"({min_duration}) for too many trials "
+        f"({current_ratio * 100}%). Set "
+        f"accepted_bads_ratio to at least {current_ratio} "
+        "and restart training to be able to continue."
+    )
 
 
 def _check_windowing_arguments(

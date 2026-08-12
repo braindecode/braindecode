@@ -1532,6 +1532,93 @@ def test_short_trial_drop_preserves_event_metadata(
     ]
 
 
+@pytest.mark.parametrize(
+    ("use_mne_epochs", "on_last_window"),
+    [
+        pytest.param(False, "drop", id="eeg-drop"),
+        pytest.param(False, "overlap", id="eeg-overlap"),
+        pytest.param(False, "keep", id="eeg-keep"),
+        pytest.param(True, "drop", id="mne-drop"),
+        pytest.param(True, "overlap", id="mne-overlap"),
+    ],
+)
+def test_uniform_dict_params_use_raw_bad_trial_ratio(
+    event_dataset_factory, use_mne_epochs, on_last_window
+):
+    """Equivalent dict parameters use the scalar whole-raw bad ratio."""
+    concat_ds = event_dataset_factory([0.2, 1.0, 0.2, 1.0], with_extras=True)
+    mapping = {"T0": 0, "T1": 1}
+    common_kwargs = dict(
+        concat_ds=concat_ds,
+        window_size_samples=50,
+        on_last_window=on_last_window,
+        mapping=mapping,
+        accepted_bads_ratio=0.5,
+        use_mne_epochs=use_mne_epochs,
+    )
+
+    results = []
+    for offset, stride in [
+        (0, 50),
+        ({event_name: 0 for event_name in mapping}, {"T0": 50, "T1": 50}),
+    ]:
+        with pytest.warns(UserWarning, match="are being dropped"):
+            results.append(
+                create_windows_from_events(
+                    trial_start_offset_samples=offset,
+                    trial_stop_offset_samples=offset,
+                    window_stride_samples=stride,
+                    **common_kwargs,
+                ).datasets[0]
+            )
+
+    scalar_ds, dict_ds = results
+    scalar_metadata = (
+        scalar_ds.windows.metadata if use_mne_epochs else scalar_ds.metadata
+    )
+    dict_metadata = dict_ds.windows.metadata if use_mne_epochs else dict_ds.metadata
+    pd.testing.assert_frame_equal(
+        scalar_metadata.reset_index(drop=True),
+        dict_metadata.reset_index(drop=True),
+    )
+    assert dict_metadata["target"].tolist() == [1, 1, 1, 1]
+    assert dict_metadata["trial_id"].tolist() == [20, 20, 40, 40]
+    assert dict_metadata["quality"].tolist() == [
+        "second",
+        "second",
+        "fourth",
+        "fourth",
+    ]
+    if use_mne_epochs:
+        assert scalar_ds.windows.event_id == dict_ds.windows.event_id == {"T1": 1}
+
+
+def test_dict_bad_trial_ratio_uses_per_event_offsets(event_dataset_factory):
+    """The raw-level ratio uses each event type's effective duration."""
+    concat_ds = event_dataset_factory([0.4] * 4, with_extras=True)
+    mapping = {"T0": 0, "T1": 1}
+
+    with pytest.warns(UserWarning, match=r"Trials \[1 3\] are being dropped"):
+        windows = create_windows_from_events(
+            concat_ds=concat_ds,
+            trial_start_offset_samples={"T0": -10, "T1": 0},
+            trial_stop_offset_samples=0,
+            window_size_samples=50,
+            window_stride_samples={"T0": 50, "T1": 25},
+            on_last_window="drop",
+            mapping=mapping,
+            accepted_bads_ratio=0.5,
+            use_mne_epochs=False,
+        )
+
+    metadata = windows.datasets[0].metadata
+    assert metadata["i_start_in_trial"].tolist() == [90, 490]
+    assert metadata["i_stop_in_trial"].tolist() == [140, 540]
+    assert metadata["target"].tolist() == [0, 0]
+    assert metadata["trial_id"].tolist() == [10, 30]
+    assert metadata["quality"].tolist() == ["short", "third"]
+
+
 @pytest.mark.parametrize("per_event_params", [False, True], ids=["int", "dict"])
 @pytest.mark.parametrize(
     ("on_missing", "expected_mne_on_missing"),
