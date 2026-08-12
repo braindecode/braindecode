@@ -6,6 +6,7 @@
 # License: BSD-3
 from __future__ import annotations
 
+import ast
 import inspect
 import os
 import sys
@@ -626,6 +627,26 @@ def test_completeness_summary_table(model_class):
     assert model_class.__name__ in _summary_table.index, (
         f"{model_class.__name__} is not in the summary table. "
         f"Please add it to the summary table."
+    )
+
+
+def test_attnsleep_summary_constructor():
+    constructor = _summary_table.at["AttnSleep", "get_#Parameters"]
+    call = ast.parse(constructor, mode="eval").body
+
+    assert isinstance(call, ast.Call)
+    assert isinstance(call.func, ast.Name)
+    assert call.func.id == "AttnSleep"
+
+    args = [ast.literal_eval(arg) for arg in call.args]
+    kwargs = {}
+    for keyword in call.keywords:
+        assert keyword.arg is not None
+        kwargs[keyword.arg] = ast.literal_eval(keyword.value)
+    model = all_models_dict[call.func.id](*args, **kwargs)
+
+    assert model.get_torchinfo_statistics().total_params == int(
+        _summary_table.at["AttnSleep", "#Parameters"]
     )
 
 

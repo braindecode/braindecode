@@ -1001,6 +1001,17 @@ def test_eldele_2021_heads_not_dividing_d_model():
         AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
 
 
+@pytest.mark.parametrize("n_attn_heads", [0, -5])
+def test_eldele_2021_rejects_non_positive_heads(n_attn_heads):
+    with pytest.raises(ValueError, match="positive"):
+        AttnSleep(
+            sfreq=100,
+            n_outputs=5,
+            n_times=3000,
+            n_attn_heads=n_attn_heads,
+        )
+
+
 def test_eldele_2021_other_window():
     # 20 seconds at 100Hz, the feature extractor returns 54 time steps there
     model = AttnSleep(sfreq=100, n_outputs=5, n_times=2000, d_model=54, n_attn_heads=6)
@@ -1072,6 +1083,42 @@ def test_eldele_2021_feature_probe_restores_state_after_error():
     with pytest.raises(RuntimeError, match="shape probe failed"):
         AttnSleep._feature_length(feature_extractor, n_times=20)
     assert feature_extractor.training
+
+
+@pytest.mark.parametrize("root_training", [False, True])
+@pytest.mark.parametrize("raises", [False, True])
+def test_eldele_2021_feature_probe_restores_descendant_states(
+    root_training, raises
+):
+    class NestedFeatureExtractor(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.training_child = nn.Identity()
+            self.eval_child = nn.Identity()
+
+        def forward(self, x):
+            x = self.training_child(x)
+            x = self.eval_child(x)
+            if raises:
+                raise RuntimeError("shape probe failed")
+            return x
+
+    feature_extractor = NestedFeatureExtractor().train(root_training)
+    feature_extractor.training_child.train()
+    feature_extractor.eval_child.eval()
+    training_states = {
+        name: module.training for name, module in feature_extractor.named_modules()
+    }
+
+    if raises:
+        with pytest.raises(RuntimeError, match="shape probe failed"):
+            AttnSleep._feature_length(feature_extractor, n_times=20)
+    else:
+        assert AttnSleep._feature_length(feature_extractor, n_times=20) == 20
+
+    assert {
+        name: module.training for name, module in feature_extractor.named_modules()
+    } == training_states
 
 
 @pytest.mark.parametrize(

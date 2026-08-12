@@ -186,13 +186,14 @@ class AttnSleep(EEGModuleMixin, nn.Module):
     @staticmethod
     def _feature_length(mrcnn, n_times):
         # time steps out of the mrcnn, the tce takes this as its model dimension
-        was_training = mrcnn.training
+        training_states = [(module, module.training) for module in mrcnn.modules()]
         mrcnn.eval()
         try:
             with torch.no_grad():
                 out = mrcnn(torch.zeros(1, 1, n_times))
         finally:
-            mrcnn.train(was_training)
+            for module, was_training in training_states:
+                module.training = was_training
         return out.shape[-1]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -401,6 +402,8 @@ class _MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, after_reduced_cnn_size, dropout=0.1):
         """Take in model size and number of heads."""
         super().__init__()
+        if h <= 0:
+            raise ValueError(f"n_attn_heads has to be a positive integer, got {h}.")
         if d_model % h != 0:
             raise ValueError(
                 f"d_model ({d_model}) has to be divisible by the number of "
