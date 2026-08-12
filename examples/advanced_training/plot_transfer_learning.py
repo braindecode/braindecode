@@ -305,7 +305,7 @@ def make_classifier(validation_windows, max_epochs, callbacks=None):
 # source validation windows after each epoch.
 
 source_clf = make_classifier(source_windows["valid"], max_epochs=source_epochs)
-source_clf.fit(source_windows["train"], y=None)
+_ = source_clf.fit(source_windows["train"], y=None)
 print(source_clf)
 
 # A state dictionary is portable and avoids serializing the entire classifier.
@@ -332,7 +332,7 @@ scratch_clf = make_classifier(
     target_windows["valid"],
     max_epochs=target_epochs,
 )
-scratch_clf.fit(target_windows["train"], y=None)
+_ = scratch_clf.fit(target_windows["train"], y=None)
 
 
 ######################################################################
@@ -365,7 +365,7 @@ fine_tune_clf = make_classifier(
     max_epochs=target_epochs,
     callbacks=[("load_source_state", LoadModelState(source_state))],
 )
-fine_tune_clf.fit(target_windows["train"], y=None)
+_ = fine_tune_clf.fit(target_windows["train"], y=None)
 
 # We fine-tune every layer, as in the main comparison in [1]_. With much less
 # target data, another experiment could freeze the backbone and train only the
