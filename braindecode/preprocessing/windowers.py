@@ -645,6 +645,11 @@ def _create_windows_from_events(
         )
 
     events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
+    if len(events) == 0:
+        raise ValueError(
+            "No events found in the recording. Add annotations before calling "
+            "create_windows_from_events."
+        )
     onsets = events[:, 0]
     ann = ds.raw.annotations
     filtered_annotations = [

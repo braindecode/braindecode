@@ -179,6 +179,30 @@ def test_windows_from_events_mapping_filter_rejects_empty_selection(tmpdir_facto
         )
 
 
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+@pytest.mark.parametrize("mapping", [None, {"T1": 0}], ids=["inferred", "explicit"])
+def test_windows_from_events_rejects_recording_without_annotations(
+    use_mne_epochs, mapping
+):
+    raw = mne.io.RawArray(
+        np.zeros((1, 500)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+
+    with pytest.raises(ValueError, match="No events found in the recording"):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            window_size_samples=100,
+            window_stride_samples=100,
+            drop_last_window=True,
+            mapping=mapping,
+            use_mne_epochs=use_mne_epochs,
+            verbose=False,
+        )
+
+
 def test_windows_from_events_different_events(tmpdir_factory):
     description_expected = 5 * ["T0", "T1"] + 4 * ["T2", "T3"] + 2 * ["T1"]
     raw = _get_raw(tmpdir_factory, description_expected[:10])
