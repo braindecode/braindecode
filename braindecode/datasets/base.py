@@ -1429,6 +1429,9 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
 
         Raises
         ------
+        TypeError
+            If a window dataset uses lazy metadata. Re-window with
+            ``lazy_metadata=False`` before aggregating metadata.
         ValueError
             If a column has conflicting values in the window metadata and the
             dataset description. Identical values are coalesced; otherwise,
@@ -1451,30 +1454,35 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 df = ds._windows.metadata
             else:
                 df = ds.metadata
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError(
+                    "get_metadata requires materialized metadata DataFrames; "
+                    f"got {type(df).__name__}. Re-window with "
+                    "lazy_metadata=False before calling get_metadata()."
+                )
             description = ds.description
             if description is not None:
                 overlapping_columns = set(df.columns).intersection(description.index)
                 conflicts = []
                 for column in overlapping_columns:
                     value = description[column]
-                    if isinstance(df, pd.DataFrame):
-                        metadata_values = df[column]
-                        if pd.api.types.is_scalar(value) and all(
-                            pd.api.types.is_scalar(metadata_value)
-                            for metadata_value in metadata_values
-                        ):
-                            matches = (
-                                metadata_values.isna()
-                                if pd.isna(value)
-                                else metadata_values.eq(value).fillna(False)
-                            )
-                            if bool(matches.all()):
-                                continue
-                        elif all(
-                            _metadata_values_equal(metadata_value, value)
-                            for metadata_value in metadata_values
-                        ):
+                    metadata_values = df[column]
+                    if pd.api.types.is_scalar(value) and all(
+                        pd.api.types.is_scalar(metadata_value)
+                        for metadata_value in metadata_values
+                    ):
+                        matches = (
+                            metadata_values.isna()
+                            if pd.isna(value)
+                            else metadata_values.eq(value).fillna(False)
+                        )
+                        if bool(matches.all()):
                             continue
+                    elif all(
+                        _metadata_values_equal(metadata_value, value)
+                        for metadata_value in metadata_values
+                    ):
+                        continue
                     conflicts.append(column)
                 conflicts = sorted(conflicts, key=str)
                 if conflicts:
@@ -1483,8 +1491,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                         "metadata and dataset description. Rename the conflicting "
                         "description fields before calling get_metadata()."
                     )
-            if isinstance(df, pd.DataFrame):
-                df = df.copy()
+            df = df.copy()
             if description is not None:
                 for key, value in description.items():
                     if key not in df.columns:

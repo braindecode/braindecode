@@ -165,6 +165,20 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
     )
 
 
+def test_windows_from_events_mapping_filter_rejects_empty_selection(tmpdir_factory):
+    raw = _get_raw(tmpdir_factory, ["T0"])
+    concat_ds = BaseConcatDataset([RawDataset(raw)])
+
+    with pytest.raises(ValueError, match="Could not find any of the events"):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            window_size_samples=100,
+            window_stride_samples=100,
+            drop_last_window=True,
+            mapping={"T1": 0},
+        )
+
+
 def test_windows_from_events_different_events(tmpdir_factory):
     description_expected = 5 * ["T0", "T1"] + 4 * ["T2", "T3"] + 2 * ["T1"]
     raw = _get_raw(tmpdir_factory, description_expected[:10])

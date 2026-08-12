@@ -250,6 +250,24 @@ def test_metadata(concat_windows_dataset):
     assert md.shape[0] == len(concat_windows_dataset)
 
 
+def test_get_metadata_rejects_lazy_metadata():
+    raw = mne.io.RawArray(
+        np.zeros((1, 500)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, description={"recording": 1})]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        drop_last_window=True,
+        lazy_metadata=True,
+    )
+
+    with pytest.raises(TypeError, match="lazy_metadata=False"):
+        windows.get_metadata()
+
+
 def _event_windows_with_description(
     description, use_mne_epochs, event_descriptions=("T0", "T1")
 ):
