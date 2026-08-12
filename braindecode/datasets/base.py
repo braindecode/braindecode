@@ -59,6 +59,7 @@ def _html_row(label, value):
 
 _METADATA_INTERNAL_COLS = {
     "i_window_in_trial",
+    "i_trial_in_dataset",
     "i_start_in_trial",
     "i_stop_in_trial",
     "target",

@@ -629,6 +629,46 @@ def test_metadata_extras(lazy_loadable_dataset, use_mne_epochs):
     )
 
 
+@pytest.mark.parametrize("use_mne_epochs", [True, False])
+def test_event_metadata_stays_aligned_after_short_trial_drop(use_mne_epochs):
+    raw = mne.io.RawArray(
+        np.zeros((1, 900)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        verbose=False,
+    )
+    annotations = mne.Annotations(
+        onset=[1, 3, 6],
+        duration=[0.5, 2, 2],
+        description=["T0", "T1", "T0"],
+    )
+    annotations.extras = [{"trial_id": value} for value in [10, 20, 30]]
+    raw.set_annotations(annotations)
+
+    with pytest.warns(UserWarning, match="Trials \\[0\\] are being dropped"):
+        windows = create_windows_from_events(
+            BaseConcatDataset(
+                [RawDataset(raw, description=pd.Series({"recording": 0}))]
+            ),
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+            window_size_samples=100,
+            window_stride_samples=100,
+            drop_last_window=True,
+            mapping={"T0": 0, "T1": 1},
+            accepted_bads_ratio=1 / 3,
+            use_mne_epochs=use_mne_epochs,
+        )
+
+    metadata = windows.get_metadata()
+    assert metadata[["i_trial_in_dataset", "target", "trial_id"]].values.tolist() == [
+        [1, 1, 20],
+        [1, 1, 20],
+        [2, 0, 30],
+        [2, 0, 30],
+    ]
+    assert "i_trial_in_dataset" not in repr(windows)
+
+
 @pytest.mark.parametrize(
     "drop_bad_windows,picks,flat,reject",
     [

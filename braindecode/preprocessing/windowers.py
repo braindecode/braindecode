@@ -756,6 +756,11 @@ def _create_windows_from_events(
         if not use_mne_epochs:
             onsets = onsets - ds.raw.first_samp
             stops = stops - ds.raw.first_samp
+        good_trials = np.flatnonzero(
+            window_size_samples
+            <= (stops + trial_stop_offset_samples)
+            - (onsets + trial_start_offset_samples)
+        )
         i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
             onsets,
             stops,
@@ -766,6 +771,7 @@ def _create_windows_from_events(
             drop_last_window,
             accepted_bads_ratio,
         )
+        i_trials = [good_trials[i_trial] for i_trial in i_trials]
 
     if (on_overlapping_events != "ignore") and any(np.diff(starts) <= 0):
         msg = "Overlapping trials detected. You can ignore, warn, or raise an error, using the on_overlapping_events argument."
