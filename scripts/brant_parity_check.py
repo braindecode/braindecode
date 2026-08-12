@@ -46,11 +46,32 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = _parse_args()
-    sys.path.insert(0, str(args.brant_src))
+def _import_upstream(brant_src: Path):
+    """Import upstream encoders without leaking their path or modules."""
+    old_path = sys.path.copy()
+    old_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "pretrain" or name.startswith("pretrain.")
+    }
+    for name in old_modules:
+        sys.modules.pop(name)
+    sys.path.insert(0, str(brant_src))
     try:
         from pretrain.pre_model import ChannelEncoder, TimeEncoder
+    finally:
+        sys.path[:] = old_path
+        for name in list(sys.modules):
+            if name == "pretrain" or name.startswith("pretrain."):
+                sys.modules.pop(name)
+        sys.modules.update(old_modules)
+    return TimeEncoder, ChannelEncoder
+
+
+def main() -> int:
+    args = _parse_args()
+    try:
+        TimeEncoder, ChannelEncoder = _import_upstream(args.brant_src)
     except ImportError as exc:  # pragma: no cover - dev tooling
         print(f"cannot import upstream Brant from {args.brant_src}: {exc}")
         return 1

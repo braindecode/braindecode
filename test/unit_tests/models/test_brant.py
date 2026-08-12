@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 import torch
@@ -111,18 +112,74 @@ def test_band_power_shape_and_finite():
     assert torch.isfinite(out).all()
 
 
+@pytest.mark.parametrize("loader", ["test-gate", "developer-script"])
+def test_upstream_import_is_isolated(tmp_path, monkeypatch, loader):
+    package = tmp_path / "pretrain"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "pre_model.py").write_text(
+        "class TimeEncoder: pass\nclass ChannelEncoder: pass\n"
+    )
+    monkeypatch.setenv("BRANT_SRC", str(tmp_path))
+
+    old_path = sys.path.copy()
+    old_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "pretrain" or name.startswith("pretrain.")
+    }
+    for name in old_modules:
+        sys.modules.pop(name)
+
+    try:
+        if loader == "test-gate":
+            time_encoder, channel_encoder = _import_upstream_or_skip()
+        else:
+            from scripts import brant_parity_check
+
+            time_encoder, channel_encoder = brant_parity_check._import_upstream(
+                Path(tmp_path)
+            )
+        assert time_encoder.__name__ == "TimeEncoder"
+        assert channel_encoder.__name__ == "ChannelEncoder"
+        assert sys.path == old_path
+        assert {
+            name: module
+            for name, module in sys.modules.items()
+            if name == "pretrain" or name.startswith("pretrain.")
+        } == old_modules
+    finally:
+        sys.path[:] = old_path
+        for name in list(sys.modules):
+            if name == "pretrain" or name.startswith("pretrain."):
+                sys.modules.pop(name)
+        sys.modules.update(old_modules)
+
+
 # --------------------------------------------------------------- parity gate
 def _import_upstream_or_skip():
     src = os.environ.get("BRANT_SRC")
     if not src or not os.path.isdir(src):
         pytest.skip("set BRANT_SRC=/path/to/Brant_src to run the parity gate")
+    old_path = sys.path.copy()
+    old_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "pretrain" or name.startswith("pretrain.")
+    }
+    for name in old_modules:
+        sys.modules.pop(name)
     sys.path.insert(0, src)
     try:
         from pretrain.pre_model import ChannelEncoder, TimeEncoder
     except ImportError as exc:  # pragma: no cover - depends on external code
         pytest.skip(f"upstream Brant not importable: {exc}")
     finally:
-        sys.path.remove(src)
+        sys.path[:] = old_path
+        for name in list(sys.modules):
+            if name == "pretrain" or name.startswith("pretrain."):
+                sys.modules.pop(name)
+        sys.modules.update(old_modules)
     return TimeEncoder, ChannelEncoder
 
 
