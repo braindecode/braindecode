@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Alexandre Gramfort
 #          Pierre Guetschel
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 from __future__ import annotations
@@ -23,6 +24,7 @@ from braindecode.models import (
     EEGPT,
     REVE,
     SSTDPN,
+    ZUNA,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -390,6 +392,7 @@ def test_model_has_drop_prob_parameter(model_class):
         InterpolatedEEGPT,
         InterpolatedLaBraM,
         InterpolatedSignalJEPA,
+        ZUNA,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -519,7 +522,6 @@ def test_model_torch_script(model):
         "BIOT",
         "Brant",
         "Labram",
-        "EEGMiner",
         "EEGPT",
         "SSTDPN",
         "BENDR",
@@ -527,6 +529,11 @@ def test_model_torch_script(model):
         "REVE",
         "CBraMod",
         "CodeBrain",
+        # einops rearrange/repeat in the Perceiver/decoder and the fixed-grid
+        # cross-attention make forward not torch.jit.script-able. (Reason is
+        # einops + dynamic length, NOT polymorphic return — DANCE.forward is
+        # monomorphic Tensor, unlike EEGDINO.)
+        "DANCE",
         # einops Rearrange layers and the interleaved-RoPE slicing in the
         # grouped-query attention are not torch.jit.script-able.
         "TCFormer",
@@ -551,7 +558,6 @@ def test_model_torch_script(model):
         "InterpolatedEEGPT",
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
-        # TorchScript cannot script einops.rearrange (it uses **axes_lengths).
         "STEEGFormer",
     ]
 
@@ -595,6 +601,24 @@ def test_model_torch_script(model):
     # output_script = scripted_model(input_tensor)
     # assert output_script.shape == output_model.shape
     # torch.testing.assert_close(output_script, output_model)
+
+
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_torch_script_methods(method):
+    model = EEGMiner(
+        method=method,
+        n_chans=4,
+        n_outputs=2,
+        n_times=128,
+        sfreq=100.0,
+    ).eval()
+    plain_model = convert_model_to_plain(model).eval()
+    input_tensor = torch.randn(2, 4, 128)
+
+    expected = plain_model(input_tensor)
+    scripted_model = torch.jit.script(plain_model)
+
+    torch.testing.assert_close(scripted_model(input_tensor), expected)
 
 
 @pytest.mark.parametrize("model_class", all_models_dict.values())

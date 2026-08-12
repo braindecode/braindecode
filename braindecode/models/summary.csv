@@ -59,5 +59,7 @@ InterpolatedLaBraM,General,"Prediction, Embedding",200,"chs_info, n_outputs, n_t
 InterpolatedSignalJEPA,"Motor Imagery, ERP, SSVEP",Embedding,128,"chs_info",3456882,"InterpolatedSignalJEPA(chs_info=<user>)","Convolution,Channel,Foundation Model",EEG
 TCFormer,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times",77820,"TCFormer(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 EEGDINO,General,Classification,200,"n_chans, n_outputs, n_times",4539698,"EEGDINO(n_chans=19, n_outputs=4, n_times=1000)","Foundation Model,Attention/Transformer",EEG
+DANCE,General,Event Detection,200,"n_chans, n_outputs, n_times, sfreq, chs_info",29813542,"DANCE(n_chans=19, n_outputs=4, n_times=6400, sfreq=200, input_window_seconds=32.0, chs_info=[{'ch_name': f'E{i+1}', 'kind': 'eeg', 'loc': numpy.random.default_rng(2024).random(12)} for i in range(19)])","Convolution,Attention/Transformer,Channel",EEG
 STEEGFormer,General,Classification,250,"n_chans, n_outputs, n_times",25305604,"STEEGFormer(n_chans=22, n_outputs=4, n_times=1000)","Attention/Transformer,Foundation Model",EEG
 MVPFormer,General,"Prediction, Embedding",512,"n_chans, n_outputs, n_times, sfreq",3356978,"MVPFormer(n_chans=22, n_outputs=4, n_times=2000, sfreq=100)","Foundation Model,Attention/Transformer",EEG
+ZUNA,General,"Classification,Embedding",256,"chs_info, n_outputs, n_times",172104100,"ZUNA(chs_info=<user>, n_outputs=4, n_times=1280)","Foundation Model,Channel,Attention/Transformer",EEG

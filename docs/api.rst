@@ -191,6 +191,7 @@ interface for all EEG models and can derive variable names when needed.
      TIDNet
      TSception
      USleep
+     ZUNA
 
 Modules
 
@@ -788,12 +789,14 @@ models and evaluate their performance.
 
      CroppedLoss
      TimeSeriesLoss
+     DanceLoss
      CroppedTrialEpochScoring
      CroppedTimeSeriesEpochScoring
      PostEpochTrainScoring
      mixup_criterion
      trial_preds_from_window_preds
      predict_trials
+     f1_event
 
 *******
  Utils

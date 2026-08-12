@@ -22,7 +22,7 @@
 .. _current:
 
 
-Current 1.7.0 (GitHub)
+Current 1.8.0 (GitHub)
 ===============================
 
 Enhancements
@@ -34,12 +34,53 @@ Enhancements
   ``Brant.from_pretrained("braindecode/brant-pretrained")`` (:gh:`1100` by
   `Adam Mounir`_)
 
+API and behavior changes
+========================
+
+- None yet
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
+  which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
+  validation (:gh:`1123` by `Bruno Aristimunha`_).
+
+Code health
+============
+
+- None yet
+
+
+Current 1.7.0 (2026-08-01)
+===============================
+
+Enhancements
+============
+
+- Add :class:`braindecode.models.ZUNA`, a position-aware EEG foundation model
+  from Warner et al. (2026), ported from the public ``Zyphra/ZUNA1.1`` encoder
+  with a Braindecode classification head, shared patch tokenization, and
+  construction-time spatial positions compatible with TorchScript and
+  ``torch.compile`` (:gh:`1020` by `Jon Huml`_)
+
 - Add :data:`braindecode.models.util.interpolated_models_dict`, a dedicated
   registry for the interpolated (channel-adapting) models, keeping them separate
   from :data:`braindecode.models.util.models_dict` (:gh:`1093` by `Bruno Aristimunha`_)
 
 API and behavior changes
 ========================
+
+- The ``stride_factor`` parameter of :class:`braindecode.models.FBLightConvNet`
+  is deprecated and will be removed in a future release. The model never read
+  it, its temporal segmentation is set by ``win_len``, and the reference
+  implementation has no such parameter. Passing it now emits a
+  ``DeprecationWarning`` and keeps being ignored. By `Sarthak Tayal`_.
 
 - Interpolated models (e.g. ``InterpolatedBIOT``, ``InterpolatedLaBraM``) are no
   longer included in :data:`braindecode.models.util.models_dict`; they now live
@@ -55,7 +96,46 @@ Requirements
 Bug fixes
 ==========
 
-- None yet
+- Fix :meth:`braindecode.EEGClassifier.predict_trials`,
+  :meth:`braindecode.EEGRegressor.predict_trials` and
+  :class:`braindecode.training.scoring.CroppedTrialEpochScoring` on the training
+  set raising ``AttributeError`` or ``TypeError`` when the module was passed as a
+  model name or as an uninstantiated class. Those paths read the ``module``
+  constructor argument instead of the initialized ``module_`` attribute, so they
+  only worked when an already instantiated module was passed, which the
+  documentation discourages. By `Sarthak Tayal`_.
+
+- Raise a clear ``ValueError`` in :class:`braindecode.models.FBLightConvNet`
+  when ``n_times`` is shorter than ``win_len``. The temporal attention kernel
+  is sized as ``n_times // win_len``, so a short window produced an empty
+  kernel and the constructor died with a ``ZeroDivisionError`` coming from the
+  weight initialisation. The docstring now also documents ``win_len`` and
+  reports the correct ``n_bands`` default of 9. By `Sarthak Tayal`_.
+
+- Use ``nn.Dropout1d`` instead of ``nn.Dropout2d`` for the channel-wise dropout
+  inside :class:`braindecode.models.BDTCN`, ``braindecode.models.TCN`` and
+  :class:`braindecode.models.BENDR`. Those layers receive
+  ``(batch, channels, times)`` activations, which ``nn.Dropout2d`` only handles
+  through a deprecated fallback that warns on every forward pass and is
+  scheduled to be reinterpreted as unbatched input, masking batch items rather
+  than channels. The masking behaviour is unchanged. By `Sarthak Tayal`_.
+
+- Clarify that :func:`braindecode.training.scoring.predict_trials`,
+  :meth:`braindecode.EEGClassifier.predict_trials`, and
+  :meth:`braindecode.EEGRegressor.predict_trials` return ground-truth dataset
+  targets alongside predictions. By `Sarthak Tayal`_.
+
+- Make :class:`braindecode.models.EEGMiner` compatible with TorchScript across
+  magnitude, correlation, and phase-locking-value feature modes by replacing
+  runtime callable dispatch with a scriptable feature module. (:gh:`1101` by
+  `Sarthak Tayal`_)
+
+- Make the :class:`braindecode.models.REVE` position bank robust on offline /
+  limited-network nodes: it is now cached in the writable MNE data directory
+  (resolved via the ``REVE_POSITIONS_PATH`` config key, defaulting under
+  ``~/mne_data``) instead of the package folder, so a prefetched
+  ``reve_positions.json`` there is used without any download (:gh:`1098` by
+  `Bruno Aristimunha`_)
 
 Code health
 ============
@@ -83,6 +163,13 @@ Enhancements
   (GEGLU with the default ``nn.GELU``, SwiGLU with ``nn.SiLU``; ``torch.nn.GLU``
   is hard-wired to the sigmoid) for building gated transformer feed-forwards.
   (:gh:`1078` by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.DANCE`, an event detection-and-classification
+  model (CNN encoder + Perceiver bottleneck + DETR-style decoder) that detects a
+  *set* of ``(start, end, class)`` events from long, unaligned EEG windows, with a
+  :class:`braindecode.training.DanceLoss` criterion, an ``f1_event`` detection
+  metric, and a runnable tutorial. The re-implemented spatial merger /
+  Perceiver / conv stack are numerically parity-verified against the upstream
+  reference. (:gh:`1075` by `Bruno Aristimunha`_)
 - Add an optional spatial Fourier :class:`braindecode.modules.ChannelMerger`
   (with :class:`braindecode.modules.FourierEmb`) to
   :class:`braindecode.models.BrainModule` via ``use_merger=True``, implementing
@@ -1473,3 +1560,4 @@ Authors
 .. _Yiheng Li: https://github.com/YihengLi-1
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
+.. _Jon Huml: https://github.com/jonathanhuml

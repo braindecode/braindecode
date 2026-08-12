@@ -12,6 +12,7 @@ from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
 from .ctnet import CTNet
+from .dance import DANCE
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .dgcnn import DGCNN
@@ -71,6 +72,7 @@ from .util import (
     models_mandatory_parameters,
     positions_from_chs_info,
 )
+from .zuna import ZUNA
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
@@ -87,6 +89,7 @@ __all__ = [
     "CodeBrain",
     "ContraWR",
     "CTNet",
+    "DANCE",
     "Deep4Net",
     "DeepSleepNet",
     "BrainModule",
@@ -145,6 +148,7 @@ __all__ = [
     "TIDNet",
     "TSception",
     "USleep",
+    "ZUNA",
     "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",
