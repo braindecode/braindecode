@@ -21,6 +21,7 @@ def _load_tutorial_function(name):
 
     namespace = {}
     module = ast.Module(body=functions, type_ignores=[])
+    module = ast.fix_missing_locations(module)
     # The parsed source is a repository-owned tutorial, not untrusted input.
     exec(  # nosec B102
         compile(module, filename=str(TUTORIAL), mode="exec"), namespace
@@ -30,6 +31,7 @@ def _load_tutorial_function(name):
 
 def test_transfer_learning_tuab_path_contract():
     tutorial = TUTORIAL.read_text(encoding="utf-8")
+    assert "source_recordings = TUHAbnormal(" in tutorial
     loader_call = tutorial.split("source_recordings = TUHAbnormal(", maxsplit=1)[
         1
     ].split(")", maxsplit=1)[0]
