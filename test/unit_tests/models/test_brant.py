@@ -14,8 +14,10 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
+from scipy.signal import periodogram
 
 from braindecode.models import Brant
 from braindecode.models.brant import (
@@ -110,6 +112,22 @@ def test_band_power_shape_and_finite():
     out = features(torch.randn(2, N_CHANS, 4, PATCH))
     assert out.shape == (2, N_CHANS, 4, len(BRANT_FREQ_BANDS))
     assert torch.isfinite(out).all()
+
+
+def test_band_power_matches_scipy_periodogram():
+    patches = torch.randn(2, 3, 4, PATCH, dtype=torch.float64)
+    actual = _BandPowerFeatures(SFREQ, BRANT_FREQ_BANDS)(patches)
+
+    freqs, psd = periodogram(patches.numpy(), fs=SFREQ, axis=-1)
+    expected = np.stack(
+        [
+            np.log10(psd[..., (freqs > low) & (freqs <= high)].sum(axis=-1) + 1)
+            for low, high in BRANT_FREQ_BANDS
+        ],
+        axis=-1,
+    )
+
+    torch.testing.assert_close(actual, torch.from_numpy(expected), rtol=1e-12, atol=1e-12)
 
 
 @pytest.mark.parametrize("loader", ["test-gate", "developer-script"])
