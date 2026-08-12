@@ -139,6 +139,10 @@ def test_load_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
         np.testing.assert_allclose(x, actual_x, rtol=1e-4, atol=1e-5)
         np.testing.assert_allclose(y, actual_y, rtol=1e-4, atol=1e-5)
         np.testing.assert_array_equal(crop_inds, actual_crop_inds)
+    for expected, actual in zip(
+        concat_windows_dataset.datasets, loaded_concat_windows_dataset.datasets
+    ):
+        pd.testing.assert_frame_equal(actual.metadata, expected.metadata)
     pd.testing.assert_frame_equal(
         concat_windows_dataset.description.astype(str),
         loaded_concat_windows_dataset.description.astype(str),
