@@ -61,6 +61,13 @@ def test_return_features():
     assert torch.isfinite(out["features"]).all()
 
 
+def test_runtime_channel_count_is_parameter_agnostic():
+    model = _model().eval()
+    with torch.no_grad():
+        out = model(torch.randn(2, N_CHANS + 3, N_TIMES))
+    assert out.shape == (2, N_OUTPUTS)
+
+
 def test_reset_head_changes_n_outputs():
     model = _model().double().eval()
     model.reset_head(7)
