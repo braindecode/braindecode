@@ -186,10 +186,11 @@ class AttnSleep(EEGModuleMixin, nn.Module):
     @staticmethod
     def _feature_length(mrcnn, n_times):
         # time steps out of the mrcnn, the tce takes this as its model dimension
+        was_training = mrcnn.training
         mrcnn.eval()
         with torch.no_grad():
             out = mrcnn(torch.zeros(1, 1, n_times))
-        mrcnn.train()
+        mrcnn.train(was_training)
         return out.shape[-1]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

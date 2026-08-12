@@ -1055,6 +1055,13 @@ def test_eldele_2021_activation_reaches_afr():
     assert all(act is nn.ELU for act in afr_activations)
 
 
+def test_eldele_2021_feature_probe_preserves_eval_state():
+    feature_extractor = nn.Identity().eval()
+
+    assert AttnSleep._feature_length(feature_extractor, n_times=20) == 20
+    assert not feature_extractor.training
+
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
