@@ -38,9 +38,10 @@ Fixed-Length Windows Extraction
 #        stop_offset_samples=None,
 #        window_size_samples=None,
 #        window_stride_samples=None,
-#        drop_last_window=None,
+#        drop_last_window=None,  # Deprecated; use on_last_window.
 #        mapping=None,
 #        preload=False,
+#        drop_bad_windows=None,
 #        picks=None,
 #        reject=None,
 #        flat=None,
@@ -48,8 +49,11 @@ Fixed-Length Windows Extraction
 #        last_target_only=True,
 #        lazy_metadata=False,
 #        on_missing='error',
+#        use_mne_epochs=None,
 #        n_jobs=1,
 #        verbose='error',
+#        *,
+#        on_last_window=None,
 #    )
 #
 #
@@ -71,16 +75,30 @@ Fixed-Length Windows Extraction
 #     - Window size in samples. If None, set to be the maximum possible window size, ie length of the recording, once offsets are accounted for.
 #
 # **window_stride_samples** : int or None
-#     - Stride between windows in samples. If None, set to be equal to winddow_size_samples, so windows will not overlap.
+#     - Stride between windows in samples. If None, set to be equal to
+#       `window_size_samples`, so windows will not overlap.
 #
 # **drop_last_window** : bool or None
-#     - Whether or not have a last overlapping window, when windows do not equally divide the continuous signal. Must be set to a bool if window size and stride are not None.
+#     - Deprecated compatibility parameter, scheduled for removal in version
+#       2.0. `True` maps to `on_last_window='drop'`; `False` maps to
+#       `on_last_window='overlap'`.
+#
+# **on_last_window** : {'overlap', 'drop', 'keep'} or None
+#     - Keyword-only strategy for an incomplete trailing window. Use
+#       `'overlap'` for a full window shifted flush to the recording end,
+#       `'drop'` to discard the remainder, or `'keep'` for a naturally placed
+#       shorter window. The `'keep'` mode requires `lazy_metadata=False` and
+#       `use_mne_epochs=False`.
 #
 # **mapping** : dict(str: int) or None
 #     - Mapping from event description to target value.
 #
 # **preload** : bool (default=False)
 #     - If True, preload the data of the Epochs objects.
+#
+# **drop_bad_windows** : bool or None
+#     - If True, drop bad windows after creating MNE Epochs. This only has an
+#       effect when `use_mne_epochs=True`.
 #
 # **picks** : str | list | slice | None
 #     - Channels to include. If None, all available channels are used. See mne.Epochs.
@@ -102,6 +120,11 @@ Fixed-Length Windows Extraction
 #
 # **on_missing** : str (default='error')
 #     - What to do if one or several event ids are not found in the recording. Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+#
+# **use_mne_epochs** : bool or None
+#     - If True, return MNE Epochs-backed windows; if False, return
+#       `EEGWindowsDataset` objects. If None, infer the representation from the
+#       other parameters.
 #
 # **n_jobs** : int (default=1)
 #     - Number of jobs to use to parallelize the windowing.
