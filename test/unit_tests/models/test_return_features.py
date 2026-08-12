@@ -7,10 +7,10 @@ import torch
 from braindecode.models import (
     BENDR,
     BIOT,
-    Brant,
     EEGDINO,
     EEGPT,
     REVE,
+    Brant,
     CBraMod,
     InterpolatedBENDR,
     InterpolatedLaBraM,
