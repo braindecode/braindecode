@@ -191,6 +191,7 @@ interface for all EEG models and can derive variable names when needed.
      TIDNet
      TSception
      USleep
+     ZUNA
 
 Modules
 
