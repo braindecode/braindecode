@@ -4,6 +4,7 @@ Test for samplers.
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Young Truong <dt.young112@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -478,3 +479,58 @@ def test_balanced_sequence_sampler_no_targets(windows_ds):
     md = windows_ds.get_metadata().drop(columns="target")
     with pytest.raises(ValueError):
         BalancedSequenceSampler(md, 10, n_sequences=5, random_state=87)
+
+
+def _sequence_metadata(windows_per_recording):
+    """Build a windows metadata frame with one recording per given length."""
+    rows = []
+    for subject, n_windows in enumerate(windows_per_recording):
+        for i_window in range(n_windows):
+            rows.append(
+                {
+                    "i_window_in_trial": i_window,
+                    "i_start_in_trial": i_window * 100,
+                    "i_stop_in_trial": i_window * 100 + 100,
+                    "target": i_window % 2,
+                    "subject": subject,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.parametrize("windows_per_recording", [[10, 10], [10, 3], [3, 10], [3, 2]])
+def test_sequence_sampler_file_ids_stay_integer(windows_per_recording):
+    """A recording too short for a sequence must not float the file ids."""
+    md = _sequence_metadata(windows_per_recording)
+    sampler = SequenceSampler(md, n_windows=5, n_windows_stride=1)
+
+    assert sampler.file_ids.dtype == np.int64
+    assert sampler.start_inds.dtype == np.int64
+
+    expected = sum(max(0, n - 5 + 1) for n in windows_per_recording)
+    assert len(sampler) == expected
+    assert len(sampler.file_ids) == expected
+
+
+def test_balanced_sequence_sampler_skips_short_recordings():
+    """A recording shorter than n_windows is left out rather than sampled."""
+    md = _sequence_metadata([10, 3])
+    sampler = BalancedSequenceSampler(md, 5, n_sequences=50, random_state=87)
+
+    assert list(sampler.long_enough_recordings) == [0]
+
+    seqs = list(sampler)
+    assert len(seqs) == 50
+    assert all(len(seq) == 5 for seq in seqs)
+    for seq in seqs:
+        assert all(np.diff(seq) == 1)
+        # every window has to come from the recording that is long enough
+        assert md.iloc[list(seq)]["subject"].nunique() == 1
+        assert md.iloc[list(seq)]["subject"].iloc[0] == 0
+
+
+def test_balanced_sequence_sampler_all_recordings_too_short():
+    """No recording able to hold a sequence is reported clearly."""
+    md = _sequence_metadata([3, 2])
+    with pytest.raises(ValueError, match="longest recording has 3 windows"):
+        BalancedSequenceSampler(md, 5, n_sequences=5, random_state=87)
