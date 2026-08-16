@@ -49,6 +49,11 @@ Bug fixes
 - Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
   which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
   validation (:gh:`1123` by `Bruno Aristimunha`_).
+- Write spec-compliant JSON in Hub dataset stores: sanitize NaN/Inf in the MNE
+  ``Info`` attributes so ``zarr.json`` no longer contains invalid ``NaN``
+  literals, and store preprocessing kwargs as native JSON objects instead of
+  double-encoded strings, while still reading stores written by older versions
+  (:gh:`880` by `Azra Bano`_).
 
 Code health
 ============
@@ -1560,3 +1565,4 @@ Authors
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Jon Huml: https://github.com/jonathanhuml
+.. _Azra Bano: https://github.com/azrabano23

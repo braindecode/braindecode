@@ -6,6 +6,7 @@
 
 
 import inspect
+import json
 from unittest import mock
 
 import mne
@@ -720,6 +721,97 @@ def test_preprocessing_kwargs_preserved(tmp_path):
         loaded.datasets[0].window_preproc_kwargs
         == windowed.datasets[0].window_preproc_kwargs
     )
+
+
+def _strict_json_loads(text):
+    """Parse JSON, rejecting NaN/Infinity literals that RFC 8259 forbids."""
+
+    def _reject(constant):
+        raise ValueError(f"non-compliant JSON constant: {constant}")
+
+    return json.loads(text, parse_constant=_reject)
+
+
+def _make_concat_raw_dataset_with_nan_locs():
+    """Create a synthetic RawDataset whose info contains NaN channel locs."""
+    rng = np.random.RandomState(42)
+    info = mne.create_info(ch_names=["C3", "C4", "Cz"], sfreq=100.0, ch_types="eeg")
+    raw = mne.io.RawArray(rng.randn(3, 500) * 1e-6, info)
+    # Realistic montage state: unknown coordinates are NaN in MNE
+    # (set_montage does the same for missing positions).
+    for ch in raw.info["chs"]:
+        ch["loc"][3:] = np.nan
+    description = pd.Series({"subject": 1, "session": "0train"})
+    return BaseConcatDataset([RawDataset(raw, description)])
+
+
+def test_zarr_json_attrs_are_spec_compliant(tmp_path):
+    """Saved zarr.json metadata must be valid JSON without NaN literals.
+
+    Regression test for gh-880: NaN values in the MNE ``Info`` dict were
+    written verbatim into ``zarr.json`` (invalid JSON per RFC 8259 and
+    the zarr v3 spec), and preprocessing kwargs were stored as
+    double-encoded JSON strings instead of JSON objects.
+    """
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    concat_ds.datasets[0].raw_preproc_kwargs = [["pick_types", {"eeg": True}]]
+
+    zarr_path = tmp_path / "dataset.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression=None, compression_level=5
+    )
+
+    zarr_json_files = sorted(zarr_path.rglob("zarr.json"))
+    assert len(zarr_json_files) >= 2  # root + recording_0 at minimum
+    for zarr_json in zarr_json_files:
+        # Raises ValueError on NaN/Infinity literals before the fix
+        _strict_json_loads(zarr_json.read_text())
+
+    root_zarr_json = _strict_json_loads((zarr_path / "zarr.json").read_text())
+    root_attrs = root_zarr_json["attributes"]
+    # Preprocessing kwargs must be stored as JSON values, not as strings
+    assert not isinstance(root_attrs["raw_preproc_kwargs"], str)
+    assert root_attrs["raw_preproc_kwargs"] == [["pick_types", {"eeg": True}]]
+
+
+def test_nan_channel_locs_round_trip(tmp_path):
+    """NaN channel locations must survive the save/load round trip (gh-880)."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    original_locs = [ch["loc"].copy() for ch in concat_ds.datasets[0].raw.info["chs"]]
+
+    zarr_path = tmp_path / "dataset.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression=None, compression_level=5
+    )
+    loaded = concat_ds._load_from_zarr_inline(zarr_path, preload=True)
+
+    loaded_chs = loaded.datasets[0].raw.info["chs"]
+    for original_loc, ch in zip(original_locs, loaded_chs):
+        # assert_array_equal treats NaN positions as equal
+        np.testing.assert_array_equal(original_loc, ch["loc"])
+
+
+def test_legacy_stringified_kwargs_still_load(tmp_path):
+    """Stores with double-encoded kwargs (pre-gh-880 fix) must still load."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    zarr_path = tmp_path / "dataset.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression=None, compression_level=5
+    )
+
+    # Rewrite the attribute the way older braindecode versions stored it
+    legacy_kwargs = [["pick_types", {"eeg": True}]]
+    root = zarr.open(str(zarr_path), mode="a")
+    root.attrs["raw_preproc_kwargs"] = json.dumps(legacy_kwargs)
+
+    loaded = concat_ds._load_from_zarr_inline(zarr_path, preload=True)
+    assert loaded.datasets[0].raw_preproc_kwargs == legacy_kwargs
 
 
 @pytest.mark.parametrize("use_mne_epochs", [True, False])

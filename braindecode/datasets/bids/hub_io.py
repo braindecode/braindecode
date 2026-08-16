@@ -17,12 +17,36 @@ from mne.utils import _soft_import
 zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
 
 
-def _restore_nan_from_json(obj):
-    """Restore NaN values from None in legacy zarr stores.
+def _sanitize_for_json(obj):
+    """Replace NaN/Inf with None so attributes serialize to valid JSON.
 
-    Datasets saved before zarr v3 native NaN support used
-    ``_sanitize_for_json`` to convert NaN/Inf → None. This restores them
-    on load so ``mne.Info.from_json_dict`` gets proper NaN arrays.
+    ``zarr.json`` must be spec-compliant JSON, but Python's ``json``
+    module writes ``NaN``/``Infinity`` literals by default, which
+    RFC 8259 forbids and non-Python zarr readers reject. MNE ``Info``
+    dicts routinely contain NaN (e.g. in channel ``loc`` arrays), so
+    they are sanitized before being stored as attributes and restored
+    with ``_restore_nan_from_json`` on load.
+    """
+    if isinstance(obj, float):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return _sanitize_for_json(obj.tolist())
+    return obj
+
+
+def _restore_nan_from_json(obj):
+    """Restore NaN values from None in JSON-loaded attributes.
+
+    Inverse of ``_sanitize_for_json`` for numeric arrays: restores NaN
+    on load so ``mne.Info.from_json_dict`` gets proper NaN arrays. Also
+    covers stores written by older braindecode versions, which sanitized
+    NaN/Inf → None the same way.
     """
     if isinstance(obj, dict):
         return {k: _restore_nan_from_json(v) for k, v in obj.items()}
@@ -64,7 +88,7 @@ def _save_windows_to_zarr(
     metadata.to_csv(metadata_path, sep="\t", index=True)
 
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = info
+    grp.attrs["info"] = _sanitize_for_json(info)
 
     if target_name is not None:
         grp.attrs["target_name"] = target_name
@@ -101,7 +125,7 @@ def _save_eegwindows_to_zarr(
     metadata.to_csv(metadata_path, sep="\t", index=True)
 
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = info
+    grp.attrs["info"] = _sanitize_for_json(info)
     grp.attrs["targets_from"] = targets_from
     grp.attrs["last_target_only"] = last_target_only
 
@@ -162,7 +186,7 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chun
     )
 
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = info
+    grp.attrs["info"] = _sanitize_for_json(info)
 
     if target_name is not None:
         grp.attrs["target_name"] = target_name

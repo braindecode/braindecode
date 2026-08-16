@@ -717,7 +717,10 @@ class HubDatasetMixin:
             if hasattr(first_ds, kwarg_name):
                 kwargs = getattr(first_ds, kwarg_name)
                 if kwargs:
-                    root.attrs[kwarg_name] = json.dumps(kwargs)
+                    # Store as native JSON (the round-trip through json
+                    # normalizes tuples to lists) so zarr.json holds a
+                    # readable object instead of a double-encoded string.
+                    root.attrs[kwarg_name] = json.loads(json.dumps(kwargs))
 
         # Create compressor
         compressor = _create_compressor(compression, compression_level)
@@ -956,7 +959,11 @@ class HubDatasetMixin:
             "window_preproc_kwargs",
         ]:
             if kwarg_name in root.attrs:
-                kwargs = json.loads(root.attrs[kwarg_name])
+                kwargs = root.attrs[kwarg_name]
+                if isinstance(kwargs, str):
+                    # Stores written by older braindecode versions kept
+                    # these attributes as double-encoded JSON strings.
+                    kwargs = json.loads(kwargs)
                 # Set on each individual dataset (where they were originally stored)
                 for ds in datasets:
                     setattr(ds, kwarg_name, kwargs)
