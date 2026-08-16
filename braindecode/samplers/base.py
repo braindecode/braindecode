@@ -220,6 +220,9 @@ class DistributedRecordingSampler(DistributedSampler):
 class SequenceSampler(RecordingSampler):
     """Sample sequences of consecutive windows.
 
+    Recordings holding fewer than ``n_windows`` windows cannot contain a full
+    sequence and contribute none.
+
     Parameters
     ----------
     metadata : pd.DataFrame
@@ -228,7 +231,7 @@ class SequenceSampler(RecordingSampler):
         Number of consecutive windows in a sequence.
     n_windows_stride : int
         Number of windows between two consecutive sequences.
-    random : bool
+    randomize : bool
         If True, sample sequences randomly. If False, sample sequences in
         order.
     random_state : np.random.RandomState | int | None
@@ -270,7 +273,10 @@ class SequenceSampler(RecordingSampler):
             .apply(lambda x: x[: end_offset : self.n_windows_stride])
             .values
         )
-        file_ids = [[i] * len(inds) for i, inds in enumerate(start_inds)]
+        # a typed array keeps the ids integer when a recording yields no sequence
+        file_ids = [
+            np.full(len(inds), i, dtype=int) for i, inds in enumerate(start_inds)
+        ]
         return np.concatenate(start_inds), np.concatenate(file_ids)
 
     def __len__(self):
