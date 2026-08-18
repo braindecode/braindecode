@@ -429,11 +429,6 @@ def test_model_compiled(model):
         # torch.compile currently stalls on the STFT/eigendecomposition-based
         # MPF featurizer at the default handwriting input size.
         "MetaNeuromotorHand",
-        # The official-size configurations are prohibitively expensive to
-        # compile in this parametrized CPU test. Reduced configurations are
-        # compiled in test_sleepfm.py.
-        "SleepFM",
-        "SleepFMStager",
     ]
     if model.__class__.__name__ in not_compilable_models:
         pytest.skip(
@@ -557,8 +552,9 @@ def test_model_torch_script(model):
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",
         "SignalJEPA_PreLocal",
-        # Feature-return mode is polymorphic, and the plain-module conversion
-        # used by this test intentionally strips SleepFM's mask helpers.
+        # torch.jit.script cannot type the shape-guard messages (`tuple(x.shape)`
+        # inside an f-string) and, as for EEGDINO and MVPFormer, rejects
+        # forward()'s polymorphic Dict[str, Tensor] / Tensor return.
         "SleepFM",
         "SleepFMStager",
         "InterpolatedBENDR",
