@@ -12,12 +12,17 @@ The following components are licensed under the Creative Commons Attribution-Non
 
 - `braindecode/models/eegminer.py`
 - `braindecode/models/meta_neuromotor.py`
+- `braindecode/models/sleepfm.py`
 
 As well as class later imported into the `braindecode.models.module` named as GeneralizedGaussianFilter.
 
 The `meta_neuromotor.py` file is a derivative of
 `facebookresearch/generic-neuromotor-interface`, released by Meta Platforms,
 Inc. under CC BY-NC 4.0, and inherits the same noncommercial terms.
+
+The `sleepfm.py` file is adapted from
+`zou-group/sleepfm-clinical`, Copyright (c) 2025 Rahul Thapa, released
+under CC BY-NC 4.0, and inherits the same noncommercial terms.
 
 ## License Links
 
