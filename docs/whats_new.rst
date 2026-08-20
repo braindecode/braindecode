@@ -46,6 +46,17 @@ Bug fixes
 - Make :class:`braindecode.datasets.SleepPhysionet` wake cropping retain the complete
   final sleep annotation without including an extra endpoint sample (:gh:`612` by
   `John Muradeli`_).
+
+- The ``activation`` parameter of :class:`braindecode.models.AttnSleep` is now
+  used by the adaptive feature recalibration block, which was always built with
+  ``nn.ReLU`` no matter what was passed (:gh:`1119` by `Sarthak Tayal`_).
+
+- :class:`braindecode.models.AttnSleep` now reports which ``d_model`` a window
+  length needs instead of failing inside a layer normalization, and it sizes its
+  final layer from the measured feature length. The model also records and
+  validates its single-channel input contract, so ``get_output_shape`` works
+  without redundant channel metadata (:gh:`1119` by `Sarthak Tayal`_).
+
 - Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
   which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
   validation (:gh:`1123` by `Bruno Aristimunha`_).
@@ -53,7 +64,9 @@ Bug fixes
 Code health
 ============
 
-- None yet
+- The attention block of :class:`braindecode.models.AttnSleep` no longer builds
+  a weighted sum that is dropped on the next line, so each attention call runs
+  one matrix multiplication less (:gh:`1119` by `Sarthak Tayal`_).
 
 
 Current 1.7.0 (2026-08-01)

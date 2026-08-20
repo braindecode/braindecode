@@ -991,6 +991,136 @@ def test_eldele_2021_feats():
     assert out.shape == (n_examples, model.len_last_layer)
 
 
+def test_eldele_2021_d_model_mismatch():
+    with pytest.raises(ValueError, match="d_model=54"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
+
+
+def test_eldele_2021_heads_not_dividing_d_model():
+    with pytest.raises(ValueError, match="divisible"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
+
+
+@pytest.mark.parametrize("n_attn_heads", [0, -5])
+def test_eldele_2021_rejects_non_positive_heads(n_attn_heads):
+    with pytest.raises(ValueError, match="positive"):
+        AttnSleep(
+            sfreq=100,
+            n_outputs=5,
+            n_times=3000,
+            n_attn_heads=n_attn_heads,
+        )
+
+
+def test_eldele_2021_other_window():
+    # 20 seconds at 100Hz, the feature extractor returns 54 time steps there
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=2000, d_model=54, n_attn_heads=6)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = torch.from_numpy(rng.randn(4, 1, 2000).astype(np.float32))
+
+    assert model.len_last_layer == 54 * 30
+    assert model(X).shape == (4, 5)
+
+
+def test_eldele_2021_other_window_feats():
+    model = AttnSleep(
+        sfreq=100,
+        n_outputs=5,
+        n_times=2000,
+        d_model=54,
+        n_attn_heads=6,
+        return_feats=True,
+    )
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = torch.from_numpy(rng.randn(4, 1, 2000).astype(np.float32))
+
+    assert model(X).shape == (4, model.len_last_layer)
+
+
+def test_eldele_2021_final_layer_matches_features():
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000)
+
+    assert model.len_last_layer == 80 * 30
+    assert model.final_layer.in_features == model.len_last_layer
+    assert model.eval().get_output_shape() == (1, 5)
+
+
+def test_eldele_2021_rejects_multiple_channels():
+    with pytest.raises(ValueError, match="requires n_chans=1"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_chans=2)
+
+
+def test_eldele_2021_activation_reaches_afr():
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000, activation=nn.ELU)
+    afr_activations = [
+        type(module)
+        for module in model.feature_extractor[0].AFR.modules()
+        if isinstance(module, (nn.ReLU, nn.ELU))
+    ]
+
+    assert afr_activations
+    assert all(act is nn.ELU for act in afr_activations)
+
+
+def test_eldele_2021_feature_probe_preserves_eval_state():
+    feature_extractor = nn.Identity().eval()
+
+    assert AttnSleep._feature_length(feature_extractor, n_times=20) == 20
+    assert not feature_extractor.training
+
+
+def test_eldele_2021_feature_probe_restores_state_after_error():
+    class FailingFeatureExtractor(nn.Module):
+        def forward(self, x):
+            raise RuntimeError("shape probe failed")
+
+    feature_extractor = FailingFeatureExtractor().train()
+
+    with pytest.raises(RuntimeError, match="shape probe failed"):
+        AttnSleep._feature_length(feature_extractor, n_times=20)
+    assert feature_extractor.training
+
+
+@pytest.mark.parametrize("root_training", [False, True])
+@pytest.mark.parametrize("raises", [False, True])
+def test_eldele_2021_feature_probe_restores_descendant_states(
+    root_training, raises
+):
+    class NestedFeatureExtractor(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.training_child = nn.Identity()
+            self.eval_child = nn.Identity()
+
+        def forward(self, x):
+            x = self.training_child(x)
+            x = self.eval_child(x)
+            if raises:
+                raise RuntimeError("shape probe failed")
+            return x
+
+    feature_extractor = NestedFeatureExtractor().train(root_training)
+    feature_extractor.training_child.train()
+    feature_extractor.eval_child.eval()
+    training_states = {
+        name: module.training for name, module in feature_extractor.named_modules()
+    }
+
+    if raises:
+        with pytest.raises(RuntimeError, match="shape probe failed"):
+            AttnSleep._feature_length(feature_extractor, n_times=20)
+    else:
+        assert AttnSleep._feature_length(feature_extractor, n_times=20) == 20
+
+    assert {
+        name: module.training for name, module in feature_extractor.named_modules()
+    } == training_states
+
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
