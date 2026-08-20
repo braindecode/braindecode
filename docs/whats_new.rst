@@ -43,6 +43,10 @@ Requirements
 Bug fixes
 ==========
 
+- Make :class:`braindecode.datasets.SleepPhysionet` wake cropping retain the complete
+  final sleep annotation without including an extra endpoint sample (:gh:`612` by
+  `John Muradeli`_).
+
 - Fix :func:`braindecode.training.mixup_criterion` treating a plain target
   tensor of three elements as a mixup ``(y_a, y_b, lam)`` triple. The branch
   was selected on ``len(target) == 3``, which is also true for the targets of
