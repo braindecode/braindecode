@@ -43,6 +43,10 @@ Requirements
 Bug fixes
 ==========
 
+- Make :class:`braindecode.datasets.SleepPhysionet` wake cropping retain the complete
+  final sleep annotation without including an extra endpoint sample (:gh:`612` by
+  `John Muradeli`_).
+
 - The ``activation`` parameter of :class:`braindecode.models.AttnSleep` is now
   used by the adaptive feature recalibration block, which was always built with
   ``nn.ReLU`` no matter what was passed (:gh:`1119` by `Sarthak Tayal`_).
