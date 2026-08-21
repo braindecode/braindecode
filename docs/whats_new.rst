@@ -33,7 +33,18 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- Deprecate ``drop_last_window`` in
+  :func:`braindecode.preprocessing.create_windows_from_events` and
+  :func:`braindecode.preprocessing.create_fixed_length_windows`; it will be
+  removed in version 2.0. Its keyword-only replacement, ``on_last_window``,
+  accepts ``'overlap'``, ``'drop'``, or ``'keep'`` and makes handling of an
+  incomplete trailing window explicit. The compatibility mappings remain
+  ``drop_last_window=False`` to ``on_last_window='overlap'`` and
+  ``drop_last_window=True`` to ``on_last_window='drop'``. Explicit legacy use
+  emits a ``DeprecationWarning``. The new ``'keep'`` mode retains the trailing
+  incomplete window at its natural shorter size and therefore requires an
+  :class:`~braindecode.datasets.EEGWindowsDataset`, not MNE Epochs.
+  (:gh:`1058` by `Michele Romani`_)
 
 Requirements
 ============
@@ -575,7 +586,6 @@ API and behavior changes
   removed. Users with arbitrary channel sets should migrate to
   :class:`braindecode.models.InterpolatedLaBraM`. (:gh:`993`
   by `Pierre Guetschel`_)
-
 Bug fixes
 ==========
 
@@ -1559,4 +1569,5 @@ Authors
 .. _Yiheng Li: https://github.com/YihengLi-1
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
+.. _Michele Romani: https://github.com/BRomans
 .. _Jon Huml: https://github.com/jonathanhuml

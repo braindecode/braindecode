@@ -86,7 +86,7 @@ def create_from_mne_raw(
         trial_stop_offset_samples=trial_stop_offset_samples,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
-        drop_last_window=drop_last_window,
+        on_last_window="drop" if drop_last_window else "overlap",
         mapping=mapping,
         drop_bad_windows=drop_bad_windows,
         preload=preload,

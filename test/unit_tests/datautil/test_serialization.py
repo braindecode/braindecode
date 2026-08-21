@@ -229,7 +229,7 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
                     "trial_stop_offset_samples": 0,
                     "window_size_samples": None,
                     "window_stride_samples": None,
-                    "drop_last_window": False,
+                    "on_last_window": "overlap",
                     "mapping": {
                         "feet": 0,
                         "left_hand": 1,
