@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+import torch
 import torch.nn as nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -113,8 +115,42 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         https://ieeexplore.ieee.org/abstract/document/9889159
     """
 
-    def __init__(self):
-        pass
+    def __init__(
+        self,
+        n_outputs: int | None = None,
+        n_chans: int | None = None,
+        chs_info: list[dict] | None = None,
+        n_times: int | None = None,
+        input_window_seconds: float | None = None,
+        sfreq: float | None = None,
+        laplacians: tuple[torch.Tensor, ...] | None = None,
+        n_features: tuple[int, ...] = (16, 32, 64, 128, 256, 512),
+        cheb_orders: tuple[int, ...] = (2, 2, 2, 2, 2, 2),
+        pool_sizes: tuple[int, ...] = (2, 2, 2, 2, 2, 2),
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            sfreq=sfreq,
+            input_window_seconds=input_window_seconds,
+        )
+
+        del n_outputs, n_chans, n_times, input_window_seconds, sfreq
+
+        if not (
+            len(n_features) == len(cheb_orders) == len(pool_sizes) != 0
+        ):
+            raise ValueError(
+                "n_features, cheb_orders, and pool_sizes must be of the same, non-zero length. "
+                "Each value is for a layer of the corresponding index order. "
+                "At least one layer must be present. "
+            )
+
+        self.n_features = n_features
+        self.cheb_orders = cheb_orders
+        self.pool_sizes = pool_sizes
 
     def forward(self):
         pass
