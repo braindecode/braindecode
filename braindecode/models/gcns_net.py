@@ -179,5 +179,16 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             )
             in_features = out_features
 
+        # Bias, batch normalization and activation of each layer.
+        self.biases = nn.ParameterList(
+            [nn.Parameter(torch.full((1, 1, n_feature), 0.1)) for n_feature in n_features]
+        )
+
+        self.batch_norms = nn.ModuleList(
+            [nn.BatchNorm1d(n_feature) for n_feature in n_features]
+        )
+
+        self.activation = nn.Softplus()
+
     def forward(self):
         pass
