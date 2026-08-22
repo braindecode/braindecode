@@ -165,5 +165,19 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         for i, laplacian in enumerate(useful_laplacians):
             self.register_buffer(f"laplacian_{i}", laplacian)
 
+        # Implement Graph Convolutional Neural Network layers.
+        self.graph_convs = nn.ModuleList()
+
+        in_features = 1  # Single scalar input to first layer
+        for out_features, cheb_order in zip(n_features, cheb_orders):
+            self.graph_convs.append(
+                _ChebyshevGraphConvolution(
+                    in_features=in_features,
+                    out_features=out_features,
+                    cheb_order=cheb_order,
+                )
+            )
+            in_features = out_features
+
     def forward(self):
         pass
