@@ -22,7 +22,7 @@ from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.util import resolve_montage_name
 
 
-class _GraphConvolution(nn.Module):
+class _ChebyshevGraphConvolution(nn.Module):
     r"""Chebyshev spectral graph convolution with :math:`1 \times 1` mixing.
 
     Implements Equations 11-13 of Song et al. (2018).  The spectral
@@ -309,7 +309,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
         The adjacency matrix captures intrinsic functional relationships
         between EEG channels that pure spatial proximity may not reflect.
 
-    - :class:`_GraphConvolution` **(Chebyshev spectral graph convolution +
+    - :class:`_ChebyshevGraphConvolution` **(Chebyshev spectral graph convolution +
       1x1 mixing)**
 
         - *Operations.*
@@ -459,7 +459,7 @@ class DGCNN(EEGModuleMixin, nn.Module):
         )
 
         # Chebyshev graph convolution + 1x1 conv (Eq. 13 + Fig. 2)
-        self.graph_conv = _GraphConvolution(
+        self.graph_conv = _ChebyshevGraphConvolution(
             in_features=self.n_times,
             out_features=n_filters,
             cheb_order=cheb_order,
