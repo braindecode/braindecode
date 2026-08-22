@@ -152,5 +152,18 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         self.cheb_orders = cheb_orders
         self.pool_sizes = pool_sizes
 
+        n_electrodes = laplacians[0].shape[0]
+
+        # Keep the useful Laplacians only. May be zero.
+        laplacian_index = 0
+        useful_laplacians = []
+
+        for pool_size in pool_sizes:
+            useful_laplacians.append(laplacians[laplacian_index])
+            laplacian_index += int(np.log2(pool_size)) if pool_size > 1 else 0
+
+        for i, laplacian in enumerate(useful_laplacians):
+            self.register_buffer(f"laplacian_{i}", laplacian)
+
     def forward(self):
         pass
