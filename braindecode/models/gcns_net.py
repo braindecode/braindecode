@@ -190,5 +190,13 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         self.activation = nn.Softplus()
 
+        # Configure a final classification layer.
+        final_n_nodes = useful_laplacians[-1].shape[0] // pool_sizes[-1]
+
+        self.final_layer = nn.Linear(
+            final_n_nodes * n_features[-1],
+            self.n_outputs,
+        )
+
     def forward(self):
         pass
