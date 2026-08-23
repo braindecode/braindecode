@@ -212,5 +212,16 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         return self.activation(x)
 
-    def forward(self):
-        pass
+    def _max_pool(self, x, pool_size):
+        """Max pooling of size pool_size. Should be a power of 2."""
+        if pool_size > 1:
+            x = x.transpose(1, 2)
+            x = nn.functional.max_pool1d(
+                x,
+                kernel_size=pool_size,
+                stride=pool_size,
+                ceil_mode=True,
+            )
+            x = x.transpose(1, 2)
+
+        return x
