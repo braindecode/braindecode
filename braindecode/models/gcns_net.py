@@ -198,5 +198,19 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             self.n_outputs,
         )
 
+    def _bias_norm_softplus(self, x, layer_index):
+        """
+        Apply bias, batch normalization, and Softplus.
+        Output:
+        N x M x Fout = Number of samples x Number of nodes x Number of output features
+        """
+        x = x + self.biases[layer_index]
+
+        x = x.transpose(1, 2)
+        x = self.batch_norms[layer_index](x)
+        x = x.transpose(1, 2)
+
+        return self.activation(x)
+
     def forward(self):
         pass
