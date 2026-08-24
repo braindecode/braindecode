@@ -1,4 +1,5 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 import glob
@@ -386,18 +387,23 @@ class ThrowAwayIndexLoader(object):
             if isinstance(x, dict):
                 if hasattr(x["x"], "type"):
                     x["x"] = x["x"].type(torch.float32)
-                if hasattr(y, "type"):
-                    y = (
-                        y.type(torch.float32)
-                        if self.is_regression
-                        else y.type(torch.int64)
-                    )
+                cast_target = True
             elif hasattr(x, "type"):
                 x = x.type(torch.float32)
-                if self.is_regression:
-                    y = y.type(torch.float32)
-                else:
-                    y = y.type(torch.int64)
+                cast_target = True
+            else:
+                cast_target = False
+            if cast_target:
+                target_dtype = torch.float32 if self.is_regression else torch.int64
+                if isinstance(y, (tuple, list)) and len(y) == 3:
+                    y_a, y_b, lam = y
+                    y = (
+                        y_a.type(target_dtype),
+                        y_b.type(target_dtype),
+                        lam.type(torch.float32),
+                    )
+                elif hasattr(y, "type"):
+                    y = y.type(target_dtype)
             yield x, y
 
 
