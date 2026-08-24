@@ -249,7 +249,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         Returns
         -------
         torch.Tensor
-            Output tensor of shape (batch_size * n_times, n_outputs).
+            Output tensor of shape (batch_size, n_outputs, n_times).
         """
         batch_size, n_chans, n_times = x.shape
 
@@ -266,5 +266,9 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         x = torch.flatten(x, 1)
         x = self.final_layer(x)
+
+        # Restore dimensions
+        x = x.reshape(batch_size, n_times, self.n_outputs)
+        x = x.transpose(1, 2)
 
         return x
