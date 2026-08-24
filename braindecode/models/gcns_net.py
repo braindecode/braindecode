@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-import torch.nn as nn
+from scipy.sparse.csgraph import laplacian
+from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.dgcnn import _ChebyshevGraphConvolution
@@ -197,6 +198,30 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         # Final classification layer.
         self.final_layer = nn.LazyLinear(self.n_outputs)
 
+    def _adjacency(self, x):
+        """Compute the adjacency matrix from EEG data."""
+        signals = x.transpose(0, 1).flatten(1)
+
+        pcc = torch.corrcoef(signals)
+
+        adjacency = pcc.abs()
+        adjacency.fill_diagonal_(0)
+
+        return adjacency
+
+    def _laplacian(self, adjacency):
+        """Compute the normalized graph Laplacian from the adjacency matrix."""
+        laplacian_matrix = laplacian(
+            adjacency.detach().cpu().numpy(),
+            normed=True,
+        )
+
+        return torch.as_tensor(
+            laplacian_matrix,
+            dtype=adjacency.dtype,
+            device=adjacency.device,
+        )
+
     def _bias_norm_softplus(self, x, layer_index):
         """
         Apply bias, batch normalization, and Softplus.
@@ -225,15 +250,15 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         return x
 
-    def _rescale_laplacian(self, laplacian):
+    def _rescale_laplacian(self, laplacian_matrix):
         """Rescale Laplacian, without modifying the input Laplacian."""
         identity = torch.eye(
-            laplacian.shape[0],
-            dtype=laplacian.dtype,
-            device=laplacian.device,
+            laplacian_matrix.shape[0],
+            dtype=laplacian_matrix.dtype,
+            device=laplacian_matrix.device,
         )
 
-        return laplacian - identity
+        return laplacian_matrix - identity
 
     def forward(self, x) -> torch.Tensor:
         """
@@ -256,9 +281,9 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         x = x.unsqueeze(-1)
 
         for i, graph_conv in enumerate(self.graph_convs):
-            laplacian = getattr(self, f"laplacian_{i}")
+            laplacian_matrix = getattr(self, f"laplacian_{i}")
 
-            x = graph_conv(x, laplacian)
+            x = graph_conv(x, laplacian_matrix)
             x = self._bias_norm_softplus(x, i)
             x = self._max_pool(x, self.pool_sizes[i])
 
