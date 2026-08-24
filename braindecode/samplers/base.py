@@ -5,6 +5,7 @@ Sampler classes.
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Theo Gnassounou <>
 #          Young Truong <dt.young112@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -219,6 +220,9 @@ class DistributedRecordingSampler(DistributedSampler):
 class SequenceSampler(RecordingSampler):
     """Sample sequences of consecutive windows.
 
+    Recordings holding fewer than ``n_windows`` windows cannot contain a full
+    sequence and contribute none.
+
     Parameters
     ----------
     metadata : pd.DataFrame
@@ -227,7 +231,7 @@ class SequenceSampler(RecordingSampler):
         Number of consecutive windows in a sequence.
     n_windows_stride : int
         Number of windows between two consecutive sequences.
-    random : bool
+    randomize : bool
         If True, sample sequences randomly. If False, sample sequences in
         order.
     random_state : np.random.RandomState | int | None
@@ -269,7 +273,10 @@ class SequenceSampler(RecordingSampler):
             .apply(lambda x: x[: end_offset : self.n_windows_stride])
             .values
         )
-        file_ids = [[i] * len(inds) for i, inds in enumerate(start_inds)]
+        # a typed array keeps the ids integer when a recording yields no sequence
+        file_ids = [
+            np.full(len(inds), i, dtype=np.int64) for i, inds in enumerate(start_inds)
+        ]
         return np.concatenate(start_inds), np.concatenate(file_ids)
 
     def __len__(self):
@@ -295,6 +302,10 @@ class BalancedSequenceSampler(RecordingSampler):
     2. Uniformly sample one of the classes.
     3. Sample a window of the corresponding class in the selected recording.
     4. Extract a sequence of windows around the sampled window.
+
+    Recordings holding fewer than ``n_windows`` windows cannot contain a full
+    sequence and are left out of step 1, as they are in
+    :class:`SequenceSampler`.
 
     Parameters
     ----------
@@ -322,6 +333,33 @@ class BalancedSequenceSampler(RecordingSampler):
         self.n_windows = n_windows
         self.n_sequences = n_sequences
         self.info_class = self._init_info(metadata, required_keys=["target"])
+        self.long_enough_recordings = self._find_long_enough_recordings()
+
+    def _find_long_enough_recordings(self):
+        """Return the indices of the recordings that can hold a full sequence.
+
+        Returns
+        -------
+        np.ndarray :
+            Array of recording indices holding at least ``n_windows`` windows.
+        """
+        n_windows_per_rec = self.info["index"].apply(len).to_numpy()
+        if n_windows_per_rec.size == 0:
+            raise ValueError("Cannot build sequences from empty metadata.")
+
+        long_enough = np.flatnonzero(n_windows_per_rec >= self.n_windows)
+        if len(long_enough) == 0:
+            raise ValueError(
+                f"No recording holds enough windows to build a sequence of "
+                f"{self.n_windows} windows. The longest recording has "
+                f"{n_windows_per_rec.max()} windows. Reduce n_windows to at "
+                f"most that value."
+            )
+        return long_enough
+
+    def sample_recording(self):
+        """Return a random recording index among the ones long enough."""
+        return self.rng.choice(self.long_enough_recordings)
 
     def sample_class(self, rec_ind=None):
         """Return a random class.
