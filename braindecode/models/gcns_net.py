@@ -206,6 +206,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         self.n_features = n_features
         self.cheb_orders = cheb_orders
         self.pool_sizes = pool_sizes
+        self.graph_initialized = False
 
         for i in range(len(n_features)):
             self.register_buffer(f"laplacian_{i}", None)
@@ -223,6 +224,10 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             for i, laplacian_matrix in enumerate(useful_laplacians):
                 laplacian_matrix = self._rescale_laplacian(laplacian_matrix)
                 setattr(self, f"laplacian_{i}", laplacian_matrix)
+
+            self.graph_initialized = True
+
+        self.graph_coarsening = _GraphCoarsening()
 
         # Implement Graph Convolutional Neural Network layers.
         self.graph_convs = nn.ModuleList()
@@ -276,6 +281,23 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             device=adjacency.device,
         )
 
+    def _initialize_graph(self, x):
+        adjacency = self._adjacency(x)
+
+        adjacencies, clusters = self.graph_coarsening(
+            adjacency,
+            levels=5,
+        )
+
+        for i, adjacency in enumerate(adjacencies):
+            laplacian_matrix = self._laplacian(adjacency)
+            laplacian_matrix = self._rescale_laplacian(laplacian_matrix)
+            setattr(self, f"laplacian_{i}", laplacian_matrix)
+
+        self.graph_initialized = True
+
+        return adjacencies, clusters
+
     def _bias_norm_softplus(self, x, layer_index):
         """
         Apply bias, batch normalization, and Softplus.
@@ -328,6 +350,9 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor of shape (batch_size, n_outputs, n_times).
         """
+        if not self.graph_initialized:
+            self._initialize_graph(x)
+
         batch_size, n_chans, n_times = x.shape
 
         x = x.transpose(1, 2)
