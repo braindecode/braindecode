@@ -163,6 +163,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             laplacian_index += int(np.log2(pool_size)) if pool_size > 1 else 0
 
         for i, laplacian in enumerate(useful_laplacians):
+            laplacian = self._rescale_laplacian(laplacian)
             self.register_buffer(f"laplacian_{i}", laplacian)
 
         # Implement Graph Convolutional Neural Network layers.
@@ -225,6 +226,16 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             x = x.transpose(1, 2)
 
         return x
+
+    def _rescale_laplacian(self, laplacian):
+        """Rescale Laplacian, without modifying the input Laplacian."""
+        identity = torch.eye(
+            laplacian.shape[0],
+            dtype=laplacian.dtype,
+            device=laplacian.device,
+        )
+
+        return laplacian - identity
 
     def forward(self, x) -> torch.Tensor:
         """
