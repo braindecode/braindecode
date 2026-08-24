@@ -495,7 +495,16 @@ def _sequence_metadata(windows_per_recording):
                     "subject": subject,
                 }
             )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "i_window_in_trial",
+            "i_start_in_trial",
+            "i_stop_in_trial",
+            "target",
+            "subject",
+        ],
+    )
 
 
 @pytest.mark.parametrize("windows_per_recording", [[10, 10], [10, 3], [3, 10], [3, 2]])
@@ -504,7 +513,7 @@ def test_sequence_sampler_file_ids_stay_integer(windows_per_recording):
     md = _sequence_metadata(windows_per_recording)
     sampler = SequenceSampler(md, n_windows=5, n_windows_stride=1)
 
-    assert sampler.file_ids.dtype == np.int64
+    assert sampler.file_ids.dtype == np.dtype(np.int64)
     assert sampler.start_inds.dtype == np.int64
 
     expected = sum(max(0, n - 5 + 1) for n in windows_per_recording)
@@ -534,3 +543,18 @@ def test_balanced_sequence_sampler_all_recordings_too_short():
     md = _sequence_metadata([3, 2])
     with pytest.raises(ValueError, match="longest recording has 3 windows"):
         BalancedSequenceSampler(md, 5, n_sequences=5, random_state=87)
+
+
+def test_balanced_sequence_sampler_rejects_empty_metadata():
+    """Schema-valid empty metadata is rejected with a deliberate error."""
+    metadata = _sequence_metadata([])
+
+    with pytest.raises(
+        ValueError, match="Cannot build sequences from empty metadata"
+    ):
+        BalancedSequenceSampler(
+            metadata,
+            n_windows=5,
+            n_sequences=5,
+            random_state=87,
+        )

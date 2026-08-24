@@ -275,7 +275,7 @@ class SequenceSampler(RecordingSampler):
         )
         # a typed array keeps the ids integer when a recording yields no sequence
         file_ids = [
-            np.full(len(inds), i, dtype=int) for i, inds in enumerate(start_inds)
+            np.full(len(inds), i, dtype=np.int64) for i, inds in enumerate(start_inds)
         ]
         return np.concatenate(start_inds), np.concatenate(file_ids)
 
@@ -343,7 +343,10 @@ class BalancedSequenceSampler(RecordingSampler):
         np.ndarray :
             Array of recording indices holding at least ``n_windows`` windows.
         """
-        n_windows_per_rec = self.info["index"].apply(len).values
+        n_windows_per_rec = self.info["index"].apply(len).to_numpy()
+        if n_windows_per_rec.size == 0:
+            raise ValueError("Cannot build sequences from empty metadata.")
+
         long_enough = np.flatnonzero(n_windows_per_rec >= self.n_windows)
         if len(long_enough) == 0:
             raise ValueError(

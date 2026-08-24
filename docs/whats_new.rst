@@ -56,18 +56,18 @@ Bug fixes
   range empty and raised ``ValueError: high <= 0`` on the first sequence that
   landed there. :class:`braindecode.samplers.SequenceSampler` already skips
   those recordings. A clear error now names the longest recording when none of
-  them can hold a sequence. By `Sarthak Tayal`_.
+  them can hold a sequence (:gh:`1125` by `Sarthak Tayal`_).
 
 - Keep ``file_ids`` of :class:`braindecode.samplers.SequenceSampler` integer.
   The ids were built from untyped lists, so an empty list coming from a
   recording too short for a sequence turned the concatenated array into
-  ``float64``, against the documented dtype and unusable as an index. By
-  `Sarthak Tayal`_.
+  ``float64``, against the documented dtype and unusable as an index
+  (:gh:`1125` by `Sarthak Tayal`_).
 
 - Document the ``randomize`` parameter of
   :class:`braindecode.samplers.SequenceSampler` under its own name. The
-  docstring described it as ``random``, which no signature accepts. By
-  `Sarthak Tayal`_.
+  docstring described it as ``random``, which no signature accepts
+  (:gh:`1125` by `Sarthak Tayal`_).
 
 Code health
 ============
