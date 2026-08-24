@@ -26,9 +26,6 @@ from braindecode.models import (
     REVE,
     SSTDPN,
     ZUNA,
-    Deep4Net,
-    EEGConformer,
-    EEGInceptionERP,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -40,9 +37,7 @@ from braindecode.models import (
     InterpolatedEEGPT,
     InterpolatedLaBraM,
     InterpolatedSignalJEPA,
-    SCCNet,
     ShallowFBCSPNet,
-    SleepStagerChambon2018,
     SyncNet,
     USleep,
 )
@@ -62,6 +57,41 @@ rng = np.random.default_rng(12)
 # Interpolated models are kept in a separate registry from ``models_dict``;
 # combine them here so integration tests continue to exercise both.
 all_models_dict = {**models_dict, **interpolated_models_dict}
+
+_DIRECT_TORCHSCRIPT_MODELS = (
+    "Deep4Net",
+    "DeepSleepNet",
+    "EEGConformer",
+    "EEGInceptionERP",
+    "EEGInceptionMI",
+    "ShallowFBCSPNet",
+    "SleepStagerBlanco2020",
+    "SleepStagerChambon2018",
+    "AttnSleep",
+    "USleep",
+    "AttentionBaseNet",
+    "EEGSimpleConv",
+    "SPARCNet",
+    "ContraWR",
+    "EEGSym",
+    "TSception",
+    "SyncNet",
+    "EEGMiner",
+    "CTNet",
+    "SincShallowNet",
+    "SCCNet",
+    "EMG2QwertyNet",
+    "FBLightConvNet",
+    "PBT",
+    "MEDFormer",
+    "DGCNN",
+    "ZUNA",
+)
+
+_MODEL_CASES = {
+    name: (required, signal_params)
+    for name, required, signal_params in models_mandatory_parameters
+}
 
 
 def convert_model_to_plain(model):
@@ -143,6 +173,15 @@ def test_completeness__models_test_cases():
     assert (
         all_models == models_tested
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
+
+
+def test_direct_torchscript_model_registry():
+    """Every direct TorchScript case is unique and registered."""
+    direct_models = set(_DIRECT_TORCHSCRIPT_MODELS)
+    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 27
+    assert len(direct_models) == len(_DIRECT_TORCHSCRIPT_MODELS)
+    assert direct_models <= all_models_dict.keys()
+    assert direct_models <= _MODEL_CASES.keys()
 
 
 @pytest.mark.parametrize(
@@ -517,13 +556,10 @@ def test_model_exported(model):
 # skip if windows or python 3.14
 @pytest.mark.skipif(
     sys.platform.startswith("win") or sys.version_info >= (3, 14),
-    reason="torch.compile is known to have issues on Windows or with Python 3.14.",
+    reason="TorchScript is known to have issues on Windows or with Python 3.14.",
 )
 def test_model_torch_script(model):
-    """
-    Verifies that all models can be torch export without issue
-    using torch.export.export()
-    """
+    """Compatible models can be scripted after conversion to plain modules."""
 
     not_working_models = [
         "BIOT",
@@ -600,19 +636,8 @@ def test_model_torch_script(model):
     os.remove(fname)
 
 
-@pytest.mark.parametrize(
-    "model_class",
-    [
-        ShallowFBCSPNet,
-        Deep4Net,
-        EEGConformer,
-        EEGInceptionERP,
-        SleepStagerChambon2018,
-        SCCNet,
-    ],
-    ids=lambda cls: cls.__name__,
-)
-def test_torch_script_without_plain_conversion(model_class):
+@pytest.mark.parametrize("model_name", _DIRECT_TORCHSCRIPT_MODELS)
+def test_torch_script_without_plain_conversion(model_name):
     """Models script directly, without being rebuilt as a plain ``nn.Module``.
 
     ``EEGModuleMixin`` exposes the signal-related parameters as properties that
@@ -621,19 +646,38 @@ def test_torch_script_without_plain_conversion(model_class):
     attribute while building the concrete type, so either one used to abort
     scripting before ``forward`` was compiled.
     """
-    model = model_class(
-        n_chans=default_signal_params["n_chans"],
-        n_outputs=default_signal_params["n_outputs"],
-        n_times=default_signal_params["n_times"],
-        sfreq=default_signal_params["sfreq"],
-    ).eval()
-    input_tensor = torch.randn(
-        2, default_signal_params["n_chans"], default_signal_params["n_times"]
-    )
+    required, signal_params = _MODEL_CASES[model_name]
+    sp = get_sp(signal_params, required)
+    model = all_models_dict[model_name](**sp).eval()
+
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    input_tensor = torch.randn(1, n_chans, n_times)
+
+    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
+        with torch.no_grad():
+            model(input_tensor)
+
+    with torch.no_grad():
+        expected = model(input_tensor)
 
     scripted_model = torch.jit.script(model)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted_model(input_tensor), expected)
 
-    torch.testing.assert_close(scripted_model(input_tensor), model(input_tensor))
+    buffer = BytesIO()
+    torch.jit.save(scripted_model, buffer)
+    buffer.seek(0)
+    restored_script = torch.jit.load(buffer)
+
+    with torch.no_grad():
+        torch.testing.assert_close(restored_script(input_tensor), expected)
 
 
 @pytest.mark.parametrize("n_chans", [None, default_signal_params["n_chans"]])
