@@ -4,9 +4,63 @@ import numpy as np
 import torch
 from scipy.sparse.csgraph import laplacian
 from torch import nn
+from torch_geometric.nn.pool import graclus
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.dgcnn import _ChebyshevGraphConvolution
+
+
+class _GraphCoarsening:
+    """
+    To carry out pooling to reduce dimensionality, the Graclus multilevel
+    clustering algorithm is performed.
+    """
+
+    def __call__(self, adjacency, levels):
+        adjacencies = [adjacency]
+        clusters = []
+
+        for _ in range(levels):
+            cluster = self._cluster(adjacencies[-1])
+            clusters.append(cluster)
+
+            coarsened_adjacency = self._coarsen_adjacency(
+                adjacencies[-1],
+                cluster,
+            )
+            adjacencies.append(coarsened_adjacency)
+
+        return adjacencies, clusters
+
+    def _cluster(self, adjacency):
+        row, col = adjacency.nonzero(as_tuple=True)
+        edge_index = torch.stack([row, col])
+        edge_weight = adjacency[row, col]
+
+        return graclus(
+            edge_index,
+            weight=edge_weight,
+            num_nodes=adjacency.shape[0],
+        )
+
+    def _coarsen_adjacency(self, adjacency, clusters):
+        _, cluster_ids = torch.unique(
+            clusters,
+            sorted=True,
+            return_inverse=True,
+        )
+
+        n_clusters = int(cluster_ids.max().item()) + 1
+
+        membership = nn.functional.one_hot(
+            cluster_ids,
+            num_classes=n_clusters,
+        ).to(adjacency.dtype)
+
+        coarsened_adjacency = membership.T @ adjacency @ membership
+        coarsened_adjacency.fill_diagonal_(0)
+
+        return coarsened_adjacency
 
 
 class GCNsNet(EEGModuleMixin, nn.Module):
@@ -103,8 +157,8 @@ class GCNsNet(EEGModuleMixin, nn.Module):
     cheb_orders : tuple of int, default=(2, 2, 2, 2, 2, 2)
         Order :math:`K` of the Chebyshev polynomial approximation.
     pool_sizes : tuple of int, default=(2, 2, 2, 2, 2, 2)
-        Pooling size. Should be 1 (no pooling) or a power of 2 
-        (reduction by 2 at each coarser level). Beware to have 
+        Pooling size. Should be 1 (no pooling) or a power of 2
+        (reduction by 2 at each coarser level). Beware to have
         coarsened enough.
 
     References
