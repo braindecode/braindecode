@@ -225,3 +225,35 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             x = x.transpose(1, 2)
 
         return x
+
+    def forward(self, x) -> torch.Tensor:
+        """
+        Forward pass of the GCNs-Net model.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, n_chans, n_times).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor of shape (batch_size * n_times, n_outputs).
+        """
+        batch_size, n_chans, n_times = x.shape
+
+        x = x.transpose(1, 2)
+        x = x.reshape(batch_size * n_times, n_chans)
+        x = x.unsqueeze(-1)
+
+        for i, graph_conv in enumerate(self.graph_convs):
+            laplacian = getattr(self, f"laplacian_{i}")
+
+            x = graph_conv(x, laplacian)
+            x = self._bias_norm_softplus(x, i)
+            x = self._max_pool(x, self.pool_sizes[i])
+
+        x = torch.flatten(x, 1)
+        x = self.final_layer(x)
+
+        return x
