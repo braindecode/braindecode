@@ -1065,13 +1065,11 @@ def mixup(
     batch_size, n_channels, n_times = X.shape
 
     X_mix = torch.zeros((batch_size, n_channels, n_times)).to(device)
-    y_a = torch.arange(batch_size).to(device)
-    y_b = torch.arange(batch_size).to(device)
+    y_a = y.clone()
+    y_b = y[idx_perm].clone()
 
     for idx in range(batch_size):
         X_mix[idx] = lam[idx] * X[idx] + (1 - lam[idx]) * X[idx_perm[idx]]
-        y_a[idx] = y[idx]
-        y_b[idx] = y[idx_perm[idx]]
 
     return X_mix, (y_a, y_b, lam)
 

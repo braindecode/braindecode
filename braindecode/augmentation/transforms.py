@@ -1068,16 +1068,18 @@ class Mixup(Transform):
         device = X.device
         batch_size, _, _ = X.shape
 
+        # lam follows the dtype of X, numpy draws float64 and that would leak
+        # into the mixed signal and into the loss returned by mixup_criterion
         if self.alpha > 0:
             if self.beta_per_sample:
                 lam = torch.as_tensor(
                     self.rng.beta(self.alpha, self.alpha, batch_size)
-                ).to(device)
+                ).to(device=device, dtype=X.dtype)
             else:
-                lam = torch.ones(batch_size).to(device)
+                lam = torch.ones(batch_size, dtype=X.dtype).to(device)
                 lam *= self.rng.beta(self.alpha, self.alpha)
         else:
-            lam = torch.ones(batch_size).to(device)
+            lam = torch.ones(batch_size, dtype=X.dtype).to(device)
 
         idx_perm = torch.as_tensor(
             self.rng.permutation(

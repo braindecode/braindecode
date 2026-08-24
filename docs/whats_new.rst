@@ -36,6 +36,10 @@ Enhancements
   scripting reaches ``forward`` instead of failing on the class attributes.
   (:gh:`1115` by `Aditya Singh`_)
 
+- Add a transfer-learning tutorial illustrating the TUAB-to-NMT pathology
+  workflow with offline synthetic recordings
+  (:gh:`580` by `Mohammad Javad D`_ and `Bruno Aristimunha`_).
+
 API and behavior changes
 ========================
 
@@ -49,9 +53,62 @@ Requirements
 Bug fixes
 ==========
 
+- Make :class:`braindecode.datasets.SleepPhysionet` wake cropping retain the complete
+  final sleep annotation without including an extra endpoint sample (:gh:`612` by
+  `John Muradeli`_).
+
+- Fix :func:`braindecode.training.mixup_criterion` treating a plain target
+  tensor of three elements as a mixup ``(y_a, y_b, lam)`` triple. The branch
+  was selected on ``len(target) == 3``, which is also true for the targets of
+  any batch holding three windows, so a validation batch or a last partial
+  batch of that size failed with ``Expected input batch_size (3) to match
+  target batch_size (0)``. The mixup branch is now selected on the container
+  type. (:gh:`1122` by `Sarthak Tayal`_)
+
+- Keep the mixing coefficient of :class:`braindecode.augmentation.Mixup` on the
+  dtype of the batch. With ``beta_per_sample=True`` it came straight from numpy
+  as ``float64``, which upcast the loss returned by
+  :func:`braindecode.training.mixup_criterion` to ``float64`` while the model
+  stayed in ``float32``. (:gh:`1122` by `Sarthak Tayal`_)
+
+- Let :class:`braindecode.augmentation.AugmentedDataLoader` used with
+  ``n_augmentation`` greater than zero carry the targets of a transform that
+  mixes them. Batches were concatenated as plain tensors, so combining that
+  option with :class:`braindecode.augmentation.Mixup` raised ``expected Tensor
+  as element 1 in argument 0, but got tuple``. The triple parts are now
+  concatenated one by one and the clean originals get a mixing coefficient of
+  one. (:gh:`1122` by `Sarthak Tayal`_)
+
+- Let :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
+  train with a transform that mixes targets. The loader wrapper cast every
+  target with ``y.type(...)``, so a batch carrying the ``(y_a, y_b, lam)``
+  triple of :class:`braindecode.augmentation.Mixup` stopped the fit with
+  ``'tuple' object has no attribute 'type'`` before the first batch was seen.
+  The triple parts now follow the same classification/regression dtype contract
+  as a plain target. (:gh:`1122` by `Sarthak Tayal`_).
+
 - Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
   which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
   validation (:gh:`1123` by `Bruno Aristimunha`_).
+
+- Leave recordings shorter than ``n_windows`` out of the draw in
+  :class:`braindecode.samplers.BalancedSequenceSampler` instead of failing on
+  them. Such a recording holds no valid sequence start, which made the sampling
+  range empty and raised ``ValueError: high <= 0`` on the first sequence that
+  landed there. :class:`braindecode.samplers.SequenceSampler` already skips
+  those recordings. A clear error now names the longest recording when none of
+  them can hold a sequence (:gh:`1125` by `Sarthak Tayal`_).
+
+- Keep ``file_ids`` of :class:`braindecode.samplers.SequenceSampler` integer.
+  The ids were built from untyped lists, so an empty list coming from a
+  recording too short for a sequence turned the concatenated array into
+  ``float64``, against the documented dtype and unusable as an index
+  (:gh:`1125` by `Sarthak Tayal`_).
+
+- Document the ``randomize`` parameter of
+  :class:`braindecode.samplers.SequenceSampler` under its own name. The
+  docstring described it as ``random``, which no signature accepts
+  (:gh:`1125` by `Sarthak Tayal`_).
 
 Code health
 ============
