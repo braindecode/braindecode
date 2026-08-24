@@ -152,19 +152,22 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         self.cheb_orders = cheb_orders
         self.pool_sizes = pool_sizes
 
-        n_electrodes = laplacians[0].shape[0]
+        for i in range(len(n_features)):
+            self.register_buffer(f"laplacian_{i}", None)
 
-        # Keep the useful Laplacians only. May be zero.
-        laplacian_index = 0
-        useful_laplacians = []
+        if laplacians is not None and len(laplacians) != 0:
+            # From input Laplacians, keep the useful Laplacians only.
+            # There may be zero Laplacians selected.
+            laplacian_index = 0
+            useful_laplacians = []
 
-        for pool_size in pool_sizes:
-            useful_laplacians.append(laplacians[laplacian_index])
-            laplacian_index += int(np.log2(pool_size)) if pool_size > 1 else 0
+            for pool_size in pool_sizes:
+                useful_laplacians.append(laplacians[laplacian_index])
+                laplacian_index += int(np.log2(pool_size)) if pool_size > 1 else 0
 
-        for i, laplacian in enumerate(useful_laplacians):
-            laplacian = self._rescale_laplacian(laplacian)
-            self.register_buffer(f"laplacian_{i}", laplacian)
+            for i, laplacian_matrix in enumerate(useful_laplacians):
+                laplacian_matrix = self._rescale_laplacian(laplacian_matrix)
+                setattr(self, f"laplacian_{i}", laplacian_matrix)
 
         # Implement Graph Convolutional Neural Network layers.
         self.graph_convs = nn.ModuleList()
@@ -191,13 +194,8 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         self.activation = nn.Softplus()
 
-        # Configure a final classification layer.
-        final_n_nodes = useful_laplacians[-1].shape[0] // pool_sizes[-1]
-
-        self.final_layer = nn.Linear(
-            final_n_nodes * n_features[-1],
-            self.n_outputs,
-        )
+        # Final classification layer.
+        self.final_layer = nn.LazyLinear(self.n_outputs)
 
     def _bias_norm_softplus(self, x, layer_index):
         """
