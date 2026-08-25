@@ -2,10 +2,36 @@
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
+#
+# The AttnSleep implementation below is derived from
+# https://github.com/emadeldeen24/AttnSleep and retains its complete notice:
+#
+# MIT License
+#
+# Copyright (c) 2020 Emadeldeen Eldele
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 import math
 import warnings
 from copy import deepcopy
+from numbers import Integral
 
 import torch
 import torch.nn.functional as F
@@ -64,18 +90,14 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
-    n_classes : int
-        Alias for `n_outputs`.
     n_chans : int, default=1
         Number of EEG channels. AttnSleep supports single-channel input only.
-    input_size_s : float
-        Alias for `input_window_seconds`.
     activation : nn.Module, default=nn.ReLU
         Activation function class to apply in the AFR block and in the
         position wise feed forward of the TCE. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     activation_mrcnn : nn.Module, default=nn.GELU
-        Activation function class to apply in the Mask R-CNN layer.
+        Activation function class to apply in the multi-resolution CNN layer.
         Should be a PyTorch activation module class like ``nn.ReLU`` or
         ``nn.GELU``. Default is ``nn.GELU``.
 
@@ -108,6 +130,18 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         n_chans=1,
         n_times=None,
     ):
+        raw_geometry = {
+            "n_times": n_times,
+            "sfreq": sfreq,
+            "input_window_seconds": input_window_seconds,
+        }
+        if sum(value is not None for value in raw_geometry.values()) < 2:
+            raise ValueError(
+                "AttnSleep requires at least two of n_times, sfreq, and "
+                "input_window_seconds. Accepted pairs are (n_times, sfreq), "
+                "(n_times, input_window_seconds), and "
+                "(sfreq, input_window_seconds)."
+            )
         if n_chans is None and chs_info is None:
             n_chans = 1
         super().__init__(
@@ -118,6 +152,13 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        for field, value in raw_geometry.items():
+            if value is not None and value <= 0:
+                raise ValueError(f"AttnSleep {field} must be positive, got {value}.")
+
+        resolved_n_times = self.n_times
+        resolved_sfreq = self.sfreq
+        resolved_input_window_seconds = self.input_window_seconds
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         if self.n_chans != 1:
@@ -129,9 +170,15 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         }
 
         if not (
-            (self.input_window_seconds == 30 and self.sfreq == 100 and d_model == 80)
+            (
+                resolved_input_window_seconds == 30
+                and resolved_sfreq == 100
+                and d_model == 80
+            )
             or (
-                self.input_window_seconds == 30 and self.sfreq == 125 and d_model == 100
+                resolved_input_window_seconds == 30
+                and resolved_sfreq == 125
+                and d_model == 100
             )
         ):
             warnings.warn(
@@ -145,7 +192,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         # the usual kernel size for the mrcnn, for sfreq 100
         kernel_size = 7
 
-        if self.sfreq == 125:
+        if resolved_sfreq == 125:
             kernel_size = 6
 
         mrcnn = _MRCNN(
@@ -154,12 +201,12 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             activation=activation_mrcnn,
             activation_se=activation,
         )
-        feature_length = self._feature_length(mrcnn, self.n_times)
+        feature_length = self._feature_length(mrcnn, resolved_n_times)
         if feature_length != d_model:
             raise ValueError(
                 f"d_model is {d_model} but the feature extractor returns "
-                f"{feature_length} time steps for an input of {self.n_times} "
-                f"samples at {self.sfreq} Hz. Set d_model={feature_length}, with "
+                f"{feature_length} time steps for an input of {resolved_n_times} "
+                f"samples at {resolved_sfreq} Hz. Set d_model={feature_length}, with "
                 "an n_attn_heads that divides it, or feed the window length the "
                 "current d_model was picked for."
             )
@@ -402,8 +449,9 @@ class _MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, after_reduced_cnn_size, dropout=0.1):
         """Take in model size and number of heads."""
         super().__init__()
-        if h <= 0:
-            raise ValueError(f"n_attn_heads has to be a positive integer, got {h}.")
+        if isinstance(h, bool) or not isinstance(h, Integral) or h <= 0:
+            raise ValueError(f"n_attn_heads has to be a positive integer, got {h!r}.")
+        h = int(h)
         if d_model % h != 0:
             raise ValueError(
                 f"d_model ({d_model}) has to be divisible by the number of "

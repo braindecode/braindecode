@@ -59,7 +59,9 @@ Bug fixes
 
 - The ``activation`` parameter of :class:`braindecode.models.AttnSleep` is now
   used by the adaptive feature recalibration block, which was always built with
-  ``nn.ReLU`` no matter what was passed (:gh:`1119` by `Sarthak Tayal`_).
+  ``nn.ReLU`` no matter what was passed. The derived model source now also
+  retains the complete MIT notice from the official AttnSleep implementation
+  (:gh:`1119` by `Sarthak Tayal`_).
 
 - :class:`braindecode.models.AttnSleep` now reports which ``d_model`` a window
   length needs instead of failing inside a layer normalization, and it sizes its

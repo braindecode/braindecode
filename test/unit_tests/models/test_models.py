@@ -996,6 +996,109 @@ def test_eldele_2021_d_model_mismatch():
         AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
 
 
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {"n_times": 3000, "sfreq": 100},
+        {"n_times": 3000, "input_window_seconds": 30},
+        {"sfreq": 100, "input_window_seconds": 30},
+        {"n_times": 3000, "sfreq": 100, "input_window_seconds": 30},
+    ],
+)
+def test_eldele_2021_accepts_two_of_three_geometry(geometry, monkeypatch):
+    original_probe = AttnSleep._feature_length
+    probe_calls = []
+
+    def tracked_probe(mrcnn, n_times):
+        probe_calls.append(n_times)
+        return original_probe(mrcnn, n_times)
+
+    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(tracked_probe))
+
+    model = AttnSleep(n_outputs=5, **geometry)
+
+    assert (model.n_times, model.sfreq, model.input_window_seconds) == (
+        3000,
+        100,
+        30,
+    )
+    assert probe_calls == [3000]
+
+
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {},
+        {"n_times": 3000},
+        {"sfreq": 100},
+        {"input_window_seconds": 30},
+    ],
+)
+def test_eldele_2021_rejects_underdetermined_geometry_before_probe(
+    geometry, monkeypatch
+):
+    def forbidden_probe(*args, **kwargs):
+        raise AssertionError("feature probe must not run")
+
+    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(forbidden_probe))
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"n_times.*sfreq.*n_times.*input_window_seconds.*"
+            r"sfreq.*input_window_seconds"
+        ),
+    ):
+        AttnSleep(n_outputs=5, **geometry)
+
+
+@pytest.mark.parametrize(
+    "geometry,invalid_field",
+    [
+        ({"n_times": 0, "sfreq": 100}, "n_times"),
+        ({"n_times": -1, "sfreq": 100}, "n_times"),
+        ({"n_times": 3000, "sfreq": 0}, "sfreq"),
+        ({"n_times": 3000, "sfreq": -1}, "sfreq"),
+        ({"n_times": 0, "input_window_seconds": 30}, "n_times"),
+        ({"n_times": -1, "input_window_seconds": 30}, "n_times"),
+        ({"n_times": 3000, "input_window_seconds": 0}, "input_window_seconds"),
+        ({"n_times": 3000, "input_window_seconds": -1}, "input_window_seconds"),
+        ({"sfreq": 0, "input_window_seconds": 30}, "sfreq"),
+        ({"sfreq": -1, "input_window_seconds": 30}, "sfreq"),
+        ({"sfreq": 100, "input_window_seconds": 0}, "input_window_seconds"),
+        ({"sfreq": 100, "input_window_seconds": -1}, "input_window_seconds"),
+    ],
+)
+def test_eldele_2021_rejects_non_positive_geometry_before_probe(
+    geometry, invalid_field, monkeypatch
+):
+    def forbidden_probe(*args, **kwargs):
+        raise AssertionError("feature probe must not run")
+
+    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(forbidden_probe))
+
+    with pytest.raises(ValueError, match=rf"{invalid_field}.*positive"):
+        AttnSleep(n_outputs=5, **geometry)
+
+
+def test_eldele_2021_preserves_mixin_geometry_consistency_error(monkeypatch):
+    def forbidden_probe(*args, **kwargs):
+        raise AssertionError("feature probe must not run")
+
+    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(forbidden_probe))
+
+    with pytest.raises(
+        ValueError,
+        match=r"n_times=3000 different from input_window_seconds=20 \* sfreq=100",
+    ):
+        AttnSleep(
+            n_outputs=5,
+            n_times=3000,
+            sfreq=100,
+            input_window_seconds=20,
+        )
+
+
 def test_eldele_2021_heads_not_dividing_d_model():
     with pytest.raises(ValueError, match="divisible"):
         AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
@@ -1004,6 +1107,17 @@ def test_eldele_2021_heads_not_dividing_d_model():
 @pytest.mark.parametrize("n_attn_heads", [0, -5])
 def test_eldele_2021_rejects_non_positive_heads(n_attn_heads):
     with pytest.raises(ValueError, match="positive"):
+        AttnSleep(
+            sfreq=100,
+            n_outputs=5,
+            n_times=3000,
+            n_attn_heads=n_attn_heads,
+        )
+
+
+@pytest.mark.parametrize("n_attn_heads", [True, False, 5.0, 2.5])
+def test_eldele_2021_rejects_non_integer_heads(n_attn_heads):
+    with pytest.raises(ValueError, match="positive integer"):
         AttnSleep(
             sfreq=100,
             n_outputs=5,
@@ -1064,6 +1178,33 @@ def test_eldele_2021_activation_reaches_afr():
 
     assert afr_activations
     assert all(act is nn.ELU for act in afr_activations)
+
+
+def test_eldele_2021_activation_without_inplace_constructor_runs():
+    class ActivationWithoutInplace(nn.Module):
+        def forward(self, x):
+            return torch.tanh(x)
+
+    model = AttnSleep(
+        sfreq=100,
+        n_outputs=5,
+        n_times=3000,
+        activation=ActivationWithoutInplace,
+    ).eval()
+
+    with torch.inference_mode():
+        output = model(torch.randn(2, 1, 3000))
+
+    assert output.shape == (2, 5)
+
+
+def test_eldele_2021_docstring_matches_public_parameters():
+    docstring = AttnSleep.__doc__
+
+    assert "\n    n_classes :" not in docstring
+    assert "\n    input_size_s :" not in docstring
+    assert "multi-resolution CNN layer" in docstring
+    assert "Mask R-CNN layer" not in docstring
 
 
 def test_eldele_2021_feature_probe_preserves_eval_state():
