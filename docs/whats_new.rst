@@ -64,21 +64,15 @@ Requirements
 Bug fixes
 ==========
 
+- Honor the configurable activation in the adaptive feature recalibration block
+  of :class:`braindecode.models.AttnSleep`, and report the ``d_model`` required
+  by a non-reference window instead of failing inside layer normalization. The
+  derived source now also carries the complete upstream MIT notice
+  (:gh:`1119` by `Sarthak Tayal`_).
+
 - Make :class:`braindecode.datasets.SleepPhysionet` wake cropping retain the complete
   final sleep annotation without including an extra endpoint sample (:gh:`612` by
   `John Muradeli`_).
-
-- The ``activation`` parameter of :class:`braindecode.models.AttnSleep` is now
-  used by the adaptive feature recalibration block, which was always built with
-  ``nn.ReLU`` no matter what was passed. The derived model source now also
-  retains the complete MIT notice from the official AttnSleep implementation
-  (:gh:`1119` by `Sarthak Tayal`_).
-
-- :class:`braindecode.models.AttnSleep` now reports which ``d_model`` a window
-  length needs instead of failing inside a layer normalization, and it sizes its
-  final layer from the measured feature length. The model also records and
-  validates its single-channel input contract, so ``get_output_shape`` works
-  without redundant channel metadata (:gh:`1119` by `Sarthak Tayal`_).
 
 - Fix :func:`braindecode.training.mixup_criterion` treating a plain target
   tensor of three elements as a mixup ``(y_a, y_b, lam)`` triple. The branch
@@ -140,9 +134,7 @@ Bug fixes
 Code health
 ============
 
-- The attention block of :class:`braindecode.models.AttnSleep` no longer builds
-  a weighted sum that is dropped on the next line, so each attention call runs
-  one matrix multiplication less (:gh:`1119` by `Sarthak Tayal`_).
+- None yet
 
 
 Current 1.7.0 (2026-08-01)

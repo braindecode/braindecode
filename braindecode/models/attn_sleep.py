@@ -3,8 +3,7 @@
 #
 # License: BSD (3-clause)
 #
-# The AttnSleep implementation below is derived from
-# https://github.com/emadeldeen24/AttnSleep and retains its complete notice:
+# This implementation derives from https://github.com/emadeldeen24/AttnSleep:
 #
 # MIT License
 #
@@ -31,7 +30,7 @@
 import math
 import warnings
 from copy import deepcopy
-from numbers import Integral, Real
+from numbers import Integral
 
 import torch
 import torch.nn.functional as F
@@ -72,11 +71,10 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         Also the input dimension of the first FC layer in the feed forward
         and the output of the second FC layer in the same.
         Increase for higher sampling rate/signal length.
-        It should be divisible by n_attn_heads.
-        It has to be equal to the number of time steps the feature extractor
-        returns, which is 80 for 30 seconds at 100 Hz and 100 for 30 seconds at
-        125 Hz. Other window lengths need their own value, and the error raised
-        at construction time reports the one to use.
+        It should be divisible by n_attn_heads. It must also equal the number
+        of time steps returned by the feature extractor: 80 for 30 seconds at
+        100 Hz and 100 for 30 seconds at 125 Hz. A construction error reports
+        the value needed for other window lengths.
     d_ff : int
         Output dimension of the first FC layer in the feed forward and the
         input dimension of the second FC layer in the same.
@@ -90,14 +88,16 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
-    n_chans : int, default=1
-        Number of EEG channels. AttnSleep supports single-channel input only.
+    n_classes : int
+        Alias for `n_outputs`.
+    input_size_s : float
+        Alias for `input_window_seconds`.
     activation : nn.Module, default=nn.ReLU
-        Activation function class to apply in the AFR block and in the
-        position wise feed forward of the TCE. Should be a PyTorch activation
+        Activation function class to apply in the AFR block and the TCE
+        feed-forward block. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     activation_mrcnn : nn.Module, default=nn.GELU
-        Activation function class to apply in the multi-resolution CNN layer.
+        Activation function class to apply in the Mask R-CNN layer.
         Should be a PyTorch activation module class like ``nn.ReLU`` or
         ``nn.GELU``. Default is ``nn.GELU``.
 
@@ -127,46 +127,17 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         after_reduced_cnn_size=30,
         return_feats=False,
         chs_info=None,
-        n_chans=1,
+        n_chans=None,
         n_times=None,
     ):
-        raw_geometry = {
-            "n_times": n_times,
-            "sfreq": sfreq,
-            "input_window_seconds": input_window_seconds,
-        }
-        if sum(value is not None for value in raw_geometry.values()) < 2:
+        if (
+            sum(value is not None for value in (n_times, sfreq, input_window_seconds))
+            < 2
+        ):
             raise ValueError(
                 "AttnSleep requires at least two of n_times, sfreq, and "
-                "input_window_seconds. Accepted pairs are (n_times, sfreq), "
-                "(n_times, input_window_seconds), and "
-                "(sfreq, input_window_seconds)."
+                "input_window_seconds."
             )
-        for field, value in raw_geometry.items():
-            if value is None:
-                continue
-            if field == "n_times":
-                if (
-                    isinstance(value, bool)
-                    or not isinstance(value, Integral)
-                    or value <= 0
-                ):
-                    raise ValueError(
-                        f"AttnSleep n_times must be a positive integer, got {value!r}."
-                    )
-            elif (
-                isinstance(value, bool)
-                or not isinstance(value, Real)
-                or not math.isfinite(value)
-                or value <= 0
-            ):
-                raise ValueError(
-                    f"AttnSleep {field} must be a finite positive real number, "
-                    f"got {value!r}."
-                )
-
-        if n_chans is None and chs_info is None:
-            n_chans = 1
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -175,24 +146,9 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        resolved_n_times = int(self.n_times)
-        resolved_sfreq = float(self.sfreq)
-        resolved_input_window_seconds = float(self.input_window_seconds)
-        self._n_times = resolved_n_times
-        self._sfreq = resolved_sfreq
-        self._input_window_seconds = resolved_input_window_seconds
-
-        resolved_n_chans = self.n_chans
-        if (
-            isinstance(resolved_n_chans, bool)
-            or not isinstance(resolved_n_chans, Integral)
-            or resolved_n_chans != 1
-        ):
-            raise ValueError(
-                f"AttnSleep requires n_chans=1 as an integer, got {resolved_n_chans!r}."
-            )
-        self._n_chans_for_jit = int(resolved_n_chans)
-
+        self._n_times = int(self.n_times)
+        self._sfreq = float(self.sfreq)
+        self._input_window_seconds = float(self.input_window_seconds)
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.mapping = {
@@ -201,15 +157,9 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         }
 
         if not (
-            (
-                resolved_input_window_seconds == 30
-                and resolved_sfreq == 100
-                and d_model == 80
-            )
+            (self.input_window_seconds == 30 and self.sfreq == 100 and d_model == 80)
             or (
-                resolved_input_window_seconds == 30
-                and resolved_sfreq == 125
-                and d_model == 100
+                self.input_window_seconds == 30 and self.sfreq == 125 and d_model == 100
             )
         ):
             warnings.warn(
@@ -223,7 +173,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         # the usual kernel size for the mrcnn, for sfreq 100
         kernel_size = 7
 
-        if resolved_sfreq == 125:
+        if self.sfreq == 125:
             kernel_size = 6
 
         mrcnn = _MRCNN(
@@ -232,16 +182,14 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             activation=activation_mrcnn,
             activation_se=activation,
         )
-        feature_length = self._feature_length(mrcnn, resolved_n_times)
+        feature_length = self._feature_length(mrcnn, self.n_times)
         if feature_length != d_model:
             raise ValueError(
                 f"d_model is {d_model} but the feature extractor returns "
-                f"{feature_length} time steps for an input of {resolved_n_times} "
-                f"samples at {resolved_sfreq} Hz. Set d_model={feature_length}, with "
-                "an n_attn_heads that divides it, or feed the window length the "
-                "current d_model was picked for."
+                f"{feature_length} time steps for an input of {self.n_times} "
+                f"samples at {self.sfreq} Hz. Set d_model={feature_length}, with "
+                "an n_attn_heads that divides it."
             )
-
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, drop_prob, activation=activation)
         tce = _TCE(
@@ -251,21 +199,18 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             n_tce,
         )
 
-        self.feature_extractor: nn.Sequential = nn.Sequential(mrcnn, tce)
-        self.len_last_layer: int = feature_length * after_reduced_cnn_size
-        self.return_feats: bool = return_feats
+        self.feature_extractor = nn.Sequential(mrcnn, tce)
+        self.len_last_layer = feature_length * after_reduced_cnn_size
+        self.return_feats = return_feats
 
         # TODO: Add new way to handle return features
         """if return_feats:
             raise ValueError("return_feat == True is not accepted anymore")"""
-        if return_feats:
-            self.final_layer: nn.Module = nn.Identity()
-        else:
+        if not return_feats:
             self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
 
     @staticmethod
     def _feature_length(mrcnn, n_times):
-        # time steps out of the mrcnn, the tce takes this as its model dimension
         training_states = [(module, module.training) for module in mrcnn.modules()]
         mrcnn.eval()
         try:
@@ -303,7 +248,6 @@ class _SELayer(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool1d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False),
-            # not inplace, so activations without that keyword also work here
             activation(),
             nn.Linear(channel // reduction, channel, bias=False),
             nn.Sigmoid(),
@@ -470,28 +414,36 @@ class _MRCNN(nn.Module):
 ##########################################################################################
 
 
-def _attention_weights(query: torch.Tensor, key: torch.Tensor) -> torch.Tensor:
-    """Weights of the scaled dot product attention."""
+def _attention(
+    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Implementation of Scaled dot product attention."""
     # d_k - dimension of the query and key vectors
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
-    return F.softmax(scores, dim=-1)  # attention weights
+    p_attn = F.softmax(scores, dim=-1)  # attention weights
+    output = torch.matmul(p_attn, value)  # (B, h, T, d_k)
+    return output, p_attn
 
 
 class _MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, after_reduced_cnn_size, dropout=0.1):
         """Take in model size and number of heads."""
         super().__init__()
-        if isinstance(h, bool) or not isinstance(h, Integral) or h <= 0:
-            raise ValueError(f"n_attn_heads has to be a positive integer, got {h!r}.")
-        h = int(h)
-        if d_model % h != 0:
+        if (
+            isinstance(h, bool)
+            or not isinstance(h, Integral)
+            or h <= 0
+            or d_model % h != 0
+        ):
             raise ValueError(
-                f"d_model ({d_model}) has to be divisible by the number of "
-                f"attention heads ({h})."
+                "n_attn_heads must be a positive integer that divides d_model, "
+                f"got n_attn_heads={h!r} and d_model={d_model}."
             )
+        h = int(h)
         self.d_per_head = d_model // h
         self.h = h
+        self.attn = torch.empty(0)
 
         base_conv = CausalConv1d(
             in_channels=after_reduced_cnn_size,
@@ -520,11 +472,14 @@ class _MultiHeadedAttention(nn.Module):
             .transpose(1, 2)
         )
 
-        attn_weights = _attention_weights(query, key)
+        x_raw, attn_weights = _attention(query, key, value)
         # apply dropout to the *weights*
         attn = self.dropout(attn_weights)
-        # weighted sum with the dropped weights
+        # recompute the weighted sum with dropped weights
         x = torch.matmul(attn, value)
+
+        # stash the pre‑dropout weights if you need them
+        self.attn = attn_weights
 
         # merge heads and project
         x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_per_head)

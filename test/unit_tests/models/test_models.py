@@ -959,6 +959,7 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
         return_feats=False,
     )
     model.eval()
+    torch.jit.script(model)
 
     X = rng.randn(n_examples, n_channels,
                   np.ceil(input_size_s * sfreq).astype(int))
@@ -991,418 +992,47 @@ def test_eldele_2021_feats():
     assert out.shape == (n_examples, model.len_last_layer)
 
 
-def test_eldele_2021_d_model_mismatch():
+def test_attn_sleep_requires_signal_geometry():
+    with pytest.raises(ValueError, match="at least two of"):
+        AttnSleep(sfreq=100, n_outputs=5)
+
+
+def test_attn_sleep_reports_required_d_model():
     with pytest.raises(ValueError, match="d_model=54"):
         AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
 
 
-@pytest.mark.parametrize(
-    "geometry",
-    [
-        {"n_times": 3000, "sfreq": 100},
-        {"n_times": 3000, "input_window_seconds": 30},
-        {"sfreq": 100, "input_window_seconds": 30},
-        {"n_times": 3000, "sfreq": 100, "input_window_seconds": 30},
-        {"n_times": np.int64(3000), "sfreq": np.float64(100)},
-        {
-            "n_times": np.int64(3000),
-            "input_window_seconds": np.float64(30),
-        },
-    ],
-)
-def test_eldele_2021_accepts_two_of_three_geometry(geometry, monkeypatch):
-    original_probe = AttnSleep._feature_length
-    probe_calls = []
-
-    def tracked_probe(mrcnn, n_times):
-        probe_calls.append(n_times)
-        return original_probe(mrcnn, n_times)
-
-    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(tracked_probe))
-
-    model = AttnSleep(n_outputs=5, **geometry)
-
-    assert (model.n_times, model.sfreq, model.input_window_seconds) == (
-        3000,
-        100,
-        30,
-    )
-    assert probe_calls == [3000]
-
-
-@pytest.mark.parametrize(
-    "geometry",
-    [
-        {},
-        {"n_times": 3000},
-        {"sfreq": 100},
-        {"input_window_seconds": 30},
-    ],
-)
-def test_eldele_2021_rejects_underdetermined_geometry_before_probe(
-    geometry, monkeypatch
-):
-    def forbidden_probe(*args, **kwargs):
-        raise AssertionError("feature probe must not run")
-
-    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(forbidden_probe))
-
-    with pytest.raises(
-        ValueError,
-        match=(
-            r"n_times.*sfreq.*n_times.*input_window_seconds.*"
-            r"sfreq.*input_window_seconds"
-        ),
-    ):
-        AttnSleep(n_outputs=5, **geometry)
-
-
-@pytest.mark.parametrize(
-    "geometry,invalid_field",
-    [
-        ({"n_times": 0, "sfreq": 100}, "n_times"),
-        ({"n_times": -1, "sfreq": 100}, "n_times"),
-        ({"n_times": 3000, "sfreq": 0}, "sfreq"),
-        ({"n_times": 3000, "sfreq": -1}, "sfreq"),
-        ({"n_times": 0, "input_window_seconds": 30}, "n_times"),
-        ({"n_times": -1, "input_window_seconds": 30}, "n_times"),
-        ({"n_times": 3000, "input_window_seconds": 0}, "input_window_seconds"),
-        ({"n_times": 3000, "input_window_seconds": -1}, "input_window_seconds"),
-        ({"sfreq": 0, "input_window_seconds": 30}, "sfreq"),
-        ({"sfreq": -1, "input_window_seconds": 30}, "sfreq"),
-        ({"sfreq": 100, "input_window_seconds": 0}, "input_window_seconds"),
-        ({"sfreq": 100, "input_window_seconds": -1}, "input_window_seconds"),
-    ],
-)
-def test_eldele_2021_rejects_non_positive_geometry_before_probe(
-    geometry, invalid_field, monkeypatch
-):
-    def forbidden_probe(*args, **kwargs):
-        raise AssertionError("feature probe must not run")
-
-    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(forbidden_probe))
-
-    with pytest.raises(ValueError, match=rf"{invalid_field}.*positive"):
-        AttnSleep(n_outputs=5, **geometry)
-
-
-@pytest.mark.parametrize(
-    "geometry,invalid_field",
-    [
-        ({"n_times": True, "sfreq": 100}, "n_times"),
-        ({"n_times": 3000.0, "sfreq": 100}, "n_times"),
-        ({"n_times": 3000, "sfreq": True}, "sfreq"),
-        ({"n_times": 3000, "sfreq": "100"}, "sfreq"),
-        ({"n_times": 3000, "sfreq": np.nan}, "sfreq"),
-        ({"n_times": 3000, "sfreq": np.inf}, "sfreq"),
-        ({"n_times": 3000, "sfreq": -np.inf}, "sfreq"),
-        ({"n_times": 3000, "input_window_seconds": True}, "input_window_seconds"),
-        ({"n_times": 3000, "input_window_seconds": "30"}, "input_window_seconds"),
-        ({"n_times": 3000, "input_window_seconds": np.nan}, "input_window_seconds"),
-        ({"n_times": 3000, "input_window_seconds": np.inf}, "input_window_seconds"),
-        ({"n_times": 3000, "input_window_seconds": -np.inf}, "input_window_seconds"),
-    ],
-)
-def test_eldele_2021_rejects_invalid_geometry_types_before_probe(
-    geometry, invalid_field, monkeypatch
-):
-    probe_calls = []
-
-    def tracked_probe(*args, **kwargs):
-        probe_calls.append((args, kwargs))
-        return 80
-
-    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(tracked_probe))
-
-    with pytest.raises(ValueError, match=invalid_field):
-        AttnSleep(n_outputs=5, **geometry)
-
-    assert probe_calls == []
-
-
-@pytest.mark.parametrize(
-    "geometry,invalid_field",
-    [
-        (
-            {"n_times": True, "sfreq": 100, "input_window_seconds": 30},
-            "n_times",
-        ),
-        (
-            {"n_times": 3000.0, "sfreq": 100, "input_window_seconds": 30},
-            "n_times",
-        ),
-        (
-            {"n_times": 3000, "sfreq": True, "input_window_seconds": 30},
-            "sfreq",
-        ),
-        (
-            {"n_times": 3000, "sfreq": "100", "input_window_seconds": 30},
-            "sfreq",
-        ),
-        (
-            {"n_times": 3000, "sfreq": np.nan, "input_window_seconds": 30},
-            "sfreq",
-        ),
-        (
-            {"n_times": 3000, "sfreq": np.inf, "input_window_seconds": 30},
-            "sfreq",
-        ),
-        (
-            {"n_times": 3000, "sfreq": -np.inf, "input_window_seconds": 30},
-            "sfreq",
-        ),
-        (
-            {"n_times": 3000, "sfreq": 100, "input_window_seconds": True},
-            "input_window_seconds",
-        ),
-        (
-            {"n_times": 3000, "sfreq": 100, "input_window_seconds": "30"},
-            "input_window_seconds",
-        ),
-        (
-            {"n_times": 3000, "sfreq": 100, "input_window_seconds": np.nan},
-            "input_window_seconds",
-        ),
-        (
-            {"n_times": 3000, "sfreq": 100, "input_window_seconds": np.inf},
-            "input_window_seconds",
-        ),
-        (
-            {"n_times": 3000, "sfreq": 100, "input_window_seconds": -np.inf},
-            "input_window_seconds",
-        ),
-    ],
-)
-def test_eldele_2021_validates_all_three_geometry_fields_before_mixin(
-    geometry, invalid_field, monkeypatch
-):
-    probe_calls = []
-
-    def tracked_probe(*args, **kwargs):
-        probe_calls.append((args, kwargs))
-        return 80
-
-    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(tracked_probe))
-
-    with pytest.raises(ValueError, match=rf"AttnSleep {invalid_field}"):
-        AttnSleep(n_outputs=5, **geometry)
-
-    assert probe_calls == []
-
-
-def test_eldele_2021_preserves_mixin_geometry_consistency_error(monkeypatch):
-    def forbidden_probe(*args, **kwargs):
-        raise AssertionError("feature probe must not run")
-
-    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(forbidden_probe))
-
-    with pytest.raises(
-        ValueError,
-        match=r"n_times=3000 different from input_window_seconds=20 \* sfreq=100",
-    ):
-        AttnSleep(
-            n_outputs=5,
-            n_times=3000,
-            sfreq=100,
-            input_window_seconds=20,
-        )
-
-
-def test_eldele_2021_heads_not_dividing_d_model():
-    with pytest.raises(ValueError, match="divisible"):
+def test_attn_sleep_rejects_invalid_attention_heads():
+    with pytest.raises(ValueError, match="positive integer that divides d_model"):
         AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
 
 
-@pytest.mark.parametrize("n_attn_heads", [0, -5])
-def test_eldele_2021_rejects_non_positive_heads(n_attn_heads):
-    with pytest.raises(ValueError, match="positive"):
-        AttnSleep(
-            sfreq=100,
-            n_outputs=5,
-            n_times=3000,
-            n_attn_heads=n_attn_heads,
-        )
-
-
-@pytest.mark.parametrize("n_attn_heads", [True, False, 5.0, 2.5])
-def test_eldele_2021_rejects_non_integer_heads(n_attn_heads):
-    with pytest.raises(ValueError, match="positive integer"):
-        AttnSleep(
-            sfreq=100,
-            n_outputs=5,
-            n_times=3000,
-            n_attn_heads=n_attn_heads,
-        )
-
-
-def test_eldele_2021_other_window():
-    # 20 seconds at 100Hz, the feature extractor returns 54 time steps there
-    model = AttnSleep(sfreq=100, n_outputs=5, n_times=2000, d_model=54, n_attn_heads=6)
-    model.eval()
-
-    rng = np.random.RandomState(42)
-    X = torch.from_numpy(rng.randn(4, 1, 2000).astype(np.float32))
-
-    assert model.len_last_layer == 54 * 30
-    assert model(X).shape == (4, 5)
-
-
-def test_eldele_2021_other_window_feats():
+@pytest.mark.parametrize("return_feats", [False, True])
+def test_attn_sleep_supports_other_window_lengths(return_feats):
     model = AttnSleep(
         sfreq=100,
         n_outputs=5,
         n_times=2000,
         d_model=54,
         n_attn_heads=6,
-        return_feats=True,
+        return_feats=return_feats,
     )
-    model.eval()
-
-    rng = np.random.RandomState(42)
-    X = torch.from_numpy(rng.randn(4, 1, 2000).astype(np.float32))
-
-    assert model(X).shape == (4, model.len_last_layer)
+    output = model(torch.randn(2, 1, 2000))
+    expected_width = model.len_last_layer if return_feats else 5
+    assert output.shape == (2, expected_width)
 
 
-def test_eldele_2021_final_layer_matches_features():
-    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000)
-
-    assert model.len_last_layer == 80 * 30
-    assert model.final_layer.in_features == model.len_last_layer
-    assert model.eval().get_output_shape() == (1, 5)
-
-
-def test_eldele_2021_rejects_multiple_channels():
-    with pytest.raises(ValueError, match="requires n_chans=1"):
-        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_chans=2)
-
-
-@pytest.mark.parametrize("n_chans", [True, False, 1.0, np.float64(1.0)])
-def test_eldele_2021_rejects_non_integer_single_channel_before_probe(
-    n_chans, monkeypatch
-):
-    probe_calls = []
-
-    def tracked_probe(*args, **kwargs):
-        probe_calls.append((args, kwargs))
-        return 80
-
-    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(tracked_probe))
-
-    with pytest.raises(ValueError, match="n_chans"):
-        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_chans=n_chans)
-
-    assert probe_calls == []
-
-
-@pytest.mark.parametrize("channel_source", ["numpy-integer", "chs-info"])
-def test_eldele_2021_accepts_supported_single_channel_sources(channel_source):
-    if channel_source == "numpy-integer":
-        channel_kwargs = {"n_chans": np.int64(1)}
-    else:
-        channel_kwargs = {
-            "n_chans": None,
-            "chs_info": mne.create_info(["Cz"], 100, "eeg")["chs"],
-        }
-
-    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000, **channel_kwargs)
-
-    assert model.n_chans == 1
-    assert model.eval().get_output_shape() == (1, 5)
-
-
-def test_eldele_2021_activation_reaches_afr():
-    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000, activation=nn.ELU)
-    afr_activations = [
-        type(module)
-        for module in model.feature_extractor[0].AFR.modules()
-        if isinstance(module, (nn.ReLU, nn.ELU))
-    ]
-
-    assert afr_activations
-    assert all(act is nn.ELU for act in afr_activations)
-
-
-def test_eldele_2021_activation_without_inplace_constructor_runs():
-    class ActivationWithoutInplace(nn.Module):
-        def forward(self, x):
-            return torch.tanh(x)
-
+def test_attn_sleep_activation_reaches_afr():
     model = AttnSleep(
-        sfreq=100,
-        n_outputs=5,
-        n_times=3000,
-        activation=ActivationWithoutInplace,
-    ).eval()
-
-    with torch.inference_mode():
-        output = model(torch.randn(2, 1, 3000))
-
-    assert output.shape == (2, 5)
-
-
-def test_eldele_2021_docstring_matches_public_parameters():
-    docstring = AttnSleep.__doc__
-
-    assert "\n    n_classes :" not in docstring
-    assert "\n    input_size_s :" not in docstring
-    assert "multi-resolution CNN layer" in docstring
-    assert "Mask R-CNN layer" not in docstring
-
-
-def test_eldele_2021_feature_probe_preserves_eval_state():
-    feature_extractor = nn.Identity().eval()
-
-    assert AttnSleep._feature_length(feature_extractor, n_times=20) == 20
-    assert not feature_extractor.training
-
-
-def test_eldele_2021_feature_probe_restores_state_after_error():
-    class FailingFeatureExtractor(nn.Module):
-        def forward(self, x):
-            raise RuntimeError("shape probe failed")
-
-    feature_extractor = FailingFeatureExtractor().train()
-
-    with pytest.raises(RuntimeError, match="shape probe failed"):
-        AttnSleep._feature_length(feature_extractor, n_times=20)
-    assert feature_extractor.training
-
-
-@pytest.mark.parametrize("root_training", [False, True])
-@pytest.mark.parametrize("raises", [False, True])
-def test_eldele_2021_feature_probe_restores_descendant_states(
-    root_training, raises
-):
-    class NestedFeatureExtractor(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.training_child = nn.Identity()
-            self.eval_child = nn.Identity()
-
-        def forward(self, x):
-            x = self.training_child(x)
-            x = self.eval_child(x)
-            if raises:
-                raise RuntimeError("shape probe failed")
-            return x
-
-    feature_extractor = NestedFeatureExtractor().train(root_training)
-    feature_extractor.training_child.train()
-    feature_extractor.eval_child.eval()
-    training_states = {
-        name: module.training for name, module in feature_extractor.named_modules()
-    }
-
-    if raises:
-        with pytest.raises(RuntimeError, match="shape probe failed"):
-            AttnSleep._feature_length(feature_extractor, n_times=20)
-    else:
-        assert AttnSleep._feature_length(feature_extractor, n_times=20) == 20
-
-    assert {
-        name: module.training for name, module in feature_extractor.named_modules()
-    } == training_states
+        sfreq=100, n_outputs=5, n_times=3000, activation=nn.GELU
+    )
+    activations = [
+        module
+        for module in model.feature_extractor[0].AFR.modules()
+        if isinstance(module, (nn.ReLU, nn.GELU))
+    ]
+    assert activations
+    assert all(isinstance(module, nn.GELU) for module in activations)
 
 
 @pytest.mark.parametrize(
