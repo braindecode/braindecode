@@ -8,6 +8,7 @@ These functions keep the Zarr serialization details isolated from hub.py.
 from __future__ import annotations
 
 import json
+from numbers import Real
 from pathlib import Path
 
 import numpy as np
@@ -17,41 +18,78 @@ from mne.utils import _soft_import
 zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
 
 
-def _sanitize_for_json(obj):
-    """Replace NaN/Inf with None so attributes serialize to valid JSON.
+def _is_non_bool_real(value):
+    return not isinstance(value, (bool, np.bool_)) and isinstance(
+        value, (Real, np.integer, np.floating)
+    )
 
-    ``zarr.json`` must be spec-compliant JSON, but Python's ``json``
-    module writes ``NaN``/``Infinity`` literals by default, which
-    RFC 8259 forbids and non-Python zarr readers reject. MNE ``Info``
-    dicts routinely contain NaN (e.g. in channel ``loc`` arrays), so
-    they are sanitized before being stored as attributes and restored
-    with ``_restore_nan_from_json`` on load.
-    """
-    if isinstance(obj, float):
-        if np.isnan(obj) or np.isinf(obj):
-            return None
-        return obj
-    if isinstance(obj, dict):
-        return {k: _sanitize_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_for_json(v) for v in obj]
+
+def _prepare_info_for_json(obj, path="info", *, _in_numeric_sequence=False):
+    """Normalize an MNE Info value to strict JSON without losing sequence NaNs."""
     if isinstance(obj, np.ndarray):
-        return _sanitize_for_json(obj.tolist())
-    return obj
+        obj = obj.tolist()
+
+    if isinstance(obj, dict):
+        return {
+            key: _prepare_info_for_json(value, f"{path}.{key}")
+            for key, value in obj.items()
+        }
+
+    if isinstance(obj, (list, tuple)):
+        values = list(obj)
+        has_none = any(value is None for value in values)
+        has_number = any(_is_non_bool_real(value) for value in values)
+        all_none = bool(values) and all(value is None for value in values)
+        if all_none or (has_none and has_number):
+            raise ValueError(
+                f"{path} is ambiguous: numeric sequences cannot contain JSON null"
+            )
+
+        is_numeric_sequence = bool(values) and all(
+            _is_non_bool_real(value) for value in values
+        )
+        return [
+            _prepare_info_for_json(
+                value,
+                f"{path}[{index}]",
+                _in_numeric_sequence=is_numeric_sequence,
+            )
+            for index, value in enumerate(values)
+        ]
+
+    if isinstance(obj, (bool, np.bool_)):
+        return bool(obj)
+    if isinstance(obj, (int, np.integer)):
+        return int(obj)
+    if _is_non_bool_real(obj):
+        value = float(obj)
+        if np.isnan(value):
+            if _in_numeric_sequence:
+                return None
+            raise ValueError(f"{path} contains unsupported NaN")
+        if np.isposinf(value):
+            raise ValueError(f"{path} contains positive infinity")
+        if np.isneginf(value):
+            raise ValueError(f"{path} contains negative infinity")
+        return value
+    if obj is None or isinstance(obj, str):
+        return obj
+    raise ValueError(f"{path} contains a non-JSON-serializable value")
 
 
 def _restore_nan_from_json(obj):
     """Restore NaN values from None in JSON-loaded attributes.
 
-    Inverse of ``_sanitize_for_json`` for numeric arrays: restores NaN
-    on load so ``mne.Info.from_json_dict`` gets proper NaN arrays. Also
-    covers stores written by older braindecode versions, which sanitized
-    NaN/Inf → None the same way.
+    JSON null is reserved for NaN only in non-boolean numeric sequences.
+    All-null lists are therefore the representation of validated all-NaN
+    sequences, while ordinary null values elsewhere remain unchanged.
     """
     if isinstance(obj, dict):
         return {k: _restore_nan_from_json(v) for k, v in obj.items()}
     if isinstance(obj, list):
-        if len(obj) > 0 and all(isinstance(x, (int, float, type(None))) for x in obj):
+        if len(obj) > 0 and all(
+            value is None or _is_non_bool_real(value) for value in obj
+        ):
             return [np.nan if x is None else x for x in obj]
         return [_restore_nan_from_json(v) for v in obj]
     return obj
@@ -88,7 +126,7 @@ def _save_windows_to_zarr(
     metadata.to_csv(metadata_path, sep="\t", index=True)
 
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = _sanitize_for_json(info)
+    grp.attrs["info"] = info
 
     if target_name is not None:
         grp.attrs["target_name"] = target_name
@@ -125,7 +163,7 @@ def _save_eegwindows_to_zarr(
     metadata.to_csv(metadata_path, sep="\t", index=True)
 
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = _sanitize_for_json(info)
+    grp.attrs["info"] = info
     grp.attrs["targets_from"] = targets_from
     grp.attrs["last_target_only"] = last_target_only
 
@@ -186,7 +224,7 @@ def _save_raw_to_zarr(grp, raw, description, info, target_name, compressor, chun
     )
 
     grp.attrs["description"] = json.loads(description.to_json(date_format="iso"))
-    grp.attrs["info"] = _sanitize_for_json(info)
+    grp.attrs["info"] = info
 
     if target_name is not None:
         grp.attrs["target_name"] = target_name

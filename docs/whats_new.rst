@@ -82,11 +82,10 @@ Bug fixes
 - Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
   which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
   validation (:gh:`1123` by `Bruno Aristimunha`_).
-- Write spec-compliant JSON in Hub dataset stores: sanitize NaN/Inf in the MNE
-  ``Info`` attributes so ``zarr.json`` no longer contains invalid ``NaN``
-  literals, and store preprocessing kwargs as native JSON objects instead of
-  double-encoded strings, while still reading stores written by older versions
-  (:gh:`880` by `Azra Bano`_).
+- Write strict JSON in Hub dataset stores while preserving NaNs in numeric MNE
+  ``Info`` sequences. Unsupported scalar NaNs and infinities are rejected
+  before store creation, and preprocessing kwargs are stored as native strict
+  JSON while legacy string values remain readable (:gh:`1128` by `Azra Bano`_).
 
 - Leave recordings shorter than ``n_windows`` out of the draw in
   :class:`braindecode.samplers.BalancedSequenceSampler` instead of failing on
