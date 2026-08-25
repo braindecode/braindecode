@@ -28,6 +28,7 @@ The format follows a BIDS-inspired sourcedata structure:
 # License: BSD (3-clause)
 
 import contextlib
+import copy
 import json
 import logging
 import tempfile
@@ -56,6 +57,7 @@ from .hub_io import (
     _load_eegwindows_from_zarr,
     _load_raw_from_zarr,
     _load_windows_from_zarr,
+    _prepare_info_for_json,
     _save_eegwindows_to_zarr,
     _save_raw_to_zarr,
     _save_windows_to_zarr,
@@ -70,6 +72,33 @@ huggingface_hub = _soft_import(
 log = logging.getLogger(__name__)
 
 _LOCK_FILE = "format_info.json"
+
+
+def _normalize_kwargs_for_json(value, field_name):
+    """Return one preprocessing-kwargs value as native strict JSON."""
+
+    def _convert(obj):
+        if isinstance(obj, np.ndarray):
+            return _convert(obj.tolist())
+        if isinstance(obj, dict):
+            return {key: _convert(item) for key, item in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_convert(item) for item in obj]
+        if isinstance(obj, np.generic):
+            return _convert(obj.item())
+        return obj
+
+    try:
+        converted = _convert(value)
+        if isinstance(converted, str):
+            raise ValueError(
+                "a root string is ambiguous with the legacy encoded format"
+            )
+        return json.loads(json.dumps(converted, allow_nan=False))
+    except (OverflowError, RecursionError, TypeError, ValueError) as error:
+        raise ValueError(
+            f"{field_name} must contain only finite JSON-serializable values"
+        ) from error
 
 
 class HubDatasetMixin:
@@ -685,14 +714,57 @@ class HubDatasetMixin:
                 f"{output_path} already exists. Set overwrite=True to replace it."
             )
 
-        # Create zarr store (zarr v3 API)
-        root = zarr.open(str(output_path), mode="w")
-
         # Validate uniformity across all datasets using shared validation
         dataset_type, _, _ = hub_validation.validate_dataset_uniformity(self.datasets)
 
-        # Keep reference to first dataset for preprocessing kwargs
-        first_ds = self.datasets[0]
+        # Normalize every JSON value before opening the output store. The cached
+        # values below are the exact values handed to the write helpers.
+        prepared_infos = []
+        for ds in self.datasets:
+            if dataset_type == "WindowsDataset":
+                info = ds.windows.info
+            elif dataset_type in ("EEGWindowsDataset", "RawDataset"):
+                info = ds.raw.info
+            prepared_infos.append(_prepare_info_for_json(info.to_json_dict()))
+
+        prepared_kwargs = {}
+        for kwarg_name in [
+            "raw_preproc_kwargs",
+            "window_kwargs",
+            "window_preproc_kwargs",
+        ]:
+            expected_present = hasattr(self.datasets[0], kwarg_name)
+            expected_value = None
+            expected_token = None
+            for i_ds, ds in enumerate(self.datasets):
+                present = hasattr(ds, kwarg_name)
+                if present != expected_present:
+                    raise ValueError(
+                        f"{kwarg_name} on dataset {i_ds} has inconsistent presence; "
+                        "the Zarr format stores one global value"
+                    )
+                if not present:
+                    continue
+                value = _normalize_kwargs_for_json(
+                    getattr(ds, kwarg_name), f"{kwarg_name} on dataset {i_ds}"
+                )
+                value_token = json.dumps(
+                    value, sort_keys=True, separators=(",", ":"), allow_nan=False
+                )
+                if i_ds == 0:
+                    expected_value = value
+                    expected_token = value_token
+                elif value_token != expected_token:
+                    raise ValueError(
+                        f"{kwarg_name} on dataset {i_ds} differs from dataset 0; "
+                        "the Zarr format stores one global value"
+                    )
+            if expected_present:
+                prepared_kwargs[kwarg_name] = expected_value
+
+        # Create compressor and zarr store (zarr v3 API) only after preflight.
+        compressor = _create_compressor(compression, compression_level)
+        root = zarr.open(str(output_path), mode="w")
 
         # Store global metadata
         root.attrs["n_datasets"] = len(self.datasets)
@@ -706,21 +778,10 @@ class HubDatasetMixin:
         root.attrs["zarr_version"] = zarr.__version__
         root.attrs["scipy_version"] = scipy.__version__
 
-        # Save preprocessing kwargs (check first dataset, assuming uniform preprocessing)
-        # These are typically set by windowing functions on individual datasets
-        for kwarg_name in [
-            "raw_preproc_kwargs",
-            "window_kwargs",
-            "window_preproc_kwargs",
-        ]:
-            # Check first dataset for these attributes
-            if hasattr(first_ds, kwarg_name):
-                kwargs = getattr(first_ds, kwarg_name)
-                if kwargs:
-                    root.attrs[kwarg_name] = json.dumps(kwargs)
-
-        # Create compressor
-        compressor = _create_compressor(compression, compression_level)
+        # Save preprocessing kwargs from the preflight cache. These are
+        # typically set by windowing functions on individual datasets.
+        for kwarg_name, kwargs in prepared_kwargs.items():
+            root.attrs[kwarg_name] = kwargs
 
         # Save each recording
         for i_ds, ds in enumerate(self.datasets):
@@ -731,7 +792,7 @@ class HubDatasetMixin:
                 data = ds.windows.get_data()
                 metadata = ds.windows.metadata
                 description = ds.description
-                info_dict = ds.windows.info.to_json_dict()
+                info_dict = prepared_infos[i_ds]
                 target_name = ds.target_name if hasattr(ds, "target_name") else None
 
                 # Save using inlined function
@@ -750,7 +811,7 @@ class HubDatasetMixin:
                 raw = ds.raw
                 metadata = ds.metadata
                 description = ds.description
-                info_dict = ds.raw.info.to_json_dict()
+                info_dict = prepared_infos[i_ds]
                 targets_from = ds.targets_from
                 last_target_only = ds.last_target_only
 
@@ -771,7 +832,7 @@ class HubDatasetMixin:
                 # Get continuous raw data from RawDataset
                 raw = ds.raw
                 description = ds.description
-                info_dict = ds.raw.info.to_json_dict()
+                info_dict = prepared_infos[i_ds]
                 target_name = ds.target_name if hasattr(ds, "target_name") else None
 
                 # Save using inlined function
@@ -956,10 +1017,14 @@ class HubDatasetMixin:
             "window_preproc_kwargs",
         ]:
             if kwarg_name in root.attrs:
-                kwargs = json.loads(root.attrs[kwarg_name])
+                kwargs = root.attrs[kwarg_name]
+                if isinstance(kwargs, str):
+                    # Stores written by older braindecode versions kept
+                    # these attributes as double-encoded JSON strings.
+                    kwargs = json.loads(kwargs)
                 # Set on each individual dataset (where they were originally stored)
                 for ds in datasets:
-                    setattr(ds, kwarg_name, kwargs)
+                    setattr(ds, kwarg_name, copy.deepcopy(kwargs))
 
         return concat_ds
 

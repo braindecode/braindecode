@@ -43,7 +43,18 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- Deprecate ``drop_last_window`` in
+  :func:`braindecode.preprocessing.create_windows_from_events` and
+  :func:`braindecode.preprocessing.create_fixed_length_windows`; it will be
+  removed in version 2.0. The keyword-only replacement,
+  ``on_last_window``, accepts ``'overlap'`` or ``'drop'``. Explicit legacy
+  ``False`` maps to ``'overlap'`` and explicit legacy ``True`` maps to
+  ``'drop'``; either legacy spelling emits a ``DeprecationWarning``.
+  When no explicit window size or stride is supplied to fixed-length
+  windowing, the policy is immaterial and normalizes to the existing single
+  full-recording window; this also replaces the internal assertion formerly
+  reached by explicit legacy ``True``.
+  (:gh:`1058` by `Michele Romani`_)
 
 Requirements
 ============
@@ -102,6 +113,10 @@ Bug fixes
 - Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
   which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
   validation (:gh:`1123` by `Bruno Aristimunha`_).
+- Write strict JSON in Hub dataset stores while preserving NaNs in numeric MNE
+  ``Info`` sequences. Unsupported scalar NaNs and infinities are rejected
+  before store creation, and preprocessing kwargs are stored as native strict
+  JSON while legacy string values remain readable (:gh:`1128` by `Azra Bano`_).
 
 - Leave recordings shorter than ``n_windows`` out of the draw in
   :class:`braindecode.samplers.BalancedSequenceSampler` instead of failing on
@@ -1620,6 +1635,7 @@ Authors
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _GalAshkenazi1: https://github.com/GalAshkenazi1
 .. _Matthew Chen: https://github.com/MatthewChen37
+.. _Michele Romani: https://github.com/BRomans
 .. _Jonathan Dan: https://github.com/jon-dan
 .. _Jonathan Lys: https://github.com/jonathanlys01
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
@@ -1634,4 +1650,5 @@ Authors
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Jon Huml: https://github.com/jonathanhuml
+.. _Azra Bano: https://github.com/azrabano23
 .. _Aditya Singh: https://github.com/adityasingh2400
