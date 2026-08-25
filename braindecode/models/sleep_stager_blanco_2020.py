@@ -30,8 +30,8 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         Kernel and stride of the max pooling layers.
     n_groups : int
         Number of groups for the convolution. Set to 2 in [Blanco2020]_ for 2 Channel EEG.
-        controls the connections between inputs and outputs. n_channels and n_conv_chans must be
-        divisible by n_groups.
+        Controls the connections between inputs and outputs. ``n_chans`` and
+        ``n_conv_chans`` must be divisible by ``n_groups``.
     drop_prob : float
         Dropout rate before the output dense layer.
     apply_batch_norm : bool

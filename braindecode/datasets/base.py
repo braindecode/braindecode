@@ -59,6 +59,7 @@ def _html_row(label, value):
 
 _METADATA_INTERNAL_COLS = {
     "i_window_in_trial",
+    "i_trial_in_dataset",
     "i_start_in_trial",
     "i_stop_in_trial",
     "target",
@@ -1373,6 +1374,20 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 "Metadata dataframe can only be computed when all "
                 "datasets are WindowsDataset."
             )
+
+        for ds in self.datasets:
+            if hasattr(ds, "_windows") and ds._windows is not None:
+                df = ds._windows.metadata
+            else:
+                df = ds.metadata
+            if (
+                "i_trial_in_dataset" in df.columns
+                and "i_trial_in_dataset" in ds.description
+            ):
+                raise ValueError(
+                    "Dataset descriptions cannot contain the reserved window "
+                    "metadata key 'i_trial_in_dataset'."
+                )
 
         all_dfs = list()
         for ds in self.datasets:

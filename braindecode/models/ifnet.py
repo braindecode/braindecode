@@ -71,7 +71,7 @@ class IFNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    bands : list[tuple[int, int]] or int or None, default=[(4, 16), (16, 40)]
+    bands : list[tuple[float, float]] or int or None, default=[(4, 16), (16, 40)]
         Frequency bands for filtering.
     n_filters_spat : int, default=64
         Number of output feature dimensions.

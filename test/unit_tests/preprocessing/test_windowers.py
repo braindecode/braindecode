@@ -8,6 +8,7 @@
 # License: BSD-3
 
 import copy
+import inspect
 import logging
 import platform
 import warnings
@@ -35,6 +36,91 @@ from braindecode.preprocessing.windowers import (
     create_windows_from_target_channels,
 )
 from braindecode.util import create_mne_dummy_raw
+
+_EVENT_METADATA_COLUMNS = [
+    "i_window_in_trial",
+    "i_trial_in_dataset",
+    "i_start_in_trial",
+    "i_stop_in_trial",
+    "target",
+    "trial_uid",
+    "phase",
+]
+
+
+def _make_annotated_raw(
+    onsets,
+    durations,
+    descriptions,
+    trial_uids,
+    phases,
+    *,
+    first_samp=0,
+    source_values=None,
+):
+    n_times = int((max(onsets) + max(durations) + 2) * 100)
+    raw = mne.io.RawArray(
+        np.zeros((1, n_times)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        first_samp=first_samp,
+        verbose=False,
+    )
+    extras = []
+    for i, (trial_uid, phase) in enumerate(zip(trial_uids, phases)):
+        extra = {"trial_uid": trial_uid, "phase": phase}
+        if source_values is not None:
+            extra["i_trial_in_dataset"] = source_values[i]
+        extras.append(extra)
+    raw.set_annotations(
+        mne.Annotations(
+            onset=onsets,
+            duration=durations,
+            description=descriptions,
+            extras=extras,
+        )
+    )
+    return raw
+
+
+def _event_windows(raws, *, use_mne_epochs, descriptions=None, **kwargs):
+    if descriptions is None:
+        descriptions = [None] * len(raws)
+    concat = BaseConcatDataset(
+        [
+            RawDataset(raw, description=description)
+            for raw, description in zip(raws, descriptions)
+        ]
+    )
+    return create_windows_from_events(
+        concat,
+        use_mne_epochs=use_mne_epochs,
+        drop_bad_windows=False,
+        **kwargs,
+    )
+
+
+def _expected_event_metadata(
+    *, window_numbers, source_rows, starts, stops, targets, trial_uids, phases
+):
+    return pd.DataFrame(
+        {
+            "i_window_in_trial": window_numbers,
+            "i_trial_in_dataset": source_rows,
+            "i_start_in_trial": starts,
+            "i_stop_in_trial": stops,
+            "target": targets,
+            "trial_uid": trial_uids,
+            "phase": phases,
+        },
+        columns=_EVENT_METADATA_COLUMNS,
+    )
+
+
+def _assert_event_metadata(actual, expected):
+    actual = actual.reset_index(drop=True)
+    pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
+    assert list(actual.columns) == _EVENT_METADATA_COLUMNS
+    assert pd.api.types.is_integer_dtype(actual["i_trial_in_dataset"])
 
 
 def _get_raw(tmpdir_factory, description=None):
@@ -1523,6 +1609,285 @@ def test_dict_params_bad_trial_dropped_extras_not_misassigned():
     )
 
 
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_mapping_gap_and_canonical_order(use_mne_epochs):
+    raws = [
+        _make_annotated_raw(
+            [7, 1, 4],
+            [2, 2, 2],
+            ["B", "A", "OMIT"],
+            [30, 10, 20],
+            ["b", "a", "omit"],
+        )
+        for _ in range(2)
+    ]
+    windows = _event_windows(
+        raws,
+        use_mne_epochs=use_mne_epochs,
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"A": 7, "B": 9},
+    )
+    expected = _expected_event_metadata(
+        window_numbers=[0, 1, 0, 1],
+        source_rows=[0, 0, 2, 2],
+        starts=[100, 200, 700, 800],
+        stops=[200, 300, 800, 900],
+        targets=[7, 7, 9, 9],
+        trial_uids=[10, 10, 30, 30],
+        phases=["a", "a", "b", "b"],
+    )
+    for ds in windows.datasets:
+        _assert_event_metadata(ds.metadata, expected)
+        if use_mne_epochs:
+            np.testing.assert_array_equal(ds.windows.events[:, 2], expected["target"])
+
+
+@pytest.mark.parametrize("drop_position", ["early", "middle"])
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_scalar_short_drop(drop_position, use_mne_epochs):
+    durations = [0.5, 2, 2] if drop_position == "early" else [2, 0.5, 2]
+    raw = _make_annotated_raw(
+        [1, 4, 7], durations, ["A", "B", "C"], [10, 20, 30], ["a", "b", "c"]
+    )
+    expected_values = {
+        "early": {
+            "source_rows": [1, 1, 2, 2],
+            "starts": [400, 500, 700, 800],
+            "targets": [8, 8, 9, 9],
+            "trial_uids": [20, 20, 30, 30],
+            "phases": ["b", "b", "c", "c"],
+            "dropped": 0,
+        },
+        "middle": {
+            "source_rows": [0, 0, 2, 2],
+            "starts": [100, 200, 700, 800],
+            "targets": [7, 7, 9, 9],
+            "trial_uids": [10, 10, 30, 30],
+            "phases": ["a", "a", "c", "c"],
+            "dropped": 1,
+        },
+    }[drop_position]
+    with pytest.warns(UserWarning, match=rf"Trials \[{expected_values['dropped']}\].*dropped"):
+        windows = _event_windows(
+            [raw],
+            use_mne_epochs=use_mne_epochs,
+            window_size_samples=100,
+            window_stride_samples=100,
+            on_last_window="drop",
+            mapping={"A": 7, "B": 8, "C": 9},
+            accepted_bads_ratio=1 / 3,
+            on_missing="ignore",
+        )
+    expected = _expected_event_metadata(
+        window_numbers=[0, 1, 0, 1],
+        source_rows=expected_values["source_rows"],
+        starts=expected_values["starts"],
+        stops=[start + 100 for start in expected_values["starts"]],
+        targets=expected_values["targets"],
+        trial_uids=expected_values["trial_uids"],
+        phases=expected_values["phases"],
+    )
+    actual = windows.datasets[0].metadata.reset_index(drop=True)
+    # These assertions precede source-column access so RED proves the old remap bug.
+    for column in (
+        "target",
+        "trial_uid",
+        "phase",
+        "i_start_in_trial",
+        "i_stop_in_trial",
+        "i_window_in_trial",
+    ):
+        np.testing.assert_array_equal(actual[column], expected[column])
+    _assert_event_metadata(actual, expected)
+    if use_mne_epochs:
+        np.testing.assert_array_equal(
+            windows.datasets[0].windows.events[:, 2], expected["target"]
+        )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_per_event_short_drop(use_mne_epochs):
+    raw = _make_annotated_raw(
+        [1, 4, 7, 10],
+        [0.5, 2, 2, 2],
+        ["A", "B", "A", "B"],
+        [10, 20, 30, 40],
+        ["a0", "b0", "a1", "b1"],
+    )
+    with pytest.warns(UserWarning, match=r"Trials \[0\].*dropped"):
+        windows = _event_windows(
+            [raw],
+            use_mne_epochs=use_mne_epochs,
+            trial_start_offset_samples={"A": 0, "B": 0},
+            trial_stop_offset_samples={"A": 0, "B": 0},
+            window_size_samples=100,
+            window_stride_samples={"A": 100, "B": 100},
+            on_last_window="drop",
+            mapping={"A": 7, "B": 9},
+            accepted_bads_ratio=0.5,
+        )
+    expected = _expected_event_metadata(
+        window_numbers=[0, 1, 0, 1, 0, 1],
+        source_rows=[1, 1, 2, 2, 3, 3],
+        starts=[400, 500, 700, 800, 1000, 1100],
+        stops=[500, 600, 800, 900, 1100, 1200],
+        targets=[9, 9, 7, 7, 9, 9],
+        trial_uids=[20, 20, 30, 30, 40, 40],
+        phases=["b0", "b0", "a1", "a1", "b1", "b1"],
+    )
+    _assert_event_metadata(windows.datasets[0].metadata, expected)
+    if use_mne_epochs:
+        np.testing.assert_array_equal(
+            windows.datasets[0].windows.events[:, 2], expected["target"]
+        )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_inferred_size_filter(use_mne_epochs):
+    raw = _make_annotated_raw(
+        [1, 4, 7], [2, 1, 2], ["A", "B", "C"], [10, 20, 30], ["a", "b", "c"]
+    )
+    with pytest.warns(UserWarning, match="different windows size 1"):
+        windows = _event_windows(
+            [raw],
+            use_mne_epochs=use_mne_epochs,
+            mapping={"A": 7, "B": 8, "C": 9},
+            on_missing="ignore",
+        )
+    expected = _expected_event_metadata(
+        window_numbers=[0, 0],
+        source_rows=[0, 2],
+        starts=[100, 700],
+        stops=[300, 900],
+        targets=[7, 9],
+        trial_uids=[10, 30],
+        phases=["a", "c"],
+    )
+    _assert_event_metadata(windows.datasets[0].metadata, expected)
+    if use_mne_epochs:
+        np.testing.assert_array_equal(
+            windows.datasets[0].windows.events[:, 2], expected["target"]
+        )
+
+
+def test_event_source_index_nonzero_first_samp():
+    direct_raw = _make_annotated_raw(
+        [1], [1], ["T0"], [10], ["a"], first_samp=1000
+    )
+    mne_raw = direct_raw.copy()
+    kwargs = dict(
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"T0": 7},
+    )
+    direct = _event_windows([direct_raw], use_mne_epochs=False, **kwargs)
+    epochs = _event_windows([mne_raw], use_mne_epochs=True, **kwargs)
+    direct_md = direct.datasets[0].metadata.reset_index(drop=True)
+    epochs_md = epochs.datasets[0].metadata.reset_index(drop=True)
+    np.testing.assert_array_equal(direct_md[["i_start_in_trial", "i_stop_in_trial"]], [[100, 200]])
+    np.testing.assert_array_equal(epochs_md[["i_start_in_trial", "i_stop_in_trial"]], [[1100, 1200]])
+    np.testing.assert_array_equal(epochs.datasets[0].windows.events[:, [0, 2]], [[1100, 7]])
+    normalized = epochs_md.copy()
+    normalized[["i_start_in_trial", "i_stop_in_trial"]] -= 1000
+    pd.testing.assert_frame_equal(direct_md, normalized)
+    assert pd.api.types.is_integer_dtype(direct_md["i_trial_in_dataset"])
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_reserved_extra(use_mne_epochs):
+    raw = _make_annotated_raw(
+        [1], [1], ["T0"], [10], ["a"], source_values=[999]
+    )
+    with pytest.warns(UserWarning, match="Dropping extra columns.*i_trial_in_dataset"):
+        windows = _event_windows(
+            [raw],
+            use_mne_epochs=use_mne_epochs,
+            window_size_samples=100,
+            window_stride_samples=100,
+            on_last_window="drop",
+            mapping={"T0": 7},
+        )
+    expected = _expected_event_metadata(
+        window_numbers=[0],
+        source_rows=[0],
+        starts=[100],
+        stops=[200],
+        targets=[7],
+        trial_uids=[10],
+        phases=["a"],
+    )
+    _assert_event_metadata(windows.datasets[0].metadata, expected)
+    assert 999 not in windows.datasets[0].metadata["i_trial_in_dataset"].to_list()
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_reserved_description(use_mne_epochs):
+    raw = _make_annotated_raw([1], [1], ["T0"], [10], ["a"])
+    windows = _event_windows(
+        [raw],
+        descriptions=[{"recording": 0, "i_trial_in_dataset": 999}],
+        use_mne_epochs=use_mne_epochs,
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"T0": 7},
+    )
+    stored_before = windows.datasets[0].metadata.copy(deep=True)
+    np.testing.assert_array_equal(stored_before["i_trial_in_dataset"], [0])
+    with pytest.raises(ValueError, match="reserved.*i_trial_in_dataset"):
+        windows.get_metadata()
+    pd.testing.assert_frame_equal(windows.datasets[0].metadata, stored_before)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_is_internal_in_representations(use_mne_epochs):
+    raw = _make_annotated_raw([1], [1], ["T0"], [10], ["a"])
+    windows = _event_windows(
+        [raw],
+        use_mne_epochs=use_mne_epochs,
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"T0": 7},
+    )
+    assert "i_trial_in_dataset" in windows.datasets[0].metadata
+    for rendered in (
+        repr(windows.datasets[0]),
+        windows.datasets[0]._repr_html_(),
+        repr(windows),
+        windows._repr_html_(),
+    ):
+        assert "i_trial_in_dataset" not in rendered
+
+
+@pytest.mark.parametrize("parameter_style", ["scalar", "per_event"])
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_all_short_preserves_post_1058_error(parameter_style, use_mne_epochs):
+    raw = _make_annotated_raw(
+        [1, 4], [0.2, 0.2], ["A", "B"], [10, 20], ["a", "b"]
+    )
+    kwargs = dict(
+        window_size_samples=100,
+        on_last_window="drop",
+        mapping={"A": 7, "B": 9},
+        accepted_bads_ratio=1.0,
+    )
+    if parameter_style == "scalar":
+        kwargs["window_stride_samples"] = 100
+    else:
+        kwargs.update(
+            trial_start_offset_samples={"A": 0, "B": 0},
+            trial_stop_offset_samples={"A": 0, "B": 0},
+            window_stride_samples={"A": 100, "B": 100},
+        )
+    with pytest.warns(UserWarning, match="are being dropped"):
+        with pytest.raises(IndexError, match="too many indices"):
+            _event_windows([raw], use_mne_epochs=use_mne_epochs, **kwargs)
+
+
 def _make_small_eeg_windows_dataset(lazy_loadable_dataset):
     windows = create_fixed_length_windows(
         concat_ds=lazy_loadable_dataset,
@@ -1602,3 +1967,187 @@ def test_to_epochs_dataset_is_consistent(lazy_loadable_dataset):
         np.testing.assert_allclose(x_epo, x_eeg)
         assert y_epo == y_eeg
         assert crop_epo == crop_eeg
+
+
+@pytest.fixture(
+    params=[
+        pytest.param(
+            (create_windows_from_events, {"trial_stop_offset_samples": 0}),
+            id="events",
+        ),
+        pytest.param((create_fixed_length_windows, {}), id="fixed-length"),
+    ]
+)
+def trailing_window_policy_case(request):
+    data = np.zeros((2, 95), dtype=np.float32)
+    raw = mne.io.RawArray(
+        data,
+        mne.create_info(["C3", "C4"], sfreq=100),
+        verbose=False,
+    )
+    raw.set_annotations(mne.Annotations([0], [0.95], ["event"]))
+    function, extra_kwargs = request.param
+    kwargs = {
+        "concat_ds": BaseConcatDataset([RawDataset(raw)]),
+        "window_size_samples": 40,
+        "window_stride_samples": 40,
+        "use_mne_epochs": False,
+        **extra_kwargs,
+    }
+    return function, kwargs
+
+
+@pytest.mark.parametrize(
+    "strategy, expected_starts, expected_stops",
+    [
+        pytest.param("drop", [0, 40], [40, 80], id="drop"),
+        pytest.param("overlap", [0, 40, 55], [40, 80, 95], id="overlap"),
+    ],
+)
+def test_on_last_window_overlap_drop(
+    trailing_window_policy_case, strategy, expected_starts, expected_stops
+):
+    function, kwargs = trailing_window_policy_case
+    dataset = function(**kwargs, on_last_window=strategy).datasets[0]
+    assert dataset.metadata["i_start_in_trial"].tolist() == expected_starts
+    assert dataset.metadata["i_stop_in_trial"].tolist() == expected_stops
+    assert all(dataset[index][0].shape[-1] == 40 for index in range(len(dataset)))
+
+
+@pytest.mark.parametrize(
+    "legacy, strategy",
+    [
+        pytest.param(False, "overlap", id="false-to-overlap"),
+        pytest.param(True, "drop", id="true-to-drop"),
+    ],
+)
+def test_drop_last_window_keyword_deprecation(
+    trailing_window_policy_case, legacy, strategy
+):
+    function, kwargs = trailing_window_policy_case
+    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.0"):
+        deprecated = function(**kwargs, drop_last_window=legacy)
+    replacement = function(**kwargs, on_last_window=strategy)
+    pd.testing.assert_frame_equal(
+        deprecated.datasets[0].metadata,
+        replacement.datasets[0].metadata,
+    )
+    assert deprecated.datasets[0].window_kwargs == replacement.datasets[0].window_kwargs
+
+
+@pytest.mark.parametrize(
+    "legacy, strategy",
+    [
+        pytest.param(False, "overlap", id="false-to-overlap"),
+        pytest.param(True, "drop", id="true-to-drop"),
+    ],
+)
+def test_drop_last_window_positional_compatibility(
+    trailing_window_policy_case, legacy, strategy
+):
+    function, kwargs = trailing_window_policy_case
+    concat_ds = kwargs["concat_ds"]
+    if function is create_windows_from_events:
+        positional_args = (concat_ds, 0, 0, 40, 40, legacy)
+    else:
+        positional_args = (concat_ds, 0, None, 40, 40, legacy)
+    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.0"):
+        deprecated = function(*positional_args, use_mne_epochs=False)
+    replacement = function(**kwargs, on_last_window=strategy)
+    pd.testing.assert_frame_equal(
+        deprecated.datasets[0].metadata,
+        replacement.datasets[0].metadata,
+    )
+    assert deprecated.datasets[0].window_kwargs == replacement.datasets[0].window_kwargs
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_on_last_window_rejects_legacy_collision(
+    trailing_window_policy_case, legacy
+):
+    function, kwargs = trailing_window_policy_case
+    with pytest.raises(ValueError, match="Cannot specify both"):
+        function(
+            **kwargs,
+            drop_last_window=legacy,
+            on_last_window="drop",
+        )
+
+
+@pytest.mark.parametrize("invalid", ["keep", "invalid", True])
+def test_on_last_window_rejects_unowned_values(
+    trailing_window_policy_case, invalid
+):
+    function, kwargs = trailing_window_policy_case
+    with pytest.raises(ValueError, match="on_last_window must be one of"):
+        function(**kwargs, on_last_window=invalid)
+
+
+@pytest.mark.parametrize(
+    "function", [create_windows_from_events, create_fixed_length_windows]
+)
+def test_on_last_window_is_keyword_only(function):
+    parameter = inspect.signature(function).parameters["on_last_window"]
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_event_windowing_default_remains_overlap(trailing_window_policy_case):
+    function, kwargs = trailing_window_policy_case
+    if function is create_fixed_length_windows:
+        pytest.skip("Fixed-size plus stride retains its explicit-policy requirement.")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        default = function(**kwargs)
+    overlap = function(**kwargs, on_last_window="overlap")
+    pd.testing.assert_frame_equal(
+        default.datasets[0].metadata,
+        overlap.datasets[0].metadata,
+    )
+
+
+def test_fixed_length_still_requires_explicit_policy(trailing_window_policy_case):
+    function, kwargs = trailing_window_policy_case
+    if function is create_windows_from_events:
+        pytest.skip("Event windowing retains its historical overlap default.")
+    with pytest.raises(ValueError, match="on_last_window must be set"):
+        function(**kwargs)
+
+
+def test_overlap_remains_incompatible_with_lazy_metadata(lazy_loadable_dataset):
+    with pytest.raises(ValueError, match="lazy_metadata"):
+        create_fixed_length_windows(
+            concat_ds=lazy_loadable_dataset,
+            window_size_samples=90,
+            window_stride_samples=90,
+            on_last_window="overlap",
+            lazy_metadata=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "legacy, strategy",
+    [
+        pytest.param(False, "overlap", id="false-to-overlap"),
+        pytest.param(True, "drop", id="true-to-drop-formerly-invalid"),
+    ],
+)
+def test_fixed_length_no_size_policy_is_moot(
+    lazy_loadable_dataset, legacy, strategy
+):
+    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.0"):
+        deprecated = create_fixed_length_windows(
+            concat_ds=lazy_loadable_dataset,
+            drop_last_window=legacy,
+        )
+    replacement = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        on_last_window=strategy,
+    )
+    deprecated_dataset = deprecated.datasets[0]
+    replacement_dataset = replacement.datasets[0]
+    assert len(deprecated_dataset) == len(replacement_dataset) == 1
+    pd.testing.assert_frame_equal(
+        deprecated_dataset.metadata,
+        replacement_dataset.metadata,
+    )
+    assert deprecated_dataset.window_kwargs == replacement_dataset.window_kwargs

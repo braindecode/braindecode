@@ -9,6 +9,7 @@ from __future__ import annotations
 import inspect
 import os
 import sys
+from io import BytesIO
 from types import MethodType
 
 import mne
@@ -36,6 +37,7 @@ from braindecode.models import (
     InterpolatedEEGPT,
     InterpolatedLaBraM,
     InterpolatedSignalJEPA,
+    ShallowFBCSPNet,
     SyncNet,
     USleep,
 )
@@ -55,6 +57,41 @@ rng = np.random.default_rng(12)
 # Interpolated models are kept in a separate registry from ``models_dict``;
 # combine them here so integration tests continue to exercise both.
 all_models_dict = {**models_dict, **interpolated_models_dict}
+
+_DIRECT_TORCHSCRIPT_MODELS = (
+    "Deep4Net",
+    "DeepSleepNet",
+    "EEGConformer",
+    "EEGInceptionERP",
+    "EEGInceptionMI",
+    "ShallowFBCSPNet",
+    "SleepStagerBlanco2020",
+    "SleepStagerChambon2018",
+    "AttnSleep",
+    "USleep",
+    "AttentionBaseNet",
+    "EEGSimpleConv",
+    "SPARCNet",
+    "ContraWR",
+    "EEGSym",
+    "TSception",
+    "SyncNet",
+    "EEGMiner",
+    "CTNet",
+    "SincShallowNet",
+    "SCCNet",
+    "EMG2QwertyNet",
+    "FBLightConvNet",
+    "PBT",
+    "MEDFormer",
+    "DGCNN",
+    "ZUNA",
+)
+
+_MODEL_CASES = {
+    name: (required, signal_params)
+    for name, required, signal_params in models_mandatory_parameters
+}
 
 
 def convert_model_to_plain(model):
@@ -136,6 +173,15 @@ def test_completeness__models_test_cases():
     assert (
         all_models == models_tested
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
+
+
+def test_direct_torchscript_model_registry():
+    """Every direct TorchScript case is unique and registered."""
+    direct_models = set(_DIRECT_TORCHSCRIPT_MODELS)
+    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 27
+    assert len(direct_models) == len(_DIRECT_TORCHSCRIPT_MODELS)
+    assert direct_models <= all_models_dict.keys()
+    assert direct_models <= _MODEL_CASES.keys()
 
 
 @pytest.mark.parametrize(
@@ -510,13 +556,10 @@ def test_model_exported(model):
 # skip if windows or python 3.14
 @pytest.mark.skipif(
     sys.platform.startswith("win") or sys.version_info >= (3, 14),
-    reason="torch.compile is known to have issues on Windows or with Python 3.14.",
+    reason="TorchScript is known to have issues on Windows or with Python 3.14.",
 )
 def test_model_torch_script(model):
-    """
-    Verifies that all models can be torch export without issue
-    using torch.export.export()
-    """
+    """Compatible models can be scripted after conversion to plain modules."""
 
     not_working_models = [
         "BIOT",
@@ -591,15 +634,102 @@ def test_model_torch_script(model):
     scripted_model.save(fname)
 
     os.remove(fname)
-    # now that we can save,
-    # erasing the model from the memory
-    #
 
-    # print(f"Model {model_class.__name__} passed the test.")
-    # Continue this tests later. Not now...
-    # output_script = scripted_model(input_tensor)
-    # assert output_script.shape == output_model.shape
-    # torch.testing.assert_close(output_script, output_model)
+
+@pytest.mark.parametrize("model_name", _DIRECT_TORCHSCRIPT_MODELS)
+def test_torch_script_without_plain_conversion(model_name):
+    """Models script directly, without being rebuilt as a plain ``nn.Module``.
+
+    ``EEGModuleMixin`` exposes the signal-related parameters as properties that
+    raise ``ValueError`` when unset, and annotates ``mapping`` with a postponed
+    ``Optional[Dict[str, str]]``. ``torch.jit.script`` reads every class
+    attribute while building the concrete type, so either one used to abort
+    scripting before ``forward`` was compiled.
+    """
+    required, signal_params = _MODEL_CASES[model_name]
+    sp = get_sp(signal_params, required)
+    model = all_models_dict[model_name](**sp).eval()
+
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    input_tensor = torch.randn(1, n_chans, n_times)
+
+    if any(isinstance(p, nn.UninitializedParameter) for p in model.parameters()):
+        with torch.no_grad():
+            model(input_tensor)
+
+    with torch.no_grad():
+        expected = model(input_tensor)
+
+    scripted_model = torch.jit.script(model)
+    with torch.no_grad():
+        torch.testing.assert_close(scripted_model(input_tensor), expected)
+
+    buffer = BytesIO()
+    torch.jit.save(scripted_model, buffer)
+    buffer.seek(0)
+    restored_script = torch.jit.load(buffer)
+
+    with torch.no_grad():
+        torch.testing.assert_close(restored_script(input_tensor), expected)
+
+
+@pytest.mark.parametrize("n_chans", [None, default_signal_params["n_chans"]])
+def test_torch_script_with_chs_info(n_chans):
+    """MNE-style channel metadata must not be part of the scripted graph."""
+    chs_info = default_signal_params["chs_info"]
+    model = ShallowFBCSPNet(
+        n_chans=n_chans,
+        chs_info=chs_info,
+        n_outputs=default_signal_params["n_outputs"],
+        n_times=default_signal_params["n_times"],
+        sfreq=default_signal_params["sfreq"],
+    ).eval()
+    input_tensor = torch.randn(
+        2, len(chs_info), default_signal_params["n_times"]
+    )
+    assert model._n_chans == n_chans
+    assert model.chs_info is chs_info
+    expected = model(input_tensor)
+
+    scripted = torch.jit.script(model)
+    buffer = BytesIO()
+    torch.jit.save(scripted, buffer)
+    buffer.seek(0)
+    restored_script = torch.jit.load(buffer)
+
+    torch.testing.assert_close(scripted(input_tensor), expected)
+    torch.testing.assert_close(restored_script(input_tensor), expected)
+
+    restored_model = ShallowFBCSPNet.from_config(model.get_config()).eval()
+    restored_model.load_state_dict(model.state_dict())
+    assert restored_model._n_chans == n_chans
+    assert restored_model.n_chans == len(chs_info)
+    assert [ch["ch_name"] for ch in restored_model.chs_info] == [
+        ch["ch_name"] for ch in chs_info
+    ]
+    for restored_ch, original_ch in zip(restored_model.chs_info, chs_info):
+        np.testing.assert_allclose(restored_ch["loc"], original_ch["loc"])
+    torch.testing.assert_close(restored_model(input_tensor), expected)
+
+
+def test_signal_params_still_raise_value_error():
+    """Hiding the properties from TorchScript must not silence their errors."""
+    model = ShallowFBCSPNet(
+        n_chans=default_signal_params["n_chans"],
+        n_outputs=default_signal_params["n_outputs"],
+        n_times=default_signal_params["n_times"],
+    )
+    with pytest.raises(ValueError, match="chs_info not specified"):
+        model.chs_info
+    with pytest.raises(ValueError, match="sfreq could not be inferred"):
+        model.sfreq
 
 
 @pytest.mark.parametrize("method", ["mag", "corr", "plv"])
