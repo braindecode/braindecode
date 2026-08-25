@@ -175,14 +175,12 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        n_times = int(n_times) if n_times is not None else None
-        sfreq = float(sfreq) if sfreq is not None else None
-        input_window_seconds = (
-            float(input_window_seconds) if input_window_seconds is not None else None
-        )
-        self._n_times = n_times
-        self._sfreq = sfreq
-        self._input_window_seconds = input_window_seconds
+        resolved_n_times = int(self.n_times)
+        resolved_sfreq = float(self.sfreq)
+        resolved_input_window_seconds = float(self.input_window_seconds)
+        self._n_times = resolved_n_times
+        self._sfreq = resolved_sfreq
+        self._input_window_seconds = resolved_input_window_seconds
 
         resolved_n_chans = self.n_chans
         if (
@@ -193,10 +191,8 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             raise ValueError(
                 f"AttnSleep requires n_chans=1 as an integer, got {resolved_n_chans!r}."
             )
+        self._n_chans_for_jit = int(resolved_n_chans)
 
-        resolved_n_times = self.n_times
-        resolved_sfreq = self.sfreq
-        resolved_input_window_seconds = self.input_window_seconds
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.mapping = {

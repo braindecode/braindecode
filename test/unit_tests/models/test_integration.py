@@ -724,6 +724,98 @@ def test_attn_sleep_scripts_cold_and_roundtrips(
         torch.testing.assert_close(restored(input_tensor), expected)
 
 
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        pytest.param({"n_times": 3000, "sfreq": 100}, id="samples-frequency"),
+        pytest.param(
+            {"n_times": 3000, "input_window_seconds": 30},
+            id="samples-duration",
+        ),
+        pytest.param(
+            {"sfreq": 100, "input_window_seconds": 30},
+            id="frequency-duration",
+        ),
+        pytest.param(
+            {"n_times": 3000, "sfreq": 100, "input_window_seconds": 30},
+            id="consistent-all-three",
+        ),
+        pytest.param(
+            {"n_times": np.int32(3000), "sfreq": np.float32(100)},
+            id="numpy-samples-frequency",
+        ),
+        pytest.param(
+            {
+                "n_times": np.int64(3000),
+                "input_window_seconds": np.float64(30),
+            },
+            id="numpy-samples-duration",
+        ),
+        pytest.param(
+            {
+                "sfreq": np.float32(100),
+                "input_window_seconds": np.float64(30),
+            },
+            id="numpy-frequency-duration",
+        ),
+        pytest.param(
+            {
+                "n_times": np.int64(3000),
+                "sfreq": np.float32(100),
+                "input_window_seconds": np.float64(30),
+            },
+            id="numpy-consistent-all-three",
+        ),
+    ],
+)
+def test_attn_sleep_geometry_scripts_cold_and_roundtrips(geometry):
+    """Every accepted geometry form has stable direct-script scalar state."""
+    model = AttnSleep(n_outputs=5, **geometry).eval()
+    input_tensor = torch.randn(2, 1, 3000)
+
+    assert type(model.n_times) is int
+    assert type(model.sfreq) is float
+    assert type(model.input_window_seconds) is float
+    scripted = torch.jit.script(model)
+    with torch.no_grad():
+        expected = model(input_tensor)
+        actual = scripted(input_tensor)
+    assert actual.shape == (2, 5)
+    torch.testing.assert_close(actual, expected)
+
+    buffer = BytesIO()
+    torch.jit.save(scripted, buffer)
+    buffer.seek(0)
+    restored = torch.jit.load(buffer)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(input_tensor), expected)
+
+
+def test_attn_sleep_numpy_channel_scripts_cold_and_roundtrips():
+    """An accepted NumPy channel count scripts before its first eager forward."""
+    model = AttnSleep(
+        n_times=3000,
+        sfreq=100,
+        n_chans=np.int64(1),
+        n_outputs=5,
+    ).eval()
+    input_tensor = torch.randn(2, 1, 3000)
+
+    scripted = torch.jit.script(model)
+    with torch.no_grad():
+        expected = model(input_tensor)
+        actual = scripted(input_tensor)
+    assert actual.shape == (2, 5)
+    torch.testing.assert_close(actual, expected)
+
+    buffer = BytesIO()
+    torch.jit.save(scripted, buffer)
+    buffer.seek(0)
+    restored = torch.jit.load(buffer)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(input_tensor), expected)
+
+
 @pytest.mark.parametrize("n_chans", [None, default_signal_params["n_chans"]])
 def test_torch_script_with_chs_info(n_chans):
     """MNE-style channel metadata must not be part of the scripted graph."""
