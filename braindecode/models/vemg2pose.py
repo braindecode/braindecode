@@ -299,7 +299,6 @@ class VEMG2PoseNet(
         ).to(dtype=torch.long)
         return traj.index_select(1, decoder_indices.clamp_max(k_dec - 1))
 
-    @torch.no_grad()
     def tracking_forward(self, x: torch.Tensor, y0: torch.Tensor) -> torch.Tensor:
         """Explicit Tracking-mode entry point (ground-truth anchor required)."""
         return self.forward(x, y0=y0)

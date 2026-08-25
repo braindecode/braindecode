@@ -97,6 +97,13 @@ def test_vemg2pose_tracking_anchor_changes_trajectory(vemg2pose, emg_window):
     assert not torch.allclose(out_a[:, :500], out_b[:, :500])
 
 
+def test_vemg2pose_tracking_forward_preserves_gradients(vemg2pose, emg_window):
+    output = vemg2pose.tracking_forward(emg_window, torch.zeros(2, 20))
+    output.sum().backward()
+
+    assert vemg2pose.final_layer.weight.grad is not None
+
+
 def test_vemg2pose_rolls_out_at_decoder_rate():
     model = VEMG2PoseNet(
         n_chans=16,
@@ -155,7 +162,7 @@ def test_neuropose_sequence_and_reset_head(emg_window):
     assert model(emg_window[:1]).shape == (1, 10000, 22)
 
 
-def test_neuropose_rejects_input_shorter_than_decimation():
+def test_neuropose_rejects_input_too_short_for_encoder():
     model = NeuroPoseNet(
         n_chans=16,
         n_outputs=20,
@@ -165,8 +172,31 @@ def test_neuropose_rejects_input_shorter_than_decimation():
         encoder_dim=32,
         n_res_blocks=1,
     )
-    with pytest.raises(ValueError, match="at least 10 time samples"):
-        model(torch.randn(1, 16, 9))
+    with pytest.raises(ValueError, match="at least 400 time samples"):
+        model(torch.randn(1, 16, 399))
+
+
+def test_neuropose_rejects_too_few_bands():
+    with pytest.raises(ValueError, match="n_bands must be at least 7"):
+        NeuroPoseNet(
+            n_chans=16,
+            n_outputs=20,
+            n_times=10000,
+            sfreq=2000.0,
+            n_bands=6,
+        )
+
+
+def test_neuropose_rejects_short_noninteger_resampling():
+    model = NeuroPoseNet(
+        n_chans=8,
+        n_outputs=20,
+        n_times=98,
+        sfreq=500.0,
+        internal_sfreq=200.0,
+    )
+    with pytest.raises(ValueError, match="requires at least 40"):
+        model(torch.randn(1, 8, 98))
 
 
 def test_neuropose_resamples_noninteger_sampling_ratio():
@@ -274,9 +304,7 @@ def test_sensingdynamics_sequence_shape():
 
 
 def test_sensingdynamics_matches_derived_adaptation_geometry():
-    model = SensingDynamicsNet(
-        n_chans=16, n_outputs=20, n_times=480, sfreq=2000.0
-    )
+    model = SensingDynamicsNet(n_chans=16, n_outputs=20, n_times=480, sfreq=2000.0)
 
     assert model.conv1.conv.kernel_size == (1, 31)
     assert model.conv1.conv.stride == (1, 8)
@@ -491,7 +519,4 @@ def test_all_three_are_non_classification_models():
 
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
 def test_vemg2pose_hub_license_matches_source_license():
-    assert (
-        VEMG2PoseNet._hub_mixin_info.model_card_data["license"]
-        == "cc-by-nc-sa-4.0"
-    )
+    assert VEMG2PoseNet._hub_mixin_info.model_card_data["license"] == "cc-by-nc-sa-4.0"

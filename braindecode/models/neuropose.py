@@ -154,6 +154,11 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
         if self.internal_sfreq <= 0:
             raise ValueError(f"internal_sfreq must be positive; got {internal_sfreq}.")
         self.n_bands = int(n_bands)
+        if self.n_bands < 7:
+            raise ValueError(
+                "n_bands must be at least 7 for the encoder's spatial pooling; "
+                f"got {n_bands}."
+            )
         self.channel_adapter_mode = channel_adapter
         self.input_sfreq = float(self.sfreq)
         sampling_ratio = self.input_sfreq / self.internal_sfreq
@@ -234,18 +239,23 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
         # Resample to the paper's internal temporal grid.
         if self.decim is not None:
             t_int = (h.shape[-1] // self.decim) * self.decim
-            if t_int == 0:
+            min_input_times = 40 * self.decim
+            if h.shape[-1] < min_input_times:
                 raise ValueError(
-                    f"Input must contain at least {self.decim} time samples for "
-                    f"decimation; got {h.shape[-1]}."
+                    f"Input must contain at least {min_input_times} time samples "
+                    "so the resampled signal has the 40 samples required by the "
+                    f"encoder; got {h.shape[-1]}."
                 )
             h = h[..., :t_int]
             if self.decim > 1:
                 h = torch.nn.functional.avg_pool1d(h, self.decim)
         else:
             t_int = round(h.shape[-1] * self.internal_sfreq / self.input_sfreq)
-            if t_int <= 0:
-                raise ValueError("Input is too short to resample to internal_sfreq.")
+            if t_int < 40:
+                raise ValueError(
+                    f"Input resamples to {t_int} internal samples, but the encoder "
+                    "requires at least 40."
+                )
             h = torch.nn.functional.interpolate(
                 h, size=t_int, mode="linear", align_corners=False
             )
