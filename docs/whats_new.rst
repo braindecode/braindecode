@@ -28,7 +28,7 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
-- Add ``BIDSDataset.plot()``: embed the eegdash-viewer trace viewer
+- Add :meth:`braindecode.datasets.BIDSDataset.plot`: embed the eegdash-viewer trace viewer
   (with the synchronized hand-pose panel when a ``*_desc-pose.json``
   sidecar is present) for any recording in the dataset.
 

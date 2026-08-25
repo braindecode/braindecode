@@ -11,8 +11,10 @@ More information on BIDS (Brain Imaging Data Structure) can be found at https://
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from html import escape
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 import mne
 import mne_bids
@@ -33,6 +35,30 @@ def _description_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
         }
     )
     return description
+
+
+def _viewer_param(fpath: Path) -> str:
+    """Return the eegdash-viewer query parameter for a recording."""
+    stem = fpath.stem.lower()
+    for token in ("ieeg", "emg", "meg", "nirs"):
+        if stem.endswith("_" + token):
+            return token
+    return "eeg"
+
+
+def _validate_web_url(url: str, name: str) -> str:
+    """Validate and normalize a web URL used in generated HTML."""
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            f"{name} must be an http or https URL without a query or fragment."
+        )
+    return parsed.geturl().rstrip("/")
 
 
 @dataclass
@@ -197,60 +223,59 @@ class BIDSDataset(BaseConcatDataset):
             raw.load_data()
         return RawDataset(raw, description)
 
+    def plot(
+        self,
+        index: int = 0,
+        *,
+        viewer_url: str,
+        base_url: str,
+        height: int = 420,
+    ):
+        """Embed one recording in an eegdash-viewer Jupyter iframe.
 
-def _viewer_param(fpath) -> str:
-    """eegdash-viewer grammar: recordings load via ?<suffix>=<url>."""
-    stem = fpath.stem.lower()
-    for token in ("ieeg", "emg", "meg", "nirs"):
-        if stem.endswith("_" + token):
-            return token
-    return "eeg"
+        Parameters
+        ----------
+        index : int
+            Recording to display (position in ``self.bids_paths``).
+        viewer_url : str
+            Base URL of a deployed eegdash-viewer instance.
+        base_url : str
+            Web-reachable base URL serving this dataset's BIDS root (e.g.
+            an eegdash/S3 deployment). Note ``python -m http.server`` does
+            not implement HTTP Range requests, which the viewer's readers
+            use for lazy windowed loading.
+        height : int
+            Iframe height in pixels.
 
+        Returns
+        -------
+        IPython.display.HTML
+        """
+        try:
+            from IPython.display import HTML
+        except ImportError:
+            raise ImportError(
+                "BIDSDataset.plot requires IPython; install it with "
+                "`pip install ipython`."
+            ) from None
 
-def plot(self, index: int = 0, *, viewer_url: str, base_url: str, height: int = 420):
-    """Embed the eegdash-viewer (https://github.com/eegdash/eegdash-viewer)
-    for one recording of this dataset in a Jupyter cell.
-
-    Parameters
-    ----------
-    index : int
-        Recording to display (position in ``self.bids_paths``).
-    viewer_url : str
-        Base URL of a deployed eegdash-viewer instance.
-    base_url : str
-        Web-reachable base URL serving this dataset's BIDS root (e.g.
-        an eegdash/S3 deployment). Note ``python -m http.server`` does
-        not implement HTTP Range requests, which the viewer's readers
-        use for lazy windowed loading.
-    height : int
-        Iframe height in pixels.
-
-    Returns
-    -------
-    IPython.display.HTML
-    """
-    from IPython.display import HTML
-    from urllib.parse import quote
-
-    fpath = Path(self.bids_paths[index].fpath).resolve()
-    root = Path(self.root).resolve()
-    base = base_url.rstrip("/")
-    url = f"{base}/{fpath.relative_to(root).as_posix()}"
-    params = [f"{_viewer_param(fpath)}={quote(url, safe='')}", "embed=1"]
-    pose = fpath.with_name(fpath.stem.rsplit("_", 1)[0] + "_desc-pose.json")
-    if pose.is_file():  # synchronized hand-pose sidecar (F10 panel)
-        pose_url = f"{base}/{pose.relative_to(root).as_posix()}"
-        params.append(f"pose={quote(pose_url, safe='')}")
-    src = f"{viewer_url.rstrip('/')}/index.html?{'&'.join(params)}"
-    return HTML(
-        f'<iframe src="{src}" style="width:100%;height:{int(height)}px;'
-        'border:1px solid var(--jp-border-color0, #ccc);border-radius:4px" '
-        'title="eegdash trace viewer" loading="lazy"></iframe>'
-    )
-
-
-BIDSDataset.plot = plot
-del plot
+        viewer = _validate_web_url(viewer_url, "viewer_url")
+        base = _validate_web_url(base_url, "base_url")
+        root = Path(self.root).absolute()
+        fpath = Path(self.bids_paths[index].fpath).absolute()
+        relative_fpath = fpath.relative_to(root)
+        url = f"{base}/{relative_fpath.as_posix()}"
+        params = [f"{_viewer_param(fpath)}={quote(url, safe='')}", "embed=1"]
+        pose = fpath.with_name(fpath.stem.rsplit("_", 1)[0] + "_desc-pose.json")
+        if pose.is_file():  # synchronized hand-pose sidecar (F10 panel)
+            pose_url = f"{base}/{pose.relative_to(root).as_posix()}"
+            params.append(f"pose={quote(pose_url, safe='')}")
+        src = escape(f"{viewer}/index.html?{'&'.join(params)}", quote=True)
+        return HTML(
+            f'<iframe src="{src}" style="width:100%;height:{int(height)}px;'
+            'border:1px solid var(--jp-border-color0, #ccc);border-radius:4px" '
+            'title="eegdash trace viewer" loading="lazy"></iframe>'
+        )
 
 
 class BIDSEpochsDataset(BIDSDataset):

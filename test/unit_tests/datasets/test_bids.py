@@ -2,6 +2,9 @@
 #
 # License: BSD (3-clause)
 
+import sys
+from types import SimpleNamespace
+
 import pytest
 from moabb.datasets import FakeDataset
 from moabb.paradigms import LeftRightImagery
@@ -41,6 +44,7 @@ def bids_dataset_root(tmpdir_factory):
 def test_bids_dataset(bids_dataset_root):
     dataset = BIDSDataset(bids_dataset_root)
     assert len(dataset.datasets) == 1
+    assert len(dataset.bids_paths) == 1
     assert len(dataset.datasets[0].raw.ch_names) == 3
     assert len(dataset.datasets[0].raw.annotations) == 60
     assert set(dataset.datasets[0].raw.annotations.description) == {
@@ -58,50 +62,121 @@ def test_bids_epochs_dataset(bids_dataset_root):
     assert y in ["left_hand", "right_hand"]
 
 
-# ===================== BIDSDataset.plot (eegdash-viewer) =====================
-
-
-def _make_emg_bids_tree(tmp_path):
-    """One minimal emg2pose-style recording: 2 emg + 1 joint-angle ch."""
-    import mne
-    import numpy as np
-
+def _make_plot_dataset(tmp_path, *, symlink_recording=False):
+    """Make a minimal dataset stub for testing URL generation only."""
     root = tmp_path / "emg2pose-bids"
     ch_dir = root / "sub-893" / "ses-s1" / "emg"
     ch_dir.mkdir(parents=True)
-    info = mne.create_info(["EMG1", "EMG2", "ja0"], 100, ["emg", "emg", "misc"])
-    raw = mne.io.RawArray(np.random.randn(3, 50) * 1e-6, info, verbose="ERROR")
-    mne.export.export_raw(
-        ch_dir / "sub-893_ses-s1_task-fist_acq-right_emg.vhdr",
-        raw,
-        fmt="brainvision",
-        overwrite=True,
-        verbose="ERROR",
+    recording = ch_dir / "sub-893_ses-s1_task-fist_acq-right_emg.vhdr"
+    if symlink_recording:
+        target = tmp_path / "external" / recording.name
+        target.parent.mkdir()
+        target.touch()
+        recording.symlink_to(target)
+    else:
+        recording.touch()
+
+    dataset = object.__new__(BIDSDataset)
+    dataset.root = root
+    dataset.bids_paths = [SimpleNamespace(fpath=recording)]
+    return dataset, recording
+
+
+def _plot(dataset):
+    return dataset.plot(
+        0,
+        viewer_url="https://viewer.example.org",
+        base_url="https://data.example.org/ds",
     )
-    return root
 
 
 @pytest.mark.parametrize("with_pose", [False, True])
 def test_bids_dataset_plot_iframe(tmp_path, with_pose):
-    root = _make_emg_bids_tree(tmp_path)
-    ds = BIDSDataset(root, suffixes="emg", datatypes="emg")
-    assert len(ds.datasets) == 1
-    assert ds.bids_paths[0].suffix == "emg"
+    dataset, recording = _make_plot_dataset(tmp_path)
 
     if with_pose:  # optional hand-pose skeleton sidecar
-        (
-            root
-            / "sub-893"
-            / "ses-s1"
-            / "emg"
-            / "sub-893_ses-s1_task-fist_acq-right_desc-pose.json"
+        recording.with_name(
+            "sub-893_ses-s1_task-fist_acq-right_desc-pose.json"
         ).write_text("{}")
 
-    html = ds.plot(
-        0,
-        viewer_url="https://viewer.example.org",
-        base_url="https://data.example.org/ds",
-    ).data
+    html = _plot(dataset).data
     assert html.startswith('<iframe src="https://viewer.example.org/index.html?emg=')
     assert "data.example.org%2Fds%2Fsub-893" in html and "embed=1" in html
     assert ("pose=" in html) is with_pose
+
+
+def test_bids_dataset_plot_preserves_symlink_path(tmp_path):
+    dataset, recording = _make_plot_dataset(tmp_path, symlink_recording=True)
+    recording.with_name("sub-893_ses-s1_task-fist_acq-right_desc-pose.json").write_text(
+        "{}"
+    )
+
+    html = _plot(dataset).data
+
+    assert "data.example.org%2Fds%2Fsub-893%2Fses-s1%2Femg" in html
+    assert "pose=" in html
+    assert "external" not in html
+
+
+def test_bids_dataset_plot_is_defined_on_class():
+    assert BIDSDataset.plot.__qualname__ == "BIDSDataset.plot"
+
+
+def test_bids_dataset_plot_explains_missing_ipython(tmp_path, monkeypatch):
+    dataset, _ = _make_plot_dataset(tmp_path)
+    monkeypatch.setitem(sys.modules, "IPython.display", None)
+
+    with pytest.raises(ImportError, match="BIDSDataset.plot requires IPython"):
+        _plot(dataset)
+
+
+@pytest.mark.parametrize(
+    ("viewer_url", "data_url"),
+    [
+        ("javascript:alert(1)", "https://data.example.org/ds"),
+        ("https://viewer.example.org", "file:///tmp/data"),
+        (
+            "https://viewer.example.org/app?theme=dark",
+            "https://data.example.org/ds",
+        ),
+        ("https://viewer.example.org", "https://data.example.org/ds#recording"),
+    ],
+)
+def test_bids_dataset_plot_rejects_non_web_urls(tmp_path, viewer_url, data_url):
+    dataset, _ = _make_plot_dataset(tmp_path)
+
+    with pytest.raises(ValueError, match="http or https URL"):
+        dataset.plot(0, viewer_url=viewer_url, base_url=data_url)
+
+
+def test_bids_dataset_plot_escapes_viewer_url(tmp_path):
+    dataset, _ = _make_plot_dataset(tmp_path)
+
+    html = dataset.plot(
+        0,
+        viewer_url='https://viewer.example.org/"><script>alert(1)</script>',
+        base_url="https://data.example.org/ds",
+    ).data
+
+    assert "<script>" not in html
+    assert "&quot;&gt;&lt;script&gt;" in html
+
+
+@pytest.mark.parametrize(
+    ("viewer_url", "data_url"),
+    [
+        ("https://viewer.example.org/app?", "https://data.example.org/ds"),
+        ("https://viewer.example.org/app", "https://data.example.org/ds#"),
+    ],
+)
+def test_bids_dataset_plot_normalizes_empty_url_delimiters(
+    tmp_path, viewer_url, data_url
+):
+    dataset, _ = _make_plot_dataset(tmp_path)
+
+    html = dataset.plot(0, viewer_url=viewer_url, base_url=data_url).data
+
+    assert html.startswith(
+        '<iframe src="https://viewer.example.org/app/index.html?emg='
+    )
+    assert "data.example.org%2Fds%2Fsub-893" in html
