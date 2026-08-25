@@ -64,6 +64,12 @@ Requirements
 Bug fixes
 ==========
 
+- Honor the configurable activation in the adaptive feature recalibration block
+  of :class:`braindecode.models.AttnSleep`, and report the ``d_model`` required
+  by a non-reference window instead of failing inside layer normalization. The
+  derived source now also carries the complete upstream MIT notice
+  (:gh:`1119` by `Sarthak Tayal`_).
+
 - Make :class:`braindecode.datasets.SleepPhysionet` wake cropping retain the complete
   final sleep annotation without including an extra endpoint sample (:gh:`612` by
   `John Muradeli`_).

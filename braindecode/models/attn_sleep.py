@@ -1,10 +1,36 @@
 # Authors: Divyesh Narayanan <divyesh.narayanan@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
+#
+# This implementation derives from https://github.com/emadeldeen24/AttnSleep:
+#
+# MIT License
+#
+# Copyright (c) 2020 Emadeldeen Eldele
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 import math
 import warnings
 from copy import deepcopy
+from numbers import Integral
 
 import torch
 import torch.nn.functional as F
@@ -33,7 +59,8 @@ class AttnSleep(EEGModuleMixin, nn.Module):
 
     Warning - This model was designed for signals of 30 seconds at 100Hz or 125Hz (in which case
     the reference architecture from [1]_ which was validated on SHHS dataset [2]_ will be used)
-    to use any other input is likely to make the model perform in unintended ways.
+    to use any other input is likely to make the model perform in unintended ways. Any other
+    window length also needs a ``d_model`` of its own, see the parameter below.
 
     Parameters
     ----------
@@ -44,7 +71,10 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         Also the input dimension of the first FC layer in the feed forward
         and the output of the second FC layer in the same.
         Increase for higher sampling rate/signal length.
-        It should be divisible by n_attn_heads
+        It should be divisible by n_attn_heads. It must also equal the number
+        of time steps returned by the feature extractor: 80 for 30 seconds at
+        100 Hz and 100 for 30 seconds at 125 Hz. A construction error reports
+        the value needed for other window lengths.
     d_ff : int
         Output dimension of the first FC layer in the feed forward and the
         input dimension of the second FC layer in the same.
@@ -63,10 +93,11 @@ class AttnSleep(EEGModuleMixin, nn.Module):
     input_size_s : float
         Alias for `input_window_seconds`.
     activation : nn.Module, default=nn.ReLU
-        Activation function class to apply. Should be a PyTorch activation
+        Activation function class to apply in the AFR block and the TCE
+        feed-forward block. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
-    activation_mrcnn : nn.Module, default=nn.ReLU
-        Activation function class to apply in the Mask R-CNN layer.
+    activation_mrcnn : nn.Module, default=nn.GELU
+        Activation function class to apply in the multi-resolution CNN layer.
         Should be a PyTorch activation module class like ``nn.ReLU`` or
         ``nn.GELU``. Default is ``nn.GELU``.
 
@@ -99,6 +130,14 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         n_chans=None,
         n_times=None,
     ):
+        if (
+            sum(value is not None for value in (n_times, sfreq, input_window_seconds))
+            < 2
+        ):
+            raise ValueError(
+                "AttnSleep requires at least two of n_times, sfreq, and "
+                "input_window_seconds."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -140,6 +179,14 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             activation=activation_mrcnn,
             activation_se=activation,
         )
+        feature_length = self._feature_length(mrcnn, self.n_times)
+        if feature_length != d_model:
+            raise ValueError(
+                f"d_model is {d_model} but the feature extractor returns "
+                f"{feature_length} time steps for an input of {self.n_times} "
+                f"samples at {self.sfreq} Hz. Set d_model={feature_length}, with "
+                "an n_attn_heads that divides it."
+            )
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, drop_prob, activation=activation)
         tce = _TCE(
@@ -150,23 +197,26 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         )
 
         self.feature_extractor = nn.Sequential(mrcnn, tce)
-        self.len_last_layer = self._len_last_layer(self.n_times)
+        self.len_last_layer = feature_length * after_reduced_cnn_size
         self.return_feats = return_feats
 
         # TODO: Add new way to handle return features
         """if return_feats:
             raise ValueError("return_feat == True is not accepted anymore")"""
         if not return_feats:
-            self.final_layer = nn.Linear(
-                d_model * after_reduced_cnn_size, self.n_outputs
-            )
+            self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
 
-    def _len_last_layer(self, input_size):
-        self.feature_extractor.eval()
-        with torch.no_grad():
-            out = self.feature_extractor(torch.Tensor(1, 1, input_size))
-        self.feature_extractor.train()
-        return len(out.flatten())
+    @staticmethod
+    def _feature_length(mrcnn, n_times):
+        training_states = [(module, module.training) for module in mrcnn.modules()]
+        mrcnn.eval()
+        try:
+            with torch.no_grad():
+                out = mrcnn(torch.zeros(1, 1, n_times))
+        finally:
+            for module, was_training in training_states:
+                module.training = was_training
+        return out.shape[-1]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -195,7 +245,7 @@ class _SELayer(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool1d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False),
-            activation(inplace=True),
+            activation(),
             nn.Linear(channel // reduction, channel, bias=False),
             nn.Sigmoid(),
         )
@@ -236,10 +286,10 @@ class _SEBasicBlock(nn.Module):
         super(_SEBasicBlock, self).__init__()
         self.conv1 = nn.Conv1d(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm1d(planes)
-        self.relu = activation(inplace=True)
+        self.relu = activation()
         self.conv2 = nn.Conv1d(planes, planes, 1)
         self.bn2 = nn.BatchNorm1d(planes)
-        self.se = _SELayer(planes, reduction)
+        self.se = _SELayer(planes, reduction, activation=activation)
         self.downsample = downsample
         self.stride = stride
         self.features = nn.Sequential(
@@ -320,11 +370,11 @@ class _MRCNN(nn.Module):
         self.dropout = nn.Dropout(drate)
         self.inplanes = 128
         self.AFR = self._make_layer(
-            _SEBasicBlock, after_reduced_cnn_size, 1, activate=activation_se
+            _SEBasicBlock, after_reduced_cnn_size, 1, activation=activation_se
         )
 
     def _make_layer(
-        self, block, planes, blocks, stride=1, activate: type[nn.Module] = nn.ReLU
+        self, block, planes, blocks, stride=1, activation: type[nn.Module] = nn.ReLU
     ):  # makes residual SE block
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
@@ -340,10 +390,12 @@ class _MRCNN(nn.Module):
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample))
+        layers.append(
+            block(self.inplanes, planes, stride, downsample, activation=activation)
+        )
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes, activate=activate))
+            layers.append(block(self.inplanes, planes, activation=activation))
 
         return nn.Sequential(*layers)
 
@@ -375,9 +427,20 @@ class _MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, after_reduced_cnn_size, dropout=0.1):
         """Take in model size and number of heads."""
         super().__init__()
-        assert d_model % h == 0
+        if (
+            isinstance(h, bool)
+            or not isinstance(h, Integral)
+            or h <= 0
+            or d_model % h != 0
+        ):
+            raise ValueError(
+                "n_attn_heads must be a positive integer that divides d_model, "
+                f"got n_attn_heads={h!r} and d_model={d_model}."
+            )
+        h = int(h)
         self.d_per_head = d_model // h
         self.h = h
+        self.attn = torch.empty(0)
 
         base_conv = CausalConv1d(
             in_channels=after_reduced_cnn_size,
