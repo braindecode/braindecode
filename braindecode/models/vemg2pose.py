@@ -18,7 +18,11 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 
 
-class VEMG2PoseNet(EEGModuleMixin, nn.Module):
+class VEMG2PoseNet(
+    EEGModuleMixin,
+    nn.Module,
+    license="cc-by-nc-sa-4.0",
+):
     r"""VEMG2PoseNet from Salter et al (2024) [salter2024]_, as revised by
     Hadidi et al (2026) [hadidi2026]_.
 

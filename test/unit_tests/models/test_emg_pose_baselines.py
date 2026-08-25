@@ -14,6 +14,7 @@ import pytest
 import torch
 from torch import nn
 
+from braindecode.models.base import HAS_HF_HUB
 from braindecode.models.neuropose import NeuroPoseNet
 from braindecode.models.sensingdynamics import SensingDynamicsNet
 from braindecode.models.vemg2pose import VEMG2PoseNet
@@ -422,3 +423,11 @@ def test_all_three_are_non_classification_models():
 
     for name in ("VEMG2PoseNet", "NeuroPoseNet", "SensingDynamicsNet"):
         assert name in non_classification_models
+
+
+@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
+def test_vemg2pose_hub_license_matches_source_license():
+    assert (
+        VEMG2PoseNet._hub_mixin_info.model_card_data["license"]
+        == "cc-by-nc-sa-4.0"
+    )
