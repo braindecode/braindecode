@@ -28,9 +28,6 @@ from .eegsimpleconv import EEGSimpleConv
 from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
 from .emg2qwerty import EMG2QwertyNet
-from .neuropose import NeuroPoseNet
-from .sensingdynamics import SensingDynamicsNet
-from .vemg2pose import VEMG2PoseNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
@@ -43,9 +40,11 @@ from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
+from .neuropose import NeuroPoseNet
 from .patchedtransformer import PBT
 from .reve import REVE
 from .sccnet import SCCNet
+from .sensingdynamics import SensingDynamicsNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
     InterpolatedSignalJEPA,
@@ -74,6 +73,7 @@ from .util import (
     models_mandatory_parameters,
     positions_from_chs_info,
 )
+from .vemg2pose import VEMG2PoseNet
 from .zuna import ZUNA
 
 # Call this last in order to make sure the dataset list is populated with
