@@ -991,6 +991,49 @@ def test_eldele_2021_feats():
     assert out.shape == (n_examples, model.len_last_layer)
 
 
+def test_attn_sleep_requires_signal_geometry():
+    with pytest.raises(ValueError, match="at least two of"):
+        AttnSleep(sfreq=100, n_outputs=5)
+
+
+def test_attn_sleep_reports_required_d_model():
+    with pytest.raises(ValueError, match="d_model=54"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
+
+
+def test_attn_sleep_rejects_invalid_attention_heads():
+    with pytest.raises(ValueError, match="positive integer that divides d_model"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
+
+
+@pytest.mark.parametrize("return_feats", [False, True])
+def test_attn_sleep_supports_other_window_lengths(return_feats):
+    model = AttnSleep(
+        sfreq=100,
+        n_outputs=5,
+        n_times=2000,
+        d_model=54,
+        n_attn_heads=6,
+        return_feats=return_feats,
+    )
+    output = model(torch.randn(2, 1, 2000))
+    expected_width = model.len_last_layer if return_feats else 5
+    assert output.shape == (2, expected_width)
+
+
+def test_attn_sleep_activation_reaches_afr():
+    model = AttnSleep(
+        sfreq=100, n_outputs=5, n_times=3000, activation=nn.GELU
+    )
+    activations = [
+        module
+        for module in model.feature_extractor[0].AFR.modules()
+        if isinstance(module, (nn.ReLU, nn.GELU))
+    ]
+    assert activations
+    assert all(isinstance(module, nn.GELU) for module in activations)
+
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
