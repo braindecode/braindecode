@@ -28,6 +28,14 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
+- Models with TorchScript-compatible forward paths can now be passed straight
+  to :func:`torch.jit.script`, without first being rebuilt as a plain
+  :class:`torch.nn.Module`.
+  :class:`braindecode.models.base.EEGModuleMixin` hides its signal-related
+  properties and the ``mapping`` attribute from TorchScript introspection, so
+  scripting reaches ``forward`` instead of failing on the class attributes.
+  (:gh:`1115` by `Aditya Singh`_)
+
 - Add a transfer-learning tutorial illustrating the TUAB-to-NMT pathology
   workflow with offline synthetic recordings
   (:gh:`580` by `Mohammad Javad D`_ and `Bruno Aristimunha`_).
@@ -1617,3 +1625,4 @@ Authors
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Jon Huml: https://github.com/jonathanhuml
 .. _Azra Bano: https://github.com/azrabano23
+.. _Aditya Singh: https://github.com/adityasingh2400
