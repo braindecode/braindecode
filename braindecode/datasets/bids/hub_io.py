@@ -8,6 +8,7 @@ These functions keep the Zarr serialization details isolated from hub.py.
 from __future__ import annotations
 
 import json
+from numbers import Real
 from pathlib import Path
 
 import numpy as np
@@ -17,17 +18,78 @@ from mne.utils import _soft_import
 zarr = _soft_import("zarr", purpose="hugging face integration", strict=False)
 
 
-def _restore_nan_from_json(obj):
-    """Restore NaN values from None in legacy zarr stores.
+def _is_non_bool_real(value):
+    return not isinstance(value, (bool, np.bool_)) and isinstance(
+        value, (Real, np.integer, np.floating)
+    )
 
-    Datasets saved before zarr v3 native NaN support used
-    ``_sanitize_for_json`` to convert NaN/Inf → None. This restores them
-    on load so ``mne.Info.from_json_dict`` gets proper NaN arrays.
+
+def _prepare_info_for_json(obj, path="info", *, _in_numeric_sequence=False):
+    """Normalize an MNE Info value to strict JSON without losing sequence NaNs."""
+    if isinstance(obj, np.ndarray):
+        obj = obj.tolist()
+
+    if isinstance(obj, dict):
+        return {
+            key: _prepare_info_for_json(value, f"{path}.{key}")
+            for key, value in obj.items()
+        }
+
+    if isinstance(obj, (list, tuple)):
+        values = list(obj)
+        has_none = any(value is None for value in values)
+        has_number = any(_is_non_bool_real(value) for value in values)
+        all_none = bool(values) and all(value is None for value in values)
+        if all_none or (has_none and has_number):
+            raise ValueError(
+                f"{path} is ambiguous: numeric sequences cannot contain JSON null"
+            )
+
+        is_numeric_sequence = bool(values) and all(
+            _is_non_bool_real(value) for value in values
+        )
+        return [
+            _prepare_info_for_json(
+                value,
+                f"{path}[{index}]",
+                _in_numeric_sequence=is_numeric_sequence,
+            )
+            for index, value in enumerate(values)
+        ]
+
+    if isinstance(obj, (bool, np.bool_)):
+        return bool(obj)
+    if isinstance(obj, (int, np.integer)):
+        return int(obj)
+    if _is_non_bool_real(obj):
+        value = float(obj)
+        if np.isnan(value):
+            if _in_numeric_sequence:
+                return None
+            raise ValueError(f"{path} contains unsupported NaN")
+        if np.isposinf(value):
+            raise ValueError(f"{path} contains positive infinity")
+        if np.isneginf(value):
+            raise ValueError(f"{path} contains negative infinity")
+        return value
+    if obj is None or isinstance(obj, str):
+        return obj
+    raise ValueError(f"{path} contains a non-JSON-serializable value")
+
+
+def _restore_nan_from_json(obj):
+    """Restore NaN values from None in JSON-loaded attributes.
+
+    JSON null is reserved for NaN only in non-boolean numeric sequences.
+    All-null lists are therefore the representation of validated all-NaN
+    sequences, while ordinary null values elsewhere remain unchanged.
     """
     if isinstance(obj, dict):
         return {k: _restore_nan_from_json(v) for k, v in obj.items()}
     if isinstance(obj, list):
-        if len(obj) > 0 and all(isinstance(x, (int, float, type(None))) for x in obj):
+        if len(obj) > 0 and all(
+            value is None or _is_non_bool_real(value) for value in obj
+        ):
             return [np.nan if x is None else x for x in obj]
         return [_restore_nan_from_json(v) for v in obj]
     return obj

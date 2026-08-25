@@ -1,5 +1,6 @@
 # Authors: Simon Brandt <simonbrandt@protonmail.com>
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3 (3-clause)
 
@@ -27,6 +28,29 @@ def test_mixup_criterion():
     target = y_a
     loss = mixup_criterion(preds, target)
     expected = -preds[:, 0].mean()
+    assert loss == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("n_samples", [1, 2, 3, 4])
+def test_mixup_criterion_plain_target(n_samples):
+    n_classes = 2
+    preds = torch.Tensor(np.random.RandomState(42).randn(n_samples, n_classes))
+    target = torch.zeros(n_samples, dtype=torch.int64)
+
+    loss = mixup_criterion(preds, target)
+    expected = -preds[:, 0].mean()
+    assert loss == pytest.approx(expected)
+
+
+def test_mixup_criterion_accepts_list_target():
+    n_samples = 3
+    y_a = torch.zeros(n_samples, dtype=torch.int64)
+    y_b = torch.ones(n_samples, dtype=torch.int64)
+    lam = torch.arange(0.1, 1, 1 / n_samples)
+    preds = torch.Tensor(np.random.RandomState(42).randn(n_samples, 2))
+
+    loss = mixup_criterion(preds, [y_a, y_b, lam])
+    expected = -(lam * preds[:, 0] + (1 - lam) * preds[:, 1]).mean()
     assert loss == pytest.approx(expected)
 
 
