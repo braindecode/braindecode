@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
@@ -31,21 +33,21 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Architecture Overview
 
-    Raw sEMG ``x ∈ (B, n_chans, T)`` → strided causal conv stem
+    Raw sEMG ``x ∈ (B, n_chans, T)`` → left-padded causal conv stem
     (kernel/stride 11/5 → 5/2, 256 ch) → TDS stage (subsampling conv
     kernel/stride 17/4) → linear squeeze to ``feature_dim`` → TDS stage
     (subsampling conv kernel/stride 9/2) → features ``(B, K, 64)`` at
-    ~25 Hz → causal nearest-neighbor upsampling to ``decoder_rate``
-    (50 Hz) → LSTM rollout with pose-state feedback → causal
-    nearest-neighbor upsampling back to ``T``.
+    ~25 Hz → fixed-rate causal indexing at ``decoder_rate`` (50 Hz)
+    → LSTM rollout with pose-state feedback → fixed-rate causal
+    indexing back to ``T``.
 
     .. rubric:: Macro Components
 
     ``VEMG2PoseNet.stem`` (strided temporal front-end)
         **Operations.** Two causal conv blocks (LayerNorm + LeakyReLU),
         mapping ``(B, n_chans, T) → (B, encoder_channels, T/10)``
-        (kernel 11 stride 5, then kernel 5 stride 2; valid convolutions
-        preserve causality).
+        (kernel 11 stride 5, then kernel 5 stride 2; left-only padding
+        preserves causality and sample alignment).
         **Role.** Raw-waveform feature extraction at ~200 Hz.
 
     ``VEMG2PoseNet.tds_stages`` (Time-Depth-Separable bottleneck)
@@ -160,6 +162,7 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
         self.parameterization = parameterization
         self.output_scalar = float(output_scalar)
         self.decoder_rate = float(decoder_rate)
+        self.input_sfreq = float(self.sfreq)
         self.activation_cls = activation
 
         # braindecode parameters read post-inference:
@@ -167,9 +170,11 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
         chs = self.n_chans
 
         self.stem = nn.Sequential(
+            nn.ConstantPad1d((10, 0), 0.0),
             nn.Conv1d(chs, encoder_channels, 11, stride=5),
             _TimeStepNorm(encoder_channels),
             activation(),
+            nn.ConstantPad1d((4, 0), 0.0),
             nn.Conv1d(encoder_channels, encoder_channels, 5, stride=2),
             _TimeStepNorm(encoder_channels),
             activation(),
@@ -202,10 +207,6 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
             nn.Dropout(drop_prob),
         )
         self.encoder_to_sequence = Rearrange("b f t -> b t f")
-        self.sequence_to_channels = Rearrange("b t f -> b f t")
-        self.channels_to_sequence = Rearrange("b f t -> b t f")
-        self.trajectory_to_channels = Rearrange("b t j -> b j t")
-        self.channels_to_trajectory = Rearrange("b j t -> b t j")
         # final_layer LAST so it lands in the last two named_children().
         self.final_layer = nn.Linear(hidden_size // 2, n_out)
 
@@ -267,14 +268,12 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
         feats = self.encoder_to_sequence(self.tds_stages(self.stem(x)))
         y_prev = y0 if y0 is not None else self.p_init.expand(x.shape[0], -1)
 
-        k_dec = max(1, int(round(feats.shape[1] * self.decoder_rate / self.enc_hz)))
-        steps = self.channels_to_sequence(
-            F.interpolate(
-                self.sequence_to_channels(feats),
-                size=k_dec,
-                mode="nearest",
-            )
-        )
+        k_dec = max(1, math.ceil(n_t * self.decoder_rate / self.input_sfreq))
+        encoder_indices = torch.floor(
+            torch.arange(k_dec, device=x.device) * self.enc_hz / self.decoder_rate
+        ).to(dtype=torch.long)
+        encoder_indices = encoder_indices.clamp_max(feats.shape[1] - 1)
+        steps = feats.index_select(1, encoder_indices)
 
         outs = []
         h = None
@@ -285,14 +284,10 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
             y_prev = y_prev + o_t if self.parameterization == "velocity" else o_t
             outs.append(y_prev)
         traj = torch.stack(outs, dim=1)  # (B, K_dec, J)
-        pred = self.channels_to_trajectory(
-            F.interpolate(
-                self.trajectory_to_channels(traj),
-                size=n_t,
-                mode="nearest",
-            )
-        )
-        return pred
+        decoder_indices = torch.floor(
+            torch.arange(n_t, device=x.device) * self.decoder_rate / self.input_sfreq
+        ).to(dtype=torch.long)
+        return traj.index_select(1, decoder_indices.clamp_max(k_dec - 1))
 
     @torch.no_grad()
     def tracking_forward(self, x: torch.Tensor, y0: torch.Tensor) -> torch.Tensor:

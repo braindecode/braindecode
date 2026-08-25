@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange, Reduce
@@ -31,7 +33,7 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Architecture Overview
 
-    ``(B, n_chans, T)`` → channel adapter → average-pool decimation to
+    ``(B, n_chans, T)`` → channel adapter → exact resampling to
     ``internal_sfreq`` (200 Hz) → three Conv2d-BN-ReLU-Dropout-MaxPool
     stages downsampling (time × bands) by (5, 2), (4, 2), (2, 2) →
     linear projection to ``encoder_dim`` → ``n_res_blocks`` residual
@@ -43,8 +45,8 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
     ``NeuroPoseNet.adapter`` (channel/time front-end)
         **Operations.** ``channel_adapter="tile"`` repeats/truncates the
         electrode axis to ``n_bands``; ``"learned"`` uses a linear map.
-        Time is then decimated by ``sfreq / internal_sfreq`` via average
-        pooling.
+        Time is then resampled to ``internal_sfreq`` using average pooling
+        for integral downsampling ratios and linear interpolation otherwise.
         **Role.** Bridges consumer-band layouts (8 ch @ 200 Hz) and
         research layouts (16 ch @ 2 kHz) into one tensor geometry.
 
@@ -72,7 +74,7 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
 
     - **Time:** The pooling/upsampling pyramid captures temporal structure.
     - **Channels/space:** Small 2-D kernels mix neighboring electrode bands.
-    - **Frequency:** Spectral content is learned from the decimated waveform.
+    - **Frequency:** Spectral content is learned from the resampled waveform.
 
     .. rubric:: Additional Mechanisms
 
@@ -88,7 +90,7 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
     ----------
     internal_sfreq : float, optional
         Sampling rate the conv stack operates at. The default is
-        ``200.0`` (paper value); inputs are average-pooled down to it.
+        ``200.0`` (paper value); inputs are resampled to this rate.
     n_bands : int, optional
         Band dimension seen by the 2-D conv stack. The default is
         ``8`` (Myo layout).
@@ -149,9 +151,18 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.internal_sfreq = float(internal_sfreq)
+        if self.internal_sfreq <= 0:
+            raise ValueError(f"internal_sfreq must be positive; got {internal_sfreq}.")
         self.n_bands = int(n_bands)
         self.channel_adapter_mode = channel_adapter
-        self.decim = max(1, int(round(float(self.sfreq) / internal_sfreq)))
+        self.input_sfreq = float(self.sfreq)
+        sampling_ratio = self.input_sfreq / self.internal_sfreq
+        rounded_ratio = round(sampling_ratio)
+        self.decim = (
+            int(rounded_ratio)
+            if rounded_ratio >= 1 and math.isclose(sampling_ratio, rounded_ratio)
+            else None
+        )
 
         if channel_adapter == "learned":
             self.adapter = nn.Sequential(
@@ -220,16 +231,24 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         t = x.shape[-1]
         h = self.adapter(x)
-        # Decimate to the internal grid.
-        t_int = (h.shape[-1] // self.decim) * self.decim
-        if t_int == 0:
-            raise ValueError(
-                f"Input must contain at least {self.decim} time samples for "
-                f"decimation; got {h.shape[-1]}."
+        # Resample to the paper's internal temporal grid.
+        if self.decim is not None:
+            t_int = (h.shape[-1] // self.decim) * self.decim
+            if t_int == 0:
+                raise ValueError(
+                    f"Input must contain at least {self.decim} time samples for "
+                    f"decimation; got {h.shape[-1]}."
+                )
+            h = h[..., :t_int]
+            if self.decim > 1:
+                h = torch.nn.functional.avg_pool1d(h, self.decim)
+        else:
+            t_int = round(h.shape[-1] * self.internal_sfreq / self.input_sfreq)
+            if t_int <= 0:
+                raise ValueError("Input is too short to resample to internal_sfreq.")
+            h = torch.nn.functional.interpolate(
+                h, size=t_int, mode="linear", align_corners=False
             )
-        h = h[..., :t_int]
-        if self.decim > 1:
-            h = torch.nn.functional.avg_pool1d(h, self.decim)
 
         # Layout contract of _ConvBlock/_UpBlock: (B, C, TIME, BANDS).
         z = self.encoder(self.input_to_encoder(h))

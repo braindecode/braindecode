@@ -182,7 +182,7 @@ class SensingDynamicsNet(EEGModuleMixin, nn.Module):
                 temporal_channels,
                 mid_channels,
                 # Paper convention: dilation (1, 2, 1) makes the electrode
-                # kernel span the full padded axis sparsely (effective
+                # kernel cover nearly the full padded axis sparsely (effective
                 # size = 2*k_e - 1; upstream 32 -> 63 over 64 electrodes).
                 kernel_size=(
                     self.n_grids,

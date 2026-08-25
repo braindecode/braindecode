@@ -84,6 +84,7 @@ def test_vemg2pose_encoder_is_causal():
     torch.testing.assert_close(
         prefix_features, full_features[..., : prefix_features.shape[-1]]
     )
+    torch.testing.assert_close(model(prefix), model(full)[:, : prefix.shape[-1]])
 
 
 def test_vemg2pose_tracking_anchor_changes_trajectory(vemg2pose, emg_window):
@@ -155,6 +156,33 @@ def test_neuropose_rejects_input_shorter_than_decimation():
     )
     with pytest.raises(ValueError, match="at least 10 time samples"):
         model(torch.randn(1, 16, 9))
+
+
+def test_neuropose_resamples_noninteger_sampling_ratio():
+    model = NeuroPoseNet(
+        n_chans=8,
+        n_outputs=20,
+        n_times=500,
+        sfreq=500.0,
+        internal_sfreq=200.0,
+        base_channels=8,
+        encoder_dim=32,
+        n_res_blocks=1,
+    )
+    internal_times = None
+
+    def capture_shape(_module, _args, output):
+        nonlocal internal_times
+        internal_times = output.shape[-2]
+
+    handle = model.input_to_encoder.register_forward_hook(capture_shape)
+    try:
+        output = model(torch.randn(1, 8, 500))
+    finally:
+        handle.remove()
+
+    assert internal_times == 200
+    assert output.shape == (1, 500, 20)
 
 
 def test_neuropose_predicts_a_time_varying_sequence(emg_window):
@@ -296,7 +324,7 @@ def test_sensingdynamics_uses_circular_grid_padding(monkeypatch):
                 feature_dim=16,
                 tds_blocks=1,
             ),
-            "stem.0.weight",
+            "stem.1.weight",
         ),
         (
             NeuroPoseNet,
