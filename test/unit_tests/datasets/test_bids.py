@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -72,7 +73,10 @@ def _make_plot_dataset(tmp_path, *, symlink_recording=False):
         target = tmp_path / "external" / recording.name
         target.parent.mkdir()
         target.touch()
-        recording.symlink_to(target)
+        try:
+            recording.symlink_to(target)
+        except OSError as error:
+            pytest.skip(f"symlinks are unavailable: {error}")
     else:
         recording.touch()
 
@@ -116,6 +120,18 @@ def test_bids_dataset_plot_preserves_symlink_path(tmp_path):
     assert "data.example.org%2Fds%2Fsub-893%2Fses-s1%2Femg" in html
     assert "pose=" in html
     assert "external" not in html
+
+
+def test_make_plot_dataset_skips_when_symlinks_are_unavailable(
+    tmp_path, monkeypatch
+):
+    def _raise_permission_error(*args, **kwargs):
+        raise OSError("symlink privilege is unavailable")
+
+    monkeypatch.setattr(Path, "symlink_to", _raise_permission_error)
+
+    with pytest.raises(pytest.skip.Exception, match="symlinks are unavailable"):
+        _make_plot_dataset(tmp_path, symlink_recording=True)
 
 
 def test_bids_dataset_plot_is_defined_on_class():
