@@ -60,7 +60,30 @@ def test_vemg2pose_position_vs_velocity_diverge(emg_window):
         hidden_size=32,
         parameterization="velocity",
     )
+    vel.load_state_dict(pos.state_dict())
     assert not torch.allclose(pos(emg_window), vel(emg_window))
+
+
+def test_vemg2pose_encoder_is_causal():
+    model = VEMG2PoseNet(
+        n_chans=16,
+        n_outputs=20,
+        n_times=10000,
+        sfreq=2000.0,
+        hidden_size=16,
+        encoder_channels=16,
+        feature_dim=16,
+        tds_blocks=1,
+    ).eval()
+    prefix = torch.randn(1, 16, 5000)
+    full = torch.cat([prefix, torch.randn(1, 16, 5000)], dim=-1)
+
+    prefix_features = model.tds_stages(model.stem(prefix))
+    full_features = model.tds_stages(model.stem(full))
+
+    torch.testing.assert_close(
+        prefix_features, full_features[..., : prefix_features.shape[-1]]
+    )
 
 
 def test_vemg2pose_tracking_anchor_changes_trajectory(vemg2pose, emg_window):
@@ -118,6 +141,20 @@ def test_neuropose_sequence_and_reset_head(emg_window):
     assert model(emg_window).shape == (2, 10000, 20)
     model.reset_head(22)
     assert model(emg_window[:1]).shape == (1, 10000, 22)
+
+
+def test_neuropose_rejects_input_shorter_than_decimation():
+    model = NeuroPoseNet(
+        n_chans=16,
+        n_outputs=20,
+        n_times=10000,
+        sfreq=2000.0,
+        base_channels=8,
+        encoder_dim=32,
+        n_res_blocks=1,
+    )
+    with pytest.raises(ValueError, match="at least 10 time samples"):
+        model(torch.randn(1, 16, 9))
 
 
 def test_neuropose_predicts_a_time_varying_sequence(emg_window):
@@ -204,6 +241,18 @@ def test_sensingdynamics_grid_geometries(kwargs):
 def test_sensingdynamics_rejects_bad_grid():
     with pytest.raises(ValueError, match="n_chans must equal"):
         SensingDynamicsNet(n_chans=17, n_grids=5, n_outputs=20)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"n_grids": 0}, "n_grids must be positive"),
+        ({"n_grids": 1, "elec_per_grid": 0}, "elec_per_grid must be positive"),
+    ],
+)
+def test_sensingdynamics_rejects_nonpositive_grid_geometry(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        SensingDynamicsNet(n_chans=16, n_outputs=20, **kwargs)
 
 
 def test_sensingdynamics_uses_circular_grid_padding(monkeypatch):

@@ -82,7 +82,7 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
     transfer-learning recipe applies unchanged (freeze all but BatchNorm
     layers, fine-tune on ~90 s of target-user data).
 
-    .. versionadded:: 1.7
+    .. versionadded:: 1.8
 
     Parameters
     ----------
@@ -222,6 +222,11 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
         h = self.adapter(x)
         # Decimate to the internal grid.
         t_int = (h.shape[-1] // self.decim) * self.decim
+        if t_int == 0:
+            raise ValueError(
+                f"Input must contain at least {self.decim} time samples for "
+                f"decimation; got {h.shape[-1]}."
+            )
         h = h[..., :t_int]
         if self.decim > 1:
             h = torch.nn.functional.avg_pool1d(h, self.decim)

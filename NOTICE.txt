@@ -19,7 +19,19 @@ The `meta_neuromotor.py` file is a derivative of
 `facebookresearch/generic-neuromotor-interface`, released by Meta Platforms,
 Inc. under CC BY-NC 4.0, and inherits the same noncommercial terms.
 
+### CC BY-NC-SA 4.0 Licensed Files
+
+The following component is licensed under the Creative Commons
+Attribution-NonCommercial-ShareAlike 4.0 International License:
+
+- `braindecode/models/vemg2pose.py`
+
+This file is a derivative of `facebookresearch/emg2pose`, released by Meta
+Platforms, Inc. under CC BY-NC-SA 4.0, and inherits the same noncommercial and
+share-alike terms.
+
 ## License Links
 
 - [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause)
 - [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)
+- [CC BY-NC-SA 4.0 License](https://creativecommons.org/licenses/by-nc-sa/4.0/)

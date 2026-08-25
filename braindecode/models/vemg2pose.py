@@ -35,13 +35,14 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
     (kernel/stride 11/5 → 5/2, 256 ch) → TDS stage (subsampling conv
     kernel/stride 17/4) → linear squeeze to ``feature_dim`` → TDS stage
     (subsampling conv kernel/stride 9/2) → features ``(B, K, 64)`` at
-    ~25 Hz → interpolated to ``decoder_rate`` (50 Hz) → LSTM rollout
-    with pose-state feedback → linear upsampling back to ``T``.
+    ~25 Hz → causal nearest-neighbor upsampling to ``decoder_rate``
+    (50 Hz) → LSTM rollout with pose-state feedback → causal
+    nearest-neighbor upsampling back to ``T``.
 
     .. rubric:: Macro Components
 
     ``VEMG2PoseNet.stem`` (strided temporal front-end)
-        **Operations.** Two causal conv blocks (GroupNorm + LeakyReLU),
+        **Operations.** Two causal conv blocks (LayerNorm + LeakyReLU),
         mapping ``(B, n_chans, T) → (B, encoder_channels, T/10)``
         (kernel 11 stride 5, then kernel 5 stride 2; valid convolutions
         preserve causality).
@@ -84,7 +85,7 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
       zero-vector initialization (zero is a valid flat-hand pose).
       Pass ``y0=(B, n_outputs)`` to :meth:`forward` for Tracking.
 
-    .. versionadded:: 1.7
+    .. versionadded:: 1.8
 
     Parameters
     ----------
@@ -167,10 +168,10 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
 
         self.stem = nn.Sequential(
             nn.Conv1d(chs, encoder_channels, 11, stride=5),
-            nn.GroupNorm(1, encoder_channels),
+            _TimeStepNorm(encoder_channels),
             activation(),
             nn.Conv1d(encoder_channels, encoder_channels, 5, stride=2),
-            nn.GroupNorm(1, encoder_channels),
+            _TimeStepNorm(encoder_channels),
             activation(),
         )
         self.tds_stages = nn.Sequential(
@@ -191,8 +192,7 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
             ),
         )
 
-        enc_hz = float(self.sfreq) / (5 * 2 * 4 * 2)  # paper strides → 25 Hz
-        self.register_buffer("enc_hz", torch.tensor(enc_hz), persistent=False)
+        self.enc_hz = float(self.sfreq) / (5 * 2 * 4 * 2)  # paper strides → 25 Hz
         self.lstm = nn.LSTM(
             feature_dim + n_out, hidden_size, num_layers=2, batch_first=True
         )
@@ -217,7 +217,7 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
             nn.init.trunc_normal_(module.weight, std=0.02)
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.GroupNorm):
+        elif isinstance(module, nn.LayerNorm):
             nn.init.ones_(module.weight)
             nn.init.zeros_(module.bias)
 
@@ -267,15 +267,12 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
         feats = self.encoder_to_sequence(self.tds_stages(self.stem(x)))
         y_prev = y0 if y0 is not None else self.p_init.expand(x.shape[0], -1)
 
-        k_dec = max(
-            1, int(round(feats.shape[1] * self.decoder_rate / float(self.enc_hz)))
-        )
+        k_dec = max(1, int(round(feats.shape[1] * self.decoder_rate / self.enc_hz)))
         steps = self.channels_to_sequence(
             F.interpolate(
                 self.sequence_to_channels(feats),
                 size=k_dec,
-                mode="linear",
-                align_corners=False,
+                mode="nearest",
             )
         )
 
@@ -292,8 +289,7 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
             F.interpolate(
                 self.trajectory_to_channels(traj),
                 size=n_t,
-                mode="linear",
-                align_corners=False,
+                mode="nearest",
             )
         )
         return pred
@@ -321,21 +317,12 @@ class _TDSStage(nn.Module):
             channels, channels, subsample_kernel, stride=subsample_stride
         )
         self.sub_pad = pad
-        self.sub_norm = nn.GroupNorm(1, channels)
+        self.sub_norm = _TimeStepNorm(channels)
         self.act = activation()
         self.channels_to_sequence = Rearrange("b c t -> b t c")
         self.sequence_to_channels = Rearrange("b t c -> b c t")
         self.conv_blocks = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Conv1d(channels, channels, 7, padding=3, groups=channels),
-                    nn.GroupNorm(1, channels),
-                    activation(),
-                    nn.Conv1d(channels, channels, 1),
-                    nn.GroupNorm(1, channels),
-                )
-                for _ in range(n_blocks)
-            ]
+            [_CausalTDSConvBlock(channels, activation) for _ in range(n_blocks)]
         )
         self.ff_blocks = nn.ModuleList(
             [
@@ -356,3 +343,32 @@ class _TDSStage(nn.Module):
             x = x + ff_b(x)
             x = self.sequence_to_channels(x)
         return x
+
+
+class _TimeStepNorm(nn.Sequential):
+    """Layer normalization over channels, independently at each time step."""
+
+    def __init__(self, channels: int):
+        super().__init__(
+            Rearrange("b c t -> b t c"),
+            nn.LayerNorm(channels),
+            Rearrange("b t c -> b c t"),
+        )
+
+
+class _CausalTDSConvBlock(nn.Module):
+    """Depthwise TDS convolution with left-only temporal padding."""
+
+    def __init__(self, channels: int, activation: type[nn.Module]):
+        super().__init__()
+        self.left_padding = 6
+        self.layers = nn.Sequential(
+            nn.Conv1d(channels, channels, 7, groups=channels),
+            _TimeStepNorm(channels),
+            activation(),
+            nn.Conv1d(channels, channels, 1),
+            _TimeStepNorm(channels),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.layers(F.pad(x, (self.left_padding, 0)))

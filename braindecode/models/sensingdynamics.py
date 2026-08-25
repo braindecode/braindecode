@@ -79,7 +79,7 @@ class SensingDynamicsNet(EEGModuleMixin, nn.Module):
     streaming use. Subject-specific transfer learning and the
     queue-based prediction smoother remain outside this module.
 
-    .. versionadded:: 1.7
+    .. versionadded:: 1.8
 
     Parameters
     ----------
@@ -146,7 +146,13 @@ class SensingDynamicsNet(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.n_grids = int(n_grids)
-        self.elec_per_grid = int(elec_per_grid or (self.n_chans // n_grids))
+        if self.n_grids <= 0:
+            raise ValueError(f"n_grids must be positive; got {n_grids}.")
+        if elec_per_grid is None:
+            elec_per_grid = self.n_chans // self.n_grids
+        self.elec_per_grid = int(elec_per_grid)
+        if self.elec_per_grid <= 0:
+            raise ValueError(f"elec_per_grid must be positive; got {elec_per_grid}.")
         if self.elec_per_grid * self.n_grids != self.n_chans:
             raise ValueError("n_chans must equal n_grids * elec_per_grid")
         self.n_frames = max(1, int(n_frames))
