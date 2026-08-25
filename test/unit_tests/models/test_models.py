@@ -1003,6 +1003,11 @@ def test_eldele_2021_d_model_mismatch():
         {"n_times": 3000, "input_window_seconds": 30},
         {"sfreq": 100, "input_window_seconds": 30},
         {"n_times": 3000, "sfreq": 100, "input_window_seconds": 30},
+        {"n_times": np.int64(3000), "sfreq": np.float64(100)},
+        {
+            "n_times": np.int64(3000),
+            "input_window_seconds": np.float64(30),
+        },
     ],
 )
 def test_eldele_2021_accepts_two_of_three_geometry(geometry, monkeypatch):
@@ -1079,6 +1084,40 @@ def test_eldele_2021_rejects_non_positive_geometry_before_probe(
 
     with pytest.raises(ValueError, match=rf"{invalid_field}.*positive"):
         AttnSleep(n_outputs=5, **geometry)
+
+
+@pytest.mark.parametrize(
+    "geometry,invalid_field",
+    [
+        ({"n_times": True, "sfreq": 100}, "n_times"),
+        ({"n_times": 3000.0, "sfreq": 100}, "n_times"),
+        ({"n_times": 3000, "sfreq": True}, "sfreq"),
+        ({"n_times": 3000, "sfreq": "100"}, "sfreq"),
+        ({"n_times": 3000, "sfreq": np.nan}, "sfreq"),
+        ({"n_times": 3000, "sfreq": np.inf}, "sfreq"),
+        ({"n_times": 3000, "sfreq": -np.inf}, "sfreq"),
+        ({"n_times": 3000, "input_window_seconds": True}, "input_window_seconds"),
+        ({"n_times": 3000, "input_window_seconds": "30"}, "input_window_seconds"),
+        ({"n_times": 3000, "input_window_seconds": np.nan}, "input_window_seconds"),
+        ({"n_times": 3000, "input_window_seconds": np.inf}, "input_window_seconds"),
+        ({"n_times": 3000, "input_window_seconds": -np.inf}, "input_window_seconds"),
+    ],
+)
+def test_eldele_2021_rejects_invalid_geometry_types_before_probe(
+    geometry, invalid_field, monkeypatch
+):
+    probe_calls = []
+
+    def tracked_probe(*args, **kwargs):
+        probe_calls.append((args, kwargs))
+        return 80
+
+    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(tracked_probe))
+
+    with pytest.raises(ValueError, match=invalid_field):
+        AttnSleep(n_outputs=5, **geometry)
+
+    assert probe_calls == []
 
 
 def test_eldele_2021_preserves_mixin_geometry_consistency_error(monkeypatch):
@@ -1166,6 +1205,40 @@ def test_eldele_2021_final_layer_matches_features():
 def test_eldele_2021_rejects_multiple_channels():
     with pytest.raises(ValueError, match="requires n_chans=1"):
         AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_chans=2)
+
+
+@pytest.mark.parametrize("n_chans", [True, False, 1.0, np.float64(1.0)])
+def test_eldele_2021_rejects_non_integer_single_channel_before_probe(
+    n_chans, monkeypatch
+):
+    probe_calls = []
+
+    def tracked_probe(*args, **kwargs):
+        probe_calls.append((args, kwargs))
+        return 80
+
+    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(tracked_probe))
+
+    with pytest.raises(ValueError, match="n_chans"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_chans=n_chans)
+
+    assert probe_calls == []
+
+
+@pytest.mark.parametrize("channel_source", ["numpy-integer", "chs-info"])
+def test_eldele_2021_accepts_supported_single_channel_sources(channel_source):
+    if channel_source == "numpy-integer":
+        channel_kwargs = {"n_chans": np.int64(1)}
+    else:
+        channel_kwargs = {
+            "n_chans": None,
+            "chs_info": mne.create_info(["Cz"], 100, "eeg")["chs"],
+        }
+
+    model = AttnSleep(sfreq=100, n_outputs=5, n_times=3000, **channel_kwargs)
+
+    assert model.n_chans == 1
+    assert model.eval().get_output_shape() == (1, 5)
 
 
 def test_eldele_2021_activation_reaches_afr():

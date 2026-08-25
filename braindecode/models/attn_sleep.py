@@ -31,7 +31,7 @@
 import math
 import warnings
 from copy import deepcopy
-from numbers import Integral
+from numbers import Integral, Real
 
 import torch
 import torch.nn.functional as F
@@ -153,16 +153,42 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         for field, value in raw_geometry.items():
-            if value is not None and value <= 0:
-                raise ValueError(f"AttnSleep {field} must be positive, got {value}.")
+            if value is None:
+                continue
+            if field == "n_times":
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, Integral)
+                    or value <= 0
+                ):
+                    raise ValueError(
+                        f"AttnSleep n_times must be a positive integer, got {value!r}."
+                    )
+            elif (
+                isinstance(value, bool)
+                or not isinstance(value, Real)
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ValueError(
+                    f"AttnSleep {field} must be a finite positive real number, "
+                    f"got {value!r}."
+                )
+
+        resolved_n_chans = self.n_chans
+        if (
+            isinstance(resolved_n_chans, bool)
+            or not isinstance(resolved_n_chans, Integral)
+            or resolved_n_chans != 1
+        ):
+            raise ValueError(
+                f"AttnSleep requires n_chans=1 as an integer, got {resolved_n_chans!r}."
+            )
 
         resolved_n_times = self.n_times
         resolved_sfreq = self.sfreq
         resolved_input_window_seconds = self.input_window_seconds
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
-        if self.n_chans != 1:
-            raise ValueError(f"AttnSleep requires n_chans=1, got {self.n_chans}.")
 
         self.mapping = {
             "fc.weight": "final_layer.weight",
@@ -220,15 +246,15 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             n_tce,
         )
 
-        self.feature_extractor = nn.Sequential(mrcnn, tce)
-        self.len_last_layer = feature_length * after_reduced_cnn_size
-        self.return_feats = return_feats
+        self.feature_extractor: nn.Sequential = nn.Sequential(mrcnn, tce)
+        self.len_last_layer: int = feature_length * after_reduced_cnn_size
+        self.return_feats: bool = return_feats
 
         # TODO: Add new way to handle return features
         """if return_feats:
             raise ValueError("return_feat == True is not accepted anymore")"""
         if not return_feats:
-            self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
+            self.final_layer: nn.Linear = nn.Linear(self.len_last_layer, self.n_outputs)
 
     @staticmethod
     def _feature_length(mrcnn, n_times):
