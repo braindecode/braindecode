@@ -28,6 +28,7 @@ The format follows a BIDS-inspired sourcedata structure:
 # License: BSD (3-clause)
 
 import contextlib
+import copy
 import json
 import logging
 import tempfile
@@ -89,6 +90,10 @@ def _normalize_kwargs_for_json(value, field_name):
 
     try:
         converted = _convert(value)
+        if isinstance(converted, str):
+            raise ValueError(
+                "a root string is ambiguous with the legacy encoded format"
+            )
         return json.loads(json.dumps(converted, allow_nan=False))
     except (OverflowError, RecursionError, TypeError, ValueError) as error:
         raise ValueError(
@@ -712,9 +717,6 @@ class HubDatasetMixin:
         # Validate uniformity across all datasets using shared validation
         dataset_type, _, _ = hub_validation.validate_dataset_uniformity(self.datasets)
 
-        # Keep reference to first dataset for preprocessing kwargs
-        first_ds = self.datasets[0]
-
         # Normalize every JSON value before opening the output store. The cached
         # values below are the exact values handed to the write helpers.
         prepared_infos = []
@@ -731,10 +733,29 @@ class HubDatasetMixin:
             "window_kwargs",
             "window_preproc_kwargs",
         ]:
-            if hasattr(first_ds, kwarg_name):
-                prepared_kwargs[kwarg_name] = _normalize_kwargs_for_json(
-                    getattr(first_ds, kwarg_name), kwarg_name
+            expected_present = hasattr(self.datasets[0], kwarg_name)
+            expected_value = None
+            for i_ds, ds in enumerate(self.datasets):
+                present = hasattr(ds, kwarg_name)
+                if present != expected_present:
+                    raise ValueError(
+                        f"{kwarg_name} on dataset {i_ds} has inconsistent presence; "
+                        "the Zarr format stores one global value"
+                    )
+                if not present:
+                    continue
+                value = _normalize_kwargs_for_json(
+                    getattr(ds, kwarg_name), f"{kwarg_name} on dataset {i_ds}"
                 )
+                if i_ds == 0:
+                    expected_value = value
+                elif value != expected_value:
+                    raise ValueError(
+                        f"{kwarg_name} on dataset {i_ds} differs from dataset 0; "
+                        "the Zarr format stores one global value"
+                    )
+            if expected_present:
+                prepared_kwargs[kwarg_name] = expected_value
 
         # Create compressor and zarr store (zarr v3 API) only after preflight.
         compressor = _create_compressor(compression, compression_level)
@@ -998,7 +1019,7 @@ class HubDatasetMixin:
                     kwargs = json.loads(kwargs)
                 # Set on each individual dataset (where they were originally stored)
                 for ds in datasets:
-                    setattr(ds, kwarg_name, kwargs)
+                    setattr(ds, kwarg_name, copy.deepcopy(kwargs))
 
         return concat_ds
 

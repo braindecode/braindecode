@@ -746,6 +746,16 @@ def _make_concat_raw_dataset_with_nan_locs():
     return BaseConcatDataset([RawDataset(raw, description)])
 
 
+def _make_two_concat_raw_datasets_with_nan_locs():
+    """Create two independent recordings for global-metadata tests."""
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    first_ds = concat_ds.datasets[0]
+    second_ds = RawDataset(
+        first_ds.raw.copy(), pd.Series({"subject": 2, "session": "0train"})
+    )
+    return BaseConcatDataset([first_ds, second_ds])
+
+
 @pytest.mark.parametrize(
     ("value", "normalized", "restored", "error_path", "error_category"),
     [
@@ -918,6 +928,85 @@ def test_preprocessing_kwargs_nonfinite_preflight_is_atomic(
             zarr_path, compression=None, compression_level=5
         )
     assert not zarr_path.exists()
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
+@pytest.mark.parametrize(
+    ("later_value", "set_later", "case"),
+    [
+        ({"outer": [{"scale": np.inf}]}, True, "nonfinite"),
+        (None, False, "presence-mismatch"),
+        ({"outer": [{"scale": 2}]}, True, "value-mismatch"),
+    ],
+)
+def test_preprocessing_kwargs_later_dataset_preflight_is_atomic(
+    tmp_path, kwarg_name, later_value, set_later, case
+):
+    """Every recording must match the one global kwargs value before writing."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_two_concat_raw_datasets_with_nan_locs()
+    setattr(concat_ds.datasets[0], kwarg_name, {"outer": [{"scale": 1}]})
+    if set_later:
+        setattr(concat_ds.datasets[1], kwarg_name, later_value)
+    zarr_path = tmp_path / f"{kwarg_name}-{case}.zarr"
+
+    with pytest.raises(ValueError, match=rf"{kwarg_name}.*dataset 1"):
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression=None, compression_level=5
+        )
+    assert not zarr_path.exists()
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
+def test_preprocessing_kwargs_root_string_rejected_atomically(tmp_path, kwarg_name):
+    """Native root strings cannot collide with legacy double-encoded attrs."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    setattr(concat_ds.datasets[0], kwarg_name, "[]")
+    zarr_path = tmp_path / f"{kwarg_name}-root-string.zarr"
+
+    with pytest.raises(ValueError, match=kwarg_name):
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression=None, compression_level=5
+        )
+    assert not zarr_path.exists()
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
+def test_preprocessing_kwargs_uniform_multi_recording_isolation(tmp_path, kwarg_name):
+    """Equal global provenance loads as independent objects per recording."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_two_concat_raw_datasets_with_nan_locs()
+    kwargs = {"outer": [{"scale": 1}]}
+    for ds in concat_ds.datasets:
+        setattr(ds, kwarg_name, copy.deepcopy(kwargs))
+    zarr_path = tmp_path / f"{kwarg_name}-uniform.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression=None, compression_level=5
+    )
+
+    loaded = concat_ds._load_from_zarr_inline(zarr_path, preload=True)
+    first = getattr(loaded.datasets[0], kwarg_name)
+    second = getattr(loaded.datasets[1], kwarg_name)
+    assert first == second == kwargs
+    assert first is not second
+    assert first["outer"] is not second["outer"]
+    assert first["outer"][0] is not second["outer"][0]
+
+    first["outer"][0]["scale"] = 99
+    assert second == kwargs
 
 
 @pytest.mark.parametrize(
