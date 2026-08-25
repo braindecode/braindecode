@@ -125,11 +125,13 @@ import sys
 sys.modules["huggingface_hub"] = None
 
 from braindecode.models import base
+from torch import nn
 
 assert not base.HAS_HF_HUB
 
 class LicensedTestModel(
     base.EEGModuleMixin,
+    nn.Module,
     license="cc-by-nc-sa-4.0",
 ):
     pass
