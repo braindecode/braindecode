@@ -25,9 +25,7 @@ class _SMU(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         positive = (1.0 + self.alpha) * x
-        smooth = (1.0 - self.alpha) * x * torch.erf(
-            self.mu * (1.0 - self.alpha) * x
-        )
+        smooth = (1.0 - self.alpha) * x * torch.erf(self.mu * (1.0 - self.alpha) * x)
         return 0.5 * (positive + smooth)
 
 
@@ -244,9 +242,7 @@ class SensingDynamicsNet(EEGModuleMixin, nn.Module):
 
         raw = self.to_feature_plane(x)
         lowpassed = self.to_feature_plane(x_lowpass)
-        features = self.conv_dropout(
-            self.conv1(torch.cat((raw, lowpassed), dim=1))
-        )
+        features = self.conv_dropout(self.conv1(torch.cat((raw, lowpassed), dim=1)))
         features = self.conv2(self.circular_pad(features))
         features = self.conv3(features)
         prediction = self.final_layer(self.mlp(self.to_sequence(features)))
@@ -272,29 +268,21 @@ class _ButterworthLowpass(nn.Module):
     def __init__(self, sfreq: float, cutoff_hz: float, order: int) -> None:
         super().__init__()
         b_coeffs, a_coeffs = butter(order, cutoff_hz, btype="low", fs=sfreq)
-        self.register_buffer(
-            "a_coeffs", torch.as_tensor(a_coeffs, dtype=torch.float64)
-        )
-        self.register_buffer(
-            "b_coeffs", torch.as_tensor(b_coeffs, dtype=torch.float64)
-        )
+        self.register_buffer("a_coeffs", torch.as_tensor(a_coeffs, dtype=torch.float64))
+        self.register_buffer("b_coeffs", torch.as_tensor(b_coeffs, dtype=torch.float64))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         n_freqs = x.shape[-1] // 2 + 1
         omega = (
             2
             * torch.pi
-            * torch.arange(
-                n_freqs, device=x.device, dtype=self.a_coeffs.dtype
-            )
+            * torch.arange(n_freqs, device=x.device, dtype=self.a_coeffs.dtype)
             / x.shape[-1]
         )
         unit_delay = torch.exp(-1j * omega)
         numerator = torch.zeros_like(unit_delay)
         denominator = torch.zeros_like(unit_delay)
-        for delay, (b_coeff, a_coeff) in enumerate(
-            zip(self.b_coeffs, self.a_coeffs)
-        ):
+        for delay, (b_coeff, a_coeff) in enumerate(zip(self.b_coeffs, self.a_coeffs)):
             numerator = numerator + b_coeff * unit_delay**delay
             denominator = denominator + a_coeff * unit_delay**delay
         zero_phase_response = (numerator / denominator).abs().square()
