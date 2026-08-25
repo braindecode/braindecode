@@ -97,7 +97,7 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         feed-forward block. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     activation_mrcnn : nn.Module, default=nn.GELU
-        Activation function class to apply in the Mask R-CNN layer.
+        Activation function class to apply in the multi-resolution CNN layer.
         Should be a PyTorch activation module class like ``nn.ReLU`` or
         ``nn.GELU``. Default is ``nn.GELU``.
 
@@ -146,9 +146,6 @@ class AttnSleep(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        self._n_times = int(self.n_times)
-        self._sfreq = float(self.sfreq)
-        self._input_window_seconds = float(self.input_window_seconds)
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.mapping = {

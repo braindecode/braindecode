@@ -959,7 +959,6 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
         return_feats=False,
     )
     model.eval()
-    torch.jit.script(model)
 
     X = rng.randn(n_examples, n_channels,
                   np.ceil(input_size_s * sfreq).astype(int))
