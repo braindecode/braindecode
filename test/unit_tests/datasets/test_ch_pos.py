@@ -50,7 +50,7 @@ def _windows(datasets):
         concat,
         window_size_samples=200,
         window_stride_samples=200,
-        on_last_window="drop",
+        drop_last_window=True,
         preload=True,
     )
 

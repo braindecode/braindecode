@@ -43,7 +43,7 @@ windows_ds = create_fixed_length_windows(
     stop_offset_samples=None,
     window_size_samples=1000,
     window_stride_samples=1000,
-    on_last_window="drop",
+    drop_last_window=True,
     mapping=None,
     preload=True,
 )

@@ -428,7 +428,7 @@ def test_predict_trials():
         ds1,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
-        on_last_window="overlap",
+        drop_last_window=False,
     )
 
     n_chans = windows_ds1[0][0].shape[0]

@@ -167,7 +167,7 @@ windows_ds = create_fixed_length_windows(
     dataset,
     window_size_samples=WINDOW_SAMPLES,
     window_stride_samples=WINDOW_SAMPLES,
-    on_last_window="drop",
+    drop_last_window=True,
     preload=True,
     use_mne_epochs=False,  # guarantees EEGWindowsDataset -> (X, y, crop_inds)
 )

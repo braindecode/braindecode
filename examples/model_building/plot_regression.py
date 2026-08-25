@@ -178,7 +178,7 @@ windows_dataset = create_fixed_length_windows(
     stop_offset_samples=0,
     window_size_samples=window_size_samples,
     window_stride_samples=n_preds_per_input,
-    on_last_window="overlap",
+    drop_last_window=False,
     preload=True,
 )
 

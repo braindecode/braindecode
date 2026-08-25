@@ -116,7 +116,7 @@ def load_example_data(preload, window_len_s, n_recordings=10):
         stop_offset_samples=None,
         window_size_samples=window_len_samples,
         window_stride_samples=window_stride_samples,
-        on_last_window="drop",
+        drop_last_window=True,
         preload=preload,
     )
 

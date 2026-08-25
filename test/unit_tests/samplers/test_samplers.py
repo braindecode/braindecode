@@ -103,7 +103,7 @@ def windows_ds():
         stop_offset_samples=None,
         window_size_samples=500,
         window_stride_samples=500,
-        on_last_window="overlap",
+        drop_last_window=False,
         preload=False,
     )
 
@@ -122,7 +122,7 @@ def target_windows_ds():
         trial_stop_offset_samples=0,
         window_size_samples=None,
         window_stride_samples=None,
-        on_last_window="overlap",
+        drop_last_window=False,
     )
 
     return windows_ds

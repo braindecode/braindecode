@@ -38,10 +38,9 @@ Fixed-Length Windows Extraction
 #        stop_offset_samples=None,
 #        window_size_samples=None,
 #        window_stride_samples=None,
-#        drop_last_window=None,  # Deprecated; use on_last_window.
+#        drop_last_window=None,
 #        mapping=None,
 #        preload=False,
-#        drop_bad_windows=None,
 #        picks=None,
 #        reject=None,
 #        flat=None,
@@ -49,11 +48,8 @@ Fixed-Length Windows Extraction
 #        last_target_only=True,
 #        lazy_metadata=False,
 #        on_missing='error',
-#        use_mne_epochs=None,
 #        n_jobs=1,
 #        verbose='error',
-#        *,
-#        on_last_window=None,
 #    )
 #
 #
@@ -75,30 +71,16 @@ Fixed-Length Windows Extraction
 #     - Window size in samples. If None, set to be the maximum possible window size, ie length of the recording, once offsets are accounted for.
 #
 # **window_stride_samples** : int or None
-#     - Stride between windows in samples. If None, set to be equal to
-#       `window_size_samples`, so windows will not overlap.
+#     - Stride between windows in samples. If None, set to be equal to winddow_size_samples, so windows will not overlap.
 #
 # **drop_last_window** : bool or None
-#     - Deprecated compatibility parameter, scheduled for removal in version
-#       2.0. `True` maps to `on_last_window='drop'`; `False` maps to
-#       `on_last_window='overlap'`.
-#
-# **on_last_window** : {'overlap', 'drop', 'keep'} or None
-#     - Keyword-only strategy for an incomplete trailing window. Use
-#       `'overlap'` for a full window shifted flush to the recording end,
-#       `'drop'` to discard the remainder, or `'keep'` for a naturally placed
-#       shorter window. With explicit window sizing, only `'drop'` supports
-#       `lazy_metadata=True`; `'keep'` also requires `use_mne_epochs=False`.
+#     - Whether or not have a last overlapping window, when windows do not equally divide the continuous signal. Must be set to a bool if window size and stride are not None.
 #
 # **mapping** : dict(str: int) or None
 #     - Mapping from event description to target value.
 #
 # **preload** : bool (default=False)
 #     - If True, preload the data of the Epochs objects.
-#
-# **drop_bad_windows** : bool or None
-#     - If True, drop bad windows after creating MNE Epochs. This only has an
-#       effect when `use_mne_epochs=True`.
 #
 # **picks** : str | list | slice | None
 #     - Channels to include. If None, all available channels are used. See mne.Epochs.
@@ -116,17 +98,10 @@ Fixed-Length Windows Extraction
 #     - If `True`, only use the last target in the window.
 #
 # **lazy_metadata** : bool (default=False)
-#     - If True, metadata is computed on access with the experimental
-#       `_LazyDataFrame`. With explicit window sizing, this requires
-#       `on_last_window='drop'` and `use_mne_epochs=False`.
+#     - If True, metadata is not computed immediately, but only when accessed by using the _LazyDataFrame (experimental).
 #
 # **on_missing** : str (default='error')
 #     - What to do if one or several event ids are not found in the recording. Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
-#
-# **use_mne_epochs** : bool or None
-#     - If True, return MNE Epochs-backed windows; if False, return
-#       `EEGWindowsDataset` objects. If None, infer the representation from the
-#       other parameters.
 #
 # **n_jobs** : int (default=1)
 #     - Number of jobs to use to parallelize the windowing.
@@ -177,7 +152,7 @@ windows_dataset = create_fixed_length_windows(
     stop_offset_samples=None,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    on_last_window="drop",
+    drop_last_window=True,
     mapping=None,
     preload=True,
     picks="eeg",  # Only EEG channels
@@ -224,7 +199,7 @@ windows_dataset = create_fixed_length_windows(
     dataset,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    on_last_window="drop",
+    drop_last_window=True,
     mapping=mapping,
     preload=True,
 )
@@ -247,7 +222,7 @@ windows_with_rejection = create_fixed_length_windows(
     window_size_samples=200,
     window_stride_samples=100,
     reject=reject_criteria,
-    on_last_window="drop",
+    drop_last_window=True,
 )
 
 print(windows_with_rejection)
@@ -262,7 +237,7 @@ lazy_windows = create_fixed_length_windows(
     concat_ds=dataset,
     window_size_samples=200,
     window_stride_samples=100,
-    on_last_window="drop",
+    drop_last_window=True,
     lazy_metadata=True,
 )
 
@@ -283,7 +258,7 @@ shifted_windows_dataset = create_fixed_length_windows(
     start_offset_samples=start_offset_samples,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    on_last_window="drop",
+    drop_last_window=True,
     preload=True,
 )
 

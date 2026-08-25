@@ -91,6 +91,6 @@ def create_from_X_y(
         stop_offset_samples=None,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
-        on_last_window="drop" if drop_last_window else "overlap",
+        drop_last_window=drop_last_window,
     )
     return windows_datasets

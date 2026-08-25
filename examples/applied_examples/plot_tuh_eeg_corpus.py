@@ -325,6 +325,6 @@ tuh_windows = create_fixed_length_windows(
     tuh_preproc,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    on_last_window="overlap",
+    drop_last_window=False,
     n_jobs=N_JOBS,
 )
