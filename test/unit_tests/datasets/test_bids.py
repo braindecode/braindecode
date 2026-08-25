@@ -56,3 +56,52 @@ def test_bids_epochs_dataset(bids_dataset_root):
     assert x.shape[0] == 3
     assert x.ndim == 2
     assert y in ["left_hand", "right_hand"]
+
+
+# ===================== BIDSDataset.plot (eegdash-viewer) =====================
+
+
+def _make_emg_bids_tree(tmp_path):
+    """One minimal emg2pose-style recording: 2 emg + 1 joint-angle ch."""
+    import mne
+    import numpy as np
+
+    root = tmp_path / "emg2pose-bids"
+    ch_dir = root / "sub-893" / "ses-s1" / "emg"
+    ch_dir.mkdir(parents=True)
+    info = mne.create_info(["EMG1", "EMG2", "ja0"], 100, ["emg", "emg", "misc"])
+    raw = mne.io.RawArray(np.random.randn(3, 50) * 1e-6, info, verbose="ERROR")
+    mne.export.export_raw(
+        ch_dir / "sub-893_ses-s1_task-fist_acq-right_emg.vhdr",
+        raw,
+        fmt="brainvision",
+        overwrite=True,
+        verbose="ERROR",
+    )
+    return root
+
+
+@pytest.mark.parametrize("with_pose", [False, True])
+def test_bids_dataset_plot_iframe(tmp_path, with_pose):
+    root = _make_emg_bids_tree(tmp_path)
+    ds = BIDSDataset(root, suffixes="emg", datatypes="emg")
+    assert len(ds.datasets) == 1
+    assert ds.bids_paths[0].suffix == "emg"
+
+    if with_pose:  # optional hand-pose skeleton sidecar
+        (
+            root
+            / "sub-893"
+            / "ses-s1"
+            / "emg"
+            / "sub-893_ses-s1_task-fist_acq-right_desc-pose.json"
+        ).write_text("{}")
+
+    html = ds.plot(
+        0,
+        viewer_url="https://viewer.example.org",
+        base_url="https://data.example.org/ds",
+    ).data
+    assert html.startswith('<iframe src="https://viewer.example.org/index.html?emg=')
+    assert "data.example.org%2Fds%2Fsub-893" in html and "embed=1" in html
+    assert ("pose=" in html) is with_pose
