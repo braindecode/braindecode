@@ -965,6 +965,35 @@ def test_preprocessing_kwargs_later_dataset_preflight_is_atomic(
     "kwarg_name",
     ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
 )
+@pytest.mark.parametrize(
+    ("first_value", "later_value", "case"),
+    [
+        (True, 1, "bool-int"),
+        (1, 1.0, "int-float"),
+    ],
+)
+def test_preprocessing_kwargs_json_types_must_match_atomically(
+    tmp_path, kwarg_name, first_value, later_value, case
+):
+    """Type-distinct JSON provenance cannot share one global attribute."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_two_concat_raw_datasets_with_nan_locs()
+    setattr(concat_ds.datasets[0], kwarg_name, {"outer": [{"value": first_value}]})
+    setattr(concat_ds.datasets[1], kwarg_name, {"outer": [{"value": later_value}]})
+    zarr_path = tmp_path / f"{kwarg_name}-{case}.zarr"
+
+    with pytest.raises(ValueError, match=rf"{kwarg_name}.*dataset 1"):
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression=None, compression_level=5
+        )
+    assert not zarr_path.exists()
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
 def test_preprocessing_kwargs_root_string_rejected_atomically(tmp_path, kwarg_name):
     """Native root strings cannot collide with legacy double-encoded attrs."""
     pytest.importorskip("zarr")
@@ -989,9 +1018,13 @@ def test_preprocessing_kwargs_uniform_multi_recording_isolation(tmp_path, kwarg_
     pytest.importorskip("zarr")
 
     concat_ds = _make_two_concat_raw_datasets_with_nan_locs()
-    kwargs = {"outer": [{"scale": 1}]}
-    for ds in concat_ds.datasets:
-        setattr(ds, kwarg_name, copy.deepcopy(kwargs))
+    kwargs = {"outer": [{"scale": 1, "enabled": True}], "method": "filter"}
+    setattr(concat_ds.datasets[0], kwarg_name, copy.deepcopy(kwargs))
+    setattr(
+        concat_ds.datasets[1],
+        kwarg_name,
+        {"method": "filter", "outer": [{"enabled": True, "scale": 1}]},
+    )
     zarr_path = tmp_path / f"{kwarg_name}-uniform.zarr"
     concat_ds._convert_to_zarr_inline(
         zarr_path, compression=None, compression_level=5

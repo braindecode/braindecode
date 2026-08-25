@@ -735,6 +735,7 @@ class HubDatasetMixin:
         ]:
             expected_present = hasattr(self.datasets[0], kwarg_name)
             expected_value = None
+            expected_token = None
             for i_ds, ds in enumerate(self.datasets):
                 present = hasattr(ds, kwarg_name)
                 if present != expected_present:
@@ -747,9 +748,13 @@ class HubDatasetMixin:
                 value = _normalize_kwargs_for_json(
                     getattr(ds, kwarg_name), f"{kwarg_name} on dataset {i_ds}"
                 )
+                value_token = json.dumps(
+                    value, sort_keys=True, separators=(",", ":"), allow_nan=False
+                )
                 if i_ds == 0:
                     expected_value = value
-                elif value != expected_value:
+                    expected_token = value_token
+                elif value_token != expected_token:
                     raise ValueError(
                         f"{kwarg_name} on dataset {i_ds} differs from dataset 0; "
                         "the Zarr format stores one global value"
