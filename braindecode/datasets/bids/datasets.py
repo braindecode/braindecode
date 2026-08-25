@@ -11,10 +11,8 @@ More information on BIDS (Brain Imaging Data Structure) can be found at https://
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from html import escape
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlsplit
 
 import mne
 import mne_bids
@@ -22,6 +20,7 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
+from .. import _notebook_viewer
 from ..base import BaseConcatDataset, RawDataset, WindowsDataset
 
 
@@ -35,30 +34,6 @@ def _description_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
         }
     )
     return description
-
-
-def _viewer_param(fpath: Path) -> str:
-    """Return the eegdash-viewer query parameter for a recording."""
-    stem = fpath.stem.lower()
-    for token in ("ieeg", "emg", "meg", "nirs"):
-        if stem.endswith("_" + token):
-            return token
-    return "eeg"
-
-
-def _validate_web_url(url: str, name: str) -> str:
-    """Validate and normalize a web URL used in generated HTML."""
-    parsed = urlsplit(url)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.netloc
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise ValueError(
-            f"{name} must be an http or https URL without a query or fragment."
-        )
-    return parsed.geturl().rstrip("/")
 
 
 @dataclass
@@ -227,25 +202,34 @@ class BIDSDataset(BaseConcatDataset):
         self,
         index: int = 0,
         *,
-        viewer_url: str,
-        base_url: str,
-        height: int = 420,
+        height: int = 520,
+        cdn_url: str = _notebook_viewer.CDN,
+        max_bytes: int = _notebook_viewer.MAX_BYTES,
     ):
-        """Embed one recording in an eegdash-viewer Jupyter iframe.
+        """Show one recording in the eegdash-viewer inside a Jupyter cell.
+
+        Serverless: the recording bytes are inlined in the output and pushed
+        into the viewer (loaded from ``cdn_url``) over ``postMessage``. The
+        output is HTML with a script, so it renders when the cell is run in
+        your session; a saved notebook shows it again only once it is
+        trusted (``jupyter trust notebook.ipynb`` or File > Trust Notebook).
+        Drag to pan, hover for the cursor readout; when a ``*_desc-pose.json``
+        sidecar sits next to the recording the hand skeleton tracks the
+        cursor (``p`` toggles the panel). See
+        https://github.com/eegdash/eegdash-viewer/blob/main/docs/embedding.md.
 
         Parameters
         ----------
         index : int
             Recording to display (position in ``self.bids_paths``).
-        viewer_url : str
-            Base URL of a deployed eegdash-viewer instance.
-        base_url : str
-            Web-reachable base URL serving this dataset's BIDS root (e.g.
-            an eegdash/S3 deployment). Note ``python -m http.server`` does
-            not implement HTTP Range requests, which the viewer's readers
-            use for lazy windowed loading.
         height : int
-            Iframe height in pixels.
+            Viewer height in pixels.
+        cdn_url : str
+            Base URL of a deployed eegdash-viewer.
+        max_bytes : int
+            Refuse to inline more than this much base64 (default 64 MiB). The
+            payload is saved with the notebook and, like any cell output,
+            stays referenced by IPython's ``Out`` history for the session.
 
         Returns
         -------
@@ -253,28 +237,31 @@ class BIDSDataset(BaseConcatDataset):
         """
         try:
             from IPython.display import HTML
-        except ImportError:
+        except ImportError as err:  # pragma: no cover - environment dependent
             raise ImportError(
                 "BIDSDataset.plot requires IPython; install it with "
                 "`pip install ipython`."
-            ) from None
+            ) from err
 
-        viewer = _validate_web_url(viewer_url, "viewer_url")
-        base = _validate_web_url(base_url, "base_url")
-        root = Path(self.root).absolute()
-        fpath = Path(self.bids_paths[index].fpath).absolute()
-        relative_fpath = fpath.relative_to(root)
-        url = f"{base}/{relative_fpath.as_posix()}"
-        params = [f"{_viewer_param(fpath)}={quote(url, safe='')}", "embed=1"]
-        pose = fpath.with_name(fpath.stem.rsplit("_", 1)[0] + "_desc-pose.json")
-        if pose.is_file():  # synchronized hand-pose sidecar (F10 panel)
-            pose_url = f"{base}/{pose.relative_to(root).as_posix()}"
-            params.append(f"pose={quote(pose_url, safe='')}")
-        src = escape(f"{viewer}/index.html?{'&'.join(params)}", quote=True)
+        bids_path = self.bids_paths[index]
+        # Not resolved: git-annex/datalad symlinks keep their BIDS name.
+        fpath = Path(bids_path.fpath)
+        # BIDS-inherited channels/events sidecars (mne_bids resolves them).
+        find = getattr(bids_path, "find_matching_sidecar", None)
+        sidecars = tuple(
+            p
+            for suffix in ("channels", "events")
+            if find and (p := find(suffix=suffix, extension=".tsv", on_error="ignore"))
+        )
         return HTML(
-            f'<iframe src="{src}" style="width:100%;height:{int(height)}px;'
-            'border:1px solid var(--jp-border-color0, #ccc);border-radius:4px" '
-            'title="eegdash trace viewer" loading="lazy"></iframe>'
+            _notebook_viewer.build_viewer_html(
+                fpath,
+                _notebook_viewer.pose_sidecar_for(fpath),
+                sidecars=sidecars,
+                height=height,
+                cdn=cdn_url,
+                max_bytes=max_bytes,
+            )
         )
 
 
