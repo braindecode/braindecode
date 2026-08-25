@@ -354,6 +354,13 @@ def create_windows_from_events(
     -------
     windows_datasets: BaseConcatDataset[WindowsDataset | EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
+
+    Notes
+    -----
+    Event-window metadata contains the recording-local annotation row
+    ``i_trial_in_dataset``. This name is reserved: a same-named annotation
+    extra is discarded with a warning, and a same-named dataset description
+    cannot be combined by :meth:`BaseConcatDataset.get_metadata`.
     """
     on_last_window = _resolve_on_last_window(
         drop_last_window,
@@ -691,14 +698,20 @@ def _create_windows_from_events(
     events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
     onsets = events[:, 0]
     ann = ds.raw.annotations
+    filtered_annotations = [
+        (i, annotation)
+        for i, annotation in enumerate(ann)
+        if annotation["description"] in events_id
+    ]
+    source_annotation_rows = np.array([i for i, _ in filtered_annotations], dtype=int)
     # Onsets are relative to the beginning of the recording
     filtered_durations = np.array(
-        [a["duration"] for a in ann if a["description"] in events_id]
+        [annotation["duration"] for _, annotation in filtered_annotations]
     )
 
     extras = None
     if hasattr(ann, "extras"):
-        extras = [a["extras"] for a in ann if a["description"] in events_id]
+        extras = [annotation["extras"] for _, annotation in filtered_annotations]
         if not any(extras):
             extras = None
 
@@ -816,6 +829,7 @@ def _create_windows_from_events(
                 events = events[checker_trials_size]
                 onsets = onsets[checker_trials_size]
                 stops = stops[checker_trials_size]
+                source_annotation_rows = source_annotation_rows[checker_trials_size]
                 if extras is not None:
                     extras = [e for i, e in enumerate(extras) if checker_trials_size[i]]
         description = events[:, -1]
@@ -823,6 +837,11 @@ def _create_windows_from_events(
         if not use_mne_epochs:
             onsets = onsets - ds.raw.first_samp
             stops = stops - ds.raw.first_samp
+        good_event_indices = np.flatnonzero(
+            window_size_samples
+            <= (stops + trial_stop_offset_samples)
+            - (onsets + trial_start_offset_samples)
+        )
         i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
             onsets,
             stops,
@@ -833,6 +852,7 @@ def _create_windows_from_events(
             drop_last_window,
             accepted_bads_ratio,
         )
+        i_trials = [good_event_indices[i_trial] for i_trial in i_trials]
 
     if (on_overlapping_events != "ignore") and any(np.diff(starts) <= 0):
         msg = "Overlapping trials detected. You can ignore, warn, or raise an error, using the on_overlapping_events argument."
@@ -855,13 +875,16 @@ def _create_windows_from_events(
     metadata = pd.DataFrame(
         {
             "i_window_in_trial": i_window_in_trials,
+            "i_trial_in_dataset": source_annotation_rows[
+                np.asarray(i_trials, dtype=int)
+            ],
             "i_start_in_trial": starts,
             "i_stop_in_trial": stops,
             "target": description,
         }
     )
     if extras is not None:
-        extras_df = pd.DataFrame(extras)
+        extras_df = pd.DataFrame([dict(extra) for extra in extras])
         if forbidden_cols := set(metadata.columns).intersection(extras_df.columns):
             warnings.warn(
                 f"Dropping extra columns that conflict with windowing metadata: {forbidden_cols}"

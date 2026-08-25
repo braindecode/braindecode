@@ -2,15 +2,17 @@
 #
 # License: BSD-3
 
+import json
 import os
 import platform
 import warnings
 
+import mne
 import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets import BaseConcatDataset, MOABBDataset
+from braindecode.datasets import BaseConcatDataset, MOABBDataset, RawDataset
 from braindecode.datautil.serialization import (
     _check_save_dir_empty,
     load_concat_dataset,
@@ -143,6 +145,78 @@ def test_load_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
         concat_windows_dataset.description.astype(str),
         loaded_concat_windows_dataset.description.astype(str),
     )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_metadata_roundtrip(tmp_path, use_mne_epochs):
+    raws = []
+    for _ in range(2):
+        raw = mne.io.RawArray(
+            np.zeros((1, 1100)),
+            mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+            verbose=False,
+        )
+        raw.set_annotations(
+            mne.Annotations(
+                onset=[7, 1, 4],
+                duration=[2, 2, 2],
+                description=["B", "A", "OMIT"],
+                extras=[
+                    {"trial_uid": 30, "phase": "b"},
+                    {"trial_uid": 10, "phase": "a"},
+                    {"trial_uid": 20, "phase": "omit"},
+                ],
+            )
+        )
+        raws.append(raw)
+
+    windows = create_windows_from_events(
+        BaseConcatDataset(
+            [
+                RawDataset(raw, description={"recording": i})
+                for i, raw in enumerate(raws)
+            ]
+        ),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"A": 7, "B": 9},
+        use_mne_epochs=use_mne_epochs,
+        drop_bad_windows=False,
+        preload=True,
+    )
+    expected = pd.DataFrame(
+        {
+            "i_window_in_trial": [0, 1, 0, 1],
+            "i_trial_in_dataset": [0, 0, 2, 2],
+            "i_start_in_trial": [100, 200, 700, 800],
+            "i_stop_in_trial": [200, 300, 800, 900],
+            "target": [7, 7, 9, 9],
+            "trial_uid": [10, 10, 30, 30],
+            "phase": ["a", "a", "b", "b"],
+        }
+    )
+    for ds in windows.datasets:
+        pd.testing.assert_frame_equal(
+            ds.metadata.reset_index(drop=True), expected, check_dtype=False
+        )
+        assert pd.api.types.is_integer_dtype(ds.metadata["i_trial_in_dataset"])
+
+    save_dir = tmp_path / "event-source-windows"
+    windows.save(save_dir, overwrite=False)
+    loaded = load_concat_dataset(save_dir, preload=False)
+
+    for before, after in zip(windows.datasets, loaded.datasets):
+        # MNE reindexes metadata rows to follow the Epochs selection, so only
+        # pandas row-index identity is deliberately excluded from this roundtrip.
+        pd.testing.assert_frame_equal(
+            after.metadata.reset_index(drop=True),
+            before.metadata.reset_index(drop=True),
+        )
+        assert pd.api.types.is_integer_dtype(after.metadata["i_trial_in_dataset"])
+        normalized_kwargs = json.loads(json.dumps(before.window_kwargs))
+        assert after.window_kwargs == normalized_kwargs
+        assert "i_trial_in_dataset" not in json.dumps(after.window_kwargs)
 
 
 def test_load_multiple_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
