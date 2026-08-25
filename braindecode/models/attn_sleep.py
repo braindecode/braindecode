@@ -142,16 +142,6 @@ class AttnSleep(EEGModuleMixin, nn.Module):
                 "(n_times, input_window_seconds), and "
                 "(sfreq, input_window_seconds)."
             )
-        if n_chans is None and chs_info is None:
-            n_chans = 1
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
         for field, value in raw_geometry.items():
             if value is None:
                 continue
@@ -174,6 +164,25 @@ class AttnSleep(EEGModuleMixin, nn.Module):
                     f"AttnSleep {field} must be a finite positive real number, "
                     f"got {value!r}."
                 )
+
+        if n_chans is None and chs_info is None:
+            n_chans = 1
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        n_times = int(n_times) if n_times is not None else None
+        sfreq = float(sfreq) if sfreq is not None else None
+        input_window_seconds = (
+            float(input_window_seconds) if input_window_seconds is not None else None
+        )
+        self._n_times = n_times
+        self._sfreq = sfreq
+        self._input_window_seconds = input_window_seconds
 
         resolved_n_chans = self.n_chans
         if (
@@ -253,8 +262,10 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         # TODO: Add new way to handle return features
         """if return_feats:
             raise ValueError("return_feat == True is not accepted anymore")"""
-        if not return_feats:
-            self.final_layer: nn.Linear = nn.Linear(self.len_last_layer, self.n_outputs)
+        if return_feats:
+            self.final_layer: nn.Module = nn.Identity()
+        else:
+            self.final_layer = nn.Linear(self.len_last_layer, self.n_outputs)
 
     @staticmethod
     def _feature_length(mrcnn, n_times):
@@ -518,9 +529,6 @@ class _MultiHeadedAttention(nn.Module):
         attn = self.dropout(attn_weights)
         # weighted sum with the dropped weights
         x = torch.matmul(attn, value)
-
-        # stash the pre‑dropout weights if you need them
-        self.attn = attn_weights
 
         # merge heads and project
         x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_per_head)

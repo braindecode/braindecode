@@ -76,6 +76,11 @@ def _is_jsonable(val):
     return False
 
 
+def _numpy_scalar_to_builtin(val):
+    """Convert a NumPy scalar to the equivalent JSON-compatible Python value."""
+    return val.item() if isinstance(val, np.generic) else val
+
+
 def track_model_init_kwargs(cls) -> None:
     """Instrument a model class so constructor kwargs are tracked."""
     init = cls.__init__
@@ -125,6 +130,12 @@ def build_model_config(model) -> dict:
     hub_config = getattr(model, "_hub_mixin_config", None)
     if hub_config is not None:
         config = dict(hub_config)
+        init_kwargs = getattr(model, "_braindecode_init_kwargs", {})
+        for name, val in init_kwargs.items():
+            if isinstance(val, np.generic):
+                val = _numpy_scalar_to_builtin(val)
+                if _is_jsonable(val):
+                    config[name] = val
     else:
         init_kwargs = getattr(model, "_braindecode_init_kwargs", None)
         if init_kwargs is None:
@@ -137,6 +148,7 @@ def build_model_config(model) -> dict:
         for name, val in deepcopy(init_kwargs).items():
             if name == "chs_info":
                 continue
+            val = _numpy_scalar_to_builtin(val)
             if isinstance(val, type):
                 val = f"{val.__module__}.{val.__qualname__}"
             elif not _is_jsonable(val):

@@ -1120,6 +1120,76 @@ def test_eldele_2021_rejects_invalid_geometry_types_before_probe(
     assert probe_calls == []
 
 
+@pytest.mark.parametrize(
+    "geometry,invalid_field",
+    [
+        (
+            {"n_times": True, "sfreq": 100, "input_window_seconds": 30},
+            "n_times",
+        ),
+        (
+            {"n_times": 3000.0, "sfreq": 100, "input_window_seconds": 30},
+            "n_times",
+        ),
+        (
+            {"n_times": 3000, "sfreq": True, "input_window_seconds": 30},
+            "sfreq",
+        ),
+        (
+            {"n_times": 3000, "sfreq": "100", "input_window_seconds": 30},
+            "sfreq",
+        ),
+        (
+            {"n_times": 3000, "sfreq": np.nan, "input_window_seconds": 30},
+            "sfreq",
+        ),
+        (
+            {"n_times": 3000, "sfreq": np.inf, "input_window_seconds": 30},
+            "sfreq",
+        ),
+        (
+            {"n_times": 3000, "sfreq": -np.inf, "input_window_seconds": 30},
+            "sfreq",
+        ),
+        (
+            {"n_times": 3000, "sfreq": 100, "input_window_seconds": True},
+            "input_window_seconds",
+        ),
+        (
+            {"n_times": 3000, "sfreq": 100, "input_window_seconds": "30"},
+            "input_window_seconds",
+        ),
+        (
+            {"n_times": 3000, "sfreq": 100, "input_window_seconds": np.nan},
+            "input_window_seconds",
+        ),
+        (
+            {"n_times": 3000, "sfreq": 100, "input_window_seconds": np.inf},
+            "input_window_seconds",
+        ),
+        (
+            {"n_times": 3000, "sfreq": 100, "input_window_seconds": -np.inf},
+            "input_window_seconds",
+        ),
+    ],
+)
+def test_eldele_2021_validates_all_three_geometry_fields_before_mixin(
+    geometry, invalid_field, monkeypatch
+):
+    probe_calls = []
+
+    def tracked_probe(*args, **kwargs):
+        probe_calls.append((args, kwargs))
+        return 80
+
+    monkeypatch.setattr(AttnSleep, "_feature_length", staticmethod(tracked_probe))
+
+    with pytest.raises(ValueError, match=rf"AttnSleep {invalid_field}"):
+        AttnSleep(n_outputs=5, **geometry)
+
+    assert probe_calls == []
+
+
 def test_eldele_2021_preserves_mixin_geometry_consistency_error(monkeypatch):
     def forbidden_probe(*args, **kwargs):
         raise AssertionError("feature probe must not run")

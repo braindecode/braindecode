@@ -27,6 +27,7 @@ from braindecode.models import (
     REVE,
     SSTDPN,
     ZUNA,
+    AttnSleep,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -679,6 +680,48 @@ def test_torch_script_without_plain_conversion(model_name):
 
     with torch.no_grad():
         torch.testing.assert_close(restored_script(input_tensor), expected)
+
+
+@pytest.mark.parametrize(
+    "return_feats,use_chs_info,expected_shape",
+    [
+        pytest.param(False, False, (2, 5), id="integer-sfreq"),
+        pytest.param(False, True, (2, 5), id="one-channel-chs-info"),
+        pytest.param(True, False, (2, 2400), id="return-features"),
+    ],
+)
+def test_attn_sleep_scripts_cold_and_roundtrips(
+    return_feats, use_chs_info, expected_shape
+):
+    """Every supported AttnSleep mode scripts before its first eager forward."""
+    channel_kwargs = {}
+    if use_chs_info:
+        channel_kwargs = {
+            "n_chans": None,
+            "chs_info": mne.create_info(["Cz"], 100, "eeg")["chs"],
+        }
+    model = AttnSleep(
+        n_times=3000,
+        sfreq=100,
+        n_outputs=5,
+        return_feats=return_feats,
+        **channel_kwargs,
+    ).eval()
+    input_tensor = torch.randn(2, 1, 3000)
+
+    scripted = torch.jit.script(model)
+    with torch.no_grad():
+        expected = model(input_tensor)
+        actual = scripted(input_tensor)
+    assert actual.shape == expected_shape
+    torch.testing.assert_close(actual, expected)
+
+    buffer = BytesIO()
+    torch.jit.save(scripted, buffer)
+    buffer.seek(0)
+    restored = torch.jit.load(buffer)
+    with torch.no_grad():
+        torch.testing.assert_close(restored(input_tensor), expected)
 
 
 @pytest.mark.parametrize("n_chans", [None, default_signal_params["n_chans"]])
