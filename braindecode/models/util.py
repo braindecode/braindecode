@@ -468,8 +468,8 @@ models_mandatory_parameters: list[
         {
             "n_chans": 16,
             "n_times": 480,
-            "sfreq": 2048.0,
-            "input_window_seconds": 480 / 2048.0,
+            "sfreq": 2000.0,
+            "input_window_seconds": 480 / 2000.0,
             "n_outputs": 20,
         },
     ),

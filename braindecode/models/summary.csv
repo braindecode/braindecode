@@ -43,7 +43,7 @@ MetaNeuromotorHand,Handwriting (sEMG),CTC Sequence,2000,"n_chans, n_outputs, n_t
 EMG2QwertyNet,Touch typing (sEMG),CTC Sequence,2000,"n_chans, n_outputs, n_times, sfreq",5293315,"EMG2QwertyNet(n_chans=32, n_outputs=99, n_times=8000, sfreq=2000)","Convolution",sEMG
 VEMG2PoseNet,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",6269992,"VEMG2PoseNet(n_chans=16, n_outputs=20, n_times=10000, sfreq=2000)","Convolution,Recurrent",sEMG
 NeuroPoseNet,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",1440756,"NeuroPoseNet(n_chans=16, n_outputs=20, n_times=10000, sfreq=2000)","Convolution",sEMG
-SensingDynamicsNet,Hand pose (sEMG),Sequence Regression,2048,"n_chans, n_outputs, n_times, sfreq",1780532,"SensingDynamicsNet(n_chans=16, n_outputs=20, n_times=480, sfreq=2048)","Convolution,Channel",sEMG
+SensingDynamicsNet,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",1738297,"SensingDynamicsNet(n_chans=16, n_outputs=20, n_times=480, sfreq=2000)","Convolution,Channel",sEMG
 FBLightConvNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6596,"FBLightConvNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 IFNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",9860,"IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 BrainModule,Speech Decoding,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6186909,"BrainModule(n_chans=64, n_outputs=29, n_times=160, sfreq=1000)","Convolution","EEG, MEG"

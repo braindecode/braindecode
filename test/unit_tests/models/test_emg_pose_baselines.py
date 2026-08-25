@@ -257,46 +257,47 @@ def test_neuropose_supports_a_wider_internal_band_adapter():
     assert model(torch.randn(1, 16, 10000)).shape == (1, 10000, 20)
 
 
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        dict(n_chans=16, n_grids=1),
-        dict(n_chans=20, n_grids=5, elec_per_grid=4, temporal_channels=16),
-    ],
-)
-def test_sensingdynamics_grid_geometries(kwargs):
+def test_sensingdynamics_sequence_shape():
     model = SensingDynamicsNet(
+        n_chans=16,
         n_outputs=20,
         n_times=480,
-        sfreq=2048.0,
-        input_window_seconds=480 / 2048.0,
+        sfreq=2000.0,
+        input_window_seconds=480 / 2000.0,
+        temporal_channels=16,
+        mid_channels=8,
+        spatial_channels=16,
         mlp_hidden=64,
-        **kwargs,
     )
-    x = torch.randn(2, kwargs["n_chans"], 480)
+    x = torch.randn(2, 16, 480)
     assert model(x).shape == (2, 480, 20)
 
 
-def test_sensingdynamics_rejects_bad_grid():
-    with pytest.raises(ValueError, match="n_chans must equal"):
-        SensingDynamicsNet(n_chans=17, n_grids=5, n_outputs=20)
+def test_sensingdynamics_matches_derived_adaptation_geometry():
+    model = SensingDynamicsNet(
+        n_chans=16, n_outputs=20, n_times=480, sfreq=2000.0
+    )
+
+    assert model.conv1.conv.kernel_size == (1, 31)
+    assert model.conv1.conv.stride == (1, 8)
+    assert model.circular_pad.padding == 4
+    assert model.conv2.conv.kernel_size == (8, 18)
+    assert model.conv2.conv.dilation == (2, 1)
+    assert model.conv3.conv.kernel_size == (3, 1)
+    assert model.mlp[1].in_features == 64 * 8
+    assert model.receptive_field_samples == 167
+    assert model.benchmark_window_samples == 10_167
 
 
-@pytest.mark.parametrize(
-    ("kwargs", "message"),
-    [
-        ({"n_grids": 0}, "n_grids must be positive"),
-        ({"n_grids": 1, "elec_per_grid": 0}, "elec_per_grid must be positive"),
-    ],
-)
-def test_sensingdynamics_rejects_nonpositive_grid_geometry(kwargs, message):
-    with pytest.raises(ValueError, match=message):
-        SensingDynamicsNet(n_chans=16, n_outputs=20, **kwargs)
+def test_sensingdynamics_rejects_non_emg2pose_channel_geometry():
+    with pytest.raises(ValueError, match="16-channel emg2pose adaptation"):
+        SensingDynamicsNet(n_chans=20, n_outputs=20, sfreq=2000.0)
 
 
-def test_sensingdynamics_rejects_nonpositive_frame_count():
-    with pytest.raises(ValueError, match="n_frames must be positive"):
-        SensingDynamicsNet(n_chans=16, n_outputs=20, n_frames=0)
+def test_sensingdynamics_rejects_short_input():
+    model = SensingDynamicsNet(n_chans=16, n_outputs=20, sfreq=2000.0)
+    with pytest.raises(ValueError, match="at least 167 input samples"):
+        model(torch.randn(1, 16, 166))
 
 
 def test_sensingdynamics_uses_circular_grid_padding(monkeypatch):
@@ -304,9 +305,11 @@ def test_sensingdynamics_uses_circular_grid_padding(monkeypatch):
         n_chans=16,
         n_outputs=20,
         n_times=480,
-        sfreq=2048.0,
-        input_window_seconds=480 / 2048.0,
+        sfreq=2000.0,
+        input_window_seconds=480 / 2000.0,
         temporal_channels=16,
+        mid_channels=8,
+        spatial_channels=16,
         mlp_hidden=64,
     )
     modes = []
@@ -322,6 +325,58 @@ def test_sensingdynamics_uses_circular_grid_padding(monkeypatch):
     model(torch.randn(1, 16, 480))
 
     assert modes == ["circular"]
+
+
+def test_sensingdynamics_stacks_raw_and_lowpass_planes():
+    model = SensingDynamicsNet(
+        n_chans=16,
+        n_outputs=20,
+        n_times=480,
+        sfreq=2000.0,
+        temporal_channels=16,
+        mid_channels=8,
+        spatial_channels=16,
+        mlp_hidden=64,
+    ).eval()
+    captured = {}
+
+    def capture_input(_module, args):
+        captured["x"] = args[0].detach()
+
+    handle = model.conv1.register_forward_pre_hook(capture_input)
+    x = torch.randn(1, 16, 480)
+    model(x)
+    handle.remove()
+
+    torch.testing.assert_close(captured["x"][:, 0], x)
+    assert not torch.equal(captured["x"][:, 1], x)
+
+
+def test_sensingdynamics_accepts_precomputed_lowpass():
+    model = SensingDynamicsNet(
+        n_chans=16,
+        n_outputs=20,
+        n_times=480,
+        sfreq=2000.0,
+        temporal_channels=16,
+        mid_channels=8,
+        spatial_channels=16,
+        mlp_hidden=64,
+    ).eval()
+    x = torch.randn(1, 16, 480)
+    x_lowpass = model.lowpass(x)
+
+    with torch.no_grad():
+        inferred = model(x)
+        precomputed = model(x, x_lowpass=x_lowpass)
+
+    torch.testing.assert_close(inferred, precomputed)
+
+
+def test_sensingdynamics_rejects_bad_precomputed_lowpass_shape():
+    model = SensingDynamicsNet(n_chans=16, n_outputs=20, sfreq=2000.0)
+    with pytest.raises(ValueError, match="same shape"):
+        model(torch.randn(1, 16, 480), x_lowpass=torch.randn(1, 16, 479))
 
 
 @pytest.mark.parametrize(
@@ -362,12 +417,14 @@ def test_sensingdynamics_uses_circular_grid_padding(monkeypatch):
                 n_chans=16,
                 n_outputs=20,
                 n_times=480,
-                sfreq=2048.0,
-                input_window_seconds=480 / 2048.0,
+                sfreq=2000.0,
+                input_window_seconds=480 / 2000.0,
                 temporal_channels=16,
+                mid_channels=8,
+                spatial_channels=16,
                 mlp_hidden=64,
             ),
-            "stem.0.weight",
+            "conv1.conv.weight",
         ),
     ],
 )
@@ -403,11 +460,12 @@ def test_stateful_activations_are_not_shared_between_layers():
         n_chans=16,
         n_outputs=20,
         n_times=480,
-        sfreq=2048.0,
-        input_window_seconds=480 / 2048.0,
+        sfreq=2000.0,
+        input_window_seconds=480 / 2000.0,
         temporal_channels=16,
+        mid_channels=8,
+        spatial_channels=16,
         mlp_hidden=64,
-        activation=nn.PReLU,
     )
 
     stem_activations = [
@@ -415,7 +473,13 @@ def test_stateful_activations_are_not_shared_between_layers():
     ]
     assert len(stem_activations) == 2
     assert stem_activations[0] is not stem_activations[1]
-    assert len([m for m in sensingdynamics.modules() if isinstance(m, nn.PReLU)]) == 4
+    smu_layers = [
+        module
+        for module in sensingdynamics.modules()
+        if module.__class__.__name__ == "_SMU"
+    ]
+    assert len(smu_layers) == 5
+    assert len({id(module.mu) for module in smu_layers}) == 5
 
 
 def test_all_three_are_non_classification_models():
