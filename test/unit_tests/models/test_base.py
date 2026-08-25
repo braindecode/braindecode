@@ -4,6 +4,8 @@
 
 
 import json
+import subprocess
+import sys
 from operator import attrgetter
 from unittest.mock import patch
 
@@ -113,6 +115,35 @@ def test_init_subclass_propagates_extended_jit_ignored_property():
         is DummyModuleWithExtraIgnoredProperty.__dict__["runtime_only"]
     )
     torch.testing.assert_close(scripted(input_tensor), module(input_tensor))
+
+
+def test_init_subclass_with_license_without_hf_hub():
+    """A model license can be declared without the optional Hub dependency."""
+    code = """
+import sys
+
+sys.modules["huggingface_hub"] = None
+
+from braindecode.models import base
+
+assert not base.HAS_HF_HUB
+
+class LicensedTestModel(
+    base.EEGModuleMixin,
+    license="cc-by-nc-sa-4.0",
+):
+    pass
+
+assert issubclass(LicensedTestModel, base.EEGModuleMixin)
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.fixture(scope="function")

@@ -11,8 +11,6 @@ Hugging Face Hub when the optional huggingface_hub dependency is installed.
 """
 
 import json
-import subprocess
-import sys
 
 import numpy as np
 import pytest
@@ -356,32 +354,3 @@ def test_init_subclass_without_hf_hub():
         assert TestModel is not None
     finally:
         base.HAS_HF_HUB = original_has_hf_hub
-
-
-def test_init_subclass_with_license_without_hf_hub():
-    """A model license can be declared without the optional Hub dependency."""
-    code = """
-import sys
-
-sys.modules["huggingface_hub"] = None
-
-from braindecode.models import base
-
-assert not base.HAS_HF_HUB
-
-class LicensedTestModel(
-    base.EEGModuleMixin,
-    license="cc-by-nc-sa-4.0",
-):
-    pass
-
-assert issubclass(LicensedTestModel, base.EEGModuleMixin)
-"""
-
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
