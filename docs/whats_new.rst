@@ -28,6 +28,14 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
+- Preserve the recording-local row of each canonical MNE annotation as
+  ``i_trial_in_dataset`` in event-window metadata, keeping it aligned with
+  targets and annotation extras through event mapping, duration filtering,
+  and dropped short trials. Conflicting annotation extras are dropped with a
+  warning, while conflicting dataset descriptions are rejected during
+  metadata aggregation.
+  (:gh:`1130` by `Bruno Aristimunha`_)
+
 - Models with TorchScript-compatible forward paths can now be passed straight
   to :func:`torch.jit.script`, without first being rebuilt as a plain
   :class:`torch.nn.Module`.
