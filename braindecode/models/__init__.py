@@ -28,6 +28,9 @@ from .eegsimpleconv import EEGSimpleConv
 from .eegsym import EEGSym
 from .eegtcnet import EEGTCNet
 from .emg2qwerty import EMG2QwertyNet
+from .neuropose import NeuroPoseNet
+from .sensingdynamics import SensingDynamicsNet
+from .vemg2pose import VEMG2PoseNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
@@ -107,6 +110,9 @@ __all__ = [
     "EEGTCNet",
     "DGCNN",
     "EMG2QwertyNet",
+    "NeuroPoseNet",
+    "SensingDynamicsNet",
+    "VEMG2PoseNet",
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",

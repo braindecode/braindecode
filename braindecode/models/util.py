@@ -440,6 +440,39 @@ models_mandatory_parameters: list[
             "n_outputs": 99,
         },
     ),
+    (
+        "VEMG2PoseNet",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 10000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 5.0,
+            "n_outputs": 20,
+        },
+    ),
+    (
+        "NeuroPoseNet",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 10000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 5.0,
+            "n_outputs": 20,
+        },
+    ),
+    (
+        "SensingDynamicsNet",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 480,
+            "sfreq": 2048.0,
+            "input_window_seconds": 480 / 2048.0,
+            "n_outputs": 20,
+        },
+    ),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
@@ -526,6 +559,10 @@ non_classification_models = [
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
+    # Dense per-frame pose sequences (batch, T, n_joints), not logits.
+    "VEMG2PoseNet",
+    "NeuroPoseNet",
+    "SensingDynamicsNet",
     # forward returns (batch, num_latents, n_outputs) dense per-token logits,
     # not class logits.
     "DANCE",
