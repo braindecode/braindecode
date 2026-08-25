@@ -1,5 +1,6 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 # License: BSD-3
 
 import os
@@ -402,6 +403,49 @@ def test_throwaway_index_loader_backward_compat():
     x, yy, net = _route((X, y, crop))
     assert torch.is_tensor(x)
     assert net._last_window_inds_ is crop  # index stashed for scoring
+
+
+@pytest.mark.parametrize(
+    "is_regression,target_dtype,container",
+    [
+        (False, torch.int64, tuple),
+        (False, torch.int64, list),
+        (True, torch.float32, tuple),
+        (True, torch.float32, list),
+    ],
+)
+def test_throwaway_index_loader_casts_mixup_target(
+    is_regression, target_dtype, container
+):
+    """Mixed targets follow the same dtype contract as plain targets."""
+    B, C, T = 4, 10, 200
+    X = torch.randn(B, C, T)
+    y_a = torch.zeros(B, dtype=torch.float64)
+    y_b = torch.ones(B, dtype=torch.float64)
+    lam = torch.full((B,), 0.3, dtype=torch.float64)
+
+    x, yy, _ = _route(
+        (X, container((y_a, y_b, lam))), is_regression=is_regression
+    )
+    assert torch.is_tensor(x) and x.dtype == torch.float32
+    assert isinstance(yy, tuple) and len(yy) == 3
+    assert yy[0].dtype == yy[1].dtype == target_dtype
+    assert yy[2].dtype == torch.float32
+
+
+def test_throwaway_index_loader_preserves_composite_input_target_dtype():
+    """Custom criteria keep float targets paired with composite model inputs."""
+    batch_size, n_chans, n_times = 4, 2, 20
+    x = (
+        torch.randn(batch_size, n_chans, n_times),
+        torch.randn(batch_size, n_chans, n_times),
+    )
+    y = torch.randint(0, 2, (batch_size,), dtype=torch.float32)
+
+    routed_x, routed_y, _ = _route((x, y))
+
+    assert routed_x is x
+    assert routed_y.dtype == torch.float32
 
 
 def test_looks_like_channel_mask_dtypes():

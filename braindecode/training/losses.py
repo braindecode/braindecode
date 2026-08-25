@@ -1,6 +1,7 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -79,10 +80,11 @@ def mixup_criterion(preds, target):
     ----------
     preds : torch.Tensor
         Predictions from the model.
-    target : torch.Tensor | list of torch.Tensor
+    target : torch.Tensor | tuple of torch.Tensor | list of torch.Tensor
         For predictions without mixup, the targets as a tensor. If mixup has
-        been applied, a list containing the targets of the two mixed
-        samples and the mixing coefficients as tensors.
+        been applied, a tuple or list containing the targets of the two mixed
+        samples and the mixing coefficients as tensors. A plain tensor is
+        always read as targets, whatever the batch size is.
 
     Returns
     -------
@@ -96,7 +98,8 @@ def mixup_criterion(preds, target):
        Online: https://arxiv.org/abs/1710.09412
     .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
-    if len(target) == 3:
+    # only a mixup target is a container, a plain target tensor of length 3 is not
+    if isinstance(target, (tuple, list)) and len(target) == 3:
         # unpack target
         y_a, y_b, lam = target
         # compute loss per sample
