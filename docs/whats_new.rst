@@ -43,7 +43,18 @@ Enhancements
 API and behavior changes
 ========================
 
-- None yet
+- Deprecate ``drop_last_window`` in
+  :func:`braindecode.preprocessing.create_windows_from_events` and
+  :func:`braindecode.preprocessing.create_fixed_length_windows`; it will be
+  removed in version 2.0. The keyword-only replacement,
+  ``on_last_window``, accepts ``'overlap'`` or ``'drop'``. Explicit legacy
+  ``False`` maps to ``'overlap'`` and explicit legacy ``True`` maps to
+  ``'drop'``; either legacy spelling emits a ``DeprecationWarning``.
+  When no explicit window size or stride is supplied to fixed-length
+  windowing, the policy is immaterial and normalizes to the existing single
+  full-recording window; this also replaces the internal assertion formerly
+  reached by explicit legacy ``True``.
+  (:gh:`1058` by `Michele Romani`_)
 
 Requirements
 ============
@@ -1610,6 +1621,7 @@ Authors
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _GalAshkenazi1: https://github.com/GalAshkenazi1
 .. _Matthew Chen: https://github.com/MatthewChen37
+.. _Michele Romani: https://github.com/BRomans
 .. _Jonathan Dan: https://github.com/jon-dan
 .. _Jonathan Lys: https://github.com/jonathanlys01
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri

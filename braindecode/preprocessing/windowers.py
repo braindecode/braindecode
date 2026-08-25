@@ -194,6 +194,43 @@ def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
     return use_mne_epochs
 
 
+_LastWindowStrategy = Literal["overlap", "drop"]
+_VALID_LAST_WINDOW_STRATEGIES = ("overlap", "drop")
+
+
+def _resolve_on_last_window(
+    drop_last_window: bool | None,
+    on_last_window: _LastWindowStrategy | None,
+    *,
+    default: _LastWindowStrategy | None,
+) -> _LastWindowStrategy | None:
+    """Resolve the replacement spelling without changing placement semantics."""
+    if drop_last_window is not None and on_last_window is not None:
+        raise ValueError(
+            "Cannot specify both `drop_last_window` and `on_last_window`. "
+            "Use `on_last_window` only, as `drop_last_window` is deprecated."
+        )
+    if (
+        on_last_window is not None
+        and on_last_window not in _VALID_LAST_WINDOW_STRATEGIES
+    ):
+        raise ValueError(
+            "on_last_window must be one of 'overlap' or 'drop', "
+            f"got {on_last_window!r}."
+        )
+    if drop_last_window is not None:
+        warnings.warn(
+            "`drop_last_window` is deprecated and will be removed in version 2.0. "
+            "Use `on_last_window='drop'` if True or "
+            "`on_last_window='overlap'` if False. "
+            "See https://github.com/braindecode/braindecode/pull/1058 for feedback.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return "drop" if drop_last_window else "overlap"
+    return default if on_last_window is None else on_last_window
+
+
 # XXX it's called concat_ds...
 def create_windows_from_events(
     concat_ds: BaseConcatDataset[RawDataset],
@@ -201,7 +238,7 @@ def create_windows_from_events(
     trial_stop_offset_samples: int | dict[str, int] = 0,
     window_size_samples: int | None = None,
     window_stride_samples: int | dict[str, int] | None = None,
-    drop_last_window: bool = False,
+    drop_last_window: bool | None = None,
     mapping: dict[str, int] | None = None,
     preload: bool = False,
     drop_bad_windows: bool | None = None,
@@ -214,6 +251,8 @@ def create_windows_from_events(
     on_overlapping_events: Literal["raise", "warn", "ignore"] = "raise",
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
+    *,
+    on_last_window: _LastWindowStrategy | None = None,
 ) -> BaseConcatDataset[WindowsDataset | EEGWindowsDataset]:
     """Create windows based on events in mne.Raw.
 
@@ -256,10 +295,11 @@ def create_windows_from_events(
         trial_start_offset_samples and trial_stop_offset_samples.
         If a dict, keys must match the keys of ``mapping`` and different
         strides are applied per event type.
-    drop_last_window: bool
-        If False, an additional overlapping window that ends at
-        trial_stop_offset_samples will be extracted around each event when the
-        last window does not end exactly at trial_stop_offset_samples.
+    drop_last_window: bool | None
+        Deprecated; use ``on_last_window`` instead. Explicit ``False`` maps to
+        ``'overlap'`` and explicit ``True`` maps to ``'drop'``. Either value
+        emits a ``DeprecationWarning`` and this parameter will be removed in
+        version 2.0.
     mapping: dict(str: int)
         Mapping from event description to numerical target value. Must be
         provided when any of ``trial_start_offset_samples``,
@@ -304,12 +344,25 @@ def create_windows_from_events(
         Number of jobs to use to parallelize the windowing.
     verbose: bool | str | int | None
         Control verbosity of the logging output when calling mne.Epochs.
+    on_last_window: {'overlap', 'drop'} | None
+        Behavior when the final regular window does not end exactly at the
+        trial boundary. ``'overlap'`` adds a final overlapping window ending
+        at the boundary; ``'drop'`` does not. Defaults to ``'overlap'`` when
+        neither this parameter nor ``drop_last_window`` is supplied.
 
     Returns
     -------
     windows_datasets: BaseConcatDataset[WindowsDataset | EEGWindowsDataset]
         Concatenated datasets of WindowsDataset containing the extracted windows.
     """
+    on_last_window = _resolve_on_last_window(
+        drop_last_window,
+        on_last_window,
+        default="overlap",
+    )
+    assert on_last_window is not None
+    drop_last_window_for_internal = on_last_window == "drop"
+
     _check_windowing_arguments(
         trial_start_offset_samples,
         trial_stop_offset_samples,
@@ -391,7 +444,7 @@ def create_windows_from_events(
             trial_stop_offset_samples,
             window_size_samples,
             window_stride_samples,
-            drop_last_window,
+            drop_last_window_for_internal,
             mapping,
             preload,
             drop_bad_windows,
@@ -429,6 +482,8 @@ def create_fixed_length_windows(
     use_mne_epochs: bool | None = None,
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
+    *,
+    on_last_window: _LastWindowStrategy | None = None,
 ) -> BaseConcatDataset[WindowsDataset | EEGWindowsDataset]:
     """Windower that creates sliding windows.
 
@@ -448,9 +503,10 @@ def create_fixed_length_windows(
         Stride between windows in samples. If None, set to be equal to winddow_size_samples, so
         windows will not overlap.
     drop_last_window: bool | None
-        Whether or not have a last overlapping window, when windows do not
-        equally divide the continuous signal. Must be set to a bool if window size and stride are
-        not None.
+        Deprecated; use ``on_last_window`` instead. Explicit ``False`` maps to
+        ``'overlap'`` and explicit ``True`` maps to ``'drop'``. Either value
+        emits a ``DeprecationWarning`` and this parameter will be removed in
+        version 2.0.
     mapping: dict(str: int)
         Mapping from event description to target value.
     preload: bool
@@ -490,6 +546,15 @@ def create_fixed_length_windows(
         Number of jobs to use to parallelize the windowing.
     verbose: bool | str | int | None
         Control verbosity of the logging output when calling mne.Epochs.
+    on_last_window: {'overlap', 'drop'} | None
+        Behavior when the final regular window does not end exactly at the
+        recording boundary. ``'overlap'`` adds a final overlapping window
+        ending at the boundary; ``'drop'`` does not. A policy is required when
+        both an explicit window size and stride are supplied. A size without a
+        stride defaults to non-overlapping windows and ``'drop'``. With no
+        explicit size or stride, the policy is immaterial and normalizes to
+        the existing single full-recording window. ``'overlap'`` is
+        incompatible with ``lazy_metadata=True``.
 
     Returns
     -------
@@ -498,15 +563,23 @@ def create_fixed_length_windows(
         EEGWindowsDataset objects with the extracted windows, depending on
         the value of ``use_mne_epochs``.
     """
-    stop_offset_samples, window_stride_samples, drop_last_window = (
+    on_last_window = _resolve_on_last_window(
+        drop_last_window,
+        on_last_window,
+        default=None,
+    )
+    stop_offset_samples, window_stride_samples, on_last_window = (
         _check_and_set_fixed_length_window_arguments(
             start_offset_samples,
             stop_offset_samples,
             window_size_samples,
             window_stride_samples,
-            drop_last_window,
+            on_last_window,
             lazy_metadata,
         )
+    )
+    drop_last_window_for_internal = (
+        None if on_last_window is None else on_last_window == "drop"
     )
 
     if drop_bad_windows is not None:
@@ -539,7 +612,7 @@ def create_fixed_length_windows(
             stop_offset_samples,
             window_size_samples,
             window_stride_samples,
-            drop_last_window,
+            drop_last_window_for_internal,
             mapping,
             preload,
             drop_bad_windows,
@@ -1244,17 +1317,17 @@ def _check_and_set_fixed_length_window_arguments(
     stop_offset_samples,
     window_size_samples,
     window_stride_samples,
-    drop_last_window,
+    on_last_window,
     lazy_metadata,
 ):
     """Raises warnings for incorrect input arguments and will set correct default values for
-    stop_offset_samples, window_stride_samples & drop_last_window, if necessary.
+    stop_offset_samples, window_stride_samples & on_last_window, if necessary.
     """
     # default stride to window size for non-overlapping windows
     if window_size_samples is not None and window_stride_samples is None:
         window_stride_samples = window_size_samples
-        if drop_last_window is None:
-            drop_last_window = True
+        if on_last_window is None:
+            on_last_window = "drop"
 
     _check_windowing_arguments(
         start_offset_samples,
@@ -1281,30 +1354,30 @@ def _check_and_set_fixed_length_window_arguments(
     if (
         window_size_samples is not None
         and window_stride_samples is not None
-        and drop_last_window is None
+        and on_last_window is None
     ):
         raise ValueError(
-            "drop_last_window must be set if both window_size_samples &"
-            " window_stride_samples have also been set"
+            "on_last_window must be set if both window_size_samples & "
+            "window_stride_samples have also been set. "
+            "Use 'drop' or 'overlap'."
         )
-    elif (
+    if (
         window_size_samples is None
         and window_stride_samples is None
-        and drop_last_window is False
+        and on_last_window is not None
     ):
-        # necessary for following assertion
-        drop_last_window = None
+        on_last_window = None
 
     assert (
         (window_size_samples is None)
         == (window_stride_samples is None)
-        == (drop_last_window is None)
+        == (on_last_window is None)
     )
-    if not drop_last_window and lazy_metadata:
+    if on_last_window != "drop" and lazy_metadata:
         raise ValueError(
-            "Cannot have drop_last_window=False and lazy_metadata=True at the same time."
+            "Cannot use on_last_window other than 'drop' with lazy_metadata=True."
         )
-    return stop_offset_samples, window_stride_samples, drop_last_window
+    return stop_offset_samples, window_stride_samples, on_last_window
 
 
 def _get_windowing_kwargs(windowing_func_locals):

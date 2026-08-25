@@ -8,6 +8,7 @@
 # License: BSD-3
 
 import copy
+import inspect
 import logging
 import platform
 import warnings
@@ -1602,3 +1603,187 @@ def test_to_epochs_dataset_is_consistent(lazy_loadable_dataset):
         np.testing.assert_allclose(x_epo, x_eeg)
         assert y_epo == y_eeg
         assert crop_epo == crop_eeg
+
+
+@pytest.fixture(
+    params=[
+        pytest.param(
+            (create_windows_from_events, {"trial_stop_offset_samples": 0}),
+            id="events",
+        ),
+        pytest.param((create_fixed_length_windows, {}), id="fixed-length"),
+    ]
+)
+def trailing_window_policy_case(request):
+    data = np.zeros((2, 95), dtype=np.float32)
+    raw = mne.io.RawArray(
+        data,
+        mne.create_info(["C3", "C4"], sfreq=100),
+        verbose=False,
+    )
+    raw.set_annotations(mne.Annotations([0], [0.95], ["event"]))
+    function, extra_kwargs = request.param
+    kwargs = {
+        "concat_ds": BaseConcatDataset([RawDataset(raw)]),
+        "window_size_samples": 40,
+        "window_stride_samples": 40,
+        "use_mne_epochs": False,
+        **extra_kwargs,
+    }
+    return function, kwargs
+
+
+@pytest.mark.parametrize(
+    "strategy, expected_starts, expected_stops",
+    [
+        pytest.param("drop", [0, 40], [40, 80], id="drop"),
+        pytest.param("overlap", [0, 40, 55], [40, 80, 95], id="overlap"),
+    ],
+)
+def test_on_last_window_overlap_drop(
+    trailing_window_policy_case, strategy, expected_starts, expected_stops
+):
+    function, kwargs = trailing_window_policy_case
+    dataset = function(**kwargs, on_last_window=strategy).datasets[0]
+    assert dataset.metadata["i_start_in_trial"].tolist() == expected_starts
+    assert dataset.metadata["i_stop_in_trial"].tolist() == expected_stops
+    assert all(dataset[index][0].shape[-1] == 40 for index in range(len(dataset)))
+
+
+@pytest.mark.parametrize(
+    "legacy, strategy",
+    [
+        pytest.param(False, "overlap", id="false-to-overlap"),
+        pytest.param(True, "drop", id="true-to-drop"),
+    ],
+)
+def test_drop_last_window_keyword_deprecation(
+    trailing_window_policy_case, legacy, strategy
+):
+    function, kwargs = trailing_window_policy_case
+    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.0"):
+        deprecated = function(**kwargs, drop_last_window=legacy)
+    replacement = function(**kwargs, on_last_window=strategy)
+    pd.testing.assert_frame_equal(
+        deprecated.datasets[0].metadata,
+        replacement.datasets[0].metadata,
+    )
+    assert deprecated.datasets[0].window_kwargs == replacement.datasets[0].window_kwargs
+
+
+@pytest.mark.parametrize(
+    "legacy, strategy",
+    [
+        pytest.param(False, "overlap", id="false-to-overlap"),
+        pytest.param(True, "drop", id="true-to-drop"),
+    ],
+)
+def test_drop_last_window_positional_compatibility(
+    trailing_window_policy_case, legacy, strategy
+):
+    function, kwargs = trailing_window_policy_case
+    concat_ds = kwargs["concat_ds"]
+    if function is create_windows_from_events:
+        positional_args = (concat_ds, 0, 0, 40, 40, legacy)
+    else:
+        positional_args = (concat_ds, 0, None, 40, 40, legacy)
+    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.0"):
+        deprecated = function(*positional_args, use_mne_epochs=False)
+    replacement = function(**kwargs, on_last_window=strategy)
+    pd.testing.assert_frame_equal(
+        deprecated.datasets[0].metadata,
+        replacement.datasets[0].metadata,
+    )
+    assert deprecated.datasets[0].window_kwargs == replacement.datasets[0].window_kwargs
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_on_last_window_rejects_legacy_collision(
+    trailing_window_policy_case, legacy
+):
+    function, kwargs = trailing_window_policy_case
+    with pytest.raises(ValueError, match="Cannot specify both"):
+        function(
+            **kwargs,
+            drop_last_window=legacy,
+            on_last_window="drop",
+        )
+
+
+@pytest.mark.parametrize("invalid", ["keep", "invalid", True])
+def test_on_last_window_rejects_unowned_values(
+    trailing_window_policy_case, invalid
+):
+    function, kwargs = trailing_window_policy_case
+    with pytest.raises(ValueError, match="on_last_window must be one of"):
+        function(**kwargs, on_last_window=invalid)
+
+
+@pytest.mark.parametrize(
+    "function", [create_windows_from_events, create_fixed_length_windows]
+)
+def test_on_last_window_is_keyword_only(function):
+    parameter = inspect.signature(function).parameters["on_last_window"]
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_event_windowing_default_remains_overlap(trailing_window_policy_case):
+    function, kwargs = trailing_window_policy_case
+    if function is create_fixed_length_windows:
+        pytest.skip("Fixed-size plus stride retains its explicit-policy requirement.")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        default = function(**kwargs)
+    overlap = function(**kwargs, on_last_window="overlap")
+    pd.testing.assert_frame_equal(
+        default.datasets[0].metadata,
+        overlap.datasets[0].metadata,
+    )
+
+
+def test_fixed_length_still_requires_explicit_policy(trailing_window_policy_case):
+    function, kwargs = trailing_window_policy_case
+    if function is create_windows_from_events:
+        pytest.skip("Event windowing retains its historical overlap default.")
+    with pytest.raises(ValueError, match="on_last_window must be set"):
+        function(**kwargs)
+
+
+def test_overlap_remains_incompatible_with_lazy_metadata(lazy_loadable_dataset):
+    with pytest.raises(ValueError, match="lazy_metadata"):
+        create_fixed_length_windows(
+            concat_ds=lazy_loadable_dataset,
+            window_size_samples=90,
+            window_stride_samples=90,
+            on_last_window="overlap",
+            lazy_metadata=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "legacy, strategy",
+    [
+        pytest.param(False, "overlap", id="false-to-overlap"),
+        pytest.param(True, "drop", id="true-to-drop-formerly-invalid"),
+    ],
+)
+def test_fixed_length_no_size_policy_is_moot(
+    lazy_loadable_dataset, legacy, strategy
+):
+    with pytest.warns(DeprecationWarning, match=r"removed in version 2\.0"):
+        deprecated = create_fixed_length_windows(
+            concat_ds=lazy_loadable_dataset,
+            drop_last_window=legacy,
+        )
+    replacement = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset,
+        on_last_window=strategy,
+    )
+    deprecated_dataset = deprecated.datasets[0]
+    replacement_dataset = replacement.datasets[0]
+    assert len(deprecated_dataset) == len(replacement_dataset) == 1
+    pd.testing.assert_frame_equal(
+        deprecated_dataset.metadata,
+        replacement_dataset.metadata,
+    )
+    assert deprecated_dataset.window_kwargs == replacement_dataset.window_kwargs
