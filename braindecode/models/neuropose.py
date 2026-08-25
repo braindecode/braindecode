@@ -118,6 +118,20 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
        doi:10.1145/3442381.3449890
     """
 
+    # Operation-equivalent subset of Meta's regression_neuropose.ckpt. Later
+    # blocks differ in width, padding, resampling, and decoder geometry.
+    mapping = {
+        "model.network.network.0.network.0.weight": "encoder.0.conv.weight",
+        "model.network.network.0.network.0.bias": "encoder.0.conv.bias",
+        "model.network.network.0.network.1.weight": "encoder.0.bn.weight",
+        "model.network.network.0.network.1.bias": "encoder.0.bn.bias",
+        "model.network.network.0.network.1.running_mean": ("encoder.0.bn.running_mean"),
+        "model.network.network.0.network.1.running_var": "encoder.0.bn.running_var",
+        "model.network.network.0.network.1.num_batches_tracked": (
+            "encoder.0.bn.num_batches_tracked"
+        ),
+    }
+
     def __init__(
         self,
         # braindecode parameters

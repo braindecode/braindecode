@@ -130,6 +130,39 @@ class VEMG2PoseNet(
        Time-Depth Separable Convolutions. arXiv:1904.01619.
     """
 
+    # Operation-equivalent subset of Meta's tracking_vemg2pose.ckpt. The
+    # remaining upstream TDS blocks and decoder head have different layouts.
+    mapping = {
+        "model.network.layers.0.conv.0.weight": "stem.1.weight",
+        "model.network.layers.0.conv.0.bias": "stem.1.bias",
+        "model.network.layers.0.norm.weight": "stem.2.1.weight",
+        "model.network.layers.0.norm.bias": "stem.2.1.bias",
+        "model.network.layers.1.conv.0.weight": "stem.5.weight",
+        "model.network.layers.1.conv.0.bias": "stem.5.bias",
+        "model.network.layers.1.norm.weight": "stem.6.1.weight",
+        "model.network.layers.1.norm.bias": "stem.6.1.bias",
+        "model.network.layers.2.layers.conv1dblock.conv.0.weight": (
+            "tds_stages.0.sub_conv.weight"
+        ),
+        "model.network.layers.2.layers.conv1dblock.conv.0.bias": (
+            "tds_stages.0.sub_conv.bias"
+        ),
+        "model.network.layers.2.layers.conv1dblock.norm.weight": (
+            "tds_stages.0.sub_norm.1.weight"
+        ),
+        "model.network.layers.2.layers.conv1dblock.norm.bias": (
+            "tds_stages.0.sub_norm.1.bias"
+        ),
+        "model.decoder.lstm.weight_ih_l0": "lstm.weight_ih_l0",
+        "model.decoder.lstm.weight_hh_l0": "lstm.weight_hh_l0",
+        "model.decoder.lstm.bias_ih_l0": "lstm.bias_ih_l0",
+        "model.decoder.lstm.bias_hh_l0": "lstm.bias_hh_l0",
+        "model.decoder.lstm.weight_ih_l1": "lstm.weight_ih_l1",
+        "model.decoder.lstm.weight_hh_l1": "lstm.weight_hh_l1",
+        "model.decoder.lstm.bias_ih_l1": "lstm.bias_ih_l1",
+        "model.decoder.lstm.bias_hh_l1": "lstm.bias_hh_l1",
+    }
+
     def __init__(
         self,
         # braindecode parameters

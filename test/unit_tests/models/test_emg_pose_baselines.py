@@ -146,6 +146,31 @@ def test_vemg2pose_rejects_nonpositive_sampling_rate():
         VEMG2PoseNet(sfreq=0)
 
 
+@pytest.mark.parametrize(
+    "model",
+    [
+        VEMG2PoseNet(n_chans=16, n_outputs=20, n_times=11790, sfreq=2000),
+        NeuroPoseNet(n_chans=16, n_outputs=20, n_times=10000, sfreq=2000),
+    ],
+    ids=["vemg2pose", "neuropose"],
+)
+def test_published_checkpoint_mapping_targets(model):
+    model_state = model.state_dict()
+    mapped_state = {
+        old_key: torch.full_like(model_state[new_key], 0.125)
+        for old_key, new_key in model.mapping.items()
+    }
+
+    incompatible = model.load_state_dict(mapped_state, strict=False)
+
+    assert not incompatible.unexpected_keys
+    loaded_state = model.state_dict()
+    for new_key in model.mapping.values():
+        torch.testing.assert_close(
+            loaded_state[new_key], torch.full_like(loaded_state[new_key], 0.125)
+        )
+
+
 def test_neuropose_sequence_and_reset_head(emg_window):
     model = NeuroPoseNet(
         n_chans=16,
