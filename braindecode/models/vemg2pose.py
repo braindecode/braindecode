@@ -149,6 +149,10 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
     ):
         if parameterization not in ("position", "velocity"):
             raise ValueError("parameterization must be 'position' or 'velocity'")
+        if decoder_rate <= 0:
+            raise ValueError(f"decoder_rate must be positive; got {decoder_rate}.")
+        if sfreq is not None and sfreq <= 0:
+            raise ValueError(f"sfreq must be positive; got {sfreq}.")
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -163,6 +167,8 @@ class VEMG2PoseNet(EEGModuleMixin, nn.Module):
         self.output_scalar = float(output_scalar)
         self.decoder_rate = float(decoder_rate)
         self.input_sfreq = float(self.sfreq)
+        if self.input_sfreq <= 0:
+            raise ValueError(f"sfreq must be positive; got {self.input_sfreq}.")
         self.activation_cls = activation
 
         # braindecode parameters read post-inference:

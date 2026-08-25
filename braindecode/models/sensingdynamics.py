@@ -155,7 +155,9 @@ class SensingDynamicsNet(EEGModuleMixin, nn.Module):
             raise ValueError(f"elec_per_grid must be positive; got {elec_per_grid}.")
         if self.elec_per_grid * self.n_grids != self.n_chans:
             raise ValueError("n_chans must equal n_grids * elec_per_grid")
-        self.n_frames = max(1, int(n_frames))
+        self.n_frames = int(n_frames)
+        if self.n_frames <= 0:
+            raise ValueError(f"n_frames must be positive; got {n_frames}.")
 
         # Fixed-envelope stand-in for the paper's 20 Hz-filtered depth
         # copy: an average filter of ≈50 ms.

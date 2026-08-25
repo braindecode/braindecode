@@ -128,6 +128,16 @@ def test_vemg2pose_invalid_parameterization():
         VEMG2PoseNet(parameterization="quaternion")
 
 
+def test_vemg2pose_rejects_nonpositive_decoder_rate():
+    with pytest.raises(ValueError, match="decoder_rate must be positive"):
+        VEMG2PoseNet(decoder_rate=0)
+
+
+def test_vemg2pose_rejects_nonpositive_sampling_rate():
+    with pytest.raises(ValueError, match="sfreq must be positive"):
+        VEMG2PoseNet(sfreq=0)
+
+
 def test_neuropose_sequence_and_reset_head(emg_window):
     model = NeuroPoseNet(
         n_chans=16,
@@ -283,6 +293,11 @@ def test_sensingdynamics_rejects_nonpositive_grid_geometry(kwargs, message):
         SensingDynamicsNet(n_chans=16, n_outputs=20, **kwargs)
 
 
+def test_sensingdynamics_rejects_nonpositive_frame_count():
+    with pytest.raises(ValueError, match="n_frames must be positive"):
+        SensingDynamicsNet(n_chans=16, n_outputs=20, n_frames=0)
+
+
 def test_sensingdynamics_uses_circular_grid_padding(monkeypatch):
     model = SensingDynamicsNet(
         n_chans=16,
@@ -394,7 +409,11 @@ def test_stateful_activations_are_not_shared_between_layers():
         activation=nn.PReLU,
     )
 
-    assert vemg2pose.stem[2] is not vemg2pose.stem[5]
+    stem_activations = [
+        module for module in vemg2pose.stem.modules() if isinstance(module, nn.PReLU)
+    ]
+    assert len(stem_activations) == 2
+    assert stem_activations[0] is not stem_activations[1]
     assert len([m for m in sensingdynamics.modules() if isinstance(m, nn.PReLU)]) == 4
 
 
