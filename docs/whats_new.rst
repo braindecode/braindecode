@@ -28,6 +28,12 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.datasets.EMG2Pose`, a BIDS-backed loader for
+  the emg2pose sEMG hand-pose benchmark, with generic sidecar-metadata
+  propagation (``braindecode.datasets._bids_meta.collect_fields``) and
+  an ``EMG2Pose.plot()`` embedding of the eegdash-viewer trace viewer
+  (localhost or hosted mode).
+
 - Models with TorchScript-compatible forward paths can now be passed straight
   to :func:`torch.jit.script`, without first being rebuilt as a plain
   :class:`torch.nn.Module`.

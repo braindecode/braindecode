@@ -1,0 +1,1156 @@
+/* ============================================================
+   styles.css — EEG Trace Viewer.
+
+   Visual identity is mostly shared with the sister electrode-explorer
+   (electrodes.eegdash.org): IBM Plex Sans/Mono pairing, mono+
+   uppercase+tracked treatment for UI chrome, ink inversion as the
+   only "primary" state. Page background is neutral white here
+   (electrode-explorer keeps its cream paper look). The viewer is a
+   scientific instrument, not a SaaS dashboard.
+   ============================================================ */
+:root {
+  --bg:        #ffffff;       /* page */
+  --bg-2:      #f3f3f3;       /* deeper page */
+  --surface:   #ffffff;       /* elevated card */
+  --ink:       #17181a;
+  --ink-2:     #3a3d42;
+  --ink-3:     #797d83;       /* darkened from #b5b8bd for WCAG AA contrast on --paper */
+  --muted:     #6a6e74;       /* darkened from #8b8e94 to clear the 4.5:1 AA threshold */
+  --line:      #dddddd;
+  --line-2:    #e8e8e8;
+  --accent:    oklch(0.55 0.15 240);
+  --accent-soft: oklch(0.92 0.04 240);
+  --bad:       #D55E00;       /* Okabe-Ito vermillion, also used by traces.js */
+  --good:      oklch(0.62 0.14 150);
+
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --display: 'Fraunces', 'Iowan Old Style', 'Cambria', 'Georgia', serif;
+
+  /* Reusable tracked-uppercase treatment for UI chrome. Use with
+     `font: var(--label-font); letter-spacing: var(--label-tracking);
+     text-transform: uppercase;` to match every other label. */
+  --label-tracking: 0.12em;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--bg-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.01em;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+::-webkit-scrollbar-track { background: transparent; }
+
+.app {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  grid-template-rows: 52px 1fr;
+  height: 100vh;
+}
+
+/* ----- header --------------------------------------------- */
+
+.header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  z-index: 5;
+}
+
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+.brand-mark svg { width: 100%; height: 100%; display: block; }
+
+.brand-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--ink);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+}
+/* Editorial-serif display treatment for the "EEG" mark — single
+   monogram-like flourish that reads "scientific journal" instead of
+   "SaaS dashboard". Optical-size 144 picks Fraunces' display cut. */
+.brand-title-display {
+  font-family: var(--display);
+  font-optical-sizing: auto;
+  font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--accent);
+  position: relative;
+  top: 2px;
+}
+.brand-sub {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.header-right {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+/* eegdash brand link. Sits to the right of the pills with a thin
+   left rule so it reads as attribution, not as a fifth pill. The
+   logo's intrinsic colours match the page's ink hierarchy already
+   (it's a black wordmark on cream); we just scale it. */
+.brand-eegdash {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+  text-decoration: none;
+  opacity: 0.55;                      /* attribution weight in standalone */
+  transition: opacity 140ms;
+}
+.brand-eegdash:hover { opacity: 1; }
+.brand-eegdash img { height: 100%; width: auto; display: block; }
+.pill {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Time-mode toggle — same visual weight as a pill, but interactive.
+   Lives in the header next to the readout pills; flips between
+   "rel" (seconds-from-start) and "clock" (HH:MM:SS) on click. */
+#time-mode-toggle {
+  appearance: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 11px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color 140ms, color 140ms, background 140ms;
+  margin-left: 2px;
+}
+#time-mode-toggle:hover:not(:disabled) {
+  border-color: var(--ink-2);
+  color: var(--ink);
+}
+#time-mode-toggle[data-mode="clock"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+#time-mode-toggle:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.pill[data-changed="true"] {
+  /* Subtle pulse when a pill's value changes — used for fs/channels/duration
+     after the binary header resolves them. Driven by JS toggling the attr. */
+  animation: pill-pulse 320ms ease-out;
+}
+@keyframes pill-pulse {
+  0%   { background: var(--accent-soft); border-color: var(--accent); }
+  100% { background: transparent;        border-color: var(--line); }
+}
+
+/* ----- left rail ------------------------------------------ */
+
+.rail.left {
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 18px 16px 24px;
+}
+
+.rail-section { margin-bottom: 22px; }
+.rail-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+  font-weight: 500;
+}
+.count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.status {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  letter-spacing: 0.02em;
+  word-break: break-all;
+  color: var(--ink);
+}
+.status strong { font-weight: 500; }
+.status .err {
+  color: var(--bad);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.provenance { margin-top: 10px; font-size: 11px; line-height: 1.6; }
+.provenance > div { margin-bottom: 1px; }
+.provenance code {
+  font-size: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  word-break: break-all;
+}
+.prov-key {
+  display: inline-block;
+  min-width: 88px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.prov-empty {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  font-style: normal;
+  padding: 2px 0;
+}
+
+/* ----- channel + event lists ------------------------------ */
+
+.ch-list, .ev-list {
+  max-height: 240px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 0;
+  background: var(--surface);
+}
+.ch-row, .ev-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  letter-spacing: 0.02em;
+}
+.ch-row { cursor: pointer; }
+.ch-row:hover, .ev-row:hover { background: var(--bg-2); }
+.ch-row.is-bad { background: color-mix(in oklab, var(--bad) 6%, transparent); }
+.ch-name { font-weight: 500; color: var(--ink); }
+.ch-type, .ch-units, .ev-label {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ev-onset {
+  color: var(--accent);
+  min-width: 62px;
+  font-variant-numeric: tabular-nums;
+}
+.bad-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--bad);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--bad) 40%, transparent);
+}
+.muted {
+  color: var(--muted);
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  font-style: normal;
+}
+
+/* ----- channel color swatches ----------------------------- */
+
+.color-swatch-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.ch-type-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  min-width: 40px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.color-picker-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.color-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in oklab, currentColor 25%, transparent);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  position: relative;
+  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 140ms;
+}
+
+.color-swatch:hover {
+  transform: scale(1.18);
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--ink) 18%, transparent);
+}
+
+/* Active state: a fine ink ring + subtle outer halo so the user sees
+   exactly which colour is in play, without obscuring its hue. */
+.color-swatch.active {
+  box-shadow:
+    inset 0 0 0 1px var(--bg),
+    0 0 0 1.5px var(--ink);
+}
+
+/* ----- filter controls (F08) ----------------------------- */
+/* Three-row instrument panel: HP / LP / Notch. Custom checkboxes
+   so the row reads as a tiny console — square checkbox, mono label,
+   numeric readout, faded "Hz" suffix. */
+
+#filter-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  text-transform: uppercase;
+}
+
+/* Square checkbox + label — clickable as one unit. */
+.filter-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  user-select: none;
+}
+.filter-row label:has(input:checked) { color: var(--ink); }
+
+.filter-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--ink-3);
+  border-radius: 2px;
+  background: var(--surface);
+  cursor: pointer;
+  position: relative;
+  transition: border-color 120ms, background 120ms;
+  flex-shrink: 0;
+}
+.filter-row input[type="checkbox"]:hover { border-color: var(--ink-2); }
+.filter-row input[type="checkbox"]:checked {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.filter-row input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  top: 1px; left: 3.5px;
+  width: 3px; height: 6px;
+  border: solid var(--bg);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.filter-row input[type="number"] {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  width: 100%;
+  min-width: 0;
+  outline: none;
+  -moz-appearance: textfield;
+}
+.filter-row input[type="number"]::-webkit-outer-spin-button,
+.filter-row input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.filter-row input[type="number"]:hover  { border-color: var(--ink-2); }
+.filter-row input[type="number"]:focus  { border-color: var(--accent); }
+
+.filter-row select {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  outline: none;
+  cursor: pointer;
+  grid-column: 2 / -1;
+}
+.filter-row select:hover { border-color: var(--ink-2); }
+.filter-row select:focus { border-color: var(--accent); }
+
+.filter-unit {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* ----- view controls -------------------------------------- */
+
+.view-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.view-controls label {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.view-controls select {
+  font: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+  cursor: pointer;
+}
+.view-controls select:hover { border-color: var(--ink-2); }
+.view-controls select:focus { border-color: var(--accent); }
+
+.view-controls input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 18px;
+  cursor: pointer;
+}
+.view-controls input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--line);
+  border-radius: 1px;
+}
+.view-controls input[type="range"]::-moz-range-track {
+  height: 2px;
+  background: var(--line);
+  border-radius: 1px;
+}
+.view-controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink);
+  margin-top: -5px;
+  border: 2px solid var(--bg);
+  transition: background 120ms;
+}
+.view-controls input[type="range"]:hover::-webkit-slider-thumb { background: var(--accent); }
+.view-controls input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 2px solid var(--bg);
+}
+#gain-readout {
+  color: var(--ink);
+  min-width: 38px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.view-tip {
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.view-tip kbd {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 1px 5px;
+  margin: 0 1px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--ink-2);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.electrode-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  transition: border-color 120ms, color 120ms, transform 120ms;
+}
+.electrode-link[hidden] { display: none; }
+.electrode-link:hover {
+  border-color: var(--accent);
+  transform: translateX(1px);
+}
+
+/* ----- stage --------------------------------------------- */
+
+.stage {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(at 100% 0%, color-mix(in oklab, var(--accent) 4%, transparent) 0, transparent 60%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+}
+
+/* Empty-stage watermark: a faint waveform glyph centered behind the
+   "No recording loaded" copy. Only visible while the stage-hint is
+   showing (i.e. before a recording loads); once traces appear, they
+   sit on the canvas and the watermark is moot. SVG is inlined as a
+   data URI so we don't fire an extra HTTP request on the empty path. */
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 220' fill='none' stroke='%230072B2' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round' opacity='0.06'%3E%3Ccircle cx='110' cy='110' r='95' stroke-opacity='0.4'/%3E%3Cpath d='M20 110 Q40 110 50 80 T70 140 T90 80 T110 140 T130 90 T150 120 T170 110 L200 110'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 320px 320px;
+  transition: opacity 320ms;
+}
+.stage:has(.traces:not([hidden]))::before { opacity: 0; }
+
+.stage-hint {
+  position: relative;       /* sit above the empty-stage watermark */
+  z-index: 1;
+  padding: 32px 36px;
+  max-width: 620px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+.stage-hint p:first-child {
+  font-size: 11px;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+.stage-hint code {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 11px;
+}
+
+.traces {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+.traces:active { cursor: grabbing; }
+/* Honour the HTML `hidden` attribute. Without this, the explicit
+   `display: block` above would mask `hidden=""` and the canvas would
+   stay visible — Playwright's CSS-based `toBeHidden()` would then
+   silently return "visible" while the JS code thinks it hid the
+   canvas. Keeps the attribute and the visual state in sync. */
+.traces[hidden] { display: none; }
+
+/* Engraved instrument legend in the stage's bottom-left corner.
+   Mirrors the sister explorer's `.stage-caption` treatment so both
+   tools read as part of the same instrument family. Populated by JS
+   from the loaded recording's metadata. */
+.stage-caption {
+  position: absolute;
+  bottom: 14px;
+  left: 18px;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  z-index: 2;
+}
+.stage-caption[hidden] { display: none; }
+.stage-caption .val { color: var(--ink-2); font-weight: 500; }
+.stage-caption .sep { color: var(--ink-3); }
+
+/* ----- cursor readout ------------------------------------ */
+
+/* Info bar: fixed strip at the bottom of the stage. Reads as an
+   instrument readout — leading "CURSOR" label, hairline column
+   separators, tabular figures so digits don't dance during pan. */
+.cursor-info-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  gap: 0;
+  align-items: stretch;
+  padding: 0;
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  border-top: 1px solid var(--line);
+}
+.cursor-info-bar[hidden] { display: none; }
+/* Leading "CURSOR" label as a fixed plate, pseudo-element so we don't
+   touch markup. The bar's children carry their own values. */
+.cursor-info-bar::before {
+  content: "Cursor";
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 9.5px;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--muted);
+  border-right: 1px solid var(--line);
+  background: color-mix(in oklab, var(--bg-2) 60%, transparent);
+}
+
+.cursor-info-bar > span {
+  padding: 4px 14px;
+  display: inline-flex;
+  align-items: center;
+}
+.cursor-time   { color: var(--accent); min-width: 110px; }
+.cursor-channel { font-weight: 500; color: var(--ink); min-width: 56px;
+                  border-left: 1px solid var(--line-2);
+                  border-right: 1px solid var(--line-2); }
+.cursor-value  { color: var(--ink-2); min-width: 90px; }
+
+/* Dot: small circle tracking the pointer on the canvas. */
+.cursor-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1.5px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--accent);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+}
+.cursor-dot[hidden] { display: none; }
+
+/* ----- embed mode ---------------------------------------- */
+/* (?embed=1) The host page provides outer context (an eegdash docs
+   page already has the wordmark, breadcrumbs, etc.), so we collapse
+   to a thin header — the eegdash mark stays as a brand anchor so
+   the iframe reads as part of the parent product. The rail hides;
+   only traces + the engraved stage caption remain. */
+
+body.embed { background: transparent; }
+body.embed .rail.left { display: none; }
+body.embed .app {
+  grid-template-columns: 1fr;
+  grid-template-rows: 38px 1fr;
+}
+body.embed .header {
+  background: transparent;
+  padding: 0 14px;
+  min-height: 38px;
+}
+body.embed .brand-title,
+body.embed .brand-sub,
+body.embed .header-right .pill { display: none; }
+body.embed .brand-mark { width: 18px; height: 18px; }
+body.embed .brand-eegdash {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
+  opacity: 1;                  /* the wordmark IS the brand here */
+  height: 24px;
+}
+body.embed .stage {
+  background: transparent;     /* let the host page bleed through */
+}
+body.embed .stage-hint { padding: 16px; font-size: 11px; }
+body.embed .stage-caption {
+  bottom: 8px;
+  left: 12px;
+  font-size: 9.5px;
+}
+
+/* ----- drag-drop overlay --------------------------------- */
+
+body.drag-active::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklab, var(--bg) 78%, transparent);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 90;
+  pointer-events: none;
+  animation: drop-fade 140ms ease-out;
+}
+body.drag-active::after {
+  content: "[ DROP BIDS RECORDING ]";
+  position: fixed;
+  inset: 24px;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed var(--ink);
+  border-radius: 10px;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.32em;
+  color: var(--ink);
+  font-weight: 500;
+  z-index: 91;
+  pointer-events: none;
+  animation: drop-fade 180ms ease-out;
+}
+@keyframes drop-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Subtle staggered fade-in for the rail content on first load.
+   Makes the panel feel "loaded" rather than just appearing. */
+@keyframes rail-fade {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: none; }
+}
+.rail.left .rail-section {
+  animation: rail-fade 240ms ease-out backwards;
+}
+.rail.left .rail-section:nth-child(1) { animation-delay: 40ms; }
+.rail.left .rail-section:nth-child(2) { animation-delay: 80ms; }
+.rail.left .rail-section:nth-child(3) { animation-delay: 120ms; }
+.rail.left .rail-section:nth-child(4) { animation-delay: 160ms; }
+@media (prefers-reduced-motion: reduce) {
+  .rail.left .rail-section { animation: none; }
+  body.drag-active::before, body.drag-active::after { animation: none; }
+  .pill[data-changed="true"] { animation: none; }
+}
+
+/* ----- overlay system (F02 shortcuts, F03 metadata) ---------- */
+
+.overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--ink) 35%, transparent);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: overlay-fade-in 140ms ease-out;
+}
+
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.overlay-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 40px color-mix(in oklab, var(--ink) 22%, transparent);
+  min-width: 360px;
+  max-width: 620px;
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 28px 32px 32px;
+  position: relative;
+  animation: overlay-panel-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes overlay-panel-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.overlay-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.overlay-header h2 {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 0;
+}
+
+.overlay-close {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  text-transform: uppercase;
+  transition: border-color 120ms, color 120ms;
+  flex-shrink: 0;
+  margin-left: 16px;
+}
+.overlay-close:hover {
+  border-color: var(--ink-2);
+  color: var(--ink);
+}
+
+/* Overlays are fixed to the viewport so they cover all grid content
+   and Playwright can see non-zero bounding box. The `hidden` HTML
+   attribute suppresses them; removing it reveals the overlay. */
+#shortcuts-overlay,
+#metadata-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#shortcuts-overlay[hidden],
+#metadata-overlay[hidden] {
+  display: none;
+}
+
+/* ----- shortcut rows (F02) ----------------------------------- */
+
+.shortcut-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 18px;
+  align-items: baseline;
+}
+
+.shortcut-key {
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.shortcut-key kbd {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.shortcut-desc {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+
+.shortcut-section-title {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 16px 0 8px;
+  grid-column: 1 / -1;
+  font-weight: 500;
+}
+.shortcut-section-title:first-child { margin-top: 0; }
+
+/* ----- metadata table (F03) ---------------------------------- */
+
+.meta-section {
+  margin-bottom: 24px;
+}
+.meta-section:last-child { margin-bottom: 0; }
+
+.meta-section-title {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.metadata-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.metadata-table tr + tr td { border-top: 1px solid var(--line-2); }
+.metadata-table td {
+  padding: 5px 6px;
+  vertical-align: top;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+.metadata-table td:first-child {
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding-right: 18px;
+  width: 110px;
+}
+.metadata-table td:last-child {
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.meta-section-bids code {
+  display: block;
+  margin: 3px 0;
+  font-size: 10px;
+  word-break: break-all;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  padding: 3px 7px;
+  border-radius: 3px;
+}
+
+.meta-section-channels table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.meta-section-channels table tr + tr td { border-top: 1px solid var(--line-2); }
+.meta-section-channels table td {
+  padding: 3px 6px;
+  color: var(--ink-2);
+}
+.meta-section-channels table td:first-child {
+  font-weight: 500;
+  color: var(--ink);
+  width: 100px;
+}
+.meta-section-channels table .bad-dot {
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--bad);
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+/* ============================================================
+   F10: Hand-pose panel — floating card on the stage, skeleton
+   playback synced to the traces time cursor (pose-panel.js).
+   Instrument styling: same tokens as .cursor-info-bar /
+   .stage-caption, tracked-uppercase mono chrome.
+   ============================================================ */
+.pose-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(23, 24, 26, 0.08);
+}
+/* display:flex would defeat the [hidden] UA style — re-assert it. */
+.pose-panel[hidden] { display: none; }
+.pose-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--line-2);
+}
+.pose-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.pose-close {
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.pose-close:hover { color: var(--ink); }
+.pose-canvas {
+  width: 220px;
+  height: 220px;
+  touch-action: none;      /* pointer-orbit owns gestures, not scroll */
+  cursor: grab;
+}
+.pose-canvas:active { cursor: grabbing; }
+.pose-caption {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  padding: 4px 10px 6px;
+}
+/* Embed mode: transparent card like .stage-caption so host pages
+   (sphinx-book-theme, notebook cells) bleed through. */
+body.embed .pose-panel {
+  background: transparent;
+  border-color: var(--line-2);
+  box-shadow: none;
+}
