@@ -80,7 +80,7 @@ class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
     unwrapped function and correctly inherits ``cls.__doc__``.
     """
 
-    def __init__(cls, class_name, class_bases, class_dict):
+    def __init__(cls, class_name, class_bases, class_dict, **kwargs):
         super().__init__(class_name, class_bases, class_dict)
         # Only wrap subclass __init__s, not EEGModuleMixin itself.
         # Wrapping the mixin would cause super().__init__() calls to
@@ -214,6 +214,8 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     __jit_unused_properties__ = ["chs_info"]
 
     def __init_subclass__(cls, **kwargs):
+        license = kwargs.pop("license", "bsd-3-clause")
+
         # TorchScript only honours ``__jit_ignored_attributes__`` for
         # properties defined directly on the concrete class: it collects them
         # with ``vars(type(module))``, which skips inherited ones. Rebinding
@@ -253,8 +255,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         )
         repo_url = kwargs.pop("repo_url", "https://braindecode.org")
         library_name = kwargs.pop("library_name", "braindecode")
-        license = kwargs.pop("license", "bsd-3-clause")
-
         # Register a coder so that type[nn.Module] parameters
         # (e.g. activation=nn.ELU) are serialized as importable
         # strings in config.json and decoded back on load.
