@@ -37,6 +37,91 @@ from braindecode.preprocessing.windowers import (
 )
 from braindecode.util import create_mne_dummy_raw
 
+_EVENT_METADATA_COLUMNS = [
+    "i_window_in_trial",
+    "i_trial_in_dataset",
+    "i_start_in_trial",
+    "i_stop_in_trial",
+    "target",
+    "trial_uid",
+    "phase",
+]
+
+
+def _make_annotated_raw(
+    onsets,
+    durations,
+    descriptions,
+    trial_uids,
+    phases,
+    *,
+    first_samp=0,
+    source_values=None,
+):
+    n_times = int((max(onsets) + max(durations) + 2) * 100)
+    raw = mne.io.RawArray(
+        np.zeros((1, n_times)),
+        mne.create_info(["Cz"], sfreq=100, ch_types="eeg"),
+        first_samp=first_samp,
+        verbose=False,
+    )
+    extras = []
+    for i, (trial_uid, phase) in enumerate(zip(trial_uids, phases)):
+        extra = {"trial_uid": trial_uid, "phase": phase}
+        if source_values is not None:
+            extra["i_trial_in_dataset"] = source_values[i]
+        extras.append(extra)
+    raw.set_annotations(
+        mne.Annotations(
+            onset=onsets,
+            duration=durations,
+            description=descriptions,
+            extras=extras,
+        )
+    )
+    return raw
+
+
+def _event_windows(raws, *, use_mne_epochs, descriptions=None, **kwargs):
+    if descriptions is None:
+        descriptions = [None] * len(raws)
+    concat = BaseConcatDataset(
+        [
+            RawDataset(raw, description=description)
+            for raw, description in zip(raws, descriptions)
+        ]
+    )
+    return create_windows_from_events(
+        concat,
+        use_mne_epochs=use_mne_epochs,
+        drop_bad_windows=False,
+        **kwargs,
+    )
+
+
+def _expected_event_metadata(
+    *, window_numbers, source_rows, starts, stops, targets, trial_uids, phases
+):
+    return pd.DataFrame(
+        {
+            "i_window_in_trial": window_numbers,
+            "i_trial_in_dataset": source_rows,
+            "i_start_in_trial": starts,
+            "i_stop_in_trial": stops,
+            "target": targets,
+            "trial_uid": trial_uids,
+            "phase": phases,
+        },
+        columns=_EVENT_METADATA_COLUMNS,
+    )
+
+
+def _assert_event_metadata(actual, expected):
+    actual = actual.reset_index(drop=True)
+    pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
+    assert list(actual.columns) == _EVENT_METADATA_COLUMNS
+    assert pd.api.types.is_integer_dtype(actual["i_trial_in_dataset"])
+
 
 def _get_raw(tmpdir_factory, description=None):
     _, fnames = create_mne_dummy_raw(
@@ -1522,6 +1607,285 @@ def test_dict_params_bad_trial_dropped_extras_not_misassigned():
     assert (t0_meta["trial_id"] == 30).all(), (
         f"Expected trial_id=30 for surviving T0 windows, got {t0_meta['trial_id'].tolist()}"
     )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_mapping_gap_and_canonical_order(use_mne_epochs):
+    raws = [
+        _make_annotated_raw(
+            [7, 1, 4],
+            [2, 2, 2],
+            ["B", "A", "OMIT"],
+            [30, 10, 20],
+            ["b", "a", "omit"],
+        )
+        for _ in range(2)
+    ]
+    windows = _event_windows(
+        raws,
+        use_mne_epochs=use_mne_epochs,
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"A": 7, "B": 9},
+    )
+    expected = _expected_event_metadata(
+        window_numbers=[0, 1, 0, 1],
+        source_rows=[0, 0, 2, 2],
+        starts=[100, 200, 700, 800],
+        stops=[200, 300, 800, 900],
+        targets=[7, 7, 9, 9],
+        trial_uids=[10, 10, 30, 30],
+        phases=["a", "a", "b", "b"],
+    )
+    for ds in windows.datasets:
+        _assert_event_metadata(ds.metadata, expected)
+        if use_mne_epochs:
+            np.testing.assert_array_equal(ds.windows.events[:, 2], expected["target"])
+
+
+@pytest.mark.parametrize("drop_position", ["early", "middle"])
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_scalar_short_drop(drop_position, use_mne_epochs):
+    durations = [0.5, 2, 2] if drop_position == "early" else [2, 0.5, 2]
+    raw = _make_annotated_raw(
+        [1, 4, 7], durations, ["A", "B", "C"], [10, 20, 30], ["a", "b", "c"]
+    )
+    expected_values = {
+        "early": {
+            "source_rows": [1, 1, 2, 2],
+            "starts": [400, 500, 700, 800],
+            "targets": [8, 8, 9, 9],
+            "trial_uids": [20, 20, 30, 30],
+            "phases": ["b", "b", "c", "c"],
+            "dropped": 0,
+        },
+        "middle": {
+            "source_rows": [0, 0, 2, 2],
+            "starts": [100, 200, 700, 800],
+            "targets": [7, 7, 9, 9],
+            "trial_uids": [10, 10, 30, 30],
+            "phases": ["a", "a", "c", "c"],
+            "dropped": 1,
+        },
+    }[drop_position]
+    with pytest.warns(UserWarning, match=rf"Trials \[{expected_values['dropped']}\].*dropped"):
+        windows = _event_windows(
+            [raw],
+            use_mne_epochs=use_mne_epochs,
+            window_size_samples=100,
+            window_stride_samples=100,
+            on_last_window="drop",
+            mapping={"A": 7, "B": 8, "C": 9},
+            accepted_bads_ratio=1 / 3,
+            on_missing="ignore",
+        )
+    expected = _expected_event_metadata(
+        window_numbers=[0, 1, 0, 1],
+        source_rows=expected_values["source_rows"],
+        starts=expected_values["starts"],
+        stops=[start + 100 for start in expected_values["starts"]],
+        targets=expected_values["targets"],
+        trial_uids=expected_values["trial_uids"],
+        phases=expected_values["phases"],
+    )
+    actual = windows.datasets[0].metadata.reset_index(drop=True)
+    # These assertions precede source-column access so RED proves the old remap bug.
+    for column in (
+        "target",
+        "trial_uid",
+        "phase",
+        "i_start_in_trial",
+        "i_stop_in_trial",
+        "i_window_in_trial",
+    ):
+        np.testing.assert_array_equal(actual[column], expected[column])
+    _assert_event_metadata(actual, expected)
+    if use_mne_epochs:
+        np.testing.assert_array_equal(
+            windows.datasets[0].windows.events[:, 2], expected["target"]
+        )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_per_event_short_drop(use_mne_epochs):
+    raw = _make_annotated_raw(
+        [1, 4, 7, 10],
+        [0.5, 2, 2, 2],
+        ["A", "B", "A", "B"],
+        [10, 20, 30, 40],
+        ["a0", "b0", "a1", "b1"],
+    )
+    with pytest.warns(UserWarning, match=r"Trials \[0\].*dropped"):
+        windows = _event_windows(
+            [raw],
+            use_mne_epochs=use_mne_epochs,
+            trial_start_offset_samples={"A": 0, "B": 0},
+            trial_stop_offset_samples={"A": 0, "B": 0},
+            window_size_samples=100,
+            window_stride_samples={"A": 100, "B": 100},
+            on_last_window="drop",
+            mapping={"A": 7, "B": 9},
+            accepted_bads_ratio=0.5,
+        )
+    expected = _expected_event_metadata(
+        window_numbers=[0, 1, 0, 1, 0, 1],
+        source_rows=[1, 1, 2, 2, 3, 3],
+        starts=[400, 500, 700, 800, 1000, 1100],
+        stops=[500, 600, 800, 900, 1100, 1200],
+        targets=[9, 9, 7, 7, 9, 9],
+        trial_uids=[20, 20, 30, 30, 40, 40],
+        phases=["b0", "b0", "a1", "a1", "b1", "b1"],
+    )
+    _assert_event_metadata(windows.datasets[0].metadata, expected)
+    if use_mne_epochs:
+        np.testing.assert_array_equal(
+            windows.datasets[0].windows.events[:, 2], expected["target"]
+        )
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_inferred_size_filter(use_mne_epochs):
+    raw = _make_annotated_raw(
+        [1, 4, 7], [2, 1, 2], ["A", "B", "C"], [10, 20, 30], ["a", "b", "c"]
+    )
+    with pytest.warns(UserWarning, match="different windows size 1"):
+        windows = _event_windows(
+            [raw],
+            use_mne_epochs=use_mne_epochs,
+            mapping={"A": 7, "B": 8, "C": 9},
+            on_missing="ignore",
+        )
+    expected = _expected_event_metadata(
+        window_numbers=[0, 0],
+        source_rows=[0, 2],
+        starts=[100, 700],
+        stops=[300, 900],
+        targets=[7, 9],
+        trial_uids=[10, 30],
+        phases=["a", "c"],
+    )
+    _assert_event_metadata(windows.datasets[0].metadata, expected)
+    if use_mne_epochs:
+        np.testing.assert_array_equal(
+            windows.datasets[0].windows.events[:, 2], expected["target"]
+        )
+
+
+def test_event_source_index_nonzero_first_samp():
+    direct_raw = _make_annotated_raw(
+        [1], [1], ["T0"], [10], ["a"], first_samp=1000
+    )
+    mne_raw = direct_raw.copy()
+    kwargs = dict(
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"T0": 7},
+    )
+    direct = _event_windows([direct_raw], use_mne_epochs=False, **kwargs)
+    epochs = _event_windows([mne_raw], use_mne_epochs=True, **kwargs)
+    direct_md = direct.datasets[0].metadata.reset_index(drop=True)
+    epochs_md = epochs.datasets[0].metadata.reset_index(drop=True)
+    np.testing.assert_array_equal(direct_md[["i_start_in_trial", "i_stop_in_trial"]], [[100, 200]])
+    np.testing.assert_array_equal(epochs_md[["i_start_in_trial", "i_stop_in_trial"]], [[1100, 1200]])
+    np.testing.assert_array_equal(epochs.datasets[0].windows.events[:, [0, 2]], [[1100, 7]])
+    normalized = epochs_md.copy()
+    normalized[["i_start_in_trial", "i_stop_in_trial"]] -= 1000
+    pd.testing.assert_frame_equal(direct_md, normalized)
+    assert pd.api.types.is_integer_dtype(direct_md["i_trial_in_dataset"])
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_reserved_extra(use_mne_epochs):
+    raw = _make_annotated_raw(
+        [1], [1], ["T0"], [10], ["a"], source_values=[999]
+    )
+    with pytest.warns(UserWarning, match="Dropping extra columns.*i_trial_in_dataset"):
+        windows = _event_windows(
+            [raw],
+            use_mne_epochs=use_mne_epochs,
+            window_size_samples=100,
+            window_stride_samples=100,
+            on_last_window="drop",
+            mapping={"T0": 7},
+        )
+    expected = _expected_event_metadata(
+        window_numbers=[0],
+        source_rows=[0],
+        starts=[100],
+        stops=[200],
+        targets=[7],
+        trial_uids=[10],
+        phases=["a"],
+    )
+    _assert_event_metadata(windows.datasets[0].metadata, expected)
+    assert 999 not in windows.datasets[0].metadata["i_trial_in_dataset"].to_list()
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_reserved_description(use_mne_epochs):
+    raw = _make_annotated_raw([1], [1], ["T0"], [10], ["a"])
+    windows = _event_windows(
+        [raw],
+        descriptions=[{"recording": 0, "i_trial_in_dataset": 999}],
+        use_mne_epochs=use_mne_epochs,
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"T0": 7},
+    )
+    stored_before = windows.datasets[0].metadata.copy(deep=True)
+    np.testing.assert_array_equal(stored_before["i_trial_in_dataset"], [0])
+    with pytest.raises(ValueError, match="reserved.*i_trial_in_dataset"):
+        windows.get_metadata()
+    pd.testing.assert_frame_equal(windows.datasets[0].metadata, stored_before)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_source_index_is_internal_in_representations(use_mne_epochs):
+    raw = _make_annotated_raw([1], [1], ["T0"], [10], ["a"])
+    windows = _event_windows(
+        [raw],
+        use_mne_epochs=use_mne_epochs,
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"T0": 7},
+    )
+    assert "i_trial_in_dataset" in windows.datasets[0].metadata
+    for rendered in (
+        repr(windows.datasets[0]),
+        windows.datasets[0]._repr_html_(),
+        repr(windows),
+        windows._repr_html_(),
+    ):
+        assert "i_trial_in_dataset" not in rendered
+
+
+@pytest.mark.parametrize("parameter_style", ["scalar", "per_event"])
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+def test_event_all_short_preserves_post_1058_error(parameter_style, use_mne_epochs):
+    raw = _make_annotated_raw(
+        [1, 4], [0.2, 0.2], ["A", "B"], [10, 20], ["a", "b"]
+    )
+    kwargs = dict(
+        window_size_samples=100,
+        on_last_window="drop",
+        mapping={"A": 7, "B": 9},
+        accepted_bads_ratio=1.0,
+    )
+    if parameter_style == "scalar":
+        kwargs["window_stride_samples"] = 100
+    else:
+        kwargs.update(
+            trial_start_offset_samples={"A": 0, "B": 0},
+            trial_stop_offset_samples={"A": 0, "B": 0},
+            window_stride_samples={"A": 100, "B": 100},
+        )
+    with pytest.warns(UserWarning, match="are being dropped"):
+        with pytest.raises(IndexError, match="too many indices"):
+            _event_windows([raw], use_mne_epochs=use_mne_epochs, **kwargs)
 
 
 def _make_small_eeg_windows_dataset(lazy_loadable_dataset):
