@@ -81,6 +81,14 @@ Requirements
 Bug fixes
 ==========
 
+- Sample stochastic-depth masks with out-of-place
+  :func:`torch.bernoulli` instead of in-place ``Tensor.bernoulli_``. This keeps
+  the same per-sample Bernoulli mask and scaling while avoiding lazy
+  recipe-cache offset failures on Gaudi accelerators. The
+  :func:`braindecode.functional.drop_path` documentation now also correctly
+  describes ``drop_prob`` as the probability of dropping a path. By `Bruno
+  Aristimunha`_.
+
 - Make :class:`braindecode.models.LUNA` rotary attention portable to
   accelerators that reject concatenations containing empty tensor views, while
   preserving its pretrained-checkpoint parameter keys and numerical behavior.
