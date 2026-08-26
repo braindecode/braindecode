@@ -164,7 +164,7 @@ def test_plot_comes_with_base_concat_dataset(emg_bids_root):
         assert vhdr.name in ds.plot(index).data
     with pytest.raises(ValueError, match="not backed by a recording file"):
         ds.plot(2)
-    with pytest.raises(ValueError, match="split recording"):
+    with pytest.raises(ValueError, match="split recordings"):
         ds.plot(3)
 
 

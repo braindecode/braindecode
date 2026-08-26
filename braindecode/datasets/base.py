@@ -32,7 +32,7 @@ from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset, IterableDataset
 from typing_extensions import TypeVar
 
-from ._notebook_viewer import ViewerMixin
+from ._notebook_viewer import plot as _viewer_plot
 from .bids.hub import HubDatasetMixin
 from .bids.hub_io import _restore_nan_from_json
 from .registry import register_dataset
@@ -1156,7 +1156,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
 
 
 @register_dataset
-class BaseConcatDataset(ConcatDataset, HubDatasetMixin, ViewerMixin, Generic[T]):
+class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     """A base class for concatenated datasets.
 
     Holds either mne.Raw or mne.Epoch in self.datasets and has
@@ -1175,9 +1175,7 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, ViewerMixin, Generic[T])
         If True, defer computing cumulative sizes until length or item access.
     """
 
-    plot = (
-        ViewerMixin.plot
-    )  # direct member: rendered in the API docs, linkable with :meth:
+    plot = _viewer_plot  # eegdash-viewer embed; a direct member so the API docs list it
 
     datasets: list[T]
 
