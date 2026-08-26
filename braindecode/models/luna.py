@@ -545,6 +545,22 @@ class _RotarySelfAttentionBlock(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
+    def _rotate_queries_or_keys(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Apply full-head RoPE without concatenating empty boundary views."""
+        seq_dim = self.rotary_emb.default_seq_dim
+        seq_len = tensor.shape[seq_dim]
+        seq = self.rotary_emb.get_seq_pos(
+            seq_len, device=tensor.device, dtype=tensor.dtype, offset=0
+        )
+        freqs = self.rotary_emb(seq, seq_len=seq_len, offset=0)
+        if seq_dim == -3:
+            freqs = rearrange(freqs, "n d -> n 1 d")
+
+        pairs = tensor.reshape(*tensor.shape[:-1], -1, 2)
+        rotated = torch.stack((-pairs[..., 1], pairs[..., 0]), dim=-1).flatten(-2)
+        transformed = tensor * freqs.cos() + rotated * freqs.sin()
+        return transformed.to(tensor.dtype)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, N, C = x.shape
         qkv = (
@@ -553,8 +569,8 @@ class _RotarySelfAttentionBlock(nn.Module):
             .permute(2, 0, 3, 1, 4)
         )  # (K, B, H, N, D)
         q, k, v = qkv[0], qkv[1], qkv[2]
-        q = self.rotary_emb.rotate_queries_or_keys(q)
-        k = self.rotary_emb.rotate_queries_or_keys(k)
+        q = self._rotate_queries_or_keys(q)
+        k = self._rotate_queries_or_keys(k)
         # Calculate attention scores
         attn_weights = (q @ k.transpose(-2, -1)) * self.scale  # (B, H, N, N)
 

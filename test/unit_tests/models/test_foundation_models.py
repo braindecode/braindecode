@@ -22,6 +22,7 @@ except ImportError:
 
 from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.luna import _RotarySelfAttentionBlock
 from braindecode.models.reve import RevePositionBank
 
 
@@ -671,6 +672,27 @@ def test_luna_base_gradient_flow(luna_base_model):
     assert any(p.grad is not None for p in luna_base_model.blocks[0].parameters())
     # Check gradient in final classification head
     assert luna_base_model.final_layer.decoder_ffn.fc1.weight.grad is not None
+
+
+def test_luna_full_rotary_attention_avoids_empty_concatenation(monkeypatch):
+    """Full-head RoPE does not concatenate zero-width tensor views."""
+    original_cat = torch.cat
+
+    def _reject_empty_tensors(tensors, *args, **kwargs):
+        dim = kwargs.get("dim", args[0] if args else 0)
+        if any(tensor.shape[dim] == 0 for tensor in tensors):
+            raise RuntimeError("backend does not support empty tensor concatenation")
+        return original_cat(tensors, *args, **kwargs)
+
+    monkeypatch.setattr(torch, "cat", _reject_empty_tensors)
+    attention = _RotarySelfAttentionBlock(dim=32, num_heads=4)
+    signal = torch.randn(2, 10, 32, requires_grad=True)
+
+    output = attention(signal)
+    output.sum().backward()
+
+    assert output.shape == signal.shape
+    assert signal.grad is not None
 
 
 # ==============================================================================
