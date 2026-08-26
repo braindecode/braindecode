@@ -28,7 +28,7 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
-- Add :meth:`braindecode.datasets.bids.BIDSDataset.plot`: show a recording in the
+- Add ``BaseConcatDataset.plot()`` (every dataset, ``BIDSDataset`` included): show a recording in the
   `eegdash-viewer <https://github.com/eegdash/eegdash-viewer>`_ inside a
   Jupyter cell — serverless (bytes inlined, viewer from CDN), with the
   synchronized hand-pose panel when a ``*_desc-pose.json`` sidecar is present

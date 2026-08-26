@@ -5,6 +5,7 @@
 import sys
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 from moabb.datasets import FakeDataset
 from moabb.paradigms import LeftRightImagery
@@ -114,7 +115,7 @@ def test_bids_dataset_plot_keeps_the_bids_name_of_a_symlink(tmp_path):
     except OSError as error:
         pytest.skip(f"symlinks are unavailable: {error}")
     ds = object.__new__(BIDSDataset)
-    ds.datasets = [SimpleNamespace(description={"path": link})]
+    ds.datasets = [SimpleNamespace(raw=SimpleNamespace(filenames=(link,)))]
     html = ds.plot(0).data
     assert link.name in html and "MD5E" not in html
 
@@ -129,8 +130,8 @@ def test_bids_dataset_plot_explains_missing_ipython(emg_bids_root, monkeypatch):
 
 
 def test_plot_comes_with_base_concat_dataset(emg_bids_root):
-    """Any BaseConcatDataset element: description['path'], a file-backed raw (data file
-    mapped to its header), or nothing to show."""
+    """Any BaseConcatDataset element: the raw's file (data file mapped to its header),
+    the recorded provenance path, or nothing to show; split raws are refused."""
     from braindecode.datasets import BaseConcatDataset
 
     vhdr = (
@@ -140,17 +141,35 @@ def test_plot_comes_with_base_concat_dataset(emg_bids_root):
         / "emg"
         / "sub-893_ses-s1_task-fist_acq-right_emg.vhdr"
     )
+
+    def raw_of(*names):
+        return SimpleNamespace(filenames=names)
+
     ds = object.__new__(BaseConcatDataset)
     ds.datasets = [
-        SimpleNamespace(description={"path": vhdr}),  # BIDSDataset element
         SimpleNamespace(
-            raw=SimpleNamespace(filenames=(vhdr.with_suffix(".eeg"),))
-        ),  # mne names the .eeg
+            raw=raw_of(vhdr.with_suffix(".eeg"))
+        ),  # mne names the .eeg data file
         SimpleNamespace(
-            raw=SimpleNamespace(filenames=(None,))
-        ),  # MOABB: raws built in memory
+            raw=raw_of(None), description={"path": str(vhdr)}
+        ),  # recorded provenance
+        SimpleNamespace(
+            raw=raw_of(None), description=pd.Series({"path": float("nan")})
+        ),  # MOABB
+        SimpleNamespace(raw=raw_of(vhdr, vhdr)),  # split raw
     ]
     for index in (0, 1):
         assert vhdr.name in ds.plot(index).data
     with pytest.raises(ValueError, match="not backed by a recording file"):
         ds.plot(2)
+    with pytest.raises(ValueError, match="split recording"):
+        ds.plot(3)
+
+
+def test_plot_forwards_its_keyword_arguments(emg_bids_root):
+    ds = BIDSDataset(emg_bids_root, suffixes="emg", datatypes="emg")
+    html = ds.plot(0, height=333, cdn_url="https://viewer.example.org/app").data
+    assert "height:333px" in html
+    assert 'frame.src = "https://viewer.example.org/app/index.html?embed=1"' in html
+    with pytest.raises(ValueError, match="max_bytes=0.0 MiB"):
+        ds.plot(0, max_bytes=1)

@@ -24,7 +24,9 @@ def files(tmp_path):
 
 
 def _payload(html):
-    return json.loads(re.search(r"var payload = (\{.*?\});\n", html).group(1))
+    return json.loads(
+        re.search(r"var payload = (\{.*?\});\n", html).group(1).replace("\\u003c", "<")
+    )
 
 
 @pytest.mark.parametrize(
@@ -67,7 +69,7 @@ def test_build_viewer_html_payload(files, tmp_path, with_pose):
     html = nv.build_viewer_html(rec, pose, height=300, cdn=CDN + "/")
 
     assert f'frame.src = "{CDN}/index.html?embed=1"' in html and "height:300px" in html
-    assert '"https://viewer.test");' in html  # postMessage target origin
+    assert 'var origin = "https://viewer.test";' in html  # postMessage target origin
     assert "eegdash-viewer:open" in html and "eegdash-viewer:ready" in html
     assert "document.currentScript" in html
     payload = _payload(html)
@@ -170,6 +172,25 @@ def test_cdn_handling(files, tmp_path, cdn, expect):
         assert expect in html and "<script>alert" not in html
 
 
+def test_eeglab_fdt_follows_the_posted_set_name(files):
+    rec, fdt = files("session1.set", "session1.fdt")
+    names = [f["name"] for f in _payload(nv.build_viewer_html(rec))["files"]]
+    assert names == [
+        "session1_eeg.set",
+        "session1_eeg.fdt",
+    ]  # the viewer probes <prefix>_eeg.fdt
+
+
+def test_missing_or_dangling_files_are_reported(tmp_path):
+    with pytest.raises(ValueError, match="file not found"):
+        nv.build_viewer_html(tmp_path / "sub-1_task-a_eeg.edf")
+    vhdr = tmp_path / "sub-1_task-a_eeg.vhdr"
+    vhdr.touch()
+    (tmp_path / "sub-1_task-a_eeg.eeg").symlink_to(tmp_path / "annex" / "gone")
+    with pytest.raises(ValueError, match="dangling symlink"):
+        nv.build_viewer_html(vhdr)
+
+
 def test_recording_files_uses_bids_inheritance(tmp_path):
     root = tmp_path / "ds"
     eeg_dir = root / "sub-01" / "ses-1" / "eeg"
@@ -188,3 +209,12 @@ def test_recording_files_uses_bids_inheritance(tmp_path):
         (),
         None,
     )  # not a BIDS name: no inheritance
+    # hyphen-free names parse (subject=None) but must not pick up foreign sidecars
+    (tmp_path / "proj" / "raw").mkdir(parents=True)
+    hyphen_free = tmp_path / "proj" / "raw" / "session1.edf"
+    hyphen_free.touch()
+    (tmp_path / "proj" / "task-rest_events.tsv").touch()
+    assert nv.recording_files(hyphen_free)[1] == ()
+    # an oddly named neighbour must not break the search
+    (root / "sub-01" / "sub-01_backup-1_events.tsv").touch()
+    assert nv.recording_files(rec)[0] == rec
