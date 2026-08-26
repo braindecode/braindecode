@@ -67,10 +67,21 @@ API and behavior changes
 Requirements
 ============
 
-- None yet
+- Remove the ``rotary_embedding_torch`` dependency. The rotary frequency
+  generation used by :class:`braindecode.models.LUNA` and
+  :class:`braindecode.models.ZUNA` is now implemented directly with PyTorch.
+  (:gh:`1136` by `Bruno Aristimunha`_)
 
 Bug fixes
 ==========
+
+- Make :class:`braindecode.models.LUNA` rotary attention portable to
+  accelerators that reject concatenations containing empty tensor views, while
+  preserving its pretrained-checkpoint parameter keys and numerical behavior.
+  Also crop mismatched :class:`braindecode.models.USleep` decoder tensors with
+  views instead of allocating index tensors, avoiding unsupported accelerator
+  lowering without changing the selected samples. (:gh:`1136` by `Bruno
+  Aristimunha`_)
 
 - Fix the docstrings of :class:`braindecode.models.ATCNet`,
   :class:`braindecode.models.AttnSleep`, :class:`braindecode.models.CTNet`,

@@ -12,6 +12,9 @@ import pooch
 import pytest
 import torch
 
+import braindecode.models.luna as luna_module
+import braindecode.models.zuna as zuna_module
+
 try:
     from huggingface_hub import hf_hub_download
     from safetensors.torch import load_file
@@ -24,6 +27,15 @@ from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
 from braindecode.models.reve import RevePositionBank
+
+_ORIGINAL_TORCH_CAT = torch.cat
+
+
+def _reject_empty_tensors(tensors, *args, **kwargs):
+    dim = kwargs.get("dim", args[0] if args else 0)
+    if any(tensor.shape[dim] == 0 for tensor in tensors):
+        raise RuntimeError("backend does not support empty tensor concatenation")
+    return _ORIGINAL_TORCH_CAT(tensors, *args, **kwargs)
 
 
 @pytest.fixture
@@ -676,14 +688,6 @@ def test_luna_base_gradient_flow(luna_base_model):
 
 def test_luna_full_rotary_attention_avoids_empty_concatenation(monkeypatch):
     """Full-head RoPE does not concatenate zero-width tensor views."""
-    original_cat = torch.cat
-
-    def _reject_empty_tensors(tensors, *args, **kwargs):
-        dim = kwargs.get("dim", args[0] if args else 0)
-        if any(tensor.shape[dim] == 0 for tensor in tensors):
-            raise RuntimeError("backend does not support empty tensor concatenation")
-        return original_cat(tensors, *args, **kwargs)
-
     monkeypatch.setattr(torch, "cat", _reject_empty_tensors)
     attention = _RotarySelfAttentionBlock(dim=32, num_heads=4)
     signal = torch.randn(2, 10, 32, requires_grad=True)
@@ -693,6 +697,32 @@ def test_luna_full_rotary_attention_avoids_empty_concatenation(monkeypatch):
 
     assert output.shape == signal.shape
     assert signal.grad is not None
+
+
+def test_luna_rotary_embedding_is_native_and_checkpoint_compatible():
+    """LUNA uses Braindecode-native RoPE without changing checkpoint keys."""
+    attention = _RotarySelfAttentionBlock(dim=32, num_heads=4)
+
+    assert type(attention.rotary_emb).__module__ == luna_module.__name__
+    assert "rotary_emb.freqs" in attention.state_dict()
+    expected = 1.0 / (10000 ** (torch.arange(0, 8, 2).float() / 8))
+    torch.testing.assert_close(attention.rotary_emb.freqs, expected)
+
+
+@pytest.mark.parametrize("axis_dim", [2, 4, 8])
+def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
+    """ZUNA's native table matches rotary-embedding-torch semantics."""
+    positions = torch.arange(5, dtype=torch.float32)
+    table = zuna_module._build_rotary_frequency_table(
+        positions, axis_dim=axis_dim, theta=10000.0
+    )
+
+    embedding_dim = max(axis_dim, 4)
+    inverse_frequencies = 1.0 / (
+        10000.0 ** (torch.arange(0, embedding_dim, 2).float() / embedding_dim)
+    )
+    expected = torch.outer(positions, inverse_frequencies).repeat_interleave(2, dim=1)
+    torch.testing.assert_close(table, expected[:, :axis_dim])
 
 
 # ==============================================================================
