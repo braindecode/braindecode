@@ -79,7 +79,6 @@ moabb = ["moabb>=1.4.3"]
 eegprep = ["eegprep[eeglabio]>=0.2.23"]
 hub = ["huggingface_hub[torch]>=0.20.0", "zarr>=3.0"]
 viz = ["captum>=0.7.0"]
-viewer = ["ipython"]  # BIDSDataset.plot(): eegdash-viewer in a notebook cell
 tests = [
     'pytest<9.1',  # pytest 9.1.0 changed IdMaker's signature, which breaks pytest_cases 3.10.1 (crash at collection time). Remove the cap once pytest_cases supports pytest >=9.1.
     'pytest-cov',
@@ -88,7 +87,6 @@ tests = [
     'mypy',
     "transformers>=4.57.0",
     "bids_validator",
-    "braindecode[viewer]",
 ]
 typing = [
     'exca>=0.5.10',
@@ -127,7 +125,6 @@ all = [
     "braindecode[eegprep]",
     "braindecode[typing]",
     "braindecode[viz]",
-    "braindecode[viewer]",
 ]
 
 [tool.setuptools]

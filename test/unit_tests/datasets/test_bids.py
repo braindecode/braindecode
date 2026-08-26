@@ -171,9 +171,10 @@ def test_make_plot_dataset_skips_when_symlinks_are_unavailable(tmp_path, monkeyp
 
 def test_bids_dataset_plot_explains_missing_ipython(plot_dataset, monkeypatch):
     dataset, _ = plot_dataset
-    monkeypatch.setitem(sys.modules, "IPython.display", None)
+    monkeypatch.setitem(sys.modules, "IPython", None)  # soft import: not declared
+    # mne's _soft_import raises RuntimeError with the pip hint
     with pytest.raises(
-        ImportError, match=r"BIDSDataset.plot requires IPython.*braindecode\[viewer\]"
+        RuntimeError, match=r"(?s)BIDSDataset.plot\(\).*IPython.*pip install IPython"
     ):
         dataset.plot(0)
 

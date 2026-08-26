@@ -22,6 +22,8 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from mne.utils import _soft_import
+
 CDN = "https://eegdash.github.io/eegdash-viewer"
 MAX_BYTES = 64 * 2**20  # base64 output per call; it is saved with the notebook
 # What the viewer opens from in-memory files: BIDS electrophysiology
@@ -253,7 +255,7 @@ class ViewerMixin:
         sidecar sits next to the recording the hand skeleton tracks the
         cursor (``p`` toggles the panel). See
         https://github.com/eegdash/eegdash-viewer/blob/main/docs/embedding.md.
-        Needs IPython (``pip install braindecode[viewer]``).
+        Needs IPython (a soft dependency: ``pip install ipython``).
 
         Parameters
         ----------
@@ -273,13 +275,10 @@ class ViewerMixin:
         -------
         IPython.display.HTML
         """
-        try:
-            from IPython.display import HTML
-        except ImportError as err:  # pragma: no cover - environment dependent
-            raise ImportError(
-                f"{type(self).__name__}.plot requires IPython; install it with "
-                "`pip install braindecode[viewer]`."
-            ) from err
+        # Soft dependency: IPython ships with every notebook front-end and is
+        # not declared as a braindecode dependency.
+        ipython = _soft_import("IPython", purpose=f"{type(self).__name__}.plot()")
+        HTML = ipython.display.HTML
 
         recording, sidecars, pose = self._viewer_recording(index)
         return HTML(
