@@ -11,7 +11,6 @@ from typing import Optional
 import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
-from rotary_embedding_torch import RotaryEmbedding
 from torch import nn
 from torch.nn import functional
 
@@ -275,18 +274,11 @@ class ZUNA(EEGModuleMixin, nn.Module):
             (channel_position_indices, coarse_time_indices.unsqueeze(1)), dim=1
         )
 
-        rotary_embedding = RotaryEmbedding(
-            # rotary_embedding_torch cannot construct dim=2 directly because
-            # of its theta-rescaling formula; dim=4 followed by slicing is
-            # equivalent for the single-frequency dim=2 case.
-            dim=max(rotary_axis_dim, 4),
+        rotary_frequency_table = _build_rotary_frequency_table(
+            torch.arange(max_seqlen, dtype=torch.float32),
+            axis_dim=rotary_axis_dim,
             theta=rope_theta,
-            cache_if_possible=False,
         )
-        with torch.no_grad():
-            rotary_frequency_table = rotary_embedding(
-                torch.arange(max_seqlen, dtype=torch.float32)
-            )[:, :rotary_axis_dim]
         token_rotary_frequencies = rearrange(
             rotary_frequency_table[token_position_indices],
             "token coordinate rotary_frequency -> token (coordinate rotary_frequency)",
@@ -342,6 +334,28 @@ class ZUNA(EEGModuleMixin, nn.Module):
             Rearrange("batch channel latent -> batch (channel latent)"),
             nn.Linear(self.num_channels * self.latent_dim, n_outputs),
         )
+
+
+def _build_rotary_frequency_table(
+    positions: torch.Tensor, *, axis_dim: int, theta: float
+) -> torch.Tensor:
+    """Build ZUNA's per-axis rotary frequencies with native PyTorch."""
+    embedding_dim = max(axis_dim, 4)
+    inverse_frequencies = 1.0 / (
+        theta
+        ** (
+            torch.arange(
+                0,
+                embedding_dim,
+                2,
+                device=positions.device,
+                dtype=torch.float32,
+            )
+            / embedding_dim
+        )
+    )
+    angles = positions.to(torch.float32).unsqueeze(-1) * inverse_frequencies
+    return angles.repeat_interleave(2, dim=-1)[:, :axis_dim]
 
 
 class _RotaryPositionEmbedding(nn.Module):

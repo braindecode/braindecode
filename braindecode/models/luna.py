@@ -20,7 +20,6 @@ import torch.fft as fft
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from rotary_embedding_torch import RotaryEmbedding
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
@@ -535,7 +534,7 @@ class _RotarySelfAttentionBlock(nn.Module):
         self.dim = dim
         self.num_heads = num_heads
         head_dim = dim // num_heads
-        self.rotary_emb = RotaryEmbedding(dim=head_dim, learned_freq=False)
+        self.rotary_emb = _RotaryEmbedding(head_dim)
 
         self.scale = qk_scale or head_dim**-0.5
 
@@ -545,6 +544,17 @@ class _RotarySelfAttentionBlock(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
+    def _rotate_queries_or_keys(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Apply full-head RoPE without concatenating empty boundary views."""
+        seq_len = tensor.shape[-2]
+        positions = torch.arange(seq_len, device=tensor.device, dtype=tensor.dtype)
+        freqs = self.rotary_emb(positions)
+
+        pairs = tensor.reshape(*tensor.shape[:-1], -1, 2)
+        rotated = torch.stack((-pairs[..., 1], pairs[..., 0]), dim=-1).flatten(-2)
+        transformed = tensor * freqs.cos() + rotated * freqs.sin()
+        return transformed.to(tensor.dtype)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, N, C = x.shape
         qkv = (
@@ -553,8 +563,8 @@ class _RotarySelfAttentionBlock(nn.Module):
             .permute(2, 0, 3, 1, 4)
         )  # (K, B, H, N, D)
         q, k, v = qkv[0], qkv[1], qkv[2]
-        q = self.rotary_emb.rotate_queries_or_keys(q)
-        k = self.rotary_emb.rotate_queries_or_keys(k)
+        q = self._rotate_queries_or_keys(q)
+        k = self._rotate_queries_or_keys(k)
         # Calculate attention scores
         attn_weights = (q @ k.transpose(-2, -1)) * self.scale  # (B, H, N, N)
 
@@ -568,6 +578,21 @@ class _RotarySelfAttentionBlock(nn.Module):
         attn = attn_weights @ v  # (B, H, N, D)
         attn = rearrange(attn, "B H N D -> B N (H D)")
         return self.proj_drop(self.proj(attn))
+
+
+class _RotaryEmbedding(nn.Module):
+    """Minimal language RoPE frequency generator used by LUNA."""
+
+    def __init__(self, dim: int, theta: float = 10000.0) -> None:
+        super().__init__()
+        frequencies = 1.0 / (
+            theta ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim)
+        )
+        self.freqs = nn.Parameter(frequencies, requires_grad=False)
+
+    def forward(self, positions: torch.Tensor) -> torch.Tensor:
+        angles = positions.to(self.freqs.dtype).unsqueeze(-1) * self.freqs
+        return angles.repeat_interleave(2, dim=-1)
 
 
 class _FeedForwardBlock(nn.Module):
