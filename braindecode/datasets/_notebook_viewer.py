@@ -186,7 +186,7 @@ def _check_cdn(cdn: str) -> tuple[str, str]:
         raise ValueError(f"cdn must be an absolute http(s) URL, got {cdn!r}")
     if parts.username is not None or parts.password is not None:
         raise ValueError(
-            f"cdn must not carry credentials (browser origins never do), got {cdn!r}"
+            f"cdn must be a URL without credentials (browser origins never carry them), got {cdn!r}"
         )
     if (
         parts.query

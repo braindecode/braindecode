@@ -123,6 +123,12 @@ def test_recordings_are_posted_under_a_viewer_name_or_rejected(files, name, post
         assert _payload(nv.build_viewer_html(rec))["files"][0]["name"] == posted_as
 
 
+def test_pose_sidecar_must_be_a_file(files, tmp_path):
+    (rec,) = files(f"{REC}.bdf")
+    with pytest.raises(ValueError, match="pose sidecar is not a file"):
+        nv.build_viewer_html(rec, tmp_path / "missing_desc-pose.json")
+
+
 def test_directory_recordings_are_rejected(tmp_path):
     (tmp_path / "sub-1_task-a_meg.ds").mkdir()
     with pytest.raises(ValueError, match="directory"):
@@ -139,6 +145,10 @@ def test_directory_recordings_are_rejected(tmp_path):
         (f"{CDN}?x=1", ValueError),
         (f"{CDN}#frag", ValueError),
         (f"{CDN}/index.html", ValueError),
+        (
+            "https://user:pw@viewer.test/v",
+            ValueError,
+        ),  # origins never carry credentials
         (
             f"{CDN}/app?",
             f'frame.src = "{CDN}/app/index.html?embed=1"',
@@ -157,6 +167,7 @@ def test_directory_recordings_are_rejected(tmp_path):
         "query",
         "fragment",
         "index.html",
+        "userinfo",
         "empty-query",
         "empty-fragment",
         "escaped",
@@ -209,6 +220,15 @@ def test_recording_files_uses_bids_inheritance(tmp_path):
         (),
         None,
     )  # not a BIDS name: no inheritance
+    with_underscores = (
+        tmp_path / "my_recording_01.edf"
+    )  # pose named after the whole stem
+    with_underscores.touch()
+    (tmp_path / "my_recording_01_desc-pose.json").write_text("{}")
+    assert (
+        nv.recording_files(with_underscores)[2]
+        == tmp_path / "my_recording_01_desc-pose.json"
+    )
     # hyphen-free names parse (subject=None) but must not pick up foreign sidecars
     (tmp_path / "proj" / "raw").mkdir(parents=True)
     hyphen_free = tmp_path / "proj" / "raw" / "session1.edf"

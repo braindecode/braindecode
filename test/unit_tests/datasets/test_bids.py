@@ -68,6 +68,8 @@ def emg_bids_root(tmp_path_factory):
     import mne
     import numpy as np
 
+    pytest.importorskip("pybv")  # mne's BrainVision writer
+
     root = tmp_path_factory.mktemp("emg2pose") / "bids"
     eeg_dir = root / "sub-893" / "ses-s1" / "emg"
     eeg_dir.mkdir(parents=True)
