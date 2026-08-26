@@ -1156,7 +1156,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
 
 
 @register_dataset
-class BaseConcatDataset(ViewerMixin, ConcatDataset, HubDatasetMixin, Generic[T]):
+class BaseConcatDataset(ConcatDataset, HubDatasetMixin, ViewerMixin, Generic[T]):
     """A base class for concatenated datasets.
 
     Holds either mne.Raw or mne.Epoch in self.datasets and has

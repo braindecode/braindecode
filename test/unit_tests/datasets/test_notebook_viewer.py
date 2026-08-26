@@ -12,14 +12,13 @@ CDN = "https://viewer.test/v"
 
 @pytest.fixture
 def files(tmp_path):
-    """Write ``tmp_path/<name>`` for each name and return the paths by name."""
+    """Write ``tmp_path/<name>`` for each name and return the paths."""
 
     def _files(*names, content=bytes(range(16))):
-        out = {}
-        for name in names:
-            out[name] = tmp_path / name
-            out[name].write_bytes(content)
-        return out
+        paths = [tmp_path / n for n in names]
+        for p in paths:
+            p.write_bytes(content)
+        return paths
 
     return _files
 
@@ -54,23 +53,23 @@ def _payload(html):
     ids=["brainvision-trio", "partial-trio", "eeglab+dedup-sidecars", "single-file"],
 )
 def test_collect_files(files, tmp_path, recording, present, sidecars, expected):
-    paths = files(recording, *present)
-    got = nv.collect_files(paths[recording], tuple(tmp_path / s for s in sidecars))
-    assert got == [paths[recording]] + [tmp_path / e for e in expected]
+    rec, *_ = files(recording, *present)
+    got = nv.collect_files(rec, tuple(tmp_path / s for s in sidecars))
+    assert got == [rec] + [tmp_path / e for e in expected]
 
 
 @pytest.mark.parametrize("with_pose", [False, True], ids=["no-pose", "pose"])
 def test_build_viewer_html_payload(files, tmp_path, with_pose):
-    rec = files(f"{REC}.bdf")[f"{REC}.bdf"]
+    (rec,) = files(f"{REC}.bdf")
     pose = (tmp_path / "sub-1_task-a_desc-pose.json") if with_pose else None
     if pose:
         pose.write_text("{}")
     html = nv.build_viewer_html(rec, pose, height=300, cdn=CDN + "/")
 
-    assert f'src="{CDN}/index.html?embed=1"' in html and "height:300px" in html
-    assert 'var origin = "https://viewer.test";' in html
+    assert f'frame.src = "{CDN}/index.html?embed=1"' in html and "height:300px" in html
+    assert '"https://viewer.test");' in html  # postMessage target origin
     assert "eegdash-viewer:open" in html and "eegdash-viewer:ready" in html
-    assert "document.currentScript" in html and "localhost" not in html
+    assert "document.currentScript" in html
     payload = _payload(html)
     assert [f["name"] for f in payload["files"]] == [rec.name]
     assert base64.b64decode(payload["files"][0]["b64"]) == bytes(range(16))
@@ -90,7 +89,7 @@ def test_build_viewer_html_payload(files, tmp_path, with_pose):
 def test_size_guard_counts_base64(
     files, tmp_path, raw_bytes, pose_bytes, max_bytes, ok
 ):
-    rec = files(f"{REC}.edf", content=bytes(raw_bytes))[f"{REC}.edf"]
+    (rec,) = files(f"{REC}.edf", content=bytes(raw_bytes))
     pose = None
     if pose_bytes is not None:
         pose = tmp_path / "sub-1_task-a_desc-pose.json"
@@ -103,52 +102,89 @@ def test_size_guard_counts_base64(
 
 
 @pytest.mark.parametrize(
-    "name",
-    ["sub-1_epo.fif", "sub-1_eeg.cdt", "sub-1_ieeg.mef", "sub-1_task-a_beh.tsv"],
+    ("name", "posted_as"),
+    [
+        ("sub-1_task-a_emg.bdf", "sub-1_task-a_emg.bdf"),  # BIDS name kept
+        ("0-raw.fif", "0-raw_eeg.fif"),  # braindecode BaseConcatDataset.save()
+        ("session1.EDF", "session1_eeg.edf"),  # plain file, any case
+        ("sub-1_epo.fif", ValueError),  # epochs, not a raw recording
+        ("sub-1_eeg.cdt", ValueError),  # no in-memory reader
+        ("sub-1_task-a_beh.tsv", ValueError),
+    ],
 )
-def test_check_viewable_rejects_unsupported(files, name):
-    with pytest.raises(ValueError, match="viewer opens"):
-        nv.build_viewer_html(files(name)[name])
+def test_recordings_are_posted_under_a_viewer_name_or_rejected(files, name, posted_as):
+    (rec,) = files(name)
+    if posted_as is ValueError:
+        with pytest.raises(ValueError, match="viewer opens"):
+            nv.build_viewer_html(rec)
+    else:
+        assert _payload(nv.build_viewer_html(rec))["files"][0]["name"] == posted_as
 
 
-def test_check_viewable_rejects_directories(tmp_path):
+def test_directory_recordings_are_rejected(tmp_path):
     (tmp_path / "sub-1_task-a_meg.ds").mkdir()
     with pytest.raises(ValueError, match="directory"):
         nv.build_viewer_html(tmp_path / "sub-1_task-a_meg.ds")
 
 
 @pytest.mark.parametrize(
-    "cdn",
+    ("cdn", "expect"),
     [
-        "viewer",
-        "file:///tmp/viewer",
-        "//cdn.example.org/v",
-        f"{CDN}?x=1",
-        f"{CDN}#frag",
-        f"{CDN}/index.html",
+        ("viewer", ValueError),
+        ("javascript:alert(1)", ValueError),
+        ("file:///tmp/viewer", ValueError),
+        ("//cdn.example.org/v", ValueError),
+        (f"{CDN}?x=1", ValueError),
+        (f"{CDN}#frag", ValueError),
+        (f"{CDN}/index.html", ValueError),
+        (
+            f"{CDN}/app?",
+            f'frame.src = "{CDN}/app/index.html?embed=1"',
+        ),  # empty delimiters dropped
+        (f"{CDN}/app#", f'frame.src = "{CDN}/app/index.html?embed=1"'),
+        (
+            f'{CDN}/"><script>alert(1)</script>',
+            "\\u003cscript>alert",
+        ),  # JSON-escaped, never a tag
+    ],
+    ids=[
+        "relative",
+        "javascript",
+        "file",
+        "protocol-relative",
+        "query",
+        "fragment",
+        "index.html",
+        "empty-query",
+        "empty-fragment",
+        "escaped",
     ],
 )
-def test_bad_cdn_fails_before_reading(tmp_path, cdn):
-    with pytest.raises(ValueError, match="cdn must be"):
-        nv.build_viewer_html(tmp_path / f"{REC}.edf", cdn=cdn)  # file never created
+def test_cdn_handling(files, tmp_path, cdn, expect):
+    if expect is ValueError:  # fails before any file is read
+        with pytest.raises(ValueError, match="cdn must be"):
+            nv.build_viewer_html(tmp_path / f"{REC}.edf", cdn=cdn)
+    else:
+        (rec,) = files(f"{REC}.edf")
+        html = nv.build_viewer_html(rec, cdn=cdn)
+        assert expect in html and "<script>alert" not in html
 
 
-def test_recording_files_from_bids_path_and_plain_path(files, tmp_path):
-    rec = files(f"{REC}.bdf")[f"{REC}.bdf"]
-    pose = tmp_path / "sub-1_task-a_desc-pose.json"
+def test_recording_files_uses_bids_inheritance(tmp_path):
+    root = tmp_path / "ds"
+    eeg_dir = root / "sub-01" / "ses-1" / "eeg"
+    eeg_dir.mkdir(parents=True)
+    rec = eeg_dir / "sub-01_ses-1_task-x_eeg.bdf"
+    rec.touch()
+    events = root / "sub-01" / "sub-01_ses-1_events.tsv"  # session level
+    events.touch()
+    pose = eeg_dir / "sub-01_ses-1_task-x_desc-pose.json"
     pose.write_text("{}")
-    assert nv.recording_files(rec) == (rec, (), pose)
-
-    class FakeBIDSPath:  # duck-typed like mne_bids.BIDSPath
-        fpath = rec
-
-        def find_matching_sidecar(self, suffix, extension, on_error):
-            return (
-                tmp_path / f"sub-1_{suffix}{extension}" if suffix == "events" else None
-            )
-
-    assert nv.recording_files(FakeBIDSPath()) == (
-        rec,
-        (tmp_path / "sub-1_events.tsv",),
-        pose,
-    )
+    assert nv.recording_files(rec) == (rec, (events,), pose)
+    plain = tmp_path / "0-raw.fif"
+    plain.touch()
+    assert nv.recording_files(plain) == (
+        plain,
+        (),
+        None,
+    )  # not a BIDS name: no inheritance

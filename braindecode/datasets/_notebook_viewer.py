@@ -1,7 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
-"""Serverless in-notebook viewer for BIDS recordings.
+"""Serverless in-notebook viewer for file-backed recordings.
 
 The recording bytes are inlined in the cell output as base64 (the
 "papaya pattern") and pushed into the deployed eegdash-viewer through
@@ -16,52 +16,44 @@ empty cell.
 from __future__ import annotations
 
 import base64
-import html
 import json
-import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import mne_bids
 from mne.utils import _soft_import
 
 CDN = "https://eegdash.github.io/eegdash-viewer"
 MAX_BYTES = 64 * 2**20  # base64 output per call; it is saved with the notebook
-# What the viewer opens from in-memory files: BIDS electrophysiology
-# suffixes and the single-file (or small-sibling) formats it reads.
-SUFFIXES = frozenset({"eeg", "ieeg", "emg", "meg", "nirs"})
+# Formats the viewer reads from in-memory files (single file or small siblings).
 EXTENSIONS = frozenset({".set", ".edf", ".bdf", ".vhdr", ".fif", ".snirf", ".nwb"})
-# Split-file formats travel with their siblings.
-_SIBLINGS = {".vhdr": (".eeg", ".vmrk"), ".set": (".fdt",)}
+_BIDS_SUFFIXES = frozenset({"eeg", "ieeg", "emg", "meg", "nirs"})
+_SIBLINGS = {".vhdr": (".eeg", ".vmrk"), ".set": (".fdt",)}  # travel with the header
+_HEADER_OF = {
+    ".eeg": ".vhdr",
+    ".fdt": ".set",
+}  # mne names the data file, the viewer wants the header
 
-_TEMPLATE = """<iframe id="{uid}" src="{src}" title="eegdash trace viewer"
-  style="width:100%;height:{height}px;border:1px solid var(--jp-border-color1,#d9dce1);border-radius:6px;background:transparent"></iframe>
+_SCRIPT = """
 <script>
 (function () {{
-  // The iframe is the element right before this script, so a cell output
-  // rendered twice (linked view, display() twice) still finds its own.
-  var self = document.currentScript;
-  var frame = (self && self.previousElementSibling && self.previousElementSibling.tagName === "IFRAME")
-    ? self.previousElementSibling : document.getElementById({uid_json});
+  var frame = document.currentScript.previousElementSibling;
   var payload = {payload};
-  var origin = {origin_json};
-  var files = null, readyGot = false;
+  var files = null;
   function decode(b64) {{
     if (Uint8Array.fromBase64) return Uint8Array.fromBase64(b64);
     var bin = atob(b64), out = new Uint8Array(bin.length);
     for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
   }}
-  function materialize() {{
-    if (files) return files;
-    files = payload.files.map(function (f) {{ return new File([decode(f.b64)], f.name); }});
-    files.pose = payload.pose ? "data:application/json;base64," + payload.pose : null;
-    payload = null;   // the File objects carry the bytes from here on
-    return files;
-  }}
-  function send(target) {{
+  function send() {{
     try {{
-      var fs = materialize();
-      frame.contentWindow.postMessage({{ type: "eegdash-viewer:open", files: fs, pose: fs.pose }}, target || origin);
+      if (!files) {{
+        files = payload.files.map(function (f) {{ return new File([decode(f.b64)], f.name); }});
+        files.pose = payload.pose ? "data:application/json;base64," + payload.pose : null;
+        payload = null;   // the File objects carry the bytes from here on
+      }}
+      frame.contentWindow.postMessage({{ type: "eegdash-viewer:open", files: files, pose: files.pose }}, {origin});
     }} catch (err) {{
       var note = document.createElement("div");
       note.style.cssText = "font:12px system-ui,sans-serif;color:#b3261e;padding:4px 0";
@@ -69,44 +61,67 @@ _TEMPLATE = """<iframe id="{uid}" src="{src}" title="eegdash trace viewer"
       frame.insertAdjacentElement("afterend", note);
     }}
   }}
-  function onMessage(e) {{
+  window.addEventListener("message", function onMessage(e) {{
     if (!frame.isConnected) {{ window.removeEventListener("message", onMessage); return; }}
-    if (e.source !== frame.contentWindow || !e.data || e.data.type !== "eegdash-viewer:ready") return;
-    readyGot = true;
-    send(e.origin);   // every ready: the viewer re-announces after a reload
-  }}
-  window.addEventListener("message", onMessage);
-  // Fallback when `ready` was posted before this script ran (cached
-  // iframe finished during the parse of the payload): the viewer's open
-  // handler is idempotent, so a second hand-over only costs a reload.
-  setTimeout(function () {{ if (!readyGot) send(); }}, 2000);
+    if (e.source === frame.contentWindow && e.data && e.data.type === "eegdash-viewer:ready") send();
+  }});
+  frame.src = {src};   // after the listener: the viewer's "ready" can never precede it
 }})();
 </script>"""
 
 
-def bids_prefix(recording: Path) -> str:
-    """``sub-01_ses-02_task-x_run-17`` for ``.../sub-01_ses-02_task-x_run-17_emg.bdf``."""
-    return Path(recording).stem.rsplit("_", 1)[0]
+def viewer_name(recording: Path) -> str:
+    """File name to hand the viewer: BIDS names as-is, others as ``<stem>_eeg<ext>``.
 
-
-def pose_sidecar_for(recording: Path) -> Path | None:
-    """The ``*_desc-pose.json`` hand-pose sidecar next to ``recording``, if any."""
+    The viewer picks the recording by its ``*_<datatype>.<ext>`` name, so a
+    braindecode-saved ``0-raw.fif`` or a plain ``session1.edf`` is posted as
+    ``0-raw_eeg.fif`` / ``session1_eeg.edf`` (the name only selects the
+    reader; channel types still come from the file).
+    """
     rec = Path(recording)
-    pose = rec.with_name(bids_prefix(rec) + "_desc-pose.json")
-    return pose if pose.is_file() else None
+    token = rec.stem.rsplit("_", 1)[-1]
+    return (
+        rec.name if token in _BIDS_SUFFIXES else f"{rec.stem}_eeg{rec.suffix.lower()}"
+    )
 
 
 def check_viewable(recording: Path) -> None:
     """Raise ``ValueError`` when the viewer cannot open ``recording`` from memory."""
     rec = Path(recording)
-    suffix = rec.stem.rsplit("_", 1)[-1]
     if rec.is_dir():
         raise ValueError(f"{rec.name}: directory-based recordings cannot be inlined")
-    if suffix not in SUFFIXES or rec.suffix.lower() not in EXTENSIONS:
+    if rec.suffix.lower() not in EXTENSIONS or rec.stem.endswith("_epo"):
         raise ValueError(
-            f"{rec.name}: the viewer opens *_{{{','.join(sorted(SUFFIXES))}}} recordings in "
+            f"{rec.name}: the viewer opens raw recordings in "
             f"{' '.join(sorted(EXTENSIONS))} from memory"
         )
+
+
+def recording_files(recording: Path) -> tuple[Path, tuple[Path, ...], Path | None]:
+    """``(recording, sidecars, pose)`` for a recording file.
+
+    A BIDS-named file (any ``mne_bids.BIDSPath``-parsable name) gets its
+    channels/events sidecars by BIDS inheritance; the hand-pose sidecar
+    (``<prefix>_desc-pose.json``) sits next to the recording. The path is
+    not resolved, so git-annex/datalad symlinks keep their BIDS name.
+    """
+    rec = Path(recording)
+    try:
+        bids_path = mne_bids.get_bids_path_from_fname(rec, check=False)
+    except (KeyError, ValueError):  # not a BIDS name (0-raw.fif, SC4001E0-PSG.edf)
+        bids_path = None
+    sidecars = tuple(
+        p
+        for suffix in ("channels", "events")
+        if bids_path
+        and (
+            p := bids_path.find_matching_sidecar(
+                suffix=suffix, extension=".tsv", on_error="ignore"
+            )
+        )
+    )
+    pose = rec.with_name(rec.stem.rsplit("_", 1)[0] + "_desc-pose.json")
+    return rec, sidecars, pose if pose.is_file() else None
 
 
 def collect_files(recording: Path, sidecars: tuple[Path, ...] = ()) -> list[Path]:
@@ -163,99 +178,81 @@ def build_viewer_html(
             f"the notebook output (max_bytes={max_bytes / 2**20:.1f} MiB). Crop or downsample "
             "and export a smaller file, or pass a larger max_bytes."
         )
-    payload = {
-        "files": [{"name": p.name, "b64": _b64(p)} for p in files],
-        "pose": _b64(pose_sidecar) if pose_sidecar is not None else None,
-    }
-    uid = f"eegdash-viewer-{uuid.uuid4().hex[:8]}"
-    return _TEMPLATE.format(
-        uid=uid,
-        uid_json=json.dumps(uid),
-        src=html.escape(f"{base}/index.html?embed=1", quote=True),
-        origin_json=json.dumps(origin),
-        height=int(height),
-        payload=json.dumps(payload).replace("</", "<\\/"),
+    # Splice the base64 straight into the JSON text: only the names need
+    # escaping and the large strings are never copied through json.dumps.
+    entries = ",".join(
+        f'{{"name":{_js(viewer_name(p) if p == files[0] else p.name)},"b64":"{_b64(p)}"}}'
+        for p in files
     )
+    pose = f'"{_b64(pose_sidecar)}"' if pose_sidecar is not None else "null"
+    return (
+        f'<iframe title="eegdash trace viewer" style="width:100%;height:{int(height)}px;'
+        'border:1px solid var(--jp-border-color1,#d9dce1);border-radius:6px;background:transparent"></iframe>'
+        + _SCRIPT.format(
+            payload=f'{{"files":[{entries}],"pose":{pose}}}',
+            origin=_js(origin),
+            src=_js(f"{base}/index.html?embed=1"),
+        )
+    )
+
+
+def _js(value: str) -> str:
+    """A JSON string literal safe inside an inline <script>."""
+    return json.dumps(value).replace("<", "\\u003c")
 
 
 def _b64(path: Path) -> str:
     return base64.b64encode(Path(path).read_bytes()).decode()
 
 
-def recording_files(bids_path) -> tuple[Path, tuple[Path, ...], Path | None]:
-    """``(recording, sidecars, pose)`` for a ``mne_bids.BIDSPath`` or a plain path.
-
-    The recording keeps its BIDS name (symlinks are not resolved); channels
-    and events sidecars are BIDS-inherited when the object can resolve them
-    (``BIDSPath.find_matching_sidecar``); the pose sidecar sits next to it.
-    """
-    fpath = Path(getattr(bids_path, "fpath", bids_path))
-    find = getattr(bids_path, "find_matching_sidecar", None)
-    sidecars = tuple(
-        p
-        for suffix in ("channels", "events")
-        if find and (p := find(suffix=suffix, extension=".tsv", on_error="ignore"))
-    )
-    return fpath, sidecars, pose_sidecar_for(fpath)
-
-
 class ViewerMixin:
     """``plot()`` for every :class:`~braindecode.datasets.BaseConcatDataset`.
 
-    The default :meth:`_viewer_recording` looks at ``self.datasets[index]``:
-    a ``bidspath`` attribute wins (eegdash's ``EEGDashBaseDataset``; its lazy
-    ``raw`` is touched first when the file is not cached yet), otherwise the
-    file behind the element's mne ``raw`` (``raw.filenames[0]``, any
-    file-backed ``RawDataset``). ``BIDSDataset`` overrides the hook with its
-    ``bids_paths`` so sidecars follow BIDS inheritance. Subclasses with
-    another notion of "the recording file" override the same hook and
-    return :func:`recording_files` of it.
-
-    ``viewer_cdn`` / ``viewer_max_bytes`` are the class-level defaults of
-    the ``plot()`` keyword arguments.
+    :meth:`_viewer_recording` names the file behind ``self.datasets[index]``:
+    ``description["path"]`` when the element records it (``BIDSDataset``),
+    else the file behind its mne ``raw`` (accessing ``raw`` is what lazily
+    downloading datasets, e.g. eegdash, hook into); split-format data files
+    map back to their header. Datasets with another notion of "the
+    recording file" override the hook and return :func:`recording_files`.
     """
-
-    viewer_cdn: str = CDN
-    viewer_max_bytes: int = MAX_BYTES
 
     def _viewer_recording(
         self, index: int
     ) -> tuple[Path, tuple[Path, ...], Path | None]:
         ds = self.datasets[index]
-        source = getattr(ds, "bidspath", None)
-        if source is not None:
-            fpath = Path(getattr(source, "fpath", source))
-            if not fpath.exists():  # lazily downloaded recordings cache on access
-                getattr(ds, "raw", None)
-            return recording_files(source)
-        filenames = getattr(getattr(ds, "raw", None), "filenames", None) or ()
-        if not filenames:
-            raise ValueError(
-                f"{type(self).__name__}[{index}] is not backed by a recording file; "
-                "nothing to show in the viewer"
-            )
-        return recording_files(Path(filenames[0]))
+        desc = getattr(ds, "description", None)  # dict or pandas Series
+        path = desc.get("path") if desc is not None else None
+        if path is None:
+            names = [
+                f
+                for f in getattr(getattr(ds, "raw", None), "filenames", None) or ()
+                if f
+            ]
+            if not names:
+                raise ValueError(
+                    f"{type(self).__name__}[{index}] is not backed by a recording file; "
+                    "nothing to show in the viewer"
+                )
+            path = Path(names[0])
+            path = path.with_suffix(_HEADER_OF.get(path.suffix.lower(), path.suffix))
+        return recording_files(Path(path))
 
     def plot(
         self,
         index: int = 0,
         *,
         height: int = 520,
-        cdn_url: str | None = None,
-        max_bytes: int | None = None,
+        cdn_url: str = CDN,
+        max_bytes: int = MAX_BYTES,
     ):
         """Show one recording in the eegdash-viewer inside a Jupyter cell.
 
         Serverless: the recording bytes are inlined in the output and pushed
-        into the viewer (loaded from ``cdn_url``) over ``postMessage``. The
-        output is HTML with a script, so it renders when the cell is run in
-        your session; a saved notebook shows it again only once it is
-        trusted (``jupyter trust notebook.ipynb`` or File > Trust Notebook).
-        Drag to pan, hover for the cursor readout; when a ``*_desc-pose.json``
-        sidecar sits next to the recording the hand skeleton tracks the
-        cursor (``p`` toggles the panel). See
-        https://github.com/eegdash/eegdash-viewer/blob/main/docs/embedding.md.
-        Needs IPython (a soft dependency: ``pip install ipython``).
+        into the viewer (loaded from ``cdn_url``) over ``postMessage``; it
+        renders when the cell ran in your session or the saved notebook is
+        trusted. A ``*_desc-pose.json`` sidecar next to the recording adds
+        the synchronized hand-pose panel. Needs IPython (soft dependency).
+        See https://github.com/eegdash/eegdash-viewer/blob/main/docs/embedding.md.
 
         Parameters
         ----------
@@ -263,31 +260,26 @@ class ViewerMixin:
             Recording to display.
         height : int
             Viewer height in pixels.
-        cdn_url : str | None
-            Base URL of a deployed eegdash-viewer (default ``viewer_cdn``).
-        max_bytes : int | None
-            Refuse to inline more than this much base64 (default
-            ``viewer_max_bytes``, 64 MiB). The payload is saved with the
-            notebook and, like any cell output, stays referenced by IPython's
-            ``Out`` history for the session.
+        cdn_url : str
+            Base URL of a deployed eegdash-viewer.
+        max_bytes : int
+            Refuse to inline more than this much base64 (default 64 MiB); the
+            payload is saved with the notebook and, like any cell output,
+            stays referenced by IPython's ``Out`` history for the session.
 
         Returns
         -------
         IPython.display.HTML
         """
-        # Soft dependency: IPython ships with every notebook front-end and is
-        # not declared as a braindecode dependency.
         ipython = _soft_import("IPython", purpose=f"{type(self).__name__}.plot()")
-        HTML = ipython.display.HTML
-
         recording, sidecars, pose = self._viewer_recording(index)
-        return HTML(
+        return ipython.display.HTML(
             build_viewer_html(
                 recording,
                 pose,
                 sidecars=sidecars,
                 height=height,
-                cdn=self.viewer_cdn if cdn_url is None else cdn_url,
-                max_bytes=self.viewer_max_bytes if max_bytes is None else max_bytes,
+                cdn=cdn_url,
+                max_bytes=max_bytes,
             )
         )

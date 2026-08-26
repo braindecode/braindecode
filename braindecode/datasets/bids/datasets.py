@@ -20,7 +20,6 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from .. import _notebook_viewer
 from ..base import BaseConcatDataset, RawDataset, WindowsDataset
 
 
@@ -180,7 +179,6 @@ class BIDSDataset(BaseConcatDataset):
                 if not (bids_path.suffix == "epo" and bids_path.extension == ".fif")
             ]
 
-        self.bids_paths = bids_paths
         all_base_ds = Parallel(n_jobs=self.n_jobs)(
             delayed(self._get_dataset)(bids_path) for bids_path in bids_paths
         )
@@ -197,10 +195,6 @@ class BIDSDataset(BaseConcatDataset):
         if self.preload:
             raw.load_data()
         return RawDataset(raw, description)
-
-    def _viewer_recording(self, index: int):
-        # BIDSPath-aware: channels/events sidecars follow BIDS inheritance.
-        return _notebook_viewer.recording_files(self.bids_paths[index])
 
 
 class BIDSEpochsDataset(BIDSDataset):
