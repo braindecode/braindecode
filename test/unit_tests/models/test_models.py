@@ -74,6 +74,7 @@ from braindecode.models.eegpt import (
     _rotate_half,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.usleep import _DecoderBlock
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
@@ -886,6 +887,27 @@ def test_usleep(n_chans, sfreq, n_classes, input_size_s):
     assert y_pred3.shape == (n_examples, n_classes, seq_length)
     np.testing.assert_allclose(
         y_pred1.detach().cpu().numpy(), y_pred2.detach().cpu().numpy()
+    )
+
+
+def test_usleep_decoder_crop_returns_prefix_views():
+    """Decoder alignment avoids allocating device-specific index tensors."""
+    longer = torch.arange(30).reshape(2, 3, 5)
+    shorter = torch.arange(24).reshape(2, 3, 4)
+
+    cropped_longer, cropped_shorter = _DecoderBlock._crop_tensors_to_match(
+        longer, shorter
+    )
+
+    torch.testing.assert_close(cropped_longer, longer[..., :4])
+    torch.testing.assert_close(cropped_shorter, shorter)
+    assert (
+        cropped_longer.untyped_storage().data_ptr()
+        == longer.untyped_storage().data_ptr()
+    )
+    assert (
+        cropped_shorter.untyped_storage().data_ptr()
+        == shorter.untyped_storage().data_ptr()
     )
 
 
