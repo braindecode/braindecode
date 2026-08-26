@@ -2,6 +2,7 @@
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
+from unittest.mock import patch
 from warnings import catch_warnings, simplefilter
 
 import numpy as np
@@ -359,19 +360,56 @@ def test_drop_path_with_dropout_shape():
     )
 
 
+def test_drop_path_does_not_require_inplace_bernoulli():
+    x = torch.ones(64, 3)
+
+    with patch.object(
+        torch.Tensor,
+        "bernoulli_",
+        side_effect=AssertionError("drop_path must not use in-place Bernoulli"),
+    ):
+        output = drop_path(x, drop_prob=0.5, training=True)
+
+    assert output.shape == x.shape
+    assert set(output.unique().tolist()).issubset({0.0, 2.0})
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.bfloat16])
+def test_drop_path_preserves_tensor_contract_and_seed(dtype):
+    x = torch.ones(64, 3, 4, dtype=dtype)
+
+    torch.manual_seed(42)
+    first = drop_path(x, drop_prob=0.5, training=True)
+    torch.manual_seed(42)
+    second = drop_path(x, drop_prob=0.5, training=True)
+
+    assert torch.equal(first, second)
+    assert first.shape == x.shape
+    assert first.dtype == x.dtype
+    assert first.device == x.device
+    assert torch.equal(first, first[:, :1, :1].expand_as(first))
+    assert set(first.unique().tolist()).issubset({0.0, 2.0})
+
+
+@pytest.mark.parametrize("drop_prob", [-0.1, 1.1, float("nan")])
+def test_drop_path_rejects_invalid_probability(drop_prob):
+    with pytest.raises(RuntimeError):
+        drop_path(torch.ones(2, 3), drop_prob=drop_prob, training=True)
+
+
 def test_drop_path_scale_by_keep():
-    torch.manual_seed(0)
-    x = torch.rand(1, 10)  # Single-dimension tensor for simplicity
+    x = torch.ones(64, 10)
     drop_prob = 0.2
+
+    torch.manual_seed(0)
     scaled_output = drop_path(x, drop_prob=drop_prob, training=True, scale_by_keep=True)
+    torch.manual_seed(0)
     unscaled_output = drop_path(
         x, drop_prob=drop_prob, training=True, scale_by_keep=False
     )
-    # This test relies on statistical expectation and may need multiple runs or adjustments
-    scale_factor = 1 / (1 - drop_prob)
-    assert torch.allclose(
-        scaled_output.mean(), unscaled_output.mean() * scale_factor, atol=0.1
-    ), "Scaled output does not match expected scaling."
+
+    keep_prob = 1 - drop_prob
+    assert torch.equal(scaled_output, unscaled_output / keep_prob)
 
 
 def test_drop_path_different_dimensions():
@@ -610,9 +648,7 @@ def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
             axis=-1,
         )
     else:
-        filtered_scipy = _filfilt_in_torch_sytle(
-            b=filts["b"], a=filts["a"], x_np=x_np
-        )
+        filtered_scipy = _filfilt_in_torch_sytle(b=filts["b"], a=filts["a"], x_np=x_np)
     # Compare the outputs
     np.testing.assert_array_almost_equal(
         filtered_signal_torch.numpy().flatten(),

@@ -40,7 +40,7 @@ def drop_path(
     x : torch.Tensor
         input tensor
     drop_prob : float, optional
-        survival rate (i.e. probability of being kept), by default 0.0
+        probability of dropping a path, by default 0.0
     training : bool, optional
         whether the model is in training mode, by default False
     scale_by_keep : bool, optional
@@ -68,9 +68,10 @@ def drop_path(
     shape = (x.shape[0],) + (1,) * (
         x.ndim - 1
     )  # work with diff dim tensors, not just 2D ConvNets
-    random_tensor = x.new_empty(shape).bernoulli_(keep_prob)
+    probabilities = torch.full(shape, keep_prob, dtype=torch.float32, device=x.device)
+    random_tensor = torch.bernoulli(probabilities).to(dtype=x.dtype)
     if keep_prob > 0.0 and scale_by_keep:
-        random_tensor.div_(keep_prob)
+        random_tensor = random_tensor / keep_prob
     return x * random_tensor
 
 
