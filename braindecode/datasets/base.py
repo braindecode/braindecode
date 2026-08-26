@@ -1175,6 +1175,10 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, ViewerMixin, Generic[T])
         If True, defer computing cumulative sizes until length or item access.
     """
 
+    plot = (
+        ViewerMixin.plot
+    )  # direct member: rendered in the API docs, linkable with :meth:
+
     datasets: list[T]
 
     def __init__(

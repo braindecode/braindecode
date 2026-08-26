@@ -95,10 +95,9 @@ def viewer_name(recording: Path) -> str:
     reader; channel types still come from the file).
     """
     rec = Path(recording)
-    token = rec.stem.rsplit("_", 1)[-1]
-    return (
-        rec.name if token in _BIDS_SUFFIXES else f"{rec.stem}_eeg{rec.suffix.lower()}"
-    )
+    if rec.stem.rpartition("_")[2] in _BIDS_SUFFIXES:
+        return rec.name
+    return f"{rec.stem}_eeg{rec.suffix.lower()}"
 
 
 def _posted_name(path: Path, recording: Path) -> str:
@@ -156,7 +155,11 @@ def recording_files(recording: Path) -> tuple[Path, tuple[Path, ...], Path | Non
         ValueError,
     ):  # not a BIDS name (0-raw.fif) / unknown entity in the tree
         pass
-    pose = rec.with_name(rec.stem.rsplit("_", 1)[0] + "_desc-pose.json")
+    # <prefix>_desc-pose.json: the BIDS prefix, or the whole stem of a plain name
+    stem, _, token = rec.stem.rpartition("_")
+    pose = rec.with_name(
+        (stem if token in _BIDS_SUFFIXES else rec.stem) + "_desc-pose.json"
+    )
     return rec, sidecars, pose if pose.is_file() else None
 
 
@@ -181,6 +184,10 @@ def _check_cdn(cdn: str) -> tuple[str, str]:
     parts = urlsplit(cdn)
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise ValueError(f"cdn must be an absolute http(s) URL, got {cdn!r}")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError(
+            f"cdn must not carry credentials (browser origins never do), got {cdn!r}"
+        )
     if (
         parts.query
         or parts.fragment
@@ -209,6 +216,8 @@ def build_viewer_html(
     """
     base, origin = _check_cdn(cdn)
     check_viewable(recording)
+    if pose_sidecar is not None and not Path(pose_sidecar).is_file():
+        raise ValueError(f"{Path(pose_sidecar).name}: pose sidecar is not a file")
     rec = Path(recording)
     files = collect_files(rec, sidecars)
     inlined = files + ([Path(pose_sidecar)] if pose_sidecar is not None else [])
@@ -219,33 +228,25 @@ def build_viewer_html(
             f"the notebook output (max_bytes={max_bytes / 2**20:.1f} MiB). Crop or downsample "
             "and export a smaller file, or pass a larger max_bytes."
         )
-    payload = {
-        "files": [{"name": _posted_name(p, rec), "b64": _b64(p)} for p in files],
-        "pose": _b64(pose_sidecar) if pose_sidecar is not None else None,
-    }
+    b64 = [base64.b64encode(p.read_bytes()).decode() for p in inlined]
     uid = f"eegdash-viewer-{uuid.uuid4().hex[:8]}"
-    return "".join(
-        (
-            f'<iframe id="{uid}" title="eegdash trace viewer" style="width:100%;height:{int(height)}px;'
-            'border:1px solid var(--jp-border-color1,#d9dce1);border-radius:6px;background:transparent"></iframe>',
-            _SCRIPT
-            % {
-                "id": _js(uid),
-                "payload": _js(payload),
-                "origin": _js(origin),
-                "src": _js(f"{base}/index.html?embed=1"),
-            },
-        )
+    literals = {  # JSON literals for the inline script: `<` can never open a tag
+        "id": uid,
+        "payload": {
+            "files": [
+                {"name": _posted_name(p, rec), "b64": b} for p, b in zip(files, b64)
+            ],
+            "pose": b64[-1] if pose_sidecar is not None else None,
+        },
+        "origin": origin,
+        "src": f"{base}/index.html?embed=1",
+    }
+    return (
+        f'<iframe id="{uid}" title="eegdash trace viewer" style="width:100%;height:{int(height)}px;'
+        'border:1px solid var(--jp-border-color1,#d9dce1);border-radius:6px;background:transparent"></iframe>'
+        + _SCRIPT
+        % {k: json.dumps(v).replace("<", "\\u003c") for k, v in literals.items()}
     )
-
-
-def _js(value: Any) -> str:
-    """A JSON literal safe inside an inline <script> (`<` can never open a tag)."""
-    return json.dumps(value).replace("<", "\\u003c")
-
-
-def _b64(path: Path) -> str:
-    return base64.b64encode(Path(path).read_bytes()).decode()
 
 
 class ViewerMixin:
