@@ -198,17 +198,16 @@ def recording_files(bids_path) -> tuple[Path, tuple[Path, ...], Path | None]:
 
 
 class ViewerMixin:
-    """``plot()`` for any dataset that can name a recording file.
+    """``plot()`` for every :class:`~braindecode.datasets.BaseConcatDataset`.
 
-    Subclasses adapt one hook, :meth:`_viewer_recording`; ``BIDSDataset``
-    reads ``self.bids_paths[index]``. A dataset whose recordings live
-    elsewhere (eegdash's ``EEGDashDataset``: ``self.datasets[index]`` with a
-    ``bidspath`` and a download step) overrides it, e.g.::
-
-        def _viewer_recording(self, index):
-            ds = self.datasets[index]
-            ds._ensure_raw()
-            return recording_files(ds.bidspath)
+    The default :meth:`_viewer_recording` looks at ``self.datasets[index]``:
+    a ``bidspath`` attribute wins (eegdash's ``EEGDashBaseDataset``; its lazy
+    ``raw`` is touched first when the file is not cached yet), otherwise the
+    file behind the element's mne ``raw`` (``raw.filenames[0]``, any
+    file-backed ``RawDataset``). ``BIDSDataset`` overrides the hook with its
+    ``bids_paths`` so sidecars follow BIDS inheritance. Subclasses with
+    another notion of "the recording file" override the same hook and
+    return :func:`recording_files` of it.
 
     ``viewer_cdn`` / ``viewer_max_bytes`` are the class-level defaults of
     the ``plot()`` keyword arguments.
@@ -220,7 +219,20 @@ class ViewerMixin:
     def _viewer_recording(
         self, index: int
     ) -> tuple[Path, tuple[Path, ...], Path | None]:
-        return recording_files(self.bids_paths[index])
+        ds = self.datasets[index]
+        source = getattr(ds, "bidspath", None)
+        if source is not None:
+            fpath = Path(getattr(source, "fpath", source))
+            if not fpath.exists():  # lazily downloaded recordings cache on access
+                getattr(ds, "raw", None)
+            return recording_files(source)
+        filenames = getattr(getattr(ds, "raw", None), "filenames", None) or ()
+        if not filenames:
+            raise ValueError(
+                f"{type(self).__name__}[{index}] is not backed by a recording file; "
+                "nothing to show in the viewer"
+            )
+        return recording_files(Path(filenames[0]))
 
     def plot(
         self,

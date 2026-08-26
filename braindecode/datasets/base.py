@@ -32,6 +32,7 @@ from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset, IterableDataset
 from typing_extensions import TypeVar
 
+from ._notebook_viewer import ViewerMixin
 from .bids.hub import HubDatasetMixin
 from .bids.hub_io import _restore_nan_from_json
 from .registry import register_dataset
@@ -1155,7 +1156,7 @@ class WindowsDataset(_ZarrMixin, RecordDataset):
 
 
 @register_dataset
-class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
+class BaseConcatDataset(ViewerMixin, ConcatDataset, HubDatasetMixin, Generic[T]):
     """A base class for concatenated datasets.
 
     Holds either mne.Raw or mne.Epoch in self.datasets and has

@@ -178,25 +178,38 @@ def test_bids_dataset_plot_explains_missing_ipython(plot_dataset, monkeypatch):
         dataset.plot(0)
 
 
-def test_viewer_mixin_is_the_extension_point(plot_dataset):
-    """A dataset without ``bids_paths`` (eegdash-style) adapts one hook."""
-    from braindecode.datasets._notebook_viewer import ViewerMixin, recording_files
+def test_plot_comes_with_base_concat_dataset(plot_dataset):
+    """Any BaseConcatDataset plots: bidspath elements (eegdash) or file-backed raws."""
+    from braindecode.datasets import BaseConcatDataset
+    from braindecode.datasets._notebook_viewer import ViewerMixin
 
-    assert issubclass(BIDSDataset, ViewerMixin)
+    assert issubclass(BaseConcatDataset, ViewerMixin)
     _, recording = plot_dataset
+    touched = []
 
-    class Cached(ViewerMixin):  # e.g. EEGDashDataset: recordings downloaded on demand
-        viewer_cdn = "https://viewer.example.org/app"
-        ensured = []
+    class LazyRecord:  # eegdash-style element: BIDSPath + download-on-access raw
+        bidspath = SimpleNamespace(
+            fpath=recording.with_name("later" + recording.suffix)
+        )
 
-        def _viewer_recording(self, index):
-            self.ensured.append(index)
-            return recording_files(recording)
+        @property
+        def raw(self):
+            touched.append("download")
+            self.bidspath.fpath.write_bytes(b"")
+            return None
 
-    html = Cached().plot(3).data
-    assert Cached.ensured == [3]
-    assert 'src="https://viewer.example.org/app/index.html?embed=1"' in html
-    assert recording.name in html
+    class FileBacked:  # any RawDataset whose mne Raw came from a file
+        raw = SimpleNamespace(filenames=(str(recording),))
+
+    class MemoryOnly:
+        raw = SimpleNamespace(filenames=())
+
+    ds = object.__new__(BaseConcatDataset)
+    ds.datasets = [LazyRecord(), FileBacked(), MemoryOnly()]
+    assert LazyRecord.bidspath.fpath.name in ds.plot(0).data and touched == ["download"]
+    assert recording.name in ds.plot(1).data
+    with pytest.raises(ValueError, match="not backed by a recording file"):
+        ds.plot(2)
 
 
 def test_bids_dataset_plot_real_tree_inlines_trio_and_inherited_sidecars(tmp_path):

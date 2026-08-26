@@ -37,7 +37,7 @@ def _description_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
 
 
 @dataclass
-class BIDSDataset(_notebook_viewer.ViewerMixin, BaseConcatDataset):
+class BIDSDataset(BaseConcatDataset):
     """Dataset for loading BIDS.
 
     This class has the same parameters as the :func:`mne_bids.find_matching_paths` function
@@ -197,6 +197,10 @@ class BIDSDataset(_notebook_viewer.ViewerMixin, BaseConcatDataset):
         if self.preload:
             raw.load_data()
         return RawDataset(raw, description)
+
+    def _viewer_recording(self, index: int):
+        # BIDSPath-aware: channels/events sidecars follow BIDS inheritance.
+        return _notebook_viewer.recording_files(self.bids_paths[index])
 
 
 class BIDSEpochsDataset(BIDSDataset):
