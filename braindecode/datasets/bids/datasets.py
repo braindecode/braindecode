@@ -37,7 +37,7 @@ def _description_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
 
 
 @dataclass
-class BIDSDataset(BaseConcatDataset):
+class BIDSDataset(_notebook_viewer.ViewerMixin, BaseConcatDataset):
     """Dataset for loading BIDS.
 
     This class has the same parameters as the :func:`mne_bids.find_matching_paths` function
@@ -197,72 +197,6 @@ class BIDSDataset(BaseConcatDataset):
         if self.preload:
             raw.load_data()
         return RawDataset(raw, description)
-
-    def plot(
-        self,
-        index: int = 0,
-        *,
-        height: int = 520,
-        cdn_url: str = _notebook_viewer.CDN,
-        max_bytes: int = _notebook_viewer.MAX_BYTES,
-    ):
-        """Show one recording in the eegdash-viewer inside a Jupyter cell.
-
-        Serverless: the recording bytes are inlined in the output and pushed
-        into the viewer (loaded from ``cdn_url``) over ``postMessage``. The
-        output is HTML with a script, so it renders when the cell is run in
-        your session; a saved notebook shows it again only once it is
-        trusted (``jupyter trust notebook.ipynb`` or File > Trust Notebook).
-        Drag to pan, hover for the cursor readout; when a ``*_desc-pose.json``
-        sidecar sits next to the recording the hand skeleton tracks the
-        cursor (``p`` toggles the panel). See
-        https://github.com/eegdash/eegdash-viewer/blob/main/docs/embedding.md.
-
-        Parameters
-        ----------
-        index : int
-            Recording to display (position in ``self.bids_paths``).
-        height : int
-            Viewer height in pixels.
-        cdn_url : str
-            Base URL of a deployed eegdash-viewer.
-        max_bytes : int
-            Refuse to inline more than this much base64 (default 64 MiB). The
-            payload is saved with the notebook and, like any cell output,
-            stays referenced by IPython's ``Out`` history for the session.
-
-        Returns
-        -------
-        IPython.display.HTML
-        """
-        try:
-            from IPython.display import HTML
-        except ImportError as err:  # pragma: no cover - environment dependent
-            raise ImportError(
-                "BIDSDataset.plot requires IPython; install it with "
-                "`pip install ipython`."
-            ) from err
-
-        bids_path = self.bids_paths[index]
-        # Not resolved: git-annex/datalad symlinks keep their BIDS name.
-        fpath = Path(bids_path.fpath)
-        # BIDS-inherited channels/events sidecars (mne_bids resolves them).
-        find = getattr(bids_path, "find_matching_sidecar", None)
-        sidecars = tuple(
-            p
-            for suffix in ("channels", "events")
-            if find and (p := find(suffix=suffix, extension=".tsv", on_error="ignore"))
-        )
-        return HTML(
-            _notebook_viewer.build_viewer_html(
-                fpath,
-                _notebook_viewer.pose_sidecar_for(fpath),
-                sidecars=sidecars,
-                height=height,
-                cdn=cdn_url,
-                max_bytes=max_bytes,
-            )
-        )
 
 
 class BIDSEpochsDataset(BIDSDataset):

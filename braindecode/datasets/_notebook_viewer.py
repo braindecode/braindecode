@@ -178,3 +178,105 @@ def build_viewer_html(
 
 def _b64(path: Path) -> str:
     return base64.b64encode(Path(path).read_bytes()).decode()
+
+
+def recording_files(bids_path) -> tuple[Path, tuple[Path, ...], Path | None]:
+    """``(recording, sidecars, pose)`` for a ``mne_bids.BIDSPath`` or a plain path.
+
+    The recording keeps its BIDS name (symlinks are not resolved); channels
+    and events sidecars are BIDS-inherited when the object can resolve them
+    (``BIDSPath.find_matching_sidecar``); the pose sidecar sits next to it.
+    """
+    fpath = Path(getattr(bids_path, "fpath", bids_path))
+    find = getattr(bids_path, "find_matching_sidecar", None)
+    sidecars = tuple(
+        p
+        for suffix in ("channels", "events")
+        if find and (p := find(suffix=suffix, extension=".tsv", on_error="ignore"))
+    )
+    return fpath, sidecars, pose_sidecar_for(fpath)
+
+
+class ViewerMixin:
+    """``plot()`` for any dataset that can name a recording file.
+
+    Subclasses adapt one hook, :meth:`_viewer_recording`; ``BIDSDataset``
+    reads ``self.bids_paths[index]``. A dataset whose recordings live
+    elsewhere (eegdash's ``EEGDashDataset``: ``self.datasets[index]`` with a
+    ``bidspath`` and a download step) overrides it, e.g.::
+
+        def _viewer_recording(self, index):
+            ds = self.datasets[index]
+            ds._ensure_raw()
+            return recording_files(ds.bidspath)
+
+    ``viewer_cdn`` / ``viewer_max_bytes`` are the class-level defaults of
+    the ``plot()`` keyword arguments.
+    """
+
+    viewer_cdn: str = CDN
+    viewer_max_bytes: int = MAX_BYTES
+
+    def _viewer_recording(
+        self, index: int
+    ) -> tuple[Path, tuple[Path, ...], Path | None]:
+        return recording_files(self.bids_paths[index])
+
+    def plot(
+        self,
+        index: int = 0,
+        *,
+        height: int = 520,
+        cdn_url: str | None = None,
+        max_bytes: int | None = None,
+    ):
+        """Show one recording in the eegdash-viewer inside a Jupyter cell.
+
+        Serverless: the recording bytes are inlined in the output and pushed
+        into the viewer (loaded from ``cdn_url``) over ``postMessage``. The
+        output is HTML with a script, so it renders when the cell is run in
+        your session; a saved notebook shows it again only once it is
+        trusted (``jupyter trust notebook.ipynb`` or File > Trust Notebook).
+        Drag to pan, hover for the cursor readout; when a ``*_desc-pose.json``
+        sidecar sits next to the recording the hand skeleton tracks the
+        cursor (``p`` toggles the panel). See
+        https://github.com/eegdash/eegdash-viewer/blob/main/docs/embedding.md.
+        Needs IPython (``pip install braindecode[viewer]``).
+
+        Parameters
+        ----------
+        index : int
+            Recording to display.
+        height : int
+            Viewer height in pixels.
+        cdn_url : str | None
+            Base URL of a deployed eegdash-viewer (default ``viewer_cdn``).
+        max_bytes : int | None
+            Refuse to inline more than this much base64 (default
+            ``viewer_max_bytes``, 64 MiB). The payload is saved with the
+            notebook and, like any cell output, stays referenced by IPython's
+            ``Out`` history for the session.
+
+        Returns
+        -------
+        IPython.display.HTML
+        """
+        try:
+            from IPython.display import HTML
+        except ImportError as err:  # pragma: no cover - environment dependent
+            raise ImportError(
+                f"{type(self).__name__}.plot requires IPython; install it with "
+                "`pip install braindecode[viewer]`."
+            ) from err
+
+        recording, sidecars, pose = self._viewer_recording(index)
+        return HTML(
+            build_viewer_html(
+                recording,
+                pose,
+                sidecars=sidecars,
+                height=height,
+                cdn=self.viewer_cdn if cdn_url is None else cdn_url,
+                max_bytes=self.viewer_max_bytes if max_bytes is None else max_bytes,
+            )
+        )
