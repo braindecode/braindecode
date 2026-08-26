@@ -189,7 +189,7 @@ def test_plot_comes_with_base_concat_dataset(plot_dataset):
 
     class LazyRecord:  # eegdash-style element: BIDSPath + download-on-access raw
         bidspath = SimpleNamespace(
-            fpath=recording.with_name("later" + recording.suffix)
+            fpath=recording.with_name("sub-893_task-later_emg.vhdr")
         )
 
         @property
