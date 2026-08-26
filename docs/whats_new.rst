@@ -73,10 +73,39 @@ API and behavior changes
 Requirements
 ============
 
-- None yet
+- Remove the ``rotary_embedding_torch`` dependency. The rotary frequency
+  generation used by :class:`braindecode.models.LUNA` and
+  :class:`braindecode.models.ZUNA` is now implemented directly with PyTorch.
+  (:gh:`1136` by `Bruno Aristimunha`_)
 
 Bug fixes
 ==========
+
+- Make :class:`braindecode.models.LUNA` rotary attention portable to
+  accelerators that reject concatenations containing empty tensor views, while
+  preserving its pretrained-checkpoint parameter keys and numerical behavior.
+  Also crop mismatched :class:`braindecode.models.USleep` decoder tensors with
+  views instead of allocating index tensors, avoiding unsupported accelerator
+  lowering without changing the selected samples. (:gh:`1136` by `Bruno
+  Aristimunha`_)
+
+- Fix the docstrings of :class:`braindecode.models.ATCNet`,
+  :class:`braindecode.models.AttnSleep`, :class:`braindecode.models.CTNet`,
+  :class:`braindecode.models.EEGSimpleConv`, :class:`braindecode.models.IFNet`,
+  :class:`braindecode.models.SPARCNet`,
+  :class:`braindecode.models.SleepStagerBlanco2020`,
+  :class:`braindecode.models.SleepStagerChambon2018` and
+  :class:`braindecode.models.TIDNet`, which documented parameters their
+  constructors do not accept, either because the parameter was renamed
+  (``bn_size`` is ``bottleneck_size``, ``resampling`` is ``resampling_freq``,
+  ``att_dropout`` is ``att_drop_prob``) or because it was a deprecated alias
+  that has since been removed (``n_classes``, ``n_channels``, ``in_chans``,
+  ``input_size_s``, ``input_window_samples``). Following those docstrings
+  raised ``TypeError``. It also corrects stale defaults and types in
+  :class:`braindecode.models.CTNet`,
+  :class:`braindecode.models.EEGSimpleConv`, :class:`braindecode.models.IFNet`,
+  and :class:`braindecode.models.SleepStagerBlanco2020` (:gh:`1116` by `Aditya
+  Singh`_).
 
 - Honor the configurable activation in the adaptive feature recalibration block
   of :class:`braindecode.models.AttnSleep`, and report the ``d_model`` required

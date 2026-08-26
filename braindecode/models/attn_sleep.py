@@ -88,10 +88,6 @@ class AttnSleep(EEGModuleMixin, nn.Module):
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
-    n_classes : int
-        Alias for `n_outputs`.
-    input_size_s : float
-        Alias for `input_window_seconds`.
     activation : nn.Module, default=nn.ReLU
         Activation function class to apply in the AFR block and the TCE
         feed-forward block. Should be a PyTorch activation

@@ -71,17 +71,19 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
 
     Parameters
     ----------
-    feature_maps: int
+    feature_maps : int
         Number of Feature Maps at the first Convolution, width of the model.
-    n_convs: int
+    n_convs : int
         Number of blocks of convolutions (2 convolutions per block), depth of the model.
-    resampling: int
+    resampling_freq : int
         Resampling Frequency.
-    kernel_size: int
+    kernel_size : int
         Size of the convolutions kernels.
-    activation: nn.Module, default=nn.ELU
+    return_feature : bool, default=False
+        If True, return the features before the final linear layer.
+    activation : nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
-        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     References
     ----------
