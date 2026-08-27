@@ -1,3 +1,4 @@
+# License: Apache-2.0
 """This implementation is adapted from ETH Zurich's BioFoundation repository.
 
 Döner, B., Ingolfsson, T. M., Benini, L., & Li, Y. (2025).

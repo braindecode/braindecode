@@ -1,3 +1,4 @@
+# License: MIT
 """IFNet Neural Network.
 
 Authors: Jiaheng Wang

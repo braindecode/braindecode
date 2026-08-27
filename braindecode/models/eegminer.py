@@ -6,6 +6,7 @@
 """
 
 # Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
+# License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
 
 import torch
 from torch import nn
