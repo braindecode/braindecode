@@ -12,6 +12,7 @@ The following components are licensed under the Creative Commons Attribution-Non
 
 - `braindecode/models/eegminer.py`
 - `braindecode/models/meta_neuromotor.py`
+- `braindecode/models/brainmodule.py`
 
 As well as class later imported into the `braindecode.models.module` named as GeneralizedGaussianFilter.
 
@@ -19,7 +20,45 @@ The `meta_neuromotor.py` file is a derivative of
 `facebookresearch/generic-neuromotor-interface`, released by Meta Platforms,
 Inc. under CC BY-NC 4.0, and inherits the same noncommercial terms.
 
+### CC BY-NC-SA 4.0 Licensed Files
+
+The following components are licensed under the Creative Commons
+Attribution-NonCommercial-ShareAlike 4.0 International License:
+
+- `braindecode/models/emg2qwerty.py`
+
+The `emg2qwerty.py` file is a derivative of `facebookresearch/emg2qwerty`,
+released by Meta Platforms, Inc. under CC BY-NC-SA 4.0, and inherits the
+same noncommercial ShareAlike terms.
+
+### MIT Licensed Files
+
+The following components are licensed under the MIT License:
+
+- `braindecode/models/ctnet.py`
+- `braindecode/models/dance.py`
+- `braindecode/models/medformer.py`
+- `braindecode/models/tcformer.py`
+- `braindecode/models/ifnet.py`
+
+### Apache-2.0 Licensed Files
+
+The following components are licensed under the Apache License 2.0:
+
+- `braindecode/models/mvpformer.py`
+- `braindecode/models/zuna.py`
+- `braindecode/models/luna.py`
+
 ## License Links
 
 - [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause)
 - [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)
+- [CC BY-NC-SA 4.0 License](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+- [MIT License](https://opensource.org/licenses/MIT)
+- [Apache-2.0 License](https://www.apache.org/licenses/LICENSE-2.0)
+
+## Note
+
+This list covers files whose own headers declare a license other than
+BSD-3-Clause. Per-file provenance review of the remaining models is
+tracked separately.
