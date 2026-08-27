@@ -1,4 +1,4 @@
-# Authors: Vandit Shah <shahvandit@gmail.com>
+# Authors: Vandit Shah <shahvanditt@gmail.com>
 #
 # License: BSD (3-clause)
 
