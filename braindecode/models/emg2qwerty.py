@@ -1,9 +1,10 @@
 # Authors: Meta Platforms, Inc. and affiliates (original emg2qwerty)
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (Braindecode adaptation)
 #
-# License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+# License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+#          International (CC BY-NC-SA 4.0)
 # Adapted from https://github.com/facebookresearch/emg2qwerty (NeurIPS 2024).
-# Inherits CC BY-NC 4.0; not covered by braindecode's BSD-3 license.
+# Inherits CC BY-NC-SA 4.0; not covered by braindecode's BSD-3 license.
 """``EMG2QwertyNet``: TDS-Conv-CTC for sEMG-to-keystroke decoding."""
 
 from __future__ import annotations
@@ -89,7 +90,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module):
     .. warning::
         **License: noncommercial use only.** This module is a derivative
         of Meta's reference implementation released under
-        `CC BY-NC 4.0 <https://creativecommons.org/licenses/by-nc/4.0/>`_,
+        `CC BY-NC-SA 4.0 <https://creativecommons.org/licenses/by-nc-sa/4.0/>`_,
         the same license as the upstream repository. Not covered by
         braindecode's BSD-3 license. Must not be used in commercial
         products or services. Pretrained weights from the upstream release
