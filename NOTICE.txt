@@ -4,7 +4,8 @@
 
 ### BSD-3-Clause Licensed Files
 
-All files within the `src/` directory are licensed under the BSD-3-Clause License.
+All files within the `braindecode/` package are licensed under the BSD-3-Clause
+License, except for those listed in the sections below.
 
 ### CC BY-NC 4.0 Licensed Files
 
