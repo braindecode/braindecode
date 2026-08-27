@@ -19,7 +19,7 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 
 
-class EMG2QwertyNet(EEGModuleMixin, nn.Module):
+class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
     r"""Decoder mapping surface electromyography (sEMG) to keystrokes
     (emg2qwerty) [emg2qwerty2024]_.
 

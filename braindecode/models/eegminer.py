@@ -48,7 +48,7 @@ class _EEGMinerFeatures(nn.Module):
         return x[:, self.triu_row, self.triu_col, :]
 
 
-class EEGMiner(EEGModuleMixin, nn.Module):
+class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     r"""EEGMiner from Ludwig et al (2024) [eegminer]_.
 
     :bdg-success:`Convolution` :bdg-warning:`Interpretability`

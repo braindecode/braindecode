@@ -26,7 +26,7 @@ from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.layers import DropPath
 
 
-class LUNA(EEGModuleMixin, nn.Module):
+class LUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     r"""LUNA from Döner et al [LUNA]_.
 
     :bdg-success:`Convolution` :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel`

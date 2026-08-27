@@ -28,7 +28,7 @@ from braindecode.modules import (
 )
 
 
-class IFNet(EEGModuleMixin, nn.Module):
+class IFNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""IFNetV2 from Wang J et al (2023) [ifnet]_.
 
     :bdg-success:`Convolution` :bdg-primary:`Filterbank`

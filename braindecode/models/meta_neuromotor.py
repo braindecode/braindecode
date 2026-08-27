@@ -31,7 +31,7 @@ _LPadType = int | Literal["none", "steady", "full"]
 # ---------------------------------------------------------------------------
 
 
-class MetaNeuromotorHand(EEGModuleMixin, nn.Module):
+class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     r"""Generic neuromotor interface for handwriting from Meta (2025) [gni2025]_.
 
     :bdg-info:`Attention/Transformer` :bdg-success:`Convolution`

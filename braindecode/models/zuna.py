@@ -19,7 +19,7 @@ from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import PatchTokenizer
 
 
-class ZUNA(EEGModuleMixin, nn.Module):
+class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     r"""ZUNA from Warner et al. (2026) [Warner2026ZUNA]_.
 
     :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel` :bdg-info:`Attention/Transformer`
