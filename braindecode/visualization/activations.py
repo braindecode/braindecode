@@ -77,9 +77,21 @@ def capture_activations(model, x, layers, forward_fn=None, detach=True):
         One entry per requested module, keyed as described above. A module
         returning a tuple or dict is stored with that structure intact.
 
+    Raises
+    ------
+    RuntimeError
+        If a requested module was never called during the forward pass.
+        Returning a short dictionary instead would push the failure to
+        whichever line first indexes the missing key, long after the cause.
+
     See Also
     --------
     run_with_activation_substitution : Replace a layer's output instead.
+
+    Notes
+    -----
+    A module called more than once in a single forward pass, as with weight
+    sharing or a loop over a shared block, keeps only its last output.
 
     Examples
     --------
@@ -117,6 +129,14 @@ def capture_activations(model, x, layers, forward_fn=None, detach=True):
         for handle in handles:
             handle.remove()
 
+    missing = [key for key, _ in items if key not in captured]
+    if missing:
+        raise RuntimeError(
+            f"these modules were never called during the forward pass: {missing}. "
+            "Check that they belong to the model reached by forward_fn and that "
+            "the input takes the branch containing them."
+        )
+
     return captured
 
 
@@ -147,6 +167,15 @@ def run_with_activation_substitution(model, x, layer, substitute_fn, forward_fn=
         Whatever ``forward_fn`` returns, computed with the substitution in
         place.
 
+    Raises
+    ------
+    TypeError
+        If ``substitute_fn`` returns ``None``. A forward hook returning
+        ``None`` leaves the module's own output in place, so a
+        ``substitute_fn`` missing its ``return`` would otherwise run to
+        completion and report an unchanged metric as though the
+        substitution had happened.
+
     See Also
     --------
     capture_activations : Record a layer's output instead of replacing it.
@@ -163,7 +192,13 @@ def run_with_activation_substitution(model, x, layer, substitute_fn, forward_fn=
 
     def hook(_module, _inputs, output):
         """Return the substituted output in place of the module's own."""
-        return substitute_fn(output)
+        replacement = substitute_fn(output)
+        if replacement is None:
+            raise TypeError(
+                "substitute_fn returned None, which torch reads as "
+                "'keep the original output'. Return the replacement instead."
+            )
+        return replacement
 
     handle = layer.register_forward_hook(hook)
     try:
