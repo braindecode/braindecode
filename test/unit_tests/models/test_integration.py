@@ -516,9 +516,6 @@ def test_model_exported(model):
         "SSTDPN",  # We found a fake tensor in the exported program constant's list.
         "Labram",  # Uses data-dependent channel/patch paths that are not export-stable yet.
         "CodeBrain",  # Data-dependent n_times // patch_size division in forward is not export-stable.
-        # Autoregressive rollouts: data-dependent step count and optional
-        # state anchor are not export-stable (graph breaks on the LSTM loop).
-        "VEMG2Pose",
     ]
     if sys.platform.startswith("win"):
         not_exportable_models += [
@@ -594,10 +591,6 @@ def test_model_torch_script(model):
         # TorchScript / torch.jit.script cannot scriptify the MPF featurizer
         # (torch.linalg.eigh + torch.stft).
         "MetaNeuromotorHand",
-        # Autoregressive pose rollouts: python-level LSTM step loop with
-        # data-dependent lengths and optional state anchor (y0); not
-        # scriptable (same class of limitation as MetaNeuromotorHand).
-        "VEMG2Pose",
         "SignalJEPA",
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",

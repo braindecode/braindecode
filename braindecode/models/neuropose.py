@@ -35,7 +35,7 @@ class NeuroPose(EEGModuleMixin, nn.Module):
 
     ``(B, n_chans, T)`` → channel adapter → exact resampling to
     ``internal_sfreq`` (200 Hz) → three Conv2d-BN-ReLU-Dropout-MaxPool
-    stages downsampling (time × bands) by (5, 2), (4, 2), (2, 2) →
+    stages downsampling (time × bands) by (5, 2), (4, 2), (2, 1) →
     linear projection to ``encoder_dim`` → ``n_res_blocks`` residual
     blocks over time → mirrored Conv-BN-ReLU-Upsample(nearest) decoder
     → linear head → upsample to ``T`` → ``(B, T, n_outputs)``.
@@ -53,7 +53,7 @@ class NeuroPose(EEGModuleMixin, nn.Module):
     ``NeuroPose.encoder``
         **Operations.** Three Conv-BN-ReLU-Dropout-MaxPool blocks
         (filters ``base_channels``, ``×2``, ``×4``), kernel 3×2,
-        downsampling factors (5, 2), (4, 2), (2, 2).
+        downsampling factors (5, 2), (4, 2), (2, 1).
         **Role.** Compact spatio-temporal representation of the 5 s
         window, mirroring the paper's schedule.
 
@@ -238,54 +238,125 @@ class NeuroPose(EEGModuleMixin, nn.Module):
 
         if channel_adapter == "learned":
             self.adapter = nn.Sequential(
-                Rearrange("b c t -> b t c"),
-                nn.Linear(self.n_chans, self.n_bands),
-                Rearrange("b t c -> b c t"),
+                Rearrange("batch nchans ntimes -> batch ntimes nchans"),
+                nn.Linear(in_features=self.n_chans, out_features=self.n_bands),
+                Rearrange("batch ntimes nbands -> batch nbands ntimes"),
             )
         else:
-            self.adapter = _TileChannels(self.n_chans, self.n_bands)
+            self.adapter = _TileChannels(n_chans=self.n_chans, n_bands=self.n_bands)
 
         if encoder_channels is None:
-            c1, c2, c3 = base_channels, base_channels * 2, base_channels * 4
+            narrow_width = base_channels
+            medium_width = base_channels * 2
+            wide_width = base_channels * 4
         else:
             if len(encoder_channels) != 3:
                 raise ValueError(
                     "encoder_channels must give exactly three widths; got "
                     f"{len(encoder_channels)}."
                 )
-            c1, c2, c3 = (int(width) for width in encoder_channels)
-            if min(c1, c2, c3) < 1:
+            narrow_width, medium_width, wide_width = (
+                int(width) for width in encoder_channels
+            )
+            if min(narrow_width, medium_width, wide_width) < 1:
                 raise ValueError(
                     f"encoder_channels must be positive; got {encoder_channels}."
                 )
         self.encoder = nn.Sequential(
-            _ConvBlock(1, c1, 3, 2, 5, 2, activation, drop_prob),
-            _ConvBlock(c1, c2, 3, 2, 4, 2, activation, drop_prob),
-            _ConvBlock(c2, c3, 3, 1, 2, 1, activation, drop_prob),
+            _ConvBlock(
+                in_channels=1,
+                out_channels=narrow_width,
+                kernel_time=3,
+                kernel_band=2,
+                pool_time=5,
+                pool_band=2,
+                activation=activation,
+                drop_prob=drop_prob,
+            ),
+            _ConvBlock(
+                in_channels=narrow_width,
+                out_channels=medium_width,
+                kernel_time=3,
+                kernel_band=2,
+                pool_time=4,
+                pool_band=2,
+                activation=activation,
+                drop_prob=drop_prob,
+            ),
+            _ConvBlock(
+                in_channels=medium_width,
+                out_channels=wide_width,
+                kernel_time=3,
+                kernel_band=1,
+                pool_time=2,
+                pool_band=1,
+                activation=activation,
+                drop_prob=drop_prob,
+            ),
         )
-        self.input_to_encoder = Rearrange("b c t -> b 1 t c")
-        self.encoder_to_sequence = Reduce("b c t s -> b t c", "mean")
+        self.input_to_encoder = Rearrange(
+            "batch nbands ntimes -> batch 1 ntimes nbands"
+        )
+        self.encoder_to_sequence = Reduce(
+            "batch channels ntimes nbands -> batch ntimes channels", "mean"
+        )
 
-        self.proj = nn.Linear(c3, encoder_dim)
+        self.proj = nn.Linear(in_features=wide_width, out_features=encoder_dim)
         self.resnet = nn.Sequential(
             *[
-                _ResBlock(encoder_dim, activation, n_convs_per_block)
+                _ResBlock(
+                    channels=encoder_dim,
+                    activation=activation,
+                    n_convs=n_convs_per_block,
+                )
                 for _ in range(n_res_blocks)
             ]
         )
-        self.sequence_to_resnet = Rearrange("b t c -> b c t")
-        self.resnet_to_sequence = Rearrange("b c t -> b t c")
-        self.sequence_to_decoder = Rearrange("b t c -> b c t 1")
-        self.decoder = nn.Sequential(
-            _UpBlock(encoder_dim, c2, 2, 4, activation),
-            _UpBlock(c2, c1, 4, 2, activation),
-            _UpBlock(c1, c1, 5, 2, activation),
+        self.sequence_to_resnet = Rearrange(
+            "batch ntimes features -> batch features ntimes"
         )
-        self.decoder_to_sequence = Rearrange("b c t s -> b t (s c)")
-        self.sequence_to_channels = Rearrange("b t j -> b j t")
-        self.channels_to_sequence = Rearrange("b j t -> b t j")
-        self.head_ff = nn.Dropout(drop_prob)
-        self.final_layer = nn.Linear(c1 * 16, self.n_outputs)
+        self.resnet_to_sequence = Rearrange(
+            "batch features ntimes -> batch ntimes features"
+        )
+        self.sequence_to_decoder = Rearrange(
+            "batch ntimes features -> batch features ntimes 1"
+        )
+        self.decoder = nn.Sequential(
+            _UpBlock(
+                in_channels=encoder_dim,
+                out_channels=medium_width,
+                upsample_time=2,
+                upsample_band=4,
+                activation=activation,
+            ),
+            _UpBlock(
+                in_channels=medium_width,
+                out_channels=narrow_width,
+                upsample_time=4,
+                upsample_band=2,
+                activation=activation,
+            ),
+            _UpBlock(
+                in_channels=narrow_width,
+                out_channels=narrow_width,
+                upsample_time=5,
+                upsample_band=2,
+                activation=activation,
+            ),
+        )
+        self.decoder_to_sequence = Rearrange(
+            "batch channels ntimes nbands -> batch ntimes (nbands channels)"
+        )
+        self.sequence_to_channels = Rearrange(
+            "batch ntimes njoints -> batch njoints ntimes"
+        )
+        self.channels_to_sequence = Rearrange(
+            "batch njoints ntimes -> batch ntimes njoints"
+        )
+        self.head_drop = nn.Dropout(p=drop_prob)
+        self.final_layer = nn.Linear(
+            in_features=narrow_width * 16, out_features=self.n_outputs
+        )
         self.apply(self._init_weights)
 
     def _init_weights(self, module: nn.Module) -> None:
@@ -302,9 +373,9 @@ class NeuroPose(EEGModuleMixin, nn.Module):
         if n_outputs <= 0:
             raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
         old = self.final_layer
-        self.final_layer = nn.Linear(old.in_features, n_outputs).to(
-            device=old.weight.device, dtype=old.weight.dtype
-        )
+        self.final_layer = nn.Linear(
+            in_features=old.in_features, out_features=n_outputs
+        ).to(device=old.weight.device, dtype=old.weight.dtype)
         self.final_layer.apply(self._init_weights)
         self._n_outputs = n_outputs
         init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
@@ -316,47 +387,51 @@ class NeuroPose(EEGModuleMixin, nn.Module):
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        t = x.shape[-1]
-        h = self.adapter(x)
+        n_times_in = x.shape[-1]
+        bands = self.adapter(x)
         # Resample to the paper's internal temporal grid.
         if self.decim is not None:
-            t_int = (h.shape[-1] // self.decim) * self.decim
+            n_times_internal = (bands.shape[-1] // self.decim) * self.decim
             min_input_times = 40 * self.decim
-            if h.shape[-1] < min_input_times:
+            if bands.shape[-1] < min_input_times:
                 raise ValueError(
                     f"Input must contain at least {min_input_times} time samples "
                     "so the resampled signal has the 40 samples required by the "
-                    f"encoder; got {h.shape[-1]}."
+                    f"encoder; got {bands.shape[-1]}."
                 )
-            h = h[..., :t_int]
+            bands = bands[..., :n_times_internal]
             if self.decim > 1:
-                h = torch.nn.functional.avg_pool1d(h, self.decim)
+                bands = torch.nn.functional.avg_pool1d(bands, self.decim)
         else:
-            t_int = round(h.shape[-1] * self.internal_sfreq / self.input_sfreq)
-            if t_int < 40:
+            n_times_internal = round(
+                bands.shape[-1] * self.internal_sfreq / self.input_sfreq
+            )
+            if n_times_internal < 40:
                 raise ValueError(
-                    f"Input resamples to {t_int} internal samples, but the encoder "
-                    "requires at least 40."
+                    f"Input resamples to {n_times_internal} internal samples, but "
+                    "the encoder requires at least 40."
                 )
-            h = torch.nn.functional.interpolate(
-                h, size=t_int, mode="linear", align_corners=False
+            bands = torch.nn.functional.interpolate(
+                bands, size=n_times_internal, mode="linear", align_corners=False
             )
 
         # Layout contract of _ConvBlock/_UpBlock: (B, C, TIME, BANDS).
-        z = self.encoder(self.input_to_encoder(h))
-        z = self.encoder_to_sequence(z)
-        z = self.proj(z)
-        z = self.resnet_to_sequence(self.resnet(self.sequence_to_resnet(z)))
+        features = self.encoder(self.input_to_encoder(bands))
+        features = self.encoder_to_sequence(features)
+        features = self.proj(features)
+        features = self.resnet_to_sequence(
+            self.resnet(self.sequence_to_resnet(features))
+        )
 
-        z = self.sequence_to_decoder(z)
-        z = self.decoder(z)  # (B, C1, T''', B')
-        z = self.decoder_to_sequence(z)
+        features = self.sequence_to_decoder(features)
+        features = self.decoder(features)  # (B, narrow_width, time, bands)
+        features = self.decoder_to_sequence(features)
 
-        out = self.final_layer(self.head_ff(z))  # (B, T_internal, J)
+        pose = self.final_layer(self.head_drop(features))  # (B, n_times_int, J)
         return self.channels_to_sequence(
             torch.nn.functional.interpolate(
-                self.sequence_to_channels(out),
-                size=t,
+                self.sequence_to_channels(pose),
+                size=n_times_in,
                 mode="linear",
                 align_corners=False,
             )
@@ -375,47 +450,89 @@ class _TileChannels(nn.Module):
 
 
 class _ConvBlock(nn.Module):
-    def __init__(self, in_c, out_c, k_t, k_b, ds_t, ds_b, act, drop_prob):
-        super().__init__()
-        self.conv = nn.Conv2d(in_c, out_c, (k_t, k_b), padding=(k_t // 2, 0))
-        self.bn = nn.BatchNorm2d(out_c)
-        self.act = act()
-        self.drop = nn.Dropout(drop_prob)
-        self.pool = nn.MaxPool2d((ds_t, ds_b))
+    """Conv2d over (time, band) + norm + activation + dropout + max-pool."""
 
-    def forward(self, x):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_time: int,
+        kernel_band: int,
+        pool_time: int,
+        pool_band: int,
+        activation: type[nn.Module],
+        drop_prob: float,
+    ):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=(kernel_time, kernel_band),
+            padding=(kernel_time // 2, 0),
+        )
+        self.bn = nn.BatchNorm2d(num_features=out_channels)
+        self.act = activation()
+        self.drop = nn.Dropout(p=drop_prob)
+        self.pool = nn.MaxPool2d(kernel_size=(pool_time, pool_band))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.pool(self.drop(self.act(self.bn(self.conv(x)))))
 
 
 class _UpBlock(nn.Module):
-    def __init__(self, in_c, out_c, up_t, up_b, act):
-        super().__init__()
-        self.conv = nn.Conv2d(in_c, out_c, 3, padding=1)
-        self.bn = nn.BatchNorm2d(out_c)
-        self.act = act()
-        self.up_t, self.up_b = up_t, up_b
+    """Conv2d + norm + activation, then nearest-neighbour upsampling."""
 
-    def forward(self, x):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        upsample_time: int,
+        upsample_band: int,
+        activation: type[nn.Module],
+    ):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            padding=1,
+        )
+        self.bn = nn.BatchNorm2d(num_features=out_channels)
+        self.act = activation()
+        self.upsample_time = upsample_time
+        self.upsample_band = upsample_band
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.act(self.bn(self.conv(x)))
         return F.interpolate(
             x,
-            scale_factor=[float(self.up_t), float(self.up_b)],
+            scale_factor=[float(self.upsample_time), float(self.upsample_band)],
             mode="nearest",
         )
 
 
 class _ResBlock(nn.Module):
-    def __init__(self, c, act, n_convs: int = 2):
+    """Residual block of ``n_convs`` conv+norm pairs; activation after the sum."""
+
+    def __init__(self, channels: int, activation: type[nn.Module], n_convs: int = 2):
         super().__init__()
         if n_convs < 1:
             raise ValueError(f"n_convs must be >= 1; got {n_convs}.")
         layers: list[nn.Module] = []
         for index in range(n_convs):
-            layers += [nn.Conv1d(c, c, 3, padding=1), nn.BatchNorm1d(c)]
+            layers += [
+                nn.Conv1d(
+                    in_channels=channels,
+                    out_channels=channels,
+                    kernel_size=3,
+                    padding=1,
+                ),
+                nn.BatchNorm1d(num_features=channels),
+            ]
             if index < n_convs - 1:
-                layers.append(act())
-        self.f = nn.Sequential(*layers)
-        self.out_act = act()
+                layers.append(activation())
+        self.layers = nn.Sequential(*layers)
+        self.out_act = activation()
 
-    def forward(self, x):
-        return self.out_act(x + self.f(x))
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.out_act(x + self.layers(x))

@@ -16,6 +16,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import MLP, CausalConv1d
 
 
 class VEMG2Pose(
@@ -87,7 +88,7 @@ class VEMG2Pose(
     - **Output scalar**: Hadidi et al. show position decoding collapses
       into low-movement minima at Salter's default 0.01; Tracking needs
       ≈0.1, Regression ≈1.0. This is THE stability knob of the recipe.
-    - **Learned regression anchor** ``p_init`` replaces the original
+    - **Learned regression anchor** ``initial_pose`` replaces the original
       zero-vector initialization (zero is a valid flat-hand pose).
       Pass ``y0=(B, n_outputs)`` to :meth:`forward` for Tracking.
 
@@ -206,33 +207,45 @@ class VEMG2Pose(
         self.input_sfreq = float(self.sfreq)
         if self.input_sfreq <= 0:
             raise ValueError(f"sfreq must be positive; got {self.input_sfreq}.")
-        self.activation_cls = activation
 
         # braindecode parameters read post-inference:
-        n_out = self.n_outputs
-        chs = self.n_chans
+        n_pose_outputs = self.n_outputs
 
         self.stem = nn.Sequential(
-            nn.ConstantPad1d((10, 0), 0.0),
-            nn.Conv1d(chs, encoder_channels, 11, stride=5),
-            _TimeStepNorm(encoder_channels),
+            nn.ConstantPad1d(padding=(10, 0), value=0.0),
+            nn.Conv1d(
+                in_channels=self.n_chans,
+                out_channels=encoder_channels,
+                kernel_size=11,
+                stride=5,
+            ),
+            _TimeStepNorm(channels=encoder_channels),
             activation(),
-            nn.ConstantPad1d((4, 0), 0.0),
-            nn.Conv1d(encoder_channels, encoder_channels, 5, stride=2),
-            _TimeStepNorm(encoder_channels),
+            nn.ConstantPad1d(padding=(4, 0), value=0.0),
+            nn.Conv1d(
+                in_channels=encoder_channels,
+                out_channels=encoder_channels,
+                kernel_size=5,
+                stride=2,
+            ),
+            _TimeStepNorm(channels=encoder_channels),
             activation(),
         )
         self.tds_stages = nn.Sequential(
             _TDSStage(
-                encoder_channels,
+                channels=encoder_channels,
                 subsample_kernel=17,
                 subsample_stride=4,
                 n_blocks=tds_blocks,
                 activation=activation,
             ),
-            nn.Conv1d(encoder_channels, feature_dim, 1),
+            nn.Conv1d(
+                in_channels=encoder_channels,
+                out_channels=feature_dim,
+                kernel_size=1,
+            ),
             _TDSStage(
-                feature_dim,
+                channels=feature_dim,
                 subsample_kernel=9,
                 subsample_stride=2,
                 n_blocks=tds_blocks,
@@ -240,20 +253,29 @@ class VEMG2Pose(
             ),
         )
 
-        self.enc_hz = float(self.sfreq) / (5 * 2 * 4 * 2)  # paper strides → 25 Hz
+        # Product of every stem/TDS stride: 5 * 2 * 4 * 2 → encoder runs at
+        # sfreq / 80, i.e. 25 Hz for the paper's 2 kHz sEMG.
+        self.encoder_sfreq = float(self.sfreq) / (5 * 2 * 4 * 2)
         self.lstm = nn.LSTM(
-            feature_dim + n_out, hidden_size, num_layers=2, batch_first=True
+            input_size=feature_dim + n_pose_outputs,
+            hidden_size=hidden_size,
+            num_layers=2,
+            batch_first=True,
         )
         self.head_ff = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size // 2),
+            nn.Linear(in_features=hidden_size, out_features=hidden_size // 2),
             activation(),
-            nn.Dropout(drop_prob),
+            nn.Dropout(p=drop_prob),
         )
-        self.encoder_to_sequence = Rearrange("b f t -> b t f")
+        self.encoder_to_sequence = Rearrange(
+            "batch features ntimes -> batch ntimes features"
+        )
         # final_layer LAST so it lands in the last two named_children().
-        self.final_layer = nn.Linear(hidden_size // 2, n_out)
+        self.final_layer = nn.Linear(
+            in_features=hidden_size // 2, out_features=n_pose_outputs
+        )
 
-        self.p_init = nn.Parameter(torch.zeros(n_out))
+        self.initial_pose = nn.Parameter(torch.zeros(n_pose_outputs))
         self.apply(self._init_weights)
 
     def _init_weights(self, module: nn.Module) -> None:
@@ -274,17 +296,20 @@ class VEMG2Pose(
         """
         if n_outputs <= 0:
             raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
-        old = self.final_layer
-        device, dtype = old.weight.device, old.weight.dtype
-        self.final_layer = nn.Linear(old.in_features, n_outputs).to(
-            device=device, dtype=dtype
-        )
+        previous_final_layer = self.final_layer
+        device = previous_final_layer.weight.device
+        dtype = previous_final_layer.weight.dtype
+        self.final_layer = nn.Linear(
+            in_features=previous_final_layer.in_features, out_features=n_outputs
+        ).to(device=device, dtype=dtype)
         self.final_layer.apply(self._init_weights)
-        self.p_init = nn.Parameter(torch.zeros(n_outputs, device=device, dtype=dtype))
-        feat_dim = self.tds_stages[-1].sub_conv.out_channels
+        self.initial_pose = nn.Parameter(
+            torch.zeros(n_outputs, device=device, dtype=dtype)
+        )
+        feature_dim = self.tds_stages[-1].sub_conv.out_channels
         self.lstm = nn.LSTM(
-            feat_dim + n_outputs,
-            self.lstm.hidden_size,
+            input_size=feature_dim + n_outputs,
+            hidden_size=self.lstm.hidden_size,
             num_layers=2,
             batch_first=True,
         ).to(device=device, dtype=dtype)
@@ -305,32 +330,77 @@ class VEMG2Pose(
             Raw sEMG window at ``sfreq``.
         y0 : Tensor (B, n_outputs) | None
             Ground-truth initial pose (Tracking mode). Falls back to the
-            learned ``p_init`` (Regression mode) when omitted.
+            learned ``initial_pose`` (Regression mode) when omitted.
         """
-        n_t = x.shape[-1]
-        feats = self.encoder_to_sequence(self.tds_stages(self.stem(x)))
-        y_prev = y0 if y0 is not None else self.p_init.expand(x.shape[0], -1)
+        batch_size, _, n_times = x.shape
+        encoder_features = self.encoder_to_sequence(self.tds_stages(self.stem(x)))
 
-        k_dec = max(1, math.ceil(n_t * self.decoder_rate / self.input_sfreq))
-        encoder_indices = torch.floor(
-            torch.arange(k_dec, device=x.device) * self.enc_hz / self.decoder_rate
-        ).to(dtype=torch.long)
-        encoder_indices = encoder_indices.clamp_max(feats.shape[1] - 1)
-        steps = feats.index_select(1, encoder_indices)
+        # Rollout length and both resampling maps follow the input length, so
+        # variable-length windows stay supported. With static input shapes these
+        # resolve to constants: torch.export unrolls the rollout (graph size then
+        # grows with window length), while TorchScript keeps a real prim::Loop.
+        n_decoder_steps = max(
+            1, math.ceil(n_times * self.decoder_rate / self.input_sfreq)
+        )
+        encoder_step_indices = (
+            (
+                torch.arange(n_decoder_steps, device=x.device, dtype=torch.float32)
+                * self.encoder_sfreq
+                / self.decoder_rate
+            )
+            .floor()
+            .to(dtype=torch.long)
+            .clamp_max(encoder_features.shape[1] - 1)
+        )
+        # Hold-last-sample upsampling from the encoder rate to the decoder rate.
+        decoder_features = encoder_features.index_select(1, encoder_step_indices)
 
-        outs = []
-        h = None
-        for t in range(k_dec):
-            z = torch.cat([steps[:, t], y_prev], dim=-1).unsqueeze(1)
-            h_t, h = self.lstm(z, h)
-            o_t = self.output_scalar * self.final_layer(self.head_ff(h_t.squeeze(1)))
-            y_prev = y_prev + o_t if self.parameterization == "velocity" else o_t
-            outs.append(y_prev)
-        traj = torch.stack(outs, dim=1)  # (B, K_dec, J)
-        decoder_indices = torch.floor(
-            torch.arange(n_t, device=x.device) * self.decoder_rate / self.input_sfreq
-        ).to(dtype=torch.long)
-        return traj.index_select(1, decoder_indices.clamp_max(k_dec - 1))
+        predicted_pose = (
+            y0 if y0 is not None else self.initial_pose.expand(batch_size, -1)
+        )
+        # Explicit zero state rather than ``None``: same numerics as the LSTM
+        # default, but a stable Tuple[Tensor, Tensor] type across the loop.
+        # torch.jit.script rejects rebinding a NoneType variable to a tuple.
+        hidden_state = torch.zeros(
+            self.lstm.num_layers,
+            batch_size,
+            self.lstm.hidden_size,
+            device=x.device,
+            dtype=x.dtype,
+        )
+        cell_state = torch.zeros_like(hidden_state)
+
+        pose_per_step = []
+        for step in range(n_decoder_steps):
+            decoder_input = torch.cat(
+                [decoder_features[:, step], predicted_pose], dim=-1
+            ).unsqueeze(1)
+            lstm_output, (hidden_state, cell_state) = self.lstm(
+                decoder_input, (hidden_state, cell_state)
+            )
+            pose_step = self.output_scalar * self.final_layer(
+                self.head_ff(lstm_output.squeeze(1))
+            )
+            predicted_pose = (
+                predicted_pose + pose_step
+                if self.parameterization == "velocity"
+                else pose_step
+            )
+            pose_per_step.append(predicted_pose)
+
+        pose_trajectory = torch.stack(pose_per_step, dim=1)
+        # Hold-last-sample downsampling from the decoder rate back to n_times.
+        decoder_step_indices = (
+            (
+                torch.arange(n_times, device=x.device, dtype=torch.float32)
+                * self.decoder_rate
+                / self.input_sfreq
+            )
+            .floor()
+            .to(dtype=torch.long)
+            .clamp_max(n_decoder_steps - 1)
+        )
+        return pose_trajectory.index_select(1, decoder_step_indices)
 
     def tracking_forward(self, x: torch.Tensor, y0: torch.Tensor) -> torch.Tensor:
         """Explicit Tracking-mode entry point (ground-truth anchor required)."""
@@ -349,24 +419,35 @@ class _TDSStage(nn.Module):
         activation: type[nn.Module],
     ):
         super().__init__()
-        pad = subsample_kernel - 1  # causal
         self.sub_conv = nn.Conv1d(
-            channels, channels, subsample_kernel, stride=subsample_stride
+            in_channels=channels,
+            out_channels=channels,
+            kernel_size=subsample_kernel,
+            stride=subsample_stride,
         )
-        self.sub_pad = pad
-        self.sub_norm = _TimeStepNorm(channels)
+        self.sub_pad = subsample_kernel - 1  # left-only padding keeps causality
+        self.sub_norm = _TimeStepNorm(channels=channels)
         self.act = activation()
-        self.channels_to_sequence = Rearrange("b c t -> b t c")
-        self.sequence_to_channels = Rearrange("b t c -> b c t")
+        self.channels_to_sequence = Rearrange(
+            "batch channels ntimes -> batch ntimes channels"
+        )
+        self.sequence_to_channels = Rearrange(
+            "batch ntimes channels -> batch channels ntimes"
+        )
         self.conv_blocks = nn.ModuleList(
-            [_CausalTDSConvBlock(channels, activation) for _ in range(n_blocks)]
+            [
+                _CausalTDSConvBlock(channels=channels, activation=activation)
+                for _ in range(n_blocks)
+            ]
         )
         self.ff_blocks = nn.ModuleList(
             [
-                nn.Sequential(
-                    nn.Linear(channels, 4 * channels),
-                    activation(),
-                    nn.Linear(4 * channels, channels),
+                MLP(
+                    in_features=channels,
+                    hidden_features=(4 * channels,),
+                    out_features=channels,
+                    activation=activation,
+                    drop=0.0,
                 )
                 for _ in range(n_blocks)
             ]
@@ -374,10 +455,10 @@ class _TDSStage(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.act(self.sub_norm(self.sub_conv(F.pad(x, (self.sub_pad, 0)))))
-        for conv_b, ff_b in zip(self.conv_blocks, self.ff_blocks):
-            x = x + conv_b(x)
+        for conv_block, ff_block in zip(self.conv_blocks, self.ff_blocks):
+            x = x + conv_block(x)
             x = self.channels_to_sequence(x)
-            x = x + ff_b(x)
+            x = x + ff_block(x)
             x = self.sequence_to_channels(x)
         return x
 
@@ -387,9 +468,9 @@ class _TimeStepNorm(nn.Sequential):
 
     def __init__(self, channels: int):
         super().__init__(
-            Rearrange("b c t -> b t c"),
-            nn.LayerNorm(channels),
-            Rearrange("b t c -> b c t"),
+            Rearrange("batch channels ntimes -> batch ntimes channels"),
+            nn.LayerNorm(normalized_shape=channels),
+            Rearrange("batch ntimes channels -> batch channels ntimes"),
         )
 
 
@@ -398,14 +479,18 @@ class _CausalTDSConvBlock(nn.Module):
 
     def __init__(self, channels: int, activation: type[nn.Module]):
         super().__init__()
-        self.left_padding = 6
         self.layers = nn.Sequential(
-            nn.Conv1d(channels, channels, 7, groups=channels),
-            _TimeStepNorm(channels),
+            CausalConv1d(
+                in_channels=channels,
+                out_channels=channels,
+                kernel_size=7,
+                groups=channels,
+            ),
+            _TimeStepNorm(channels=channels),
             activation(),
-            nn.Conv1d(channels, channels, 1),
-            _TimeStepNorm(channels),
+            nn.Conv1d(in_channels=channels, out_channels=channels, kernel_size=1),
+            _TimeStepNorm(channels=channels),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.layers(F.pad(x, (self.left_padding, 0)))
+        return self.layers(x)

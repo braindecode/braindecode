@@ -167,52 +167,68 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         if not 0 < lowpass_hz < self.sfreq / 2:
             raise ValueError("lowpass_hz must lie between 0 and the Nyquist frequency")
 
-        self.lowpass = _ButterworthLowpass(self.sfreq, lowpass_hz, order=4)
-        self.to_feature_plane = Rearrange("b c t -> b 1 c t")
-        self.circular_pad = _CircularPad2d(4)
+        self.lowpass = _ButterworthLowpass(
+            sfreq=self.sfreq, cutoff_hz=lowpass_hz, order=4
+        )
+        self.to_feature_plane = Rearrange(
+            "batch nchans ntimes -> batch 1 nchans ntimes"
+        )
+        # (left, right, top, bottom): wrap the electrode axis only.
+        self.circular_pad = nn.CircularPad2d(padding=(0, 0, 4, 4))
         self.conv1 = _ConvBlock(
-            2,
-            temporal_channels,
-            (1, 31),
+            in_channels=2,
+            out_channels=temporal_channels,
+            kernel_size=(1, 31),
             stride=(1, 8),
             activation=activation,
         )
-        self.conv_dropout = nn.Dropout2d(conv_drop_prob)
+        self.conv_dropout = nn.Dropout2d(p=conv_drop_prob)
         self.conv2 = _ConvBlock(
-            temporal_channels,
-            mid_channels,
-            (8, 18),
+            in_channels=temporal_channels,
+            out_channels=mid_channels,
+            kernel_size=(8, 18),
             dilation=(2, 1),
             activation=activation,
         )
         self.conv3 = _ConvBlock(
-            mid_channels,
-            spatial_channels,
-            (3, 1),
+            in_channels=mid_channels,
+            out_channels=spatial_channels,
+            kernel_size=(3, 1),
             activation=activation,
         )
 
         electrode_features = 8
-        self.to_sequence = Rearrange("b f c t -> b t (f c)")
-        self.sequence_to_channels = Rearrange("b t j -> b j t")
-        self.channels_to_sequence = Rearrange("b j t -> b t j")
+        self.to_sequence = Rearrange(
+            "batch features nelectrodes ntimes -> batch ntimes (features nelectrodes)"
+        )
+        self.sequence_to_channels = Rearrange(
+            "batch ntimes njoints -> batch njoints ntimes"
+        )
+        self.channels_to_sequence = Rearrange(
+            "batch njoints ntimes -> batch ntimes njoints"
+        )
         self.mlp = nn.Sequential(
-            nn.Dropout(mlp_drop_prob),
-            nn.Linear(spatial_channels * electrode_features, mlp_hidden),
+            nn.Dropout(p=mlp_drop_prob),
+            nn.Linear(
+                in_features=spatial_channels * electrode_features,
+                out_features=mlp_hidden,
+            ),
             activation(),
-            nn.Linear(mlp_hidden, mlp_hidden),
+            nn.Linear(in_features=mlp_hidden, out_features=mlp_hidden),
             activation(),
         )
-        self.final_layer = nn.Linear(mlp_hidden, self.n_outputs)
+        self.final_layer = nn.Linear(
+            in_features=mlp_hidden, out_features=self.n_outputs
+        )
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality."""
         if n_outputs <= 0:
             raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
         old = self.final_layer
-        self.final_layer = nn.Linear(old.in_features, n_outputs).to(
-            device=old.weight.device, dtype=old.weight.dtype
-        )
+        self.final_layer = nn.Linear(
+            in_features=old.in_features, out_features=n_outputs
+        ).to(device=old.weight.device, dtype=old.weight.dtype)
         self._n_outputs = n_outputs
         init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
         if init_kwargs is not None and "n_outputs" in init_kwargs:
@@ -226,10 +242,13 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
     ) -> torch.Tensor:
         """Predict angles, optionally using an externally filtered input copy."""
         n_times = x.shape[-1]
+        # Literal, not ``self.receptive_field_samples``: TorchScript cannot
+        # resolve a class attribute here (it is absent from the instance
+        # __dict__ that the plain-module conversion copies). Keep in sync with
+        # the class attribute above.
         if n_times < 167:
             raise ValueError(
-                "SensingDynamics requires at least 167 input samples; "
-                f"got {n_times}."
+                f"SensingDynamics requires at least 167 input samples; got {n_times}."
             )
 
         if x_lowpass is None:
@@ -294,17 +313,6 @@ class _ButterworthLowpass(nn.Module):
         )
 
 
-class _CircularPad2d(nn.Module):
-    """Circularly pad the wristband-electrode dimension."""
-
-    def __init__(self, padding: int) -> None:
-        super().__init__()
-        self.padding = int(padding)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.pad(x, (0, 0, self.padding, self.padding), mode="circular")
-
-
 class _ConvBlock(nn.Module):
     """SensingDynamics Conv-BN-SMU block."""
 
@@ -320,13 +328,13 @@ class _ConvBlock(nn.Module):
     ) -> None:
         super().__init__()
         self.conv = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
             stride=stride,
             dilation=dilation,
         )
-        self.batch_norm = nn.BatchNorm2d(out_channels)
+        self.batch_norm = nn.BatchNorm2d(num_features=out_channels)
         self.activation = activation()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

@@ -333,7 +333,9 @@ def test_sensingdynamics_matches_derived_adaptation_geometry():
 
     assert model.conv1.conv.kernel_size == (1, 31)
     assert model.conv1.conv.stride == (1, 8)
-    assert model.circular_pad.padding == 4
+    # (left, right, top, bottom): the electrode axis wraps by 4 either
+    # side, the time axis is untouched.
+    assert model.circular_pad.padding == (0, 0, 4, 4)
     assert model.conv2.conv.kernel_size == (8, 18)
     assert model.conv2.conv.dilation == (2, 1)
     assert model.conv3.conv.kernel_size == (3, 1)
@@ -554,9 +556,7 @@ def test_neuropose_default_capacity_is_stable():
     than emg2pose's adaptation (~6.36 M in the released checkpoint). See the
     class docstring for the difference.
     """
-    model = NeuroPose(
-        n_chans=16, n_outputs=20, n_times=4000, sfreq=2000.0, n_bands=16
-    )
+    model = NeuroPose(n_chans=16, n_outputs=20, n_times=4000, sfreq=2000.0, n_bands=16)
     assert sum(p.numel() for p in model.parameters()) == 1_440_756
 
 
@@ -607,3 +607,30 @@ def test_neuropose_rejects_bad_encoder_channels():
             n_bands=16,
             encoder_channels=(32, 128),
         )
+
+
+def test_vemg2pose_ff_block_structure_is_pinned():
+    """VEMG2Pose's TDS feedforward is built from the shared ``MLP`` block.
+
+    ``MLP`` assembles ``[Linear, activation, Linear, Dropout]`` by trimming a
+    trailing activation. That trim is an implementation detail of
+    ``braindecode.modules.blocks.MLP``; if it ever changes, this model's
+    architecture would change silently. Pin the resulting geometry here so
+    such a change fails loudly instead.
+    """
+    model = VEMG2Pose(
+        n_chans=16, n_outputs=20, n_times=4000, sfreq=2000.0, feature_dim=32
+    )
+    ff_block = model.tds_stages[2].ff_blocks[0]
+    layers = list(ff_block)
+
+    assert [type(layer) for layer in layers] == [
+        nn.Linear,
+        nn.LeakyReLU,
+        nn.Linear,
+        nn.Dropout,
+    ]
+    assert (layers[0].in_features, layers[0].out_features) == (32, 128)
+    assert (layers[2].in_features, layers[2].out_features) == (128, 32)
+    # Dropout must stay inert: the paper's TDS feedforward has none.
+    assert layers[3].p == 0.0
