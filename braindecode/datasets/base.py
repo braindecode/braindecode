@@ -32,6 +32,7 @@ from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset, IterableDataset
 from typing_extensions import TypeVar
 
+from ._notebook_viewer import plot as _viewer_plot
 from .bids.hub import HubDatasetMixin
 from .bids.hub_io import _restore_nan_from_json
 from .registry import register_dataset
@@ -1173,6 +1174,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
     lazy : bool, default False
         If True, defer computing cumulative sizes until length or item access.
     """
+
+    plot = _viewer_plot  # eegdash-viewer embed; a direct member so the API docs list it
 
     datasets: list[T]
 

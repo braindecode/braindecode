@@ -14,7 +14,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import CausalConv1d, Conv1dWithConstraint, DropPath
 
 
-class TCFormer(EEGModuleMixin, nn.Module):
+class TCFormer(EEGModuleMixin, nn.Module, license="mit"):
     r"""TCFormer from Altaheri et al (2025) [tcformer]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`

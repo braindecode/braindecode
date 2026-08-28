@@ -32,6 +32,11 @@ Enhancements
   :class:`braindecode.models.NeuroPoseNet`, and
   :class:`braindecode.models.SensingDynamicsNet` for dense hand-pose
   regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
+- Add :meth:`braindecode.datasets.BaseConcatDataset.plot` (every dataset, ``BIDSDataset`` included): show a recording in the
+  `eegdash-viewer <https://github.com/eegdash/eegdash-viewer>`_ inside a
+  Jupyter cell — serverless (bytes inlined, viewer from CDN), with the
+  synchronized hand-pose panel when a ``*_desc-pose.json`` sidecar is present
+  (:gh:`1133` by `Bruno Aristimunha`_)
 
 - Preserve the recording-local row of each canonical MNE annotation as
   ``i_trial_in_dataset`` in event-window metadata, keeping it aligned with
@@ -72,10 +77,47 @@ API and behavior changes
 Requirements
 ============
 
-- None yet
+- Remove the ``rotary_embedding_torch`` dependency. The rotary frequency
+  generation used by :class:`braindecode.models.LUNA` and
+  :class:`braindecode.models.ZUNA` is now implemented directly with PyTorch.
+  (:gh:`1136` by `Bruno Aristimunha`_)
 
 Bug fixes
 ==========
+
+- Sample stochastic-depth masks with out-of-place
+  :func:`torch.bernoulli` instead of in-place ``Tensor.bernoulli_``. This keeps
+  the same per-sample Bernoulli mask and scaling while avoiding lazy
+  recipe-cache offset failures on Gaudi accelerators. The
+  :func:`braindecode.functional.drop_path` documentation now also correctly
+  describes ``drop_prob`` as the probability of dropping a path. By `Bruno
+  Aristimunha`_.
+
+- Make :class:`braindecode.models.LUNA` rotary attention portable to
+  accelerators that reject concatenations containing empty tensor views, while
+  preserving its pretrained-checkpoint parameter keys and numerical behavior.
+  Also crop mismatched :class:`braindecode.models.USleep` decoder tensors with
+  views instead of allocating index tensors, avoiding unsupported accelerator
+  lowering without changing the selected samples. (:gh:`1136` by `Bruno
+  Aristimunha`_)
+
+- Fix the docstrings of :class:`braindecode.models.ATCNet`,
+  :class:`braindecode.models.AttnSleep`, :class:`braindecode.models.CTNet`,
+  :class:`braindecode.models.EEGSimpleConv`, :class:`braindecode.models.IFNet`,
+  :class:`braindecode.models.SPARCNet`,
+  :class:`braindecode.models.SleepStagerBlanco2020`,
+  :class:`braindecode.models.SleepStagerChambon2018` and
+  :class:`braindecode.models.TIDNet`, which documented parameters their
+  constructors do not accept, either because the parameter was renamed
+  (``bn_size`` is ``bottleneck_size``, ``resampling`` is ``resampling_freq``,
+  ``att_dropout`` is ``att_drop_prob``) or because it was a deprecated alias
+  that has since been removed (``n_classes``, ``n_channels``, ``in_chans``,
+  ``input_size_s``, ``input_window_samples``). Following those docstrings
+  raised ``TypeError``. It also corrects stale defaults and types in
+  :class:`braindecode.models.CTNet`,
+  :class:`braindecode.models.EEGSimpleConv`, :class:`braindecode.models.IFNet`,
+  and :class:`braindecode.models.SleepStagerBlanco2020` (:gh:`1116` by `Aditya
+  Singh`_).
 
 - Honor the configurable activation in the adaptive feature recalibration block
   of :class:`braindecode.models.AttnSleep`, and report the ``d_model`` required

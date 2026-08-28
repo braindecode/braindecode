@@ -24,7 +24,7 @@ from braindecode.modules import (
 )
 
 
-class CTNet(EEGModuleMixin, nn.Module):
+class CTNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""CTNet from Zhao, W et al (2024) [ctnet]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
@@ -59,16 +59,19 @@ class CTNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    activation : nn.Module, default=nn.GELU
-        Activation function to use in the network.
+    activation_patch : nn.Module, default=nn.ELU
+        Activation function to use in the convolutional patch embedding.
+    activation_transformer : nn.Module, default=nn.GELU
+        Activation function to use in the Transformer encoder.
     num_heads : int, default=4
         Number of attention heads in the Transformer encoder.
-    embed_dim : int or None, default=None
+    embed_dim : int or None, default=40
         Embedding size (dimensionality) for the Transformer encoder.
     num_layers : int, default=6
         Number of encoder layers in the Transformer.
-    n_filters_time : int, default=20
-        Number of temporal filters in the first convolutional layer.
+    n_filters_time : int or None, default=None
+        Number of temporal filters in the first convolutional layer. Inferred
+        from ``embed_dim`` and ``depth_multiplier`` when left at ``None``.
     kernel_size : int, default=64
         Kernel size for the temporal convolutional layer.
     depth_multiplier : int, default=2
@@ -77,7 +80,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         Pooling size for the first average pooling layer.
     pool_size_2 : int, default=8
         Pooling size for the second average pooling layer.
-        cnn_drop_prob: float, default=0.3
+    cnn_drop_prob : float, default=0.3
         Dropout probability after convolutional layers.
     att_positional_drop_prob : float, default=0.1
         Dropout probability for the positional encoding in the Transformer.

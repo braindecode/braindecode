@@ -22,7 +22,7 @@ from braindecode.modules import ChannelMerger, Perceiver, SimpleConv
 from braindecode.modules.dance_modules import DanceDetrDecoder
 
 
-class DANCE(EEGModuleMixin, nn.Module):
+class DANCE(EEGModuleMixin, nn.Module, license="mit"):
     r"""DANCE from Lévy et al (2026) [dance]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel`
