@@ -34,6 +34,15 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel`
 
+    .. figure:: ../_static/model/sensingdynamics.png
+       :align: center
+       :alt: SensingDynamics architecture with circular electrode padding
+
+       Figure 7 of Sîmpetru et al. (2022), CC BY-ND. Raw and low-pass
+       filtered sEMG enter stacked, the electrode axis is circularly
+       padded, and a 512/512 MLP reads out the joint angles.
+
+
     .. rubric:: Architecture Overview
 
     The emg2pose adaptation replaces the original five-grid 3D convolutions
@@ -110,7 +119,25 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
     mlp_drop_prob : float, optional
         Dropout before the MLP. Default is ``0.4``.
     lowpass_hz : float, optional
-        Cutoff of the fourth-order Butterworth input copy. Default is ``20``.
+        Cutoff of the Butterworth input copy. Default is ``20``.
+    lowpass_order : int, optional
+        Order of that Butterworth filter. Default is ``4``.
+    temporal_kernel : tuple of int, optional
+        ``(electrodes, time)`` kernel of the action-potential detector.
+        Default is ``(1, 31)``.
+    temporal_stride : tuple of int, optional
+        Stride of that convolution. Default is ``(1, 8)``.
+    mid_kernel : tuple of int, optional
+        ``(electrodes, time)`` kernel of the electrode mixer. Default is
+        ``(8, 18)``.
+    mid_dilation : tuple of int, optional
+        Dilation of the mixer. Default is ``(2, 1)``.
+    spatial_kernel : tuple of int, optional
+        ``(electrodes, time)`` kernel of the final convolution. Default is
+        ``(3, 1)``.
+    electrode_wrap : int, optional
+        Circular padding applied to each end of the electrode axis, which
+        is a ring on the wristband. Default is ``4``.
     activation : type[nn.Module], optional
         Activation class. The default is the paper's learnable SMU.
 
@@ -123,6 +150,9 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
     """
 
     #: Temporal receptive field of the derived emg2pose adaptation.
+    #: Temporal receptive field of the paper's default configuration. The
+    #: value actually enforced is derived per instance in ``__init__``, so a
+    #: reconfigured stack validates against its own receptive field.
     receptive_field_samples = 167
     #: Best training-window length reported by the emg2pose benchmark.
     benchmark_window_samples = 10_167
@@ -145,6 +175,13 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         conv_drop_prob: float = 0.25,
         mlp_drop_prob: float = 0.4,
         lowpass_hz: float = 20.0,
+        lowpass_order: int = 4,
+        temporal_kernel: tuple[int, int] = (1, 31),
+        temporal_stride: tuple[int, int] = (1, 8),
+        mid_kernel: tuple[int, int] = (8, 18),
+        mid_dilation: tuple[int, int] = (2, 1),
+        spatial_kernel: tuple[int, int] = (3, 1),
+        electrode_wrap: int = 4,
         activation: type[nn.Module] = _SMU,
     ) -> None:
         super().__init__(
@@ -162,6 +199,19 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
                 "SensingDynamics implements the 16-channel emg2pose "
                 f"adaptation; got n_chans={self.n_chans}."
             )
+        # Standard receptive-field accumulation over the temporal axis:
+        # each layer contributes (kernel - 1) * dilation, scaled by the
+        # strides before it. At the defaults this is 1 + 30 + 136 = 167.
+        receptive_field = 1
+        stride_so_far = 1
+        for kernel, dilation, stride in (
+            (temporal_kernel[1], 1, temporal_stride[1]),
+            (mid_kernel[1], mid_dilation[1], 1),
+            (spatial_kernel[1], 1, 1),
+        ):
+            receptive_field += (kernel - 1) * dilation * stride_so_far
+            stride_so_far *= stride
+        self.receptive_field_samples = receptive_field
         if self.n_times < self.receptive_field_samples:
             raise ValueError(
                 f"SensingDynamics requires at least "
@@ -173,36 +223,51 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
             raise ValueError("lowpass_hz must lie between 0 and the Nyquist frequency")
 
         self.lowpass = _ButterworthLowpass(
-            sfreq=self.sfreq, cutoff_hz=lowpass_hz, order=4
+            sfreq=self.sfreq, cutoff_hz=lowpass_hz, order=lowpass_order
         )
         self.to_feature_plane = Rearrange(
             "batch nchans ntimes -> batch 1 nchans ntimes"
         )
         # (left, right, top, bottom): wrap the electrode axis only.
-        self.circular_pad = nn.CircularPad2d(padding=(0, 0, 4, 4))
+        self.circular_pad = nn.CircularPad2d(
+            padding=(0, 0, electrode_wrap, electrode_wrap)
+        )
         self.conv1 = _ConvBlock(
             in_channels=2,
             out_channels=temporal_channels,
-            kernel_size=(1, 31),
-            stride=(1, 8),
+            kernel_size=temporal_kernel,
+            stride=temporal_stride,
             activation=activation,
         )
         self.conv_dropout = nn.Dropout2d(p=conv_drop_prob)
         self.conv2 = _ConvBlock(
             in_channels=temporal_channels,
             out_channels=mid_channels,
-            kernel_size=(8, 18),
-            dilation=(2, 1),
+            kernel_size=mid_kernel,
+            dilation=mid_dilation,
             activation=activation,
         )
         self.conv3 = _ConvBlock(
             in_channels=mid_channels,
             out_channels=spatial_channels,
-            kernel_size=(3, 1),
+            kernel_size=spatial_kernel,
             activation=activation,
         )
 
-        electrode_features = 8
+        # Width of the electrode axis where conv3 leaves it. Previously a
+        # literal 8, which silently assumed the default kernels *and* the
+        # 16-electrode montage; deriving it lets both vary.
+        electrode_features = self.n_chans
+        electrode_features -= temporal_kernel[0] - 1
+        electrode_features += 2 * electrode_wrap
+        electrode_features -= mid_dilation[0] * (mid_kernel[0] - 1)
+        electrode_features -= spatial_kernel[0] - 1
+        if electrode_features < 1:
+            raise ValueError(
+                f"The configured kernels consume the electrode axis: "
+                f"n_chans={self.n_chans} leaves {electrode_features} positions "
+                "after conv3. Widen electrode_wrap or shrink the kernels."
+            )
         self.to_sequence = Rearrange(
             "batch features nelectrodes ntimes -> batch ntimes (features nelectrodes)"
         )

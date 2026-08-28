@@ -29,6 +29,15 @@ class VEMG2Pose(
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
 
+    .. figure:: https://arxiv.org/html/2412.02725v1/figures/fig1_clip.png
+       :align: center
+       :alt: emg2pose wristband and predicted hand pose
+
+       Figure 1 of Salter et al. (2024). The paper describes vemg2pose in
+       prose (Section 3.5, Appendix C) and publishes no architecture
+       diagram, so this is its overview figure.
+
+
     Causal time-depth-separable (TDS) convolutional encoder producing
     64-D features at 25 Hz, decoded autoregressively at 50 Hz by a
     state-conditioned LSTM whose input concatenates the encoder feature
@@ -106,6 +115,19 @@ class VEMG2Pose(
         Autoregressive rollout rate in Hz. The default is ``50.0``.
     tds_blocks : int, optional
         Residual conv/FF block pairs per TDS stage. The default is ``2``.
+    stem_kernel_sizes : tuple of int, optional
+        Kernel of each strided stem convolution. The default is ``(11, 5)``.
+        Padding is ``kernel - 1`` on the left, keeping the stem causal.
+    stem_strides : tuple of int, optional
+        Stride of each stem convolution. The default is ``(5, 2)``.
+    tds_subsample_kernels : tuple of int, optional
+        Subsampling kernel of each TDS stage. The default is ``(17, 9)``.
+    tds_subsample_strides : tuple of int, optional
+        Subsampling stride of each TDS stage. The default is ``(4, 2)``.
+        Together with ``stem_strides`` this fixes the encoder rate:
+        ``sfreq / prod(strides)``, i.e. 25 Hz for the paper's 2 kHz input.
+    lstm_layers : int, optional
+        Depth of the decoder LSTM. The default is ``2``.
     parameterization : {'position', 'velocity'}, optional
         Decoder output interpretation. The default is ``'position'``.
     output_scalar : float, optional
@@ -180,6 +202,11 @@ class VEMG2Pose(
         feature_dim: int = 64,
         decoder_rate: float = 50.0,
         tds_blocks: int = 2,
+        stem_kernel_sizes: tuple[int, int] = (11, 5),
+        stem_strides: tuple[int, int] = (5, 2),
+        tds_subsample_kernels: tuple[int, int] = (17, 9),
+        tds_subsample_strides: tuple[int, int] = (4, 2),
+        lstm_layers: int = 2,
         parameterization: str = "position",
         output_scalar: float = 0.1,
         activation: type[nn.Module] = nn.LeakyReLU,
@@ -211,31 +238,31 @@ class VEMG2Pose(
         # braindecode parameters read post-inference:
         n_pose_outputs = self.n_outputs
 
-        self.stem = nn.Sequential(
-            nn.ConstantPad1d(padding=(10, 0), value=0.0),
-            nn.Conv1d(
-                in_channels=self.n_chans,
-                out_channels=encoder_channels,
-                kernel_size=11,
-                stride=5,
-            ),
-            _TimeStepNorm(channels=encoder_channels),
-            activation(),
-            nn.ConstantPad1d(padding=(4, 0), value=0.0),
-            nn.Conv1d(
-                in_channels=encoder_channels,
-                out_channels=encoder_channels,
-                kernel_size=5,
-                stride=2,
-            ),
-            _TimeStepNorm(channels=encoder_channels),
-            activation(),
-        )
+        stem_layers: list[nn.Module] = []
+        for index, (kernel, stride) in enumerate(
+            zip(stem_kernel_sizes, stem_strides, strict=True)
+        ):
+            in_channels = self.n_chans if index == 0 else encoder_channels
+            stem_layers += [
+                # Left-only padding: keeps the block causal and the output
+                # aligned with the input, so it follows the kernel rather
+                # than being restated per stage.
+                nn.ConstantPad1d(padding=(kernel - 1, 0), value=0.0),
+                nn.Conv1d(
+                    in_channels=in_channels,
+                    out_channels=encoder_channels,
+                    kernel_size=kernel,
+                    stride=stride,
+                ),
+                _TimeStepNorm(channels=encoder_channels),
+                activation(),
+            ]
+        self.stem = nn.Sequential(*stem_layers)
         self.tds_stages = nn.Sequential(
             _TDSStage(
                 channels=encoder_channels,
-                subsample_kernel=17,
-                subsample_stride=4,
+                subsample_kernel=tds_subsample_kernels[0],
+                subsample_stride=tds_subsample_strides[0],
                 n_blocks=tds_blocks,
                 activation=activation,
             ),
@@ -246,20 +273,22 @@ class VEMG2Pose(
             ),
             _TDSStage(
                 channels=feature_dim,
-                subsample_kernel=9,
-                subsample_stride=2,
+                subsample_kernel=tds_subsample_kernels[1],
+                subsample_stride=tds_subsample_strides[1],
                 n_blocks=tds_blocks,
                 activation=activation,
             ),
         )
 
-        # Product of every stem/TDS stride: 5 * 2 * 4 * 2 → encoder runs at
-        # sfreq / 80, i.e. 25 Hz for the paper's 2 kHz sEMG.
-        self.encoder_sfreq = float(self.sfreq) / (5 * 2 * 4 * 2)
+        # Read off the strides actually configured rather than restated as a
+        # literal: at the defaults this is 5 * 2 * 4 * 2 = 80, so a 2 kHz input
+        # reaches the decoder at 25 Hz, and it stays right if they change.
+        self.encoder_decimation = math.prod((*stem_strides, *tds_subsample_strides))
+        self.encoder_sfreq = float(self.sfreq) / self.encoder_decimation
         self.lstm = nn.LSTM(
             input_size=feature_dim + n_pose_outputs,
             hidden_size=hidden_size,
-            num_layers=2,
+            num_layers=lstm_layers,
             batch_first=True,
         )
         self.head_ff = nn.Sequential(
@@ -307,7 +336,7 @@ class VEMG2Pose(
         self.lstm = nn.LSTM(
             input_size=self.tds_stages[-1].sub_conv.out_channels + n_outputs,
             hidden_size=self.lstm.hidden_size,
-            num_layers=2,
+            num_layers=self.lstm.num_layers,
             batch_first=True,
         ).to(device=device, dtype=dtype)
 

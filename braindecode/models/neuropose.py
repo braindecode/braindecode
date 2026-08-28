@@ -15,59 +15,19 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
-# Parameter suffixes stored by each layer type, used to build the checkpoint map.
-_CONV_PARAMS = ("weight", "bias")
-_NORM_PARAMS = (
-    "weight",
-    "bias",
-    "running_mean",
-    "running_var",
-    "num_batches_tracked",
-)
-
-
-def _build_checkpoint_mapping(
-    n_encoder_blocks: int = 3,
-    n_residual_blocks: int = 5,
-    n_convs_per_block: int = 3,
-    n_decoder_blocks: int = 3,
-) -> dict[str, str]:
-    """Map ``regression_neuropose.ckpt`` keys onto this module's names.
-
-    Upstream keeps every block in a single ``nn.Sequential``, so encoder,
-    residual and decoder blocks share one running index; this class splits
-    them into three attributes. Only that prefix differs -- the layer layout
-    inside each block is identical -- so the mapping is mechanical.
-    """
-    layout = (
-        [("encoder", index, 1) for index in range(n_encoder_blocks)]
-        + [("resnet", index, n_convs_per_block) for index in range(n_residual_blocks)]
-        + [("decoder", index, 1) for index in range(n_decoder_blocks)]
-    )
-    mapping: dict[str, str] = {}
-    for flat_index, (attribute, local_index, n_convs) in enumerate(layout):
-        source = f"model.network.network.{flat_index}.network."
-        target = f"{attribute}.{local_index}.network."
-        for conv in range(n_convs):
-            # Each conv group is Conv2d, BatchNorm2d, activation, Dropout.
-            conv_index, norm_index = 4 * conv, 4 * conv + 1
-            for suffix in _CONV_PARAMS:
-                mapping[f"{source}{conv_index}.{suffix}"] = (
-                    f"{target}{conv_index}.{suffix}"
-                )
-            for suffix in _NORM_PARAMS:
-                mapping[f"{source}{norm_index}.{suffix}"] = (
-                    f"{target}{norm_index}.{suffix}"
-                )
-    mapping["model.network.linear.weight"] = "final_layer.weight"
-    mapping["model.network.linear.bias"] = "final_layer.bias"
-    return mapping
-
 
 class NeuroPose(EEGModuleMixin, nn.Module):
     r"""NeuroPose from Liu et al (2021) [liu2021neuropose]_.
 
     :bdg-success:`Convolution`
+
+    .. figure:: ../_static/model/neuropose.png
+       :align: center
+       :alt: NeuroPose encoder / ResNet / decoder architecture
+
+       Figure 6 of Liu et al. (2021), CC BY. The three stages map onto
+       :class:`NeuroPose`'s ``encoder``, ``resnet`` and ``decoder``.
+
 
     Convolutional encoder-decoder with a residual bottleneck mapping
     wearable sEMG windows to continuous finger joint angles. The defaults
@@ -138,6 +98,18 @@ class NeuroPose(EEGModuleMixin, nn.Module):
     sequence back to ``T``, which is exactly the identity when ``T`` is
     divisible by that factor and well-defined when it is not.
 
+    .. rubric:: Pre-trained weights
+
+    Meta's released ``regression_neuropose.ckpt`` is rehosted with these
+    parameter names, so no conversion step is needed::
+
+        NeuroPose.from_pretrained("braindecode/NeuroPose-emg2pose")
+
+    The original ``.ckpt`` also loads directly -- ``mapping`` rewrites the
+    upstream key names -- and both routes reproduce the reference
+    implementation exactly. The weights stay under emg2pose's CC BY-NC-SA
+    4.0; only the code here is BSD-3.
+
     Liu et al.'s original 200 Hz Myo configuration remains reachable by
     passing the original schedule::
 
@@ -191,10 +163,6 @@ class NeuroPose(EEGModuleMixin, nn.Module):
        Surface Electromyographic Hand Pose Estimation. NeurIPS Datasets
        and Benchmarks. arXiv:2412.02725
     """
-
-    #: Complete key map for Meta's ``regression_neuropose.ckpt``, valid for
-    #: the default block layout.
-    mapping = _build_checkpoint_mapping()
 
     def __init__(
         self,
@@ -324,6 +292,30 @@ class NeuroPose(EEGModuleMixin, nn.Module):
             in_features=decoder_channels[-1] * n_electrodes,
             out_features=self.n_outputs,
         )
+
+    @property
+    def mapping(self) -> dict[str, str]:
+        """Map ``regression_neuropose.ckpt`` keys onto this module's names.
+
+        Upstream holds every block in one ``nn.Sequential``, so encoder,
+        residual and decoder blocks share a single running index, where this
+        class splits them across three attributes. Only that prefix differs.
+        The map is therefore read off the blocks themselves rather than
+        rebuilt from a second copy of the block counts, so it stays correct
+        when the schedule is reconfigured.
+        """
+        mapping: dict[str, str] = {}
+        flat_index = 0
+        for attribute in ("encoder", "resnet", "decoder"):
+            for local_index, block in enumerate(getattr(self, attribute)):
+                for key in block.state_dict():
+                    mapping[f"model.network.network.{flat_index}.{key}"] = (
+                        f"{attribute}.{local_index}.{key}"
+                    )
+                flat_index += 1
+        mapping["model.network.linear.weight"] = "final_layer.weight"
+        mapping["model.network.linear.bias"] = "final_layer.bias"
+        return mapping
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality."""
