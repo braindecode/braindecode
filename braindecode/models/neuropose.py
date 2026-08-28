@@ -4,7 +4,7 @@
 # License: BSD (3-clause)
 # Reimplementation for research/benchmarking; original work is
 # Liu et al., WWW 2021 / IEEE IoT-J 2022.
-"""``NeuroPoseNet``: CNN encoder-decoder with ResNet bottleneck."""
+"""``NeuroPose``: CNN encoder-decoder with ResNet bottleneck."""
 
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
 
 
-class NeuroPoseNet(EEGModuleMixin, nn.Module):
-    r"""NeuroPoseNet from Liu et al (2021) [liu2021neuropose]_.
+class NeuroPose(EEGModuleMixin, nn.Module):
+    r"""NeuroPose from Liu et al (2021) [liu2021neuropose]_.
 
     :bdg-success:`Convolution`
 
@@ -42,7 +42,7 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Macro Components
 
-    ``NeuroPoseNet.adapter`` (channel/time front-end)
+    ``NeuroPose.adapter`` (channel/time front-end)
         **Operations.** ``channel_adapter="tile"`` repeats/truncates the
         electrode axis to ``n_bands``; ``"learned"`` uses a linear map.
         Time is then resampled to ``internal_sfreq`` using average pooling
@@ -50,20 +50,20 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
         **Role.** Bridges consumer-band layouts (8 ch @ 200 Hz) and
         research layouts (16 ch @ 2 kHz) into one tensor geometry.
 
-    ``NeuroPoseNet.encoder``
+    ``NeuroPose.encoder``
         **Operations.** Three Conv-BN-ReLU-Dropout-MaxPool blocks
         (filters ``base_channels``, ``×2``, ``×4``), kernel 3×2,
         downsampling factors (5, 2), (4, 2), (2, 2).
         **Role.** Compact spatio-temporal representation of the 5 s
         window, mirroring the paper's schedule.
 
-    ``NeuroPoseNet.resnet`` (residual bottleneck)
+    ``NeuroPose.resnet`` (residual bottleneck)
         **Operations.** ``n_res_blocks`` basic blocks computing
         ``act(x + f(x))`` with ``n_convs_per_block`` 1-D convolutions each.
         **Role.** The paper's key accuracy lever: deeper feature
         extraction without convergence loss ({3, 5, 7} swept upstream).
 
-    ``NeuroPoseNet.decoder`` / ``NeuroPoseNet.final_layer``
+    ``NeuroPose.decoder`` / ``NeuroPose.final_layer``
         **Operations.** Mirrored Conv-BN-ReLU-Upsample(nearest) stages
         restore 1,000 temporal positions and expand the spatial axis to
         16 bands; ``final_layer`` maps flattened band channels to
@@ -105,7 +105,7 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
     ``encoder_channels`` and ``n_convs_per_block`` exist so that capacity
     can be raised toward the reference without editing the class::
 
-        NeuroPoseNet(
+        NeuroPose(
             n_chans=16, n_outputs=20, n_times=10_000, sfreq=2_000.0,
             n_bands=16, encoder_channels=(32, 128, 256),
             encoder_dim=320, n_res_blocks=5, n_convs_per_block=3,
@@ -114,7 +114,14 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
     This narrows the capacity gap but is **not** an equivalence: as the
     ``mapping`` table below records, the decoder geometry, padding and
     resampling still differ, so no argument combination reproduces the
-    released checkpoint exactly. The pooling schedule is fixed, so
+    released checkpoint exactly. It is also not automatically better:
+    trained from scratch on NEMAR NM000281 under a reduced ~6-epoch budget,
+    that configuration improved validation error (15.80 deg against 16.01)
+    but was **worse on all three held-out test conditions** -- 16.37 / 19.18 /
+    18.98 deg against 15.89 / 18.58 / 18.38 for the defaults. Extra capacity
+    on a short schedule buys training-user fit at the cost of the
+    generalization the held-out splits measure. Raise it only alongside a
+    training budget that can support it. The pooling schedule is fixed, so
     emg2pose's widened front end cannot be expressed at all; this class
     decimates to ``internal_sfreq`` instead and therefore discards EMG
     content above 100 Hz.

@@ -28,9 +28,9 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
-- Add :class:`braindecode.models.VEMG2PoseNet`,
-  :class:`braindecode.models.NeuroPoseNet`, and
-  :class:`braindecode.models.SensingDynamicsNet` for dense hand-pose
+- Add :class:`braindecode.models.VEMG2Pose`,
+  :class:`braindecode.models.NeuroPose`, and
+  :class:`braindecode.models.SensingDynamics` for dense hand-pose
   regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 - Add :meth:`braindecode.datasets.BaseConcatDataset.plot` (every dataset, ``BIDSDataset`` included): show a recording in the
   `eegdash-viewer <https://github.com/eegdash/eegdash-viewer>`_ inside a

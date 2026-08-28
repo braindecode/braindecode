@@ -7,7 +7,7 @@ The parametrized integration suite (test_integration.py) already covers
 the braindecode contract; these tests pin the pose-specific semantics:
 sequence output shapes, position-vs-velocity parameterization, the
 Tracking state anchor, and grid-geometry handling for
-SensingDynamicsNet.
+SensingDynamics.
 """
 
 import pytest
@@ -15,9 +15,9 @@ import torch
 from torch import nn
 
 from braindecode.models.base import HAS_HF_HUB
-from braindecode.models.neuropose import NeuroPoseNet
-from braindecode.models.sensingdynamics import SensingDynamicsNet
-from braindecode.models.vemg2pose import VEMG2PoseNet
+from braindecode.models.neuropose import NeuroPose
+from braindecode.models.sensingdynamics import SensingDynamics
+from braindecode.models.vemg2pose import VEMG2Pose
 
 
 @pytest.fixture()
@@ -27,7 +27,7 @@ def emg_window():
 
 @pytest.fixture()
 def vemg2pose():
-    return VEMG2PoseNet(
+    return VEMG2Pose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -43,7 +43,7 @@ def test_vemg2pose_sequence_output(vemg2pose, emg_window):
 
 
 def test_vemg2pose_position_vs_velocity_diverge(emg_window):
-    pos = VEMG2PoseNet(
+    pos = VEMG2Pose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -52,7 +52,7 @@ def test_vemg2pose_position_vs_velocity_diverge(emg_window):
         hidden_size=32,
         parameterization="position",
     )
-    vel = VEMG2PoseNet(
+    vel = VEMG2Pose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -66,7 +66,7 @@ def test_vemg2pose_position_vs_velocity_diverge(emg_window):
 
 
 def test_vemg2pose_encoder_is_causal():
-    model = VEMG2PoseNet(
+    model = VEMG2Pose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -105,7 +105,7 @@ def test_vemg2pose_tracking_forward_preserves_gradients(vemg2pose, emg_window):
 
 
 def test_vemg2pose_rolls_out_at_decoder_rate():
-    model = VEMG2PoseNet(
+    model = VEMG2Pose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -133,24 +133,24 @@ def test_vemg2pose_rolls_out_at_decoder_rate():
 
 def test_vemg2pose_invalid_parameterization():
     with pytest.raises(ValueError, match="parameterization"):
-        VEMG2PoseNet(parameterization="quaternion")
+        VEMG2Pose(parameterization="quaternion")
 
 
 def test_vemg2pose_rejects_nonpositive_decoder_rate():
     with pytest.raises(ValueError, match="decoder_rate must be positive"):
-        VEMG2PoseNet(decoder_rate=0)
+        VEMG2Pose(decoder_rate=0)
 
 
 def test_vemg2pose_rejects_nonpositive_sampling_rate():
     with pytest.raises(ValueError, match="sfreq must be positive"):
-        VEMG2PoseNet(sfreq=0)
+        VEMG2Pose(sfreq=0)
 
 
 @pytest.mark.parametrize(
     "model",
     [
-        VEMG2PoseNet(n_chans=16, n_outputs=20, n_times=11790, sfreq=2000),
-        NeuroPoseNet(n_chans=16, n_outputs=20, n_times=10000, sfreq=2000),
+        VEMG2Pose(n_chans=16, n_outputs=20, n_times=11790, sfreq=2000),
+        NeuroPose(n_chans=16, n_outputs=20, n_times=10000, sfreq=2000),
     ],
     ids=["vemg2pose", "neuropose"],
 )
@@ -172,7 +172,7 @@ def test_published_checkpoint_mapping_targets(model):
 
 
 def test_neuropose_sequence_and_reset_head(emg_window):
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -188,7 +188,7 @@ def test_neuropose_sequence_and_reset_head(emg_window):
 
 
 def test_neuropose_rejects_input_too_short_for_encoder():
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -203,7 +203,7 @@ def test_neuropose_rejects_input_too_short_for_encoder():
 
 def test_neuropose_rejects_too_few_bands():
     with pytest.raises(ValueError, match="n_bands must be at least 7"):
-        NeuroPoseNet(
+        NeuroPose(
             n_chans=16,
             n_outputs=20,
             n_times=10000,
@@ -213,7 +213,7 @@ def test_neuropose_rejects_too_few_bands():
 
 
 def test_neuropose_rejects_short_noninteger_resampling():
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=8,
         n_outputs=20,
         n_times=98,
@@ -225,7 +225,7 @@ def test_neuropose_rejects_short_noninteger_resampling():
 
 
 def test_neuropose_resamples_noninteger_sampling_ratio():
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=8,
         n_outputs=20,
         n_times=500,
@@ -252,7 +252,7 @@ def test_neuropose_resamples_noninteger_sampling_ratio():
 
 
 def test_neuropose_predicts_a_time_varying_sequence(emg_window):
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -271,7 +271,7 @@ def test_neuropose_predicts_a_time_varying_sequence(emg_window):
 
 
 def test_neuropose_decoder_restores_paper_output_grid():
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -297,7 +297,7 @@ def test_neuropose_decoder_restores_paper_output_grid():
 
 
 def test_neuropose_supports_a_wider_internal_band_adapter():
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=16,
         n_outputs=20,
         n_times=10000,
@@ -313,7 +313,7 @@ def test_neuropose_supports_a_wider_internal_band_adapter():
 
 
 def test_sensingdynamics_sequence_shape():
-    model = SensingDynamicsNet(
+    model = SensingDynamics(
         n_chans=16,
         n_outputs=20,
         n_times=480,
@@ -329,7 +329,7 @@ def test_sensingdynamics_sequence_shape():
 
 
 def test_sensingdynamics_matches_derived_adaptation_geometry():
-    model = SensingDynamicsNet(n_chans=16, n_outputs=20, n_times=480, sfreq=2000.0)
+    model = SensingDynamics(n_chans=16, n_outputs=20, n_times=480, sfreq=2000.0)
 
     assert model.conv1.conv.kernel_size == (1, 31)
     assert model.conv1.conv.stride == (1, 8)
@@ -344,17 +344,17 @@ def test_sensingdynamics_matches_derived_adaptation_geometry():
 
 def test_sensingdynamics_rejects_non_emg2pose_channel_geometry():
     with pytest.raises(ValueError, match="16-channel emg2pose adaptation"):
-        SensingDynamicsNet(n_chans=20, n_outputs=20, sfreq=2000.0)
+        SensingDynamics(n_chans=20, n_outputs=20, sfreq=2000.0)
 
 
 def test_sensingdynamics_rejects_short_input():
-    model = SensingDynamicsNet(n_chans=16, n_outputs=20, sfreq=2000.0)
+    model = SensingDynamics(n_chans=16, n_outputs=20, sfreq=2000.0)
     with pytest.raises(ValueError, match="at least 167 input samples"):
         model(torch.randn(1, 16, 166))
 
 
 def test_sensingdynamics_uses_circular_grid_padding(monkeypatch):
-    model = SensingDynamicsNet(
+    model = SensingDynamics(
         n_chans=16,
         n_outputs=20,
         n_times=480,
@@ -381,7 +381,7 @@ def test_sensingdynamics_uses_circular_grid_padding(monkeypatch):
 
 
 def test_sensingdynamics_stacks_raw_and_lowpass_planes():
-    model = SensingDynamicsNet(
+    model = SensingDynamics(
         n_chans=16,
         n_outputs=20,
         n_times=480,
@@ -406,7 +406,7 @@ def test_sensingdynamics_stacks_raw_and_lowpass_planes():
 
 
 def test_sensingdynamics_accepts_precomputed_lowpass():
-    model = SensingDynamicsNet(
+    model = SensingDynamics(
         n_chans=16,
         n_outputs=20,
         n_times=480,
@@ -427,7 +427,7 @@ def test_sensingdynamics_accepts_precomputed_lowpass():
 
 
 def test_sensingdynamics_rejects_bad_precomputed_lowpass_shape():
-    model = SensingDynamicsNet(n_chans=16, n_outputs=20, sfreq=2000.0)
+    model = SensingDynamics(n_chans=16, n_outputs=20, sfreq=2000.0)
     with pytest.raises(ValueError, match="same shape"):
         model(torch.randn(1, 16, 480), x_lowpass=torch.randn(1, 16, 479))
 
@@ -436,7 +436,7 @@ def test_sensingdynamics_rejects_bad_precomputed_lowpass_shape():
     ("model_cls", "kwargs", "backbone_key"),
     [
         (
-            VEMG2PoseNet,
+            VEMG2Pose,
             dict(
                 n_chans=16,
                 n_outputs=20,
@@ -451,7 +451,7 @@ def test_sensingdynamics_rejects_bad_precomputed_lowpass_shape():
             "stem.1.weight",
         ),
         (
-            NeuroPoseNet,
+            NeuroPose,
             dict(
                 n_chans=16,
                 n_outputs=20,
@@ -465,7 +465,7 @@ def test_sensingdynamics_rejects_bad_precomputed_lowpass_shape():
             "encoder.0.conv.weight",
         ),
         (
-            SensingDynamicsNet,
+            SensingDynamics,
             dict(
                 n_chans=16,
                 n_outputs=20,
@@ -497,7 +497,7 @@ def test_reset_head_preserves_backbone_dtype_and_config(
 
 
 def test_stateful_activations_are_not_shared_between_layers():
-    vemg2pose = VEMG2PoseNet(
+    vemg2pose = VEMG2Pose(
         n_chans=16,
         n_outputs=20,
         n_times=1000,
@@ -509,7 +509,7 @@ def test_stateful_activations_are_not_shared_between_layers():
         tds_blocks=1,
         activation=nn.PReLU,
     )
-    sensingdynamics = SensingDynamicsNet(
+    sensingdynamics = SensingDynamics(
         n_chans=16,
         n_outputs=20,
         n_times=480,
@@ -538,23 +538,23 @@ def test_stateful_activations_are_not_shared_between_layers():
 def test_all_three_are_non_classification_models():
     from braindecode.models.util import non_classification_models
 
-    for name in ("VEMG2PoseNet", "NeuroPoseNet", "SensingDynamicsNet"):
+    for name in ("VEMG2Pose", "NeuroPose", "SensingDynamics"):
         assert name in non_classification_models
 
 
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
 def test_vemg2pose_hub_license_matches_source_license():
-    assert VEMG2PoseNet._hub_mixin_info.model_card_data["license"] == "cc-by-nc-sa-4.0"
+    assert VEMG2Pose._hub_mixin_info.model_card_data["license"] == "cc-by-nc-sa-4.0"
 
 
 def test_neuropose_default_capacity_is_stable():
-    """Defaults must not drift: they define every published NeuroPoseNet number.
+    """Defaults must not drift: they define every published NeuroPose number.
 
     The value is the Liu et al. configuration, which is deliberately smaller
     than emg2pose's adaptation (~6.36 M in the released checkpoint). See the
     class docstring for the difference.
     """
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=16, n_outputs=20, n_times=4000, sfreq=2000.0, n_bands=16
     )
     assert sum(p.numel() for p in model.parameters()) == 1_440_756
@@ -562,7 +562,7 @@ def test_neuropose_default_capacity_is_stable():
 
 def test_neuropose_reference_capacity_is_reachable():
     """The emg2pose capacity must be constructible without editing the class."""
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=16,
         n_outputs=20,
         n_times=4000,
@@ -583,7 +583,7 @@ def test_neuropose_reference_capacity_is_reachable():
 @pytest.mark.parametrize("n_convs", [1, 2, 3, 4])
 def test_neuropose_residual_conv_count(n_convs):
     """n_convs_per_block changes depth without changing the output contract."""
-    model = NeuroPoseNet(
+    model = NeuroPose(
         n_chans=16,
         n_outputs=20,
         n_times=4000,
@@ -599,7 +599,7 @@ def test_neuropose_residual_conv_count(n_convs):
 
 def test_neuropose_rejects_bad_encoder_channels():
     with pytest.raises(ValueError, match="exactly three widths"):
-        NeuroPoseNet(
+        NeuroPose(
             n_chans=16,
             n_outputs=20,
             n_times=4000,

@@ -441,7 +441,7 @@ models_mandatory_parameters: list[
         },
     ),
     (
-        "VEMG2PoseNet",
+        "VEMG2Pose",
         ["n_chans", "n_outputs", "n_times", "sfreq"],
         {
             "n_chans": 16,
@@ -452,7 +452,7 @@ models_mandatory_parameters: list[
         },
     ),
     (
-        "NeuroPoseNet",
+        "NeuroPose",
         ["n_chans", "n_outputs", "n_times", "sfreq"],
         {
             "n_chans": 16,
@@ -463,7 +463,7 @@ models_mandatory_parameters: list[
         },
     ),
     (
-        "SensingDynamicsNet",
+        "SensingDynamics",
         ["n_chans", "n_outputs", "n_times", "sfreq"],
         {
             "n_chans": 16,
@@ -560,9 +560,9 @@ non_classification_models = [
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
     # Dense per-frame pose sequences (batch, T, n_joints), not logits.
-    "VEMG2PoseNet",
-    "NeuroPoseNet",
-    "SensingDynamicsNet",
+    "VEMG2Pose",
+    "NeuroPose",
+    "SensingDynamics",
     # forward returns (batch, num_latents, n_outputs) dense per-token logits,
     # not class logits.
     "DANCE",

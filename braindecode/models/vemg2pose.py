@@ -4,7 +4,7 @@
 # License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0
 # Architecture follows Salter et al. 2024 (CC BY-NC-SA 4.0) as revised by
 # Hadidi et al. 2026 (arXiv 2603.08212, CC BY 4.0).
-"""``VEMG2PoseNet``: state-conditioned sEMG-to-pose decoder."""
+"""``VEMG2Pose``: state-conditioned sEMG-to-pose decoder."""
 
 from __future__ import annotations
 
@@ -18,12 +18,12 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 
 
-class VEMG2PoseNet(
+class VEMG2Pose(
     EEGModuleMixin,
     nn.Module,
     license="cc-by-nc-sa-4.0",
 ):
-    r"""VEMG2PoseNet from Salter et al (2024) [salter2024]_, as revised by
+    r"""VEMG2Pose from Salter et al (2024) [salter2024]_, as revised by
     Hadidi et al (2026) [hadidi2026]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
@@ -47,14 +47,14 @@ class VEMG2PoseNet(
 
     .. rubric:: Macro Components
 
-    ``VEMG2PoseNet.stem`` (strided temporal front-end)
+    ``VEMG2Pose.stem`` (strided temporal front-end)
         **Operations.** Two causal conv blocks (LayerNorm + LeakyReLU),
         mapping ``(B, n_chans, T) → (B, encoder_channels, T/10)``
         (kernel 11 stride 5, then kernel 5 stride 2; left-only padding
         preserves causality and sample alignment).
         **Role.** Raw-waveform feature extraction at ~200 Hz.
 
-    ``VEMG2PoseNet.tds_stages`` (Time-Depth-Separable bottleneck)
+    ``VEMG2Pose.tds_stages`` (Time-Depth-Separable bottleneck)
         **Operations.** Subsampling conv (kernel 17, stride 4) followed
         by ``tds_blocks`` depthwise-conv + pointwise + feedforward
         residual pairs; a 1×1 projection to ``feature_dim``; a second
@@ -62,7 +62,7 @@ class VEMG2PoseNet(
         **Role.** Hannun-et-al-style factorized sequence modeling down
         to the 25 Hz decoder grid ([hannun2019]_).
 
-    ``VEMG2PoseNet.lstm`` / ``VEMG2PoseNet.final_layer``
+    ``VEMG2Pose.lstm`` / ``VEMG2Pose.final_layer``
         **Operations.** At rollout step t: input
         ``z_t = [f_t ; ŷ_{t−1}] ∈ R^{feature_dim + n_outputs}``;
         2-layer LSTM (hidden ``hidden_size``); head = Linear →

@@ -29,8 +29,8 @@ class _SMU(nn.Module):
         return 0.5 * (positive + smooth)
 
 
-class SensingDynamicsNet(EEGModuleMixin, nn.Module):
-    r"""SensingDynamicsNet from Sîmpetru et al. (2022) [simpetru2022]_.
+class SensingDynamics(EEGModuleMixin, nn.Module):
+    r"""SensingDynamics from Sîmpetru et al. (2022) [simpetru2022]_.
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel`
 
@@ -43,26 +43,26 @@ class SensingDynamicsNet(EEGModuleMixin, nn.Module):
 
     .. rubric:: Macro Components
 
-    ``SensingDynamicsNet.lowpass`` (spectral input copy)
+    ``SensingDynamics.lowpass`` (spectral input copy)
         **Operations.** Periodic fourth-order, zero-phase 20 Hz Butterworth
         response.
         **Role.** Exposes the low-frequency neural drive alongside broadband
         monopolar EMG.
 
-    ``SensingDynamicsNet.conv1`` (action-potential detector)
+    ``SensingDynamics.conv1`` (action-potential detector)
         **Operations.** Conv2d ``(1, 31)``, stride ``(1, 8)``, BatchNorm, SMU,
         and spatial dropout.
         **Role.** Detects short motor-unit waveform patterns independently at
         each electrode.
 
-    ``SensingDynamicsNet.conv2`` / ``SensingDynamicsNet.conv3`` (ring mixer)
+    ``SensingDynamics.conv2`` / ``SensingDynamics.conv3`` (ring mixer)
         **Operations.** Circular padding by four electrodes; dilated Conv2d
         ``(8, 18)`` with dilation ``(2, 1)``; Conv2d ``(3, 1)``; BatchNorm and
         SMU after both convolutions.
         **Role.** Mixes synchronous activity around the wristband with a
         17-electrode spatial and 167-sample temporal receptive field.
 
-    ``SensingDynamicsNet.mlp`` / ``SensingDynamicsNet.final_layer``
+    ``SensingDynamics.mlp`` / ``SensingDynamics.final_layer``
         **Operations.** Flatten the 64 by 8 spatial features with an einops
         layer, then apply a ``512, 512, n_outputs`` MLP.
         **Role.** Regresses joint angles at the feature rate before linear
@@ -159,7 +159,7 @@ class SensingDynamicsNet(EEGModuleMixin, nn.Module):
 
         if self.n_chans != 16:
             raise ValueError(
-                "SensingDynamicsNet implements the 16-channel emg2pose "
+                "SensingDynamics implements the 16-channel emg2pose "
                 f"adaptation; got n_chans={self.n_chans}."
             )
         if self.sfreq <= 0:
@@ -228,7 +228,7 @@ class SensingDynamicsNet(EEGModuleMixin, nn.Module):
         n_times = x.shape[-1]
         if n_times < 167:
             raise ValueError(
-                "SensingDynamicsNet requires at least 167 input samples; "
+                "SensingDynamics requires at least 167 input samples; "
                 f"got {n_times}."
             )
 
