@@ -545,3 +545,65 @@ def test_all_three_are_non_classification_models():
 @pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
 def test_vemg2pose_hub_license_matches_source_license():
     assert VEMG2PoseNet._hub_mixin_info.model_card_data["license"] == "cc-by-nc-sa-4.0"
+
+
+def test_neuropose_default_capacity_is_stable():
+    """Defaults must not drift: they define every published NeuroPoseNet number.
+
+    The value is the Liu et al. configuration, which is deliberately smaller
+    than emg2pose's adaptation (~6.36 M in the released checkpoint). See the
+    class docstring for the difference.
+    """
+    model = NeuroPoseNet(
+        n_chans=16, n_outputs=20, n_times=4000, sfreq=2000.0, n_bands=16
+    )
+    assert sum(p.numel() for p in model.parameters()) == 1_440_756
+
+
+def test_neuropose_reference_capacity_is_reachable():
+    """The emg2pose capacity must be constructible without editing the class."""
+    model = NeuroPoseNet(
+        n_chans=16,
+        n_outputs=20,
+        n_times=4000,
+        sfreq=2000.0,
+        n_bands=16,
+        encoder_channels=(32, 128, 256),
+        encoder_dim=320,
+        n_res_blocks=5,
+        n_convs_per_block=3,
+    )
+    n_params = sum(p.numel() for p in model.parameters())
+    # 0.83x the released regression_neuropose.ckpt (6,363,758 parameters).
+    assert n_params == 5_254_516
+    out = model(torch.randn(2, 16, 4000))
+    assert out.shape == (2, 4000, 20)
+
+
+@pytest.mark.parametrize("n_convs", [1, 2, 3, 4])
+def test_neuropose_residual_conv_count(n_convs):
+    """n_convs_per_block changes depth without changing the output contract."""
+    model = NeuroPoseNet(
+        n_chans=16,
+        n_outputs=20,
+        n_times=4000,
+        sfreq=2000.0,
+        n_bands=16,
+        n_res_blocks=1,
+        n_convs_per_block=n_convs,
+    )
+    convs = [m for m in model.resnet.modules() if isinstance(m, torch.nn.Conv1d)]
+    assert len(convs) == n_convs
+    assert model(torch.randn(2, 16, 4000)).shape == (2, 4000, 20)
+
+
+def test_neuropose_rejects_bad_encoder_channels():
+    with pytest.raises(ValueError, match="exactly three widths"):
+        NeuroPoseNet(
+            n_chans=16,
+            n_outputs=20,
+            n_times=4000,
+            sfreq=2000.0,
+            n_bands=16,
+            encoder_channels=(32, 128),
+        )

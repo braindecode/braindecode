@@ -59,7 +59,7 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
 
     ``NeuroPoseNet.resnet`` (residual bottleneck)
         **Operations.** ``n_res_blocks`` basic blocks computing
-        ``act(x + f(x))`` with two 1-D convolutions each.
+        ``act(x + f(x))`` with ``n_convs_per_block`` 1-D convolutions each.
         **Role.** The paper's key accuracy lever: deeper feature
         extraction without convergence loss ({3, 5, 7} swept upstream).
 
@@ -84,6 +84,41 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
     transfer-learning recipe applies unchanged (freeze all but BatchNorm
     layers, fine-tune on ~90 s of target-user data).
 
+    .. rubric:: Relationship to emg2pose's NeuroPose baseline
+
+    The defaults reproduce Liu et al.'s original architecture, **not** the
+    adaptation emg2pose used to produce its published numbers, and they will
+    not reproduce that paper's angular error. The two differ in capacity and
+    in front-end strategy:
+
+    ==========================  ====================  ====================
+    Setting                     Default here          emg2pose
+    ==========================  ====================  ====================
+    Encoder widths              32 / 64 / 128         32 / 128 / 256
+    Residual blocks             3                     5
+    Convs per residual block    2                     3
+    Front end                   decimate to 200 Hz    keep 2 kHz, widen
+                                                      pooling 8× / 2×
+    Parameters                  ~1.44 M               ~6.36 M
+    ==========================  ====================  ====================
+
+    ``encoder_channels`` and ``n_convs_per_block`` exist so that capacity
+    can be raised toward the reference without editing the class::
+
+        NeuroPoseNet(
+            n_chans=16, n_outputs=20, n_times=10_000, sfreq=2_000.0,
+            n_bands=16, encoder_channels=(32, 128, 256),
+            encoder_dim=320, n_res_blocks=5, n_convs_per_block=3,
+        )  # ~5.25 M parameters, 0.83x the released checkpoint
+
+    This narrows the capacity gap but is **not** an equivalence: as the
+    ``mapping`` table below records, the decoder geometry, padding and
+    resampling still differ, so no argument combination reproduces the
+    released checkpoint exactly. The pooling schedule is fixed, so
+    emg2pose's widened front end cannot be expressed at all; this class
+    decimates to ``internal_sfreq`` instead and therefore discards EMG
+    content above 100 Hz.
+
     .. versionadded:: 1.8
 
     Parameters
@@ -99,11 +134,20 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
         ``'tile'`` (parameter-free repeat/truncate).
     base_channels : int, optional
         First-stage filters (doubled per stage). The default is ``32``.
+        Ignored when ``encoder_channels`` is given.
+    encoder_channels : tuple of int, optional
+        Explicit widths of the three encoder stages. The default is
+        ``None``, deriving ``(base_channels, ×2, ×4)``. Provide this to
+        reach width schedules the doubling rule cannot express, such as
+        emg2pose's ``(32, 128, 256)``.
     encoder_dim : int, optional
         Bottleneck width after the projection. The default is ``256``.
     n_res_blocks : int, optional
         Residual blocks between encoder and decoder. The default is
         ``3``.
+    n_convs_per_block : int, optional
+        Convolutions inside each residual block. The default is ``2``;
+        emg2pose's NeuroPose configuration uses ``3``.
     activation : type[nn.Module], optional
         Activation class used throughout. The default is ``nn.ReLU``.
     drop_prob : float, optional
@@ -147,8 +191,10 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
         n_bands: int = 8,
         channel_adapter: str = "tile",
         base_channels: int = 32,
+        encoder_channels: tuple[int, int, int] | None = None,
         encoder_dim: int = 256,
         n_res_blocks: int = 3,
+        n_convs_per_block: int = 2,
         activation: type[nn.Module] = nn.ReLU,
         drop_prob: float = 0.05,
     ):
@@ -192,7 +238,19 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
         else:
             self.adapter = _TileChannels(self.n_chans, self.n_bands)
 
-        c1, c2, c3 = base_channels, base_channels * 2, base_channels * 4
+        if encoder_channels is None:
+            c1, c2, c3 = base_channels, base_channels * 2, base_channels * 4
+        else:
+            if len(encoder_channels) != 3:
+                raise ValueError(
+                    "encoder_channels must give exactly three widths; got "
+                    f"{len(encoder_channels)}."
+                )
+            c1, c2, c3 = (int(width) for width in encoder_channels)
+            if min(c1, c2, c3) < 1:
+                raise ValueError(
+                    f"encoder_channels must be positive; got {encoder_channels}."
+                )
         self.encoder = nn.Sequential(
             _ConvBlock(1, c1, 3, 2, 5, 2, activation, drop_prob),
             _ConvBlock(c1, c2, 3, 2, 4, 2, activation, drop_prob),
@@ -203,7 +261,10 @@ class NeuroPoseNet(EEGModuleMixin, nn.Module):
 
         self.proj = nn.Linear(c3, encoder_dim)
         self.resnet = nn.Sequential(
-            *[_ResBlock(encoder_dim, activation) for _ in range(n_res_blocks)]
+            *[
+                _ResBlock(encoder_dim, activation, n_convs_per_block)
+                for _ in range(n_res_blocks)
+            ]
         )
         self.sequence_to_resnet = Rearrange("b t c -> b c t")
         self.resnet_to_sequence = Rearrange("b c t -> b t c")
@@ -337,15 +398,16 @@ class _UpBlock(nn.Module):
 
 
 class _ResBlock(nn.Module):
-    def __init__(self, c, act):
+    def __init__(self, c, act, n_convs: int = 2):
         super().__init__()
-        self.f = nn.Sequential(
-            nn.Conv1d(c, c, 3, padding=1),
-            nn.BatchNorm1d(c),
-            act(),
-            nn.Conv1d(c, c, 3, padding=1),
-            nn.BatchNorm1d(c),
-        )
+        if n_convs < 1:
+            raise ValueError(f"n_convs must be >= 1; got {n_convs}.")
+        layers: list[nn.Module] = []
+        for index in range(n_convs):
+            layers += [nn.Conv1d(c, c, 3, padding=1), nn.BatchNorm1d(c)]
+            if index < n_convs - 1:
+                layers.append(act())
+        self.f = nn.Sequential(*layers)
         self.out_act = act()
 
     def forward(self, x):
