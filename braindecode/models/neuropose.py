@@ -21,7 +21,7 @@ class NeuroPose(EEGModuleMixin, nn.Module):
 
     :bdg-success:`Convolution`
 
-    .. figure:: ../_static/model/neuropose.png
+    .. figure:: https://braindecode.org/dev/_static/model/neuropose.png
        :align: center
        :alt: NeuroPose encoder / ResNet / decoder architecture
 

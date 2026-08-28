@@ -34,7 +34,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
 
     :bdg-success:`Convolution` :bdg-dark-line:`Channel`
 
-    .. figure:: ../_static/model/sensingdynamics.png
+    .. figure:: https://braindecode.org/dev/_static/model/sensingdynamics.png
        :align: center
        :alt: SensingDynamics architecture with circular electrode padding
 
