@@ -45,7 +45,7 @@ classifiers = [
 readme = "README.rst"
 requires-python = ">=3.11"
 dependencies = [
-    "torch>=2.0",
+    "torch>=2.1",  # nn.CircularPad2d (sensingdynamics)
     "torchaudio>=2.0",
     'mne>=1.11.0',  # we get matplotlib, numpy, scipy from here
     'mne_bids>=0.18', # in theory we get the mne here, but we prefer to have it explicit
