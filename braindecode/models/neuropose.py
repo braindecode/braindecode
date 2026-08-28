@@ -370,28 +370,25 @@ class NeuroPose(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality."""
-        if n_outputs <= 0:
-            raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
+        self._set_n_outputs(n_outputs)
         old = self.final_layer
         self.final_layer = nn.Linear(
             in_features=old.in_features, out_features=n_outputs
         ).to(device=old.weight.device, dtype=old.weight.dtype)
         self.final_layer.apply(self._init_weights)
-        self._n_outputs = n_outputs
-        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
-        if init_kwargs is not None and "n_outputs" in init_kwargs:
-            init_kwargs["n_outputs"] = n_outputs
-        hub_config = getattr(self, "_hub_mixin_config", None)
-        if hub_config is not None and "n_outputs" in hub_config:
-            hub_config["n_outputs"] = n_outputs
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         n_times_in = x.shape[-1]
+        # Layout contract of _ConvBlock/_UpBlock: (B, C, TIME, BANDS).
         bands = self.adapter(x)
-        # Resample to the paper's internal temporal grid.
+
+        # Resampling stays inline: forward is wrapped by
+        # _disable_batch_norm_training_if_batch_size_one, so TorchScript
+        # resolves global names against util.py rather than this module, and
+        # the plain-module conversion it uses drops class methods. Neither a
+        # helper method nor a module-level function survives that.
         if self.decim is not None:
-            n_times_internal = (bands.shape[-1] // self.decim) * self.decim
             min_input_times = 40 * self.decim
             if bands.shape[-1] < min_input_times:
                 raise ValueError(
@@ -399,7 +396,7 @@ class NeuroPose(EEGModuleMixin, nn.Module):
                     "so the resampled signal has the 40 samples required by the "
                     f"encoder; got {bands.shape[-1]}."
                 )
-            bands = bands[..., :n_times_internal]
+            bands = bands[..., : (bands.shape[-1] // self.decim) * self.decim]
             if self.decim > 1:
                 bands = torch.nn.functional.avg_pool1d(bands, self.decim)
         else:
@@ -415,19 +412,16 @@ class NeuroPose(EEGModuleMixin, nn.Module):
                 bands, size=n_times_internal, mode="linear", align_corners=False
             )
 
-        # Layout contract of _ConvBlock/_UpBlock: (B, C, TIME, BANDS).
-        features = self.encoder(self.input_to_encoder(bands))
-        features = self.encoder_to_sequence(features)
+        features = self.encoder_to_sequence(self.encoder(self.input_to_encoder(bands)))
         features = self.proj(features)
         features = self.resnet_to_sequence(
             self.resnet(self.sequence_to_resnet(features))
         )
+        features = self.decoder_to_sequence(
+            self.decoder(self.sequence_to_decoder(features))
+        )
 
-        features = self.sequence_to_decoder(features)
-        features = self.decoder(features)  # (B, narrow_width, time, bands)
-        features = self.decoder_to_sequence(features)
-
-        pose = self.final_layer(self.head_drop(features))  # (B, n_times_int, J)
+        pose = self.final_layer(self.head_drop(features))
         return self.channels_to_sequence(
             torch.nn.functional.interpolate(
                 self.sequence_to_channels(pose),

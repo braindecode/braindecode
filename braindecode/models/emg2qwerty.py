@@ -453,22 +453,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         captured init config (``get_config()``) is also kept in sync so
         save/load round-trips rebuild the new head.
         """
-        if n_outputs <= 0:
-            raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
+        self._set_n_outputs(n_outputs)
         old_head = self.final_layer
         self.final_layer = nn.Linear(old_head.in_features, n_outputs).to(
             device=old_head.weight.device, dtype=old_head.weight.dtype
         )
-        self._n_outputs = n_outputs
-        # Keep the init-kwargs snapshot used by ``get_config()`` aligned with
-        # the live head, so ``EMG2QwertyNet.from_config(m.get_config())``
-        # rebuilds the head with the new vocab size.
-        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
-        if init_kwargs is not None and "n_outputs" in init_kwargs:
-            init_kwargs["n_outputs"] = n_outputs
-        hub_config = getattr(self, "_hub_mixin_config", None)
-        if hub_config is not None and "n_outputs" in hub_config:
-            hub_config["n_outputs"] = n_outputs
 
     def compute_output_lengths(self, input_lengths: torch.Tensor) -> torch.Tensor:
         """Map per-sample input lengths to CTC emission lengths.

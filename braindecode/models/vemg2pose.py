@@ -294,32 +294,22 @@ class VEMG2Pose(
         (``[f_t ; ŷ_{t-1}]``), changing ``n_outputs`` also requires
         rebuilding the recurrent stack — its weights are re-initialized.
         """
-        if n_outputs <= 0:
-            raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
-        previous_final_layer = self.final_layer
-        device = previous_final_layer.weight.device
-        dtype = previous_final_layer.weight.dtype
+        self._set_n_outputs(n_outputs)
+        old = self.final_layer
+        device, dtype = old.weight.device, old.weight.dtype
         self.final_layer = nn.Linear(
-            in_features=previous_final_layer.in_features, out_features=n_outputs
+            in_features=old.in_features, out_features=n_outputs
         ).to(device=device, dtype=dtype)
         self.final_layer.apply(self._init_weights)
         self.initial_pose = nn.Parameter(
             torch.zeros(n_outputs, device=device, dtype=dtype)
         )
-        feature_dim = self.tds_stages[-1].sub_conv.out_channels
         self.lstm = nn.LSTM(
-            input_size=feature_dim + n_outputs,
+            input_size=self.tds_stages[-1].sub_conv.out_channels + n_outputs,
             hidden_size=self.lstm.hidden_size,
             num_layers=2,
             batch_first=True,
         ).to(device=device, dtype=dtype)
-        self._n_outputs = n_outputs
-        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
-        if init_kwargs is not None and "n_outputs" in init_kwargs:
-            init_kwargs["n_outputs"] = n_outputs
-        hub_config = getattr(self, "_hub_mixin_config", None)
-        if hub_config is not None and "n_outputs" in hub_config:
-            hub_config["n_outputs"] = n_outputs
 
     def forward(self, x: torch.Tensor, y0: torch.Tensor | None = None) -> torch.Tensor:
         """Decode hand pose from raw EMG.

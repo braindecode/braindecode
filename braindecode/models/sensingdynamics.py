@@ -162,6 +162,11 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
                 "SensingDynamics implements the 16-channel emg2pose "
                 f"adaptation; got n_chans={self.n_chans}."
             )
+        if self.n_times < self.receptive_field_samples:
+            raise ValueError(
+                f"SensingDynamics requires at least "
+                f"{self.receptive_field_samples} input samples; got {self.n_times}."
+            )
         if self.sfreq <= 0:
             raise ValueError(f"sfreq must be positive; got {self.sfreq}.")
         if not 0 < lowpass_hz < self.sfreq / 2:
@@ -223,34 +228,17 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality."""
-        if n_outputs <= 0:
-            raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
+        self._set_n_outputs(n_outputs)
         old = self.final_layer
         self.final_layer = nn.Linear(
             in_features=old.in_features, out_features=n_outputs
         ).to(device=old.weight.device, dtype=old.weight.dtype)
-        self._n_outputs = n_outputs
-        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
-        if init_kwargs is not None and "n_outputs" in init_kwargs:
-            init_kwargs["n_outputs"] = n_outputs
-        hub_config = getattr(self, "_hub_mixin_config", None)
-        if hub_config is not None and "n_outputs" in hub_config:
-            hub_config["n_outputs"] = n_outputs
 
     def forward(
         self, x: torch.Tensor, x_lowpass: torch.Tensor | None = None
     ) -> torch.Tensor:
         """Predict angles, optionally using an externally filtered input copy."""
         n_times = x.shape[-1]
-        # Literal, not ``self.receptive_field_samples``: TorchScript cannot
-        # resolve a class attribute here (it is absent from the instance
-        # __dict__ that the plain-module conversion copies). Keep in sync with
-        # the class attribute above.
-        if n_times < 167:
-            raise ValueError(
-                f"SensingDynamics requires at least 167 input samples; got {n_times}."
-            )
-
         if x_lowpass is None:
             x_lowpass = self.lowpass(x)
         elif x_lowpass.shape != x.shape:
