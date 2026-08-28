@@ -93,7 +93,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     .. [Yassine2023Code] Yassine El Ouahidi, V. Gripon, B. Pasdeloup, G. Bouallegue
         N. Farrugia, G. Lioi, 2023. A Strong and Simple Deep Learning Baseline for
         BCI Motor Imagery Decoding. GitHub repository.
-        https://github.com/elouayas/EEGSimpleConv.
+        https://github.com/elouayas/EEGSimpleConv
 
     """
 
