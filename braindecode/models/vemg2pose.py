@@ -85,8 +85,15 @@ class VEMG2Pose(
 
     Meta's released checkpoints are rehosted with these parameter names::
 
+        # vemg2pose: recurrent decoder
         VEMG2Pose.from_pretrained("braindecode/VEMG2Pose-emg2pose")
         VEMG2Pose.from_pretrained("braindecode/VEMG2Pose-emg2pose-tracking")
+        # emg2pose: same encoder, stateless MLP decoder
+        VEMG2Pose.from_pretrained("braindecode/EMG2Pose-emg2pose")
+        VEMG2Pose.from_pretrained("braindecode/EMG2Pose-emg2pose-tracking")
+
+    Each config records its own ``decoder`` and ``parameterization``, so the
+    right rollout is restored automatically.
 
     The original ``.ckpt`` files also load directly, since ``mapping``
     rewrites the upstream key names. Both routes reproduce the reference
@@ -106,7 +113,16 @@ class VEMG2Pose(
     hidden_size : int, optional
         LSTM hidden width. The default is ``512``.
     lstm_layers : int, optional
-        Depth of the decoder LSTM. The default is ``2``.
+        Depth of the decoder LSTM, when ``decoder='lstm'``. The default is
+        ``2``.
+    decoder : {'lstm', 'mlp'}, optional
+        Rollout decoder. ``'lstm'`` (the default) is the recurrent decoder
+        the ``vemg2pose`` checkpoints use. ``'mlp'`` is the stateless
+        normalised MLP behind emg2pose's own ``emg2pose`` baseline; both are
+        state-conditioned on the previous pose either way.
+    decoder_hidden_sizes : tuple of int, optional
+        Hidden widths of the MLP decoder, unused when ``decoder='lstm'``.
+        The default is ``(512, 512)``.
     stem_kernel_sizes : tuple of int, optional
         Kernel of each strided stem convolution. The default is ``(11, 5)``.
     stem_strides : tuple of int, optional
@@ -171,6 +187,8 @@ class VEMG2Pose(
         feature_dim: int = 64,
         hidden_size: int = 512,
         lstm_layers: int = 2,
+        decoder: str = "lstm",
+        decoder_hidden_sizes: tuple[int, ...] = (512, 512),
         stem_kernel_sizes: tuple[int, ...] = (11, 5),
         stem_strides: tuple[int, ...] = (5, 2),
         tds_subsample_kernels: tuple[int, ...] = (17, 9),
@@ -206,6 +224,8 @@ class VEMG2Pose(
                 "tds_subsample_kernels, tds_subsample_strides and "
                 "tds_kernel_widths must have the same length."
             )
+        if decoder not in ("lstm", "mlp"):
+            raise ValueError(f"decoder must be 'lstm' or 'mlp'; got {decoder!r}.")
         if parameterization not in ("hybrid", "velocity", "position"):
             raise ValueError(
                 "parameterization must be 'hybrid', 'velocity' or 'position'; "
@@ -273,20 +293,37 @@ class VEMG2Pose(
                 f"{self.n_times}. Use a longer window."
             )
 
-        self.lstm = nn.LSTM(
-            input_size=feature_dim + self.n_outputs,
-            hidden_size=hidden_size,
-            num_layers=lstm_layers,
-            batch_first=True,
-        )
-        self.decoder_activation = activation()
+        # Both decoders take (feature, hidden, cell) and return the same
+        # triple, so ``forward`` never branches -- TorchScript compiles every
+        # branch it sees, and would reject a conditionally-typed submodule.
+        decoder_in = feature_dim + self.n_outputs
+        if decoder == "lstm":
+            self.decoder: nn.Module = _LstmPoseDecoder(
+                in_features=decoder_in,
+                hidden_size=hidden_size,
+                num_layers=lstm_layers,
+                activation=activation,
+            )
+            head_in = hidden_size
+        else:
+            self.decoder = _MlpPoseDecoder(
+                in_features=decoder_in,
+                hidden_sizes=decoder_hidden_sizes,
+                activation=activation,
+            )
+            head_in = decoder_hidden_sizes[-1]
+        self.decoder_type = decoder
+        # State carried through the rollout; the MLP decoder ignores it, so a
+        # single dummy element keeps the signature uniform.
+        self._state_layers = lstm_layers if decoder == "lstm" else 1
+        self._state_size = hidden_size if decoder == "lstm" else 1
         # ``hybrid`` emits a position *and* a velocity per joint, so the head
         # is twice as wide and the halves are split in ``forward``. The other
         # two modes emit one value per joint. Last child, as braindecode
         # expects of the head.
         self._head_multiplier = 2 if parameterization == "hybrid" else 1
         self.final_layer = nn.Linear(
-            in_features=hidden_size,
+            in_features=head_in,
             out_features=self._head_multiplier * self.n_outputs,
         )
 
@@ -304,11 +341,25 @@ class VEMG2Pose(
             for index, block in enumerate(self.encoder)
             for key in block.state_dict()
         }
-        for key in self.lstm.state_dict():
-            mapping[f"model.decoder.lstm.{key}"] = f"lstm.{key}"
-        # mlp_out is (LeakyReLU, Linear); only the Linear carries parameters.
-        mapping["model.decoder.mlp_out.1.weight"] = "final_layer.weight"
-        mapping["model.decoder.mlp_out.1.bias"] = "final_layer.bias"
+        for key in self.decoder.state_dict():
+            # The LSTM decoder keeps upstream's own attribute name; the MLP
+            # one calls its stack ``layers`` where upstream calls it ``mlp``.
+            upstream = (
+                key
+                if self.decoder_type == "lstm"
+                else key.replace("layers.", "mlp.", 1)
+            )
+            mapping[f"model.decoder.{upstream}"] = f"decoder.{key}"
+        # Upstream's decoder ends in the head this class calls final_layer:
+        # mlp_out is (LeakyReLU, Linear) for the LSTM, and the trailing Linear
+        # of the MLP stack otherwise.
+        head = (
+            "mlp_out.1"
+            if self.decoder_type == "lstm"
+            else f"mlp.{len(self.decoder.layers)}"
+        )
+        mapping[f"model.decoder.{head}.weight"] = "final_layer.weight"
+        mapping[f"model.decoder.{head}.bias"] = "final_layer.bias"
         return mapping
 
     def reset_head(self, n_outputs: int) -> None:
@@ -326,12 +377,9 @@ class VEMG2Pose(
             out_features=self._head_multiplier * n_outputs,
         ).to(device=device, dtype=dtype)
         feature_dim = self.encoder[-1].out_channels
-        self.lstm = nn.LSTM(
-            input_size=feature_dim + n_outputs,
-            hidden_size=self.lstm.hidden_size,
-            num_layers=self.lstm.num_layers,
-            batch_first=True,
-        ).to(device=device, dtype=dtype)
+        self.decoder = self.decoder.rebuilt(in_features=feature_dim + n_outputs).to(
+            device=device, dtype=dtype
+        )
 
     def forward(self, x: torch.Tensor, y0: torch.Tensor | None = None) -> torch.Tensor:
         """Decode hand pose from raw EMG.
@@ -365,23 +413,16 @@ class VEMG2Pose(
         predicted_pose = (
             y0 if y0 is not None else x.new_zeros((batch_size, self.n_outputs))
         )
-        hidden_state = x.new_zeros(
-            (self.lstm.num_layers, batch_size, self.lstm.hidden_size)
-        )
+        hidden_state = x.new_zeros((self._state_layers, batch_size, self._state_size))
         cell_state = torch.zeros_like(hidden_state)
 
         pose_per_step = []
         for step in range(n_steps):
-            decoder_input = torch.cat(
-                [features[:, :, step], predicted_pose], dim=-1
-            ).unsqueeze(1)
-            lstm_output, (hidden_state, cell_state) = self.lstm(
-                decoder_input, (hidden_state, cell_state)
+            decoder_input = torch.cat([features[:, :, step], predicted_pose], dim=-1)
+            decoder_output, hidden_state, cell_state = self.decoder(
+                decoder_input, hidden_state, cell_state
             )
-            output = (
-                self.final_layer(self.decoder_activation(lstm_output[:, 0]))
-                * self.output_scalar
-            )
+            output = self.final_layer(decoder_output) * self.output_scalar
             if self.parameterization == "hybrid":
                 position, velocity = torch.split(output, self.n_outputs, dim=1)
                 predicted_pose = (
@@ -555,3 +596,80 @@ class _TdsStage(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.layers(x)
         return self.linear_layer(x.swapaxes(-1, -2)).swapaxes(-1, -2)
+
+
+class _LstmPoseDecoder(nn.Module):
+    """Recurrent rollout decoder: an LSTM step followed by an activation."""
+
+    def __init__(
+        self,
+        in_features: int,
+        hidden_size: int,
+        num_layers: int,
+        activation: type[nn.Module],
+    ) -> None:
+        super().__init__()
+        self.lstm = nn.LSTM(
+            input_size=in_features,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+        )
+        self.activation = activation()
+        self._activation_cls = activation
+
+    def rebuilt(self, in_features: int) -> "_LstmPoseDecoder":
+        """A fresh decoder of the same shape for a new input width."""
+        return _LstmPoseDecoder(
+            in_features=in_features,
+            hidden_size=self.lstm.hidden_size,
+            num_layers=self.lstm.num_layers,
+            activation=self._activation_cls,
+        )
+
+    def forward(
+        self, x: torch.Tensor, hidden: torch.Tensor, cell: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        output, (hidden, cell) = self.lstm(x.unsqueeze(1), (hidden, cell))
+        return self.activation(output[:, 0]), hidden, cell
+
+
+class _MlpPoseDecoder(nn.Module):
+    """Stateless rollout decoder: a normalised MLP over the same input.
+
+    The hidden and cell tensors are accepted and returned untouched so the
+    two decoders share one signature, which keeps ``forward`` branch-free.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        hidden_sizes: tuple[int, ...],
+        activation: type[nn.Module],
+    ) -> None:
+        super().__init__()
+        layers: list[nn.Module] = []
+        width = in_features
+        for hidden_size in hidden_sizes:
+            layers += [
+                nn.Linear(in_features=width, out_features=hidden_size),
+                nn.LayerNorm(normalized_shape=hidden_size),
+                activation(),
+            ]
+            width = hidden_size
+        self.layers = nn.Sequential(*layers)
+        self._hidden_sizes = tuple(hidden_sizes)
+        self._activation_cls = activation
+
+    def rebuilt(self, in_features: int) -> "_MlpPoseDecoder":
+        """A fresh decoder of the same shape for a new input width."""
+        return _MlpPoseDecoder(
+            in_features=in_features,
+            hidden_sizes=self._hidden_sizes,
+            activation=self._activation_cls,
+        )
+
+    def forward(
+        self, x: torch.Tensor, hidden: torch.Tensor, cell: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return self.layers(x), hidden, cell
