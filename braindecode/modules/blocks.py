@@ -1,6 +1,8 @@
+from collections.abc import Sequence
 from warnings import warn
 
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 
 
@@ -315,3 +317,214 @@ class FeedForwardBlock(nn.Sequential):
             nn.Dropout(drop_p),
             nn.Linear(expansion * emb_size, emb_size),
         )
+
+
+class TDSConv2dBlock(nn.Module):
+    r"""Time-depth-separable convolutional block.
+
+    The feature dimension is factorized as ``channels * width`` and processed
+    by a valid ``(1, kernel_width)`` convolution. The result is combined with
+    the aligned tail of the input before layer normalization.
+
+    Parameters
+    ----------
+    channels : int
+        Number of convolution channels in the feature factorization.
+    width : int
+        Width of each convolution channel. The input feature dimension must be
+        ``channels * width``.
+    kernel_width : int
+        Size of the valid temporal convolution kernel.
+    activation : type[nn.Module], default=nn.ReLU
+        Activation constructor applied after the convolution.
+    time_first : bool, default=True
+        If ``True``, inputs and outputs use ``(time, batch, features)``. If
+        ``False``, they use ``(batch, features, time)``.
+    """
+
+    def __init__(
+        self,
+        channels: int,
+        width: int,
+        kernel_width: int,
+        activation: type[nn.Module] = nn.ReLU,
+        time_first: bool = True,
+    ) -> None:
+        super().__init__()
+        self.channels = channels
+        self.width = width
+        self.time_first = time_first
+        self.conv2d = nn.Conv2d(
+            in_channels=channels,
+            out_channels=channels,
+            kernel_size=(1, kernel_width),
+        )
+        self.activation = activation()
+        self.layer_norm = nn.LayerNorm(channels * width)
+        if time_first:
+            self.fold_features = Rearrange(
+                "time batch (channels width) -> batch channels width time",
+                channels=channels,
+                width=width,
+            )
+            self.unfold_features = Rearrange(
+                "batch channels width time -> time batch (channels width)"
+            )
+        else:
+            self.fold_features = Rearrange(
+                "batch (channels width) time -> batch channels width time",
+                channels=channels,
+                width=width,
+            )
+            self.unfold_features = Rearrange(
+                "batch channels width time -> batch (channels width) time"
+            )
+        self.features_to_sequence = Rearrange(
+            "batch features time -> batch time features"
+        )
+        self.sequence_to_features = Rearrange(
+            "batch time features -> batch features time"
+        )
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        folded = self.fold_features(inputs)
+        convolved = self.conv2d(folded)
+        activated = self.activation(convolved)
+        conv_out = self.unfold_features(activated)
+        n_out_frames = activated.shape[-1]
+
+        if self.time_first:
+            residual_added = conv_out + inputs[-n_out_frames:]
+            output = self.layer_norm(residual_added)
+            return output
+
+        residual_added = conv_out + inputs[..., -n_out_frames:]
+        sequence = self.features_to_sequence(residual_added)
+        normalized = self.layer_norm(sequence)
+        output = self.sequence_to_features(normalized)
+        return output
+
+
+class TDSFullyConnectedBlock(nn.Module):
+    r"""Residual position-wise feed-forward TDS block.
+
+    Parameters
+    ----------
+    num_features : int
+        Size of the feature dimension.
+    activation : type[nn.Module], default=nn.ReLU
+        Activation constructor used between the two linear layers.
+    drop_prob : float, default=0.0
+        Dropout probability after the activation and second linear layer.
+    time_first : bool, default=True
+        If ``True``, inputs and outputs use ``(time, batch, features)``. If
+        ``False``, they use ``(batch, features, time)``.
+    """
+
+    def __init__(
+        self,
+        num_features: int,
+        activation: type[nn.Module] = nn.ReLU,
+        drop_prob: float = 0.0,
+        time_first: bool = True,
+    ) -> None:
+        super().__init__()
+        self.time_first = time_first
+        layers: list[nn.Module] = [
+            nn.Linear(num_features, num_features),
+            activation(),
+        ]
+        if drop_prob > 0:
+            layers.append(nn.Dropout(drop_prob))
+        layers.append(nn.Linear(num_features, num_features))
+        if drop_prob > 0:
+            layers.append(nn.Dropout(drop_prob))
+        self.fc_block = nn.Sequential(*layers)
+        self.layer_norm = nn.LayerNorm(num_features)
+        self.features_to_sequence = Rearrange(
+            "batch features time -> batch time features"
+        )
+        self.sequence_to_features = Rearrange(
+            "batch time features -> batch features time"
+        )
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        if self.time_first:
+            transformed = self.fc_block(inputs)
+            residual_added = transformed + inputs
+            output = self.layer_norm(residual_added)
+            return output
+
+        sequence = self.features_to_sequence(inputs)
+        transformed = self.fc_block(sequence)
+        residual_added = transformed + sequence
+        normalized = self.layer_norm(residual_added)
+        output = self.sequence_to_features(normalized)
+        return output
+
+
+class TDSConvEncoder(nn.Module):
+    r"""Stack time-depth-separable convolution and feed-forward blocks.
+
+    With ``K = len(block_channels)`` blocks and valid convolutions, the encoder
+    removes ``K * (kernel_width - 1)`` frames. Every entry in
+    ``block_channels`` must evenly divide ``num_features``.
+
+    Parameters
+    ----------
+    num_features : int
+        Size of the input and output feature dimension.
+    block_channels : sequence of int, default=(24, 24, 24, 24)
+        Convolution channel count for each TDS block.
+    kernel_width : int, default=32
+        Size of each valid temporal convolution kernel.
+    activation : type[nn.Module], default=nn.ReLU
+        Activation constructor used in every block.
+    drop_prob : float, default=0.0
+        Dropout probability in the feed-forward blocks.
+    time_first : bool, default=True
+        If ``True``, inputs and outputs use ``(time, batch, features)``. If
+        ``False``, they use ``(batch, features, time)``.
+    """
+
+    def __init__(
+        self,
+        num_features: int,
+        block_channels: Sequence[int] = (24, 24, 24, 24),
+        kernel_width: int = 32,
+        activation: type[nn.Module] = nn.ReLU,
+        drop_prob: float = 0.0,
+        time_first: bool = True,
+    ) -> None:
+        super().__init__()
+        if not block_channels:
+            raise ValueError("block_channels must be non-empty.")
+        blocks: list[nn.Module] = []
+        for n_block_channels in block_channels:
+            if num_features % n_block_channels != 0:
+                raise ValueError(
+                    f"block_channels entry {n_block_channels} does not evenly "
+                    f"divide num_features={num_features}."
+                )
+            blocks.extend(
+                [
+                    TDSConv2dBlock(
+                        channels=n_block_channels,
+                        width=num_features // n_block_channels,
+                        kernel_width=kernel_width,
+                        activation=activation,
+                        time_first=time_first,
+                    ),
+                    TDSFullyConnectedBlock(
+                        num_features=num_features,
+                        activation=activation,
+                        drop_prob=drop_prob,
+                        time_first=time_first,
+                    ),
+                ]
+            )
+        self.tds_conv_blocks = nn.Sequential(*blocks)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        output = self.tds_conv_blocks(inputs)
+        return output

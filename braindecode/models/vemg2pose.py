@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
+from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import TDSConvEncoder
 
 
 class VEMG2Pose(
@@ -56,7 +58,7 @@ class VEMG2Pose(
     ``VEMG2Pose.encoder``
         **Operations.** ``_Conv1dBlock`` ×2 then ``_TdsStage`` ×2. A stage is
         a strided ``Conv1d`` + LayerNorm, then ``tds_blocks`` × (
-        ``_TDSConv2dBlock``, ``_TDSFullyConnectedBlock``), both residual and
+        ``TDSConv2dBlock``, ``TDSFullyConnectedBlock``), both residual and
         each closing with a LayerNorm over the channel axis.
         **Role.** Compresses 2 kHz sEMG to ``feature_dim`` features at
         ``sfreq / prod(strides)``, i.e. 25 Hz for the paper's input.
@@ -217,6 +219,16 @@ class VEMG2Pose(
             raise ValueError(f"sfreq must be positive; got {self.sfreq}.")
         if rollout_rate <= 0:
             raise ValueError(f"rollout_rate must be positive; got {rollout_rate}.")
+        if len(stem_kernel_sizes) == 0:
+            raise ValueError("stem_kernel_sizes and stem_strides must be non-empty.")
+        if len(stem_kernel_sizes) != len(stem_strides):
+            raise ValueError(
+                "stem_kernel_sizes and stem_strides must have the same length."
+            )
+        if any(kernel <= 0 for kernel in stem_kernel_sizes) or any(
+            stride <= 0 for stride in stem_strides
+        ):
+            raise ValueError("stem kernels and strides must all be positive.")
         if len(tds_subsample_kernels) != len(tds_subsample_strides) or len(
             tds_subsample_kernels
         ) != len(tds_kernel_widths):
@@ -224,13 +236,27 @@ class VEMG2Pose(
                 "tds_subsample_kernels, tds_subsample_strides and "
                 "tds_kernel_widths must have the same length."
             )
+        if len(tds_subsample_kernels) == 0:
+            raise ValueError("At least one TDS stage must be configured.")
+        if any(kernel <= 0 for kernel in tds_subsample_kernels) or any(
+            stride <= 0 for stride in tds_subsample_strides
+        ):
+            raise ValueError("TDS subsampling kernels and strides must be positive.")
+        if any(kernel <= 0 or kernel % 2 == 0 for kernel in tds_kernel_widths):
+            raise ValueError("TDS kernel widths must be positive odd integers.")
         if decoder not in ("lstm", "mlp"):
             raise ValueError(f"decoder must be 'lstm' or 'mlp'; got {decoder!r}.")
+        if decoder == "mlp" and len(decoder_hidden_sizes) == 0:
+            raise ValueError(
+                "decoder_hidden_sizes must be non-empty when decoder='mlp'."
+            )
         if parameterization not in ("hybrid", "velocity", "position"):
             raise ValueError(
                 "parameterization must be 'hybrid', 'velocity' or 'position'; "
                 f"got {parameterization!r}."
             )
+        if tds_channels <= 0:
+            raise ValueError(f"tds_channels must be positive; got {tds_channels}.")
         if encoder_channels % tds_channels:
             raise ValueError(
                 f"tds_channels ({tds_channels}) must divide encoder_channels "
@@ -322,13 +348,17 @@ class VEMG2Pose(
         # two modes emit one value per joint. Last child, as braindecode
         # expects of the head.
         self._head_multiplier = 2 if parameterization == "hybrid" else 1
+        self.trajectory_to_sequence = Rearrange(
+            "batch outputs time -> batch time outputs"
+        )
         self.final_layer = nn.Linear(
             in_features=head_in,
             out_features=self._head_multiplier * self.n_outputs,
         )
+        self.apply(self._init_weights)
+        self.mapping = self._build_checkpoint_mapping()
 
-    @property
-    def mapping(self) -> dict[str, str]:
+    def _build_checkpoint_mapping(self) -> dict[str, str]:
         """Map the released emg2pose checkpoints onto this module's names.
 
         Upstream wraps the encoder in a LightningModule as ``model.network``
@@ -362,6 +392,25 @@ class VEMG2Pose(
         mapping[f"model.decoder.{head}.bias"] = "final_layer.bias"
         return mapping
 
+    @staticmethod
+    def _init_weights(module: nn.Module) -> None:
+        """Initialize trainable layers with the Braindecode model convention."""
+        if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear)):
+            nn.init.trunc_normal_(module.weight, std=0.02)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.LSTM):
+            for name, parameter in module.named_parameters(recurse=False):
+                if "weight" in name:
+                    nn.init.normal_(parameter, std=0.02)
+                elif "bias" in name:
+                    nn.init.zeros_(parameter)
+        elif isinstance(module, nn.LayerNorm):
+            if module.weight is not None:
+                nn.init.ones_(module.weight)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality.
 
@@ -376,10 +425,12 @@ class VEMG2Pose(
             in_features=old.in_features,
             out_features=self._head_multiplier * n_outputs,
         ).to(device=device, dtype=dtype)
+        self._init_weights(self.final_layer)
         feature_dim = self.encoder[-1].out_channels
         self.decoder = self.decoder.rebuilt(in_features=feature_dim + n_outputs).to(
             device=device, dtype=dtype
         )
+        self.decoder.apply(self._init_weights)
 
     def forward(self, x: torch.Tensor, y0: torch.Tensor | None = None) -> torch.Tensor:
         """Decode hand pose from raw EMG.
@@ -418,11 +469,13 @@ class VEMG2Pose(
 
         pose_per_step = []
         for step in range(n_steps):
-            decoder_input = torch.cat([features[:, :, step], predicted_pose], dim=-1)
-            decoder_output, hidden_state, cell_state = self.decoder(
+            step_features = features[:, :, step]
+            decoder_input = torch.cat([step_features, predicted_pose], dim=-1)
+            decoder_features, hidden_state, cell_state = self.decoder(
                 decoder_input, hidden_state, cell_state
             )
-            output = self.final_layer(decoder_output) * self.output_scalar
+            decoder_output = self.final_layer(decoder_features)
+            output = decoder_output * self.output_scalar
             if self.parameterization == "hybrid":
                 position, velocity = torch.split(output, self.n_outputs, dim=1)
                 predicted_pose = (
@@ -437,7 +490,8 @@ class VEMG2Pose(
         trajectory = torch.stack(pose_per_step, dim=-1)  # (B, n_outputs, steps)
         # Back to the input grid, so the model keeps braindecode's contract.
         trajectory = F.interpolate(trajectory, size=n_times, mode="linear")
-        return trajectory.transpose(1, 2)
+        output = self.trajectory_to_sequence(trajectory)
+        return output
 
     def tracking_forward(self, x: torch.Tensor, y0: torch.Tensor) -> torch.Tensor:
         """Explicit Tracking-mode entry point (ground-truth anchor required)."""
@@ -471,79 +525,19 @@ class _Conv1dBlock(nn.Module):
             nn.Dropout(p=drop_prob),
         )
         self.norm = nn.LayerNorm(normalized_shape=out_channels)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.conv(x)
-        return self.norm(x.swapaxes(-1, -2)).swapaxes(-1, -2)
-
-
-class _TDSConv2dBlock(nn.Module):
-    """Time-depth-separable convolution over a channel/width factorisation."""
-
-    def __init__(self, channels: int, width: int, kernel_width: int) -> None:
-        super().__init__()
-        if kernel_width % 2 == 0:
-            raise ValueError(f"kernel_width must be odd; got {kernel_width}.")
-        self.channels = channels
-        self.width = width
-        self.conv2d = nn.Conv2d(
-            in_channels=channels,
-            out_channels=channels,
-            kernel_size=(1, kernel_width),
-            bias=True,
+        self.channels_to_sequence = Rearrange(
+            "batch channels time -> batch time channels"
         )
-        self.relu = nn.ReLU(inplace=True)
-        self.layer_norm = nn.LayerNorm(normalized_shape=channels * width)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch, n_features, n_times = x.shape
-        out = x.reshape(batch, self.channels, self.width, n_times)
-        out = self.relu(self.conv2d(out))
-        out = out.reshape(batch, n_features, -1)
-        # Valid convolution shortens the sequence, so the residual is taken
-        # from the tail of the input.
-        out = out + x[..., -out.shape[-1] :]
-        return self.layer_norm(out.swapaxes(-1, -2)).swapaxes(-1, -2)
-
-
-class _TDSFullyConnectedBlock(nn.Module):
-    """Residual position-wise feed-forward block with a trailing LayerNorm."""
-
-    def __init__(self, n_features: int) -> None:
-        super().__init__()
-        self.fc_block = nn.Sequential(
-            nn.Linear(in_features=n_features, out_features=n_features),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=n_features, out_features=n_features),
+        self.sequence_to_channels = Rearrange(
+            "batch time channels -> batch channels time"
         )
-        self.layer_norm = nn.LayerNorm(normalized_shape=n_features)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = self.fc_block(x.swapaxes(-1, -2)).swapaxes(-1, -2) + x
-        return self.layer_norm(out.swapaxes(-1, -2)).swapaxes(-1, -2)
-
-
-class _TDSConvEncoder(nn.Module):
-    """``n_blocks`` pairs of a TDS convolution and a feed-forward block."""
-
-    def __init__(
-        self, n_features: int, n_blocks: int, channels: int, kernel_width: int
-    ) -> None:
-        super().__init__()
-        blocks: list[nn.Module] = []
-        for _ in range(n_blocks):
-            blocks += [
-                _TDSConv2dBlock(
-                    channels=channels,
-                    width=n_features // channels,
-                    kernel_width=kernel_width,
-                ),
-                _TDSFullyConnectedBlock(n_features=n_features),
-            ]
-        self.tds_conv_blocks = nn.Sequential(*blocks)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.tds_conv_blocks(x)
+        convolved = self.conv(x)
+        sequence = self.channels_to_sequence(convolved)
+        normalized = self.norm(sequence)
+        output = self.sequence_to_channels(normalized)
+        return output
 
 
 class _TdsStage(nn.Module):
@@ -577,11 +571,11 @@ class _TdsStage(nn.Module):
         )
         self.layers.add_module(
             "tds_block",
-            _TDSConvEncoder(
-                n_features=n_features,
-                n_blocks=n_blocks,
-                channels=channels,
+            TDSConvEncoder(
+                num_features=n_features,
+                block_channels=(channels,) * n_blocks,
                 kernel_width=kernel_width,
+                time_first=False,
             ),
         )
         # Identity when the stage does not project, so the attribute always
@@ -592,10 +586,19 @@ class _TdsStage(nn.Module):
             if out_channels is not None
             else nn.Identity()
         )
+        self.features_to_sequence = Rearrange(
+            "batch features time -> batch time features"
+        )
+        self.sequence_to_features = Rearrange(
+            "batch time features -> batch features time"
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.layers(x)
-        return self.linear_layer(x.swapaxes(-1, -2)).swapaxes(-1, -2)
+        encoded = self.layers(x)
+        sequence = self.features_to_sequence(encoded)
+        projected = self.linear_layer(sequence)
+        output = self.sequence_to_features(projected)
+        return output
 
 
 class _LstmPoseDecoder(nn.Module):
@@ -617,6 +620,8 @@ class _LstmPoseDecoder(nn.Module):
         )
         self.activation = activation()
         self._activation_cls = activation
+        self.add_time_axis = Rearrange("batch features -> batch 1 features")
+        self.remove_time_axis = Rearrange("batch 1 features -> batch features")
 
     def rebuilt(self, in_features: int) -> "_LstmPoseDecoder":
         """A fresh decoder of the same shape for a new input width."""
@@ -630,8 +635,11 @@ class _LstmPoseDecoder(nn.Module):
     def forward(
         self, x: torch.Tensor, hidden: torch.Tensor, cell: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        output, (hidden, cell) = self.lstm(x.unsqueeze(1), (hidden, cell))
-        return self.activation(output[:, 0]), hidden, cell
+        sequence = self.add_time_axis(x)
+        sequence_output, (next_hidden, next_cell) = self.lstm(sequence, (hidden, cell))
+        decoder_features = self.remove_time_axis(sequence_output)
+        output = self.activation(decoder_features)
+        return output, next_hidden, next_cell
 
 
 class _MlpPoseDecoder(nn.Module):
@@ -672,4 +680,5 @@ class _MlpPoseDecoder(nn.Module):
     def forward(
         self, x: torch.Tensor, hidden: torch.Tensor, cell: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        return self.layers(x), hidden, cell
+        output = self.layers(x)
+        return output, hidden, cell

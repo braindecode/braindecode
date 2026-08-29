@@ -292,9 +292,10 @@ class NeuroPose(EEGModuleMixin, nn.Module):
             in_features=decoder_channels[-1] * n_electrodes,
             out_features=self.n_outputs,
         )
+        self.apply(self._init_weights)
+        self.mapping = self._build_checkpoint_mapping()
 
-    @property
-    def mapping(self) -> dict[str, str]:
+    def _build_checkpoint_mapping(self) -> dict[str, str]:
         """Map ``regression_neuropose.ckpt`` keys onto this module's names.
 
         Upstream holds every block in one ``nn.Sequential``, so encoder,
@@ -317,6 +318,22 @@ class NeuroPose(EEGModuleMixin, nn.Module):
         mapping["model.network.linear.bias"] = "final_layer.bias"
         return mapping
 
+    @staticmethod
+    def _init_weights(module: nn.Module) -> None:
+        """Initialize trainable layers with the Braindecode model convention."""
+        if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear)):
+            nn.init.trunc_normal_(module.weight, std=0.02)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(
+            module,
+            (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm),
+        ):
+            if module.weight is not None:
+                nn.init.ones_(module.weight)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality."""
         self._set_n_outputs(n_outputs)
@@ -324,24 +341,30 @@ class NeuroPose(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=old.in_features, out_features=n_outputs
         ).to(device=old.weight.device, dtype=old.weight.dtype)
+        self._init_weights(self.final_layer)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         n_times_in = x.shape[-1]
-        features = self.decoder(self.resnet(self.encoder(self.input_to_encoder(x))))
-        pose = self.final_layer(self.decoder_to_sequence(features))
+        encoder_input = self.input_to_encoder(x)
+        encoded = self.encoder(encoder_input)
+        bottleneck = self.resnet(encoded)
+        decoded = self.decoder(bottleneck)
+        decoded_sequence = self.decoder_to_sequence(decoded)
+        pose = self.final_layer(decoded_sequence)
 
         # Upstream needs n_times divisible by the total temporal pooling
         # factor; this restores whatever flooring dropped, and is the identity
         # when it does divide.
-        return self.channels_to_sequence(
-            torch.nn.functional.interpolate(
-                self.sequence_to_channels(pose),
-                size=n_times_in,
-                mode="linear",
-                align_corners=False,
-            )
+        pose_channels = self.sequence_to_channels(pose)
+        resized_pose_channels = torch.nn.functional.interpolate(
+            pose_channels,
+            size=n_times_in,
+            mode="linear",
+            align_corners=False,
         )
+        resized_pose = self.channels_to_sequence(resized_pose_channels)
+        return resized_pose
 
 
 class _EncoderBlock(nn.Module):
@@ -373,7 +396,8 @@ class _EncoderBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.network(x)
+        encoded = self.network(x)
+        return encoded
 
 
 class _ResBlock(nn.Module):
@@ -405,7 +429,9 @@ class _ResBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # No activation after the sum, following the reference implementation.
-        return x + self.network(x)
+        residual = self.network(x)
+        output = x + residual
+        return output
 
 
 class _DecoderBlock(nn.Module):
@@ -438,4 +464,5 @@ class _DecoderBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.network(x)
+        decoded = self.network(x)
+        return decoded

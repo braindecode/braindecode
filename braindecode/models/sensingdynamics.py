@@ -7,26 +7,13 @@
 from __future__ import annotations
 
 import torch
-import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from scipy.signal import butter
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-
-
-class _SMU(nn.Module):
-    """Smooth Maximum Unit with the paper's learnable ``mu`` parameter."""
-
-    def __init__(self, alpha: float = 0.01, mu: float = 2.5) -> None:
-        super().__init__()
-        self.alpha = float(alpha)
-        self.mu = nn.Parameter(torch.tensor(float(mu)))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        positive = (1.0 + self.alpha) * x
-        smooth = (1.0 - self.alpha) * x * torch.erf(self.mu * (1.0 - self.alpha) * x)
-        return 0.5 * (positive + smooth)
+from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
+from braindecode.modules import SmoothMaximumUnit
 
 
 class SensingDynamics(EEGModuleMixin, nn.Module):
@@ -114,7 +101,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         Output width of the final convolution. Default is ``64``.
     mlp_hidden : int, optional
         Width of both hidden MLP layers. Default is ``512``.
-    conv_drop_prob : float, optional
+    drop_prob : float, optional
         Spatial dropout after the first convolution. Default is ``0.25``.
     mlp_drop_prob : float, optional
         Dropout before the MLP. Default is ``0.4``.
@@ -149,7 +136,6 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
        bioRxiv 2022.07.29.502064. doi:10.1101/2022.07.29.502064
     """
 
-    #: Temporal receptive field of the derived emg2pose adaptation.
     #: Temporal receptive field of the paper's default configuration. The
     #: value actually enforced is derived per instance in ``__init__``, so a
     #: reconfigured stack validates against its own receptive field.
@@ -172,7 +158,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         mid_channels: int = 32,
         spatial_channels: int = 64,
         mlp_hidden: int = 512,
-        conv_drop_prob: float = 0.25,
+        drop_prob: float = 0.25,
         mlp_drop_prob: float = 0.4,
         lowpass_hz: float = 20.0,
         lowpass_order: int = 4,
@@ -182,7 +168,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         mid_dilation: tuple[int, int] = (2, 1),
         spatial_kernel: tuple[int, int] = (3, 1),
         electrode_wrap: int = 4,
-        activation: type[nn.Module] = _SMU,
+        activation: type[nn.Module] = SmoothMaximumUnit,
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -194,6 +180,22 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        pair_parameters = {
+            "temporal_kernel": temporal_kernel,
+            "temporal_stride": temporal_stride,
+            "mid_kernel": mid_kernel,
+            "mid_dilation": mid_dilation,
+            "spatial_kernel": spatial_kernel,
+        }
+        for name, values in pair_parameters.items():
+            if len(values) != 2 or any(value <= 0 for value in values):
+                raise ValueError(f"{name} must contain two positive integers.")
+        if electrode_wrap < 0:
+            raise ValueError(
+                f"electrode_wrap must be non-negative; got {electrode_wrap}."
+            )
+        if lowpass_order <= 0:
+            raise ValueError(f"lowpass_order must be positive; got {lowpass_order}.")
         if self.n_chans != 16:
             raise ValueError(
                 "SensingDynamics implements the 16-channel emg2pose "
@@ -239,7 +241,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
             stride=temporal_stride,
             activation=activation,
         )
-        self.conv_dropout = nn.Dropout2d(p=conv_drop_prob)
+        self.conv_dropout = nn.Dropout2d(p=drop_prob)
         self.conv2 = _ConvBlock(
             in_channels=temporal_channels,
             out_channels=mid_channels,
@@ -257,11 +259,21 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         # Width of the electrode axis where conv3 leaves it. Previously a
         # literal 8, which silently assumed the default kernels *and* the
         # 16-electrode montage; deriving it lets both vary.
-        electrode_features = self.n_chans
-        electrode_features -= temporal_kernel[0] - 1
+        electrode_features = _conv_output_size(
+            self.n_chans,
+            kernel_size=temporal_kernel[0],
+            stride=temporal_stride[0],
+        )
         electrode_features += 2 * electrode_wrap
-        electrode_features -= mid_dilation[0] * (mid_kernel[0] - 1)
-        electrode_features -= spatial_kernel[0] - 1
+        electrode_features = _conv_output_size(
+            electrode_features,
+            kernel_size=mid_kernel[0],
+            dilation=mid_dilation[0],
+        )
+        electrode_features = _conv_output_size(
+            electrode_features,
+            kernel_size=spatial_kernel[0],
+        )
         if electrode_features < 1:
             raise ValueError(
                 f"The configured kernels consume the electrode axis: "
@@ -290,6 +302,23 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=mlp_hidden, out_features=self.n_outputs
         )
+        self.apply(self._init_weights)
+
+    @staticmethod
+    def _init_weights(module: nn.Module) -> None:
+        """Initialize trainable layers with the Braindecode model convention."""
+        if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Linear)):
+            nn.init.trunc_normal_(module.weight, std=0.02)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(
+            module,
+            (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm),
+        ):
+            if module.weight is not None:
+                nn.init.ones_(module.weight)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the output layer for a new output dimensionality."""
@@ -298,7 +327,9 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
         self.final_layer = nn.Linear(
             in_features=old.in_features, out_features=n_outputs
         ).to(device=old.weight.device, dtype=old.weight.dtype)
+        self._init_weights(self.final_layer)
 
+    @_disable_batch_norm_training_if_batch_size_one
     def forward(
         self, x: torch.Tensor, x_lowpass: torch.Tensor | None = None
     ) -> torch.Tensor:
@@ -314,18 +345,27 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
 
         raw = self.to_feature_plane(x)
         lowpassed = self.to_feature_plane(x_lowpass)
-        features = self.conv_dropout(self.conv1(torch.cat((raw, lowpassed), dim=1)))
-        features = self.conv2(self.circular_pad(features))
-        features = self.conv3(features)
-        prediction = self.final_layer(self.mlp(self.to_sequence(features)))
-        return self.channels_to_sequence(
-            F.interpolate(
-                self.sequence_to_channels(prediction),
-                size=n_times,
-                mode="linear",
-                align_corners=False,
-            )
+        stacked_inputs = torch.cat((raw, lowpassed), dim=1)
+
+        temporal_features = self.conv1(stacked_inputs)
+        temporal_features = self.conv_dropout(temporal_features)
+        wrapped_features = self.circular_pad(temporal_features)
+        mixed_features = self.conv2(wrapped_features)
+        spatial_features = self.conv3(mixed_features)
+
+        feature_sequence = self.to_sequence(spatial_features)
+        hidden = self.mlp(feature_sequence)
+        prediction = self.final_layer(hidden)
+
+        prediction_channels = self.sequence_to_channels(prediction)
+        resized_prediction_channels = torch.nn.functional.interpolate(
+            prediction_channels,
+            size=n_times,
+            mode="linear",
+            align_corners=False,
         )
+        resized_prediction = self.channels_to_sequence(resized_prediction_channels)
+        return resized_prediction
 
 
 class _ButterworthLowpass(nn.Module):
@@ -344,26 +384,39 @@ class _ButterworthLowpass(nn.Module):
         self.register_buffer("b_coeffs", torch.as_tensor(b_coeffs, dtype=torch.float64))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        n_freqs = x.shape[-1] // 2 + 1
-        omega = (
-            2
-            * torch.pi
-            * torch.arange(n_freqs, device=x.device, dtype=self.a_coeffs.dtype)
-            / x.shape[-1]
+        n_times = x.shape[-1]
+        n_freqs = n_times // 2 + 1
+        frequency_indices = torch.arange(
+            n_freqs,
+            device=x.device,
+            dtype=self.a_coeffs.dtype,
         )
-        unit_delay = torch.exp(-1j * omega)
+        omega = 2 * torch.pi * frequency_indices / n_times
+        negative_imaginary_omega = -1j * omega
+        unit_delay = torch.exp(negative_imaginary_omega)
+
         numerator = torch.zeros_like(unit_delay)
         denominator = torch.zeros_like(unit_delay)
         for delay, (b_coeff, a_coeff) in enumerate(zip(self.b_coeffs, self.a_coeffs)):
-            numerator = numerator + b_coeff * unit_delay**delay
-            denominator = denominator + a_coeff * unit_delay**delay
-        zero_phase_response = (numerator / denominator).abs().square()
+            unit_delay_power = unit_delay**delay
+            numerator_term = b_coeff * unit_delay_power
+            denominator_term = a_coeff * unit_delay_power
+            numerator = numerator + numerator_term
+            denominator = denominator + denominator_term
+
+        frequency_response = numerator / denominator
+        magnitude_response = frequency_response.abs()
+        zero_phase_response = magnitude_response.square()
+
         spectrum = torch.fft.rfft(x, dim=-1)
-        return torch.fft.irfft(
-            spectrum * zero_phase_response.to(dtype=spectrum.dtype),
-            n=x.shape[-1],
+        typed_response = zero_phase_response.to(dtype=spectrum.dtype)
+        filtered_spectrum = spectrum * typed_response
+        filtered = torch.fft.irfft(
+            filtered_spectrum,
+            n=n_times,
             dim=-1,
         )
+        return filtered
 
 
 class _ConvBlock(nn.Module):
@@ -377,7 +430,7 @@ class _ConvBlock(nn.Module):
         *,
         stride: tuple[int, int] = (1, 1),
         dilation: tuple[int, int] = (1, 1),
-        activation: type[nn.Module] = _SMU,
+        activation: type[nn.Module] = SmoothMaximumUnit,
     ) -> None:
         super().__init__()
         self.conv = nn.Conv2d(
@@ -391,4 +444,18 @@ class _ConvBlock(nn.Module):
         self.activation = activation()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.activation(self.batch_norm(self.conv(x)))
+        convolved = self.conv(x)
+        normalized = self.batch_norm(convolved)
+        activated = self.activation(normalized)
+        return activated
+
+
+def _conv_output_size(
+    input_size: int,
+    *,
+    kernel_size: int,
+    stride: int = 1,
+    dilation: int = 1,
+) -> int:
+    """Return the valid-convolution output size for one spatial dimension."""
+    return (input_size - dilation * (kernel_size - 1) - 1) // stride + 1
