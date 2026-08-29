@@ -11,6 +11,7 @@ surface while using reduced model widths and windows where possible.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 import torch
@@ -22,8 +23,8 @@ from braindecode.models.sensingdynamics import SensingDynamics
 from braindecode.models.vemg2pose import VEMG2Pose
 
 
-def _small_neuropose(**overrides) -> NeuroPose:
-    kwargs = dict(
+def _small_neuropose(**overrides: Any) -> NeuroPose:
+    kwargs: dict[str, Any] = dict(
         n_chans=4,
         n_outputs=3,
         n_times=64,
@@ -39,8 +40,8 @@ def _small_neuropose(**overrides) -> NeuroPose:
     return NeuroPose(**kwargs)
 
 
-def _small_vemg2pose(**overrides) -> VEMG2Pose:
-    kwargs = dict(
+def _small_vemg2pose(**overrides: Any) -> VEMG2Pose:
+    kwargs: dict[str, Any] = dict(
         n_chans=4,
         n_outputs=3,
         n_times=64,
@@ -63,8 +64,8 @@ def _small_vemg2pose(**overrides) -> VEMG2Pose:
     return VEMG2Pose(**kwargs)
 
 
-def _small_sensingdynamics(**overrides) -> SensingDynamics:
-    kwargs = dict(
+def _small_sensingdynamics(**overrides: Any) -> SensingDynamics:
+    kwargs: dict[str, Any] = dict(
         n_chans=16,
         n_outputs=3,
         n_times=192,
