@@ -21,41 +21,58 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
     :bdg-danger:`Foundation Model`
 
-    The input ``(batch, n_chans, n_times)`` is embedded by temporal and spatial
-    convolutions into ``(batch, n_tokens, embed_dim)``, processed by pre-norm
-    Transformer blocks, mean pooled across tokens to ``(batch, embed_dim)``,
-    and mapped to ``(batch, n_outputs)`` logits by a linear head.
+    .. rubric:: Architecture Overview
 
-    Patch embedding uses a 25-sample temporal convolution, a spatial
-    convolution across all input channels, batch normalization, ELU, 75-sample
-    average pooling with stride 15, dropout, and a 1x1 projection.
+    1. Temporal and spatial convolutions embed the input EEG.
+    2. Pre-normalized Transformer blocks contextualize the resulting tokens.
+    3. Token averaging and a linear head produce class logits.
 
-    The Transformer uses pre-normalized residual attention and feed-forward
-    branches. Its attention scores use the released source scale
-    ``embed_dim ** -0.5``.
+    .. rubric:: Macro Components
 
-    Transformer tokens are mean pooled and passed to the classification head.
-    With ``return_features=True``, the pooled tokens are returned instead as
-    the unified feature dictionary.
+    ``MIRepNet.embedding``
+        **Operations:** A 25-sample temporal convolution, a spatial convolution
+        across all channels, batch normalization, ELU, 75-sample average
+        pooling with stride 15, dropout, and a 1x1 projection transform
+        ``(batch, n_chans, n_times)`` into
+        ``(batch, n_tokens, embed_dim)``.
+
+        **Role:** Extract local temporal-spatial EEG features and form tokens.
+
+    ``MIRepNet.transformer``
+        **Operations:** Pre-normalized residual attention and feed-forward
+        branches from the released implementation [mirepnetcode]_ process the
+        token sequence.
+
+        **Role:** Contextualize each token using the full embedded sequence.
+
+    ``MIRepNet.final_layer``
+        **Operations:** Mean pooling produces ``(batch, embed_dim)`` features,
+        then a linear projection produces ``(batch, n_outputs)`` logits.
+
+        **Role:** Convert the learned representation into class scores.
+
+    .. rubric:: Temporal, Spatial, and Spectral Encoding
+
+    - **Time:** temporal convolution, temporal pooling, and attention encode
+      local and global temporal structure.
+    - **Channels/space:** one convolution spans all input channels.
+    - **Frequency:** no explicit spectral layer is used; spectral content is
+      learned from the time-domain input.
+
+    .. rubric:: Additional Mechanisms
+
+    Attention scores use the released source scale ``embed_dim ** -0.5``.
+    With ``return_features=True``, mean-pooled tokens are returned in the
+    unified feature dictionary instead of being classified.
 
     This class does not perform the paper's 8--30 Hz filter, 250 Hz resampling,
     channel preparation, or Euclidean alignment. Users are responsible for
     applying that preprocessing before calling the model.
 
+    .. versionadded:: 1.8
+
     Parameters
     ----------
-    n_outputs : int, optional
-        Number of output classes.
-    n_chans : int, optional
-        Number of EEG channels.
-    chs_info : list of dict, optional
-        Channel information as MNE ``info["chs"]`` entries.
-    n_times : int, optional
-        Number of time samples in each input window.
-    input_window_seconds : float, optional
-        Input-window duration in seconds.
-    sfreq : float, optional
-        Sampling frequency in Hz. Released weights expect 250 Hz input.
     embed_dim : int, default=256
         Transformer embedding dimension.
     num_layers : int, default=6
@@ -92,6 +109,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
 
     def __init__(
         self,
+        # braindecode parameters
         n_outputs=None,
         n_chans=None,
         chs_info=None,
@@ -99,6 +117,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         input_window_seconds=None,
         sfreq=None,
         *,
+        # model-specific parameters
         embed_dim: int = 256,
         num_layers: int = 6,
         num_heads: int = 8,
@@ -116,6 +135,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if embed_dim <= 0:
             raise ValueError("embed_dim must be positive.")
         if num_layers <= 0:
@@ -130,11 +150,11 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             raise ValueError("drop_prob must be between 0 and 1.")
         if self._n_times is not None and self._n_times < 99:
             raise ValueError("n_times must be at least 99.")
-        if sfreq is not None and sfreq != 250:
+        if self._sfreq is not None and self._sfreq != 250:
             warn(
                 "MIRepNet's released configuration expects data resampled to 250 Hz; "
-                f"received sfreq={sfreq} Hz. Resample the data before calling the model "
-                "when using released weights.",
+                f"received sfreq={self._sfreq} Hz. Resample the data before calling "
+                "the model when using released weights.",
                 UserWarning,
             )
 
@@ -167,8 +187,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     def forward(self, x: Tensor, return_features: bool | None = None):
         if x.ndim != 3:
             raise ValueError(
-                "MIRepNet expects input with 3 dimensions "
-                "(batch, n_chans, n_times)."
+                "MIRepNet expects input with 3 dimensions (batch, n_chans, n_times)."
             )
         if x.shape[1] != self.n_chans:
             raise ValueError(
