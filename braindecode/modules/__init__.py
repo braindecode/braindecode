@@ -24,9 +24,7 @@ from .blocks import (
     FeedForwardBlock,
     InceptionBlock,
     PatchTokenizer,
-    TDSConv2dBlock,
     TDSConvEncoder,
-    TDSFullyConnectedBlock,
 )
 from .convolution import (
     AvgPool2dWithConv,
@@ -86,9 +84,7 @@ __all__ = [
     "FeedForwardBlock",
     "InceptionBlock",
     "PatchTokenizer",
-    "TDSConv2dBlock",
     "TDSConvEncoder",
-    "TDSFullyConnectedBlock",
     "AvgPool2dWithConv",
     "CausalConv1d",
     "CombinedConv",
