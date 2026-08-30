@@ -445,9 +445,9 @@ models_mandatory_parameters: list[
         ["n_chans", "n_outputs", "n_times", "sfreq"],
         {
             "n_chans": 16,
-            "n_times": 10000,
+            "n_times": 11790,
             "sfreq": 2000.0,
-            "input_window_seconds": 5.0,
+            "input_window_seconds": 5.895,
             "n_outputs": 20,
         },
     ),

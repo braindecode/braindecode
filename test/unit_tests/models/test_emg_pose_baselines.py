@@ -93,7 +93,8 @@ def test_pose_models_return_a_sequence(
     model = factory().eval()
     output = model(torch.randn(input_shape))
 
-    assert output.shape == (input_shape[0], input_shape[2], 3)
+    n_times = input_shape[2] - getattr(model, "left_context", 0)
+    assert output.shape == (input_shape[0], n_times, 3)
 
 
 @pytest.mark.parametrize(
@@ -144,6 +145,19 @@ def test_vemg2pose_tracking_forward_preserves_gradients():
     output.sum().backward()
 
     assert model.final_layer.weight.grad is not None
+
+
+def test_vemg2pose_rejects_windows_without_valid_samples():
+    model = _small_vemg2pose()
+
+    with pytest.raises(ValueError, match="left context"):
+        model(torch.randn(1, 4, model.left_context))
+
+
+def test_vemg2pose_supports_a_single_rollout_step():
+    model = _small_vemg2pose(rollout_rate=1.0)
+
+    assert model(torch.randn(1, 4, 64)).shape == (1, 50, 3)
 
 
 def test_vemg2pose_position_and_velocity_parameterizations_diverge():
@@ -256,8 +270,9 @@ def test_reset_head_preserves_backbone_and_updates_config(
     assert model.get_config()["n_outputs"] == 5
     restored = type(model).from_config(model.get_config())
     assert restored.n_outputs == 5
+    n_times = input_shape[2] - getattr(model, "left_context", 0)
     assert model(torch.randn(input_shape, dtype=torch.float64)).shape == (
         input_shape[0],
-        input_shape[2],
+        n_times,
         5,
     )

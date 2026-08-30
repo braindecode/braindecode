@@ -47,11 +47,11 @@ class VEMG2Pose(
     time-depth-separable 2-D convolution and a residual feed-forward block →
     a linear projection to ``feature_dim`` → linear resampling to
     ``rollout_rate`` → LSTM rollout conditioned on the previous pose →
-    ``(B, T, n_outputs)``.
+    ``(B, T - left_context, n_outputs)``.
 
     Every convolution is *valid* (no padding), so the encoder consumes a
-    ``left_context`` of ``1790`` samples at the default schedule; the
-    prediction spans the remainder and is resampled back to ``T``.
+    ``left_context`` of ``1790`` samples at the default schedule. It returns
+    predictions for the valid interval ``[left_context, T)``.
 
     .. rubric:: Macro Components
 
@@ -445,6 +445,12 @@ class VEMG2Pose(
             ``regression`` checkpoint was trained.
         """
         batch_size, _, n_times = x.shape
+        if n_times <= self.left_context:
+            raise ValueError(
+                f"VEMG2Pose consumes a left context of {self.left_context} "
+                f"samples before its first prediction; got n_times={n_times}. "
+                "Use a longer window."
+            )
         features = self.encoder(x)
 
         # Predictions span the input past the left context, unrolled at
@@ -453,7 +459,7 @@ class VEMG2Pose(
         # int(): TorchScript's round() returns a float, which interpolate rejects.
         n_steps = max(1, int(round(valid_seconds * self.rollout_rate)))
         features = F.interpolate(
-            features, size=n_steps, mode="linear", align_corners=True
+            features, size=n_steps, mode="linear", align_corners=False
         )
 
         # Steps taken as position before switching to velocity integration.
@@ -488,8 +494,12 @@ class VEMG2Pose(
             pose_per_step.append(predicted_pose)
 
         trajectory = torch.stack(pose_per_step, dim=-1)  # (B, n_outputs, steps)
-        # Back to the input grid, so the model keeps braindecode's contract.
-        trajectory = F.interpolate(trajectory, size=n_times, mode="linear")
+        trajectory = F.interpolate(
+            trajectory,
+            size=n_times - self.left_context,
+            mode="linear",
+            align_corners=False,
+        )
         output = self.trajectory_to_sequence(trajectory)
         return output
 
