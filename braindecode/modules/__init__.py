@@ -1,4 +1,9 @@
-from .activation import GatedLinearUnit, LogActivation, SafeLog, Square
+from .activation import (
+    GatedLinearUnit,
+    LogActivation,
+    SafeLog,
+    Square,
+)
 from .attention import (
     CAT,
     CBAM,
@@ -14,7 +19,13 @@ from .attention import (
     MultiHeadAttention,
     SqueezeAndExcitation,
 )
-from .blocks import MLP, FeedForwardBlock, InceptionBlock, PatchTokenizer
+from .blocks import (
+    MLP,
+    FeedForwardBlock,
+    InceptionBlock,
+    PatchTokenizer,
+    TDSConvEncoder,
+)
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
@@ -73,6 +84,7 @@ __all__ = [
     "FeedForwardBlock",
     "InceptionBlock",
     "PatchTokenizer",
+    "TDSConvEncoder",
     "AvgPool2dWithConv",
     "CausalConv1d",
     "CombinedConv",
