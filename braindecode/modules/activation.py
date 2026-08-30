@@ -138,29 +138,3 @@ class GatedLinearUnit(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         value, gate = x.chunk(2, dim=-1)
         return value * self.activation(gate)
-
-
-class SmoothMaximumUnit(nn.Module):
-    r"""Smooth Maximum Unit (SMU) activation.
-
-    This is the learnable smooth activation used by SensingDynamics. ``alpha``
-    controls the negative slope and ``mu`` controls the smoothness of the
-    transition.
-
-    Parameters
-    ----------
-    alpha : float, default=0.01
-        Negative-slope coefficient.
-    mu : float, default=2.5
-        Initial value of the learnable smoothness parameter.
-    """
-
-    def __init__(self, alpha: float = 0.01, mu: float = 2.5) -> None:
-        super().__init__()
-        self.alpha = float(alpha)
-        self.mu = nn.Parameter(torch.tensor(float(mu)))
-
-    def forward(self, x: Tensor) -> Tensor:
-        positive = (1.0 + self.alpha) * x
-        smooth = (1.0 - self.alpha) * x * torch.erf(self.mu * (1.0 - self.alpha) * x)
-        return 0.5 * (positive + smooth)
