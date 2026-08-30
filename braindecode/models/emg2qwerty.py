@@ -17,6 +17,7 @@ import torchaudio.transforms as ta_transforms
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import TDSConv2dBlock, TDSConvEncoder
 
 
 class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
@@ -346,7 +347,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
                 activation=activation,
             ),
             nn.Flatten(start_dim=2),
-            _TDSConvEncoder(
+            TDSConvEncoder(
                 num_features=num_features,
                 block_channels=list(block_channels),
                 kernel_width=kernel_width,
@@ -358,7 +359,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         self.final_layer = nn.Linear(num_features, self.n_outputs)
 
         self._n_conv_blocks = sum(
-            isinstance(m, _TDSConv2dBlock) for m in self.model[3].tds_conv_blocks
+            isinstance(m, TDSConv2dBlock) for m in self.model[3].tds_conv_blocks
         )
 
     def forward(
@@ -453,22 +454,11 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         captured init config (``get_config()``) is also kept in sync so
         save/load round-trips rebuild the new head.
         """
-        if n_outputs <= 0:
-            raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
+        self._set_n_outputs(n_outputs)
         old_head = self.final_layer
         self.final_layer = nn.Linear(old_head.in_features, n_outputs).to(
             device=old_head.weight.device, dtype=old_head.weight.dtype
         )
-        self._n_outputs = n_outputs
-        # Keep the init-kwargs snapshot used by ``get_config()`` aligned with
-        # the live head, so ``EMG2QwertyNet.from_config(m.get_config())``
-        # rebuilds the head with the new vocab size.
-        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
-        if init_kwargs is not None and "n_outputs" in init_kwargs:
-            init_kwargs["n_outputs"] = n_outputs
-        hub_config = getattr(self, "_hub_mixin_config", None)
-        if hub_config is not None and "n_outputs" in hub_config:
-            hub_config["n_outputs"] = n_outputs
 
     def compute_output_lengths(self, input_lengths: torch.Tensor) -> torch.Tensor:
         """Map per-sample input lengths to CTC emission lengths.
@@ -800,116 +790,3 @@ class _MultiBandRotationInvariantMLP(nn.Module):
         for band_idx, mlp in enumerate(self.mlps):
             band_outputs.append(mlp(per_band_inputs[band_idx]))
         return torch.stack(band_outputs, dim=self.stack_dim)
-
-
-class _TDSConv2dBlock(nn.Module):
-    r"""Time-Depth-Separable 2-D conv block ([hannun2019tds]_).
-
-    1×``kernel_width`` conv + activation + residual + LayerNorm. No
-    temporal padding: strips ``kernel_width - 1`` frames per block.
-    """
-
-    def __init__(
-        self,
-        channels: int,
-        width: int,
-        kernel_width: int,
-        activation: type[nn.Module] = nn.ReLU,
-    ) -> None:
-        super().__init__()
-        self.channels = channels
-        self.width = width
-        self.conv2d = nn.Conv2d(
-            in_channels=channels,
-            out_channels=channels,
-            kernel_size=(1, kernel_width),
-        )
-        self.activation = activation()
-        self.layer_norm = nn.LayerNorm(channels * width)
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        n_in_frames, batch_size, n_features = inputs.shape
-        folded = inputs.movedim(0, -1).reshape(
-            batch_size, self.channels, self.width, n_in_frames
-        )
-        conv_out = self.activation(self.conv2d(folded))
-        conv_out = conv_out.reshape(batch_size, n_features, -1).movedim(-1, 0)
-        n_out_frames = conv_out.shape[0]
-        # Output frame i aligns with input frame i+(kernel_width-1), so
-        # the residual is the LAST n_out_frames input frames.
-        residual_added = conv_out + inputs[-n_out_frames:]
-        return self.layer_norm(residual_added)
-
-
-class _TDSFullyConnectedBlock(nn.Module):
-    r"""Two-layer FFN with residual skip, LayerNorm, and optional dropout."""
-
-    def __init__(
-        self,
-        num_features: int,
-        activation: type[nn.Module] = nn.ReLU,
-        drop_prob: float = 0.0,
-    ) -> None:
-        super().__init__()
-        layers: list[nn.Module] = [
-            nn.Linear(num_features, num_features),
-            activation(),
-        ]
-        if drop_prob > 0:
-            layers.append(nn.Dropout(drop_prob))
-        layers.append(nn.Linear(num_features, num_features))
-        if drop_prob > 0:
-            layers.append(nn.Dropout(drop_prob))
-        self.fc_block = nn.Sequential(*layers)
-        self.layer_norm = nn.LayerNorm(num_features)
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.layer_norm(self.fc_block(inputs) + inputs)
-
-
-class _TDSConvEncoder(nn.Module):
-    r"""``_TDSConv2dBlock`` + ``_TDSFullyConnectedBlock`` stack.
-
-    With ``K = len(block_channels)`` blocks and no temporal padding, the
-    encoder strips ``K * (kernel_width - 1)`` frames in total. Each ``ch``
-    must evenly divide ``num_features`` so the conv block can fold features
-    as ``(channels=ch, width=num_features // ch)``.
-    """
-
-    def __init__(
-        self,
-        num_features: int,
-        block_channels: Sequence[int] = (24, 24, 24, 24),
-        kernel_width: int = 32,
-        activation: type[nn.Module] = nn.ReLU,
-        drop_prob: float = 0.0,
-    ) -> None:
-        super().__init__()
-        if not block_channels:
-            raise ValueError("block_channels must be non-empty.")
-        blocks: list[nn.Module] = []
-        for n_block_channels in block_channels:
-            if num_features % n_block_channels != 0:
-                raise ValueError(
-                    f"block_channels entry {n_block_channels} does not evenly "
-                    f"divide num_features={num_features}."
-                )
-            blocks.extend(
-                [
-                    _TDSConv2dBlock(
-                        n_block_channels,
-                        num_features // n_block_channels,
-                        kernel_width,
-                        activation=activation,
-                    ),
-                    _TDSFullyConnectedBlock(
-                        num_features,
-                        activation=activation,
-                        drop_prob=drop_prob,
-                    ),
-                ]
-            )
-        self.tds_conv_blocks = nn.Sequential(*blocks)
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.tds_conv_blocks(inputs)
