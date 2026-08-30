@@ -2,7 +2,6 @@ from .activation import (
     GatedLinearUnit,
     LogActivation,
     SafeLog,
-    SmoothMaximumUnit,
     Square,
 )
 from .attention import (
@@ -68,7 +67,6 @@ __all__ = [
     "GatedLinearUnit",
     "LogActivation",
     "SafeLog",
-    "SmoothMaximumUnit",
     "Square",
     "CAT",
     "CBAM",
