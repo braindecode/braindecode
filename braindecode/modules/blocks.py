@@ -319,7 +319,7 @@ class FeedForwardBlock(nn.Sequential):
         )
 
 
-class TDSConv2dBlock(nn.Module):
+class _TDSConv2dBlock(nn.Module):
     r"""Time-depth-separable convolutional block.
 
     The feature dimension is factorized as ``channels * width`` and processed
@@ -405,7 +405,7 @@ class TDSConv2dBlock(nn.Module):
         return output
 
 
-class TDSFullyConnectedBlock(nn.Module):
+class _TDSFullyConnectedBlock(nn.Module):
     r"""Residual position-wise feed-forward TDS block.
 
     Parameters
@@ -508,14 +508,14 @@ class TDSConvEncoder(nn.Module):
                 )
             blocks.extend(
                 [
-                    TDSConv2dBlock(
+                    _TDSConv2dBlock(
                         channels=n_block_channels,
                         width=num_features // n_block_channels,
                         kernel_width=kernel_width,
                         activation=activation,
                         time_first=time_first,
                     ),
-                    TDSFullyConnectedBlock(
+                    _TDSFullyConnectedBlock(
                         num_features=num_features,
                         activation=activation,
                         drop_prob=drop_prob,

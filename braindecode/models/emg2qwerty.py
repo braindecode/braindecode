@@ -17,7 +17,7 @@ import torchaudio.transforms as ta_transforms
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import TDSConv2dBlock, TDSConvEncoder
+from braindecode.modules import TDSConvEncoder
 
 
 class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
@@ -358,9 +358,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
 
         self.final_layer = nn.Linear(num_features, self.n_outputs)
 
-        self._n_conv_blocks = sum(
-            isinstance(m, TDSConv2dBlock) for m in self.model[3].tds_conv_blocks
-        )
+        self._n_conv_blocks = len(block_channels)
 
     def forward(
         self, x: torch.Tensor, return_features: bool = False

@@ -33,9 +33,7 @@ from braindecode.modules import (
     MaxNormLinear,
     SafeLog,
     SqueezeAndExcitation,
-    TDSConv2dBlock,
     TDSConvEncoder,
-    TDSFullyConnectedBlock,
     TimeDistributed,
 )
 
@@ -43,16 +41,6 @@ from braindecode.modules import (
 @pytest.mark.parametrize(
     "module_factory",
     [
-        lambda time_first: TDSConv2dBlock(
-            channels=3,
-            width=4,
-            kernel_width=3,
-            time_first=time_first,
-        ),
-        lambda time_first: TDSFullyConnectedBlock(
-            num_features=12,
-            time_first=time_first,
-        ),
         lambda time_first: TDSConvEncoder(
             num_features=12,
             block_channels=(3, 4),
