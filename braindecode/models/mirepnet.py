@@ -1,4 +1,5 @@
-# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+# Authors: Dingkun Liu (original implementation)
+#          Bruno Aristimunha <b.aristimunha@gmail.com> (Braindecode adaptation)
 #
 # License: MIT
 # Adapted from https://github.com/staraink/MIRepNet

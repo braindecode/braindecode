@@ -905,13 +905,14 @@ class MultiHeadAttention(nn.Module):
         values = self.rearrange_stack(self.values(x))
 
         dp = self.att_drop if self.training else 0.0
+        if self.scale is not None:
+            queries = queries * (self.scale * self.head_dim**0.5)
         out = F.scaled_dot_product_attention(
             queries,
             keys,
             values,
             attn_mask=mask,
             dropout_p=dp,
-            scale=self.scale,
         )
 
         out = self.rearrange_unstack(out)
