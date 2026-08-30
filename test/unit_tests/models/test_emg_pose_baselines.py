@@ -224,17 +224,12 @@ def test_sensingdynamics_batch_one_training():
     ("model_cls", "kwargs", "expected_count"),
     [
         (
-            NeuroPose,
-            dict(n_chans=16, n_outputs=20, n_times=4000, sfreq=2000.0),
-            149,
-        ),
-        (
             VEMG2Pose,
             dict(n_chans=16, n_outputs=20, n_times=2000, sfreq=2000.0),
             68,
         ),
     ],
-    ids=("neuropose", "vemg2pose"),
+    ids=("vemg2pose",),
 )
 def test_published_checkpoint_mapping_is_complete(model_cls, kwargs, expected_count):
     model = model_cls(**kwargs)

@@ -87,9 +87,7 @@ class NeuroPose(EEGModuleMixin, nn.Module):
     With default arguments this class is operation-equivalent to
     emg2pose's ``network/neuropose.yaml``: the same block widths, kernels,
     pooling and upsampling schedule, the same residual depth, and the same
-    6,354,903 parameters at ``n_chans=16, n_outputs=20``. The class-level
-    ``mapping`` covers every tensor in ``regression_neuropose.ckpt``, so
-    the released checkpoint loads directly.
+    6,354,903 parameters at ``n_chans=16, n_outputs=20``.
 
     One deviation remains, and it is a superset rather than a difference:
     upstream requires the window length to be divisible by the total
@@ -105,10 +103,8 @@ class NeuroPose(EEGModuleMixin, nn.Module):
 
         NeuroPose.from_pretrained("braindecode/NeuroPose-emg2pose")
 
-    The original ``.ckpt`` also loads directly -- ``mapping`` rewrites the
-    upstream key names -- and both routes reproduce the reference
-    implementation exactly. The weights stay under emg2pose's CC BY-NC-SA
-    4.0; only the code here is BSD-3.
+    The weights stay under emg2pose's CC BY-NC-SA 4.0; only the code here is
+    BSD-3.
 
     Liu et al.'s original 200 Hz Myo configuration remains reachable by
     passing the original schedule::
@@ -293,30 +289,6 @@ class NeuroPose(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
         )
         self.apply(self._init_weights)
-        self.mapping = self._build_checkpoint_mapping()
-
-    def _build_checkpoint_mapping(self) -> dict[str, str]:
-        """Map ``regression_neuropose.ckpt`` keys onto this module's names.
-
-        Upstream holds every block in one ``nn.Sequential``, so encoder,
-        residual and decoder blocks share a single running index, where this
-        class splits them across three attributes. Only that prefix differs.
-        The map is therefore read off the blocks themselves rather than
-        rebuilt from a second copy of the block counts, so it stays correct
-        when the schedule is reconfigured.
-        """
-        mapping: dict[str, str] = {}
-        flat_index = 0
-        for attribute in ("encoder", "resnet", "decoder"):
-            for local_index, block in enumerate(getattr(self, attribute)):
-                for key in block.state_dict():
-                    mapping[f"model.network.network.{flat_index}.{key}"] = (
-                        f"{attribute}.{local_index}.{key}"
-                    )
-                flat_index += 1
-        mapping["model.network.linear.weight"] = "final_layer.weight"
-        mapping["model.network.linear.bias"] = "final_layer.bias"
-        return mapping
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:

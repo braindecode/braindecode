@@ -13,20 +13,7 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import _disable_batch_norm_training_if_batch_size_one
-
-
-class SmoothMaximumUnit(nn.Module):
-    """Learnable smooth activation used only by SensingDynamics."""
-
-    def __init__(self, alpha: float = 0.01, mu: float = 2.5) -> None:
-        super().__init__()
-        self.alpha = float(alpha)
-        self.mu = nn.Parameter(torch.tensor(float(mu)))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        positive = (1.0 + self.alpha) * x
-        smooth = (1.0 - self.alpha) * x * torch.erf(self.mu * (1.0 - self.alpha) * x)
-        return 0.5 * (positive + smooth)
+from braindecode.modules.activation import SmoothMaximumUnit
 
 
 class SensingDynamics(EEGModuleMixin, nn.Module):
