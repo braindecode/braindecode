@@ -28,6 +28,10 @@ Current 1.8.0 (GitHub)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.MIRepNet`, the released downstream
+  convolutional-Transformer encoder and classification head for motor-imagery
+  EEG (:gh:`1126` by `Bruno Aristimunha`_).
+
 - Add a reusable temporal-distributed separable convolution encoder to
   :mod:`braindecode.modules`, and centralize output-head replacement for models using
   :class:`braindecode.models.base.EEGModuleMixin` (:gh:`1145` by `Bruno

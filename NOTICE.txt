@@ -41,6 +41,7 @@ The following components are licensed under the MIT License:
 - `braindecode/models/medformer.py`
 - `braindecode/models/tcformer.py`
 - `braindecode/models/ifnet.py`
+- `braindecode/models/mirepnet.py`
 
 ### Apache-2.0 Licensed Files
 

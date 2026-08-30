@@ -62,3 +62,4 @@ DANCE,General,Event Detection,200,"n_chans, n_outputs, n_times, sfreq, chs_info"
 STEEGFormer,General,Classification,250,"n_chans, n_outputs, n_times",25305604,"STEEGFormer(n_chans=22, n_outputs=4, n_times=1000)","Attention/Transformer,Foundation Model",EEG
 MVPFormer,General,"Prediction, Embedding",512,"n_chans, n_outputs, n_times, sfreq",3356978,"MVPFormer(n_chans=22, n_outputs=4, n_times=2000, sfreq=100)","Foundation Model,Attention/Transformer",EEG
 ZUNA,General,"Classification,Embedding",256,"chs_info, n_outputs, n_times",172104100,"ZUNA(chs_info=<user>, n_outputs=4, n_times=1280)","Foundation Model,Channel,Attention/Transformer",EEG
+MIRepNet,Motor Imagery,"Prediction, Embedding",250,"n_chans, n_outputs",5143300,"MIRepNet(n_chans=45, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer,Foundation Model",EEG
