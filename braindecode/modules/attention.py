@@ -848,6 +848,9 @@ class MultiHeadAttention(nn.Module):
         Number of attention heads. Must evenly divide ``emb_size``.
     dropout : float, optional
         Dropout probability applied to attention weights. Default: 0.0.
+    scale : float, optional
+        Multiplier applied to attention scores before softmax. When ``None``,
+        PyTorch's default ``head_dim ** -0.5`` is used.
 
     Examples
     --------
@@ -860,7 +863,7 @@ class MultiHeadAttention(nn.Module):
     torch.Size([2, 10, 32])
     """
 
-    def __init__(self, emb_size, num_heads, dropout=0.0):
+    def __init__(self, emb_size, num_heads, dropout=0.0, scale: float | None = None):
         super().__init__()
         if emb_size % num_heads != 0:
             raise ValueError(
@@ -869,6 +872,7 @@ class MultiHeadAttention(nn.Module):
         self.emb_size = emb_size
         self.num_heads = num_heads
         self.head_dim = emb_size // num_heads
+        self.scale = scale
         self.keys = nn.Linear(emb_size, emb_size)
         self.queries = nn.Linear(emb_size, emb_size)
         self.values = nn.Linear(emb_size, emb_size)
@@ -907,6 +911,7 @@ class MultiHeadAttention(nn.Module):
             values,
             attn_mask=mask,
             dropout_p=dp,
+            scale=self.scale,
         )
 
         out = self.rearrange_unstack(out)
