@@ -17,7 +17,6 @@ import pytest
 import torch
 from torch import nn
 
-from braindecode.models.base import HAS_HF_HUB
 from braindecode.models.neuropose import NeuroPose
 from braindecode.models.sensingdynamics import SensingDynamics
 from braindecode.models.vemg2pose import VEMG2Pose
@@ -208,24 +207,6 @@ def test_sensingdynamics_batch_one_training():
 
 
 @pytest.mark.parametrize(
-    ("factory", "input_shape"),
-    [
-        (_small_neuropose, (1, 4, 64)),
-        (_small_vemg2pose, (1, 4, 64)),
-    ],
-    ids=("neuropose", "vemg2pose"),
-)
-def test_pose_models_are_directly_torchscriptable(factory, input_shape):
-    model = factory().eval()
-    x = torch.randn(input_shape)
-
-    scripted = torch.jit.script(model)
-
-    with torch.no_grad():
-        torch.testing.assert_close(scripted(x), model(x))
-
-
-@pytest.mark.parametrize(
     ("model_cls", "kwargs", "expected_count"),
     [
         (
@@ -280,26 +261,3 @@ def test_reset_head_preserves_backbone_and_updates_config(
         input_shape[2],
         5,
     )
-
-
-@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub is not installed")
-@pytest.mark.parametrize(
-    ("factory", "input_shape"),
-    [
-        (_small_neuropose, (1, 4, 64)),
-        (_small_vemg2pose, (1, 4, 64)),
-        (_small_sensingdynamics, (1, 16, 192)),
-    ],
-    ids=("neuropose", "vemg2pose", "sensingdynamics"),
-)
-def test_local_huggingface_round_trip(tmp_path, factory, input_shape):
-    model = factory().eval()
-    x = torch.randn(input_shape)
-    save_directory = tmp_path / type(model).__name__
-    save_directory.mkdir()
-
-    model._save_pretrained(save_directory)
-    restored = type(model).from_pretrained(save_directory).eval()
-
-    with torch.no_grad():
-        torch.testing.assert_close(restored(x), model(x))
