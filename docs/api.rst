@@ -901,6 +901,18 @@ reimplementation of skimage's structural similarity (no extra dependency). Pass
      METRIC_NAMES
      SSIM_METRIC_NAMES
 
+Activations
+===========
+
+Read or replace a submodule's output during a forward pass. The temporary hooks are
+removed even when the forward pass raises.
+
+.. autosummary::
+    :toctree: generated/
+
+     capture_activations
+     run_with_activation_substitution
+
 Topography
 ==========
 

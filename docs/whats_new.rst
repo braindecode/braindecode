@@ -39,6 +39,11 @@ Enhancements
   synchronized hand-pose panel when a ``*_desc-pose.json`` sidecar is present
   (:gh:`1133` by `Bruno Aristimunha`_)
 
+- Add :func:`braindecode.visualization.capture_activations` and
+  :func:`braindecode.visualization.run_with_activation_substitution` to read or
+  replace a submodule's output during a forward pass
+  (:gh:`1138` by `Vandit Shah`_)
+
 - Preserve the recording-local row of each canonical MNE annotation as
   ``i_trial_in_dataset`` in event-window metadata, keeping it aligned with
   targets and annotation extras through event mapping, duration filtering,
