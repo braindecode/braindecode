@@ -904,12 +904,8 @@ reimplementation of skimage's structural similarity (no extra dependency). Pass
 Activations
 ===========
 
-Read or replace what a submodule emits during a forward pass, via
-:meth:`torch.nn.Module.register_forward_hook`. :func:`capture_activations` records the
-output of one or more named modules; :func:`run_with_activation_substitution` swaps a
-module's output for something else so everything downstream runs on the substitute,
-which is how a layer is ablated or a stand-in representation is tested. Hooks are
-removed in a ``finally`` block, so a raising forward pass cannot leave them attached.
+Read or replace a submodule's output during a forward pass. The temporary hooks are
+removed even when the forward pass raises.
 
 .. autosummary::
     :toctree: generated/
