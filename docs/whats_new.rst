@@ -22,6 +22,18 @@
 .. _current:
 
 
+Current 1.8.1 (2026-08-31)
+===============================
+
+Enhancements
+============
+
+- Add :class:`braindecode.models.VEMG2Pose`,
+  :class:`braindecode.models.NeuroPose`, and
+  :class:`braindecode.models.SensingDynamics` for dense hand-pose
+  regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
+
+
 Current 1.8.0 (2026-08-31)
 ===============================
 
@@ -32,11 +44,6 @@ Enhancements
   :mod:`braindecode.modules`, and centralize output-head replacement for models using
   :class:`braindecode.models.base.EEGModuleMixin` (:gh:`1145` by `Bruno
   Aristimunha`_)
-
-- Add :class:`braindecode.models.VEMG2Pose`,
-  :class:`braindecode.models.NeuroPose`, and
-  :class:`braindecode.models.SensingDynamics` for dense hand-pose
-  regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
 - Add :meth:`braindecode.datasets.BaseConcatDataset.plot` (every dataset, ``BIDSDataset`` included): show a recording in the
   `eegdash-viewer <https://github.com/eegdash/eegdash-viewer>`_ inside a
