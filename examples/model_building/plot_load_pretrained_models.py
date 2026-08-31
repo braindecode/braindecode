@@ -606,9 +606,18 @@ plt.show()
 #    * - :class:`~braindecode.models.EEGPT`
 #      - ``braindecode/eegpt-pretrained``
 #      - 62 ch, 250 Hz
+#    * - :class:`~braindecode.models.VEMG2Pose`
+#      - ``braindecode/EMG2Pose-emg2pose``
+#      - regression, MLP decoder
+#    * - :class:`~braindecode.models.VEMG2Pose`
+#      - ``braindecode/EMG2Pose-emg2pose-tracking``
+#      - tracking, MLP decoder
 #    * - :class:`~braindecode.models.Labram`
 #      - ``braindecode/labram-pretrained``
 #      - 128 channels
+#    * - :class:`~braindecode.models.NeuroPose`
+#      - ``braindecode/NeuroPose-emg2pose``
+#      - regression, 16 ch, 2 kHz
 #    * - :class:`~braindecode.models.SignalJEPA` and downstream variants
 #      - ``braindecode/signal-jepa``
 #      - 62 channels + pre-trained channel embedding
@@ -627,6 +636,12 @@ plt.show()
 #    * - :class:`~braindecode.models.STEEGFormer`
 #      - ``braindecode/STEEGFormer-largeV2``
 #      - 302M params, 256-slot HBN channel vocabulary
+#    * - :class:`~braindecode.models.VEMG2Pose`
+#      - ``braindecode/VEMG2Pose-emg2pose``
+#      - regression, recurrent decoder
+#    * - :class:`~braindecode.models.VEMG2Pose`
+#      - ``braindecode/VEMG2Pose-emg2pose-tracking``
+#      - tracking, recurrent decoder
 #
 # The STEEGFormer checkpoints above are braindecode-format re-hosts of the
 # official MAE encoder weights. The saved ``config.json`` selects the correct
