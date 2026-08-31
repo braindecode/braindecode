@@ -1,19 +1,43 @@
-name: Publish to PyPI on main updates
+name: Publish packages on main updates
 
 on:
   push:
     branches: [master]
 
 jobs:
-  publish:
+  classify:
     runs-on: ubuntu-latest
-    # Skip the per-commit ``.devN`` publish when the head commit is the stable
-    # release commit produced by ``.github/workflows/monthly-release.yml``.
-    # At that commit, ``braindecode/version.py`` is ``X.Y.Z`` (no ``.dev``),
-    # and running this job would otherwise push ``X.Y.Z.devN`` to PyPI right
-    # after the stable ``X.Y.Z``. The companion ``chore: bump version`` commit
-    # is intentionally NOT excluded — it kicks off the next dev cycle.
-    if: "${{ !startsWith(github.event.head_commit.message, 'release: v') }}"
+    permissions:
+      contents: read
+    outputs:
+      stable: ${{ steps.version.outputs.stable }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install packaging
+      - name: Classify package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          from packaging.version import Version
+          from scripts.monthly_release import read_version
+
+          version = Version(read_version("braindecode/version.py"))
+          if version.is_prerelease or version.is_postrelease or version.local:
+              raise SystemExit(f"unsupported release version: {version}")
+          print(f"version={version}")
+          print(f"stable={'false' if version.is_devrelease else 'true'}")
+          PY
+
+  publish-dev:
+    needs: classify
+    if: needs.classify.outputs.stable != 'true'
+    runs-on: ubuntu-latest
     concurrency:
       group: pypi-publish
       cancel-in-progress: false
@@ -21,55 +45,40 @@ jobs:
       contents: read
     env:
       PYPI_USERNAME: __token__
-
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install build deps
+      - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
           pip install build packaging
 
-      # Figure out if this push is a merged PR or a direct push
-      - name: Derive version suffix (PR number if merged, else short SHA)
+      - name: Derive version suffix
         id: ver
         shell: bash
         run: |
           set -euo pipefail
           COMMIT_MSG="$(git log -1 --pretty=%B)"
           if [[ "$COMMIT_MSG" =~ Merge\ pull\ request\ \#([0-9]+) ]]; then
-            echo "suffix=pr${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
             echo "pr_number=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-            echo "Detected merged PR #${BASH_REMATCH[1]}"
           else
-            SHORT_SHA="$(git rev-parse --short HEAD)"
-            echo "suffix=sha${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-            echo "Detected direct push (no PR); using ${SHORT_SHA}"
+            echo "suffix=sha$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
-      # Use your script, passing PR number when present, otherwise a SHA-based suffix
-      - name: Bump version
+      - name: Seed the dev package version
         shell: bash
         run: |
           set -euo pipefail
           if [[ -n "${{ steps.ver.outputs.pr_number || '' }}" ]]; then
-            python scripts/release_script.py \
-              --init-file braindecode/version.py \
-              --pr "${{ steps.ver.outputs.pr_number }}"
+            python scripts/release_script.py --pr "${{ steps.ver.outputs.pr_number }}"
           else
-            # Fallback path must be supported by your script; if not, change the script
-            # to accept --pr and append a compliant .devN/.postN label.
-            python scripts/release_script.py \
-              --init-file braindecode/version.py \
-              --suffix "${{ steps.ver.outputs.suffix }}"
+            python scripts/release_script.py --suffix "${{ steps.ver.outputs.suffix }}"
           fi
 
       - name: Build sdist and wheel
@@ -79,3 +88,85 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+  publish-stable:
+    needs: classify
+    if: needs.classify.outputs.stable == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pypi-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build packaging twine
+
+      - name: Build and validate stable package
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Push stable release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v${{ needs.classify.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG"; then
+            echo "ERROR: $TAG already exists" >&2
+            exit 1
+          fi
+          git tag -a "$TAG" -m "braindecode ${{ needs.classify.outputs.version }}"
+          git push origin "refs/tags/$TAG"
+
+      - name: Publish stable package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.classify.outputs.version }}
+          name: braindecode ${{ needs.classify.outputs.version }}
+          generate_release_notes: true
+          files: dist/*
+
+      - name: Open next-development pull request
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="chore/bump-after-v${{ needs.classify.outputs.version }}"
+          if git ls-remote --exit-code --heads origin "$BRANCH"; then
+            echo "next-development branch $BRANCH already exists"
+            exit 0
+          fi
+          git checkout -b "$BRANCH" origin/master
+          python scripts/monthly_release.py next-dev --bump minor
+          git add braindecode/version.py docs/whats_new.rst
+          git commit -m "chore: bump version to ${{ needs.classify.outputs.version }} after release"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --base master \
+            --head "$BRANCH" \
+            --title "chore: bump version after v${{ needs.classify.outputs.version }}" \
+            --body "Automated post-release development-version bump."
