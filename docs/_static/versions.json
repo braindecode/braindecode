@@ -10,6 +10,16 @@
         "url": "https://braindecode.org/stable/"
     },
     {
+        "name": "1.7",
+        "version": "1.7",
+        "url": "https://braindecode.org/1.7/"
+    },
+    {
+        "name": "1.6",
+        "version": "1.6",
+        "url": "https://braindecode.org/1.6/"
+    },
+    {
         "name": "1.5",
         "version": "1.5",
         "url": "https://braindecode.org/1.5/"
