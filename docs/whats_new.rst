@@ -22,6 +22,35 @@
 .. _current:
 
 
+Current 1.9.0 (GitHub)
+===============================
+
+Enhancements
+============
+
+- None yet
+
+API and behavior changes
+========================
+
+- None yet
+
+Requirements
+============
+
+- None yet
+
+Bug fixes
+==========
+
+- None yet
+
+Code health
+============
+
+- None yet
+
+
 Current 1.8.0 (2026-08-31)
 ===============================
 
