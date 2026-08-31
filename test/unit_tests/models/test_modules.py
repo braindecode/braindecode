@@ -1384,6 +1384,58 @@ def test_multi_head_attention_forward_shape():
     assert out.shape == (2, 10, 32)
 
 
+def test_multi_head_attention_explicit_scale_matches_manual_attention():
+    from braindecode.modules import MultiHeadAttention
+
+    torch.manual_seed(1126)
+    scale = 8**-0.5
+    mha = MultiHeadAttention(
+        emb_size=8,
+        num_heads=2,
+        dropout=0.0,
+        scale=scale,
+    ).eval()
+    x = torch.randn(1, 3, 8)
+
+    queries = mha.rearrange_stack(mha.queries(x))
+    keys = mha.rearrange_stack(mha.keys(x))
+    values = mha.rearrange_stack(mha.values(x))
+    attention = torch.softmax(
+        torch.matmul(queries, keys.transpose(-2, -1)) * scale,
+        dim=-1,
+    )
+    expected = mha.projection(
+        mha.rearrange_unstack(torch.matmul(attention, values))
+    )
+
+    torch.testing.assert_close(mha(x), expected)
+
+
+def test_multi_head_attention_supports_torch_2_0_sdpa(monkeypatch):
+    import braindecode.modules.attention as attention
+    from braindecode.modules import MultiHeadAttention
+
+    received_queries = []
+
+    def legacy_sdpa(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False):
+        received_queries.append(query)
+        return value
+
+    monkeypatch.setattr(attention.F, "scaled_dot_product_attention", legacy_sdpa)
+    mha = MultiHeadAttention(emb_size=8, num_heads=2).eval()
+    x = torch.randn(1, 3, 8)
+    queries = mha.rearrange_stack(mha.queries(x))
+
+    mha(x)
+    mha.scale = 8**-0.5
+    mha(x)
+
+    torch.testing.assert_close(received_queries[0], queries)
+    torch.testing.assert_close(
+        received_queries[1], queries * (mha.scale * mha.head_dim**0.5)
+    )
+
+
 def test_multi_head_attention_bool_mask():
     from braindecode.modules import MultiHeadAttention
 
