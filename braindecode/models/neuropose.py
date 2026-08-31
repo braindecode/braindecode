@@ -103,7 +103,8 @@ class NeuroPose(EEGModuleMixin, nn.Module):
 
         NeuroPose.from_pretrained("braindecode/NeuroPose-emg2pose")
 
-    The weights stay under emg2pose's CC BY-NC-SA 4.0; only the code here is
+    The rehosted weights reproduce the reference implementation exactly.
+    They stay under emg2pose's CC BY-NC-SA 4.0 license; only the code here is
     BSD-3.
 
     Liu et al.'s original 200 Hz Myo configuration remains reachable by
@@ -352,8 +353,7 @@ class _EncoderBlock(nn.Module):
         drop_prob: float,
     ) -> None:
         super().__init__()
-        # ``network`` mirrors the upstream attribute name, so the checkpoint
-        # mapping only has to rewrite each block's prefix.
+        # ``network`` mirrors the upstream block layout.
         self.network = nn.Sequential(
             nn.Conv2d(
                 in_channels=in_channels,

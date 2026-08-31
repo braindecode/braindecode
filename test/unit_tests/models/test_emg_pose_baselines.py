@@ -221,25 +221,23 @@ def test_sensingdynamics_batch_one_training():
 
 
 @pytest.mark.parametrize(
-    ("model_cls", "kwargs", "expected_count"),
+    ("model_cls", "kwargs"),
     [
+        (
+            NeuroPose,
+            dict(n_chans=16, n_outputs=20, n_times=4000, sfreq=2000.0),
+        ),
         (
             VEMG2Pose,
             dict(n_chans=16, n_outputs=20, n_times=2000, sfreq=2000.0),
-            68,
         ),
     ],
-    ids=("vemg2pose",),
+    ids=("neuropose", "vemg2pose"),
 )
-def test_published_checkpoint_mapping_is_complete(model_cls, kwargs, expected_count):
+def test_pose_models_require_native_checkpoint_keys(model_cls, kwargs):
     model = model_cls(**kwargs)
-    mapping = model.mapping
-    state_keys = set(model.state_dict())
 
-    assert len(mapping) == expected_count
-    assert len(set(mapping)) == expected_count
-    assert len(set(mapping.values())) == expected_count
-    assert set(mapping.values()) <= state_keys
+    assert model.mapping is None
 
 
 @pytest.mark.parametrize(

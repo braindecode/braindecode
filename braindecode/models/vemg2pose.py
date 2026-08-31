@@ -97,10 +97,8 @@ class VEMG2Pose(
     Each config records its own ``decoder`` and ``parameterization``, so the
     right rollout is restored automatically.
 
-    The original ``.ckpt`` files also load directly, since ``mapping``
-    rewrites the upstream key names. Both routes reproduce the reference
-    implementation exactly. The weights remain under emg2pose's
-    CC BY-NC-SA 4.0.
+    The rehosted weights reproduce the reference implementation exactly and
+    remain under emg2pose's CC BY-NC-SA 4.0 license.
 
     .. versionadded:: 1.8
 
@@ -269,8 +267,7 @@ class VEMG2Pose(
         self.parameterization = parameterization
         self.output_scalar = float(output_scalar)
 
-        # ``layers`` mirrors upstream's single Sequential so the checkpoint
-        # map only has to rewrite the prefix.
+        # ``layers`` mirrors upstream's single Sequential.
         layers: list[nn.Module] = []
         for index, (kernel, stride) in enumerate(
             zip(stem_kernel_sizes, stem_strides, strict=True)
@@ -338,7 +335,6 @@ class VEMG2Pose(
                 activation=activation,
             )
             head_in = decoder_hidden_sizes[-1]
-        self.decoder_type = decoder
         # State carried through the rollout; the MLP decoder ignores it, so a
         # single dummy element keeps the signature uniform.
         self._state_layers = lstm_layers if decoder == "lstm" else 1
@@ -356,41 +352,6 @@ class VEMG2Pose(
             out_features=self._head_multiplier * self.n_outputs,
         )
         self.apply(self._init_weights)
-        self.mapping = self._build_checkpoint_mapping()
-
-    def _build_checkpoint_mapping(self) -> dict[str, str]:
-        """Map the released emg2pose checkpoints onto this module's names.
-
-        Upstream wraps the encoder in a LightningModule as ``model.network``
-        and the rollout head as ``model.decoder``. The block layout is
-        identical, so the map is read off the encoder rather than restated,
-        and stays correct if the schedule is reconfigured.
-        """
-        mapping = {
-            f"model.network.layers.{index}.{key}": f"encoder.{index}.{key}"
-            for index, block in enumerate(self.encoder)
-            for key in block.state_dict()
-        }
-        for key in self.decoder.state_dict():
-            # The LSTM decoder keeps upstream's own attribute name; the MLP
-            # one calls its stack ``layers`` where upstream calls it ``mlp``.
-            upstream = (
-                key
-                if self.decoder_type == "lstm"
-                else key.replace("layers.", "mlp.", 1)
-            )
-            mapping[f"model.decoder.{upstream}"] = f"decoder.{key}"
-        # Upstream's decoder ends in the head this class calls final_layer:
-        # mlp_out is (LeakyReLU, Linear) for the LSTM, and the trailing Linear
-        # of the MLP stack otherwise.
-        head = (
-            "mlp_out.1"
-            if self.decoder_type == "lstm"
-            else f"mlp.{len(self.decoder.layers)}"
-        )
-        mapping[f"model.decoder.{head}.weight"] = "final_layer.weight"
-        mapping[f"model.decoder.{head}.bias"] = "final_layer.bias"
-        return mapping
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:
