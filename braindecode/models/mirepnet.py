@@ -22,6 +22,13 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
     :bdg-danger:`Foundation Model`
 
+    .. figure:: https://braindecode.org/dev/_static/model/mirepnet.png
+       :align: center
+       :alt: MIRepNet architecture
+
+       Original MIRepNet overview. Braindecode implements only the downstream
+       embedding, Transformer encoder, pooling, and classifier shown at right.
+
     .. rubric:: Architecture Overview
 
     1. Temporal and spatial convolutions embed the input EEG.
@@ -205,7 +212,7 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         if return_features is None:
             return_features = self.return_features
         if return_features:
-            return {"features": features, "cls_token": None}
+            return {"features": features, "cls_token": None}  # nosec B105
         return self.final_layer(features)
 
     def reset_head(self, n_outputs: int) -> None:
