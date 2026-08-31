@@ -33,6 +33,14 @@ from .test_integration import get_sp
 # Interpolated models are stored in a separate registry from ``models_dict``.
 all_models_dict = {**models_dict, **interpolated_models_dict}
 
+# Dense pose regressors return tensors and support the same local Hub
+# round-trip as classifiers. Other non-classification models remain skipped
+# until their task-specific output/state contracts are covered here.
+_HF_DENSE_POSE_MODELS = {"NeuroPose", "SensingDynamics", "VEMG2Pose"}
+_HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS = set(non_classification_models).difference(
+    _HF_DENSE_POSE_MODELS
+)
+
 # Skip all tests in this file if huggingface_hub is not installed
 pytestmark = pytest.mark.skipif(
     not HAS_HF_HUB,
@@ -145,7 +153,10 @@ def test_json_serialization(tmp_path, sample_chs_info):
 def test_save_pretrained_creates_config(tmp_path, sample_model):
     sample_model, name, _ = sample_model
     # TODO: fix for AttnSleep/SincShallowNet
-    if name in non_classification_models + ["AttnSleep", "SincShallowNet"]:
+    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS | {
+        "AttnSleep",
+        "SincShallowNet",
+    }:
         pytest.skip(f"Skipping config test for non-classification model: {name}")
 
     if any(isinstance(p, nn.UninitializedParameter) for p in sample_model.parameters()):
@@ -153,7 +164,7 @@ def test_save_pretrained_creates_config(tmp_path, sample_model):
 
     sample_model._save_pretrained(tmp_path)
 
-    config_path = tmp_path / f'config.json'
+    config_path = tmp_path / 'config.json'
     assert config_path.exists()
 
     with open(config_path, 'r') as config_file:
@@ -220,7 +231,10 @@ def test_local_push_and_pull_roundtrip(tmp_path, sample_model):
     """Roundtrip through local Hub save/load mimics push/pull."""
     model, name, sp = sample_model
     # TODO: fix for AttnSleep/SincShallowNet
-    if name in non_classification_models + ["AttnSleep", "SincShallowNet"]:
+    if name in _HF_UNSUPPORTED_NON_CLASSIFICATION_MODELS | {
+        "AttnSleep",
+        "SincShallowNet",
+    }:
         pytest.skip(f"Skipping Hugging Face Hub test for non-classification model: {name}")
     assert hasattr(model, 'from_pretrained')
     assert callable(getattr(model, 'from_pretrained'))
@@ -339,7 +353,6 @@ def test_save_pretrained_without_hf_hub():
             model._save_pretrained(tmpdir)
     finally:
         base.HAS_HF_HUB = original_has_hf_hub
-
 
 def test_init_subclass_without_hf_hub():
     """Test that __init_subclass__ works when HF Hub is not available."""
