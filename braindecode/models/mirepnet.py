@@ -7,8 +7,6 @@
 
 from __future__ import annotations
 
-from warnings import warn
-
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -17,7 +15,7 @@ from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
 class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
-    r"""MIRepNet from Liu et al. (2025) [mirepnet2025]_.
+    r"""MIRepNet from Liu et al. (2026) [liu2026mirepnet]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
     :bdg-danger:`Foundation Model`
@@ -77,12 +75,32 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     channel preparation, or Euclidean alignment. Users are responsible for
     applying that preprocessing before calling the model.
 
+    .. rubric:: Pre-trained weights
+
+    The released downstream checkpoint is re-hosted in Braindecode format on
+    the Hugging Face Hub and can be loaded with::
+
+        model = MIRepNet.from_pretrained("braindecode/mirepnet-pretrained")
+
+    It was trained with 45 channels, 1,000 samples at 250 Hz, and three output
+    classes. Pass ``n_outputs`` to replace its classification head.
+
     .. versionadded:: 1.8
 
     Parameters
     ----------
     embed_dim : int, default=256
         Transformer embedding dimension.
+    n_filters_time : int, default=64
+        Number of temporal convolution filters.
+    n_filters_spat : int, default=128
+        Number of spatial convolution filters.
+    filter_time_length : int, default=25
+        Length of the temporal convolution kernel, in samples.
+    pool_time_length : int, default=75
+        Length of the temporal average-pooling kernel, in samples.
+    pool_time_stride : int, default=15
+        Stride of the temporal average pooling, in samples.
     num_layers : int, default=6
         Number of Transformer encoder blocks.
     num_heads : int, default=8
@@ -94,13 +112,20 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
     activation_trans : type[nn.Module], default=nn.GELU
         Activation used in Transformer feed-forward blocks.
     drop_prob : float, default=0.5
-        Dropout probability in the patch embedding and Transformer blocks.
+        Dropout probability in the patch embedding.
+    att_drop_prob : float, default=0.5
+        Dropout probability in attention and Transformer residual branches.
+    feedforward_drop_prob : float, default=0.5
+        Dropout probability inside Transformer feed-forward blocks.
+    attention_scale : float or None, default=None
+        Attention-score multiplier. ``None`` uses the released
+        ``embed_dim ** -0.5`` scale.
     return_features : bool, default=False
         Whether ``forward`` returns the unified feature dictionary by default.
 
     Input shape
     -----------
-    ``(batch, n_chans, n_times)`` with at least 99 samples.
+    ``(batch, n_chans, n_times)``.
 
     Output shape
     ------------
@@ -109,8 +134,9 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
 
     References
     ----------
-    .. [mirepnet2025] Liu et al. (2025). MIRepNet: A Pipeline and Foundation
-       Model for EEG-Based Motor Imagery Classification.
+    .. [liu2026mirepnet] Liu et al. (2026). MIRepNet: A pipeline and pre-trained
+       model for EEG-based motor imagery classification. Knowledge-Based
+       Systems, 343, 115966. https://doi.org/10.1016/j.knosys.2026.115966
     .. [mirepnetcode] Released implementation:
        https://github.com/staraink/MIRepNet
     """
@@ -127,12 +153,20 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         *,
         # model-specific parameters
         embed_dim: int = 256,
+        n_filters_time: int = 64,
+        n_filters_spat: int = 128,
+        filter_time_length: int = 25,
+        pool_time_length: int = 75,
+        pool_time_stride: int = 15,
         num_layers: int = 6,
         num_heads: int = 8,
         feedforward_expansion: int = 4,
         activation: type[nn.Module] = nn.ELU,
         activation_trans: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.5,
+        att_drop_prob: float = 0.5,
+        feedforward_drop_prob: float = 0.5,
+        attention_scale: float | None = None,
         return_features: bool = False,
     ):
         super().__init__(
@@ -144,27 +178,30 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        if embed_dim <= 0:
-            raise ValueError("embed_dim must be positive.")
-        if num_layers <= 0:
-            raise ValueError("num_layers must be positive.")
-        if num_heads <= 0:
-            raise ValueError("num_heads must be positive.")
+        for name, positive_value in (
+            ("embed_dim", embed_dim),
+            ("n_filters_time", n_filters_time),
+            ("n_filters_spat", n_filters_spat),
+            ("filter_time_length", filter_time_length),
+            ("pool_time_length", pool_time_length),
+            ("pool_time_stride", pool_time_stride),
+            ("num_layers", num_layers),
+            ("num_heads", num_heads),
+            ("feedforward_expansion", feedforward_expansion),
+        ):
+            if positive_value <= 0:
+                raise ValueError(f"{name} must be positive.")
         if embed_dim % num_heads:
             raise ValueError("embed_dim must be divisible by num_heads.")
-        if feedforward_expansion <= 0:
-            raise ValueError("feedforward_expansion must be positive.")
-        if not 0 <= drop_prob <= 1:
-            raise ValueError("drop_prob must be between 0 and 1.")
-        if self._n_times is not None and self._n_times < 99:
-            raise ValueError("n_times must be at least 99.")
-        if self._sfreq is not None and self._sfreq != 250:
-            warn(
-                "MIRepNet's released configuration expects data resampled to 250 Hz; "
-                f"received sfreq={self._sfreq} Hz. Resample the data before calling "
-                "the model when using released weights.",
-                UserWarning,
-            )
+        for name, probability in (
+            ("drop_prob", drop_prob),
+            ("att_drop_prob", att_drop_prob),
+            ("feedforward_drop_prob", feedforward_drop_prob),
+        ):
+            if not 0 <= probability <= 1:
+                raise ValueError(f"{name} must be between 0 and 1.")
+        if attention_scale is not None and attention_scale <= 0:
+            raise ValueError("attention_scale must be positive or None.")
 
         self.embed_dim = embed_dim
         self.return_features = return_features
@@ -177,6 +214,11 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
         self.embedding = _PatchEmbedding(
             n_chans=self.n_chans,
             embed_dim=embed_dim,
+            n_filters_time=n_filters_time,
+            n_filters_spat=n_filters_spat,
+            filter_time_length=filter_time_length,
+            pool_time_length=pool_time_length,
+            pool_time_stride=pool_time_stride,
             activation=activation,
             drop_prob=drop_prob,
         )
@@ -186,27 +228,14 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             num_heads=num_heads,
             feedforward_expansion=feedforward_expansion,
             activation=activation_trans,
-            drop_prob=drop_prob,
+            att_drop_prob=att_drop_prob,
+            feedforward_drop_prob=feedforward_drop_prob,
+            attention_scale=attention_scale,
         )
         self.final_layer = nn.Linear(embed_dim, self.n_outputs)
-        self.apply(self._init_weights)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(self, x: Tensor, return_features: bool | None = None):
-        if x.ndim != 3:
-            raise ValueError(
-                "MIRepNet expects input with 3 dimensions (batch, n_chans, n_times)."
-            )
-        if x.shape[1] != self.n_chans:
-            raise ValueError(
-                f"MIRepNet was configured for {self.n_chans} channels, "
-                f"but received {x.shape[1]}."
-            )
-        if x.shape[2] < 99:
-            raise ValueError(
-                "MIRepNet requires at least 99 samples in the time dimension."
-            )
-
         tokens = self.transformer(self.embedding(x))
         features = tokens.mean(dim=1)
         if return_features is None:
@@ -223,19 +252,6 @@ class MIRepNet(EEGModuleMixin, nn.Module, license="mit"):
             device=self.final_layer.weight.device,
             dtype=self.final_layer.weight.dtype,
         )
-        self._init_weights(self.final_layer)
-
-    @staticmethod
-    def _init_weights(module: nn.Module) -> None:
-        if isinstance(module, nn.Linear):
-            nn.init.trunc_normal_(module.weight, std=0.02)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
-        elif isinstance(module, (nn.LayerNorm, nn.BatchNorm2d)):
-            if module.weight is not None:
-                nn.init.ones_(module.weight)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
 
 
 class _PatchEmbedding(nn.Module):
@@ -243,17 +259,24 @@ class _PatchEmbedding(nn.Module):
         self,
         n_chans: int,
         embed_dim: int,
+        n_filters_time: int,
+        n_filters_spat: int,
+        filter_time_length: int,
+        pool_time_length: int,
+        pool_time_stride: int,
         activation: type[nn.Module],
         drop_prob: float,
     ):
         super().__init__()
-        self.conv1 = nn.Conv2d(1, 64, kernel_size=(1, 25))
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=(n_chans, 1))
-        self.bn = nn.BatchNorm2d(128)
+        self.conv1 = nn.Conv2d(1, n_filters_time, kernel_size=(1, filter_time_length))
+        self.conv2 = nn.Conv2d(n_filters_time, n_filters_spat, kernel_size=(n_chans, 1))
+        self.bn = nn.BatchNorm2d(n_filters_spat)
         self.elu = activation()
-        self.pool = nn.AvgPool2d(kernel_size=(1, 75), stride=(1, 15))
+        self.pool = nn.AvgPool2d(
+            kernel_size=(1, pool_time_length), stride=(1, pool_time_stride)
+        )
         self.dropout = nn.Dropout(drop_prob)
-        self.projection = nn.Conv2d(128, embed_dim, kernel_size=(1, 1))
+        self.projection = nn.Conv2d(n_filters_spat, embed_dim, kernel_size=(1, 1))
 
     def forward(self, x: Tensor) -> Tensor:
         x = x.unsqueeze(1)
@@ -283,8 +306,12 @@ class _TransformerEncoderBlock(nn.Sequential):
         num_heads: int,
         feedforward_expansion: int,
         activation: type[nn.Module],
-        drop_prob: float,
+        att_drop_prob: float,
+        feedforward_drop_prob: float,
+        attention_scale: float | None,
     ):
+        if attention_scale is None:
+            attention_scale = embed_dim**-0.5
         super().__init__(
             _ResidualAdd(
                 nn.Sequential(
@@ -292,10 +319,10 @@ class _TransformerEncoderBlock(nn.Sequential):
                     MultiHeadAttention(
                         emb_size=embed_dim,
                         num_heads=num_heads,
-                        dropout=drop_prob,
-                        scale=embed_dim**-0.5,
+                        dropout=att_drop_prob,
+                        scale=attention_scale,
                     ),
-                    nn.Dropout(drop_prob),
+                    nn.Dropout(att_drop_prob),
                 )
             ),
             _ResidualAdd(
@@ -304,10 +331,10 @@ class _TransformerEncoderBlock(nn.Sequential):
                     FeedForwardBlock(
                         emb_size=embed_dim,
                         expansion=feedforward_expansion,
-                        drop_p=drop_prob,
+                        drop_p=feedforward_drop_prob,
                         activation=activation,
                     ),
-                    nn.Dropout(drop_prob),
+                    nn.Dropout(att_drop_prob),
                 )
             ),
         )
@@ -321,7 +348,9 @@ class _TransformerEncoder(nn.Sequential):
         num_heads: int,
         feedforward_expansion: int,
         activation: type[nn.Module],
-        drop_prob: float,
+        att_drop_prob: float,
+        feedforward_drop_prob: float,
+        attention_scale: float | None,
     ):
         super().__init__(
             *(
@@ -330,7 +359,9 @@ class _TransformerEncoder(nn.Sequential):
                     num_heads=num_heads,
                     feedforward_expansion=feedforward_expansion,
                     activation=activation,
-                    drop_prob=drop_prob,
+                    att_drop_prob=att_drop_prob,
+                    feedforward_drop_prob=feedforward_drop_prob,
+                    attention_scale=attention_scale,
                 )
                 for _ in range(depth)
             )

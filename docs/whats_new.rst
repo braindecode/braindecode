@@ -30,7 +30,9 @@ Enhancements
 
 - Add :class:`braindecode.models.MIRepNet`, the released downstream
   convolutional-Transformer encoder and classification head for motor-imagery
-  EEG (:gh:`1126` by `Bruno Aristimunha`_).
+  EEG, with pre-trained weights re-hosted at
+  `braindecode/mirepnet-pretrained <https://huggingface.co/braindecode/mirepnet-pretrained>`_
+  (:gh:`1126` by `Bruno Aristimunha`_).
 
 - Add a reusable temporal-distributed separable convolution encoder to
   :mod:`braindecode.modules`, and centralize output-head replacement for models using
