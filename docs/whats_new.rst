@@ -56,6 +56,10 @@ Enhancements
   replace a submodule's output during a forward pass
   (:gh:`1138` by `Vandit Shah`_)
 
+- Add :class:`braindecode.visualization.SparseAutoencoder`, a Top-K sparse
+  autoencoder that decomposes a layer's activations into a sparse combination of
+  learned directions (:gh:`1152` by `Vandit Shah`_)
+
 - Preserve the recording-local row of each canonical MNE annotation as
   ``i_trial_in_dataset`` in event-window metadata, keeping it aligned with
   targets and annotation extras through event mapping, duration filtering,
