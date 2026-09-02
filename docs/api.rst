@@ -913,6 +913,17 @@ removed even when the forward pass raises.
      capture_activations
      run_with_activation_substitution
 
+Sparse Autoencoders
+===================
+
+Decompose a layer's activations into a sparse combination of learned directions,
+keeping only the largest few per activation.
+
+.. autosummary::
+    :toctree: generated/
+
+     SparseAutoencoder
+
 Topography
 ==========
 
