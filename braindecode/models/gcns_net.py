@@ -37,23 +37,25 @@ class _GraphCoarsening:
         edge_index = torch.stack([row, col])
         edge_weight = adjacency[row, col]
 
-        return graclus(
+        clusters = graclus(
             edge_index,
             weight=edge_weight,
             num_nodes=adjacency.shape[0],
         )
 
-    def _coarsen_adjacency(self, adjacency, clusters):
-        _, cluster_ids = torch.unique(
+        _, clusters = torch.unique(
             clusters,
             sorted=True,
             return_inverse=True,
         )
 
-        n_clusters = int(cluster_ids.max().item()) + 1
+        return clusters
+
+    def _coarsen_adjacency(self, adjacency, clusters):
+        n_clusters = int(clusters.max().item()) + 1
 
         membership = nn.functional.one_hot(
-            cluster_ids,
+            clusters,
             num_classes=n_clusters,
         ).to(adjacency.dtype)
 
@@ -61,6 +63,42 @@ class _GraphCoarsening:
         coarsened_adjacency.fill_diagonal_(0)
 
         return coarsened_adjacency
+
+    def _compute_perm(self, parents):
+        """
+        Return a list of indices to reorder the adjacency and data matrices so
+        that the union of two neighbors from layer to layer forms a binary tree.
+        """
+
+        # Order of last layer is arbitrary (chosen by the clustering algorithm).
+        indices = []
+        if len(parents) > 0:
+            M_last = int(parents[-1].max().item()) + 1
+            indices.append(list(range(M_last)))
+
+        for parent in parents[::-1]:
+            # Fake nodes go after real ones.
+            pool_singletons = len(parent)
+
+            indices_layer = []
+            for i in indices[-1]:
+                indices_node = torch.where(parent == i)[0].tolist()
+                
+                if len(indices_node) == 1:
+                    # Add a node to go with a singleton.
+                    indices_node.append(pool_singletons)
+                    pool_singletons += 1
+
+                elif len(indices_node) == 0:
+                    # Add two nodes as children of a singleton in the parent.
+                    indices_node.append(pool_singletons + 0)
+                    indices_node.append(pool_singletons + 1)
+                    pool_singletons += 2
+
+                indices_layer.extend(indices_node)
+            indices.append(indices_layer)
+
+        return indices[::-1]
 
 
 class GCNsNet(EEGModuleMixin, nn.Module):
