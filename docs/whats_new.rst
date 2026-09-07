@@ -39,8 +39,8 @@ Bug fixes
 - Fix :class:`braindecode.modules.CombinedConv` raising ``RuntimeError: self
   must be a matrix`` when ``in_chans``, ``n_filters_time`` or ``n_filters_spat``
   is 1, which made :class:`braindecode.models.ShallowFBCSPNet` and
-  :class:`braindecode.models.Deep4Net` unusable on single-channel data. By
-  `Julien Gadonneix`_.
+  :class:`braindecode.models.Deep4Net` unusable on single-channel data
+  (:gh:`1154` by `Julien Gadonneix`_).
 
 
 Current 1.8.0 (2026-08-31)
