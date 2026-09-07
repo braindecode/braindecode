@@ -33,6 +33,15 @@ Enhancements
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
   regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
+Bug fixes
+==========
+
+- Fix :class:`braindecode.modules.CombinedConv` raising ``RuntimeError: self
+  must be a matrix`` when ``in_chans``, ``n_filters_time`` or ``n_filters_spat``
+  is 1, which made :class:`braindecode.models.ShallowFBCSPNet` and
+  :class:`braindecode.models.Deep4Net` unusable on single-channel data. By
+  `Julien Gadonneix`_.
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
@@ -1717,3 +1726,4 @@ Authors
 .. _Jon Huml: https://github.com/jonathanhuml
 .. _Azra Bano: https://github.com/azrabano23
 .. _Aditya Singh: https://github.com/adityasingh2400
+.. _Julien Gadonneix: https://github.com/julien-gadonneix
