@@ -241,13 +241,22 @@ def test_dense_spatial_filter_forward_collapse_false():
 @pytest.mark.parametrize(
     "bias_time,bias_spat", [(False, False), (False, True), (True, False), (True, True)]
 )
-def test_combined_conv(bias_time, bias_spat):
+@pytest.mark.parametrize(
+    "in_chans,n_filters_time,n_filters_spat",
+    [(44, 40, 40), (1, 40, 40), (44, 40, 1), (44, 1, 1)],
+)
+def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat):
     batch_size = 64
-    in_chans = 44
     timepoints = 1000
 
     data = torch.rand([batch_size, 1, timepoints, in_chans])
-    conv = CombinedConv(in_chans=in_chans, bias_spat=bias_spat, bias_time=bias_time)
+    conv = CombinedConv(
+        in_chans=in_chans,
+        n_filters_time=n_filters_time,
+        n_filters_spat=n_filters_spat,
+        bias_spat=bias_spat,
+        bias_time=bias_time,
+    )
 
     combined_out = conv(data)
     sequential_out = conv.conv_spat(conv.conv_time(data))
