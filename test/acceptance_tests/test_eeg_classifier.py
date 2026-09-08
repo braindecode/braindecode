@@ -156,6 +156,10 @@ def test_eeg_classifier():
     assert all(epoch["train_batch_count"] == 3 for epoch in clf.history)
     assert all(epoch["valid_batch_count"] == 1 for epoch in clf.history)
     assert all(len(epoch["batches"]) == 4 for epoch in clf.history)
-    assert all("train_loss" in batch for epoch in clf.history for batch in epoch["batches"][:-1])
+    assert all(
+        "train_loss" in batch
+        for epoch in clf.history
+        for batch in epoch["batches"][:-1]
+    )
     assert all("valid_loss" in epoch["batches"][-1] for epoch in clf.history)
     return clf
