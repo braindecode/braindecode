@@ -638,10 +638,11 @@ class Labram(EEGModuleMixin, nn.Module):
             temporal = self.embed_dim
         else:
             # For neural decoder: input is (batch, n_chans, n_times)
-            # patch_embed returns (batch, n_patchs, emb_dim)
+            # patch_embed returns one token per temporal patch:
+            # (batch, n_patches_per_channel, emb_dim)
             x = self.patch_embed(x)
-            # x shape: (batch, n_patchs, emb_dim)
-            batch_size, n_patch, temporal = x.shape
+            # x shape: (batch, n_patches_per_channel, emb_dim)
+            batch_size, n_patches_per_channel, temporal = x.shape
 
         # add the [CLS] token to the embedded patch tokens
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
@@ -659,10 +660,13 @@ class Labram(EEGModuleMixin, nn.Module):
                     pos_embed_used=pos_embed_used, batch_size=batch_size
                 )
             else:
-                # In decoder mode, we have different number of patches
-                # Adapt position embedding for n_patch patches
-                # Use the first n_patch+1 positions from position_embedding
-                n_pos = min(self.position_embedding.shape[1], n_patch + 1)
+                # In decoder mode, patch_embed already averages over the grouped
+                # channel dimension, so the token axis only indexes temporal
+                # patches.
+                n_pos = min(
+                    self.position_embedding.shape[1],
+                    n_patches_per_channel + 1,
+                )
                 pos_embed_used = self.position_embedding[:, :n_pos, :]
                 pos_embed = pos_embed_used.expand(batch_size, -1, -1)
 
@@ -676,19 +680,20 @@ class Labram(EEGModuleMixin, nn.Module):
             )
             x[:, 1:, :] += time_embed
         else:
-            # In decoder mode, we have n_patch patches and don't need to expand
-            # Just broadcast the temporal embedding
+            # In decoder mode, patch_embed returns one token per temporal patch,
+            # so we only need one temporal embedding per time slice.
             if temporal is None:
                 temporal = self.embed_dim
 
-            # Get temporal embeddings for n_patch patches
-            n_time_tokens = min(n_patch, self.temporal_embedding.shape[1] - 1)
+            n_time_tokens = min(
+                n_patches_per_channel, self.temporal_embedding.shape[1] - 1
+            )
             time_embed = self.temporal_embedding[
                 :, 1 : n_time_tokens + 1, :
-            ]  # (1, n_patch, emb_dim)
+            ]  # (1, n_patches_per_channel, emb_dim)
             time_embed = time_embed.expand(
                 batch_size, -1, -1
-            )  # (batch, n_patch, emb_dim)
+            )  # (batch, n_patches_per_channel, emb_dim)
             x[:, 1:, :] += time_embed
 
         x = self.pos_drop(x)
@@ -1000,7 +1005,8 @@ class _PatchEmbed(nn.Module):
     but the original LaBraM expects pre-patched data (Batch, n_channels, n_patches, patch_size).
     This class reshapes the input to the pre-patched format, then applies a 2D
     convolution to project this pre-patched data to the embedding dimension,
-    and finally flattens across channels to produce a unified embedding.
+    and finally averages over grouped channels to produce one embedding per
+    temporal patch.
 
     Parameters:
     -----------
