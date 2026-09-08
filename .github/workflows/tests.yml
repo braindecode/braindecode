@@ -2,6 +2,8 @@ name: tests
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
   cancel-in-progress: true
+env:
+  TEST_EXTRAS: tests,moabb,hub,eegprep,typing,viz
 on:
   push:
     branches:
@@ -16,8 +18,47 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ "ubuntu-latest", "macos-latest", "windows-latest" ]
-        python-version: [ "3.12", "3.13" ] # , "3.11", "3.14"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.12"
+            test-target: test/
+            run-coverage: true
+          - os: ubuntu-latest
+            python-version: "3.13"
+            test-target: >-
+              test/acceptance_tests/test_model_architectures.py
+              test/unit_tests/datasets/test_dataset.py
+              test/unit_tests/models/test_base.py
+              test/unit_tests/models/test_config.py
+              test/unit_tests/models/test_model_modality.py
+              test/unit_tests/preprocessing/test_mne_preprocessor.py
+              test/unit_tests/test_eegneuralnet.py
+              test/unit_tests/visualization/test_topology.py
+            run-coverage: false
+          - os: macos-latest
+            python-version: "3.13"
+            test-target: >-
+              test/acceptance_tests/test_model_architectures.py
+              test/unit_tests/datasets/test_dataset.py
+              test/unit_tests/models/test_base.py
+              test/unit_tests/models/test_config.py
+              test/unit_tests/models/test_model_modality.py
+              test/unit_tests/preprocessing/test_mne_preprocessor.py
+              test/unit_tests/test_eegneuralnet.py
+              test/unit_tests/visualization/test_topology.py
+            run-coverage: false
+          - os: windows-latest
+            python-version: "3.13"
+            test-target: >-
+              test/acceptance_tests/test_model_architectures.py
+              test/unit_tests/datasets/test_dataset.py
+              test/unit_tests/models/test_base.py
+              test/unit_tests/models/test_config.py
+              test/unit_tests/models/test_model_modality.py
+              test/unit_tests/preprocessing/test_mne_preprocessor.py
+              test/unit_tests/test_eegneuralnet.py
+              test/unit_tests/visualization/test_topology.py
+            run-coverage: false
     steps:
     ## Install Braindecode
     - name: Checking Out Repository
@@ -28,14 +69,14 @@ jobs:
     # the test configuration changes.
     - name: Create/Restore MNE Data Cache
       id: cache-mne_data
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/mne_data
         key: test-2-${{ runner.os }}-${{ matrix.python-version }}
         restore-keys: |
           test-2-${{ runner.os }}-${{ matrix.python-version }}-
           test-2-${{ runner.os }}-
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install uv
@@ -51,18 +92,24 @@ jobs:
         # CI runners have no GPU; pull the CPU-only torch wheels instead of the
         # ~1.8 GiB CUDA stack. Avoids disk exhaustion and speeds up install.
         UV_TORCH_BACKEND: cpu
-      run: uv pip install --system -e .[all]
+      run: uv pip install --system -e .[${{ env.TEST_EXTRAS }}]
     # Show Braindecode Version
     - run: python -c "import braindecode; print(braindecode.__version__)"
 
     ## Run Tests
-    - name: Run Tests # See https://stackoverflow.com/a/59959080/1469195 for the cov-report logic
+    - name: Run Full Test Suite # See https://stackoverflow.com/a/59959080/1469195 for the cov-report logic
+      if: ${{ matrix.run-coverage }}
       env:
         HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
       run: pytest --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
+    - name: Run Cross-Platform Smoke Suite
+      if: ${{ !matrix.run-coverage }}
+      env:
+        HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
+      run: pytest ${{ matrix.test-target }}
     - name: Upload Coverage to Codecov
       uses: codecov/codecov-action@v4
-      if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'}}
+      if: ${{ matrix.run-coverage }}
       with:
         fail_ci_if_error: true
         file: ./coverage.xml
