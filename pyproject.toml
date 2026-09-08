@@ -81,6 +81,7 @@ viz = ["captum>=0.7.0"]
 tests = [
     'pytest<9.1',  # pytest 9.1.0 changed IdMaker's signature, which breaks pytest_cases 3.10.1 (crash at collection time). Remove the cap once pytest_cases supports pytest >=9.1.
     'pytest-cov',
+    'pytest-xdist>=3.8.0',
     'codecov',
     'pytest_cases',
     'mypy',
