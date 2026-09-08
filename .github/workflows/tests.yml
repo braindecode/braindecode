@@ -101,7 +101,7 @@ jobs:
       if: ${{ matrix.run-coverage }}
       env:
         HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
-      run: pytest -n auto --dist loadfile --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
+      run: pytest -vv --durations=0 -n auto --dist loadfile --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
     - name: Run Cross-Platform Smoke Suite
       if: ${{ !matrix.run-coverage }}
       env:
