@@ -193,6 +193,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
             "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
+        self.state_dict_mapping = self.mapping
 
         if self.stride_before_pool:
             conv_stride = self.pool_time_stride

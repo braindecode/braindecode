@@ -573,6 +573,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         )
 
     mapping: Optional[Dict[str, str]] = None
+    state_dict_mapping: Optional[Dict[str, str]] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         mapping = self.mapping if self.mapping else {}
@@ -584,6 +585,23 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
                 new_state_dict[k] = v
 
         return super().load_state_dict(new_state_dict, *args, **kwargs)
+
+    def state_dict(self, *args, **kwargs):
+        state_dict = super().state_dict(*args, **kwargs)
+        mapping = self.state_dict_mapping if self.state_dict_mapping else {}
+        if not mapping:
+            return state_dict
+
+        reverse_mapping = {new_key: old_key for old_key, new_key in mapping.items()}
+        remapped_state_dict = OrderedDict(
+            (reverse_mapping.get(key, key), value) for key, value in state_dict.items()
+        )
+        if hasattr(state_dict, "_metadata"):
+            remapped_state_dict._metadata = OrderedDict(
+                (reverse_mapping.get(key, key), value)
+                for key, value in state_dict._metadata.items()
+            )
+        return remapped_state_dict
 
     def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """

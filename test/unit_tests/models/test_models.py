@@ -233,6 +233,33 @@ def test_deep4net_load_state_dict(input_sizes):
     model.load_state_dict(state_dict)
 
 
+@pytest.mark.parametrize("model_cls", [ShallowFBCSPNet, Deep4Net])
+def test_combined_conv_state_dict_uses_legacy_keys(input_sizes, model_cls):
+    model = model_cls(
+        input_sizes["n_channels"],
+        input_sizes["n_classes"],
+        input_sizes["n_in_times"],
+        final_conv_length="auto",
+    )
+
+    state_dict = model.state_dict()
+
+    assert "conv_time.weight" in state_dict
+    assert "conv_spat.weight" in state_dict
+    assert "conv_classifier.weight" in state_dict
+    assert "conv_time_spat.conv_time.weight" not in state_dict
+    assert "conv_time_spat.conv_spat.weight" not in state_dict
+    assert "final_layer.conv_classifier.weight" not in state_dict
+
+    reloaded_model = model_cls(
+        input_sizes["n_channels"],
+        input_sizes["n_classes"],
+        input_sizes["n_in_times"],
+        final_conv_length="auto",
+    )
+    reloaded_model.load_state_dict(state_dict, strict=True)
+
+
 
 def test_hybridnet(input_sizes):
     model = HybridNet(
