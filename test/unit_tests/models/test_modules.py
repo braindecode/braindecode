@@ -261,7 +261,7 @@ def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters
     combined_out = conv(data)
     sequential_out = conv.conv_spat(conv.conv_time(data))
 
-    assert torch.isclose(combined_out, sequential_out, atol=1e-4).all()
+    torch.testing.assert_close(combined_out, sequential_out, atol=1e-6, rtol=1e-6)
 
     diff = combined_out - sequential_out
     assert ((diff**2).mean().sqrt() / sequential_out.std()) < 1e-5

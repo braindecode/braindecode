@@ -1,5 +1,3 @@
-from typing import Optional
-
 import numpy as np
 import torch
 from torch import nn
@@ -176,41 +174,7 @@ class CombinedConv(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Merge time and spat weights
-        combined_weight = (
-            (self.conv_time.weight * self.conv_spat.weight.permute(1, 0, 2, 3))
-            .sum(0)
-            .unsqueeze(1)
-        )
-
-        bias = None
-        calculated_bias: Optional[torch.Tensor] = None
-
-        # Calculate bias terms
-        if self.bias_time:
-            time_bias = self.conv_time.bias
-            if time_bias is None:
-                raise RuntimeError("conv_time.bias is None despite bias_time=True")
-            # squeeze only the singleton kernel dimension: a bare squeeze() also
-            # drops n_filters_spat / n_filters_time / in_chans when they are 1
-            calculated_bias = (
-                self.conv_spat.weight.squeeze(2)
-                .sum(-1)
-                .mm(time_bias.unsqueeze(-1))
-                .squeeze(-1)
-            )
-        if self.bias_spat:
-            spat_bias = self.conv_spat.bias
-            if spat_bias is None:
-                raise RuntimeError("conv_spat.bias is None despite bias_spat=True")
-            if calculated_bias is None:
-                calculated_bias = spat_bias
-            else:
-                calculated_bias = calculated_bias + spat_bias
-
-        bias = calculated_bias
-
-        return F.conv2d(x, weight=combined_weight, bias=bias, stride=(1, 1))
+        return self.conv_spat(self.conv_time(x))
 
 
 class CausalConv1d(nn.Conv1d):

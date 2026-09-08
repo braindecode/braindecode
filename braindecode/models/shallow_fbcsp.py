@@ -131,7 +131,6 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
             "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
-        self.state_dict_mapping = self.mapping
 
         self.add_module("ensuredims", Ensure4d())
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
