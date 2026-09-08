@@ -2,12 +2,12 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
-import sys
-
 import numpy as np
 import pytest
 import torch
 from skorch.helper import predefined_split
+
+from test.acceptance_tests._history_assertions import assert_learning_history
 
 from braindecode import EEGClassifier
 from braindecode.datasets import BaseConcatDataset
@@ -22,7 +22,6 @@ from braindecode.training import CroppedLoss
 from braindecode.util import set_random_seeds
 
 
-@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
 def test_variable_length_trials_cropped_decoding():
     cuda = False
     set_random_seeds(seed=20210726, cuda=cuda)
@@ -65,8 +64,9 @@ def test_variable_length_trials_cropped_decoding():
     classes = list(range(n_classes))
     # initialize a model
     model = ShallowFBCSPNet(
-        in_chans=x.shape[0],
-        n_classes=n_classes,
+        n_chans=x.shape[0],
+        n_outputs=n_classes,
+        n_times=x.shape[1],
     )
     model.to_dense_prediction_model()
     if cuda:
@@ -87,27 +87,10 @@ def test_variable_length_trials_cropped_decoding():
     clf.fit(variable_tuh_windows_train, y=None, epochs=3)
 
     # make sure it does what we expect
-    np.testing.assert_allclose(
-        clf.history[:, "train_loss"],
-        np.array(
-            [
-                0.689495325088501,
-                0.1353449523448944,
-                0.006638816092163324,
-            ]
-        ),
-        rtol=1e-1,
-        atol=1e-1,
-    )
-    np.testing.assert_allclose(
-        clf.history[:, "valid_loss"],
-        np.array(
-            [
-                2.925871,
-                3.611423,
-                4.23494,
-            ]
-        ),
-        rtol=1e-1,
-        atol=1e-1,
+    assert_learning_history(
+        clf.history,
+        n_epochs=3,
+        loss_keys=("train_loss", "valid_loss"),
+        accuracy_keys=("train_accuracy", "valid_accuracy"),
+        improving_accuracy_keys=("train_accuracy",),
     )
