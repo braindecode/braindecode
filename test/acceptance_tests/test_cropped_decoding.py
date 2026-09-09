@@ -2,8 +2,6 @@
 #          Robin Tibor Schirrmeister
 #
 # License: BSD-3
-import sys
-
 import mne
 import numpy as np
 import pytest
@@ -12,6 +10,8 @@ from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch import optim
 
+from test.acceptance_tests._history_assertions import assert_learning_history
+
 from braindecode import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models import ShallowFBCSPNet
@@ -19,7 +19,6 @@ from braindecode.training.losses import CroppedLoss
 from braindecode.util import set_random_seeds
 
 
-@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
 @pytest.mark.network
 def test_cropped_decoding():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
@@ -76,9 +75,9 @@ def test_cropped_decoding():
     in_chans = X.shape[1]
     # final_conv_length determines the size of the receptive field of the ConvNet
     model = ShallowFBCSPNet(
-        in_chans=in_chans,
-        n_classes=n_classes,
-        input_window_samples=input_window_samples,
+        n_chans=in_chans,
+        n_outputs=n_classes,
+        n_times=input_window_samples,
         final_conv_length=12,
     )
     model.to_dense_prediction_model()
@@ -122,30 +121,10 @@ def test_cropped_decoding():
     )
 
     clf.fit(train_set, y=None, epochs=4)
-    np.testing.assert_allclose(
-        clf.history[:, "train_loss"],
-        np.array([1.391054, 1.278387, 1.086732, 1.111006]),
-        rtol=1e-3,
-        atol=1e-4,
-    )
-
-    np.testing.assert_allclose(
-        clf.history[:, "valid_loss"],
-        np.array([2.24272, 0.891798, 0.741147, 0.933025]),
-        rtol=1e-3,
-        atol=1e-3,
-    )
-
-    np.testing.assert_allclose(
-        clf.history[:, "train_accuracy"],
-        np.array([0.5, 0.516667, 0.6, 0.533333]),
-        rtol=1e-3,
-        atol=1e-4,
-    )
-
-    np.testing.assert_allclose(
-        clf.history[:, "valid_accuracy"],
-        np.array([0.466667, 0.533333, 0.6, 0.6]),
-        rtol=1e-3,
-        atol=1e-4,
+    assert_learning_history(
+        clf.history,
+        n_epochs=4,
+        loss_keys=("train_loss", "valid_loss"),
+        accuracy_keys=("train_accuracy", "valid_accuracy"),
+        improving_accuracy_keys=("train_accuracy", "valid_accuracy"),
     )
