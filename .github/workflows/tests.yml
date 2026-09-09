@@ -92,7 +92,7 @@ jobs:
         # CI runners have no GPU; pull the CPU-only torch wheels instead of the
         # ~1.8 GiB CUDA stack. Avoids disk exhaustion and speeds up install.
         UV_TORCH_BACKEND: cpu
-      run: uv pip install --system -e .[${{ env.TEST_EXTRAS }}]
+      run: uv pip install --system -e ".[${{ env.TEST_EXTRAS }}]"
     # Show Braindecode Version
     - run: python -c "import braindecode; print(braindecode.__version__)"
 
@@ -101,7 +101,8 @@ jobs:
       if: ${{ matrix.run-coverage }}
       env:
         HF_TOKEN_REVE: ${{ secrets.HF_TOKEN_REVE }}
-      run: pytest -vv --durations=0 -n auto --dist loadfile --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
+      # Redistribute individual tests: the integration module dominates runtime.
+      run: pytest -vv --durations=0 -n auto --dist worksteal --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
     - name: Run Cross-Platform Smoke Suite
       if: ${{ !matrix.run-coverage }}
       env:
