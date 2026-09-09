@@ -58,7 +58,7 @@ jobs:
           # CI runners have no GPU; pull the CPU-only torch wheels instead of the
           # ~1.8 GiB CUDA stack. Avoids disk exhaustion and speeds up install.
           UV_TORCH_BACKEND: cpu
-        run: uv pip install --system -e .[${{ env.DOCS_EXTRAS }}]
+        run: uv pip install --system -e ".[${{ env.DOCS_EXTRAS }}]"
       # Show Braindecode Version
       - run: python -c "import braindecode; print(braindecode.__version__)"
       # Persist HF token to disk so sphinx-gallery examples can access gated repos
@@ -66,8 +66,17 @@ jobs:
         if: ${{ env.HF_TOKEN != '' }}
         run: python -c "import os; from huggingface_hub import login; login(token=os.environ['HF_TOKEN'])"
       - name: Create Docs
+        env:
+          # DANCE alone peaks near 8.5 GB; do not use auto gallery workers.
+          BRAINDECODE_DOCS_JOBS: "2"
         run: |
+          # Configure MNE before workers can race on first-use config creation.
+          mkdir -p ~/mne_data
+          python -c "import os, mne; mne.set_config('MNE_DATA', os.path.expanduser('~/mne_data'))"
           cd docs
+          # memory_profiler cannot start its monitor inside a loky worker.
+          # The full pass reuses this example's same-build gallery result.
+          BRAINDECODE_DOCS_JOBS=1 make html SPHINXOPTS="-j auto -D sphinx_gallery_conf.filename_pattern=plot_benchmark_preprocessing.py"
           make html SPHINXOPTS="-j auto"
 
       - name: Generate Notebooks from Examples

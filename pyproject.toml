@@ -95,7 +95,7 @@ typing = [
 ]
 
 docs = [
-    'sphinx_gallery',
+    'sphinx_gallery>=0.17',
     'sphinx_rtd_theme',
     'sphinx-autodoc-typehints',
     'sphinx-autobuild',
