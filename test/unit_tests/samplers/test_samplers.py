@@ -158,11 +158,11 @@ def test_recording_sampler(windows_ds):
         win_ind, rec_ind = sampler.sample_window(rec_ind=None)
         assert rec_ind in range(windows_ds.description.shape[0])
 
-def dist_sampler_init_process(rank, world_size, windows_ds):
+def dist_sampler_init_process(rank, world_size, windows_ds, init_method):
     """Initialize the process group for multi-CPU training."""
     dist.init_process_group(
         backend="gloo",
-        init_method="tcp://127.0.0.1:29500",  # Localhost for single machine
+        init_method=init_method,
         rank=rank,
         world_size=world_size
     )
@@ -203,11 +203,23 @@ def dist_sampler_init_process(rank, world_size, windows_ds):
 
 @pytest.mark.skipif(platform.system() == 'Windows',
                     reason="Not supported on Windows because of use_libuv compatibility")
-def test_distributed_recording_sampler(windows_ds):
+def test_distributed_recording_sampler(windows_ds, tmp_path):
     world_size = 1  # Test single process - no dataset splitting
-    mp.spawn(dist_sampler_init_process, args=(world_size,windows_ds), nprocs=world_size, join=True)
+    init_method = (tmp_path / "rendezvous-1").as_uri()
+    mp.spawn(
+        dist_sampler_init_process,
+        args=(world_size, windows_ds, init_method),
+        nprocs=world_size,
+        join=True,
+    )
     world_size = 3  # Test multiple processes - dataset splitting
-    mp.spawn(dist_sampler_init_process, args=(world_size,windows_ds), nprocs=world_size, join=True)
+    init_method = (tmp_path / "rendezvous-3").as_uri()
+    mp.spawn(
+        dist_sampler_init_process,
+        args=(world_size, windows_ds, init_method),
+        nprocs=world_size,
+        join=True,
+    )
 
 
 @pytest.mark.parametrize("same_rec_neg", [True, False])
@@ -272,10 +284,12 @@ def test_relative_positioning_sampler_presample(windows_ds):
     assert np.array_equal(sampler.examples, pairs)
     assert np.array_equal(sampler.examples, pairs2)
 
-def distributed_relative_positioning_sampler_init_process(rank, world_size, windows_ds, same_rec_neg):
+def distributed_relative_positioning_sampler_init_process(
+    rank, world_size, windows_ds, same_rec_neg, init_method
+):
     dist.init_process_group(
         backend="gloo",
-        init_method="tcp://127.0.0.1:29500",  # Localhost for single machine
+        init_method=init_method,
         rank=rank,
         world_size=world_size
     )
@@ -323,16 +337,24 @@ def distributed_relative_positioning_sampler_init_process(rank, world_size, wind
 @pytest.mark.skipif(platform.system() == 'Windows',
                     reason="Not supported on Windows because of use_libuv compatibility")
 @pytest.mark.parametrize("same_rec_neg", [True, False])
-def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg):
+def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg, tmp_path):
     world_size = 1
-    mp.spawn(distributed_relative_positioning_sampler_init_process, args=(world_size, windows_ds, same_rec_neg), nprocs=world_size, join=True)
+    init_method = (tmp_path / "rendezvous").as_uri()
+    mp.spawn(
+        distributed_relative_positioning_sampler_init_process,
+        args=(world_size, windows_ds, same_rec_neg, init_method),
+        nprocs=world_size,
+        join=True,
+    )
 
 
-def distributed_relative_positioning_sampler_n_examples_check(rank, world_size, windows_ds, n_examples_total):
+def distributed_relative_positioning_sampler_n_examples_check(
+    rank, world_size, windows_ds, n_examples_total, init_method
+):
     """Test that n_examples calculation uses correct operator precedence."""
     dist.init_process_group(
         backend="gloo",
-        init_method="tcp://127.0.0.1:29500",
+        init_method=init_method,
         rank=rank,
         world_size=world_size
     )
@@ -371,7 +393,9 @@ def distributed_relative_positioning_sampler_n_examples_check(rank, world_size, 
     (50, 2),   # Test case from bug report that could truncate to 0
     (100, 4),  # Test case from bug report
 ])
-def test_distributed_relative_positioning_sampler_n_examples_calculation(windows_ds, n_examples_total, world_size):
+def test_distributed_relative_positioning_sampler_n_examples_calculation(
+    windows_ds, n_examples_total, world_size, tmp_path
+):
     """Test that n_examples calculation distributes examples correctly across ranks.
 
     This test validates the fix for the operator precedence bug where:
@@ -380,7 +404,12 @@ def test_distributed_relative_positioning_sampler_n_examples_calculation(windows
     """
     mp.spawn(
         distributed_relative_positioning_sampler_n_examples_check,
-        args=(world_size, windows_ds, n_examples_total),
+        args=(
+            world_size,
+            windows_ds,
+            n_examples_total,
+            (tmp_path / "rendezvous").as_uri(),
+        ),
         nprocs=world_size,
         join=True
     )
