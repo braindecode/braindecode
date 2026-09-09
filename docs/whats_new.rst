@@ -33,6 +33,10 @@ Enhancements
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
   regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
 
+- Improve CI test scheduling and run documentation examples with bounded
+  parallelism, preserving the test cases and gallery training workloads
+  (:gh:`1161` by `Bruno Aristimunha`_).
+
 Bug fixes
 ==========
 
