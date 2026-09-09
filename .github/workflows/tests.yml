@@ -61,9 +61,9 @@ jobs:
     # Show Braindecode Version
     - run: python -c "import braindecode; print(braindecode.__version__)"
 
-    # xdist collects modules concurrently; finish NEMAR's shared-file downloads first.
-    - name: Pre-download MOABB test data
-      run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().download(subject_list=[1, 2, 4], update_path=True)"
+    # xdist collects modules concurrently; finish NEMAR downloads and legacy-file materialization first.
+    - name: Materialize MOABB test data before xdist
+      run: python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1, 2, 4])"
 
     - name: Compute TorchInductor Cache Key
       id: compiler-cache-key

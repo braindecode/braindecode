@@ -73,6 +73,8 @@ jobs:
           # Configure MNE before workers can race on first-use config creation.
           mkdir -p ~/mne_data
           python -c "import os, mne; mne.set_config('MNE_DATA', os.path.expanduser('~/mne_data'))"
+          # Gallery workers can import MOABB examples concurrently; finish NEMAR downloads and legacy-file materialization first.
+          python -c "from moabb.datasets import BNCI2014_001; BNCI2014_001().get_data([1, 2, 3])"
           cd docs
           # memory_profiler cannot start its monitor inside a loky worker.
           # The full pass reuses this example's same-build gallery result.
