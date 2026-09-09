@@ -333,6 +333,9 @@ def distributed_relative_positioning_sampler_init_process(
         assert all(pairs_df.loc[pairs_df["y"] == 1, "same_rec"] == True)  # noqa: E712
     assert abs(np.diff(pairs_df["y"].value_counts())) < 20
 
+    # Cleanup
+    dist.destroy_process_group()
+
 
 @pytest.mark.skipif(platform.system() == 'Windows',
                     reason="Not supported on Windows because of use_libuv compatibility")

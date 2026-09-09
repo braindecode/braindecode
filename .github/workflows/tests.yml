@@ -29,9 +29,7 @@ jobs:
     - name: Checking Out Repository
       uses: actions/checkout@v4
     # Cache MNE Data
-    # The cache key includes the OS and a hash of pyproject.toml to invalidate
-    # when dependencies change. This ensures that test data is fresh when
-    # the test configuration changes.
+    # The cache key separates MNE data by runner OS and Python version.
     - name: Create/Restore MNE Data Cache
       id: cache-mne_data
       uses: actions/cache@v4
@@ -45,8 +43,9 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install uv
-      uses: astral-sh/setup-uv@v3
+      uses: astral-sh/setup-uv@v7
       with:
+        version: latest
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
 
