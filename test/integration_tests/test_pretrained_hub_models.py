@@ -331,6 +331,7 @@ class TestSTEEGFormerPretrained:
         # does not pass — they are exercised by the dedicated
         # Test*Pretrained classes above.
         ("Labram", "braindecode/labram-pretrained", 128),
+        ("MIRepNet", "braindecode/mirepnet-pretrained", 45),
         ("STEEGFormer", "braindecode/STEEGFormer-small", 22),
     ],
 )
@@ -362,6 +363,7 @@ def test_all_pretrained_models_load(
         # (n_times, n_outputs, strict=False); exercised by their dedicated
         # Test*Pretrained classes above.
         ("Labram", "braindecode/labram-pretrained"),
+        ("MIRepNet", "braindecode/mirepnet-pretrained"),
         ("STEEGFormer", "braindecode/STEEGFormer-small"),
     ],
 )
