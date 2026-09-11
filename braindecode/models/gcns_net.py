@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from scipy.sparse.csgraph import laplacian
 from torch import nn
 from torch_geometric.nn.pool import graclus
@@ -30,7 +31,15 @@ class _GraphCoarsening:
             )
             adjacencies.append(coarsened_adjacency)
 
-        return adjacencies, clusters
+        permutations = self._compute_perm(clusters)
+
+        for i in range(levels):
+            adjacencies[i] = self._perm_adjacency(
+                adjacencies[i],
+                permutations[i],
+            )
+
+        return adjacencies, permutations[0] if levels > 0 else None
 
     def _cluster(self, adjacency):
         row, col = adjacency.nonzero(as_tuple=True)
@@ -83,7 +92,7 @@ class _GraphCoarsening:
             indices_layer = []
             for i in indices[-1]:
                 indices_node = torch.where(parent == i)[0].tolist()
-                
+
                 if len(indices_node) == 1:
                     # Add a node to go with a singleton.
                     indices_node.append(pool_singletons)
@@ -99,6 +108,30 @@ class _GraphCoarsening:
             indices.append(indices_layer)
 
         return indices[::-1]
+
+    def _perm_adjacency(self, adjacency, indices):
+        """
+        Permute adjacency matrix, i.e. exchange node ids,
+        so that binary unions form the clustering tree.
+        """
+        n_nodes = adjacency.shape[0]
+        n_nodes_new = len(indices)
+
+        # Add isolated fake nodes for padding.
+        if n_nodes_new > n_nodes:
+            padding = n_nodes_new - n_nodes
+            adjacency = F.pad(
+                adjacency,
+                (0, padding, 0, padding),
+            )
+
+        indices = torch.tensor(
+            indices,
+            dtype=torch.long,
+            device=adjacency.device,
+        )
+
+        return adjacency[indices][:, indices]
 
 
 class GCNsNet(EEGModuleMixin, nn.Module):
@@ -322,7 +355,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
     def _initialize_graph(self, x):
         adjacency = self._adjacency(x)
 
-        adjacencies, clusters = self.graph_coarsening(
+        adjacencies, permutation = self.graph_coarsening(
             adjacency,
             levels=5,
         )
@@ -334,7 +367,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         self.graph_initialized = True
 
-        return adjacencies, clusters
+        return adjacencies, permutation
 
     def _bias_norm_softplus(self, x, layer_index):
         """
