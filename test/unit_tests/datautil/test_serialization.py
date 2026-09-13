@@ -496,9 +496,7 @@ def test_save_concat_dataset(tmpdir, setup_concat_raw_dataset):
 
 def test_load_concat_windows_dataset_channel_targets(tmp_path):
     info = mne.create_info(["Cz", "target"], sfreq=100, ch_types=["eeg", "misc"])
-    raw = mne.io.RawArray(
-        np.random.RandomState(0).randn(2, 1000), info, verbose=False
-    )
+    raw = mne.io.RawArray(np.random.RandomState(0).randn(2, 1000), info, verbose=False)
     windows = create_fixed_length_windows(
         BaseConcatDataset([RawDataset(raw, description={"recording": 0})]),
         window_size_samples=100,
