@@ -427,7 +427,8 @@ def create_windows_from_events(
     # If user did not specify mapping, we extract all events from all datasets
     # and map them to increasing integers starting from 0
     infer_mapping = mapping is None
-    mapping = dict() if infer_mapping else mapping
+    if infer_mapping:
+        mapping = _infer_mapping(concat_ds)
     infer_window_size_stride = window_size_samples is None
 
     if drop_bad_windows is not None:
@@ -636,6 +637,16 @@ def create_fixed_length_windows(
         for ds in concat_ds.datasets
     )
     return BaseConcatDataset(list_of_windows_ds)
+
+
+def _infer_mapping(concat_ds):
+    # built once here so parallel workers do not each start counting from 0
+    mapping: dict[str, int] = dict()
+    for ds in concat_ds.datasets:
+        for event_name in np.unique(ds.raw.annotations.description):
+            if event_name not in mapping:
+                mapping[event_name] = len(mapping)
+    return mapping
 
 
 def _create_windows_from_events(
