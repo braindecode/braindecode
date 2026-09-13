@@ -133,6 +133,29 @@ class _GraphCoarsening:
 
         return adjacency[indices][:, indices]
 
+    def _perm_data(self, x, indices):
+        """
+        Permute data matrix, i.e. exchange node ids,
+        so that binary unions form the clustering tree.
+        """
+        if indices is None:
+            return x
+
+        n_nodes = x.shape[1]
+        n_nodes_new = len(indices)
+
+        if n_nodes_new > n_nodes:
+            padding = n_nodes_new - n_nodes
+            x = F.pad(x, (0, padding))
+
+        indices = torch.tensor(
+            indices,
+            dtype=torch.long,
+            device=x.device,
+        )
+
+        return x[:, indices]
+
 
 class GCNsNet(EEGModuleMixin, nn.Module):
     r"""GCNs-Net: A Graph Convolutional Neural Network
@@ -265,9 +288,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq
 
-        if not (
-            len(n_features) == len(cheb_orders) == len(pool_sizes) != 0
-        ):
+        if not (len(n_features) == len(cheb_orders) == len(pool_sizes) != 0):
             raise ValueError(
                 "n_features, cheb_orders, and pool_sizes must be of the same, non-zero length. "
                 "Each value is for a layer of the corresponding index order. "
@@ -278,6 +299,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         self.cheb_orders = cheb_orders
         self.pool_sizes = pool_sizes
         self.graph_initialized = False
+        self.permutation = None
 
         for i in range(len(n_features)):
             self.register_buffer(f"laplacian_{i}", None)
@@ -316,7 +338,10 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         # Bias, batch normalization and activation of each layer.
         self.biases = nn.ParameterList(
-            [nn.Parameter(torch.full((1, 1, n_feature), 0.1)) for n_feature in n_features]
+            [
+                nn.Parameter(torch.full((1, 1, n_feature), 0.1))
+                for n_feature in n_features
+            ]
         )
 
         self.batch_norms = nn.ModuleList(
@@ -359,6 +384,8 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             adjacency,
             levels=5,
         )
+
+        self.permutation = permutation
 
         for i, adjacency in enumerate(adjacencies):
             laplacian_matrix = self._laplacian(adjacency)
@@ -428,6 +455,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         x = x.transpose(1, 2)
         x = x.reshape(batch_size * n_times, n_chans)
+        x = self.graph_coarsening._perm_data(x, self.permutation)
         x = x.unsqueeze(-1)
 
         for i, graph_conv in enumerate(self.graph_convs):
