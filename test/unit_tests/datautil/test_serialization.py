@@ -1,4 +1,5 @@
 # Authors: Lukas Gemein <l.gemein@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 
@@ -20,6 +21,7 @@ from braindecode.datautil.serialization import (
 )
 from braindecode.preprocessing import (
     Preprocessor,
+    create_fixed_length_windows,
     create_windows_from_events,
     preprocess,
 )
@@ -490,3 +492,27 @@ def test_save_concat_dataset(tmpdir, setup_concat_raw_dataset):
     # Call the save_concat_dataset function
     with pytest.warns(UserWarning):
         save_concat_dataset(tmpdir, setup_concat_raw_dataset, overwrite=False)
+
+
+def test_load_concat_windows_dataset_channel_targets(tmp_path):
+    info = mne.create_info(["Cz", "target"], sfreq=100, ch_types=["eeg", "misc"])
+    raw = mne.io.RawArray(np.random.RandomState(0).randn(2, 1000), info, verbose=False)
+    windows = create_fixed_length_windows(
+        BaseConcatDataset([RawDataset(raw, description={"recording": 0})]),
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="overlap",
+        targets_from="channels",
+        last_target_only=False,
+    )
+    windows.save(tmp_path, overwrite=False)
+    loaded = load_concat_dataset(tmp_path, preload=False)
+
+    for before, after in zip(windows.datasets, loaded.datasets):
+        assert after.targets_from == before.targets_from
+        assert after.last_target_only == before.last_target_only
+    for i in range(len(windows)):
+        x_before, y_before, _ = windows[i]
+        x_after, y_after, _ = loaded[i]
+        np.testing.assert_allclose(x_after, x_before, rtol=1e-4, atol=1e-5)
+        np.testing.assert_allclose(y_after, y_before, rtol=1e-4, atol=1e-5)

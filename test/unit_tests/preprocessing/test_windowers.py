@@ -2151,3 +2151,30 @@ def test_fixed_length_no_size_policy_is_moot(
         replacement_dataset.metadata,
     )
     assert deprecated_dataset.window_kwargs == replacement_dataset.window_kwargs
+
+
+def test_windows_from_events_infer_mapping_n_jobs(tmpdir_factory):
+    # every recording sees a different subset of the event types
+    descriptions = [5 * ["T0", "T1"], 5 * ["T1", "T2"], 10 * ["T2"]]
+    concat_ds = BaseConcatDataset(
+        [
+            RawDataset(
+                _get_raw(tmpdir_factory, description),
+                description=pd.Series({"file_id": i}),
+            )
+            for i, description in enumerate(descriptions)
+        ]
+    )
+    expected = [5 * [0, 1], 5 * [1, 2], 10 * [2]]
+    for n_jobs in [1, 2]:
+        windows = create_windows_from_events(
+            concat_ds=concat_ds,
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+            window_size_samples=100,
+            window_stride_samples=100,
+            on_last_window="overlap",
+            n_jobs=n_jobs,
+        )
+        for ds, targets in zip(windows.datasets, expected):
+            np.testing.assert_array_equal(ds.metadata["target"], targets)

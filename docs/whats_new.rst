@@ -46,6 +46,26 @@ Bug fixes
   :class:`braindecode.models.Deep4Net` unusable on single-channel data
   (:gh:`1154` by `Julien Gadonneix`_).
 
+- Make :func:`braindecode.preprocessing.create_windows_from_events` infer the
+  event mapping once for the whole dataset before the recordings are windowed.
+  With ``mapping=None`` and ``n_jobs`` above one, every worker numbered the
+  event descriptions of its own recording from zero, so the same description
+  could receive different integer targets across recordings. By `Sarthak
+  Tayal`_.
+
+- Make :func:`braindecode.datautil.load_concat_dataset` restore the
+  ``targets_from`` and ``last_target_only`` settings of a saved
+  :class:`braindecode.datasets.EEGWindowsDataset`. The loader looked the stored
+  settings up under the name ``WindowsDataset`` while the windowers record them
+  under ``EEGWindowsDataset``, so a dataset windowed with
+  ``targets_from="channels"`` came back reading its targets from the metadata.
+  By `Sarthak Tayal`_.
+
+- Make :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` work on a
+  copy of the metadata of each dataset. The description columns were written
+  into the metadata frame of the dataset itself, replacing any column sharing a
+  name with a description key such as ``target``. By `Sarthak Tayal`_.
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
