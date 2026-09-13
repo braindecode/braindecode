@@ -680,8 +680,9 @@ def _create_windows_from_events(
     ds : RawDataset
         Dataset containing continuous data and description.
     infer_mapping : bool
-        If True, extract all events from all datasets and map them to
-        increasing integers starting from 0.
+        If True, add the event descriptions of ``ds`` missing from ``mapping``
+        to it with increasing integers. `create_windows_from_events` already
+        fills the mapping from all datasets before calling this function.
     infer_window_size_stride : bool
         If True, infer the stride from the original trial size of the first
         trial and trial_start_offset_samples and trial_stop_offset_samples.
