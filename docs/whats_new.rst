@@ -40,6 +40,14 @@ Enhancements
 Bug fixes
 ==========
 
+- Fix a ``FutureWarning`` raised by MNE >= 1.13 when importing
+  :mod:`braindecode` or using models, datasets and augmentations that build
+  on the ``standard_1005``/``standard_1020`` montages: MNE renamed these
+  montages to ``colin27_1005``/``colin27_1020`` and will remove the legacy
+  names in MNE 1.14, so their spelling is now resolved against the installed
+  MNE version via :func:`braindecode.util.resolve_montage_name`
+  (:gh:`1163` by `Li Qing`_).
+
 - Fix :class:`braindecode.modules.CombinedConv` raising ``RuntimeError: self
   must be a matrix`` when ``in_chans``, ``n_filters_time`` or ``n_filters_spat``
   is 1, which made :class:`braindecode.models.ShallowFBCSPNet` and
@@ -1731,3 +1739,4 @@ Authors
 .. _Azra Bano: https://github.com/azrabano23
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
+.. _Li Qing: https://github.com/qinxwew
