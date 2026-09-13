@@ -53,6 +53,14 @@ Bug fixes
   could receive different integer targets across recordings. By `Sarthak
   Tayal`_.
 
+- Make :func:`braindecode.datautil.load_concat_dataset` restore the
+  ``targets_from`` and ``last_target_only`` settings of a saved
+  :class:`braindecode.datasets.EEGWindowsDataset`. The loader looked the stored
+  settings up under the name ``WindowsDataset`` while the windowers record them
+  under ``EEGWindowsDataset``, so a dataset windowed with
+  ``targets_from="channels"`` came back reading its targets from the metadata.
+  By `Sarthak Tayal`_.
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
