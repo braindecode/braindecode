@@ -301,9 +301,12 @@ def create_windows_from_events(
         emits a ``DeprecationWarning`` and this parameter will be removed in
         version 2.0.
     mapping: dict(str: int)
-        Mapping from event description to numerical target value. Must be
-        provided when any of ``trial_start_offset_samples``,
-        ``trial_stop_offset_samples``, or ``window_stride_samples`` is a dict.
+        Mapping from event description to numerical target value. If None, the
+        event descriptions of all datasets are numbered from 0 in the order they
+        are first met, and this mapping is shared by every dataset regardless
+        of ``n_jobs``. Must be provided when any of
+        ``trial_start_offset_samples``, ``trial_stop_offset_samples``, or
+        ``window_stride_samples`` is a dict.
     preload: bool
         If True, preload the data of the Epochs objects. This is useful to
         reduce disk reading overhead when returning windows in a training
