@@ -61,6 +61,11 @@ Bug fixes
   ``targets_from="channels"`` came back reading its targets from the metadata.
   By `Sarthak Tayal`_.
 
+- Make :meth:`braindecode.datasets.BaseConcatDataset.get_metadata` work on a
+  copy of the metadata of each dataset. The description columns were written
+  into the metadata frame of the dataset itself, replacing any column sharing a
+  name with a description key such as ``target``. By `Sarthak Tayal`_.
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
