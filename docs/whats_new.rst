@@ -46,6 +46,13 @@ Bug fixes
   :class:`braindecode.models.Deep4Net` unusable on single-channel data
   (:gh:`1154` by `Julien Gadonneix`_).
 
+- Make :func:`braindecode.preprocessing.create_windows_from_events` infer the
+  event mapping once for the whole dataset before the recordings are windowed.
+  With ``mapping=None`` and ``n_jobs`` above one, every worker numbered the
+  event descriptions of its own recording from zero, so the same description
+  could receive different integer targets across recordings. By `Sarthak
+  Tayal`_.
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
