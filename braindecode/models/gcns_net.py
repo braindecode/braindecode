@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.sparse.csgraph import laplacian
@@ -244,8 +243,11 @@ class GCNsNet(EEGModuleMixin, nn.Module):
     chs_info : list of dict, optional
         Information about each channel, typically obtained from
         ``mne.Info['chs']``.
-    laplacians : tuple of Tensor, optional
-        List of Graph Laplacians. Size M x M. One per coarsening level.
+    adjacency : Tensor, optional
+        Adjacency matrix of shape (n_chans, n_chans). If not provided, adjacency
+        is inferred from the data passed to ``EEGClassifier.fit`` or
+        ``EEGRegressor.fit``, or the first input passed to ``forward``
+        when the model is used directly.
     n_features : tuple of int, default=(16, 32, 64, 128, 256, 512)
         Number of features.
     cheb_orders : tuple of int, default=(2, 2, 2, 2, 2, 2)
@@ -272,7 +274,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         n_times: int | None = None,
         input_window_seconds: float | None = None,
         sfreq: float | None = None,
-        laplacians: tuple[torch.Tensor, ...] | None = None,
+        adjacency: torch.Tensor | None = None,
         n_features: tuple[int, ...] = (16, 32, 64, 128, 256, 512),
         cheb_orders: tuple[int, ...] = (2, 2, 2, 2, 2, 2),
         pool_sizes: tuple[int, ...] = (2, 2, 2, 2, 2, 2),
@@ -301,26 +303,17 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         self.graph_initialized = False
         self.permutation = None
 
+        self.graph_coarsening = _GraphCoarsening()
+
         for i in range(len(n_features)):
             self.register_buffer(f"laplacian_{i}", None)
 
-        if laplacians is not None and len(laplacians) != 0:
-            # From input Laplacians, keep the useful Laplacians only.
-            # There may be zero Laplacians selected.
-            laplacian_index = 0
-            useful_laplacians = []
-
-            for pool_size in pool_sizes:
-                useful_laplacians.append(laplacians[laplacian_index])
-                laplacian_index += int(np.log2(pool_size)) if pool_size > 1 else 0
-
-            for i, laplacian_matrix in enumerate(useful_laplacians):
-                laplacian_matrix = self._rescale_laplacian(laplacian_matrix)
-                setattr(self, f"laplacian_{i}", laplacian_matrix)
-
-            self.graph_initialized = True
-
-        self.graph_coarsening = _GraphCoarsening()
+        if adjacency is not None:
+            adjacency = torch.as_tensor(
+                adjacency,
+                dtype=torch.float32,
+            )
+            self._initialize_graph(adjacency)
 
         # Implement Graph Convolutional Neural Network layers.
         self.graph_convs = nn.ModuleList()
@@ -353,7 +346,15 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         # Final classification layer.
         self.final_layer = nn.LazyLinear(self.n_outputs)
 
-    def _adjacency(self, x):
+    @classmethod
+    def _infer_model_kwargs(cls, X, y=None):
+        x = torch.as_tensor(X, dtype=torch.float32)
+        adjacency = cls._adjacency(x)
+
+        return {"adjacency": adjacency}
+
+    @staticmethod
+    def _adjacency(x):
         """Compute the adjacency matrix from EEG data."""
         signals = x.transpose(0, 1).flatten(1)
 
@@ -377,9 +378,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             device=adjacency.device,
         )
 
-    def _initialize_graph(self, x):
-        adjacency = self._adjacency(x)
-
+    def _initialize_graph(self, adjacency):
         adjacencies, permutation = self.graph_coarsening(
             adjacency,
             levels=5,
@@ -387,8 +386,8 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         self.permutation = permutation
 
-        for i, adjacency in enumerate(adjacencies):
-            laplacian_matrix = self._laplacian(adjacency)
+        for i, coarsened_adjacency in enumerate(adjacencies):
+            laplacian_matrix = self._laplacian(coarsened_adjacency)
             laplacian_matrix = self._rescale_laplacian(laplacian_matrix)
             setattr(self, f"laplacian_{i}", laplacian_matrix)
 
@@ -449,7 +448,8 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             Output tensor of shape (batch_size, n_outputs, n_times).
         """
         if not self.graph_initialized:
-            self._initialize_graph(x)
+            adjacency = self._adjacency(x)
+            self._initialize_graph(adjacency)
 
         batch_size, n_chans, n_times = x.shape
 
