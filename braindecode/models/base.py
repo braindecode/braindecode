@@ -415,6 +415,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
             kwargs[x] = self.channel_layer(kwargs[x], chs_info)[0]
         return type(self).forward(self, *args, **kwargs)
 
+    @classmethod
+    def _infer_model_kwargs(cls, X, y=None):
+        """Infer model-specific initialization parameters from data."""
+        return {}
+
     @property
     def n_outputs(self) -> int:
         if self._n_outputs is None:

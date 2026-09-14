@@ -823,3 +823,69 @@ def test_eegregressor_cropped_loss_is_per_trial_mse(from_dataset):
     per_trial_pred = y_pred.mean(dim=2).reshape(-1)
     expected = ((per_trial_pred - y_batch.reshape(-1).float()) ** 2).mean()
     torch.testing.assert_close(loss, expected)
+
+
+class MockModuleInferKwargs(EEGModuleMixin, torch.nn.Module):
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        inferred_value=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self.inferred_value = inferred_value
+        self.final_layer = torch.nn.Linear(
+            self.n_chans * self.n_times,
+            self.n_outputs,
+        )
+
+    @classmethod
+    def _infer_model_kwargs(cls, X, y=None):
+        return {"inferred_value": len(X)}
+
+    def forward(self, x):
+        return self.final_layer(x.flatten(1))
+
+
+@pytest.mark.filterwarnings("ignore:The training set has")
+def test_set_model_specific_inferred_params(Xy):
+    X, y = Xy
+
+    net = EEGClassifier(
+        MockModuleInferKwargs,
+        train_split=None,
+        max_epochs=1,
+        batch_size=5,
+    )
+
+    net.fit(X, y)
+
+    assert net.module_.inferred_value == len(X)
+
+
+@pytest.mark.filterwarnings("ignore:The training set has")
+def test_user_overrides_model_specific_inferred_params(Xy):
+    X, y = Xy
+
+    net = EEGClassifier(
+        MockModuleInferKwargs,
+        module__inferred_value=42,
+        train_split=None,
+        max_epochs=1,
+        batch_size=5,
+    )
+
+    net.fit(X, y)
+
+    assert net.module_.inferred_value == 42
