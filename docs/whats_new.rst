@@ -37,6 +37,10 @@ Enhancements
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
 
+- Add pull request templates, including an exhaustive checklist for new model
+  contributions covering implementation conventions, registration,
+  documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
+
 Bug fixes
 ==========
 
