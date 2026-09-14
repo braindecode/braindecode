@@ -889,3 +889,29 @@ def test_user_overrides_model_specific_inferred_params(Xy):
     net.fit(X, y)
 
     assert net.module_.inferred_value == 42
+
+
+class MockModuleInferOverlappingKwargs(MockModuleInferKwargs):
+    @classmethod
+    def _infer_model_kwargs(cls, X, y=None):
+        return {
+            "n_chans": 42,
+            "inferred_value": len(X),
+        }
+
+
+@pytest.mark.filterwarnings("ignore:The training set has")
+def test_signal_params_override_model_inferred_params(Xy):
+    X, y = Xy
+
+    net = EEGClassifier(
+        MockModuleInferOverlappingKwargs,
+        train_split=None,
+        max_epochs=1,
+        batch_size=5,
+    )
+
+    net.fit(X, y)
+
+    assert net.module_.n_chans == X.shape[1]
+    assert net.module_.inferred_value == len(X)

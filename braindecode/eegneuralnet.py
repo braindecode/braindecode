@@ -209,6 +209,13 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         if callable(infer_model_kwargs):
             model_kwargs = infer_model_kwargs(X, y)
 
+        # Ensure model parameters do not override signal-inferred parameters.
+        model_kwargs = {
+            param_key: value
+            for param_key, value in model_kwargs.items()
+            if param_key not in signal_kwargs
+        }
+
         inferred_kwargs = {
             **signal_kwargs,
             **model_kwargs,
