@@ -39,7 +39,7 @@ Enhancements
 
 - Add pull request templates, including an exhaustive checklist for new model
   contributions covering implementation conventions, registration,
-  documentation, and benchmarking (:gh:`XXXX` by `Li Qing`_).
+  documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
 
 Bug fixes
 ==========
