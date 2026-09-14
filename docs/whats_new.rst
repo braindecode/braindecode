@@ -47,6 +47,14 @@ Bug fixes
   (:gh:`1154` by `Julien Gadonneix`_).
 
 
+Bugs
+====
+
+- Fix the channel-interpolation test for MNE 1.13 by using matching channel
+  names at distinct positions instead of relying on numerical deviations
+  from identity (by `Bruno Aristimunha`_).
+
+
 Current 1.8.0 (2026-08-31)
 ===============================
 

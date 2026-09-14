@@ -79,16 +79,18 @@ def test_compute_mne_matrix_returns_correct_shape():
 
 
 def test_always_mode_uses_mne_even_when_names_match():
-    # Identical src and tgt by name — in name_match this would be identity,
-    # in always mode it uses the MNE matrix (NOT identity).
+    # Match names but use different positions: name_match would be identity,
+    # while always must interpolate using the target geometry.
     # Use at least 4 channels to satisfy MNE's minimum digitization requirement.
     names = ["Fz", "Cz", "Pz", "C3", "C4"]
     src = [_montage_ch(n) for n in names]
-    tgt = [_montage_ch(n) for n in names]
+    tgt = [
+        dict(_montage_ch(position), ch_name=name)
+        for name, position in zip(names, ["F3", "F4", "P3", "P4", "Oz"])
+    ]
     layer = ChannelInterpolationLayer(src, tgt, mode="always")
     assert layer.matrix.shape == (5, 5)
-    # MNE on identical positions will approximate identity but likely not
-    # be exactly identity. Check non-trivial off-diagonal structure.
+    # Distinct positions require non-trivial off-diagonal structure.
     off_diag = layer.matrix - torch.diag(torch.diagonal(layer.matrix))
     assert torch.any(off_diag.abs() > 1e-6), (
         "expected non-trivial MNE-computed matrix, got pure diagonal"
