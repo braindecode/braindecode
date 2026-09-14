@@ -5,6 +5,7 @@
 
 import os
 import tempfile
+import warnings
 from unittest import mock
 
 import h5py
@@ -24,6 +25,7 @@ from braindecode.util import (
     get_balanced_batches,
     np_to_th,
     read_all_file_names,
+    resolve_montage_name,
     set_random_seeds,
     th_to_np,
 )
@@ -484,3 +486,37 @@ def test_throwaway_index_loader_routes_pos_and_mask():
     # regression casts y to float even on the dict path
     _, yy, _ = _route((X, torch.randn(B), crop, pos, mask), is_regression=True)
     assert yy.dtype == torch.float32
+
+
+def test_resolve_montage_name():
+    renamed = {
+        "standard_1005": "colin27_1005",
+        "standard_1020": "colin27_1020",
+    }
+    for legacy, new in renamed.items():
+        resolved = resolve_montage_name(legacy)
+        assert resolved in (legacy, new)
+        assert resolved in mne.channels.get_builtin_montages()
+
+    # names that were not renamed pass through untouched
+    assert resolve_montage_name("biosemi64") == "biosemi64"
+    assert resolve_montage_name("easycap-M1") == "easycap-M1"
+
+
+def test_resolve_montage_name_raises_no_future_warning():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        for name in ("standard_1005", "standard_1020"):
+            montage = mne.channels.make_standard_montage(resolve_montage_name(name))
+            assert isinstance(montage, mne.channels.DigMontage)
+
+
+def test_eegpt_channel_building_raises_no_future_warning():
+    # gh-1163: building EEGPT's canonical channel list used to emit MNE's
+    # montage deprecation FutureWarning already at import time
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        from braindecode.models.eegpt import _get_eegpt_channels
+
+        channels = _get_eegpt_channels()
+    assert len(channels) > 0
