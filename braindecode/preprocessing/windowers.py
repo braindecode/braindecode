@@ -301,8 +301,11 @@ def create_windows_from_events(
         emits a ``DeprecationWarning`` and this parameter will be removed in
         version 2.0.
     mapping: dict(str: int)
-        Mapping from event description to numerical target value. Must be
-        provided when any of ``trial_start_offset_samples``,
+        Mapping from event description to numerical target value. If None, the
+        event descriptions of all datasets are numbered from 0 in dataset
+        order, with descriptions sorted within each dataset. This mapping is
+        shared by every dataset regardless of ``n_jobs``. Must be provided
+        when any of ``trial_start_offset_samples``,
         ``trial_stop_offset_samples``, or ``window_stride_samples`` is a dict.
     preload: bool
         If True, preload the data of the Epochs objects. This is useful to
@@ -427,7 +430,8 @@ def create_windows_from_events(
     # If user did not specify mapping, we extract all events from all datasets
     # and map them to increasing integers starting from 0
     infer_mapping = mapping is None
-    mapping = dict() if infer_mapping else mapping
+    if infer_mapping:
+        mapping = _infer_mapping(concat_ds)
     infer_window_size_stride = window_size_samples is None
 
     if drop_bad_windows is not None:
@@ -638,6 +642,16 @@ def create_fixed_length_windows(
     return BaseConcatDataset(list_of_windows_ds)
 
 
+def _infer_mapping(concat_ds):
+    # built once here so parallel workers do not each start counting from 0
+    mapping: dict[str, int] = dict()
+    for ds in concat_ds.datasets:
+        for event_name in np.unique(ds.raw.annotations.description):
+            if event_name not in mapping:
+                mapping[event_name] = len(mapping)
+    return mapping
+
+
 def _create_windows_from_events(
     ds,
     infer_mapping,
@@ -666,8 +680,9 @@ def _create_windows_from_events(
     ds : RawDataset
         Dataset containing continuous data and description.
     infer_mapping : bool
-        If True, extract all events from all datasets and map them to
-        increasing integers starting from 0.
+        If True, add the event descriptions of ``ds`` missing from ``mapping``
+        to it with increasing integers. `create_windows_from_events` already
+        fills the mapping from all datasets before calling this function.
     infer_window_size_stride : bool
         If True, infer the stride from the original trial size of the first
         trial and trial_start_offset_samples and trial_stop_offset_samples.

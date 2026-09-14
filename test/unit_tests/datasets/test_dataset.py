@@ -1,5 +1,6 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -1006,3 +1007,26 @@ def test_windows_dataset_fast_vs_preload_consistency(basic_raw_and_metadata, tmp
         np.testing.assert_array_equal(X_fast, X_preloaded)
         assert y_fast == y_preloaded
         assert crop_fast == crop_preloaded
+
+
+def test_get_metadata_leaves_dataset_metadata_untouched(concat_ds_targets):
+    concat_ds, _ = concat_ds_targets
+    windows_ds = create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="overlap",
+    )
+    # a description key sharing its name with a metadata column
+    windows_ds.set_description({"target": [99] * len(windows_ds.datasets)})
+    metadata_before = [ds.metadata.copy() for ds in windows_ds.datasets]
+    targets_before = [y for _, y, _ in windows_ds]
+
+    metadata = windows_ds.get_metadata()
+
+    assert "subject" in metadata.columns
+    for ds, before in zip(windows_ds.datasets, metadata_before):
+        pd.testing.assert_frame_equal(ds.metadata, before)
+    assert [y for _, y, _ in windows_ds] == targets_before
