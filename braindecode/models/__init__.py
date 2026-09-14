@@ -39,7 +39,7 @@ from .emg2qwerty import EMG2QwertyNet
 from .fbcnet import FBCNet
 from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
-from .gcns_net import GCNsNet
+from .gcnsnet import GCNsNet
 from .guetschel2026 import Guetschel2026
 from .hybrid import HybridNet
 from .ifnet import IFNet
