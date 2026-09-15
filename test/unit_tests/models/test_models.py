@@ -1875,6 +1875,47 @@ def test_gcnsnet_adjacency():
 
 
 @pytest.mark.parametrize(
+    "pool_sizes, expected_levels",
+    [
+        ((2, 2, 2, 2), [0, 1, 2, 3]),
+        ((1, 2, 4, 2), [0, 0, 1, 3]),
+        ((1, 1, 1), [0, 0, 0]),
+    ],
+)
+def test_gcnsnet_compute_pooling_levels(pool_sizes, expected_levels):
+    assert GCNsNet._compute_pooling_levels(pool_sizes) == expected_levels
+
+
+@pytest.mark.parametrize("pool_sizes", [(0, 2), (3, 2), (-1, 2)])
+def test_gcnsnet_invalid_pool_sizes(pool_sizes):
+    with pytest.raises(ValueError, match="pool_sizes must be 1 or powers of 2"):
+        GCNsNet(
+            n_chans=64,
+            n_outputs=2,
+            n_times=128,
+            n_features=(8, 16),
+            cheb_orders=(2, 2),
+            pool_sizes=pool_sizes,
+        )
+
+
+def test_gcnsnet_variable_pool_sizes():
+    model = GCNsNet(
+        n_chans=64,
+        n_outputs=4,
+        n_times=128,
+        n_features=(8, 16, 32, 64),
+        cheb_orders=(2, 2, 2, 2),
+        pool_sizes=(1, 2, 4, 2),
+    )
+
+    x = torch.randn(2, 64, 128)
+    output = model(x)
+
+    assert output.shape == (2, 4)
+
+
+@pytest.mark.parametrize(
     "n_times, n_chans, sfreq, n_outputs",
     [
         (204, 8, 256.0, 2),

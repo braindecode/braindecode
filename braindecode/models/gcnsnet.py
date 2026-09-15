@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from math import log2
+
 import mne
 import torch
 import torch.nn.functional as F
@@ -306,6 +308,17 @@ class GCNsNet(EEGModuleMixin, nn.Module):
                 "At least one layer must be present. "
             )
 
+        invalid_pool_sizes = [
+            pool_size
+            for pool_size in pool_sizes
+            if (pool_size <= 0 or (pool_size & (pool_size - 1)))
+        ]
+        if invalid_pool_sizes:
+            raise ValueError(
+                "pool_sizes must be 1 or powers of 2. "
+                f"Invalid pool sizes: {', '.join([str(invalid_ps) for invalid_ps in invalid_pool_sizes])}."
+            )
+
         self.n_features = n_features
         self.cheb_orders = cheb_orders
         self.pool_sizes = pool_sizes
@@ -391,16 +404,31 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             device=adjacency.device,
         )
 
+    @staticmethod
+    def _compute_pooling_levels(pool_sizes):
+        """Compute the graph coarsening level used by each convolution."""
+        levels = []
+        level = 0
+
+        for pool_size in pool_sizes:
+            levels.append(level)
+            level += int(log2(pool_size))
+
+        return levels
+
     def _initialize_graph(self, adjacency):
+        pooling_levels = self._compute_pooling_levels(self.pool_sizes)
+        n_pooling_levels = pooling_levels[-1]
+
         adjacencies, permutation = self.graph_coarsening(
             adjacency,
-            levels=5,
+            levels=n_pooling_levels,
         )
 
         self.permutation = permutation
 
-        for i, coarsened_adjacency in enumerate(adjacencies):
-            laplacian_matrix = self._laplacian(coarsened_adjacency)
+        for i, level in enumerate(pooling_levels):
+            laplacian_matrix = self._laplacian(adjacencies[level])
             laplacian_matrix = self._rescale_laplacian(laplacian_matrix)
             setattr(self, f"laplacian_{i}", laplacian_matrix)
 
