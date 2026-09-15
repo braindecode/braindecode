@@ -1856,6 +1856,31 @@ def test_gcnsnet_dummy(n_times, n_chans, n_outputs):
     assert output.shape == (batch_size, n_outputs, n_times)
 
 
+def test_gcnsnet_infer_model_kwargs():
+    X = torch.randn(5, 64, 100)
+
+    model_kwargs = GCNsNet._infer_model_kwargs(X)
+
+    expected_adjacency = GCNsNet._adjacency(X)
+
+    assert model_kwargs.keys() == {"adjacency"}
+    torch.testing.assert_close(
+        model_kwargs["adjacency"],
+        expected_adjacency,
+    )
+
+
+def test_gcnsnet_adjacency():
+    X = torch.randn(5, 64, 100)
+
+    adjacency = GCNsNet._adjacency(X)
+
+    assert adjacency.shape == (64, 64)
+    torch.testing.assert_close(adjacency, adjacency.T)
+    torch.testing.assert_close(adjacency.diag(), torch.zeros(64))
+    assert torch.all(adjacency >= 0)
+
+
 @pytest.mark.parametrize(
     "n_times, n_chans, sfreq, n_outputs",
     [
