@@ -1838,23 +1838,16 @@ def test_channels_without_positions_give_finite_outputs(name):
 def test_gcnsnet_dummy(n_times, n_chans, n_outputs):
     batch_size = 8
 
-    identity_laplacians = tuple(
-        torch.eye(n_chans // (2**i))
-        for i in range(6)
-    )
-
     model = GCNsNet(
         n_chans=n_chans,
         n_outputs=n_outputs,
         n_times=n_times,
-        laplacians=identity_laplacians,
     )
 
     x = torch.randn(batch_size, n_chans, n_times)
     output = model(x)
 
-    assert output.shape == (batch_size, n_outputs, n_times)
-
+    assert output.shape == (batch_size, n_outputs)
 
 def test_gcnsnet_infer_model_kwargs():
     X = torch.randn(5, 64, 100)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mne
 import torch
 import torch.nn.functional as F
 from scipy.sparse.csgraph import laplacian
@@ -256,6 +257,12 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         Pooling size. Should be 1 (no pooling) or a power of 2
         (reduction by 2 at each coarser level). Beware to have
         coarsened enough.
+    activation : nn.Module, default=nn.Softplus
+        Activation function class. Use a PyTorch activation module,
+        default=``nn.Softplus``.
+    drop_prob : float, default=0.0
+        Dropout probability. Optional dropout is applied before the final
+        classification layer.
 
     References
     ----------
@@ -278,6 +285,8 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         n_features: tuple[int, ...] = (16, 32, 64, 128, 256, 512),
         cheb_orders: tuple[int, ...] = (2, 2, 2, 2, 2, 2),
         pool_sizes: tuple[int, ...] = (2, 2, 2, 2, 2, 2),
+        activation: type[nn.Module] = nn.Softplus,
+        drop_prob: float = 0.0,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -302,6 +311,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         self.pool_sizes = pool_sizes
         self.graph_initialized = False
         self.permutation = None
+        self.dropout = nn.Dropout(drop_prob)
 
         self.graph_coarsening = _GraphCoarsening()
 
@@ -341,13 +351,16 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             [nn.BatchNorm1d(n_feature) for n_feature in n_features]
         )
 
-        self.activation = nn.Softplus()
+        self.activation = activation()
 
         # Final classification layer.
         self.final_layer = nn.LazyLinear(self.n_outputs)
 
     @classmethod
     def _infer_model_kwargs(cls, X, y=None):
+        if isinstance(X, mne.BaseEpochs):
+            X = X.get_data(units="uV")
+
         x = torch.as_tensor(X, dtype=torch.float32)
         adjacency = cls._adjacency(x)
 
@@ -395,9 +408,9 @@ class GCNsNet(EEGModuleMixin, nn.Module):
 
         return adjacencies, permutation
 
-    def _bias_norm_softplus(self, x, layer_index):
+    def _bias_norm_activation(self, x, layer_index):
         """
-        Apply bias, batch normalization, and Softplus.
+        Apply bias, batch normalization, and activation.
         Output:
         N x M x Fout = Number of samples x Number of nodes x Number of output features
         """
@@ -445,7 +458,7 @@ class GCNsNet(EEGModuleMixin, nn.Module):
         Returns
         -------
         torch.Tensor
-            Output tensor of shape (batch_size, n_outputs, n_times).
+            Output tensor of shape (batch_size, n_outputs).
         """
         if not self.graph_initialized:
             adjacency = self._adjacency(x)
@@ -462,14 +475,15 @@ class GCNsNet(EEGModuleMixin, nn.Module):
             laplacian_matrix = getattr(self, f"laplacian_{i}")
 
             x = graph_conv(x, laplacian_matrix)
-            x = self._bias_norm_softplus(x, i)
+            x = self._bias_norm_activation(x, i)
             x = self._max_pool(x, self.pool_sizes[i])
 
         x = torch.flatten(x, 1)
+        x = self.dropout(x)
         x = self.final_layer(x)
 
-        # Restore dimensions
+        # Restore dimensions via averaging predictions with respect to time.
         x = x.reshape(batch_size, n_times, self.n_outputs)
-        x = x.transpose(1, 2)
+        x = x.mean(dim=1)
 
         return x
