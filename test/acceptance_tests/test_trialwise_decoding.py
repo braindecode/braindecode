@@ -2,8 +2,6 @@
 #          Robin Tibor Schirrmeister
 #
 # License: BSD-3
-import sys
-
 import mne
 import numpy as np
 import pytest
@@ -11,6 +9,8 @@ import torch
 from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch.utils.data import Dataset, Subset
+
+from test.acceptance_tests._history_assertions import assert_learning_history
 
 from braindecode.classifier import EEGClassifier
 from braindecode.models import ShallowFBCSPNet
@@ -32,7 +32,6 @@ class EpochsDataset(Dataset):
         return len(self.windows.events)
 
 
-@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
 @pytest.mark.network
 def test_trialwise_decoding():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
@@ -92,9 +91,9 @@ def test_trialwise_decoding():
     in_chans = train_set[0][0].shape[0]
     input_window_samples = train_set[0][0].shape[1]
     model = ShallowFBCSPNet(
-        in_chans=in_chans,
-        n_classes=n_classes,
-        input_window_samples=input_window_samples,
+        n_chans=in_chans,
+        n_outputs=n_classes,
+        n_times=input_window_samples,
         final_conv_length="auto",
     )
     if cuda:
@@ -114,65 +113,10 @@ def test_trialwise_decoding():
     )
     clf.fit(train_set, y=None, epochs=6)
 
-    np.testing.assert_allclose(
-        clf.history[:, "train_loss"],
-        np.array(
-            [
-                1.501254916191101,
-                0.8498813807964325,
-                0.6930762231349945,
-                0.7033905684947968,
-                0.7674900889396667,
-                0.47585436701774597,
-            ]
-        ),
-        rtol=1e-4,
-        atol=1e-5,
-    )
-
-    np.testing.assert_allclose(
-        clf.history[:, "valid_loss"],
-        np.array(
-            [
-                0.9057853817939758,
-                1.0028964281082153,
-                0.85847407579422,
-                0.88216233253479,
-                0.8980739712715149,
-                0.8764537572860718,
-            ]
-        ),
-        rtol=1e-4,
-        atol=1e-5,
-    )
-
-    np.testing.assert_allclose(
-        clf.history[:, "train_accuracy"],
-        np.array(
-            [
-                0.7666666666666667,
-                0.7333333333333333,
-                0.8166666666666667,
-                0.8333333333333334,
-                0.9333333333333333,
-                0.9333333333333333,
-            ]
-        ),
-        rtol=1e-4,
-        atol=1e-5,
-    )
-    np.testing.assert_allclose(
-        clf.history[:, "valid_accuracy"],
-        np.array(
-            [
-                0.5666666666666667,
-                0.5666666666666667,
-                0.6,
-                0.6,
-                0.6,
-                0.6,
-            ]
-        ),
-        rtol=1e-4,
-        atol=1e-5,
+    assert_learning_history(
+        clf.history,
+        n_epochs=6,
+        loss_keys=("train_loss", "valid_loss"),
+        accuracy_keys=("train_accuracy", "valid_accuracy"),
+        improving_accuracy_keys=("train_accuracy", "valid_accuracy"),
     )
