@@ -14,6 +14,7 @@ from braindecode.models import (
     InterpolatedBENDR,
     InterpolatedLaBraM,
     Labram,
+    MIRepNet,
     SignalJEPA,
     SignalJEPA_Contextual,
     SignalJEPA_PostLocal,
@@ -113,6 +114,18 @@ _MODELS = [
         {"chs_info": _chs()},
         False,
         id="SignalJEPA_PreLocal",
+    ),
+    pytest.param(
+        MIRepNet,
+        N_CHANS,
+        {
+            "embed_dim": 16,
+            "num_layers": 2,
+            "num_heads": 4,
+            "feedforward_expansion": 2,
+        },
+        False,
+        id="MIRepNet",
     ),
 ]
 
