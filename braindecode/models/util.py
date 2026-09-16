@@ -1,5 +1,6 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #          Hubert Banville <hubert.jbanville@gmail.com>
+#          Julien Gadonneix <145470783+julien-gadonneix@users.noreply.github.com>
 #
 # License: BSD (3-clause)
 import inspect
@@ -516,6 +517,11 @@ models_mandatory_parameters: list[
         {"n_chans": 19, "n_times": 6000},
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
+    (
+        "DIVER1",
+        ["n_chans", "n_outputs", "n_times"],
+        {"sfreq": 500.0},
+    ),
     ("EEGDINO", ["n_chans", "n_outputs", "n_times"], None),
     (
         "DANCE",

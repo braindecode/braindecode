@@ -54,6 +54,7 @@ LUNA,General,"Prediction, Embedding",128,"n_chans, n_times, sfreq, chs_info",710
 MEDFormer,General,Prediction,250,"n_chans, n_outputs, n_times",5313924,"MEDFormer(n_chans=22, n_outputs=4, n_times=1000)","Foundation Model,Convolution",EEG
 REVE,General,Prediction,200,"n_outputs, n_times, n_chans",69481476,"REVE(n_times=1000, n_outputs=4, n_chans=19)","Foundation Model,Attention/Transformer",EEG
 DGCNN,Emotion Recognition,Prediction,128,"n_chans, n_outputs, n_times, chs_info",1037385,"DGCNN(n_chans=62, n_outputs=4, n_times=128)","Graph Neural Network,Channel",EEG
+DIVER1,General,"Prediction, Embedding",500,"n_chans, n_outputs, n_times",12711366,"DIVER1(n_chans=22, n_outputs=4, n_times=1000, sfreq=500)","Attention/Transformer,Foundation Model,Channel",iEEG
 InterpolatedBENDR,General,"Prediction, Embedding",250,"chs_info, n_outputs, n_times",157143101,"InterpolatedBENDR(chs_info=<user>, n_outputs=4, n_times=1000)","Foundation Model,Convolution,Channel",EEG
 InterpolatedBIOT,"Sleep Staging, Epilepsy",Prediction,200,"chs_info, n_outputs, n_times, sfreq",3184101,"InterpolatedBIOT(chs_info=<user>, n_outputs=5, sfreq=200, n_times=6000)","Foundation Model,Channel",EEG
 InterpolatedEEGPT,General,Prediction,256,"chs_info, n_outputs, n_times",25323137,"InterpolatedEEGPT(chs_info=<user>, n_outputs=4, n_times=1024)","Foundation Model,Attention/Transformer,Channel",EEG

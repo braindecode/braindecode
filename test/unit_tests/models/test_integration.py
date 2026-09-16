@@ -2,6 +2,7 @@
 #          Alexandre Gramfort
 #          Pierre Guetschel
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
+#          Julien Gadonneix <145470783+julien-gadonneix@users.noreply.github.com>
 #
 # License: BSD-3
 from __future__ import annotations
@@ -604,6 +605,10 @@ def test_model_torch_script(model):
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
         "STEEGFormer",
+        # einops rearrange in the any-variate encoder and the STCPE
+        # unfold/fold, plus a Dict/Tensor polymorphic return; torch.jit.script
+        # rejects the polymorphic return type.
+        "DIVER1",
     ]
 
     if model.__class__.__name__ in not_working_models:

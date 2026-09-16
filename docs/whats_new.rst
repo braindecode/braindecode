@@ -28,6 +28,12 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.DIVER1`, an any-variate intracranial EEG
+  foundation model with full electrode-time attention, rotary temporal
+  offsets, a learned same/cross-channel attention bias and a sliding-window
+  spatio-temporal conditional positional embedding
+  (:gh:`1170` by `Julien Gadonneix`_).
+
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose

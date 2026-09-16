@@ -7,6 +7,7 @@ import torch
 from braindecode.models import (
     BENDR,
     BIOT,
+    DIVER1,
     EEGDINO,
     EEGPT,
     REVE,
@@ -80,6 +81,13 @@ _MODELS = [
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
     pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
+    pytest.param(
+        DIVER1,
+        N_CHANS,
+        {"patch_size": 100, "d_model": 64, "n_layers": 2},
+        True,
+        id="DIVER1",
+    ),
     pytest.param(
         STEEGFormer,
         N_CHANS,
