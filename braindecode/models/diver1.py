@@ -1,14 +1,13 @@
 # Authors: Julien Gadonneix <145470783+julien-gadonneix@users.noreply.github.com>
-#
-# License: Apache-2.0
 """DIVER-1: an any-variate iEEG foundation model.
 
 Reimplementation of DIVER-1 (Han et al., 2025), "DIVER-1: Scaling Intracranial
 EEG Foundation Models for Transferable Representations". The architecture is
 transcribed from the authors' reference implementation, whose Transformer
 encoder is adapted from Salesforce's MOIRAI / ``uni2ts`` (Copyright Salesforce,
-Inc.), released under the Apache License, Version 2.0; this file is therefore
-distributed under Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+Inc.), released under the Apache License, Version 2.0. The license this port
+should carry follows from that provenance but is still to be confirmed with the
+braindecode maintainers.
 The braindecode reimplementation is pure-PyTorch (no ``mup``, no ``jaxtyping``)
 and covers the downstream encoder only.
 
