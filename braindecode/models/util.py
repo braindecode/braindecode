@@ -1,6 +1,6 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #          Hubert Banville <hubert.jbanville@gmail.com>
-#          Julien Gadonneix <145470783+julien-gadonneix@users.noreply.github.com>
+#          Julien Gadonneix <juliengado.2001@gmail.com>
 #
 # License: BSD (3-clause)
 import inspect
@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import pydantic
 import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
+from mne.io.constants import FIFF
 from torch import nn
 
 models_dict = {}
@@ -519,7 +520,7 @@ models_mandatory_parameters: list[
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
     (
         "DIVER1",
-        ["n_chans", "n_outputs", "n_times"],
+        ["chs_info", "n_outputs", "n_times"],
         {"sfreq": 500.0},
     ),
     ("EEGDINO", ["n_chans", "n_outputs", "n_times"], None),
@@ -716,6 +717,7 @@ def get_summary_table(dir_name=None):
 def extract_channel_locations_from_chs_info(
     chs_info: Optional[Sequence[Dict[str, Any]]],
     num_channels: Optional[int] = None,
+    fill_missing: bool = False,
 ) -> Optional[np.ndarray]:
     """Extract 3D channel locations from MNE-style channel information.
 
@@ -732,19 +734,31 @@ def extract_channel_locations_from_chs_info(
     num_channels : int or None
         If specified, only extract the first ``num_channels`` channel locations.
         If None, extract all available channels.
+    fill_missing : bool
+        If False (default), extraction stops at the first channel whose location
+        is missing or malformed, so the result may be shorter than requested,
+        and an all-zero montage yields None. If True, each such channel
+        contributes a row of ``NaN`` instead, an all-zero montage yields all
+        ``NaN``, and the result always has one row per requested channel.
 
     Returns
     -------
     channel_locations : np.ndarray of shape (n_channels, 3) or None
         Array of 3D channel locations in cartesian coordinates. Returns None if
-        no valid locations are found.
+        no valid locations are found, unless ``fill_missing=True``, in which
+        case missing locations are reported as ``NaN`` rows and None is only
+        returned when ``chs_info`` is None or no channel was requested.
 
     Notes
     -----
     - This function handles both 12-element MNE location format (using indices 0:3)
       and 3-element location format (using directly).
-    - Invalid or missing locations cause extraction to stop at that point.
-    - Returns None if no valid locations can be extracted.
+    - Invalid or missing locations cause extraction to stop at that point, unless
+      ``fill_missing=True``.
+    - An all-zero montage is treated as no montage at all, which is also how
+      :func:`has_valid_locations` reads it.
+    - Returns None if no valid locations can be extracted, except with
+      ``fill_missing=True`` as described above.
     - This is a unified utility compatible with models like SignalJEPA and LUNA.
 
     Examples
@@ -762,26 +776,31 @@ def extract_channel_locations_from_chs_info(
     locations = []
     n_to_extract = num_channels if num_channels is not None else len(chs_info)
 
-    for i, ch_info in enumerate(chs_info[:n_to_extract]):
-        if not isinstance(ch_info, dict):
-            break
+    for i in range(n_to_extract):
+        ch_info = chs_info[i] if i < len(chs_info) else None
+        coordinates = None
 
-        loc = ch_info.get("loc")
-        if loc is None:
-            break
+        if isinstance(ch_info, dict):
+            loc = ch_info.get("loc")
+            if loc is not None:
+                try:
+                    loc_array = np.asarray(loc, dtype=np.float32)
+                except (ValueError, TypeError):
+                    loc_array = None
+                # MNE format: 12-element array with electrode position at indices 0:3
+                if (
+                    loc_array is not None
+                    and loc_array.ndim == 1
+                    and loc_array.size >= 3
+                ):
+                    coordinates = loc_array[:3]
 
-        try:
-            loc_array = np.asarray(loc, dtype=np.float32)
-
-            # MNE format: 12-element array with electrode position at indices 0:3
-            if loc_array.ndim == 1 and loc_array.size >= 3:
-                coordinates = loc_array[:3]
-            else:
+        if coordinates is None:
+            if not fill_missing:
                 break
+            coordinates = np.full(3, np.nan, dtype=np.float32)
 
-            locations.append(coordinates)
-        except (ValueError, TypeError):
-            break
+        locations.append(coordinates)
 
     if len(locations) == 0:
         return None
@@ -790,7 +809,10 @@ def extract_channel_locations_from_chs_info(
 
     # Check positions are not all zero / degenerate
     if np.allclose(result, 0):
-        return None
+        if not fill_missing:
+            return None
+        # An all-zero montage carries no position, just like an absent one
+        result = np.full_like(result, np.nan)
 
     return result
 
@@ -835,6 +857,66 @@ def has_valid_locations(chs_info) -> bool:
     if np.allclose(xyz, 0.0):
         return False
     return True
+
+
+# Canonical MNE channel-type name for the electrode kinds braindecode models
+# tell apart.
+_KIND_TO_CH_TYPE = {
+    FIFF.FIFFV_EEG_CH: "eeg",
+    FIFF.FIFFV_SEEG_CH: "seeg",
+    FIFF.FIFFV_DBS_CH: "dbs",
+    FIFF.FIFFV_ECOG_CH: "ecog",
+}
+
+#: MNE channel types recorded from inside the skull.
+INTRACRANIAL_CH_TYPES = frozenset({"seeg", "dbs", "ecog"})
+
+
+def channel_types_from_chs_info(
+    chs_info: Optional[Sequence[Dict[str, Any]]],
+    num_channels: Optional[int] = None,
+) -> list[str]:
+    """Canonical MNE channel-type name for each channel of ``chs_info``.
+
+    Parameters
+    ----------
+    chs_info : list of dict or None
+        MNE-style channel info dicts, typically from ``mne.Info.chs``. Each
+        ``"kind"`` entry may be an MNE FIFF integer code or a plain type string.
+    num_channels : int or None
+        Number of channels to report. Channels beyond ``chs_info`` yield
+        ``"unknown"``, so the returned list always has this length. If None, one
+        entry per ``chs_info`` channel is returned (empty when it is None).
+
+    Returns
+    -------
+    list of str
+        Lowercase channel-type names such as ``"eeg"``, ``"seeg"``, ``"ecog"`` or
+        ``"dbs"``, and ``"unknown"`` where the kind is missing or is not one of
+        the electrode kinds resolved here.
+
+    Notes
+    -----
+    Only electrode kinds are resolved. An MNE ``"kind"`` code does not identify
+    every channel type on its own: code 2 is shared by ``"eeg"`` and ``"csd"``,
+    code 1 by ``"grad"`` and ``"mag"``, because MNE disambiguates those with
+    ``"unit"`` and ``"coil_type"``. Use :func:`mne.channel_type` with a full
+    :class:`mne.Info` when those channel types matter.
+    """
+    if num_channels is None:
+        num_channels = len(chs_info) if chs_info is not None else 0
+
+    types = []
+    for i in range(num_channels):
+        ch_info = chs_info[i] if chs_info is not None and i < len(chs_info) else None
+        kind = ch_info.get("kind") if isinstance(ch_info, dict) else None
+        if isinstance(kind, str):
+            types.append(kind.lower())
+        elif isinstance(kind, int):
+            types.append(_KIND_TO_CH_TYPE.get(kind, "unknown"))
+        else:
+            types.append("unknown")
+    return types
 
 
 _summary_table = get_summary_table()

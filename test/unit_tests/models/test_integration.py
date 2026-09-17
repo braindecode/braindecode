@@ -2,7 +2,6 @@
 #          Alexandre Gramfort
 #          Pierre Guetschel
 #          Sarthak Tayal <sarthaktayal2@gmail.com>
-#          Julien Gadonneix <145470783+julien-gadonneix@users.noreply.github.com>
 #
 # License: BSD-3
 from __future__ import annotations
@@ -605,10 +604,6 @@ def test_model_torch_script(model):
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
         "STEEGFormer",
-        # einops rearrange in the any-variate encoder and the STCPE
-        # unfold/fold, plus a Dict/Tensor polymorphic return; torch.jit.script
-        # rejects the polymorphic return type.
-        "DIVER1",
     ]
 
     if model.__class__.__name__ in not_working_models:
@@ -699,9 +694,7 @@ def test_torch_script_with_chs_info(n_chans):
         n_times=default_signal_params["n_times"],
         sfreq=default_signal_params["sfreq"],
     ).eval()
-    input_tensor = torch.randn(
-        2, len(chs_info), default_signal_params["n_times"]
-    )
+    input_tensor = torch.randn(2, len(chs_info), default_signal_params["n_times"])
     assert model._n_chans == n_chans
     assert model.chs_info is chs_info
     expected = model(input_tensor)
