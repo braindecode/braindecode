@@ -23,6 +23,7 @@ from .attention import (
 from .blocks import (
     MLP,
     FeedForwardBlock,
+    GLUFeedForward,
     InceptionBlock,
     PatchTokenizer,
     TDSConvEncoder,
@@ -84,6 +85,7 @@ __all__ = [
     "CrissCrossTransformerEncoderLayer",
     "MLP",
     "FeedForwardBlock",
+    "GLUFeedForward",
     "InceptionBlock",
     "PatchTokenizer",
     "TDSConvEncoder",
