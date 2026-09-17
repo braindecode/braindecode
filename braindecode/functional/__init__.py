@@ -1,5 +1,6 @@
 from .functions import (
     _get_gaussian_kernel1d,
+    apply_rotary,
     daubechies_filters,
     drop_path,
     dwt_max_level,
@@ -8,6 +9,8 @@ from .functions import (
     iou_1d,
     pairwise_iou_1d,
     plv_time,
+    rotary_positional_encoding,
+    rotate_half,
     safe_log,
     sinusoidal_positional_encoding,
     square,
@@ -17,6 +20,7 @@ from .initialization import glorot_weight_zero_bias, rescale_parameter
 
 __all__ = [
     "_get_gaussian_kernel1d",
+    "apply_rotary",
     "daubechies_filters",
     "drop_path",
     "dwt_max_level",
@@ -25,6 +29,8 @@ __all__ = [
     "iou_1d",
     "pairwise_iou_1d",
     "plv_time",
+    "rotary_positional_encoding",
+    "rotate_half",
     "safe_log",
     "sinusoidal_positional_encoding",
     "square",
