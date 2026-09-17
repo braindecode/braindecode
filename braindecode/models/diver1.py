@@ -835,23 +835,19 @@ class _SinusoidalCoordEmbedding(nn.Module):
         self.n_feats = d_model // n_dim // 2 * 2
         self.padding = d_model - self.n_feats * n_dim
         self.scale = scale * 2.0 * math.pi
-        # Wavelengths in geometric progression, each repeated twice so that the
-        # sine and the cosine of one wavelength end up side by side.
-        dim_t = torch.arange(self.n_feats, dtype=torch.float32)
-        dim_t = temperature ** (
-            2 * torch.div(dim_t, 2, rounding_mode="trunc") / self.n_feats
-        )
+        # The n_feats // 2 wavelengths of the bank, in geometric progression.
+        dim_t = torch.arange(0, self.n_feats, 2, dtype=torch.float32)
+        dim_t = temperature ** (dim_t / self.n_feats)
         self.register_buffer("dim_t", dim_t, persistent=False)
 
     def forward(self, xyz: torch.Tensor) -> torch.Tensor:
         """Encode coordinates of shape ``(..., 3)`` into ``(..., d_model)``."""
         # One angle per (axis, wavelength) pair.
         angles = (xyz * self.scale).unsqueeze(-1) / self.dim_t
-        # Consecutive angles come in equal pairs, so taking the sine of the
-        # first of each pair and the cosine of the second covers every
-        # wavelength once.
-        sin = angles[..., 0::2].sin()
-        cos = angles[..., 1::2].cos()
+        # Every wavelength is read out twice, as a sine and as a cosine, and
+        # the stack puts the two of them side by side.
+        sin = angles.sin()
+        cos = angles.cos()
         pairs = torch.stack([sin, cos], dim=-1)
         # Flatten the three axes and their features into one vector, then pad.
         emb = pairs.flatten(start_dim=-3)
