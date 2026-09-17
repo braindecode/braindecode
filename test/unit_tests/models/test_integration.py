@@ -694,9 +694,7 @@ def test_torch_script_with_chs_info(n_chans):
         n_times=default_signal_params["n_times"],
         sfreq=default_signal_params["sfreq"],
     ).eval()
-    input_tensor = torch.randn(
-        2, len(chs_info), default_signal_params["n_times"]
-    )
+    input_tensor = torch.randn(2, len(chs_info), default_signal_params["n_times"])
     assert model._n_chans == n_chans
     assert model.chs_info is chs_info
     expected = model(input_tensor)

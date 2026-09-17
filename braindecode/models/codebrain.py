@@ -1,4 +1,5 @@
 # Authors: Vandit Shah <shahvanditt@gmail.com>
+#          Julien Gadonneix <juliengado.2001@gmail.com>
 #
 # Code adapted from https://github.com/jingyingma01/CodeBrain
 #
@@ -575,6 +576,14 @@ class _ZeroConv1d(nn.Module):
 
 
 class _RMSNorm(nn.Module):
+    """Root-mean-square normalisation over the channel axis of ``(B, C, T)``.
+
+    Unlike :class:`torch.nn.RMSNorm`, which normalises trailing dimensions and
+    adds ``eps`` inside the square root, the reference implementation
+    normalises the channel axis and adds ``eps`` to the root-mean-square
+    itself, so the two are not interchangeable here.
+    """
+
     def __init__(self, dim, eps=1e-8):
         super().__init__()
 

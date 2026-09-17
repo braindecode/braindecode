@@ -57,6 +57,10 @@ authors:
     family-names: Tayal
   - given-names: Young
     family-names: Truong
+  - given-names: Julien
+    family-names: Gadonneix
+    affiliation: "Université Paris Cité, Paris, France"
+    orcid: "https://orcid.org/0009-0000-7490-8415"
   - given-names: Thomas
     family-names: Moreau
     affiliation: "Université Paris-Saclay, Inria, CEA, Palaiseau, France"
