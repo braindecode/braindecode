@@ -15,6 +15,9 @@ upstream repository when ``BRAINBERT_SRC`` is set). The short-time Fourier
 transform front-end is moved *inside* the model, a braindecode-native
 adaptation. The official pretrained checkpoint loads directly via
 ``BrainBERT.from_pretrained("braindecode/brainbert-pretrained")``.
+
+Licensing: the upstream repository ships **no LICENSE file**, so the weights are
+re-hosted with their licence declared as ``unknown`` rather than assumed.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ from braindecode.modules.brainbert_modules import (
 )
 
 
-class BrainBERT(EEGModuleMixin, nn.Module):
+class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
     r"""BrainBERT from Wang et al. (2023) [BrainBERT2023]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
@@ -79,6 +82,10 @@ class BrainBERT(EEGModuleMixin, nn.Module):
        It uses the "large" configuration above; ``n_chans`` and ``n_outputs`` may
        be changed freely, as frames are pooled and the classification head is
        task-specific.
+
+       The upstream repository ships no LICENSE file, so the re-hosted weights
+       are declared ``unknown`` rather than assumed permissive; the model card
+       records the SHA-256 and retrieval date of the source archive.
 
     .. versionadded:: 1.8
 
