@@ -11,7 +11,9 @@ the spectrogram argument); here it is computed **inside** the forward pass so th
 model keeps the standard ``(batch, n_chans, n_times)`` input signature. Every
 other module (input embedding, spectrogram-prediction head) is ported verbatim,
 so its parameters map 1:1 to the upstream ``TransformerEncoderInput`` /
-``SpecPredictionHead`` (see ``scripts/brainbert_parity_check``).
+``SpecPredictionHead``. That mapping is asserted by the parity gate in
+``test/unit_tests/models/test_brainbert.py``, which runs against a real clone of
+the upstream repository when ``BRAINBERT_SRC`` is set.
 """
 
 from __future__ import annotations
@@ -31,11 +33,32 @@ class _STFTSpectrogram(nn.Module):
     model consumes raw signal, not a pre-extracted spectrogram. This module has
     no learnable parameters.
 
-    The defaults match the released ("stft") checkpoint: ``fs=2048`` Hz,
-    ``nperseg=400``, ``noverlap=350`` (hop 50), the first ``freq_cutoff=40``
-    one-sided frequency bins, ``boundary="zeros"`` + ``padded=True`` framing
-    (as in :func:`scipy.signal.stft`), ``clip`` boundary frames trimmed from each
-    end and per-bin z-score over time.
+    .. note::
+       **The upstream repository ships two different STFT recipes, and they are
+       not equivalent.** They differ in the *order* of the trimming and the
+       z-score, and in the number of frames trimmed:
+
+       * ``preprocessors/stft.py`` (``STFTPreprocessor``) z-scores **first**,
+         then trims **10** frames per side. This is the recipe reached from
+         ``conf/preprocessor/stft_pretrained.yaml`` through
+         ``preprocessors/spec_pretrained.py``, i.e. the one used to produce the
+         published downstream numbers with the released checkpoint. Upstream
+         chose this order deliberately, to keep NaNs out of the statistics
+         (see the ``TODO`` comment on that line).
+       * ``notebooks/demo.ipynb`` (``get_stft``) trims **5** frames per side
+         **first**, then z-scores.
+
+       The defaults here follow the *released-checkpoint* recipe
+       (``clip=10``, ``zscore_before_clip=True``). Set ``clip=5,
+       zscore_before_clip=False`` to reproduce the demo notebook instead. On
+       filtered noise the two agree to a correlation of 0.999 but differ by up
+       to 0.48 z-unit per bin, and produce sequences whose lengths differ by 10
+       frames, so the choice is not cosmetic.
+
+    The remaining defaults match the released checkpoint: ``fs=2048`` Hz,
+    ``nperseg=400``, ``noverlap=350`` (hop 50), the first ``idx_freq_cutoff=40``
+    one-sided frequency bins, and ``boundary="zeros"`` + ``padded=True`` framing
+    (as in :func:`scipy.signal.stft`).
 
     Parameters
     ----------
@@ -45,13 +68,20 @@ class _STFTSpectrogram(nn.Module):
         STFT window length, in samples.
     noverlap : int
         Number of samples of overlap between consecutive windows.
-    freq_cutoff : int
+    idx_freq_cutoff : int
         Number of low-frequency one-sided bins kept (the model ``input_dim``).
+        This is a **bin index**, not a frequency: with ``nperseg=400`` and
+        ``sfreq=2048`` Hz, the default 40 bins reach about 200 Hz.
     clip : int
         Number of boundary frames trimmed from each end (handles STFT edge
-        effects, as in the upstream demo).
+        effects). 10 upstream in ``preprocessors/stft.py``, 5 in the demo
+        notebook.
     normalizing : str
         ``"zscore"`` (per-bin z-score over time, upstream default) or ``"none"``.
+    zscore_before_clip : bool
+        Whether the z-score is computed before the boundary frames are trimmed
+        (``preprocessors/stft.py``) or after (demo notebook). Ignored when
+        ``normalizing != "zscore"``.
     """
 
     def __init__(
@@ -59,24 +89,30 @@ class _STFTSpectrogram(nn.Module):
         sfreq: float,
         nperseg: int = 400,
         noverlap: int = 350,
-        freq_cutoff: int = 40,
-        clip: int = 5,
+        idx_freq_cutoff: int = 40,
+        clip: int = 10,
         normalizing: str = "zscore",
+        zscore_before_clip: bool = True,
     ):
         super().__init__()
         if noverlap >= nperseg:
             raise ValueError(f"noverlap ({noverlap}) must be < nperseg ({nperseg}).")
-        if freq_cutoff > nperseg // 2 + 1:
+        if idx_freq_cutoff > nperseg // 2 + 1:
             raise ValueError(
-                f"freq_cutoff ({freq_cutoff}) exceeds the number of one-sided "
-                f"bins ({nperseg // 2 + 1}) for nperseg={nperseg}."
+                f"idx_freq_cutoff ({idx_freq_cutoff}) exceeds the number of "
+                f"one-sided bins ({nperseg // 2 + 1}) for nperseg={nperseg}."
+            )
+        if normalizing not in ("zscore", "none"):
+            raise ValueError(
+                f"normalizing must be 'zscore' or 'none', got {normalizing!r}."
             )
         self.sfreq = float(sfreq)
         self.nperseg = int(nperseg)
         self.noverlap = int(noverlap)
-        self.freq_cutoff = int(freq_cutoff)
+        self.idx_freq_cutoff = int(idx_freq_cutoff)
         self.clip = int(clip)
         self.normalizing = normalizing
+        self.zscore_before_clip = bool(zscore_before_clip)
         # scipy uses a periodic ("fftbins") Hann window; scaling='spectrum'
         # normalises by the window sum. Registered as a buffer so it follows
         # device / dtype moves without being a learnable parameter.
@@ -107,7 +143,7 @@ class _STFTSpectrogram(nn.Module):
         Returns
         -------
         torch.Tensor
-            Shape ``(batch, n_chans, n_frames, freq_cutoff)``.
+            Shape ``(batch, n_chans, n_frames, idx_freq_cutoff)``.
         """
         step = self.nperseg - self.noverlap
         pad = self.nperseg // 2
@@ -123,23 +159,44 @@ class _STFTSpectrogram(nn.Module):
         scale = 1.0 / win.sum()  # scaling="spectrum"
         spec = torch.fft.rfft(frames * win, n=self.nperseg, dim=-1) * scale
         # keep the low-frequency bins, take magnitude: (b, c, n_frames, cutoff)
-        mag = spec[..., : self.freq_cutoff].abs()
-        # trim boundary frames (time axis == -2)
+        mag = spec[..., : self.idx_freq_cutoff].abs()
+        # The time axis is -2. Upstream applies the z-score and the boundary
+        # trimming in an order that depends on the recipe (see the class note).
+        if self.normalizing == "zscore" and self.zscore_before_clip:
+            mag = self._zscore(mag)
+            # upstream stft.py: a window whose z-scored spectrogram is entirely
+            # constant (a flat or dead channel) is replaced by ones rather than
+            # left at zero. Upstream tests this on a single electrode, so the
+            # faithful generalisation is per (batch, channel).
+            # Written branch-free on purpose: an ``if degenerate.any()`` would
+            # be a data-dependent guard and break ``torch.export``.
+            degenerate = mag.flatten(start_dim=-2).std(dim=-1) == 0
+            mag = torch.where(degenerate[..., None, None], torch.ones_like(mag), mag)
         if self.clip:
             mag = mag[..., self.clip : -self.clip, :]
-        if self.normalizing == "zscore":
-            mean = mag.mean(dim=-2, keepdim=True)
-            std = mag.std(dim=-2, unbiased=False, keepdim=True)
-            std = torch.where(std == 0, torch.ones_like(std), std)
-            mag = (mag - mean) / std
-        return mag
+        if self.normalizing == "zscore" and not self.zscore_before_clip:
+            mag = self._zscore(mag)
+        # upstream stft.py: NaNs surviving the statistics are zeroed rather than
+        # propagated. Without this a single bad sample poisons the whole window.
+        return torch.nan_to_num(mag, nan=0.0)
+
+    @staticmethod
+    def _zscore(mag: torch.Tensor) -> torch.Tensor:
+        """Per-bin z-score over time, with the upstream zero-variance guard."""
+        mean = mag.mean(dim=-2, keepdim=True)
+        # ddof=0, as scipy's default and as upstream's hand-rolled zscore().
+        std = mag.std(dim=-2, unbiased=False, keepdim=True)
+        # upstream: `std[(std==0)] = 1.0`, described there as "a hack".
+        std = torch.where(std == 0, torch.ones_like(std), std)
+        return (mag - mean) / std
 
 
 class _SinusoidalPositionalEncoding(nn.Module):
     """Fixed sinusoidal positional encoding (upstream ``PositionalEncoding``).
 
     ``pe`` is a non-learnable buffer of shape ``(1, max_len, d_model)``; the
-    forward adds the leading ``seq_len`` positions to the input.
+    forward adds the leading ``seq_len`` positions to the input, and refuses a
+    sequence longer than the table rather than silently truncating it.
     """
 
     def __init__(self, d_model: int, max_len: int = 5000):
@@ -155,7 +212,14 @@ class _SinusoidalPositionalEncoding(nn.Module):
         self.register_buffer("pe", pe.unsqueeze(0), persistent=False)
 
     def forward(self, seq: torch.Tensor) -> torch.Tensor:
-        return seq + self.pe[:, : seq.size(1), :]
+        seq_len = seq.size(1)
+        max_len = self.pe.size(1)
+        if seq_len > max_len:
+            raise ValueError(
+                f"Sequence of {seq_len} frames exceeds the positional encoding "
+                f"table ({max_len}). Build the model with a larger max_len."
+            )
+        return seq + self.pe[:, :seq_len, :]
 
 
 class _BrainBERTInputEmbedding(nn.Module):
@@ -167,10 +231,16 @@ class _BrainBERTInputEmbedding(nn.Module):
     directly.
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int, drop_prob: float = 0.1):
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int,
+        drop_prob: float = 0.1,
+        max_len: int = 5000,
+    ):
         super().__init__()
         self.in_proj = nn.Linear(input_dim, hidden_dim)
-        self.positional_encoding = _SinusoidalPositionalEncoding(hidden_dim)
+        self.positional_encoding = _SinusoidalPositionalEncoding(hidden_dim, max_len)
         self.layer_norm = nn.LayerNorm(hidden_dim)
         self.dropout = nn.Dropout(p=drop_prob)
 
@@ -203,14 +273,19 @@ class _SpecPredictionHead(nn.Module):
 
 
 class _BrainBERTHead(nn.Module):
-    """braindecode-native classification head: LayerNorm + linear on the pooled
-    representation. Upstream has no fixed downstream head (linear probing /
-    task-specific finetuning), so this is a minimal, standard choice."""
+    """Downstream classification head: a bare linear probe.
+
+    Upstream evaluates the frozen encoder with a plain ``nn.Linear`` on the
+    pooled representation and nothing else — ``models/linear_wav_baseline.py``
+    is literally ``nn.Linear(input_dim, 1)``. An earlier revision of this port
+    put a :class:`~torch.nn.LayerNorm` in front of it; it was removed so a
+    frozen-encoder probe reproduces the published protocol rather than a
+    variant of it.
+    """
 
     def __init__(self, hidden_dim: int, n_outputs: int):
         super().__init__()
-        self.norm = nn.LayerNorm(hidden_dim)
         self.fc = nn.Linear(hidden_dim, n_outputs)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
-        return self.fc(self.norm(z))
+        return self.fc(z)

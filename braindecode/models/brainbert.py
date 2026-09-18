@@ -9,11 +9,11 @@ Upstream code and pretrained weights are released by the authors:
 
 BrainBERT learns representations of intracranial electrode data by masked
 modelling of its **spectrogram**. The Transformer encoder and input encoding are
-ported weight-for-weight from the upstream reference (bit-exact, see
-``scripts/brainbert_parity_check``); the short-time Fourier transform front-end
-is moved *inside* the model (a braindecode-native adaptation) and the pooling /
-classification head is a braindecode-native addition. The official pretrained
-checkpoint loads directly via
+ported weight-for-weight from the upstream reference (bit-exact; the gate lives
+in ``test/unit_tests/models/test_brainbert.py`` and runs against a clone of the
+upstream repository when ``BRAINBERT_SRC`` is set). The short-time Fourier
+transform front-end is moved *inside* the model, a braindecode-native
+adaptation. The official pretrained checkpoint loads directly via
 ``BrainBERT.from_pretrained("braindecode/brainbert-pretrained")``.
 """
 
@@ -51,10 +51,22 @@ class BrainBERT(EEGModuleMixin, nn.Module):
 
     The released checkpoint expects signals sampled at **2048 Hz**,
     Laplacian-re-referenced, with ``nperseg=400``, ``noverlap=350`` and the first
-    ``freq_cutoff=40`` frequency bins. The defaults below are a modest,
+    ``idx_freq_cutoff=40`` frequency bins. The defaults below are a modest,
     ready-to-run configuration; the **released ("large") model** uses
     ``hidden_dim=768``, ``ffn_dim=3072``, ``n_heads=12`` and ``n_layers=6``
     (~43M parameters) — pass these to reproduce it.
+
+    **Pooling follows the published downstream protocol.** Upstream feeds one
+    electrode at a time and averages the ``pool_n_frames=10`` encoder outputs
+    centred on the window
+    (``preprocessors/spec_pretrained.py``: ``outputs[:, middle-5:middle+5].mean``),
+    then applies a bare linear probe; averaging *every* frame is present in that
+    file only as a commented-out alternative. This port keeps the centre-frame
+    average and adds a mean over channels, which is the identity for
+    ``n_chans=1``: a single-channel BrainBERT therefore reproduces the upstream
+    feature exactly, while multi-channel input remains supported as the
+    braindecode-native generalisation. Pass ``pool_n_frames=None`` to average
+    all frames instead.
 
     .. important::
        **Pre-trained weights available.** The official checkpoint is released by
@@ -68,7 +80,7 @@ class BrainBERT(EEGModuleMixin, nn.Module):
        be changed freely, as frames are pooled and the classification head is
        task-specific.
 
-    .. versionadded:: 1.7
+    .. versionadded:: 1.8
 
     Parameters
     ----------
@@ -85,11 +97,25 @@ class BrainBERT(EEGModuleMixin, nn.Module):
         STFT window length in samples. Default 400.
     noverlap : int, optional
         STFT overlap in samples. Default 350 (hop of 50).
-    freq_cutoff : int, optional
+    idx_freq_cutoff : int, optional
         Number of low-frequency STFT bins kept; the Transformer ``input_dim``.
-        Default 40.
+        This is a **bin index**, not a frequency in Hz: the default 40 bins
+        reach about 200 Hz at ``sfreq=2048`` with ``nperseg=400``. Default 40.
     stft_clip : int, optional
-        Boundary frames trimmed from each end of the spectrogram. Default 5.
+        Boundary frames trimmed from each end of the spectrogram. Default 10,
+        as in the upstream ``preprocessors/stft.py`` used with the released
+        checkpoint (the demo notebook uses 5; see ``stft_zscore_before_clip``).
+    stft_zscore_before_clip : bool, optional
+        Whether the spectrogram is z-scored before the boundary frames are
+        trimmed. Default ``True``, which together with ``stft_clip=10``
+        reproduces the recipe behind the published numbers. Set to ``False``
+        with ``stft_clip=5`` to reproduce the upstream demo notebook instead;
+        the two recipes are close (correlation 0.999 on filtered noise) but not
+        equal, and they yield sequences of different length.
+    pool_n_frames : int or None, optional
+        Number of encoder frames, centred on the window, averaged into the
+        pooled representation. Default 10, as upstream. ``None`` averages all
+        frames.
     activation : type[nn.Module], optional
         Transformer feed-forward activation. Default ``nn.GELU`` (as pretrained).
     drop_prob : float, optional
@@ -113,8 +139,10 @@ class BrainBERT(EEGModuleMixin, nn.Module):
         n_heads: int = 4,
         nperseg: int = 400,
         noverlap: int = 350,
-        freq_cutoff: int = 40,
-        stft_clip: int = 5,
+        idx_freq_cutoff: int = 40,
+        stft_clip: int = 10,
+        stft_zscore_before_clip: bool = True,
+        pool_n_frames: int | None = 10,
         activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
         # --- braindecode mandatory signal parameters ---
@@ -139,15 +167,17 @@ class BrainBERT(EEGModuleMixin, nn.Module):
         self.ffn_dim = ffn_dim
         self.n_layers = n_layers
         self.n_heads = n_heads
-        self.freq_cutoff = freq_cutoff
+        self.idx_freq_cutoff = idx_freq_cutoff
+        self.pool_n_frames = pool_n_frames
 
         # braindecode-native: STFT computed inside forward (see module).
         self.spectrogram = _STFTSpectrogram(
             sfreq=self.sfreq,
             nperseg=nperseg,
             noverlap=noverlap,
-            freq_cutoff=freq_cutoff,
+            idx_freq_cutoff=idx_freq_cutoff,
             clip=stft_clip,
+            zscore_before_clip=stft_zscore_before_clip,
         )
         # At least one frame must survive the boundary trimming.
         self.seq_len = self.spectrogram.n_frames(self.n_times)
@@ -158,9 +188,22 @@ class BrainBERT(EEGModuleMixin, nn.Module):
                 f"{stft_clip} boundary frames on each side. Provide a longer "
                 f"signal or reduce nperseg / stft_clip."
             )
+        # Refuse rather than silently fall back to a different pooling: the
+        # number of frames averaged is part of the published protocol.
+        if pool_n_frames is not None and self.seq_len < pool_n_frames:
+            raise ValueError(
+                f"n_times ({self.n_times}) yields only {self.seq_len} "
+                f"spectrogram frames, fewer than the pool_n_frames="
+                f"{pool_n_frames} centre frames pooled by the upstream "
+                f"protocol. Provide a longer signal, or pass a smaller "
+                f"pool_n_frames (None averages all frames)."
+            )
 
         self.input_embedding = _BrainBERTInputEmbedding(
-            input_dim=freq_cutoff, hidden_dim=hidden_dim, drop_prob=drop_prob
+            input_dim=idx_freq_cutoff,
+            hidden_dim=hidden_dim,
+            drop_prob=drop_prob,
+            max_len=max(5000, self.seq_len),
         )
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
@@ -173,7 +216,7 @@ class BrainBERT(EEGModuleMixin, nn.Module):
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
         # kept for weight parity with the upstream pretraining checkpoint; the
         # classification path does not use it.
-        self.spec_prediction_head = _SpecPredictionHead(hidden_dim, freq_cutoff)
+        self.spec_prediction_head = _SpecPredictionHead(hidden_dim, idx_freq_cutoff)
         self.final_layer = _BrainBERTHead(hidden_dim, self.n_outputs)
 
     def reset_head(self, n_outputs: int) -> None:
@@ -191,8 +234,8 @@ class BrainBERT(EEGModuleMixin, nn.Module):
         return_features : bool
             If ``True``, return the pooled encoder embedding instead of the
             class logits, as ``{"features": pooled, "cls_token": None}``
-            (braindecode foundation-model convention). BrainBERT pools over
-            channels and time frames and has no class token, hence
+            (braindecode foundation-model convention). BrainBERT pools the
+            centre frames and then the channels, and has no class token, hence
             ``cls_token`` is ``None``.
 
         Returns
@@ -204,16 +247,23 @@ class BrainBERT(EEGModuleMixin, nn.Module):
         batch_size, n_chans, _ = x.shape
 
         # 1. spectrogram front-end (braindecode-native, computed here).
-        spec = self.spectrogram(x)  # (batch, n_chans, n_frames, freq_cutoff)
+        spec = self.spectrogram(x)  # (batch, n_chans, n_frames, idx_freq_cutoff)
         seq_len = spec.shape[2]
-        spec = spec.reshape(batch_size * n_chans, seq_len, self.freq_cutoff)
+        spec = spec.reshape(batch_size * n_chans, seq_len, self.idx_freq_cutoff)
 
         # 2. input encoding + Transformer over the sequence of frames.
         h = self.input_embedding(spec)
         z = self.transformer(h)  # (batch * n_chans, n_frames, hidden_dim)
 
-        # 3. pool over channels and frames, then classify.
+        # 3. pool. Upstream averages the pool_n_frames encoder outputs centred
+        #    on the window (spec_pretrained.py), not every frame; the mean over
+        #    channels after it is the braindecode-native generalisation and is
+        #    the identity when n_chans == 1.
         z = z.reshape(batch_size, n_chans, seq_len, self.hidden_dim)
+        if self.pool_n_frames is not None:
+            middle = seq_len // 2
+            half = self.pool_n_frames // 2
+            z = z[:, :, middle - half : middle - half + self.pool_n_frames, :]
         pooled = z.mean(dim=(1, 2))
         if return_features:
             return {"features": pooled, "cls_token": None}
