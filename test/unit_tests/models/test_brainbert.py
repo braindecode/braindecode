@@ -262,6 +262,34 @@ def test_pool_all_frames_is_available():
     assert out["features"].shape == (2, model.hidden_dim)
 
 
+@pytest.mark.parametrize(
+    "activation",
+    [
+        torch.nn.GELU,  # class: the braindecode house spelling, and the default
+        torch.nn.GELU(),  # ready-made module
+        "gelu",  # string, as TransformerEncoderLayer accepts
+        torch.nn.functional.gelu,  # bare callable
+    ],
+)
+def test_activation_accepts_every_torch_spelling(activation):
+    """All four forms must build and run, not just the nn.Module subclass.
+
+    ``TransformerEncoderLayer`` itself takes a string or a callable, so calling
+    ``activation()`` on one of those used to raise before the parameter was
+    normalised.
+    """
+    model = _model(activation=activation).eval()
+    with torch.no_grad():
+        out = model(torch.randn(2, N_CHANS, N_TIMES))
+    assert out.shape == (2, N_OUTPUTS)
+    assert torch.isfinite(out).all()
+
+
+def test_activation_rejects_a_non_module_class():
+    with pytest.raises(ValueError, match="nn.Module"):
+        _model(activation=dict)
+
+
 def test_head_is_a_bare_linear_probe():
     """Upstream's downstream model is ``nn.Linear(input_dim, 1)`` and nothing
     else; a normalisation layer here would change the published protocol."""

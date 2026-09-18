@@ -22,6 +22,8 @@ re-hosted with their licence declared as ``unknown`` rather than assumed.
 
 from __future__ import annotations
 
+from typing import Callable
+
 import torch
 import torch.nn as nn
 
@@ -32,6 +34,37 @@ from braindecode.modules.brainbert_modules import (
     _SpecPredictionHead,
     _STFTSpectrogram,
 )
+
+
+def _as_transformer_activation(
+    activation: str
+    | type[nn.Module]
+    | nn.Module
+    | Callable[[torch.Tensor], torch.Tensor],
+) -> str | Callable[[torch.Tensor], torch.Tensor]:
+    """Normalise ``activation`` into something ``TransformerEncoderLayer`` takes.
+
+    braindecode spells this parameter ``type[nn.Module]`` (see BIOT, LaBraM,
+    CBraMod), so that stays the documented default. But
+    :class:`~torch.nn.TransformerEncoderLayer` itself accepts a string or a
+    plain callable, and instantiating those with ``activation()`` raises. The
+    four accepted forms are therefore folded here: a class is instantiated, and
+    a string, a module instance or a bare callable is passed straight through.
+    """
+    if isinstance(activation, str):
+        return activation
+    if isinstance(activation, type):
+        if not issubclass(activation, nn.Module):
+            raise ValueError(
+                f"activation class must subclass nn.Module, got {activation!r}."
+            )
+        return activation()
+    if callable(activation):
+        return activation
+    raise ValueError(
+        "activation must be a string, an nn.Module subclass or instance, or a "
+        f"callable; got {type(activation).__name__}."
+    )
 
 
 class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
@@ -129,8 +162,12 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         Number of encoder frames, centred on the window, averaged into the
         pooled representation. Default 10, as upstream. ``None`` averages all
         frames.
-    activation : type[nn.Module], optional
-        Transformer feed-forward activation. Default ``nn.GELU`` (as pretrained).
+    activation : type[nn.Module] or str or nn.Module or callable, optional
+        Transformer feed-forward activation. Default ``nn.GELU`` (as
+        pretrained). A class is instantiated; a string (``"gelu"``,
+        ``"relu"``), a ready-made module or a plain callable such as
+        :func:`torch.nn.functional.gelu` is forwarded to
+        :class:`~torch.nn.TransformerEncoderLayer` as-is.
     drop_prob : float, optional
         Dropout probability. Default 0.1.
 
@@ -156,7 +193,10 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         stft_clip: int = 10,
         stft_zscore_before_clip: bool = True,
         pool_n_frames: int | None = 10,
-        activation: type[nn.Module] = nn.GELU,
+        activation: str
+        | type[nn.Module]
+        | nn.Module
+        | Callable[[torch.Tensor], torch.Tensor] = nn.GELU,
         drop_prob: float = 0.1,
         # --- braindecode mandatory signal parameters ---
         n_outputs=None,
@@ -222,7 +262,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             d_model=hidden_dim,
             nhead=n_heads,
             dim_feedforward=ffn_dim,
-            activation=activation(),
+            activation=_as_transformer_activation(activation),
             dropout=drop_prob,
             batch_first=True,
         )
