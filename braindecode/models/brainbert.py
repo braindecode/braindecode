@@ -87,6 +87,12 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
        are declared ``unknown`` rather than assumed permissive; the model card
        records the SHA-256 and retrieval date of the source archive.
 
+    .. seealso::
+       :ref:`brainbert-ieeg-features` works through the three settings that
+       silently change what the pretrained encoder sees — the sampling rate, the
+       normalisation order and the window length — on real intracranial data,
+       and reproduces the frozen-encoder linear probe of the paper.
+
     .. versionadded:: 1.8
 
     Parameters
