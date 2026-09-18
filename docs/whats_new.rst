@@ -37,6 +37,16 @@ Enhancements
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.BrainBERT`, a self-supervised foundation model
+  for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023). The
+  short-time Fourier transform front-end is computed inside the model so it keeps
+  the standard ``(batch, n_chans, n_times)`` input signature; the Transformer
+  encoder is ported bit-exact from the upstream reference, and the spectrogram
+  recipe, the centre-frame pooling and the bare linear probe follow the
+  configuration behind the published downstream numbers, with a tutorial
+  (:ref:`brainbert-ieeg-features`) on the settings that silently change what the
+  pretrained encoder sees (:gh:`1104` by `Adam Mounir`_)
+
 Bug fixes
 ==========
 

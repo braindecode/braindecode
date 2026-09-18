@@ -376,6 +376,14 @@ models_mandatory_parameters: list[
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 128.0}),
     ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
     (
+        "BrainBERT",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        # The released checkpoint works on 1 s windows at 2048 Hz; a shorter
+        # window leaves fewer spectrogram frames than the centre window pooled
+        # by the upstream downstream protocol.
+        {"n_times": 2048, "sfreq": 2048.0},
+    ),
+    (
         "InterpolatedBIOT",
         ["chs_info", "n_outputs", "sfreq", "n_times"],
         {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels

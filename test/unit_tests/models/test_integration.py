@@ -604,6 +604,9 @@ def test_model_torch_script(model):
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
         "STEEGFormer",
+        # forward() returns Dict[str, Tensor] (features) or Tensor (logits);
+        # torch.jit.script rejects this polymorphic return type.
+        "BrainBERT",
     ]
 
     if model.__class__.__name__ in not_working_models:
