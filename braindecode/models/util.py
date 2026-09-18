@@ -441,6 +441,39 @@ models_mandatory_parameters: list[
             "n_outputs": 99,
         },
     ),
+    (
+        "VEMG2Pose",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 11790,
+            "sfreq": 2000.0,
+            "input_window_seconds": 5.895,
+            "n_outputs": 20,
+        },
+    ),
+    (
+        "NeuroPose",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 10000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 5.0,
+            "n_outputs": 20,
+        },
+    ),
+    (
+        "SensingDynamics",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 480,
+            "sfreq": 2000.0,
+            "input_window_seconds": 480 / 2000.0,
+            "n_outputs": 20,
+        },
+    ),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
@@ -485,6 +518,34 @@ models_mandatory_parameters: list[
     ),
     ("DGCNN", ["n_chans", "n_outputs", "n_times", "chs_info"], None),
     ("EEGDINO", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "DANCE",
+        ["n_outputs", "n_chans", "n_times", "sfreq", "chs_info"],
+        {
+            "n_chans": 19,
+            "n_times": 6400,  # 32 s @ 200 Hz, above the depth-10 stack minimum
+            "sfreq": 200.0,
+            "input_window_seconds": 32.0,
+            "n_outputs": 4,
+            "chs_info": [
+                {
+                    "ch_name": f"E{i + 1}",
+                    "kind": "eeg",
+                    "loc": _rng.random(12),
+                }
+                for i in range(19)
+            ],
+        },
+    ),
+    (
+        "ZUNA",
+        ["chs_info", "n_outputs", "n_times"],
+        {
+            "n_times": 1280,
+            "sfreq": 256.0,
+            "input_window_seconds": 5.0,
+        },
+    ),
 ]
 
 ################################################################
@@ -499,6 +560,13 @@ non_classification_models = [
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
+    # Dense per-frame pose sequences (batch, T, n_joints), not logits.
+    "VEMG2Pose",
+    "NeuroPose",
+    "SensingDynamics",
+    # forward returns (batch, num_latents, n_outputs) dense per-token logits,
+    # not class logits.
+    "DANCE",
 ]
 
 ################################################################

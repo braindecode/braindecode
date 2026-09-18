@@ -431,11 +431,7 @@ class _DecoderBlock(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Crops two tensors to their lowest-common-dimension along an axis."""
         dim_cropped = min(x1.shape[axis], x2.shape[axis])
-
-        x1_cropped = torch.index_select(
-            x1, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
+        return (
+            x1.narrow(axis, 0, dim_cropped),
+            x2.narrow(axis, 0, dim_cropped),
         )
-        x2_cropped = torch.index_select(
-            x2, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
-        )
-        return x1_cropped, x2_cropped

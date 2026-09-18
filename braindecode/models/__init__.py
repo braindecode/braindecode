@@ -12,6 +12,7 @@ from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
 from .ctnet import CTNet
+from .dance import DANCE
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .dgcnn import DGCNN
@@ -40,9 +41,11 @@ from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
+from .neuropose import NeuroPose
 from .patchedtransformer import PBT
 from .reve import REVE
 from .sccnet import SCCNet
+from .sensingdynamics import SensingDynamics
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
     InterpolatedSignalJEPA,
@@ -71,6 +74,8 @@ from .util import (
     models_mandatory_parameters,
     positions_from_chs_info,
 )
+from .vemg2pose import VEMG2Pose
+from .zuna import ZUNA
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
@@ -88,6 +93,7 @@ __all__ = [
     "CodeBrain",
     "ContraWR",
     "CTNet",
+    "DANCE",
     "Deep4Net",
     "DeepSleepNet",
     "BrainModule",
@@ -106,6 +112,9 @@ __all__ = [
     "EEGTCNet",
     "DGCNN",
     "EMG2QwertyNet",
+    "NeuroPose",
+    "SensingDynamics",
+    "VEMG2Pose",
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",
@@ -145,6 +154,7 @@ __all__ = [
     "TIDNet",
     "TSception",
     "USleep",
+    "ZUNA",
     "build_model_config",
     "_init_models_dict",
     "models_mandatory_parameters",

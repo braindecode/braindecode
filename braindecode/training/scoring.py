@@ -3,6 +3,7 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD-3
 
@@ -401,7 +402,7 @@ class PostEpochTrainScoring(EpochScoring):
 
 def predict_trials(module, dataset, return_targets=True, batch_size=1, num_workers=0):
     """Create trialwise predictions and optionally also return trialwise
-    labels from cropped dataset given module.
+    targets from a cropped dataset given a module.
 
     Parameters
     ----------
@@ -422,10 +423,11 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
             3-dimensional array (n_trials x n_classes x n_predictions), where
             the number of predictions depend on the chosen window size and the
             receptive field of the network.
-        trial_labels: np.ndarray
-            2-dimensional array (n_trials x n_targets) where the number of
-            targets depends on the decoding paradigm and can be either a single
-            value, multiple values, or a sequence.
+        trial_targets: np.ndarray
+            Ground-truth targets from the dataset in a 2-dimensional array
+            (n_trials x n_targets). Only returned when ``return_targets=True``.
+            The number of targets depends on the decoding paradigm and can be
+            either a single value, multiple values, or a sequence.
     """
     # Ensure the model is in evaluation mode
     module.eval()
@@ -482,3 +484,42 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
             ys_per_trial = np.array(ys_per_trial)
         return preds_per_trial, ys_per_trial
     return preds_per_trial
+
+
+def f1_event(pred_events, gt_events, iou_threshold: float = 0.5) -> float:
+    """COCO-style greedy event F1: TP requires IoU > threshold AND class match.
+
+    Inputs are lists of ``(start, end, class[, conf])`` tuples with class in
+    ``1..n_classes-1`` (CLASS-0 CONTRACT: callers never pass class 0 -- decoded
+    detections skip ``argmax == 0`` and the target builder never stores class 0).
+    """
+    matched_gt = set()
+    tp = 0
+    preds = sorted(
+        pred_events, key=lambda ev: (ev[3] if len(ev) > 3 else 1.0), reverse=True
+    )
+    for ev in preds:
+        ps, pe, pc = ev[0], ev[1], int(ev[2])
+        best_iou, best_j = 0.0, -1
+        for j, (gs, ge, gc) in enumerate(gt_events):
+            if j in matched_gt or int(gc) != pc:
+                continue
+            inter = max(0.0, min(pe, ge) - max(ps, gs))
+            union = (pe - ps) + (ge - gs) - inter
+            iou = inter / union if union > 0 else 0.0
+            if iou > best_iou:
+                best_iou, best_j = iou, j
+        if best_iou > iou_threshold and best_j >= 0:
+            matched_gt.add(best_j)
+            tp += 1
+    fp = len(pred_events) - tp
+    fn = len(gt_events) - tp
+    if tp == 0:
+        # Nothing to detect and nothing predicted is trivially perfect (F1=1.0);
+        # 0.0 only when one side has events the other does not.
+        if not pred_events and not gt_events:
+            return 1.0
+        return 0.0
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+    return 2 * precision * recall / (precision + recall)

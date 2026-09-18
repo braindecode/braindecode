@@ -1,3 +1,7 @@
+# Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
+#
+# License: BSD-3
+
 from __future__ import annotations
 
 from typing import Optional
@@ -61,15 +65,18 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_bands : int or None or list of tuple of int, default=8
+    n_bands : int or None or list of tuple of int, default=9
         Number of frequency bands or a list of frequency band tuples. If a list of tuples is provided,
         each tuple defines the lower and upper bounds of a frequency band.
     n_filters_spat : int, default=32
         Number of spatial filters in the depthwise convolutional layer.
     n_dim : int, default=3
         Number of dimensions for the temporal reduction layer.
-    stride_factor : int, default=4
-        Stride factor used for reshaping the temporal dimension.
+    win_len : int, default=250
+        Length in samples of the non-overlapping temporal windows the signal is
+        split into before the variance based feature extraction. The number of
+        windows passed to the attention module is ``n_times // win_len``, so
+        ``n_times`` has to be at least ``win_len``.
     activation : nn.Module, default=nn.ELU
         Activation function class to apply after convolutional layers.
     verbose : bool, default=False
@@ -82,6 +89,9 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         If True, applies softmax to the attention weights.
     bias : bool, default=False
         If True, includes a bias term in the convolutional layers.
+    stride_factor : int or None, default=None
+        Deprecated and ignored, it will be removed in a future release. The
+        temporal segmentation of this model is controlled by ``win_len``.
 
     References
     ----------
@@ -106,7 +116,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         n_bands=9,
         n_filters_spat: int = 32,
         n_dim: int = 3,
-        stride_factor: int = 4,
+        stride_factor: Optional[int] = None,
         win_len: int = 250,
         heads: int = 8,
         weight_softmax: bool = True,
@@ -125,6 +135,14 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        if stride_factor is not None:
+            warn(
+                "The parameter `stride_factor` is deprecated and ignored, it "
+                "will be removed in a future release. The temporal "
+                "segmentation of FBLightConvNet is set by `win_len`.",
+                DeprecationWarning,
+            )
+
         # Parameters
         self.n_bands = n_bands
         self.n_filters_spat = n_filters_spat
@@ -138,6 +156,13 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.filter_parameters = filter_parameters or {}
 
         # Checkers
+        if self.n_times < self.win_len:
+            raise ValueError(
+                f"Time dimension ({self.n_times}) is shorter than win_len "
+                f"({self.win_len}), so the model cannot build a single "
+                f"temporal window. Pass a longer input or lower `win_len`."
+            )
+
         self.n_times_truncated = self.n_times
         if self.n_times % self.win_len != 0:
             warn(
@@ -194,10 +219,12 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the FBLightConvNet model.
+
         Parameters
         ----------
         x : torch.Tensor
             Input tensor with shape (batch_size, n_chans, n_times).
+
         Returns
         -------
         torch.Tensor
