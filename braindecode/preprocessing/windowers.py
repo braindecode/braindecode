@@ -652,6 +652,21 @@ def _infer_mapping(concat_ds):
     return mapping
 
 
+def _unique_event_id(events_id):
+    """Give :class:`mne.Epochs` an ``event_id`` with one key per code.
+
+    A windowing ``mapping`` may send several event descriptions to the same
+    target, for example sleep stages 3 and 4 both to ``3``. ``mne.Epochs``
+    rejects an ``event_id`` with repeated values, so the descriptions sharing
+    a code are joined with ``/``. MNE reads ``/`` as a tag separator, so
+    ``epochs["Sleep stage 4"]`` still selects the windows of the merged target.
+    """
+    names_by_code: dict[int, list[str]] = {}
+    for event_name, event_code in events_id.items():
+        names_by_code.setdefault(event_code, []).append(event_name)
+    return {"/".join(names): code for code, names in names_by_code.items()}
+
+
 def _create_windows_from_events(
     ds,
     infer_mapping,
@@ -912,7 +927,7 @@ def _create_windows_from_events(
         mne_epochs = mne.Epochs(
             ds.raw,
             events,
-            events_id,
+            _unique_event_id(events_id),
             baseline=None,
             tmin=0,
             tmax=(window_size_samples - 1) / ds.raw.info["sfreq"],
