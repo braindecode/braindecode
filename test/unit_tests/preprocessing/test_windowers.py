@@ -1796,6 +1796,32 @@ def test_event_source_index_nonzero_first_samp():
     assert pd.api.types.is_integer_dtype(direct_md["i_trial_in_dataset"])
 
 
+def test_event_windows_mapping_shares_target_with_mne_epochs():
+    # sleep staging merges stages 3 and 4 into one target, which mne.Epochs
+    # refuses as a duplicated event_id value
+    raw = _make_annotated_raw(
+        [0, 1, 2, 3], [1, 1, 1, 1], ["W", "N3", "N4", "R"], [1, 2, 3, 4], ["a"] * 4
+    )
+    kwargs = dict(
+        window_size_samples=100,
+        window_stride_samples=100,
+        on_last_window="drop",
+        mapping={"W": 0, "N3": 1, "N4": 1, "R": 2},
+        preload=True,
+    )
+    direct = _event_windows([raw.copy()], use_mne_epochs=False, **kwargs)
+    epochs = _event_windows([raw.copy()], use_mne_epochs=True, **kwargs)
+    windows = epochs.datasets[0].windows
+    assert windows.event_id == {"W": 0, "N3/N4": 1, "R": 2}
+    np.testing.assert_array_equal(windows.events[:, 2], [0, 1, 1, 2])
+    np.testing.assert_array_equal(windows.metadata["target"], [0, 1, 1, 2])
+    np.testing.assert_array_equal(
+        direct.datasets[0].metadata["target"], windows.metadata["target"]
+    )
+    # either merged name selects the windows of the shared target
+    assert len(windows["N3"]) == len(windows["N4"]) == len(windows["N3/N4"]) == 2
+
+
 @pytest.mark.parametrize("use_mne_epochs", [False, True])
 def test_event_source_index_reserved_extra(use_mne_epochs):
     raw = _make_annotated_raw(
