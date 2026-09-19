@@ -243,6 +243,13 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             )
         # Refuse rather than silently fall back to a different pooling: the
         # number of frames averaged is part of the published protocol.
+        if pool_n_frames is not None and pool_n_frames <= 0:
+            # ``forward`` would slice ``middle:middle`` and average an empty
+            # tensor, so the model would return NaN instead of failing.
+            raise ValueError(
+                f"pool_n_frames must be positive; got {pool_n_frames}. "
+                "Pass None to average every frame instead."
+            )
         if pool_n_frames is not None and self.seq_len < pool_n_frames:
             raise ValueError(
                 f"n_times ({self.n_times}) yields only {self.seq_len} "
@@ -274,8 +281,12 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
-        self._n_outputs = n_outputs
-        self.final_layer = _BrainBERTHead(self.hidden_dim, n_outputs)
+        # The mixin helper validates the value and keeps the init kwargs and
+        # the Hub config in step, so a re-serialized model advertises the head
+        # it actually carries. Assigning ``_n_outputs`` directly left the saved
+        # configuration reporting the old count.
+        self._set_n_outputs(n_outputs)
+        self.final_layer = _BrainBERTHead(self.hidden_dim, self.n_outputs)
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Decode a batch of signals.

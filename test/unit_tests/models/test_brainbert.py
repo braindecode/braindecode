@@ -290,6 +290,36 @@ def test_activation_rejects_a_non_module_class():
         _model(activation=dict)
 
 
+@pytest.mark.parametrize("pool_n_frames", [0, -1])
+def test_non_positive_pooling_is_refused(pool_n_frames):
+    """``middle:middle`` averages an empty tensor, so the model used to return
+    NaN instead of failing. A guard has to refuse, not warn."""
+    with pytest.raises(ValueError, match="pool_n_frames must be positive"):
+        _model(pool_n_frames=pool_n_frames)
+
+
+def test_reset_head_refuses_a_non_positive_count():
+    model = _model()
+    for bad in (0, -3):
+        with pytest.raises(ValueError, match="n_outputs must be positive"):
+            model.reset_head(bad)
+    assert model.n_outputs == N_OUTPUTS
+
+
+def test_reset_head_keeps_the_serialized_config_in_step():
+    """A model re-serialized after ``reset_head`` must advertise the head it
+    actually carries, otherwise ``from_pretrained`` rebuilds the old one."""
+    model = _model()
+    model.reset_head(7)
+    assert model.n_outputs == 7
+    assert model.final_layer.fc.out_features == 7
+    stored = {
+        **getattr(model, "_init_kwargs", {}),
+        **(getattr(model, "_hub_mixin_config", None) or {}),
+    }
+    assert stored.get("n_outputs") == 7
+
+
 def test_head_is_a_bare_linear_probe():
     """Upstream's downstream model is ``nn.Linear(input_dim, 1)`` and nothing
     else; a normalisation layer here would change the published protocol."""
