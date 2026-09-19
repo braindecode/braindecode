@@ -74,6 +74,13 @@ Bug fixes
   into the metadata frame of the dataset itself, replacing any column sharing a
   name with a description key such as ``target``. By `Sarthak Tayal`_.
 
+- Make :func:`braindecode.preprocessing.create_windows_from_events` accept a
+  ``mapping`` that sends several event descriptions to the same target when the
+  windows are stored as :class:`mne.Epochs`, for example to merge sleep stages
+  3 and 4. ``mne.Epochs`` rejects an ``event_id`` with repeated values since
+  MNE 1.13, so the descriptions sharing a target are now joined into one
+  ``/``-separated key. By `Sarthak Tayal`_.
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
