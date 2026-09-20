@@ -162,12 +162,14 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         Number of encoder frames, centred on the window, averaged into the
         pooled representation. Default 10, as upstream. ``None`` averages all
         frames.
-    activation : type[nn.Module] or str or nn.Module or callable, optional
+    activation : type[nn.Module], optional
         Transformer feed-forward activation. Default ``nn.GELU`` (as
-        pretrained). A class is instantiated; a string (``"gelu"``,
+        pretrained). A class is the documented, serializable form — it is what
+        the braindecode model config round-trips. A string (``"gelu"``,
         ``"relu"``), a ready-made module or a plain callable such as
-        :func:`torch.nn.functional.gelu` is forwarded to
-        :class:`~torch.nn.TransformerEncoderLayer` as-is.
+        :func:`torch.nn.functional.gelu` is also accepted at runtime and
+        forwarded to :class:`~torch.nn.TransformerEncoderLayer` as-is, but a
+        model built that way does not serialize its activation faithfully.
     drop_prob : float, optional
         Dropout probability. Default 0.1.
 
@@ -193,10 +195,13 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         stft_clip: int = 10,
         stft_zscore_before_clip: bool = True,
         pool_n_frames: int | None = 10,
-        activation: str
-        | type[nn.Module]
-        | nn.Module
-        | Callable[[torch.Tensor], torch.Tensor] = nn.GELU,
+        # Annotated as the class alone, like every other braindecode model.
+        # The shared model config round-trips this annotation through pydantic,
+        # and a union starting with ``str`` makes that round-trip lossy: a
+        # serialized ``"torch.nn.modules.activation.GELU"`` comes back as the
+        # string instead of the class. Other spellings still work at runtime,
+        # normalised below.
+        activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
         # --- braindecode mandatory signal parameters ---
         n_outputs=None,

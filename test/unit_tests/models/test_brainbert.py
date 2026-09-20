@@ -290,6 +290,21 @@ def test_activation_rejects_a_non_module_class():
         _model(activation=dict)
 
 
+def test_activation_annotation_stays_serializable():
+    """The shared model config round-trips this annotation through pydantic.
+
+    Widening it to a union starting with ``str`` makes the round-trip lossy —
+    a serialized ``"torch.nn.modules.activation.GELU"`` comes back as the
+    string rather than the class — and that only surfaces in
+    ``test_config.py``, which skips when pydantic is absent. Pin it here too.
+    """
+    import inspect
+
+    annotation = inspect.signature(BrainBERT.__init__).parameters["activation"]
+    assert annotation.annotation == "type[nn.Module]"
+    assert annotation.default is torch.nn.GELU
+
+
 @pytest.mark.parametrize("pool_n_frames", [0, -1])
 def test_non_positive_pooling_is_refused(pool_n_frames):
     """``middle:middle`` averages an empty tensor, so the model used to return
