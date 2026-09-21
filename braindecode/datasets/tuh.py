@@ -25,6 +25,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 from braindecode.datasets.base import BaseConcatDataset, RawDataset
+from braindecode.util import resolve_montage_name
 
 
 class TUH(BaseConcatDataset):
@@ -182,7 +183,9 @@ class TUH(BaseConcatDataset):
         }
         raw.rename_channels(mapping_strip)
 
-        montage1005 = mne.channels.make_standard_montage("standard_1005")
+        montage1005 = mne.channels.make_standard_montage(
+            resolve_montage_name("standard_1005")
+        )
         mapping_eeg_names = {
             c.upper(): c for c in montage1005.ch_names if c.upper() in raw.ch_names
         }
@@ -207,7 +210,9 @@ class TUH(BaseConcatDataset):
 
     @staticmethod
     def _set_montage(raw):
-        montage = mne.channels.make_standard_montage("standard_1005")
+        montage = mne.channels.make_standard_montage(
+            resolve_montage_name("standard_1005")
+        )
         raw.set_montage(montage, on_missing="ignore")
 
     @staticmethod

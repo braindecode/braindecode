@@ -9,6 +9,9 @@
 #
 # License: BSD-3
 
+import inspect
+import re
+import warnings
 from collections import OrderedDict
 from functools import partial
 from unittest import mock
@@ -21,6 +24,7 @@ from sklearn.utils import check_random_state
 from torch import nn
 
 from braindecode.models import (
+    BDTCN,
     BENDR,
     BIOT,
     DGCNN,
@@ -45,6 +49,7 @@ from braindecode.models import (
     EEGTCNet,
     EMG2QwertyNet,
     FBCNet,
+    FBLightConvNet,
     FBMSNet,
     HybridNet,
     IFNet,
@@ -69,6 +74,7 @@ from braindecode.models.eegpt import (
     _rotate_half,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.usleep import _DecoderBlock
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
@@ -884,6 +890,27 @@ def test_usleep(n_chans, sfreq, n_classes, input_size_s):
     )
 
 
+def test_usleep_decoder_crop_returns_prefix_views():
+    """Decoder alignment avoids allocating device-specific index tensors."""
+    longer = torch.arange(30).reshape(2, 3, 5)
+    shorter = torch.arange(24).reshape(2, 3, 4)
+
+    cropped_longer, cropped_shorter = _DecoderBlock._crop_tensors_to_match(
+        longer, shorter
+    )
+
+    torch.testing.assert_close(cropped_longer, longer[..., :4])
+    torch.testing.assert_close(cropped_shorter, shorter)
+    assert (
+        cropped_longer.untyped_storage().data_ptr()
+        == longer.untyped_storage().data_ptr()
+    )
+    assert (
+        cropped_shorter.untyped_storage().data_ptr()
+        == shorter.untyped_storage().data_ptr()
+    )
+
+
 def test_usleep_n_params():
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
@@ -986,6 +1013,49 @@ def test_eldele_2021_feats():
 
     out = model(X)
     assert out.shape == (n_examples, model.len_last_layer)
+
+
+def test_attn_sleep_requires_signal_geometry():
+    with pytest.raises(ValueError, match="at least two of"):
+        AttnSleep(sfreq=100, n_outputs=5)
+
+
+def test_attn_sleep_reports_required_d_model():
+    with pytest.raises(ValueError, match="d_model=54"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
+
+
+def test_attn_sleep_rejects_invalid_attention_heads():
+    with pytest.raises(ValueError, match="positive integer that divides d_model"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
+
+
+@pytest.mark.parametrize("return_feats", [False, True])
+def test_attn_sleep_supports_other_window_lengths(return_feats):
+    model = AttnSleep(
+        sfreq=100,
+        n_outputs=5,
+        n_times=2000,
+        d_model=54,
+        n_attn_heads=6,
+        return_feats=return_feats,
+    )
+    output = model(torch.randn(2, 1, 2000))
+    expected_width = model.len_last_layer if return_feats else 5
+    assert output.shape == (2, expected_width)
+
+
+def test_attn_sleep_activation_reaches_afr():
+    model = AttnSleep(
+        sfreq=100, n_outputs=5, n_times=3000, activation=nn.GELU
+    )
+    activations = [
+        module
+        for module in model.feature_extractor[0].AFR.modules()
+        if isinstance(module, (nn.ReLU, nn.GELU))
+    ]
+    assert activations
+    assert all(isinstance(module, nn.GELU) for module in activations)
 
 
 @pytest.mark.parametrize(
@@ -2064,6 +2134,34 @@ def test_eegminer_invalid_parameters():
         )
 
 
+@pytest.mark.parametrize("method", ["mag", "corr", "plv"])
+def test_eegminer_legacy_state_dict_compatibility(method):
+    model_kwargs = {
+        "method": method,
+        "n_chans": 4,
+        "n_outputs": 2,
+        "n_times": 128,
+        "sfreq": 100.0,
+    }
+    model = EEGMiner(**model_kwargs)
+    state_dict = model.state_dict()
+    legacy_keys = {
+        "filter.n_range",
+        "filter.f_mean",
+        "filter.bandwidth",
+        "filter.shape",
+        "filter.group_delay",
+        "batch_layer.running_mean",
+        "batch_layer.running_var",
+        "batch_layer.num_batches_tracked",
+        "final_layer.weight",
+        "final_layer.bias",
+    }
+
+    assert set(state_dict) == legacy_keys
+    EEGMiner(**model_kwargs).load_state_dict(state_dict, strict=True)
+
+
 def test_eegminer_filter_clamping():
     """
     Test that EEGMiner's filters are constructed correctly and parameters are clamped.
@@ -2160,7 +2258,7 @@ def test_eegminer_plv_values_range():
     # Forward pass up to PLV computation
     x = eegminer.ensure_dim(input_tensor)
     x = eegminer.filter(x)
-    x = eegminer._apply_plv(x, n_chans=n_chans)
+    x = eegminer.feature_layer(x)
 
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
@@ -2558,6 +2656,51 @@ def test_fbmsnet_invalid_temporal_layer():
             temporal_layer='InvalidLayer',
             sfreq=250,
         )
+
+
+@pytest.mark.parametrize("win_len, n_windows", [(100, 10), (250, 4), (500, 2)])
+def test_fblightconvnet_win_len_sets_number_of_windows(win_len, n_windows):
+    model = FBLightConvNet(
+        n_chans=8,
+        n_outputs=3,
+        n_times=1000,
+        sfreq=250,
+        win_len=win_len,
+    )
+    assert model.attn_conv.kernel_size == n_windows
+
+
+def test_fblightconvnet_stride_factor_is_deprecated_and_ignored():
+    kwargs = dict(n_chans=8, n_outputs=3, n_times=1000, sfreq=250)
+
+    set_random_seeds(2025, cuda=False)
+    default = FBLightConvNet(**kwargs).eval()
+
+    with pytest.warns(DeprecationWarning, match="stride_factor"):
+        set_random_seeds(2025, cuda=False)
+        passed = FBLightConvNet(stride_factor=17, **kwargs).eval()
+
+    # stride_factor never reached a layer, so the two models agree exactly
+    assert passed.attn_conv.kernel_size == default.attn_conv.kernel_size
+    x = torch.randn(2, 8, 1000)
+    with torch.no_grad():
+        assert torch.equal(passed(x), default(x))
+
+
+def test_fblightconvnet_default_build_is_not_deprecated():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        FBLightConvNet(n_chans=8, n_outputs=3, n_times=1000, sfreq=250)
+    assert not [w for w in caught if issubclass(w.category, DeprecationWarning)]
+
+
+@pytest.mark.parametrize("n_times", [200, 249])
+def test_fblightconvnet_window_shorter_than_win_len(n_times):
+    # used to reach xavier_uniform_ with an empty kernel and die on a
+    # division by zero
+    with pytest.raises(ValueError, match="shorter than win_len"):
+        FBLightConvNet(n_chans=8, n_outputs=3, n_times=n_times, sfreq=250)
+
 
 def test_initialize_weights_linear():
     linear = nn.Linear(10, 5)
@@ -4032,3 +4175,154 @@ def test_emg2qwerty_feature_flags():
     assert isinstance(bundle_t, dict) and torch.equal(bundle_t["features"], out_t[1])
     assert m_t.get_config()["return_feature"] is True
     assert m_t.get_output_shape() == (1, emissions.shape[1], 99)
+
+
+@pytest.mark.parametrize("model_cls", [BDTCN, BENDR])
+def test_channel_dropout_on_1d_activations(model_cls):
+    """BDTCN and BENDR drop whole channels of a ``(batch, channels, times)``
+    tensor, so the dropout modules must be ``nn.Dropout1d``. ``nn.Dropout2d``
+    routes 3D input to the channel-wise path only through a deprecated
+    fallback that warns on every forward pass."""
+    model = model_cls(
+        n_chans=8, n_outputs=2, n_times=256, sfreq=100.0, drop_prob=0.5
+    ).train()
+
+    assert any(isinstance(m, nn.Dropout1d) for m in model.modules())
+    assert not any(isinstance(m, nn.Dropout2d) for m in model.modules())
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        model(torch.randn(4, 8, 256))
+    assert not [w for w in caught if "dropout2d" in str(w.message)]
+
+
+def test_tcn_bai_variant_channel_dropout():
+    """The Bai et al. ``TCN`` shares the residual block with ``BDTCN``, so it
+    gets the same channel-wise dropout module."""
+    model = TCN(n_chans=8, n_outputs=2, n_blocks=2, n_filters=5, drop_prob=0.5)
+    assert any(isinstance(m, nn.Dropout1d) for m in model.modules())
+    assert not any(isinstance(m, nn.Dropout2d) for m in model.modules())
+
+
+def test_dropout1d_masks_channels_not_batch_items():
+    """The channel-wise dropout used by BDTCN and BENDR zeroes rows of the
+    channel axis, independently per batch item. Under the announced
+    ``nn.Dropout2d`` semantics for 3D input the same tensor would be read as
+    unbatched and whole batch items would be dropped instead."""
+    set_random_seeds(2024, cuda=False)
+    out = nn.Dropout1d(0.5).train()(torch.ones(64, 16, 32))
+
+    # A dropped entry covers the full time axis of one (batch item, channel)
+    # pair.
+    zeroed = out.abs().sum(dim=-1) == 0
+    assert zeroed.any() and not zeroed.all()
+    # At least one batch item keeps some channels and loses others, which
+    # cannot happen when the mask is drawn over the batch axis.
+    assert (zeroed.any(dim=1) & ~zeroed.all(dim=1)).any()
+
+
+_PARAM_LINE = re.compile(
+    r"^(?P<names>\*{0,2}\w+(?:\s*,\s*\*{0,2}\w+)*)\s*:"
+)
+
+
+def _documented_parameters(model_class):
+    """Names listed in the ``Parameters`` section of a model docstring.
+
+    ``EEGModuleMixin.__init_subclass__`` appends the Hugging Face Hub notes to
+    every model docstring, so drop them before parsing. After
+    :func:`inspect.getdoc` a parameter entry sits at column zero and its
+    description is indented, which is what tells them apart from prose lines
+    such as ``Note: ...`` inside a description.
+    """
+    doc = inspect.getdoc(model_class) or ""
+    doc = doc.split(".. rubric:: Hugging Face Hub integration")[0]
+    lines = doc.split("\n")
+
+    names = []
+    inside = False
+    for position, line in enumerate(lines):
+        stripped = line.strip()
+        next_line = lines[position + 1].strip() if position + 1 < len(lines) else ""
+        if next_line and set(next_line) == {"-"}:
+            inside = stripped == "Parameters"
+            continue
+        if not inside:
+            continue
+        match = _PARAM_LINE.match(line)
+        if match is None:
+            continue
+        following = next((nxt for nxt in lines[position + 1 :] if nxt.strip()), "")
+        if following.startswith(" "):
+            names.extend(
+                name.strip().lstrip("*") for name in match.group("names").split(",")
+            )
+    return names
+
+
+@pytest.mark.parametrize("model_name", sorted(all_models_dict))
+def test_documented_parameters_exist_in_signature(model_name):
+    """Every documented parameter must be accepted by the constructor.
+
+    Renamed or removed parameters used to survive in the docstrings, so users
+    following the documentation got a ``TypeError`` instead of a model.
+    """
+    model_class = all_models_dict[model_name]
+    parameters = inspect.signature(model_class.__init__).parameters
+    if any(p.kind == p.VAR_KEYWORD for p in parameters.values()):
+        pytest.skip(f"{model_name} forwards **kwargs, any name is accepted")
+
+    accepted = set(parameters) - {"self"}
+    documented = set(_documented_parameters(model_class))
+    unknown = sorted(documented - accepted)
+
+    assert not unknown, (
+        f"{model_name} documents parameters its constructor does not accept: "
+        f"{unknown}"
+    )
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "ATCNet",
+        "AttnSleep",
+        "CTNet",
+        "EEGSimpleConv",
+        "IFNet",
+        "SPARCNet",
+        "SleepStagerBlanco2020",
+        "SleepStagerChambon2018",
+        "TIDNet",
+    ],
+)
+def test_audited_model_parameter_headers_follow_numpydoc(model_name):
+    """Changed parameter headers must be parsed as names, not name-and-type."""
+    model_class = all_models_dict[model_name]
+    doc = inspect.getdoc(model_class) or ""
+    doc = doc.split(".. rubric:: Hugging Face Hub integration")[0]
+    lines = doc.split("\n")
+
+    malformed = []
+    inside = False
+    for position, line in enumerate(lines):
+        stripped = line.strip()
+        next_line = lines[position + 1].strip() if position + 1 < len(lines) else ""
+        if next_line and set(next_line) == {"-"}:
+            inside = stripped == "Parameters"
+            continue
+        if not inside:
+            continue
+        match = _PARAM_LINE.match(line)
+        if match is None:
+            continue
+        following = next((nxt for nxt in lines[position + 1 :] if nxt.strip()), "")
+        if following.startswith(" ") and not line.startswith(
+            f"{match.group('names')} : "
+        ):
+            malformed.append(line)
+
+    assert not malformed, (
+        f"{model_class.__name__} has parameter headers numpydoc misparses: "
+        f"{malformed}"
+    )

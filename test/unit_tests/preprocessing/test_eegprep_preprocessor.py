@@ -3,6 +3,7 @@
 # License: BSD-3
 
 import copy
+from types import SimpleNamespace
 
 import mne
 import numpy as np
@@ -705,6 +706,24 @@ def test_missing_eegprep_raises_error(base_concat_ds, monkeypatch):
     error_message = str(exc_info.value)
     assert "pip install braindecode[eegprep]" in error_message, \
         f"Expected installation instructions in error message, got: {error_message}"
+
+
+def test_eegprep_does_not_require_utils_namespace(monkeypatch):
+    """Support EEGPrep 0.3, which no longer exports ``eegprep.utils``."""
+    import braindecode.preprocessing.eegprep_preprocess as eegprep_module
+
+    fake_eegprep = SimpleNamespace(
+        clean_artifacts=lambda eeg, **kwargs: (eeg,),
+    )
+    monkeypatch.setattr(eegprep_module, "eegprep", fake_eegprep)
+    eeg = {"data": np.zeros((1, 10)), "srate": 250.0, "chanlocs": []}
+
+    result = EEGPrep(
+        bad_channel_reinterpolate=False,
+        common_avg_ref=False,
+    ).apply_eeg(eeg, raw=None)
+
+    assert result["srate"] == 250.0
 
 
 @pytest.mark.skipif(not EEGPREP_AVAILABLE, reason="eegprep not installed")

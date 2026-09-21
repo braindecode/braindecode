@@ -33,6 +33,7 @@ class EpochsDataset(Dataset):
 
 
 @pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
+@pytest.mark.network
 def test_trialwise_decoding():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1

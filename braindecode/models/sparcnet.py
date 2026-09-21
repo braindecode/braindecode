@@ -33,7 +33,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         Number of layers per dense block. Default is 4.
     growth_rate : int, optional
         Growth rate of the DenseNet. Default is 16.
-    bn_size : int, optional
+    bottleneck_size : int, optional
         Bottleneck size. Default is 16.
     drop_prob : float, optional
         Dropout rate. Default is 0.5.
@@ -41,7 +41,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         Whether to use bias in convolutional layers. Default is True.
     batch_norm : bool, optional
         Whether to use batch normalization. Default is True.
-    activation: nn.Module, default=nn.ELU
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 

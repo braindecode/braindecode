@@ -1,4 +1,10 @@
-from .activation import GatedLinearUnit, LogActivation, SafeLog, Square
+from .activation import (
+    GatedLinearUnit,
+    LogActivation,
+    SafeLog,
+    SmoothMaximumUnit,
+    Square,
+)
 from .attention import (
     CAT,
     CBAM,
@@ -14,7 +20,13 @@ from .attention import (
     MultiHeadAttention,
     SqueezeAndExcitation,
 )
-from .blocks import MLP, FeedForwardBlock, InceptionBlock, PatchTokenizer
+from .blocks import (
+    MLP,
+    FeedForwardBlock,
+    InceptionBlock,
+    PatchTokenizer,
+    TDSConvEncoder,
+)
 from .convolution import (
     AvgPool2dWithConv,
     CausalConv1d,
@@ -23,6 +35,7 @@ from .convolution import (
     Conv2dWithConstraint,
     DepthwiseConv2d,
 )
+from .dance_modules import Perceiver, SimpleConv
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
 from .interpolation import ChannelInterpolationLayer
 from .layers import (
@@ -53,6 +66,7 @@ __all__ = [
     "GatedLinearUnit",
     "LogActivation",
     "SafeLog",
+    "SmoothMaximumUnit",
     "Square",
     "CAT",
     "CBAM",
@@ -72,12 +86,17 @@ __all__ = [
     "FeedForwardBlock",
     "InceptionBlock",
     "PatchTokenizer",
+    "TDSConvEncoder",
     "AvgPool2dWithConv",
     "CausalConv1d",
     "CombinedConv",
     "Conv1dWithConstraint",
     "Conv2dWithConstraint",
     "DepthwiseConv2d",
+    "ChannelMerger",
+    "FourierEmb",
+    "Perceiver",
+    "SimpleConv",
     "FilterBankLayer",
     "GeneralizedGaussianFilter",
     "Chomp1d",
@@ -88,8 +107,6 @@ __all__ = [
     "TimeDistributed",
     "LinearWithConstraint",
     "MaxNormLinear",
-    "ChannelMerger",
-    "FourierEmb",
     "MaxNorm",
     "MaxNormParametrize",
     "LogPowerLayer",
