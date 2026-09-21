@@ -51,6 +51,16 @@ The following components are licensed under the Apache License 2.0:
 - `braindecode/models/zuna.py`
 - `braindecode/models/luna.py`
 
+### USC Academic License Files
+
+The following component is a derivative of `ShanechiLab/BaRISTA`, released by
+the University of Southern California under an academic license that permits
+use, copying, modification and distribution for educational, research and
+non-profit purposes only. Commercial use requires an agreement with the USC
+Stevens Center for Innovation.
+
+- `braindecode/models/barista.py`
+
 ## License Links
 
 - [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause)
@@ -58,6 +68,7 @@ The following components are licensed under the Apache License 2.0:
 - [CC BY-NC-SA 4.0 License](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 - [MIT License](https://opensource.org/licenses/MIT)
 - [Apache-2.0 License](https://www.apache.org/licenses/LICENSE-2.0)
+- [USC Academic License](https://github.com/ShanechiLab/BaRISTA/blob/master/LICENSE.md)
 
 ## Note
 
