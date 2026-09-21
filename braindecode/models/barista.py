@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import torch
 import torch.nn.functional as F
 from einops.layers.torch import Rearrange
@@ -74,7 +76,8 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     - **Read-out** (``BaRISTA.token_pooling``, ``BaRISTA.final_layer``).
       *Operations:* collapse the token sequence with a learned bias-free linear
       combination (or a mean), then apply a linear classifier. *Role:* produce
-      the class logits.
+      the class logits. The learned combination is the only part tied to a
+      token count, and therefore to a fixed montage and window length.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
@@ -104,6 +107,16 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     ``chs_info`` positions from metres onto a centred 1 mm grid. This fallback
     is not Brain Treebank's voxel convention; use the dataset's indices for
     that dataset. ``"none"`` disables spatial encoding.
+
+    **Recordings with different montages**
+
+    The embedding tables only depend on the spatial scale, so the montage is a
+    :meth:`forward` argument: a batch from another subject, with another number
+    of electrodes, passes its own ``spatial_indices``. Constructor-provided
+    indices (or ``chs_info`` positions) are only the default for batches that
+    do not. Everything else in the encoder is shape-agnostic, so the channel
+    count and the window length may vary from batch to batch as long as
+    ``pooling="mean"``.
 
     **Pre-trained weights**
 
@@ -138,10 +151,11 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     Parameters
     ----------
     spatial_scale : {"coords", "parcels", "lobes", "none"}
-        Spatial embedding scale. Coordinate mode uses ``spatial_indices`` or
-        falls back to ``chs_info``; region modes require ``spatial_indices``.
+        Spatial embedding scale, which sets the embedding tables. Coordinate
+        mode falls back to ``chs_info`` when ``spatial_indices`` is omitted.
     spatial_indices : list of int or list of list of int, optional
-        Dataset-provided embedding indices in input-channel order. Shape
+        Dataset-provided embedding indices in input-channel order, used for
+        batches whose :meth:`forward` does not pass its own. Shape
         ``(n_chans, 3)`` for coordinates, with values in ``[0, coord_bins)``;
         shape ``(n_chans,)`` for parcels or lobes, with values in ``[0, 121)``
         or ``[0, 21)`` respectively. Region index 0 denotes unknown. Use the
@@ -173,9 +187,9 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         Convolution width of the dilated CNN.
     pooling : {"learned", "mean"}
         Token aggregation before the head. ``"learned"`` reproduces the paper's
-        finetuning protocol, a bias-free linear combination of the tokens;
-        ``"mean"`` averages them instead. Both modes use the channel and patch
-        counts fixed at construction.
+        finetuning protocol, a bias-free linear combination of the tokens, and
+        so only accepts the channel and patch counts fixed at construction;
+        ``"mean"`` averages them instead, and accepts any montage and window.
     drop_prob : float
         Dropout rate used in the encoder.
     activation : type[nn.Module]
@@ -272,9 +286,6 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         self.drop_prob = drop_prob
         self.activation = activation
 
-        # Kept as plain ints because EEGModuleMixin hides its signal properties
-        # from TorchScript, so a scripted forward cannot read self.n_chans.
-        self.n_chans_grid = self.n_chans
         # The trailing samples are dropped when n_times is not a multiple of
         # patch_size, as in the reference.
         self.n_patches = self.n_times // patch_size
@@ -316,13 +327,11 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             mlp_ratio=mlp_ratio,
             drop_prob=drop_prob,
             activation=activation,
-            n_patches=self.n_patches,
-            n_chans=self.n_chans,
         )
 
-        n_tokens = self.n_patches * self.n_chans
+        self.n_tokens = self.n_patches * self.n_chans
         self.token_pooling = (
-            nn.Linear(n_tokens, 1, bias=False) if pooling == "learned" else None
+            nn.Linear(self.n_tokens, 1, bias=False) if pooling == "learned" else None
         )
         self.final_layer = nn.Linear(d_model, self.n_outputs)
         self.apply(self._init_weights)
@@ -341,7 +350,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         spatial_scale: str,
         spatial_indices: list[int] | list[list[int]] | None,
     ) -> _SpatialEmbedding | None:
-        """Use dataset indices, or bin MNE positions when none were supplied."""
+        """Build the tables of the scale, and the montage used by default."""
         if spatial_scale == "none":
             return None
         is_coords = spatial_scale == "coords"
@@ -350,16 +359,33 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             if is_coords
             else {"parcels": 121, "lobes": 21}[spatial_scale]
         )
+        # The tables only depend on the scale, so a model whose recordings each
+        # come with their own montage can be built without any index at all.
+        return _SpatialEmbedding(
+            d_model=self.d_model,
+            n_slots=n_slots,
+            n_dims=3 if is_coords else 1,
+            padding_idx=None if is_coords else 0,
+            default_indices=self._default_spatial_indices(
+                spatial_indices, is_coords, n_slots
+            ),
+        )
+
+    def _default_spatial_indices(
+        self,
+        spatial_indices: list[int] | list[list[int]] | None,
+        is_coords: bool,
+        n_slots: int,
+    ) -> torch.Tensor | None:
+        """Use dataset indices, or bin MNE positions when none were supplied."""
         if spatial_indices is None:
             if not is_coords:
-                raise ValueError(f"spatial_indices is required for {spatial_scale!r}.")
+                return None
             locations = extract_channel_locations_from_chs_info(
                 self._chs_info, num_channels=self.n_chans
             )
             if locations is None or len(locations) != self.n_chans:
-                raise ValueError(
-                    "Provide spatial_indices or chs_info positions for every channel."
-                )
+                return None
             positions = torch.as_tensor(locations, dtype=torch.float32)
             if not positions.isfinite().all():
                 raise ValueError("chs_info positions must be finite.")
@@ -385,13 +411,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             raise ValueError(
                 f"spatial_indices must contain integers in [0, {n_slots})."
             )
-        indices = indices.long()
-        return _SpatialEmbedding(
-            indices.T if is_coords else indices.unsqueeze(0),
-            self.d_model,
-            n_slots,
-            padding_idx=None if is_coords else 0,
-        )
+        return indices.long()
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the linear classification head for a new ``n_outputs``."""
@@ -403,13 +423,23 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
             dtype=self.final_layer.weight.dtype,
         ).train(self.training)
 
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+    def forward(
+        self,
+        x: torch.Tensor,
+        spatial_indices: Optional[torch.Tensor] = None,
+        return_features: bool = False,
+    ):
         """Encode an iEEG batch into class logits.
 
         Parameters
         ----------
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``.
+        spatial_indices : torch.Tensor, optional
+            Embedding indices of this batch's montage, of shape ``(n_chans, 3)``
+            for ``spatial_scale="coords"`` and ``(n_chans,)`` otherwise. Every
+            sample of the batch shares them. Defaults to the montage resolved at
+            construction, which only fits the construction-time channel count.
         return_features : bool
             Return the pooled embedding instead of logits.
 
@@ -421,21 +451,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         """
         if x.ndim != 3:
             raise ValueError("Expected input of shape (batch, n_chans, n_times).")
-        if x.shape[1] != self.n_chans_grid:
-            raise ValueError(
-                f"BaRISTA was built for {self.n_chans_grid} channels but got input "
-                f"with {x.shape[1]}; rebuild the model for this montage."
-            )
-        # The spatial embedding is tiled for a fixed patch count, and so (for
-        # pooling="learned") is the read-out, so reject a different input length
-        # outright rather than silently cropping it to a different grid. Windows
-        # that differ only in samples the tokenizer drops are accepted.
-        if x.shape[-1] // self.patch_size != self.n_patches:
-            raise ValueError(
-                f"BaRISTA was built for {self.n_patches} temporal patches of "
-                f"{self.patch_size} samples but got input with {x.shape[-1]} "
-                f"samples; rebuild the model for this window length."
-            )
+        n_chans = x.shape[1]
 
         patches = self.patch_tokenizer(x)
         patches = self.fold_grid(patches)
@@ -444,14 +460,28 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         tokens = self.temporal_pooler(patches)
 
         if self.spatial_emb is not None:
+            spatial = self.spatial_emb(spatial_indices)
+            if spatial.shape[0] != n_chans:
+                raise ValueError(
+                    f"Got spatial indices for {spatial.shape[0]} channels but "
+                    f"input with {n_chans}; pass the spatial_indices of this "
+                    f"recording to forward."
+                )
             # (n_chans, d_model) tiled over patches, which matches the
             # interleaved (patch, channel) token order.
-            spatial = self.spatial_emb().repeat(self.n_patches, 1)
+            spatial = spatial.repeat(tokens.shape[1] // n_chans, 1)
             tokens = tokens + spatial[None]
 
-        latents = self.backbone(tokens)
+        latents = self.backbone(tokens, n_chans)
 
         if self.token_pooling is not None:
+            if latents.shape[1] != self.n_tokens:
+                raise ValueError(
+                    f"pooling='learned' reads out a fixed grid of "
+                    f"{self.n_tokens} tokens but got {latents.shape[1]}; use "
+                    f"pooling='mean' to accept other channel counts and window "
+                    f"lengths."
+                )
             features = self.token_pooling(latents.transpose(1, 2)).squeeze(dim=-1)
         else:
             features = latents.mean(dim=1)
@@ -461,29 +491,58 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
 
 
 class _SpatialEmbedding(nn.Module):
-    """Sum of one learned embedding table per spatial dimension."""
+    """Sum of one learned embedding table per spatial dimension.
+
+    The tables are indexed at call time, so one model encodes the montage of
+    whichever recording the batch comes from.
+    """
 
     def __init__(
         self,
-        indices: torch.Tensor,
         d_model: int,
         n_slots: int,
+        n_dims: int,
         padding_idx: int | None,
+        default_indices: torch.Tensor | None,
     ):
         super().__init__()
-        self.indices: torch.Tensor
-        self.register_buffer("indices", indices, persistent=False)
+        self.n_dims = n_dims
+        self.default_indices: Optional[torch.Tensor]
+        self.register_buffer("default_indices", default_indices, persistent=False)
         self.tables = nn.ModuleList(
             [
                 nn.Embedding(n_slots, d_model, padding_idx=padding_idx)
-                for _ in range(indices.shape[0])
+                for _ in range(n_dims)
             ]
         )
 
-    def forward(self) -> torch.Tensor:
-        """Return the ``(n_chans, d_model)`` spatial encoding of the montage."""
+    def forward(self, indices: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Return the ``(n_chans, d_model)`` spatial encoding of a montage."""
+        if indices is None:
+            default = self.default_indices
+            if default is None:
+                raise ValueError(
+                    "No spatial indices available: pass spatial_indices to "
+                    "forward, or build the model with spatial_indices or with "
+                    "chs_info positions."
+                )
+            indices = default
+        if indices.dtype != torch.long and indices.dtype != torch.int:
+            raise ValueError("spatial_indices must be an integer tensor.")
+        # One row per spatial dimension, from the (n_chans, n_dims) layout of
+        # the public interface, whose axis is dropped for single-dimension
+        # scales.
+        if self.n_dims == 1 and indices.dim() == 1:
+            grid = indices.unsqueeze(0)
+        elif indices.dim() == 2 and indices.shape[1] == self.n_dims:
+            grid = indices.t()
+        else:
+            raise ValueError(
+                "spatial_indices must have shape (n_chans, 3) for coordinates "
+                "and (n_chans,) for region scales."
+            )
         return torch.stack(
-            [table(self.indices[dim]) for dim, table in enumerate(self.tables)]
+            [table(grid[dim]) for dim, table in enumerate(self.tables)]
         ).sum(dim=0)
 
 
@@ -554,16 +613,12 @@ class _Transformer(nn.Module):
         mlp_ratio: int,
         drop_prob: float,
         activation: type[nn.Module],
-        n_patches: int,
-        n_chans: int,
     ):
         super().__init__()
         head_dim = d_model // num_heads
         inv_freq = 1.0 / (10000.0 ** (torch.arange(0, head_dim, 2).float() / head_dim))
-        angles = torch.outer(torch.arange(n_patches).float(), inv_freq)
-        angles = torch.cat((angles, angles), dim=-1).repeat_interleave(n_chans, dim=0)
-        self.register_buffer("cos", angles.cos()[None, None], persistent=False)
-        self.register_buffer("sin", angles.sin()[None, None], persistent=False)
+        self.inv_freq: torch.Tensor
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
         self.layers = nn.ModuleList(
             [
                 _TransformerEncoderLayer(
@@ -578,9 +633,19 @@ class _Transformer(nn.Module):
         )
         self.norm = nn.RMSNorm(d_model, eps=1e-8)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, n_chans: int) -> torch.Tensor:
+        # All channels of a patch share the patch index as their position, and
+        # the grid is only known here, so the angles are built per call.
+        n_patches = x.shape[1] // n_chans
+        positions = torch.arange(
+            n_patches, device=self.inv_freq.device, dtype=self.inv_freq.dtype
+        )
+        angles = torch.outer(positions, self.inv_freq)
+        angles = torch.cat((angles, angles), dim=-1).repeat_interleave(n_chans, dim=0)
+        cos = angles.cos()[None, None]
+        sin = angles.sin()[None, None]
         for layer in self.layers:
-            x = layer(x, self.cos, self.sin)
+            x = layer(x, cos, sin)
         return self.norm(x)
 
 
