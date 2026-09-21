@@ -402,11 +402,8 @@ class _RotaryPositionEmbedding(nn.Module):
 class _RMSNorm(nn.Module):
     """Root-mean-square layer normalisation.
 
-    ``torch.nn.RMSNorm`` is only available from PyTorch 2.4, but braindecode
-    supports ``torch>=2.0``; this shippable equivalent (same approach as
-    :class:`~braindecode.models.REVE` and ``CodeBrain``) keeps the model
-    importable on older PyTorch while preserving the ``.weight`` parameter
-    name for state-dict compatibility.
+    Accumulates in float32 to match the reference implementation and retains
+    the ``.weight`` parameter name for state-dict compatibility.
     """
 
     def __init__(self, dimension: int, epsilon: float = 1e-5):

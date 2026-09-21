@@ -28,6 +28,9 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Require PyTorch and TorchAudio >= 2.4 so the declared minimum supports
+  native :class:`torch.nn.RMSNorm`, used by transformer models.
+
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
