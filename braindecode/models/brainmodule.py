@@ -25,7 +25,7 @@ from braindecode.modules.layers import SubjectLayers
 __all__ = ["BrainModule"]
 
 
-class BrainModule(EEGModuleMixin, nn.Module):
+class BrainModule(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     r"""BrainModule from [brainmagick]_, also known as SimpleConv.
 
     A dilated convolutional encoder for EEG decoding, using residual

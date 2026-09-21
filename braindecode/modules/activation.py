@@ -106,6 +106,20 @@ class LogActivation(nn.Module):
         return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
 
 
+class SmoothMaximumUnit(nn.Module):
+    """Learnable smooth maximum activation."""
+
+    def __init__(self, alpha: float = 0.01, mu: float = 2.5) -> None:
+        super().__init__()
+        self.alpha = float(alpha)
+        self.mu = nn.Parameter(torch.tensor(float(mu)))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        positive = (1.0 + self.alpha) * x
+        smooth = (1.0 - self.alpha) * x * torch.erf(self.mu * (1.0 - self.alpha) * x)
+        return 0.5 * (positive + smooth)
+
+
 class GatedLinearUnit(nn.Module):
     r"""Generalized gated linear unit (GLU family).
 

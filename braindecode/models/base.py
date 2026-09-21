@@ -80,7 +80,7 @@ class _BraindecodeDocstringMeta(NumpyDocstringInheritanceInitMeta):
     unwrapped function and correctly inherits ``cls.__doc__``.
     """
 
-    def __init__(cls, class_name, class_bases, class_dict):
+    def __init__(cls, class_name, class_bases, class_dict, **kwargs):
         super().__init__(class_name, class_bases, class_dict)
         # Only wrap subclass __init__s, not EEGModuleMixin itself.
         # Wrapping the mixin would cause super().__init__() calls to
@@ -198,7 +198,36 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
     See :ref:`load-pretrained-models` for a complete tutorial.
     """
 
+    #: Attributes that :func:`torch.jit.script` must not introspect. The
+    #: signal-related properties raise :class:`ValueError` when their value was
+    #: neither given nor inferable, and ``mapping`` carries a postponed
+    #: annotation TorchScript cannot resolve. Either one aborts scripting
+    #: before ``forward`` is ever compiled.
+    __jit_ignored_attributes__ = [
+        *sorted(_EEG_PARAMS),
+        "_chs_info",
+        "input_shape",
+        "mapping",
+    ]
+    #: Rich MNE channel dictionaries are intentionally unavailable in scripted
+    #: forwards; they remain unchanged on eager models and in saved configs.
+    __jit_unused_properties__ = ["chs_info"]
+
     def __init_subclass__(cls, **kwargs):
+        license = kwargs.pop("license", "bsd-3-clause")
+
+        # TorchScript only honours ``__jit_ignored_attributes__`` for
+        # properties defined directly on the concrete class: it collects them
+        # with ``vars(type(module))``, which skips inherited ones. Rebinding
+        # the very same property objects on each subclass makes them visible
+        # there without changing any runtime behaviour.
+        for name in cls.__jit_ignored_attributes__:
+            if name in cls.__dict__:
+                continue
+            prop = getattr(cls, name, None)
+            if isinstance(prop, property):
+                setattr(cls, name, prop)
+
         # Append model-specific Hub integration notes to the docstring.
         # This runs before the metaclass __init__, so the Hub notes will
         # be included in the docstring that the metaclass processes.
@@ -226,8 +255,6 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         )
         repo_url = kwargs.pop("repo_url", "https://braindecode.org")
         library_name = kwargs.pop("library_name", "braindecode")
-        license = kwargs.pop("license", "bsd-3-clause")
-
         # Register a coder so that type[nn.Module] parameters
         # (e.g. activation=nn.ELU) are serialized as importable
         # strings in config.json and decoded back on load.
@@ -286,6 +313,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         self._chs_info = chs_info  # type: ignore[assignment]
         self._n_outputs = n_outputs  # type: ignore[assignment]
         self._n_chans = n_chans  # type: ignore[assignment]
+        # TorchScript cannot represent the rich MNE dictionaries in _chs_info.
+        # Keep the original eager state above and expose only the derived scalar
+        # to scripted signal-property getters.
+        self._n_chans_for_jit = (
+            len(chs_info) if n_chans is None and chs_info is not None else n_chans
+        )
         self._n_times = n_times  # type: ignore[assignment]
         self._sfreq = sfreq  # type: ignore[assignment]
 
@@ -310,6 +343,12 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
 
     @property
     def n_chans(self) -> int:
+        if torch.jit.is_scripting():
+            if self._n_chans_for_jit is None:
+                raise ValueError(
+                    "n_chans could not be inferred. Either specify n_chans or chs_info."
+                )
+            return self._n_chans_for_jit
         if self._n_chans is None and self._chs_info is not None:
             return len(self._chs_info)
         elif self._n_chans is None:
@@ -319,7 +358,7 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         return self._n_chans
 
     @property
-    def chs_info(self) -> list[str]:
+    def chs_info(self) -> list[dict]:
         if self._chs_info is None:
             raise ValueError("chs_info not specified.")
         return self._chs_info
@@ -479,6 +518,31 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         config.pop("braindecode_version", None)
         resolve_type_kwargs(cls, config)
         return cls(**config)
+
+    def _set_n_outputs(self, n_outputs: int) -> None:
+        """Record a new ``n_outputs`` on the model and its saved configs.
+
+        Helper for :meth:`reset_head` implementations: validates the value,
+        then keeps the ``n_outputs`` property, the braindecode init kwargs
+        and the Hugging Face hub config in sync, so a re-serialized model
+        reports the head it actually has.
+
+        Parameters
+        ----------
+        n_outputs : int
+            New number of outputs. Must be positive.
+
+        .. versionadded:: 1.8
+        """
+        if n_outputs <= 0:
+            raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
+        self._n_outputs = n_outputs
+        for config in (
+            getattr(self, "_braindecode_init_kwargs", None),
+            getattr(self, "_hub_mixin_config", None),
+        ):
+            if config is not None and "n_outputs" in config:
+                config["n_outputs"] = n_outputs
 
     def reset_head(self, n_outputs):
         """Replace the classification head for a new number of outputs.

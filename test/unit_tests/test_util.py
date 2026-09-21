@@ -1,9 +1,11 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 # License: BSD-3
 
 import os
 import tempfile
+import warnings
 from unittest import mock
 
 import h5py
@@ -23,6 +25,7 @@ from braindecode.util import (
     get_balanced_batches,
     np_to_th,
     read_all_file_names,
+    resolve_montage_name,
     set_random_seeds,
     th_to_np,
 )
@@ -404,6 +407,49 @@ def test_throwaway_index_loader_backward_compat():
     assert net._last_window_inds_ is crop  # index stashed for scoring
 
 
+@pytest.mark.parametrize(
+    "is_regression,target_dtype,container",
+    [
+        (False, torch.int64, tuple),
+        (False, torch.int64, list),
+        (True, torch.float32, tuple),
+        (True, torch.float32, list),
+    ],
+)
+def test_throwaway_index_loader_casts_mixup_target(
+    is_regression, target_dtype, container
+):
+    """Mixed targets follow the same dtype contract as plain targets."""
+    B, C, T = 4, 10, 200
+    X = torch.randn(B, C, T)
+    y_a = torch.zeros(B, dtype=torch.float64)
+    y_b = torch.ones(B, dtype=torch.float64)
+    lam = torch.full((B,), 0.3, dtype=torch.float64)
+
+    x, yy, _ = _route(
+        (X, container((y_a, y_b, lam))), is_regression=is_regression
+    )
+    assert torch.is_tensor(x) and x.dtype == torch.float32
+    assert isinstance(yy, tuple) and len(yy) == 3
+    assert yy[0].dtype == yy[1].dtype == target_dtype
+    assert yy[2].dtype == torch.float32
+
+
+def test_throwaway_index_loader_preserves_composite_input_target_dtype():
+    """Custom criteria keep float targets paired with composite model inputs."""
+    batch_size, n_chans, n_times = 4, 2, 20
+    x = (
+        torch.randn(batch_size, n_chans, n_times),
+        torch.randn(batch_size, n_chans, n_times),
+    )
+    y = torch.randint(0, 2, (batch_size,), dtype=torch.float32)
+
+    routed_x, routed_y, _ = _route((x, y))
+
+    assert routed_x is x
+    assert routed_y.dtype == torch.float32
+
+
 def test_looks_like_channel_mask_dtypes():
     from braindecode.util import _looks_like_channel_mask
 
@@ -440,3 +486,37 @@ def test_throwaway_index_loader_routes_pos_and_mask():
     # regression casts y to float even on the dict path
     _, yy, _ = _route((X, torch.randn(B), crop, pos, mask), is_regression=True)
     assert yy.dtype == torch.float32
+
+
+def test_resolve_montage_name():
+    renamed = {
+        "standard_1005": "colin27_1005",
+        "standard_1020": "colin27_1020",
+    }
+    for legacy, new in renamed.items():
+        resolved = resolve_montage_name(legacy)
+        assert resolved in (legacy, new)
+        assert resolved in mne.channels.get_builtin_montages()
+
+    # names that were not renamed pass through untouched
+    assert resolve_montage_name("biosemi64") == "biosemi64"
+    assert resolve_montage_name("easycap-M1") == "easycap-M1"
+
+
+def test_resolve_montage_name_raises_no_future_warning():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        for name in ("standard_1005", "standard_1020"):
+            montage = mne.channels.make_standard_montage(resolve_montage_name(name))
+            assert isinstance(montage, mne.channels.DigMontage)
+
+
+def test_eegpt_channel_building_raises_no_future_warning():
+    # gh-1163: building EEGPT's canonical channel list used to emit MNE's
+    # montage deprecation FutureWarning already at import time
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        from braindecode.models.eegpt import _get_eegpt_channels
+
+        channels = _get_eegpt_channels()
+    assert len(channels) > 0

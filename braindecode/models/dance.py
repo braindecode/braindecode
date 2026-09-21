@@ -22,7 +22,7 @@ from braindecode.modules import ChannelMerger, Perceiver, SimpleConv
 from braindecode.modules.dance_modules import DanceDetrDecoder
 
 
-class DANCE(EEGModuleMixin, nn.Module):
+class DANCE(EEGModuleMixin, nn.Module, license="mit"):
     r"""DANCE from Lévy et al (2026) [dance]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer` :bdg-dark-line:`Channel`
@@ -349,8 +349,7 @@ class DANCE(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the dense head and the DETR class head for a new ``n_outputs``."""
-        if n_outputs <= 0:
-            raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
+        self._set_n_outputs(n_outputs)
         old = self.final_layer
         self.final_layer = nn.Linear(old.in_features, n_outputs).to(
             device=old.weight.device, dtype=old.weight.dtype
@@ -359,10 +358,3 @@ class DANCE(EEGModuleMixin, nn.Module):
         self.decoder.class_head = nn.Linear(ch.in_features, n_outputs).to(
             device=ch.weight.device, dtype=ch.weight.dtype
         )
-        self._n_outputs = n_outputs
-        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
-        if init_kwargs is not None and "n_outputs" in init_kwargs:
-            init_kwargs["n_outputs"] = n_outputs
-        hub_config = getattr(self, "_hub_mixin_config", None)
-        if hub_config is not None and "n_outputs" in hub_config:
-            hub_config["n_outputs"] = n_outputs

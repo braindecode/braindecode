@@ -13,6 +13,8 @@ import numpy as np
 import torch
 from mne.channels import make_standard_montage
 
+from braindecode.util import resolve_montage_name
+
 from .base import Transform
 from .functional import (
     amplitude_scale,
@@ -703,7 +705,7 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
     )
     if ordered_ch_names is None:
         ordered_ch_names = raw_or_epoch.info["ch_names"]
-    ten_twenty_montage = make_standard_montage("standard_1020")
+    ten_twenty_montage = make_standard_montage(resolve_montage_name("standard_1020"))
     positions_dict = ten_twenty_montage.get_positions()["ch_pos"]
     positions_subdict = {
         k: positions_dict[k] for k in ordered_ch_names if k in positions_dict
@@ -729,7 +731,7 @@ class SensorsRotation(Transform):
         `mne` through::
 
          >>> ten_twenty_montage = mne.channels.make_standard_montage(
-         ...    'standard_1020'
+         ...    'standard_1020'  # 'colin27_1020' on MNE >= 1.13
          ... ).get_positions()['ch_pos']
 
     axis : 'x' | 'y' | 'z', optional
@@ -1068,16 +1070,18 @@ class Mixup(Transform):
         device = X.device
         batch_size, _, _ = X.shape
 
+        # lam follows the dtype of X, numpy draws float64 and that would leak
+        # into the mixed signal and into the loss returned by mixup_criterion
         if self.alpha > 0:
             if self.beta_per_sample:
                 lam = torch.as_tensor(
                     self.rng.beta(self.alpha, self.alpha, batch_size)
-                ).to(device)
+                ).to(device=device, dtype=X.dtype)
             else:
-                lam = torch.ones(batch_size).to(device)
+                lam = torch.ones(batch_size, dtype=X.dtype).to(device)
                 lam *= self.rng.beta(self.alpha, self.alpha)
         else:
-            lam = torch.ones(batch_size).to(device)
+            lam = torch.ones(batch_size, dtype=X.dtype).to(device)
 
         idx_perm = torch.as_tensor(
             self.rng.permutation(

@@ -6,6 +6,7 @@
 
 
 import inspect
+import json
 from unittest import mock
 
 import mne
@@ -32,6 +33,7 @@ from braindecode.datasets import (
     RawDataset,
     WindowsDataset,
 )
+from braindecode.datasets.bids import hub_io
 from braindecode.datasets.bids.hub import (
     _generate_readme_content,
     _infer_license_from_descriptions,
@@ -720,6 +722,352 @@ def test_preprocessing_kwargs_preserved(tmp_path):
         loaded.datasets[0].window_preproc_kwargs
         == windowed.datasets[0].window_preproc_kwargs
     )
+
+
+def _strict_json_loads(text):
+    """Parse JSON, rejecting NaN/Infinity literals that RFC 8259 forbids."""
+
+    def _reject(constant):
+        raise ValueError(f"non-compliant JSON constant: {constant}")
+
+    return json.loads(text, parse_constant=_reject)
+
+
+def _make_concat_raw_dataset_with_nan_locs():
+    """Create a synthetic RawDataset whose info contains NaN channel locs."""
+    rng = np.random.RandomState(42)
+    info = mne.create_info(ch_names=["C3", "C4", "Cz"], sfreq=100.0, ch_types="eeg")
+    raw = mne.io.RawArray(rng.randn(3, 500) * 1e-6, info)
+    # Realistic montage state: unknown coordinates are NaN in MNE
+    # (set_montage does the same for missing positions).
+    for ch in raw.info["chs"]:
+        ch["loc"][3:] = np.nan
+    description = pd.Series({"subject": 1, "session": "0train"})
+    return BaseConcatDataset([RawDataset(raw, description)])
+
+
+def _make_two_concat_raw_datasets_with_nan_locs():
+    """Create two independent recordings for global-metadata tests."""
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    first_ds = concat_ds.datasets[0]
+    second_ds = RawDataset(
+        first_ds.raw.copy(), pd.Series({"subject": 2, "session": "0train"})
+    )
+    return BaseConcatDataset([first_ds, second_ds])
+
+
+@pytest.mark.parametrize(
+    ("value", "normalized", "restored", "error_path", "error_category"),
+    [
+        (np.bool_(True), True, True, None, None),
+        (np.int64(7), 7, 7, None, None),
+        (np.float32(1.25), 1.25, 1.25, None, None),
+        ((np.int64(1), np.float64(2.5)), [1, 2.5], [1, 2.5], None, None),
+        (np.array([1, 2]), [1, 2], [1, 2], None, None),
+        (None, None, None, None, None),
+        ([1.0, np.nan], [1.0, None], [1.0, np.nan], None, None),
+        ([np.nan, np.nan], [None, None], [np.nan, np.nan], None, None),
+        ([True, None], [True, None], [True, None], None, None),
+        ([1.0, None], None, None, "info.value", "ambiguous"),
+        ([None, None], None, None, "info.value", "ambiguous"),
+        (
+            {"nested": [0.0, np.inf]},
+            None,
+            None,
+            "info.value.nested[1]",
+            "positive infinity",
+        ),
+        (
+            {"nested": [0.0, -np.inf]},
+            None,
+            None,
+            "info.value.nested[1]",
+            "negative infinity",
+        ),
+    ],
+)
+def test_info_json_normalization_contract(
+    value, normalized, restored, error_path, error_category
+):
+    """Info JSON normalization is lossless only on its reserved domain."""
+    if error_path is not None:
+        with pytest.raises(ValueError) as exc_info:
+            hub_io._prepare_info_for_json(value, path="info.value")
+        assert error_path in str(exc_info.value)
+        assert error_category in str(exc_info.value)
+        return
+
+    result = hub_io._prepare_info_for_json(value, path="info.value")
+    assert type(result) is type(normalized)
+    if isinstance(normalized, list):
+        np.testing.assert_equal(result, normalized)
+        np.testing.assert_equal(hub_io._restore_nan_from_json(result), restored)
+    else:
+        assert result == normalized
+        assert hub_io._restore_nan_from_json(result) == restored
+
+
+def test_zarr_json_attrs_are_spec_compliant(tmp_path):
+    """Saved zarr.json metadata must be valid JSON without NaN literals.
+
+    Regression test for gh-880: NaN values in the MNE ``Info`` dict were
+    written verbatim into ``zarr.json`` (invalid JSON per RFC 8259 and
+    the zarr v3 spec), and preprocessing kwargs were stored as
+    double-encoded JSON strings instead of JSON objects.
+    """
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    concat_ds.datasets[0].raw_preproc_kwargs = [["pick_types", {"eeg": True}]]
+
+    zarr_path = tmp_path / "dataset.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression=None, compression_level=5
+    )
+
+    zarr_json_files = sorted(zarr_path.rglob("zarr.json"))
+    assert len(zarr_json_files) >= 2  # root + recording_0 at minimum
+    for zarr_json in zarr_json_files:
+        # Raises ValueError on NaN/Infinity literals before the fix
+        _strict_json_loads(zarr_json.read_text())
+
+    root_zarr_json = _strict_json_loads((zarr_path / "zarr.json").read_text())
+    root_attrs = root_zarr_json["attributes"]
+    # Preprocessing kwargs must be stored as JSON values, not as strings
+    assert not isinstance(root_attrs["raw_preproc_kwargs"], str)
+    assert root_attrs["raw_preproc_kwargs"] == [["pick_types", {"eeg": True}]]
+
+
+def test_nan_channel_locs_round_trip(tmp_path):
+    """NaN channel locations must survive the save/load round trip (gh-880)."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    original_locs = [ch["loc"].copy() for ch in concat_ds.datasets[0].raw.info["chs"]]
+
+    zarr_path = tmp_path / "dataset.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression=None, compression_level=5
+    )
+    loaded = concat_ds._load_from_zarr_inline(zarr_path, preload=True)
+
+    loaded_chs = loaded.datasets[0].raw.info["chs"]
+    for original_loc, ch in zip(original_locs, loaded_chs):
+        # assert_array_equal treats NaN positions as equal
+        np.testing.assert_array_equal(original_loc, ch["loc"])
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
+def test_preprocessing_kwargs_strict_json_round_trip(tmp_path, kwarg_name):
+    """All preprocessing kwargs use native strict JSON and load legacy strings."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    kwargs = {
+        "tuple": (np.int64(2), np.float32(1.5)),
+        "enabled": True,
+        "nested": {"missing": None, "scale": np.float64(2.25)},
+    }
+    expected = {
+        "tuple": [2, 1.5],
+        "enabled": True,
+        "nested": {"missing": None, "scale": 2.25},
+    }
+    setattr(concat_ds.datasets[0], kwarg_name, kwargs)
+
+    zarr_path = tmp_path / f"{kwarg_name}.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression=None, compression_level=5
+    )
+
+    for zarr_json in zarr_path.rglob("zarr.json"):
+        _strict_json_loads(zarr_json.read_text())
+    root_attrs = _strict_json_loads((zarr_path / "zarr.json").read_text())[
+        "attributes"
+    ]
+    assert not isinstance(root_attrs[kwarg_name], str)
+    assert root_attrs[kwarg_name] == expected
+
+    loaded = concat_ds._load_from_zarr_inline(zarr_path, preload=True)
+    assert getattr(loaded.datasets[0], kwarg_name) == expected
+
+    # Rewrite the attribute the way older braindecode versions stored it.
+    root = zarr.open(str(zarr_path), mode="a")
+    root.attrs[kwarg_name] = json.dumps(expected)
+
+    loaded = concat_ds._load_from_zarr_inline(zarr_path, preload=True)
+    assert getattr(loaded.datasets[0], kwarg_name) == expected
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
+@pytest.mark.parametrize(
+    "nonfinite", [pytest.param(np.nan, id="nan"), np.inf, -np.inf]
+)
+def test_preprocessing_kwargs_nonfinite_preflight_is_atomic(
+    tmp_path, kwarg_name, nonfinite
+):
+    """Every kwargs field rejects nested nonfinite values before store creation."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    setattr(
+        concat_ds.datasets[0],
+        kwarg_name,
+        {"outer": [{"invalid": nonfinite}]},
+    )
+    zarr_path = tmp_path / f"{kwarg_name}.zarr"
+
+    with pytest.raises(ValueError, match=kwarg_name):
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression=None, compression_level=5
+        )
+    assert not zarr_path.exists()
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
+@pytest.mark.parametrize(
+    ("later_value", "set_later", "case"),
+    [
+        ({"outer": [{"scale": np.inf}]}, True, "nonfinite"),
+        (None, False, "presence-mismatch"),
+        ({"outer": [{"scale": 2}]}, True, "value-mismatch"),
+    ],
+)
+def test_preprocessing_kwargs_later_dataset_preflight_is_atomic(
+    tmp_path, kwarg_name, later_value, set_later, case
+):
+    """Every recording must match the one global kwargs value before writing."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_two_concat_raw_datasets_with_nan_locs()
+    setattr(concat_ds.datasets[0], kwarg_name, {"outer": [{"scale": 1}]})
+    if set_later:
+        setattr(concat_ds.datasets[1], kwarg_name, later_value)
+    zarr_path = tmp_path / f"{kwarg_name}-{case}.zarr"
+
+    with pytest.raises(ValueError, match=rf"{kwarg_name}.*dataset 1"):
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression=None, compression_level=5
+        )
+    assert not zarr_path.exists()
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
+@pytest.mark.parametrize(
+    ("first_value", "later_value", "case"),
+    [
+        (True, 1, "bool-int"),
+        (1, 1.0, "int-float"),
+    ],
+)
+def test_preprocessing_kwargs_json_types_must_match_atomically(
+    tmp_path, kwarg_name, first_value, later_value, case
+):
+    """Type-distinct JSON provenance cannot share one global attribute."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_two_concat_raw_datasets_with_nan_locs()
+    setattr(concat_ds.datasets[0], kwarg_name, {"outer": [{"value": first_value}]})
+    setattr(concat_ds.datasets[1], kwarg_name, {"outer": [{"value": later_value}]})
+    zarr_path = tmp_path / f"{kwarg_name}-{case}.zarr"
+
+    with pytest.raises(ValueError, match=rf"{kwarg_name}.*dataset 1"):
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression=None, compression_level=5
+        )
+    assert not zarr_path.exists()
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
+def test_preprocessing_kwargs_root_string_rejected_atomically(tmp_path, kwarg_name):
+    """Native root strings cannot collide with legacy double-encoded attrs."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    setattr(concat_ds.datasets[0], kwarg_name, "[]")
+    zarr_path = tmp_path / f"{kwarg_name}-root-string.zarr"
+
+    with pytest.raises(ValueError, match=kwarg_name):
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression=None, compression_level=5
+        )
+    assert not zarr_path.exists()
+
+
+@pytest.mark.parametrize(
+    "kwarg_name",
+    ["raw_preproc_kwargs", "window_kwargs", "window_preproc_kwargs"],
+)
+def test_preprocessing_kwargs_uniform_multi_recording_isolation(tmp_path, kwarg_name):
+    """Equal global provenance loads as independent objects per recording."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_two_concat_raw_datasets_with_nan_locs()
+    kwargs = {"outer": [{"scale": 1, "enabled": True}], "method": "filter"}
+    setattr(concat_ds.datasets[0], kwarg_name, copy.deepcopy(kwargs))
+    setattr(
+        concat_ds.datasets[1],
+        kwarg_name,
+        {"method": "filter", "outer": [{"enabled": True, "scale": 1}]},
+    )
+    zarr_path = tmp_path / f"{kwarg_name}-uniform.zarr"
+    concat_ds._convert_to_zarr_inline(
+        zarr_path, compression=None, compression_level=5
+    )
+
+    loaded = concat_ds._load_from_zarr_inline(zarr_path, preload=True)
+    first = getattr(loaded.datasets[0], kwarg_name)
+    second = getattr(loaded.datasets[1], kwarg_name)
+    assert first == second == kwargs
+    assert first is not second
+    assert first["outer"] is not second["outer"]
+    assert first["outer"][0] is not second["outer"][0]
+
+    first["outer"][0]["scale"] = 99
+    assert second == kwargs
+
+
+@pytest.mark.parametrize(
+    ("nonfinite", "path", "category"),
+    [
+        (np.nan, "info.line_freq", "NaN"),
+        (np.inf, "info.chs[0].loc[0]", "positive infinity"),
+        (-np.inf, "info.chs[0].loc[0]", "negative infinity"),
+    ],
+)
+def test_info_nonfinite_preflight_is_atomic(tmp_path, nonfinite, path, category):
+    """Unsupported Info nonfinite values fail before opening a fresh store."""
+    pytest.importorskip("zarr")
+
+    concat_ds = _make_concat_raw_dataset_with_nan_locs()
+    if path == "info.line_freq":
+        concat_ds.datasets[0].raw.info["line_freq"] = nonfinite
+    else:
+        concat_ds.datasets[0].raw.info["chs"][0]["loc"][0] = nonfinite
+    zarr_path = tmp_path / "invalid-info.zarr"
+
+    with pytest.raises(ValueError) as exc_info:
+        concat_ds._convert_to_zarr_inline(
+            zarr_path, compression=None, compression_level=5
+        )
+    assert path in str(exc_info.value)
+    assert category in str(exc_info.value)
+    assert not zarr_path.exists()
 
 
 @pytest.mark.parametrize("use_mne_epochs", [True, False])

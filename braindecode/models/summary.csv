@@ -33,7 +33,7 @@ SleepFM,"Sleep Staging, Disease Prediction",Prediction,128,"n_chans, n_outputs, 
 SleepFMStager,Sleep Staging,Prediction,128,"n_chans, n_outputs, n_times, sfreq",1373485,"SleepFMStager(n_chans=4, n_outputs=5, n_times=3840, sfreq=128)","Convolution,Recurrent,Attention/Transformer,Foundation Model",EEG
 SleepStagerBlanco2020,Sleep Staging,Prediction,100,"n_chans, n_outputs, n_times",2845,"SleepStagerBlanco2020(n_chans=2, n_outputs=5, n_times=3000, sfreq=100)","Convolution",EEG
 SleepStagerChambon2018,Sleep Staging,Prediction,128,"n_chans, n_outputs, n_times, sfreq",5835,"SleepStagerChambon2018(n_chans=2, n_outputs=5, n_times=3840, sfreq=128)","Convolution",EEG
-AttnSleep,Sleep Staging,Prediction,100,"n_chans, n_outputs, n_times, sfreq",719925,"AttnSleep(n_chans=2, n_outputs=5, n_times=3000, sfreq=100)","Convolution, Attention/Transformer",EEG
+AttnSleep,Sleep Staging,Prediction,100,"n_chans, n_outputs, n_times, sfreq",522805,"AttnSleep(n_chans=1, n_outputs=5, n_times=3000, sfreq=100)","Convolution, Attention/Transformer",EEG
 SPARCNet,Epilepsy,Prediction,200,"n_chans, n_outputs, n_times",1141921,"SPARCNet(n_chans=16, n_outputs=6, n_times=2000, sfreq=200)","Convolution",EEG
 SyncNet,"Emotion Recognition, Alcoholism",Prediction,256,"n_chans, n_outputs, n_times",554,"SyncNet(n_chans=62, n_outputs=3, n_times=5120, sfreq=256)","Interpretability",EEG
 TSception,Emotion Recognition,Prediction,256,"n_chans, n_outputs, n_times, sfreq",2187206,"TSception(n_chans=62, n_outputs=3, n_times=5120, sfreq=256)","Convolution",EEG
@@ -43,6 +43,9 @@ FBCNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",11812,"
 FBMSNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",16231,"FBMSNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 MetaNeuromotorHand,Handwriting (sEMG),CTC Sequence,2000,"n_chans, n_outputs, n_times, sfreq",1021284,"MetaNeuromotorHand(n_chans=16, n_outputs=100, n_times=32000, sfreq=2000)","Convolution,Attention/Transformer",sEMG
 EMG2QwertyNet,Touch typing (sEMG),CTC Sequence,2000,"n_chans, n_outputs, n_times, sfreq",5293315,"EMG2QwertyNet(n_chans=32, n_outputs=99, n_times=8000, sfreq=2000)","Convolution",sEMG
+VEMG2Pose,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",5980328,"VEMG2Pose(n_chans=16, n_outputs=20, n_times=11790, sfreq=2000)","Convolution,Recurrent",sEMG
+NeuroPose,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",6354903,"NeuroPose(n_chans=16, n_outputs=20, n_times=10000, sfreq=2000)","Convolution",sEMG
+SensingDynamics,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",1738297,"SensingDynamics(n_chans=16, n_outputs=20, n_times=480, sfreq=2000)","Convolution,Channel",sEMG
 FBLightConvNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6596,"FBLightConvNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 IFNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",9860,"IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 BrainModule,Speech Decoding,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6186909,"BrainModule(n_chans=64, n_outputs=29, n_times=160, sfreq=1000)","Convolution","EEG, MEG"

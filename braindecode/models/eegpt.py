@@ -16,6 +16,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import DropPath
 from braindecode.modules.convolution import Conv1dWithConstraint
 from braindecode.modules.linear import LinearWithConstraint
+from braindecode.util import resolve_montage_name
 
 
 class EEGPT(EEGModuleMixin, nn.Module):
@@ -494,7 +495,7 @@ _ALLOWED_CHANNELS = {
 
 
 def _get_eegpt_channels():
-    montage = mne.channels.make_standard_montage("standard_1020")
+    montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1020"))
     return [ch.upper() for ch in montage.ch_names if ch.upper() in _ALLOWED_CHANNELS]
 
 
@@ -1449,7 +1450,7 @@ from mne.channels import make_standard_montage  # noqa: E402
 
 from braindecode.models.interpolated import InterpolatedModel  # noqa: E402
 
-montage = make_standard_montage("standard_1020")
+montage = make_standard_montage(resolve_montage_name("standard_1020"))
 ch_pos = {
     ch.upper(): (ch, loc) for ch, loc in montage.get_positions()["ch_pos"].items()
 }
