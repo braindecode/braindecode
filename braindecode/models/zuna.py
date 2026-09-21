@@ -12,7 +12,7 @@ import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn import functional
+from torch.nn import RMSNorm, functional
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
@@ -399,16 +399,6 @@ class _RotaryPositionEmbedding(nn.Module):
         return query, key
 
 
-class _RMSNorm(nn.RMSNorm):
-    """Native RMSNorm with the reference's float32 accumulation and output dtype."""
-
-    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
-        normalized = functional.rms_norm(
-            input_tensor.float(), self.normalized_shape, eps=self.eps
-        )
-        return normalized.type_as(self.weight) * self.weight
-
-
 class _Attention(nn.Module):
     def __init__(
         self,
@@ -429,8 +419,8 @@ class _Attention(nn.Module):
         self.wk = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wv = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wo = nn.Linear(n_heads * head_dim, embedding_dim, bias=False)
-        self.q_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
-        self.k_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.q_norm = RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.k_norm = RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
         self.rotary_embedding = _RotaryPositionEmbedding()
 
     def forward(
@@ -517,13 +507,13 @@ class _TransformerBlock(nn.Module):
             ffn_dim_multiplier=ffn_dim_multiplier,
             activation=activation,
         )
-        self.attention_norm = _RMSNorm(embedding_dim, eps=norm_eps)
-        self.ffn_norm = _RMSNorm(embedding_dim, eps=norm_eps)
+        self.attention_norm = RMSNorm(embedding_dim, eps=norm_eps)
+        self.ffn_norm = RMSNorm(embedding_dim, eps=norm_eps)
         self.attention_norm_post = (
-            _RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+            RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
         )
         self.ffn_norm_post = (
-            _RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
+            RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
         )
 
     def forward(
@@ -579,7 +569,7 @@ class _ZUNAEncoder(nn.Module):
             )
             for _ in range(n_layers)
         )
-        self.norm = _RMSNorm(dim, eps=norm_eps)
+        self.norm = RMSNorm(dim, eps=norm_eps)
         self.output = nn.Linear(dim, output_dim, bias=False)
 
         # Buffers
