@@ -24,126 +24,111 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
 
     .. versionadded:: 1.8.2
 
-    An intracranial EEG encoder with channel-wise temporal tokenization and
-    joint space-time attention. Spatial embeddings can represent electrode
-    coordinates, atlas parcels, or lobes.
+    BaRISTA encodes intracranial EEG with a shared temporal CNN and joint
+    space-time attention. Its spatial embeddings use electrode coordinates,
+    atlas parcels or lobes. This class provides the encoder and a classification
+    head; it does not implement the masked pretraining objective.
+
+    .. figure:: ../_static/model/barista.jpeg
+       :align: center
+       :alt: BaRISTA pretraining with coordinate, parcel or lobe embeddings,
+             followed by fine-tuning on a new subject.
+       :width: 90%
+
+       Overview from the `authors' repository
+       <https://github.com/ShanechiLab/BaRISTA/tree/83b27375eba60e9eba9da4e7dd8fb283baace376>`_.
+       The figure includes pretraining, which is outside this implementation.
 
     .. rubric:: Architecture Overview
 
-    Tokens are assembled additively, for the :math:`i`-th patch of the
-    :math:`j`-th channel,
+    For patch :math:`i` of channel :math:`j`, the temporal CNN and projection
+    :math:`\mathcal{F}` produce a token. The spatial embedding is added before
+    attention:
 
     .. math::
-        \mathbf{S}_{ij} = \mathcal{F}(\mathbf{P}_{ij}) + \mathbf{E}_{sp(j)},
+        \mathbf{S}_{ij} = \mathcal{F}(\mathbf{P}_{ij}) + \mathbf{E}_{sp(j)}.
 
-    where :math:`\mathbf{P}_{ij}` is the raw patch, :math:`\mathcal{F}` the
-    tokenizer and :math:`\mathbf{E}_{sp(j)}` the embedding of the channel's
-    spatial category. The tokens are laid out with space and time interleaved,
+    Tokens are ordered by patch, then channel:
 
     .. math::
         \mathbf{S} = [\mathbf{S}_{11}, \ldots, \mathbf{S}_{1C}, \mathbf{S}_{21},
-        \ldots, \mathbf{S}_{nC}],
+        \ldots, \mathbf{S}_{nC}].
 
-    so a single encoder attends over all :math:`nC` of them at once.
+    Each attention layer therefore connects all electrodes and time patches.
 
     .. rubric:: Macro Components
 
-    - **Patch tokenizer** (``BaRISTA.patch_tokenizer``,
-      ``BaRISTA.temporal_encoder``, ``BaRISTA.temporal_pooler``).
-      *Operations:* split each channel into non-overlapping patches of
-      ``patch_size`` samples; run every patch through a shared dilated CNN
-      (``cnn_depth + 1`` residual blocks of two width-``cnn_kernel_size``
-      convolutions with exponentially growing dilation, each followed by a
-      parameter-free layer norm over time and a GELU), which maps a patch back
-      to a univariate signal of the same length; then apply one bias-free
-      linear layer to get a ``d_model`` token. *Role:* turn a
-      ``(n_chans, n_times)`` segment into an ``(n_patches, n_chans, d_model)``
-      token grid, one token per electrode and patch, with no mixing across
-      channels. The dilated CNN is used for its wide receptive field over the
-      oscillatory content of the patch.
-    - **Spatial embedding** (``BaRISTA.spatial_emb``). *Operations:* look up one
-      learned vector per channel, selected by the channel's category at the
-      chosen ``spatial_scale``, and add it to every token of that channel.
-      Multi-dimensional scales (the three electrode coordinates) keep one
-      embedding table per dimension and sum the lookups. *Role:* the only place
-      space enters the model, which is what makes the spatial scale a single
-      knob.
-    - **Encoder** (``BaRISTA.backbone``). *Operations:* ``n_layers`` pre-norm
-      blocks with RMSNorm, multi-head self-attention over the full interleaved
-      sequence with rotary embeddings on the *patch* index, and a gated
-      feed-forward block. *Role:* model cross-channel and cross-time
-      interactions concurrently in one attention stack.
-    - **Read-out** (``BaRISTA.token_pooling``, ``BaRISTA.final_layer``).
-      *Operations:* collapse the token sequence with a learned bias-free linear
-      combination (or a mean), then apply a linear classifier. *Role:* produce
-      the class logits. The learned combination is the only part tied to a
-      token count, and therefore to a fixed montage and window length.
+    - ``patch_tokenizer``, ``temporal_encoder`` and ``temporal_pooler`` split
+      each channel into patches, apply ``cnn_depth + 1`` residual CNN blocks,
+      then project each patch to ``d_model`` features. Each block has two
+      dilated convolutions with parameter-free temporal LayerNorm and GELU.
+      Dilation doubles between blocks; channels are encoded independently.
+    - ``spatial_emb`` adds a learned vector to each electrode's tokens.
+      Coordinate mode sums three embedding lookups. Parcel and lobe modes use
+      one table, so electrodes assigned to the same region share an embedding.
+    - ``backbone`` applies ``n_layers`` pre-norm blocks with RMSNorm, rotary
+      self-attention and a GELU-gated feed-forward network by default. All
+      channels in a patch share its rotary position.
+    - ``token_pooling`` reduces the sequence by a learned linear combination
+      or a mean. ``final_layer`` maps the resulting vector to class logits.
+      Learned pooling fixes the number of tokens; mean pooling permits it to
+      vary between recordings.
 
     .. rubric:: Temporal, Spatial, and Spectral Encoding
 
-    - *Temporal:* non-overlapping patches of ``patch_size`` samples, with the
-      dilated CNN encoding within-patch dynamics and rotary embeddings encoding
-      the patch index across the sequence. All channels of a patch share one
-      rotary position, so attention sees "same time, different electrode" and
-      "same electrode, different time" alike.
-    - *Spatial:* one additive learned embedding per channel, indexed by its
-      category at the chosen scale. At scales coarser than the channel, two
-      electrodes in the same parcel or lobe get *identical* spatial encodings.
-    - *Spectral:* none explicitly; oscillatory structure is left to the dilated
-      CNN.
+    - Temporal encoding uses non-overlapping patches and patch-index rotary
+      embeddings. Samples beyond the last complete patch are dropped.
+    - Spatial encoding uses dataset-provided coordinate or region indices.
+      ``spatial_scale="none"`` disables it.
+    - The CNN operates on waveforms. There is no explicit spectral transform.
 
     .. rubric:: Additional Mechanisms
 
-    **Spatial metadata**
+    Supply ``spatial_indices`` in input-channel order. NEMAR dataset
+    ``nm000253`` provides Brain Treebank's indices in ``electrodes.tsv``:
+    ``x, y, z`` for coordinates, ``barista_parcel_index`` for parcels and
+    ``barista_lobe_index`` for lobes. Region index 0 denotes an unknown region
+    and contributes no spatial embedding. The coordinate fallback bins finite,
+    same-frame MNE positions onto a centred 1 mm grid. Use the dataset's indices
+    with the released weights: the MNE fallback does not recover Brain
+    Treebank's coordinate convention.
 
-    Pass dataset-provided ``spatial_indices`` in input-channel order:
-    three coordinate indices per channel for ``"coords"``, or one region
-    index per channel for ``"parcels"`` and ``"lobes"``. Brain Treebank's
-    NEMAR dataset ``nm000253`` supplies these in ``electrodes.tsv`` as
-    ``x, y, z``, ``barista_parcel_index`` and ``barista_lobe_index``.
-    Region index 0 is unknown and contributes no spatial embedding.
-
-    If coordinate indices are omitted, ``"coords"`` bins finite, same-frame
-    ``chs_info`` positions from metres onto a centred 1 mm grid. This fallback
-    is not Brain Treebank's voxel convention; use the dataset's indices for
-    that dataset. ``"none"`` disables spatial encoding.
-
-    **Recordings with different montages**
-
-    The embedding tables only depend on the spatial scale, so the montage is a
-    :meth:`forward` argument: a batch from another subject, with another number
-    of electrodes, passes its own ``spatial_indices``. Constructor-provided
-    indices (or ``chs_info`` positions) are only the default for batches that
-    do not. Everything else in the encoder is shape-agnostic, so the channel
-    count and the window length may vary from batch to batch as long as
-    ``pooling="mean"``.
+    With ``pooling="mean"``, channel counts and window lengths can vary between
+    batches, provided each window contains a full patch. Pass each recording's
+    indices to :meth:`forward`; otherwise it uses the constructor's indices
+    or MNE positions. All samples in one batch
+    share a montage. The encoder uses PyTorch attention on separate batch
+    items, corresponding to the reference's block-diagonal attention mask.
 
     **Pre-trained weights**
 
-    The reference publishes three checkpoints, one per spatial scale. Loading
-    those checkpoints is not supported by this port: parameter names and the
-    fused gated projection differ. Dataset-provided indices preserve spatial
-    table ordering but do not convert checkpoint parameters. Local checkpoints
-    saved by this class can be restored through ``from_pretrained``.
+    ``scripts/convert_barista_weights.py`` downloads and converts all three
+    released encoders from a pinned source revision, checking each file's
+    SHA-256 hash. It renames tensors, combines the gated projections and checks
+    encoder tokens against the released forward equations on float32 CPU
+    inputs. The check uses explicit PyTorch attention in place of xformers;
+    it does not test downstream accuracy or mixed-precision equivalence.
 
-    **License**
+    From a Braindecode checkout with the ``hub`` extra installed, choose the
+    geometry and output count for your task, then run:
+
+    .. code-block:: console
+
+        python scripts/convert_barista_weights.py --output-dir barista-converted --n-chans 3 --n-times 6144 --n-outputs 2
+
+    The script saves one local Hub directory per scale and a JSON check report.
+    Load a converted encoder and supply its montage indices:
+
+    .. code-block:: python
+
+        model = BaRISTA.from_pretrained("barista-converted/parcels", strict=True)
+        logits = model(x, spatial_indices=parcel_indices)
+
+    The releases contain no downstream head. Pooling and classifier weights in
+    the converted models are newly initialized and require fine-tuning.
 
     USC Academic License (non-commercial; see ``NOTICE.txt``). For commercial
     use, contact the USC Stevens Center for Innovation.
-
-    .. note::
-        The reference runs attention through ``xformers`` with a block-diagonal
-        mask, packing the whole minibatch into one sequence; this port uses
-        :func:`~torch.nn.functional.scaled_dot_product_attention` over a regular
-        batch axis, which is equivalent because the mask only ever blocks
-        attention across samples.
-
-        The masked latent reconstruction objective used for pretraining, its
-        spatially-guided masking, the EMA target tokenizer and the predictor
-        network are out of scope: this port is the encoder and a classification
-        head. Note that the paper's downstream protocol also uses the EMA target
-        tokenizer rather than the online one, a distinction that only exists
-        during pretraining.
 
     Parameters
     ----------
@@ -185,8 +170,8 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     pooling : {"learned", "mean"}
         Token aggregation before the head. ``"learned"`` reproduces the paper's
         finetuning protocol, a bias-free linear combination of the tokens, and
-        so only accepts the channel and patch counts fixed at construction;
-        ``"mean"`` averages them instead, and accepts any montage and window.
+        requires the same total token count as at construction. ``"mean"``
+        averages tokens and accepts different montages and window lengths.
     drop_prob : float
         Dropout rate used in the encoder.
     activation : type[nn.Module]
