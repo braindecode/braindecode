@@ -1812,14 +1812,15 @@ def test_event_windows_mapping_shares_target_with_mne_epochs():
     direct = _event_windows([raw.copy()], use_mne_epochs=False, **kwargs)
     epochs = _event_windows([raw.copy()], use_mne_epochs=True, **kwargs)
     windows = epochs.datasets[0].windows
-    assert windows.event_id == {"W": 0, "N3/N4": 1, "R": 2}
-    np.testing.assert_array_equal(windows.events[:, 2], [0, 1, 1, 2])
+    assert windows.event_id == {"W": 0, "N3": 1, "N4": 2, "R": 3}
+    np.testing.assert_array_equal(windows.events[:, 2], [0, 1, 2, 3])
     np.testing.assert_array_equal(windows.metadata["target"], [0, 1, 1, 2])
     np.testing.assert_array_equal(
         direct.datasets[0].metadata["target"], windows.metadata["target"]
     )
-    # either merged name selects the windows of the shared target
-    assert len(windows["N3"]) == len(windows["N4"]) == len(windows["N3/N4"]) == 2
+    # Shared targets retain independently selectable annotation names.
+    assert len(windows["N3"]) == len(windows["N4"]) == 1
+    assert len(windows[["N3", "N4"]]) == 2
 
 
 @pytest.mark.parametrize("use_mne_epochs", [False, True])
@@ -2204,3 +2205,33 @@ def test_windows_from_events_infer_mapping_n_jobs(tmpdir_factory):
         )
         for ds, targets in zip(windows.datasets, expected):
             np.testing.assert_array_equal(ds.metadata["target"], targets)
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+@pytest.mark.parametrize("preload", [False, True])
+@pytest.mark.parametrize("per_event_stride", [False, True])
+def test_event_aliases_preserve_targets(use_mne_epochs, preload, per_event_stride):
+    raw = mne.io.RawArray(
+        np.zeros((1, 600)), mne.create_info(["Cz"], 100, "eeg"), verbose=False
+    )
+    raw.set_annotations(mne.Annotations([0, 2, 4], [2, 2, 2], ["N3", "N4", "REM"]))
+    mapping = {"N3": 3, "N4": 3, "REM": 4}
+    windows = create_windows_from_events(
+        BaseConcatDataset([RawDataset(raw)]),
+        mapping=mapping,
+        window_size_samples=100,
+        window_stride_samples=(
+            {"N3": 100, "N4": 200, "REM": 100} if per_event_stride else 100
+        ),
+        use_mne_epochs=use_mne_epochs,
+        preload=preload,
+        on_last_window="drop",
+    )
+    expected = [3, 3, 3, 4, 4] if per_event_stride else [3, 3, 3, 3, 4, 4]
+    assert [windows[i][1] for i in range(len(windows))] == expected
+    assert mapping == {"N3": 3, "N4": 3, "REM": 4}
+    if use_mne_epochs:
+        epochs = windows.datasets[0].windows
+        assert len(set(epochs.event_id.values())) == 3
+        assert len(epochs["N3"]) == len(epochs["REM"]) == 2
+        assert len(epochs["N4"]) == (1 if per_event_stride else 2)
