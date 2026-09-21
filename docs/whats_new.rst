@@ -47,6 +47,10 @@ Enhancements
 Bug fixes
 ==========
 
+- Preserve shared class targets when creating MNE epochs from different event
+  annotations, as in sleep staging. MNE event IDs remain unique.
+  (:gh:`1174` by `Bruno Aristimunha`_)
+
 - Fix a ``FutureWarning`` raised by MNE >= 1.13 when importing
   :mod:`braindecode` or using models, datasets and augmentations that build
   on the ``standard_1005``/``standard_1020`` montages: MNE renamed these
@@ -905,7 +909,7 @@ Bugs
   are called without the optional ``huggingface_hub`` dependency installed.
   Users now get a clear :class:`ImportError` with installation instructions
   (``pip install 'braindecode[hub]'``) instead of an ``AttributeError``.
-  (:gh:`1024` by `@copilot`_)
+  (:gh:`1024` by `@copilot <https://github.com/copilot>`_)
 - Replace the vague ``license: unknown`` field in the auto-generated Hugging
   Face Hub dataset card with an inferred license (when consistent across all
   recordings' descriptions) or a ``please-specify`` placeholder with a
