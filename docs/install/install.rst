@@ -4,7 +4,10 @@
  Installation
 ##############
 
-Braindecode is written in Python 3, specifically for version 3.11 or above.
+Braindecode requires Python >= 3.11, PyTorch >= 2.4, and TorchAudio >= 2.4. macOS
+requires Apple Silicon; Intel Macs are no longer supported because `PyTorch discontinued
+macOS x86_64 binaries after 2.2
+<https://dev-discuss.pytorch.org/t/pytorch-macos-x86-builds-deprecation-starting-january-2024/1690>`_.
 
 The package is distributed via Python package index (`PyPI <braindecode-pypi_>`_), and
 you can access the source code via `Github <braindecode-github_>`_ repository.
