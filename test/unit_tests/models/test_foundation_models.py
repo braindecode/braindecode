@@ -26,7 +26,7 @@ except ImportError:
 from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import RevePositionBank
+from braindecode.models.reve import Attention, RevePositionBank
 
 _ORIGINAL_TORCH_CAT = torch.cat
 
@@ -723,6 +723,26 @@ def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
     )
     expected = torch.outer(positions, inverse_frequencies).repeat_interleave(2, dim=1)
     torch.testing.assert_close(table, expected[:, :axis_dim])
+
+
+def test_reve_attention_matches_explicit_attention():
+    attention = Attention(dim=16, heads=2, head_dim=8)
+    x = torch.randn(2, 5, 16, requires_grad=True)
+    q, k, v = (
+        t.reshape(2, 5, 2, 8).transpose(1, 2)
+        for t in attention.to_qkv(attention.norm(x)).chunk(3, dim=-1)
+    )
+    weights = (q @ k.transpose(-1, -2) / 8**0.5).softmax(dim=-1)
+    expected = attention.to_out((weights @ v).transpose(1, 2).reshape(2, 5, 16))
+    actual = attention(x)
+    torch.testing.assert_close(actual, expected)
+    parameters = (x, *attention.parameters())
+    actual_grads = torch.autograd.grad(
+        actual.square().sum(), parameters, retain_graph=True
+    )
+    expected_grads = torch.autograd.grad(expected.square().sum(), parameters)
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads):
+        torch.testing.assert_close(actual_grad, expected_grad)
 
 
 # ==============================================================================
