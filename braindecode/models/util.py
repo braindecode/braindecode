@@ -1,6 +1,5 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #          Hubert Banville <hubert.jbanville@gmail.com>
-#          Julien Gadonneix <juliengado.2001@gmail.com>
 #
 # License: BSD (3-clause)
 import inspect
@@ -343,27 +342,6 @@ models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
-    (
-        "BaRISTA",
-        ["chs_info", "n_outputs", "n_times"],
-        {
-            # 3 s at the paper's 2048 Hz, i.e. 12 patches of 512 samples.
-            "n_times": 6144,
-            "sfreq": 2048.0,
-            # Intracranial positions, in metres as MNE stores them, so that the
-            # default coordinate-scale spatial encoding gets distinct bins.
-            "chs_info": [
-                {
-                    "ch_name": f"E{i + 1}",
-                    "kind": "seeg",
-                    "loc": np.concatenate(
-                        [0.06 * (2 * _rng.random(3) - 1), np.zeros(9)]
-                    ),
-                }
-                for i in range(8)
-            ],
-        },
-    ),
     ("BDTCN", ["n_chans", "n_outputs"], None),
     ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
     ("DeepSleepNet", ["n_chans", "n_outputs", "n_times"], None),
