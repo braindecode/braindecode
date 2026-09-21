@@ -13,6 +13,8 @@ import numpy as np
 import torch
 from mne.channels import make_standard_montage
 
+from braindecode.util import resolve_montage_name
+
 from .base import Transform
 from .functional import (
     amplitude_scale,
@@ -703,7 +705,7 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
     )
     if ordered_ch_names is None:
         ordered_ch_names = raw_or_epoch.info["ch_names"]
-    ten_twenty_montage = make_standard_montage("standard_1020")
+    ten_twenty_montage = make_standard_montage(resolve_montage_name("standard_1020"))
     positions_dict = ten_twenty_montage.get_positions()["ch_pos"]
     positions_subdict = {
         k: positions_dict[k] for k in ordered_ch_names if k in positions_dict
@@ -729,7 +731,7 @@ class SensorsRotation(Transform):
         `mne` through::
 
          >>> ten_twenty_montage = mne.channels.make_standard_montage(
-         ...    'standard_1020'
+         ...    'standard_1020'  # 'colin27_1020' on MNE >= 1.13
          ... ).get_positions()['ch_pos']
 
     axis : 'x' | 'y' | 'z', optional
