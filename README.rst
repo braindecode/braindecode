@@ -175,5 +175,5 @@ Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0), Cre
 Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0), MIT
 and Apache-2.0.
 
-Please refer to the ``LICENSE`` and ``NOTICE`` files for the per-file list and more
+Please refer to ``LICENSE.txt``, ``NOTICE.txt``, and the ``LICENSES`` directory for more
 detailed information.

@@ -10,6 +10,7 @@ from braindecode.models import (
     EEGDINO,
     EEGPT,
     REVE,
+    BrainOmni,
     CBraMod,
     InterpolatedBENDR,
     InterpolatedLaBraM,
@@ -79,6 +80,13 @@ _MODELS = [
     ),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
+    pytest.param(
+        BrainOmni,
+        N_CHANS,
+        {"chs_info": _chs(), "sfreq": 256.0},
+        False,
+        id="BrainOmni",
+    ),
     pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
     pytest.param(
         STEEGFormer,

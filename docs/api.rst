@@ -66,6 +66,8 @@ interface for all EEG models and can derive variable names when needed.
     .. currentmodule:: braindecode.models
 
     - :class:`BIOT` - Foundation model with pre-trained weights
+    - :class:`BrainOmni` - Unified EEG/MEG foundation model; official raw weights are
+      available from the authors
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
@@ -137,6 +139,8 @@ interface for all EEG models and can derive variable names when needed.
      BENDR
      BIOT
      BrainModule
+     BrainOmni
+     BrainTokenizer
      CBraMod
      CodeBrain
      ContraWR
@@ -244,6 +248,8 @@ squeeze and excitation layers.
     GatherExcite
     GSoP
     MultiHeadAttention
+    MultiHeadAttentionRoPE
+    RotaryPositionalEmbedding
     SqueezeAndExcitation
 
 Blocks
@@ -380,6 +386,24 @@ model.
     :recursive:
 
     aggregate_probas
+
+Quantization
+============
+
+These modules implement vector quantisation building blocks used by the BrainOmni
+foundation model, including an EMA-updated codebook, a single-layer vector quantiser
+with optional rotation-trick straight-through estimator, and a residual VQ stack.
+
+:py:mod:`braindecode.modules.quantization`:
+
+.. autosummary::
+    :toctree: generated/quantization
+    :template: class_in_subdir
+    :recursive:
+
+    Codebook
+    ResidualVQ
+    VectorQuantizer
 
 Wrappers
 ========

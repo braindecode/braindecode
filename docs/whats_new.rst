@@ -28,6 +28,14 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.BrainOmni` and
+  :class:`braindecode.models.BrainTokenizer`, a unified EEG/MEG brain foundation
+  model and its VQ-VAE tokenizer (NeurIPS 2025). The public models can strictly
+  load the authors' released raw checkpoints and construct directly from the
+  released configurations. From-scratch codebooks follow the official K-means
+  initialization and distributed EMA updates. (:gh:`1043` by `Bruno Aristimunha`_)
+
+
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
