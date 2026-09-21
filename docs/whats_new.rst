@@ -33,7 +33,7 @@ Enhancements
   channel-wise and space enters as a single learned embedding selected by the
   electrode coordinate, its atlas parcel or its lobe, before a joint
   space-time transformer encoder with rotary temporal embeddings
-  (:gh:`1171` by `Julien Gadonneix`_).
+  (:gh:`1173` by `Julien Gadonneix`_).
 
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
