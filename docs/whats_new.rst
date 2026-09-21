@@ -44,6 +44,15 @@ Enhancements
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
 
+Requirements
+============
+
+- Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
+  RMS normalization in REVE and ZUNA now uses PyTorch's implementation while
+  retaining float32 accumulation. Intel macOS is no longer supported because
+  PyTorch stopped providing its binary packages after 2.2.
+  (:gh:`1174` by `Bruno Aristimunha`_)
+
 Bug fixes
 ==========
 
