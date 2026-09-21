@@ -1,27 +1,8 @@
 # Authors: Julien Gadonneix <juliengado.2001@gmail.com>
-#
-# License: USC academic, non-commercial (full notice below)
-#
-# This software is Copyright © 2025 The University of Southern California. All Rights Reserved.
-#
-# Permission to use, copy, modify, and distribute this software and its documentation for educational, research and non-profit purposes, without fee, and without a writen agreement is hereby granted, provided that the above copyright notice, this paragraph and the following three paragraphs appear in all copies.  # codespell:ignore writen
-#
-# Permission to make commercial use of this software may be obtained by contacting:\
-# USC Stevens Center for Innovation\
-# University of Southern California\
-# 1150 S. Olive Street, Suite 2300\
-# Los Angeles, CA 90115, USA\
-# E-mail to: info@stevens.usc.edu and cc to: accounting@stevens.usc.edu
-#
-# This software program and documentation are copyrighted by The University of Southern California. The software program and documentation are supplied "as is", without any accompanying services from USC. USC does not warrant that the operation of the program will be uninterrupted or error-free. The end-user understands that the program was developed for research purposes and is advised not to rely exclusively on the program for any reason.
-#
-# IN NO EVENT SHALL THE UNIVERSITY OF SOUTHERN CALIFORNIA BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE UNIVERSITY OF SOUTHERN CALIFORNIA HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. THE UNIVERSITY OF SOUTHERN CALIFORNIA SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" BASIS, AND THE UNIVERSITY OF SOUTHERN CALIFORNIA HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
-
+# License: USC academic, non-commercial; see NOTICE.txt.
 """BaRISTA, adapted from https://github.com/ShanechiLab/BaRISTA."""
 
 from __future__ import annotations
-
-import warnings
 
 import torch
 import torch.nn.functional as F
@@ -110,37 +91,26 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
 
     .. rubric:: Additional Mechanisms
 
-    **Spatial scales**
+    **Spatial metadata**
 
-    ``"coords"`` uses three ``coord_bins``-row embedding tables indexed by
-    electrode positions from ``chs_info``. ``"parcels"`` uses 121 Destrieux
-    categories, and ``"lobes"`` uses 21 lobe/subcortical slots, including the
-    unknown slot. Both require per-channel ``spatial_regions`` labels; this
-    model does not perform atlas localization. ``"none"`` disables spatial
-    encoding. Region labels are case-insensitive, with hyphens treated as
-    underscores. Unknown labels map to a zero embedding and produce a warning;
-    the explicit label ``"UNKNOWN"`` maps to zero without warning.
+    Pass dataset-provided ``spatial_indices`` in input-channel order:
+    three coordinate indices per channel for ``"coords"``, or one region
+    index per channel for ``"parcels"`` and ``"lobes"``. Brain Treebank's
+    NEMAR dataset ``nm000253`` supplies these in ``electrodes.tsv`` as
+    ``x, y, z``, ``barista_parcel_index`` and ``barista_lobe_index``.
+    Region index 0 is unknown and contributes no spatial embedding.
 
-    **Channel metadata**
-
-    Only ``spatial_scale="coords"`` reads ``chs_info``, and it needs the
-    ``"loc"`` entries. Positions are taken in metres, as MNE stores them,
-    converted to millimetres, negated and rounded to a 1 mm integer grid about
-    their coordinate-frame origin. This is a model-specific grid, not a
-    conversion to Brain Treebank voxel coordinates: ``chs_info`` can contain
-    head or MRI coordinates. All channels must use the same coordinate frame,
-    and training and inference must use the same frame and origin.
-    Positions outside the ``coord_bins``-millimetre cube are clipped to its
-    faces. A channel whose position is missing or not
-    finite, which is how MNE marks one it cannot place, is an error: it would
-    otherwise be encoded as sitting at the head origin.
+    If coordinate indices are omitted, ``"coords"`` bins finite, same-frame
+    ``chs_info`` positions from metres onto a centred 1 mm grid. This fallback
+    is not Brain Treebank's voxel convention; use the dataset's indices for
+    that dataset. ``"none"`` disables spatial encoding.
 
     **Pre-trained weights**
 
     The reference publishes three checkpoints, one per spatial scale. Loading
     those checkpoints is not supported by this port: parameter names and the
-    fused gated projection differ, and the coordinate tables use Brain
-    Treebank voxel indices rather than the grid defined here. Local checkpoints
+    fused gated projection differ. Dataset-provided indices preserve spatial
+    table ordering but do not convert checkpoint parameters. Local checkpoints
     saved by this class can be restored through ``from_pretrained``.
 
     **License**
@@ -168,16 +138,17 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     Parameters
     ----------
     spatial_scale : {"coords", "parcels", "lobes", "none"}
-        Spatial scale at which electrodes are encoded. ``"coords"`` reads the
-        electrode positions from ``chs_info``; ``"parcels"`` and ``"lobes"``
-        need ``spatial_regions``; ``"none"`` disables spatial encoding.
-    spatial_regions : list of str, optional
-        Region label of each channel, required by ``spatial_scale="parcels"``
-        and ``"lobes"`` and unused otherwise.
+        Spatial embedding scale. Coordinate mode uses ``spatial_indices`` or
+        falls back to ``chs_info``; region modes require ``spatial_indices``.
+    spatial_indices : list of int or list of list of int, optional
+        Dataset-provided embedding indices in input-channel order. Shape
+        ``(n_chans, 3)`` for coordinates, with values in ``[0, coord_bins)``;
+        shape ``(n_chans,)`` for parcels or lobes, with values in ``[0, 121)``
+        or ``[0, 21)`` respectively. Region index 0 denotes unknown. Use the
+        dataset's BaRISTA index mapping, not arbitrary atlas label numbers.
     coord_bins : int
-        Number of embedding slots per coordinate axis, i.e. the width in
-        millimetres of the cube of head positions that can be encoded. Default
-        200, as in the reference.
+        Number of slots per coordinate axis, default 200. Also the grid width
+        in millimetres when deriving indices from ``chs_info``.
     patch_size : int
         Number of samples per temporal patch, default 512 (250 ms at the
         paper's 2048 Hz). Windows are tokenized into whole patches, so a window
@@ -231,7 +202,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         # --- model hyperparameters (defaults: the published BaRISTA) ---
         *,
         spatial_scale: str = "coords",
-        spatial_regions: list[str] | None = None,
+        spatial_indices: list[int] | list[list[int]] | None = None,
         coord_bins: int = 200,
         patch_size: int = 512,
         d_model: int = 64,
@@ -336,7 +307,7 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         self.unfold_grid = Rearrange("batch 1 seq time -> batch seq time")
         self.temporal_pooler = nn.Linear(patch_size, d_model, bias=False)
 
-        self.spatial_emb = self._build_spatial_embedding(spatial_scale, spatial_regions)
+        self.spatial_emb = self._build_spatial_embedding(spatial_scale, spatial_indices)
 
         self.backbone = _Transformer(
             d_model=d_model,
@@ -366,74 +337,60 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
                 nn.init.zeros_(module.bias)
 
     def _build_spatial_embedding(
-        self, spatial_scale: str, spatial_regions: list[str] | None
+        self,
+        spatial_scale: str,
+        spatial_indices: list[int] | list[list[int]] | None,
     ) -> _SpatialEmbedding | None:
-        """Resolve the per-channel spatial categories and build their embedding."""
+        """Use dataset indices, or bin MNE positions when none were supplied."""
         if spatial_scale == "none":
             return None
-
-        if spatial_scale == "coords":
-            if not self._chs_info:
-                raise ValueError(
-                    "BaRISTA reads the electrode coordinates from chs_info when "
-                    "spatial_scale='coords', which must therefore be given and "
-                    "non-empty. Pass region labels in spatial_regions and use "
-                    "spatial_scale='parcels' or 'lobes' instead, or disable "
-                    "spatial encoding with spatial_scale='none'."
-                )
+        is_coords = spatial_scale == "coords"
+        n_slots = (
+            self.coord_bins
+            if is_coords
+            else {"parcels": 121, "lobes": 21}[spatial_scale]
+        )
+        if spatial_indices is None:
+            if not is_coords:
+                raise ValueError(f"spatial_indices is required for {spatial_scale!r}.")
             locations = extract_channel_locations_from_chs_info(
-                self.chs_info, num_channels=self.n_chans
+                self._chs_info, num_channels=self.n_chans
             )
-            # The shared extractor can return partial or non-finite locations.
-            positions = (
-                None
-                if locations is None
-                else torch.as_tensor(locations, dtype=torch.float32)
-            )
-            if (
-                positions is None
-                or len(positions) != self.n_chans
-                or not positions.isfinite().all()
-            ):
+            if locations is None or len(locations) != self.n_chans:
                 raise ValueError(
-                    "BaRISTA needs a position for every channel when "
-                    "spatial_scale='coords', but the 'loc' entries of chs_info "
-                    "are missing, degenerate or not finite. Set a montage, or "
-                    "encode space at a coarser scale with spatial_scale='parcels' "
-                    "or 'lobes' and region labels in spatial_regions, or disable "
-                    "spatial encoding with spatial_scale='none'."
+                    "Provide spatial_indices or chs_info positions for every channel."
                 )
-            frames = {ch.get("coord_frame") for ch in self.chs_info}
-            if len(frames) > 1:
+            positions = torch.as_tensor(locations, dtype=torch.float32)
+            if not positions.isfinite().all():
+                raise ValueError("chs_info positions must be finite.")
+            if len({ch.get("coord_frame") for ch in self.chs_info}) > 1:
                 raise ValueError(
                     "chs_info must use the same coordinate frame for all channels."
                 )
-            # This centred grid is not the reference's Brain Treebank voxel grid.
-            coords_mm = -1e3 * positions
-            indices = coords_mm.round() + self.coord_bins // 2
-            indices = indices.clamp(0, self.coord_bins - 1).to(torch.long)
-            # One table per axis, summed, as in Appendix D of the paper.
-            return _SpatialEmbedding(
-                indices.T, self.d_model, self.coord_bins, padding_idx=None
-            )
-
-        vocabulary, n_regions = _SPATIAL_VOCABULARIES[spatial_scale]
-        if spatial_regions is None:
+            indices = (-1000 * positions).round() + self.coord_bins // 2
+            indices = indices.clamp(0, self.coord_bins - 1)
+        else:
+            indices = torch.as_tensor(spatial_indices)
+        expected = (self.n_chans, 3) if is_coords else (self.n_chans,)
+        if tuple(indices.shape) != expected:
+            raise ValueError(f"spatial_indices must have shape {expected}.")
+        if (
+            indices.is_complex()
+            or indices.dtype == torch.bool
+            or not indices.isfinite().all()
+            or (indices < 0).any()
+            or (indices >= n_slots).any()
+            or (indices != indices.long()).any()
+        ):
             raise ValueError(
-                f"BaRISTA cannot derive the {spatial_scale} of each electrode on "
-                f"its own, so spatial_regions must be given when "
-                f"spatial_scale={spatial_scale!r}."
+                f"spatial_indices must contain integers in [0, {n_slots})."
             )
-        if len(spatial_regions) != self.n_chans:
-            raise ValueError(
-                f"spatial_regions has {len(spatial_regions)} labels but the model "
-                f"has {self.n_chans} channels."
-            )
-        indices = _region_indices(list(spatial_regions), vocabulary)
-        # Slot 0 is the reference's UNKNOWN, kept as the padding index so that
-        # electrodes of unknown region contribute nothing.
+        indices = indices.long()
         return _SpatialEmbedding(
-            indices.unsqueeze(0), self.d_model, n_regions, padding_idx=0
+            indices.T if is_coords else indices.unsqueeze(0),
+            self.d_model,
+            n_slots,
+            padding_idx=None if is_coords else 0,
         )
 
     def reset_head(self, n_outputs: int) -> None:
@@ -619,7 +576,7 @@ class _Transformer(nn.Module):
                 for _ in range(n_layers)
             ]
         )
-        self.norm = nn.RMSNorm(d_model, eps=_NORM_EPS)
+        self.norm = nn.RMSNorm(d_model, eps=1e-8)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for layer in self.layers:
@@ -639,14 +596,14 @@ class _TransformerEncoderLayer(nn.Module):
         activation: type[nn.Module],
     ):
         super().__init__()
-        self.norm1 = nn.RMSNorm(d_model, eps=_NORM_EPS)
+        self.norm1 = nn.RMSNorm(d_model, eps=1e-8)
         self.self_attn = _RotarySelfAttention(
             d_model=d_model,
             num_heads=num_heads,
             drop_prob=drop_prob,
         )
         self.dropout = nn.Dropout(drop_prob)
-        self.norm2 = nn.RMSNorm(d_model, eps=_NORM_EPS)
+        self.norm2 = nn.RMSNorm(d_model, eps=1e-8)
         self.mlp = nn.Sequential(
             nn.Linear(d_model, 2 * mlp_ratio * d_model),
             GatedLinearUnit(activation),
@@ -700,212 +657,3 @@ def _apply_rotary(
     """Apply the reference's half-split (not interleaved) rotary embedding."""
     first, second = x.chunk(2, dim=-1)
     return x * cos.to(x.dtype) + torch.cat((-second, first), dim=-1) * sin.to(x.dtype)
-
-
-def _region_indices(labels: list[str], vocabulary: dict[str, int]) -> torch.Tensor:
-    """Normalize atlas names and map unknown labels to the zero padding slot."""
-    slots = []
-    unmatched = set()
-    for label in labels:
-        key = str(label).replace("-", "_").upper()
-        if key in vocabulary:
-            slots.append(vocabulary[key])
-        else:
-            slots.append(0)
-            unmatched.add(label)
-    if unmatched:
-        warnings.warn(
-            f"BaRISTA did not recognise the region labels {sorted(unmatched)}; "
-            "the corresponding channels get a zero spatial embedding.",
-            UserWarning,
-            stacklevel=3,
-        )
-    return torch.tensor(slots, dtype=torch.long)
-
-
-# The reference RMSNorm eps, from ``config/model.yaml``.
-_NORM_EPS = 1e-8
-
-# Destrieux parcels, in the slot order of the reference ``Destrieux`` enum: this
-# is the subset of the atlas that Brain Treebank annotates, plus the subcortical
-# structures the dataset labels, so it is neither the full atlas nor alphabetical.
-# The order is what indexes the released parcel-level embedding table, and slot 0
-# is the padding slot given to electrodes of unknown parcel.
-_DESTRIEUX_REGIONS: tuple[str, ...] = (
-    "UNKNOWN",
-    "LEFT_AMYGDALA",
-    "LEFT_HIPPOCAMPUS",
-    "LEFT_INF_LAT_VENT",
-    "LEFT_PUTAMEN",
-    "RIGHT_AMYGDALA",
-    "RIGHT_HIPPOCAMPUS",
-    "RIGHT_INF_LAT_VENT",
-    "RIGHT_PUTAMEN",
-    "CTX_LH_G_INS_LG_AND_S_CENT_INS",
-    "CTX_LH_G_AND_S_CINGUL_ANT",
-    "CTX_LH_G_AND_S_CINGUL_MID_ANT",
-    "CTX_LH_G_AND_S_CINGUL_MID_POST",
-    "CTX_LH_G_AND_S_SUBCENTRAL",
-    "CTX_LH_G_CINGUL_POST_DORSAL",
-    "CTX_LH_G_FRONT_INF_OPERCULAR",
-    "CTX_LH_G_FRONT_INF_ORBITAL",
-    "CTX_LH_G_FRONT_INF_TRIANGUL",
-    "CTX_LH_G_FRONT_MIDDLE",
-    "CTX_LH_G_FRONT_SUP",
-    "CTX_LH_G_INSULAR_SHORT",
-    "CTX_LH_G_OC_TEMP_MED_PARAHIP",
-    "CTX_LH_G_OCCIPITAL_MIDDLE",
-    "CTX_LH_G_ORBITAL",
-    "CTX_LH_G_PARIET_INF_ANGULAR",
-    "CTX_LH_G_PARIET_INF_SUPRAMAR",
-    "CTX_LH_G_PARIETAL_SUP",
-    "CTX_LH_G_POSTCENTRAL",
-    "CTX_LH_G_PRECENTRAL",
-    "CTX_LH_G_PRECUNEUS",
-    "CTX_LH_G_RECTUS",
-    "CTX_LH_G_TEMP_SUP_G_T_TRANSV",
-    "CTX_LH_G_TEMP_SUP_LATERAL",
-    "CTX_LH_G_TEMP_SUP_PLAN_POLAR",
-    "CTX_LH_G_TEMP_SUP_PLAN_TEMPO",
-    "CTX_LH_G_TEMPORAL_INF",
-    "CTX_LH_G_TEMPORAL_MIDDLE",
-    "CTX_LH_LAT_FIS_ANT_HORIZONT",
-    "CTX_LH_LAT_FIS_ANT_VERTICAL",
-    "CTX_LH_LAT_FIS_POST",
-    "CTX_LH_POLE_TEMPORAL",
-    "CTX_LH_S_CALCARINE",
-    "CTX_LH_S_CENTRAL",
-    "CTX_LH_S_CINGUL_MARGINALIS",
-    "CTX_LH_S_CIRCULAR_INSULA_ANT",
-    "CTX_LH_S_CIRCULAR_INSULA_INF",
-    "CTX_LH_S_CIRCULAR_INSULA_SUP",
-    "CTX_LH_S_COLLAT_TRANSV_ANT",
-    "CTX_LH_S_FRONT_INF",
-    "CTX_LH_S_FRONT_MIDDLE",
-    "CTX_LH_S_FRONT_SUP",
-    "CTX_LH_S_INTRAPARIET_AND_P_TRANS",
-    "CTX_LH_S_OC_TEMP_MED_AND_LINGUAL",
-    "CTX_LH_S_ORBITAL_H_SHAPED",
-    "CTX_LH_S_ORBITAL_LATERAL",
-    "CTX_LH_S_ORBITAL_MED_OLFACT",
-    "CTX_LH_S_PARIETO_OCCIPITAL",
-    "CTX_LH_S_PERICALLOSAL",
-    "CTX_LH_S_POSTCENTRAL",
-    "CTX_LH_S_PRECENTRAL_INF_PART",
-    "CTX_LH_S_PRECENTRAL_SUP_PART",
-    "CTX_LH_S_SUBORBITAL",
-    "CTX_LH_S_SUBPARIETAL",
-    "CTX_LH_S_TEMPORAL_INF",
-    "CTX_LH_S_TEMPORAL_SUP",
-    "CTX_LH_S_TEMPORAL_TRANSVERSE",
-    "CTX_RH_G_INS_LG_AND_S_CENT_INS",
-    "CTX_RH_G_AND_S_CINGUL_ANT",
-    "CTX_RH_G_AND_S_CINGUL_MID_ANT",
-    "CTX_RH_G_AND_S_CINGUL_MID_POST",
-    "CTX_RH_G_AND_S_FRONTOMARGIN",
-    "CTX_RH_G_AND_S_PARACENTRAL",
-    "CTX_RH_G_AND_S_SUBCENTRAL",
-    "CTX_RH_G_CINGUL_POST_DORSAL",
-    "CTX_RH_G_FRONT_INF_OPERCULAR",
-    "CTX_RH_G_FRONT_INF_ORBITAL",
-    "CTX_RH_G_FRONT_INF_TRIANGUL",
-    "CTX_RH_G_FRONT_MIDDLE",
-    "CTX_RH_G_FRONT_SUP",
-    "CTX_RH_G_INSULAR_SHORT",
-    "CTX_RH_G_OC_TEMP_LAT_FUSIFOR",
-    "CTX_RH_G_OC_TEMP_MED_PARAHIP",
-    "CTX_RH_G_ORBITAL",
-    "CTX_RH_G_PARIET_INF_ANGULAR",
-    "CTX_RH_G_PARIET_INF_SUPRAMAR",
-    "CTX_RH_G_PRECENTRAL",
-    "CTX_RH_G_RECTUS",
-    "CTX_RH_G_TEMP_SUP_G_T_TRANSV",
-    "CTX_RH_G_TEMP_SUP_LATERAL",
-    "CTX_RH_G_TEMP_SUP_PLAN_POLAR",
-    "CTX_RH_G_TEMP_SUP_PLAN_TEMPO",
-    "CTX_RH_G_TEMPORAL_INF",
-    "CTX_RH_G_TEMPORAL_MIDDLE",
-    "CTX_RH_LAT_FIS_ANT_HORIZONT",
-    "CTX_RH_LAT_FIS_ANT_VERTICAL",
-    "CTX_RH_LAT_FIS_POST",
-    "CTX_RH_POLE_TEMPORAL",
-    "CTX_RH_S_CENTRAL",
-    "CTX_RH_S_CINGUL_MARGINALIS",
-    "CTX_RH_S_CIRCULAR_INSULA_ANT",
-    "CTX_RH_S_CIRCULAR_INSULA_INF",
-    "CTX_RH_S_CIRCULAR_INSULA_SUP",
-    "CTX_RH_S_COLLAT_TRANSV_ANT",
-    "CTX_RH_S_FRONT_INF",
-    "CTX_RH_S_FRONT_MIDDLE",
-    "CTX_RH_S_FRONT_SUP",
-    "CTX_RH_S_INTRAPARIET_AND_P_TRANS",
-    "CTX_RH_S_OC_TEMP_LAT",
-    "CTX_RH_S_OC_TEMP_MED_AND_LINGUAL",
-    "CTX_RH_S_ORBITAL_H_SHAPED",
-    "CTX_RH_S_ORBITAL_LATERAL",
-    "CTX_RH_S_ORBITAL_MED_OLFACT",
-    "CTX_RH_S_PERICALLOSAL",
-    "CTX_RH_S_POSTCENTRAL",
-    "CTX_RH_S_PRECENTRAL_INF_PART",
-    "CTX_RH_S_PRECENTRAL_SUP_PART",
-    "CTX_RH_S_SUBORBITAL",
-    "CTX_RH_S_SUBPARIETAL",
-    "CTX_RH_S_TEMPORAL_INF",
-    "CTX_RH_S_TEMPORAL_SUP",
-    "CTX_RH_S_TEMPORAL_TRANSVERSE",
-)
-
-# Desikan-Killiany cortical regions grouped into lobe slots, as (left slot,
-# right slot, region names without the ``CTX_?H_`` prefix). Slots 11 and 12 are
-# the left and right occipital lobe: the reference reserves them but no Brain
-# Treebank electrode falls there, so the released lobe embedding table has two
-# rows that were never trained.
-_LOBE_CORTICAL = (
-    (
-        5,
-        6,
-        "SUPERIORFRONTAL ROSTRALMIDDLEFRONTAL CAUDALMIDDLEFRONTAL "
-        "PARSOPERCULARIS PARSORBITALIS PARSTRIANGULARIS LATERALORBITOFRONTAL "
-        "MEDIALORBITOFRONTAL PRECENTRAL PARACENTRAL",
-    ),
-    (7, 8, "SUPERIORPARIETAL INFERIORPARIETAL SUPRAMARGINAL POSTCENTRAL PRECUNEUS"),
-    (
-        9,
-        10,
-        "SUPERIORTEMPORAL MIDDLETEMPORAL INFERIORTEMPORAL BANKSSTS FUSIFORM "
-        "TRANSVERSETEMPORAL ENTORHINAL TEMPORALPOLE PARAHIPPOCAMPAL",
-    ),
-    (
-        13,
-        14,
-        "ROSTRALANTERIORCINGULATE CAUDALANTERIORCINGULATE POSTERIORCINGULATE "
-        "ISTHMUSCINGULATE",
-    ),
-    (15, 16, "INSULA"),
-)
-
-# Subcortical structures, which the reference keeps as lobe slots of their own.
-_LOBE_SUBCORTICAL: tuple[tuple[int, int, str], ...] = (
-    (1, 2, "AMYGDALA"),
-    (3, 4, "HIPPOCAMPUS"),
-    (17, 18, "PUTAMEN"),
-    (19, 20, "INF_LAT_VENT"),
-)
-
-_LOBE_REGIONS: dict[str, int] = {"UNKNOWN": 0}
-for _left, _right, _names in _LOBE_CORTICAL:
-    for _name in _names.split():
-        _LOBE_REGIONS[f"CTX_LH_{_name}"] = _left
-        _LOBE_REGIONS[f"CTX_RH_{_name}"] = _right
-for _left, _right, _name in _LOBE_SUBCORTICAL:
-    _LOBE_REGIONS[f"LEFT_{_name}"] = _left
-    _LOBE_REGIONS[f"RIGHT_{_name}"] = _right
-
-_N_LOBES = 21
-_DESTRIEUX_LOOKUP: dict[str, int] = {
-    name: slot for slot, name in enumerate(_DESTRIEUX_REGIONS)
-}
-_SPATIAL_VOCABULARIES: dict[str, tuple[dict[str, int], int]] = {
-    "parcels": (_DESTRIEUX_LOOKUP, len(_DESTRIEUX_REGIONS)),
-    "lobes": (_LOBE_REGIONS, _N_LOBES),
-}
