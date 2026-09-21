@@ -128,11 +128,8 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
 
     **License**
 
-    The reference implementation is Copyright (c) 2025 University of Southern
-    California and is licensed for educational, research and non-profit use
-    only; commercial use requires an agreement with the USC Stevens Center for
-    Innovation. This file inherits those terms and is therefore *not* covered by
-    braindecode's BSD-3-Clause license.
+    USC Academic License (non-commercial; see ``NOTICE.txt``). For commercial
+    use, contact the USC Stevens Center for Innovation.
 
     .. note::
         The reference runs attention through ``xformers`` with a block-diagonal
@@ -350,68 +347,52 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
         spatial_scale: str,
         spatial_indices: list[int] | list[list[int]] | None,
     ) -> _SpatialEmbedding | None:
-        """Build the tables of the scale, and the montage used by default."""
+        """Build spatial tables with optional dataset or MNE-derived indices."""
         if spatial_scale == "none":
             return None
         is_coords = spatial_scale == "coords"
-        n_slots = (
-            self.coord_bins
-            if is_coords
-            else {"parcels": 121, "lobes": 21}[spatial_scale]
+        n_slots = {"coords": self.coord_bins, "parcels": 121, "lobes": 21}[
+            spatial_scale
+        ]
+        indices = (
+            torch.as_tensor(spatial_indices) if spatial_indices is not None else None
         )
-        # The tables only depend on the scale, so a model whose recordings each
-        # come with their own montage can be built without any index at all.
+        if indices is None and is_coords:
+            locations = extract_channel_locations_from_chs_info(
+                self._chs_info, num_channels=self.n_chans
+            )
+            if locations is not None and len(locations) == self.n_chans:
+                positions = torch.as_tensor(locations, dtype=torch.float32)
+                if not positions.isfinite().all():
+                    raise ValueError("chs_info positions must be finite.")
+                if len({ch.get("coord_frame") for ch in self.chs_info}) > 1:
+                    raise ValueError(
+                        "chs_info must use the same coordinate frame for all channels."
+                    )
+                indices = (-1000 * positions).round() + self.coord_bins // 2
+                indices = indices.clamp(0, self.coord_bins - 1)
+        if indices is not None:
+            expected = (self.n_chans, 3) if is_coords else (self.n_chans,)
+            if tuple(indices.shape) != expected:
+                raise ValueError(f"spatial_indices must have shape {expected}.")
+            if (
+                indices.is_complex()
+                or indices.dtype == torch.bool
+                or (indices < 0).any()
+                or (indices >= n_slots).any()
+                or (indices != indices.long()).any()
+            ):
+                raise ValueError(
+                    f"spatial_indices must contain integers in [0, {n_slots})."
+                )
+            indices = indices.long()
         return _SpatialEmbedding(
             d_model=self.d_model,
             n_slots=n_slots,
             n_dims=3 if is_coords else 1,
             padding_idx=None if is_coords else 0,
-            default_indices=self._default_spatial_indices(
-                spatial_indices, is_coords, n_slots
-            ),
+            default_indices=indices,
         )
-
-    def _default_spatial_indices(
-        self,
-        spatial_indices: list[int] | list[list[int]] | None,
-        is_coords: bool,
-        n_slots: int,
-    ) -> torch.Tensor | None:
-        """Use dataset indices, or bin MNE positions when none were supplied."""
-        if spatial_indices is None:
-            if not is_coords:
-                return None
-            locations = extract_channel_locations_from_chs_info(
-                self._chs_info, num_channels=self.n_chans
-            )
-            if locations is None or len(locations) != self.n_chans:
-                return None
-            positions = torch.as_tensor(locations, dtype=torch.float32)
-            if not positions.isfinite().all():
-                raise ValueError("chs_info positions must be finite.")
-            if len({ch.get("coord_frame") for ch in self.chs_info}) > 1:
-                raise ValueError(
-                    "chs_info must use the same coordinate frame for all channels."
-                )
-            indices = (-1000 * positions).round() + self.coord_bins // 2
-            indices = indices.clamp(0, self.coord_bins - 1)
-        else:
-            indices = torch.as_tensor(spatial_indices)
-        expected = (self.n_chans, 3) if is_coords else (self.n_chans,)
-        if tuple(indices.shape) != expected:
-            raise ValueError(f"spatial_indices must have shape {expected}.")
-        if (
-            indices.is_complex()
-            or indices.dtype == torch.bool
-            or not indices.isfinite().all()
-            or (indices < 0).any()
-            or (indices >= n_slots).any()
-            or (indices != indices.long()).any()
-        ):
-            raise ValueError(
-                f"spatial_indices must contain integers in [0, {n_slots})."
-            )
-        return indices.long()
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the linear classification head for a new ``n_outputs``."""
