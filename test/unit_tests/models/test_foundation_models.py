@@ -733,7 +733,8 @@ def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
 def test_foundation_rms_norm_preserves_reference_precision(
     norm_class, eps, input_dtype, weight_dtype
 ):
-    norm = norm_class(8, eps=eps).to(weight_dtype)
+    norm = RMSNorm(dim=8) if norm_class is RMSNorm else norm_class(8, eps=eps)
+    norm = norm.to(weight_dtype)
     weight = torch.linspace(0.5, 1.5, 8, dtype=weight_dtype, requires_grad=True)
     norm.load_state_dict({"weight": weight.detach()}, strict=True)
     # Squaring 1000 overflows float16; small values exercise the explicit eps.
