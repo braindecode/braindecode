@@ -812,6 +812,7 @@ Functions available in braindecode util module.
     :toctree: generated/
 
      set_random_seeds
+     resolve_montage_name
 
 ***************
  Visualization
