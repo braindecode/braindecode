@@ -319,6 +319,74 @@ class FeedForwardBlock(nn.Sequential):
         )
 
 
+class GLUFeedForward(nn.Module):
+    r"""Feed-forward block whose hidden activation is gated.
+
+    A gated linear unit splits the hidden projection of an ordinary
+    feed-forward block in two, one branch passed through an activation and the
+    other left linear, and multiplies them elementwise before projecting back:
+
+    .. math::
+        y = W_3 \left( a(W_1 x + b_1) \odot (W_2 x + b_2) \right) + b_3
+
+    The hidden width is therefore reached with two projections instead of one,
+    so a GLU block of hidden size :math:`d_{ff}` holds half again as many
+    parameters as a plain block of the same width. Naming follows [Shazeer2020]_,
+    where the variants are known by their activation: GEGLU for
+    :class:`~torch.nn.GELU`, SwiGLU for :class:`~torch.nn.SiLU`.
+
+    Parameters
+    ----------
+    d_model : int
+        Input and output dimension.
+    d_ff : int
+        Hidden dimension of each of the two input projections.
+    drop_prob : float, default=0.0
+        Dropout applied to the gated hidden activation and to the output.
+    activation : type[nn.Module], default=nn.GELU
+        Activation constructor applied to the gate branch.
+
+    References
+    ----------
+    .. [Shazeer2020] Shazeer, N. (2020). GLU Variants Improve Transformer.
+       arXiv preprint arXiv:2002.05202.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.modules import GLUFeedForward
+    >>> module = GLUFeedForward(d_model=32, d_ff=64)
+    >>> inputs = torch.randn(2, 10, 32)
+    >>> outputs = module(inputs)
+    >>> outputs.shape
+    torch.Size([2, 10, 32])
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        d_ff: int,
+        drop_prob: float = 0.0,
+        activation: type[nn.Module] = nn.GELU,
+    ):
+        super().__init__()
+        self.gate_proj = nn.Linear(d_model, d_ff, bias=True)
+        self.up_proj = nn.Linear(d_model, d_ff, bias=True)
+        self.down_proj = nn.Linear(d_ff, d_model, bias=True)
+        self.activation = activation()
+        self.dropout1 = nn.Dropout(drop_prob)
+        self.dropout2 = nn.Dropout(drop_prob)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        gate = self.gate_proj(x)
+        gate = self.activation(gate)
+        up = self.up_proj(x)
+        hidden = gate * up
+        hidden = self.dropout1(hidden)
+        hidden = self.down_proj(hidden)
+        return self.dropout2(hidden)
+
+
 class _TDSConv2dBlock(nn.Module):
     r"""Time-depth-separable convolutional block.
 
