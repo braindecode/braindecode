@@ -24,12 +24,14 @@ from .metrics import (
     compute_metrics,
     compute_ssim_metrics,
 )
+from .sae import SparseAutoencoder
 from .sanity import cascading_layer_reset, random_target
 from .topology import project_to_topomap
 
 __all__ = [
     "METRIC_NAMES",
     "SSIM_METRIC_NAMES",
+    "SparseAutoencoder",
     "amplitude_gradients",
     "amplitude_gradients_per_trial",
     "capture_activations",
