@@ -2,6 +2,10 @@
 Functions for visualisations, especially of the ConvNets.
 """
 
+from .activations import (
+    capture_activations,
+    run_with_activation_substitution,
+)
 from .attribution import (
     deconvolution,
     deep_lift,
@@ -22,10 +26,8 @@ from .metrics import (
 )
 from .sae import (
     SparseAutoencoder,
-    capture_activations,
     fit_sparse_autoencoder,
     grouped_train_valid_test_split,
-    run_with_activation_substitution,
     sae_diagnostics,
 )
 from .sanity import cascading_layer_reset, random_target

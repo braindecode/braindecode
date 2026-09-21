@@ -4,10 +4,13 @@
 
 
 import json
+import subprocess
+import sys
 from operator import attrgetter
 from unittest.mock import patch
 
 import pytest
+import torch
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -55,6 +58,94 @@ class DummyModuleConfigRoundTrip(EEGModuleMixin, nn.Sequential):
         self.add_module("drop", nn.Dropout(drop_prob))
         self.add_module("activation_module", activation())
         self.add_module("linear", nn.Linear(self.n_times, self.n_outputs))
+
+
+class DummyModuleWithOverriddenSfreq(DummyModule):
+    """Extension model with a custom inherited signal property."""
+
+    @property
+    def sfreq(self):
+        return 321.0
+
+
+class DummyModuleWithInheritedOverride(DummyModuleWithOverriddenSfreq):
+    """Second-level extension that must retain the custom property."""
+
+
+class DummyModuleWithExtraIgnoredProperty(DummyModule):
+    """Extension model with its own runtime-only property."""
+
+    __jit_ignored_attributes__ = [
+        *DummyModule.__jit_ignored_attributes__,
+        "runtime_only",
+    ]
+
+    @property
+    def runtime_only(self):
+        raise ValueError("runtime_only must not be inspected while scripting")
+
+
+class DummyModuleWithInheritedExtraIgnoredProperty(
+    DummyModuleWithExtraIgnoredProperty
+):
+    """Leaf extension inheriting the custom ignored property."""
+
+
+def test_init_subclass_preserves_inherited_signal_property_override():
+    assert (
+        DummyModuleWithInheritedOverride.__dict__["sfreq"]
+        is DummyModuleWithOverriddenSfreq.__dict__["sfreq"]
+    )
+    descriptor = DummyModuleWithInheritedOverride.__dict__["sfreq"]
+    assert descriptor.__get__(object(), DummyModuleWithInheritedOverride) == 321.0
+
+
+def test_init_subclass_propagates_extended_jit_ignored_property():
+    module = DummyModuleWithInheritedExtraIgnoredProperty(
+        n_outputs=1,
+        n_chans=1,
+        n_times=4,
+    ).eval()
+    input_tensor = torch.randn(2, 1, 4)
+
+    scripted = torch.jit.script(module)
+
+    assert (
+        DummyModuleWithInheritedExtraIgnoredProperty.__dict__["runtime_only"]
+        is DummyModuleWithExtraIgnoredProperty.__dict__["runtime_only"]
+    )
+    torch.testing.assert_close(scripted(input_tensor), module(input_tensor))
+
+
+def test_init_subclass_with_license_without_hf_hub():
+    """A model license can be declared without the optional Hub dependency."""
+    code = """
+import sys
+
+sys.modules["huggingface_hub"] = None
+
+from braindecode.models import base
+from torch import nn
+
+assert not base.HAS_HF_HUB
+
+class LicensedTestModel(
+    base.EEGModuleMixin,
+    nn.Module,
+    license="cc-by-nc-sa-4.0",
+):
+    pass
+
+assert issubclass(LicensedTestModel, base.EEGModuleMixin)
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.fixture(scope="function")

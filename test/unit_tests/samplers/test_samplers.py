@@ -4,6 +4,7 @@ Test for samplers.
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Young Truong <dt.young112@gmail.com>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -157,11 +158,11 @@ def test_recording_sampler(windows_ds):
         win_ind, rec_ind = sampler.sample_window(rec_ind=None)
         assert rec_ind in range(windows_ds.description.shape[0])
 
-def dist_sampler_init_process(rank, world_size, windows_ds):
+def dist_sampler_init_process(rank, world_size, windows_ds, init_method):
     """Initialize the process group for multi-CPU training."""
     dist.init_process_group(
         backend="gloo",
-        init_method="tcp://127.0.0.1:29500",  # Localhost for single machine
+        init_method=init_method,
         rank=rank,
         world_size=world_size
     )
@@ -202,11 +203,23 @@ def dist_sampler_init_process(rank, world_size, windows_ds):
 
 @pytest.mark.skipif(platform.system() == 'Windows',
                     reason="Not supported on Windows because of use_libuv compatibility")
-def test_distributed_recording_sampler(windows_ds):
+def test_distributed_recording_sampler(windows_ds, tmp_path):
     world_size = 1  # Test single process - no dataset splitting
-    mp.spawn(dist_sampler_init_process, args=(world_size,windows_ds), nprocs=world_size, join=True)
+    init_method = (tmp_path / "rendezvous-1").as_uri()
+    mp.spawn(
+        dist_sampler_init_process,
+        args=(world_size, windows_ds, init_method),
+        nprocs=world_size,
+        join=True,
+    )
     world_size = 3  # Test multiple processes - dataset splitting
-    mp.spawn(dist_sampler_init_process, args=(world_size,windows_ds), nprocs=world_size, join=True)
+    init_method = (tmp_path / "rendezvous-3").as_uri()
+    mp.spawn(
+        dist_sampler_init_process,
+        args=(world_size, windows_ds, init_method),
+        nprocs=world_size,
+        join=True,
+    )
 
 
 @pytest.mark.parametrize("same_rec_neg", [True, False])
@@ -271,10 +284,12 @@ def test_relative_positioning_sampler_presample(windows_ds):
     assert np.array_equal(sampler.examples, pairs)
     assert np.array_equal(sampler.examples, pairs2)
 
-def distributed_relative_positioning_sampler_init_process(rank, world_size, windows_ds, same_rec_neg):
+def distributed_relative_positioning_sampler_init_process(
+    rank, world_size, windows_ds, same_rec_neg, init_method
+):
     dist.init_process_group(
         backend="gloo",
-        init_method="tcp://127.0.0.1:29500",  # Localhost for single machine
+        init_method=init_method,
         rank=rank,
         world_size=world_size
     )
@@ -318,20 +333,31 @@ def distributed_relative_positioning_sampler_init_process(rank, world_size, wind
         assert all(pairs_df.loc[pairs_df["y"] == 1, "same_rec"] == True)  # noqa: E712
     assert abs(np.diff(pairs_df["y"].value_counts())) < 20
 
+    # Cleanup
+    dist.destroy_process_group()
+
 
 @pytest.mark.skipif(platform.system() == 'Windows',
                     reason="Not supported on Windows because of use_libuv compatibility")
 @pytest.mark.parametrize("same_rec_neg", [True, False])
-def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg):
+def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg, tmp_path):
     world_size = 1
-    mp.spawn(distributed_relative_positioning_sampler_init_process, args=(world_size, windows_ds, same_rec_neg), nprocs=world_size, join=True)
+    init_method = (tmp_path / "rendezvous").as_uri()
+    mp.spawn(
+        distributed_relative_positioning_sampler_init_process,
+        args=(world_size, windows_ds, same_rec_neg, init_method),
+        nprocs=world_size,
+        join=True,
+    )
 
 
-def distributed_relative_positioning_sampler_n_examples_check(rank, world_size, windows_ds, n_examples_total):
+def distributed_relative_positioning_sampler_n_examples_check(
+    rank, world_size, windows_ds, n_examples_total, init_method
+):
     """Test that n_examples calculation uses correct operator precedence."""
     dist.init_process_group(
         backend="gloo",
-        init_method="tcp://127.0.0.1:29500",
+        init_method=init_method,
         rank=rank,
         world_size=world_size
     )
@@ -370,7 +396,9 @@ def distributed_relative_positioning_sampler_n_examples_check(rank, world_size, 
     (50, 2),   # Test case from bug report that could truncate to 0
     (100, 4),  # Test case from bug report
 ])
-def test_distributed_relative_positioning_sampler_n_examples_calculation(windows_ds, n_examples_total, world_size):
+def test_distributed_relative_positioning_sampler_n_examples_calculation(
+    windows_ds, n_examples_total, world_size, tmp_path
+):
     """Test that n_examples calculation distributes examples correctly across ranks.
 
     This test validates the fix for the operator precedence bug where:
@@ -379,7 +407,12 @@ def test_distributed_relative_positioning_sampler_n_examples_calculation(windows
     """
     mp.spawn(
         distributed_relative_positioning_sampler_n_examples_check,
-        args=(world_size, windows_ds, n_examples_total),
+        args=(
+            world_size,
+            windows_ds,
+            n_examples_total,
+            (tmp_path / "rendezvous").as_uri(),
+        ),
         nprocs=world_size,
         join=True
     )
@@ -478,3 +511,82 @@ def test_balanced_sequence_sampler_no_targets(windows_ds):
     md = windows_ds.get_metadata().drop(columns="target")
     with pytest.raises(ValueError):
         BalancedSequenceSampler(md, 10, n_sequences=5, random_state=87)
+
+
+def _sequence_metadata(windows_per_recording):
+    """Build a windows metadata frame with one recording per given length."""
+    rows = []
+    for subject, n_windows in enumerate(windows_per_recording):
+        for i_window in range(n_windows):
+            rows.append(
+                {
+                    "i_window_in_trial": i_window,
+                    "i_start_in_trial": i_window * 100,
+                    "i_stop_in_trial": i_window * 100 + 100,
+                    "target": i_window % 2,
+                    "subject": subject,
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "i_window_in_trial",
+            "i_start_in_trial",
+            "i_stop_in_trial",
+            "target",
+            "subject",
+        ],
+    )
+
+
+@pytest.mark.parametrize("windows_per_recording", [[10, 10], [10, 3], [3, 10], [3, 2]])
+def test_sequence_sampler_file_ids_stay_integer(windows_per_recording):
+    """A recording too short for a sequence must not float the file ids."""
+    md = _sequence_metadata(windows_per_recording)
+    sampler = SequenceSampler(md, n_windows=5, n_windows_stride=1)
+
+    assert sampler.file_ids.dtype == np.dtype(np.int64)
+    assert sampler.start_inds.dtype == np.int64
+
+    expected = sum(max(0, n - 5 + 1) for n in windows_per_recording)
+    assert len(sampler) == expected
+    assert len(sampler.file_ids) == expected
+
+
+def test_balanced_sequence_sampler_skips_short_recordings():
+    """A recording shorter than n_windows is left out rather than sampled."""
+    md = _sequence_metadata([10, 3])
+    sampler = BalancedSequenceSampler(md, 5, n_sequences=50, random_state=87)
+
+    assert list(sampler.long_enough_recordings) == [0]
+
+    seqs = list(sampler)
+    assert len(seqs) == 50
+    assert all(len(seq) == 5 for seq in seqs)
+    for seq in seqs:
+        assert all(np.diff(seq) == 1)
+        # every window has to come from the recording that is long enough
+        assert md.iloc[list(seq)]["subject"].nunique() == 1
+        assert md.iloc[list(seq)]["subject"].iloc[0] == 0
+
+
+def test_balanced_sequence_sampler_all_recordings_too_short():
+    """No recording able to hold a sequence is reported clearly."""
+    md = _sequence_metadata([3, 2])
+    with pytest.raises(ValueError, match="longest recording has 3 windows"):
+        BalancedSequenceSampler(md, 5, n_sequences=5, random_state=87)
+
+
+def test_balanced_sequence_sampler_rejects_empty_metadata():
+    """Schema-valid empty metadata is rejected with a deliberate error."""
+    metadata = _sequence_metadata([])
+
+    with pytest.raises(
+        ValueError, match="Cannot build sequences from empty metadata"
+    ):
+        BalancedSequenceSampler(
+            metadata,
+            n_windows=5,
+            n_sequences=5,
+            random_state=87,
+        )

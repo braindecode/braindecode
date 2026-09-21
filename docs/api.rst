@@ -191,6 +191,7 @@ interface for all EEG models and can derive variable names when needed.
      TIDNet
      TSception
      USleep
+     ZUNA
 
 Modules
 
@@ -811,6 +812,7 @@ Functions available in braindecode util module.
     :toctree: generated/
 
      set_random_seeds
+     resolve_montage_name
 
 ***************
  Visualization
@@ -899,6 +901,18 @@ reimplementation of skimage's structural similarity (no extra dependency). Pass
      compute_ssim_metrics
      METRIC_NAMES
      SSIM_METRIC_NAMES
+
+Activations
+===========
+
+Read or replace a submodule's output during a forward pass. The temporary hooks are
+removed even when the forward pass raises.
+
+.. autosummary::
+    :toctree: generated/
+
+     capture_activations
+     run_with_activation_substitution
 
 Topography
 ==========

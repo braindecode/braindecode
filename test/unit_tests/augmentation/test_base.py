@@ -1,4 +1,5 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
+#          Sarthak Tayal <sarthaktayal2@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -8,9 +9,16 @@ import pytest
 import torch
 from sklearn.utils import check_random_state
 
-from braindecode.augmentation.base import AugmentedDataLoader, Compose, Transform
-from braindecode.augmentation.transforms import SmoothTimeMask
+from braindecode import EEGRegressor
+from braindecode.augmentation.base import (
+    AugmentedDataLoader,
+    Compose,
+    Transform,
+    _AugmentationCollate,
+)
+from braindecode.augmentation.transforms import Mixup, SmoothTimeMask
 from braindecode.datasets import create_from_mne_epochs
+from braindecode.training.losses import mixup_criterion
 
 
 def dummy_k_operation(X, y, k):
@@ -29,6 +37,31 @@ class DummyTransform(Transform):
 
     def get_augmentation_params(self, X, y):
         return {"k": self.k}
+
+
+class _TinyMixupRegressor(torch.nn.Module):
+    def __init__(self, n_chans=2, n_times=20, n_outputs=1):
+        super().__init__()
+        self.linear = torch.nn.Linear(n_chans * n_times, n_outputs)
+
+    def forward(self, x):
+        return self.linear(x.flatten(start_dim=1))
+
+
+class _RecordingMixupMSELoss(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seen_targets = []
+
+    def forward(self, preds, target):
+        y_a, y_b, lam = target
+        self.seen_targets.append(
+            tuple(part.detach().cpu().clone() for part in (y_a, y_b, lam))
+        )
+        lam = lam.reshape(lam.shape[0], *([1] * (preds.ndim - 1)))
+        return (
+            lam * torch.square(preds - y_a) + (1 - lam) * torch.square(preds - y_b)
+        ).mean()
 
 
 @pytest.fixture
@@ -236,6 +269,124 @@ def test_augmented_data_loader_negative_n_augmentation():
     dataset = TensorDataset(torch.randn(4, 4, 20), torch.arange(4))
     with pytest.raises(ValueError, match="n_augmentation"):
         AugmentedDataLoader(dataset, n_augmentation=-1, batch_size=4)
+
+
+@pytest.mark.parametrize("beta_per_sample", [False, True])
+def test_augmented_data_loader_n_augmentation_mixup(beta_per_sample):
+    """``n_augmentation`` keeps the ``(y_a, y_b, lam)`` triple Mixup returns."""
+    from torch.utils.data import TensorDataset
+
+    n_samples, n_chans, n_times, batch_size = 8, 4, 20, 8
+    X = torch.randn(n_samples, n_chans, n_times)
+    y = torch.arange(n_samples) % 2
+
+    loader = AugmentedDataLoader(
+        TensorDataset(X, y),
+        transforms=Mixup(alpha=0.5, beta_per_sample=beta_per_sample, random_state=0),
+        batch_size=batch_size,
+        n_augmentation=2,
+        shuffle=False,
+    )
+    batch_X, batch_y = next(iter(loader))
+
+    assert batch_X.shape == (3 * batch_size, n_chans, n_times)
+    assert isinstance(batch_y, tuple) and len(batch_y) == 3
+    y_a, y_b, lam = batch_y
+    assert y_a.shape == y_b.shape == lam.shape == (3 * batch_size,)
+    # The clean block is untouched and mixed with itself with a coefficient of one.
+    assert torch.equal(batch_X[:batch_size], X)
+    assert torch.equal(y_a[:batch_size], y)
+    assert torch.equal(y_b[:batch_size], y)
+    assert torch.all(lam[:batch_size] == 1.0)
+    # The loss can consume the batch, which needs one single dtype for lam.
+    preds = torch.log_softmax(torch.randn(3 * batch_size, 2), dim=1)
+    assert torch.isfinite(mixup_criterion(preds, batch_y))
+
+
+def test_augmentation_collate_accepts_list_mixed_target():
+    """List-form mixed targets follow the same expansion path as tuples."""
+    batch_size = 4
+    X = torch.randn(batch_size, 2, 10)
+    y = torch.arange(batch_size)
+
+    def list_mixup(batch_X, batch_y):
+        lam = torch.full((batch_X.shape[0],), 0.5, dtype=batch_X.dtype)
+        return batch_X, [batch_y, batch_y.flip(0), lam]
+
+    batch_X, batch_y = _AugmentationCollate(list_mixup, n_augmentation=1)(
+        list(zip(X, y))
+    )
+
+    assert batch_X.shape[0] == 2 * batch_size
+    assert isinstance(batch_y, tuple) and len(batch_y) == 3
+    assert all(part.shape == (2 * batch_size,) for part in batch_y)
+
+
+@pytest.mark.parametrize("beta_per_sample", [False, True])
+def test_mixup_lam_follows_batch_dtype(beta_per_sample):
+    """``lam`` stays on the dtype of the batch so the loss is not upcast."""
+    X = torch.randn(6, 3, 20)
+    y = torch.arange(6) % 2
+
+    _, out_y = Mixup(alpha=0.5, beta_per_sample=beta_per_sample, random_state=0)(X, y)
+    assert out_y[2].dtype == X.dtype
+
+    preds = torch.log_softmax(torch.randn(6, 2), dim=1)
+    assert mixup_criterion(preds, out_y).dtype == preds.dtype
+
+
+@pytest.mark.parametrize("beta_per_sample", [False, True])
+@pytest.mark.parametrize("n_augmentation", [0, 2])
+def test_eegregressor_mixup_preserves_fractional_targets(
+    beta_per_sample, n_augmentation
+):
+    """The public fit boundary keeps fractional ``(B, 1)`` mixed targets."""
+    batch_size, n_chans, n_times = 6, 2, 20
+    X = torch.randn(batch_size, n_chans, n_times)
+    y = torch.tensor(
+        [0.25, 1.75, -2.5, 3.125, 4.875, -5.25], dtype=torch.float64
+    ).reshape(batch_size, 1)
+
+    regressor = EEGRegressor(
+        _TinyMixupRegressor,
+        criterion=_RecordingMixupMSELoss,
+        optimizer=torch.optim.SGD,
+        lr=0.01,
+        iterator_train=AugmentedDataLoader,
+        iterator_train__transforms=Mixup(
+            alpha=0.5,
+            beta_per_sample=beta_per_sample,
+            random_state=0,
+        ),
+        iterator_train__n_augmentation=n_augmentation,
+        iterator_train__shuffle=False,
+        iterator_train__drop_last=False,
+        batch_size=batch_size,
+        max_epochs=1,
+        train_split=None,
+        verbose=0,
+    )
+
+    regressor.fit(X, y)
+
+    assert len(regressor.criterion_.seen_targets) == 1
+    y_a, y_b, lam = regressor.criterion_.seen_targets[0]
+    n_copies = n_augmentation + 1
+    expected_y = y.to(torch.float32)
+    expected_y_a = expected_y.repeat(n_copies, 1)
+    assert y_a.shape == y_b.shape == (n_copies * batch_size, 1)
+    assert y_a.dtype == y_b.dtype == torch.float32
+    assert torch.equal(y_a, expected_y_a)
+
+    expected_sorted = expected_y.sort(dim=0).values
+    for target_block in y_b.split(batch_size):
+        assert torch.equal(target_block.sort(dim=0).values, expected_sorted)
+
+    assert lam.shape == (n_copies * batch_size,)
+    assert lam.dtype == torch.float32
+    if n_augmentation:
+        assert torch.equal(lam[:batch_size], torch.ones(batch_size))
+    assert np.isfinite(regressor.history[-1, "train_loss"])
 
 
 @pytest.mark.network

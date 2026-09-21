@@ -223,9 +223,7 @@ def to_tokens(activations):
     return activations.squeeze(-1).permute(0, 2, 1).reshape(-1, activations.shape[1])
 
 
-train_acts = capture_activations(model, torch.from_numpy(X_train), {"layer": layer})[
-    "layer"
-]
+train_acts = capture_activations(model, torch.from_numpy(X_train), layer).detach()
 train_flat = to_tokens(train_acts)
 
 sae, history = fit_sparse_autoencoder(

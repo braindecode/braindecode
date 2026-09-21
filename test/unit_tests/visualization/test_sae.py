@@ -7,11 +7,13 @@ from torch import nn
 
 from braindecode.visualization import (
     SparseAutoencoder,
-    capture_activations,
     fit_sparse_autoencoder,
     grouped_train_valid_test_split,
-    run_with_activation_substitution,
     sae_diagnostics,
+)
+from braindecode.visualization.sae import (
+    capture_activations,
+    run_with_activation_substitution,
 )
 
 
