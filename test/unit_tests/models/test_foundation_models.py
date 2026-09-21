@@ -11,6 +11,7 @@ import mne
 import pooch
 import pytest
 import torch
+import torch.nn as nn
 
 import braindecode.models.luna as luna_module
 import braindecode.models.zuna as zuna_module
@@ -265,6 +266,56 @@ def test_labram_neural_decoder_gradient_flow(model_decoder, n_chans, n_times):
     # Check that gradients exist
     assert model_decoder.cls_token.grad is not None
     assert any(p.grad is not None for p in model_decoder.blocks[0].parameters())
+
+
+def test_labram_neural_decoder_temporal_embeddings_match_time_patches(
+    chs_info, n_times
+):
+    """Decoder mode adds one temporal embedding per temporal patch token."""
+    model = Labram(
+        n_times=n_times,
+        chs_info=chs_info,
+        n_outputs=4,
+        patch_size=200,
+        embed_dim=4,
+        conv_in_channels=8,
+        num_layers=0,
+        num_heads=1,
+        use_abs_pos_emb=False,
+        neural_tokenizer=False,
+    )
+    batch_size = 2
+    x = torch.zeros(batch_size, len(chs_info), n_times)
+    input_chans = torch.arange(len(LABRAM_CHANNEL_ORDER) + 1)
+    model.norm = nn.Identity()
+    model.pos_drop = nn.Identity()
+
+    with torch.no_grad():
+        model.cls_token.zero_()
+        model.patch_embed[0].proj.weight.zero_()
+        model.patch_embed[0].proj.bias.zero_()
+        model.temporal_embedding.zero_()
+        expected_time_embed = torch.arange(
+            1,
+            model.patch_embed[0].n_patchs * model.embed_dim + 1,
+            dtype=model.temporal_embedding.dtype,
+        ).reshape(1, model.patch_embed[0].n_patchs, model.embed_dim)
+        model.temporal_embedding[:, 1:, :] = expected_time_embed
+
+    features = model.forward_features(
+        x, input_chans=input_chans, return_all_tokens=True
+    )
+
+    assert features.shape == (
+        batch_size,
+        model.patch_embed[0].n_patchs + 1,
+        model.embed_dim,
+    )
+    assert torch.equal(features[:, 0], torch.zeros_like(features[:, 0]))
+    assert torch.equal(
+        features[:, 1:],
+        expected_time_embed.expand(batch_size, -1, -1),
+    )
 
 
 # ==============================================================================

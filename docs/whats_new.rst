@@ -28,6 +28,10 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Clarify decoder temporal embedding indexing in :class:`braindecode.models.Labram`
+  and cover its one-token-per-temporal-patch behavior
+  (:gh:`1155` by `Bruno Aristimunha`_).
+
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
