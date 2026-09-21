@@ -6,6 +6,7 @@
 """
 
 # Authors: Sarthak Tayal <sarthaktayal2@gmail.com>
+# License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
 
 import torch
 from torch import nn
@@ -48,7 +49,7 @@ class _EEGMinerFeatures(nn.Module):
         return x[:, self.triu_row, self.triu_col, :]
 
 
-class EEGMiner(EEGModuleMixin, nn.Module):
+class EEGMiner(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
     r"""EEGMiner from Ludwig et al (2024) [eegminer]_.
 
     :bdg-success:`Convolution` :bdg-warning:`Interpretability`

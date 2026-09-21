@@ -11,7 +11,6 @@ from typing import Optional
 import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
-from rotary_embedding_torch import RotaryEmbedding
 from torch import nn
 from torch.nn import functional
 
@@ -20,7 +19,7 @@ from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules import PatchTokenizer
 
 
-class ZUNA(EEGModuleMixin, nn.Module):
+class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     r"""ZUNA from Warner et al. (2026) [Warner2026ZUNA]_.
 
     :bdg-danger:`Foundation Model` :bdg-dark-line:`Channel` :bdg-info:`Attention/Transformer`
@@ -275,18 +274,11 @@ class ZUNA(EEGModuleMixin, nn.Module):
             (channel_position_indices, coarse_time_indices.unsqueeze(1)), dim=1
         )
 
-        rotary_embedding = RotaryEmbedding(
-            # rotary_embedding_torch cannot construct dim=2 directly because
-            # of its theta-rescaling formula; dim=4 followed by slicing is
-            # equivalent for the single-frequency dim=2 case.
-            dim=max(rotary_axis_dim, 4),
+        rotary_frequency_table = _build_rotary_frequency_table(
+            torch.arange(max_seqlen, dtype=torch.float32),
+            axis_dim=rotary_axis_dim,
             theta=rope_theta,
-            cache_if_possible=False,
         )
-        with torch.no_grad():
-            rotary_frequency_table = rotary_embedding(
-                torch.arange(max_seqlen, dtype=torch.float32)
-            )[:, :rotary_axis_dim]
         token_rotary_frequencies = rearrange(
             rotary_frequency_table[token_position_indices],
             "token coordinate rotary_frequency -> token (coordinate rotary_frequency)",
@@ -344,6 +336,28 @@ class ZUNA(EEGModuleMixin, nn.Module):
         )
 
 
+def _build_rotary_frequency_table(
+    positions: torch.Tensor, *, axis_dim: int, theta: float
+) -> torch.Tensor:
+    """Build ZUNA's per-axis rotary frequencies with native PyTorch."""
+    embedding_dim = max(axis_dim, 4)
+    inverse_frequencies = 1.0 / (
+        theta
+        ** (
+            torch.arange(
+                0,
+                embedding_dim,
+                2,
+                device=positions.device,
+                dtype=torch.float32,
+            )
+            / embedding_dim
+        )
+    )
+    angles = positions.to(torch.float32).unsqueeze(-1) * inverse_frequencies
+    return angles.repeat_interleave(2, dim=-1)[:, :axis_dim]
+
+
 class _RotaryPositionEmbedding(nn.Module):
     def __init__(self):
         super().__init__()
@@ -385,24 +399,12 @@ class _RotaryPositionEmbedding(nn.Module):
         return query, key
 
 
-class _RMSNorm(nn.Module):
-    """Root-mean-square layer normalisation.
-
-    ``torch.nn.RMSNorm`` is only available from PyTorch 2.4, but braindecode
-    supports ``torch>=2.0``; this shippable equivalent (same approach as
-    :class:`~braindecode.models.REVE` and ``CodeBrain``) keeps the model
-    importable on older PyTorch while preserving the ``.weight`` parameter
-    name for state-dict compatibility.
-    """
-
-    def __init__(self, dimension: int, epsilon: float = 1e-5):
-        super().__init__()
-        self.epsilon = epsilon
-        self.weight = nn.Parameter(torch.ones(dimension))
+class _RMSNorm(nn.RMSNorm):
+    """Native RMSNorm with the reference's float32 accumulation and output dtype."""
 
     def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
-        normalized = input_tensor.float() * torch.rsqrt(
-            input_tensor.float().pow(2).mean(-1, keepdim=True) + self.epsilon
+        normalized = functional.rms_norm(
+            input_tensor.float(), self.normalized_shape, eps=self.eps
         )
         return normalized.type_as(self.weight) * self.weight
 
@@ -427,8 +429,8 @@ class _Attention(nn.Module):
         self.wk = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wv = nn.Linear(embedding_dim, n_heads * head_dim, bias=False)
         self.wo = nn.Linear(n_heads * head_dim, embedding_dim, bias=False)
-        self.q_norm = _RMSNorm(head_dim, epsilon=norm_eps) if qk_norm else nn.Identity()
-        self.k_norm = _RMSNorm(head_dim, epsilon=norm_eps) if qk_norm else nn.Identity()
+        self.q_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
+        self.k_norm = _RMSNorm(head_dim, eps=norm_eps) if qk_norm else nn.Identity()
         self.rotary_embedding = _RotaryPositionEmbedding()
 
     def forward(
@@ -515,17 +517,13 @@ class _TransformerBlock(nn.Module):
             ffn_dim_multiplier=ffn_dim_multiplier,
             activation=activation,
         )
-        self.attention_norm = _RMSNorm(embedding_dim, epsilon=norm_eps)
-        self.ffn_norm = _RMSNorm(embedding_dim, epsilon=norm_eps)
+        self.attention_norm = _RMSNorm(embedding_dim, eps=norm_eps)
+        self.ffn_norm = _RMSNorm(embedding_dim, eps=norm_eps)
         self.attention_norm_post = (
-            _RMSNorm(embedding_dim, epsilon=norm_eps)
-            if sandwich_norm
-            else nn.Identity()
+            _RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
         )
         self.ffn_norm_post = (
-            _RMSNorm(embedding_dim, epsilon=norm_eps)
-            if sandwich_norm
-            else nn.Identity()
+            _RMSNorm(embedding_dim, eps=norm_eps) if sandwich_norm else nn.Identity()
         )
 
     def forward(
@@ -581,7 +579,7 @@ class _ZUNAEncoder(nn.Module):
             )
             for _ in range(n_layers)
         )
-        self.norm = _RMSNorm(dim, epsilon=norm_eps)
+        self.norm = _RMSNorm(dim, eps=norm_eps)
         self.output = nn.Linear(dim, output_dim, bias=False)
 
         # Buffers

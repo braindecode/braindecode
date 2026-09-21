@@ -22,7 +22,7 @@
 .. _current:
 
 
-Current 1.8.0 (GitHub)
+Current 1.8.1 (2026-08-31)
 ===============================
 
 Enhancements
@@ -34,22 +34,216 @@ Enhancements
   feature-return, and head-reset APIs. This architecture-only addition does not
   include or verify pretrained weights (:gh:`1100` by `Adam Mounir`_).
 
-API and behavior changes
-========================
 
-- None yet
+- Add :class:`braindecode.models.VEMG2Pose`,
+  :class:`braindecode.models.NeuroPose`, and
+  :class:`braindecode.models.SensingDynamics` for dense hand-pose
+  regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
+
+- Improve CI test scheduling and run documentation examples with bounded
+  parallelism, preserving the test cases and gallery training workloads
+  (:gh:`1161` by `Bruno Aristimunha`_).
 
 Requirements
 ============
 
-- None yet
+- Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
+  RMS normalization in REVE and ZUNA now uses PyTorch's implementation while
+  retaining float32 accumulation. Intel macOS is no longer supported because
+  PyTorch stopped providing its binary packages after 2.2.
+  (:gh:`1174` by `Bruno Aristimunha`_)
 
 Bug fixes
 ==========
 
+- Preserve shared class targets when creating MNE epochs from different event
+  annotations, as in sleep staging. MNE event IDs remain unique.
+  (:gh:`1174` by `Bruno Aristimunha`_)
+
+- Fix a ``FutureWarning`` raised by MNE >= 1.13 when importing
+  :mod:`braindecode` or using models, datasets and augmentations that build
+  on the ``standard_1005``/``standard_1020`` montages: MNE renamed these
+  montages to ``colin27_1005``/``colin27_1020`` and will remove the legacy
+  names in MNE 1.14, so their spelling is now resolved against the installed
+  MNE version via :func:`braindecode.util.resolve_montage_name`
+  (:gh:`1163` by `Li Qing`_).
+
+- Fix :class:`braindecode.modules.CombinedConv` raising ``RuntimeError: self
+  must be a matrix`` when ``in_chans``, ``n_filters_time`` or ``n_filters_spat``
+  is 1, which made :class:`braindecode.models.ShallowFBCSPNet` and
+  :class:`braindecode.models.Deep4Net` unusable on single-channel data
+  (:gh:`1154` by `Julien Gadonneix`_).
+
+
+Current 1.8.0 (2026-08-31)
+===============================
+
+Enhancements
+============
+
+- Add a reusable temporal-distributed separable convolution encoder to
+  :mod:`braindecode.modules`, and centralize output-head replacement for models using
+  :class:`braindecode.models.base.EEGModuleMixin` (:gh:`1145` by `Bruno
+  Aristimunha`_)
+
+- Add :meth:`braindecode.datasets.BaseConcatDataset.plot` (every dataset, ``BIDSDataset`` included): show a recording in the
+  `eegdash-viewer <https://github.com/eegdash/eegdash-viewer>`_ inside a
+  Jupyter cell — serverless (bytes inlined, viewer from CDN), with the
+  synchronized hand-pose panel when a ``*_desc-pose.json`` sidecar is present
+  (:gh:`1133` by `Bruno Aristimunha`_)
+
+- Add :func:`braindecode.visualization.capture_activations` and
+  :func:`braindecode.visualization.run_with_activation_substitution` to read or
+  replace a submodule's output during a forward pass
+  (:gh:`1138` by `Vandit Shah`_)
+
+- Preserve the recording-local row of each canonical MNE annotation as
+  ``i_trial_in_dataset`` in event-window metadata, keeping it aligned with
+  targets and annotation extras through event mapping, duration filtering,
+  and dropped short trials. Conflicting annotation extras are dropped with a
+  warning, while conflicting dataset descriptions are rejected during
+  metadata aggregation.
+  (:gh:`1130` by `Bruno Aristimunha`_)
+
+- Models with TorchScript-compatible forward paths can now be passed straight
+  to :func:`torch.jit.script`, without first being rebuilt as a plain
+  :class:`torch.nn.Module`.
+  :class:`braindecode.models.base.EEGModuleMixin` hides its signal-related
+  properties and the ``mapping`` attribute from TorchScript introspection, so
+  scripting reaches ``forward`` instead of failing on the class attributes.
+  (:gh:`1115` by `Aditya Singh`_)
+
+- Add a transfer-learning tutorial illustrating the TUAB-to-NMT pathology
+  workflow with offline synthetic recordings
+  (:gh:`580` by `Mohammad Javad D`_ and `Bruno Aristimunha`_).
+
+API and behavior changes
+========================
+
+- Deprecate ``drop_last_window`` in
+  :func:`braindecode.preprocessing.create_windows_from_events` and
+  :func:`braindecode.preprocessing.create_fixed_length_windows`; it will be
+  removed in version 2.0. The keyword-only replacement,
+  ``on_last_window``, accepts ``'overlap'`` or ``'drop'``. Explicit legacy
+  ``False`` maps to ``'overlap'`` and explicit legacy ``True`` maps to
+  ``'drop'``; either legacy spelling emits a ``DeprecationWarning``.
+  When no explicit window size or stride is supplied to fixed-length
+  windowing, the policy is immaterial and normalizes to the existing single
+  full-recording window; this also replaces the internal assertion formerly
+  reached by explicit legacy ``True``.
+  (:gh:`1058` by `Michele Romani`_)
+
+Requirements
+============
+
+- Remove the ``rotary_embedding_torch`` dependency. The rotary frequency
+  generation used by :class:`braindecode.models.LUNA` and
+  :class:`braindecode.models.ZUNA` is now implemented directly with PyTorch.
+  (:gh:`1136` by `Bruno Aristimunha`_)
+
+Bug fixes
+==========
+
+- Sample stochastic-depth masks with out-of-place
+  :func:`torch.bernoulli` instead of in-place ``Tensor.bernoulli_``. This keeps
+  the same per-sample Bernoulli mask and scaling while avoiding lazy
+  recipe-cache offset failures on Gaudi accelerators. The
+  :func:`braindecode.functional.drop_path` documentation now also correctly
+  describes ``drop_prob`` as the probability of dropping a path. By `Bruno
+  Aristimunha`_.
+
+- Make :class:`braindecode.models.LUNA` rotary attention portable to
+  accelerators that reject concatenations containing empty tensor views, while
+  preserving its pretrained-checkpoint parameter keys and numerical behavior.
+  Also crop mismatched :class:`braindecode.models.USleep` decoder tensors with
+  views instead of allocating index tensors, avoiding unsupported accelerator
+  lowering without changing the selected samples. (:gh:`1136` by `Bruno
+  Aristimunha`_)
+
+- Fix the docstrings of :class:`braindecode.models.ATCNet`,
+  :class:`braindecode.models.AttnSleep`, :class:`braindecode.models.CTNet`,
+  :class:`braindecode.models.EEGSimpleConv`, :class:`braindecode.models.IFNet`,
+  :class:`braindecode.models.SPARCNet`,
+  :class:`braindecode.models.SleepStagerBlanco2020`,
+  :class:`braindecode.models.SleepStagerChambon2018` and
+  :class:`braindecode.models.TIDNet`, which documented parameters their
+  constructors do not accept, either because the parameter was renamed
+  (``bn_size`` is ``bottleneck_size``, ``resampling`` is ``resampling_freq``,
+  ``att_dropout`` is ``att_drop_prob``) or because it was a deprecated alias
+  that has since been removed (``n_classes``, ``n_channels``, ``in_chans``,
+  ``input_size_s``, ``input_window_samples``). Following those docstrings
+  raised ``TypeError``. It also corrects stale defaults and types in
+  :class:`braindecode.models.CTNet`,
+  :class:`braindecode.models.EEGSimpleConv`, :class:`braindecode.models.IFNet`,
+  and :class:`braindecode.models.SleepStagerBlanco2020` (:gh:`1116` by `Aditya
+  Singh`_).
+
+- Honor the configurable activation in the adaptive feature recalibration block
+  of :class:`braindecode.models.AttnSleep`, and report the ``d_model`` required
+  by a non-reference window instead of failing inside layer normalization. The
+  derived source now also carries the complete upstream MIT notice
+  (:gh:`1119` by `Sarthak Tayal`_).
+
+- Make :class:`braindecode.datasets.SleepPhysionet` wake cropping retain the complete
+  final sleep annotation without including an extra endpoint sample (:gh:`612` by
+  `John Muradeli`_).
+
+- Fix :func:`braindecode.training.mixup_criterion` treating a plain target
+  tensor of three elements as a mixup ``(y_a, y_b, lam)`` triple. The branch
+  was selected on ``len(target) == 3``, which is also true for the targets of
+  any batch holding three windows, so a validation batch or a last partial
+  batch of that size failed with ``Expected input batch_size (3) to match
+  target batch_size (0)``. The mixup branch is now selected on the container
+  type. (:gh:`1122` by `Sarthak Tayal`_)
+
+- Keep the mixing coefficient of :class:`braindecode.augmentation.Mixup` on the
+  dtype of the batch. With ``beta_per_sample=True`` it came straight from numpy
+  as ``float64``, which upcast the loss returned by
+  :func:`braindecode.training.mixup_criterion` to ``float64`` while the model
+  stayed in ``float32``. (:gh:`1122` by `Sarthak Tayal`_)
+
+- Let :class:`braindecode.augmentation.AugmentedDataLoader` used with
+  ``n_augmentation`` greater than zero carry the targets of a transform that
+  mixes them. Batches were concatenated as plain tensors, so combining that
+  option with :class:`braindecode.augmentation.Mixup` raised ``expected Tensor
+  as element 1 in argument 0, but got tuple``. The triple parts are now
+  concatenated one by one and the clean originals get a mixing coefficient of
+  one. (:gh:`1122` by `Sarthak Tayal`_)
+
+- Let :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor`
+  train with a transform that mixes targets. The loader wrapper cast every
+  target with ``y.type(...)``, so a batch carrying the ``(y_a, y_b, lam)``
+  triple of :class:`braindecode.augmentation.Mixup` stopped the fit with
+  ``'tuple' object has no attribute 'type'`` before the first batch was seen.
+  The triple parts now follow the same classification/regression dtype contract
+  as a plain target. (:gh:`1122` by `Sarthak Tayal`_).
+
 - Keep :class:`braindecode.preprocessing.EEGPrep` compatible with EEGPrep 0.3,
   which no longer exposes the ``eegprep.utils`` namespace used for sampling-rate
   validation (:gh:`1123` by `Bruno Aristimunha`_).
+- Write strict JSON in Hub dataset stores while preserving NaNs in numeric MNE
+  ``Info`` sequences. Unsupported scalar NaNs and infinities are rejected
+  before store creation, and preprocessing kwargs are stored as native strict
+  JSON while legacy string values remain readable (:gh:`1128` by `Azra Bano`_).
+
+- Leave recordings shorter than ``n_windows`` out of the draw in
+  :class:`braindecode.samplers.BalancedSequenceSampler` instead of failing on
+  them. Such a recording holds no valid sequence start, which made the sampling
+  range empty and raised ``ValueError: high <= 0`` on the first sequence that
+  landed there. :class:`braindecode.samplers.SequenceSampler` already skips
+  those recordings. A clear error now names the longest recording when none of
+  them can hold a sequence (:gh:`1125` by `Sarthak Tayal`_).
+
+- Keep ``file_ids`` of :class:`braindecode.samplers.SequenceSampler` integer.
+  The ids were built from untyped lists, so an empty list coming from a
+  recording too short for a sequence turned the concatenated array into
+  ``float64``, against the documented dtype and unusable as an index
+  (:gh:`1125` by `Sarthak Tayal`_).
+
+- Document the ``randomize`` parameter of
+  :class:`braindecode.samplers.SequenceSampler` under its own name. The
+  docstring described it as ``random``, which no signature accepts
+  (:gh:`1125` by `Sarthak Tayal`_).
 
 Code health
 ============
@@ -724,7 +918,7 @@ Bugs
   are called without the optional ``huggingface_hub`` dependency installed.
   Users now get a clear :class:`ImportError` with installation instructions
   (``pip install 'braindecode[hub]'``) instead of an ``AttributeError``.
-  (:gh:`1024` by `@copilot`_)
+  (:gh:`1024` by `@copilot <https://github.com/copilot>`_)
 - Replace the vague ``license: unknown`` field in the auto-generated Hugging
   Face Hub dataset card with an inferred license (when consistent across all
   recordings' descriptions) or a ``please-specify`` placeholder with a
@@ -1547,6 +1741,7 @@ Authors
 .. _Kuntal Kokate: https://github.com/Kkuntal990
 .. _GalAshkenazi1: https://github.com/GalAshkenazi1
 .. _Matthew Chen: https://github.com/MatthewChen37
+.. _Michele Romani: https://github.com/BRomans
 .. _Jonathan Dan: https://github.com/jon-dan
 .. _Jonathan Lys: https://github.com/jonathanlys01
 .. _Thorir Mar Ingolfsson: https://github.com/Thoriri
@@ -1561,3 +1756,7 @@ Authors
 .. _Fashad Ahmed: https://github.com/Fashad-Ahmed
 .. _Bhargav Kowshik: https://github.com/bkowshik
 .. _Jon Huml: https://github.com/jonathanhuml
+.. _Azra Bano: https://github.com/azrabano23
+.. _Aditya Singh: https://github.com/adityasingh2400
+.. _Julien Gadonneix: https://github.com/julien-gadonneix
+.. _Li Qing: https://github.com/qinxwew

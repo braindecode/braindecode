@@ -12,6 +12,9 @@ import pooch
 import pytest
 import torch
 
+import braindecode.models.luna as luna_module
+import braindecode.models.zuna as zuna_module
+
 try:
     from huggingface_hub import hf_hub_download
     from safetensors.torch import load_file
@@ -22,7 +25,17 @@ except ImportError:
 
 from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
-from braindecode.models.reve import RevePositionBank
+from braindecode.models.luna import _RotarySelfAttentionBlock
+from braindecode.models.reve import Attention, RevePositionBank, RMSNorm
+
+_ORIGINAL_TORCH_CAT = torch.cat
+
+
+def _reject_empty_tensors(tensors, *args, **kwargs):
+    dim = kwargs.get("dim", args[0] if args else 0)
+    if any(tensor.shape[dim] == 0 for tensor in tensors):
+        raise RuntimeError("backend does not support empty tensor concatenation")
+    return _ORIGINAL_TORCH_CAT(tensors, *args, **kwargs)
 
 
 @pytest.fixture
@@ -671,6 +684,98 @@ def test_luna_base_gradient_flow(luna_base_model):
     assert any(p.grad is not None for p in luna_base_model.blocks[0].parameters())
     # Check gradient in final classification head
     assert luna_base_model.final_layer.decoder_ffn.fc1.weight.grad is not None
+
+
+def test_luna_full_rotary_attention_avoids_empty_concatenation(monkeypatch):
+    """Full-head RoPE does not concatenate zero-width tensor views."""
+    monkeypatch.setattr(torch, "cat", _reject_empty_tensors)
+    attention = _RotarySelfAttentionBlock(dim=32, num_heads=4)
+    signal = torch.randn(2, 10, 32, requires_grad=True)
+
+    output = attention(signal)
+    output.sum().backward()
+
+    assert output.shape == signal.shape
+    assert signal.grad is not None
+
+
+def test_luna_rotary_embedding_is_native_and_checkpoint_compatible():
+    """LUNA uses Braindecode-native RoPE without changing checkpoint keys."""
+    attention = _RotarySelfAttentionBlock(dim=32, num_heads=4)
+
+    assert type(attention.rotary_emb).__module__ == luna_module.__name__
+    assert "rotary_emb.freqs" in attention.state_dict()
+    expected = 1.0 / (10000 ** (torch.arange(0, 8, 2).float() / 8))
+    torch.testing.assert_close(attention.rotary_emb.freqs, expected)
+
+
+@pytest.mark.parametrize("axis_dim", [2, 4, 8])
+def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
+    """ZUNA's native table matches rotary-embedding-torch semantics."""
+    positions = torch.arange(5, dtype=torch.float32)
+    table = zuna_module._build_rotary_frequency_table(
+        positions, axis_dim=axis_dim, theta=10000.0
+    )
+
+    embedding_dim = max(axis_dim, 4)
+    inverse_frequencies = 1.0 / (
+        10000.0 ** (torch.arange(0, embedding_dim, 2).float() / embedding_dim)
+    )
+    expected = torch.outer(positions, inverse_frequencies).repeat_interleave(2, dim=1)
+    torch.testing.assert_close(table, expected[:, :axis_dim])
+
+
+@pytest.mark.parametrize(
+    "norm_class, eps", [(RMSNorm, 1e-6), (zuna_module._RMSNorm, 1e-5)]
+)
+@pytest.mark.parametrize("input_dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("weight_dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_foundation_rms_norm_preserves_reference_precision(
+    norm_class, eps, input_dtype, weight_dtype
+):
+    norm = RMSNorm(dim=8) if norm_class is RMSNorm else norm_class(8, eps=eps)
+    norm = norm.to(weight_dtype)
+    weight = torch.linspace(0.5, 1.5, 8, dtype=weight_dtype, requires_grad=True)
+    norm.load_state_dict({"weight": weight.detach()}, strict=True)
+    # Squaring 1000 overflows float16; small values exercise the explicit eps.
+    x = torch.linspace(-1, 1, 24).reshape(3, 8)
+    x = (
+        (x * torch.tensor([1e-4, 1.0, 1000.0])[:, None])
+        .to(input_dtype)
+        .requires_grad_()
+    )
+    reference_x = x.detach().clone().requires_grad_()
+    normalized = reference_x.float() * torch.rsqrt(
+        reference_x.float().square().mean(-1, keepdim=True) + eps
+    )
+    dtype = input_dtype if norm_class is RMSNorm else weight_dtype
+    expected = normalized.to(dtype) * weight
+    actual = norm(x)
+    torch.testing.assert_close(actual, expected)
+    actual.sum().backward()
+    expected.sum().backward()
+    torch.testing.assert_close(x.grad, reference_x.grad)
+    torch.testing.assert_close(norm.weight.grad, weight.grad)
+
+
+def test_reve_attention_matches_explicit_attention():
+    attention = Attention(dim=16, heads=2, head_dim=8)
+    x = torch.randn(2, 5, 16, requires_grad=True)
+    q, k, v = (
+        t.reshape(2, 5, 2, 8).transpose(1, 2)
+        for t in attention.to_qkv(attention.norm(x)).chunk(3, dim=-1)
+    )
+    weights = (q @ k.transpose(-1, -2) / 8**0.5).softmax(dim=-1)
+    expected = attention.to_out((weights @ v).transpose(1, 2).reshape(2, 5, 16))
+    actual = attention(x)
+    torch.testing.assert_close(actual, expected)
+    parameters = (x, *attention.parameters())
+    actual_grads = torch.autograd.grad(
+        actual.square().sum(), parameters, retain_graph=True
+    )
+    expected_grads = torch.autograd.grad(expected.square().sum(), parameters)
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads):
+        torch.testing.assert_close(actual_grad, expected_grad)
 
 
 # ==============================================================================

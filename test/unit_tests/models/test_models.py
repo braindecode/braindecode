@@ -9,6 +9,8 @@
 #
 # License: BSD-3
 
+import inspect
+import re
 import warnings
 from collections import OrderedDict
 from functools import partial
@@ -72,6 +74,7 @@ from braindecode.models.eegpt import (
     _rotate_half,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
+from braindecode.models.usleep import _DecoderBlock
 from braindecode.models.util import (
     _get_possible_signal_params,
     _get_signal_params,
@@ -887,6 +890,27 @@ def test_usleep(n_chans, sfreq, n_classes, input_size_s):
     )
 
 
+def test_usleep_decoder_crop_returns_prefix_views():
+    """Decoder alignment avoids allocating device-specific index tensors."""
+    longer = torch.arange(30).reshape(2, 3, 5)
+    shorter = torch.arange(24).reshape(2, 3, 4)
+
+    cropped_longer, cropped_shorter = _DecoderBlock._crop_tensors_to_match(
+        longer, shorter
+    )
+
+    torch.testing.assert_close(cropped_longer, longer[..., :4])
+    torch.testing.assert_close(cropped_shorter, shorter)
+    assert (
+        cropped_longer.untyped_storage().data_ptr()
+        == longer.untyped_storage().data_ptr()
+    )
+    assert (
+        cropped_shorter.untyped_storage().data_ptr()
+        == shorter.untyped_storage().data_ptr()
+    )
+
+
 def test_usleep_n_params():
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
@@ -989,6 +1013,49 @@ def test_eldele_2021_feats():
 
     out = model(X)
     assert out.shape == (n_examples, model.len_last_layer)
+
+
+def test_attn_sleep_requires_signal_geometry():
+    with pytest.raises(ValueError, match="at least two of"):
+        AttnSleep(sfreq=100, n_outputs=5)
+
+
+def test_attn_sleep_reports_required_d_model():
+    with pytest.raises(ValueError, match="d_model=54"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=2000)
+
+
+def test_attn_sleep_rejects_invalid_attention_heads():
+    with pytest.raises(ValueError, match="positive integer that divides d_model"):
+        AttnSleep(sfreq=100, n_outputs=5, n_times=3000, n_attn_heads=7)
+
+
+@pytest.mark.parametrize("return_feats", [False, True])
+def test_attn_sleep_supports_other_window_lengths(return_feats):
+    model = AttnSleep(
+        sfreq=100,
+        n_outputs=5,
+        n_times=2000,
+        d_model=54,
+        n_attn_heads=6,
+        return_feats=return_feats,
+    )
+    output = model(torch.randn(2, 1, 2000))
+    expected_width = model.len_last_layer if return_feats else 5
+    assert output.shape == (2, expected_width)
+
+
+def test_attn_sleep_activation_reaches_afr():
+    model = AttnSleep(
+        sfreq=100, n_outputs=5, n_times=3000, activation=nn.GELU
+    )
+    activations = [
+        module
+        for module in model.feature_extractor[0].AFR.modules()
+        if isinstance(module, (nn.ReLU, nn.GELU))
+    ]
+    assert activations
+    assert all(isinstance(module, nn.GELU) for module in activations)
 
 
 @pytest.mark.parametrize(
@@ -4152,3 +4219,110 @@ def test_dropout1d_masks_channels_not_batch_items():
     # At least one batch item keeps some channels and loses others, which
     # cannot happen when the mask is drawn over the batch axis.
     assert (zeroed.any(dim=1) & ~zeroed.all(dim=1)).any()
+
+
+_PARAM_LINE = re.compile(
+    r"^(?P<names>\*{0,2}\w+(?:\s*,\s*\*{0,2}\w+)*)\s*:"
+)
+
+
+def _documented_parameters(model_class):
+    """Names listed in the ``Parameters`` section of a model docstring.
+
+    ``EEGModuleMixin.__init_subclass__`` appends the Hugging Face Hub notes to
+    every model docstring, so drop them before parsing. After
+    :func:`inspect.getdoc` a parameter entry sits at column zero and its
+    description is indented, which is what tells them apart from prose lines
+    such as ``Note: ...`` inside a description.
+    """
+    doc = inspect.getdoc(model_class) or ""
+    doc = doc.split(".. rubric:: Hugging Face Hub integration")[0]
+    lines = doc.split("\n")
+
+    names = []
+    inside = False
+    for position, line in enumerate(lines):
+        stripped = line.strip()
+        next_line = lines[position + 1].strip() if position + 1 < len(lines) else ""
+        if next_line and set(next_line) == {"-"}:
+            inside = stripped == "Parameters"
+            continue
+        if not inside:
+            continue
+        match = _PARAM_LINE.match(line)
+        if match is None:
+            continue
+        following = next((nxt for nxt in lines[position + 1 :] if nxt.strip()), "")
+        if following.startswith(" "):
+            names.extend(
+                name.strip().lstrip("*") for name in match.group("names").split(",")
+            )
+    return names
+
+
+@pytest.mark.parametrize("model_name", sorted(all_models_dict))
+def test_documented_parameters_exist_in_signature(model_name):
+    """Every documented parameter must be accepted by the constructor.
+
+    Renamed or removed parameters used to survive in the docstrings, so users
+    following the documentation got a ``TypeError`` instead of a model.
+    """
+    model_class = all_models_dict[model_name]
+    parameters = inspect.signature(model_class.__init__).parameters
+    if any(p.kind == p.VAR_KEYWORD for p in parameters.values()):
+        pytest.skip(f"{model_name} forwards **kwargs, any name is accepted")
+
+    accepted = set(parameters) - {"self"}
+    documented = set(_documented_parameters(model_class))
+    unknown = sorted(documented - accepted)
+
+    assert not unknown, (
+        f"{model_name} documents parameters its constructor does not accept: "
+        f"{unknown}"
+    )
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "ATCNet",
+        "AttnSleep",
+        "CTNet",
+        "EEGSimpleConv",
+        "IFNet",
+        "SPARCNet",
+        "SleepStagerBlanco2020",
+        "SleepStagerChambon2018",
+        "TIDNet",
+    ],
+)
+def test_audited_model_parameter_headers_follow_numpydoc(model_name):
+    """Changed parameter headers must be parsed as names, not name-and-type."""
+    model_class = all_models_dict[model_name]
+    doc = inspect.getdoc(model_class) or ""
+    doc = doc.split(".. rubric:: Hugging Face Hub integration")[0]
+    lines = doc.split("\n")
+
+    malformed = []
+    inside = False
+    for position, line in enumerate(lines):
+        stripped = line.strip()
+        next_line = lines[position + 1].strip() if position + 1 < len(lines) else ""
+        if next_line and set(next_line) == {"-"}:
+            inside = stripped == "Parameters"
+            continue
+        if not inside:
+            continue
+        match = _PARAM_LINE.match(line)
+        if match is None:
+            continue
+        following = next((nxt for nxt in lines[position + 1 :] if nxt.strip()), "")
+        if following.startswith(" ") and not line.startswith(
+            f"{match.group('names')} : "
+        ):
+            malformed.append(line)
+
+    assert not malformed, (
+        f"{model_class.__name__} has parameter headers numpydoc misparses: "
+        f"{malformed}"
+    )

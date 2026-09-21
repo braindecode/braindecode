@@ -32,6 +32,7 @@ from mne.utils.docs import deprecated
 from torch.utils.data import ConcatDataset, Dataset, IterableDataset
 from typing_extensions import TypeVar
 
+from ._notebook_viewer import plot as _viewer_plot
 from .bids.hub import HubDatasetMixin
 from .bids.hub_io import _restore_nan_from_json
 from .registry import register_dataset
@@ -59,6 +60,7 @@ def _html_row(label, value):
 
 _METADATA_INTERNAL_COLS = {
     "i_window_in_trial",
+    "i_trial_in_dataset",
     "i_start_in_trial",
     "i_stop_in_trial",
     "target",
@@ -1173,6 +1175,8 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
         If True, defer computing cumulative sizes until length or item access.
     """
 
+    plot = _viewer_plot  # eegdash-viewer embed; a direct member so the API docs list it
+
     datasets: list[T]
 
     def __init__(
@@ -1373,6 +1377,20 @@ class BaseConcatDataset(ConcatDataset, HubDatasetMixin, Generic[T]):
                 "Metadata dataframe can only be computed when all "
                 "datasets are WindowsDataset."
             )
+
+        for ds in self.datasets:
+            if hasattr(ds, "_windows") and ds._windows is not None:
+                df = ds._windows.metadata
+            else:
+                df = ds.metadata
+            if (
+                "i_trial_in_dataset" in df.columns
+                and "i_trial_in_dataset" in ds.description
+            ):
+                raise ValueError(
+                    "Dataset descriptions cannot contain the reserved window "
+                    "metadata key 'i_trial_in_dataset'."
+                )
 
         all_dfs = list()
         for ds in self.datasets:

@@ -46,8 +46,8 @@ classifiers = [
 readme = "README.rst"
 requires-python = ">=3.11"
 dependencies = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
+    "torch>=2.4",
+    "torchaudio>=2.4",
     'mne>=1.11.0',  # we get matplotlib, numpy, scipy from here
     'mne_bids>=0.18', # in theory we get the mne here, but we prefer to have it explicit
     'h5py',
@@ -58,13 +58,11 @@ dependencies = [
     'wfdb>=4.3.1',  # requests comes transitively via mne→pooch and wfdb
     'linear_attention_transformer',
     'docstring_inheritance',        # we get einops from here
-    'rotary_embedding_torch',
     'pydantic>=2.0',
 ]
 
 [tool.uv]
 required-environments = [
-  "sys_platform == 'darwin' and platform_machine == 'x86_64'",  # Intel Mac
   "sys_platform == 'darwin' and platform_machine == 'arm64'",   # Apple Silicon Mac (M1/M2/M3)
   "sys_platform == 'linux' and platform_machine == 'x86_64'",   # Linux 64-bit
   "sys_platform == 'win32' and platform_machine == 'AMD64'"     # Windows 64-bit
@@ -83,9 +81,11 @@ viz = ["captum>=0.7.0"]
 tests = [
     'pytest<9.1',  # pytest 9.1.0 changed IdMaker's signature, which breaks pytest_cases 3.10.1 (crash at collection time). Remove the cap once pytest_cases supports pytest >=9.1.
     'pytest-cov',
+    'pytest-xdist>=3.8.0',
     'codecov',
     'pytest_cases',
     'mypy',
+    'ipython',
     "transformers>=4.57.0",
     "bids_validator",
 ]
@@ -95,7 +95,7 @@ typing = [
 ]
 
 docs = [
-    'sphinx_gallery',
+    'sphinx_gallery>=0.17',
     'sphinx_rtd_theme',
     'sphinx-autodoc-typehints',
     'sphinx-autobuild',

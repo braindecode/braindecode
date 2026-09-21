@@ -9,6 +9,7 @@ import numpy as np
 import torch.nn as nn
 
 from braindecode.modules.interpolation import ChannelInterpolationLayer
+from braindecode.util import resolve_montage_name
 
 
 def InterpolatedModel(
@@ -157,7 +158,9 @@ def _build_chs_info_from_montage(names: list[str], montage: str) -> list[dict]:
     names : list of str
         Channel names in the desired order.
     montage : str
-        Name of an MNE standard montage (e.g. ``"standard_1005"``).
+        Name of an MNE standard montage (e.g. ``"standard_1005"``, renamed to
+        ``"colin27_1005"`` in MNE >= 1.13; both spellings are accepted here
+        for any supported MNE version).
 
     Returns
     -------
@@ -170,7 +173,7 @@ def _build_chs_info_from_montage(names: list[str], montage: str) -> list[dict]:
     """
     import mne
 
-    mtg = mne.channels.make_standard_montage(montage)
+    mtg = mne.channels.make_standard_montage(resolve_montage_name(montage))
     ch_pos = mtg.get_positions()["ch_pos"]
     out = []
     for n in names:

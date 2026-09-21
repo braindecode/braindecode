@@ -191,11 +191,13 @@ class CombinedConv(nn.Module):
             time_bias = self.conv_time.bias
             if time_bias is None:
                 raise RuntimeError("conv_time.bias is None despite bias_time=True")
+            # squeeze only the singleton kernel dimension: a bare squeeze() also
+            # drops n_filters_spat / n_filters_time / in_chans when they are 1
             calculated_bias = (
-                self.conv_spat.weight.squeeze()
+                self.conv_spat.weight.squeeze(2)
                 .sum(-1)
                 .mm(time_bias.unsqueeze(-1))
-                .squeeze()
+                .squeeze(-1)
             )
         if self.bias_spat:
             spat_bias = self.conv_spat.bias

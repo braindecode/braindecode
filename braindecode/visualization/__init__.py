@@ -2,6 +2,10 @@
 Functions for visualisations, especially of the ConvNets.
 """
 
+from .activations import (
+    capture_activations,
+    run_with_activation_substitution,
+)
 from .attribution import (
     deconvolution,
     deep_lift,
@@ -28,6 +32,7 @@ __all__ = [
     "SSIM_METRIC_NAMES",
     "amplitude_gradients",
     "amplitude_gradients_per_trial",
+    "capture_activations",
     "cascading_layer_reset",
     "compute_metrics",
     "compute_ssim_metrics",
@@ -41,5 +46,6 @@ __all__ = [
     "plot_confusion_matrix",
     "project_to_topomap",
     "random_target",
+    "run_with_activation_substitution",
     "saliency",
 ]
