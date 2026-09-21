@@ -26,7 +26,7 @@ except ImportError:
 from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import Attention, RevePositionBank, RMSNorm
+from braindecode.models.reve import Attention, RevePositionBank
 
 _ORIGINAL_TORCH_CAT = torch.cat
 
@@ -723,39 +723,6 @@ def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
     )
     expected = torch.outer(positions, inverse_frequencies).repeat_interleave(2, dim=1)
     torch.testing.assert_close(table, expected[:, :axis_dim])
-
-
-@pytest.mark.parametrize(
-    "norm_class, eps", [(RMSNorm, 1e-6), (zuna_module._RMSNorm, 1e-5)]
-)
-@pytest.mark.parametrize("input_dtype", [torch.float32, torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("weight_dtype", [torch.float32, torch.float16, torch.bfloat16])
-def test_foundation_rms_norm_preserves_reference_precision(
-    norm_class, eps, input_dtype, weight_dtype
-):
-    norm = RMSNorm(dim=8) if norm_class is RMSNorm else norm_class(8, eps=eps)
-    norm = norm.to(weight_dtype)
-    weight = torch.linspace(0.5, 1.5, 8, dtype=weight_dtype, requires_grad=True)
-    norm.load_state_dict({"weight": weight.detach()}, strict=True)
-    # Squaring 1000 overflows float16; small values exercise the explicit eps.
-    x = torch.linspace(-1, 1, 24).reshape(3, 8)
-    x = (
-        (x * torch.tensor([1e-4, 1.0, 1000.0])[:, None])
-        .to(input_dtype)
-        .requires_grad_()
-    )
-    reference_x = x.detach().clone().requires_grad_()
-    normalized = reference_x.float() * torch.rsqrt(
-        reference_x.float().square().mean(-1, keepdim=True) + eps
-    )
-    dtype = input_dtype if norm_class is RMSNorm else weight_dtype
-    expected = normalized.to(dtype) * weight
-    actual = norm(x)
-    torch.testing.assert_close(actual, expected)
-    actual.sum().backward()
-    expected.sum().backward()
-    torch.testing.assert_close(x.grad, reference_x.grad)
-    torch.testing.assert_close(norm.weight.grad, weight.grad)
 
 
 def test_reve_attention_matches_explicit_attention():

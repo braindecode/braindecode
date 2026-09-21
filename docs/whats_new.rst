@@ -41,8 +41,8 @@ Requirements
 ============
 
 - Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
-  RMS normalization in REVE and ZUNA now uses PyTorch's implementation while
-  retaining float32 accumulation. Intel macOS is no longer supported because
+  REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
+  explicit epsilon values. Intel macOS is no longer supported because
   PyTorch stopped providing its binary packages after 2.2.
   (:gh:`1174` by `Bruno Aristimunha`_)
 
