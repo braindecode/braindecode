@@ -15,8 +15,9 @@ recipe that produced it.
 The source revision and checkpoint hashes are pinned below. The numerical check
 uses the released forward equations with explicit PyTorch attention instead of
 CUDA-only xformers. It checks float32 encoder tokens, not downstream accuracy or
-mixed-precision equivalence. Pooling and classification weights are initialized
-locally because the releases contain neither. Fine-tune these before prediction.
+mixed-precision equivalence. The releases carry no pooling or classification
+weights, so the published files hold the encoder alone and Braindecode
+initializes the head on load. Fine-tune it before prediction.
 
 The published models pool by mean, so one encoder serves recordings with
 different montages and window lengths; ``n_chans`` only sizes the learned
@@ -26,14 +27,17 @@ read-out and can be overridden when loading.
 import argparse
 import json
 import shutil
+from contextlib import contextmanager
 from pathlib import Path
 
 import pooch
 import torch
 import torch.nn.functional as F
+from torch import nn
 
 from braindecode.models import BaRISTA
 
+HEAD = {"final_layer.weight", "final_layer.bias"}
 REVISION = "83b27375eba60e9eba9da4e7dd8fb283baace376"
 SOURCE = f"https://raw.githubusercontent.com/ShanechiLab/BaRISTA/{REVISION}"
 LICENSE = f"https://github.com/ShanechiLab/BaRISTA/blob/{REVISION}/LICENSE.md"
@@ -104,9 +108,10 @@ your own `n_chans`, `n_times` and `n_outputs` when loading.
 
 ## Limitations
 
-The release contains the encoder only. The classification head in these files
-is newly initialized and needs fine-tuning, as does the learned read-out of the
-paper's protocol (`pooling="learned"`), which was never released. The check
+These files hold the encoder only, as does the release. Braindecode
+initializes the classification head on load, so it needs fine-tuning, as does
+the learned read-out of the paper's protocol (`pooling="learned"`), which was
+never released. The check
 above covers float32 CPU encoder tokens, not downstream accuracy, GPU kernels or
 mixed precision.
 
@@ -157,11 +162,7 @@ def convert_weights(source, model):
         )
         converted[key] = tensor
     missing, unexpected = model.load_state_dict(converted, strict=False)
-    expected_missing = {
-        "token_pooling.weight",
-        "final_layer.weight",
-        "final_layer.bias",
-    }
+    expected_missing = {"token_pooling.weight", *HEAD}
     if model.token_pooling is None:
         expected_missing.remove("token_pooling.weight")
     if set(missing) != expected_missing or unexpected:
@@ -264,9 +265,20 @@ def reference_tokens(state, x, indices):
     )
 
 
+@contextmanager
+def without_head(model):
+    """Hide the untrained classifier so only encoder tensors get serialized."""
+    head, model.final_layer = model.final_layer, nn.Identity()
+    try:
+        yield
+    finally:
+        model.final_layer = head
+
+
 def write_directory(model, destination, card):
     """Save the Hub directory: weights, config, notice, card and this script."""
-    model.save_pretrained(destination)
+    with without_head(model):
+        model.save_pretrained(destination)
     shutil.copyfile(
         Path(__file__).resolve().parents[1] / "NOTICE.txt", destination / "NOTICE.txt"
     )
@@ -279,7 +291,8 @@ def publish(model, destination, repo_id):
     """Push the weights through Braindecode, then the files it does not carry."""
     from huggingface_hub import HfApi
 
-    model.push_to_hub(repo_id)
+    with without_head(model):
+        model.push_to_hub(repo_id)
     api = HfApi()
     for name in ("README.md", "NOTICE.txt", Path(__file__).name):
         api.upload_file(
@@ -338,10 +351,11 @@ def main():
             torch.no_grad(),
             model.backbone.register_forward_hook(lambda _m, _x, y: captured.append(y)),
         ):
-            logits = model(x, spatial_indices=indices)
+            features = model(x, spatial_indices=indices, return_features=True)
             expected = reference_tokens(state, x, indices)
+        features = features["features"]
         torch.testing.assert_close(captured[0], expected, rtol=1e-4, atol=1e-5)
-        if not torch.isfinite(logits).all():
+        if not torch.isfinite(features).all():
             raise RuntimeError(f"Non-finite output for {scale}")
         error = (captured[0] - expected).abs().max().item()
         name = f"BaRISTA-{scale}"
@@ -366,16 +380,27 @@ def main():
                 n_times=args.n_times,
             ),
         )
-        restored = BaRISTA.from_pretrained(destination, strict=True).eval()
+        stored = torch.load(
+            destination / "pytorch_model.bin", map_location="cpu", weights_only=True
+        )
+        if set(stored) != set(model.state_dict()) - HEAD:
+            raise RuntimeError(
+                f"Published tensors are not the encoder: {stored.keys()}"
+            )
+        # strict=False, since loading initializes the head these files omit.
+        restored = BaRISTA.from_pretrained(destination).eval()
         with torch.no_grad():
             torch.testing.assert_close(
-                restored(x, spatial_indices=indices), logits, rtol=0, atol=0
+                restored(x, spatial_indices=indices, return_features=True)["features"],
+                features,
+                rtol=0,
+                atol=0,
             )
         report["checkpoints"][scale] = {
             "filename": filename,
             "sha256": digest,
             "encoder_tensors_loaded": loaded,
-            "new_head_tensors": missing,
+            "omitted_head_tensors": missing,
             "max_abs_token_error": error,
             "rtol": 1e-4,
             "atol": 1e-5,
