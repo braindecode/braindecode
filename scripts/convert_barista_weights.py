@@ -1,16 +1,26 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Julien Gadonneix <juliengado.2001@gmail.com>
 # License: USC academic, non-commercial; see NOTICE.txt.
-"""Convert and check all three released BaRISTA encoders on CPU.
+"""Convert, check and publish all three released BaRISTA encoders on CPU.
 
 Run from an editable Braindecode checkout with the ``hub`` extra installed::
 
     python scripts/convert_barista_weights.py --output-dir /tmp/barista-converted
+
+Add ``--push-to braindecode`` to upload each converted encoder with
+:meth:`~braindecode.models.base.EEGModuleMixin.push_to_hub`, together with this
+script, the licence notice and a model card, so every repository carries the
+recipe that produced it.
 
 The source revision and checkpoint hashes are pinned below. The numerical check
 uses the released forward equations with explicit PyTorch attention instead of
 CUDA-only xformers. It checks float32 encoder tokens, not downstream accuracy or
 mixed-precision equivalence. Pooling and classification weights are initialized
 locally because the releases contain neither. Fine-tune these before prediction.
+
+The published models pool by mean, so one encoder serves recordings with
+different montages and window lengths; ``n_chans`` only sizes the learned
+read-out and can be overridden when loading.
 """
 
 import argparse
@@ -26,6 +36,7 @@ from braindecode.models import BaRISTA
 
 REVISION = "83b27375eba60e9eba9da4e7dd8fb283baace376"
 SOURCE = f"https://raw.githubusercontent.com/ShanechiLab/BaRISTA/{REVISION}"
+LICENSE = f"https://github.com/ShanechiLab/BaRISTA/blob/{REVISION}/LICENSE.md"
 CHECKPOINTS = {
     "coords": (
         "chans_chans.ckpt",
@@ -40,6 +51,82 @@ CHECKPOINTS = {
         "d810338a4929df0fb2421f342b3ee859f9fef269e35fb4f2fd9c55347a63324a",
     ),
 }
+SLOTS = {"coords": 200, "parcels": 121, "lobes": 21}
+INDICES = {
+    "coords": "an ``(n_chans, 3)`` tensor of grid coordinates in ``[0, 200)``",
+    "parcels": "an ``(n_chans,)`` tensor of Destrieux parcels in ``[0, 121)``",
+    "lobes": "an ``(n_chans,)`` tensor of lobes in ``[0, 21)``",
+}
+CARD = """---
+library_name: braindecode
+license: other
+license_name: usc-academic-non-commercial
+license_link: {license}
+pipeline_tag: feature-extraction
+tags:
+- braindecode
+- BaRISTA
+- ieeg
+- seeg
+- foundation-model
+- pytorch_model_hub_mixin
+---
+
+# BaRISTA, {scale} scale
+
+The released BaRISTA encoder of [Oganesian, Hashemi and Shanechi
+(2025)](https://arxiv.org/abs/2512.12135) for the **{scale}** spatial scale,
+converted to
+[`braindecode.models.BaRISTA`](https://braindecode.org/stable/generated/braindecode.models.BaRISTA.html).
+
+Source: `pretrained_models/{filename}` at revision
+[`{revision}`](https://github.com/ShanechiLab/BaRISTA/tree/{revision}),
+sha256 `{digest}`. Conversion renames tensors and fuses the released gated
+projections into the single projection this port uses; `convert_barista_weights.py`
+in this repository reproduces it. Encoder tokens match the released forward
+equations to {error:.2g} in float32 on CPU.
+
+## Usage
+
+Supply the montage of each batch as `spatial_indices`, {indices}:
+
+```python
+import torch
+from braindecode.models import BaRISTA
+
+model = BaRISTA.from_pretrained("{repo_id}", n_chans=64, n_outputs=2)
+logits = model(torch.randn(8, 64, 6144), spatial_indices={example})
+```
+
+The saved geometry is {n_chans} channels and {n_times} samples at 2048 Hz, the
+pretraining window. Mean pooling makes the encoder independent of both, so pass
+your own `n_chans`, `n_times` and `n_outputs` when loading.
+
+## Limitations
+
+The release contains the encoder only. The classification head in these files
+is newly initialized and needs fine-tuning, as does the learned read-out of the
+paper's protocol (`pooling="learned"`), which was never released. The check
+above covers float32 CPU encoder tokens, not downstream accuracy, GPU kernels or
+mixed precision.
+
+## Citation
+
+```bibtex
+@inproceedings{{oganesian2025barista,
+    title={{BaRISTA: Brain Scale Informed Spatiotemporal Representation of Human Intracranial Neural Activity}},
+    author={{Oganesian, Lucine L. and Hashemi, Saba and Shanechi, Maryam M.}},
+    booktitle={{Advances in Neural Information Processing Systems}},
+    year={{2025}}
+}}
+```
+
+## License
+
+Copyright (c) 2025 University of Southern California. Educational, research and
+non-profit use only; commercial use requires an agreement with the USC Stevens
+Center for Innovation. See `NOTICE.txt` and the [original licence]({license}).
+"""
 
 
 def convert_weights(source, model):
@@ -177,16 +264,42 @@ def reference_tokens(state, x, indices):
     )
 
 
+def write_directory(model, destination, card):
+    """Save the Hub directory: weights, config, notice, card and this script."""
+    model.save_pretrained(destination)
+    shutil.copyfile(
+        Path(__file__).resolve().parents[1] / "NOTICE.txt", destination / "NOTICE.txt"
+    )
+    shutil.copyfile(Path(__file__).resolve(), destination / Path(__file__).name)
+    # Written last: save_pretrained leaves a placeholder card behind.
+    (destination / "README.md").write_text(card)
+
+
+def publish(model, destination, repo_id):
+    """Push the weights through Braindecode, then the files it does not carry."""
+    from huggingface_hub import HfApi
+
+    model.push_to_hub(repo_id)
+    api = HfApi()
+    for name in ("README.md", "NOTICE.txt", Path(__file__).name):
+        api.upload_file(
+            path_or_fileobj=str(destination / name),
+            path_in_repo=name,
+            repo_id=repo_id,
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
         "--cache-dir", type=Path, default=pooch.os_cache("braindecode") / "barista"
     )
-    parser.add_argument("--n-chans", type=int, default=3)
+    parser.add_argument("--n-chans", type=int, default=64)
     parser.add_argument("--n-times", type=int, default=6144)
     parser.add_argument("--n-outputs", type=int, default=2)
-    parser.add_argument("--pooling", choices=("learned", "mean"), default="learned")
+    parser.add_argument("--pooling", choices=("learned", "mean"), default="mean")
+    parser.add_argument("--push-to", help="Hub namespace to publish the models to")
     args = parser.parse_args()
     torch.set_num_threads(1)
     torch.manual_seed(0)
@@ -212,10 +325,10 @@ def main():
         ).eval()
         loaded, missing = convert_weights(state, model)
         # Synthetic indices exercise the whole table, including unknown region 0.
-        slots = {"coords": 200, "parcels": 121, "lobes": 21}[scale]
+        axes = 3 if scale == "coords" else 1
         shape = (args.n_chans, 3) if scale == "coords" else (args.n_chans,)
         indices = (
-            torch.linspace(0, slots - 1, args.n_chans * (3 if scale == "coords" else 1))
+            torch.linspace(0, SLOTS[scale] - 1, args.n_chans * axes)
             .long()
             .reshape(shape)
         )
@@ -231,11 +344,27 @@ def main():
         if not torch.isfinite(logits).all():
             raise RuntimeError(f"Non-finite output for {scale}")
         error = (captured[0] - expected).abs().max().item()
+        name = f"BaRISTA-{scale}"
+        repo_id = f"{args.push_to}/{name}" if args.push_to else name
         destination = args.output_dir / scale
-        model.save_pretrained(destination)
-        shutil.copyfile(
-            Path(__file__).resolve().parents[1] / "NOTICE.txt",
-            destination / "NOTICE.txt",
+        write_directory(
+            model,
+            destination,
+            CARD.format(
+                scale=scale,
+                filename=filename,
+                digest=digest,
+                revision=REVISION,
+                license=LICENSE,
+                error=error,
+                repo_id=repo_id,
+                indices=INDICES[scale],
+                example=f"torch.randint(0, {SLOTS[scale]}, (64, 3))"
+                if scale == "coords"
+                else f"torch.randint(0, {SLOTS[scale]}, (64,))",
+                n_chans=args.n_chans,
+                n_times=args.n_times,
+            ),
         )
         restored = BaRISTA.from_pretrained(destination, strict=True).eval()
         with torch.no_grad():
@@ -254,6 +383,9 @@ def main():
         print(
             f"{scale}: {loaded} encoder tensors loaded; max token error {error:.3g}; saved to {destination}"
         )
+        if args.push_to:
+            publish(model, destination, repo_id)
+            print(f"{scale}: published to https://huggingface.co/{repo_id}")
     (args.output_dir / "conversion_report.json").write_text(
         json.dumps(report, indent=2) + "\n"
     )

@@ -109,20 +109,24 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
     inputs. The check uses explicit PyTorch attention in place of xformers;
     it does not test downstream accuracy or mixed-precision equivalence.
 
-    From a Braindecode checkout with the ``hub`` extra installed, choose the
-    geometry and output count for your task, then run:
-
-    .. code-block:: console
-
-        python scripts/convert_barista_weights.py --output-dir barista-converted --n-chans 3 --n-times 6144 --n-outputs 2
-
-    The script saves one local Hub directory per scale and a JSON check report.
-    Load a converted encoder and supply its montage indices:
+    The converted encoders are published as ``braindecode/BaRISTA-coords``,
+    ``braindecode/BaRISTA-parcels`` and ``braindecode/BaRISTA-lobes``, each with
+    the conversion script that produced it. Load one and supply the montage
+    indices of the batch:
 
     .. code-block:: python
 
-        model = BaRISTA.from_pretrained("barista-converted/parcels", strict=True)
+        model = BaRISTA.from_pretrained("braindecode/BaRISTA-parcels", n_chans=64)
         logits = model(x, spatial_indices=parcel_indices)
+
+    They pool by mean, so one encoder serves any montage and window length. To
+    rebuild them, run the script from a Braindecode checkout with the ``hub``
+    extra installed; it saves one local Hub directory per scale and a JSON
+    check report, and ``--push-to`` uploads them:
+
+    .. code-block:: console
+
+        python scripts/convert_barista_weights.py --output-dir barista-converted
 
     The releases contain no downstream head. Pooling and classifier weights in
     the converted models are newly initialized and require fine-tuning.
