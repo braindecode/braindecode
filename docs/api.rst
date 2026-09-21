@@ -262,7 +262,6 @@ perceptrons (MLPs) and inception blocks.
 
     MLP
     FeedForwardBlock
-    GLUFeedForward
     InceptionBlock
     PatchTokenizer
 
@@ -413,15 +412,12 @@ The functional module contains various functions that can be used like functiona
     :toctree: generated
     :recursive:
 
-     apply_rotary
      drop_path
      glorot_weight_zero_bias
      hilbert_freq
      identity
      plv_time
      rescale_parameter
-     rotary_positional_encoding
-     rotate_half
      safe_log
      sinusoidal_positional_encoding
      square
