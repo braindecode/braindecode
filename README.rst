@@ -170,8 +170,10 @@ This project is primarily licensed under the BSD-3-Clause License.
 Additional Components
 =====================
 
-Some components within this repository are licensed under the Creative Commons
-Attribution-NonCommercial 4.0 International License or the MIT License.
+Some components within this repository are licensed under other licenses, including
+Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0), Creative
+Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0), MIT
+and Apache-2.0.
 
 Please refer to ``LICENSE.txt``, ``NOTICE.txt``, and the ``LICENSES`` directory for more
 detailed information.

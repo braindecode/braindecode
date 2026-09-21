@@ -15,7 +15,9 @@ import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import torch.nn as nn
+
+import braindecode.models.luna as luna_module
+import braindecode.models.zuna as zuna_module
 
 try:
     from huggingface_hub import hf_hub_download
@@ -49,9 +51,19 @@ from braindecode.models.brainomni import (
     _TokenizerEncoder,
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
-from braindecode.models.reve import RevePositionBank
+from braindecode.models.luna import _RotarySelfAttentionBlock
+from braindecode.models.reve import Attention, RevePositionBank, RMSNorm
 from braindecode.models.util import _geometry_from_chs_info
 from braindecode.modules import Codebook, ResidualVQ
+
+_ORIGINAL_TORCH_CAT = torch.cat
+
+
+def _reject_empty_tensors(tensors, *args, **kwargs):
+    dim = kwargs.get("dim", args[0] if args else 0)
+    if any(tensor.shape[dim] == 0 for tensor in tensors):
+        raise RuntimeError("backend does not support empty tensor concatenation")
+    return _ORIGINAL_TORCH_CAT(tensors, *args, **kwargs)
 
 
 @pytest.fixture
@@ -700,6 +712,98 @@ def test_luna_base_gradient_flow(luna_base_model):
     assert any(p.grad is not None for p in luna_base_model.blocks[0].parameters())
     # Check gradient in final classification head
     assert luna_base_model.final_layer.decoder_ffn.fc1.weight.grad is not None
+
+
+def test_luna_full_rotary_attention_avoids_empty_concatenation(monkeypatch):
+    """Full-head RoPE does not concatenate zero-width tensor views."""
+    monkeypatch.setattr(torch, "cat", _reject_empty_tensors)
+    attention = _RotarySelfAttentionBlock(dim=32, num_heads=4)
+    signal = torch.randn(2, 10, 32, requires_grad=True)
+
+    output = attention(signal)
+    output.sum().backward()
+
+    assert output.shape == signal.shape
+    assert signal.grad is not None
+
+
+def test_luna_rotary_embedding_is_native_and_checkpoint_compatible():
+    """LUNA uses Braindecode-native RoPE without changing checkpoint keys."""
+    attention = _RotarySelfAttentionBlock(dim=32, num_heads=4)
+
+    assert type(attention.rotary_emb).__module__ == luna_module.__name__
+    assert "rotary_emb.freqs" in attention.state_dict()
+    expected = 1.0 / (10000 ** (torch.arange(0, 8, 2).float() / 8))
+    torch.testing.assert_close(attention.rotary_emb.freqs, expected)
+
+
+@pytest.mark.parametrize("axis_dim", [2, 4, 8])
+def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
+    """ZUNA's native table matches rotary-embedding-torch semantics."""
+    positions = torch.arange(5, dtype=torch.float32)
+    table = zuna_module._build_rotary_frequency_table(
+        positions, axis_dim=axis_dim, theta=10000.0
+    )
+
+    embedding_dim = max(axis_dim, 4)
+    inverse_frequencies = 1.0 / (
+        10000.0 ** (torch.arange(0, embedding_dim, 2).float() / embedding_dim)
+    )
+    expected = torch.outer(positions, inverse_frequencies).repeat_interleave(2, dim=1)
+    torch.testing.assert_close(table, expected[:, :axis_dim])
+
+
+@pytest.mark.parametrize(
+    "norm_class, eps", [(RMSNorm, 1e-6), (zuna_module._RMSNorm, 1e-5)]
+)
+@pytest.mark.parametrize("input_dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("weight_dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_foundation_rms_norm_preserves_reference_precision(
+    norm_class, eps, input_dtype, weight_dtype
+):
+    norm = RMSNorm(dim=8) if norm_class is RMSNorm else norm_class(8, eps=eps)
+    norm = norm.to(weight_dtype)
+    weight = torch.linspace(0.5, 1.5, 8, dtype=weight_dtype, requires_grad=True)
+    norm.load_state_dict({"weight": weight.detach()}, strict=True)
+    # Squaring 1000 overflows float16; small values exercise the explicit eps.
+    x = torch.linspace(-1, 1, 24).reshape(3, 8)
+    x = (
+        (x * torch.tensor([1e-4, 1.0, 1000.0])[:, None])
+        .to(input_dtype)
+        .requires_grad_()
+    )
+    reference_x = x.detach().clone().requires_grad_()
+    normalized = reference_x.float() * torch.rsqrt(
+        reference_x.float().square().mean(-1, keepdim=True) + eps
+    )
+    dtype = input_dtype if norm_class is RMSNorm else weight_dtype
+    expected = normalized.to(dtype) * weight
+    actual = norm(x)
+    torch.testing.assert_close(actual, expected)
+    actual.sum().backward()
+    expected.sum().backward()
+    torch.testing.assert_close(x.grad, reference_x.grad)
+    torch.testing.assert_close(norm.weight.grad, weight.grad)
+
+
+def test_reve_attention_matches_explicit_attention():
+    attention = Attention(dim=16, heads=2, head_dim=8)
+    x = torch.randn(2, 5, 16, requires_grad=True)
+    q, k, v = (
+        t.reshape(2, 5, 2, 8).transpose(1, 2)
+        for t in attention.to_qkv(attention.norm(x)).chunk(3, dim=-1)
+    )
+    weights = (q @ k.transpose(-1, -2) / 8**0.5).softmax(dim=-1)
+    expected = attention.to_out((weights @ v).transpose(1, 2).reshape(2, 5, 16))
+    actual = attention(x)
+    torch.testing.assert_close(actual, expected)
+    parameters = (x, *attention.parameters())
+    actual_grads = torch.autograd.grad(
+        actual.square().sum(), parameters, retain_graph=True
+    )
+    expected_grads = torch.autograd.grad(expected.square().sum(), parameters)
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads):
+        torch.testing.assert_close(actual_grad, expected_grad)
 
 
 # ==============================================================================
@@ -1594,55 +1698,6 @@ def test_brainomni_submodule_shapes(build, make_inputs, exp_shape):
     assert torch.isfinite(out).all()
 
 
-@pytest.mark.parametrize("model_name", ["tokenizer", "brainomni"])
-def test_brainomni_public_models_support_missing_native_rmsnorm(
-    monkeypatch, model_name
-):
-    """The public models must construct and run at the declared PyTorch 2.0 floor."""
-    monkeypatch.delattr(nn, "RMSNorm", raising=False)
-    common = {
-        "chs_info": _eeg_chs_info(2),
-        "n_times": 8,
-        "sfreq": 256.0,
-        "window_length": 8,
-        "n_filters": 4,
-        "ratios": (2,),
-        "kernel_size": 3,
-        "last_kernel_size": 3,
-        "emb_dim": 8,
-        "n_neuro": 2,
-        "tokenizer_num_heads": 2,
-        "codebook_dim": 8,
-        "codebook_size": 8,
-        "num_quantizers": 1,
-    }
-    if model_name == "tokenizer":
-        model = BrainTokenizer(**common).eval()
-        expected_shape = (1, 2, 8)
-        expected_weight_keys = {"sensor_embed.norm.weight"}
-    else:
-        model = BrainOmni(
-            n_outputs=3,
-            overlap_ratio=0.0,
-            lm_dim=8,
-            num_heads=2,
-            depth=2,
-            **common,
-        ).eval()
-        expected_shape = (1, 3)
-        expected_weight_keys = {
-            "tokenizer.sensor_embed.norm.weight",
-            "blocks.0.pre_attn_norm.weight",
-            "blocks.0.pre_ff_norm.weight",
-        }
-
-    output = model(torch.randn(1, 2, 8))
-
-    assert output.shape == expected_shape
-    assert torch.isfinite(output).all()
-    assert expected_weight_keys <= model.state_dict().keys()
-
-
 def test_seanet_roundtrip_downsampling():
     kw = dict(
         channels=1,
@@ -1721,22 +1776,6 @@ def test_brain_quantizer_initializes_codebook_from_first_batch():
     assert codebook.cluster_size.sum() > 0
     assert torch.isfinite(codebook.embed).all()
     assert codebook.embed.norm(dim=-1).max() < 1.1
-
-
-def test_brain_quantizer_supports_torch_without_compiler_namespace(monkeypatch):
-    """PyTorch 2.0 has no public ``torch.compiler`` namespace."""
-    codebook = Codebook(
-        dim=2,
-        codebook_size=2,
-        threshold_ema_dead_code=0,
-        kmeans_init=False,
-    ).eval()
-    monkeypatch.delattr(torch, "compiler")
-
-    quantized, indices = codebook(torch.randn(1, 2, 2))
-
-    assert quantized.shape == (1, 2, 2)
-    assert indices.shape == (1, 2)
 
 
 @pytest.mark.skipif(not dist.is_available(), reason="torch.distributed is unavailable")

@@ -626,6 +626,67 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
         assert torch.equal(X_t, X)
 
 
+@pytest.mark.parametrize("beta_per_sample", [False, True])
+@pytest.mark.parametrize("trailing_shape", [(), (1,), (2,)])
+@pytest.mark.parametrize("target_dtype", [torch.float32, torch.float64])
+def test_mixup_preserves_fractional_target_contract(
+    rng_seed,
+    random_batch,
+    beta_per_sample,
+    trailing_shape,
+    target_dtype,
+):
+    """Mixed targets preserve every target value, dimension, dtype, and device."""
+    X, _ = random_batch
+    batch_size = X.shape[0]
+    n_target_values = batch_size * max(1, np.prod(trailing_shape, dtype=int))
+    y = (
+        torch.arange(n_target_values, device=X.device, dtype=target_dtype)
+        .add(0.25)
+        .reshape(batch_size, *trailing_shape)
+    )
+
+    _, (y_a, y_b, lam) = Mixup(
+        alpha=0.5,
+        beta_per_sample=beta_per_sample,
+        random_state=rng_seed,
+    )(X, y)
+
+    assert torch.equal(y_a, y)
+    assert y_a.shape == y_b.shape == y.shape
+    assert y_a.dtype == y_b.dtype == target_dtype
+    assert y_a.device == y_b.device == y.device
+
+    expected_rows = y.reshape(batch_size, -1)
+    actual_rows = y_b.reshape(batch_size, -1)
+    expected_order = expected_rows[:, 0].argsort()
+    actual_order = actual_rows[:, 0].argsort()
+    assert torch.equal(actual_rows[actual_order], expected_rows[expected_order])
+    assert lam.shape == (batch_size,)
+    assert lam.dtype == X.dtype
+    assert lam.device == X.device
+
+
+@pytest.mark.parametrize("beta_per_sample", [False, True])
+def test_mixup_preserves_unbatched_fractional_target(beta_per_sample):
+    """An unbatched example keeps its fractional target after internal batching."""
+    X = torch.randn(3, 20)
+    y = torch.tensor(1.75, dtype=torch.float64)
+
+    transformed_X, (y_a, y_b, lam) = Mixup(
+        alpha=0.5,
+        beta_per_sample=beta_per_sample,
+        random_state=0,
+    )(X, y)
+
+    assert transformed_X.shape == X.shape
+    assert torch.equal(y_a, y.reshape(1))
+    assert torch.equal(y_b, y.reshape(1))
+    assert y_a.dtype == y_b.dtype == y.dtype
+    assert y_a.device == y_b.device == y.device
+    assert lam.shape == (1,)
+
+
 MONTAGE_10_20 = [
     "Fz",
     "FC3",
