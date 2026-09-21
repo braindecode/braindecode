@@ -62,7 +62,6 @@ dependencies = [
 
 [tool.uv]
 required-environments = [
-  "sys_platform == 'darwin' and platform_machine == 'x86_64'",  # Intel Mac
   "sys_platform == 'darwin' and platform_machine == 'arm64'",   # Apple Silicon Mac (M1/M2/M3)
   "sys_platform == 'linux' and platform_machine == 'x86_64'",   # Linux 64-bit
   "sys_platform == 'win32' and platform_machine == 'AMD64'"     # Windows 64-bit

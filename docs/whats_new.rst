@@ -28,9 +28,6 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
-- Require PyTorch and TorchAudio >= 2.4 so the declared minimum supports
-  native :class:`torch.nn.RMSNorm`, used by transformer models.
-
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
@@ -39,6 +36,15 @@ Enhancements
 - Improve CI test scheduling and run documentation examples with bounded
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
+
+Requirements
+============
+
+- Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
+  RMS normalization in REVE and ZUNA now uses PyTorch's implementation while
+  retaining float32 accumulation. Intel macOS is no longer supported because
+  PyTorch stopped providing its binary packages after 2.2.
+  (:gh:`1174` by `Bruno Aristimunha`_)
 
 Bug fixes
 ==========
