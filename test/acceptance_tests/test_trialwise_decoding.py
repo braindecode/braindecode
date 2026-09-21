@@ -10,11 +10,10 @@ from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch.utils.data import Dataset, Subset
 
-from test.acceptance_tests._history_assertions import assert_learning_history
-
 from braindecode.classifier import EEGClassifier
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
+from test.acceptance_tests._history_assertions import assert_learning_history
 
 
 class EpochsDataset(Dataset):

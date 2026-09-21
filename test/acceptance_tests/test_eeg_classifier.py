@@ -11,14 +11,13 @@ from skorch.helper import predefined_split
 from torch import optim
 from torch.nn.functional import nll_loss
 
-from test.acceptance_tests._history_assertions import assert_learning_history
-
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models import ShallowFBCSPNet
 from braindecode.training.losses import CroppedLoss
 from braindecode.training.scoring import CroppedTrialEpochScoring
 from braindecode.util import np_to_th, set_random_seeds
+from test.acceptance_tests._history_assertions import assert_learning_history
 
 
 @pytest.mark.network

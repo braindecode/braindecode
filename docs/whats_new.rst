@@ -28,6 +28,9 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Restore acceptance tests on supported Python versions using the current model
+  API and training-history checks (:gh:`1159` by `Bruno Aristimunha`_).
+
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose

@@ -3,11 +3,8 @@
 #
 # License: BSD-3
 import numpy as np
-import pytest
 import torch
 from skorch.helper import predefined_split
-
-from test.acceptance_tests._history_assertions import assert_learning_history
 
 from braindecode import EEGClassifier
 from braindecode.datasets import BaseConcatDataset
@@ -20,6 +17,7 @@ from braindecode.preprocessing import (
 )
 from braindecode.training import CroppedLoss
 from braindecode.util import set_random_seeds
+from test.acceptance_tests._history_assertions import assert_learning_history
 
 
 def test_variable_length_trials_cropped_decoding():

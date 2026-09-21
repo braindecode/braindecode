@@ -10,13 +10,12 @@ from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch import optim
 
-from test.acceptance_tests._history_assertions import assert_learning_history
-
 from braindecode import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models import ShallowFBCSPNet
 from braindecode.training.losses import CroppedLoss
 from braindecode.util import set_random_seeds
+from test.acceptance_tests._history_assertions import assert_learning_history
 
 
 @pytest.mark.network
