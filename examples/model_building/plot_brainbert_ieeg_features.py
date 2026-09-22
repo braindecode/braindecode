@@ -43,6 +43,10 @@ from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
 from braindecode.models import BrainBERT
+from braindecode.models.brainbert import (
+    BRAINBERT_WEIGHTS_REPO,
+    BRAINBERT_WEIGHTS_REVISION,
+)
 
 torch.manual_seed(20200220)  # the untrained control below must be reproducible
 
@@ -276,8 +280,11 @@ def extract(net):
     return np.concatenate(out)
 
 
+# The revision is pinned on purpose: ``main`` is a mutable branch, so without
+# it the figures below could change without this file changing.
 pretrained = BrainBERT.from_pretrained(
-    "braindecode/brainbert-pretrained",
+    BRAINBERT_WEIGHTS_REPO,
+    revision=BRAINBERT_WEIGHTS_REVISION,
     n_chans=len(picked),
     n_outputs=2,
     n_times=WINDOW,
@@ -364,7 +371,8 @@ print("chance:                          ROC-AUC = 0.500")
 #     from braindecode import EEGClassifier
 #
 #     model = BrainBERT.from_pretrained(
-#         "braindecode/brainbert-pretrained",
+#         BRAINBERT_WEIGHTS_REPO,
+#         revision=BRAINBERT_WEIGHTS_REVISION,
 #         n_chans=len(picked), n_outputs=2,
 #         n_times=WINDOW, sfreq=SFREQ,
 #     )

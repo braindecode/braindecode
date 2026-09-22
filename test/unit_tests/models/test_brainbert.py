@@ -27,6 +27,11 @@ import pytest
 import torch
 
 from braindecode.models import BrainBERT
+from braindecode.models.brainbert import (
+    BRAINBERT_WEIGHTS_REPO,
+    BRAINBERT_WEIGHTS_REVISION,
+    BRAINBERT_WEIGHTS_SHA256,
+)
 from braindecode.modules.brainbert_modules import (
     _BrainBERTInputEmbedding,
     _STFTSpectrogram,
@@ -101,6 +106,41 @@ def test_declared_license_is_unknown():
     """
     pytest.importorskip("huggingface_hub")
     assert BrainBERT._hub_mixin_info.model_card_data.license == "unknown"
+
+
+def test_checkpoint_revision_is_pinned_to_a_commit():
+    """The weights must be addressed by an immutable commit, not by a branch.
+
+    Upstream distributes the checkpoint from a mutable Google Drive folder, and
+    a Hub branch is mutable too, so ``from_pretrained(repo)`` alone gives no
+    lineage: a later push changes what loads without changing this repository.
+    The pin plus the recorded digests are what make a published number
+    re-checkable, so a change here has to be deliberate.
+    """
+    assert BRAINBERT_WEIGHTS_REPO == "braindecode/brainbert-pretrained"
+    # a full 40-hex commit, never "main" or a tag
+    assert len(BRAINBERT_WEIGHTS_REVISION) == 40
+    assert all(c in "0123456789abcdef" for c in BRAINBERT_WEIGHTS_REVISION)
+    assert set(BRAINBERT_WEIGHTS_SHA256) == {"model.safetensors", "pytorch_model.bin"}
+    for name, digest in BRAINBERT_WEIGHTS_SHA256.items():
+        assert len(digest) == 64, name
+        assert all(c in "0123456789abcdef" for c in digest), name
+
+
+def test_docs_do_not_show_an_unpinned_load():
+    """Every documented ``from_pretrained`` call passes the revision.
+
+    A copy-pasteable snippet without it is how an unpinned load spreads, and
+    the pin above would then only protect code nobody reads.
+    """
+    import inspect
+
+    import braindecode.models.brainbert as module
+
+    text = inspect.getsource(module)
+    for chunk in text.split("from_pretrained(")[1:]:
+        call = chunk[: chunk.index(")")]
+        assert "revision" in call, f"unpinned from_pretrained: {call!r}"
 
 
 # ------------------------------------------------------- STFT front-end vs scipy

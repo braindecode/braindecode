@@ -14,7 +14,8 @@ in ``test/unit_tests/models/test_brainbert.py`` and runs against a clone of the
 upstream repository when ``BRAINBERT_SRC`` is set). The short-time Fourier
 transform front-end is moved *inside* the model, a braindecode-native
 adaptation. The official pretrained checkpoint loads directly via
-``BrainBERT.from_pretrained("braindecode/brainbert-pretrained")``.
+``BrainBERT.from_pretrained(BRAINBERT_WEIGHTS_REPO,
+revision=BRAINBERT_WEIGHTS_REVISION)``.
 
 Licensing: the upstream repository ships **no LICENSE file**, so the weights are
 re-hosted with their licence declared as ``unknown`` rather than assumed.
@@ -34,6 +35,31 @@ from braindecode.modules.brainbert_modules import (
     _SpecPredictionHead,
     _STFTSpectrogram,
 )
+
+#: Hub repository holding the re-hosted upstream checkpoint.
+BRAINBERT_WEIGHTS_REPO = "braindecode/brainbert-pretrained"
+
+#: Immutable commit of that repository.
+#:
+#: ``from_pretrained`` without a ``revision`` resolves to whatever ``main``
+#: points at, and a Hub branch is mutable: a later push would silently change
+#: what this model loads, and with it any number published against it. Pinning
+#: the commit is what makes a reported result re-checkable after the fact.
+#: Upstream itself distributes the weights from a mutable Google Drive folder,
+#: so this pin is the only immutable handle in the chain.
+BRAINBERT_WEIGHTS_REVISION = "d5abbde693aeac08dcaae59c3702ab1bbf9a5388"
+
+#: SHA-256 of the weight files at :data:`BRAINBERT_WEIGHTS_REVISION`, so the
+#: bytes can be checked without trusting the Hub to have served the right
+#: commit. Verify with ``sha256sum`` on the downloaded file.
+BRAINBERT_WEIGHTS_SHA256 = {
+    "model.safetensors": (
+        "dbdab4696be1315bc559c620de510aebd5f83890aedc2fbaa1d08b1b8e040a33"
+    ),
+    "pytorch_model.bin": (
+        "5e1e93aaec221fa3316a565cb4e54ccde35f11376a30e6b275e750f25cd18a3b"
+    ),
+}
 
 
 def _as_transformer_activation(
@@ -108,13 +134,25 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
        **Pre-trained weights available.** The official checkpoint is released by
        the authors and loads directly::
 
+           from braindecode.models.brainbert import (
+               BRAINBERT_WEIGHTS_REPO,
+               BRAINBERT_WEIGHTS_REVISION,
+           )
+
            model = BrainBERT.from_pretrained(
-               "braindecode/brainbert-pretrained", n_outputs=2
+               BRAINBERT_WEIGHTS_REPO,
+               revision=BRAINBERT_WEIGHTS_REVISION,
+               n_outputs=2,
            )
 
        It uses the "large" configuration above; ``n_chans`` and ``n_outputs`` may
        be changed freely, as frames are pooled and the classification head is
        task-specific.
+
+       Always pass the ``revision``. Omitting it resolves to the repository's
+       ``main`` branch, which is mutable, so a number reported today could stop
+       reproducing tomorrow without anything in this file changing.
+       :data:`BRAINBERT_WEIGHTS_SHA256` records the bytes of that commit.
 
        The upstream repository ships no LICENSE file, so the re-hosted weights
        are declared ``unknown`` rather than assumed permissive; the model card
