@@ -47,18 +47,18 @@ class _PopTSpatialPositionalEncoding(nn.Module):
     Parameters
     ----------
     hidden_dim : int
-        Model width ``D``; must be divisible by 4.
+        Model width ``D``; must be divisible by 8.
     max_len : int
         Size of the coordinate table (largest addressable integer coordinate).
     """
 
     def __init__(self, hidden_dim: int, max_len: int = 5000):
         super().__init__()
-        if hidden_dim % 4 != 0:
+        if hidden_dim % 8 != 0:
             raise ValueError(
-                f"hidden_dim ({hidden_dim}) must be divisible by 4 for the "
-                "spatial positional encoding (one quarter per X/Y/Z axis and "
-                "the sequence id)."
+                f"hidden_dim ({hidden_dim}) must be divisible by 8 for the "
+                "spatial positional encoding (one even-sized quarter per X/Y/Z "
+                "axis and the sequence id)."
             )
         pe_dim = hidden_dim // 4
         pe = torch.zeros(max_len, pe_dim)

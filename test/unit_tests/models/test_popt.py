@@ -177,3 +177,46 @@ def test_encoder_is_bit_exact_with_upstream(upstream_pt_model):
         ours_out = ours_trans(ours_embed(features, coords, seq_id))
     assert up_out.shape == ours_out.shape == (batch, n_elec + 1, hidden_dim)
     assert torch.allclose(up_out, ours_out, atol=1e-5)
+
+
+def test_raw_coord_units_keep_release_coordinates():
+    """``coord_units='raw'`` keeps integer (L, I, P) as stored in NEMAR nm000253."""
+    import mne
+
+    info = mne.create_info([f"e{i}" for i in range(3)], 2048.0, "seeg")
+    lip = [[150, 129, 98], [148, 126, 96], [60, 131, 101]]
+    for ch, pos in zip(info["chs"], lip):
+        ch["loc"][:3] = pos
+    model = PopulationTransformer(
+        chs_info=info["chs"], n_outputs=2, n_times=N_TIMES, hidden_dim=32,
+        ffn_dim=48, n_layers=1, n_heads=4, coord_units="raw",
+    )
+    assert model.electrode_coords.tolist() == lip
+
+
+def test_key_padding_mask_ignores_padded_electrodes():
+    torch.manual_seed(0)
+    model = _model(n_chans=3).eval()
+    x = torch.randn(2, 3, N_TIMES)
+    coords = torch.randint(0, 100, (2, 3, 3))
+    x_pad = torch.cat([x, torch.randn(2, 2, N_TIMES)], dim=1)
+    coords_pad = torch.cat([coords, torch.randint(0, 100, (2, 2, 3))], dim=1)
+    mask = torch.tensor([[False] * 3 + [True] * 2] * 2)
+    with torch.no_grad():
+        ref = model(x, coords=coords, return_features=True)["features"]
+        out = model(
+            x_pad, coords=coords_pad, key_padding_mask=mask, return_features=True
+        )["features"]
+    torch.testing.assert_close(out, ref, atol=1e-5, rtol=1e-5)
+
+
+def test_reset_head_keeps_dtype():
+    model = _model().double().eval()
+    model.reset_head(3)
+    assert model(torch.randn(2, N_CHANS, N_TIMES, dtype=torch.double)).shape == (2, 3)
+    assert model.n_outputs == 3
+
+
+def test_hidden_dim_must_be_divisible_by_8():
+    with pytest.raises(ValueError, match="divisible by 8"):
+        _model(hidden_dim=12, n_heads=4)
