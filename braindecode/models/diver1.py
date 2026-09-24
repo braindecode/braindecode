@@ -311,6 +311,11 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         finetuning protocol (a linear classifier on the flattened token grid);
         ``"mean"`` averages over channels and patches first, giving a head that
         is independent of ``n_chans`` and ``n_times``.
+    mup_attention : bool
+        Scale attention scores by ``1 / head_dim`` (the muP scaling the released
+        checkpoints were trained with, ``original_moirai_encoder.py:709`` in the
+        official code) instead of the standard ``1 / sqrt(head_dim)``. Keep it
+        ``True`` to load the pretrained weights.
     drop_prob : float
         Dropout rate used in the encoder and the spectral embedding.
     activation : type[nn.Module]
@@ -350,6 +355,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         use_spectral_emb: bool = True,
         use_position_emb: bool = True,
         pooling: str = "flatten",
+        mup_attention: bool = True,
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.SiLU,
     ):
@@ -483,6 +489,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 activation=activation,
                 n_chans=self.n_chans,
                 n_patches=self.n_patches,
+                mup_attention=mup_attention,
             )
             if use_stcpe
             else None
@@ -512,6 +519,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             activation=activation,
             # One extra patch position for the register column.
             max_len=max(512, self.n_patches + 1),
+            mup_attention=mup_attention,
         )
 
         head_in_features = (
@@ -888,6 +896,7 @@ class _STCPE(nn.Module):
         activation: type[nn.Module],
         n_chans: int,
         n_patches: int,
+        mup_attention: bool = True,
     ):
         super().__init__()
         inner_dim = d_model // ratio
@@ -942,6 +951,7 @@ class _STCPE(nn.Module):
             drop_prob=0.0,
             activation=activation,
             max_len=window,
+            mup_attention=mup_attention,
         )
         self.up = nn.Linear(inner_dim, d_model)
 
@@ -1025,6 +1035,7 @@ class _AnyVariateEncoder(nn.Module):
         drop_prob: float,
         activation: type[nn.Module],
         max_len: int,
+        mup_attention: bool = True,
     ):
         super().__init__()
         # The rotary tables are parameter-free, so all layers share one module
@@ -1040,6 +1051,7 @@ class _AnyVariateEncoder(nn.Module):
                     drop_prob=drop_prob,
                     activation=activation,
                     rotary=self.rotary,
+                    mup_attention=mup_attention,
                 )
                 for _ in range(n_layers)
             ]
@@ -1086,11 +1098,16 @@ class _AnyVariateEncoderLayer(nn.Module):
         drop_prob: float,
         activation: type[nn.Module],
         rotary: _RotaryEmbedding,
+        mup_attention: bool = True,
     ):
         super().__init__()
         self.norm1 = nn.RMSNorm(d_model, eps=1e-5)
         self.self_attn = _AnyVariateAttention(
-            d_model=d_model, num_heads=num_heads, drop_prob=drop_prob, rotary=rotary
+            d_model=d_model,
+            num_heads=num_heads,
+            drop_prob=drop_prob,
+            rotary=rotary,
+            mup_attention=mup_attention,
         )
         self.dropout = nn.Dropout(drop_prob)
         self.norm2 = nn.RMSNorm(d_model, eps=1e-5)
@@ -1131,11 +1148,18 @@ class _AnyVariateAttention(nn.Module):
     """
 
     def __init__(
-        self, d_model: int, num_heads: int, drop_prob: float, rotary: _RotaryEmbedding
+        self,
+        d_model: int,
+        num_heads: int,
+        drop_prob: float,
+        rotary: _RotaryEmbedding,
+        mup_attention: bool = True,
     ):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = d_model // num_heads
+        # None lets SDPA use its default 1 / sqrt(head_dim).
+        self.scale = 1.0 / self.head_dim if mup_attention else None
         self.drop_prob = drop_prob
         self.rotary = rotary
         self.q_proj = nn.Linear(d_model, d_model, bias=False)
@@ -1174,6 +1198,7 @@ class _AnyVariateAttention(nn.Module):
             value,
             attn_mask=bias,
             dropout_p=self.drop_prob if self.training else 0.0,
+            scale=self.scale,
         )
         out = self.merge_heads(out)
         return self.out_proj(out)
