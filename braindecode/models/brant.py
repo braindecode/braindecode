@@ -96,19 +96,28 @@ class Brant(EEGModuleMixin, nn.Module):
     positions require the runtime signal length to equal the configured
     ``n_times``; channel count remains parameter-agnostic.
 
-    The upstream model operates on signals down-sampled to **250 Hz**. The
-    defaults are a modest, ready-to-run configuration. The paper's large
+    The upstream model operates on signals down-sampled to **250 Hz**, but its
+    band-power features are computed at a fixed 256 Hz (upstream
+    ``pre_utils.py:54`` and ``utils.py:36``), whatever the true rate. Pass
+    ``sfreq=256`` to reproduce the official features exactly; at 250 Hz the
+    band edges shift and the pretrained embeddings change (by up to 0.55 in
+    our checks). The defaults are a modest, ready-to-run configuration. The paper's large
     architecture uses ``patch_size=1500`` (6 s), ``embed_dim=2048``,
     ``ffn_dim=3072``, ``temporal_n_layers=12``, ``spatial_n_layers=5``,
     ``n_heads=16``, and ``n_times=22500`` (15 patches, 90 s).
 
-    .. note::
-       **Architecture-only scope.** Braindecode does not ship or advertise a
-       verified Brant pretrained checkpoint with this implementation. The
-       inherited ``from_pretrained`` API remains available for checkpoints
-       saved from this implementation. Official-weight provenance, numerical
-       parity, and redistribution terms must be established independently
-       before an external artifact is documented or rehosted.
+    .. important::
+       **Pretrained weights.** ``braindecode/brant-pretrained`` holds the
+       official weights converted to this implementation: all 210 tensors are
+       identical to the official release (``Brant_pre_trained_weights.zip``,
+       sha256 ``de4f28f4...``), and with the same inputs the encoders reproduce
+       the official source (``Daoze/Brant`` on the Hugging Face Hub, revision
+       ``7e6f9156``) exactly. It uses the large configuration above; the
+       classification head is braindecode's and is not pretrained::
+
+           model = Brant.from_pretrained(
+               "braindecode/brant-pretrained", n_outputs=2, sfreq=256
+           )
 
     .. versionadded:: 1.8
 
