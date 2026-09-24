@@ -1,6 +1,7 @@
 include README.rst
 include LICENSE.txt
 include NOTICE.txt
+include LICENSES/Apache-2.0.txt
 
 include braindecode/models/summary.csv
 

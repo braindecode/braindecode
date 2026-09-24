@@ -4,8 +4,8 @@
 
 ### BSD-3-Clause Licensed Files
 
-All files within the `braindecode/` package are licensed under the BSD-3-Clause
-License, except for those listed in the sections below.
+Except where otherwise identified below or in a file header, Braindecode-authored
+source is licensed under the BSD-3-Clause License.
 
 ### CC BY-NC 4.0 Licensed Files
 
@@ -50,14 +50,32 @@ The following components are licensed under the Apache License 2.0:
 - `braindecode/models/mvpformer.py`
 - `braindecode/models/zuna.py`
 - `braindecode/models/luna.py`
+- `braindecode/models/brant.py`
+
+`braindecode/models/brant.py` is a modified adaptation of the Brant architecture
+by Daoze Zhang and contributors. The Python source is published on the Hugging
+Face Hub (https://huggingface.co/Daoze/Brant, audited revision
+7e6f91569e24eab44226e4d2d03d6cdfd49ce937, Apache-2.0); the GitHub project
+(https://github.com/yzz673/Brant) holds only the README, license and figures.
+The adaptation changes the upstream architecture for Braindecode's raw-signal
+input API, in-model spectral feature extraction, configuration and dtype
+contracts, and downstream feature pooling and classification. The source file
+carries a prominent modification notice. The verbatim license is in
+`LICENSES/Apache-2.0.txt`.
+
+The Python distribution contains no weights. The official pretrained weights
+(`Brant_pre_trained_weights.zip`, dated 2023-05-09, sha256
+de4f28f40543717c2ee006e4c2c84cc9f732da43e0a03d8a14e0397a2735224c) are
+converted to https://huggingface.co/braindecode/brant-pretrained; all 210
+converted tensors are identical to the official ones.
 
 ## License Links
 
 - [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause)
+- [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 - [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)
 - [CC BY-NC-SA 4.0 License](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 - [MIT License](https://opensource.org/licenses/MIT)
-- [Apache-2.0 License](https://www.apache.org/licenses/LICENSE-2.0)
 
 ## Note
 
