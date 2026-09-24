@@ -311,7 +311,6 @@ def main():
     parser.add_argument("--n-chans", type=int, default=64)
     parser.add_argument("--n-times", type=int, default=6144)
     parser.add_argument("--n-outputs", type=int, default=2)
-    parser.add_argument("--pooling", choices=("learned", "mean"), default="mean")
     parser.add_argument("--push-to", help="Hub namespace to publish the models to")
     args = parser.parse_args()
     torch.set_num_threads(1)
@@ -334,7 +333,8 @@ def main():
             n_times=args.n_times,
             n_outputs=args.n_outputs,
             spatial_scale=scale,
-            pooling=args.pooling,
+            # The releases carry no learned read-out, so only mean pooling is honest.
+            pooling="mean",
         ).eval()
         loaded, missing = convert_weights(state, model)
         # Synthetic indices exercise the whole table, including unknown region 0.

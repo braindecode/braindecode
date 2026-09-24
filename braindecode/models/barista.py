@@ -17,7 +17,7 @@ from braindecode.modules import GatedLinearUnit, PatchTokenizer
 
 
 class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
-    r"""BaRISTA from Oganesian, Hashemi and Shanechi (2025) [Oganesian2025]_.
+    r"""BaRISTA from Oganesian et al (2025) [Oganesian2025]_.
 
     :bdg-info:`Attention/Transformer` :bdg-danger:`Foundation Model`
     :bdg-dark-line:`Channel`
@@ -358,6 +358,11 @@ class BaRISTA(EEGModuleMixin, nn.Module, license="other"):
                     raise ValueError(
                         "chs_info must use the same coordinate frame for all channels."
                     )
+                # MNE positions are RAS metres; negated they are (left, posterior,
+                # inferior). Reorder to the (left, inferior, posterior) columns of
+                # the released coordinate tables (upstream
+                # braintreebank_data_helpers.py:365, NEMAR nm000253 electrodes).
+                positions = positions[:, [0, 2, 1]]
                 indices = (-1000 * positions).round() + self.coord_bins // 2
                 indices = indices.clamp(0, self.coord_bins - 1)
         if indices is not None:
@@ -511,6 +516,16 @@ class _SpatialEmbedding(nn.Module):
                 "spatial_indices must have shape (n_chans, 3) for coordinates "
                 "and (n_chans,) for region scales."
             )
+        grid = grid.to(self.tables[0].weight.device)
+        # Value check only in eager mode: it branches on tensor data, which
+        # TorchScript, torch.export and torch.compile graphs cannot express.
+        if not torch.jit.is_scripting():
+            if not torch.compiler.is_compiling():
+                n_slots = self.tables[0].num_embeddings
+                if bool((grid < 0).any()) or bool((grid >= n_slots).any()):
+                    raise ValueError(
+                        f"spatial_indices must contain integers in [0, {n_slots})."
+                    )
         return torch.stack(
             [table(grid[dim]) for dim, table in enumerate(self.tables)]
         ).sum(dim=0)
