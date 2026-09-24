@@ -36,6 +36,7 @@ from .ifnet import IFNet
 from .interpolated import InterpolatedModel
 from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
+from .mapa import MAPA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
@@ -128,6 +129,7 @@ __all__ = [
     "LUNA",
     "extract_channel_locations_from_chs_info",
     "positions_from_chs_info",
+    "MAPA",
     "MEDFormer",
     "MSVTNet",
     "MVPFormer",

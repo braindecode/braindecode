@@ -9,6 +9,7 @@ from braindecode.models import (
     BIOT,
     EEGDINO,
     EEGPT,
+    MAPA,
     REVE,
     CBraMod,
     InterpolatedBENDR,
@@ -78,6 +79,16 @@ _MODELS = [
         id="InterpolatedBENDR",
     ),
     pytest.param(BIOT, N_CHANS, {}, False, id="BIOT"),
+    pytest.param(
+        MAPA,
+        N_CHANS,
+        {
+            "contact_labels": [f"L{'AB'[i % 2]}{i + 1}" for i in range(N_CHANS)],
+            "d_model": 64,
+        },
+        False,
+        id="MAPA",
+    ),
     pytest.param(CBraMod, N_CHANS, {}, False, id="CBraMod"),
     pytest.param(EEGDINO, 16, {}, True, id="EEGDINO"),
     pytest.param(

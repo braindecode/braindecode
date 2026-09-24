@@ -492,6 +492,21 @@ models_mandatory_parameters: list[
         {"chs_info": _chs_info_4ch},  # MNE interpolation needs >=4 channels
     ),
     ("LUNA", ["n_chans", "n_times", "n_outputs"], None),
+    (
+        "MAPA",
+        ["chs_info", "n_outputs", "n_times"],
+        {
+            # 1 s at the paper's 2048 Hz, i.e. 32 frames of the 32 Hz clock.
+            "n_times": 2048,
+            "sfreq": 2048.0,
+            # Clinical sEEG labels, which MAPA reads the array and the contact
+            # number off: two arrays of unequal length.
+            "chs_info": [
+                {"ch_name": name, "kind": "seeg"}
+                for name in ("LA1", "LA2", "LA5", "LB3", "LB7")
+            ],
+        },
+    ),
     ("MEDFormer", ["n_chans", "n_outputs", "n_times"], None),
     ("STEEGFormer", ["n_chans", "n_outputs", "n_times"], None),
     (
