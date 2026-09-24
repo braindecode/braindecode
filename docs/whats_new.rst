@@ -35,7 +35,7 @@ Enhancements
   magnitude-spectrogram bands on a shared frame clock are tokenized per
   contact, offset by a learned region embedding, and mixed by a transformer
   whose attention stays inside one array and carries a two-axis rotary encoding
-  on the contact number and on time (:gh:`1173` by `Julien Gadonneix`_).
+  on the contact number and on time (:gh:`1178` by `Julien Gadonneix`_).
 
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
