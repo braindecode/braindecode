@@ -51,6 +51,33 @@ The following components are licensed under the Apache License 2.0:
 - `braindecode/models/zuna.py`
 - `braindecode/models/luna.py`
 
+### USC Academic License Files
+
+The following components are derived from `ShanechiLab/BaRISTA`, released by
+the University of Southern California under an academic license that permits
+use, copying, modification and distribution for educational, research and
+non-profit purposes only. Commercial use requires an agreement with the USC
+Stevens Center for Innovation.
+
+- `braindecode/models/barista.py`
+- `scripts/convert_barista_weights.py`
+- `docs/_static/model/barista.jpeg` (original overview figure)
+
+This software is Copyright © 2025 The University of Southern California. All Rights Reserved.
+
+Permission to use, copy, modify, and distribute this software and its documentation for educational, research and non-profit purposes, without fee, and without a writen agreement is hereby granted, provided that the above copyright notice, this paragraph and the following three paragraphs appear in all copies. <!-- codespell:ignore writen -->
+
+Permission to make commercial use of this software may be obtained by contacting:\
+USC Stevens Center for Innovation\
+University of Southern California\
+1150 S. Olive Street, Suite 2300\
+Los Angeles, CA 90115, USA\
+E-mail to: info@stevens.usc.edu and cc to: accounting@stevens.usc.edu
+
+This software program and documentation are copyrighted by The University of Southern California. The software program and documentation are supplied "as is", without any accompanying services from USC. USC does not warrant that the operation of the program will be uninterrupted or error-free. The end-user understands that the program was developed for research purposes and is advised not to rely exclusively on the program for any reason.
+
+IN NO EVENT SHALL THE UNIVERSITY OF SOUTHERN CALIFORNIA BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE UNIVERSITY OF SOUTHERN CALIFORNIA HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. THE UNIVERSITY OF SOUTHERN CALIFORNIA SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" BASIS, AND THE UNIVERSITY OF SOUTHERN CALIFORNIA HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+
 ## License Links
 
 - [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause)
@@ -58,6 +85,7 @@ The following components are licensed under the Apache License 2.0:
 - [CC BY-NC-SA 4.0 License](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 - [MIT License](https://opensource.org/licenses/MIT)
 - [Apache-2.0 License](https://www.apache.org/licenses/LICENSE-2.0)
+- [USC Academic License](https://github.com/ShanechiLab/BaRISTA/blob/master/LICENSE.md)
 
 ## Note
 

@@ -1,0 +1,423 @@
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Julien Gadonneix <juliengado.2001@gmail.com>
+# License: USC academic, non-commercial; see NOTICE.txt.
+"""Convert, check and publish all three released BaRISTA encoders on CPU.
+
+Run from an editable Braindecode checkout with the ``hub`` extra installed::
+
+    python scripts/convert_barista_weights.py --output-dir /tmp/barista-converted
+
+Add ``--push-to braindecode`` to upload each converted encoder with
+:meth:`~braindecode.models.base.EEGModuleMixin.push_to_hub`, together with this
+script, the licence notice and a model card, so every repository carries the
+recipe that produced it.
+
+The source revision and checkpoint hashes are pinned below. The numerical check
+uses the released forward equations with explicit PyTorch attention instead of
+CUDA-only xformers. It checks float32 encoder tokens, not downstream accuracy or
+mixed-precision equivalence. The releases carry no pooling or classification
+weights, so the published files hold the encoder alone and Braindecode
+initializes the head on load. Fine-tune it before prediction.
+
+The published models pool by mean, so one encoder serves recordings with
+different montages and window lengths; ``n_chans`` only sizes the learned
+read-out and can be overridden when loading.
+"""
+
+import argparse
+import json
+import shutil
+from contextlib import contextmanager
+from pathlib import Path
+
+import pooch
+import torch
+import torch.nn.functional as F
+from torch import nn
+
+from braindecode.models import BaRISTA
+
+HEAD = {"final_layer.weight", "final_layer.bias"}
+REVISION = "83b27375eba60e9eba9da4e7dd8fb283baace376"
+SOURCE = f"https://raw.githubusercontent.com/ShanechiLab/BaRISTA/{REVISION}"
+LICENSE = f"https://github.com/ShanechiLab/BaRISTA/blob/{REVISION}/LICENSE.md"
+CHECKPOINTS = {
+    "coords": (
+        "chans_chans.ckpt",
+        "400eeacc0697004cb81c9ecf754859da184ffeea40afc8ee7b5930c3b997e1d0",
+    ),
+    "parcels": (
+        "parcels_chans.ckpt",
+        "6c234517d286a8e710b09716dc88c713618670df523cfffb89e4c9073f2657c1",
+    ),
+    "lobes": (
+        "lobes_chans.ckpt",
+        "d810338a4929df0fb2421f342b3ee859f9fef269e35fb4f2fd9c55347a63324a",
+    ),
+}
+SLOTS = {"coords": 200, "parcels": 121, "lobes": 21}
+INDICES = {
+    "coords": "an ``(n_chans, 3)`` tensor of grid coordinates in ``[0, 200)``",
+    "parcels": "an ``(n_chans,)`` tensor of Destrieux parcels in ``[0, 121)``",
+    "lobes": "an ``(n_chans,)`` tensor of lobes in ``[0, 21)``",
+}
+CARD = """---
+library_name: braindecode
+license: other
+license_name: usc-academic-non-commercial
+license_link: {license}
+pipeline_tag: feature-extraction
+tags:
+- braindecode
+- BaRISTA
+- ieeg
+- seeg
+- foundation-model
+- pytorch_model_hub_mixin
+---
+
+# BaRISTA, {scale} scale
+
+The released BaRISTA encoder of [Oganesian, Hashemi and Shanechi
+(2025)](https://arxiv.org/abs/2512.12135) for the **{scale}** spatial scale,
+converted to
+[`braindecode.models.BaRISTA`](https://braindecode.org/stable/generated/braindecode.models.BaRISTA.html).
+
+Source: `pretrained_models/{filename}` at revision
+[`{revision}`](https://github.com/ShanechiLab/BaRISTA/tree/{revision}),
+sha256 `{digest}`. Conversion renames tensors and fuses the released gated
+projections into the single projection this port uses; `convert_barista_weights.py`
+in this repository reproduces it. Encoder tokens match the released forward
+equations to {error:.2g} in float32 on CPU.
+
+## Usage
+
+Supply the montage of each batch as `spatial_indices`, {indices}:
+
+```python
+import torch
+from braindecode.models import BaRISTA
+
+model = BaRISTA.from_pretrained("{repo_id}", n_chans=64, n_outputs=2)
+logits = model(torch.randn(8, 64, 6144), spatial_indices={example})
+```
+
+The saved geometry is {n_chans} channels and {n_times} samples at 2048 Hz, the
+pretraining window. Mean pooling makes the encoder independent of both, so pass
+your own `n_chans`, `n_times` and `n_outputs` when loading.
+
+## Limitations
+
+These files hold the encoder only, as does the release. Braindecode
+initializes the classification head on load, so it needs fine-tuning, as does
+the learned read-out of the paper's protocol (`pooling="learned"`), which was
+never released. The check
+above covers float32 CPU encoder tokens, not downstream accuracy, GPU kernels or
+mixed precision.
+
+## Citation
+
+```bibtex
+@inproceedings{{oganesian2025barista,
+    title={{BaRISTA: Brain Scale Informed Spatiotemporal Representation of Human Intracranial Neural Activity}},
+    author={{Oganesian, Lucine L. and Hashemi, Saba and Shanechi, Maryam M.}},
+    booktitle={{Advances in Neural Information Processing Systems}},
+    year={{2025}}
+}}
+```
+
+## License
+
+Copyright (c) 2025 University of Southern California. Educational, research and
+non-profit use only; commercial use requires an agreement with the USC Stevens
+Center for Innovation. See `NOTICE.txt` and the [original licence]({license}).
+"""
+
+
+def convert_weights(source, model):
+    """Rename tensors and fuse value/gate projections; check rotary buffers."""
+    source = dict(source)
+    for i in range(model.n_layers):
+        prefix = f"backbone.layers.{i}."
+        frequency = source.pop(prefix + "attention.rotary_emb.inv_freq")
+        torch.testing.assert_close(frequency, model.backbone.inv_freq, rtol=0, atol=0)
+        for suffix in ("weight", "bias"):
+            source[prefix + "mlp.0." + suffix] = torch.cat(
+                [
+                    source.pop(prefix + "mlp.up_proj." + suffix),
+                    source.pop(prefix + "mlp.gate_proj." + suffix),
+                ]
+            )
+    converted = {}
+    for key, tensor in source.items():
+        key = key.replace(
+            "tokenizer.temporal_encoder.feature_extractor.net.", "temporal_encoder."
+        )
+        key = key.replace("tokenizer.temporal_pooler.final_layer.", "temporal_pooler.")
+        key = key.replace(
+            "tokenizer.spatial_encoder.subcomponent_embeddings.", "spatial_emb.tables."
+        )
+        key = key.replace(".attention.", ".self_attn.").replace(
+            ".mlp.down_proj.", ".mlp.3."
+        )
+        converted[key] = tensor
+    missing, unexpected = model.load_state_dict(converted, strict=False)
+    expected_missing = {"token_pooling.weight", *HEAD}
+    if model.token_pooling is None:
+        expected_missing.remove("token_pooling.weight")
+    if set(missing) != expected_missing or unexpected:
+        raise RuntimeError(
+            f"Incomplete conversion: missing={missing}, unexpected={unexpected}"
+        )
+    return len(converted), sorted(missing)
+
+
+def reference_tokens(state, x, indices):
+    """Evaluate released tokenizer/transformer equations without converted keys.
+
+    Reference: barista/models/{TSEncoder2D,tokenizer,transformer,spatial_encoder}.py
+    at REVISION. Defaults match config/model.yaml: 512 samples, 64 features,
+    five CNN blocks, 12 transformer blocks, four heads and RMSNorm eps=1e-8.
+    """
+    batch, channels, _ = x.shape
+    patches = x.unfold(-1, 512, 512).permute(0, 2, 1, 3)
+    n_patches = patches.shape[1]
+    h = patches.reshape(1, 1, -1, 512)
+    for i in range(5):
+        prefix = f"tokenizer.temporal_encoder.feature_extractor.net.{i}."
+        residual = h
+        if prefix + "projector.weight" in state:
+            residual = F.conv2d(
+                h, state[prefix + "projector.weight"], state[prefix + "projector.bias"]
+            )
+        for conv in ("conv1", "conv2"):
+            h = F.conv2d(
+                h,
+                state[prefix + conv + ".conv.weight"],
+                state[prefix + conv + ".conv.bias"],
+                padding=(0, 2**i),
+                dilation=(1, 2**i),
+            )
+            h = F.gelu(F.layer_norm(h, (512,)))
+        h = h + residual
+    h = F.linear(
+        h.reshape(-1, 512), state["tokenizer.temporal_pooler.final_layer.weight"]
+    )
+    h = h.reshape(batch, n_patches * channels, 64)
+    grid = indices.T if indices.ndim == 2 else indices[None]
+    spatial = torch.stack(
+        [
+            F.embedding(
+                axis,
+                state[f"tokenizer.spatial_encoder.subcomponent_embeddings.{i}.weight"],
+            )
+            for i, axis in enumerate(grid)
+        ]
+    ).sum(0)
+    h = h + spatial.repeat(n_patches, 1)[None]
+    for i in range(12):
+        prefix = f"backbone.layers.{i}."
+        normalized = h * torch.rsqrt(h.square().mean(-1, keepdim=True) + 1e-8)
+        normalized = normalized * state[prefix + "norm1.weight"]
+        qkv = F.linear(
+            normalized,
+            state[prefix + "attention.qkv_proj.weight"],
+            state[prefix + "attention.qkv_proj.bias"],
+        )
+        q, k, v = [
+            part.reshape(batch, -1, 4, 16).transpose(1, 2) for part in qkv.chunk(3, -1)
+        ]
+        positions = torch.arange(n_patches).repeat_interleave(channels)
+        angles = torch.outer(positions, state[prefix + "attention.rotary_emb.inv_freq"])
+        angles = torch.cat((angles, angles), -1)[None, None]
+        q = q * angles.cos() + torch.cat((-q[..., 8:], q[..., :8]), -1) * angles.sin()
+        k = k * angles.cos() + torch.cat((-k[..., 8:], k[..., :8]), -1) * angles.sin()
+        attention = ((q @ k.transpose(-1, -2)) / 4).softmax(-1) @ v
+        attention = attention.transpose(1, 2).reshape(batch, -1, 64)
+        h = h + F.linear(
+            attention,
+            state[prefix + "attention.o_proj.weight"],
+            state[prefix + "attention.o_proj.bias"],
+        )
+        normalized = h * torch.rsqrt(h.square().mean(-1, keepdim=True) + 1e-8)
+        normalized = normalized * state[prefix + "norm2.weight"]
+        gate = F.gelu(
+            F.linear(
+                normalized,
+                state[prefix + "mlp.gate_proj.weight"],
+                state[prefix + "mlp.gate_proj.bias"],
+            )
+        )
+        value = F.linear(
+            normalized,
+            state[prefix + "mlp.up_proj.weight"],
+            state[prefix + "mlp.up_proj.bias"],
+        )
+        h = h + F.linear(
+            gate * value,
+            state[prefix + "mlp.down_proj.weight"],
+            state[prefix + "mlp.down_proj.bias"],
+        )
+    return (
+        h
+        * torch.rsqrt(h.square().mean(-1, keepdim=True) + 1e-8)
+        * state["backbone.norm.weight"]
+    )
+
+
+@contextmanager
+def without_head(model):
+    """Hide the untrained classifier so only encoder tensors get serialized."""
+    head, model.final_layer = model.final_layer, nn.Identity()
+    try:
+        yield
+    finally:
+        model.final_layer = head
+
+
+def write_directory(model, destination, card):
+    """Save the Hub directory: weights, config, notice, card and this script."""
+    with without_head(model):
+        model.save_pretrained(destination)
+    shutil.copyfile(
+        Path(__file__).resolve().parents[1] / "NOTICE.txt", destination / "NOTICE.txt"
+    )
+    shutil.copyfile(Path(__file__).resolve(), destination / Path(__file__).name)
+    # Written last: save_pretrained leaves a placeholder card behind.
+    (destination / "README.md").write_text(card)
+
+
+def publish(model, destination, repo_id):
+    """Push the weights through Braindecode, then the files it does not carry."""
+    from huggingface_hub import HfApi
+
+    with without_head(model):
+        model.push_to_hub(repo_id)
+    api = HfApi()
+    for name in ("README.md", "NOTICE.txt", Path(__file__).name):
+        api.upload_file(
+            path_or_fileobj=str(destination / name),
+            path_in_repo=name,
+            repo_id=repo_id,
+        )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--cache-dir", type=Path, default=pooch.os_cache("braindecode") / "barista"
+    )
+    parser.add_argument("--n-chans", type=int, default=64)
+    parser.add_argument("--n-times", type=int, default=6144)
+    parser.add_argument("--n-outputs", type=int, default=2)
+    parser.add_argument("--push-to", help="Hub namespace to publish the models to")
+    args = parser.parse_args()
+    torch.set_num_threads(1)
+    torch.manual_seed(0)
+    report = {
+        "source_revision": REVISION,
+        "torch_version": torch.__version__,
+        "checkpoints": {},
+    }
+    for scale, (filename, digest) in CHECKPOINTS.items():
+        path = pooch.retrieve(
+            f"{SOURCE}/pretrained_models/{filename}",
+            known_hash=f"sha256:{digest}",
+            fname=filename,
+            path=args.cache_dir,
+        )
+        state = torch.load(path, map_location="cpu", weights_only=True)
+        model = BaRISTA(
+            n_chans=args.n_chans,
+            n_times=args.n_times,
+            n_outputs=args.n_outputs,
+            spatial_scale=scale,
+            # The releases carry no learned read-out, so only mean pooling is honest.
+            pooling="mean",
+        ).eval()
+        loaded, missing = convert_weights(state, model)
+        # Synthetic indices exercise the whole table, including unknown region 0.
+        axes = 3 if scale == "coords" else 1
+        shape = (args.n_chans, 3) if scale == "coords" else (args.n_chans,)
+        indices = (
+            torch.linspace(0, SLOTS[scale] - 1, args.n_chans * axes)
+            .long()
+            .reshape(shape)
+        )
+        x = torch.randn(2, args.n_chans, args.n_times)
+        captured = []
+        with (
+            torch.no_grad(),
+            model.backbone.register_forward_hook(lambda _m, _x, y: captured.append(y)),
+        ):
+            features = model(x, spatial_indices=indices, return_features=True)
+            expected = reference_tokens(state, x, indices)
+        features = features["features"]
+        torch.testing.assert_close(captured[0], expected, rtol=1e-4, atol=1e-5)
+        if not torch.isfinite(features).all():
+            raise RuntimeError(f"Non-finite output for {scale}")
+        error = (captured[0] - expected).abs().max().item()
+        name = f"BaRISTA-{scale}"
+        repo_id = f"{args.push_to}/{name}" if args.push_to else name
+        destination = args.output_dir / scale
+        write_directory(
+            model,
+            destination,
+            CARD.format(
+                scale=scale,
+                filename=filename,
+                digest=digest,
+                revision=REVISION,
+                license=LICENSE,
+                error=error,
+                repo_id=repo_id,
+                indices=INDICES[scale],
+                example=f"torch.randint(0, {SLOTS[scale]}, (64, 3))"
+                if scale == "coords"
+                else f"torch.randint(0, {SLOTS[scale]}, (64,))",
+                n_chans=args.n_chans,
+                n_times=args.n_times,
+            ),
+        )
+        stored = torch.load(
+            destination / "pytorch_model.bin", map_location="cpu", weights_only=True
+        )
+        if set(stored) != set(model.state_dict()) - HEAD:
+            raise RuntimeError(
+                f"Published tensors are not the encoder: {stored.keys()}"
+            )
+        # strict=False, since loading initializes the head these files omit.
+        restored = BaRISTA.from_pretrained(destination).eval()
+        with torch.no_grad():
+            torch.testing.assert_close(
+                restored(x, spatial_indices=indices, return_features=True)["features"],
+                features,
+                rtol=0,
+                atol=0,
+            )
+        report["checkpoints"][scale] = {
+            "filename": filename,
+            "sha256": digest,
+            "encoder_tensors_loaded": loaded,
+            "omitted_head_tensors": missing,
+            "max_abs_token_error": error,
+            "rtol": 1e-4,
+            "atol": 1e-5,
+        }
+        print(
+            f"{scale}: {loaded} encoder tensors loaded; max token error {error:.3g}; saved to {destination}"
+        )
+        if args.push_to:
+            publish(model, destination, repo_id)
+            print(f"{scale}: published to https://huggingface.co/{repo_id}")
+    (args.output_dir / "conversion_report.json").write_text(
+        json.dumps(report, indent=2) + "\n"
+    )
+    print(
+        "All encoders and local Hub round trips passed. Downstream heads need fine-tuning."
+    )
+
+
+if __name__ == "__main__":
+    main()
