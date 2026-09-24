@@ -369,7 +369,7 @@ def test_reset_head_keeps_the_serialized_config_in_step():
     assert model.n_outputs == 7
     assert model.final_layer.fc.out_features == 7
     stored = {
-        **getattr(model, "_init_kwargs", {}),
+        **getattr(model, "_braindecode_init_kwargs", {}),
         **(getattr(model, "_hub_mixin_config", None) or {}),
     }
     assert stored.get("n_outputs") == 7
@@ -470,3 +470,30 @@ def test_encoder_is_bit_exact_with_upstream():
             ours_out = ours_trans(ours_embed(spec))
         assert up_out.shape == ours_out.shape == (batch, seq_len, hidden_dim)
         assert torch.allclose(up_out, ours_out, atol=1e-5)
+
+
+def test_official_checkpoint_key_mapping_targets_exist():
+    """The official ``input_encoding.*`` keys map onto real port parameters."""
+    model = _model()
+    state = model.state_dict()
+    assert model.mapping
+    for target in model.mapping.values():
+        assert target in state
+
+
+def test_reset_head_keeps_dtype():
+    model = _model().double().eval()
+    model.reset_head(3)
+    x = torch.randn(2, N_CHANS, N_TIMES, dtype=torch.double)
+    assert model(x).shape == (2, 3)
+
+
+def test_odd_hidden_dim_raises():
+    with pytest.raises(ValueError, match="hidden_dim must be even"):
+        _model(hidden_dim=33, n_heads=3)
+
+
+def test_forward_rejects_too_few_frames():
+    model = _model().eval()
+    with pytest.raises(ValueError, match="spectrogram frames"):
+        model(torch.randn(1, N_CHANS, N_TIMES // 4))

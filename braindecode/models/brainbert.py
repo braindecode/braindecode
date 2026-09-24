@@ -302,6 +302,23 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
                 f"pool_n_frames (None averages all frames)."
             )
 
+        if hidden_dim % 2:
+            raise ValueError(
+                f"hidden_dim must be even for the sinusoidal position encoding; "
+                f"got {hidden_dim}."
+            )
+        # The official checkpoint names the input block ``input_encoding``; its
+        # fixed ``pe`` table is rebuilt here, so it is simply left unmatched.
+        self.mapping = {
+            f"input_encoding.{name}": f"input_embedding.{name}"
+            for name in (
+                "in_proj.weight",
+                "in_proj.bias",
+                "layer_norm.weight",
+                "layer_norm.bias",
+            )
+        }
+
         self.input_embedding = _BrainBERTInputEmbedding(
             input_dim=idx_freq_cutoff,
             hidden_dim=hidden_dim,
@@ -328,8 +345,11 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         # the Hub config in step, so a re-serialized model advertises the head
         # it actually carries. Assigning ``_n_outputs`` directly left the saved
         # configuration reporting the old count.
+        old = next(self.final_layer.parameters())
         self._set_n_outputs(n_outputs)
-        self.final_layer = _BrainBERTHead(self.hidden_dim, self.n_outputs)
+        self.final_layer = _BrainBERTHead(self.hidden_dim, self.n_outputs).to(
+            device=old.device, dtype=old.dtype
+        )
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Decode a batch of signals.
@@ -356,6 +376,14 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         # 1. spectrogram front-end (braindecode-native, computed here).
         spec = self.spectrogram(x)  # (batch, n_chans, n_frames, idx_freq_cutoff)
         seq_len = spec.shape[2]
+        # The constructor checks n_times; inputs of another length must still
+        # give enough frames, otherwise the centre slice silently shrinks.
+        min_frames = self.pool_n_frames if self.pool_n_frames is not None else 1
+        if seq_len < min_frames:
+            raise ValueError(
+                f"Input of {x.shape[-1]} samples gives {seq_len} spectrogram "
+                f"frames; at least {min_frames} are needed."
+            )
         spec = spec.reshape(batch_size * n_chans, seq_len, self.idx_freq_cutoff)
 
         # 2. input encoding + Transformer over the sequence of frames.
