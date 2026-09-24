@@ -42,6 +42,7 @@ from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
 from .neuropose import NeuroPose
 from .patchedtransformer import PBT
+from .popt import PopulationTransformer
 from .reve import REVE
 from .sccnet import SCCNet
 from .sensingdynamics import SensingDynamics
@@ -132,6 +133,7 @@ __all__ = [
     "MSVTNet",
     "MVPFormer",
     "PBT",
+    "PopulationTransformer",
     "REVE",
     "SCCNet",
     "ShallowFBCSPNet",

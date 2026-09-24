@@ -28,6 +28,14 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.PopulationTransformer`, a self-supervised
+  population model for intracranial (sEEG/iEEG) signals from Chau et al. (2024).
+  It aggregates across electrodes from per-electrode features (e.g. frozen
+  BrainBERT embeddings) plus their anatomical coordinates; the input embedding,
+  spatial position encoding and Transformer encoder are ported bit-exact from the
+  upstream reference (:gh:`1105` by `Adam Mounir`_)
+
+
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
