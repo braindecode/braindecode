@@ -47,7 +47,8 @@ Requirements
 ============
 
 - Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
-  REVE and ZUNA now use native PyTorch RMSNorm with explicit epsilon values. Intel macOS is no longer supported because
+  REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
+  explicit epsilon values. Intel macOS is no longer supported because
   PyTorch stopped providing its binary packages after 2.2.
   (:gh:`1174` by `Bruno Aristimunha`_)
 
@@ -71,18 +72,6 @@ Bug fixes
   is 1, which made :class:`braindecode.models.ShallowFBCSPNet` and
   :class:`braindecode.models.Deep4Net` unusable on single-channel data
   (:gh:`1154` by `Julien Gadonneix`_).
-
-API changes
-===========
-
-- Raise the minimum supported PyTorch version to ``torch>=2.4``, which is
-  already required in practice by models relying on :class:`torch.nn.RMSNorm`.
-  :class:`braindecode.models.ZUNA` and :class:`braindecode.models.REVE` now use
-  :class:`torch.nn.RMSNorm` instead of their private copies, which removes the
-  undocumented ``braindecode.models.reve.RMSNorm`` class; parameter names,
-  state-dict keys and outputs are unchanged
-  (:gh:`1170` by `Julien Gadonneix`_).
-
 
 Current 1.8.0 (2026-08-31)
 ===============================
