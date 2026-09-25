@@ -19,6 +19,7 @@ import math
 import re
 import warnings
 from numbers import Integral
+from typing import NamedTuple, cast
 
 import torch
 import torch.nn.functional as F
@@ -138,6 +139,18 @@ _UNASSIGNED_REGION = len(MAPA_DKT_REGIONS)
 _LABEL_PATTERN = re.compile(r"^(.*?)(\d+)$")
 
 
+class _TokenLayout(NamedTuple):
+    """Where each token sits, for one montage and one window length."""
+
+    gather_idx: torch.Tensor
+    key_mask: torch.Tensor
+    token_region: torch.Tensor
+    scatter_idx: torch.Tensor
+    rope_cos: torch.Tensor
+    rope_sin: torch.Tensor
+    k_full: int
+
+
 class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     r"""MAPA from Tang, Spalding and Cogan (2026) [Tang2026]_.
 
@@ -240,6 +253,24 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     :data:`MAPA_DKT_REGIONS`, as the reference rejects near-misses rather than
     letting a misspelling become silently unassigned.
 
+    .. rubric:: One model, many subjects
+
+    Because nothing the model is told about an electrode is subject-specific,
+    one instance encodes recordings from different subjects, with different
+    montages and different window lengths, without being rebuilt. The
+    constructor arguments describe one montage only to give
+    :meth:`forward` a default; to read another recording, pass its metadata as
+    the ``sensor_indices`` argument of :meth:`forward`, which
+    :meth:`sensor_indices` builds from that recording's contact labels and
+    regions. All the samples of one batch share it, so batch by recording.
+
+    The token layout that metadata implies is kept between calls and rebuilt
+    only when the montage or the window length changes, which mirrors the
+    reference's ``prepare``: streaming the windows of one recording pays for it
+    once. Only ``pooling="flatten"`` is tied to a single montage, since its
+    head holds weights per token; ``pooling="mean"`` takes any number of
+    channels and any window length.
+
     .. rubric:: Sampling frequency and window length
 
     The band definitions are FFT bin slices at 2048 Hz, so a recording at
@@ -279,8 +310,9 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         median and scaled median absolute deviation on the window itself. This
         is the one place where this port cannot reproduce the reference
         numerically: for windows of a second or so the statistics come from a
-        few dozen frames rather than a whole session. Normalize upstream and
-        pass ``normalization="none"`` to feed the reference's own inputs.
+        few dozen frames rather than a whole session. ``normalization="none"``
+        leaves the magnitudes as the transforms give them, for a caller whose
+        windows were scaled upstream so that the z-score is already implicit.
 
         The features this model pools are the encoder's own output, the
         concatenation of the four normed deep-supervision taps. The paper's
@@ -299,7 +331,8 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     contact_labels : list of str, optional
         Clinical label of each channel, such as ``"LA7"``, from which the array
         and the contact number are read. Defaults to the ``chs_info`` channel
-        names, then to a single array numbered from 1.
+        names, then to a single array numbered from 1. Describes the montage
+        :meth:`forward` assumes when it is given none.
     regions : list of str or int or None, optional
         DKT region of each channel, either an exact name from
         :data:`MAPA_DKT_REGIONS` or its integer slot, with ``None`` selecting
@@ -325,14 +358,36 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     pooling : {"mean", "flatten"}
         Token aggregation before the head. ``"mean"`` averages the tokens,
         giving a head that depends on neither the montage nor the window
-        length; ``"flatten"`` keeps every token, as the paper's frozen linear
-        probe does, at the cost of a head that grows with both.
+        length, so one model reads any recording; ``"flatten"`` keeps every
+        token, as the paper's frozen linear probe does, at the cost of a head
+        that fits one montage and one window length only.
     normalization : {"window", "none"}
         Whether the spectrograms are robust z-scored on each window, or passed
         to the stem as they come because they were normalized upstream.
     activation : type[nn.Module]
         Activation layer class of the feed-forward blocks, default
         :class:`~torch.nn.GELU`.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from braindecode.models import MAPA
+    >>> model = MAPA(
+    ...     n_outputs=2,
+    ...     n_chans=3,
+    ...     n_times=2048,
+    ...     sfreq=2048,
+    ...     contact_labels=["LA1", "LA2", "LB4"],
+    ...     regions=["ctx-lh-insula", "ctx-lh-insula", "Left-Hippocampus"],
+    ... )
+    >>> model(torch.randn(4, 3, 2048)).shape
+    torch.Size([4, 2])
+
+    The same model reads another subject, given that subject's electrodes:
+
+    >>> other = MAPA.sensor_indices(["RC1", "RC2", "RC3", "RD7"])
+    >>> model(torch.randn(4, 4, 4096), other).shape
+    torch.Size([4, 2])
 
     References
     ----------
@@ -406,19 +461,11 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 UserWarning,
             )
 
-        self.n_frames = ((1 + self.n_times // _HOP) // _FRAME_QUANTUM) * _FRAME_QUANTUM
-        if self.n_frames < _FRAME_QUANTUM:
-            raise ValueError(
-                f"MAPA needs a window of at least {(_FRAME_QUANTUM - 1) * _HOP} "
-                f"samples, which is {_FRAME_QUANTUM} frames of the 32 Hz clock "
-                f"and one token of the slow band, but got {self.n_times}."
-            )
-        self.band_lengths = tuple(self.n_frames // stride for *_, stride in _BANDS)
+        self.n_frames = _frame_count(self.n_times)
+        self.band_lengths = _band_lengths(self.n_frames)
         self.k_full = sum(self.band_lengths)
 
-        self.frontend = _SpectrogramFrontend(
-            n_frames=self.n_frames, normalization=normalization
-        )
+        self.frontend = _SpectrogramFrontend(normalization=normalization)
         self.stem = _PerBandStem(
             d_model=d_model, band_bins=tuple(k1 - k0 + 1 for _, _, k0, k1, _ in _BANDS)
         )
@@ -431,7 +478,18 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             activation=activation,
         )
 
-        self._register_geometry(contact_labels, regions)
+        # The montage resolved here is only the default: forward takes another
+        # recording's metadata directly, which is what lets one instance read
+        # subjects it was not built for. Its layout rides along as buffers, so
+        # it follows the module across devices and nothing has to be laid out
+        # at call time unless the montage or the window actually changes.
+        indices = self.sensor_indices(self._resolve_labels(contact_labels), regions)
+        self.register_buffer("default_sensor_indices", indices, persistent=False)
+        default_layout = _build_token_layout(indices, self.n_frames, space_rope)
+        for name, value in default_layout._asdict().items():
+            if isinstance(value, torch.Tensor):
+                self.register_buffer(name, value, persistent=False)
+        self._layout_cache: tuple[int, torch.Tensor, _TokenLayout] | None = None
 
         feature_dim = d_model * (len(_SUP_TAPS) if deep_sup else 1)
         n_features = (
@@ -441,74 +499,110 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         )
         self.final_layer = nn.Linear(n_features, self.n_outputs)
 
-    def _register_geometry(
-        self,
-        contact_labels: list[str] | None,
-        regions: list[str | int | None] | None,
-    ) -> None:
-        """Lay the token grid out per array and cache what attention reads.
+    @staticmethod
+    def sensor_indices(
+        contact_labels: list[str],
+        regions: list[str | int | None] | None = None,
+    ) -> torch.Tensor:
+        """Assemble one recording's electrode metadata for :meth:`forward`.
 
-        The layout depends only on the montage and the window length, so the
-        gather plan, the rotary tables, the padding mask and the region of each
-        token are all built once here and reused for every batch.
+        Parameters
+        ----------
+        contact_labels : list of str
+            Clinical label of each channel, such as ``"LA7"``, from which the
+            array and the contact number are read.
+        regions : list of str or int or None, optional
+            DKT region of each channel, either an exact name from
+            :data:`MAPA_DKT_REGIONS` or its integer slot, with ``None``
+            selecting the reserved unassigned slot. Defaults to unassigned
+            everywhere.
+
+        Returns
+        -------
+        torch.Tensor
+            ``(n_chans, 3)`` long tensor whose columns are the array, the
+            contact number along it, and the region slot.
+
+        Examples
+        --------
+        >>> from braindecode.models import MAPA
+        >>> MAPA.sensor_indices(["LA1", "LA3", "LB2"]).tolist()
+        [[0, 1, 74], [0, 3, 74], [1, 2, 74]]
         """
-        labels = self._resolve_labels(contact_labels)
-        array_of_contact, depth_of_contact = _parse_contact_labels(labels)
-        region_of_contact = _resolve_regions(regions, self.n_chans)
-
-        members: list[list[int]] = [
-            [
-                contact
-                for contact, array in enumerate(array_of_contact.tolist())
-                if array == group
-            ]
-            for group in range(int(array_of_contact.max()) + 1)
-        ]
-        n_arrays = len(members)
-        max_contacts = max(len(group) for group in members)
-
-        # Row s holds the contacts of array s, padded with contact 0, whose
-        # tokens are masked out of attention and dropped on the way back.
-        gather_idx = torch.zeros((n_arrays, max_contacts), dtype=torch.long)
-        valid = torch.zeros((n_arrays, max_contacts), dtype=torch.bool)
-        for array, group in enumerate(members):
-            gather_idx[array, : len(group)] = torch.tensor(group, dtype=torch.long)
-            valid[array, : len(group)] = True
-
-        # Each contact carries the same block of tokens: the three bands in
-        # order, each at its own rate on the shared clock.
-        lattice = torch.cat(
-            [
-                torch.arange(length) * stride
-                for length, (*_, stride) in zip(self.band_lengths, _BANDS)
-            ]
+        labels = [str(label) for label in contact_labels]
+        arrays, contacts = _parse_contact_labels(labels)
+        return torch.stack(
+            [arrays, contacts, _resolve_regions(regions, len(labels))], dim=1
         )
-        self.register_buffer("gather_idx", gather_idx, persistent=False)
-        self.register_buffer(
-            "token_valid", valid.repeat_interleave(self.k_full, dim=1), persistent=False
-        )
-        self.register_buffer(
-            "token_region",
-            region_of_contact[gather_idx].repeat_interleave(self.k_full, dim=1),
-            persistent=False,
-        )
-        # Position of each contact in the flattened, array-major token grid,
-        # which undoes the gather after the encoder.
-        scatter_idx = torch.empty(self.n_chans, dtype=torch.long)
-        scatter_idx[gather_idx[valid]] = torch.arange(n_arrays * max_contacts)[
-            valid.flatten()
-        ]
-        self.register_buffer("scatter_idx", scatter_idx, persistent=False)
 
-        cos, sin = _rotary_table(
-            contact=depth_of_contact[gather_idx].repeat_interleave(self.k_full, dim=1),
-            time=lattice.repeat(max_contacts).expand(n_arrays, -1),
-            head_dim=_HEAD_DIM,
-            space_rope=self.space_rope,
-        )
-        # Inserted axes broadcast the tables over the batch and the heads.
-        self.register_buffer("rope_cos", cos[None, :, None], persistent=False)
-        self.register_buffer("rope_sin", sin[None, :, None], persistent=False)
+    def _resolve_sensor_indices(
+        self, sensor_indices: torch.Tensor | None, x: torch.Tensor
+    ) -> torch.Tensor:
+        """Validate a recording's metadata, or fall back to the default montage."""
+        n_chans = x.shape[1]
+        if sensor_indices is None:
+            if n_chans != self.n_chans:
+                raise ValueError(
+                    f"MAPA resolved a {self.n_chans}-channel montage at "
+                    f"construction but got input with {n_chans} channels. Pass "
+                    f"this recording's metadata as sensor_indices, which "
+                    f"MAPA.sensor_indices builds from its contact labels."
+                )
+            return self.get_buffer("default_sensor_indices")
+        indices = torch.as_tensor(sensor_indices)
+        if (
+            indices.is_floating_point()
+            or indices.is_complex()
+            or indices.dtype == torch.bool
+        ):
+            raise ValueError(f"sensor_indices must hold integers, got {indices.dtype}.")
+        if indices.shape != (n_chans, 3):
+            raise ValueError(
+                f"sensor_indices must have shape ({n_chans}, 3), one row of "
+                f"(array, contact number, region slot) per channel, got "
+                f"{tuple(indices.shape)}."
+            )
+        if bool((indices < 0).any()) or bool((indices[:, 2] >= _N_REGIONS).any()):
+            raise ValueError(
+                f"sensor_indices must be non-negative, with region slots below "
+                f"{_N_REGIONS}."
+            )
+        return indices.to(device=x.device, dtype=torch.long)
+
+    def _token_layout(self, indices: torch.Tensor, n_frames: int) -> _TokenLayout:
+        """Return the token layout of a montage, rebuilding it when it changes.
+
+        The construction-time layout is held as buffers and costs nothing to
+        reach. Any other is laid out on the spot and then kept until the
+        montage or the window length changes, which is what the reference's
+        ``prepare`` amounts to: streaming the windows of one recording builds
+        it once, and only moving to another subject pays for it again.
+        """
+        if (
+            indices is self.get_buffer("default_sensor_indices")
+            and n_frames == self.n_frames
+        ):
+            return _TokenLayout(
+                gather_idx=self.get_buffer("gather_idx"),
+                key_mask=self.get_buffer("key_mask"),
+                token_region=self.get_buffer("token_region"),
+                scatter_idx=self.get_buffer("scatter_idx"),
+                rope_cos=self.get_buffer("rope_cos"),
+                rope_sin=self.get_buffer("rope_sin"),
+                k_full=self.k_full,
+            )
+        cache = self._layout_cache
+        if (
+            cache is not None
+            and cache[0] == n_frames
+            and cache[1].shape == indices.shape
+            and cache[1].device == indices.device
+            and bool(torch.equal(cache[1], indices))
+        ):
+            return cache[2]
+        layout = _build_token_layout(indices, n_frames, self.space_rope)
+        self._layout_cache = (n_frames, indices, layout)
+        return layout
 
     def _resolve_labels(self, contact_labels: list[str] | None) -> list[str]:
         """Return the clinical label of every channel."""
@@ -528,13 +622,24 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self._n_outputs = n_outputs
         self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
 
-    def forward(self, x: torch.Tensor, return_features: bool = False):
+    def forward(
+        self,
+        x: torch.Tensor,
+        sensor_indices: torch.Tensor | None = None,
+        return_features: bool = False,
+    ):
         """Encode an iEEG batch into class logits.
 
         Parameters
         ----------
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``.
+        sensor_indices : torch.Tensor, optional
+            ``(n_chans, 3)`` electrode metadata of the recording this batch
+            comes from, one row of (array, contact number, region slot) per
+            channel, as :meth:`sensor_indices` builds it. Every sample of the
+            batch shares it. Defaults to the montage resolved at construction,
+            which only fits the construction-time channel count.
         return_features : bool
             Whether to also return the pooled token embedding.
 
@@ -543,37 +648,35 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         torch.Tensor
             Class logits of shape ``(batch, n_outputs)``.
         """
-        if x.shape[1] != self.n_chans:
-            raise ValueError(
-                f"MAPA was built for {self.n_chans} channels but got input "
-                f"with {x.shape[1]}; rebuild the model for this montage."
-            )
-        # The rotary tables, the padding mask and (for pooling="flatten") the
-        # read-out are all built for a fixed token count, so reject a different
-        # window outright rather than silently encoding a different grid.
-        # Windows that differ only in frames the frontend drops are accepted.
-        if ((1 + x.shape[-1] // _HOP) // _FRAME_QUANTUM) * _FRAME_QUANTUM != (
-            self.n_frames
+        indices = self._resolve_sensor_indices(sensor_indices, x)
+        n_frames = _frame_count(x.shape[-1])
+        # Everything else adapts to the montage and the window, but a flattened
+        # read-out is a fixed number of weights per token, so it can only ever
+        # serve the grid it was built for.
+        if self.pooling == "flatten" and (
+            x.shape[1] != self.n_chans or n_frames != self.n_frames
         ):
             raise ValueError(
-                f"MAPA was built for {self.n_frames} frames of the 32 Hz clock "
-                f"but got input with {x.shape[-1]} samples; rebuild the model "
-                f"for this window length."
+                f"pooling='flatten' ties the read-out to the {self.n_chans} "
+                f"channels and {self.n_frames} frames it was built for, but got "
+                f"{x.shape[1]} channels and {n_frames} frames. Build the model "
+                f"with pooling='mean' to encode recordings of any shape."
             )
+        layout = self._token_layout(indices, n_frames)
 
         tokens = self.stem(self.frontend(x))
         # (batch, n_arrays, max_contacts * k_full, d_model), array-contiguous.
-        packed = tokens[:, self.gather_idx].flatten(2, 3)
+        packed = tokens[:, layout.gather_idx].flatten(2, 3)
         encoded = self.encoder(
             packed,
-            self.token_region,
-            self.rope_cos,
-            self.rope_sin,
-            self.token_valid[None, :, None, None],
+            layout.token_region,
+            layout.rope_cos,
+            layout.rope_sin,
+            layout.key_mask,
         )
         # Back to one block of tokens per channel, in the input channel order.
-        encoded = encoded.unflatten(2, (-1, self.k_full)).flatten(1, 2)
-        encoded = encoded[:, self.scatter_idx]
+        encoded = encoded.unflatten(2, (-1, layout.k_full)).flatten(1, 2)
+        encoded = encoded[:, layout.scatter_idx]
 
         if self.pooling == "mean":
             features = encoded.mean(dim=(1, 2))
@@ -587,6 +690,103 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 "cls_token": None,  # nosec B105
             }
         return logits
+
+
+def _frame_count(n_times: int) -> int:
+    """Number of frames of the shared 32 Hz clock a window of this length gives."""
+    n_frames = ((1 + n_times // _HOP) // _FRAME_QUANTUM) * _FRAME_QUANTUM
+    if n_frames < _FRAME_QUANTUM:
+        raise ValueError(
+            f"MAPA needs a window of at least {(_FRAME_QUANTUM - 1) * _HOP} "
+            f"samples, which is {_FRAME_QUANTUM} frames of the 32 Hz clock and "
+            f"one token of the slow band, but got {n_times}."
+        )
+    return n_frames
+
+
+def _band_lengths(n_frames: int) -> tuple[int, ...]:
+    """Number of tokens each band lays on the shared clock."""
+    return tuple(n_frames // stride for *_, stride in _BANDS)
+
+
+def _build_token_layout(
+    sensor_indices: torch.Tensor, n_frames: int, space_rope: bool
+) -> _TokenLayout:
+    """Lay the token grid out per array and build what attention reads.
+
+    Attention runs within an array, so the channels are regrouped into a
+    rectangle of arrays by contacts, padded to the largest array. The gather
+    plan, the rotary tables, the padding mask and the region of each token all
+    follow from that rectangle and from how many tokens a window carries.
+
+    Parameters
+    ----------
+    sensor_indices : torch.Tensor
+        ``(n_chans, 3)`` long tensor of (array, contact number, region slot).
+    n_frames : int
+        Length of the window in frames of the shared clock.
+    space_rope : bool
+        Whether the contact axis is rotary-encoded alongside time.
+
+    Returns
+    -------
+    _TokenLayout
+        Everything :meth:`MAPA.forward` needs to run this montage.
+    """
+    device = sensor_indices.device
+    n_chans = sensor_indices.shape[0]
+    arrays, contacts, regions = sensor_indices.unbind(dim=1)
+    band_lengths = _band_lengths(n_frames)
+    k_full = sum(band_lengths)
+
+    # Renumber the arrays contiguously, so any labelling of them works.
+    _, array_of_contact = torch.unique(arrays, return_inverse=True)
+    counts = torch.bincount(array_of_contact)
+    n_arrays, max_contacts = counts.numel(), int(counts.max())
+
+    # Row s holds the contacts of array s in input order, padded with contact
+    # 0, whose tokens are masked out of attention and dropped on the way back.
+    order = torch.argsort(array_of_contact, stable=True)
+    row = array_of_contact[order]
+    slot = (
+        torch.arange(n_chans, device=device)
+        - torch.cat([counts.new_zeros(1), counts.cumsum(0)[:-1]])[row]
+    )
+    gather_idx = torch.zeros((n_arrays, max_contacts), dtype=torch.long, device=device)
+    valid = torch.zeros((n_arrays, max_contacts), dtype=torch.bool, device=device)
+    gather_idx[row, slot] = order
+    valid[row, slot] = True
+
+    # Position of each contact in the flattened, array-major token grid, which
+    # undoes the gather after the encoder.
+    scatter_idx = torch.empty(n_chans, dtype=torch.long, device=device)
+    scatter_idx[order] = row * max_contacts + slot
+
+    # Each contact carries the same block of tokens: the three bands in order,
+    # each at its own rate on the shared clock.
+    lattice = torch.cat(
+        [
+            torch.arange(length, device=device) * stride
+            for length, (*_, stride) in zip(band_lengths, _BANDS)
+        ]
+    )
+    cos, sin = _rotary_table(
+        contact=contacts[gather_idx].repeat_interleave(k_full, dim=1),
+        time=lattice.repeat(max_contacts).expand(n_arrays, -1),
+        head_dim=_HEAD_DIM,
+        space_rope=space_rope,
+    )
+    return _TokenLayout(
+        gather_idx=gather_idx,
+        # Inserted axes broadcast the mask and the tables over the batch and
+        # the heads.
+        key_mask=valid.repeat_interleave(k_full, dim=1)[None, :, None, None],
+        token_region=regions[gather_idx].repeat_interleave(k_full, dim=1),
+        scatter_idx=scatter_idx,
+        rope_cos=cos[None, :, None],
+        rope_sin=sin[None, :, None],
+        k_full=k_full,
+    )
 
 
 def _parse_contact_labels(labels: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
@@ -774,16 +974,13 @@ class _SpectrogramFrontend(nn.Module):
 
     Parameters
     ----------
-    n_frames : int
-        Number of frames of the shared clock the window yields.
     normalization : {"window", "none"}
         Whether the magnitudes are robust z-scored on each window, or left as
         they come because they were normalized upstream.
     """
 
-    def __init__(self, n_frames: int, normalization: str):
+    def __init__(self, normalization: str):
         super().__init__()
-        self.n_frames = n_frames
         self.normalization = normalization
         for name, n_fft, *_ in _BANDS:
             self.register_buffer(
@@ -797,6 +994,7 @@ class _SpectrogramFrontend(nn.Module):
         slow, mid, fast order.
         """
         batch, n_chans = x.shape[0], x.shape[1]
+        n_frames = _frame_count(x.shape[-1])
         waveform = x.reshape(batch * n_chans, x.shape[-1])
         bands = []
         for (name, n_fft, k0, k1, stride), cap in zip(_BANDS, _INPUT_CLIP_Z):
@@ -816,7 +1014,7 @@ class _SpectrogramFrontend(nn.Module):
                 normalized=False,
                 return_complex=True,
             )
-            band = spectrum[:, k0 : k1 + 1, : self.n_frames].abs()
+            band = spectrum[:, k0 : k1 + 1, :n_frames].abs()
             if self.normalization == "window":
                 band = _robust_z(band)
             bands.append(
@@ -895,7 +1093,7 @@ class _Encoder(nn.Module):
     ):
         super().__init__()
         self.region_embed = _RegionIdentityEmbed(d_model, enabled=region_embed)
-        self.blocks = nn.ModuleList(
+        self.blocks: nn.ModuleList = nn.ModuleList(
             [
                 _WithinArrayBlock(
                     d_model=d_model,
@@ -921,7 +1119,8 @@ class _Encoder(nn.Module):
 
     def _rescale_blocks(self) -> None:
         """Damp the residual branches with depth, so their variance stays flat."""
-        for layer, block in enumerate(self.blocks):
+        for layer, module in enumerate(self.blocks):
+            block = cast(_WithinArrayBlock, module)
             scale = math.sqrt(2.0 * (layer + 1))
             block.out.weight.data.div_(scale)
             block.mlp.fc2.weight.data.div_(scale)
