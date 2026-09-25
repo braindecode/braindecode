@@ -89,6 +89,7 @@ _DIRECT_TORCHSCRIPT_MODELS = (
     "MEDFormer",
     "DGCNN",
     "ZUNA",
+    "BrainBERT",
 )
 
 _MODEL_CASES = {
@@ -181,7 +182,7 @@ def test_completeness__models_test_cases():
 def test_direct_torchscript_model_registry():
     """Every direct TorchScript case is unique and registered."""
     direct_models = set(_DIRECT_TORCHSCRIPT_MODELS)
-    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 30
+    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 31
     assert len(direct_models) == len(_DIRECT_TORCHSCRIPT_MODELS)
     assert direct_models <= all_models_dict.keys()
     assert direct_models <= _MODEL_CASES.keys()
@@ -604,9 +605,6 @@ def test_model_torch_script(model):
         "InterpolatedLaBraM",
         "InterpolatedSignalJEPA",
         "STEEGFormer",
-        # forward() returns Dict[str, Tensor] (features) or Tensor (logits);
-        # torch.jit.script rejects this polymorphic return type.
-        "BrainBERT",
     ]
 
     if model.__class__.__name__ in not_working_models:

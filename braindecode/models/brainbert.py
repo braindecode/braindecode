@@ -1,96 +1,24 @@
-"""BrainBERT: a self-supervised foundation model for intracranial signals.
-
-Port of BrainBERT (Wang et al., ICLR 2023) into a braindecode-native model.
-Upstream code and pretrained weights are released by the authors:
-
-* paper: https://arxiv.org/abs/2302.14367
-* code: https://github.com/czlwang/BrainBERT
-* weights: released by the authors (Google Drive, see the upstream README)
-
-BrainBERT learns representations of intracranial electrode data by masked
-modelling of its **spectrogram**. The Transformer encoder and input encoding are
-ported weight-for-weight from the upstream reference (bit-exact; the gate lives
-in ``test/unit_tests/models/test_brainbert.py`` and runs against a clone of the
-upstream repository when ``BRAINBERT_SRC`` is set). The short-time Fourier
-transform front-end is moved *inside* the model, a braindecode-native
-adaptation. The official pretrained checkpoint loads directly via
-``BrainBERT.from_pretrained(BRAINBERT_WEIGHTS_REPO,
-revision=BRAINBERT_WEIGHTS_REVISION)``.
-
-Licensing: the upstream repository ships **no LICENSE file**, so the weights are
-re-hosted with their licence declared as ``unknown`` rather than assumed.
+# Authors: Adam Mounir <am91ris@gmail.com>
+#
+# License: BSD (3-clause)
+"""BrainBERT (Wang et al., ICLR 2023): a spectrogram Transformer for intracranial
+signals, ported weight-for-weight from https://github.com/czlwang/BrainBERT with
+the STFT front-end moved inside the model. See :class:`BrainBERT`.
 """
 
 from __future__ import annotations
 
-from typing import Callable
-
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
+from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.brainbert_modules import (
-    _BrainBERTHead,
-    _BrainBERTInputEmbedding,
-    _SpecPredictionHead,
-    _STFTSpectrogram,
-)
 
 #: Hub repository holding the re-hosted upstream checkpoint.
 BRAINBERT_WEIGHTS_REPO = "braindecode/brainbert-pretrained"
-
-#: Immutable commit of that repository.
-#:
-#: ``from_pretrained`` without a ``revision`` resolves to whatever ``main``
-#: points at, and a Hub branch is mutable: a later push would silently change
-#: what this model loads, and with it any number published against it. Pinning
-#: the commit is what makes a reported result re-checkable after the fact.
-#: Upstream itself distributes the weights from a mutable Google Drive folder,
-#: so this pin is the only immutable handle in the chain.
+#: Immutable commit to pass as ``revision=`` (``main`` is mutable).
 BRAINBERT_WEIGHTS_REVISION = "d5abbde693aeac08dcaae59c3702ab1bbf9a5388"
-
-#: SHA-256 of the weight files at :data:`BRAINBERT_WEIGHTS_REVISION`, so the
-#: bytes can be checked without trusting the Hub to have served the right
-#: commit. Verify with ``sha256sum`` on the downloaded file.
-BRAINBERT_WEIGHTS_SHA256 = {
-    "model.safetensors": (
-        "dbdab4696be1315bc559c620de510aebd5f83890aedc2fbaa1d08b1b8e040a33"
-    ),
-    "pytorch_model.bin": (
-        "5e1e93aaec221fa3316a565cb4e54ccde35f11376a30e6b275e750f25cd18a3b"
-    ),
-}
-
-
-def _as_transformer_activation(
-    activation: str
-    | type[nn.Module]
-    | nn.Module
-    | Callable[[torch.Tensor], torch.Tensor],
-) -> str | Callable[[torch.Tensor], torch.Tensor]:
-    """Normalise ``activation`` into something ``TransformerEncoderLayer`` takes.
-
-    braindecode spells this parameter ``type[nn.Module]`` (see BIOT, LaBraM,
-    CBraMod), so that stays the documented default. But
-    :class:`~torch.nn.TransformerEncoderLayer` itself accepts a string or a
-    plain callable, and instantiating those with ``activation()`` raises. The
-    four accepted forms are therefore folded here: a class is instantiated, and
-    a string, a module instance or a bare callable is passed straight through.
-    """
-    if isinstance(activation, str):
-        return activation
-    if isinstance(activation, type):
-        if not issubclass(activation, nn.Module):
-            raise ValueError(
-                f"activation class must subclass nn.Module, got {activation!r}."
-            )
-        return activation()
-    if callable(activation):
-        return activation
-    raise ValueError(
-        "activation must be a string, an nn.Module subclass or instance, or a "
-        f"callable; got {type(activation).__name__}."
-    )
 
 
 class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
@@ -107,9 +35,10 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
     per-frame representations are used for downstream decoding.
 
     Following the braindecode convention, the STFT is computed **inside**
-    ``forward`` (via :class:`~braindecode.modules.brainbert_modules._STFTSpectrogram`)
-    so the model keeps the standard ``(batch, n_chans, n_times)`` input
-    signature, whereas the upstream reference consumes a pre-computed spectrogram.
+    ``forward`` (by the private ``_STFTSpectrogram`` module of this file), so the
+    model keeps the standard ``(batch, n_chans, n_times)`` input signature,
+    whereas the upstream reference consumes a pre-computed spectrogram. The
+    encoder and input encoding match the upstream ``MaskedTFModel`` to 1e-5.
 
     The released checkpoint expects signals sampled at **2048 Hz**,
     Laplacian-re-referenced, with ``nperseg=400``, ``noverlap=350`` and the first
@@ -152,17 +81,9 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
        Always pass the ``revision``. Omitting it resolves to the repository's
        ``main`` branch, which is mutable, so a number reported today could stop
        reproducing tomorrow without anything in this file changing.
-       :data:`BRAINBERT_WEIGHTS_SHA256` records the bytes of that commit.
 
        The upstream repository ships no LICENSE file, so the re-hosted weights
-       are declared ``unknown`` rather than assumed permissive; the model card
-       records the SHA-256 and retrieval date of the source archive.
-
-    .. seealso::
-       :ref:`brainbert-ieeg-features` works through the three settings that
-       silently change what the pretrained encoder sees — the sampling rate, the
-       normalisation order and the window length — on real intracranial data,
-       and reproduces the frozen-encoder linear probe of the paper.
+       are declared ``unknown`` rather than assumed permissive.
 
     .. versionadded:: 1.8
 
@@ -184,7 +105,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
     idx_freq_cutoff : int, optional
         Number of low-frequency STFT bins kept; the Transformer ``input_dim``.
         This is a **bin index**, not a frequency in Hz: the default 40 bins
-        reach about 200 Hz at ``sfreq=2048`` with ``nperseg=400``. Default 40.
+        reach about 205 Hz at 2048 Hz with ``nperseg=400``. Default 40.
     stft_clip : int, optional
         Boundary frames trimmed from each end of the spectrogram. Default 10,
         as in the upstream ``preprocessors/stft.py`` used with the released
@@ -194,20 +115,15 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         trimmed. Default ``True``, which together with ``stft_clip=10``
         reproduces the recipe behind the published numbers. Set to ``False``
         with ``stft_clip=5`` to reproduce the upstream demo notebook instead;
-        the two recipes are close (correlation 0.999 on filtered noise) but not
-        equal, and they yield sequences of different length.
+        the two recipes are close but not equal, and they yield sequences of
+        different length.
     pool_n_frames : int or None, optional
         Number of encoder frames, centred on the window, averaged into the
         pooled representation. Default 10, as upstream. ``None`` averages all
         frames.
     activation : type[nn.Module], optional
-        Transformer feed-forward activation. Default ``nn.GELU`` (as
-        pretrained). A class is the documented, serializable form — it is what
-        the braindecode model config round-trips. A string (``"gelu"``,
-        ``"relu"``), a ready-made module or a plain callable such as
-        :func:`torch.nn.functional.gelu` is also accepted at runtime and
-        forwarded to :class:`~torch.nn.TransformerEncoderLayer` as-is, but a
-        model built that way does not serialize its activation faithfully.
+        Transformer feed-forward activation class. Default ``nn.GELU`` (as
+        pretrained).
     drop_prob : float, optional
         Dropout probability. Default 0.1.
 
@@ -233,12 +149,6 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         stft_clip: int = 10,
         stft_zscore_before_clip: bool = True,
         pool_n_frames: int | None = 10,
-        # Annotated as the class alone, like every other braindecode model.
-        # The shared model config round-trips this annotation through pydantic,
-        # and a union starting with ``str`` makes that round-trip lossy: a
-        # serialized ``"torch.nn.modules.activation.GELU"`` comes back as the
-        # string instead of the class. Other spellings still work at runtime,
-        # normalised below.
         activation: type[nn.Module] = nn.GELU,
         drop_prob: float = 0.1,
         # --- braindecode mandatory signal parameters ---
@@ -257,58 +167,31 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, chs_info, n_times, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        self.hidden_dim = hidden_dim
-        self.ffn_dim = ffn_dim
-        self.n_layers = n_layers
-        self.n_heads = n_heads
-        self.idx_freq_cutoff = idx_freq_cutoff
+        # Refuse rather than silently fall back to a different pooling: the
+        # number of frames averaged is part of the published protocol.
+        if pool_n_frames is not None and pool_n_frames <= 0:
+            raise ValueError(
+                f"pool_n_frames must be positive; got {pool_n_frames}. "
+                "Pass None to average every frame instead."
+            )
         self.pool_n_frames = pool_n_frames
+        self.min_frames = 1 if pool_n_frames is None else pool_n_frames
 
-        # braindecode-native: STFT computed inside forward (see module).
+        # braindecode-native: the STFT is computed inside forward.
         self.spectrogram = _STFTSpectrogram(
-            sfreq=self.sfreq,
             nperseg=nperseg,
             noverlap=noverlap,
             idx_freq_cutoff=idx_freq_cutoff,
             clip=stft_clip,
             zscore_before_clip=stft_zscore_before_clip,
         )
-        # At least one frame must survive the boundary trimming.
         self.seq_len = self.spectrogram.n_frames(self.n_times)
-        if self.seq_len < 1:
-            raise ValueError(
-                f"n_times ({self.n_times}) is too short: it yields "
-                f"{self.seq_len} spectrogram frames after trimming "
-                f"{stft_clip} boundary frames on each side. Provide a longer "
-                f"signal or reduce nperseg / stft_clip."
-            )
-        # Refuse rather than silently fall back to a different pooling: the
-        # number of frames averaged is part of the published protocol.
-        if pool_n_frames is not None and pool_n_frames <= 0:
-            # ``forward`` would slice ``middle:middle`` and average an empty
-            # tensor, so the model would return NaN instead of failing.
-            raise ValueError(
-                f"pool_n_frames must be positive; got {pool_n_frames}. "
-                "Pass None to average every frame instead."
-            )
-        if pool_n_frames is not None and self.seq_len < pool_n_frames:
-            raise ValueError(
-                f"n_times ({self.n_times}) yields only {self.seq_len} "
-                f"spectrogram frames, fewer than the pool_n_frames="
-                f"{pool_n_frames} centre frames pooled by the upstream "
-                f"protocol. Provide a longer signal, or pass a smaller "
-                f"pool_n_frames (None averages all frames)."
-            )
 
-        if hidden_dim % 2:
-            raise ValueError(
-                f"hidden_dim must be even for the sinusoidal position encoding; "
-                f"got {hidden_dim}."
-            )
-        # The official checkpoint names the input block ``input_encoding``; its
-        # fixed ``pe`` table is rebuilt here, so it is simply left unmatched.
+        # The re-hosted Hub checkpoint already uses this port's names. The
+        # authors' original ``.pth`` calls the input block ``input_encoding``;
+        # load it with ``strict=False`` (its fixed ``pe`` table is rebuilt here).
         self.mapping = {
             f"input_encoding.{name}": f"input_embedding.{name}"
             for name in (
@@ -323,33 +206,27 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             input_dim=idx_freq_cutoff,
             hidden_dim=hidden_dim,
             drop_prob=drop_prob,
+            # upstream table size; inputs longer than n_times stay allowed.
             max_len=max(5000, self.seq_len),
         )
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
             nhead=n_heads,
             dim_feedforward=ffn_dim,
-            activation=_as_transformer_activation(activation),
+            activation=activation(),
             dropout=drop_prob,
             batch_first=True,
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
-        # kept for weight parity with the upstream pretraining checkpoint; the
-        # classification path does not use it.
-        self.spec_prediction_head = _SpecPredictionHead(hidden_dim, idx_freq_cutoff)
-        self.final_layer = _BrainBERTHead(hidden_dim, self.n_outputs)
+        # Upstream's downstream probe is a bare linear layer
+        # (``models/linear_wav_baseline.py``), with no normalisation in front.
+        self.final_layer = nn.Linear(hidden_dim, self.n_outputs)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
-        # The mixin helper validates the value and keeps the init kwargs and
-        # the Hub config in step, so a re-serialized model advertises the head
-        # it actually carries. Assigning ``_n_outputs`` directly left the saved
-        # configuration reporting the old count.
-        old = next(self.final_layer.parameters())
         self._set_n_outputs(n_outputs)
-        self.final_layer = _BrainBERTHead(self.hidden_dim, self.n_outputs).to(
-            device=old.device, dtype=old.dtype
-        )
+        head = nn.Linear(self.final_layer.in_features, n_outputs)
+        self.final_layer = head.to(self.final_layer.weight)
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Decode a batch of signals.
@@ -363,7 +240,8 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             class logits, as ``{"features": pooled, "cls_token": None}``
             (braindecode foundation-model convention). BrainBERT pools the
             centre frames and then the channels, and has no class token, hence
-            ``cls_token`` is ``None``.
+            ``cls_token`` is ``None``. A scripted model (``torch.jit.script``)
+            ignores this flag and always returns the logits.
 
         Returns
         -------
@@ -375,31 +253,162 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
 
         # 1. spectrogram front-end (braindecode-native, computed here).
         spec = self.spectrogram(x)  # (batch, n_chans, n_frames, idx_freq_cutoff)
-        seq_len = spec.shape[2]
-        # The constructor checks n_times; inputs of another length must still
-        # give enough frames, otherwise the centre slice silently shrinks.
-        min_frames = self.pool_n_frames if self.pool_n_frames is not None else 1
-        if seq_len < min_frames:
+        n_frames = spec.shape[2]
+        # An input shorter than the model was built for must still give enough
+        # frames, otherwise the centre slice below silently shrinks.
+        if n_frames < self.min_frames:
             raise ValueError(
-                f"Input of {x.shape[-1]} samples gives {seq_len} spectrogram "
-                f"frames; at least {min_frames} are needed."
+                f"Input of {x.shape[-1]} samples gives {n_frames} spectrogram "
+                f"frames; at least {self.min_frames} are needed."
             )
-        spec = spec.reshape(batch_size * n_chans, seq_len, self.idx_freq_cutoff)
+        spec = spec.flatten(0, 1)  # (batch * n_chans, n_frames, idx_freq_cutoff)
 
         # 2. input encoding + Transformer over the sequence of frames.
-        h = self.input_embedding(spec)
+        h = self.input_embedding(spec)  # (batch * n_chans, n_frames, hidden_dim)
         z = self.transformer(h)  # (batch * n_chans, n_frames, hidden_dim)
 
         # 3. pool. Upstream averages the pool_n_frames encoder outputs centred
         #    on the window (spec_pretrained.py), not every frame; the mean over
         #    channels after it is the braindecode-native generalisation and is
         #    the identity when n_chans == 1.
-        z = z.reshape(batch_size, n_chans, seq_len, self.hidden_dim)
+        z = z.unflatten(
+            0, [batch_size, n_chans]
+        )  # (batch, n_chans, n_frames, hidden_dim)
         if self.pool_n_frames is not None:
-            middle = seq_len // 2
-            half = self.pool_n_frames // 2
-            z = z[:, :, middle - half : middle - half + self.pool_n_frames, :]
-        pooled = z.mean(dim=(1, 2))
+            start = n_frames // 2 - self.pool_n_frames // 2
+            z = z[:, :, start : start + self.pool_n_frames, :]
+        pooled = z.mean(dim=(1, 2))  # (batch, hidden_dim)
+        logits = self.final_layer(pooled)
         if return_features:
+            # A scripted model always returns the logits (single return type).
+            if torch.jit.is_scripting():
+                return logits
             return {"features": pooled, "cls_token": None}
-        return self.final_layer(pooled)
+        return logits
+
+
+class _STFTSpectrogram(nn.Module):
+    """Magnitude STFT spectrogram, computed inside the model.
+
+    Pure-torch replacement for BrainBERT's scipy front-end (``signal.stft`` +
+    magnitude + z-score), so the model consumes raw signal rather than a
+    pre-extracted spectrogram. No learnable parameters. Framing follows
+    :func:`scipy.signal.stft` with ``boundary="zeros"``, ``padded=True``, a
+    periodic Hann window and ``scaling="spectrum"``.
+
+    Upstream ships two recipes that differ in the order of the z-score and the
+    boundary trimming, and in how many frames are trimmed; see ``stft_clip`` and
+    ``stft_zscore_before_clip`` in :class:`BrainBERT`.
+
+    Parameters
+    ----------
+    nperseg : int
+        STFT window length, in samples.
+    noverlap : int
+        Number of samples of overlap between consecutive windows.
+    idx_freq_cutoff : int
+        Number of low-frequency one-sided bins kept (the model ``input_dim``).
+        A bin index, not a frequency: with ``nperseg=400`` at 2048 Hz, 40 bins
+        reach about 205 Hz.
+    clip : int
+        Number of boundary frames trimmed from each end (10 in the upstream
+        ``preprocessors/stft.py``, 5 in the demo notebook).
+    zscore_before_clip : bool
+        Whether the per-bin z-score over time is computed before the boundary
+        frames are trimmed (``preprocessors/stft.py``) or after (demo notebook).
+    """
+
+    def __init__(
+        self,
+        nperseg: int = 400,
+        noverlap: int = 350,
+        idx_freq_cutoff: int = 40,
+        clip: int = 10,
+        zscore_before_clip: bool = True,
+    ):
+        super().__init__()
+        if noverlap >= nperseg:
+            raise ValueError(f"noverlap ({noverlap}) must be < nperseg ({nperseg}).")
+        if idx_freq_cutoff > nperseg // 2 + 1:
+            raise ValueError(
+                f"idx_freq_cutoff ({idx_freq_cutoff}) exceeds the number of "
+                f"one-sided bins ({nperseg // 2 + 1}) for nperseg={nperseg}."
+            )
+        self.nperseg = nperseg
+        self.noverlap = noverlap
+        self.idx_freq_cutoff = idx_freq_cutoff
+        self.clip = clip
+        self.zscore_before_clip = zscore_before_clip
+        self.step = nperseg - noverlap
+        self.boundary_pad = nperseg // 2  # scipy boundary="zeros"
+        # scipy's periodic Hann window; non-persistent, rebuilt in __init__.
+        self.register_buffer(
+            "window", torch.hann_window(nperseg, periodic=True), persistent=False
+        )
+
+    def _padded_length(self, n_times: int) -> int:
+        """Signal length after scipy's ``boundary="zeros"`` and ``padded=True``."""
+        length = n_times + 2 * self.boundary_pad
+        return length + (-(length - self.nperseg)) % self.step
+
+    def n_frames(self, n_times: int) -> int:
+        """Number of output frames for a signal of ``n_times`` samples."""
+        n_seg = (self._padded_length(n_times) - self.nperseg) // self.step + 1
+        return n_seg - 2 * self.clip
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """``(batch, n_chans, n_times)`` -> ``(batch, n_chans, n_frames, cutoff)``."""
+        # scipy boundary="zeros": half a window of zeros on each end, then
+        # padded=True: extend so an integer number of segments fits.
+        n_times = x.shape[-1]
+        right_pad = self._padded_length(n_times) - n_times - self.boundary_pad
+        xp = F.pad(x, (self.boundary_pad, right_pad))  # (batch, n_chans, padded)
+        frames = xp.unfold(-1, self.nperseg, self.step)  # (b, c, n_frames, nperseg)
+        win = self.window.to(frames.dtype)
+        scale = 1.0 / win.sum()  # scaling="spectrum"
+        spec = torch.fft.rfft(frames * win, dim=-1)  # (b, c, n_frames, nperseg//2+1)
+        low = spec[..., : self.idx_freq_cutoff] * scale  # (b, c, n_frames, cutoff)
+        mag = low.abs()
+        # The time axis is -2. The z-score and the trimming happen in the order
+        # the recipe dictates (see the class docstring).
+        if self.zscore_before_clip:
+            mag = self._zscore(mag)
+            # upstream stft.py: a flat (e.g. dead) channel becomes ones. Written
+            # branch-free so torch.export sees no data-dependent guard.
+            degenerate = mag.flatten(start_dim=-2).std(dim=-1) == 0
+            mag = mag.masked_fill(degenerate[..., None, None], 1.0)
+        if self.clip:
+            mag = mag[..., self.clip : -self.clip, :]
+        if not self.zscore_before_clip:
+            mag = self._zscore(mag)
+        # upstream stft.py: NaNs surviving the statistics are zeroed, not kept.
+        return torch.nan_to_num(mag, nan=0.0)
+
+    @staticmethod
+    def _zscore(mag: torch.Tensor) -> torch.Tensor:
+        """Per-bin z-score over time (ddof=0); zero standard deviations become one."""
+        mean = mag.mean(dim=-2, keepdim=True)
+        std = mag.std(dim=-2, unbiased=False, keepdim=True)
+        std = std.masked_fill(std == 0, 1.0)
+        return (mag - mean) / std
+
+
+class _BrainBERTInputEmbedding(nn.Module):
+    """Upstream ``TransformerEncoderInput``: linear projection, fixed sinusoidal
+    position encoding, LayerNorm and dropout. ``in_proj`` and ``layer_norm``
+    keep the upstream names; the sinusoidal table is rebuilt, not persisted."""
+
+    def __init__(self, input_dim: int, hidden_dim: int, drop_prob: float, max_len: int):
+        super().__init__()
+        self.in_proj = nn.Linear(input_dim, hidden_dim)
+        self.layer_norm = nn.LayerNorm(hidden_dim)
+        self.dropout = nn.Dropout(p=drop_prob)
+        self.register_buffer(
+            "pe", sinusoidal_positional_encoding(max_len, hidden_dim), persistent=False
+        )
+
+    def forward(self, spec: torch.Tensor) -> torch.Tensor:
+        h = self.in_proj(spec)  # (batch, n_frames, hidden_dim)
+        h = h + self.pe[: h.size(1)]
+        h = self.layer_norm(h)
+        return self.dropout(h)

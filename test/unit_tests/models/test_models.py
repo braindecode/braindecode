@@ -20,6 +20,7 @@ import mne
 import numpy as np
 import pytest
 import torch
+from scipy.signal import stft
 from sklearn.utils import check_random_state
 from torch import nn
 
@@ -66,6 +67,7 @@ from braindecode.models import (
     TSception,
     USleep,
 )
+from braindecode.models.brainbert import _STFTSpectrogram
 from braindecode.models.eegpt import (
     _apply_rotary_emb,
     _Attention,
@@ -4175,6 +4177,42 @@ def test_emg2qwerty_feature_flags():
     assert isinstance(bundle_t, dict) and torch.equal(bundle_t["features"], out_t[1])
     assert m_t.get_config()["return_feature"] is True
     assert m_t.get_output_shape() == (1, emissions.shape[1], 99)
+
+
+# ---------------------------------------------------------------------------
+# BrainBERT
+# ---------------------------------------------------------------------------
+# BrainBERT-specific check; the generic model contract is covered by the
+# parametrized suites. The encoder was checked against upstream offline.
+
+
+def _brainbert_upstream_spectrogram(wav, clip, zscore_before_clip):
+    """Upstream scipy recipe: magnitude of the first 40 bins, per-bin z-score
+    (ddof=0, zero std replaced by one) and boundary trimming, in either order."""
+
+    def zscore(a):
+        std = a.std(axis=-1, ddof=0, keepdims=True)
+        std[std == 0] = 1.0
+        return (a - a.mean(axis=-1, keepdims=True)) / std
+
+    _, _, zxx = stft(wav, 2048, nperseg=400, noverlap=350)
+    mag = np.abs(zxx[:40])
+    if zscore_before_clip:  # preprocessors/stft.py, behind the released checkpoint
+        mag = zscore(mag)[:, clip:-clip]
+    else:  # notebooks/demo.ipynb
+        mag = zscore(mag[:, clip:-clip])
+    return np.nan_to_num(mag).T  # (n_frames, 40)
+
+
+@pytest.mark.parametrize("clip, zscore_before_clip", [(10, True), (5, False)])
+def test_brainbert_stft_front_end_matches_upstream_scipy(clip, zscore_before_clip):
+    wav = np.random.RandomState(0).randn(6000)
+    ref = _brainbert_upstream_spectrogram(wav, clip, zscore_before_clip)
+    module = _STFTSpectrogram(clip=clip, zscore_before_clip=zscore_before_clip)
+    ours = module(torch.from_numpy(wav).view(1, 1, -1))[0, 0].numpy()
+    assert ours.shape == ref.shape == (module.n_frames(len(wav)), 40)
+    # The residual is the float32 Hann window (scipy builds it in float64).
+    assert np.abs(ref - ours).max() < 5e-6
 
 
 @pytest.mark.parametrize("model_cls", [BDTCN, BENDR])
