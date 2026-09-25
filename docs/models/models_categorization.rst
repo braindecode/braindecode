@@ -160,6 +160,8 @@ categories can be found in the respective sections below.
       :class: no-scaled-link
 
      Large-scale foundation model layers require self-supervised pre-training to work effectively.
+     Examples include :class:`SignalJEPA`, :class:`CodeBrain`, and the multimodal
+     PSG models :class:`SleepFM` and :class:`SleepFMStager`.
 
 - Across most architectures, the earliest stages are convolutional
   (:bdg-success:`Convolution`), reflecting the brain time series's noisy, locally
