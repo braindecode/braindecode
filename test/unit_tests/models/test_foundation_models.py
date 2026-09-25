@@ -1251,3 +1251,21 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+def test_diver1_mup_attention_scale():
+    """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
+    import mne
+
+    from braindecode.models import DIVER1
+
+    info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
+    info.set_montage("standard_1020")
+    for mup in (True, False):
+        model = DIVER1(
+            chs_info=info["chs"], n_outputs=2, n_times=1000, mup_attention=mup
+        )
+        attention = [m for m in model.modules() if hasattr(m, "head_dim")]
+        assert attention
+        for module in attention:
+            assert module.scale == (1.0 / module.head_dim if mup else None)

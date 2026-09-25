@@ -142,6 +142,7 @@ interface for all EEG models and can derive variable names when needed.
      ContraWR
      CTNet
      DGCNN
+     DIVER1
      Deep4Net
      DeepSleepNet
      EEGConformer
