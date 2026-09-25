@@ -8,6 +8,8 @@ the STFT front-end moved inside the model. See :class:`BrainBERT`.
 
 from __future__ import annotations
 
+import warnings
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -36,7 +38,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
     frame thus serves downstream decoding.
 
     In the present implementation, we compute the STFT inside ``forward`` (the
-    ``_STFTSpectrogram`` module of this file), so that the model still takes the
+    ``spectrogram`` submodule), so that the model still takes the
     standard ``(batch, n_chans, n_times)`` input, whereas the upstream reference
     takes a pre-computed spectrogram as input. The input encoding and the encoder
     match the upstream ``MaskedTFModel`` to 1e-5.
@@ -68,12 +70,19 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
                "braindecode/brainbert-pretrained", n_outputs=2
            )
 
-       It has the "large" configuration above; ``n_chans`` and ``n_outputs`` may
-       change freely, since the frames are pooled and the head is specific to the
-       task. The upstream repository provides no LICENSE file, so we mark the
-       licence of the weights as unknown rather than assume a permissive one.
+       It has the "large" configuration above; ``n_chans``, ``n_times`` and
+       ``n_outputs`` may change freely, since the frames are pooled and the head
+       is specific to the task (pass these, not ``chs_info`` or
+       ``input_window_seconds``, which conflict with the saved config). The
+       upstream repository provides no LICENSE file, so we mark the licence of
+       the weights as unknown rather than assume a permissive one.
 
-    .. versionadded:: 1.8
+    .. note::
+       As in the upstream front-end, a channel whose z-scored spectrogram is
+       flat (a dead channel) is set to ones, and a ``NaN`` sample zeroes that
+       channel's whole spectrogram for the window, without a warning.
+
+    .. versionadded:: 1.9
 
     Parameters
     ----------
@@ -93,7 +102,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
     idx_freq_cutoff : int, optional
         Number of low-frequency STFT bins kept; the Transformer ``input_dim``.
         This is a **bin index**, not a frequency in Hz: the default 40 bins
-        reach about 205 Hz at 2048 Hz with ``nperseg=400``. Default 40.
+        reach about 200 Hz at 2048 Hz with ``nperseg=400``. Default 40.
     stft_clip : int, optional
         Boundary frames trimmed from each end of the spectrogram. Default 10,
         as in the upstream ``preprocessors/stft.py`` used with the released
@@ -166,8 +175,13 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             )
         self.pool_n_frames = pool_n_frames
         self.min_frames = 1 if pool_n_frames is None else pool_n_frames
+        if self._sfreq is not None and self._sfreq != 2048:
+            warnings.warn(
+                f"BrainBERT was pretrained at 2048 Hz; the STFT bins of a {self._sfreq}"
+                " Hz signal cover other frequencies. Resample to 2048 Hz.",
+                stacklevel=2,
+            )
 
-        # braindecode-native: the STFT is computed inside forward.
         self.spectrogram = _STFTSpectrogram(
             nperseg=nperseg,
             noverlap=noverlap,
@@ -175,11 +189,20 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             clip=stft_clip,
             zscore_before_clip=stft_zscore_before_clip,
         )
-        self.seq_len = self.spectrogram.n_frames(self.n_times)
+        n_frames = self.spectrogram.n_frames(self.n_times)
+        if n_frames < self.min_frames:
+            min_n_times = self.spectrogram.min_n_times(self.min_frames)
+            raise ValueError(
+                f"n_times={self.n_times} gives {n_frames} STFT frames; the pooling "
+                f"needs {self.min_frames}, i.e. n_times >= {min_n_times} with these "
+                "STFT settings."
+            )
 
         # The re-hosted Hub checkpoint already uses this port's names. The
         # authors' original ``.pth`` calls the input block ``input_encoding``;
-        # load it with ``strict=False`` (its fixed ``pe`` table is rebuilt here).
+        # load ``torch.load(path, weights_only=False)["model"]`` with
+        # ``strict=False`` (its fixed ``pe`` table and pre-training head are
+        # dropped).
         self.mapping = {
             f"input_encoding.{name}": f"input_embedding.{name}"
             for name in (
@@ -195,7 +218,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             hidden_dim=hidden_dim,
             drop_prob=drop_prob,
             # upstream table size; inputs longer than n_times stay allowed.
-            max_len=max(5000, self.seq_len),
+            max_len=max(5000, n_frames),
         )
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
@@ -205,7 +228,11 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             dropout=drop_prob,
             batch_first=True,
         )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+        # No padding mask is ever passed, so the nested-tensor fast path (and its
+        # warning for activations other than ReLU/GELU) is simply off.
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer, num_layers=n_layers, enable_nested_tensor=False
+        )
         # Each channel is its own sequence for the Transformer, as upstream feeds
         # one electrode at a time; the pooling then averages frames and channels.
         self.merge_channels = Rearrange(
@@ -246,7 +273,10 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
             Class logits of shape ``(batch, n_outputs)``, or the feature dict
             ``{"features", "cls_token"}`` when ``return_features`` is set.
         """
-        # 1. spectrogram front-end (braindecode-native, computed here).
+        if x.shape[1] != self.n_chans:
+            raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
+
+        # 1. spectrogram front-end.
         spec = self.spectrogram(x)  # (batch, n_chans, n_frames, idx_freq_cutoff)
         n_frames = spec.shape[2]
         # An input shorter than the model was built for must still give enough
@@ -263,18 +293,16 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         z = self.transformer(h)  # (batch * n_chans, n_frames, hidden_dim)
         z = self.split_channels(z)  # (batch, n_chans, n_frames, hidden_dim)
 
-        # 3. pool: the pool_n_frames centre frames, as upstream
-        #    (spec_pretrained.py), then the mean over channels and frames.
+        # 3. pool the centre frames, then frames and channels.
         if self.pool_n_frames is not None:
             start = n_frames // 2 - self.pool_n_frames // 2
-            z = z[:, :, start : start + self.pool_n_frames]  # centre frames
+            z = z[:, :, start : start + self.pool_n_frames]
         pooled = self.pool(z)  # (batch, hidden_dim)
         logits = self.final_layer(pooled)
         if return_features:
-            # A scripted model always returns the logits (single return type).
             if torch.jit.is_scripting():
                 return logits
-            return {"features": pooled, "cls_token": None}
+            return {"features": pooled, "cls_token": None}  # nosec B105
         return logits
 
 
@@ -298,15 +326,11 @@ class _STFTSpectrogram(nn.Module):
     noverlap : int
         Number of samples of overlap between consecutive windows.
     idx_freq_cutoff : int
-        Number of low-frequency one-sided bins kept (the model ``input_dim``).
-        A bin index, not a frequency: with ``nperseg=400`` at 2048 Hz, 40 bins
-        reach about 205 Hz.
+        Number of low-frequency one-sided bins kept (a bin index, not Hz).
     clip : int
-        Number of boundary frames trimmed from each end (10 in the upstream
-        ``preprocessors/stft.py``, 5 in the demo notebook).
+        Number of boundary frames trimmed from each end.
     zscore_before_clip : bool
-        Whether the per-bin z-score over time is computed before the boundary
-        frames are trimmed (``preprocessors/stft.py``) or after (demo notebook).
+        Whether the per-bin z-score over time precedes the trimming.
     """
 
     def __init__(
@@ -318,18 +342,24 @@ class _STFTSpectrogram(nn.Module):
         zscore_before_clip: bool = True,
     ):
         super().__init__()
-        if noverlap >= nperseg:
-            raise ValueError(f"noverlap ({noverlap}) must be < nperseg ({nperseg}).")
-        if idx_freq_cutoff > nperseg // 2 + 1:
+        if not 0 <= noverlap < nperseg:
             raise ValueError(
-                f"idx_freq_cutoff ({idx_freq_cutoff}) exceeds the number of "
-                f"one-sided bins ({nperseg // 2 + 1}) for nperseg={nperseg}."
+                f"noverlap ({noverlap}) must be in [0, nperseg={nperseg})."
             )
+        if not 1 <= idx_freq_cutoff <= nperseg // 2 + 1:
+            raise ValueError(
+                f"idx_freq_cutoff ({idx_freq_cutoff}) must be in [1, "
+                f"{nperseg // 2 + 1}] for nperseg={nperseg}."
+            )
+        if clip < 0:
+            raise ValueError(f"clip must be >= 0; got {clip}.")
         self.nperseg = nperseg
-        self.noverlap = noverlap
         self.idx_freq_cutoff = idx_freq_cutoff
         self.clip = clip
         self.zscore_before_clip = zscore_before_clip
+        # "zscore" as upstream; pipelines that apply their own statistics (the
+        # Neuroprobe global z-score recipes) set it to "none" on the instance.
+        self.normalizing = "zscore"
         self.step = nperseg - noverlap
         self.boundary_pad = nperseg // 2  # scipy boundary="zeros"
         # scipy's periodic Hann window; non-persistent, rebuilt in __init__.
@@ -347,10 +377,19 @@ class _STFTSpectrogram(nn.Module):
         n_seg = (self._padded_length(n_times) - self.nperseg) // self.step + 1
         return n_seg - 2 * self.clip
 
+    def min_n_times(self, n_frames: int) -> int:
+        """Shortest signal that yields at least ``n_frames`` output frames."""
+        n_seg = n_frames + 2 * self.clip
+        return self.nperseg + (n_seg - 2) * self.step + 1 - 2 * self.boundary_pad
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """``(batch, n_chans, n_times)`` -> ``(batch, n_chans, n_frames, cutoff)``."""
         # scipy boundary="zeros": half a window of zeros on each end, then
         # padded=True: extend so an integer number of segments fits.
+        if not x.is_floating_point():
+            raise TypeError(
+                f"BrainBERT expects a floating-point signal, got {x.dtype}."
+            )
         n_times = x.shape[-1]
         right_pad = self._padded_length(n_times) - n_times - self.boundary_pad
         xp = F.pad(x, (self.boundary_pad, right_pad))  # (batch, n_chans, padded)
@@ -362,7 +401,7 @@ class _STFTSpectrogram(nn.Module):
         mag = low.abs()
         # The time axis is -2. The z-score and the trimming happen in the order
         # the recipe dictates (see the class docstring).
-        if self.zscore_before_clip:
+        if self.normalizing == "zscore" and self.zscore_before_clip:
             mag = self._zscore(mag)
             # upstream stft.py: a flat (e.g. dead) channel becomes ones. Written
             # branch-free so torch.export sees no data-dependent guard.
@@ -370,7 +409,7 @@ class _STFTSpectrogram(nn.Module):
             mag = mag.masked_fill(degenerate[..., None, None], 1.0)
         if self.clip:
             mag = mag[..., self.clip : -self.clip, :]
-        if not self.zscore_before_clip:
+        if self.normalizing == "zscore" and not self.zscore_before_clip:
             mag = self._zscore(mag)
         # upstream stft.py: NaNs surviving the statistics are zeroed, not kept.
         return torch.nan_to_num(mag, nan=0.0)
@@ -400,6 +439,10 @@ class _BrainBERTInputEmbedding(nn.Module):
 
     def forward(self, spec: torch.Tensor) -> torch.Tensor:
         h = self.in_proj(spec)  # (batch, n_frames, hidden_dim)
+        if h.size(1) > self.pe.size(0):
+            raise ValueError(
+                f"{h.size(1)} frames exceed the positional table ({self.pe.size(0)})."
+            )
         h = h + self.pe[: h.size(1)]
         h = self.layer_norm(h)
         return self.dropout(h)

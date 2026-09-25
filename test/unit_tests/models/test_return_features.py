@@ -22,13 +22,12 @@ from braindecode.models import (
     STEEGFormer,
 )
 from braindecode.models.labram import _LABRAM_TARGET_CHS_INFO
-from braindecode.models.util import models_mandatory_parameters
+from braindecode.models.util import _get_signal_params, models_mandatory_parameters
 
 N_CHANS, N_TIMES, N_OUTPUTS, BATCH = 22, 1000, 4, 2
-# Window length per model: the registry override when a model needs one
-# (e.g. BrainBERT pools 10 STFT frames, more than 1000 samples give).
+# Window length per model, from the registry.
 _N_TIMES = {
-    name: (sp if isinstance(sp, dict) else {}).get("n_times", N_TIMES)
+    name: _get_signal_params(sp)["n_times"]
     for name, _, sp in models_mandatory_parameters
 }
 
