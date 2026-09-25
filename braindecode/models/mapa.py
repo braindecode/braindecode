@@ -1,6 +1,6 @@
 # Authors: Julien Gadonneix <juliengado.2001@gmail.com>
 #
-# License: BSD (3-clause)
+# License: Apache-2.0
 """MAPA: masked autoencoding of iEEG with anatomical priors.
 
 Reimplementation of MAPA (Tang, Spalding & Cogan, 2026), "Pretraining for
@@ -115,6 +115,12 @@ _DKT_SUBCORTICAL_STRUCTURES: tuple[str, ...] = (
     "Thalamus-Proper",
 )
 
+#: FreeSurfer DKT region names, in the slot order of MAPA's region table.
+#:
+#: The 62 hemisphere-qualified cortical parcels come first, then the 12
+#: subcortical structures, which is the order that indexes the released region
+#: embedding. Slot ``len(MAPA_DKT_REGIONS)`` is the reserved slot given to a
+#: contact that falls outside every region.
 MAPA_DKT_REGIONS: tuple[str, ...] = tuple(
     f"ctx-{hemisphere}-{parcel}"
     for hemisphere in ("lh", "rh")
@@ -124,13 +130,6 @@ MAPA_DKT_REGIONS: tuple[str, ...] = tuple(
     for hemisphere in ("Left", "Right")
     for structure in _DKT_SUBCORTICAL_STRUCTURES
 )
-"""FreeSurfer DKT region names, in the slot order of MAPA's region table.
-
-The 62 hemisphere-qualified cortical parcels come first, then the 12
-subcortical structures, which is the order that indexes the released region
-embedding. Slot ``len(MAPA_DKT_REGIONS)`` is the reserved slot given to a
-contact that falls outside every region.
-"""
 
 _N_REGIONS = len(MAPA_DKT_REGIONS) + 1
 _UNASSIGNED_REGION = len(MAPA_DKT_REGIONS)
@@ -308,18 +307,21 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         slices windows out of the normalized spectrogram. A braindecode model
         sees one window at a time, so ``normalization="window"`` fits the same
         median and scaled median absolute deviation on the window itself. This
-        is the one place where this port cannot reproduce the reference
-        numerically: for windows of a second or so the statistics come from a
-        few dozen frames rather than a whole session. ``normalization="none"``
-        leaves the magnitudes as the transforms give them, for a caller whose
-        windows were scaled upstream so that the z-score is already implicit.
+        one of two places where this port departs numerically from the
+        reference: for windows of a second or so the statistics come from a few
+        dozen frames rather than a whole session. The other is the spectrogram
+        itself, which the reference computes once per session and this port
+        computes per window, with centre reflect-padding at the window edges.
+        Because the STFT runs inside :meth:`forward`, ``normalization="none"``
+        feeds the raw STFT magnitude to the stem; it does not reproduce the
+        reference inputs.
 
         The features this model pools are the encoder's own output, the
         concatenation of the four normed deep-supervision taps. The paper's
         frozen evaluation instead reads block 12 straight off the residual
         stream, before that norm, and fits a ridge probe on every token of
-        every contact, which ``pooling="flatten"`` reproduces up to the choice
-        of regularizer.
+        every contact. ``pooling="flatten"`` flattens the normed four-tap
+        concatenation, so it is not that read-out.
 
         The masked autoencoding objective, its decoder, the anatomical
         localization and the artifact detectors ("Guard 1" and "Guard 2") are
