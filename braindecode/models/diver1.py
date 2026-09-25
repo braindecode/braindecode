@@ -239,18 +239,25 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. rubric:: Pre-trained weights
 
-    The released iEEG encoder, DIVER-1-0.1s Tiny (``patch_size=50`` at 500 Hz,
-    ``d_model=256``, ``n_layers=12``), is on the Hugging Face Hub::
+    Both released encoders are on the Hugging Face Hub, all at 500 Hz:
+
+    - ``braindecode/DIVER-1-0.1s-tiny``: the iEEG encoder (``patch_size=50``,
+      ``d_model=256``, ``n_layers=12``), ``weights/ieeg_pretrained_weights.pt``;
+    - ``braindecode/DIVER-1-1s-small``: the joint iEEG and EEG encoder of paper
+      versions 1 and 2 (``patch_size=500``, ``d_model=512``, ``n_layers=12``),
+      ``weights/i_eeg_pretrained_weights.pt``.
+
+    ::
 
         model = DIVER1.from_pretrained(
             "braindecode/DIVER-1-0.1s-tiny", chs_info=raw.info["chs"],
             n_times=500, n_outputs=2,
         )
 
-    It is the official ``weights/ieeg_pretrained_weights.pt`` converted by
-    ``scripts/convert_diver1_weights.py``, whose encoder features match the
-    reference model exactly on CPU. The release has no classification head, so
-    the head is initialized on load and needs fine-tuning.
+    ``scripts/convert_diver1_weights.py`` converts the official files; the
+    encoder features match the reference model exactly on CPU. The releases
+    have no classification head, so the head is initialized on load and needs
+    fine-tuning.
 
     .. rubric:: License
 
@@ -262,7 +269,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Numerical equivalence of the encoder features with the reference
         implementation has been verified layer by layer, for both patch-size
         variants, by transplanting a randomly initialised reference state dict,
-        and with the released iEEG checkpoint, whose encoder features match
+        and with both released checkpoints, whose encoder features match
         exactly on CPU (``scripts/convert_diver1_weights.py``). The comparison requires
         disabling the reference's attention dropout, which stays active in eval
         mode there because ``dropout_p`` is passed straight to

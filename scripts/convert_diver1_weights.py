@@ -1,21 +1,23 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 # License: BSD (3-clause)
-"""Convert, check and publish the released DIVER-1 iEEG encoder on CPU.
+"""Convert, check and publish the two released DIVER-1 encoders on CPU.
 
 Run from an editable Braindecode checkout with the ``hub`` extra installed::
 
-    python scripts/convert_diver1_weights.py \\
-        --checkpoint ieeg_pretrained_weights.pt \\
+    python scripts/convert_diver1_weights.py --weights-dir DIVER-1/weights \\
         --reference-dir DIVER-1 --output-dir /tmp/diver1-converted
 
-``--checkpoint`` is ``weights/ieeg_pretrained_weights.pt`` of the official
-repository. Its GitHub LFS object is no longer served, so download it from the
-authors' Google Drive folder linked in their README; the SHA-256 below must
-match. ``--reference-dir`` is a clone of the official repository at
-``REVISION``: its model runs on the same input as the converted port, and the
-encoder features must agree within ``TOLERANCE``.
+``--weights-dir`` holds the release files of the official repository,
+``ieeg_pretrained_weights.pt`` (0.1 s Tiny, iEEG) and
+``i_eeg_pretrained_weights.pt`` (1 s Small, iEEG and EEG). Their GitHub LFS
+objects are no longer served, so download them from the authors' Google Drive
+folder linked in their README; the SHA-256 values below must match.
+``--reference-dir`` is a clone of the official repository at ``REVISION``: its
+model runs on the same input as the converted port, for intracranial and scalp
+channels, and the encoder features must agree within ``TOLERANCE``.
+``--variant`` converts one checkpoint only.
 
-Add ``--push-to braindecode`` to upload the converted encoder with
+Add ``--push-to braindecode`` to upload each converted encoder with
 :meth:`~braindecode.models.base.EEGModuleMixin.push_to_hub`, together with this
 script, the MIT licence of the weights and a model card. The release holds
 pretraining heads but no classification head, so the published files hold the
@@ -41,13 +43,37 @@ from braindecode.models import DIVER1
 
 REPOSITORY = "https://github.com/DIVER-Project/DIVER-1"
 REVISION = "25638eb38ef297b582ab79ae1c96260f57c155b3"
-CHECKPOINT = "weights/ieeg_pretrained_weights.pt"
-SHA256 = "b812093779fb5cf1b76e18f8307df4136b67b008b6cd94c6be75fa286a87864c"
 DRIVE = "https://drive.google.com/drive/folders/1Wmv36jifjE0Jj6noGOFFsqRzK-4xnj1b"
-REPO_NAME = "DIVER-1-0.1s-tiny"
-# DIVER-1-0.1s Tiny: scripts/finetune_neuroprobe.sh (width 256, depth 12, patch
-# 50 at 500 Hz) in the official repository.
-CONFIG = dict(sfreq=500.0, patch_size=50, d_model=256, n_layers=12, mup_attention=True)
+# Width, depth and patch size of each release file, as the official scripts load
+# them (all at 500 Hz, with muP attention): scripts/finetune_neuroprobe.sh for the
+# iEEG encoder, scripts/finetune_{faced,physionet,mentalarithmetic}.sh for the
+# joint iEEG and EEG one.
+VARIANTS = {
+    "tiny": dict(
+        filename="ieeg_pretrained_weights.pt",
+        sha256="b812093779fb5cf1b76e18f8307df4136b67b008b6cd94c6be75fa286a87864c",
+        repo="DIVER-1-0.1s-tiny",
+        title="DIVER-1, 0.1 s Tiny (iEEG)",
+        summary="the iEEG encoder DIVER-1-0.1s Tiny (patches of 0.1 s at 500 Hz, "
+        "pretrained on intracranial recordings)",
+        script="scripts/finetune_neuroprobe.sh",
+        n_times=500,
+        config=dict(patch_size=50, d_model=256, n_layers=12),
+    ),
+    "small": dict(
+        filename="i_eeg_pretrained_weights.pt",
+        sha256="dbfa48289989475a52719b1bcb868e62a82877120ac8272ca7dab772e407b891",
+        repo="DIVER-1-1s-small",
+        title="DIVER-1, 1 s Small (iEEG and EEG)",
+        summary="the joint encoder DIVER-1-1s Small (patches of 1 s at 500 Hz, "
+        "pretrained on intracranial and scalp recordings; described in versions 1 "
+        "and 2 of the paper)",
+        script="scripts/finetune_faced.sh",
+        n_times=1000,
+        config=dict(patch_size=500, d_model=512, n_layers=12),
+    ),
+}
+COMMON = dict(sfreq=500.0, mup_attention=True)
 TOLERANCE = 1e-4
 RENAMES = {
     "token_manager.special_tokens.N_token.param": "patch_register",
@@ -150,13 +176,25 @@ def load_reference(reference_dir):
     return DIVER
 
 
-def check_against_reference(state, reference_dir, n_times, n_chans=6, batch=3):
+def placeholder_montage(n_chans, kind="seeg"):
+    """Channels without positions (zeros, which DIVER1 reads as unknown)."""
+    chs = mne.create_info([f"C{i}" for i in range(n_chans)], COMMON["sfreq"], kind)[
+        "chs"
+    ]
+    for ch in chs:
+        ch["loc"][:] = 0.0  # not NaN: config.json must stay valid JSON
+    return chs
+
+
+def check_against_reference(
+    state, config, reference_dir, n_times, kind, n_chans=6, batch=3
+):
     """Largest encoder-feature difference between the port and the reference."""
     reference = load_reference(reference_dir)(
-        d_model=CONFIG["d_model"],
-        e_layer=CONFIG["n_layers"],
+        d_model=config["d_model"],
+        e_layer=config["n_layers"],
         mup=True,
-        patch_size=CONFIG["patch_size"],
+        patch_size=config["patch_size"],
     )
     reference.load_state_dict({k: v.float() for k, v in state.items()}, strict=False)
     for module in reference.modules():
@@ -166,18 +204,18 @@ def check_against_reference(state, reference_dir, n_times, n_chans=6, batch=3):
     reference.eval()
     rng = np.random.default_rng(0)
     xyz_mm = torch.tensor(rng.uniform(-60, 60, size=(n_chans, 3)), dtype=torch.float32)
-    chs = mne.create_info([f"C{i}" for i in range(n_chans)], CONFIG["sfreq"], "seeg")[
-        "chs"
-    ]
+    chs = placeholder_montage(n_chans, kind)
     for ch, xyz in zip(chs, xyz_mm):
-        ch["loc"][:3] = (
-            xyz / 1e3
-        ).numpy()  # MNE metres; the reference takes millimetres
-    model = DIVER1(chs_info=chs, n_times=n_times, n_outputs=2, **CONFIG).eval()
+        ch["loc"][:3] = (xyz / 1e3).numpy()  # MNE metres; the reference takes mm
+    model = DIVER1(
+        chs_info=chs, n_times=n_times, n_outputs=2, **config, **COMMON
+    ).eval()
     convert_weights(state, model)
     x = torch.randn(batch, n_chans, n_times)
+    # The port reads modality and sub-modality from the channel kind.
+    modality, subtype = ("iEEG", "depth") if kind == "seeg" else ("EEG", "Unknown")
     info = [
-        {"xyz_id": xyz_mm, "modality": "iEEG", "coord_subtype": ["depth"] * n_chans}
+        {"xyz_id": xyz_mm, "modality": modality, "coord_subtype": [subtype] * n_chans}
     ] * batch
     with torch.no_grad():
         expected = reference(x, data_info_list=info, use_mask=False)[
@@ -206,7 +244,9 @@ def without_head(model):
         model.final_layer = head
 
 
-def model_card(report):
+def model_card(variant, report):
+    v = VARIANTS[variant]
+    patch = v["config"]["patch_size"]
     return f"""---
 library_name: braindecode
 license: mit
@@ -216,39 +256,43 @@ tags:
 - DIVER-1
 - ieeg
 - seeg
+- eeg
 - foundation-model
 - pytorch_model_hub_mixin
 ---
 
-# DIVER-1, 0.1 s Tiny (iEEG)
+# {v["title"]}
 
-The released iEEG encoder of [Han et al. (2025)](https://arxiv.org/abs/2512.19097),
-DIVER-1-0.1s Tiny (12.7M parameters, patches of 0.1 s at 500 Hz), converted to
+The released encoder of [Han et al. (2025)](https://arxiv.org/abs/2512.19097),
+{v["summary"]}, {report["n_params"] / 1e6:.1f}M parameters, converted to
 [`braindecode.models.DIVER1`](https://braindecode.org/stable/generated/braindecode.models.DIVER1.html).
 
-Source: `{CHECKPOINT}` of [DIVER-Project/DIVER-1]({REPOSITORY}/tree/{REVISION}),
-sha256 `{SHA256}` (the GitHub LFS object is no longer served; the same file is in
+Source: `weights/{v["filename"]}` of [DIVER-Project/DIVER-1]({REPOSITORY}/tree/{REVISION}),
+sha256 `{v["sha256"]}` (the GitHub LFS object is no longer served; the same file is in
 the authors' [Google Drive folder]({DRIVE})). Conversion casts the bfloat16
 tensors to float32, renames them and drops the pretraining-only mask token and
 reconstruction heads; `convert_diver1_weights.py` in this repository reproduces
 it. Encoder features match the official model to {report["max_abs_diff"]:.1e} in
-float32 on CPU, with muP attention scaling (`mup_attention=True`).
+float32 on CPU, for intracranial and scalp channels, with muP attention scaling
+(`mup_attention=True`).
 
 ## Usage
 
-Resample to 500 Hz and pass the electrode positions in `chs_info` (metres, as in MNE):
+Resample to 500 Hz and pass the electrode positions in `chs_info` (metres, as in
+MNE). The channel kinds set the modality: SEEG, ECoG and DBS are intracranial,
+EEG is scalp.
 
 ```python
 import torch
 from braindecode.models import DIVER1
 
 model = DIVER1.from_pretrained(
-    "braindecode/{REPO_NAME}", chs_info=raw.info["chs"], n_times=500, n_outputs=2
+    "braindecode/{v["repo"]}", chs_info=raw.info["chs"], n_times={v["n_times"]}, n_outputs=2
 )
-logits = model(torch.randn(8, len(raw.ch_names), 500))
+logits = model(torch.randn(8, len(raw.ch_names), {v["n_times"]}))
 ```
 
-`n_times` must be a multiple of 50. The saved geometry is {report["n_chans"]}
+`n_times` must be a multiple of {patch}. The saved geometry is {report["n_chans"]}
 channels and {report["n_times"]} samples; the encoder does not depend on it, so
 pass your own montage, `n_times` and `n_outputs` when loading.
 
@@ -256,7 +300,7 @@ pass your own montage, `n_times` and `n_outputs` when loading.
 
 These files hold the encoder only; the release has no classification head.
 Braindecode initializes the head on load, so it needs fine-tuning, as in the
-paper's protocol (`scripts/finetune_neuroprobe.sh`). The check above covers
+paper's protocol (`{v["script"]}`). The check above covers
 float32 CPU encoder features, not downstream accuracy, GPU kernels or mixed
 precision.
 
@@ -278,62 +322,64 @@ Braindecode's code is BSD-3-Clause.
 """
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--reference-dir", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--n-chans", type=int, default=6)
-    parser.add_argument("--n-times", type=int, default=500)
-    parser.add_argument("--n-outputs", type=int, default=2)
-    parser.add_argument("--push-to", help="Hub namespace to publish the model to")
-    args = parser.parse_args()
-    torch.set_num_threads(1)
-    torch.manual_seed(0)
-    if sha256(args.checkpoint) != SHA256:
-        raise SystemExit(
-            f"{args.checkpoint} is not the released checkpoint (sha256 mismatch)"
+def convert(variant, args):
+    """Convert, check and write one release file; push it if asked."""
+    v = VARIANTS[variant]
+    path = args.weights_dir / v["filename"]
+    if sha256(path) != v["sha256"]:
+        raise SystemExit(f"{path} is not the released checkpoint (sha256 mismatch)")
+    state = torch.load(path, map_location="cpu", weights_only=True)["module"]
+    state = {k: t for k, t in state.items() if torch.is_tensor(t)}
+    n_times = args.n_times or v["n_times"]
+    max_abs_diff = max(
+        check_against_reference(
+            state, v["config"], args.reference_dir, n_times, kind, n_chans=args.n_chans
         )
-    state = torch.load(args.checkpoint, map_location="cpu", weights_only=True)["module"]
-    state = {k: v for k, v in state.items() if torch.is_tensor(v)}
-    max_abs_diff = check_against_reference(
-        state, args.reference_dir, args.n_times, n_chans=args.n_chans
+        for kind in ("seeg", "eeg")
     )
     if max_abs_diff > TOLERANCE:
         raise SystemExit(f"encoder features differ by {max_abs_diff:.2e} > {TOLERANCE}")
-    # A placeholder montage without positions: users pass their own chs_info
-    # when loading, and the encoder weights do not depend on it.
-    chs = mne.create_info(
-        [f"C{i}" for i in range(args.n_chans)], CONFIG["sfreq"], "seeg"
-    )["chs"]
+    # Users pass their own chs_info when loading; the weights do not depend on it.
     model = DIVER1(
-        chs_info=chs, n_times=args.n_times, n_outputs=args.n_outputs, **CONFIG
+        chs_info=placeholder_montage(args.n_chans),
+        n_times=n_times,
+        n_outputs=args.n_outputs,
+        **v["config"],
+        **COMMON,
     ).eval()
     mapped = convert_weights(state, model)
     report = {
-        "source": f"{REPOSITORY}@{REVISION}:{CHECKPOINT}",
-        "sha256": SHA256,
+        "source": f"{REPOSITORY}@{REVISION}:weights/{v['filename']}",
+        "sha256": v["sha256"],
         "tensors_loaded": len(mapped),
         "tensors_dropped": sorted(k for k in state if rename(k) is None),
+        "n_params": sum(t.numel() for t in mapped.values()),
         "max_abs_diff": max_abs_diff,
         "n_chans": args.n_chans,
-        "n_times": args.n_times,
+        "n_times": n_times,
         "torch_version": torch.__version__,
     }
     print(json.dumps(report, indent=2))
-    destination = args.output_dir / REPO_NAME
+    destination = args.output_dir / v["repo"]
     destination.mkdir(parents=True, exist_ok=True)
     with without_head(model):
         model.save_pretrained(destination)
+    # The Hub rejects NaN and Infinity, which Python's json writes by default.
+    json.loads(
+        (destination / "config.json").read_text(),
+        parse_constant=lambda c: (_ for _ in ()).throw(
+            ValueError(f"{c} in config.json")
+        ),
+    )
     shutil.copyfile(Path(__file__).resolve(), destination / Path(__file__).name)
     (destination / "LICENSE").write_text(LICENSE)
     (destination / "report.json").write_text(json.dumps(report, indent=2))
     # Written last: save_pretrained leaves a placeholder card behind.
-    (destination / "README.md").write_text(model_card(report))
+    (destination / "README.md").write_text(model_card(variant, report))
     if args.push_to:
         from huggingface_hub import HfApi
 
-        repo_id = f"{args.push_to}/{REPO_NAME}"
+        repo_id = f"{args.push_to}/{v['repo']}"
         with without_head(model):
             model.push_to_hub(repo_id)
         api = HfApi()
@@ -344,6 +390,23 @@ def main():
                 repo_id=repo_id,
             )
         print(f"published https://huggingface.co/{repo_id}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--weights-dir", type=Path, required=True)
+    parser.add_argument("--reference-dir", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--variant", choices=sorted(VARIANTS), action="append")
+    parser.add_argument("--n-chans", type=int, default=6)
+    parser.add_argument("--n-times", type=int, help="default: 1 s (tiny), 2 s (small)")
+    parser.add_argument("--n-outputs", type=int, default=2)
+    parser.add_argument("--push-to", help="Hub namespace to publish the models to")
+    args = parser.parse_args()
+    torch.set_num_threads(1)
+    for variant in args.variant or VARIANTS:
+        torch.manual_seed(0)
+        convert(variant, args)
 
 
 if __name__ == "__main__":
