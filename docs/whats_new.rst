@@ -36,7 +36,9 @@ Enhancements
   contact, offset by a learned region embedding, and mixed by a transformer
   whose attention stays inside one array and carries a two-axis rotary encoding
   on the contact number and on time. One instance encodes recordings from
-  different subjects, by passing each one's electrode metadata to ``forward``
+  different subjects, by passing each one's electrode metadata to ``forward``,
+  and ``normalization="session"`` takes a spectrogram normalized over the whole
+  recording, which reproduces the reference inputs
   (:gh:`1178` by `Julien Gadonneix`_).
 
 - Add :class:`braindecode.models.VEMG2Pose`,
