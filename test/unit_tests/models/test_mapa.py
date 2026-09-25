@@ -96,3 +96,51 @@ def test_bad_sensor_indices_are_rejected(model, sensor_indices, match):
 def test_window_shorter_than_one_slow_token_is_rejected(model):
     with pytest.raises(ValueError, match="at least 448 samples"):
         model(torch.randn(1, len(SUBJECT_A), 256))
+
+
+def _session_model(**kwargs):
+    return MAPA(
+        n_outputs=4,
+        n_chans=len(SUBJECT_A),
+        n_times=32,
+        sfreq=32,
+        contact_labels=SUBJECT_A,
+        d_model=64,
+        normalization="session",
+        **kwargs,
+    ).eval()
+
+
+def test_session_normalization_matches_window_normalization_on_its_bands(model):
+    """Handed the bands window normalization computes, session mode is identical."""
+    session = _session_model()
+    session.load_state_dict(model.state_dict())
+    x = torch.randn(2, len(SUBJECT_A), 2048)
+    frames = torch.cat(model.frontend._stft_bands(x), dim=2)
+    with torch.no_grad():
+        torch.testing.assert_close(session(frames), model(x))
+
+
+def test_session_normalization_reads_another_subject():
+    frames = torch.randn(2, len(SUBJECT_B), 20, 64)
+    with torch.no_grad():
+        y = _session_model()(frames, MAPA.sensor_indices(SUBJECT_B))
+    assert y.shape == (2, 4)
+
+
+@pytest.mark.parametrize(
+    "shape,match",
+    [
+        ((1, 5, 2048), "takes a spectrogram"),
+        ((1, 5, 19, 32), "takes a spectrogram"),
+        ((1, 5, 20, 4), "at least 8 frames"),
+    ],
+)
+def test_session_normalization_rejects_bad_input(shape, match):
+    with pytest.raises(ValueError, match=match):
+        _session_model()(torch.randn(shape))
+
+
+def test_raw_normalization_rejects_a_spectrogram(model):
+    with pytest.raises(ValueError, match="normalization='session'"):
+        model(torch.randn(1, len(SUBJECT_A), 20, 32))

@@ -50,6 +50,7 @@ _BANDS: tuple[tuple[str, int, int, int, int], ...] = (
     ("mid", 256, 2, 7, 2),
     ("fast", 128, 4, 10, 1),
 )
+_BAND_BINS: tuple[int, ...] = tuple(k1 - k0 + 1 for _, _, k0, k1, _ in _BANDS)
 # The slow band is the coarsest, so a window must hold a whole number of its
 # tokens.
 _FRAME_QUANTUM = max(stride for *_, stride in _BANDS)
@@ -192,7 +193,8 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
       magnitude of an inclusive bin slice per band; robust z-score each contact
       and bin; clip to the published caps; decimate each band by its own
       stride. *Role:* produce the three normalized spectrograms the released
-      encoder consumes, from the raw voltage that braindecode passes around.
+      encoder consumes, from the raw voltage that braindecode passes around;
+      given a spectrogram normalized upstream, it only clips and decimates.
     - **Per-band stem** (``MAPA.stem``). *Operations:* one weight-shared linear
       layer per band maps that band's frequency bins to ``d_model``, and a
       learned per-band vector is added. *Role:* embed a patch while keeping the
@@ -279,6 +281,13 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
     ``1 + n_times // 64`` frames, truncated to a multiple of 8 so the slow band
     holds a whole number of tokens, which needs at least 448 samples.
 
+    With ``normalization="session"`` the input is already on the frame clock:
+    ``sfreq`` is 32 Hz and ``n_times`` counts frames, likewise truncated to a
+    multiple of 8. Each frame stacks the 20 retained bins, slow then mid then
+    fast, of the three magnitude spectrograms (Hann window, centred, hop 64 at
+    2048 Hz), each robust z-scored per contact and bin over the whole
+    recording.
+
     .. rubric:: Pre-trained weights
 
     Four checkpoints are published, all pretrained on Brain Treebank: the
@@ -304,17 +313,17 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         :func:`~torch.nn.functional.scaled_dot_product_attention` unchanged.
 
         The reference fits its robust z-score on a whole recording and then
-        slices windows out of the normalized spectrogram. A braindecode model
-        sees one window at a time, so ``normalization="window"`` fits the same
-        median and scaled median absolute deviation on the window itself. This
-        one of two places where this port departs numerically from the
-        reference: for windows of a second or so the statistics come from a few
-        dozen frames rather than a whole session. The other is the spectrogram
-        itself, which the reference computes once per session and this port
-        computes per window, with centre reflect-padding at the window edges.
-        Because the STFT runs inside :meth:`forward`, ``normalization="none"``
-        feeds the raw STFT magnitude to the stem; it does not reproduce the
-        reference inputs.
+        slices windows out of the normalized spectrogram. A model fed raw
+        windows cannot, so ``normalization="window"`` fits the same median and
+        scaled median absolute deviation on the window itself. This departs
+        from the reference twice: for windows of a second or so the statistics
+        come from a few dozen frames rather than a whole session, which also
+        erases the window's overall power, and the spectrogram is computed per
+        window, with centre reflect-padding at the window edges.
+        ``normalization="none"`` feeds the raw STFT magnitude to the stem.
+        Only ``normalization="session"`` reproduces the reference inputs: it
+        takes windows of the spectrogram the caller computed and normalized
+        over the whole recording, and keeps only the caps and the decimation.
 
         The features this model pools are the encoder's own output, the
         concatenation of the four normed deep-supervision taps. The paper's
@@ -363,9 +372,11 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         length, so one model reads any recording; ``"flatten"`` keeps every
         token, as the paper's frozen linear probe does, at the cost of a head
         that fits one montage and one window length only.
-    normalization : {"window", "none"}
-        Whether the spectrograms are robust z-scored on each window, or passed
-        to the stem as they come because they were normalized upstream.
+    normalization : {"window", "session", "none"}
+        ``"window"`` robust z-scores the spectrograms of each raw window;
+        ``"session"`` takes the spectrogram itself, normalized over the whole
+        recording upstream, as the reference does; ``"none"`` passes the raw
+        STFT magnitude to the stem.
     activation : type[nn.Module]
         Activation layer class of the feed-forward blocks, default
         :class:`~torch.nn.GELU`.
@@ -436,9 +447,10 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             )
         if pooling not in ("mean", "flatten"):
             raise ValueError(f"pooling must be 'mean' or 'flatten', got {pooling!r}.")
-        if normalization not in ("window", "none"):
+        if normalization not in ("window", "session", "none"):
             raise ValueError(
-                f"normalization must be 'window' or 'none', got {normalization!r}."
+                f"normalization must be 'window', 'session' or 'none', got "
+                f"{normalization!r}."
             )
 
         self.d_model = d_model
@@ -454,7 +466,16 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
             sfreq = float(self.sfreq)
         except ValueError:
             sfreq = None
-        if sfreq is not None and not math.isclose(sfreq, _SAMPLE_RATE):
+        if normalization == "session":
+            if sfreq is not None and not math.isclose(sfreq, _FRAME_RATE):
+                warnings.warn(
+                    f"normalization='session' takes a spectrogram on MAPA's "
+                    f"{_FRAME_RATE} Hz frame clock, but sfreq is {sfreq} Hz, so "
+                    f"the tokens run at another rate. Pass sfreq={_FRAME_RATE} "
+                    f"and count n_times in frames.",
+                    UserWarning,
+                )
+        elif sfreq is not None and not math.isclose(sfreq, _SAMPLE_RATE):
             warnings.warn(
                 f"MAPA's frequency bands and its 32 Hz frame clock are defined "
                 f"at {_SAMPLE_RATE} Hz, but sfreq is {sfreq} Hz, so the bands "
@@ -463,14 +484,14 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 UserWarning,
             )
 
-        self.n_frames = _frame_count(self.n_times)
+        self.n_frames = _frame_count(
+            self.n_times, spectrogram=normalization == "session"
+        )
         self.band_lengths = _band_lengths(self.n_frames)
         self.k_full = sum(self.band_lengths)
 
         self.frontend = _SpectrogramFrontend(normalization=normalization)
-        self.stem = _PerBandStem(
-            d_model=d_model, band_bins=tuple(k1 - k0 + 1 for _, _, k0, k1, _ in _BANDS)
-        )
+        self.stem = _PerBandStem(d_model=d_model, band_bins=_BAND_BINS)
         self.encoder = _Encoder(
             d_model=d_model,
             n_heads=d_model // _HEAD_DIM,
@@ -635,7 +656,9 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Parameters
         ----------
         x : torch.Tensor
-            Input of shape ``(batch, n_chans, n_times)``.
+            Raw signal of shape ``(batch, n_chans, n_times)``, or with
+            ``normalization="session"`` the normalized spectrogram of shape
+            ``(batch, n_chans, 20, n_frames)``.
         sensor_indices : torch.Tensor, optional
             ``(n_chans, 3)`` electrode metadata of the recording this batch
             comes from, one row of (array, contact number, region slot) per
@@ -650,8 +673,21 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         torch.Tensor
             Class logits of shape ``(batch, n_outputs)``.
         """
+        spectrogram = self.normalization == "session"
+        if spectrogram and (x.ndim != 4 or x.shape[2] != sum(_BAND_BINS)):
+            raise ValueError(
+                f"normalization='session' takes a spectrogram of shape (batch, "
+                f"n_chans, {sum(_BAND_BINS)}, n_frames), the slow, mid and fast "
+                f"bins stacked in that order, but got {tuple(x.shape)}."
+            )
+        if not spectrogram and x.ndim != 3:
+            raise ValueError(
+                f"MAPA takes a raw signal of shape (batch, n_chans, n_times), but "
+                f"got {tuple(x.shape)}. A precomputed spectrogram needs "
+                f"normalization='session'."
+            )
         indices = self._resolve_sensor_indices(sensor_indices, x)
-        n_frames = _frame_count(x.shape[-1])
+        n_frames = _frame_count(x.shape[-1], spectrogram=spectrogram)
         # Everything else adapts to the montage and the window, but a flattened
         # read-out is a fixed number of weights per token, so it can only ever
         # serve the grid it was built for.
@@ -694,13 +730,23 @@ class MAPA(EEGModuleMixin, nn.Module, license="apache-2.0"):
         return logits
 
 
-def _frame_count(n_times: int) -> int:
-    """Number of frames of the shared 32 Hz clock a window of this length gives."""
-    n_frames = ((1 + n_times // _HOP) // _FRAME_QUANTUM) * _FRAME_QUANTUM
+def _frame_count(n_times: int, spectrogram: bool = False) -> int:
+    """Number of frames of the shared 32 Hz clock a window of this length gives.
+
+    ``n_times`` counts samples of the raw signal, or frames when the input is
+    already a ``spectrogram``.
+    """
+    frames = n_times if spectrogram else 1 + n_times // _HOP
+    n_frames = (frames // _FRAME_QUANTUM) * _FRAME_QUANTUM
     if n_frames < _FRAME_QUANTUM:
+        minimum = (
+            f"{_FRAME_QUANTUM} frames"
+            if spectrogram
+            else f"{(_FRAME_QUANTUM - 1) * _HOP} samples, which is "
+            f"{_FRAME_QUANTUM} frames"
+        )
         raise ValueError(
-            f"MAPA needs a window of at least {(_FRAME_QUANTUM - 1) * _HOP} "
-            f"samples, which is {_FRAME_QUANTUM} frames of the 32 Hz clock and "
+            f"MAPA needs a window of at least {minimum} of the 32 Hz clock and "
             f"one token of the slow band, but got {n_times}."
         )
     return n_frames
@@ -972,13 +1018,14 @@ class _SpectrogramFrontend(nn.Module):
     samples so that they land on one 32 Hz frame clock, of which each band
     keeps an inclusive slice of rfft bins. The magnitudes are robust z-scored
     per contact and bin, bounded by the published caps, and decimated to the
-    band's own token rate.
+    band's own token rate. A spectrogram normalized upstream skips straight to
+    the caps.
 
     Parameters
     ----------
-    normalization : {"window", "none"}
-        Whether the magnitudes are robust z-scored on each window, or left as
-        they come because they were normalized upstream.
+    normalization : {"window", "session", "none"}
+        Whether the magnitudes are robust z-scored on each window, arrive as a
+        spectrogram normalized over the session, or are left as they come.
     """
 
     def __init__(self, normalization: str):
@@ -990,16 +1037,30 @@ class _SpectrogramFrontend(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
-        """Take ``(batch, n_chans, n_times)`` to one tensor per band.
+        """Take a raw window, or a spectrogram, to one tensor per band.
 
-        Returns ``(batch, n_chans, n_bins, n_tokens)`` tensors in the fixed
-        slow, mid, fast order.
+        The input is ``(batch, n_chans, n_times)``, or ``(batch, n_chans, 20,
+        n_frames)`` when ``normalization="session"``. Returns ``(batch,
+        n_chans, n_bins, n_tokens)`` tensors in the fixed slow, mid, fast
+        order.
         """
+        if self.normalization == "session":
+            n_frames = _frame_count(x.shape[-1], spectrogram=True)
+            bands = x[..., :n_frames].split(_BAND_BINS, dim=2)
+        else:
+            bands = self._stft_bands(x)
+        return [
+            band.clamp(-cap, cap)[..., ::stride]
+            for band, cap, (*_, stride) in zip(bands, _INPUT_CLIP_Z, _BANDS)
+        ]
+
+    def _stft_bands(self, x: torch.Tensor) -> list[torch.Tensor]:
+        """Take ``(batch, n_chans, n_times)`` to ``(batch, n_chans, n_bins, n_frames)``."""
         batch, n_chans = x.shape[0], x.shape[1]
         n_frames = _frame_count(x.shape[-1])
         waveform = x.reshape(batch * n_chans, x.shape[-1])
         bands = []
-        for (name, n_fft, k0, k1, stride), cap in zip(_BANDS, _INPUT_CLIP_Z):
+        for name, n_fft, k0, k1, _ in _BANDS:
             # A window shorter than the transform is zero-padded, as in the
             # reference, so the centred transform has something to reflect; the
             # frames past the true window are then dropped.
@@ -1019,11 +1080,7 @@ class _SpectrogramFrontend(nn.Module):
             band = spectrum[:, k0 : k1 + 1, :n_frames].abs()
             if self.normalization == "window":
                 band = _robust_z(band)
-            bands.append(
-                band.clamp(-cap, cap)[..., ::stride].reshape(
-                    batch, n_chans, k1 - k0 + 1, -1
-                )
-            )
+            bands.append(band.reshape(batch, n_chans, k1 - k0 + 1, n_frames))
         return bands
 
 
