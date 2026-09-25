@@ -41,6 +41,10 @@ Enhancements
   for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023), with
   pretrained weights (:gh:`1104` by `Adam Mounir`_).
 
+- Add pull request templates, including an exhaustive checklist for new model
+  contributions covering implementation conventions, registration,
+  documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
+
 Requirements
 ============
 

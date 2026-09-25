@@ -151,6 +151,8 @@ you should be aware that the Braindecode models must all follow certain conventi
 otherwise, your model will fail some tests.
 Please follow the detailed guide on *Adding a model to Braindecode* provided at
 [the end of this document](#adding-a-model-to-braindecode).
+When you open your pull request, an exhaustive checklist version of these
+requirements is available through the **New model** pull request template.
 
 #### Write Tests
 
