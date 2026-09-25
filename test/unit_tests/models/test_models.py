@@ -20,6 +20,7 @@ import mne
 import numpy as np
 import pytest
 import torch
+from scipy.signal import stft
 from sklearn.utils import check_random_state
 from torch import nn
 
@@ -34,6 +35,7 @@ from braindecode.models import (
     ATCNet,
     AttentionBaseNet,
     AttnSleep,
+    BrainBERT,
     BrainModule,
     ContraWR,
     Deep4Net,
@@ -66,6 +68,7 @@ from braindecode.models import (
     TSception,
     USleep,
 )
+from braindecode.models.brainbert import _STFTSpectrogram
 from braindecode.models.eegpt import (
     _apply_rotary_emb,
     _Attention,
@@ -4326,3 +4329,51 @@ def test_audited_model_parameter_headers_follow_numpydoc(model_name):
         f"{model_class.__name__} has parameter headers numpydoc misparses: "
         f"{malformed}"
     )
+
+
+# ---------------------------------------------------------------------------
+# BrainBERT
+# ---------------------------------------------------------------------------
+
+
+def _brainbert_upstream_spectrogram(wav, clip, zscore_before_clip):
+    """Upstream scipy recipe: magnitude of the first 40 bins, per-bin z-score
+    (ddof=0, zero std replaced by one), a fully flat window replaced by ones,
+    and boundary trimming in either order."""
+
+    def zscore(a):
+        std = a.std(axis=-1, ddof=0, keepdims=True)
+        std[std == 0] = 1.0
+        return (a - a.mean(axis=-1, keepdims=True)) / std
+
+    _, _, zxx = stft(wav, 2048, nperseg=400, noverlap=350)
+    mag = np.abs(zxx[:40])
+    if zscore_before_clip:  # preprocessors/stft.py, behind the released checkpoint
+        mag = zscore(mag)
+        if (mag.std() == 0).any():
+            mag = np.ones_like(mag)
+        mag = mag[:, clip:-clip]
+    else:  # notebooks/demo.ipynb
+        mag = zscore(mag[:, clip:-clip])
+    return np.nan_to_num(mag).T  # (n_frames, 40)
+
+
+@pytest.mark.parametrize("clip, zscore_before_clip", [(10, True), (5, False)])
+@pytest.mark.parametrize("n_times", [2048, 6000])  # 2048 needs scipy's right padding
+def test_brainbert_stft_front_end_matches_upstream_scipy(
+    clip, zscore_before_clip, n_times
+):
+    module = _STFTSpectrogram(clip=clip, zscore_before_clip=zscore_before_clip)
+    for wav in (np.random.RandomState(0).randn(n_times), np.zeros(n_times)):
+        ref = _brainbert_upstream_spectrogram(wav, clip, zscore_before_clip)
+        ours = module(torch.from_numpy(wav).view(1, 1, -1))[0, 0].numpy()
+        assert ours.shape == ref.shape == (module.n_frames(n_times), 40)
+        # The residual is the float32 Hann window (scipy builds it in float64).
+        assert np.abs(ref - ours).max() < 5e-6
+
+
+def test_brainbert_mapping_targets():
+    """The authors' ``input_encoding.*`` keys map onto real port parameters."""
+    model = BrainBERT(n_chans=1, n_outputs=2, n_times=2048)
+    state = model.state_dict()
+    assert model.mapping and all(target in state for target in model.mapping.values())

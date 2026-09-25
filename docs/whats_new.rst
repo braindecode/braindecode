@@ -37,6 +37,10 @@ Enhancements
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.BrainBERT`, a self-supervised foundation model
+  for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023), with
+  pretrained weights (:gh:`1104` by `Adam Mounir`_).
+
 Requirements
 ============
 
