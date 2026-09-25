@@ -239,21 +239,31 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. rubric:: Pre-trained weights
 
-    None. The reference repository ships a placeholder in place of
-    ``weights/ieeg_pretrained_weights.pt``, so no DIVER-1 checkpoint is publicly
-    available and this port provides the architecture only.
+    The released iEEG encoder, DIVER-1-0.1s Tiny (``patch_size=50`` at 500 Hz,
+    ``d_model=256``, ``n_layers=12``), is on the Hugging Face Hub::
+
+        model = DIVER1.from_pretrained(
+            "braindecode/DIVER-1-0.1s-tiny", chs_info=raw.info["chs"],
+            n_times=500, n_outputs=2,
+        )
+
+    It is the official ``weights/ieeg_pretrained_weights.pt`` converted by
+    ``scripts/convert_diver1_weights.py``, whose encoder features match the
+    reference model exactly on CPU. The release has no classification head, so
+    the head is initialized on load and needs fine-tuning.
 
     .. rubric:: License
 
-    Apache-2.0, inherited from the MOIRAI / ``uni2ts`` code that the reference
-    encoder is adapted from. The reference repository states no license of its
-    own, so check the terms of the original implementation before redistributing.
+    The code is Apache-2.0, inherited from the MOIRAI / ``uni2ts`` code that the
+    reference encoder is adapted from. The released weights are MIT-licensed by
+    the DIVER Project.
 
     .. note::
         Numerical equivalence of the encoder features with the reference
         implementation has been verified layer by layer, for both patch-size
-        variants, by transplanting a randomly initialised reference state dict
-        (no checkpoint exists to verify against). The comparison requires
+        variants, by transplanting a randomly initialised reference state dict,
+        and with the released iEEG checkpoint, whose encoder features match
+        exactly on CPU (``scripts/convert_diver1_weights.py``). The comparison requires
         disabling the reference's attention dropout, which stays active in eval
         mode there because ``dropout_p`` is passed straight to
         :func:`~torch.nn.functional.scaled_dot_product_attention`; this port
