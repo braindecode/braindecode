@@ -375,6 +375,12 @@ models_mandatory_parameters: list[
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 128.0}),
     ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
+    # The default 1000 samples leave 1 STFT frame; the centre pooling needs 10.
+    (
+        "BrainBERT",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_times": 2048, "sfreq": 2048.0},  # the pretraining rate, 1 s windows
+    ),
     (
         "InterpolatedBIOT",
         ["chs_info", "n_outputs", "sfreq", "n_times"],

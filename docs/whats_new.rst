@@ -37,17 +37,20 @@ Enhancements
   parallelism, preserving the test cases and gallery training workloads
   (:gh:`1161` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.BrainBERT`, a self-supervised foundation model
+  for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023), with
+  pretrained weights (:gh:`1104` by `Adam Mounir`_).
+
 - Add pull request templates, including an exhaustive checklist for new model
   contributions covering implementation conventions, registration,
   documentation, and benchmarking (:gh:`1169` by `Li Qing`_).
-
 
 Requirements
 ============
 
 - Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
-  RMS normalization in REVE and ZUNA now uses PyTorch's implementation while
-  retaining float32 accumulation. Intel macOS is no longer supported because
+  REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
+  explicit epsilon values. Intel macOS is no longer supported because
   PyTorch stopped providing its binary packages after 2.2.
   (:gh:`1174` by `Bruno Aristimunha`_)
 
