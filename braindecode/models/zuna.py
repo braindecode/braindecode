@@ -329,11 +329,12 @@ class ZUNA(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new number of outputs."""
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self.final_layer = nn.Sequential(
             Rearrange("batch channel latent -> batch (channel latent)"),
             nn.Linear(self.num_channels * self.latent_dim, n_outputs),
         )
+        self.final_layer.train(self.training)
 
 
 def _build_rotary_frequency_table(

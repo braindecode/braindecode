@@ -484,8 +484,9 @@ class MetaNeuromotorHand(EEGModuleMixin, nn.Module, license="cc-by-nc-4.0"):
 
     def reset_head(self, n_outputs: int) -> None:
         """Replace the classification head for a new number of outputs."""
+        self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
-        self._n_outputs = n_outputs
+        self.final_layer.train(self.training)
 
     def compute_output_lengths(self, input_lengths: torch.Tensor) -> torch.Tensor:
         """Compute the valid emission length for each input sequence.

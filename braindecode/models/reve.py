@@ -346,8 +346,9 @@ class REVE(EEGModuleMixin, nn.Module):
             )
 
     def reset_head(self, n_outputs):
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self._build_head(n_outputs)
+        self.final_layer.train(self.training)
 
     def get_positions(self, channel_names: list[str]) -> torch.Tensor:
         """Fetch channel positions from the position bank. The position bank is downloaded when the model is instantiated.

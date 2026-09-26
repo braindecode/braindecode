@@ -402,9 +402,10 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         Called by :meth:`from_pretrained` when the requested number of outputs
         differs from the pre-trained checkpoint (whose head is discarded).
         """
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
         self._init_weights(self.final_layer)  # match the constructor's head init
+        self.final_layer.train(self.training)
 
     def _chan_pos_idx_from_chs_info(self) -> torch.Tensor:
         """Resolve montage-vocabulary slots from the ``chs_info`` electrode names.

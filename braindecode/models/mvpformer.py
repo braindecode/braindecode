@@ -304,13 +304,14 @@ class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 nn.init.zeros_(module.bias)
 
     def reset_head(self, n_outputs):
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         head_in = (
             self.d_model if self.pooling == "mean" else self.n_chans * self.d_model
         )
         self.final_layer = nn.Linear(head_in, n_outputs, bias=False)
         # Match fresh construction (std=0.02), not the default Linear init.
         self._init_weights(self.final_layer)
+        self.final_layer.train(self.training)
 
     def forward(self, x, return_features: bool = False):
         # x: (batch, n_chans, n_times)

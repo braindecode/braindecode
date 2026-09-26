@@ -251,6 +251,7 @@ class BrainBERT(EEGModuleMixin, nn.Module, license="unknown"):
         self._set_n_outputs(n_outputs)
         head = nn.Linear(self.final_layer.in_features, n_outputs)
         self.final_layer = head.to(self.final_layer.weight)
+        self.final_layer.train(self.training)
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Decode a batch of signals.

@@ -457,6 +457,7 @@ class EMG2QwertyNet(EEGModuleMixin, nn.Module, license="cc-by-nc-sa-4.0"):
         self.final_layer = nn.Linear(old_head.in_features, n_outputs).to(
             device=old_head.weight.device, dtype=old_head.weight.dtype
         )
+        self.final_layer.train(self.training)
 
     def compute_output_lengths(self, input_lengths: torch.Tensor) -> torch.Tensor:
         """Map per-sample input lengths to CTC emission lengths.

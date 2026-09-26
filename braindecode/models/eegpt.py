@@ -370,11 +370,12 @@ class EEGPT(EEGModuleMixin, nn.Module):
         return self.target_encoder.num_patches[1]
 
     def reset_head(self, n_outputs):
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self.final_layer = _LinearConstraintProbe(
             **self.get_probe_params(),
             n_outputs=n_outputs,
         )
+        self.final_layer.train(self.training)
 
     def get_probe_params(self) -> dict:
         """Get parameters needed to create a _LinearConstraintProbe.
