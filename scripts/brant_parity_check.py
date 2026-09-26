@@ -105,7 +105,8 @@ def main() -> int:
 
     with torch.no_grad():
         up_time = up_t(mask=None, data=data, power=power, need_mask=False, use_power=True)
-        ours_time = ours_t(data, power)
+        # the port takes channels merged into the batch, as upstream does inside
+        ours_time = ours_t(data.flatten(0, 1), power.flatten(0, 1))
     t_diff = (up_time - ours_time).abs().max().item()
     print(f"temporal encoder : max|diff| = {t_diff:.2e}")
 

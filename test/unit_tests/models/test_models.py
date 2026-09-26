@@ -4338,7 +4338,7 @@ def test_brant_band_power_rate_is_independent_of_sfreq():
     from braindecode.models.brant import BRANT_FREQ_BANDS, _BandPowerFeatures
 
     x = torch.randn(2, 3, 1, 1500)
-    at_256 = _BandPowerFeatures(256.0, BRANT_FREQ_BANDS)(x)
+    at_256 = _BandPowerFeatures(256.0, BRANT_FREQ_BANDS, 1500)(x)
     model_250 = Brant(n_chans=3, n_outputs=2, n_times=1500, patch_size=1500, sfreq=250)
     # sfreq describes the data; the band edges follow band_power_sfreq (upstream fs=256).
     assert torch.equal(model_250.band_power(x), at_256)
@@ -4351,3 +4351,28 @@ def test_brant_head_is_a_bare_linear_layer():
     model.reset_head(5)
     assert model.n_outputs == 5 and model.final_layer.out_features == 5
     assert model.get_config()["n_outputs"] == 5
+
+
+def test_brant_rejects_channel_count_mismatch():
+    model = Brant(n_chans=2, n_outputs=3, n_times=1500, patch_size=1500).eval()
+    with pytest.raises(ValueError, match="channels"):
+        model(torch.randn(1, 5, 1500))
+
+
+def test_brant_scripts_and_matches_eager():
+    model = Brant(
+        n_chans=2,
+        n_outputs=3,
+        n_times=3000,
+        patch_size=1500,
+        embed_dim=32,
+        ffn_dim=64,
+        temporal_n_layers=1,
+        spatial_n_layers=1,
+        n_heads=2,
+    ).eval()
+    x = torch.randn(2, 2, 3000)
+    scripted = torch.jit.script(model)
+    assert torch.equal(scripted(x), model(x))
+    # Under scripting, return_features=True yields the logits (is_scripting guard).
+    assert torch.equal(scripted(x, return_features=True), model(x))

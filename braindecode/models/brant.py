@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+from einops.layers.torch import Rearrange, Reduce
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
@@ -94,7 +95,7 @@ class Brant(EEGModuleMixin, nn.Module):
     classification does not consume its output. Brant has no class token, so
     ``return_features=True`` returns ``cls_token=None``. The learned temporal
     positions require the runtime signal length to equal the configured
-    ``n_times``; channel count remains parameter-agnostic.
+    ``n_times``, and the input must have the configured ``n_chans`` channels.
 
     The upstream model operates on signals down-sampled to **250 Hz**, but its
     band-power features are computed at a fixed 256 Hz (upstream
@@ -221,7 +222,9 @@ class Brant(EEGModuleMixin, nn.Module):
             on_non_divisible="crop",
         )
         # braindecode-native: band-power computed inside forward (see module).
-        self.band_power = _BandPowerFeatures(band_power_sfreq, BRANT_FREQ_BANDS)
+        self.band_power = _BandPowerFeatures(
+            band_power_sfreq, BRANT_FREQ_BANDS, self.patch_size
+        )
         self.temporal_encoder = _BrantTemporalEncoder(
             patch_size=self.patch_size,
             d_model=self.embed_dim,
@@ -240,6 +243,20 @@ class Brant(EEGModuleMixin, nn.Module):
             n_heads=self.n_heads,
             drop_prob=self.drop_prob,
         )
+        # Each channel is its own sequence for the temporal encoder; the spatial
+        # encoder then sees the n_chans channel tokens of each patch.
+        self.merge_channels = Rearrange(
+            "batch chans patches samples -> (batch chans) patches samples"
+        )
+        self.split_time = Rearrange(
+            "(batch chans) patches dim -> (batch patches) chans dim",
+            chans=self.n_chans,
+        )
+        self.merge_time = Rearrange(
+            "(batch patches) chans dim -> batch chans patches dim",
+            patches=self.seq_len,
+        )
+        self.pool = Reduce("batch chans patches dim -> batch dim", "mean")
         # Upstream's seizure head is an MLP trained on private data; braindecode
         # ships a bare linear layer, as for BrainBERT.
         self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
@@ -262,6 +279,7 @@ class Brant(EEGModuleMixin, nn.Module):
             class logits, as ``{"features": pooled, "cls_token": None}``
             (braindecode foundation-model convention). Brant pools over channels
             and patches and has no class token, hence ``cls_token`` is ``None``.
+            A TorchScript-compiled model returns the logits instead.
 
         Returns
         -------
@@ -274,32 +292,30 @@ class Brant(EEGModuleMixin, nn.Module):
                 f"Brant was configured for {self.n_times} time samples, "
                 f"but received {x.shape[-1]}."
             )
+        if x.shape[1] != self.n_chans:
+            raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}.")
 
-        batch_size, n_chans, _ = x.shape
-        seq_len = self.seq_len
-        d_model = self.embed_dim
-
-        # 1. patch: split into non-overlapping patches (shared PatchTokenizer);
-        #    trailing samples that do not fill a whole patch are cropped.
+        # 1. patch: (batch, n_chans, n_times) -> (batch, n_chans, seq_len, patch_size)
         patches = self.patch_tokenizer(x)
-
-        # 2. log band-power features (computed here, not fed in as upstream).
+        # 2. log band-power features per patch: (batch, n_chans, seq_len, n_bands)
         power = self.band_power(patches)
-
-        # 3. temporal encoder over the seq_len consecutive patches, per channel.
-        time_z = self.temporal_encoder(patches, power)
-        time_z = time_z.reshape(batch_size, n_chans, seq_len, d_model)
-        time_z = time_z.transpose(1, 2).reshape(batch_size * seq_len, n_chans, d_model)
-
-        # 4. spatial encoder over the n_chans channels at each time index.
-        ch_z, _ = self.spatial_encoder(time_z)
-        emb = ch_z.reshape(batch_size, seq_len, n_chans, d_model).transpose(1, 2)
-
-        # 5. pool over channels and patches, then classify.
-        pooled = emb.mean(dim=(1, 2))
+        # 3. temporal encoder over the patches of each channel
+        tokens = self.merge_channels(patches)  # (batch * n_chans, seq_len, patch_size)
+        power = self.merge_channels(power)  # (batch * n_chans, seq_len, n_bands)
+        # (batch * n_chans, seq_len, embed_dim)
+        time_z = self.temporal_encoder(tokens, power)
+        # 4. spatial encoder over the channels of each patch
+        time_z = self.split_time(time_z)  # (batch * seq_len, n_chans, embed_dim)
+        ch_z, _ = self.spatial_encoder(time_z)  # (batch * seq_len, n_chans, embed_dim)
+        emb = self.merge_time(ch_z)  # (batch, n_chans, seq_len, embed_dim)
+        # 5. pool over channels and patches, then classify
+        pooled = self.pool(emb)  # (batch, embed_dim)
+        logits = self.final_layer(pooled)
         if return_features:
+            if torch.jit.is_scripting():
+                return logits
             return {"features": pooled, "cls_token": None}  # nosec B105
-        return self.final_layer(pooled)
+        return logits
 
 
 class _BandPowerFeatures(nn.Module):
@@ -315,12 +331,26 @@ class _BandPowerFeatures(nn.Module):
     bands : tuple of (float, float)
         Frequency band edges ``(low, high)`` in Hz. A frequency ``f`` belongs to
         a band when ``low < f <= high``.
+    patch_size : int
+        Number of samples per patch; fixes the periodogram frequency grid.
     """
 
-    def __init__(self, sfreq: float, bands: tuple[tuple[float, float], ...]):
+    def __init__(
+        self,
+        sfreq: float,
+        bands: tuple[tuple[float, float], ...],
+        patch_size: int,
+    ):
         super().__init__()
         self.sfreq = float(sfreq)
         self.bands = tuple(bands)
+        self.patch_size = int(patch_size)
+        # 0/1 membership of every periodogram bin in every band: (n_freqs, n_bands)
+        freqs = torch.fft.rfftfreq(self.patch_size, d=1.0 / self.sfreq)
+        matrix = torch.stack(
+            [((freqs > lo) & (freqs <= hi)).float() for lo, hi in self.bands], dim=1
+        )
+        self.register_buffer("band_matrix", matrix, persistent=False)
 
     def forward(self, patches: torch.Tensor) -> torch.Tensor:
         """Compute log band-power of every patch.
@@ -335,6 +365,11 @@ class _BandPowerFeatures(nn.Module):
         torch.Tensor
             Shape ``(batch, n_chans, seq_len, n_bands)``.
         """
+        if patches.shape[-1] != self.patch_size:
+            raise ValueError(
+                f"Expected patches of {self.patch_size} samples, "
+                f"got {patches.shape[-1]}."
+            )
         output_dtype = patches.dtype
         # CPU FFT does not accept reduced precision, while CUDA float16 FFT is
         # restricted to power-of-two lengths (the released patch size is 1500).
@@ -350,14 +385,12 @@ class _BandPowerFeatures(nn.Module):
         psd[..., 1:] = psd[..., 1:] * 2
         if n % 2 == 0:  # do not double the Nyquist bin
             psd[..., -1] = psd[..., -1] / 2
-        freqs = torch.fft.rfftfreq(n, d=1.0 / self.sfreq, device=patches.device)
 
-        out = []
-        for low, high in self.bands:
-            mask = (freqs > low) & (freqs <= high)
-            band = psd[..., mask].sum(dim=-1)
-            out.append(torch.log10(band + 1.0))
-        return torch.stack(out, dim=-1).to(dtype=output_dtype)
+        # Sum the PSD bins of each band: (batch, n_chans, seq_len, n_bands).
+        # Elementwise ops keep float32 under autocast; a matmul would be cast
+        # down to float16.
+        band = (psd.unsqueeze(-1) * self.band_matrix).sum(dim=-2)
+        return torch.log10(band + 1.0).to(dtype=output_dtype)
 
 
 class _BrantInputEmbedding(nn.Module):
@@ -371,14 +404,15 @@ class _BrantInputEmbedding(nn.Module):
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, data: torch.Tensor, power: torch.Tensor) -> torch.Tensor:
-        """Embed raw patches together with frequency and position information."""
-        batch_size, n_chans, seq_len, patch_size = data.shape
-        power = self.softmax(power)
-        power_emb = torch.einsum("hijk, kl->hijl", power, self.band_encoding)
+        """Embed raw patches together with frequency and position information.
 
-        data = data.reshape(batch_size * n_chans, seq_len, patch_size)
-        input_emb = self.proj(data)
-        input_emb = input_emb + power_emb.reshape(batch_size * n_chans, seq_len, -1)
+        ``data`` is ``(batch * n_chans, seq_len, patch_size)`` and ``power`` is
+        ``(batch * n_chans, seq_len, n_bands)``.
+        """
+        weights = self.softmax(power)  # (batch * n_chans, seq_len, n_bands)
+        power_emb = torch.einsum("bsk,kd->bsd", weights, self.band_encoding)
+        input_emb = self.proj(data)  # (batch * n_chans, seq_len, d_model)
+        input_emb = input_emb + power_emb
         return input_emb + self.positional_encoding
 
 
@@ -413,7 +447,8 @@ class _BrantTemporalEncoder(nn.Module):
         self.trans_enc = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
 
     def forward(self, data: torch.Tensor, power: torch.Tensor) -> torch.Tensor:
-        return self.trans_enc(self.input_embedding(data, power))
+        h = self.input_embedding(data, power)  # (batch * n_chans, seq_len, embed_dim)
+        return self.trans_enc(h)
 
 
 class _BrantSpatialEncoder(nn.Module):
