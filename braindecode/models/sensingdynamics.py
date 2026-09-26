@@ -328,6 +328,7 @@ class SensingDynamics(EEGModuleMixin, nn.Module):
             in_features=old.in_features, out_features=n_outputs
         ).to(device=old.weight.device, dtype=old.weight.dtype)
         self._init_weights(self.final_layer)
+        self.final_layer.train(self.training)
 
     @_disable_batch_norm_training_if_batch_size_one
     def forward(

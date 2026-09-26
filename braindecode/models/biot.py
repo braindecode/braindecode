@@ -236,12 +236,13 @@ class BIOT(EEGModuleMixin, nn.Module):
         )
 
     def reset_head(self, n_outputs):
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self.final_layer = _ClassificationHead(
             emb_size=self.embed_dim,
             n_outputs=n_outputs,
             activation=self._head_activation,
         )
+        self.final_layer.train(self.training)
 
     def forward(self, x, return_features=False):
         """

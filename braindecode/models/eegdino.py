@@ -259,9 +259,11 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         ``return_encoder_output`` (a linear-probe model thereby gains a real head),
         mirroring :meth:`braindecode.models.CBraMod.reset_head`.
         """
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self.return_encoder_output = False
+        self._update_init_kwargs(return_encoder_output=False)
         self.final_layer = self._make_head()
+        self.final_layer.train(self.training)
 
     def forward(self, x, return_features: bool | None = None):
         """Forward pass.

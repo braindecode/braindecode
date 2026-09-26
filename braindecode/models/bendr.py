@@ -354,9 +354,11 @@ class BENDR(EEGModuleMixin, nn.Module):
         )
 
     def reset_head(self, n_outputs):
-        self._n_outputs = n_outputs
+        self._set_n_outputs(n_outputs)
         self.include_final_layer = True
+        self._update_init_kwargs(final_layer=True)
         self._build_head(n_outputs)
+        self.final_layer.train(self.training)
 
     def forward(self, x, return_features=False):
         encoded = self.encoder(x)

@@ -537,12 +537,31 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         if n_outputs <= 0:
             raise ValueError(f"n_outputs must be positive; got {n_outputs}.")
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
+
+    def _update_init_kwargs(self, **init_kwargs) -> None:
+        """Record constructor arguments that change after construction.
+
+        Helper for :meth:`reset_head` implementations that also change a
+        constructor argument, for example turning a feature extractor into a
+        classifier. Keeps the braindecode init kwargs and the Hugging Face hub
+        config in sync, so :meth:`get_config` and ``save_pretrained`` rebuild
+        the architecture the model actually has.
+
+        Parameters
+        ----------
+        **init_kwargs
+            Constructor argument names mapped to their new values.
+        """
         for config in (
             getattr(self, "_braindecode_init_kwargs", None),
             getattr(self, "_hub_mixin_config", None),
         ):
-            if config is not None and "n_outputs" in config:
-                config["n_outputs"] = n_outputs
+            if config is None:
+                continue
+            for name, value in init_kwargs.items():
+                if name in config:
+                    config[name] = value
 
     def reset_head(self, n_outputs):
         """Replace the classification head for a new number of outputs.
@@ -550,6 +569,11 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         This is called automatically by :meth:`from_pretrained` when the
         user passes an ``n_outputs`` that differs from the saved config.
         Override in subclasses that need a model-specific head structure.
+        Implementations record the new value with ``self._set_n_outputs``
+        (and any other constructor argument they change with
+        ``self._update_init_kwargs``), so that a saved model can be loaded
+        back, and build the new head in ``self.training`` mode, so that a
+        model in eval mode stays in eval mode.
 
         Parameters
         ----------
