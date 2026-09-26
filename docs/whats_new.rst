@@ -81,7 +81,7 @@ Bug fixes
   they became classifiers, instead of reloading without their trained head. The
   new head now follows the model's train/eval mode, so ``from_pretrained(...,
   n_outputs=...)`` no longer leaves dropout active in eval mode
-  (:gh:`1179` by `Raghav Rathi`_).
+  (:gh:`1181` by `Raghav Rathi`_).
 
 
 Current 1.8.0 (2026-08-31)
