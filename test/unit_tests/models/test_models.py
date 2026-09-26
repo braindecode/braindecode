@@ -4359,6 +4359,13 @@ def test_brant_rejects_channel_count_mismatch():
         model(torch.randn(1, 5, 1500))
 
 
+def test_brant_rejects_invalid_construction():
+    with pytest.raises(ValueError, match="patch_size"):
+        Brant(n_chans=2, n_outputs=2, n_times=1499, patch_size=1500)
+    with pytest.raises(ValueError, match="n_freq_bands"):
+        Brant(n_chans=2, n_outputs=2, n_times=1500, patch_size=1500, n_freq_bands=5)
+
+
 def test_brant_scripts_and_matches_eager():
     model = Brant(
         n_chans=2,
