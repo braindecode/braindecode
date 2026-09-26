@@ -100,7 +100,9 @@ class Brant(EEGModuleMixin, nn.Module):
     band-power features are computed at a fixed 256 Hz (upstream
     ``pre_utils.py:54`` and ``utils.py:36``), whatever the true rate; see
     ``band_power_sfreq`` below. At a different rate the band edges shift and
-    the pretrained embeddings change (by up to 0.55 in our checks). The defaults are a modest, ready-to-run configuration. The paper's large
+    the pretrained embeddings change (by up to 0.55 in our checks).
+
+    The defaults are a modest, ready-to-run configuration. The paper's large
     architecture uses ``patch_size=1500`` (6 s), ``embed_dim=2048``,
     ``ffn_dim=3072``, ``temporal_n_layers=12``, ``spatial_n_layers=5``,
     ``n_heads=16``, and ``n_times=22500`` (15 patches, 90 s).
