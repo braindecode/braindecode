@@ -35,6 +35,7 @@ from braindecode.models import (
     AttentionBaseNet,
     AttnSleep,
     BrainModule,
+    Brant,
     ContraWR,
     Deep4Net,
     DeepSleepNet,
@@ -4326,3 +4327,19 @@ def test_audited_model_parameter_headers_follow_numpydoc(model_name):
         f"{model_class.__name__} has parameter headers numpydoc misparses: "
         f"{malformed}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Brant
+# ---------------------------------------------------------------------------
+
+
+def test_brant_band_power_rate_is_independent_of_sfreq():
+    from braindecode.models.brant import BRANT_FREQ_BANDS, _BandPowerFeatures
+
+    x = torch.randn(2, 3, 1, 1500)
+    at_256 = _BandPowerFeatures(256.0, BRANT_FREQ_BANDS)(x)
+    model_250 = Brant(n_chans=3, n_outputs=2, n_times=1500, patch_size=1500, sfreq=250)
+    # sfreq describes the data; the band edges follow band_power_sfreq (upstream fs=256).
+    assert torch.equal(model_250.band_power(x), at_256)
+    assert model_250.band_power.sfreq == 256.0

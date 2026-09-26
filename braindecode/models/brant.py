@@ -98,10 +98,9 @@ class Brant(EEGModuleMixin, nn.Module):
 
     The upstream model operates on signals down-sampled to **250 Hz**, but its
     band-power features are computed at a fixed 256 Hz (upstream
-    ``pre_utils.py:54`` and ``utils.py:36``), whatever the true rate. Pass
-    ``sfreq=256`` to reproduce the official features exactly; at 250 Hz the
-    band edges shift and the pretrained embeddings change (by up to 0.55 in
-    our checks). The defaults are a modest, ready-to-run configuration. The paper's large
+    ``pre_utils.py:54`` and ``utils.py:36``), whatever the true rate; see
+    ``band_power_sfreq`` below. At a different rate the band edges shift and
+    the pretrained embeddings change (by up to 0.55 in our checks). The defaults are a modest, ready-to-run configuration. The paper's large
     architecture uses ``patch_size=1500`` (6 s), ``embed_dim=2048``,
     ``ffn_dim=3072``, ``temporal_n_layers=12``, ``spatial_n_layers=5``,
     ``n_heads=16``, and ``n_times=22500`` (15 patches, 90 s).
@@ -116,7 +115,7 @@ class Brant(EEGModuleMixin, nn.Module):
        classification head is braindecode's and is not pretrained::
 
            model = Brant.from_pretrained(
-               "braindecode/brant-pretrained", n_outputs=2, sfreq=256
+               "braindecode/brant-pretrained", n_outputs=2
            )
 
     .. versionadded:: 1.8
@@ -139,6 +138,11 @@ class Brant(EEGModuleMixin, nn.Module):
     n_freq_bands : int, optional
         Number of frequency bands used by the frequency encoding. Default 8
         (must match ``len(BRANT_FREQ_BANDS)``).
+    band_power_sfreq : float, optional
+        Sampling rate the upstream code assumes when it computes the eight band
+        powers: 256 Hz, although the data are 250 Hz (``Brant_src/utils.py:36``).
+        Keep the default to load the released weights faithfully; ``sfreq``
+        describes the data and is not used by the band-power features.
     drop_prob : float, optional
         Dropout probability. Default 0.1.
     activation : type[nn.Module], optional
@@ -170,6 +174,7 @@ class Brant(EEGModuleMixin, nn.Module):
         spatial_n_layers: int = 2,
         n_heads: int = 8,
         n_freq_bands: int = 8,
+        band_power_sfreq: float = 256.0,
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.ReLU,
     ):
@@ -218,7 +223,7 @@ class Brant(EEGModuleMixin, nn.Module):
             on_non_divisible="crop",
         )
         # braindecode-native: band-power computed inside forward (see module).
-        self.band_power = _BandPowerFeatures(self.sfreq, BRANT_FREQ_BANDS)
+        self.band_power = _BandPowerFeatures(band_power_sfreq, BRANT_FREQ_BANDS)
         self.temporal_encoder = _BrantTemporalEncoder(
             patch_size=self.patch_size,
             d_model=self.embed_dim,
