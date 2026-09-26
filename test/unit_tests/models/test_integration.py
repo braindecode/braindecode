@@ -26,6 +26,7 @@ from braindecode.models import (
     REVE,
     SSTDPN,
     ZUNA,
+    Brant,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -363,6 +364,7 @@ def test_model_has_activation_parameter(model_class):
     named 'activation' or any parameter that starts with 'activation'.
     """
     if model_class in [
+        Brant,
         EEGMiner,
         REVE,
         EEGPT,

@@ -4343,3 +4343,11 @@ def test_brant_band_power_rate_is_independent_of_sfreq():
     # sfreq describes the data; the band edges follow band_power_sfreq (upstream fs=256).
     assert torch.equal(model_250.band_power(x), at_256)
     assert model_250.band_power.sfreq == 256.0
+
+
+def test_brant_head_is_a_bare_linear_layer():
+    model = Brant(n_chans=2, n_outputs=3, n_times=1500, patch_size=1500)
+    assert isinstance(model.final_layer, torch.nn.Linear)
+    model.reset_head(5)
+    assert model.n_outputs == 5 and model.final_layer.out_features == 5
+    assert model.get_config()["n_outputs"] == 5

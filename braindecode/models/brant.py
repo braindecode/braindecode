@@ -71,8 +71,8 @@ class Brant(EEGModuleMixin, nn.Module):
         vocabulary or channel-specific parameters.
 
     ``Brant.final_layer``
-        **Operations.** Mean-pool the encoded channel-patch grid and apply a
-        three-layer MLP.
+        **Operations.** Mean-pool the encoded channel-patch grid, then apply a
+        single linear layer.
 
         **Role.** Adapt the upstream encoder to Braindecode classification. This
         pooling and head are not part of the masked-reconstruction pretraining
@@ -147,8 +147,6 @@ class Brant(EEGModuleMixin, nn.Module):
         describes the data and is not used by the band-power features.
     drop_prob : float, optional
         Dropout probability. Default 0.1.
-    activation : type[nn.Module], optional
-        Activation used in the classification head. Default ``nn.ReLU``.
 
     References
     ----------
@@ -178,7 +176,6 @@ class Brant(EEGModuleMixin, nn.Module):
         n_freq_bands: int = 8,
         band_power_sfreq: float = 256.0,
         drop_prob: float = 0.1,
-        activation: type[nn.Module] = nn.ReLU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -198,7 +195,6 @@ class Brant(EEGModuleMixin, nn.Module):
         self.n_heads = n_heads
         self.n_freq_bands = n_freq_bands
         self.drop_prob = drop_prob
-        self._head_activation = activation
 
         if self.n_freq_bands != len(BRANT_FREQ_BANDS):
             raise ValueError(
@@ -244,21 +240,15 @@ class Brant(EEGModuleMixin, nn.Module):
             n_heads=self.n_heads,
             drop_prob=self.drop_prob,
         )
-        self.final_layer = _BrantHead(self.embed_dim, self.n_outputs, activation)
+        # Upstream's seizure head is an MLP trained on private data; braindecode
+        # ships a bare linear layer, as for BrainBERT.
+        self.final_layer = nn.Linear(self.embed_dim, self.n_outputs)
 
     def reset_head(self, n_outputs: int) -> None:
         """Swap the classification head for a new number of outputs."""
-        old_param = next(self.final_layer.parameters())
-        self.final_layer = _BrantHead(
-            self.embed_dim, n_outputs, self._head_activation
-        ).to(device=old_param.device, dtype=old_param.dtype)
-        self._n_outputs = n_outputs
-        init_kwargs = getattr(self, "_braindecode_init_kwargs", None)
-        if init_kwargs is not None:
-            init_kwargs["n_outputs"] = n_outputs
-        hub_config = getattr(self, "_hub_mixin_config", None)
-        if hub_config is not None:
-            hub_config["n_outputs"] = n_outputs
+        self._set_n_outputs(n_outputs)
+        head = nn.Linear(self.final_layer.in_features, n_outputs)
+        self.final_layer = head.to(self.final_layer.weight)
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Decode a batch of signals.
@@ -452,22 +442,3 @@ class _BrantSpatialEncoder(nn.Module):
     def forward(self, time_z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         ch_z = self.trans_enc(time_z)
         return ch_z, self.proj_out(ch_z)
-
-
-class _BrantHead(nn.Module):
-    """Braindecode downstream classification head for Brant."""
-
-    def __init__(
-        self, in_dim: int, out_dim: int, activation: type[nn.Module] = nn.ReLU
-    ):
-        super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(in_dim, in_dim // 2),
-            activation(),
-            nn.Linear(in_dim // 2, in_dim // 4),
-            activation(),
-            nn.Linear(in_dim // 4, out_dim),
-        )
-
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
-        return self.mlp(z)
