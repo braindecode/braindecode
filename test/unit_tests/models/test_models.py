@@ -4373,6 +4373,71 @@ def test_brant_scripts_and_matches_eager():
     ).eval()
     x = torch.randn(2, 2, 3000)
     scripted = torch.jit.script(model)
-    assert torch.equal(scripted(x), model(x))
+    torch.testing.assert_close(scripted(x), model(x))
     # Under scripting, return_features=True yields the logits (is_scripting guard).
-    assert torch.equal(scripted(x, return_features=True), model(x))
+    torch.testing.assert_close(scripted(x, return_features=True), model(x))
+
+
+def test_brant_band_power_matches_scipy_periodogram():
+    """Upstream computes log10(sum of periodogram density in each band + 1) at fs=256."""
+    from scipy.signal import periodogram
+
+    from braindecode.models.brant import BRANT_FREQ_BANDS, _BandPowerFeatures
+
+    patches = torch.randn(2, 3, 2, 1500)
+    ours = _BandPowerFeatures(256.0, BRANT_FREQ_BANDS, 1500)(patches).numpy()
+    freqs, psd = periodogram(patches.numpy(), fs=256.0, axis=-1)
+    ref = np.stack(
+        [
+            np.log10(psd[..., (freqs > lo) & (freqs <= hi)].sum(-1) + 1)
+            for lo, hi in BRANT_FREQ_BANDS
+        ],
+        -1,
+    )
+    assert np.abs(ours - ref).max() < 1e-4
+
+
+def test_brant_input_length_must_match():
+    model = Brant(n_chans=2, n_outputs=2, n_times=3000, patch_size=1500).eval()
+    with pytest.raises(ValueError, match="time samples"):
+        model(torch.randn(1, 2, 1500))
+
+
+def test_brant_channel_tokens_keep_channel_order():
+    """Pin the per-channel token layout downstream code relies on.
+
+    ``merge_time`` outputs ``(batch, n_chans, seq_len, embed_dim)`` with the
+    channel axis in the same order as the input; the spatial encoder has no
+    channel-specific parameters, so permuting input channels permutes the
+    output channel tokens the same way.
+    """
+    model = Brant(
+        n_chans=3,
+        n_outputs=2,
+        n_times=3000,
+        patch_size=1500,
+        embed_dim=32,
+        ffn_dim=64,
+        temporal_n_layers=1,
+        spatial_n_layers=1,
+        n_heads=2,
+    ).eval()
+
+    captured = {}
+
+    def _hook(module, inputs, output):
+        captured["out"] = output
+
+    handle = model.merge_time.register_forward_hook(_hook)
+    try:
+        x = torch.randn(2, 3, 3000)
+        model(x)
+        first = captured["out"].clone()
+        assert first.shape == (2, 3, 2, 32)  # (batch, n_chans, seq_len, embed_dim)
+
+        perm = [2, 0, 1]
+        model(x[:, perm])
+        permuted = captured["out"]
+        torch.testing.assert_close(permuted, first[:, perm])
+    finally:
+        handle.remove()

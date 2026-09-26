@@ -110,12 +110,11 @@ class Brant(EEGModuleMixin, nn.Module):
 
     .. important::
        **Pretrained weights.** ``braindecode/brant-pretrained`` holds the
-       official weights converted to this implementation: all 210 tensors are
-       identical to the official release (``Brant_pre_trained_weights.zip``,
-       sha256 ``de4f28f4...``), and with the same inputs the encoders reproduce
-       the official source (``Daoze/Brant`` on the Hugging Face Hub, revision
-       ``7e6f9156``) exactly. It uses the large configuration above; the
-       classification head is braindecode's and is not pretrained::
+       official weights converted to this implementation. All 210 shared
+       tensors of the official checkpoint load unchanged; the encoder outputs
+       of the port match the official code within 1e-5 on identical inputs
+       (``scripts/brant_parity_check.py``). It uses the large configuration
+       above; the classification head is braindecode's and is not pretrained::
 
            model = Brant.from_pretrained(
                "braindecode/brant-pretrained", n_outputs=2
