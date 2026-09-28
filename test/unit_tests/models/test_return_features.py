@@ -222,7 +222,7 @@ _REGISTRY = {name: sp for name, _, sp in models_mandatory_parameters}
 # Every registered model that overrides reset_head, including the interpolated
 # wrappers that inherit it from their backbone.
 _RESET_HEAD_CASES = [
-    pytest.param(name, id=name)
+    name
     for name in _REGISTRY
     if _ALL_MODELS[name].reset_head is not EEGModuleMixin.reset_head
 ]
