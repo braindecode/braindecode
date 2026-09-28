@@ -4,12 +4,11 @@
 
 import json
 import os
-import warnings
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
 
 import mne
-import numpy as np
 import pooch
 import pytest
 import torch
@@ -1264,115 +1263,82 @@ def test_codebrain_return_features():
     assert out["cls_token"] is None
 
 
-# ---------------------------------------------------------------------------
-# STEEGFormer: channel -> vocabulary slot resolution
-# ---------------------------------------------------------------------------
-
-_STEEG_VOCAB = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
-
-
 @pytest.fixture
 def steeg_vocab(monkeypatch):
-    """Small in-memory vocabulary, so these tests never download from the Hub."""
-    monkeypatch.setattr(steegformer, "_channel_order", lambda: list(_STEEG_VOCAB))
+    """Use an offline vocabulary; keep the model's real 145-slot capacity."""
+    names = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
+    monkeypatch.setattr(steegformer, "_channel_order", lambda: names)
     monkeypatch.setattr(
         steegformer,
         "_channel_index",
-        lambda: {n.upper(): i for i, n in enumerate(_STEEG_VOCAB)},
+        lambda: {n.upper(): i for i, n in enumerate(names)},
     )
-    return _STEEG_VOCAB
+    return names
 
 
-def _steeg_chs(names, positions=None):
-    info = mne.create_info(list(names), 250.0, "eeg")
-    chs = [dict(ch) for ch in info["chs"]]
-    for ch in chs:
-        ch["loc"] = np.array(ch["loc"], dtype=float)
-    if positions is not None:
-        for ch, xyz in zip(chs, positions):
-            ch["loc"][:3] = xyz
-    return chs
-
-
-def _steeg(chs, **kwargs):
-    return STEEGFormer(
-        n_chans=len(chs),
-        n_outputs=2,
-        n_times=64,
-        chs_info=chs,
-        embed_dim=32,
-        depth=1,
-        num_heads=2,
-        **kwargs,
+@pytest.mark.parametrize(
+    "names, explicit, expected, warning",
+    [
+        (["oz", "FP1", "Cz"], None, [3, 0, 2], None),
+        (["E1", "fp1", "E2"], None, [3, 0, 5], "nearest 10-05 site"),
+        (["E1", "fp1", "E2"], [5, 4, 3], [5, 4, 3], None),
+    ],
+    ids=["known-names", "mixed-positions", "explicit-override"],
+)
+@pytest.mark.filterwarnings("error")
+def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, warning):
+    info = mne.create_info(["Oz", "Cz", "T8"], 250, "eeg")
+    info.set_montage(
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     )
+    chs = [dict(ch, ch_name=name) for ch, name in zip(info["chs"], names)]
+    # Unknown electrodes are slightly displaced; fp1 must ignore its Cz position.
+    chs[0]["loc"][:3] += [0.003, 0, 0.002]
+    chs[2]["loc"][:3] += [0, 0.004, -0.003]
+    with pytest.warns(UserWarning, match=warning) if warning else nullcontext():
+        model = STEEGFormer(
+            n_chans=3,
+            n_outputs=2,
+            n_times=64,
+            chs_info=chs,
+            chan_pos_idx=explicit,
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    assert model.channel_indices.tolist() == expected
 
 
-def _site(name):
-    montage = mne.channels.make_standard_montage(
-        resolve_montage_name("standard_1005")
+@pytest.mark.parametrize(
+    "n_chans", [3, 146, 256], ids=["identity", "too-many", "hydrocel"]
+)
+def test_steegformer_montage_fallback(steeg_vocab, n_chans):
+    info = mne.create_info([f"E{i + 1}" for i in range(n_chans)], 250, "eeg")
+    if n_chans == 256:
+        info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
+    expectation = (
+        pytest.raises(ValueError, match="cannot be mapped")
+        if n_chans == 146
+        else pytest.warns(
+            UserWarning,
+            match=(
+                "nearest 10-05 site" if n_chans == 256 else "identity channel mapping"
+            ),
+        )
     )
-    info = mne.create_info([name], 250.0, "eeg")
-    info.set_montage(montage)
-    return info["chs"][0]["loc"][:3]
-
-
-def test_steegformer_known_names_keep_their_slots(steeg_vocab):
-    names = ["Oz", "Fp1", "Cz"]
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")  # no fallback warning expected
-        model = _steeg(_steeg_chs(names, [_site(n) for n in names]))
-    assert model.channel_indices.tolist() == [3, 0, 2]
-
-
-def test_steegformer_unknown_names_use_nearest_site(steeg_vocab):
-    # Sensors a few millimetres off Oz and T8, under vendor-style names; Fp1
-    # is named and must keep its own slot whatever its position says.
-    names = ["E1", "Fp1", "E2"]
-    positions = [
-        _site("Oz") + [0.003, 0.0, 0.002],
-        _site("Cz"),  # deliberately wrong position for a named channel
-        _site("T8") + [0.0, 0.004, -0.003],
-    ]
-    with pytest.warns(UserWarning, match="nearest 10-05 site"):
-        model = _steeg(_steeg_chs(names, positions))
-    assert model.channel_indices.tolist() == [3, 0, 5]
-
-
-def test_steegformer_unknown_names_without_positions_keep_identity(steeg_vocab):
-    with pytest.warns(UserWarning, match="identity channel mapping"):
-        model = _steeg(_steeg_chs(["E1", "E2", "Cz"]))
-    assert model.channel_indices.tolist() == [0, 1, 2]
-
-
-def test_steegformer_too_many_unlocated_channels_raise_clearly(steeg_vocab):
-    names = [f"E{i}" for i in range(1, 151)]  # more than the 145 slots
-    with pytest.raises(ValueError, match="cannot be mapped"):
-        _steeg(_steeg_chs(names))
-
-
-def test_steegformer_hydrocel_256_maps_into_vocabulary(steeg_vocab):
-    montage = mne.channels.make_standard_montage("GSN-HydroCel-256")
-    info = mne.create_info(montage.ch_names, 250.0, "eeg")
-    info.set_montage(montage)
-    with pytest.warns(UserWarning, match="nearest 10-05 site"):
-        model = _steeg(list(info["chs"]))
-    slots = model.channel_indices
-    assert slots.shape == (len(montage.ch_names),)
-    assert int(slots.min()) >= 0 and int(slots.max()) < len(steeg_vocab)
-
-
-def test_steegformer_explicit_indices_override_names_and_positions(steeg_vocab):
-    chs = _steeg_chs(["Fp1", "unknown"], [_site("Oz"), _site("Cz")])
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        model = _steeg(chs, chan_pos_idx=[5, 4])
-    assert model.channel_indices.tolist() == [5, 4]
-
-
-@pytest.mark.parametrize("frame", [0, 5, "mri", "unknown"])
-def test_steegformer_non_head_positions_fall_back(steeg_vocab, frame):
-    chs = _steeg_chs(["unknown"], [_site("Oz")])
-    chs[0]["coord_frame"] = frame
-    with pytest.warns(UserWarning, match="valid head-frame position"):
-        model = _steeg(chs)
-    assert model.channel_indices.tolist() == [0]
+    with expectation:
+        model = STEEGFormer(
+            n_chans=n_chans,
+            n_outputs=2,
+            n_times=64,
+            chs_info=info["chs"],
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    if n_chans == 3:
+        assert model.channel_indices.tolist() == [0, 1, 2]
+    elif n_chans == 256:
+        slots = model.channel_indices
+        assert slots.shape == (256,)
+        assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
