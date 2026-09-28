@@ -28,7 +28,7 @@ BRANT_FREQ_BANDS: tuple[tuple[float, float], ...] = (
 )
 
 
-class Brant(EEGModuleMixin, nn.Module):
+class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
     r"""Brant from Zhang et al. (2023) [Brant2023]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
