@@ -37,6 +37,10 @@ from braindecode.modules import (
 # when a ``chs_info`` montage actually needs name-based slot resolution.
 _CHANNELS_REPO = "braindecode/STEEGFormer-small"
 _CHANNELS_FILE = "steegformer_channels.json"
+# Pinned commit of the Hub repository that hosts the vocabulary file, so the
+# download is immutable and reproducible. Bump deliberately when the file
+# changes upstream.
+_CHANNELS_REVISION = "633c9c0d76c6e26459e1e0d1337c91858578f13d"
 # Embedding size (n_chans_pos) the published vocabulary is valid for. Name-based
 # chs_info resolution only applies to the small/base/large variants; largeV2's
 # 256-slot HBN vocabulary has no published electrode names.
@@ -48,7 +52,10 @@ def _channel_order() -> list[str]:
     """Download (and cache) the shared montage vocabulary from the Hub."""
     if huggingface_hub is False:
         raise ImportError(f"STEEGFormer channel vocabulary {_HF_INSTALL_HINT}")
-    with open(huggingface_hub.hf_hub_download(_CHANNELS_REPO, _CHANNELS_FILE)) as f:
+    path = huggingface_hub.hf_hub_download(
+        _CHANNELS_REPO, _CHANNELS_FILE, revision=_CHANNELS_REVISION
+    )
+    with open(path) as f:
         return json.load(f)
 
 
