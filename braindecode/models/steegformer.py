@@ -15,11 +15,10 @@ from functools import lru_cache
 import torch
 from einops import rearrange
 from einops.layers.torch import Rearrange
-from huggingface_hub import hf_hub_download
 from torch import nn
 
 from braindecode.functional import sinusoidal_positional_encoding
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import _HF_INSTALL_HINT, EEGModuleMixin, huggingface_hub
 from braindecode.models.util import resolve_channel_indices
 from braindecode.modules import (
     DropPath,
@@ -47,7 +46,9 @@ _CHANNELS_VOCAB_SIZE = 145
 @lru_cache(maxsize=1)
 def _channel_order() -> list[str]:
     """Download (and cache) the shared montage vocabulary from the Hub."""
-    with open(hf_hub_download(_CHANNELS_REPO, _CHANNELS_FILE)) as f:
+    if huggingface_hub is False:
+        raise ImportError(f"STEEGFormer channel vocabulary {_HF_INSTALL_HINT}")
+    with open(huggingface_hub.hf_hub_download(_CHANNELS_REPO, _CHANNELS_FILE)) as f:
         return json.load(f)
 
 
