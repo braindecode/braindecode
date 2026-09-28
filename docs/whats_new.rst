@@ -83,7 +83,7 @@ Bug fixes
   now clamps its parameters in place under ``torch.no_grad()`` instead of
   reassigning ``.data``, and :func:`braindecode.functional.hilbert_freq`
   computes the complex FFT step in float32 for bfloat16 inputs, so the phase
-  features work under bfloat16 autocast (:gh:`PRNUM` by `Bruno Aristimunha`_).
+  features work under bfloat16 autocast (:gh:`1183` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
