@@ -31,7 +31,7 @@ Enhancements
 - Add :class:`braindecode.models.AXON`, an axis-factorized EEG foundation
   model whose layers mix a temporal and a spatial attention path with a
   per-token gate, with pretrained weights on the Hugging Face Hub
-  (:gh:`TODO-PR-NUMBER` by `Mahir Jain`_).
+  (:gh:`1182` by `Mahir Jain`_).
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
