@@ -15,6 +15,7 @@ from scipy.signal import fftconvolve as fftconvolve_scipy
 from scipy.signal import freqz
 from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
+from torch.nn.utils.parametrize import register_parametrization
 
 from braindecode.functional import drop_path
 from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
@@ -31,6 +32,7 @@ from braindecode.modules import (
     GeneralizedGaussianFilter,
     LinearWithConstraint,
     MaxNormLinear,
+    MaxNormParametrize,
     SafeLog,
     SqueezeAndExcitation,
     TDSConvEncoder,
@@ -1537,12 +1539,11 @@ def test_gated_linear_unit_geglu_semantics():
 
 @pytest.mark.parametrize("shape", [(8, 4), (16, 22, 1, 25), (40, 1, 13)])
 @pytest.mark.parametrize("max_norm", [0.25, 1.0, 5.0])
-def test_max_norm_parametrize_matches_renorm(shape, max_norm):
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_max_norm_parametrize_matches_renorm(shape, max_norm, dtype):
     """The explicit rescale must match ``Tensor.renorm`` values and gradients."""
-    from braindecode.modules import MaxNormParametrize
-
     torch.manual_seed(0)
-    weight_ref = torch.randn(*shape, dtype=torch.float64, requires_grad=True)
+    weight_ref = torch.randn(*shape, dtype=dtype, requires_grad=True)
     weight = weight_ref.detach().clone().requires_grad_()
 
     expected = weight_ref.renorm(p=2, dim=0, maxnorm=max_norm)
@@ -1560,10 +1561,6 @@ def test_max_norm_parametrize_matches_renorm(shape, max_norm):
 
 def test_max_norm_parametrize_does_not_call_renorm():
     """``renorm`` breaks on Intel Gaudi (HPU), so the forward must avoid it."""
-    from torch.nn.utils.parametrize import register_parametrization
-
-    from braindecode.modules import MaxNormParametrize
-
     conv = nn.Conv1d(4, 8, kernel_size=3)
     register_parametrization(conv, "weight", MaxNormParametrize(0.5))
     with patch.object(
@@ -1575,36 +1572,70 @@ def test_max_norm_parametrize_does_not_call_renorm():
     assert (row_norms <= 0.5 + 1e-6).all()
 
 
-def test_max_norm_parametrize_is_scriptable():
-    """Models with a max-norm constraint are exported with TorchScript."""
-    from braindecode.modules import MaxNormParametrize
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+def test_max_norm_parametrize_is_scriptable(dtype, tmp_path):
+    """Save/load preserves the dtype-dependent rescale and empty-input branch."""
+    module = MaxNormParametrize(0.5)
+    path = tmp_path / "maxnorm.pt"
+    torch.jit.script(module).save(str(path))
+    scripted = torch.jit.load(str(path))
+    for shape in [(8, 4, 1, 3), (0, 3), (3, 0)]:
+        weight = torch.randn(shape, dtype=dtype)
+        torch.testing.assert_close(scripted(weight), module(weight))
 
-    scripted = torch.jit.script(MaxNormParametrize(0.5))
-    weight = torch.randn(8, 4, 1, 3)
-    torch.testing.assert_close(
-        scripted(weight), weight.renorm(p=2, dim=0, maxnorm=0.5)
+
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+@pytest.mark.parametrize("max_norm", [0.0, 1.0])
+def test_max_norm_parametrize_boundary_values_and_gradients(dtype, max_norm):
+    """Zero, tiny, below/at/above-limit rows agree with a full-precision reference."""
+    weight = torch.tensor(
+        [
+            [0.0, 0.0],
+            [1e-5, 0.0],
+            [0.5, 0.0],
+            [1.0, 0.0],
+            [1.0 + 1e-8, 0.0],
+            [3.0, 4.0],
+        ],
+        dtype=dtype,
+        requires_grad=True,
     )
-
-
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
-@pytest.mark.parametrize("fill", [0.0, 1e-5, 3.0])
-def test_max_norm_parametrize_low_precision_stays_finite(dtype, fill):
-    """Zero and tiny rows keep finite outputs and gradients, like ``renorm``."""
-    from braindecode.modules import MaxNormParametrize
-
-    weight = torch.full((4, 3), fill, dtype=dtype, requires_grad=True)
-    output = MaxNormParametrize(1.0)(weight)
-    output.sum().backward()
+    reference_dtype = torch.float64 if dtype == torch.float64 else torch.float32
+    weight_ref = weight.detach().to(reference_dtype).requires_grad_()
+    expected = weight_ref.renorm(p=2, dim=0, maxnorm=max_norm)
+    output = MaxNormParametrize(max_norm)(weight)
+    assert output.dtype == dtype
+    torch.testing.assert_close(output, expected.to(dtype))
+    # Nonuniform upstream derivatives exercise tangential as well as radial terms.
+    grad_output = torch.tensor([0.25, -0.5], dtype=dtype).expand_as(weight)
+    (output * grad_output).sum().backward()
+    (expected * grad_output.to(reference_dtype)).sum().backward()
     assert torch.isfinite(output).all()
     assert torch.isfinite(weight.grad).all()
-    expected = weight.detach().float().renorm(p=2, dim=0, maxnorm=1.0)
-    torch.testing.assert_close(output.float(), expected, atol=2e-3, rtol=2e-3)
+    torch.testing.assert_close(weight.grad, weight_ref.grad.to(dtype))
+    if max_norm == 1.0:
+        torch.testing.assert_close(output[:4], weight[:4], rtol=0, atol=0)
+        torch.testing.assert_close(weight.grad[:4], grad_output[:4], rtol=0, atol=0)
+        if dtype == torch.float64:
+            assert output[4].norm() <= max_norm
 
 
-def test_max_norm_parametrize_edge_cases_match_renorm():
-    from braindecode.modules import MaxNormParametrize
+@pytest.mark.parametrize(
+    "dtype", [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+)
+@pytest.mark.parametrize("shape", [(0, 3), (3, 0), (2, 0, 4)])
+def test_max_norm_parametrize_empty_matches_renorm(dtype, shape):
+    weight = torch.empty(shape, dtype=dtype, requires_grad=True)
+    output = MaxNormParametrize(1.0)(weight)
+    torch.testing.assert_close(output, weight.renorm(p=2, dim=0, maxnorm=1.0))
+    output.sum().backward()
+    torch.testing.assert_close(weight.grad, torch.zeros_like(weight))
 
-    empty = torch.randn(0, 3)
-    assert MaxNormParametrize(1.0)(empty).shape == empty.shape
+
+def test_max_norm_parametrize_rejects_negative_limit():
     with pytest.raises(ValueError, match="max_norm must be >= 0"):
         MaxNormParametrize(-1.0)

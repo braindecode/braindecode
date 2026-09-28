@@ -45,10 +45,14 @@ class MaxNormParametrize(nn.Module):
         if X.numel() == 0:
             return X
         rows = X.reshape(X.shape[0], -1)
-        # The norm and scale are computed in float32: in float16 the
-        # 1 / (norm + 1e-7) of a small row overflows to inf, which
-        # ``torch.where`` would still propagate as NaN into the gradient.
-        norm = rows.float().norm(p=2, dim=1, keepdim=True)
+        # Promote only low-precision inputs to avoid float16 overflow in
+        # the reciprocal and its gradient, without downcasting float64.
+        norm_rows = rows
+        if X.dtype == torch.float16 or X.dtype == torch.bfloat16:
+            norm_rows = rows.float()
+        norm = norm_rows.norm(p=2, dim=1, keepdim=True)
+        # ``torch.where`` evaluates both branches. Mask the denominator as
+        # well as the scale to keep unused reciprocals and gradients safe.
         safe_norm = torch.where(norm > self.max_norm, norm, torch.ones_like(norm))
         scale = torch.where(
             norm > self.max_norm,
