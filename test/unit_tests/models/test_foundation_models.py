@@ -1310,20 +1310,37 @@ def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, war
 
 
 @pytest.mark.parametrize(
-    "n_chans", [3, 146, 256], ids=["identity", "too-many", "hydrocel"]
+    "n_chans, fallback, n_chans_pos",
+    [
+        (3, "unlocated", 145),
+        (146, "unlocated", 145),
+        (256, "hydrocel", 145),
+        (3, "absent", 145),
+        (146, "absent", 145),
+        (3, "unpublished", 256),
+        (257, "unpublished", 256),
+        (3, "unavailable", 145),
+        (146, "unavailable", 145),
+    ],
 )
-def test_steegformer_montage_fallback(steeg_vocab, n_chans):
+def test_steegformer_montage_fallback(
+    steeg_vocab, monkeypatch, n_chans, fallback, n_chans_pos
+):
     info = mne.create_info([f"E{i + 1}" for i in range(n_chans)], 250, "eeg")
-    if n_chans == 256:
+    if fallback == "hydrocel":
         info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
+    if fallback == "unavailable":
+        def unavailable():
+            raise OSError("offline")
+
+        monkeypatch.setattr(steegformer, "_channel_index", unavailable)
+    overflow = n_chans > n_chans_pos and fallback != "hydrocel"
     expectation = (
-        pytest.raises(ValueError, match="cannot be mapped")
-        if n_chans == 146
+        pytest.raises(ValueError, match="identity mapping.*chan_pos_idx")
+        if overflow
         else pytest.warns(
             UserWarning,
-            match=(
-                "nearest 10-05 site" if n_chans == 256 else "identity channel mapping"
-            ),
+            match="nearest 10-05 site" if fallback == "hydrocel" else "identity",
         )
     )
     with expectation:
@@ -1331,14 +1348,16 @@ def test_steegformer_montage_fallback(steeg_vocab, n_chans):
             n_chans=n_chans,
             n_outputs=2,
             n_times=64,
-            chs_info=info["chs"],
+            chs_info=None if fallback == "absent" else info["chs"],
+            n_chans_pos=n_chans_pos,
             embed_dim=32,
             depth=1,
             num_heads=2,
         )
-    if n_chans == 3:
-        assert model.channel_indices.tolist() == [0, 1, 2]
-    elif n_chans == 256:
-        slots = model.channel_indices
-        assert slots.shape == (256,)
-        assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
+    if not overflow:
+        if fallback == "hydrocel":
+            slots = model.channel_indices
+            assert slots.shape == (256,)
+            assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
+        else:
+            assert model.channel_indices.tolist() == list(range(n_chans))

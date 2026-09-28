@@ -12,6 +12,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 from braindecode import models
 from braindecode.models.util import (
+    extract_channel_locations_from_chs_info,
     interpolated_models_dict,
     models_dict,
     resolve_channel_indices,
@@ -137,14 +138,36 @@ def test_resolve_channel_indices_transformed_head_geometry():
 @pytest.mark.parametrize(
     "loc, frame",
     [
+        ("missing", "head"),
         (None, "head"),
+        (1.0, "head"),
+        ("invalid", "head"),
+        ([[0.1], [0.2, 0.3]], "head"),
+        ([0.1, 0.2], "head"),
+        ([[0.1, 0.2, 0.3]], "head"),
         ([0, 0, 0], "head"),
         ([np.nan, 0, 1], "head"),
         ([0.01, 0.02, 0.1], "mri"),
         ([0.01, 0.02, 0.1], 0),
     ],
-    ids=["missing", "zero", "nonfinite", "mri", "unknown-frame"],
+    ids=[
+        "missing", "none", "scalar", "string", "ragged", "short", "matrix",
+        "zero", "nonfinite", "mri", "unknown-frame",
+    ],
 )
 def test_resolve_channel_indices_invalid_geometry(loc, frame):
     chs = [{"ch_name": "unknown", "loc": loc, "coord_frame": frame}]
+    if isinstance(loc, str) and loc == "missing":
+        chs[0].pop("loc")
+    # Malformed locations stop extraction, preserving any valid prefix.
+    malformed = not (
+        isinstance(loc, list) and len(loc) == 3 and np.isscalar(loc[0])
+    )
+    if frame == "head" and malformed:
+        assert extract_channel_locations_from_chs_info(chs) is None
+        prefix = {"ch_name": "other", "loc": [0.01, 0.02, 0.1]}
+        assert extract_channel_locations_from_chs_info([prefix, *chs]).shape == (1, 3)
+        assert resolve_channel_indices(
+            [prefix, *chs], ["Cz"], montage="standard_1005"
+        ) is None
     assert resolve_channel_indices(chs, ["Cz"], montage="standard_1005") is None
