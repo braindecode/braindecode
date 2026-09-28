@@ -26,7 +26,7 @@ except ImportError:
 from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import RevePositionBank
+from braindecode.models.reve import Attention, RevePositionBank
 
 _ORIGINAL_TORCH_CAT = torch.cat
 
@@ -725,6 +725,26 @@ def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
     torch.testing.assert_close(table, expected[:, :axis_dim])
 
 
+def test_reve_attention_matches_explicit_attention():
+    attention = Attention(dim=16, heads=2, head_dim=8)
+    x = torch.randn(2, 5, 16, requires_grad=True)
+    q, k, v = (
+        t.reshape(2, 5, 2, 8).transpose(1, 2)
+        for t in attention.to_qkv(attention.norm(x)).chunk(3, dim=-1)
+    )
+    weights = (q @ k.transpose(-1, -2) / 8**0.5).softmax(dim=-1)
+    expected = attention.to_out((weights @ v).transpose(1, 2).reshape(2, 5, 16))
+    actual = attention(x)
+    torch.testing.assert_close(actual, expected)
+    parameters = (x, *attention.parameters())
+    actual_grads = torch.autograd.grad(
+        actual.square().sum(), parameters, retain_graph=True
+    )
+    expected_grads = torch.autograd.grad(expected.square().sum(), parameters)
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
 # ==============================================================================
 # Tests for LUNA Large Variant
 # ==============================================================================
@@ -1231,3 +1251,21 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+def test_diver1_mup_attention_scale():
+    """The released DIVER-1 checkpoints need attention scaled by 1 / head_dim."""
+    import mne
+
+    from braindecode.models import DIVER1
+
+    info = mne.create_info(["C3", "Cz", "C4"], 500.0, "eeg")
+    info.set_montage("standard_1020")
+    for mup in (True, False):
+        model = DIVER1(
+            chs_info=info["chs"], n_outputs=2, n_times=1000, mup_attention=mup
+        )
+        attention = [m for m in model.modules() if hasattr(m, "head_dim")]
+        assert attention
+        for module in attention:
+            assert module.scale == (1.0 / module.head_dim if mup else None)

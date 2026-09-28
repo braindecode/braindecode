@@ -316,21 +316,38 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     .. rubric:: Pre-trained weights
 
-    None. The reference repository ships a placeholder in place of
-    ``weights/ieeg_pretrained_weights.pt``, so no DIVER-1 checkpoint is publicly
-    available and this port provides the architecture only.
+    Both released encoders are on the Hugging Face Hub, all at 500 Hz:
+
+    - ``braindecode/DIVER-1-0.1s-tiny``: the iEEG encoder (``patch_size=50``,
+      ``d_model=256``, ``n_layers=12``), ``weights/ieeg_pretrained_weights.pt``;
+    - ``braindecode/DIVER-1-1s-small``: the joint iEEG and EEG encoder of paper
+      versions 1 and 2 (``patch_size=500``, ``d_model=512``, ``n_layers=12``),
+      ``weights/i_eeg_pretrained_weights.pt``.
+
+    ::
+
+        model = DIVER1.from_pretrained(
+            "braindecode/DIVER-1-0.1s-tiny", chs_info=raw.info["chs"],
+            n_times=500, n_outputs=2,
+        )
+
+    ``scripts/convert_diver1_weights.py`` converts the official files; the
+    encoder features match the reference model exactly on CPU. The releases
+    have no classification head, so the head is initialized on load and needs
+    fine-tuning.
 
     .. rubric:: License
 
-    Apache-2.0, inherited from the MOIRAI / ``uni2ts`` code that the reference
-    encoder is adapted from. The reference repository states no license of its
-    own, so check the terms of the original implementation before redistributing.
+    The code is Apache-2.0, inherited from the MOIRAI / ``uni2ts`` code that the
+    reference encoder is adapted from. The released weights are MIT-licensed by
+    the DIVER Project.
 
     .. note::
         Numerical equivalence of the encoder features with the reference
         implementation has been verified layer by layer, for both patch-size
-        variants, by transplanting a randomly initialised reference state dict
-        (no checkpoint exists to verify against). The comparison requires
+        variants, by transplanting a randomly initialised reference state dict,
+        and with both released checkpoints, whose encoder features match
+        exactly on CPU (``scripts/convert_diver1_weights.py``). The comparison requires
         disabling the reference's attention dropout, which stays active in eval
         mode there because ``dropout_p`` is passed straight to
         :func:`~torch.nn.functional.scaled_dot_product_attention`; this port
@@ -389,6 +406,12 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         ``"mean"`` averages over channels and patches first, giving a head that
         is independent of ``n_chans``, which is what lets one instance read
         montages of any size.
+        is independent of ``n_chans`` and ``n_times``.
+    mup_attention : bool
+        Scale attention scores by ``1 / head_dim`` (the muP scaling the released
+        checkpoints were trained with, ``original_moirai_encoder.py:709`` in the
+        official code) instead of the standard ``1 / sqrt(head_dim)``. Keep it
+        ``True`` to load the pretrained weights.
     drop_prob : float
         Dropout rate used in the encoder and the spectral embedding.
     activation : type[nn.Module]
@@ -428,6 +451,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         use_spectral_emb: bool = True,
         use_position_emb: bool = True,
         pooling: str = "flatten",
+        mup_attention: bool = True,
         drop_prob: float = 0.1,
         activation: type[nn.Module] = nn.SiLU,
     ):
@@ -526,6 +550,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 window=stcpe_window,
                 activation=activation,
                 n_patches=self.n_patches,
+                mup_attention=mup_attention,
             )
             if use_stcpe
             else None
@@ -556,6 +581,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             activation=activation,
             # One extra patch position for the register column.
             max_len=max(512, self.n_patches + 1),
+            mup_attention=mup_attention,
         )
 
         head_in_features = (
@@ -1019,6 +1045,7 @@ class _STCPE(nn.Module):
         window: int,
         activation: type[nn.Module],
         n_patches: int,
+        mup_attention: bool = True,
     ):
         super().__init__()
         inner_dim = d_model // ratio
@@ -1072,6 +1099,7 @@ class _STCPE(nn.Module):
             drop_prob=0.0,
             activation=activation,
             max_len=window,
+            mup_attention=mup_attention,
         )
         self.up = nn.Linear(inner_dim, d_model)
 
@@ -1159,6 +1187,7 @@ class _AnyVariateEncoder(nn.Module):
         drop_prob: float,
         activation: type[nn.Module],
         max_len: int,
+        mup_attention: bool = True,
     ):
         super().__init__()
         # The rotary tables are parameter-free, so all layers share one module
@@ -1174,6 +1203,7 @@ class _AnyVariateEncoder(nn.Module):
                     drop_prob=drop_prob,
                     activation=activation,
                     rotary=self.rotary,
+                    mup_attention=mup_attention,
                 )
                 for _ in range(n_layers)
             ]
@@ -1220,11 +1250,16 @@ class _AnyVariateEncoderLayer(nn.Module):
         drop_prob: float,
         activation: type[nn.Module],
         rotary: _RotaryEmbedding,
+        mup_attention: bool = True,
     ):
         super().__init__()
         self.norm1 = nn.RMSNorm(d_model, eps=1e-5)
         self.self_attn = _AnyVariateAttention(
-            d_model=d_model, num_heads=num_heads, drop_prob=drop_prob, rotary=rotary
+            d_model=d_model,
+            num_heads=num_heads,
+            drop_prob=drop_prob,
+            rotary=rotary,
+            mup_attention=mup_attention,
         )
         self.dropout = nn.Dropout(drop_prob)
         self.norm2 = nn.RMSNorm(d_model, eps=1e-5)
@@ -1265,11 +1300,18 @@ class _AnyVariateAttention(nn.Module):
     """
 
     def __init__(
-        self, d_model: int, num_heads: int, drop_prob: float, rotary: _RotaryEmbedding
+        self,
+        d_model: int,
+        num_heads: int,
+        drop_prob: float,
+        rotary: _RotaryEmbedding,
+        mup_attention: bool = True,
     ):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = d_model // num_heads
+        # None lets SDPA use its default 1 / sqrt(head_dim).
+        self.scale = 1.0 / self.head_dim if mup_attention else None
         self.drop_prob = drop_prob
         self.rotary = rotary
         self.q_proj = nn.Linear(d_model, d_model, bias=False)
@@ -1308,6 +1350,7 @@ class _AnyVariateAttention(nn.Module):
             value,
             attn_mask=bias,
             dropout_p=self.drop_prob if self.training else 0.0,
+            scale=self.scale,
         )
         out = self.merge_heads(out)
         return self.out_proj(out)

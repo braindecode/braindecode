@@ -2151,3 +2151,33 @@ def test_fixed_length_no_size_policy_is_moot(
         replacement_dataset.metadata,
     )
     assert deprecated_dataset.window_kwargs == replacement_dataset.window_kwargs
+
+
+@pytest.mark.parametrize("use_mne_epochs", [False, True])
+@pytest.mark.parametrize("preload", [False, True])
+@pytest.mark.parametrize("per_event_stride", [False, True])
+def test_event_aliases_preserve_targets(use_mne_epochs, preload, per_event_stride):
+    raw = mne.io.RawArray(
+        np.zeros((1, 600)), mne.create_info(["Cz"], 100, "eeg"), verbose=False
+    )
+    raw.set_annotations(mne.Annotations([0, 2, 4], [2, 2, 2], ["N3", "N4", "REM"]))
+    mapping = {"N3": 3, "N4": 3, "REM": 4}
+    windows = create_windows_from_events(
+        BaseConcatDataset([RawDataset(raw)]),
+        mapping=mapping,
+        window_size_samples=100,
+        window_stride_samples=(
+            {"N3": 100, "N4": 200, "REM": 100} if per_event_stride else 100
+        ),
+        use_mne_epochs=use_mne_epochs,
+        preload=preload,
+        on_last_window="drop",
+    )
+    expected = [3, 3, 3, 4, 4] if per_event_stride else [3, 3, 3, 3, 4, 4]
+    assert [windows[i][1] for i in range(len(windows))] == expected
+    assert mapping == {"N3": 3, "N4": 3, "REM": 4}
+    if use_mne_epochs:
+        epochs = windows.datasets[0].windows
+        assert len(set(epochs.event_id.values())) == 3
+        assert len(epochs["N3"]) == len(epochs["REM"]) == 2
+        assert len(epochs["N4"]) == (1 if per_event_stride else 2)

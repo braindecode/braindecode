@@ -46,7 +46,7 @@ readme = "README.rst"
 requires-python = ">=3.11"
 dependencies = [
     "torch>=2.4",
-    "torchaudio>=2.0",
+    "torchaudio>=2.4",
     'mne>=1.11.0',  # we get matplotlib, numpy, scipy from here
     'mne_bids>=0.18', # in theory we get the mne here, but we prefer to have it explicit
     'h5py',
@@ -62,7 +62,6 @@ dependencies = [
 
 [tool.uv]
 required-environments = [
-  "sys_platform == 'darwin' and platform_machine == 'x86_64'",  # Intel Mac
   "sys_platform == 'darwin' and platform_machine == 'arm64'",   # Apple Silicon Mac (M1/M2/M3)
   "sys_platform == 'linux' and platform_machine == 'x86_64'",   # Linux 64-bit
   "sys_platform == 'win32' and platform_machine == 'AMD64'"     # Windows 64-bit
