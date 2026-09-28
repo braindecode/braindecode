@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -16,8 +16,7 @@ maintainers = [
     { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
     { name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" },
 ]
-license = "BSD-3-Clause"
-license-files = ["LICENSE.txt", "NOTICE.txt", "LICENSES/Apache-2.0.txt"]
+license = { text = "BSD-3-Clause" }
 keywords = [
     "python",
     "deep-learning",

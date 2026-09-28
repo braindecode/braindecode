@@ -2,8 +2,7 @@
 #          Adam Mounir <am91ris@gmail.com> (braindecode adaptation)
 #
 # License: Apache-2.0
-# Modifications: adapted to Braindecode's raw-signal API, downstream head,
-#                configuration, and dtype contracts; see NOTICE.txt.
+# Adapted from https://huggingface.co/Daoze/Brant (Apache-2.0).
 
 from __future__ import annotations
 
@@ -28,7 +27,7 @@ BRANT_FREQ_BANDS: tuple[tuple[float, float], ...] = (
 )
 
 
-class Brant(EEGModuleMixin, nn.Module):
+class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
     r"""Brant from Zhang et al. (2023) [Brant2023]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`
