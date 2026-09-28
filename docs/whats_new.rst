@@ -78,6 +78,13 @@ Bug fixes
   :class:`braindecode.models.Deep4Net` unusable on single-channel data
   (:gh:`1154` by `Julien Gadonneix`_).
 
+- Fix :class:`braindecode.modules.MaxNormParametrize` failing on Intel Gaudi
+  (HPU), which affects every model with a max-norm weight constraint
+  (e.g. :class:`braindecode.models.EEGNet`,
+  :class:`braindecode.models.ATCNet`). The row rescale is now written out
+  instead of calling ``Tensor.renorm``; values and gradients are unchanged
+  (:gh:`1184` by `Bruno Aristimunha`_).
+
 
 Current 1.8.0 (2026-08-31)
 ===============================

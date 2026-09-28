@@ -34,5 +34,16 @@ class MaxNormParametrize(nn.Module):
         self.max_norm = max_norm
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
-        # Renormalize each "row" (dim=0 slice) to have at most self.max_norm L2-norm
-        return X.renorm(p=2, dim=0, maxnorm=self.max_norm)
+        # Renormalize each "row" (dim=0 slice) to have at most self.max_norm
+        # L2-norm. This is ``X.renorm(p=2, dim=0, maxnorm=self.max_norm)``
+        # written out, with the same 1e-7 epsilon: ``renorm`` fails on Intel
+        # Gaudi (HPU), which decomposes it into a broadcast that breaks for
+        # some weight shapes. The rescale uses a mask, not a data-dependent
+        # branch, so it also traces and compiles without graph breaks.
+        # Rows are flattened so the scale broadcasts as (rows, 1); this form
+        # is also TorchScript-compatible.
+        rows = X.reshape(X.shape[0], -1)
+        norm = rows.norm(p=2, dim=1, keepdim=True)
+        over = (norm > self.max_norm).to(X.dtype)
+        scale = (1.0 - over) + over * (self.max_norm / (norm + 1e-7))
+        return (rows * scale).reshape_as(X)
