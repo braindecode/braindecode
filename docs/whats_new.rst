@@ -28,6 +28,10 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.AXON`, an axis-factorized EEG foundation
+  model whose layers mix a temporal and a spatial attention path with a
+  per-token gate, with pretrained weights on the Hugging Face Hub
+  (:gh:`TODO-PR-NUMBER` by `Mahir Jain`_).
 - Add :class:`braindecode.models.VEMG2Pose`,
   :class:`braindecode.models.NeuroPose`, and
   :class:`braindecode.models.SensingDynamics` for dense hand-pose
@@ -1757,3 +1761,4 @@ Authors
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
+.. _Mahir Jain: https://github.com/mahirjain01

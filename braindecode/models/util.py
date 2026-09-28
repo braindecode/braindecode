@@ -342,6 +342,7 @@ models_mandatory_parameters: list[
     tuple[str, list[SigArgName], dict[SigArgName, Any] | None | Any]
 ] = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("AXON", ["chs_info", "n_outputs"], {"sfreq": 200.0, "n_times": 1000}),
     ("BDTCN", ["n_chans", "n_outputs"], None),
     ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
     ("DeepSleepNet", ["n_chans", "n_outputs", "n_times"], None),

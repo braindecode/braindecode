@@ -3,6 +3,7 @@
 from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
+from .axon import AXON
 from .base import EEGModuleMixin
 from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
@@ -83,6 +84,7 @@ _init_models_dict()
 
 __all__ = [
     "ATCNet",
+    "AXON",
     "AttnSleep",
     "AttentionBaseNet",
     "EEGModuleMixin",

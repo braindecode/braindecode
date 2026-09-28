@@ -1251,3 +1251,21 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+# ==============================================================================
+# Tests for AXON Model
+# ==============================================================================
+
+
+@pytest.mark.network
+@pytest.mark.huggingface
+def test_axon_pretrained_loads():
+    from braindecode.models import AXON
+
+    chs_info = [{"ch_name": n, "kind": "eeg"} for n in ["Fz", "C3", "Cz", "C4", "Pz"]]
+    model = AXON.from_pretrained(
+        "NeuroDX/axon-eeg", chs_info=chs_info, n_outputs=2, n_times=800
+    )
+    out = model(torch.randn(2, 5, 800))
+    assert out.shape == (2, 2)
