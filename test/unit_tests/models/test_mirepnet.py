@@ -43,8 +43,8 @@ def test_mirepnet_edge_cases(kwargs, message):
         "num_layers": 2,
         "num_heads": 4,
         "feedforward_expansion": 2,
+        **kwargs,
     }
-    model_kwargs.update(kwargs)
 
     with pytest.raises(ValueError, match=message):
         MIRepNet(**model_kwargs)
