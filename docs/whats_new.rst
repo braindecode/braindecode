@@ -87,6 +87,18 @@ Bug fixes
   their ``chs_info`` position, while named channels keep their own slot. Without
   positions, the identity fallback is kept, and a clear error is raised when it
   cannot fit (:gh:`1185` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU) and under
+  ``torch.jit.trace``: :class:`braindecode.modules.GeneralizedGaussianFilter`
+  now clamps its parameters in place under ``torch.no_grad()`` instead of
+  reassigning ``.data``, and :func:`braindecode.functional.hilbert_freq`
+  computes the complex FFT step in float32 for bfloat16 inputs, so the phase
+  features work under bfloat16 autocast (:gh:`1183` by `Bruno Aristimunha`_).
+- Fix :class:`braindecode.modules.MaxNormParametrize` failing on Intel Gaudi
+  (HPU), which affects every model with a max-norm weight constraint
+  (e.g. :class:`braindecode.models.EEGNet`,
+  :class:`braindecode.models.ATCNet`). The row rescale is now written out
+  instead of calling ``Tensor.renorm``; values and gradients are unchanged
+  (:gh:`1184` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)

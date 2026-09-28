@@ -643,16 +643,17 @@ class GeneralizedGaussianFilter(nn.Module):
         """
         min_f_mean = self.clamp_f_mean[0] / (self.sample_rate / 2)
         max_f_mean = self.clamp_f_mean[1] / (self.sample_rate / 2)
-        f_mean = torch.clamp(self.f_mean, min=min_f_mean, max=max_f_mean)
+        f_mean = torch.clamp(self.f_mean.clone(), min=min_f_mean, max=max_f_mean)
         bandwidth = torch.clamp(
-            self.bandwidth, min=1.0 / (self.sample_rate / 2), max=1.0
+            self.bandwidth.clone(), min=1.0 / (self.sample_rate / 2), max=1.0
         )
-        shape = torch.clamp(self.shape, min=2.0, max=3.0)
+        shape = torch.clamp(self.shape.clone(), min=2.0, max=3.0)
 
-        if not torch.jit.is_scripting():
-            self.f_mean.data = f_mean
-            self.bandwidth.data = bandwidth
-            self.shape.data = shape
+        if not torch.jit.is_scripting() and not torch.jit.is_tracing():
+            with torch.no_grad():
+                self.f_mean.copy_(f_mean)
+                self.bandwidth.copy_(bandwidth)
+                self.shape.copy_(shape)
 
         # Create magnitude response with gain=1 -> (channels, freqs)
         mag_response = self.exponential_power(
