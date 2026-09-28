@@ -78,6 +78,13 @@ Bug fixes
   :class:`braindecode.models.Deep4Net` unusable on single-channel data
   (:gh:`1154` by `Julien Gadonneix`_).
 
+- Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU) and under
+  ``torch.jit.trace``: :class:`braindecode.modules.GeneralizedGaussianFilter`
+  now clamps its parameters in place under ``torch.no_grad()`` instead of
+  reassigning ``.data``, and :func:`braindecode.functional.hilbert_freq`
+  computes the complex FFT step in float32 for bfloat16 inputs, so the phase
+  features work under bfloat16 autocast (:gh:`PRNUM` by `Bruno Aristimunha`_).
+
 
 Current 1.8.0 (2026-08-31)
 ===============================
