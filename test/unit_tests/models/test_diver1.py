@@ -1,4 +1,4 @@
-# Authors: The braindecode contributors.
+# Authors: Julien Gadonneix <juliengado.2001@gmail.com>
 #
 # License: BSD-3
 
