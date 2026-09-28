@@ -47,6 +47,10 @@ _SUBTYPES = ("grid", "strip", "depth")
 _TYPE_TO_SUBTYPE = {"seeg": "depth", "dbs": "depth", "ecog": "grid"}
 # Recording modality implied by each channel type.
 _TYPE_TO_MODALITY = {t: "iEEG" for t in INTRACRANIAL_CH_TYPES} | {"eeg": "EEG"}
+# Vocabulary sizes, as plain ints so that a scripted forward can check metadata
+# against them (TorchScript cannot read the tuples themselves).
+_N_MODALITIES = len(_MODALITIES)
+_N_SUBTYPES = len(_SUBTYPES)
 
 
 def _label_indices(
@@ -77,6 +81,63 @@ def _label_indices(
         dtype=torch.long,
     )
     return indices, torch.tensor(known, dtype=torch.float32).unsqueeze(-1)
+
+
+def _split_channel_metadata(
+    metadata: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Split a ``(n_chans, 5)`` metadata tensor into the embedding's inputs.
+
+    Coordinates that are non-finite or exactly zero (MNE's two ways of spelling
+    "no montage", as in ``has_valid_locations``) and negative sub-modality slots
+    stand for unknown, and are returned as a zero flag so that
+    :class:`_ChannelMetaEmbedding` zeroes the corresponding term out.
+    """
+    coords = metadata[:, :3]
+    coords_known = (
+        torch.isfinite(coords).all(dim=-1, keepdim=True)
+        & (coords != 0).any(dim=-1, keepdim=True)
+    ).to(coords.dtype)
+    type_idx = metadata[:, 3].long()
+    subtype = metadata[:, 4].long()
+    subtype_known = (subtype >= 0).to(coords.dtype).unsqueeze(-1)
+    return (
+        torch.nan_to_num(coords),
+        coords_known,
+        type_idx,
+        subtype.clamp(min=0),
+        subtype_known,
+    )
+
+
+def _check_channel_metadata(
+    metadata: torch.Tensor,
+    n_chans: int,
+    # Bound as defaults rather than read from the module: a scripted forward
+    # cannot reach global values, but it does capture default arguments.
+    n_modalities: int = _N_MODALITIES,
+    n_subtypes: int = _N_SUBTYPES,
+) -> None:
+    """Reject metadata that does not describe the channels of this batch."""
+    if metadata.dim() != 2 or metadata.shape[0] != n_chans or metadata.shape[1] != 5:
+        raise ValueError(
+            f"chan_metadata must have shape ({n_chans}, 5), one row of "
+            f"(x, y, z, modality, sub-modality) per channel of the input, got "
+            f"{list(metadata.shape)}."
+        )
+    modality = metadata[:, 3]
+    if bool(((modality < 0) | (modality >= n_modalities)).any()):
+        raise ValueError(
+            f"The modality column of chan_metadata must hold slots in "
+            f"[0, {n_modalities}), got values from {float(modality.min())} to "
+            f"{float(modality.max())}."
+        )
+    if bool((metadata[:, 4] >= n_subtypes).any()):
+        raise ValueError(
+            f"The sub-modality column of chan_metadata must hold slots below "
+            f"{n_subtypes}, or a negative value for unknown, got up to "
+            f"{float(metadata[:, 4].max())}."
+        )
 
 
 class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
@@ -237,6 +298,22 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
       Coordinates that are missing, non-finite or exactly zero get a zeroed
       coordinate embedding, which is how the paper handles unknown positions.
 
+    .. rubric:: One model, many subjects
+
+    Because nothing the model is told about an electrode is subject-specific,
+    one instance encodes recordings from different subjects, with different
+    montages, without being rebuilt. The ``chs_info`` given to the constructor
+    describes one montage only, to give :meth:`forward` a default; to read
+    another recording, pass its metadata as the ``chan_metadata`` argument of
+    :meth:`forward`, which :meth:`channel_metadata` builds from that
+    recording's ``chs_info``. All the samples of one batch share it, so batch
+    by recording.
+
+    Only ``pooling="flatten"`` is tied to a single montage, since its head
+    holds weights per token; ``pooling="mean"`` takes any number of channels.
+    The window length is fixed either way, as the read-out and the rotary
+    tables are sized for a patch count.
+
     .. rubric:: Pre-trained weights
 
     None. The reference repository ships a placeholder in place of
@@ -310,7 +387,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Token aggregation before the head. ``"flatten"`` reproduces the paper's
         finetuning protocol (a linear classifier on the flattened token grid);
         ``"mean"`` averages over channels and patches first, giving a head that
-        is independent of ``n_chans`` and ``n_times``.
+        is independent of ``n_chans``, which is what lets one instance read
+        montages of any size.
     drop_prob : float
         Dropout rate used in the encoder and the spectral embedding.
     activation : type[nn.Module]
@@ -417,7 +495,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             patch_size=patch_size, n_times=self.n_times
         )
         self.patch_cnn = _PatchCNN(
-            n_chans=self.n_chans,
+            n_patches=self.n_patches,
             patch_size=patch_size,
             d_model=d_model,
             stride=cnn_stride,
@@ -429,49 +507,15 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
             _SpectralEmbedding(d_model, drop_prob) if use_spectral_emb else None
         )
 
-        # Channel metadata, all read from chs_info. Registered non-persistently
-        # because it describes the montage the model was built for, not learned
-        # state.
-        # MNE stores coordinates in metres; DIVER-1 encodes MNI coordinates in
-        # millimetres. Channels whose coordinates are non-finite or exactly zero
-        # (MNE's two ways of spelling "no montage", as in ``has_valid_locations``)
-        # are flagged so their embedding is zeroed, which is how the paper
-        # handles unknown positions.
-        coords = 1e3 * torch.as_tensor(
-            extract_channel_locations_from_chs_info(
-                self.chs_info, num_channels=self.n_chans, fill_missing=True
-            ),
-            dtype=torch.float32,
+        # The montage read from chs_info is only the default: forward takes
+        # another recording's metadata directly, which is what lets one
+        # instance read subjects it was not built for. It rides along as a
+        # buffer, so it follows the module across devices.
+        self.register_buffer(
+            "default_chan_metadata",
+            self.channel_metadata(self.chs_info),
+            persistent=False,
         )
-        coords_known = (
-            torch.isfinite(coords).all(dim=-1, keepdim=True)
-            & (coords != 0).any(dim=-1, keepdim=True)
-        ).to(coords.dtype)
-        self.register_buffer("chan_coords", torch.nan_to_num(coords), persistent=False)
-        self.register_buffer("chan_coords_known", coords_known, persistent=False)
-
-        # Modality and sub-modality both come from the chs_info channel kinds.
-        # The modality is never guessed: the reference takes it as mandatory
-        # metadata, and mislabelling scalp EEG as intracranial (or the reverse)
-        # picks the wrong learned embedding slot. An undeterminable sub-modality
-        # is tolerated with a zeroed embedding, as in the reference.
-        types = channel_types_from_chs_info(self.chs_info, num_channels=self.n_chans)
-        undetermined = sorted({t for t in types if t not in _TYPE_TO_MODALITY})
-        if undetermined:
-            raise ValueError(
-                f"DIVER1 cannot determine the recording modality of every "
-                f"channel: the chs_info 'kind' of some resolves to "
-                f"{undetermined}, which is neither scalp EEG nor an "
-                f"intracranial type ({sorted(INTRACRANIAL_CH_TYPES)}). Set the "
-                f"channel kinds in chs_info accordingly."
-            )
-        type_idx, _ = _label_indices([_TYPE_TO_MODALITY[t] for t in types], _MODALITIES)
-        subtype_idx, subtype_known = _label_indices(
-            [_TYPE_TO_SUBTYPE.get(t, "unknown") for t in types], _SUBTYPES
-        )
-        self.register_buffer("chan_type_idx", type_idx, persistent=False)
-        self.register_buffer("chan_subtype_idx", subtype_idx, persistent=False)
-        self.register_buffer("chan_subtype_known", subtype_known, persistent=False)
 
         self.chan_emb = _ChannelMetaEmbedding(d_model) if use_position_emb else None
 
@@ -481,7 +525,6 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
                 ratio=stcpe_ratio,
                 window=stcpe_window,
                 activation=activation,
-                n_chans=self.n_chans,
                 n_patches=self.n_patches,
             )
             if use_stcpe
@@ -497,10 +540,11 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.global_register = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
 
         # Any-variate attention runs over the flattened (channel, patch) grid.
-        # Unflattening only needs the channel count, registers included.
+        # Unflattening is keyed on the patch count, registers included, which
+        # is fixed, so that the channel count stays free.
         self.flatten_grid = Rearrange("batch chan patch dim -> batch (chan patch) dim")
         self.unflatten_grid = Rearrange(
-            "batch (chan patch) dim -> batch chan patch dim", chan=self.n_chans + 1
+            "batch (chan patch) dim -> batch chan patch dim", patch=self.n_patches + 1
         )
 
         self.encoder = _AnyVariateEncoder(
@@ -524,23 +568,111 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self._n_outputs = n_outputs
         self.final_layer = nn.Linear(self.final_layer.in_features, n_outputs)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def channel_metadata(chs_info: list[dict]) -> torch.Tensor:
+        """Assemble one recording's electrode metadata for :meth:`forward`.
+
+        The modality is never guessed: the reference takes it as mandatory
+        metadata, and mislabelling scalp EEG as intracranial (or the reverse)
+        picks the wrong learned embedding slot. An undeterminable sub-modality
+        is tolerated with a zeroed embedding, as in the reference, and so is an
+        unknown position.
+
+        Parameters
+        ----------
+        chs_info : list of dict
+            MNE channel information (``info["chs"]``) of the recording, one
+            entry per channel, holding its kind and its location.
+
+        Returns
+        -------
+        torch.Tensor
+            ``(n_chans, 5)`` float tensor whose columns are the three MNI
+            coordinates in millimetres, the recording-modality slot and the
+            electrode-sub-modality slot, the latter negative when unknown.
+
+        Examples
+        --------
+        >>> import mne
+        >>> from braindecode.models import DIVER1
+        >>> info = mne.create_info(["A1", "A2"], 500.0, "seeg")
+        >>> DIVER1.channel_metadata(info["chs"])[:, 3:].tolist()
+        [[1.0, 2.0], [1.0, 2.0]]
+        """
+        n_chans = len(chs_info)
+        # MNE stores coordinates in metres; DIVER-1 encodes MNI coordinates in
+        # millimetres.
+        coords = 1e3 * torch.as_tensor(
+            extract_channel_locations_from_chs_info(
+                chs_info, num_channels=n_chans, fill_missing=True
+            ),
+            dtype=torch.float32,
+        )
+        types = channel_types_from_chs_info(chs_info, num_channels=n_chans)
+        undetermined = sorted({t for t in types if t not in _TYPE_TO_MODALITY})
+        if undetermined:
+            raise ValueError(
+                f"DIVER1 cannot determine the recording modality of every "
+                f"channel: the chs_info 'kind' of some resolves to "
+                f"{undetermined}, which is neither scalp EEG nor an "
+                f"intracranial type ({sorted(INTRACRANIAL_CH_TYPES)}). Set the "
+                f"channel kinds in chs_info accordingly."
+            )
+        type_idx, _ = _label_indices([_TYPE_TO_MODALITY[t] for t in types], _MODALITIES)
+        subtype_idx, subtype_known = _label_indices(
+            [_TYPE_TO_SUBTYPE.get(t, "unknown") for t in types], _SUBTYPES
+        )
+        # An unknown sub-modality has no slot of its own; a negative index is
+        # what spells it out in the packed tensor.
+        subtype = torch.where(subtype_known.squeeze(-1) > 0, subtype_idx, -1)
+        return torch.cat(
+            [coords, type_idx.unsqueeze(-1), subtype.unsqueeze(-1)], dim=-1
+        ).to(coords.dtype)
+
+    def forward(
+        self, x: torch.Tensor, chan_metadata: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """Encode an iEEG batch into class logits.
 
         Parameters
         ----------
         x : torch.Tensor
             Input of shape ``(batch, n_chans, n_times)``.
+        chan_metadata : torch.Tensor, optional
+            ``(n_chans, 5)`` electrode metadata of the recording this batch
+            comes from, one row of (x, y, z, modality, sub-modality) per
+            channel, as :meth:`channel_metadata` builds it from its
+            ``chs_info``. Every sample of the batch shares it. Defaults to the
+            montage given at construction, which only fits the
+            construction-time channel count.
 
         Returns
         -------
         torch.Tensor
             Class logits of shape ``(batch, n_outputs)``.
         """
-        if x.shape[1] != self.n_chans_grid:
+        n_chans = x.shape[1]
+        if chan_metadata is None:
+            if n_chans != self.n_chans_grid:
+                raise ValueError(
+                    f"DIVER1 was built for {self.n_chans_grid} channels but got "
+                    f"input with {n_chans}; pass this recording's metadata as "
+                    f"chan_metadata, which DIVER1.channel_metadata builds from "
+                    f"its chs_info."
+                )
+            metadata = self.default_chan_metadata
+        else:
+            _check_channel_metadata(chan_metadata, n_chans)
+            metadata = chan_metadata.to(device=x.device, dtype=x.dtype)
+        # Everything else adapts to the montage, but a flattened read-out is a
+        # fixed number of weights per token, so it can only ever serve the grid
+        # it was built for.
+        if self.pooling == "flatten" and n_chans != self.n_chans_grid:
             raise ValueError(
-                f"DIVER1 was built for {self.n_chans_grid} channels but got input "
-                f"with {x.shape[1]}; rebuild the model for this montage."
+                f"pooling='flatten' ties the read-out to the "
+                f"{self.n_chans_grid} channels it was built for, but got "
+                f"{n_chans}. Build the model with pooling='mean' to encode "
+                f"montages of any size."
             )
         # The rotary tables and (for ``pooling="flatten"``) the head are sized
         # for a fixed patch count, so reject a different input length outright
@@ -561,13 +693,12 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         if self.spectral_emb is not None:
             tokens = tokens + self.spectral_emb(tokens)
         if self.chan_emb is not None:
+            coords, coords_known, type_idx, subtype_idx, subtype_known = (
+                _split_channel_metadata(metadata)
+            )
             # (n_chans, d_model), broadcast over batch and patches.
             chan_emb = self.chan_emb(
-                self.chan_coords,
-                self.chan_coords_known,
-                self.chan_type_idx,
-                self.chan_subtype_idx,
-                self.chan_subtype_known,
+                coords, coords_known, type_idx, subtype_idx, subtype_known
             )
             tokens = tokens + chan_emb[None, :, None, :]
         if self.stcpe is not None:
@@ -576,22 +707,23 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # Prepend the register column (per-channel), row (per-patch) and their
         # corner (global).
         batch = tokens.shape[0]
-        patch_reg = self.patch_register[None].expand(batch, self.n_chans_grid, -1, -1)
+        patch_reg = self.patch_register[None].expand(batch, n_chans, -1, -1)
         tokens = torch.cat([patch_reg, tokens], dim=2)
         chan_reg = self.chan_register[None].expand(batch, -1, self.n_patches, -1)
         global_reg = self.global_register[None].expand(batch, -1, -1, -1)
         row = torch.cat([global_reg, chan_reg], dim=2)
         tokens = torch.cat([row, tokens], dim=1)
 
-        _, n_chans, n_patches, _ = tokens.shape
+        # Registers included, so one more than the input channel and patch counts.
+        _, n_rows, n_cols, _ = tokens.shape
         # Any-variate attention is over the flattened (channel, patch) grid; the
         # two id vectors are what tells the attention which token is which. The
         # reference carries them per sample, to support the variable-length
         # subviews of pretraining; a braindecode batch always shares one montage
         # and length, so a single shared pair of ids is equivalent and keeps the
         # attention bias at (1, num_heads, seq, seq) instead of a per-sample copy.
-        var_id = torch.arange(n_chans, device=x.device).repeat_interleave(n_patches)
-        time_id = torch.arange(n_patches, device=x.device).repeat(n_chans)
+        var_id = torch.arange(n_rows, device=x.device).repeat_interleave(n_cols)
+        time_id = torch.arange(n_cols, device=x.device).repeat(n_rows)
         tokens = self.encoder(
             self.flatten_grid(tokens),
             var_id=var_id,
@@ -623,9 +755,10 @@ class _PatchCNN(nn.Module):
 
     Parameters
     ----------
-    n_chans : int
-        Number of channels of the grid, needed to split the ``(chan patch)``
-        axis back apart after the convolutions.
+    n_patches : int
+        Number of temporal patches, needed to split the ``(chan patch)`` axis
+        back apart after the convolutions. Keying on the patch count rather
+        than the channel count leaves the channel count free at call time.
     patch_size : int
         Number of samples per patch.
     d_model : int
@@ -641,7 +774,7 @@ class _PatchCNN(nn.Module):
 
     def __init__(
         self,
-        n_chans: int,
+        n_patches: int,
         patch_size: int,
         d_model: int,
         stride: int | None = None,
@@ -706,7 +839,7 @@ class _PatchCNN(nn.Module):
         # are what makes up a token: ``d_model = hidden * out``.
         self.unfold_grid = Rearrange(
             "batch hidden (chan patch) out -> batch chan patch (hidden out)",
-            chan=n_chans,
+            patch=n_patches,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -874,10 +1007,9 @@ class _STCPE(nn.Module):
         Width of the temporal window, in patches.
     activation : type[nn.Module]
         Activation layer class of the inner feed-forward block.
-    n_chans : int
-        Height of the token grid, i.e. the height of a window.
     n_patches : int
-        Width of the token grid, which fixes how many windows cover it.
+        Width of the token grid, which fixes how many windows cover it. The
+        height, i.e. the channel count, is read off the grid at call time.
     """
 
     def __init__(
@@ -886,7 +1018,6 @@ class _STCPE(nn.Module):
         ratio: int,
         window: int,
         activation: type[nn.Module],
-        n_chans: int,
         n_patches: int,
     ):
         super().__init__()
@@ -904,14 +1035,13 @@ class _STCPE(nn.Module):
         ):
             inner_heads -= 1
         self.window = window
-        self.n_chans = n_chans
-        # Full-height, window-wide patches of the (channel, patch) grid.
+        self.n_patches = n_patches
+        # Full-height, window-wide patches of the (channel, patch) grid. The
+        # height follows the input, so only the time axis is fixed here.
         # Zero-padding by window - 1 keeps a window centred on every patch, so
         # there are that many more windows than patches.
-        self.kernel_size = (n_chans, window)
         self.stride = (1, 1)
         self.padding = (0, window - 1)
-        self.grid_size = (n_chans, n_patches)
         self.n_windows = n_patches + window - 1
         # The feature axis is folded into the batch so that unfold and fold only
         # ever slide over time, and the window is full height so that every
@@ -947,11 +1077,17 @@ class _STCPE(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Map a token grid to a positional bias of the same shape."""
+        # A window spans the whole height of the grid, so its geometry follows
+        # the channel count of this batch.
+        n_chans = x.shape[1]
+        kernel_size = (n_chans, self.window)
+        grid_size = (n_chans, self.n_patches)
+
         x = self.down(x)
         flat = self.fold_features(x)
         unfolded = F.unfold(
             flat,
-            kernel_size=self.kernel_size,
+            kernel_size=kernel_size,
             stride=self.stride,
             padding=self.padding,
         )
@@ -959,17 +1095,15 @@ class _STCPE(nn.Module):
 
         # Inside a window, tokens are tagged by their channel and their offset
         # from the start of the window.
-        var_id = torch.arange(self.n_chans, device=x.device).repeat_interleave(
-            self.window
-        )
-        time_id = torch.arange(self.window, device=x.device).repeat(self.n_chans)
+        var_id = torch.arange(n_chans, device=x.device).repeat_interleave(self.window)
+        time_id = torch.arange(self.window, device=x.device).repeat(n_chans)
         encoded = self.encoder(windows, var_id=var_id, time_id=time_id)
         encoded = self.batch_to_windows(encoded)
 
         folded = F.fold(
             encoded,
-            output_size=self.grid_size,
-            kernel_size=self.kernel_size,
+            output_size=grid_size,
+            kernel_size=kernel_size,
             stride=self.stride,
             padding=self.padding,
         )
@@ -979,13 +1113,13 @@ class _STCPE(nn.Module):
         overlap = F.fold(
             torch.ones(
                 1,
-                self.n_chans * self.window,
+                n_chans * self.window,
                 self.n_windows,
                 dtype=x.dtype,
                 device=x.device,
             ),
-            output_size=self.grid_size,
-            kernel_size=self.kernel_size,
+            output_size=grid_size,
+            kernel_size=kernel_size,
             stride=self.stride,
             padding=self.padding,
         )
