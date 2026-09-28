@@ -86,7 +86,7 @@ Bug fixes
   channels. Such channels now take the slot of the nearest 10-05 site from
   their ``chs_info`` position, while named channels keep their own slot. Without
   positions, the identity fallback is kept, and a clear error is raised when it
-  cannot fit (:gh:`PRNUM` by `Bruno Aristimunha`_).
+  cannot fit (:gh:`1185` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
