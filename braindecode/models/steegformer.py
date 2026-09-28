@@ -487,10 +487,10 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
             identity = self._identity_channel_indices()
             warnings.warn(
                 f"STEEGFormer: {len(missing)} channel name(s) absent from the "
-                f"montage vocabulary ({shown}) and without a valid head-frame position in "
-                f"chs_info; falling back to the identity channel mapping. Pass "
-                f"`chan_pos_idx` explicitly to align an arbitrary montage with "
-                f"the pre-trained channel embedding.",
+                f"montage vocabulary ({shown}) and without a valid head-frame "
+                f"position in chs_info; falling back to the identity channel "
+                f"mapping. Pass `chan_pos_idx` explicitly to align an arbitrary "
+                f"montage with the pre-trained channel embedding.",
                 UserWarning,
                 stacklevel=2,
             )
