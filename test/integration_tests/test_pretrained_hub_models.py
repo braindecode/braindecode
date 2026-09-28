@@ -332,6 +332,7 @@ class TestSTEEGFormerPretrained:
         # Test*Pretrained classes above.
         ("Labram", "braindecode/labram-pretrained", 128),
         ("STEEGFormer", "braindecode/STEEGFormer-small", 22),
+        ("BrainBERT", "braindecode/brainbert-pretrained", 1),
     ],
 )
 def test_all_pretrained_models_load(
@@ -363,6 +364,7 @@ def test_all_pretrained_models_load(
         # Test*Pretrained classes above.
         ("Labram", "braindecode/labram-pretrained"),
         ("STEEGFormer", "braindecode/STEEGFormer-small"),
+        ("BrainBERT", "braindecode/brainbert-pretrained"),
     ],
 )
 def test_pretrained_models_forward_pass(model_cls, repo_id, hub_cache_dir):

@@ -6,7 +6,9 @@ from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
 from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
+from .brainbert import BrainBERT
 from .brainmodule import BrainModule
+from .brant import Brant
 from .cbramod import CBraMod
 from .codebrain import CodeBrain
 from .contrawr import ContraWR
@@ -40,9 +42,11 @@ from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
+from .neuropose import NeuroPose
 from .patchedtransformer import PBT
 from .reve import REVE
 from .sccnet import SCCNet
+from .sensingdynamics import SensingDynamics
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
     InterpolatedSignalJEPA,
@@ -71,6 +75,7 @@ from .util import (
     models_mandatory_parameters,
     positions_from_chs_info,
 )
+from .vemg2pose import VEMG2Pose
 from .zuna import ZUNA
 
 # Call this last in order to make sure the dataset list is populated with
@@ -84,6 +89,7 @@ __all__ = [
     "EEGModuleMixin",
     "BIOT",
     "BENDR",
+    "BrainBERT",
     "CBraMod",
     "CodeBrain",
     "ContraWR",
@@ -92,6 +98,7 @@ __all__ = [
     "Deep4Net",
     "DeepSleepNet",
     "BrainModule",
+    "Brant",
     "EEGConformer",
     "EEGDINO",
     "EEGPT",
@@ -107,6 +114,9 @@ __all__ = [
     "EEGTCNet",
     "DGCNN",
     "EMG2QwertyNet",
+    "NeuroPose",
+    "SensingDynamics",
+    "VEMG2Pose",
     "FBCNet",
     "FBLightConvNet",
     "FBMSNet",

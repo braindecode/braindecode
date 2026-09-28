@@ -26,7 +26,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import PatchTokenizer
 
 
-class MVPFormer(EEGModuleMixin, nn.Module):
+class MVPFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
     r"""MVPFormer from Carzaniga et al. (2026) [Carzaniga2026]_.
 
     :bdg-danger:`Foundation Model` :bdg-info:`Attention/Transformer`

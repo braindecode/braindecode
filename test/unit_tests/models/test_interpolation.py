@@ -58,13 +58,14 @@ def test_forward_applies_matrix_over_channel_axis():
     torch.testing.assert_close(y[0, 1], torch.tensor([1.0, 2.0, 3.0]))
 
 
-def _montage_ch(name):
+def _montage_ch(name, pos_name=None):
     # Positions from a real montage: we pick a handful of 10-20 names.
     import mne
 
     mtg = mne.channels.make_standard_montage("standard_1005")
     pos = mtg.get_positions()["ch_pos"]
-    return {"ch_name": name, "kind": "eeg", "loc": np.asarray(pos[name], dtype=float)}
+    loc = np.asarray(pos[pos_name or name], dtype=float)
+    return {"ch_name": name, "kind": "eeg", "loc": loc}
 
 
 def test_compute_mne_matrix_returns_correct_shape():
@@ -79,20 +80,30 @@ def test_compute_mne_matrix_returns_correct_shape():
 
 
 def test_always_mode_uses_mne_even_when_names_match():
-    # Identical src and tgt by name — in name_match this would be identity,
-    # in always mode it uses the MNE matrix (NOT identity).
-    # Use at least 4 channels to satisfy MNE's minimum digitization requirement.
+    # All names match, so name_match would short-circuit to a permutation
+    # matrix. In always mode the MNE interpolation is computed from the
+    # positions, so with different tgt positions the result must NOT be a
+    # permutation. (For identical positions the spline self-interpolation is
+    # numerically exact identity, so the positions must differ for this test
+    # to distinguish the two modes.)
     names = ["Fz", "Cz", "Pz", "C3", "C4"]
+    pos_names = ["F3", "F4", "P3", "P4", "Oz"]
     src = [_montage_ch(n) for n in names]
-    tgt = [_montage_ch(n) for n in names]
+    tgt = [_montage_ch(n, p) for n, p in zip(names, pos_names)]
     layer = ChannelInterpolationLayer(src, tgt, mode="always")
     assert layer.matrix.shape == (5, 5)
-    # MNE on identical positions will approximate identity but likely not
-    # be exactly identity. Check non-trivial off-diagonal structure.
-    off_diag = layer.matrix - torch.diag(torch.diagonal(layer.matrix))
-    assert torch.any(off_diag.abs() > 1e-6), (
-        "expected non-trivial MNE-computed matrix, got pure diagonal"
+    # Spline interpolation onto different positions mixes several sources
+    # into each target: no row is close to a one-hot.
+    for i, row in enumerate(layer.matrix):
+        n_large = (row.abs() > 0.1).sum().item()
+        assert n_large > 1, f"row {i} looks one-hot ({n_large} large entries)"
+    # Spline preserves constant signals: each row sums to one.
+    torch.testing.assert_close(
+        layer.matrix.sum(axis=1), torch.ones(5), atol=1e-3, rtol=0
     )
+    # Contrast: the same inputs in name_match mode yield the permutation.
+    layer_nm = ChannelInterpolationLayer(src, tgt, mode="name_match")
+    torch.testing.assert_close(layer_nm.matrix, torch.eye(5))
 
 
 def test_name_match_partial_overwrites_matched_rows_with_one_hots():

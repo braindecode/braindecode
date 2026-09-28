@@ -185,7 +185,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
        31, pp.710-719. https://ieeexplore.ieee.org/document/9991178
     .. [ConformerCode] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
        conformer: Convolutional transformer for EEG decoding and visualization.
-       https://github.com/eeyhsong/EEG-Conformer.
+       https://github.com/eeyhsong/EEG-Conformer
     """
 
     def __init__(

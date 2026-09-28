@@ -22,17 +22,84 @@
 .. _current:
 
 
-Current 1.8.0 (GitHub)
+Current 1.8.1 (2026-08-31)
 ===============================
 
 Enhancements
 ============
+
+- Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
+  foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
+  2023), including in-model spectral features and the shared configuration,
+  feature-return, and head-reset APIs. The official pretrained weights load from
+  ``braindecode/brant-pretrained`` (all tensors verified identical to the
+  official release) (:gh:`1100` by `Adam Mounir`_).
+
+- Add :class:`braindecode.models.VEMG2Pose`,
+  :class:`braindecode.models.NeuroPose`, and
+  :class:`braindecode.models.SensingDynamics` for dense hand-pose
+  regression from surface EMG (:gh:`1132` by `Bruno Aristimunha`_).
+
+- Improve CI test scheduling and run documentation examples with bounded
+  parallelism, preserving the test cases and gallery training workloads
+  (:gh:`1161` by `Bruno Aristimunha`_).
+
+- Add :class:`braindecode.models.BrainBERT`, a self-supervised foundation model
+  for intracranial (sEEG/iEEG) signals from Wang et al. (ICLR 2023), with
+  pretrained weights (:gh:`1104` by `Adam Mounir`_).
+
+Requirements
+============
+
+- Require PyTorch and TorchAudio >= 2.4 and remove obsolete attention fallbacks.
+  REVE and ZUNA now import PyTorch's RMSNorm layer directly, preserving their
+  explicit epsilon values. Intel macOS is no longer supported because
+  PyTorch stopped providing its binary packages after 2.2.
+  (:gh:`1174` by `Bruno Aristimunha`_)
+
+Bug fixes
+==========
+
+- Preserve shared class targets when creating MNE epochs from different event
+  annotations, as in sleep staging. MNE event IDs remain unique.
+  (:gh:`1174` by `Bruno Aristimunha`_)
+
+- Fix a ``FutureWarning`` raised by MNE >= 1.13 when importing
+  :mod:`braindecode` or using models, datasets and augmentations that build
+  on the ``standard_1005``/``standard_1020`` montages: MNE renamed these
+  montages to ``colin27_1005``/``colin27_1020`` and will remove the legacy
+  names in MNE 1.14, so their spelling is now resolved against the installed
+  MNE version via :func:`braindecode.util.resolve_montage_name`
+  (:gh:`1163` by `Li Qing`_).
+
+- Fix :class:`braindecode.modules.CombinedConv` raising ``RuntimeError: self
+  must be a matrix`` when ``in_chans``, ``n_filters_time`` or ``n_filters_spat``
+  is 1, which made :class:`braindecode.models.ShallowFBCSPNet` and
+  :class:`braindecode.models.Deep4Net` unusable on single-channel data
+  (:gh:`1154` by `Julien Gadonneix`_).
+
+
+Current 1.8.0 (2026-08-31)
+===============================
+
+Enhancements
+============
+
+- Add a reusable temporal-distributed separable convolution encoder to
+  :mod:`braindecode.modules`, and centralize output-head replacement for models using
+  :class:`braindecode.models.base.EEGModuleMixin` (:gh:`1145` by `Bruno
+  Aristimunha`_)
 
 - Add :meth:`braindecode.datasets.BaseConcatDataset.plot` (every dataset, ``BIDSDataset`` included): show a recording in the
   `eegdash-viewer <https://github.com/eegdash/eegdash-viewer>`_ inside a
   Jupyter cell — serverless (bytes inlined, viewer from CDN), with the
   synchronized hand-pose panel when a ``*_desc-pose.json`` sidecar is present
   (:gh:`1133` by `Bruno Aristimunha`_)
+
+- Add :func:`braindecode.visualization.capture_activations` and
+  :func:`braindecode.visualization.run_with_activation_substitution` to read or
+  replace a submodule's output during a forward pass
+  (:gh:`1138` by `Vandit Shah`_)
 
 - Preserve the recording-local row of each canonical MNE annotation as
   ``i_trial_in_dataset`` in event-window metadata, keeping it aligned with
@@ -855,7 +922,7 @@ Bugs
   are called without the optional ``huggingface_hub`` dependency installed.
   Users now get a clear :class:`ImportError` with installation instructions
   (``pip install 'braindecode[hub]'``) instead of an ``AttributeError``.
-  (:gh:`1024` by `@copilot`_)
+  (:gh:`1024` by `@copilot <https://github.com/copilot>`_)
 - Replace the vague ``license: unknown`` field in the auto-generated Hugging
   Face Hub dataset card with an inferred license (when consistent across all
   recordings' descriptions) or a ``please-specify`` placeholder with a
@@ -1695,3 +1762,5 @@ Authors
 .. _Jon Huml: https://github.com/jonathanhuml
 .. _Azra Bano: https://github.com/azrabano23
 .. _Aditya Singh: https://github.com/adityasingh2400
+.. _Julien Gadonneix: https://github.com/julien-gadonneix
+.. _Li Qing: https://github.com/qinxwew

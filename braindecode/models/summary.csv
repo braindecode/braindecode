@@ -3,6 +3,7 @@ ATCNet,General,Prediction,250,"n_chans, n_outputs, n_times",113732,"ATCNet(n_cha
 AttentionBaseNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",3692,"AttentionBaseNet(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 BDTCN,Normal Abnormal,Prediction,100,"n_chans, n_outputs, n_times",456502,"BDTCN(n_chans=21, n_outputs=2, n_times=6000, n_blocks=5, n_filters=55, kernel_size=16)","Convolution,Recurrent",EEG
 BIOT,"Sleep Staging, Epilepsy",Prediction,200,"n_chans, n_outputs",3183879,"BIOT(n_chans=2,  n_outputs=5,  n_times=6000)","Foundation Model",EEG
+BrainBERT,General,"Prediction, Embedding",2048,"n_chans, n_outputs, n_times",603269,"BrainBERT(n_chans=2, n_outputs=5, n_times=2048)","Foundation Model,Attention/Transformer",iEEG
 CBraMod,General,"Prediction, Embedding",200,"n_outputs",4924000,"CBraMod(n_outputs=2)","Foundation Model",EEG
 CodeBrain,General,"Prediction, Embedding",200,"n_chans, n_outputs, n_times",15238802,"CodeBrain(n_chans=19, n_outputs=2, n_times=6000)","Foundation Model,Attention/Transformer",EEG
 ContraWR,Sleep Staging,"Prediction, Embedding",125,"n_chans, n_outputs, sfreq",1160165,"ContraWR(n_chans=2, n_outputs=5, n_times=3750, emb_size=256, sfreq=125)",Convolution,EEG
@@ -41,9 +42,13 @@ FBCNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",11812,"
 FBMSNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",16231,"FBMSNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 MetaNeuromotorHand,Handwriting (sEMG),CTC Sequence,2000,"n_chans, n_outputs, n_times, sfreq",1021284,"MetaNeuromotorHand(n_chans=16, n_outputs=100, n_times=32000, sfreq=2000)","Convolution,Attention/Transformer",sEMG
 EMG2QwertyNet,Touch typing (sEMG),CTC Sequence,2000,"n_chans, n_outputs, n_times, sfreq",5293315,"EMG2QwertyNet(n_chans=32, n_outputs=99, n_times=8000, sfreq=2000)","Convolution",sEMG
+VEMG2Pose,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",5980328,"VEMG2Pose(n_chans=16, n_outputs=20, n_times=11790, sfreq=2000)","Convolution,Recurrent",sEMG
+NeuroPose,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",6354903,"NeuroPose(n_chans=16, n_outputs=20, n_times=10000, sfreq=2000)","Convolution",sEMG
+SensingDynamics,Hand pose (sEMG),Sequence Regression,2000,"n_chans, n_outputs, n_times, sfreq",1738297,"SensingDynamics(n_chans=16, n_outputs=20, n_times=480, sfreq=2000)","Convolution,Channel",sEMG
 FBLightConvNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6596,"FBLightConvNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 IFNet,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times, sfreq",9860,"IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Convolution,FilterBank",EEG
 BrainModule,Speech Decoding,Prediction,250,"n_chans, n_outputs, n_times, sfreq",6186909,"BrainModule(n_chans=64, n_outputs=29, n_times=160, sfreq=1000)","Convolution","EEG, MEG"
+Brant,Epilepsy,Prediction,250,"n_chans, n_outputs, n_times, sfreq",2902780,"Brant(n_chans=16, n_outputs=2, n_times=3000, sfreq=250)","Foundation Model,Attention/Transformer",iEEG
 PBT,General,Prediction,250,"n_chans, n_outputs, n_times",818948,"PBT(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)","Foundation Model",EEG
 SSTDPN,Motor Imagery,Prediction,250,"n_chans, n_outputs, n_times",19502,"SSTDPN(n_chans=22, n_outputs=4, n_times=1000)","Convolution,Attention/Transformer",EEG
 BENDR,General,"Prediction, Embedding",250,"n_chans, n_times, n_outputs",157141049,"BENDR(n_chans=22, n_outputs=4, n_times=1000)","Foundation Model,Convolution",EEG

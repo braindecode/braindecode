@@ -375,6 +375,12 @@ models_mandatory_parameters: list[
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 128.0}),
     ("BIOT", ["n_chans", "n_outputs", "sfreq", "n_times"], None),
+    # The default 1000 samples leave 1 STFT frame; the centre pooling needs 10.
+    (
+        "BrainBERT",
+        ["n_chans", "n_outputs", "n_times"],
+        {"n_times": 2048, "sfreq": 2048.0},  # the pretraining rate, 1 s windows
+    ),
     (
         "InterpolatedBIOT",
         ["chs_info", "n_outputs", "sfreq", "n_times"],
@@ -440,11 +446,45 @@ models_mandatory_parameters: list[
             "n_outputs": 99,
         },
     ),
+    (
+        "VEMG2Pose",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 11790,
+            "sfreq": 2000.0,
+            "input_window_seconds": 5.895,
+            "n_outputs": 20,
+        },
+    ),
+    (
+        "NeuroPose",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 10000,
+            "sfreq": 2000.0,
+            "input_window_seconds": 5.0,
+            "n_outputs": 20,
+        },
+    ),
+    (
+        "SensingDynamics",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        {
+            "n_chans": 16,
+            "n_times": 480,
+            "sfreq": 2000.0,
+            "input_window_seconds": 480 / 2000.0,
+            "n_outputs": 20,
+        },
+    ),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], {"sfreq": 200.0}),
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("BrainModule", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("Brant", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
         "BENDR",
         ["n_chans", "n_outputs", "n_times"],
@@ -526,6 +566,10 @@ non_classification_models = [
     # Emits a (batch, T_out, vocab) sequence for CTC, not class logits.
     "MetaNeuromotorHand",
     "EMG2QwertyNet",
+    # Dense per-frame pose sequences (batch, T, n_joints), not logits.
+    "VEMG2Pose",
+    "NeuroPose",
+    "SensingDynamics",
     # forward returns (batch, num_latents, n_outputs) dense per-token logits,
     # not class logits.
     "DANCE",

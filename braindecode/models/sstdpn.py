@@ -216,7 +216,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         temporal dual prototype network for motor imagery
         brain–computer interface. Knowledge-Based Systems,
         315, 113315. GitHub repository.
-        https://github.com/hancan16/SST-DPN.
+        https://github.com/hancan16/SST-DPN
     """
 
     def __init__(

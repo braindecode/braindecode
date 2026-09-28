@@ -17,7 +17,7 @@ from braindecode.functional import sinusoidal_positional_encoding
 from braindecode.models.base import EEGModuleMixin
 
 
-class MEDFormer(EEGModuleMixin, nn.Module):
+class MEDFormer(EEGModuleMixin, nn.Module, license="mit"):
     r"""
     Medformer from Wang et al (2024) [Medformer2024]_.
 

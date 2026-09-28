@@ -26,6 +26,7 @@ from braindecode.models import (
     REVE,
     SSTDPN,
     ZUNA,
+    Brant,
     EEGInceptionMI,
     EEGMiner,
     EEGSimpleConv,
@@ -81,11 +82,16 @@ _DIRECT_TORCHSCRIPT_MODELS = (
     "SincShallowNet",
     "SCCNet",
     "EMG2QwertyNet",
+    "NeuroPose",
+    "SensingDynamics",
+    "VEMG2Pose",
     "FBLightConvNet",
     "PBT",
     "MEDFormer",
     "DGCNN",
     "ZUNA",
+    "Brant",
+    "BrainBERT",
 )
 
 _MODEL_CASES = {
@@ -178,7 +184,7 @@ def test_completeness__models_test_cases():
 def test_direct_torchscript_model_registry():
     """Every direct TorchScript case is unique and registered."""
     direct_models = set(_DIRECT_TORCHSCRIPT_MODELS)
-    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 27
+    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 32
     assert len(direct_models) == len(_DIRECT_TORCHSCRIPT_MODELS)
     assert direct_models <= all_models_dict.keys()
     assert direct_models <= _MODEL_CASES.keys()
@@ -360,6 +366,7 @@ def test_model_has_activation_parameter(model_class):
     named 'activation' or any parameter that starts with 'activation'.
     """
     if model_class in [
+        Brant,
         EEGMiner,
         REVE,
         EEGPT,

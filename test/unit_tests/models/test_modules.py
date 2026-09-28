@@ -8,6 +8,7 @@ from warnings import catch_warnings, simplefilter
 import numpy as np
 import pytest
 import torch
+from einops import rearrange
 from mne.filter import create_filter
 from mne.time_frequency import psd_array_welch
 from scipy.signal import fftconvolve as fftconvolve_scipy
@@ -32,8 +33,48 @@ from braindecode.modules import (
     MaxNormLinear,
     SafeLog,
     SqueezeAndExcitation,
+    TDSConvEncoder,
     TimeDistributed,
 )
+
+
+@pytest.mark.parametrize(
+    "module_factory",
+    [
+        lambda time_first: TDSConvEncoder(
+            num_features=12,
+            block_channels=(3, 4),
+            kernel_width=3,
+            time_first=time_first,
+        ),
+    ],
+)
+def test_tds_blocks_layouts_and_torchscript(module_factory):
+    """Both supported layouts are numerically equivalent and scriptable."""
+    torch.manual_seed(0)
+    time_first = module_factory(True).eval()
+    batch_first = module_factory(False).eval()
+    batch_first.load_state_dict(time_first.state_dict())
+
+    time_first_inputs = torch.randn(11, 2, 12)
+    batch_first_inputs = rearrange(
+        time_first_inputs, "time batch features -> batch features time"
+    )
+
+    time_first_output = time_first(time_first_inputs)
+    expected = rearrange(
+        time_first_output, "time batch features -> batch features time"
+    )
+    actual = batch_first(batch_first_inputs)
+
+    assert torch.allclose(actual, expected)
+    assert torch.allclose(
+        torch.jit.script(time_first)(time_first_inputs), time_first_output
+    )
+    assert torch.allclose(
+        torch.jit.script(batch_first)(batch_first_inputs),
+        actual,
+    )
 
 
 def old_maxnorm(
@@ -200,13 +241,22 @@ def test_dense_spatial_filter_forward_collapse_false():
 @pytest.mark.parametrize(
     "bias_time,bias_spat", [(False, False), (False, True), (True, False), (True, True)]
 )
-def test_combined_conv(bias_time, bias_spat):
+@pytest.mark.parametrize(
+    "in_chans,n_filters_time,n_filters_spat",
+    [(44, 40, 40), (1, 40, 40), (44, 40, 1), (44, 1, 1)],
+)
+def test_combined_conv(bias_time, bias_spat, in_chans, n_filters_time, n_filters_spat):
     batch_size = 64
-    in_chans = 44
     timepoints = 1000
 
     data = torch.rand([batch_size, 1, timepoints, in_chans])
-    conv = CombinedConv(in_chans=in_chans, bias_spat=bias_spat, bias_time=bias_time)
+    conv = CombinedConv(
+        in_chans=in_chans,
+        n_filters_time=n_filters_time,
+        n_filters_spat=n_filters_spat,
+        bias_spat=bias_spat,
+        bias_time=bias_time,
+    )
 
     combined_out = conv(data)
     sequential_out = conv.conv_spat(conv.conv_time(data))

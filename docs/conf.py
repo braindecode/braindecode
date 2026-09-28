@@ -295,12 +295,17 @@ else:
         f"%pip install braindecode=={release}"
     )
 
+# Keep local memory profiling; CI bounds concurrent examples to fit runner RAM.
+_gallery_jobs = int(os.environ.get("BRAINDECODE_DOCS_JOBS", "1"))
+
 sphinx_gallery_conf = {
     "examples_dirs": ["../examples"],
     "gallery_dirs": ["auto_examples"],
     "doc_module": ("braindecode", "mne"),
     "backreferences_dir": "generated",
-    "show_memory": True,
+    "parallel": _gallery_jobs,
+    # Sphinx-Gallery's built-in memory profiler does not support parallel runs.
+    "show_memory": _gallery_jobs == 1,
     "reference_url": dict(braindecode=None),
     "first_notebook_cell": _pip_install_cell,
     "subsection_order": ExplicitOrder(

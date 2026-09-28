@@ -304,6 +304,8 @@ def create_windows_from_events(
         Mapping from event description to numerical target value. Must be
         provided when any of ``trial_start_offset_samples``,
         ``trial_stop_offset_samples``, or ``window_stride_samples`` is a dict.
+        Multiple descriptions may share a target. In that case, MNE event IDs
+        are distinct from the class targets stored in window metadata.
     preload: bool
         If True, preload the data of the Epochs objects. This is useful to
         reduce disk reading overhead when returning windows in a training
@@ -695,7 +697,14 @@ def _create_windows_from_events(
             }
         )
 
-    events, events_id = mne.events_from_annotations(ds.raw, mapping, verbose=verbose)
+    # MNE requires unique event IDs even when annotations share a training target.
+    event_mapping = mapping
+    if len(set(mapping.values())) < len(mapping):
+        event_mapping = {name: i for i, name in enumerate(mapping)}
+    events, events_id = mne.events_from_annotations(
+        ds.raw, event_mapping, verbose=verbose
+    )
+    targets = {code: mapping[name] for name, code in events_id.items()}
     onsets = events[:, 0]
     ann = ds.raw.annotations
     filtered_annotations = [
@@ -880,7 +889,7 @@ def _create_windows_from_events(
             ],
             "i_start_in_trial": starts,
             "i_stop_in_trial": stops,
-            "target": description,
+            "target": [targets[code] for code in description],
         }
     )
     if extras is not None:

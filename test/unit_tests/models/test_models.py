@@ -20,6 +20,7 @@ import mne
 import numpy as np
 import pytest
 import torch
+from scipy.signal import stft
 from sklearn.utils import check_random_state
 from torch import nn
 
@@ -34,7 +35,9 @@ from braindecode.models import (
     ATCNet,
     AttentionBaseNet,
     AttnSleep,
+    BrainBERT,
     BrainModule,
+    Brant,
     ContraWR,
     Deep4Net,
     DeepSleepNet,
@@ -66,6 +69,7 @@ from braindecode.models import (
     TSception,
     USleep,
 )
+from braindecode.models.brainbert import _STFTSpectrogram
 from braindecode.models.eegpt import (
     _apply_rotary_emb,
     _Attention,
@@ -4326,3 +4330,172 @@ def test_audited_model_parameter_headers_follow_numpydoc(model_name):
         f"{model_class.__name__} has parameter headers numpydoc misparses: "
         f"{malformed}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Brant
+# ---------------------------------------------------------------------------
+
+
+def test_brant_band_power_rate_is_independent_of_sfreq():
+    from braindecode.models.brant import BRANT_FREQ_BANDS, _BandPowerFeatures
+
+    x = torch.randn(2, 3, 1, 1500)
+    at_256 = _BandPowerFeatures(256.0, BRANT_FREQ_BANDS, 1500)(x)
+    model_250 = Brant(n_chans=3, n_outputs=2, n_times=1500, patch_size=1500, sfreq=250)
+    # sfreq describes the data; the band edges follow band_power_sfreq (upstream fs=256).
+    assert torch.equal(model_250.band_power(x), at_256)
+    assert model_250.band_power.sfreq == 256.0
+
+
+def test_brant_head_is_a_bare_linear_layer():
+    model = Brant(n_chans=2, n_outputs=3, n_times=1500, patch_size=1500)
+    assert isinstance(model.final_layer, torch.nn.Linear)
+    model.reset_head(5)
+    assert model.n_outputs == 5 and model.final_layer.out_features == 5
+    assert model.get_config()["n_outputs"] == 5
+
+
+def test_brant_rejects_channel_count_mismatch():
+    model = Brant(n_chans=2, n_outputs=3, n_times=1500, patch_size=1500).eval()
+    with pytest.raises(ValueError, match="channels"):
+        model(torch.randn(1, 5, 1500))
+
+
+def test_brant_rejects_invalid_construction():
+    with pytest.raises(ValueError, match="patch_size"):
+        Brant(n_chans=2, n_outputs=2, n_times=1499, patch_size=1500)
+    with pytest.raises(ValueError, match="n_freq_bands"):
+        Brant(n_chans=2, n_outputs=2, n_times=1500, patch_size=1500, n_freq_bands=5)
+
+
+def test_brant_scripts_and_matches_eager():
+    model = Brant(
+        n_chans=2,
+        n_outputs=3,
+        n_times=3000,
+        patch_size=1500,
+        embed_dim=32,
+        ffn_dim=64,
+        temporal_n_layers=1,
+        spatial_n_layers=1,
+        n_heads=2,
+    ).eval()
+    x = torch.randn(2, 2, 3000)
+    scripted = torch.jit.script(model)
+    torch.testing.assert_close(scripted(x), model(x))
+    # Under scripting, return_features=True yields the logits (is_scripting guard).
+    torch.testing.assert_close(scripted(x, return_features=True), model(x))
+
+
+def test_brant_band_power_matches_scipy_periodogram():
+    """Upstream computes log10(sum of periodogram density in each band + 1) at fs=256."""
+    from scipy.signal import periodogram
+
+    from braindecode.models.brant import BRANT_FREQ_BANDS, _BandPowerFeatures
+
+    patches = torch.randn(2, 3, 2, 1500)
+    ours = _BandPowerFeatures(256.0, BRANT_FREQ_BANDS, 1500)(patches).numpy()
+    freqs, psd = periodogram(patches.numpy(), fs=256.0, axis=-1)
+    ref = np.stack(
+        [
+            np.log10(psd[..., (freqs > lo) & (freqs <= hi)].sum(-1) + 1)
+            for lo, hi in BRANT_FREQ_BANDS
+        ],
+        -1,
+    )
+    assert np.abs(ours - ref).max() < 1e-4
+
+
+def test_brant_input_length_must_match():
+    model = Brant(n_chans=2, n_outputs=2, n_times=3000, patch_size=1500).eval()
+    with pytest.raises(ValueError, match="time samples"):
+        model(torch.randn(1, 2, 1500))
+
+
+def test_brant_channel_tokens_keep_channel_order():
+    """Pin the per-channel token layout downstream code relies on.
+
+    ``merge_time`` outputs ``(batch, n_chans, seq_len, embed_dim)`` with the
+    channel axis in the same order as the input; the spatial encoder has no
+    channel-specific parameters, so permuting input channels permutes the
+    output channel tokens the same way.
+    """
+    model = Brant(
+        n_chans=3,
+        n_outputs=2,
+        n_times=3000,
+        patch_size=1500,
+        embed_dim=32,
+        ffn_dim=64,
+        temporal_n_layers=1,
+        spatial_n_layers=1,
+        n_heads=2,
+    ).eval()
+
+    captured = {}
+
+    def _hook(module, inputs, output):
+        captured["out"] = output
+
+    handle = model.merge_time.register_forward_hook(_hook)
+    try:
+        x = torch.randn(2, 3, 3000)
+        model(x)
+        first = captured["out"].clone()
+        assert first.shape == (2, 3, 2, 32)  # (batch, n_chans, seq_len, embed_dim)
+
+        perm = [2, 0, 1]
+        model(x[:, perm])
+        permuted = captured["out"]
+        torch.testing.assert_close(permuted, first[:, perm])
+    finally:
+        handle.remove()
+
+
+# ---------------------------------------------------------------------------
+# BrainBERT
+# ---------------------------------------------------------------------------
+
+
+def _brainbert_upstream_spectrogram(wav, clip, zscore_before_clip):
+    """Upstream scipy recipe: magnitude of the first 40 bins, per-bin z-score
+    (ddof=0, zero std replaced by one), a fully flat window replaced by ones,
+    and boundary trimming in either order."""
+
+    def zscore(a):
+        std = a.std(axis=-1, ddof=0, keepdims=True)
+        std[std == 0] = 1.0
+        return (a - a.mean(axis=-1, keepdims=True)) / std
+
+    _, _, zxx = stft(wav, 2048, nperseg=400, noverlap=350)
+    mag = np.abs(zxx[:40])
+    if zscore_before_clip:  # preprocessors/stft.py, behind the released checkpoint
+        mag = zscore(mag)
+        if (mag.std() == 0).any():
+            mag = np.ones_like(mag)
+        mag = mag[:, clip:-clip]
+    else:  # notebooks/demo.ipynb
+        mag = zscore(mag[:, clip:-clip])
+    return np.nan_to_num(mag).T  # (n_frames, 40)
+
+
+@pytest.mark.parametrize("clip, zscore_before_clip", [(10, True), (5, False)])
+@pytest.mark.parametrize("n_times", [2048, 6000])  # 2048 needs scipy's right padding
+def test_brainbert_stft_front_end_matches_upstream_scipy(
+    clip, zscore_before_clip, n_times
+):
+    module = _STFTSpectrogram(clip=clip, zscore_before_clip=zscore_before_clip)
+    for wav in (np.random.RandomState(0).randn(n_times), np.zeros(n_times)):
+        ref = _brainbert_upstream_spectrogram(wav, clip, zscore_before_clip)
+        ours = module(torch.from_numpy(wav).view(1, 1, -1))[0, 0].numpy()
+        assert ours.shape == ref.shape == (module.n_frames(n_times), 40)
+        # The residual is the float32 Hann window (scipy builds it in float64).
+        assert np.abs(ref - ours).max() < 5e-6
+
+
+def test_brainbert_mapping_targets():
+    """The authors' ``input_encoding.*`` keys map onto real port parameters."""
+    model = BrainBERT(n_chans=1, n_outputs=2, n_times=2048)
+    state = model.state_dict()
+    assert model.mapping and all(target in state for target in model.mapping.values())

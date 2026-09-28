@@ -66,6 +66,8 @@ interface for all EEG models and can derive variable names when needed.
     .. currentmodule:: braindecode.models
 
     - :class:`BIOT` - Foundation model with pre-trained weights
+    - :class:`BrainBERT` - Intracranial (sEEG/iEEG) foundation model with pre-trained
+      weights
     - :class:`CBraMod` - Criss-Cross Transformer model with pre-trained weights
     - :class:`CodeBrain` - Scalable EEG pre-training with temporal and spectral code
       prediction
@@ -136,6 +138,7 @@ interface for all EEG models and can derive variable names when needed.
      BDTCN
      BENDR
      BIOT
+     BrainBERT
      BrainModule
      CBraMod
      CodeBrain
@@ -812,6 +815,7 @@ Functions available in braindecode util module.
     :toctree: generated/
 
      set_random_seeds
+     resolve_montage_name
 
 ***************
  Visualization
@@ -900,6 +904,18 @@ reimplementation of skimage's structural similarity (no extra dependency). Pass
      compute_ssim_metrics
      METRIC_NAMES
      SSIM_METRIC_NAMES
+
+Activations
+===========
+
+Read or replace a submodule's output during a forward pass. The temporary hooks are
+removed even when the forward pass raises.
+
+.. autosummary::
+    :toctree: generated/
+
+     capture_activations
+     run_with_activation_substitution
 
 Topography
 ==========

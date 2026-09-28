@@ -24,7 +24,7 @@ from braindecode.modules import (
 )
 
 
-class CTNet(EEGModuleMixin, nn.Module):
+class CTNet(EEGModuleMixin, nn.Module, license="mit"):
     r"""CTNet from Zhao, W et al (2024) [ctnet]_.
 
     :bdg-success:`Convolution` :bdg-info:`Attention/Transformer`
