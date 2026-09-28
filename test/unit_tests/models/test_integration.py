@@ -91,6 +91,7 @@ _DIRECT_TORCHSCRIPT_MODELS = (
     "DGCNN",
     "ZUNA",
     "Brant",
+    "BrainBERT",
 )
 
 _MODEL_CASES = {
@@ -183,7 +184,7 @@ def test_completeness__models_test_cases():
 def test_direct_torchscript_model_registry():
     """Every direct TorchScript case is unique and registered."""
     direct_models = set(_DIRECT_TORCHSCRIPT_MODELS)
-    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 31
+    assert len(_DIRECT_TORCHSCRIPT_MODELS) == 32
     assert len(direct_models) == len(_DIRECT_TORCHSCRIPT_MODELS)
     assert direct_models <= all_models_dict.keys()
     assert direct_models <= _MODEL_CASES.keys()
