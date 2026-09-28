@@ -1533,3 +1533,54 @@ def test_gated_linear_unit_geglu_semantics():
     out = glu(x)
     assert out.shape == (2, 4, 5)
     assert torch.equal(out, value * torch.nn.functional.gelu(gate))
+
+
+@pytest.mark.parametrize("shape", [(8, 4), (16, 22, 1, 25), (40, 1, 13)])
+@pytest.mark.parametrize("max_norm", [0.25, 1.0, 5.0])
+def test_max_norm_parametrize_matches_renorm(shape, max_norm):
+    """The explicit rescale must match ``Tensor.renorm`` values and gradients."""
+    from braindecode.modules import MaxNormParametrize
+
+    torch.manual_seed(0)
+    weight_ref = torch.randn(*shape, dtype=torch.float64, requires_grad=True)
+    weight = weight_ref.detach().clone().requires_grad_()
+
+    expected = weight_ref.renorm(p=2, dim=0, maxnorm=max_norm)
+    output = MaxNormParametrize(max_norm)(weight)
+    torch.testing.assert_close(output, expected)
+
+    grad_output = torch.randn_like(expected)
+    (expected * grad_output).sum().backward()
+    (output * grad_output).sum().backward()
+    torch.testing.assert_close(weight.grad, weight_ref.grad)
+
+    row_norms = output.detach().reshape(shape[0], -1).norm(dim=1)
+    assert (row_norms <= max_norm + 1e-6).all()
+
+
+def test_max_norm_parametrize_does_not_call_renorm():
+    """``renorm`` breaks on Intel Gaudi (HPU), so the forward must avoid it."""
+    from torch.nn.utils.parametrize import register_parametrization
+
+    from braindecode.modules import MaxNormParametrize
+
+    conv = nn.Conv1d(4, 8, kernel_size=3)
+    register_parametrization(conv, "weight", MaxNormParametrize(0.5))
+    with patch.object(
+        torch.Tensor, "renorm", side_effect=AssertionError("renorm called")
+    ):
+        output = conv(torch.randn(2, 4, 16))
+    assert output.shape == (2, 8, 14)
+    row_norms = conv.weight.detach().reshape(8, -1).norm(dim=1)
+    assert (row_norms <= 0.5 + 1e-6).all()
+
+
+def test_max_norm_parametrize_is_scriptable():
+    """Models with a max-norm constraint are exported with TorchScript."""
+    from braindecode.modules import MaxNormParametrize
+
+    scripted = torch.jit.script(MaxNormParametrize(0.5))
+    weight = torch.randn(8, 4, 1, 3)
+    torch.testing.assert_close(
+        scripted(weight), weight.renorm(p=2, dim=0, maxnorm=0.5)
+    )
