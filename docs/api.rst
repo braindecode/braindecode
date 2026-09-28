@@ -920,8 +920,8 @@ removed even when the forward pass raises.
 Sparse Autoencoders
 ===================
 
-Decompose a layer's activations into a sparse combination of learned directions,
-keeping only the largest few per activation.
+Decompose a layer's activations into a sparse combination of learned directions, keeping
+only the largest few per activation.
 
 .. autosummary::
     :toctree: generated/
