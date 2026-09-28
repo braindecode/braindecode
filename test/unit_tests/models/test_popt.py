@@ -65,11 +65,6 @@ def test_reset_head_changes_n_outputs():
     assert out.shape == (2, 7)
 
 
-def test_hidden_dim_must_be_divisible_by_four():
-    with pytest.raises(ValueError):
-        _model(hidden_dim=30)
-
-
 def test_coords_from_chs_info():
     """Electrode coordinates are read from chs_info and discretised."""
     # three electrodes 1 mm apart along x (metres in the MNE convention).
@@ -217,6 +212,7 @@ def test_reset_head_keeps_dtype():
     assert model.n_outputs == 3
 
 
-def test_hidden_dim_must_be_divisible_by_8():
+@pytest.mark.parametrize("hidden_dim", [30, 12])
+def test_hidden_dim_must_be_divisible_by_8(hidden_dim):
     with pytest.raises(ValueError, match="divisible by 8"):
-        _model(hidden_dim=12, n_heads=4)
+        _model(hidden_dim=hidden_dim, n_heads=4)
