@@ -25,6 +25,7 @@ from braindecode.modules import (
     MultiHeadAttention,
     PatchTokenizer,
 )
+from braindecode.util import resolve_montage_name
 
 # Shared montage vocabulary of the official ST-EEGFormer checkpoints: the
 # learned channel embedding has one slot per entry, in this order (the slot
@@ -88,7 +89,7 @@ def _nearest_vocabulary_slots(
             return None
         locations.append(loc)
 
-    standard = mne.channels.make_standard_montage("standard_1005")
+    standard = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     positions = {
         name.upper(): xyz for name, xyz in standard.get_positions()["ch_pos"].items()
     }

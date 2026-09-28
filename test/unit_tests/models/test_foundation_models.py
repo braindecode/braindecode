@@ -29,6 +29,7 @@ from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
 from braindecode.models.reve import Attention, RevePositionBank
+from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat
 
@@ -1302,7 +1303,9 @@ def _steeg(chs):
 
 
 def _site(name):
-    montage = mne.channels.make_standard_montage("standard_1005")
+    montage = mne.channels.make_standard_montage(
+        resolve_montage_name("standard_1005")
+    )
     return montage.get_positions()["ch_pos"][name]
 
 
