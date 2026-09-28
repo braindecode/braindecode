@@ -25,7 +25,15 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
+from braindecode.models import (
+    LUNA,
+    REVE,
+    CBraMod,
+    CodeBrain,
+    Labram,
+    STEEGFormer,
+    steegformer,
+)
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
 from braindecode.models.reve import Attention, RevePositionBank
@@ -1266,8 +1274,6 @@ _STEEG_VOCAB = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
 @pytest.fixture
 def steeg_vocab(monkeypatch):
     """Small in-memory vocabulary, so these tests never download from the Hub."""
-    from braindecode.models import steegformer
-
     monkeypatch.setattr(steegformer, "_channel_order", lambda: list(_STEEG_VOCAB))
     monkeypatch.setattr(
         steegformer,
@@ -1288,9 +1294,7 @@ def _steeg_chs(names, positions=None):
     return chs
 
 
-def _steeg(chs):
-    from braindecode.models import STEEGFormer
-
+def _steeg(chs, **kwargs):
     return STEEGFormer(
         n_chans=len(chs),
         n_outputs=2,
@@ -1299,6 +1303,7 @@ def _steeg(chs):
         embed_dim=32,
         depth=1,
         num_heads=2,
+        **kwargs,
     )
 
 
@@ -1306,7 +1311,9 @@ def _site(name):
     montage = mne.channels.make_standard_montage(
         resolve_montage_name("standard_1005")
     )
-    return montage.get_positions()["ch_pos"][name]
+    info = mne.create_info([name], 250.0, "eeg")
+    info.set_montage(montage)
+    return info["chs"][0]["loc"][:3]
 
 
 def test_steegformer_known_names_keep_their_slots(steeg_vocab):
@@ -1352,3 +1359,20 @@ def test_steegformer_hydrocel_256_maps_into_vocabulary(steeg_vocab):
     slots = model.channel_indices
     assert slots.shape == (len(montage.ch_names),)
     assert int(slots.min()) >= 0 and int(slots.max()) < len(steeg_vocab)
+
+
+def test_steegformer_explicit_indices_override_names_and_positions(steeg_vocab):
+    chs = _steeg_chs(["Fp1", "unknown"], [_site("Oz"), _site("Cz")])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        model = _steeg(chs, chan_pos_idx=[5, 4])
+    assert model.channel_indices.tolist() == [5, 4]
+
+
+@pytest.mark.parametrize("frame", [0, 5, "mri", "unknown"])
+def test_steegformer_non_head_positions_fall_back(steeg_vocab, frame):
+    chs = _steeg_chs(["unknown"], [_site("Oz")])
+    chs[0]["coord_frame"] = frame
+    with pytest.warns(UserWarning, match="valid head-frame position"):
+        model = _steeg(chs)
+    assert model.channel_indices.tolist() == [0]

@@ -7,13 +7,17 @@ import warnings
 from copy import deepcopy
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional, Sequence
+from typing import Any, Dict, Literal, Optional, Sequence, cast
 
+import mne
 import numpy as np
 import pandas as pd
 import pydantic
 import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
+from mne.io.constants import FIFF
 from torch import nn
+
+from braindecode.util import resolve_montage_name
 
 models_dict = {}
 # Interpolated models are channel-interpolating wrappers around existing
@@ -794,6 +798,102 @@ def extract_channel_locations_from_chs_info(
         return None
 
     return result
+
+
+def resolve_channel_indices(
+    chs_info: Sequence[Dict[str, Any]],
+    channel_names: Sequence[str],
+    *,
+    montage: Optional[str] = None,
+) -> Optional[list[int]]:
+    """Resolve input channels into an ordered, case-insensitive vocabulary.
+
+    Exact names take precedence over positions, as in the pretrained channel
+    embeddings of SignalJEPA and LaBraM. Optionally, map unknown names to the
+    nearest angular standard-montage site. This selects embedding indices; it
+    does not interpolate signals or change the supplied channel information.
+
+    Parameters
+    ----------
+    chs_info : sequence of dict
+        MNE channel metadata. Positional fallback requires finite, nonzero
+        ``loc[:3]`` in metres in the head frame. Missing ``coord_frame`` means
+        head coordinates (for hand-built dictionaries); explicit non-head
+        frames are rejected because channel dictionaries lack fiducials needed
+        to transform them. Known names do not require valid positions.
+    channel_names : sequence of str
+        Ordered embedding vocabulary. Multiple inputs may select the same slot.
+    montage : str | None
+        Standard MNE montage supplying reference sites for unknown names.
+        Native montage coordinates are transformed to head coordinates with
+        MNE's public fiducial transform. None enables name-only resolution.
+
+    Returns
+    -------
+    list of int | None
+        One index per input channel, or None if any channel cannot be resolved.
+        The caller chooses whether to raise or use a model-specific fallback.
+
+    Notes
+    -----
+    Angular distances are measured about a least-squares sphere centre fitted
+    to the full reference montage, not the selected vocabulary or input subset.
+    This removes radius dependence without making the mapping depend on which
+    input channels are present. Nearest-site assignment is a heuristic, not an
+    exact correspondence to a pretrained sensor layout.
+    """
+    name_to_index = {name.upper(): i for i, name in enumerate(channel_names)}
+    indices = [name_to_index.get(ch.get("ch_name", "").upper()) for ch in chs_info]
+    unresolved = [i for i, index in enumerate(indices) if index is None]
+    if not unresolved:
+        return cast(list[int], indices)
+    if montage is None:
+        return None
+
+    unknown = [chs_info[i] for i in unresolved]
+    if any(
+        ch.get("coord_frame", FIFF.FIFFV_COORD_HEAD)
+        not in (FIFF.FIFFV_COORD_HEAD, "head")
+        for ch in unknown
+    ):
+        return None
+    locations = extract_channel_locations_from_chs_info(unknown)
+    if (
+        locations is None
+        or len(locations) != len(unknown)
+        or not np.isfinite(locations).all()
+        or np.any(np.linalg.norm(locations, axis=1) == 0)
+    ):
+        return None
+
+    standard = mne.channels.make_standard_montage(resolve_montage_name(montage))
+    standard.apply_trans(
+        mne.channels.compute_native_head_t(standard, on_missing="raise")
+    )
+    positions = {
+        name.upper(): xyz for name, xyz in standard.get_positions()["ch_pos"].items()
+    }
+    site_indices = [
+        i for i, name in enumerate(channel_names) if name.upper() in positions
+    ]
+    if not site_indices:
+        return None
+    sites = np.array([positions[channel_names[i].upper()] for i in site_indices])
+    points = np.array(list(positions.values()))
+    design = np.c_[2 * points, np.ones(len(points))]
+    solution, *_ = np.linalg.lstsq(design, (points**2).sum(axis=1), rcond=None)
+    centre = solution[:3]
+    radial = np.concatenate([locations, sites]) - centre
+    norms = np.linalg.norm(radial, axis=1, keepdims=True)
+    if not np.isfinite(norms).all() or np.any(norms <= 1e-7):
+        return None
+    directions = radial / norms
+    nearest = (directions[: len(locations)] @ directions[len(locations) :].T).argmax(
+        axis=1
+    )
+    for i, j in zip(unresolved, nearest):
+        indices[i] = site_indices[int(j)]
+    return cast(list[int], indices)
 
 
 def positions_from_chs_info(chs_info) -> np.ndarray:
