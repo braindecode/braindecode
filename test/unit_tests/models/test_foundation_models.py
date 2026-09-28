@@ -4,10 +4,12 @@
 
 import json
 import os
+import warnings
 from pathlib import Path
 from urllib.error import URLError
 
 import mne
+import numpy as np
 import pooch
 import pytest
 import torch
@@ -1251,3 +1253,99 @@ def test_codebrain_return_features():
     # features shape: (batch, n_chans, seq_len, out_channels)
     assert out["features"].shape == (2, 19, 30, 200)
     assert out["cls_token"] is None
+
+
+# ---------------------------------------------------------------------------
+# STEEGFormer: channel -> vocabulary slot resolution
+# ---------------------------------------------------------------------------
+
+_STEEG_VOCAB = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
+
+
+@pytest.fixture
+def steeg_vocab(monkeypatch):
+    """Small in-memory vocabulary, so these tests never download from the Hub."""
+    from braindecode.models import steegformer
+
+    monkeypatch.setattr(steegformer, "_channel_order", lambda: list(_STEEG_VOCAB))
+    monkeypatch.setattr(
+        steegformer,
+        "_channel_index",
+        lambda: {n.upper(): i for i, n in enumerate(_STEEG_VOCAB)},
+    )
+    return _STEEG_VOCAB
+
+
+def _steeg_chs(names, positions=None):
+    info = mne.create_info(list(names), 250.0, "eeg")
+    chs = [dict(ch) for ch in info["chs"]]
+    for ch in chs:
+        ch["loc"] = np.array(ch["loc"], dtype=float)
+    if positions is not None:
+        for ch, xyz in zip(chs, positions):
+            ch["loc"][:3] = xyz
+    return chs
+
+
+def _steeg(chs):
+    from braindecode.models import STEEGFormer
+
+    return STEEGFormer(
+        n_chans=len(chs),
+        n_outputs=2,
+        n_times=64,
+        chs_info=chs,
+        embed_dim=32,
+        depth=1,
+        num_heads=2,
+    )
+
+
+def _site(name):
+    montage = mne.channels.make_standard_montage("standard_1005")
+    return montage.get_positions()["ch_pos"][name]
+
+
+def test_steegformer_known_names_keep_their_slots(steeg_vocab):
+    names = ["Oz", "Fp1", "Cz"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # no fallback warning expected
+        model = _steeg(_steeg_chs(names, [_site(n) for n in names]))
+    assert model.channel_indices.tolist() == [3, 0, 2]
+
+
+def test_steegformer_unknown_names_use_nearest_site(steeg_vocab):
+    # Sensors a few millimetres off Oz and T8, under vendor-style names; Fp1
+    # is named and must keep its own slot whatever its position says.
+    names = ["E1", "Fp1", "E2"]
+    positions = [
+        _site("Oz") + [0.003, 0.0, 0.002],
+        _site("Cz"),  # deliberately wrong position for a named channel
+        _site("T8") + [0.0, 0.004, -0.003],
+    ]
+    with pytest.warns(UserWarning, match="nearest 10-05 site"):
+        model = _steeg(_steeg_chs(names, positions))
+    assert model.channel_indices.tolist() == [3, 0, 5]
+
+
+def test_steegformer_unknown_names_without_positions_keep_identity(steeg_vocab):
+    with pytest.warns(UserWarning, match="identity channel mapping"):
+        model = _steeg(_steeg_chs(["E1", "E2", "Cz"]))
+    assert model.channel_indices.tolist() == [0, 1, 2]
+
+
+def test_steegformer_too_many_unlocated_channels_raise_clearly(steeg_vocab):
+    names = [f"E{i}" for i in range(1, 151)]  # more than the 145 slots
+    with pytest.raises(ValueError, match="cannot be mapped"):
+        _steeg(_steeg_chs(names))
+
+
+def test_steegformer_hydrocel_256_maps_into_vocabulary(steeg_vocab):
+    montage = mne.channels.make_standard_montage("GSN-HydroCel-256")
+    info = mne.create_info(montage.ch_names, 250.0, "eeg")
+    info.set_montage(montage)
+    with pytest.warns(UserWarning, match="nearest 10-05 site"):
+        model = _steeg(list(info["chs"]))
+    slots = model.channel_indices
+    assert slots.shape == (len(montage.ch_names),)
+    assert int(slots.min()) >= 0 and int(slots.max()) < len(steeg_vocab)

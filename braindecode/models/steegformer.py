@@ -56,6 +56,64 @@ def _channel_index() -> dict[str, int]:
     return {name.upper(): i for i, name in enumerate(_channel_order())}
 
 
+def _nearest_vocabulary_slots(
+    chs_info: list[dict],
+    slots: list[int | None],
+    vocabulary: list[str],
+) -> list[int] | None:
+    """Fill unresolved vocabulary slots from electrode positions.
+
+    ``slots`` holds the name-resolved slot of each channel, ``None`` where the
+    name is not in ``vocabulary``. Each such channel gets the slot whose 10-05
+    site points in the closest direction from the head centre. Positions are
+    read from ``chs_info[i]["loc"][:3]`` and must be in the MNE head frame,
+    which is what :meth:`mne.io.Raw.set_montage` produces; the 10-05 sites
+    come from MNE's ``standard_1005`` montage, in the same frame. Both are
+    reduced to unit directions from the centre of the sphere fitted to the
+    10-05 montage, so a net with a different head radius still lands on the
+    right sites. Slots may repeat: two sensors a few millimetres apart sit on
+    the same 10-05 site.
+
+    Returns ``None`` when any unresolved channel has no finite, non-zero
+    position, so the caller can fall back.
+    """
+    import mne
+    import numpy as np
+
+    unresolved = [i for i, slot in enumerate(slots) if slot is None]
+    locations = []
+    for i in unresolved:
+        loc = np.asarray(chs_info[i].get("loc", ()), dtype=float)[:3]
+        if loc.shape != (3,) or not np.isfinite(loc).all() or not loc.any():
+            return None
+        locations.append(loc)
+
+    standard = mne.channels.make_standard_montage("standard_1005")
+    positions = {
+        name.upper(): xyz for name, xyz in standard.get_positions()["ch_pos"].items()
+    }
+    site_slots = [s for s, name in enumerate(vocabulary) if name.upper() in positions]
+    if not site_slots:
+        return None
+    sites = np.array([positions[vocabulary[s].upper()] for s in site_slots])
+
+    # Least-squares sphere through the full 10-05 montage: |p - c|^2 = r^2.
+    points = np.array(list(positions.values()))
+    design = np.c_[2 * points, np.ones(len(points))]
+    solution, *_ = np.linalg.lstsq(design, (points**2).sum(axis=1), rcond=None)
+    centre = solution[:3]
+
+    def _directions(xyz):
+        radial = np.asarray(xyz) - centre
+        return radial / np.linalg.norm(radial, axis=1, keepdims=True)
+
+    nearest = (_directions(locations) @ _directions(sites).T).argmax(axis=1)
+    resolved = list(slots)
+    for i, j in zip(unresolved, nearest):
+        resolved[i] = site_slots[int(j)]
+    return resolved  # type: ignore[return-value]
+
+
 def __getattr__(name: str):
     # PEP 562: expose STEEGFORMER_CHANNEL_ORDER lazily so importing this module
     # never triggers a network call; the vocabulary is fetched on first access.
@@ -207,9 +265,13 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         implementation has been verified on the released checkpoints. The
         channel-to-vocabulary mapping is resolved from the electrode names
         in ``chs_info`` (looked up in :data:`STEEGFORMER_CHANNEL_ORDER`, the
-        BENDR/LaBraM convention); when ``chs_info`` is absent or a name is
-        unknown, it falls back to the identity mapping (channel ``i`` -> slot
-        ``i``) with a warning. Pass ``chan_pos_idx`` to override explicitly.
+        BENDR/LaBraM convention). A channel whose name is not in the
+        vocabulary (for example the numbered ``E1`` ... ``E256`` sensors of an
+        EGI HydroCel net) is assigned the slot of the nearest 10-05 site,
+        using its 3D position from ``chs_info``; named channels always keep
+        their own slot. Only when positions are unavailable does it fall back
+        to the identity mapping (channel ``i`` -> slot ``i``), with a warning.
+        Pass ``chan_pos_idx`` to override explicitly.
 
     Parameters
     ----------
@@ -238,7 +300,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         from (145 for small/base/large, 256 for ``largeV2``), default 145.
     chan_pos_idx : array-like of int, optional
         Montage-vocabulary slot of each input channel, shape ``(n_chans,)``.
-        If omitted, it is resolved from ``chs_info`` electrode names (falling
+        If omitted, it is resolved from ``chs_info`` electrode names, then
+        from electrode positions for names outside the vocabulary (falling
         back to ``range(n_chans)``).
 
     References
@@ -459,11 +522,33 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         missing = [n for n, j in zip(names, idx) if j is None]
         if missing:
             shown = ", ".join(missing[:8]) + ("..." if len(missing) > 8 else "")
+            by_position = _nearest_vocabulary_slots(chs_info, idx, _channel_order())
+            if by_position is not None:
+                warnings.warn(
+                    f"STEEGFormer: {len(missing)} channel name(s) absent from the "
+                    f"montage vocabulary ({shown}); assigned each the slot of the "
+                    f"nearest 10-05 site from its position in chs_info. Pass "
+                    f"`chan_pos_idx` explicitly to choose the mapping yourself.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                return torch.tensor(by_position, dtype=torch.long)
+            if self.n_chans > self.n_chans_pos:
+                raise ValueError(
+                    f"STEEGFormer: {len(missing)} channel name(s) absent from the "
+                    f"montage vocabulary ({shown}) and chs_info has no finite 3D "
+                    f"position for them, so they cannot be mapped to the "
+                    f"{self.n_chans_pos}-slot vocabulary, and the identity mapping "
+                    f"does not fit {self.n_chans} channels. Set a montage on the "
+                    f"recording (e.g. ``raw.set_montage('GSN-HydroCel-256')``) or "
+                    f"pass `chan_pos_idx` explicitly."
+                )
             warnings.warn(
                 f"STEEGFormer: {len(missing)} channel name(s) absent from the "
-                f"montage vocabulary ({shown}); falling back to the identity "
-                f"channel mapping. Pass `chan_pos_idx` explicitly to align an "
-                f"arbitrary montage with the pre-trained channel embedding.",
+                f"montage vocabulary ({shown}) and without a position in "
+                f"chs_info; falling back to the identity channel mapping. Pass "
+                f"`chan_pos_idx` explicitly to align an arbitrary montage with "
+                f"the pre-trained channel embedding.",
                 UserWarning,
                 stacklevel=2,
             )
