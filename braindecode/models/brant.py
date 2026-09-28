@@ -111,9 +111,9 @@ class Brant(EEGModuleMixin, nn.Module, license="apache-2.0"):
        **Pretrained weights.** ``braindecode/brant-pretrained`` holds the
        official weights converted to this implementation. All 210 shared
        tensors of the official checkpoint load unchanged; the encoder outputs
-       of the port match the official code within 1e-5 on identical inputs
-       (``scripts/brant_parity_check.py``). It uses the large configuration
-       above; the classification head is braindecode's and is not pretrained::
+       of the port match the official code within 1e-5 on identical inputs.
+       It uses the large configuration above; the classification head is
+       braindecode's and is not pretrained::
 
            model = Brant.from_pretrained(
                "braindecode/brant-pretrained", n_outputs=2
