@@ -28,6 +28,11 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.MSCFormer`, a multi-scale convolutional
+  transformer network for motor imagery decoding from Zhao et al. (2025),
+  adapted from the reference implementation to reuse braindecode's shared
+  attention and feed-forward blocks (:gh:`1186` by `Li Qing`_).
+
 - Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
   foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
   2023), including in-model spectral features and the shared configuration,
