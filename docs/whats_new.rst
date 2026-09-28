@@ -91,6 +91,12 @@ Bug fixes
   instead of calling ``Tensor.renorm``; values and gradients are unchanged
   (:gh:`1184` by `Bruno Aristimunha`_).
 
+- Fix :class:`braindecode.modules.MaxNormParametrize` producing ``NaN`` outputs
+  or gradients for zero or very small float16 rows after :gh:`1184`; the
+  rescale is now computed in float32 and only on rows above ``max_norm``.
+  Empty tensors pass through and a negative ``max_norm`` raises, as
+  ``Tensor.renorm`` does (:gh:`PRNUM` by `Bruno Aristimunha`_).
+
 
 Current 1.8.0 (2026-08-31)
 ===============================

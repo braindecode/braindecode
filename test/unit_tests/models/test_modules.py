@@ -1584,3 +1584,27 @@ def test_max_norm_parametrize_is_scriptable():
     torch.testing.assert_close(
         scripted(weight), weight.renorm(p=2, dim=0, maxnorm=0.5)
     )
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
+@pytest.mark.parametrize("fill", [0.0, 1e-5, 3.0])
+def test_max_norm_parametrize_low_precision_stays_finite(dtype, fill):
+    """Zero and tiny rows keep finite outputs and gradients, like ``renorm``."""
+    from braindecode.modules import MaxNormParametrize
+
+    weight = torch.full((4, 3), fill, dtype=dtype, requires_grad=True)
+    output = MaxNormParametrize(1.0)(weight)
+    output.sum().backward()
+    assert torch.isfinite(output).all()
+    assert torch.isfinite(weight.grad).all()
+    expected = weight.detach().float().renorm(p=2, dim=0, maxnorm=1.0)
+    torch.testing.assert_close(output.float(), expected, atol=2e-3, rtol=2e-3)
+
+
+def test_max_norm_parametrize_edge_cases_match_renorm():
+    from braindecode.modules import MaxNormParametrize
+
+    empty = torch.randn(0, 3)
+    assert MaxNormParametrize(1.0)(empty).shape == empty.shape
+    with pytest.raises(ValueError, match="max_norm must be >= 0"):
+        MaxNormParametrize(-1.0)
