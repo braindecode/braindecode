@@ -83,7 +83,7 @@ Bug fixes
   (e.g. :class:`braindecode.models.EEGNet`,
   :class:`braindecode.models.ATCNet`). The row rescale is now written out
   instead of calling ``Tensor.renorm``; values and gradients are unchanged
-  (:gh:`PRNUM` by `Bruno Aristimunha`_).
+  (:gh:`1184` by `Bruno Aristimunha`_).
 
 
 Current 1.8.0 (2026-08-31)
