@@ -1531,3 +1531,14 @@ def test_max_norm_parametrize_does_not_call_renorm():
     assert output.shape == (2, 8, 14)
     row_norms = conv.weight.detach().reshape(8, -1).norm(dim=1)
     assert (row_norms <= 0.5 + 1e-6).all()
+
+
+def test_max_norm_parametrize_is_scriptable():
+    """Models with a max-norm constraint are exported with TorchScript."""
+    from braindecode.modules import MaxNormParametrize
+
+    scripted = torch.jit.script(MaxNormParametrize(0.5))
+    weight = torch.randn(8, 4, 1, 3)
+    torch.testing.assert_close(
+        scripted(weight), weight.renorm(p=2, dim=0, maxnorm=0.5)
+    )

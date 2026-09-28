@@ -40,8 +40,10 @@ class MaxNormParametrize(nn.Module):
         # Gaudi (HPU), which decomposes it into a broadcast that breaks for
         # some weight shapes. The rescale uses a mask, not a data-dependent
         # branch, so it also traces and compiles without graph breaks.
-        norm = X.reshape(X.shape[0], -1).norm(p=2, dim=1)
-        norm = norm.reshape(X.shape[0], *([1] * (X.ndim - 1)))
+        # Rows are flattened so the scale broadcasts as (rows, 1); this form
+        # is also TorchScript-compatible.
+        rows = X.reshape(X.shape[0], -1)
+        norm = rows.norm(p=2, dim=1, keepdim=True)
         over = (norm > self.max_norm).to(X.dtype)
         scale = (1.0 - over) + over * (self.max_norm / (norm + 1e-7))
-        return X * scale
+        return (rows * scale).reshape_as(X)
