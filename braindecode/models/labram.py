@@ -823,6 +823,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.reset_classifier(n_outputs)
 
     def _adj_temporal_embedding(self, num_ch, batch_size, dim_embed=None):

@@ -224,6 +224,9 @@ class CBraMod(EEGModuleMixin, nn.Module):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
+        # A head implies a classifier, also when built with return_encoder_output.
+        self._update_init_kwargs(return_encoder_output=False)
         if self._n_times is not None and self._n_chans is not None:
             n_patch = self._n_times // self._patch_size
             flat_dim = self._n_chans * n_patch * self._emb_dim

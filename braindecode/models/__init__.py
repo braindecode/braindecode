@@ -3,6 +3,7 @@
 from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
 from .attn_sleep import AttnSleep
+from .barista import BaRISTA
 from .base import EEGModuleMixin
 from .bendr import BENDR, InterpolatedBENDR
 from .biot import BIOT, InterpolatedBIOT
@@ -40,6 +41,7 @@ from .labram import InterpolatedLaBraM, Labram
 from .luna import LUNA
 from .medformer import MEDFormer
 from .meta_neuromotor import MetaNeuromotorHand
+from .mirepnet import MIRepNet
 from .mscformer import MSCFormer
 from .msvtnet import MSVTNet
 from .mvpformer import MVPFormer
@@ -87,6 +89,7 @@ __all__ = [
     "ATCNet",
     "AttnSleep",
     "AttentionBaseNet",
+    "BaRISTA",
     "EEGModuleMixin",
     "BIOT",
     "BENDR",
@@ -134,6 +137,7 @@ __all__ = [
     "extract_channel_locations_from_chs_info",
     "positions_from_chs_info",
     "MEDFormer",
+    "MIRepNet",
     "MSCFormer",
     "MSVTNet",
     "MVPFormer",
