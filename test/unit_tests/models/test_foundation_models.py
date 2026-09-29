@@ -4,6 +4,7 @@
 
 import json
 import os
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import URLError
 
@@ -23,10 +24,20 @@ try:
 except ImportError:
     HAS_SAFETENSORS = False
 
-from braindecode.models import LUNA, REVE, CBraMod, CodeBrain, Labram
+from braindecode.models import (
+    LUNA,
+    REVE,
+    ZUNA,
+    CBraMod,
+    CodeBrain,
+    Labram,
+    STEEGFormer,
+    steegformer,
+)
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import Attention, RevePositionBank
+from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
+from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat
 
@@ -725,6 +736,62 @@ def test_zuna_builds_rotary_frequency_table_natively(axis_dim):
     torch.testing.assert_close(table, expected[:, :axis_dim])
 
 
+# ==============================================================================
+# Tests for ZUNA's on_non_divisible option
+# ==============================================================================
+
+_ZUNA_SMALL = dict(n_outputs=2, sfreq=250.0, dim=64, n_layers=1, n_heads=2, head_dim=32)
+
+
+def _zuna_chs_info():
+    info = mne.create_info(["Fz", "Cz", "Pz", "C3", "C4", "O1"], 250.0, "eeg")
+    info.set_montage("standard_1020")
+    return info["chs"]
+
+
+def test_zuna_rejects_non_divisible_n_times_by_default():
+    """The default ``on_non_divisible="error"`` keeps the previous behavior."""
+    with pytest.raises(ValueError, match="divisible"):
+        ZUNA(chs_info=_zuna_chs_info(), n_times=1000, **_ZUNA_SMALL)
+
+
+def test_zuna_rejects_invalid_on_non_divisible():
+    """An unknown ``on_non_divisible`` value raises, even for a divisible n_times."""
+    with pytest.raises(ValueError, match="on_non_divisible"):
+        ZUNA(
+            chs_info=_zuna_chs_info(),
+            n_times=1024,
+            on_non_divisible="bogus",
+            **_ZUNA_SMALL,
+        )
+
+
+def test_zuna_pad_equals_explicit_zero_padding():
+    """``"pad"`` matches the same weights built with a padded ``n_times``."""
+    torch.manual_seed(0)
+    padded = ZUNA(
+        chs_info=_zuna_chs_info(), n_times=1000, on_non_divisible="pad", **_ZUNA_SMALL
+    ).eval()
+    reference = ZUNA(chs_info=_zuna_chs_info(), n_times=1024, **_ZUNA_SMALL).eval()
+    reference.load_state_dict(padded.state_dict())
+    x = torch.randn(2, 6, 1000)
+    torch.testing.assert_close(
+        padded(x), reference(torch.nn.functional.pad(x, (0, 24))), rtol=0, atol=0
+    )
+
+
+def test_zuna_crop_drops_trailing_samples():
+    """``"crop"`` matches the same weights built with a cropped ``n_times``."""
+    torch.manual_seed(0)
+    cropped = ZUNA(
+        chs_info=_zuna_chs_info(), n_times=1000, on_non_divisible="crop", **_ZUNA_SMALL
+    ).eval()
+    reference = ZUNA(chs_info=_zuna_chs_info(), n_times=992, **_ZUNA_SMALL).eval()
+    reference.load_state_dict(cropped.state_dict())
+    x = torch.randn(2, 6, 1000)
+    torch.testing.assert_close(cropped(x), reference(x[..., :992]), rtol=0, atol=0)
+
+
 def test_reve_attention_matches_explicit_attention():
     attention = Attention(dim=16, heads=2, head_dim=8)
     x = torch.randn(2, 5, 16, requires_grad=True)
@@ -1194,6 +1261,30 @@ def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
     assert bank.get_all_positions() == list(config.keys())
 
 
+def test_reve_fourier_emb_4d_computes_in_float32():
+    """Intel Gaudi (HPU) autocast feeds sin/cos bf16 position x frequency products.
+
+    CPU autocast leaves elementwise ``mul`` alone, so bf16 positions reproduce it.
+    ``_embed`` is the unguarded computation.
+    """
+    torch.manual_seed(0)
+    electrodes = torch.randn(2, 16, 3)
+    positions = FourierEmb4D.add_time_patch(
+        electrodes / electrodes.norm(dim=-1, keepdim=True), 3
+    )
+    module = FourierEmb4D(dimension=64, freqs=4)
+    reference = module._embed(positions)
+    assert torch.equal(module(positions), reference)
+
+    def rel_error(out):
+        return ((out.float() - reference).norm() / reference.norm()).item()
+
+    bf16 = positions.to(torch.bfloat16)
+    out = module(bf16)
+    assert out.dtype == torch.bfloat16
+    assert rel_error(out) < 0.01 < 0.02 < rel_error(module._embed(bf16))
+
+
 # ==============================================================================
 # Tests for CBraMod Model
 # ==============================================================================
@@ -1269,3 +1360,103 @@ def test_diver1_mup_attention_scale():
         assert attention
         for module in attention:
             assert module.scale == (1.0 / module.head_dim if mup else None)
+
+
+@pytest.fixture
+def steeg_vocab(monkeypatch):
+    """Use an offline vocabulary; keep the model's real 145-slot capacity."""
+    names = ["Fp1", "Fp2", "Cz", "Oz", "T7", "T8", "Pz", "Fz"]
+    monkeypatch.setattr(steegformer, "_channel_order", lambda: names)
+    monkeypatch.setattr(
+        steegformer,
+        "_channel_index",
+        lambda: {n.upper(): i for i, n in enumerate(names)},
+    )
+    return names
+
+
+@pytest.mark.parametrize(
+    "names, explicit, expected, warning",
+    [
+        (["oz", "FP1", "Cz"], None, [3, 0, 2], None),
+        (["E1", "fp1", "E2"], None, [3, 0, 5], "nearest 10-05 site"),
+        (["E1", "fp1", "E2"], [5, 4, 3], [5, 4, 3], None),
+    ],
+    ids=["known-names", "mixed-positions", "explicit-override"],
+)
+@pytest.mark.filterwarnings("error")
+def test_steegformer_channel_mapping(steeg_vocab, names, explicit, expected, warning):
+    info = mne.create_info(["Oz", "Cz", "T8"], 250, "eeg")
+    info.set_montage(
+        mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
+    )
+    chs = [dict(ch, ch_name=name) for ch, name in zip(info["chs"], names)]
+    # Unknown electrodes are slightly displaced; fp1 must ignore its Cz position.
+    chs[0]["loc"][:3] += [0.003, 0, 0.002]
+    chs[2]["loc"][:3] += [0, 0.004, -0.003]
+    with pytest.warns(UserWarning, match=warning) if warning else nullcontext():
+        model = STEEGFormer(
+            n_chans=3,
+            n_outputs=2,
+            n_times=64,
+            chs_info=chs,
+            chan_pos_idx=explicit,
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    assert model.channel_indices.tolist() == expected
+
+
+@pytest.mark.parametrize(
+    "n_chans, fallback, n_chans_pos",
+    [
+        (3, "unlocated", 145),
+        (146, "unlocated", 145),
+        (256, "hydrocel", 145),
+        (3, "absent", 145),
+        (146, "absent", 145),
+        (3, "unpublished", 256),
+        (257, "unpublished", 256),
+        (3, "unavailable", 145),
+        (146, "unavailable", 145),
+    ],
+)
+def test_steegformer_montage_fallback(
+    steeg_vocab, monkeypatch, n_chans, fallback, n_chans_pos
+):
+    info = mne.create_info([f"E{i + 1}" for i in range(n_chans)], 250, "eeg")
+    if fallback == "hydrocel":
+        info.set_montage(mne.channels.make_standard_montage("GSN-HydroCel-256"))
+    if fallback == "unavailable":
+        def unavailable():
+            raise OSError("offline")
+
+        monkeypatch.setattr(steegformer, "_channel_index", unavailable)
+    overflow = n_chans > n_chans_pos and fallback != "hydrocel"
+    expectation = (
+        pytest.raises(ValueError, match="identity mapping.*chan_pos_idx")
+        if overflow
+        else pytest.warns(
+            UserWarning,
+            match="nearest 10-05 site" if fallback == "hydrocel" else "identity",
+        )
+    )
+    with expectation:
+        model = STEEGFormer(
+            n_chans=n_chans,
+            n_outputs=2,
+            n_times=64,
+            chs_info=None if fallback == "absent" else info["chs"],
+            n_chans_pos=n_chans_pos,
+            embed_dim=32,
+            depth=1,
+            num_heads=2,
+        )
+    if not overflow:
+        if fallback == "hydrocel":
+            slots = model.channel_indices
+            assert slots.shape == (256,)
+            assert 0 <= int(slots.min()) <= int(slots.max()) < len(steeg_vocab)
+        else:
+            assert model.channel_indices.tolist() == list(range(n_chans))

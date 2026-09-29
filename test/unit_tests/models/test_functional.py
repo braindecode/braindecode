@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import torch
+from scipy.signal import hilbert
 
 from braindecode.functional import (
     hilbert_freq,
@@ -42,6 +43,19 @@ def test_hilbert_freq_constant_signal():
         "Imaginary part should be zero for constant input"
 
 
+@pytest.mark.parametrize("seq_len", [7, 8, 101, 128])
+def test_hilbert_freq_matches_scipy(seq_len):
+    """hilbert_freq keeps the input length and matches scipy.signal.hilbert
+    for odd and even lengths."""
+    t = np.arange(seq_len)
+    x = np.stack([np.sin(0.3 * t) + 0.1 * t, np.cos(1.7 * t) - 0.05 * t])
+    output = hilbert_freq(torch.from_numpy(x), forward_fourier=True)
+    assert output.shape == (2, seq_len, 2)
+    expected = hilbert(x, axis=-1)
+    np.testing.assert_allclose(output[..., 0].numpy(), expected.real, atol=1e-10)
+    np.testing.assert_allclose(output[..., 1].numpy(), expected.imag, atol=1e-10)
+
+
 def test_plv_time_shape():
     """
     Test that plv_time returns the correct shape.
@@ -69,6 +83,54 @@ def test_plv_time_perfect_synchronization():
     expected = torch.ones(batch, channels, channels)
     assert torch.allclose(plv_matrix, expected, atol=1e-5), \
         "PLV should be 1 for perfectly synchronized signals"
+
+
+@pytest.mark.parametrize("forward_fourier", [False, True])
+def test_hilbert_freq_bfloat16_matches_float32(forward_fourier):
+    """The complex-valued Hilbert path accepts BF16 coefficients.
+
+    PyTorch does not support BF16 inputs to ``view_as_complex`` (and some
+    backends also lack BF16 FFT kernels), so the implementation computes this
+    narrow part in FP32 while retaining the real-valued input dtype contract.
+    """
+    if forward_fourier:
+        input_tensor = torch.randn(2, 3, 32)
+    else:
+        input_tensor = torch.randn(2, 3, 17, 2)
+    bfloat16_input = input_tensor.to(torch.bfloat16)
+
+    output = hilbert_freq(bfloat16_input, forward_fourier=forward_fourier)
+    reference = hilbert_freq(
+        bfloat16_input.float(), forward_fourier=forward_fourier
+    )
+
+    assert output.dtype == torch.bfloat16
+    assert torch.allclose(output.float(), reference, atol=2e-2, rtol=2e-2)
+
+
+def test_hilbert_freq_bfloat16_backward():
+    """The FP32 complex boundary remains differentiable for BF16 inputs."""
+    input_tensor = torch.randn(2, 3, 17, 2, dtype=torch.bfloat16, requires_grad=True)
+
+    output = hilbert_freq(input_tensor, forward_fourier=False)
+    output.square().mean().backward()
+
+    assert output.dtype == torch.bfloat16
+    assert input_tensor.grad is not None
+    assert input_tensor.grad.dtype == torch.bfloat16
+    assert torch.isfinite(input_tensor.grad).all()
+
+
+def test_plv_time_bfloat16_matches_float32():
+    """PLV can consume the BF16 Fourier coefficients used by EEGMiner."""
+    input_tensor = torch.randn(2, 3, 17, 2)
+    bfloat16_input = input_tensor.to(torch.bfloat16)
+
+    output = plv_time(bfloat16_input, forward_fourier=False)
+    reference = plv_time(bfloat16_input.float(), forward_fourier=False)
+
+    assert output.dtype == torch.bfloat16
+    assert torch.allclose(output.float(), reference, atol=2e-2, rtol=2e-2)
 
 
 def test_daubechies_filters_match_pywt():
