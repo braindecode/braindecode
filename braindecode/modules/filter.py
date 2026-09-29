@@ -741,7 +741,7 @@ class GeneralizedGaussianFilter(nn.Module):
         repeat = self.out_channels // self.in_channels
         real = torch.repeat_interleave(real, repeat, dim=-2)
         imag = torch.repeat_interleave(imag, repeat, dim=-2)
-        filters = self.filters.float()
+        filters = self.filters.to(real.dtype)
         out_real = real * filters[..., 0]
         out_imag = imag * filters[..., 1]
         if self.inverse_fourier:
