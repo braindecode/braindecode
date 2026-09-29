@@ -77,7 +77,7 @@ Bug fixes
   devices without complex tensors, computed in float32 with autocast disabled
   (a bf16 matmul DFT gave phase-locking features 20% off and wrong-direction
   filter gradients). CPU and CUDA keep ``torch.fft``
-  (:gh:`NNNN` by `Bruno Aristimunha`_)
+  (:gh:`1193` by `Bruno Aristimunha`_)
 
 - Preserve shared class targets when creating MNE epochs from different event
   annotations, as in sleep staging. MNE event IDs remain unique.
