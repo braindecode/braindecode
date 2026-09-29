@@ -33,6 +33,14 @@ Enhancements
   forwarded to the shared :class:`braindecode.modules.PatchTokenizer`; the default
   ``"error"`` keeps the previous behaviour (:gh:`1190` by `Bruno Aristimunha`_).
 
+- Add :class:`braindecode.models.MSCFormer`, a multi-scale convolutional
+  transformer network for motor imagery decoding from Zhao et al. (2025),
+  adapted from the reference implementation to reuse braindecode's shared
+  attention and feed-forward blocks. The default attention logit scale
+  reproduces the released source's ``embed_dim ** -0.5`` (numerically
+  verified against the original code, max abs logit diff < 1e-6) and is
+  configurable via ``attention_scale`` (:gh:`1186` by `Li Qing`_).
+
 - Add :class:`braindecode.models.BaRISTA`, an intracranial EEG foundation model
   whose spatial encoding scale is a free choice: electrodes are tokenized
   channel-wise and space enters as a single learned embedding selected by the
@@ -80,6 +88,13 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU), part 2 of
+  :gh:`1183`: :class:`braindecode.modules.GeneralizedGaussianFilter` and
+  :func:`braindecode.functional.hilbert_freq` now use a real-valued DFT on
+  devices without complex tensors, computed in float32 with autocast disabled
+  (a bf16 matmul DFT gave phase-locking features 20% off and wrong-direction
+  filter gradients). CPU and CUDA keep ``torch.fft``
+  (:gh:`1193` by `Bruno Aristimunha`_)
 - Compute the 4-D Fourier position embedding of :class:`braindecode.models.REVE`
   in float32 with autocast disabled. Intel Gaudi (HPU) autocast downcasts the
   position × frequency products to bf16 before sin/cos (embedding ~3 % off on

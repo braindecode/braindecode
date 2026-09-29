@@ -13,6 +13,8 @@ from torch import Tensor, from_numpy, nn
 from torch.fft import fftfreq
 from torchaudio.functional import fftconvolve, filtfilt, lfilter
 
+from braindecode.functional import _real_dft
+
 
 class FilterBankLayer(nn.Module):
     """Apply multiple band-pass filters to generate multiview signal representation.
@@ -704,6 +706,8 @@ class GeneralizedGaussianFilter(nn.Module):
         self.filters = self.construct_filters()
         # Preserving the original dtype.
         dtype = x.dtype
+        if _real_dft.needs_real_dft(x):
+            return self._forward_real_dft(x).to(dtype)
         # Apply FFT -> (..., channels, freqs, 2)
         x = torch.fft.rfft(x, dim=-1)
         x = torch.view_as_real(x)  # separate real and imag
@@ -722,3 +726,24 @@ class GeneralizedGaussianFilter(nn.Module):
         x = x.to(dtype)
 
         return x
+
+    @torch.jit.unused
+    @_real_dft.fp32_island
+    def _forward_real_dft(self, x):
+        # Real-valued equivalent of the torch.fft path above, for devices
+        # without complex tensors (Intel Gaudi / HPU), in float32 with autocast
+        # disabled. ``self.filters`` multiplies the real and imaginary parts
+        # element-wise, exactly like ``x * self.filters`` on the
+        # ``view_as_real`` layout above (not a complex multiplication).
+        # ``torch.jit.unused`` keeps this branch out of the scripted graph:
+        # CPU/CUDA never take it, and HPU does not run under torch.jit.script.
+        real, imag = _real_dft.real_rfft(x)
+        repeat = self.out_channels // self.in_channels
+        real = torch.repeat_interleave(real, repeat, dim=-2)
+        imag = torch.repeat_interleave(imag, repeat, dim=-2)
+        filters = self.filters.to(real.dtype)
+        out_real = real * filters[..., 0]
+        out_imag = imag * filters[..., 1]
+        if self.inverse_fourier:
+            return _real_dft.real_irfft(out_real, out_imag, n=self.sequence_length)
+        return torch.stack((out_real, out_imag), dim=-1)

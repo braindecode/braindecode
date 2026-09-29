@@ -17,7 +17,7 @@ from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
 from torch.nn.utils.parametrize import register_parametrization
 
-from braindecode.functional import drop_path
+from braindecode.functional import _real_dft, drop_path
 from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
@@ -1199,6 +1199,44 @@ def test_forward_pass_no_inverse_fourier():
     assert output.dtype == torch.float32 or output.dtype == torch.float64, (
         "Output should be real-valued tensor"
     )
+
+
+@pytest.mark.parametrize("sequence_length", [120, 121])
+@pytest.mark.parametrize("inverse_fourier", [True, False])
+def test_generalized_gaussian_filter_real_dft_path_matches(
+    monkeypatch, sequence_length, inverse_fourier
+):
+    """Forcing the real-valued DFT path (as on HPU) reproduces the
+    ``torch.fft``-based path exactly, for odd and even ``sequence_length`` and
+    for both ``inverse_fourier`` values, in outputs and in gradients."""
+    torch.manual_seed(0)
+    kwargs = dict(
+        in_channels=1,
+        out_channels=2,
+        sequence_length=sequence_length,
+        sample_rate=120,
+        inverse_fourier=inverse_fourier,
+        f_mean=(12.0, 28.0),
+        bandwidth=(10.0, 16.0),
+        shape=(2.0, 2.5),
+        group_delay=(20.0, 20.0),
+    )
+    x = torch.randn(4, 6, 1, sequence_length)
+
+    def run(force):
+        module = GeneralizedGaussianFilter(**kwargs)
+        if force:
+            monkeypatch.setattr(_real_dft, "needs_real_dft", lambda t: True)
+        out = module(x)
+        out.square().sum().backward()
+        monkeypatch.undo()
+        return out.detach(), [p.grad for p in module.parameters()]
+
+    ref_out, ref_grads = run(force=False)
+    out, grads = run(force=True)
+    torch.testing.assert_close(out, ref_out, rtol=1e-5, atol=1e-5)
+    for grad, ref_grad in zip(grads, ref_grads):
+        torch.testing.assert_close(grad, ref_grad, rtol=1e-4, atol=1e-5)
 
 
 def test_eca_invalid_kernel_size():
