@@ -7,7 +7,7 @@ import warnings
 from copy import deepcopy
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional, Sequence, cast
+from typing import Any, Callable, Dict, Literal, Optional, Sequence, cast
 
 import mne
 import numpy as np
@@ -15,6 +15,7 @@ import pandas as pd
 import pydantic
 import torch  # noqa: F401  # exposed so TorchScript can resolve ``torch`` through the BatchNorm-guard wrapper's __globals__
 from mne.io.constants import FIFF
+from sklearn.metrics import pairwise_distances_argmin
 from torch import nn
 
 from braindecode.util import resolve_montage_name
@@ -805,6 +806,7 @@ def resolve_channel_indices(
     channel_names: Sequence[str],
     *,
     montage: Optional[str] = None,
+    metric: str | Callable = "cosine",
 ) -> Optional[list[int]]:
     """Resolve input channels into an ordered, case-insensitive vocabulary.
 
@@ -827,6 +829,12 @@ def resolve_channel_indices(
         Standard MNE montage supplying reference sites for unknown names.
         Native montage coordinates are transformed to head coordinates with
         MNE's public fiducial transform. None enables name-only resolution.
+    metric : str | callable
+        Distance metric accepted by :func:`sklearn.metrics.pairwise_distances`.
+        Applied to sphere-centred unit directions, not raw electrode positions.
+        The default, "cosine", preserves nearest-angular-site matching. A
+        callable takes two direction vectors and returns their distance.
+        Used only for positional fallback; exact names always take precedence.
 
     Returns
     -------
@@ -888,8 +896,8 @@ def resolve_channel_indices(
     if not np.isfinite(norms).all() or np.any(norms <= 1e-7):
         return None
     directions = radial / norms
-    nearest = (directions[: len(locations)] @ directions[len(locations) :].T).argmax(
-        axis=1
+    nearest = pairwise_distances_argmin(
+        directions[: len(locations)], directions[len(locations) :], metric=metric
     )
     for i, j in zip(unresolved, nearest):
         indices[i] = site_indices[int(j)]

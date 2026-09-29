@@ -117,7 +117,8 @@ def test_interpolated_models_dict():
         assert getattr(model_cls, "_TARGET_CHS_INFO", None) is None
 
 
-def test_resolve_channel_indices_transformed_head_geometry():
+@pytest.mark.parametrize("metric", ["cosine", "euclidean", "manhattan"])
+def test_resolve_channel_indices_transformed_head_geometry(metric):
     """Independent MNE head coordinates expose native/head reference mismatches."""
     montage = mne.channels.make_standard_montage(resolve_montage_name("standard_1005"))
     # Drop aliases sharing coordinates, so every expected slot is unambiguous.
@@ -130,9 +131,9 @@ def test_resolve_channel_indices_transformed_head_geometry():
     head = np.array([ch["loc"][:3] for ch in info["chs"]])
     assert not np.allclose(list(sites), head)
     chs = [dict(ch, ch_name=f"sensor-{i}") for i, ch in enumerate(info["chs"])]
-    assert resolve_channel_indices(chs, names, montage="standard_1005") == list(
-        range(len(names))
-    )
+    assert resolve_channel_indices(
+        chs, names, montage="standard_1005", metric=metric
+    ) == list(range(len(names)))
 
 
 @pytest.mark.parametrize(
