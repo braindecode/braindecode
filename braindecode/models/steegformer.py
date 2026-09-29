@@ -416,6 +416,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         differs from the pre-trained checkpoint (whose head is discarded).
         """
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
         self._init_weights(self.final_layer)  # match the constructor's head init
 

@@ -85,6 +85,16 @@ Bug fixes
   :class:`braindecode.models.Deep4Net` unusable on single-channel data
   (:gh:`1154` by `Julien Gadonneix`_).
 
+- Fix :meth:`braindecode.models.base.EEGModuleMixin.reset_head` leaving the
+  saved configuration on the previous head, so a model saved after changing its
+  number of outputs could not be loaded back. Eighteen models (BENDR, BIOT,
+  CBraMod, EEGDINO, EEGPT, Labram, MetaNeuromotorHand, MVPFormer, REVE,
+  STEEGFormer, ZUNA, the three SignalJEPA classifiers and the Interpolated
+  BENDR, BIOT, EEGPT and LaBraM wrappers) now record the new ``n_outputs``, and
+  BENDR, CBraMod and EEGDINO built as feature extractors now also record that
+  they became classifiers, instead of reloading without their trained head.
+  Existing head-reset train/eval behavior is unchanged
+  (:gh:`1181` by `Raghav Rathi`_).
 - Make :func:`braindecode.preprocessing.create_windows_from_events` infer the
   event mapping once for the whole dataset before the recordings are windowed.
   With ``mapping=None`` and ``n_jobs`` above one, every worker numbered the
@@ -1834,3 +1844,4 @@ Authors
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
+.. _Raghav Rathi: https://github.com/raghav-rathi
