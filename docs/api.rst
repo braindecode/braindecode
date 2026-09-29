@@ -177,6 +177,7 @@ interface for all EEG models and can derive variable names when needed.
      LUNA
      MEDFormer
      MetaNeuromotorHand
+     MSCFormer
      MSVTNet
      PBT
      REVE
