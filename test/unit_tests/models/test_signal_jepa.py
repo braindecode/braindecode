@@ -227,6 +227,133 @@ class TestPosEncoderBuffer:
         assert pe.default_ch_idxs.device == torch.device("cpu")
 
 
+class TestPosEncoderEncodingTimeBuffer:
+    """Regression tests for the ``encoding_time`` device bug.
+
+    ``encoding_time`` used to be a plain tensor attribute (not a buffer),
+    so it silently stayed on the CPU after ``model.to(device)``/``.to(dtype)``
+    while the rest of the module moved. On accelerators (e.g. HPU), the
+    subsequent CPU -> device strided ``copy_`` into the pre-allocated
+    encoding silently did nothing, and the temporal part of the assembled
+    positional encoding was wrong. These tests exercise the buffer
+    registration via ``.double()`` (a CPU-only proxy for ``.to(device)``,
+    since both go through ``nn.Module._apply``).
+    """
+
+    @staticmethod
+    def _make_pos_encoder():
+        return _PosEncoder(
+            spat_dim=4,
+            time_dim=6,
+            channel_locations=[[0.0, 0.0], [1.0, 1.0]],
+            ch_idxs=torch.tensor([0, 1], dtype=torch.long),
+            sfreq_features=1.0,
+        )
+
+    def test_encoding_time_is_non_persistent_buffer(self):
+        pe = self._make_pos_encoder()
+        # Registered as a buffer (so .to()/.double() moves/casts it)...
+        assert "encoding_time" in dict(pe.named_buffers())
+        # ...but not persistent: state_dict keys are unchanged vs master,
+        # where it was not a buffer/parameter at all and thus never saved.
+        assert "encoding_time" not in pe.state_dict()
+
+    def test_encoding_time_dtype_follows_double_cast_before_build(self):
+        # Cast happens before the table is ever built (still size 0).
+        pe = self._make_pos_encoder()
+        pe = pe.double()
+        pe._check_encoding_time(5)
+        assert pe.encoding_time.dtype == torch.float64
+
+    def test_encoding_time_dtype_follows_double_cast_after_build(self):
+        # Cast happens after the table already has real content.
+        pe = self._make_pos_encoder()
+        pe._check_encoding_time(5)
+        assert pe.encoding_time.dtype == torch.float32
+        pe = pe.double()
+        assert pe.encoding_time.dtype == torch.float64
+        # Growing again after the cast keeps the new dtype.
+        pe._check_encoding_time(10)
+        assert pe.encoding_time.dtype == torch.float64
+
+    def test_loading_old_style_state_dict_without_encoding_time_key(self):
+        """A checkpoint saved before this fix never had an ``encoding_time``
+        key (it was a plain attribute). Loading such a state_dict with
+        ``strict=True`` must still work, which guards against accidentally
+        making the new buffer persistent (that would add a required key
+        old checkpoints don't have)."""
+        source = self._make_pos_encoder()
+        old_style_state_dict = {
+            k: v for k, v in source.state_dict().items() if k != "encoding_time"
+        }
+        assert "encoding_time" not in old_style_state_dict  # sanity check
+
+        target = self._make_pos_encoder()
+        target._check_encoding_time(5)  # non-trivial table before loading
+        result = target.load_state_dict(old_style_state_dict, strict=True)
+        assert result.missing_keys == []
+        assert result.unexpected_keys == []
+
+
+def _reference_pos_encoder_forward(pos_encoder, local_features, ch_idxs=None):
+    """Verbatim copy of the pre-fix ``_PosEncoder.forward`` assembly.
+
+    Used as a golden master to prove the CPU numerical output is unchanged
+    by the device-correctness fix (new_empty + strided writes -> torch.cat).
+    Only meaningful when ``emb_dim == spat_dim + time_dim``: beyond that,
+    the original ``new_empty`` buffer left the trailing slice uninitialized
+    (undefined content), so there is nothing well-defined to compare against.
+    """
+    batch_size, n_chans_times, emb_dim = local_features.shape
+    if ch_idxs is None:
+        ch_idxs = pos_encoder.default_ch_idxs[None, :].expand(batch_size, -1)
+    batch_size_chs, n_chans = ch_idxs.shape
+    n_times = n_chans_times // n_chans
+    pos_encoding = local_features.new_empty(
+        (batch_size_chs, n_chans, n_times, emb_dim)
+    )
+    pos_encoding[:, :, :, : pos_encoder.spat_dim] = pos_encoder.pos_encoder_spat(
+        ch_idxs
+    )[:, :, None, :]
+    pos_encoder._check_encoding_time(n_times)
+    pos_encoding[
+        :, :, :, pos_encoder.spat_dim : pos_encoder.spat_dim + pos_encoder.time_dim
+    ] = pos_encoder.encoding_time[None, None, :n_times, :]
+    return pos_encoding.view(batch_size, n_chans_times, emb_dim)
+
+
+class TestPosEncoderForwardAssembly:
+    def test_forward_matches_reference_assembly_on_cpu(self):
+        # emb_dim == spat_dim + time_dim: fully-defined reference output.
+        pe = _PosEncoder(
+            spat_dim=4,
+            time_dim=6,
+            channel_locations=[[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],
+            ch_idxs=torch.tensor([2, 0], dtype=torch.long),
+            sfreq_features=1.0,
+        )
+        local_features = torch.randn(3, 2 * 5, 10)
+        expected = _reference_pos_encoder_forward(pe, local_features)
+        actual = pe(local_features)
+        assert torch.equal(actual, expected)
+
+    def test_forward_zero_fills_dimensions_beyond_spat_plus_time(self):
+        # emb_dim > spat_dim + time_dim is reachable (no cross-validation
+        # ties pos_encoder__spat_dim/time_dim to the feature encoder's
+        # output width or transformer__d_model). The trailing slice must
+        # be zero-filled rather than left as uninitialized memory.
+        pe = _PosEncoder(
+            spat_dim=4,
+            time_dim=6,
+            channel_locations=[[0.0, 0.0], [1.0, 1.0]],
+            ch_idxs=torch.tensor([0, 1], dtype=torch.long),
+            sfreq_features=1.0,
+        )
+        local_features = torch.randn(1, 2 * 5, 20)  # emb_dim=20 > 4 + 6
+        out = pe(local_features).view(1, 2, 5, 20)
+        assert torch.equal(out[..., 10:], torch.zeros(1, 2, 5, 10))
+
+
 class TestSignalJEPAChannelEmbedding:
     @staticmethod
     def _user_chs(names):
