@@ -28,6 +28,7 @@ from braindecode.modules import (
     CausalConv1d,
     CombinedConv,
     DropPath,
+    FeedForwardBlock,
     FilterBankLayer,
     GeneralizedGaussianFilter,
     LinearWithConstraint,
@@ -1691,3 +1692,75 @@ def test_max_norm_parametrize_empty_matches_renorm(dtype, shape):
 def test_max_norm_parametrize_rejects_negative_limit():
     with pytest.raises(ValueError, match="max_norm must be >= 0"):
         MaxNormParametrize(-1.0)
+
+
+@pytest.mark.parametrize("gated", [False, True])
+@pytest.mark.parametrize("activation", [nn.GELU, nn.SiLU, nn.PReLU])
+@pytest.mark.parametrize("precision", ["float32", "float64", "autocast"])
+@pytest.mark.parametrize("mode", ["train", "eval", "mixed"])
+@pytest.mark.parametrize("drop_p", [0.0, 0.2])
+def test_feed_forward_block_compatibility(gated, activation, precision, mode, drop_p):
+    """Preserve historical initialization, checkpoints, modes and exact arithmetic."""
+    width = 13 if gated else 32
+    torch.manual_seed(17)
+    if gated:
+        reference = nn.Module()
+        reference.fc1 = nn.Linear(8, width, bias=False)
+        reference.fc_gate = nn.Linear(8, width, bias=False)
+        reference.fc2 = nn.Linear(width, 8, bias=False)
+        reference.activation = activation()
+        reference.dropout1 = nn.Dropout(drop_p)
+        reference.dropout2 = nn.Dropout(drop_p)
+    else:
+        reference = nn.Sequential(
+            nn.Linear(8, width), activation(), nn.Dropout(drop_p), nn.Linear(width, 8)
+        )
+    rng = torch.get_rng_state()
+    torch.manual_seed(17)
+    options = dict(hidden_features=width, gated=True, bias=False, output_drop_p=drop_p) if gated else {}
+    actual = FeedForwardBlock(8, 4, drop_p, activation, **options)
+    assert torch.equal(rng, torch.get_rng_state())
+    assert list(reference.state_dict()) == list(actual.state_dict())
+    for key, value in reference.state_dict().items():
+        torch.testing.assert_close(value, actual.state_dict()[key], rtol=0, atol=0)
+    actual.load_state_dict(reference.state_dict(), strict=True)
+    dtype = torch.float64 if precision == "float64" else torch.float32
+    for module in (reference, actual):
+        module.to(dtype).train(mode == "train")
+        if mode == "mixed":
+            (module.dropout1 if gated else module[2]).train()
+    assert {n: m.training for n, m in reference.named_modules()} == {
+        n: m.training for n, m in actual.named_modules()
+    }
+    x = torch.randn(2, 3, 8, dtype=dtype)
+    results = []
+    for module in (reference, actual):
+        xx = x.clone().requires_grad_()
+        torch.manual_seed(91)
+        with torch.autocast("cpu", dtype=torch.bfloat16, enabled=precision == "autocast"):
+            if module is reference and gated:
+                hidden = module.activation(module.fc_gate(xx)) * module.fc1(xx)
+                y = module.dropout2(module.fc2(module.dropout1(hidden)))
+            else:
+                y = module(xx)
+        y.square().sum().backward()
+        results.append((y, xx.grad, [p.grad for p in module.parameters()], torch.get_rng_state()))
+    for index in (0, 1, 3):
+        torch.testing.assert_close(results[0][index], results[1][index], rtol=0, atol=0)
+    for expected, observed in zip(results[0][2], results[1][2]):
+        torch.testing.assert_close(expected, observed, rtol=0, atol=0)
+    scripted = torch.jit.script(actual)
+    torch.manual_seed(91)
+    expected = actual(x)
+    torch.manual_seed(91)
+    torch.testing.assert_close(scripted(x), expected, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("gated", [False, True])
+def test_feed_forward_block_options(gated):
+    """Explicit width, projection bias and output dropout work in both modes."""
+    module = FeedForwardBlock(8, 4, 0.0, hidden_features=13, gated=gated, bias=False, output_drop_p=1.0)
+    assert all("bias" not in name for name in module.state_dict())
+    assert next(module.parameters()).shape == (13, 8)
+    assert torch.count_nonzero(module(torch.randn(2, 3, 8))) == 0
+    torch.jit.script(module)

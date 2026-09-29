@@ -13,6 +13,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 from braindecode import models
 from braindecode.models.util import (
+    channel_metadata_from_chs_info,
     extract_channel_locations_from_chs_info,
     has_valid_locations,
     interpolated_models_dict,
@@ -227,3 +228,57 @@ def test_coordinate_helpers_preserve_dictionary_defaults():
     result = positions_from_chs_info(chs)
     assert result.dtype == np.float64
     np.testing.assert_array_equal(result, [[0, 0], [1, 0], [.5, 0]])
+
+
+@pytest.mark.parametrize("kind, slots", [("eeg", [0, -1]), ("ecog", [1, 0]), ("seeg", [1, 2]), ("dbs", [1, 2])])
+def test_channel_metadata_from_chs_info(kind, slots):
+    """Standalone metadata retains the model alias and MNE units/type slots."""
+    info = mne.create_info(["A1", "A2"], 500.0, kind)
+    info["chs"][0]["loc"][:3] = [0.01, 0.02, -0.03]
+    metadata = channel_metadata_from_chs_info(info["chs"])
+    torch.testing.assert_close(metadata[0, :3], torch.tensor([10.0, 20.0, -30.0]))
+    assert torch.isnan(metadata[1, :3]).all()
+    assert metadata[:, 3:].tolist() == [slots, slots]
+    torch.testing.assert_close(metadata, models.DIVER1.channel_metadata(info["chs"]), equal_nan=True, rtol=0, atol=0)
+    with pytest.raises(ValueError, match="cannot determine"):
+        channel_metadata_from_chs_info([dict(kind="unknown")])
+
+
+@pytest.mark.parametrize("fill_missing", [False, True])
+@pytest.mark.parametrize(
+    "entry, valid",
+    [(None, False), ({}, False), ({"loc": None}, False),
+     ({"loc": "invalid"}, False), ({"loc": 1}, False),
+     ({"loc": [[1, 2, 3]]}, False), ({"loc": [[1], [2, 3]]}, False),
+     ({"loc": [1, 2]}, False), ({"loc": {"x": 1}}, False),
+     ({"loc": [1, 2, 3]}, True), ({"loc": np.arange(12)}, True),
+     ({"loc": [np.nan, 1, 2]}, True), ({"loc": [np.inf, 1, 2]}, True),
+     ({"loc": [0, 0, 0]}, True), (np.array([1, 2, 3]), False)],
+)
+def test_extract_channel_locations_fill_policy(entry, valid, fill_missing):
+    prefix = {"loc": [1, 2, 3]}
+    actual = extract_channel_locations_from_chs_info([prefix, entry, prefix], fill_missing=fill_missing)
+    if valid:
+        expected = [[1, 2, 3], np.asarray(entry["loc"])[:3], [1, 2, 3]]
+    elif fill_missing:
+        expected = [[1, 2, 3], [np.nan] * 3, [1, 2, 3]]
+    else:
+        expected = [[1, 2, 3]]
+    assert actual.dtype == np.float32
+    np.testing.assert_array_equal(actual, np.asarray(expected, dtype=np.float32))
+
+
+@pytest.mark.parametrize("fill_missing", [False, True])
+def test_extract_channel_locations_empty_zero_and_requested_count(fill_missing):
+    for chs in [None, []]:
+        assert extract_channel_locations_from_chs_info(chs, fill_missing=fill_missing) is None
+    chs = [{"loc": [0, 0, 0]}]
+    assert extract_channel_locations_from_chs_info(chs, num_channels=0, fill_missing=fill_missing) is None
+    actual = extract_channel_locations_from_chs_info(chs, fill_missing=fill_missing)
+    if fill_missing:
+        np.testing.assert_array_equal(actual, np.full((1, 3), np.nan, dtype=np.float32))
+    else:
+        assert actual is None
+    actual = extract_channel_locations_from_chs_info([{"loc": [1, 2, 3]}], num_channels=3, fill_missing=fill_missing)
+    expected = [[1, 2, 3], [np.nan] * 3, [np.nan] * 3] if fill_missing else [[1, 2, 3]]
+    np.testing.assert_array_equal(actual, np.asarray(expected, dtype=np.float32))

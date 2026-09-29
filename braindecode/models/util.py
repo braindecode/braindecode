@@ -21,6 +21,19 @@ from torch import nn
 
 from braindecode.util import resolve_montage_name
 
+# Canonical MNE channel-type name for the electrode kinds braindecode models
+# tell apart.
+_KIND_TO_CH_TYPE = {
+    FIFF.FIFFV_EEG_CH: "eeg",
+    FIFF.FIFFV_SEEG_CH: "seeg",
+    FIFF.FIFFV_DBS_CH: "dbs",
+    FIFF.FIFFV_ECOG_CH: "ecog",
+}
+
+#: MNE channel types recorded from inside the skull.
+INTRACRANIAL_CH_TYPES = frozenset({"seeg", "dbs", "ecog"})
+
+
 models_dict = {}
 # Interpolated models are channel-interpolating wrappers around existing
 # braindecode backbones (see :func:`braindecode.models.InterpolatedModel`).
@@ -811,27 +824,18 @@ def extract_channel_locations_from_chs_info(
 
     for i in range(n_to_extract):
         ch_info = chs_info[i] if i < len(chs_info) else None
-        coordinates = None
+        loc = ch_info.get("loc") if isinstance(ch_info, dict) else None
+        try:
+            coordinates = np.asarray(loc, dtype=np.float32)
+        except (ValueError, TypeError):
+            coordinates = np.asarray(np.nan, dtype=np.float32)
 
-        if isinstance(ch_info, dict):
-            loc = ch_info.get("loc")
-            if loc is not None:
-                try:
-                    loc_array = np.asarray(loc, dtype=np.float32)
-                except (ValueError, TypeError):
-                    loc_array = None
-                # MNE format: 12-element array with electrode position at indices 0:3
-                if (
-                    loc_array is not None
-                    and loc_array.ndim == 1
-                    and loc_array.size >= 3
-                ):
-                    coordinates = loc_array[:3]
-
-        if coordinates is None:
-            if not fill_missing:
-                break
+        if coordinates.ndim == 1 and coordinates.size >= 3:
+            coordinates = coordinates[:3]
+        elif fill_missing:
             coordinates = np.full(3, np.nan, dtype=np.float32)
+        else:
+            break
 
         locations.append(coordinates)
 
@@ -1040,19 +1044,6 @@ def valid_location_mask(locations: torch.Tensor) -> torch.Tensor:
     )
 
 
-# Canonical MNE channel-type name for the electrode kinds braindecode models
-# tell apart.
-_KIND_TO_CH_TYPE = {
-    FIFF.FIFFV_EEG_CH: "eeg",
-    FIFF.FIFFV_SEEG_CH: "seeg",
-    FIFF.FIFFV_DBS_CH: "dbs",
-    FIFF.FIFFV_ECOG_CH: "ecog",
-}
-
-#: MNE channel types recorded from inside the skull.
-INTRACRANIAL_CH_TYPES = frozenset({"seeg", "dbs", "ecog"})
-
-
 def channel_types_from_chs_info(
     chs_info: Optional[Sequence[Dict[str, Any]]],
     num_channels: Optional[int] = None,
@@ -1098,6 +1089,54 @@ def channel_types_from_chs_info(
         else:
             types.append("unknown")
     return types
+
+
+def channel_metadata_from_chs_info(chs_info: list[dict]) -> torch.Tensor:
+    """Build coordinate and electrode-type metadata from MNE channel info.
+
+    Parameters
+    ----------
+    chs_info : list of dict
+        One MNE ``info["chs"]`` entry per channel, with ``kind`` and ``loc``.
+
+    Returns
+    -------
+    torch.Tensor
+        Float32 ``(n_chans, 5)`` tensor: xyz in millimetres, modality
+        (EEG=0, intracranial=1), and subtype (grid=0, strip=1, depth=2,
+        unknown=-1). MNE cannot identify strips. Missing coordinates are NaN.
+        These slots follow DIVER-1's vocabulary, not MNE kind codes.
+
+    Examples
+    --------
+    >>> import mne
+    >>> info = mne.create_info(["A1", "A2"], 500.0, "seeg")
+    >>> channel_metadata_from_chs_info(info["chs"])[:, 3:].tolist()
+    [[1.0, 2.0], [1.0, 2.0]]
+    """
+    # EEG/iEEG; grid/strip/depth. MNE cannot distinguish strips from grids.
+    type_to_slots = {"eeg": (0, -1), "ecog": (1, 0), "seeg": (1, 2), "dbs": (1, 2)}
+    n_chans = len(chs_info)
+    # MNE stores coordinates in metres; DIVER-1 encodes MNI coordinates in
+    # millimetres.
+    coords = 1e3 * torch.as_tensor(
+        extract_channel_locations_from_chs_info(
+            chs_info, num_channels=n_chans, fill_missing=True
+        ),
+        dtype=torch.float32,
+    )
+    types = channel_types_from_chs_info(chs_info, num_channels=n_chans)
+    undetermined = sorted({t for t in types if t not in type_to_slots})
+    if undetermined:
+        raise ValueError(
+            f"DIVER1 cannot determine the recording modality of every "
+            f"channel: the chs_info 'kind' of some resolves to "
+            f"{undetermined}, which is neither scalp EEG nor an "
+            f"intracranial type ({sorted(INTRACRANIAL_CH_TYPES)}). Set the "
+            f"channel kinds in chs_info accordingly."
+        )
+    slots = torch.tensor([type_to_slots[t] for t in types], dtype=coords.dtype)
+    return torch.cat([coords, slots], dim=-1)
 
 
 _summary_table = get_summary_table()

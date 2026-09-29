@@ -6,6 +6,7 @@ from scipy.signal import hilbert
 from braindecode.functional import (
     hilbert_freq,
     plv_time,
+    rotate_pairs,
     sinusoidal_positional_encoding,
 )
 
@@ -184,3 +185,23 @@ def test_sinusoidal_positional_encoding_odd_dim_truncates_contiguously():
     assert pe_odd.shape == (50, 15)
     assert pe_odd.is_contiguous()
     assert torch.equal(pe_odd, sinusoidal_positional_encoding(50, 16)[:, :15])
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.bfloat16])
+@pytest.mark.parametrize("shape", [(8,), (2, 3, 8), (2, 0, 8)])
+def test_rotate_pairs(dtype, shape):
+    x = torch.randn(shape, dtype=dtype).transpose(0, -1).contiguous().transpose(0, -1)
+    x.requires_grad_()
+    expected = torch.stack((-x[..., 1::2], x[..., 0::2]), dim=-1).flatten(-2)
+    actual = rotate_pairs(x)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    torch.testing.assert_close(torch.jit.script(rotate_pairs)(x), expected, rtol=0, atol=0)
+    weights = torch.randn_like(actual)
+    grad = torch.autograd.grad((actual * weights).sum(), x)[0]
+    ref_grad = torch.autograd.grad((expected * weights).sum(), x)[0]
+    torch.testing.assert_close(grad, ref_grad, rtol=0, atol=0)
+
+
+def test_rotate_pairs_rejects_odd_width():
+    with pytest.raises(RuntimeError):
+        rotate_pairs(torch.zeros(2, 3))

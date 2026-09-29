@@ -1,19 +1,11 @@
 # Authors: Julien Gadonneix <juliengado.2001@gmail.com>
 #
 # License: Apache-2.0
-"""DIVER-1: an any-variate iEEG foundation model.
+"""DIVER-1 (Han et al., 2025), adapted by Julien Gadonneix.
 
-Reimplementation of DIVER-1 (Han et al., 2025), "DIVER-1: Scaling Intracranial
-EEG Foundation Models for Transferable Representations". The architecture is
-transcribed from the authors' reference implementation, whose Transformer
-encoder is adapted from Salesforce's MOIRAI / ``uni2ts`` (Copyright Salesforce,
-Inc.), released under the Apache License, Version 2.0; this file is therefore
-distributed under Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0).
-The reference repository states no license of its own, so check the terms of the
-original implementation before redistributing.
-
-Original Authors: Han et al., Seoul National University
-Braindecode Adaptation: Julien Gadonneix
+The reference encoder derives from Salesforce's MOIRAI / ``uni2ts``
+(Copyright Salesforce, Inc.; https://www.apache.org/licenses/LICENSE-2.0).
+The reference repository declares no separate code license.
 """
 
 from __future__ import annotations
@@ -26,18 +18,13 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from braindecode.functional import rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import (
-    INTRACRANIAL_CH_TYPES,
-    channel_types_from_chs_info,
-    extract_channel_locations_from_chs_info,
+    channel_metadata_from_chs_info,
     valid_location_mask,
 )
-from braindecode.modules import PatchTokenizer
-
-# Reference slots: modality EEG=0/iEEG=1; subtype grid=0/strip=1/depth=2.
-# MNE kinds cannot identify strips; -1 marks unknown subtypes.
-_TYPE_TO_SLOTS = {"eeg": (0, -1), "ecog": (1, 0), "seeg": (1, 2), "dbs": (1, 2)}
+from braindecode.modules import FeedForwardBlock, PatchTokenizer
 
 
 def _check_channel_metadata(
@@ -108,7 +95,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
     zero coordinates and unknown subtypes contribute zero embeddings. Disabling
     ``use_position_emb`` removes both coordinate and type embeddings.
 
-    For another montage, pass :meth:`channel_metadata`'s result to
+    For another montage, pass
+    :func:`~braindecode.models.util.channel_metadata_from_chs_info`'s result to
     :meth:`forward`. All samples in a batch share this metadata. The encoder is
     channel-permutation equivariant (the flattened head is not).
 
@@ -308,7 +296,7 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
         # A device-aware default montage; forward can supply another recording.
         self.register_buffer(
             "default_chan_metadata",
-            self.channel_metadata(self.chs_info),
+            channel_metadata_from_chs_info(self.chs_info),
             persistent=False,
         )
 
@@ -363,50 +351,8 @@ class DIVER1(EEGModuleMixin, nn.Module, license="apache-2.0"):
 
     @staticmethod
     def channel_metadata(chs_info: list[dict]) -> torch.Tensor:
-        """Assemble one recording's electrode metadata for :meth:`forward`.
-
-        Parameters
-        ----------
-        chs_info : list of dict
-            MNE channel information (``info["chs"]``) of the recording, one
-            entry per channel, holding its kind and its location.
-
-        Returns
-        -------
-        torch.Tensor
-            ``(n_chans, 5)`` float tensor whose columns are the three MNI
-            coordinates in millimetres, the recording-modality slot and the
-            electrode-sub-modality slot, the latter negative when unknown.
-
-        Examples
-        --------
-        >>> import mne
-        >>> from braindecode.models import DIVER1
-        >>> info = mne.create_info(["A1", "A2"], 500.0, "seeg")
-        >>> DIVER1.channel_metadata(info["chs"])[:, 3:].tolist()
-        [[1.0, 2.0], [1.0, 2.0]]
-        """
-        n_chans = len(chs_info)
-        # MNE stores coordinates in metres; DIVER-1 encodes MNI coordinates in
-        # millimetres.
-        coords = 1e3 * torch.as_tensor(
-            extract_channel_locations_from_chs_info(
-                chs_info, num_channels=n_chans, fill_missing=True
-            ),
-            dtype=torch.float32,
-        )
-        types = channel_types_from_chs_info(chs_info, num_channels=n_chans)
-        undetermined = sorted({t for t in types if t not in _TYPE_TO_SLOTS})
-        if undetermined:
-            raise ValueError(
-                f"DIVER1 cannot determine the recording modality of every "
-                f"channel: the chs_info 'kind' of some resolves to "
-                f"{undetermined}, which is neither scalp EEG nor an "
-                f"intracranial type ({sorted(INTRACRANIAL_CH_TYPES)}). Set the "
-                f"channel kinds in chs_info accordingly."
-            )
-        slots = torch.tensor([_TYPE_TO_SLOTS[t] for t in types], dtype=coords.dtype)
-        return torch.cat([coords, slots], dim=-1)
+        """Alias for :func:`braindecode.models.util.channel_metadata_from_chs_info`."""
+        return channel_metadata_from_chs_info(chs_info)
 
     def forward(
         self, x: torch.Tensor, chan_metadata: torch.Tensor | None = None
@@ -813,7 +759,16 @@ class _AnyVariateEncoderLayer(nn.Module):
         )
         self.dropout = nn.Dropout(drop_prob)
         self.norm2 = nn.RMSNorm(d_model, eps=1e-5)
-        self.ffn = _SwiGLUFeedForward(d_model, d_ff, drop_prob, activation)
+        self.ffn = FeedForwardBlock(
+            d_model,
+            expansion=4,
+            drop_p=drop_prob,
+            activation=activation,
+            hidden_features=d_ff,
+            gated=True,
+            bias=False,
+            output_drop_p=drop_prob,
+        )
 
     def forward(
         self, x: torch.Tensor, var_id: torch.Tensor, time_id: torch.Tensor
@@ -903,25 +858,5 @@ class _RotaryEmbedding(nn.Module):
         cos = self.cos[position_id].to(x.dtype)
         sin = self.sin[position_id].to(x.dtype)
         direct = cos * x
-        even, odd = x[..., 0::2], x[..., 1::2]
-        rotated = torch.stack([-odd, even], dim=-1).flatten(start_dim=-2)
+        rotated = rotate_pairs(x)
         return direct + sin * rotated
-
-
-class _SwiGLUFeedForward(nn.Module):
-    """Bias-free gated feed-forward with hidden and output dropout."""
-
-    def __init__(
-        self, d_model: int, d_ff: int, drop_prob: float, activation: type[nn.Module]
-    ):
-        super().__init__()
-        self.fc1 = nn.Linear(d_model, d_ff, bias=False)
-        self.fc_gate = nn.Linear(d_model, d_ff, bias=False)
-        self.fc2 = nn.Linear(d_ff, d_model, bias=False)
-        self.activation = activation()
-        self.dropout1 = nn.Dropout(drop_prob)
-        self.dropout2 = nn.Dropout(drop_prob)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        hidden = self.activation(self.fc_gate(x)) * self.fc1(x)
-        return self.dropout2(self.fc2(self.dropout1(hidden)))
