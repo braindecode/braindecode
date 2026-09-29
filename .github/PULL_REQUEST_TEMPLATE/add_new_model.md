@@ -1,57 +1,63 @@
----
-name: New model
-description: Add a published PyTorch model to braindecode.models
-title: "[models] Add <ModelName>"
----
-
 <!--
-Thank you for contributing a new model! This checklist mirrors the guide in
-CONTRIBUTING.md ("Adding a model to Braindecode") and the conventions enforced
-by test/unit_tests/models/test_integration.py. Fill in the model information,
-tick the boxes as you go, and keep the sections that do not apply with a short
-note explaining why.
+Thank you for contributing a new model! Follow CONTRIBUTING.md ("Adding a model
+to Braindecode") and test/unit_tests/models/test_integration.py. Tick completed
+items; keep inapplicable items with "N/A — reason". Explain exceptions rather
+than marking unrun checks as passing. Suggested title: [models] Add <ModelName>.
 -->
 
 ## Model information
 
 - **Model name**:
 - **Paper**: <!-- link to the publication; models must be published -->
-- **Reference implementation**: <!-- link to the authors' code, and its license -->
-- **Motivation**: <!-- one or two sentences: what this model adds over the models already in braindecode.models -->
+- **Motivation**: <!-- what this model adds over the models already in braindecode.models -->
+
+## Implementation fidelity
+
+- **Reference implementation**: <!-- source URL and commit/tag; license and license URL, or explain unavailable -->
+- **Deviations**: <!-- architectural/numerical changes, renamed layers, reused building blocks; or none -->
+- **Checkpoint/parity evidence**: <!-- if available: checkpoint source, weight mapping, comparison setup/tolerances/results; otherwise limitations. Distinguish implementation agreement from benchmark reproduction. -->
 
 ## Checklist
 
 ### Implementation (`braindecode/models/<name>.py`)
 
-- [ ] New class inheriting from `EEGModuleMixin` **before** `nn.Module` (or `nn.Sequential`), with `license="<SPDX id>"` matching the reference implementation
-- [ ] Mandatory parameters (`n_outputs`, `n_chans`, `chs_info`, `n_times`, `input_window_seconds`, `sfreq`) forwarded to `super().__init__(...)`
-- [ ] Forward pass consumes `(batch_size, n_chans, n_times)` and returns `(batch_size, n_outputs)`, transposing internally if the original model expects channels last
-- [ ] The classification head is assigned to `self.final_layer` and is among the last two layers (`test_model_integration_full_last_layer`)
-- [ ] No softmax or log-softmax after the final layer (`EEGClassifier` applies it)
-- [ ] Activation functions exposed as `__init__` parameters with class defaults, e.g. `activation: type[nn.Module] = nn.ELU` (`test_model_has_activation_parameter`, `test_activation_default_parameters_are_nn_module_classes`)
-- [ ] Dropout probabilities exposed as `__init__` parameters (`test_model_has_drop_prob_parameter`)
-- [ ] Module docstring documents the model, its parameters and the paper (numpydoc, `[1]_` reference)
-- [ ] Any deviation from the reference implementation (renamed layers, shared building blocks, different attention scaling, ...) is listed in the docstring or in this PR
-- [ ] No new runtime dependency
+- [ ] Class inherits from `EEGModuleMixin` **before** `nn.Module` (or `nn.Sequential`); `license="<SPDX id>"`, attribution and any `NOTICE.txt` entry match the source license
+- [ ] Signal parameters (`n_outputs`, `n_chans`, `chs_info`, `n_times`, `input_window_seconds`, `sfreq`) forwarded to `super().__init__(...)`
+- [ ] Input/output shapes documented and tested: normally `(batch_size, n_chans, n_times)` → `(batch_size, n_outputs)`; explain temporal outputs or other task-specific shapes
+- [ ] `self.final_layer` is among the last two child modules (`test_model_integration_has_final_layer`); classification head has no final softmax/log-softmax (`EEGClassifier` handles it)
+- [ ] Activation parameters use `nn.Module` class defaults (e.g. `activation=nn.ELU`) and dropout parameters use `drop_prob` names, as applicable; explain exceptions against the integration tests
+- [ ] Model docstring describes the architecture, parameters and paper (numpydoc, `[1]_` reference); deviations recorded above or linked to the docstring
+- [ ] Runtime dependency changes declared and justified, or none
 
 ### Registration and documentation
 
-- [ ] Exported in `braindecode/models/__init__.py` (import + `__all__`)
-- [ ] Registered in `braindecode/models/util.py`
-- [ ] Row added to `braindecode/models/summary.csv`, with `#Parameters` and `get_#Parameters` filled in (`test_completeness_summary_table`)
+- [ ] Exported in `braindecode/models/__init__.py` (import + `__all__`); exports are discovered automatically by `_init_models_dict()`
+- [ ] Test case added to `models_mandatory_parameters` in `braindecode/models/util.py`, with suitable signal parameters; task-specific test exceptions explained if needed
+- [ ] Row added to `braindecode/models/summary.csv`, including `#Parameters` and `get_#Parameters` (`test_completeness_summary_table` checks row presence)
 - [ ] API entry in `docs/api.rst`
-- [ ] Architecture figure at `docs/_static/model/<name>_arch.png`
+- [ ] Architecture figure at `docs/_static/model/<name>_arch.png`, if applicable (or N/A with reason)
 - [ ] Entry in `docs/whats_new.rst` (required by the changelog CI check)
 
-### Validation
+### Validation and compatibility
 
-- [ ] Integration tests pass for the new model (models registered in `util.py` are picked up automatically by `test/unit_tests/models/test_integration.py`)
-- [ ] `pytest test/` and `pre-commit run --all-files` pass
-- [ ] Benchmark reproducing the paper's results on at least one public dataset:
-    - [ ] Table or figure comparing to the paper values (per subject or per dataset)
-    - [ ] Training protocol described: dataset, splits, optimizer, training budget, and any deviation from the paper
-    - [ ] If the paper's numbers could not be reproduced, an explanation of the gap
+- [ ] Relevant integration and model-specific regression coverage added/updated in the shared model test suites; commands and results recorded below
+- [ ] Style checks recorded below, e.g. `pre-commit run --files <changed files>`
+- [ ] Shared components changed: <!-- none, or list affected models/APIs and regression coverage -->
+- [ ] Where relevant, checkpoint/config save-load round trips tested, including after head changes; evidence or N/A below
+- [ ] Where supported or changed, `reset_head` sentinel semantics (e.g. `0`/`None`) and train/eval behavior declared and tested, including mixed submodule modes where relevant; evidence or N/A below
 
-## Benchmarks
+## Validation evidence
 
-<!-- Paste the results table or figure and the training protocol here. -->
+<!-- Exact commands, environment/device, results (including failures/skips), and relevant CI links.
+Separate focused checks from the full suite (`pytest test/`); say what was not run and why.
+Include compatibility evidence or N/A reasons for the conditional items above. -->
+
+## Benchmark reproduction
+
+- [ ] Benchmark on at least one public dataset reported, or limitations explained below
+- [ ] Table/figure compares to the paper's values (per subject or dataset), or explains why comparison is unavailable
+- [ ] Dataset/version, splits, preprocessing, evaluation protocol, optimizer, training budget and deviations from the paper documented
+- [ ] Any gap from the paper's results or incomplete reproduction explained
+
+<!-- Results and protocol, or limitations (e.g. unavailable data/code/weights or compute).
+Implementation/parity evidence above is not by itself reproduction of paper benchmarks. -->
