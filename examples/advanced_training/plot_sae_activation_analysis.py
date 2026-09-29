@@ -90,10 +90,10 @@ from braindecode.visualization import (
 # (the trained SAE, or the class a feature was picked for) in blue, the
 # native decoder in ink and every control in muted slate.
 
-INK, ACCENT, SUBTLE, AMBER = "#14181f", "#3a6c97", "#5e6878", "#b46a2c"
+INK, ACCENT, SUBTLE, RED = "#14181f", "#3a6c97", "#5e6878", "#b5332e"
 MUTED = (0.37, 0.41, 0.47, 0.45)  # SUBTLE at 45% opacity
 BLUES = LinearSegmentedColormap.from_list("blues", ["white", "#dde7f0", ACCENT])
-DIVERGE = LinearSegmentedColormap.from_list("diverge", [AMBER, "white", ACCENT])
+DIVERGE = LinearSegmentedColormap.from_list("diverge", [RED, "white", ACCENT])
 # sphinx_gallery_start_ignore
 plt.rcParams.update(
     {
@@ -612,7 +612,7 @@ for (row, column), value in np.ndenumerate(heat):
     )
 for row, column in enumerate(picked_for):  # inset, so neighbouring boxes never touch
     ax.add_patch(
-        Rectangle((column - 0.42, row - 0.42), 0.84, 0.84, fill=False, ec=AMBER, lw=1.6)
+        Rectangle((column - 0.42, row - 0.42), 0.84, 0.84, fill=False, ec=RED, lw=1.6)
     )
 ax.hlines(
     np.arange(n_per_class, len(heat), n_per_class) - 0.5,
