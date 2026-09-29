@@ -107,12 +107,12 @@ from braindecode.util import set_random_seeds
 # The figures use the colors of the Braindecode documentation: the result
 # in blue, the native model in ink, controls in muted slate, and the
 # pretrained blocks that finish an edited forward pass (and the other
-# classes' feature sets) in amber.
+# classes' feature sets) in red.
 
-INK, ACCENT, SUBTLE, AMBER = "#14181f", "#3a6c97", "#5e6878", "#b46a2c"
+INK, ACCENT, SUBTLE, RED = "#14181f", "#3a6c97", "#5e6878", "#b5332e"
 MUTED = (0.37, 0.41, 0.47, 0.45)  # SUBTLE at 45% opacity
 BLUES = LinearSegmentedColormap.from_list("blues", ["white", "#dde7f0", ACCENT])
-DIVERGE = LinearSegmentedColormap.from_list("diverge", [AMBER, "white", ACCENT])
+DIVERGE = LinearSegmentedColormap.from_list("diverge", [RED, "white", ACCENT])
 # sphinx_gallery_start_ignore
 plt.rcParams.update(
     {
@@ -310,7 +310,7 @@ print(f"REVE-base: {n_params / 1e6:.1f} M parameters, {n_blocks} blocks")
 # output is cached. The SAE reads and edits the stream at block 18
 # (blue), in one of two ways: the first test replaces the tokens by their
 # reconstruction, and the second takes away only the decoded contribution of
-# the removed features. ``run_blocks`` then applies only the amber blocks
+# the removed features. ``run_blocks`` then applies only the red blocks
 # again, once per edit. The lower panel shows why a hook cannot do this: what a
 # submodule returns is the update, and the stream itself only exists in the
 # loop. After training the head, we check that ``run_blocks`` reproduces
@@ -335,14 +335,12 @@ for b in range(n_blocks + 1):
 for b in range(1, n_blocks + 1):
     fc, ec, color = ("#f6f7f8", "#d6d9de", SUBTLE)  # blocks the edit never reruns
     if b >= block:
-        fc, ec, color = (
-            (ACCENT, ACCENT, "white") if b == block else ("white", AMBER, AMBER)
-        )
+        fc, ec, color = (ACCENT, ACCENT, "white") if b == block else ("white", RED, RED)
     style = box | {"fc": fc, "ec": ec}
     ax.text(b, 0, b, ha="center", va="center", fontsize=7.5, color=color, bbox=style)
 for start, end, color, text in (  # what each function computes, and how often
     (0.6, block + 0.4, SUBTLE, "token_streams: model(x, return_output=True), once"),
-    (block + 0.6, n_blocks + 3.3, AMBER, f"run_blocks(tokens, {block + 1}), per edit"),
+    (block + 0.6, n_blocks + 3.3, RED, f"run_blocks(tokens, {block + 1}), per edit"),
 ):
     ax.annotate(
         "",
@@ -1049,7 +1047,7 @@ for row in effects:
 # The left panel shows every value behind the table, one row per class, on
 # the trials of that class: the drop caused by the class's own features
 # (blue), by each of the 20 random feature sets (grey dots) and by each of
-# the other classes' sets (open amber markers). Its right column gives the
+# the other classes' sets (open red markers). Its right column gives the
 # specificity contrast, the drop caused by the own set minus the largest drop
 # caused by any control: it is positive only when no control comes close, and
 # a control that exceeds the own set is named. The right panel shows every
@@ -1076,7 +1074,7 @@ for c, effect in enumerate(effects):
             textcoords="offset points",
             ha="center",
             fontsize=7.5,
-            color=AMBER,
+            color=RED,
         )
     ax.text(
         1,
@@ -1086,11 +1084,11 @@ for c, effect in enumerate(effects):
         ha="right",
         va="center",
         family="monospace",
-        color=INK if contrast[c] > 0 else AMBER,
+        color=INK if contrast[c] > 0 else RED,
         weight="normal" if contrast[c] > 0 else "bold",
     )
     ax.scatter(random_drops[:, c], c + jitter, s=10, color=MUTED, lw=0)
-    ax.scatter(other_sets, [c] * len(other_sets), s=30, fc="white", ec=AMBER, lw=1.2)
+    ax.scatter(other_sets, [c] * len(other_sets), s=30, fc="white", ec=RED, lw=1.2)
     ax.scatter(effect["own"], c, s=55, color=ACCENT, zorder=3)
     ax.text(
         effect["own"],
@@ -1104,7 +1102,7 @@ for c, effect in enumerate(effects):
 for i, (text, color) in enumerate(
     (
         (f"own {n_selected} features", ACCENT),
-        ("each other class's set", AMBER),
+        ("each other class's set", RED),
         (f"{n_random} random sets", SUBTLE),
     )
 ):
