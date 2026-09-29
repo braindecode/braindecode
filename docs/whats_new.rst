@@ -143,6 +143,12 @@ Bug fixes
   :class:`braindecode.models.ATCNet`). The row rescale is now written out
   instead of calling ``Tensor.renorm``; values and gradients are unchanged
   (:gh:`1184` by `Bruno Aristimunha`_).
+- Fix :func:`braindecode.functional.hilbert_freq` with ``forward_fourier=True``
+  returning one sample fewer than the input for odd-length signals and
+  doubling the Nyquist coefficient for even-length ones. It now matches
+  :func:`scipy.signal.hilbert` for both.
+  :func:`braindecode.functional.plv_time` on time-domain input uses the
+  corrected transform (:gh:`1188` by `Arthur031221`_).
 
 - Fix :class:`braindecode.modules.MaxNormParametrize` producing ``NaN`` outputs
   or gradients for zero or very small float16 rows after :gh:`1184`; the
@@ -1844,4 +1850,5 @@ Authors
 .. _Aditya Singh: https://github.com/adityasingh2400
 .. _Julien Gadonneix: https://github.com/julien-gadonneix
 .. _Li Qing: https://github.com/qinxwew
+.. _Arthur031221: https://github.com/Arthur031221
 .. _Raghav Rathi: https://github.com/raghav-rathi
