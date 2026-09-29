@@ -643,6 +643,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = _get_separable_clf_layer(
             conv_layers_spec=self._clf_conv_layers_spec,
             n_chans=self.n_chans,
@@ -887,6 +888,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = _get_separable_clf_layer(
             conv_layers_spec=self._clf_conv_layers_spec,
             n_chans=self.n_chans,
@@ -1120,6 +1122,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     def reset_head(self, n_outputs):
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = nn.Sequential(
             nn.Flatten(start_dim=1),
             nn.Linear(self._out_emb_dim, n_outputs),

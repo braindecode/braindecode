@@ -260,7 +260,9 @@ class EEGDINO(EEGModuleMixin, nn.Module):
         mirroring :meth:`braindecode.models.CBraMod.reset_head`.
         """
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.return_encoder_output = False
+        self._update_init_kwargs(return_encoder_output=False)
         self.final_layer = self._make_head()
 
     def forward(self, x, return_features: bool | None = None):
