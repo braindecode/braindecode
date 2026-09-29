@@ -392,8 +392,6 @@ class VEMG2Pose(
             device=device, dtype=dtype
         )
         self.decoder.apply(self._init_weights)
-        self.final_layer.train(self.training)
-        self.decoder.train(self.training)
 
     def forward(self, x: torch.Tensor, y0: torch.Tensor | None = None) -> torch.Tensor:
         """Decode hand pose from raw EMG.

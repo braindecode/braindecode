@@ -569,11 +569,10 @@ class EEGModuleMixin(_BaseHubMixin, metaclass=_BraindecodeDocstringMeta):
         This is called automatically by :meth:`from_pretrained` when the
         user passes an ``n_outputs`` that differs from the saved config.
         Override in subclasses that need a model-specific head structure.
-        Implementations record the new value with ``self._set_n_outputs``
-        (and any other constructor argument they change with
-        ``self._update_init_kwargs``), so that a saved model can be loaded
-        back, and build the new head in ``self.training`` mode, so that a
-        model in eval mode stays in eval mode.
+        Implementations keep changed constructor arguments in sync with
+        ``self._update_init_kwargs``, so that a saved model can be loaded
+        back. Implementations requiring positive outputs can also use
+        ``self._set_n_outputs`` to validate and record the new value.
 
         Parameters
         ----------

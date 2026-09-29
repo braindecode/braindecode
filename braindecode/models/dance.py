@@ -358,5 +358,3 @@ class DANCE(EEGModuleMixin, nn.Module, license="mit"):
         self.decoder.class_head = nn.Linear(ch.in_features, n_outputs).to(
             device=ch.weight.device, dtype=ch.weight.dtype
         )
-        self.final_layer.train(self.training)
-        self.decoder.class_head.train(self.training)
