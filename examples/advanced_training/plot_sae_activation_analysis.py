@@ -296,7 +296,7 @@ trainer = SAETrainer(
     data_provider=activation_batches(),
 )
 trainer.fit()
-sae.eval()
+_ = sae.eval()
 
 ######################################################################
 # Reconstruction quality on the test session
