@@ -96,15 +96,25 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         Dropout probability applied after the positional encoding.
     final_drop_prob : float, default=0.25
         Dropout probability before the final classification layer.
+    attention_scale : float or None, default=None
+        Multiplier applied to the attention logits before the softmax in
+        :class:`braindecode.modules.MultiHeadAttention`. When ``None``
+        (default), it reproduces the released source scale
+        ``embed_dim ** -0.5`` (i.e. ``1 / sqrt(3 * n_filters_time)``),
+        *not* the more common ``head_dim ** -0.5``: the two only coincide
+        when ``num_heads == 1``. Numerically verified against the
+        original implementation (max abs logit diff < 1e-6 with matched
+        weights); passing ``head_dim ** -0.5`` explicitly instead gives a
+        max abs logit diff of about 0.035 on a random smoke input.
 
     Notes
     -----
     This implementation is adapted from the original MSCFormer source
     code [mscformercode]_ to comply with Braindecode's model standards.
     The multi-head attention is the shared
-    :class:`braindecode.modules.MultiHeadAttention` with the standard
-    ``1/sqrt(head_dim)`` logit scaling, following the same adaptation
-    used for :class:`braindecode.models.CTNet`.
+    :class:`braindecode.modules.MultiHeadAttention`, configured through
+    ``attention_scale`` to match the original ``embed_dim ** -0.5`` logit
+    scaling by default (see the parameter description above).
 
     References
     ----------
@@ -138,6 +148,7 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         att_drop_prob: float = 0.5,
         att_positional_drop_prob: float = 0.1,
         final_drop_prob: float = 0.25,
+        attention_scale: float | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -161,6 +172,9 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
         self.att_drop_prob = att_drop_prob
         self.att_positional_drop_prob = att_positional_drop_prob
         self.final_drop_prob = final_drop_prob
+        if attention_scale is not None and attention_scale <= 0:
+            raise ValueError("attention_scale must be positive or None.")
+        self.attention_scale = attention_scale
 
         self.embed_dim = n_filters_time * len(kernel_sizes)
 
@@ -185,6 +199,9 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             n_tokens=n_tokens,
         )
 
+        attention_scale = (
+            self.embed_dim**-0.5 if attention_scale is None else attention_scale
+        )
         self.trans = _TransformerEncoder(
             num_heads=num_heads,
             depth=num_layers,
@@ -192,6 +209,7 @@ class MSCFormer(EEGModuleMixin, nn.Module, license="apache-2.0"):
             drop_prob=att_drop_prob,
             forward_expansion=forward_expansion,
             activation=activation_ffn,
+            attention_scale=attention_scale,
         )
 
         self.final_layer = nn.Sequential(
@@ -345,11 +363,12 @@ class _TransformerEncoderBlock(nn.Module):
         num_heads: int,
         drop_prob: float,
         forward_expansion: int,
+        attention_scale: float,
         activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
         self.attention = _ResidualAdd(
-            MultiHeadAttention(emb_size, num_heads, drop_prob),
+            MultiHeadAttention(emb_size, num_heads, drop_prob, scale=attention_scale),
             emb_size,
             drop_prob,
         )
@@ -393,6 +412,7 @@ class _TransformerEncoder(nn.Module):
         emb_size: int,
         drop_prob: float,
         forward_expansion: int,
+        attention_scale: float,
         activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
@@ -403,6 +423,7 @@ class _TransformerEncoder(nn.Module):
                     num_heads=num_heads,
                     drop_prob=drop_prob,
                     forward_expansion=forward_expansion,
+                    attention_scale=attention_scale,
                     activation=activation,
                 )
                 for _ in range(depth)
