@@ -18,7 +18,8 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.functional import sinusoidal_positional_encoding
-from braindecode.models.base import EEGModuleMixin
+from braindecode.models.base import _HF_INSTALL_HINT, EEGModuleMixin, huggingface_hub
+from braindecode.models.util import resolve_channel_indices
 from braindecode.modules import (
     DropPath,
     FeedForwardBlock,
@@ -36,6 +37,10 @@ from braindecode.modules import (
 # when a ``chs_info`` montage actually needs name-based slot resolution.
 _CHANNELS_REPO = "braindecode/STEEGFormer-small"
 _CHANNELS_FILE = "steegformer_channels.json"
+# Pinned commit of the Hub repository that hosts the vocabulary file, so the
+# download is immutable and reproducible. Bump deliberately when the file
+# changes upstream.
+_CHANNELS_REVISION = "633c9c0d76c6e26459e1e0d1337c91858578f13d"
 # Embedding size (n_chans_pos) the published vocabulary is valid for. Name-based
 # chs_info resolution only applies to the small/base/large variants; largeV2's
 # 256-slot HBN vocabulary has no published electrode names.
@@ -45,9 +50,12 @@ _CHANNELS_VOCAB_SIZE = 145
 @lru_cache(maxsize=1)
 def _channel_order() -> list[str]:
     """Download (and cache) the shared montage vocabulary from the Hub."""
-    from huggingface_hub import hf_hub_download
-
-    with open(hf_hub_download(_CHANNELS_REPO, _CHANNELS_FILE)) as f:
+    if huggingface_hub is False:
+        raise ImportError(f"STEEGFormer channel vocabulary {_HF_INSTALL_HINT}")
+    path = huggingface_hub.hf_hub_download(
+        _CHANNELS_REPO, _CHANNELS_FILE, revision=_CHANNELS_REVISION
+    )
+    with open(path) as f:
         return json.load(f)
 
 
@@ -207,9 +215,13 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         implementation has been verified on the released checkpoints. The
         channel-to-vocabulary mapping is resolved from the electrode names
         in ``chs_info`` (looked up in :data:`STEEGFORMER_CHANNEL_ORDER`, the
-        BENDR/LaBraM convention); when ``chs_info`` is absent or a name is
-        unknown, it falls back to the identity mapping (channel ``i`` -> slot
-        ``i``) with a warning. Pass ``chan_pos_idx`` to override explicitly.
+        BENDR/LaBraM convention). A channel whose name is not in the
+        vocabulary (for example the numbered ``E1`` ... ``E256`` sensors of an
+        EGI HydroCel net) is assigned the slot of the nearest 10-05 site,
+        using its head-frame 3D position from ``chs_info``; named channels always keep
+        their own slot. Only when positions are unavailable does it fall back
+        to the identity mapping (channel ``i`` -> slot ``i``), with a warning.
+        Pass ``chan_pos_idx`` to override explicitly.
 
     Parameters
     ----------
@@ -238,7 +250,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         from (145 for small/base/large, 256 for ``largeV2``), default 145.
     chan_pos_idx : array-like of int, optional
         Montage-vocabulary slot of each input channel, shape ``(n_chans,)``.
-        If omitted, it is resolved from ``chs_info`` electrode names (falling
+        If omitted, it is resolved from ``chs_info`` electrode names, then
+        from electrode positions for names outside the vocabulary (falling
         back to ``range(n_chans)``).
 
     References
@@ -310,8 +323,8 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
 
         # Map each input channel to its slot in the shared montage vocabulary.
         # Priority: explicit ``chan_pos_idx`` wins; otherwise resolve from the
-        # electrode names in ``chs_info`` (BENDR/LaBraM convention); if neither
-        # is usable, fall back to the identity mapping (channel i -> slot i).
+        # electrode names, then positions in ``chs_info``; if neither is usable,
+        # fall back to the identity mapping (channel i -> slot i).
         explicit_chan_pos = chan_pos_idx is not None
         if explicit_chan_pos:
             chan_pos_idx = torch.as_tensor(chan_pos_idx, dtype=torch.long)
@@ -403,6 +416,7 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         differs from the pre-trained checkpoint (whose head is discarded).
         """
         self._n_outputs = n_outputs
+        self._update_init_kwargs(n_outputs=n_outputs)
         self.final_layer = nn.Linear(self.embed_dim, n_outputs)
         self._init_weights(self.final_layer)  # match the constructor's head init
 
@@ -413,15 +427,19 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
         (case-insensitive), which is downloaded from the Hub on first use. Only
         valid for the 145-slot variants (small/base/large); for other
         ``n_chans_pos`` (e.g. largeV2's 256-slot HBN vocabulary, whose names are
-        not published) pass ``chan_pos_idx`` explicitly. Falls back to the
+        not published) pass ``chan_pos_idx`` explicitly. Unknown names use the
+        nearest 10-05 site from valid head-frame positions. Falls back to the
         identity mapping -- and warns -- when ``chs_info`` is absent, the
-        vocabulary does not apply or cannot be fetched, or a name is outside it.
+        vocabulary does not apply or cannot be fetched, or an unknown channel
+        lacks a valid position. Raises an actionable error if the identity
+        mapping exceeds the embedding capacity.
         """
         try:
             chs_info = self.chs_info
         except ValueError:
             chs_info = None
         if not chs_info:
+            identity = self._identity_channel_indices()
             warnings.warn(
                 "STEEGFormer: no chs_info provided; using the identity channel "
                 "mapping (input channel i -> vocab slot i), which rarely matches "
@@ -430,8 +448,9 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 UserWarning,
                 stacklevel=2,
             )
-            return torch.arange(self.n_chans)
+            return identity
         if self.n_chans_pos != _CHANNELS_VOCAB_SIZE:
+            identity = self._identity_channel_indices()
             warnings.warn(
                 f"STEEGFormer: name-based channel resolution uses the published "
                 f"{_CHANNELS_VOCAB_SIZE}-slot vocabulary (small/base/large), but "
@@ -441,10 +460,11 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 UserWarning,
                 stacklevel=2,
             )
-            return torch.arange(self.n_chans)
+            return identity
         try:
             index = _channel_index()  # downloaded from the Hub on first use
         except Exception as exc:  # noqa: BLE001 - any download/parse failure
+            identity = self._identity_channel_indices()
             warnings.warn(
                 f"STEEGFormer: could not fetch the channel vocabulary ({exc}); "
                 f"falling back to the identity channel mapping. Pass "
@@ -453,22 +473,49 @@ class STEEGFormer(EEGModuleMixin, nn.Module):
                 UserWarning,
                 stacklevel=2,
             )
-            return torch.arange(self.n_chans)
+            return identity
         names = [ch.get("ch_name", "") for ch in chs_info]  # type: ignore[attr-defined]
         idx = [index.get(n.upper()) for n in names]
         missing = [n for n, j in zip(names, idx) if j is None]
         if missing:
             shown = ", ".join(missing[:8]) + ("..." if len(missing) > 8 else "")
+            by_position = resolve_channel_indices(
+                chs_info, _channel_order(), montage="standard_1005"
+            )
+            if by_position is not None:
+                warnings.warn(
+                    f"STEEGFormer: {len(missing)} channel name(s) absent from the "
+                    f"montage vocabulary ({shown}); assigned each the slot of the "
+                    f"nearest 10-05 site from its position in chs_info. Pass "
+                    f"`chan_pos_idx` explicitly to choose the mapping yourself.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                return torch.tensor(by_position, dtype=torch.long)
+            identity = self._identity_channel_indices()
             warnings.warn(
                 f"STEEGFormer: {len(missing)} channel name(s) absent from the "
-                f"montage vocabulary ({shown}); falling back to the identity "
-                f"channel mapping. Pass `chan_pos_idx` explicitly to align an "
-                f"arbitrary montage with the pre-trained channel embedding.",
+                f"montage vocabulary ({shown}) and without a valid head-frame "
+                f"position in chs_info; falling back to the identity channel "
+                f"mapping. Pass `chan_pos_idx` explicitly to align an arbitrary "
+                f"montage with the pre-trained channel embedding.",
                 UserWarning,
                 stacklevel=2,
             )
-            return torch.arange(self.n_chans)
+            return identity
         return torch.tensor(idx, dtype=torch.long)
+
+    def _identity_channel_indices(self) -> torch.Tensor:
+        """Validate capacity before using input order as channel embedding slots."""
+        if self.n_chans > self.n_chans_pos:
+            raise ValueError(
+                f"STEEGFormer: channels cannot be mapped automatically, and the "
+                f"identity mapping does not fit {self.n_chans} channels in the "
+                f"{self.n_chans_pos}-slot vocabulary. Set a montage on the "
+                f"recording and pass its chs_info for the published 145-slot "
+                f"vocabulary, or pass `chan_pos_idx` explicitly."
+            )
+        return torch.arange(self.n_chans)
 
     def forward(self, x: torch.Tensor, return_features: bool = False):
         """Encode an EEG batch into class logits (or encoder features).

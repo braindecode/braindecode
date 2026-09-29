@@ -22,6 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
+from braindecode.functional import rotate_pairs
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.util import extract_channel_locations_from_chs_info
 from braindecode.modules.layers import DropPath
@@ -551,8 +552,9 @@ class _RotarySelfAttentionBlock(nn.Module):
         positions = torch.arange(seq_len, device=tensor.device, dtype=tensor.dtype)
         freqs = self.rotary_emb(positions)
 
+        # Keep the full-head reshape (including its empty-input boundary).
         pairs = tensor.reshape(*tensor.shape[:-1], -1, 2)
-        rotated = torch.stack((-pairs[..., 1], pairs[..., 0]), dim=-1).flatten(-2)
+        rotated = rotate_pairs(pairs.flatten(-2))
         transformed = tensor * freqs.cos() + rotated * freqs.sin()
         return transformed.to(tensor.dtype)
 
