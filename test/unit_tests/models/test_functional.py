@@ -237,6 +237,8 @@ def test_real_dft_path_ignores_bf16_autocast(monkeypatch):
 
 
 def test_real_dft_basis_rejects_lengths_that_overflow_the_phase_index():
-    _real_dft.real_dft_basis(65536, device="cpu", dtype=torch.float32)
+    # Check the accepted boundary without allocating its quadratic-size basis.
+    cosine, sine = _real_dft.real_dft_basis(65536, device="meta", dtype=torch.float32)
+    assert cosine.shape == sine.shape == (32769, 65536)
     with pytest.raises(ValueError, match="65536"):
         _real_dft.real_dft_basis(65537, device="cpu", dtype=torch.float32)
