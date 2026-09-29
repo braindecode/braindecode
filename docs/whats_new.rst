@@ -71,6 +71,11 @@ Requirements
 Bug fixes
 ==========
 
+- Compute the 4-D Fourier position embedding of :class:`braindecode.models.REVE`
+  in float32 with autocast disabled. Intel Gaudi (HPU) autocast downcasts the
+  position × frequency products to bf16 before sin/cos (embedding ~3 % off on
+  Gaudi2); CPU/CUDA results are unchanged
+  (:gh:`1192` by `Bruno Aristimunha`_)
 - Fix :class:`braindecode.models.MVPFormer` on Intel Gaudi (HPU): the
   channel-relative shift is now a single ``torch.gather`` and the grouped-query
   key repeat works on a contiguous copy. On HPU the previous advanced indexing

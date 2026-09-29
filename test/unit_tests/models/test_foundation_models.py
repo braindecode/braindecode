@@ -35,7 +35,7 @@ from braindecode.models import (
 )
 from braindecode.models.labram import LABRAM_CHANNEL_ORDER
 from braindecode.models.luna import _RotarySelfAttentionBlock
-from braindecode.models.reve import Attention, RevePositionBank
+from braindecode.models.reve import Attention, FourierEmb4D, RevePositionBank
 from braindecode.util import resolve_montage_name
 
 _ORIGINAL_TORCH_CAT = torch.cat
@@ -1202,6 +1202,30 @@ def test_reve_position_bank_corrupt_cache_redownloads(tmp_path, monkeypatch):
     bank = RevePositionBank(cache_dir=str(tmp_path))
 
     assert bank.get_all_positions() == list(config.keys())
+
+
+def test_reve_fourier_emb_4d_computes_in_float32():
+    """Intel Gaudi (HPU) autocast feeds sin/cos bf16 position x frequency products.
+
+    CPU autocast leaves elementwise ``mul`` alone, so bf16 positions reproduce it.
+    ``_embed`` is the unguarded computation.
+    """
+    torch.manual_seed(0)
+    electrodes = torch.randn(2, 16, 3)
+    positions = FourierEmb4D.add_time_patch(
+        electrodes / electrodes.norm(dim=-1, keepdim=True), 3
+    )
+    module = FourierEmb4D(dimension=64, freqs=4)
+    reference = module._embed(positions)
+    assert torch.equal(module(positions), reference)
+
+    def rel_error(out):
+        return ((out.float() - reference).norm() / reference.norm()).item()
+
+    bf16 = positions.to(torch.bfloat16)
+    out = module(bf16)
+    assert out.dtype == torch.bfloat16
+    assert rel_error(out) < 0.01 < 0.02 < rel_error(module._embed(bf16))
 
 
 # ==============================================================================
