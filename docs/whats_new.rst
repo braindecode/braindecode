@@ -81,6 +81,13 @@ Requirements
 Bug fixes
 ==========
 
+- Fix :class:`braindecode.models.EEGMiner` on Intel Gaudi (HPU), part 2 of
+  :gh:`1183`: :class:`braindecode.modules.GeneralizedGaussianFilter` and
+  :func:`braindecode.functional.hilbert_freq` now use a real-valued DFT on
+  devices without complex tensors, computed in float32 with autocast disabled
+  (a bf16 matmul DFT gave phase-locking features 20% off and wrong-direction
+  filter gradients). CPU and CUDA keep ``torch.fft``
+  (:gh:`1193` by `Bruno Aristimunha`_)
 - Compute the 4-D Fourier position embedding of :class:`braindecode.models.REVE`
   in float32 with autocast disabled. Intel Gaudi (HPU) autocast downcasts the
   position × frequency products to bf16 before sin/cos (embedding ~3 % off on
