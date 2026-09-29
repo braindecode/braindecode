@@ -28,6 +28,13 @@ Current 1.8.1 (2026-08-31)
 Enhancements
 ============
 
+- Add :class:`braindecode.models.BaRISTA`, an intracranial EEG foundation model
+  whose spatial encoding scale is a free choice: electrodes are tokenized
+  channel-wise and space enters as a single learned embedding selected by the
+  electrode coordinate, its atlas parcel or its lobe, before a joint
+  space-time transformer encoder with rotary temporal embeddings
+  (:gh:`1173` by `Julien Gadonneix`_).
+
 - Add :class:`braindecode.models.Brant`, a braindecode-native port of the Brant
   foundation model for intracranial (sEEG/iEEG) signals (Zhang et al., NeurIPS
   2023), including in-model spectral features and the shared configuration,
